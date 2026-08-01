@@ -250,7 +250,7 @@ fn rankUfcsCand(self: *Lowering, maybe_fd: ?*const ast.FnDecl, args_ast: []const
     }
 }
 
-/// issue 0157 + review follow-ups: a bare-ufcs name resolves through a single
+/// A bare-ufcs name resolves through a single
 /// last-wins `fn_ast_map` winner (`fd0`), which may be a same-named generic ufcs
 /// whose receiver does NOT match the call's receiver (e.g. user `cancel :: ufcs
 /// (t: *Task($R))` shadowed by the stdlib `cancel :: ufcs (f: *Future($R))`).
@@ -336,7 +336,7 @@ fn nameAuthoredOnlyPrivately(self: *Lowering, name: []const u8) bool {
 
 /// True when `name` is bound in the current lexical scope to a CALLABLE
 /// value — a fn-pointer or closure local. Such a binding shadows any
-/// same-named top-level fn in call position (issue 0217): the call must
+/// same-named top-level fn in call position: the call must
 /// dispatch indirectly through the LOCAL, so every program-fn path — the
 /// non-transitive-visibility gate, the early pack/comptime/generic
 /// dispatch, and direct name dispatch — is skipped for it. Without this,
@@ -375,9 +375,7 @@ fn indirectCallThroughLocal(self: *Lowering, name: []const u8, binding: lower.Bi
     // pack-variadic signature (`pack_start != null`) binds per call shape,
     // so it is exempt. A C-conv pointer may carry a genuine `...` variadic
     // tail the fn TYPE cannot express, so extras are allowed there; too
-    // FEW args is wrong under every convention. (Overlaps issue 0188's
-    // callable-value arg check on master — reconcile at cherry-pick,
-    // keeping 0188's check plus this file's gating.)
+    // FEW args is wrong under every convention.
     if (!binding.ty.isBuiltin()) {
         const bti = self.module.types.get(binding.ty);
         if (bti == .function and bti.function.pack_start == null) {
@@ -399,8 +397,8 @@ fn indirectCallThroughLocal(self: *Lowering, name: []const u8, binding: lower.Bi
         const bti = self.module.types.get(binding.ty);
         break :blk if (bti == .function) bti.function.ret else .i64;
     } else .i64;
-    // Coerce user args to the fn-pointer's param types (issue
-    // 0186) — same as the closure-value and global-fn-pointer
+    // Coerce user args to the fn-pointer's param types — same as
+    // the closure-value and global-fn-pointer
     // paths. The arg loop already applied implicit address-of
     // for `*T` params (resolveCallParamTypes now surfaces the
     // `.function` param types), so this completes value
@@ -703,7 +701,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // user-typed name resolved as-is to a top-level fn — local-scope
         // mangling (eff_name != id_name) and UFCS alias rewriting are
         // compiler indirections and stay exempt. A callable LOCAL binding
-        // shadows the top-level fn entirely (issue 0217): the call targets
+        // shadows the top-level fn entirely: the call targets
         // the local, so the program-fn visibility gate must not fire.
         // An intrinsic is a compiler feature, not a library export, so import
         // visibility does not gate it — the same reason `size_of` / `sqrt` /
@@ -751,7 +749,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // would invoke another module's function. On the common path
         // (`sel_author == null`) this reads the winner exactly as before —
         // byte-identical, since the selector reroutes nothing there.
-        // A callable LOCAL binding shadows the top-level fn (issue 0217):
+        // A callable LOCAL binding shadows the top-level fn:
         // the early pack/comptime/generic program-fn dispatch must not
         // consume the call — the main dispatch routes it indirect through
         // the local. (`sel_author` is already `.none` for any shadowed
@@ -792,7 +790,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // target exactly like the direct-call path: without it, an
                 // `xx local` arg to a protocol param lowers node-lessly and
                 // the later value-wise coercion HEAP-COPIES the local through
-                // context.allocator instead of borrowing it (issue 0302). An
+                // context.allocator instead of borrowing it. An
                 // unresolvable param slot keeps a null target (the ambient
                 // target must still not leak into the arg).
                 const early_param_types = astCalleeParamTypes(self, fd, c.args);
@@ -984,7 +982,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // For enum_literal callees (.Variant(payload)), resolve the payload target type
     // from the union field type so struct literal fields get proper coercion.
     // Resolve through optional layers — a `?E` destination constructs the E
-    // and wraps at the coercion site (issue 0351).
+    // and wraps at the coercion site.
     var enum_payload_ty: ?TypeId = null;
     if (c.callee.data == .enum_literal) {
         var target = self.target_type orelse .unresolved;
@@ -1001,7 +999,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             target = info.optional.child;
         }
     }
-    // Running PARAMETER index (issue 0239): a spread expands one
+    // Running PARAMETER index: a spread expands one
     // AST arg into N lowered args, so the AST loop index stops matching the
     // callee's parameter positions after any spread. `param_idx` advances by
     // the EXPANDED width, so every post-spread arg is target-typed / coerced
@@ -1056,7 +1054,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             self.target_type = param_types[ai];
         }
         // `cast(T) X` — lower an integer-literal operand against the cast's
-        // target type T (issue 0275): otherwise the literal folds against the
+        // target type T: otherwise the literal folds against the
         // ambient default `i64` and a value above i64.max but within a wider
         // target (`cast(u64) 0xcbf...`) trips the i64 fits-check before the
         // cast ever applies — AND a same-width signed↔unsigned reinterpret
@@ -1118,7 +1116,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         // MUTABLE global arg to a `*T` param: pass the global's
                         // LIVE address (`global_addr` via lowerExprAsPtr), not a
                         // loaded copy the callee would mutate in vain — the
-                        // explicit-call sibling of the 0202 UFCS-receiver fix.
+                        // explicit-call sibling of the UFCS-receiver rule.
                         // A `::` const global is excluded (no `*T` into `.rodata`
                         // — would SIGBUS / slip past the const-write guard); it
                         // falls through to the value copy below.
@@ -1181,7 +1179,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
         }
         // Concrete lvalue → `*Protocol` param: the borrowed-VIEW coercion
-        // (erasure model; issue 0303's cell). Take the lvalue's REAL address,
+        // (erasure model). Take the lvalue's REAL address,
         // build the borrow-mode protocol value around it (ctx = that address,
         // so mutations through the view reach the original), spill the value
         // to a frame slot and pass the slot's address. Mirrors the implicit
@@ -1216,8 +1214,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // An argument is a VALUE position: a block-form `if C { A } else { B }`
         // / `match` used directly as an argument must yield its branch value,
         // not be lowered as a statement-if (which returns a bare `void 0` and
-        // silently passes `0`, or overruns for a wider branch type → segfault,
-        // issue 0268). The `then`-form and a `let`-bound local already work
+        // silently passes `0`, or overruns for a wider branch type → segfault).
+        // The `then`-form and a `let`-bound local already work
         // because both reach `lowerIfExpr` with `force_block_value` set; a bare
         // call argument did not. Set it here so the arg materializes its value.
         const saved_fbv = self.force_block_value;
@@ -1300,8 +1298,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             // A callable binding (closure value / fn pointer)
                             // reached only ACROSS a nested-fn boundary is the
                             // enclosing function's local — dispatching through
-                            // it reads a dead env/fn Ref (Bus error; issue 0250
-                            // fold). Diagnose for BOTH closure and fn-pointer
+                            // it reads a dead env/fn Ref (Bus error).
+                            // Diagnose for BOTH closure and fn-pointer
                             // shapes — even a non-capturing closure that would
                             // happen to run must not silently legitimize the
                             // reference. A NON-callable crossed binding falls
@@ -1314,11 +1312,11 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             }
                             if (ty_info == .closure) {
                                 // Exact-arity + spread-placeholder validation
-                                // against the closure TYPE (issue 0188).
+                                // against the closure TYPE.
                                 if (checkCallableValueArgs(self, "closure", id.name, args.items, ty_info.closure.params.len, ty_info.closure.pack_start, c, c.callee.span)) return Ref.none;
                                 const callee_ref = if (binding.is_alloca) self.builder.load(binding.ref, binding.ty) else binding.ref;
-                                // Coerce user args to the closure's param types
-                                // (issue 0186) — a `?T` param must wrap the arg.
+                                // Coerce user args to the closure's param types —
+                                // a `?T` param must wrap the arg.
                                 coerceClosureCallArgs(self, args.items, ty_info.closure.params);
                                 // Closure trampolines carry `__sx_ctx` at
                                 // slot 0; emit_llvm's `call_closure` builds
@@ -1334,13 +1332,13 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 return self.builder.emit(.{ .call_closure = .{ .callee = callee_ref, .args = owned } }, ret_ty);
                             }
                             // A local fn-POINTER binding shadows any same-named
-                            // top-level fn (issue 0217): dispatch indirect through
+                            // top-level fn: dispatch indirect through
                             // the LOCAL before the author / name-based program-fn
                             // paths below, otherwise an importer's unrelated
                             // module-scope fn hijacks the call. A fn-pointer type
                             // has no variadic slot — reject a leftover slice/array
                             // spread placeholder before the arity check counts it
-                            // as one arg (issues 0188 + 0239).
+                            // as one arg.
                             if (binding.pack_elem == null and ty_info == .function) {
                                 if (rejectLeftoverSpreadPlaceholder(self, "a function pointer", args.items, c, c.callee.span)) return Ref.none;
                                 return indirectCallThroughLocal(self, id.name, binding, args.items, c.callee.span);
@@ -1376,7 +1374,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 if (arity_fd) |fd| {
                     // A leftover slice/array-spread placeholder into a callee
                     // with NO variadic slot to consume it: diagnose the spread
-                    // itself (issue 0239) — an arity error alone counts the
+                    // itself — an arity error alone counts the
                     // placeholder as one arg, and a count that happens to line
                     // up emits undef for the slot.
                     if (!fnDeclHasVariadicParam(fd)) {
@@ -1438,12 +1436,12 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
             // May be a variable holding a function pointer (non-closure).
             // Function-typed bindings dispatch through the program-fn paths
-            // above (issue 0217); this trailing fallback covers every other
+            // above; this trailing fallback covers every other
             // binding shape.
             if (self.scope) |scope| {
                 // A binding reachable only across a nested-fn boundary is an
                 // enclosing local — never a valid indirect-call target here
-                // (issue 0250 fold; mirrors the callable-binding gate above).
+                // (mirrors the callable-binding gate above).
                 if (scope.lookupBoundary(id.name).crossed_fn_boundary) {
                     _ = self.diagEnclosingLocalRef(id.name, c.callee.span);
                     return Ref.none;
@@ -1451,7 +1449,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 if (scope.lookup(id.name)) |binding| {
                     // No variadic slot on any binding-typed callee — a leftover
                     // slice/array spread placeholder must not reach the
-                    // indirect call as undef (issues 0188 + 0239).
+                    // indirect call as undef.
                     if (rejectLeftoverSpreadPlaceholder(self, "a function pointer", args.items, c, c.callee.span)) return Ref.none;
                     return indirectCallThroughLocal(self, id.name, binding, args.items, c.callee.span);
                 }
@@ -1462,7 +1460,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const gti = self.module.types.get(gi.ty);
                     if (gti == .function) {
                         // Exact-arity + spread-placeholder validation against
-                        // the fn-pointer TYPE (issue 0188).
+                        // the fn-pointer TYPE.
                         if (checkCallableValueArgs(self, "function pointer", id.name, args.items, gti.function.params.len, gti.function.pack_start, c, c.callee.span)) return Ref.none;
                         const callee_ref = self.builder.emit(.{ .global_get = gi.id }, gi.ty);
                         // Coerce args to match fn-ptr param types (including
@@ -1600,8 +1598,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                     }
                                     // ORDINAL indexes `fields[]` (payload-type
                                     // lookup); the EXPLICIT tag value is what's
-                                    // stored at runtime so match/C-interop agree
-                                    // (issue 0281).
+                                    // stored at runtime so match/C-interop agree.
                                     const ord = self.resolveVariantIndex(result_ty, fa.field);
                                     const tag = self.resolveVariantValue(result_ty, fa.field);
                                     var payload = if (args.items.len > 0) args.items[0] else Ref.none;
@@ -1672,7 +1669,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
 
                 // A static method on a plain struct is selected from the
                 // nominal type head's author, not the global last-wins
-                // `StructName.method` entry (issue 0320). This precedes
+                // `StructName.method` entry. This precedes
                 // namespace-name stripping so `a.Thing.init()` retains a's
                 // TypeId and body provenance end to end.
                 switch (self.staticStructHead(fa.object)) {
@@ -1744,7 +1741,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ n, fa.field }) catch func_name
                 else
                     func_name;
-                // The carry gate (issue 0114): a plain-identifier root that is
+                // The carry gate: a plain-identifier root that is
                 // a namespace ALIAS (not a type / fn global name — those are
                 // the `Type.method` paths below) must be visible under the
                 // carry rule, and its fn members dispatch pinned to the
@@ -1835,7 +1832,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 return self.builder.enumInit(0, Ref.none, union_ty);
                             }
                             // ORDINAL indexes `fields[]`; the EXPLICIT tag value
-                            // is stored at runtime (issue 0281).
+                            // is stored at runtime.
                             const ord = self.resolveVariantIndex(union_ty, func_name);
                             const tag = self.resolveVariantValue(union_ty, func_name);
                             var payload = if (args.items.len > 0) args.items[0] else Ref.none;
@@ -1882,7 +1879,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
 
             // A guard-narrowed optional receiver dispatches through its
             // child implicitly — parity with field reads and the
-            // coercion sites (issue 0352).
+            // coercion sites.
             if (!obj_ty.isBuiltin()) {
                 const oinfo_nrw = self.module.types.get(obj_ty);
                 if (oinfo_nrw == .optional and self.narrowed_refs.contains(obj)) {
@@ -1900,7 +1897,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         const fti = self.module.types.get(f.ty);
                         if (fti == .closure) {
                             // Exact-arity + spread-placeholder validation
-                            // against the field's closure TYPE (issue 0188).
+                            // against the field's closure TYPE.
                             if (checkCallableValueArgs(self, "closure", fa.field, args.items, fti.closure.params.len, fti.closure.pack_start, c, c.callee.span)) return Ref.none;
                             // structGet requires an aggregate value; if obj is *T, load through it first.
                             var agg = obj;
@@ -1909,7 +1906,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 agg = self.builder.load(obj, oi.pointer.pointee);
                             }
                             const closure_val = self.builder.structGet(agg, @intCast(fi), f.ty);
-                            // Coerce user args to the closure's param types (issue 0186).
+                            // Coerce user args to the closure's param types.
                             coerceClosureCallArgs(self, args.items, fti.closure.params);
                             // Prepend ctx for sx-side closure call ABI.
                             const owned = if (self.implicit_ctx_enabled) blk: {
@@ -1926,7 +1923,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         // (ctx prepend gated on the fn-ptr's own ABI).
                         if (fti == .function) {
                             // Exact-arity + spread-placeholder validation
-                            // against the field's fn-pointer TYPE (issue 0188).
+                            // against the field's fn-pointer TYPE.
                             if (checkCallableValueArgs(self, "function pointer", fa.field, args.items, fti.function.params.len, fti.function.pack_start, c, c.callee.span)) return Ref.none;
                             var agg = obj;
                             const oi = self.module.types.get(obj_ty);
@@ -1934,7 +1931,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 agg = self.builder.load(obj, oi.pointer.pointee);
                             }
                             const fp_val = self.builder.structGet(agg, @intCast(fi), f.ty);
-                            // Coerce user args to the fn-ptr's param types (issue 0186).
+                            // Coerce user args to the fn-ptr's param types.
                             coerceClosureCallArgs(self, args.items, fti.function.params);
                             var final_args = std.ArrayList(Ref).empty;
                             defer final_args.deinit(self.alloc);
@@ -2004,7 +2001,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             return self.emitProtocolDispatch(obj, proto_info, fa.field, args.items, pay_ty, c.callee.span);
                         }
                     }
-                    // `?*P` (optional VIEW, issue 0310): the optional of a
+                    // `?*P` (optional VIEW): the optional of a
                     // pointer is pointer-sentinel-shaped, so the optional
                     // value IS the `*P` word — load the pointee protocol
                     // value and dispatch, same as the plain `*P` arm.
@@ -2248,7 +2245,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // route through the SAME pack-call path the direct call uses,
                 // with the receiver spliced in as the first arg so the pack
                 // boundary, the `$R` closure-return binding, and the pack
-                // expansion all line up with `fd.params[0]` (issue 0151).
+                // expansion all line up with `fd.params[0]`.
                 // `lowerPackFnCall` reads only `call_node.args` (never the
                 // callee), so a synthetic spliced-args call is sufficient.
                 if (ufcs_fd) |fd| {
@@ -2271,7 +2268,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         defer eff_args.deinit(self.alloc);
                         eff_args.append(self.alloc, effective_obj_node) catch unreachable;
                         for (c.args) |arg| eff_args.append(self.alloc, arg) catch unreachable;
-                        // issue 0157: the last-wins `fn_ast_map` winner may be a
+                        // The last-wins `fn_ast_map` winner may be a
                         // same-named generic ufcs from another module whose
                         // receiver doesn't match. Only when it fails to bind all
                         // its type-params for THIS receiver do we re-select the
@@ -2439,7 +2436,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 if (target_opt) |tgt| {
                     // A `?E` destination constructs the E and wraps at the
                     // coercion site — resolve through optional layers, same
-                    // as the bare-literal path (issue 0351).
+                    // as the bare-literal path.
                     var t = tgt;
                     while (!t.isBuiltin()) {
                         const info = self.module.types.get(t);
@@ -2462,7 +2459,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 return self.builder.enumInit(0, Ref.none, target);
             }
             // ORDINAL indexes `fields[]`; the EXPLICIT tag value is stored at
-            // runtime so a payloadful match/C-interop agree (issue 0281).
+            // runtime so a payloadful match/C-interop agree.
             const ord = self.resolveVariantIndex(target, el.name);
             const tag = self.resolveVariantValue(target, el.name);
             var payload = if (args.items.len > 0) args.items[0] else Ref.none;
@@ -2471,8 +2468,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // arg node: an anonymous payload literal (`.key_up(.{ ... })`)
             // re-infers as the STEERING target (the union type itself, from a
             // return/binding context), and that phantom `union → payload`
-            // mismatch trips the unmodeled-coercion guard (issue 0191). The
-            // lowered ref's type is authoritative (same rule as issue 0175).
+            // mismatch trips the unmodeled-coercion guard. The
+            // lowered ref's type is authoritative.
             if (!payload.isNone() and !target.isBuiltin()) {
                 const info = self.module.types.get(target);
                 if (info == .tagged_union) {
@@ -2501,10 +2498,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 const cti = self.module.types.get(callee_ty);
                 if (cti == .closure) {
                     // Exact-arity + spread-placeholder validation against
-                    // the callee expression's closure TYPE (issue 0188).
+                    // the callee expression's closure TYPE.
                     if (checkCallableValueArgs(self, "closure", null, args.items, cti.closure.params.len, cti.closure.pack_start, c, c.callee.span)) return Ref.none;
                     const callee_ref = self.lowerExpr(c.callee);
-                    // Coerce user args to the closure's param types (issue 0186).
+                    // Coerce user args to the closure's param types.
                     coerceClosureCallArgs(self, args.items, cti.closure.params);
                     // Prepend implicit ctx for the sx-side closure call ABI
                     // (emit_llvm builds the call as [ctx, env, user_args]).
@@ -2525,7 +2522,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             } else null;
             if (fn_info) |fi| {
                 // Exact-arity + spread-placeholder validation against the
-                // callee expression's fn-pointer TYPE (issue 0188).
+                // callee expression's fn-pointer TYPE.
                 if (checkCallableValueArgs(self, "function pointer", null, args.items, fi.params.len, fi.pack_start, c, c.callee.span)) return Ref.none;
                 coerceClosureCallArgs(self, args.items, fi.params);
             }
@@ -3606,7 +3603,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         // comptime type-kind predicate that folds at lower time (mirrors the
         // `tryConstBoolCondition` arm so `inline if is_struct(T)` gates
         // field-wise reflection). Any non-struct (enum, scalar, pointer, …) is
-        // false — routing an enum key to a leaf byte-hash (issue 0274).
+        // false — routing an enum key to a leaf byte-hash.
         if (c.args.len < 1) return self.builder.constBool(false);
         const ty = self.resolveTypeArg(c.args[0]);
         if (ty.isBuiltin() or ty == .unresolved) return self.builder.constBool(false);
@@ -3918,7 +3915,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         // payload-less enum with EXPLICIT values the runtime tag is the
         // explicit value (e.g. 7), NOT the ordinal, so it must be
         // reverse-mapped: returning the raw tag fed `field_name(T, tag)` an
-        // out-of-range index → out-of-bounds GEP → segfault (issue 0277).
+        // out-of-range index → out-of-bounds GEP → segfault.
         if (c.args.len < 2) return self.builder.constInt(0, .i64);
         if (!self.isStaticTypeArg(c.args[0])) {
             // Runtime Type: the value travels as an `any` VIEW (a typed
@@ -3946,8 +3943,8 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             // case the runtime tag is the explicit value (e.g. 0x100), NOT the
             // sequential ordinal. `field_name` indexes the name array by
             // ordinal, so returning the raw tag mis-indexes it — a garbage /
-            // out-of-range variant name (issue 0277 for plain enums, issue 0280
-            // for tagged unions). Reverse-map the tag → ordinal for either kind.
+            // out-of-range variant name, for plain enums and tagged unions
+            // alike. Reverse-map the tag → ordinal for either kind.
             const explicit_vals: ?[]const i64 = switch (self.module.types.get(ty)) {
                 .@"enum" => |e| e.explicit_values,
                 .tagged_union => |u| u.explicit_tag_values,
@@ -3967,7 +3964,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
                 // way a `-1` sentinel would (an OOB GEP → crash). A tagged union
                 // whose payload variants are call-constructed currently stores
                 // the ordinal for those variants rather than the explicit tag
-                // (a distinct construction bug — see issue 0281); the identity
+                // (a distinct construction bug); the identity
                 // seed keeps their names resolvable here instead of crashing.
                 var acc = tag;
                 for (vals, 0..) |v, i| {
@@ -4266,7 +4263,7 @@ pub fn checkCallArity(self: *Lowering, fd: *const ast.FnDecl, callee_name: []con
 
 /// Argument validation for a call through a callable VALUE — a closure
 /// value or a fn-pointer value — which has no `ast.FnDecl` for the
-/// decl-based `checkCallArity` to consume (issue 0188). `params` is the
+/// decl-based `checkCallArity` to consume. `params` is the
 /// callable TYPE's user-visible param list (closure/function type params
 /// never include the implicit `__sx_ctx` slot — that is prepended
 /// separately per `fnPtrTypeWantsCtx` / `implicit_ctx_enabled`); `args`
@@ -4313,8 +4310,8 @@ fn checkCallableValueArgs(
     return false;
 }
 
-/// Reject a leftover `Ref.none` spread placeholder in a lowered arg list
-/// (issues 0188 + 0239): the only producer is a runtime slice/array spread
+/// Reject a leftover `Ref.none` spread placeholder in a lowered arg list.
+/// The only producer is a runtime slice/array spread
 /// that no variadic slot consumed — it has no statically-known length to
 /// expand into positional args, and emitting the placeholder would reach
 /// the call op as undef (silent garbage). `what` names the callee for the
@@ -4848,8 +4845,8 @@ pub fn expandCallDefaults(
                 // defaults must not lower the author (0102d).
                 if (author_declines) return null;
                 if (sel_author) |sf| break :blk sf.decl;
-                // A callable LOCAL binding shadows the top-level fn (issue
-                // 0217): the shadowed-out global's defaults must
+                // A callable LOCAL binding shadows the top-level fn: the
+                // shadowed-out global's defaults must
                 // not expand — their exprs' side effects would run and the
                 // spliced args would reach the local's call_indirect as
                 // phantom extras.
@@ -4899,7 +4896,7 @@ pub fn expandCallDefaults(
             else => return null,
         }
     };
-    // Param slots the written args actually consume (issue 0188):
+    // Param slots the written args actually consume:
     // a spread arg supplies its operand's WIDTH, not one — a 2-tuple spread
     // into `(a: i64, b: i64 = 99)` supplies BOTH params, so no default may be
     // filled (counting the spread node as one arg filled `b`'s default on top
@@ -4983,7 +4980,7 @@ pub fn userParamTypes(self: *Lowering, func: *const Function) []TypeId {
 /// `$T → concrete` bindings the pin would resolve `T` as an undeclared
 /// type in a non-main module and diagnose it unknown.
 /// Coerce already-lowered closure-call arguments to the closure's declared
-/// parameter types (issue 0186). The arg-lowering loop only sets `target_type`
+/// parameter types. The arg-lowering loop only sets `target_type`
 /// (which steers literal lowering) but does NOT itself coerce, so a concrete
 /// `7` flowing into a `?i64` param would reach `call_closure` as a bare `i64`
 /// (read ABSENT by the callee) and a `null` as a bare pointer (LLVM verifier
@@ -5091,7 +5088,7 @@ pub fn resolveCallParamTypes(
                 // symbol intentionally has no distinct `socket.write` FuncId.
                 // Without the signature here, the ambient expression target
                 // leaks into argument lowering (a `-> bool` caller truncated a
-                // byte count to i1 before calling libc; issue 0282).
+                // byte count to i1 before calling libc).
                 switch (self.namespaceAliasVerdict(obj_name)) {
                     .target => |target| {
                         if (self.namespaceFnMember(&target, fa.field)) |fd| {
@@ -5133,7 +5130,7 @@ pub fn resolveCallParamTypes(
         // protocol's ProtocolMethodInfo.param_types already excludes self.
         // The receiver may be erased directly (`P`), a view (`*P`), or the
         // optional of either (`?P` / `?*P`) — same look-through as the plan
-        // and dispatch arms (issue 0313: enum-literal args through a view
+        // and dispatch arms (enum-literal args through a view
         // dispatch lost their param target and typed from the ambient
         // destination instead).
         const proto_recv = blk: {
@@ -5268,7 +5265,7 @@ pub fn resolveCallParamTypes(
                     // TypeTable, where `resolveTypeCategoryTags`'s category
                     // scan later hands it to `any_to_string`'s `case slice`
                     // arm and monomorphizes an uncompilable
-                    // `slice_to_string__unresolved` (issue 0288). Bind first,
+                    // `slice_to_string__unresolved`. Bind first,
                     // receiver prepended so positions line up with
                     // `fd.params[0] = self`.
                     const saved_bindings = self.type_bindings;
@@ -5313,7 +5310,7 @@ pub fn resolveCallParamTypes(
     const bare_name = c.callee.data.identifier.name;
     // Closure / fn-pointer VALUE bound in scope (`g := () => ...; g(args)`):
     // type each arg against the callee value's declared parameter types so a
-    // `?T` param wraps the argument (issue 0186) — without this the args lower
+    // `?T` param wraps the argument — without this the args lower
     // with no target type and reach `call_closure` unconverted (a concrete arg
     // arrives as a bare payload that reads ABSENT; `null` reaches a `{T,i1}`
     // slot as a bare pointer → LLVM verifier failure). A local value shadows a

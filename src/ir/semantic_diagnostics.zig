@@ -52,19 +52,19 @@ pub const UnknownTypeChecker = struct {
     /// Source that authors the declaration currently being checked. This is
     /// semantic lookup authority, kept separate from the diagnostic renderer's
     /// mutable current file so an already-visited facade cannot reclassify a
-    /// main-file protocol constraint (issue 0328).
+    /// main-file protocol constraint.
     author_source: ?[]const u8 = null,
     /// Declared error-set names (`E :: error { ... }`) gathered across every
     /// compiled module + nested scope. Populated in `run`; consulted by the
     /// `.error_type_expr` arm of `checkTypeNodeForUnknown` to tell a valid
     /// `!E` (E a declared set) apart from an undeclared name or a value name
     /// used after `!` in type position (both of which silently fabricate a
-    /// zero-field `{}` stub — issue 0189). `null` only before `run` populates it.
+    /// zero-field `{}` stub). `null` only before `run` populates it.
     error_sets: ?*const std.StringHashMap(void) = null,
     /// The constructing Lowering, borrowed to fold `inline if` conditions
     /// (`evalComptimeCondition` / `evalComptimeMatch`) so the checker prunes
     /// exactly the branches lowering prunes — a statically-dead `inline if`
-    /// branch must not have its type annotations resolved (issue 0290).
+    /// branch must not have its type annotations resolved.
     /// `null` (unit tests) keeps the walk-everything behavior.
     lowering: ?*lower.Lowering = null,
 
@@ -117,7 +117,7 @@ pub const UnknownTypeChecker = struct {
         defer declared.deinit();
         self.collectDeclaredTypeNames(decls, &declared);
         // Declared error-set names — every module + nested scope. Used by the
-        // `.error_type_expr` arm to validate `!E` (issue 0189). Collected
+        // `.error_type_expr` arm to validate `!E`. Collected
         // unfiltered (imported sets count: `g :: () -> i64 !LibErr` is valid).
         var error_sets = std.StringHashMap(void).init(self.alloc);
         defer error_sets.deinit();
@@ -133,9 +133,9 @@ pub const UnknownTypeChecker = struct {
                 }
             }
             // Render against the decl's own module, not the ambient file the
-            // previous phase left behind (issue 0122). Main-file AST nodes are
+            // previous phase left behind. Main-file AST nodes are
             // intentionally unstamped, so null means `main_file`; it is not
-            // permission to retain whichever facade was visited last (0328).
+            // permission to retain whichever facade was visited last.
             const author_source = decl.source_file orelse self.main_file;
             if (author_source) |sf| self.diagnostics.current_source_file = sf;
             var decl_checker = checker;
@@ -152,9 +152,9 @@ pub const UnknownTypeChecker = struct {
                     .struct_decl => |sd| decl_checker.checkStructDeclTypes(&sd, &declared),
                     // A COMPOSITE type alias — tuple / array / slice / optional
                     // / pointer / many-pointer / function / closure RHS
-                    // (`NT :: Tuple(a: i64, b: bool)` issue 0196;
-                    // `Bad :: [3]T`, `S :: []T`, `O :: ?T`, `P :: *T`,
-                    // `F :: (T) -> U`, `CB :: Closure(T) -> U` issue 0230) —
+                    // (`NT :: Tuple(a: i64, b: bool)`, `Bad :: [3]T`,
+                    // `S :: []T`, `O :: ?T`, `P :: *T`, `F :: (T) -> U`,
+                    // `CB :: Closure(T) -> U`) —
                     // registers the structural TypeId; an unknown element/
                     // pointee/param/return name would otherwise resolve to a
                     // silent empty-struct stub INSIDE the shape (never patched,
@@ -240,7 +240,7 @@ pub const UnknownTypeChecker = struct {
             // ── Binding-introducing nodes: check the name(s), then recurse. ──
             // Every site passes the node's own `is_raw` straight to the check —
             // never an `if (!is_raw)` call-site guard — so the check and its
-            // exemption are one operation that cannot be threaded apart (0089).
+            // exemption are one operation that cannot be threaded apart.
             .var_decl => |vd| {
                 self.checkBindingName(vd.name, vd.name_span, vd.is_raw);
                 if (vd.value) |v| self.checkBindingNames(v);
@@ -255,7 +255,7 @@ pub const UnknownTypeChecker = struct {
                 // A function NAME is a binding site too: a bare reserved-name
                 // `i2 :: (…) {…}` (free fn or struct/impl method) is rejected,
                 // exactly like `i2 := …`. Backtick (`` `i2 :: … ``) and
-                // `#import c` extern fns set `is_raw` and are exempt (0089).
+                // `#import c` extern fns set `is_raw` and are exempt.
                 self.checkBindingName(fd.name, fd.name_span, fd.is_raw);
                 self.checkParamNames(fd.params);
                 self.checkBindingNames(fd.body);
@@ -336,7 +336,7 @@ pub const UnknownTypeChecker = struct {
             },
             .runtime_class_decl => |fcd| {
                 // The sx-side alias (left of `::`) is a user-chosen name, so a
-                // reserved spelling is rejected like any other type decl (0089).
+                // reserved spelling is rejected like any other type decl.
                 self.checkDeclName(node, fcd.name, fcd.is_raw);
                 for (fcd.members) |member| switch (member) {
                     .method => |m| if (m.body) |body| {
@@ -364,7 +364,7 @@ pub const UnknownTypeChecker = struct {
                 // blessed builtin definition (`string :: []u8 intrinsic`, value
                 // `.intrinsic_expr`). When the value node is itself a named decl
                 // (struct/enum/union/error/fn), that node carries & checks its
-                // own name on recursion — don't double-check it here (0089).
+                // own name on recursion — don't double-check it here.
                 switch (cd.value.data) {
                     .intrinsic_expr, .struct_decl, .enum_decl, .union_decl, .error_set_decl, .fn_decl => {},
                     else => self.checkBindingName(cd.name, cd.name_span, cd.is_raw),
@@ -736,7 +736,7 @@ pub const UnknownTypeChecker = struct {
                 // branch (lowerIfExpr's evalComptimeCondition gate), so only
                 // that branch's annotations are live — a type behind a
                 // disabled target/feature must not error from the dead
-                // branch (issue 0290). Unfoldable conditions walk both.
+                // branch. Unfoldable conditions walk both.
                 const live: ?bool = if (ie.is_comptime)
                     (if (self.lowering) |l| l.evalComptimeCondition(ie.condition) else null)
                 else
@@ -780,7 +780,7 @@ pub const UnknownTypeChecker = struct {
             .match_expr => |me| {
                 self.walkBodyTypes(me.subject, declared, in_scope, type_vals);
                 // Comptime match (`inline if x == { case … }`): only the
-                // matching arm is lowered — mirror lowerMatch (issue 0290).
+                // matching arm is lowered — mirror lowerMatch.
                 if (me.is_comptime) {
                     if (self.lowering) |l| {
                         if (l.evalComptimeMatch(&me)) |arm_body| {
@@ -846,7 +846,7 @@ pub const UnknownTypeChecker = struct {
                 // `.undeclared` main-file arm, which keeps the empty-struct stub
                 // and defers back to THIS checker — nothing diagnoses it and the
                 // literal silently compiles with a 0-field struct, dropping every
-                // field (issue 0220). `struct_name` is always a bare, non-raw
+                // field. `struct_name` is always a bare, non-raw
                 // identifier (the parser only sets it for the simple-name form;
                 // `mod.Type{…}` and `Gen(args){…}` carry `type_expr` instead,
                 // resolved+diagnosed on the lowering path). `reportIfUnknownType`
@@ -866,8 +866,8 @@ pub const UnknownTypeChecker = struct {
                 // an undefined element name (`([2]?Undefined).[…]`) bypasses the
                 // checker and reaches the lowering's forward-ref stub, silently
                 // compiling with an empty-struct element instead of erroring
-                // like the `x: [2]?Undefined` declaration path (issues
-                // 0173–0175). `checkTypeNodeForUnknown` recurses the
+                // like the `x: [2]?Undefined` declaration path.
+                // `checkTypeNodeForUnknown` recurses the
                 // `[N]?T` / `[]T` head down to its leaf type name and skips
                 // forward-refs (`declared`), generics (`in_scope`), aliases, and
                 // parameterized element types — so only genuinely-undeclared
@@ -939,7 +939,7 @@ pub const UnknownTypeChecker = struct {
         // only be a literal `$T` sigil (a bare name matching a header type param
         // would have been found above) — and a struct field cannot introduce a
         // fresh type parameter the way a function param can. Left undiagnosed it
-        // resolves to `.unresolved` and panics at LLVM emission (issue 0278).
+        // resolves to `.unresolved` and panics at LLVM emission.
         // Declare the parameter in the struct header and reference it bare.
         if (struct_field) {
             self.diagnostics.addFmt(.err, span, "'${s}' cannot introduce a type parameter in a struct field; declare it in the struct header with `struct (${s}: Type) {{ ... }}` and reference it as `{s}`", .{ name, name, name });
@@ -1052,7 +1052,7 @@ pub const UnknownTypeChecker = struct {
             // (name == null) is the inferred/void channel and is always valid.
             // A named `!E` is valid ONLY when `E` is a declared error set;
             // otherwise the lowering path silently fabricates a zero-field
-            // `{}` stub (issue 0189), so reject it here with a precise
+            // `{}` stub, so reject it here with a precise
             // diagnostic — "unknown error set" for an undeclared name, "expected
             // an error set" for a name that resolves to a non-error-set type or
             // a value.
@@ -1067,7 +1067,7 @@ pub const UnknownTypeChecker = struct {
     /// message: an undeclared name (`unknown error set`), and a declared name
     /// that is NOT an error set — a value or a non-error-set type (`expected an
     /// error set`). Mirrors the silent-fabrication guard for `g.a` in
-    /// `resolveTypeWithBindings` (issue 0189): never let a non-error-set name
+    /// `resolveTypeWithBindings`: never let a non-error-set name
     /// after `!` reach the lowering stub.
     fn reportIfNotErrorSet(self: UnknownTypeChecker, name: []const u8, span: ?ast.Span) void {
         // Inline-spelled / qualified spellings (`mod.E`) carry non-identifier

@@ -21,7 +21,7 @@ const LLVMEmitter = emit.LLVMEmitter;
 ///
 /// The default sx ABI applies the same ≤8-byte non-HFA → i64 packing (see
 /// `abiCoerceDefaultParamType`) so `{i8×4}` values like UI `Color` are not
-/// expanded into four `i8` args that mis-spill on AArch64 (issue 0286).
+/// expanded into four `i8` args that mis-spill on AArch64.
 pub const AbiLowering = struct {
     e: *LLVMEmitter,
 
@@ -85,7 +85,7 @@ pub const AbiLowering = struct {
     /// Default (sx-internal) ABI param coercion. Packs ≤8-byte non-HFA
     /// structs into `i64` so AArch64 does not expand `{i8,i8,i8,i8}` into
     /// four `i8` args that mis-spill when a second such param overflows the
-    /// integer registers (issue 0286). Leaves string/slice fat pointers,
+    /// integer registers. Leaves string/slice fat pointers,
     /// HFAs, mid-size, and large structs as their raw LLVM types — those
     /// paths are already correct without C-style register packing.
     pub fn abiCoerceDefaultParamType(self: AbiLowering, ir_ty: TypeId, llvm_ty: c.LLVMTypeRef) c.LLVMTypeRef {

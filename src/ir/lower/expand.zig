@@ -960,7 +960,7 @@ const Group = struct {
                 const mint = g.claimRegistration(decl);
                 const is_true = folded orelse {
                     // Never silently discard the declarations of an unevaluable
-                    // module-scope conditional (issue 0241): a live function,
+                    // module-scope conditional: a live function,
                     // import, or asm block would vanish and surface as a
                     // distant unresolved-name error.
                     if (mint) {
@@ -1009,8 +1009,8 @@ const Group = struct {
     /// STATEMENT parser, so it arrives as an in-function `.asm_expr` — not the
     /// `.asm_global` the top-level parser produces. Once its branch is
     /// selected the node IS module-scope global asm: retag it so lowering's
-    /// `.asm_global` arm appends the template to `module.global_asm` (issue
-    /// 0194). `parseAsmGlobal`'s top-level restrictions apply: template only.
+    /// `.asm_global` arm appends the template to `module.global_asm`.
+    /// `parseAsmGlobal`'s top-level restrictions apply: template only.
     fn spliceGlobalAsm(g: *Group, stmt: *Node, src: ?[]const u8, mint: bool) void {
         if (stmt.data == .asm_global) {
             g.out.append(g.ex.self.alloc, stmt) catch {};

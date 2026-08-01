@@ -152,7 +152,7 @@ pub const ExprTyper = struct {
                 if (fa.object.data == .identifier) {
                     const obj_name = fa.object.data.identifier.name;
                     // Nominal-authority selection first, mirroring the
-                    // lowerFieldAccess intercept (issue 0320) — the global
+                    // lowerFieldAccess intercept — the global
                     // "Struct.CONST" spelling is last-wins across same-name
                     // authors and stays only as the untracked-head fallback.
                     var author_tracked = false;
@@ -224,7 +224,7 @@ pub const ExprTyper = struct {
                 var obj_ty = self.l.inferExprType(fa.object);
                 // A guard-narrowed optional local resolves through its
                 // child for PLAIN access — mirrors the lowerFieldAccess
-                // narrowing unwrap (issue 0352; two-resolver lockstep).
+                // narrowing unwrap (two-resolver lockstep).
                 // `?.` keeps the optional (the chain arm below).
                 if (!fa.is_optional and !obj_ty.isBuiltin() and fa.object.data == .identifier) {
                     const nrw_info = self.l.module.types.get(obj_ty);
@@ -251,7 +251,7 @@ pub const ExprTyper = struct {
                 }
                 // `.len`/`.ptr` pseudo-fields belong to the special containers
                 // only — a struct/union/tuple member named `len`/`ptr` resolves
-                // below to its DECLARED type (issue 0340; `#get` accessors also
+                // below to its DECLARED type (`#get` accessors also
                 // resolve below, via getAccessorFor).
                 const is_special_container = obj_ty == .string or (!obj_ty.isBuiltin() and switch (self.l.module.types.get(obj_ty)) {
                     .slice, .array, .vector => true,
@@ -318,7 +318,7 @@ pub const ExprTyper = struct {
                     // inner type via a synthetic `*T` receiver, so a value
                     // optional (`?T`) — whose receiver would otherwise be the
                     // optional itself — and a pointer optional (`?*T`) both type
-                    // exactly as `lowerOptionalChain` emits (issue 0160).
+                    // exactly as `lowerOptionalChain` emits.
                     if (is_opt_chain) {
                         var deref_inner = obj_ty;
                         if (!deref_inner.isBuiltin() and self.l.module.types.get(deref_inner) == .pointer)
@@ -343,7 +343,7 @@ pub const ExprTyper = struct {
                 // an enum / tagged-union (not shadowed by a value binding / global
                 // value) and `field` is a PAYLOADLESS variant. Without this, a
                 // direct `go(E.x)` generic-arg inference (and a `hash_val(E.A)`
-                // key) yielded `.unresolved` for the value's type (issue 0274).
+                // key) yielded `.unresolved` for the value's type.
                 if (fa.object.data == .identifier) {
                     const oname = fa.object.data.identifier.name;
                     const shadowed = if (self.l.scope) |s| s.lookup(oname) != null else false;
@@ -423,7 +423,7 @@ pub const ExprTyper = struct {
                     if (self.l.module.types.findByName(self.l.module.types.internString("Context"))) |ty| return ty;
                 }
                 // Check global variables (e.g., `context : Context`) —
-                // source-aware (issue 0115): infer the AUTHOR's global type,
+                // source-aware: infer the AUTHOR's global type,
                 // never an unrelated module's same-named one. `.not_a_global`
                 // falls through to the const / fn arms below.
                 if (self.l.program_index.global_names.get(id.name)) |gi| {
@@ -493,15 +493,15 @@ pub const ExprTyper = struct {
                 }
                 // A qualified (`m.Cfg{…}`) or generic (`Pair(i32){…}`) prefix
                 // carries its type as a NODE — resolve it the same way lowering
-                // does, so a `:=`-inferred decl gets the real struct type (issue
-                // 0204), not the empty `{}` it would fall to below.
+                // does, so a `:=`-inferred decl gets the real struct type,
+                // not the empty `{}` it would fall to below.
                 if (sl.type_expr) |te| {
                     // `Ev.key{ ... }` — qualified tagged-union variant
                     // construction: the literal's TYPE is the tagged union
                     // `Ev`, not a resolvable `Ev.key` type. Recognize it here
                     // (side-effect-free `findByName`) so inference doesn't fall
                     // to the type_bridge "field_access in type position"
-                    // warning (issue 0281); lowering routes the same shape.
+                    // warning; lowering routes the same shape.
                     if (te.data == .field_access) {
                         const fa = te.data.field_access;
                         if (self.l.qualifiedTypeName(fa.object)) |path| {
@@ -654,13 +654,13 @@ pub const ExprTyper = struct {
                 // Optional-chain index `opt?.xs[i]`: the object types as an
                 // optional container (`?[N]T` / `?[]T` / `?[*]T`), so the whole
                 // index expression is `?ElemType` (flattened if the element is
-                // itself optional) — mirrors lowerOptionalChainIndex (issue 0181).
+                // itself optional) — mirrors lowerOptionalChainIndex.
                 if (!obj_ty.isBuiltin() and self.l.module.types.get(obj_ty) == .optional) {
                     const child = self.l.module.types.get(obj_ty).optional.child;
                     // `?*[N]T` is indexable: element is the pointee array's
                     // element. `getElementType` has no pointer arm, so consult
                     // `ptrToArrayElem` first (mirrors lowerIndexExpr's guard) —
-                    // otherwise `?*[N]T` typed as `.unresolved` (issue 0181).
+                    // otherwise `?*[N]T` typed as `.unresolved`.
                     const elem = self.l.ptrToArrayElem(child) orelse self.l.ptrToSliceElem(child) orelse self.l.getElementType(child);
                     if (elem != .unresolved) return self.l.optionalOfFlattened(elem);
                 }
@@ -709,7 +709,7 @@ pub const ExprTyper = struct {
             // its annotations. The generic-call binder types args from the raw
             // AST (notably the UFCS path, before args are lowered), so without
             // this a `Closure(..) -> $R` worker couldn't bind `$R` from the
-            // lambda's declared return type (issue 0151). An unannotated param /
+            // lambda's declared return type. An unannotated param /
             // body-inferred return stays `.unresolved` here — that arg simply
             // doesn't contribute a binding, exactly as before.
             .lambda => |lam| blk: {

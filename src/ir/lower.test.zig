@@ -116,7 +116,7 @@ test "lower: writable slice ptr keeps pointer type on wasm32" {
     try std.testing.expect(!diagnostics.hasErrors());
 }
 
-test "lower: bare function values use a pointer-width word on wasm32 (issue 0318)" {
+test "lower: bare function values use a pointer-width word on wasm32" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1147,7 +1147,7 @@ test "lower: vectorLaneIndex maps swizzle components, colour aliases, rejects no
     try std.testing.expectEqual(@as(?u32, null), Lowering.vectorLaneIndex(""));
 }
 
-test "lower: assigning to a missing struct field emits field-not-found, no panic (issue 0094)" {
+test "lower: assigning to a missing struct field emits field-not-found, no panic" {
     // Arena keeps the leak checker quiet — DiagnosticList.addFmt allocates
     // messages it never frees in deinit (mixed ownership with borrowed literals).
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -1195,7 +1195,7 @@ test "lower: assigning to a missing struct field emits field-not-found, no panic
     try std.testing.expect(found);
 }
 
-test "lower: deref-assign struct literal typed from pointee, not fn return type (issue 0215)" {
+test "lower: deref-assign struct literal typed from pointee, not fn return type" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1237,8 +1237,7 @@ test "lower: deref-assign struct literal typed from pointee, not fn return type 
     // The deref-LHS assign arm seeds target_type with the pointee type T, so
     // the anonymous literal takes T and lowering is diagnostic-free. Typing it
     // from the AMBIENT target_type — the fn's return type (i64) — would
-    // diagnose "cannot assign 'target' of type 'T' with a value of type 'i64'"
-    // (issue 0215).
+    // diagnose "cannot assign 'target' of type 'T' with a value of type 'i64'".
     lowering.lowerFunction(&fd, "mk", false);
 
     for (diags.items.items) |d| {
@@ -1249,7 +1248,7 @@ test "lower: deref-assign struct literal typed from pointee, not fn return type 
     }
 }
 
-test "lower: assignment to an undeclared identifier is diagnosed, '_' discard stays silent (issue 0216)" {
+test "lower: assignment to an undeclared identifier is diagnosed, '_' discard stays silent" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1298,7 +1297,7 @@ test "lower: assignment to an undeclared identifier is diagnosed, '_' discard st
     try std.testing.expect(found_compound);
 }
 
-test "lower: multi-assign to an undeclared identifier is diagnosed, '_' discard stays silent (issue 0218)" {
+test "lower: multi-assign to an undeclared identifier is diagnosed, '_' discard stays silent" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1312,9 +1311,8 @@ test "lower: multi-assign to an undeclared identifier is diagnosed, '_' discard 
     // main :: () { totl, _ = 42, 3; }
     // `totl` exists nowhere — the ident-target arm of lowerMultiAssign
     // consults local scope, then globals, and emits an "unresolved ... in
-    // assignment" error rather than DROPPING the store on lookup failure (the
-    // multi-assign sibling of issue 0216); the `_` discard leg stays
-    // diagnostic-free.
+    // assignment" error rather than DROPPING the store on lookup failure; the
+    // `_` discard leg stays diagnostic-free.
     var totl_ident = Node{ .span = span, .data = .{ .identifier = .{ .name = "totl" } } };
     var underscore = Node{ .span = span, .data = .{ .identifier = .{ .name = "_" } } };
     var forty_two = Node{ .span = span, .data = .{ .int_literal = .{ .value = 42 } } };
@@ -1341,7 +1339,7 @@ test "lower: multi-assign to an undeclared identifier is diagnosed, '_' discard 
     try std.testing.expect(found_unresolved);
 }
 
-test "lower: multi-assign un-narrows its ident targets, unrelated names stay narrowed (issue 0228)" {
+test "lower: multi-assign un-narrows its ident targets, unrelated names stay narrowed" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1430,7 +1428,7 @@ test "lower: multi-assign un-narrows its ident targets, unrelated names stay nar
     try std.testing.expectEqual(@as(usize, 1), err_count);
 }
 
-test "lower: multi-assign to a GLOBAL array index stores in place via global_addr, not a value copy (issue 0249)" {
+test "lower: multi-assign to a GLOBAL array index stores in place via global_addr, not a value copy" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1507,7 +1505,7 @@ test "lower: multi-assign to a GLOBAL array index stores in place via global_add
     try std.testing.expect(!saw_array_global_get);
 }
 
-test "lower: multi-assign to a missing struct field emits field-not-found, no corruption (issue 0094)" {
+test "lower: multi-assign to a missing struct field emits field-not-found, no corruption" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1560,7 +1558,7 @@ test "lower: multi-assign to a missing struct field emits field-not-found, no co
     try std.testing.expect(found);
 }
 
-test "lower: shared resolver types a pointer-typed field GEP as *field_ty, not field_ty (issue 0094 clobber)" {
+test "lower: shared resolver types a pointer-typed field GEP as *field_ty, not field_ty" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1628,7 +1626,7 @@ test "lower: shared resolver types a pointer-typed field GEP as *field_ty, not f
     try std.testing.expect(found);
 }
 
-test "lower: reflectionArgIsType accepts spelled types, rejects plain values (issue 0090)" {
+test "lower: reflectionArgIsType accepts spelled types, rejects plain values" {
     const alloc = std.testing.allocator;
     var module = ir_mod.Module.init(alloc);
     defer module.deinit();
@@ -1642,8 +1640,8 @@ test "lower: reflectionArgIsType accepts spelled types, rejects plain values (is
 
     // A spelled type is a type → the introspection builtins accept it.
     try std.testing.expect(l.reflectionArgIsType(&ty_node));
-    // Plain values are NOT types — these are exactly the arguments issue
-    // 0090's strict `$T: Type` guard rejects, before a builtin could
+    // Plain values are NOT types — these are exactly the arguments the
+    // strict `$T: Type` guard rejects, before a builtin could
     // reinterpret the value as a TypeId index (`type_is_unsigned(6)` → true)
     // or size its `typeof` (`size_of(true)` → 8).
     try std.testing.expect(!l.reflectionArgIsType(&int_node));
@@ -1682,7 +1680,7 @@ fn countRealBodies(module: *ir_mod.Module, name: []const u8) usize {
 // `lowerRetainedSameNameAuthors` declares the shadowed author its OWN same-name
 // FuncId and lowers its body there, so BOTH authors carry distinct, non-extern
 // bodies, and `resolveFuncByName` still returns the winner (the name-keyed slot).
-test "lower: shadowed same-name author gets its own FuncId + real body (issue 0102)" {
+test "lower: shadowed same-name author gets its own FuncId + real body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1820,7 +1818,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body (issue 01
     // author — its `*FnDecl` + source, NOT first-wins. The selector does NOT
     // eagerly materialize: it returns the decl, and the FuncId still round-trips
     // to the shadow slot via the identity map (`fn_decl_fids`).
-    // Imported modules are keyed by their CANONICAL path (issue 0148).
+    // Imported modules are keyed by their CANONICAL path.
     const a_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/a.sx", .{absdir}));
     const b_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/b.sx", .{absdir}));
     try std.testing.expect(lowering.selectCallableAuthor("greet", main_path, .any_body) == .ambiguous);
@@ -1920,7 +1918,7 @@ test "lower: scan populates source-keyed caches per declaring source" {
     lowering.lowerRoot(resolved_root);
     try std.testing.expect(!diagnostics.hasErrors());
 
-    // Imported modules are keyed by their CANONICAL path (issue 0148).
+    // Imported modules are keyed by their CANONICAL path.
     const a_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/a.sx", .{absdir}));
     const b_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/b.sx", .{absdir}));
     const idx = &lowering.program_index;
@@ -1946,7 +1944,7 @@ test "lower: scan populates source-keyed caches per declaring source" {
     try std.testing.expect(global_k.value == k_a.value or global_k.value == k_b.value);
 }
 
-test "struct literal: non-aggregate target and uninferable untyped literal diagnose (issues 0161, 0184)" {
+test "struct literal: non-aggregate target and uninferable untyped literal diagnose" {
     // Arena: DiagnosticList.addFmt allocates messages it never frees in deinit
     // (mixed ownership with borrowed literals) — an arena keeps the leak
     // checker clean without changing diagnostic semantics.
@@ -1956,8 +1954,8 @@ test "struct literal: non-aggregate target and uninferable untyped literal diagn
 
     // Untyped `.{ }` literals SELF-TYPE — targetless locals, global consts,
     // inferred returns, and array elements all mint anonymous structs, so only
-    // the 0161 arm (a bare literal against a NON-aggregate annotation)
-    // diagnoses here.
+    // only the non-aggregate arm (a bare literal against a NON-aggregate
+    // annotation) diagnoses here.
     const src =
         \\main :: () {
         \\    x : i64 = .{ a = 1 };
@@ -1975,8 +1973,8 @@ test "struct literal: non-aggregate target and uninferable untyped literal diagn
     lowering.diagnostics = &diagnostics;
     lowering.lowerRoot(root);
 
-    // `.{ a = 1 }` against a scalar target (issue 0161) and an untyped
-    // `.{ 1, 2, 3 }` with no target (issue 0184) must both be clean located
+    // `.{ a = 1 }` against a scalar target and an untyped
+    // `.{ 1, 2, 3 }` with no target must both be clean located
     // diagnostics from lowering, never an .unresolved that reaches the backend.
     try std.testing.expect(diagnostics.hasErrors());
     var saw_non_aggregate = false;
@@ -1990,7 +1988,7 @@ test "struct literal: non-aggregate target and uninferable untyped literal diagn
 test "struct literal: untyped shapes SELF-TYPE — global const, inferred return, array element" {
     // Untyped `.{ }` literals self-type as anonymous structs — pass-1
     // inference mints the type — so each of these three shapes compiles with
-    // NO diagnostic (issue 0184; corpus pin: 0865).
+    // NO diagnostic (corpus pin: 0865).
     const cases = [_][]const u8{
         \\K :: .{ 1, 2, 3 };
         \\main :: () { k := K; }
@@ -2023,7 +2021,7 @@ test "struct literal: untyped shapes SELF-TYPE — global const, inferred return
     }
 }
 
-test "lower: match on untagged union subject (payload binding) is diagnosed, not .unresolved (issues 0163/0222)" {
+test "lower: match on untagged union subject (payload binding) is diagnosed, not .unresolved" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2060,7 +2058,7 @@ test "lower: match on untagged union subject (payload binding) is diagnosed, not
 
     var lowering = Lowering.init(&module);
     lowering.diagnostics = &diags;
-    // The 0222 subject-type gate subsumes the arm-level union rejection: the
+    // The subject-type gate subsumes the arm-level union rejection: the
     // whole match on an untagged-union subject is refused up front — binding or
     // not. Ungated, the capture's payload type leaks out as .unresolved and
     // panics at LLVM emission (declareFunction → toLLVMType).
@@ -2073,7 +2071,7 @@ test "lower: match on untagged union subject (payload binding) is diagnosed, not
     try std.testing.expect(found);
 }
 
-test "lower: match on untagged union subject (no binding) is diagnosed, not invalid IR (issue 0222)" {
+test "lower: match on untagged union subject (no binding) is diagnosed, not invalid IR" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2093,7 +2091,7 @@ test "lower: match on untagged union subject (no binding) is diagnosed, not inva
     const span = ast.Span{ .start = 0, .end = 0 };
 
     // main :: (s: Shape) { r := if s == { case .circle: { } case .rect: { } }; }
-    // NO payload binding — slipping past the arm-level 0163 guard reaches the
+    // NO payload binding — slipping past the arm-level guard reaches the
     // backend as a switch on the raw `[8 x i8]` union storage against `i0`
     // case constants (LLVM verifier failure, no diagnostic).
     var shape_type = Node{ .span = span, .data = .{ .type_expr = .{ .name = "Shape", .is_generic = false } } };
@@ -2125,7 +2123,7 @@ test "lower: match on untagged union subject (no binding) is diagnosed, not inva
     try std.testing.expect(found);
 }
 
-test "lower: match on a string subject is diagnosed, not invalid IR (issue 0224)" {
+test "lower: match on a string subject is diagnosed, not invalid IR" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2167,7 +2165,7 @@ test "lower: match on a string subject is diagnosed, not invalid IR (issue 0224)
     try std.testing.expect(found);
 }
 
-test "lower: match arms with incompatible result types are diagnosed, not a mixed-type phi (issue 0236)" {
+test "lower: match arms with incompatible result types are diagnosed, not a mixed-type phi" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2216,7 +2214,7 @@ test "lower: match arms with incompatible result types are diagnosed, not a mixe
     try std.testing.expect(found);
 }
 
-test "lower: payload binding on a payload-less enum match is diagnosed, not .unresolved (issue 0163 fold)" {
+test "lower: payload binding on a payload-less enum match is diagnosed, not .unresolved" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2264,8 +2262,8 @@ test "lower: payload binding on a payload-less enum match is diagnosed, not .unr
     try std.testing.expect(found);
 }
 
-test "call: a local fn-pointer binding shadows a same-named top-level fn (issue 0217)" {
-    // The 0217 shape: an (importer's) module-scope fn named like a LOCAL
+test "call: a local fn-pointer binding shadows a same-named top-level fn" {
+    // An (importer's) module-scope fn named like a LOCAL
     // fn-pointer binding must never hijack the call — nor may the
     // non-transitive visibility gate reject it. Call-position resolution
     // honors the lexical scope first, matching value-position resolution
@@ -2315,7 +2313,7 @@ test "call: a local fn-pointer binding shadows a same-named top-level fn (issue 
     try std.testing.expect(saw_indirect);
 }
 
-test "scope: lookupNearest resolves by depth across both local namespaces (issue 0217 review F1)" {
+test "scope: lookupNearest resolves by depth across both local namespaces" {
     // `lookup` / `lookupFn` each walk the WHOLE chain of one namespace, so
     // neither can say which declaration is nearest when a value binding and
     // a nested local fn share a name at different depths. `lookupNearest`
@@ -2352,7 +2350,7 @@ test "scope: lookupNearest resolves by depth across both local namespaces (issue
     try std.testing.expect(inner.lookupNearest("absent") == null);
 }
 
-test "scope: lookupBoundary flags a value binding reached across a nested-fn boundary (issue 0250)" {
+test "scope: lookupBoundary flags a value binding reached across a nested-fn boundary" {
     // A static nested `::` fn's body scope keeps its parent chain (so sibling
     // fns + comptime consts still resolve) but sets `is_fn_boundary`. A plain
     // VALUE binding found by crossing that boundary is an enclosing local the
@@ -2395,7 +2393,7 @@ test "scope: lookupBoundary flags a value binding reached across a nested-fn bou
     try std.testing.expect(!miss.crossed_fn_boundary);
 }
 
-test "lower: getExprAlloca diagnoses + returns null across a nested-fn boundary, resolves same-function allocas (issue 0250 fold)" {
+test "lower: getExprAlloca diagnoses + returns null across a nested-fn boundary, resolves same-function allocas" {
     // The review fold: getExprAlloca is the storage resolver behind the
     // indexed-read fast path and the lvalue helpers — pre-fold it handed a
     // nested static fn the ENCLOSING function's alloca Ref (dead in this
@@ -2434,7 +2432,7 @@ test "lower: getExprAlloca diagnoses + returns null across a nested-fn boundary,
 
     var x_node = Node{ .span = span, .data = .{ .identifier = .{ .name = "x" } } };
 
-    // Crossed: null + exactly one 0250 diagnostic.
+    // Crossed: null + exactly one enclosing-local diagnostic.
     try std.testing.expect(lowering.getExprAlloca(&x_node) == null);
     var count: usize = 0;
     for (diags.items.items) |d| {
@@ -2455,7 +2453,7 @@ test "lower: getExprAlloca diagnoses + returns null across a nested-fn boundary,
     try std.testing.expectEqual(diags.items.items.len, @as(usize, 1));
 }
 
-test "capture: a scope binding shadowing a fn name resolves to .binding, not skipped (issue 0251)" {
+test "capture: a scope binding shadowing a fn name resolves to .binding, not skipped" {
     // The decision `collectCaptures` makes: at a closure-creation site, a
     // local/param that shadows a global fn name must be CAPTURED (a `.binding`
     // result), never skipped as a "function name". Consulting the program-wide
@@ -2485,7 +2483,7 @@ test "capture: a scope binding shadowing a fn name resolves to .binding, not ski
     try std.testing.expect(scope.lookupNearest("print") == null);
 }
 
-test "lower: indexing a scalar pointer diagnoses in write and address-of positions, no unresolved GEP (issue 0155)" {
+test "lower: indexing a scalar pointer diagnoses in write and address-of positions, no unresolved GEP" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2499,9 +2497,9 @@ test "lower: indexing a scalar pointer diagnoses in write and address-of positio
     // f :: (pc: *i64) { pc[0] = 7; q := @pc[0]; }
     // A bare `*T` is not indexable (specs.md, Pointer Types) — both the WRITE
     // (`pc[0] = 7`) and ADDRESS-OF (`@pc[0]`) index paths must diagnose. The
-    // READ path has its own guard (issue 0183); unguarded, these two arms emit
+    // READ path has its own guard; unguarded, these two arms emit
     // an `index_gep` typed `ptrTo(.unresolved)` that panics at LLVM emission
-    // ("unresolved type reached LLVM emission", issue 0155).
+    // ("unresolved type reached LLVM emission").
     var i64_type = Node{ .span = span, .data = .{ .type_expr = .{ .name = "i64", .is_generic = false } } };
     var ptr_i64 = Node{ .span = span, .data = .{ .pointer_type_expr = .{ .pointee_type = &i64_type } } };
 
@@ -2537,7 +2535,7 @@ test "lower: indexing a scalar pointer diagnoses in write and address-of positio
     try std.testing.expectEqual(@as(usize, 2), count);
 }
 
-test "pack spread: expandSpreadArgNodes expands a pack-name spread into index nodes (issue 0156p2)" {
+test "pack spread: expandSpreadArgNodes expands a pack-name spread into index nodes" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2592,7 +2590,7 @@ test "pack spread: expandSpreadArgNodes returns null when nothing expands" {
     try std.testing.expect(lowering.expandSpreadArgNodes(&unexp) == null);
 }
 
-test "lower: closure-value call with wrong arity is diagnosed, extras not silently dropped (issue 0188)" {
+test "lower: closure-value call with wrong arity is diagnosed, extras not silently dropped" {
     // Arena keeps the leak checker quiet — DiagnosticList.addFmt allocates
     // messages it never frees in deinit (mixed ownership with borrowed literals).
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -2624,9 +2622,9 @@ test "lower: closure-value call with wrong arity is diagnosed, extras not silent
 
     var lowering = Lowering.init(&module);
     lowering.diagnostics = &diags;
-    // The closure-value call path arity-checks like a top-level fn call
-    // (issue 0188); without it an extra arg is silently dropped and a missing
-    // one reads garbage.
+    // The closure-value call path arity-checks like a top-level fn call;
+    // without it an extra arg is silently dropped and a missing one reads
+    // garbage.
     lowering.lowerFunction(&fd, "f", false);
 
     var found = false;
@@ -2636,7 +2634,7 @@ test "lower: closure-value call with wrong arity is diagnosed, extras not silent
     try std.testing.expect(found);
 }
 
-test "type alias: tuple-type alias registers the structural tuple TypeId (issue 0196)" {
+test "type alias: tuple-type alias registers the structural tuple TypeId" {
     // `NT :: Tuple(a: i64, b: bool)` / `PT :: Tuple(i64, bool)` must land in
     // `type_alias_map` as the STRUCTURAL tuple TypeId (fields + names), not an
     // opaque nominal placeholder — field access (`x.a` / `x.0`) and comptime
@@ -2682,7 +2680,7 @@ test "type alias: tuple-type alias registers the structural tuple TypeId (issue 
     try std.testing.expect(pt_info.tuple.names == null);
 }
 
-test "type alias: pack-spread tuple alias poisons to .unresolved with a diagnostic (issue 0196)" {
+test "type alias: pack-spread tuple alias poisons to .unresolved with a diagnostic" {
     // `Bad :: Tuple(..Ts)` has no pack binding at a top-level alias; the
     // stateless resolver preserves the pack SHAPE as a tuple carrying an
     // `.unresolved` field. Registering that tuple would panic the LLVM
@@ -2717,7 +2715,7 @@ test "type alias: pack-spread tuple alias poisons to .unresolved with a diagnost
     try std.testing.expect(saw);
 }
 
-test "type alias: tuple element referencing a LATER-declared alias resolves via the deferred fixpoint (issue 0196 review)" {
+test "type alias: tuple element referencing a LATER-declared alias resolves via the deferred fixpoint" {
     // `A :: Tuple(a: B, c: bool); B :: i64;` — eager in-loop resolution would
     // mint a permanent empty-struct stub under `B` (aliases never adopt
     // stubs), silently corrupting the layout. The deferred fixpoint registers
@@ -2753,7 +2751,7 @@ test "type alias: tuple element referencing a LATER-declared alias resolves via 
     try std.testing.expectEqual(TypeId.bool, a_info.tuple.fields[1]);
 }
 
-test "type alias: tuple alias referenced ABOVE its declaration diagnoses instead of an LLVM dump (issue 0196 review)" {
+test "type alias: tuple alias referenced ABOVE its declaration diagnoses instead of an LLVM dump" {
     // `use_it :: (t: NT) …` above `NT :: Tuple(…)`: the fn signature resolves
     // eagerly at scan and binds a stub that no alias registration ever adopts.
     // That must be a clean located diagnostic at the alias decl, not an LLVM
@@ -2788,7 +2786,7 @@ test "type alias: tuple alias referenced ABOVE its declaration diagnoses instead
     try std.testing.expect(saw);
 }
 
-test "type alias: mutually-recursive tuple aliases diagnose a reference cycle and poison (issue 0196 review)" {
+test "type alias: mutually-recursive tuple aliases diagnose a reference cycle and poison" {
     // `T1 :: Tuple(a: T2); T2 :: Tuple(b: T1);` can never converge — resolving
     // either member would mint a stub of its peer that the unresolved-check
     // cannot tell from a real empty struct. Both must poison with the cycle
@@ -2825,7 +2823,7 @@ test "type alias: mutually-recursive tuple aliases diagnose a reference cycle an
     try std.testing.expectEqual(@as(usize, 2), cycle_count);
 }
 
-test "type alias: array element referencing a LATER-declared alias resolves via the deferred fixpoint (issue 0230)" {
+test "type alias: array element referencing a LATER-declared alias resolves via the deferred fixpoint" {
     // `A :: [2]B; B :: i64;` — eager in-loop resolution would mint a permanent
     // empty-struct stub under `B` (aliases never adopt stubs), silently
     // registering a size-0 element layout. The deferred composite-alias
@@ -2860,7 +2858,7 @@ test "type alias: array element referencing a LATER-declared alias resolves via 
     try std.testing.expectEqual(TypeId.i64, a_info.array.element); // NOT a stub
 }
 
-test "type alias: forward composite elements across all shapes adopt the real element type (issue 0230)" {
+test "type alias: forward composite elements across all shapes adopt the real element type" {
     // The deferred composite-alias fixpoint, generalized to every kind. Each
     // alias' element is declared LATER; the eager path would mint a permanent
     // size-0 empty-struct stub for it. The fixpoint adopts the real i64
@@ -2915,7 +2913,7 @@ test "type alias: forward composite elements across all shapes adopt the real el
     try std.testing.expectEqual(TypeId.i64, fnl.function.ret);
 }
 
-test "type alias: generic-instantiation element in a composite RHS instantiates for real (issue 0230)" {
+test "type alias: generic-instantiation element in a composite RHS instantiates for real" {
     // `AL :: [2]Box(i64);` must instantiate the generic element for real — a
     // non-empty struct with a real size — NOT an empty size-0 nominal with a
     // lying size_of.
@@ -2953,7 +2951,7 @@ test "type alias: generic-instantiation element in a composite RHS instantiates 
     try std.testing.expect(elem_size >= 8);
 }
 
-test "type alias: function-alias with a pointer to a LATER-declared nominal resolves (issue 0230)" {
+test "type alias: function-alias with a pointer to a LATER-declared nominal resolves" {
     // `H :: (rc: *Ctx) -> void; Ctx :: struct {...}` — a pointer to a forward
     // nominal is a well-formed pointer regardless of pointee completeness, so
     // the function alias must resolve to a real function type (the stdlib http
@@ -2991,7 +2989,7 @@ test "type alias: function-alias with a pointer to a LATER-declared nominal reso
     try std.testing.expect(p0 == .pointer);
 }
 
-test "lower: assignment to a by-value loop capture is diagnosed as immutable, a real local is not (issue 0219)" {
+test "lower: assignment to a by-value loop capture is diagnosed as immutable, a real local is not" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -3010,7 +3008,7 @@ test "lower: assignment to a by-value loop capture is diagnosed as immutable, a 
     // The capture `x` is a non-alloca scope binding with no store path
     // (a per-iteration read-only alias), so the compound store emits an
     // "immutable capture" error rather than falling through to a silent no-op
-    // that reaches neither a container nor the capture's own copy (issue 0219).
+    // that reaches neither a container nor the capture's own copy.
     // The mutation of the ordinary `y` local stays clean.
     var zero = Node{ .span = span, .data = .{ .int_literal = .{ .value = 0 } } };
     var three = Node{ .span = span, .data = .{ .int_literal = .{ .value = 3 } } };

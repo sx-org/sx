@@ -118,7 +118,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         // `xx s : P` path — then wrap inline. Routing through `.coerce` instead
         // reaches the node-less value-erasure arm below (`.optional_wrap` →
         // `.erase_protocol`), which heap-boxes the receiver through
-        // context.allocator with no owner to ever free it (issue 0213).
+        // context.allocator with no owner to ever free it.
         .erase_protocol_wrap => {
             const child = self.module.types.get(dst_ty).optional.child;
             const erased = self.buildProtocolErasure(operand, operand_node, src_ty, child);
@@ -136,8 +136,8 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
             // A pointer-to-PROTOCOL target is a type lie, not a recovery:
             // ctx addresses the CONCRETE value, so `s.(*Sizable)` would
             // return concrete bytes typed as a protocol-value pointer —
-            // and `*P` dispatch would load them as {ctx, type_id, vtable}
-            // (issue 0306). Refuse with the two honest spellings.
+            // and `*P` dispatch would load them as {ctx, type_id, vtable}.
+            // Refuse with the two honest spellings.
             if (!dst_ty.isBuiltin()) {
                 const dinfo = self.module.types.get(dst_ty);
                 if (dinfo == .pointer and self.getProtocolInfo(dinfo.pointer.pointee) != null) {
@@ -208,7 +208,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
     // hand codegen a value whose IR type contradicts its sx type — fine in
     // store positions (memory is untyped; the historic escape-hatch uses),
     // but the first VALUE-context use (icmp, call arg, arithmetic) aborts
-    // the LLVM verifier (issue 0305). Deliver the promised reinterpretation
+    // the LLVM verifier. Deliver the promised reinterpretation
     // for real: spill through a zero-initialized slot typed as the larger
     // side, load back as the target — a genuine dst-typed value in every
     // context, byte-identical to the store-mediated semantics ("width be
@@ -460,7 +460,7 @@ pub fn isLvalueExpr(self: *Lowering, node: *const Node) bool {
         // comptime-only with no runtime storage — `pack[i]` resolves to the
         // call-site arg node, which only acquires storage when lowered as a
         // value. Taking its address via `lowerExprAsPtr` would lower the bare
-        // pack as a value and trip the pack-as-value error (issue 0135).
+        // pack as a value and trip the pack-as-value error.
         // Reporting it as an rvalue routes `buildProtocolErasure` into its
         // heap-copy branch, which copies the already-materialized element.
         // A non-pack index (array/slice element) is a genuine lvalue.
@@ -485,7 +485,7 @@ pub fn isLvalueExpr(self: *Lowering, node: *const Node) bool {
 /// COPY, so a protocol erasure must not see through its defining load to
 /// the storage the value was read FROM (the container element / the
 /// matched payload). The erasure materializes such operands instead of
-/// borrowing (issue 0214 fold F2).
+/// borrowing.
 pub fn isByValueBindingIdent(self: *Lowering, node: *const Node) bool {
     if (node.data != .identifier) return false;
     const scope = self.scope orelse return false;
@@ -512,8 +512,8 @@ pub fn coerceOrErase(self: *Lowering, val: Ref, src: TypeId, dst: TypeId, node: 
 /// from, WITHOUT re-lowering the operand's AST node. Re-lowering an lvalue
 /// expression evaluates any side effect it carries a second time — for
 /// `xx arr[next()]` the index call `next()` ran once for the value and once
-/// for the borrow, and the two evaluations could denote DIFFERENT elements
-/// (issue 0214). Instead, walk the value's defining instruction:
+/// for the borrow, and the two evaluations could denote DIFFERENT elements.
+/// Instead, walk the value's defining instruction:
 ///   - `.load` / `.deref`  → the pointer it read through (already evaluated)
 ///   - `.global_get`       → a re-emitted `global_addr` of the same global
 ///   - `.struct_get`       → recurse on the base, then GEP the same field
@@ -655,15 +655,14 @@ pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) R
 
 /// Coerce an already-lowered ARRAY value `val` (of array type `src_ty`) into a
 /// slice `dst_ty` as a ZERO-COPY VIEW when the array is addressable, mirroring
-/// the issue-0225 subslice fix on the implicit array→slice COERCION path
-/// (issue 0264). An ADDRESSABLE array (local, global, struct field, `*[N]T`
-/// deref) has its storage address recovered via the issue-0214
+/// the explicit-subslice path. An ADDRESSABLE array (local, global, struct
+/// field, `*[N]T` deref) has its storage address recovered via the
 /// `refStorageAddress` walk (re-emits only address arithmetic, never re-runs a
 /// side-effecting index) and a `subslice [0..len]` built over that pointer with
 /// `base_ty = [*]elem` — so both backends take their many-pointer subslice arm
 /// (a genuine view, no alloca+store). The explicit `arr[0..N]` syntax already
-/// aliases (0225); without this the IMPLICIT `fill(arr)` coercion silently
-/// COPIED via `array_to_slice`, so `arr` vs `arr[0..]` differed (silent-wrong).
+/// aliases; without this the IMPLICIT `fill(arr)` coercion would silently COPY
+/// via `array_to_slice`, making `arr` and `arr[0..]` differ.
 ///
 /// Returns null when the array is a NON-ADDRESSABLE rvalue (a call result, a
 /// literal, a by-value binding — `refStorageAddress` yields null). The caller
@@ -763,7 +762,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
                     // through — never re-lower the AST node, which would
                     // re-run any side effect in the expression
                     // (`xx arr[next()]` called `next()` twice, and the two
-                    // calls could pick different elements — issue 0214).
+                    // calls could pick different elements).
                     // `lowerExprAsPtr` remains as the fallback when no
                     // address is derivable from the defining instruction
                     // (e.g. a struct param bound directly to its SSA ref) —
@@ -868,7 +867,7 @@ pub fn refuseIdentityRvalueErasure(self: *Lowering, dst_ty: TypeId, span: ?ast.S
 }
 
 /// Concrete storage address → borrowed protocol VIEW `*P` (the erasure
-/// model's view coercion, issues 0303/0304). Builds the borrow-mode protocol
+/// model's view coercion). Builds the borrow-mode protocol
 /// value with `ctx = concrete_addr`, spills it to a frame slot, and returns
 /// the slot's address. The pointee protocol value ALIASES the concrete
 /// storage — mutations through the view are visible to the original; the
@@ -1063,7 +1062,7 @@ pub fn buildDefaultValue(self: *Lowering, ty: TypeId) Ref {
         }, ty);
     }
     // Check for struct defaults — TypeId identity first; for an
-    // author-tracked type a tid-map miss means "no defaults" (issue 0320).
+    // author-tracked type a tid-map miss means "no defaults".
     const struct_name_str = self.module.types.getString(info.@"struct".name);
     const field_defaults = self.struct_defaults_by_tid.get(ty) orelse blk: {
         if (self.plain_struct_authors.contains(ty)) return self.builder.constUndef(ty);
@@ -1138,7 +1137,7 @@ pub fn lowerCoercedDefault(self: *Lowering, default_expr: *const Node, field_ty:
 }
 
 /// Lower a struct field's default expression with an OPTIONAL generic-instance
-/// type-binding context installed (issue 0221). When `bindings` is non-null
+/// type-binding context installed. When `bindings` is non-null
 /// (the field belongs to a generic struct instance), `self.type_bindings` is
 /// temporarily set to it so a default that references a type param — e.g.
 /// `sz: i64 = size_of(T)` — monomorphizes to THIS instantiation's concrete
@@ -1224,7 +1223,7 @@ fn refuseSetWeld(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span
 /// UNCHANGED — a raw reinterpreting store. That is only DANGEROUS when the
 /// value's byte width differs from the slot's: a 16-byte `string` written into
 /// a 4-byte `i32` slot overruns it, corrupting memory and segfaulting at run
-/// time (issue 0197). A SAME-width `.none` is a bit-compatible reinterpretation
+/// time. A SAME-width `.none` is a bit-compatible reinterpretation
 /// sx's passthrough has always performed for legitimate pairs that the
 /// classifier doesn't model — `*T → [*]T`, `i64 → isize`, `*void ← *T`, a bare
 /// fn-ref into a function slot — so it must stay allowed.
@@ -1329,11 +1328,11 @@ pub fn functionSignatureType(self: *Lowering, fid: inst_mod.FuncId) ?TypeId {
 }
 
 /// A bare-function VALUE is carried in an integer-word IR type
-/// (`func_ref` typed `i64`/`isize` — issue 0237), which is not the value's
-/// TYPE: it must never leak into a user-facing message (issue 0338: "cannot
+/// (`func_ref` typed `i64`/`isize`), which is not the value's
+/// TYPE: it must never leak into a user-facing message ("cannot
 /// coerce a value of type 'i64'" for a fn name), and it must never be what a
 /// generic type param or a comptime pack element binds to — the binding would
-/// carry the word instead of a callable signature (issues 0367 / 0368). When
+/// carry the word instead of a callable signature. When
 /// `val` is a `func_ref`, recover the function's real signature type;
 /// otherwise return `src_ty`.
 pub fn valueTypeOfRef(self: *Lowering, val: Ref, src_ty: TypeId) TypeId {
@@ -1365,7 +1364,7 @@ pub fn bareFnNameSignature(self: *Lowering, node: *const Node) ?TypeId {
     return functionSignatureType(self, fid);
 }
 
-/// The central issue-0191 guard: an IMPLICIT coercion classified `.none` with
+/// The central weld guard: an IMPLICIT coercion classified `.none` with
 /// a byte-width mismatch is a silent weld — the passthrough value would be
 /// bit-reinterpreted into a differently-sized slot (return slot, call arg,
 /// field/element init, merge phi), corrupting data with no diagnostic. Emit
@@ -1414,7 +1413,7 @@ pub fn externalErrorsExist(self: *Lowering) bool {
 /// named-return-default guard: a store of `src_ty` into a `dst_ty` slot has NO
 /// modeled coercion (`coerceMode` would pass it through UNCHANGED) AND the two
 /// differ in byte width — so the raw store overruns / under-fills the slot,
-/// corrupting memory (issue 0197). A same-width `.none` is a legitimate
+/// corrupting memory. A same-width `.none` is a legitimate
 /// bit-compatible reinterpretation (`*T → [*]T`, `i64 → isize`, `*void ← *T`),
 /// which stays allowed. Callers should have already cleared the cheap
 /// cascade/escape-hatch cases (unresolved operands, explicit `xx`/`cast`).
@@ -1425,15 +1424,15 @@ pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) 
     // width match or not: both sides are one code pointer, but the callee reads
     // its arguments and return slot per the signature it was compiled for.
     // Welding `(i64) -> i64` into a `() -> i64` slot makes the call read an
-    // argument register the caller never wrote (issue 0369). Signatures are
+    // argument register the caller never wrote. Signatures are
     // interned, so "different TypeId" is exactly "incompatible signature" —
     // arity, parameter types, return type, or calling convention.
     if (isFunctionType(self, src_ty) and isFunctionType(self, dst_ty)) return true;
     // An unmodeled pair where exactly ONE side is an aggregate value
     // (struct/union/tagged union/array/tuple) is NEVER a legitimate
     // bit-reinterpretation, width match or not: the aggregate's bytes pun
-    // into a scalar/pointer slot (issue 0303's crash class — a same-width
-    // `struct{i64}` passed where a pointer is expected). The same-width
+    // into a scalar/pointer slot (a same-width `struct{i64}` passed where a
+    // pointer is expected). The same-width
     // exemption below is for the scalar family only (`*T → [*]T`,
     // `i64 → isize`, fn-ref → fn slot).
     if (isAggregateValueKind(self, src_ty) != isAggregateValueKind(self, dst_ty)) return true;
@@ -1480,7 +1479,7 @@ fn sameStoreWidth(self: *Lowering, a: TypeId, b: TypeId) bool {
 pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode) Ref {
     // Pointer-to-concrete (or concrete-storage value) → `*P`: materialize
     // the borrowed VIEW here, at the node-less layer, so EVERY store site
-    // agrees with the node-aware decl/arg arms (issue 0311: an assignment
+    // agrees with the node-aware decl/arg arms (an assignment
     // `g = p` classified *C → *P as a plain pointer passthrough — the raw
     // pointer word was stored as if it were a *P and the first dispatch
     // read a garbage vtable out of the concrete struct's bytes).
@@ -1518,7 +1517,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // init consuming the cast's result) honour the opt-in. For an IMPLICIT
         // coercion a same-width passthrough is the long-standing legitimate
         // bit-reinterpretation (`*T → [*]T`, `i64 → isize`, fn-ref → fn slot);
-        // a WIDTH-MISMATCHED one is the issue-0191 silent weld (a 16-byte
+        // a WIDTH-MISMATCHED one is a silent weld (a 16-byte
         // string "returned" as i64, a struct passed where a scalar is
         // expected) — diagnose it instead of fabricating garbage.
         .none => {
@@ -1529,7 +1528,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             return val;
         },
         // Unbox Any → concrete type. An IMPLICIT unbox (`s : S = some_any`) is
-        // rejected (issue 0198): the unbox blindly reinterprets the boxed payload
+        // rejected: the unbox blindly reinterprets the boxed payload
         // word as `dst_ty` with NO runtime tag check, so a wrong target silently
         // yields garbage (`f64 = any_holding_i64` → 0.0) or — for an aggregate
         // target — dereferences the payload word as a pointer and segfaults. sx
@@ -1603,7 +1602,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             return self.builder.emit(.{ .tuple_init = .{ .fields = self.alloc.dupe(Ref, elems.items) catch unreachable } }, dst_ty);
         },
         // Optional → Concrete unwrapping — ONLY when the value is PROVEN
-        // present by flow narrowing (issue 0179). Unwrapping an un-narrowed
+        // present by flow narrowing. Unwrapping an un-narrowed
         // `?T` unconditionally would yield the zero payload of a null optional
         // with no diagnostic — a silent miscompile across the whole
         // `?T → concrete` family. Per spec the
@@ -1624,7 +1623,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         },
         // Optional → bool: there is no implicit presence-test coercion. An
         // unwrap-then-narrow ladder silently produces `false` for every
-        // optional (issue 0169). Reject with a fix-it pointing at `!= null`.
+        // optional. Reject with a fix-it pointing at `!= null`.
         .optional_to_bool_reject => {
             if (self.diagnostics) |d| {
                 const cs = self.builder.current_span;
@@ -1665,7 +1664,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // (fall through to `.optional_wrap`) unwrapped the SOURCE optional
         // unconditionally and re-wrapped as always-present, dropping the
         // has-bit — a null `?i32` became a present `?i64` carrying zero
-        // (issue 0180: generic `??` returning the wrong fallback). Branch on
+        // (generic `??` returning the wrong fallback). Branch on
         // the source's presence so the payload is only unwrapped when it is
         // actually present (the interp errors on unwrapping a null optional,
         // so a branchless select is not an option):
@@ -1702,7 +1701,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             // and pass `val` through UNCHANGED — e.g. wrapping a `?i64` value
             // into a `?(?i64)` whose payload is the 1-tuple `(?i64)`. Building
             // the optional then inserts a `{i64,i1}` into a `{{i64,i1}}` slot,
-            // producing malformed IR that aborts the LLVM verifier (issue 0165).
+            // producing malformed IR that aborts the LLVM verifier.
             // If the coerced operand's type does not match the optional's child
             // type, the wrap is invalid — diagnose loudly instead of emitting a
             // corrupt InsertValue. (`hasErrors()` then aborts the build.)
@@ -1752,7 +1751,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 // Builtins take this branch too: leaving `concrete_ptr = val`
                 // — the raw SCALAR — for `buildProtocolValue` to use as the ctx
                 // "pointer" produces a malformed `insertvalue {ptr,ptr} undef,
-                // <scalar>, 0` and an LLVM verification failure (issue 0279).
+                // <scalar>, 0` and an LLVM verification failure.
                 //
                 // This node-less layer serves call paths that lowered the
                 // arg before its param target was known (UFCS/generic
@@ -1852,8 +1851,8 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         .array_to_slice => {
             // Implicit array→slice coercion (`fill(arr)` where `fill :: (s:
             // []T)`). The explicit `arr[0..N]` syntax aliases the array's
-            // storage (issue 0225); this implicit path MUST match, or passing
-            // `arr` vs `arr[0..]` silently differs (issue 0264). For an
+            // storage; this implicit path MUST match, or passing
+            // `arr` vs `arr[0..]` silently differs. For an
             // ADDRESSABLE array, build a zero-copy VIEW over its storage.
             if (self.arrayToSliceView(val, src_ty)) |view| return view;
             // NON-addressable rvalue array (`fill(makeArr())`): keep the
@@ -1864,7 +1863,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             // slice-typed BINDING form (`s : []T = makeArr()`, handled in
             // stmt.zig) likewise copies into a function-entry slot that
             // outlives the binding — sound, never dangling. Both differ from
-            // 0225's SUBSLICE of a temporary, which aliases the temp directly
+            // a SUBSLICE of a temporary, which aliases the temp directly
             // (dangling) and IS rejected. Recorded in specs.md §Subslicing.
             return self.builder.emit(.{ .array_to_slice = .{ .operand = val } }, dst_ty);
         },
@@ -1925,8 +1924,8 @@ pub fn coerceCallArgs(self: *Lowering, args: []Ref, params: []const Function.Par
             // pointer; the view aliases the pointee). A bare concrete VALUE
             // reaching this node-less layer is rvalue-shaped — it has no
             // durable storage to borrow; diagnose instead of passing the
-            // struct's bytes where a pointer is expected (issue 0303's
-            // silent LLVM-verifier crash).
+            // struct's bytes where a pointer is expected (a silent
+            // LLVM-verifier crash).
             if (dst_info == .pointer and src_ty != dst_ty and
                 self.getProtocolInfo(dst_info.pointer.pointee) != null and
                 self.getProtocolInfo(src_ty) == null)

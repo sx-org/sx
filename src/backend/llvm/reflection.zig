@@ -572,10 +572,10 @@ pub const Reflection = struct {
         // truth `memberTableLen`/`memberName` (types.zig) — NOT a per-kind switch
         // here. This guarantees the array length always matches `emitFieldNameGet`'s
         // GEP sizing (which also derives from `memberTableLen`), so a kind covered
-        // by one but not the other can never reappear (that mismatch was issue 0195:
-        // tuples/arrays counted N members but built a zero-length name array → an
-        // out-of-bounds GEP → segfault). A member with no name (positional tuple
-        // element, array/vector/slice element, optional child) yields `.empty` →
+        // by one but not the other cannot exist: N counted members against a
+        // zero-length name array is an out-of-bounds GEP → segfault. A member
+        // with no name (positional tuple element, array/vector/slice element,
+        // optional child) yields `.empty` →
         // "", keeping one slot per member so `field_name(T, i)` is always
         // in-bounds.
         const n_members: i64 = self.e.ir_mod.types.memberTableLen(struct_type) orelse 0;

@@ -154,7 +154,7 @@ fn fnReturnsTypeValue(fd: *const ast.FnDecl) bool {
 /// COMPOSITE shape — tuple fields, array/slice/vector/many-pointer elements,
 /// optional child, pointer pointee, function/closure params + return. A tuple
 /// ALIAS must never register such a type: the sentinel would reach LLVM
-/// emission and panic the tripwire (issue 0196: `Tuple(a: [2][zz]i64)` hides
+/// emission and panic the tripwire (`Tuple(a: [2][zz]i64)` hides
 /// the sentinel one composite deep, where a tuple-only recursion waves it
 /// through). Nominal aggregates
 /// (struct/union/enum) are terminal: their fields are validated at their own
@@ -347,7 +347,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     self.convergeTaggedSets();
     // Pass 6: any impl block STILL unregistered has an unresolvable head or
     // types — every registration opportunity has run. Silence here let a
-    // dead impl degrade its consumers (issue 0346).
+    // dead impl degrade its consumers.
     self.protocolResolver().diagnoseUnregisteredImpls(decls);
     // CP coverage lock: every generic instance carries both a template and an
     // author stamp (body-author ≡ layout-author by construction).
@@ -757,7 +757,7 @@ pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) 
             // Bool/string literal consts carry their real type — registering
             // them here (not just in declaration-ordered pass 1) lets a
             // const ALIAS chain below resolve through them regardless of
-            // declaration order (issue 0296).
+            // declaration order.
             .bool_literal => {
                 const info = program_index_mod.ModuleConstInfo{ .value = cd.value, .ty = .bool };
                 self.putModuleConst(decl.source_file, cd.name, info);
@@ -802,7 +802,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     registerLiteralModuleConsts(self, decls);
     // Pass 0a': const ALIASES of consts (`B :: A`, chains of any depth /
     // declaration order). A bare-identifier RHS registers here, exactly as
-    // the expression spelling `B :: A + 0` does (issue 0296). Register it with its
+    // the expression spelling `B :: A + 0` does. Register it with its
     // TARGET's type (the typer reads `ty`, so a placeholder would break
     // `if B` on a bool chain); the value node stays the identifier —
     // `emitModuleConst`'s expression arm lowers it through the target.
@@ -810,7 +810,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     // identifier naming a type / function / global keeps its existing
     // behavior. Fixpoint over the decl list so chain order doesn't matter;
     // each productive round registers at least one new name, so the loop is
-    // bounded by the decl count (issue 0331 — no arbitrary round cap). An
+    // bounded by the decl count (no arbitrary round cap). An
     // unresolvable or cyclic alias simply never registers; a cycle is
     // diagnosed by `followAliasChain` during fn-alias registration and the
     // use site still reports the unresolved name.
@@ -829,9 +829,9 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     // plus a local `E :: error { ... }`) form one shadow group alike — a
     // forward reference from a fn signature must bind its OWN file's author
     // whatever its kind, and without the up-front reservation the signature's
-    // `findByName` fallback binds whichever author interned first (issue 0212:
-    // the imported struct won, so the signature and the body — resolved
-    // source-aware AFTER registration — disagreed about the same param). Each
+    // `findByName` fallback binds whichever author interned first (the
+    // imported struct wins, so the signature and the body — resolved
+    // source-aware AFTER registration — disagree about the same param). Each
     // decl still reserves through its own kind's reserver, so the reserved
     // slot's kind always matches its later registration (the
     // `updatePreservingKey` key-stability requirement). Gating on the scanned
@@ -917,8 +917,8 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     // alias. Resolving an element that references a LATER decl
                     // would mint a permanent empty-struct stub under the
                     // element's name — never adopted for aliases, a silently
-                    // size-0 wrong layout forever (issue 0196 HIGH-1, extended
-                    // to every composite kind in 0230) — so those DEFER to the
+                    // size-0 wrong layout forever, for every composite kind
+                    // — so those DEFER to the
                     // `resolveCompositeAliases` fixpoint after the forward-alias
                     // fixpoint below, where the element is ADOPTED once its
                     // decl has been seen (`A :: [2]B; B :: i64`).
@@ -931,11 +931,11 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     // statelessly here, then re-tried by the source-aware
                     // `resolveForwardIdentifierAliases` fixpoint if it names a
                     // forward decl. (Composite RHS shapes take the deferred,
-                    // stub-hardened branch above — issue 0230.)
+                    // stub-hardened branch above.)
                     const target_ty = type_bridge.resolveAstType(cd.value, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map);
                     self.putTypeAlias(self.current_source_file, cd.name, target_ty);
                 } else if (cd.value.data == .identifier or cd.value.data == .field_access) {
-                    // FN alias (issue 0121): `print2 :: print;` /
+                    // FN alias: `print2 :: print;` /
                     // `my_print :: s.print;`. When the alias chain terminates
                     // at a fn decl, register the ALIAS name in `fn_ast_map`
                     // pointing at the target's decl — every dispatch path
@@ -965,7 +965,8 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                         // the local B registers. A GLOBAL selection here would bind A
                         // to a namespaced same-name B, and the per-source fixpoint
                         // guard (`aliasResolvedInSource`) would then SKIP A — leaving
-                        // the wrong global TypeId and re-opening 0105 one layer down.
+                        // the wrong global TypeId, re-opening the same-name
+                        // collision one layer down.
                         // Same unified `putTypeAlias` writer (no-drift).
                         const rhs = cd.value.data.identifier;
                         if (self.current_source_file orelse self.main_file) |from| {
@@ -1281,7 +1282,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
 /// target that IS a registered module const qualifies; an identifier naming a
 /// type / function / global keeps its existing behavior. Each productive round
 /// registers at least one new name, so the loop is bounded by the decl count
-/// (issue 0331 — no arbitrary round cap). An unresolvable or cyclic alias
+/// (no arbitrary round cap). An unresolvable or cyclic alias
 /// simply never registers; a cycle is diagnosed by `followAliasChain` during
 /// fn-alias registration and the use site still reports the unresolved name.
 pub fn registerConstAliases(self: *Lowering, decls: []const *const Node) void {
@@ -1344,7 +1345,7 @@ pub fn registerTypedModuleConst(self: *Lowering, cd: *const ast.ConstDecl) void 
     // silently-accepted const — registering it would let `emitModuleConst`
     // stamp the value with the wrong IR type (an int emitted as a `string`
     // const → a bogus pointer that segfaults at the use site) and let the
-    // count path fold it (`[N]i64` → 4). Issue 0088.
+    // count path fold it (`[N]i64` → 4).
     if (!self.typedConstInitFits(cd.value, ty)) {
         // A non-integral compile-time float into an integer const is the
         // same implicit-narrowing failure as a typed local/field/param —
@@ -1637,7 +1638,7 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
 
     // An optional-typed global (`g : ?T = <present>;`) must carry the
     // 2-field `{ payload, has_value }` aggregate the optional's LLVM
-    // layout expects — NOT the raw payload constant (issue 0234). The
+    // layout expects — NOT the raw payload constant. The
     // absent forms (`= null` / `= ---`) already zero the whole `{T,i1}`
     // struct via `.null_val` / `.zeroinit` at the emit top level, which is
     // exactly `{ zeroinit, false }`, so they flow through unwrapped. Any
@@ -1656,7 +1657,7 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
         // Sentinel-shaped optionals (`?*T`, `?fn`, `?Closure`, `?Protocol`)
         // reuse the payload's null representation and therefore have no
         // `{payload, has_value}` wrapper in LLVM. A present global address is
-        // already the complete initializer for `?*T` (issue 0248).
+        // already the complete initializer for `?*T`.
         const child_info = self.module.types.get(child);
         const sentinel_optional = child_info == .pointer or child_info == .many_pointer or
             child_info == .function or child_info == .cstring or child_info == .closure or
@@ -1787,8 +1788,8 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
             break :blk null;
         },
         // An enum-literal global (`chosen : Color = .green;`) serializes to
-        // the variant's tag value against the destination enum type (issue
-        // 0082). The compiler-injected `OS`/`ARCH` globals flow through here
+        // the variant's tag value against the destination enum type. The
+        // compiler-injected `OS`/`ARCH` globals flow through here
         // too; their runtime reads resolve via `comptime_constants`, so the
         // serialized tag only affects the static initializer.
         .enum_literal => |el| self.constEnumLiteral(&el, var_ty, v.span),
@@ -1831,8 +1832,8 @@ pub fn diagnoseNonConstGlobal(self: *Lowering, vd: *const ast.VarDecl, v: *const
 /// `type_alias_map` / global `findByName`. The "already resolved" guard is
 /// likewise per-source. When a same-name `B` is authored by a *different*
 /// source (e.g. a namespaced import polluting the global alias map last-wins),
-/// a global fixpoint would bind `A` to the wrong `B` and re-open 0105 one
-/// layer down once E2 registers shadows; resolving against `A`'s source binds
+/// a global fixpoint would bind `A` to the wrong `B`, re-opening the same-name
+/// collision one layer down; resolving against `A`'s source binds
 /// the local `B`. The `.pending` outcome (B is itself a not-yet-resolved
 /// forward alias) routes BACK into this fixpoint — `A` is skipped this round
 /// and converges on a later iteration. `.undeclared` (no type author) and
@@ -1858,7 +1859,7 @@ pub fn resolveForwardIdentifierAliases(self: *Lowering, decls: []const *const No
             //    `ns` to its target module and resolve `Leaf` THERE. Without this
             //    a re-exported ENUM/union/error alias stays `.pending` and adopts
             //    the empty-struct `{}` stub — which silently name-reconciles for a
-            //    struct target but corrupts a non-struct target (issue 0206).
+            //    struct target but corrupts a non-struct target.
             var qualified_path: ?[]const u8 = null;
             defer if (qualified_path) |path| self.alloc.free(path);
             const target_src, const leaf, const leaf_raw = switch (cd.value.data) {
@@ -1899,9 +1900,8 @@ pub fn resolveForwardIdentifierAliases(self: *Lowering, decls: []const *const No
 
 /// TRUE when a const-decl RHS is a COMPOSITE type-expression alias whose
 /// element/pointee/param/return positions carry name leaves that must defer
-/// past the forward-alias fixpoint (issue 0230 — generalizes the 0196 tuple
-/// case to array / slice / optional / pointer / many-pointer / function /
-/// closure RHS). Bare-name aliases (`.type_expr` / `.identifier`, e.g.
+/// past the forward-alias fixpoint (tuple, array, slice, optional, pointer,
+/// many-pointer, function and closure RHS alike). Bare-name aliases (`.type_expr` / `.identifier`, e.g.
 /// `MyFloat :: f64`, `B :: A`) are DELIBERATELY excluded — those resolve
 /// through the source-aware `resolveForwardIdentifierAliases` fixpoint.
 fn isCompositeAliasRhs(kind: std.meta.Tag(ast.Node.Data)) bool {
@@ -1922,7 +1922,7 @@ fn isCompositeAliasRhs(kind: std.meta.Tag(ast.Node.Data)) bool {
 /// The `const_decl` behind a composite-type-alias declaration
 /// (`NT :: Tuple(...)`, `Bad :: [3]T`, `S :: []T`, `O :: ?T`, `P :: *T`,
 /// `F :: (T) -> U`, `CB :: Closure(T) -> U`), or null for any other decl
-/// shape (issue 0230, generalized from the 0196 tuple-only probe).
+/// shape.
 fn compositeAliasConstDecl(decl: *const Node) ?*const ast.ConstDecl {
     if (decl.data != .const_decl) return null;
     const cd = &decl.data.const_decl;
@@ -1947,12 +1947,12 @@ fn addrOfAliasRhs(node: *const Node) bool {
     };
 }
 
-/// Registration-time READINESS probe for a tuple-alias RHS (issue 0196): TRUE
+/// Registration-time READINESS probe for a tuple-alias RHS: TRUE
 /// when every bare type-name leaf in `node` already resolves from `source` —
 /// probed via the NON-MINTING `selectNominalLeaf`, so a not-yet-registered
 /// element name never gets a permanent empty-struct stub interned under it
-/// (the stub is adopted only by NOMINAL decls, never by a later alias — the
-/// 0196 silent-layout corruption). FALSE defers the alias to
+/// (the stub is adopted only by NOMINAL decls, never by a later alias, so it
+/// would corrupt the layout silently). FALSE defers the alias to
 /// the `resolveCompositeAliases` fixpoint (element declared later) or its final
 /// rounds (spread / undeclared / builtin-constructor heads — resolved or
 /// diagnosed there). Conservative by construction: node kinds without bare
@@ -1978,7 +1978,7 @@ pub fn typeNodeLeavesReady(self: *Lowering, node: *const Node, source: ?[]const 
         // is a well-formed pointer regardless of pointee completeness, and the
         // minted forward stub is ADOPTED when the nominal registers (key-stable
         // update) — exactly the working `next: *Node` forward-field pattern the
-        // stdlib relies on (issue 0230). So the pointee is probed in
+        // stdlib relies on. So the pointee is probed in
         // `behind_ptr` mode: a bare `.forward` (forward nominal) leaf counts as
         // ready there, while `.pending` (a forward IDENTIFIER ALIAS — never
         // adopted) still defers.
@@ -2033,7 +2033,7 @@ pub fn typeNodeLeavesReady(self: *Lowering, node: *const Node, source: ?[]const 
     }
 }
 
-/// Readiness probe for a POINTER/MANY-POINTER pointee (issue 0230). Same as
+/// Readiness probe for a POINTER/MANY-POINTER pointee. Same as
 /// `typeNodeLeavesReady` except a bare NOMINAL leaf that is declared-but-not-
 /// yet-registered (`.forward`) counts as READY: a pointer to a forward nominal
 /// is a well-formed pointer TypeId, and the minted forward stub is adopted
@@ -2090,7 +2090,7 @@ fn bareTypeLeafReady(self: *Lowering, name: []const u8, src: []const u8, raw: bo
 /// for `resolveCompositeAliases`' last-chance round. Resolving such an RHS
 /// would mint an empty-struct stub for the pending peer that
 /// `typeCarriesUnresolved` cannot tell from a real empty struct, silently
-/// registering a lying layout (issue 0230, generalized from 0196's tuple probe).
+/// registering a lying layout.
 fn compositeRhsReferencesPending(node: *const Node, pending: *const std.StringHashMap(void)) bool {
     switch (node.data) {
         .type_expr => |te| return pending.contains(te.name),
@@ -2127,8 +2127,8 @@ fn compositeRhsReferencesPending(node: *const Node, pending: *const std.StringHa
 }
 
 /// Report the precise per-element diagnostic for a composite-alias RHS that
-/// resolved (transitively) to `.unresolved` (issue 0230, generalized from the
-/// 0196 tuple loop). Walks the RHS shape to the FIRST offending leaf and emits
+/// resolved (transitively) to `.unresolved`. Walks the RHS shape to the FIRST
+/// offending leaf and emits
 /// at that leaf's own span — a `..pack` spread (no pack binding at a top-level
 /// alias), an unresolvable array dimension (precise too-large/negative message
 /// via `reportDimError` where the fold pins it down), or an element/pointee/
@@ -2155,7 +2155,7 @@ fn reportCompositeAliasElement(self: *Lowering, cd: *const ast.ConstDecl, node: 
             // `registerCompositeAlias` ("array dimension must be a compile-
             // time integer constant", matching the direct form) — so recurse
             // only into the ELEMENT here, never re-emitting a dim message,
-            // which would duplicate the resolver's (issue 0230).
+            // which would duplicate the resolver's.
             const dim = type_bridge.foldArrayDim(at.length, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map);
             switch (dim) {
                 .too_large, .below_min, .non_integral_float => return program_index_mod.reportDimError(d, at.length.span, dim),
@@ -2208,9 +2208,8 @@ fn nodeTypeLeafName(node: *const Node) ?[]const u8 {
     };
 }
 
-/// Resolve a COMPOSITE-alias RHS STATEFULLY and register it (issue 0230,
-/// generalized from the 0196 tuple case to array / slice / optional /
-/// pointer / many-pointer / function / closure — and tuple). The stateful
+/// Resolve a COMPOSITE-alias RHS STATEFULLY and register it: tuple, array,
+/// slice, optional, pointer, many-pointer, function, closure. The stateful
 /// `resolveTypeWithBindings` is the same resolver the inline annotation form
 /// (`x : [2]List(i64)`, `x : Tuple(a: List(i64), b: string)`) uses, so
 /// generic-instantiation elements instantiate for real instead of stubbing
@@ -2233,7 +2232,7 @@ fn registerCompositeAlias(self: *Lowering, cd: *const ast.ConstDecl, source: ?[]
         // the alias's own name means an earlier reference (fn signature /
         // struct field) resolved the name before this registration and bound
         // a never-adopted stub. For a STRUCTURAL TUPLE alias that stub keeps a
-        // permanently-wrong empty layout (0196), so reject loudly.
+        // permanently-wrong empty layout, so reject loudly.
         // The other composite RHS kinds (function / closure / pointer / slice
         // / optional / array) do NOT hit this: a struct field / signature that
         // names such an alias above its decl (e.g. `body_read_fn: BodyReadFn`
@@ -2263,7 +2262,7 @@ fn registerCompositeAlias(self: *Lowering, cd: *const ast.ConstDecl, source: ?[]
 }
 
 /// Fixpoint registration for COMPOSITE-type aliases whose elements reference
-/// decls registered LATER in the scan (issues 0196 and 0230, every composite
+/// decls registered LATER in the scan (every composite
 /// kind): `A :: [2]B; B :: i64;` /
 /// `A :: Tuple(a: B, c: bool); B :: i64;` — A's in-loop registration was
 /// deferred (resolving `B` then would mint a permanent stub); now that every
@@ -2971,7 +2970,7 @@ pub fn namedRefTid(self: *Lowering, ref: resolver_mod.RawDeclRef, name: []const 
         .struct_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
         .enum_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
         .union_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
-        // Error sets carry per-decl nominal identity (issue 0134), so prefer
+        // Error sets carry per-decl nominal identity, so prefer
         // the own author's reserved TypeId over the name-keyed first-author
         // `findByName` — mirroring the struct/enum/union arms above. A set that
         // was not decl-registered (no `type_decl_tids` entry) falls back to the
@@ -3101,8 +3100,8 @@ pub fn resolveNominalLeaf(self: *Lowering, name: []const u8, raw: bool, span: ?a
                 d.addFmt(.err, span, "type '{s}' is private to its declaring module", .{name});
             return .unresolved;
         },
-        // ≥2 distinct same-name type authors flat-visible, none own (issue
-        // 0105 case 4): a genuine collision the source can't disambiguate.
+        // ≥2 distinct same-name type authors flat-visible, none own: a
+        // genuine collision the source can't disambiguate.
         // Emit a loud diagnostic and poison — never a silent first-/last-wins.
         .ambiguous => {
             if (self.diagnostics) |d|
@@ -3268,7 +3267,7 @@ fn returnGenericLeaf(node: *const Node) ?[]const u8 {
 /// signature shares the first registration; a CONFLICTING one is diagnosed —
 /// silently letting the first registration win mis-types every call through
 /// the later declaration (a `-> string` view of a symbol registered `-> *u8`
-/// reads the wrong shape; issue 0128). True = handled (shared or diagnosed),
+/// reads the wrong shape). True = handled (shared or diagnosed),
 /// caller must not declare again.
 pub fn dedupeExternSymbol(self: *Lowering, fd: *const ast.FnDecl, sym_name: StringId, params: []const Function.Param, ret_ty: TypeId) bool {
     for (self.module.functions.items, 0..) |*func, i| {
@@ -3681,7 +3680,7 @@ pub fn lazyLowerFunction(self: *Lowering, name: []const u8) void {
     // `Function.source_file` to switch to. Restore the alias's OWN declaring
     // source before lowering its body, otherwise it lowers in the caller's
     // visibility context and an own-import callee (`foo` calling `helper`
-    // from `foo`'s module's flat import) is reported "not visible" (0100 F1).
+    // from `foo`'s module's flat import) is reported "not visible".
     // The reentry guard keeps the nested lowering transparent to the caller.
     var reentry = FnBodyReentry.enter(self);
     defer reentry.restore();
@@ -3927,7 +3926,7 @@ pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, i
     // sibling nested fns + comptime consts resolve, but is flagged a fn
     // boundary: a plain value binding read across it is an enclosing
     // local/param/const the static fn has no env to reach, and the identifier
-    // site diagnoses it (issue 0250) instead of emitting a dead Ref.
+    // site diagnoses it instead of emitting a dead Ref.
     var scope = Scope.init(self.alloc, self.scope);
     scope.is_fn_boundary = self.scope != null;
     defer scope.deinit();

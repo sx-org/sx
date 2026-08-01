@@ -833,7 +833,7 @@ pub fn collectCImportSources(allocator: std.mem.Allocator, root: *const Node) ![
     // namespaced module declares its own named unit — recurse, or a
     // unit two aliases deep is silently never compiled and its symbols
     // resolve from whatever process image carries the same names (the
-    // extractLibraries depth bug, issue 0130, in c_import form).
+    // extractLibraries depth bug in c_import form).
     //
     // Dedup is by CONTENT (sources + includes + defines + flags), not
     // node identity: one module imported through several aliased paths

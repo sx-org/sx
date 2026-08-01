@@ -234,8 +234,7 @@ pub fn registerErrorSetDecl(self: *Lowering, node: *const Node) void {
     // single-author name keeps id 0. The body is built by the shared
     // `type_bridge.buildErrorSetInfo`; `internNamedTypeDecl` interns it under
     // the computed nominal id and records `decl_key → TypeId` so a local
-    // `Foo :: error { Boom }` does not collapse onto a same-name imported set
-    // (issue 0134).
+    // `Foo :: error { Boom }` does not collapse onto a same-name imported set.
     const table = &self.module.types;
     const name_id = table.internString(esd.name);
     const decl_key: *const anyopaque = @ptrCast(&node.data.error_set_decl);
@@ -337,7 +336,7 @@ pub fn reserveShadowUnionSlot(self: *Lowering, ud: *const ast.UnionDecl) void {
 /// intern key, only name + nominal id), so `internNamedTypeDecl` later fills the
 /// real tags via `updatePreservingKey`. Without this, a local `Foo :: error { ... }`
 /// declared after a same-name imported set would collapse onto the imported
-/// TypeId via the `findByName` first-author fallback (issue 0134).
+/// TypeId via the `findByName` first-author fallback.
 pub fn reserveShadowErrorSetSlot(self: *Lowering, esd: *const ast.ErrorSetDecl) void {
     const table = &self.module.types;
     const decl_key: *const anyopaque = @ptrCast(esd);
@@ -462,7 +461,7 @@ pub fn internNamedTypeDecl(self: *Lowering, decl_key: *const anyopaque, name_id:
         table.internNominal(info, nominal_id);
     const stamped = stampNominalId(info, nominal_id);
     // A self / mutual `*Name` field in an enum/union body — or a fn signature
-    // referencing an error set declared later (issue 0211) — forward-creates a
+    // referencing an error set declared later — forward-creates a
     // STRUCT placeholder under `Name` (the stateless resolver has no kind
     // context — `type_resolver.resolveNamed` always stubs a struct), which the
     // `findByName` above then returns. Adopting a wrong-kind stub needs a
@@ -586,7 +585,7 @@ pub fn rawNamedTypePtr(ref: resolver_mod.RawDeclRef) ?*const anyopaque {
 pub fn buildGenericStructTemplate(self: *Lowering, sd: *const ast.StructDecl, source_file: ?[]const u8) ?StructTemplate {
     // Main-file top-level AST nodes are deliberately unstamped. Preserve the
     // declaration's real lookup authority instead of leaving a null template
-    // to inherit an unrelated instantiation/facade context (issue 0328).
+    // to inherit an unrelated instantiation/facade context.
     const author_source = source_file orelse self.current_source_file orelse self.main_file;
     const owned_name = self.alloc.dupe(u8, sd.name) catch return null;
 
@@ -702,7 +701,7 @@ fn singleVisibleAuthor(self: *Lowering, name: []const u8, from: []const u8) ?res
 }
 
 /// Resolve `name`, as seen from `from`, to a generic-struct template by
-/// following const ALIAS declarations (issue 0120). Entry for the head
+/// following const ALIAS declarations. Entry for the head
 /// selector's bare tail: the FIRST hop must be alias-shaped — a direct
 /// struct author is the template map's business, never this path's. Each
 /// hop resolves from the ALIAS AUTHOR's source, so visibility is the
@@ -731,7 +730,7 @@ fn followToTemplate(self: *Lowering, author: resolver_mod.RawAuthor) ?StructTemp
 /// chain (callers unwrap it by domain: `structDeclOfRaw` / `fnDeclOfRaw`).
 /// Any acyclic chain resolves — the walk is bounded by the finite set of
 /// alias decls; a cycle (`A :: B; B :: A;`) is detected by declaration
-/// identity, diagnosed once, and returns null (issue 0331).
+/// identity, diagnosed once, and returns null.
 pub fn followAliasChain(self: *Lowering, author: resolver_mod.RawAuthor) ?resolver_mod.RawAuthor {
     var visited: std.ArrayList(*const ast.ConstDecl) = .empty;
     defer visited.deinit(self.alloc);
@@ -783,7 +782,7 @@ fn diagnoseAliasCycle(self: *Lowering, cycle: []const *const ast.ConstDecl) void
 }
 
 /// The fn decl a const ALIAS chain terminates at, or null when `cd` is not
-/// an alias of a function. Entry for fn-alias registration (issue 0121):
+/// an alias of a function. Entry for fn-alias registration:
 /// `cd` itself seeds the chain (it IS the first alias hop), `from` is its
 /// declaring source.
 pub fn aliasedFnDecl(self: *Lowering, cd: *const ast.ConstDecl, from: []const u8) ?*const ast.FnDecl {
@@ -904,8 +903,8 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     // shadow already reserved its distinct slot up-front in `scanDecls` (the
     // first at id 0, the rest at nonzero ids), so a self / forward / mutual
     // reference to the shadow name bound to ITS nominal TypeId via
-    // `type_decl_tids`, not the global findByName first-author fallback (issue
-    // 0105): reuse that reserved id. A single-author name (or a phantom
+    // `type_decl_tids`, not the global findByName first-author fallback:
+    // reuse that reserved id. A single-author name (or a phantom
     // over-counted by the raw import facts) is NOT reserved — it keeps id 0 and
     // the post-field registration.
     // `shadowNominalId` here only fires for the non-scanDecls registration paths
@@ -917,7 +916,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     // Build field list, expanding #using entries. Defaults are built IN THE
     // SAME interleave so they stay aligned with the FLATTENED layout — an
     // embedded base field holds null (base defaults do not flow through
-    // `#using`, matching generic instantiation; issue 0335), and an explicit
+    // `#using`, matching generic instantiation), and an explicit
     // field's declared default lands at its flattened position.
     var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
     var layout_defaults = std.ArrayList(?*const Node).empty;
@@ -986,11 +985,11 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     const struct_ty = self.internNamedTypeDecl(decl_key, name_id, info, nominal_id);
     // Couple the nominal layout identity to its authoring declaration. Method
     // calls must select through this TypeId-keyed provenance, never through the
-    // process-global `StructName.method` spelling (issue 0320).
+    // process-global `StructName.method` spelling.
     self.plain_struct_authors.put(struct_ty, .{ .decl = sd, .source = source_file orelse self.current_source_file }) catch @panic("out of memory");
 
     // Store field defaults for struct literal lowering — the LAYOUT-ALIGNED
-    // array, keyed by the concrete TypeId (authoritative; issue 0320) and by
+    // array, keyed by the concrete TypeId (authoritative) and by
     // display name (fallback for consumers without a nominal identity;
     // last-wins across same-name authors).
     {
@@ -1029,7 +1028,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     }
 
     // Register struct-level constants (e.g., GRAVITY :f32: 9.81) — keyed by
-    // the concrete TypeId (authoritative; issue 0320) and by the
+    // the concrete TypeId (authoritative) and by the
     // "Struct.CONST" spelling (fallback for heads with no nominal identity;
     // last-wins across same-name authors).
     for (sd.constants) |const_node| {
@@ -1045,7 +1044,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
 }
 
 /// Resolve a `#using` base name from the DECLARING struct's own source
-/// authority (issue 0320: the global `findByName` first/last-match let a
+/// authority (the global `findByName` first/last-match let a
 /// different module's same-name base win). `.resolved` wins; any other
 /// verdict falls back to the global lookup, which covers forward references and
 /// unwired-facts registration. When BOTH miss,
@@ -1085,7 +1084,7 @@ pub fn registerEnumDecl(self: *Lowering, ed: *const ast.EnumDecl) void {
     // recursion hook — the same seam `resolveCompound` uses — so a payload type
     // NAME resolves in the enum's OWN module visibility context (own author wins
     // over a namespaced same-name import), not via a global `findByName`
-    // first-match (issue 0132's class).
+    // first-match.
     const info = type_bridge.buildEnumInfo(ed, table, self);
     _ = self.internNamedTypeDecl(decl_key, name_id, info, nominal_id);
 }

@@ -297,7 +297,7 @@ const ModuleConstCtx = struct {
     // The GLOBAL-map fold carries no namespace-import facts (no `namespace_edges`
     // / per-source const cache), so a qualified-member const `m.CAP` can only be
     // resolved by the SOURCE-AWARE path (`SourceConstCtx` / `Lowering`). Null
-    // here (issue 0192). A qualified const used inside another module const's RHS
+    // here. A qualified const used inside another module const's RHS
     // folds through `SourceConstCtx`, not this ctx, so this is not a live gap.
     pub fn lookupQualifiedConst(_: ModuleConstCtx, _: []const u8, _: []const u8) ?i64 {
         return null;
@@ -467,7 +467,7 @@ pub fn isFloatValuedExpr(node: *const Node, ctx: anytype) bool {
             };
             if (obj_name) |on| {
                 if (type_resolver.TypeResolver.floatLimitFor(on, fa.field) != null) break :blk true;
-                // A QUALIFIED-import-member float const (`m.PI`, issue 0192): so
+                // A QUALIFIED-import-member float const (`m.PI`): so
                 // the int folder's division guard classifies `m.K / 3` as float
                 // division exactly as it does a bare `K / 3`.
                 if (ctx.qualifiedNameIsFloatTyped(on, fa.field)) break :blk true;
@@ -572,7 +572,7 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
                 // A struct const's integer field (`LIT.r`) folds to the
                 // SELECTED author's field value.
                 if (ctx.lookupConstStructField(on, fa.field)) |v| break :blk v;
-                // A QUALIFIED-import-member const (`m.CAP`, issue 0192): `on`
+                // A QUALIFIED-import-member const (`m.CAP`): `on`
                 // names a namespace alias and `fa.field` a const in its target
                 // module. Tried last so a same-named struct-const / numeric-limit
                 // receiver keeps its existing meaning.
@@ -694,7 +694,7 @@ pub fn evalConstFloatExpr(node: *const Node, ctx: anytype) ?f64 {
             };
             if (obj_name) |on| {
                 if (type_resolver.TypeResolver.floatLimitFor(on, fa.field)) |v| break :blk v;
-                // A QUALIFIED-import-member float const (`m.PI`, issue 0192) —
+                // A QUALIFIED-import-member float const (`m.PI`) —
                 // the float twin of the int folder's qualified-const arm.
                 if (ctx.lookupQualifiedConstFloat(on, fa.field)) |v| break :blk v;
             }

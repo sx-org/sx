@@ -54,8 +54,7 @@ fn provenRemove(set: *ProvenSet, name: []const u8) void {
 /// `shadow_undo`: every declaration statement records the prior state of
 /// its name (see `declareName`) and `scopeExit` restores it when the
 /// enclosing lexical scope ends — a record never outlives its variable, so a
-/// stale one cannot poison a later same-name `:=` in a sibling scope
-/// (issue 0210).
+/// stale one cannot poison a later same-name `:=` in a sibling scope.
 const FlowCtx = struct {
     bindings: std.StringHashMap([]const u8),
     err_vars: std.StringHashMap(void),
@@ -93,7 +92,7 @@ pub const ErrorFlow = struct {
     /// A `:=` declaration introduces a NEW variable: it must not inherit a
     /// stale failable-guard record (value taint, err-var role, or
     /// proven-absent fact) left by a same-named variable from an earlier or
-    /// enclosing scope (issue 0210). Save the prior records on the
+    /// enclosing scope. Save the prior records on the
     /// shadow-undo stack — so `scopeExit` can restore an outer variable's
     /// state when this scope ends — then clear all three.
     fn declareName(self: ErrorFlow, ctx: *FlowCtx, proven: *ProvenSet, name: []const u8) void {
@@ -151,7 +150,7 @@ pub const ErrorFlow = struct {
             // Pin the visibility context (and diagnostic rendering) to the
             // decl's own module — the flow walk resolves types via
             // inferExprType, and the ambient file the previous phase left
-            // behind is arbitrary (issue 0122).
+            // behind is arbitrary.
             if (decl.source_file) |sf| self.l.setCurrentSourceFile(sf);
             switch (decl.data) {
                 .fn_decl => |fd| self.analyzeFnBody(fd.body),

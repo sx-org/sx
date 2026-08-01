@@ -757,8 +757,8 @@ pub const Function = struct {
 
     /// For a body-local `#run` wrapper (`L :: #run f()` → an `is_comptime`
     /// `__ct_N` function): the user-facing const NAME the `#run` initializes, so
-    /// a comptime-init failure can report `comptime init of 'L' failed` (issue
-    /// 0182) rather than the internal `__ct_N` wrapper name. Null when the `#run`
+    /// a comptime-init failure can report `comptime init of 'L' failed` rather
+    /// than the internal `__ct_N` wrapper name. Null when the `#run`
     /// is not bound to a named const (a bare inline `#run`).
     comptime_display_name: ?StringId = null,
 

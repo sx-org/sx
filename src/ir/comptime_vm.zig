@@ -201,7 +201,7 @@ pub var last_bail_reason: ?[]const u8 = null;
 /// cannot be materialized into a host `Value`), as opposed to an EXECUTION bail
 /// (`runEntry` couldn't evaluate the body — an unported op, a VM
 /// `DivisionByZero`, etc.). The distinction matters for a body-local `#run`
-/// fold (issue 0182): a BRIDGE bail means a runtime re-execution would run the
+/// fold: a BRIDGE bail means a runtime re-execution would run the
 /// SAME body over (possibly `---`) storage and produce DIFFERENT, garbage data —
 /// a silent miscompile that must fail the build. An EXECUTION bail means the VM
 /// simply can't run it; the established runtime-call fallback computes the
@@ -347,8 +347,7 @@ pub const Evaluation = struct {
             e.vm.regToValue(e.gpa, &e.module.types, reg, func.ret) catch |err| blk: {
                 // The body RAN; only the result bridge failed → mark this a BRIDGE
                 // bail so a body-local `#run` fold can tell a genuine "result can't
-                // be materialized" miscompile from a "VM can't run it" fallback
-                // (issue 0182).
+                // be materialized" miscompile from a "VM can't run it" fallback.
                 last_bail_was_bridge = true;
                 last_bail_reason = e.vm.detail orelse @errorName(err);
                 break :blk null;

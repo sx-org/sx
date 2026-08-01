@@ -105,7 +105,7 @@ test "generics: inferGenericReturnType binds explicit type args, resolves return
     try std.testing.expectEqual(TypeId.f64, gr.inferGenericReturnType(&fd, &c_f64));
 
     // The scoped binding env restores the prior `type_bindings` (null here) —
-    // it must NOT leak the call's temporary bindings (the issue-0048/0050 class).
+    // it must NOT leak the call's temporary bindings.
     try std.testing.expect(l.type_bindings == null);
 }
 

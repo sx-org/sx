@@ -1379,7 +1379,7 @@ test "sandbox: a declared output outside .sx-tmp is refused and never deleted" {
     const a = arena.allocator();
     const io = test_io();
 
-    // Issue 0391: a corpus run deleted the repo root's untracked `assets/`.
+    // A corpus run deleted the repo root's untracked `assets/`.
     // Stand in for the repo root so the scenario is reproduced without writing
     // into the real one, and give it the same untracked content to lose.
     const repo_root = std.fs.path.dirname(corpus_paths.examples_dir) orelse ".";
@@ -1521,7 +1521,7 @@ fn timedStageRecorded(stderr_raw: []const u8, stage: []const u8) bool {
     return false;
 }
 
-test "object cache: second identical run hits, source edit invalidates (issue 0336)" {
+test "object cache: second identical run hits, source edit invalidates" {
     const io = test_io();
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();

@@ -193,7 +193,7 @@ pub fn main(init: std.process.Init) !void {
         return;
     };
     // Canonicalize the entry path the same way `#import`-resolved paths are
-    // keyed (issue 0148): an absolute entry that lives under the CWD becomes
+    // keyed: an absolute entry that lives under the CWD becomes
     // the cwd-relative spelling, so the entry file's OWN diagnostics display
     // identically to a relative invocation. Identity-guarded — a respelling
     // that stops naming the same file (or a nonexistent entry) keeps the
@@ -252,7 +252,7 @@ pub fn main(init: std.process.Init) !void {
         // runJITFromObject does NOT reliably report "no main" — it has been
         // observed reporting success while leaving the address at garbage
         // (0x0 or a small non-zero value), which then gets called and
-        // segfaults (issue 0137). Reject programs with no `main` here, before
+        // segfaults. Reject programs with no `main` here, before
         // any codegen/JIT, with a clean diagnostic + non-zero exit.
         if (!hasMainEntry(root)) {
             std.debug.print("error: no 'main' function found — 'sx run' requires a top-level 'main' entry point\n", .{});
@@ -261,7 +261,7 @@ pub fn main(init: std.process.Init) !void {
 
         // A failed compiler self-hash disables the cache for this process
         // (slower, never stale) — the key must always carry the compiler's
-        // identity (issue 0336).
+        // identity.
         const self_hash: ?u64 = if (enable_cache and !hasTopLevelRun(root)) compilerSelfHash(allocator, io) else null;
         const use_cache = self_hash != null;
         const key = computeCacheKey(source, &comp.import_sources, target_config, self_hash orelse 0);
@@ -339,7 +339,7 @@ pub fn main(init: std.process.Init) !void {
         // pure-runtime tests keep their current snapshots.
         if (hasTopLevelRun(root)) {
             // Stay on the same stream as the #run output (stdout, via
-            // core.flushInterpOutput). Same reason as issue-0047: the
+            // core.flushInterpOutput): the
             // user doesn't distinguish build-time `print` from
             // runtime `print` at the call site, and the delimiter is
             // meaningless if it lands on a different stream than the
@@ -896,7 +896,7 @@ fn runAOT(allocator: std.mem.Allocator, io: std.Io, input_path: []const u8, targ
 /// Content hash of the RUNNING compiler executable, computed once per
 /// process (~11MB wyhash, a few ms). Mixed into the object-cache key so a
 /// rebuilt compiler can never satisfy a key an older build produced
-/// (issue 0336 — the cache silently replayed stale codegen). Null when the
+/// (the cache silently replayed stale codegen). Null when the
 /// executable cannot be located or read: the caller must treat that as
 /// cache-off — slower but never stale.
 var g_compiler_hash: ?u64 = null;
@@ -948,7 +948,7 @@ fn saveObjectToCache(obj_buf: sx.llvm_api.c.LLVMMemoryBufferRef, io: std.Io, cac
     // Stage through a PID-UNIQUE temp inside the cache dir, then rename —
     // atomic on POSIX (same directory), so concurrent `--cache` processes
     // (the parallel corpus runner) never observe or clobber a half-written
-    // object (issue 0336).
+    // object.
     var tmp_buf: [64]u8 = undefined;
     const tmp = std.fmt.bufPrint(&tmp_buf, ".sx-cache/.tmp-{d}", .{std.c.getpid()}) catch return;
     std.Io.Dir.createDirPath(.cwd(), io, ".sx-cache") catch return;
@@ -968,7 +968,7 @@ fn hasTopLevelRun(root: *const sx.ast.Node) bool {
 /// binary) entry symbol is a flat function named `main`; this scans the
 /// resolved AST for a `fn_decl` named "main", recursing into namespace
 /// decls so a `main` brought in behind an aliased import is still found.
-/// Used as a pre-JIT guard (issue 0137): the ORC `main` lookup does not
+/// Used as a pre-JIT guard: the ORC `main` lookup does not
 /// reliably surface "no main", so we reject the no-main program here with
 /// a clean diagnostic instead of calling a garbage function pointer.
 fn hasMainEntry(root: *const sx.ast.Node) bool {

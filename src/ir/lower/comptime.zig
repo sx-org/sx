@@ -157,7 +157,7 @@ pub fn constStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Typ
     const struct_fields = ti.@"struct".fields;
     const struct_name = self.module.types.getString(ti.@"struct".name);
     // TypeId identity first; for an author-tracked type a tid-map miss means
-    // "no defaults" (issue 0320).
+    // "no defaults".
     const field_defaults: []const ?*const Node = self.struct_defaults_by_tid.get(ty) orelse blk: {
         if (self.plain_struct_authors.contains(ty)) break :blk &.{};
         break :blk self.struct_defaults_map.get(struct_name) orelse &.{};
@@ -338,7 +338,7 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
     if (std.mem.eql(u8, name, "type") or std.mem.eql(u8, name, "Type")) return tid == .type_value;
     if (tid.isBuiltin()) {
         // A concrete builtin ARM (`case i64:`, `case u8:`, `case f32:`):
-        // resolve the primitive spelling and compare (issue 0342 — this
+        // resolve the primitive spelling and compare (this
         // returned false unconditionally, making concrete builtin arms
         // unreachable in the static fold; `case string:` only worked by
         // doubling as a category name).
@@ -654,7 +654,7 @@ fn preludeBeforeReturn(body: *const Node) []const *const Node {
 }
 
 /// Run a comptime type-construction function and post-process its result: render
-/// any interp bail as a build-gating diagnostic (issue 0140) and reject a bare
+/// any interp bail as a build-gating diagnostic and reject a bare
 /// `declare()` never completed by `define()` (a zero-field nominal slot that
 /// would otherwise panic at codegen). `span` locates both diagnostics.
 pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?TypeId {
@@ -664,7 +664,7 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
     // protocol thunks). No separate thunk-forcing here.
 
     // If lowering this type-fn's BODY already emitted an error (e.g. a rejected
-    // coercion like `[*]T → []T`, issue 0141), the function holds malformed IR —
+    // coercion like `[*]T → []T`), the function holds malformed IR —
     // a slice value that is really a bare 8-byte pointer, etc. Running the VM on it
     // would dereference garbage (a comptime Addr is a real host pointer, so a bad
     // data pointer FAULTS, defeating the VM's bail-not-crash guards which only catch
@@ -691,8 +691,8 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
 
     // VM bailed: render a build-gating diagnostic naming the reason — NOT poison
     // to `.unresolved` silently and let that crash at LLVM emission ("unresolved
-    // type reached LLVM emission") or hide behind a downstream cascade (issue
-    // 0140). The VM's bail reason carries the precise cause (e.g. "comptime
+    // type reached LLVM emission") or hide behind a downstream cascade.
+    // The VM's bail reason carries the precise cause (e.g. "comptime
     // define(): duplicate variant name 'x'"), so a comptime type-construction
     // failure (1179/1180) produces its proper user diagnostic.
     if (self.diagnostics) |d| {
@@ -1712,7 +1712,7 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     const name = std.fmt.bufPrint(&buf, "{s}_{d}", .{ prefix, self.comptime_counter }) catch prefix;
     self.comptime_counter += 1;
 
-    // Flow narrowing (issue 0179) is per-function: this wrapper body has its
+    // Flow narrowing is per-function: this wrapper body has its
     // own `Ref` space (overlapping the caller's), so isolate it from the
     // caller's `narrowed`/`narrowed_refs` to avoid a false-positive unwrap gate.
     var nested_guard = Lowering.NestedBodyGuard.enter(self);
@@ -1724,8 +1724,8 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     // the wrapper) or comptime-param bindings (which would substitute
     // caller's `$fmt` inside the wrapper's #insert children). Without these
     // saves, nested comptime calls leak outer state into the interp-executed
-    // wrapper, producing garbage stores (issue-0046 face 1 — storeAtRawPtr
-    // null). The guard above owns the inlined-body exit.
+    // wrapper, producing garbage stores (a null `storeAtRawPtr`). The guard
+    // above owns the inlined-body exit.
     const saved_func = self.builder.func;
     const saved_block = self.builder.current_block;
     const saved_counter = self.builder.inst_counter;
@@ -1878,8 +1878,8 @@ pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const Cons
 }
 
 /// Resolve a QUALIFIED module const `ns.field` (a namespaced-import member —
-/// `m :: #import "lib.sx"; … m.CAP`) to its authoring source + info (issue
-/// 0192). The alias `ns` is resolved in the CURRENT source context — the file
+/// `m :: #import "lib.sx"; … m.CAP`) to its authoring source + info.
+/// The alias `ns` is resolved in the CURRENT source context — the file
 /// that wrote `ns.field`, since an alias binds in its declaring file, not the
 /// use site — then `field` is read from that target module's per-source const
 /// cache (`module_consts_by_source`). Null when `ns` is not a visible namespace
@@ -1902,7 +1902,7 @@ pub fn selectQualifiedConst(self: *Lowering, ns: []const u8, field: []const u8) 
     return .{ .info = ci, .source = src };
 }
 
-/// Source-aware INTEGER fold of a qualified const `ns.field` (issue 0192): the
+/// Source-aware INTEGER fold of a qualified const `ns.field`: the
 /// qualified twin of `foldSourceConstInt`. Resolve the namespace member to its
 /// authoring source, then fold ITS RHS PINNED to that source so nested const
 /// leaves (`CAP :: BASE + 1`, `BASE` authored in the target module) re-select
@@ -1918,7 +1918,7 @@ pub fn foldQualifiedConstInt(self: *Lowering, ns: []const u8, field: []const u8,
     return program_index_mod.evalConstIntExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
 }
 
-/// FLOAT counterpart of `foldQualifiedConstInt` (issue 0192) — the qualified
+/// FLOAT counterpart of `foldQualifiedConstInt` — the qualified
 /// twin of `foldSourceConstFloat`, so a qualified non-integral float const
 /// (`m.PI`) folds the same way its bare-name sibling does.
 pub fn foldQualifiedConstFloat(self: *Lowering, ns: []const u8, field: []const u8, frame: ?*const ConstFoldFrame) ?f64 {
@@ -1931,7 +1931,7 @@ pub fn foldQualifiedConstFloat(self: *Lowering, ns: []const u8, field: []const u
     return program_index_mod.evalConstFloatExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
 }
 
-/// "Is the qualified const `ns.field` FLOAT-valued" (issue 0192) — the
+/// "Is the qualified const `ns.field` FLOAT-valued" — the
 /// qualified twin of `sourceConstIsFloatTyped`, consulted by the int folder's
 /// division guard so `m.K / 3` (with `m.K : f64`) is recognised as float
 /// division exactly as a bare `K / 3` is.
@@ -2052,7 +2052,7 @@ pub fn selectModuleConst(self: *Lowering, name: []const u8) ConstAuthor {
         // The reader's own module authors `name` as a const that never
         // materialized a per-source value (unsupported shape). Owning the
         // name blocks borrowing a flat import's / the global registration's
-        // same-named const (issue 0115).
+        // same-named const.
         if (o.raw == .const_decl) return .own_opaque;
     }
     var the_one: ?SelectedConst = null;

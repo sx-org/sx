@@ -568,7 +568,7 @@ test "emit: abiCoerceParamType coerces C-ABI structs by size bucket" {
     try std.testing.expect(emitter.abiCoerceParamType(.i32, emitter.toLLVMType(.i32)) == emitter.toLLVMType(.i32));
 }
 
-// issue 0286: default ABI must pack ≤8-byte non-HFA structs (Color-shaped
+// Default ABI must pack ≤8-byte non-HFA structs (Color-shaped
 // `{i8×4}`) into i64 so AArch64 does not expand them into four i8 args that
 // mis-spill. string / HFA / mid / large stay raw.
 test "emit: abiCoerceDefaultParamType packs only small non-HFA structs" {
@@ -1349,7 +1349,7 @@ test "emit: no DWARF without a debug context (unit-test default)" {
 // a codegen invariant violation; it must surface the dedicated `.unresolved`
 // tripwire sentinel (which `toLLVMType` hard-panics on) rather than a silent
 // `.void` default, which would emit a void-typed extern-call argument.
-test "emit: argIRTypeOrFail surfaces .unresolved for an unresolvable FFI arg ref (issue 0074)" {
+test "emit: argIRTypeOrFail surfaces .unresolved for an unresolvable FFI arg ref" {
     const alloc = std.testing.allocator;
     var module = Module.init(alloc);
     defer module.deinit();
@@ -1397,7 +1397,7 @@ test "emit: argIRTypeOrFail surfaces .unresolved for an unresolvable FFI arg ref
 // surface `.unresolved` (which the emit site hard-panics on) instead of a silent
 // `.i64` default that would mis-classify a boxed arg as bare and read the wrong
 // value with no diagnostic.
-test "emit: reflectArgRepr surfaces .unresolved for an unresolvable reflection arg ref (issue 0075)" {
+test "emit: reflectArgRepr surfaces .unresolved for an unresolvable reflection arg ref" {
     const alloc = std.testing.allocator;
     var module = Module.init(alloc);
     defer module.deinit();

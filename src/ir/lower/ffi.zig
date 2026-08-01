@@ -816,7 +816,7 @@ pub fn registerRuntimeClassDecl(self: *Lowering, fcd: *const ast.RuntimeClassDec
     }
 }
 
-/// Issue 0348: the runtime-class registry is name-keyed program-wide, so two
+/// The runtime-class registry is name-keyed program-wide, so two
 /// modules declaring the same sx name would race the slot silently (last-wins),
 /// resolving the loser's member calls against the winner's surface. Extern
 /// declarations are C-header-like per-module VIEWS of one runtime class, so
@@ -1165,7 +1165,7 @@ pub fn synthesizeJniMainStubs(self: *Lowering) void {
 }
 
 pub fn synthesizeJniMainStub(self: *Lowering, fcd: *const ast.RuntimeClassDecl, md: ast.RuntimeMethodDecl) void {
-    // Flow narrowing (issue 0179) is per-function: each native-method stub body
+    // Flow narrowing is per-function: each native-method stub body
     // gets its own `Ref` space (reset by `beginFunction` below) that OVERLAPS
     // both the enclosing pass and a sibling method's stub. Without isolation the
     // previous method's `narrowed_refs` indices falsely match this body's `Ref`s

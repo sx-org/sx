@@ -1435,7 +1435,7 @@ fn publishTags(self: *Lowering) void {
 /// (desugared before lowering, where no IR blocks exist to split).
 /// The concrete type a `?*T` postfix target tests, when `child` is a plain
 /// pointer whose pointee names one. A protocol pointee is the type lie the
-/// hard ctx recovery refuses (issue 0306); `void` and `any` name no concrete
+/// hard ctx recovery refuses; `void` and `any` name no concrete
 /// type, so neither can be a membership question.
 pub fn softRecoveryPointee(self: *Lowering, child: TypeId) ?TypeId {
     if (child.isBuiltin()) return null;

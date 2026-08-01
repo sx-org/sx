@@ -330,7 +330,7 @@ pub fn lowerFailableSuccessReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, spa
     // SETS differ (`(T, !Concrete)` forwarded through `(T, !)`, or concrete
     // → concrete). Without this arm the whole callee result falls into the
     // scalar/value paths below and gets packed as element 0 of the caller's
-    // own tuple — invalid IR (issue 0205).
+    // own tuple — invalid IR.
     // `val_ty == fields[0]` is NOT a forward: the lone value slot's type is
     // itself this failable type, so the user is returning the value.
     if (val_ty != fields[0] and !val_ty.isBuiltin()) {
@@ -377,7 +377,7 @@ pub fn lowerFailableSuccessReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, spa
     }
     const n_vals = fields.len - 1;
     if (n_vals == 1) {
-        // Issue 0191: an un-coercible success value must not be bit-welded
+        // An un-coercible success value must not be bit-welded
         // into the declared value slot — a 16-byte string into an i64 slot
         // corrupts the error tag, giving a phantom `catch` on success.
         const cv = if (self.checkReturnable(ref, val_ty, fields[0], span))
@@ -402,7 +402,7 @@ pub fn lowerFailableSuccessReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, spa
     defer vals.deinit(self.alloc);
     for (0..n_vals) |i| {
         const fv = self.builder.emit(.{ .tuple_get = .{ .base = ref, .field_index = @intCast(i), .base_type = val_ty } }, vfields[i]);
-        // Issue 0191: per-slot coercibility — an un-coercible element is
+        // Per-slot coercibility — an un-coercible element is
         // diagnosed instead of bit-welded into the declared slot.
         const cf = if (self.checkReturnable(fv, vfields[i], fields[i], span))
             self.coerceToType(fv, vfields[i], fields[i])
@@ -438,7 +438,7 @@ fn lowerFailableForwardReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, val_ty:
     defer vals.deinit(self.alloc);
     for (0..n_vals) |i| {
         const fv = self.builder.emit(.{ .tuple_get = .{ .base = ref, .field_index = @intCast(i), .base_type = val_ty } }, vfields[i]);
-        // Issue 0191: a forwarded value slot with NO modeled coercion to the
+        // A forwarded value slot with NO modeled coercion to the
         // caller's slot type is diagnosed, not bit-welded.
         const cf = if (self.checkReturnable(fv, vfields[i], fields[i], span))
             self.coerceToType(fv, vfields[i], fields[i])
@@ -504,7 +504,7 @@ pub fn coercePureFailableReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, span:
             else => {},
         }
     }
-    // Issue 0191: a non-error-set value returned from a pure failable
+    // A non-error-set value returned from a pure failable
     // (`return "str";` in `-> !E`) has no modeled coercion to the error set —
     // diagnose instead of welding the value's bits into the tag.
     if (!self.checkReturnable(ref, val_ty, ret_ty, span)) {

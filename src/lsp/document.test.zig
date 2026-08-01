@@ -31,7 +31,7 @@ fn fieldTypeOf(doc: *doc_mod.Document, type_name: []const u8, field: []const u8)
     return null;
 }
 
-test "analyzeDocument: identifier array dimension folds to the const value (issue 0099)" {
+test "analyzeDocument: identifier array dimension folds to the const value" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();

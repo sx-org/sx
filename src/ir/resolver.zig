@@ -25,7 +25,7 @@
 //! `flat_import_graph`/`import_graph` in this file — inside
 //! `collectVisibleAuthors`. `collectNamespaceAuthors` iterates one
 //! `NamespaceTarget.own_decls` slice and touches no graph. This is what keeps
-//! 0102 (callable) and 0105 (type) the SAME cross-module edge-walk.
+//! callable and type resolution on the SAME cross-module edge-walk.
 
 const std = @import("std");
 const ast = @import("../ast.zig");

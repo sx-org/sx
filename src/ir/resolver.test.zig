@@ -195,7 +195,7 @@ test "resolver: collectNamespaceAuthors — returns target members, walks no gra
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
     const main_path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{absdir});
-    // Imported modules are keyed by their CANONICAL path (issue 0148), so the
+    // Imported modules are keyed by their CANONICAL path, so the
     // expected key goes through the same chokepoint.
     const point_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/point.sx", .{absdir}));
 

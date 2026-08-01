@@ -44,7 +44,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         // Qualified variant construction: `Ev.key{ ... }`. Here `type_expr`
         // is a field_access (`Ev.key`), not an `enum_literal` — `Ev` names the
         // tagged union and `key` the variant. Route it through the same path
-        // as the inferred `.key{ ... }` form (issue 0281); without this the
+        // as the inferred `.key{ ... }` form; without this the
         // field_access falls to `resolveTypeWithBindings`, which cannot place
         // `Ev.key` in type position and returns `.unresolved` → LLVM panic.
         if (te.data == .field_access) {
@@ -68,8 +68,8 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                 };
                 // Diagnostic-free PROBE: this pass only decides whether the
                 // head is a tagged union (`Ev.key{...}` variant construction).
-                // The object may equally be a namespace alias (`m.Cfg{...}`,
-                // issue 0334) — the real head resolution below owns the
+                // The object may equally be a namespace alias (`m.Cfg{...}`)
+                // — the real head resolution below owns the
                 // diagnostics, so a loud `resolveNominalLeaf` here would blast
                 // "unknown type 'm'" for a perfectly valid qualified literal
                 // lowered in a non-main module.
@@ -159,7 +159,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // Plain (untagged) union target: build by writing each named member into a
     // union-sized slot. `getStructFields` returns empty for a union, so the
     // generic struct path below would emit a malformed `structInit` whose
-    // overlapping zero-fill clobbers the named member (issue 0158). Tagged
+    // overlapping zero-fill clobbers the named member. Tagged
     // unions were already handled above.
     if (!ty.isBuiltin() and self.module.types.get(ty) == .@"union") {
         return self.lowerUnionLiteral(sl, ty, span);
@@ -169,7 +169,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // `T` and wraps it once. Without this `ty` is the optional itself, so the
     // literal is lowered into the optional's `{payload, has_value}` layout and
     // then re-wrapped — corrupting the value (a `?T` arg silently reads as
-    // null) or failing LLVM verification on the double wrap (issue 0160).
+    // null) or failing LLVM verification on the double wrap.
     // Only the bare `.{ ... }` form reaches here with an optional `ty` (a named
     // / generic literal resolves `ty` from its own type, never the target).
     if (!ty.isBuiltin() and self.module.types.get(ty) == .optional) {
@@ -182,7 +182,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         // then sees a loaded value, the same shape the working `T -> ?T` value
         // coercion wraps. Returning a fully-built `?T` makes EVERY caller
         // context correct, including array/struct-literal element slots that
-        // don't re-coerce (issue 0160).
+        // don't re-coerce.
         const saved_tt = self.target_type;
         self.target_type = child;
         const inner = self.lowerStructLiteral(sl, span);
@@ -197,7 +197,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // `.unresolved`): the literal's type can never be resolved, and an
     // `.unresolved`-typed `struct_init` flows to codegen and panics LLVM
     // emission ("unresolved type reached LLVM emission"), with no
-    // diagnostic (issue 0184). Diagnose at the literal site and return an
+    // diagnostic. Diagnose at the literal site and return an
     // `.unresolved`-typed poison ref — the diagnostic makes `hasErrors()`
     // abort before codegen, and downstream use of the poison value is
     // suppressed (field/index access on an `.unresolved` object defers).
@@ -258,7 +258,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // an enum, a pointer, ... — would reach `structInit` against a
     // non-aggregate LLVM type: a non-empty literal fails LLVM verification
     // (`Invalid InsertValueInst operands!`), and the empty `.{}` silently
-    // produces garbage (issue 0161). Diagnose and return a typed zero
+    // produces garbage. Diagnose and return a typed zero
     // placeholder — the diagnostic aborts the build before codegen; the
     // placeholder only keeps the remaining lowering coherent.
     // A TUPLE-targeted bare `.{ … }` routes through the tuple-literal
@@ -317,7 +317,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // "this struct declares no defaults", never "borrow a same-name author's".
     // The display-name map remains only for names without a nominal identity
     // entry (generic instances, whose mangled names are unique) — its key is
-    // last-wins across same-name authors (issue 0320).
+    // last-wins across same-name authors.
     const field_defaults: []const ?*const Node = blk: {
         if (!ty.isBuiltin()) {
             if (self.struct_defaults_by_tid.get(ty)) |d| break :blk d;
@@ -327,7 +327,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     };
 
     // A generic instance's defaults may REFERENCE its type params — `sz: i64 =
-    // size_of(T)` (issue 0221, dependent defaults). Those default AST nodes
+    // size_of(T)` (dependent defaults). Those default AST nodes
     // are monomorphized here: while lowering a missing field's default we
     // temporarily install this instance's captured `type_bindings` (stamped by
     // `instantiateGenericStruct` into `struct_instance_bindings`, keyed by the
@@ -348,7 +348,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // whose first element is a bare variable (`.{ x, 2 }`, `x` not a field of
     // the target) therefore arrives here as `[name=x][name=null]` — a spurious
     // mix that the named branch below mis-reorders (the unmatched punned name
-    // leaves every real field at its default, zeroing the value — issue 0175).
+    // leaves every real field at its default, zeroing the value).
     //
     // Disambiguate using the struct definition we now have: a punned bare-ident
     // field whose name does NOT match any declared field is not a real named
@@ -455,7 +455,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                         // default folds/errors here instead of being
                         // silently bit-coerced by the backend. A generic
                         // instance's default may reference a type param —
-                        // lower it with this instance's bindings (issue 0221).
+                        // lower it with this instance's bindings.
                         fields.append(self.alloc, self.lowerDefaultWithBindings(default_expr, sf.ty, default_bindings)) catch unreachable;
                     } else {
                         fields.append(self.alloc, self.zeroValue(sf.ty)) catch unreachable;
@@ -483,7 +483,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // scalar element flowing into an aggregate element slot stores the wrong
     // shape. Concretely `[N]?T` would store a bare `T`/`null` into a `{T,i1}`
     // slot — corrupting the array (a present element reads back as absent;
-    // indexing it segfaults). Issue 0168. `coerceToType` is a no-op when the
+    // indexing it segfaults). `coerceToType` is a no-op when the
     // element already matches (the common `[N]i64`/`[N]Struct` case).
     const array_elem_ty: TypeId = if (!ty.isBuiltin()) switch (self.module.types.get(ty)) {
         .array, .vector => self.getElementType(ty),
@@ -497,7 +497,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // is coerced to `struct_fields[i].ty`. Without this a bare element flows
     // into the field slot with the wrong shape (e.g. a bare `i64` into a
     // `{i64,i1}` optional slot — the present optional reads back as absent).
-    // Issue 0174. `TupleInfo.fields[i]` is the i-th tuple field type.
+    // `TupleInfo.fields[i]` is the i-th tuple field type.
     const tuple_fields: []const TypeId = if (!ty.isBuiltin()) switch (self.module.types.get(ty)) {
         .tuple => |t| t.fields,
         else => &.{},
@@ -527,7 +527,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         // than a re-inferred source type: a re-inference of a punned positional
         // identifier (`.{ x, … }`, parser-named `x = x`) could disagree with
         // the SSA value's real type and mis-narrow it. The lowered ref's type
-        // is authoritative (issue 0175).
+        // is authoritative.
         if (elem_target != .unresolved) {
             const src_ty = self.builder.getRefType(val);
             if (src_ty != elem_target) {
@@ -645,7 +645,7 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                 } else if (self.resolveGlobalRef(nm, null) != null and !self.rootIsConstant(nm)) {
                     // MUTABLE module-global lvalue receiver: address the global's
                     // LIVE storage so `self: *T` mutations target the global
-                    // itself, not a throwaway stack copy (issue 0202). Mirrors
+                    // itself, not a throwaway stack copy. Mirrors
                     // the compound-lvalue branch below; `lowerExprAsPtr` yields
                     // the global's `global_addr`.
                     //
@@ -755,7 +755,7 @@ pub fn builtinTypeName(ty: TypeId) ?[]const u8 {
 /// Resolve the type of a named field on a given type. The `.len`/`.ptr`
 /// pseudo-fields belong to the special containers (string/slice/array/
 /// vector) — a REAL struct/union/tuple member named `len` or `ptr` resolves
-/// to its declared type (issue 0340: the unconditional pseudo arm typed a
+/// to its declared type (the unconditional pseudo arm typed a
 /// struct's own `ptr: *T` as `[*]unresolved` and its `len` as `i64`). For
 /// non-container types with NO matching real member the pseudo typing is
 /// kept as a FALLBACK — `#get len` accessors (e.g. `List.len`) have no
@@ -1039,7 +1039,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     // already re-entered with the target module as current source), so
     // same-name structs select their own constants; the process-global
     // "Struct.CONST" spelling is last-wins and remains only the fallback for
-    // heads without a tracked author (issue 0320).
+    // heads without a tracked author.
     if (fa.object.data == .identifier) {
         const head_name = fa.object.data.identifier.name;
         var author_tracked = false;
@@ -1132,7 +1132,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
 
     // A guard-narrowed optional local reads through implicitly: the
     // guard proved presence, so plain field access unwraps exactly as
-    // the coercion sites do (issue 0352 — narrowing parity for member
+    // the coercion sites do (narrowing parity for member
     // access), BEFORE the pointer auto-deref so a `?*T` takes the
     // ordinary load-through route. `?.` below keeps the optional;
     // explicit spellings stay.
@@ -1291,7 +1291,7 @@ pub fn lowerOptionalChain(self: *Lowering, obj: Ref, fa: *const ast.FieldAccess,
     // getter instead of a struct-field read. A synthetic receiver local (typed
     // `inner_ty`) lets the existing getter intercept in `lowerFieldAccess` do
     // the deref / address-of; we bind it type-only here for the return-type
-    // query, then fill its ref in the some-branch (issue 0160).
+    // query, then fill its ref in the some-branch.
     var deref_inner = inner_ty;
     if (!deref_inner.isBuiltin() and self.module.types.get(deref_inner) == .pointer)
         deref_inner = self.module.types.get(deref_inner).pointer.pointee;
@@ -1675,7 +1675,7 @@ pub fn lowerEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral) Ref {
     // into a `?E` slot must produce an `E` for the coercion layer to wrap
     // (`.optional_wrap`). Resolving against the optional itself fell into
     // resolveVariantValue's non-enum fallback — variant 0, mis-typed as
-    // the optional (issue 0098).
+    // the optional.
     while (!target.isBuiltin()) {
         const info = self.module.types.get(target);
         if (info != .optional) break;
@@ -1840,9 +1840,9 @@ pub fn lowerErrorTagLiteral(self: *Lowering, tag_name: []const u8, span: ast.Spa
             // A NOMINAL non-error destination (struct / enum / union /
             // tagged union): an error tag has no representation there — the
             // raw-u32 fallback below would flow the global tag id into the
-            // aggregate's bytes and silently reinterpret it (issue 0212:
-            // `f(error.Fault)` into a struct-typed param read back as the
-            // struct's first field). Per the spec's context rule the fallback
+            // aggregate's bytes and silently reinterpret it (`f(error.Fault)`
+            // into a struct-typed param reads back as the struct's first
+            // field). Per the spec's context rule the fallback
             // exists for the UNTYPED / integer context only — reject the
             // cross-kind destination loudly.
             switch (info) {
@@ -1900,7 +1900,7 @@ pub fn lowerTaggedEnumLiteral(
     // Scalar (non-aggregate) payload: `.key{ 42 }` where `key`'s payload is a
     // plain i64 — the single field_init IS the payload value. There is no
     // struct to insertvalue into, so wrapping it in a structInit builds an
-    // invalid `insertvalue i64 ...` (issue 0281). Emit the value directly.
+    // invalid `insertvalue i64 ...`. Emit the value directly.
     if (payload_fields.len == 0) {
         if (sl.field_inits.len > 1) {
             if (self.diagnostics) |diags| {
@@ -2067,7 +2067,7 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
     // anything else (scalar `i16.[…]`, struct `Point.[…]`) would read as an
     // element-type prefix — a second meaning this spelling does not carry.
     // Silently ignoring it lets elements fall back to the literal default, so
-    // `i32.[1]` builds a `[1]i64`; refuse it instead (issue 0293).
+    // `i32.[1]` builds a `[1]i64`; refuse it instead.
     if (al.type_expr) |te| {
         const resolved = self.resolveArrayLiteralType(te);
         if (resolved != .unresolved) {
@@ -2140,7 +2140,6 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
         // an `[N]?T` literal stores bare `T`/`null` elements into a slot whose
         // stride is the optional's `{T,i1}` size — corrupting the aggregate
         // (a present element reads back as absent; indexing segfaults).
-        // Issue 0168.
         //
         // `coerceToType` classifies a same-type element as `.no_op`/`.none`
         // and returns `val` unchanged, so this is a no-op for elements already
@@ -2255,8 +2254,8 @@ pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
         // optional element). Without these arms an `array_type_expr` /
         // `slice_type_expr` head falls through to `else => .unresolved`, so a
         // typed `([2]?i64).[ ... ]` loses its `?i64` element type — the null
-        // element reaches LLVM as `const_null(.unresolved)` and panics
-        // (issue 0173). `resolveTypeWithBindings` is the lowering-side resolver
+        // element reaches LLVM as `const_null(.unresolved)` and panics.
+        // `resolveTypeWithBindings` is the lowering-side resolver
         // (carries generic bindings); it delegates to `resolveAstType` for
         // these plain structural shapes.
         .array_type_expr,
@@ -2276,7 +2275,7 @@ pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
 /// must not steer it: under an `f32` target (`v : f32 = s[0];`, a `-> f32`
 /// body) the literal `0` lowered as the float constant `0.0` and reached the
 /// backend as `getelementptr float, ptr %d, float 0.0` — "GEP indexes must be
-/// integers" from the LLVM verifier, with no source location (issue 0289).
+/// integers" from the LLVM verifier, with no source location.
 /// Pin the target to `i64` for the operand and restore the caller's.
 pub fn lowerIndexOperand(self: *Lowering, index_node: *const ast.Node) Ref {
     const saved_tt = self.target_type;
@@ -2381,14 +2380,14 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     // applies inside the chain's some-branch and the whole expression is
     // `?ElemType` (null if the receiver was null). Without this the element
     // type resolved through `getElementType(?[N]T)` was `.unresolved` and an
-    // `index_get` on the optional value reached LLVM emission (issue 0181).
+    // `index_get` on the optional value reached LLVM emission.
     if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .optional) {
         const child = self.module.types.get(obj_ty).optional.child;
         // A pointer-to-array child (`?*[N]T`) is indexable too: its element is
         // the pointee array's element. `getElementType` has no pointer arm, so
         // ask `ptrToArrayElem` first (mirrors the non-optional `*[N]T` path
         // below) — otherwise the `?*[N]T` case fell through to a plain
-        // `index_get` with an `.unresolved` element type (issue 0181).
+        // `index_get` with an `.unresolved` element type.
         const elem_ty = self.ptrToArrayElem(child) orelse self.ptrToSliceElem(child) orelse self.getElementType(child);
         if (elem_ty != .unresolved) {
             return self.lowerOptionalChainIndex(ie, child, elem_ty);
@@ -2397,16 +2396,16 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     // Array with addressable storage: GEP the element in place + load,
     // never `index_get` on the loaded array VALUE — that realizes as
     // copy-whole-array-to-temp per read (the general-expression sibling
-    // of 0110's `lowerFor` fix), and on a 64K+ array the whole-aggregate
-    // load/store ops segfault LLVM's SelectionDAG (issue 0124). The
+    // of the `lowerFor` rule), and on a 64K+ array the whole-aggregate
+    // load/store ops segfault LLVM's SelectionDAG. The
     // object must not be lowered as a value on this path or the dead
     // whole-array load still reaches the DAG.
     if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .array) {
         // A simple local (`arr[i]`) uses its alloca directly; any other
         // addressable chain (`table.fast[i]`, `g.grid[i][j]`, `(*p).buf[i]`)
-        // recovers its storage through the lvalue machinery (issue 0317 —
-        // the value fallback copied the whole field array per read). Each
-        // path evaluates the object and the index exactly once.
+        // recovers its storage through the lvalue machinery (a value fallback
+        // would copy the whole field array per read). Each path evaluates the
+        // object and the index exactly once.
         const storage: ?Ref = self.getExprAlloca(ie.object) orelse
             if (self.exprHasAddressableStorage(ie.object)) self.lowerExprAsPtr(ie.object) else null;
         if (storage) |base| {
@@ -2418,7 +2417,7 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     }
     const obj = self.lowerExpr(ie.object);
     const idx = self.lowerIndexOperand(ie.index);
-    // `*[N]T` receiver auto-derefs (issue 0117): `obj` IS the pointer
+    // `*[N]T` receiver auto-derefs: `obj` IS the pointer
     // value — GEP the pointee array and load the element.
     if (self.ptrToArrayElem(obj_ty)) |elem| {
         const gep = self.builder.emit(.{ .index_gep = .{ .lhs = obj, .rhs = idx } }, self.module.types.ptrTo(elem));
@@ -2434,9 +2433,9 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     // `string`, and `ptrToArrayElem` handled `*[N]T` above; an `.unresolved`
     // element means the base is a single pointer `*T` / a struct (non-indexable
     // by design), or a pointer-to-slice `*[]T` (indexable per spec,
-    // unimplemented — issue 0242). Emitting an `index_get` with `.unresolved`
+    // unimplemented). Emitting an `index_get` with `.unresolved`
     // would slip past lowering and panic in emit_llvm ("unresolved type
-    // reached LLVM emission", issue 0183). Diagnose (see diagNonIndexable) and
+    // reached LLVM emission"). Diagnose (see diagNonIndexable) and
     // return a placeholder so hasErrors() aborts before codegen.
     if (elem_ty == .unresolved) {
         self.diagNonIndexable(obj_ty, ie.object.span);
@@ -2452,15 +2451,16 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
 /// getElementType(..)`; an `.unresolved` result means the base is a shape
 /// those resolvers don't index — a single pointer `*T` or a struct
 /// (non-indexable by design, specs.md Pointer Types), or a pointer-to-slice
-/// `*[]T` (indexable per spec but unimplemented — issue 0242; it lands here). Emitting an `index_get`/`index_gep`
-/// whose element type is `.unresolved` would slip past lowering and panic at
-/// LLVM emission ("unresolved type reached LLVM emission" — issues 0183 read,
-/// 0155 write/address-of/lvalue). The caller must bail with a placeholder
-/// after calling this; hasErrors() aborts before codegen.
+/// `*[]T` (indexable per spec but unimplemented; it lands here). Emitting an
+/// `index_get`/`index_gep` whose element type is `.unresolved` would slip past
+/// lowering and panic at LLVM emission ("unresolved type reached LLVM
+/// emission") on the read, write, address-of and lvalue paths alike. The
+/// caller must bail with a placeholder after calling this; hasErrors() aborts
+/// before codegen.
 ///
 /// An already-`.unresolved` object type is skipped: it comes from a PRIOR
 /// error (e.g. an undefined name) already diagnosed — re-reporting would
-/// duplicate the message (mirrors the issue-0172 `??` guard).
+/// duplicate the message (mirrors the `??` guard).
 pub fn diagNonIndexable(self: *Lowering, obj_ty: TypeId, span: ast.Span) void {
     if (obj_ty == .unresolved) return;
     if (self.diagnostics) |d| {
@@ -2488,7 +2488,7 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     // A slice base whose type never resolved to a concrete array — an inline
     // array literal (`i64.[1,2,3][0..2]`), a struct-literal array, or an
     // already-poisoned base — must not reach codegen: `emitSubslice` would
-    // call `toLLVMType` on the `.unresolved` element and panic (issue 0225).
+    // call `toLLVMType` on the `.unresolved` element and panic.
     // It is also a temporary with no backing storage, which
     // specs.md §Subslicing names a compile error. Emit the temporary-array
     // diagnostic (unless an upstream error already fired — avoids a
@@ -2516,7 +2516,7 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     else if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .many_pointer) blk: {
         // A many-pointer `[*]T` carries no length, so an open-ended slice
         // `mp[lo..]` has no upper bound to resolve — a `.length` op on it would
-        // yield a garbage length (issue 0159). Require an explicit `hi`.
+        // yield a garbage length. Require an explicit `hi`.
         if (self.diagnostics) |d|
             d.addFmt(.err, se.object.span, "slicing a many-pointer `[*]T` requires an explicit upper bound (`mp[lo..hi]`) — it has no length", .{});
         break :blk self.builder.constInt(0, .i64);
@@ -2533,10 +2533,10 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     // backing storage — no memory allocation"). Lowering the array as a VALUE
     // materializes a fresh temp (emitSubslice's array-value arm does an
     // alloca+store), so the slice would view a COPY and mutations through it
-    // would never reach the array (issue 0225). For an ADDRESSABLE array
+    // would never reach the array. For an ADDRESSABLE array
     // (local, global, struct field, `*[N]T` deref) recover the storage
-    // ADDRESS from the already-lowered value — via the issue-0214
-    // `refStorageAddress` walk, which re-emits only address arithmetic, never
+    // ADDRESS from the already-lowered value — via the `refStorageAddress`
+    // walk, which re-emits only address arithmetic, never
     // re-runs a side-effecting index — and subslice over THAT pointer (the
     // many-pointer arm of emitSubslice / the comptime VM GEPs by `lo` in
     // place). `base_ty` becomes `[*]elem` so the comptime VM strides by the
@@ -2803,8 +2803,8 @@ pub fn lowerDerefExpr(self: *Lowering, de: *const ast.DerefExpr) Ref {
     return ptr;
 }
 
-/// Reject using an un-narrowed optional directly as a binary-op operand
-/// (issue 0185). Mirrors the `coerceMode` `?T → concrete` rejection (0179):
+/// Reject using an un-narrowed optional directly as a binary-op operand.
+/// Mirrors the `coerceMode` `?T → concrete` rejection:
 /// the optional does not implicitly unwrap; steer the user to an explicit form.
 pub fn diagOptionalOperand(self: *Lowering, opt_ty: TypeId, span: ast.Span) void {
     if (self.diagnostics) |d| {
@@ -2827,7 +2827,7 @@ pub fn lowerNullCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     // `.unresolved` inner type (from `resolveOptionalInner`) flow into the
     // merge-block params / `optionalUnwrap` / the RHS target type and reach
     // emit_llvm's "unresolved type reached LLVM emission" panic with no source
-    // location (issue 0172). Skip an already-`.unresolved` lhs: that comes
+    // location. Skip an already-`.unresolved` lhs: that comes
     // from a PRIOR error (e.g. an undefined name) which has already been
     // diagnosed — re-reporting would be a confusing second message.
     const lhs_is_optional = !lhs_ty.isBuiltin() and self.module.types.get(lhs_ty) == .optional;
@@ -2861,7 +2861,7 @@ pub fn lowerNullCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     // Thread the optional's child type as the expected/target type so an
     // untyped struct literal default (`?? .{ ... }`) resolves to `T` rather
     // than staying `.unresolved` and reaching codegen as a malformed
-    // struct_init (issue 0166). Scalar/pointer/typed defaults are unaffected:
+    // struct_init. Scalar/pointer/typed defaults are unaffected:
     // they ignore `target_type` or coerce identically. Restore afterwards so
     // a `??` nested inside a larger expression doesn't leak this target type.
     const saved_tt = self.target_type;
@@ -2871,7 +2871,7 @@ pub fn lowerNullCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     const rhs_ty = self.builder.getRefType(rhs);
     // Skip the coerce entirely when the pair has NO modeled coercion and a
     // width mismatch: `coerceToType` would be a passthrough no-op anyway, and
-    // its issue-0191 guard would fire a generic "cannot coerce" ahead of the
+    // its weld guard would fire a generic "cannot coerce" ahead of the
     // focused `'??' default has type ...` diagnostic below (double error).
     if (rhs_ty != inner_ty and rhs_ty != .void and inner_ty != .void and !self.noneReinterpretIsUnsafe(rhs_ty, inner_ty)) {
         rhs = self.coerceToType(rhs, rhs_ty, inner_ty);
@@ -2882,7 +2882,7 @@ pub fn lowerNullCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     // whose payload is a 1-tuple `(i32,)`: there is no implicit scalar→1-tuple
     // coercion — a 1-tuple value is written `(5,)`), branching with the
     // mismatched type emits a `phi {i32}` vs `i32` that aborts the LLVM
-    // verifier (issue 0180). Diagnose loudly and br with a typed placeholder so
+    // verifier. Diagnose loudly and br with a typed placeholder so
     // the PHI stays well-formed; `hasErrors()` aborts before codegen anyway.
     const coerced_ty = self.builder.getRefType(rhs);
     if (coerced_ty != inner_ty and coerced_ty != .void and inner_ty != .void) {
@@ -3085,7 +3085,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     // `inline for xs (x)` element capture — lower the
                     // synthesized `xs[<i>]` it aliases.
                     if (binding.pack_elem) |elem| break :blk self.lowerExpr(elem);
-                    // Flow narrowing (issue 0179): a name proven present by a
+                    // Flow narrowing: a name proven present by a
                     // `!= null` guard tags its loaded value so the implicit
                     // `?T → concrete` unwrap in `coerceMode` is permitted (an
                     // un-narrowed unwrap is rejected, not silently zeroed).
@@ -3122,7 +3122,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 };
                 break :blk self.builder.load(self.current_ctx_ref, ctx_ty);
             }
-            // Check globals (#run constants) — source-aware (issue 0115):
+            // Check globals (#run constants) — source-aware:
             // the global registry is last-wins across modules, so select the
             // AUTHOR first and emit ITS global, never an unrelated module's
             // same-named one.
@@ -3265,7 +3265,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                                 break :blk self.builder.closureCreate(tramp_id, Ref.none, tt);
                             }
                             // fn → Closure promotion composes with T → ?T
-                            // wrapping (issue 0338): a `?Closure(...)` target
+                            // wrapping: a `?Closure(...)` target
                             // promotes to the CHILD closure type here, and the
                             // standard optional_wrap coercion wraps the value —
                             // call args, struct-literal fields, decl targets,
@@ -3309,7 +3309,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                         }
                     }
                     // A bare function value keeps the integer-shaped IR
-                    // used by the async/fiber lowering paths (issue 0237), but
+                    // used by the async/fiber lowering paths, but
                     // that word must match the target pointer width. Hard-coded
                     // i64 fails an otherwise exact callback assignment on
                     // wasm32: the destination function slot is 4 bytes while the
@@ -3363,7 +3363,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
 
         .unary_op => |uop| blk: {
             // `xx <pack>` with a slice target materializes the comptime
-            // pack into a runtime `[]elem` (issue 0053). Must run before the
+            // pack into a runtime `[]elem`. Must run before the
             // operand is lowered (a bare pack name otherwise hits the
             // pack-as-value error).
             if (uop.op == .xx and uop.operand.data == .identifier and self.isPackName(uop.operand.data.identifier.name)) {
@@ -3407,7 +3407,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 const elem_ty = self.ptrToArrayElem(obj_ty) orelse self.ptrToSliceElem(obj_ty) orelse self.getElementType(obj_ty);
                 // Non-indexable base (`@pc[i]` on a `*T`, a struct, ...): an
                 // `index_gep` typed `ptrTo(.unresolved)` panics at LLVM
-                // emission (issue 0155) — diagnose and bail instead.
+                // emission — diagnose and bail instead.
                 if (elem_ty == .unresolved) {
                     self.diagNonIndexable(obj_ty, ie.object.span);
                     break :blk self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts
@@ -3449,7 +3449,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                         // generic `addr_of` arm and reinterpret the folded value
                         // as a pointer — `inttoptr (i64 <value> to ptr)`, a wild
                         // pointer that segfaults on deref and emits invalid stores
-                        // for asm `-> @const` (issue 0138). Diagnose loudly.
+                        // for asm `-> @const`. Diagnose loudly.
                         if (!binding.is_ref_capture and binding.pack_elem == null) {
                             if (self.diagnostics) |d|
                                 d.addFmt(.err, node.span, "cannot take the address of constant '{s}' — a scalar '::' constant has no storage (use a '=' variable or a local copy for mutable data)", .{id_name});
@@ -3465,7 +3465,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 // A module-scope scalar `::` constant (not in lexical `scope`, and
                 // not a storage-backed array/struct const — those resolve above).
                 // Same defect as the local case: without storage, `@FORTY` would
-                // become `inttoptr (i64 <value> to ptr)`. Diagnose (issue 0138).
+                // become `inttoptr (i64 <value> to ptr)`. Diagnose.
                 if (self.program_index.module_const_map.get(id_name) != null) {
                     if (self.diagnostics) |d|
                         d.addFmt(.err, node.span, "cannot take the address of constant '{s}' — a scalar '::' constant has no storage (use a '=' variable or a local copy for mutable data)", .{id_name});
@@ -3510,7 +3510,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 // error binding (u32 tag), a plain integer — lowers as the
                 // truthiness complement `operand == 0`: a bitwise not of a
                 // nonzero tag stays nonzero, so `if !e` held even on a set
-                // error (issue 0129). Anything else is diagnosed.
+                // error. Anything else is diagnosed.
                 .not => blk2: {
                     const oty = self.inferExprType(uop.operand);
                     if (oty == .bool) {
@@ -3642,7 +3642,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     const target_node = if (soft) pc.type_expr.data.optional_type_expr.inner_type else pc.type_expr;
                     // A bare target name is asked of THIS file: a member's name two
                     // modules declare must reach the one this file selects, or the
-                    // downcast asks about somebody else's type (issue 0453).
+                    // downcast asks about somebody else's type.
                     const bare_target: ?[]const u8 = switch (target_node.data) {
                         .identifier => |id| id.name,
                         .type_expr => |te| if (te.protocol_constraints.len == 0) te.name else null,
@@ -3897,15 +3897,15 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 // The LAST statement is the block's value — force value-position
                 // lowering so a trailing (possibly nested) if-else / match yields
                 // a phi'd value instead of being demoted to a statement whose
-                // result is dropped (issue 0259). Mirrors `lowerBlockValue`.
+                // result is dropped. Mirrors `lowerBlockValue`.
                 self.force_block_value = true;
                 // The last statement may itself terminate the block (a trailing
                 // `return`/`break`/`continue` statement — e.g. an `if`-arm
                 // `{ return -1; }` in value position). In that case there is no
                 // value to yield AND appending a `const_int(0, .void)` placeholder
                 // would land a non-terminator instruction AFTER the terminator,
-                // producing invalid "terminator in the middle of a block" IR
-                // (issue 0269). Return `Ref.none` — the caller detects the
+                // producing invalid "terminator in the middle of a block" IR.
+                // Return `Ref.none` — the caller detects the
                 // termination via `currentBlockHasTerminator()` and never reads it.
                 const last_val = self.tryLowerAsExpr(blk.stmts[blk.stmts.len - 1]) orelse
                     (if (self.currentBlockHasTerminator()) Ref.none else self.builder.constInt(0, .void));
@@ -3967,7 +3967,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         // in expression position are first-class `Type` values, exactly like
         // the named form above (`t : Type = *i64;` ↔ `t : Type = f64;`). Also
         // the path a static `cast(*i64) v` type argument takes — call args are
-        // lowered before the cast handler inspects the AST (issue 0118).
+        // lowered before the cast handler inspects the AST.
         .pointer_type_expr,
         .many_pointer_type_expr,
         .slice_type_expr,
@@ -4261,7 +4261,7 @@ pub fn refCapturePointee(self: *Lowering, node: *const Node) ?TypeId {
 /// Everything else (float, void, string, any, type_value, struct/union/tuple/
 /// array/slice/vector/function/closure/protocol/pack) reaches condBr as a
 /// non-comparable aggregate or a value with no truthiness, which folds truthy
-/// and `@panic`s in the backend (issue 0164). Such a condition is a type
+/// and `@panic`s in the backend. Such a condition is a type
 /// error — see `checkConditionType`.
 fn isValidConditionType(self: *Lowering, ty: TypeId) bool {
     if (ty == .unresolved) return true; // already-diagnosed elsewhere; don't double-report
@@ -4279,7 +4279,7 @@ fn isValidConditionType(self: *Lowering, ty: TypeId) bool {
 /// proceeds normally), `false` if a diagnostic was emitted (caller should
 /// recover with a placeholder bool so lowering doesn't crash before the
 /// diagnostic surfaces). This is the lowering-time replacement for the
-/// backend `@panic` in `emitCondBr` (issue 0164): the type and span are both
+/// backend `@panic` in `emitCondBr`: the type and span are both
 /// available here, so we report a clean compile-time error instead.
 pub fn checkConditionType(self: *Lowering, ty: TypeId, span: ast.Span) bool {
     if (isValidConditionType(self, ty)) return true;
@@ -4290,7 +4290,7 @@ pub fn checkConditionType(self: *Lowering, ty: TypeId, span: ast.Span) bool {
 /// Lower `node` as a boolean condition. If its type is an optional, reduce
 /// it to its has_value flag (presence-as-truth) — same rule as `if opt`/
 /// `while opt`. Without this, a bare optional operand reaches a condBr/phi as
-/// a `{T,i1}` aggregate and folds truthy (issue 0164). Returns an i1/bool Ref.
+/// a `{T,i1}` aggregate and folds truthy. Returns an i1/bool Ref.
 /// A non-condition-typed operand (struct/float/...) is rejected with a located
 /// type error via `checkConditionType`; on rejection a placeholder `false` is
 /// returned so lowering can continue to surface the diagnostic.
@@ -4364,7 +4364,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // `{tag, data-pointer}` — the only comparable words are the view
     // address (accidental pointer identity) — so there is no meaningful
     // language-level equality. Unbox to a typed value first, or compare
-    // `type_of(av)` for tag questions (issue 0199).
+    // `type_of(av)` for tag questions.
     if (bop.op == .eq or bop.op == .neq) {
         const lhs_ty = self.inferExprType(bop.lhs);
         const rhs_ty = self.inferExprType(bop.rhs);
@@ -4463,7 +4463,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     }
     // In a comparison, an anonymous positional literal on the RHS is typed
     // from the LHS just like an enum shorthand. This also keeps the following
-    // `{` available as the if body after the parser's issue-0246 brace fix.
+    // `{` available as the if body.
     // Against a `?T` LHS the literal types at the payload (mixed compare).
     if (bop.rhs.data == .struct_literal and
         bop.rhs.data.struct_literal.struct_name == null and
@@ -4482,7 +4482,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     if (rhs_ref_pointee) |p| rhs = self.builder.load(rhs, p);
     self.target_type = saved_tt;
 
-    // Optional value-equality (issue 0344): `?T == ?T` — equal iff both
+    // Optional value-equality: `?T == ?T` — equal iff both
     // null or both present with equal payloads — and the mixed `?T == T`,
     // where a null optional is simply unequal. Equality never reads a
     // payload without a presence guard, so the no-implicit-unwrap doctrine
@@ -4533,8 +4533,8 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     var ty = arithResultType(lhs_ty, rhs_inferred);
 
     // Auto-unwrap optional operands for arithmetic/comparison — ONLY when the
-    // operand is PROVEN present by flow narrowing (issue 0185, the operand-side
-    // sibling of 0179). Unwrapping an un-narrowed `?T` operand
+    // operand is PROVEN present by flow narrowing (the operand-side
+    // sibling of the coercion rule). Unwrapping an un-narrowed `?T` operand
     // unconditionally turns a null operand into its zero payload
     // (`null + 10` → `10`, no diagnostic). `lowerIdentifier` tags a
     // guard-narrowed local's loaded `Ref` into `narrowed_refs`; an un-narrowed
@@ -4566,7 +4566,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             self.builder.emit(.{ .str_ne = .{ .lhs = lhs, .rhs = rhs } }, .bool);
     }
 
-    // Non-comparable aggregate `==` / `!=` guard (issue 0233).
+    // Non-comparable aggregate `==` / `!=` guard.
     //
     // An untagged `union { ... }` and a fixed `[N]T` array are raw byte /
     // element aggregates with NO defined value-equality: a union's inactive-
@@ -4596,7 +4596,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         }
     }
 
-    // Struct value equality (issue 0245). A user `struct` `==` / `!=` is a
+    // Struct value equality. A user `struct` `==` / `!=` is a
     // recursive FIELD-WISE compare — the same element-wise policy the spec
     // already mandates for tuples (which share struct layout), and the only
     // shape that ignores padding bytes (a byte-wise compare would read the
@@ -4610,7 +4610,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // a user struct — it sees only the string/slice/tagged-union `{ptr,len}` /
     // `{tag,payload}` reductions it is written for.
     // Non-comparable sub-fields (untagged union, fixed array) are rejected with
-    // the issue-0233 diagnostic, consistent with rejecting those shapes bare.
+    // a located diagnostic, consistent with rejecting those shapes bare.
     if ((bop.op == .eq or bop.op == .neq) and !ty.isBuiltin()) {
         const eq_info = self.module.types.get(ty);
         if (eq_info == .@"struct" and !eq_info.@"struct".is_protocol) {
@@ -4689,7 +4689,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // types — and those only reconcile int↔int width (SExt/ZExt). A mixed
     // int-vs-float compare (`xx i < t`, i:i32 t:f32) or a two-float-width
     // compare (`f64 >= f32`) reaches the emitter with mismatched operands and
-    // fails LLVM verification (issue 0146). Coerce each operand up to the
+    // fails LLVM verification. Coerce each operand up to the
     // promoted common type HERE — `coerceToType` emits the SIToFP / FPExt /
     // width-ext — so the operands are already type-equal when the cmp is built.
     // Restricted to float `ty`: an int↔int compare is handled by the emitter,
@@ -4872,7 +4872,7 @@ pub fn lowerTupleMembership(self: *Lowering, value: Ref, tuple: Ref, tuple_info:
     return result;
 }
 
-/// Struct value equality (issue 0245): recursive field-wise `==` / `!=`.
+/// Struct value equality: recursive field-wise `==` / `!=`.
 ///
 /// Emits a per-field comparison against each field's OWN type, AND-reduces for
 /// `==` (OR-reduces for `!=`), matching the tuple element-wise policy and the
@@ -4881,7 +4881,7 @@ pub fn lowerTupleMembership(self: *Lowering, value: Ref, tuple: Ref, tuple_info:
 ///
 /// A field that is not itself comparable — an untagged `union`, a fixed `[N]T`
 /// array, or an `?T` optional — is rejected with a located diagnostic, mirroring
-/// how those shapes are rejected as bare `==` operands (issues 0233 + the
+/// how those shapes are rejected as bare `==` operands (and by the
 /// optional-operand guard). The reduced per-field comparisons that DO get built
 /// are scalar / pointer / string / slice / tagged-union / nested-struct — each
 /// with its own valid lowering — so `emit_llvm`'s narrow struct arm never sees a
@@ -5031,7 +5031,7 @@ pub fn lowerFieldEquality(self: *Lowering, lf: Ref, rf: Ref, field_ty: TypeId, s
         // Optional field: both-null equal, one-null unequal, both-present →
         // payload compare — the same rule as bare `?T == ?T`.
         .optional => self.lowerOptionalEquality(lf, rf, fi.optional.child, span),
-        // Non-comparable field types — reject with the issue-0233 policy. An
+        // Non-comparable field types — rejected. An
         // untagged union's inactive bytes are unspecified; a fixed array has no
         // defined value-equality (compare elements). Each mirrors how the bare
         // shape is rejected as a top-level `==` operand.

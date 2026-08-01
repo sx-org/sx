@@ -111,7 +111,7 @@ pub fn valueSpreadRefs(self: *Lowering, operand: *const Node, span: ast.Span) ?[
         .array => |a| {
             // GEP + load each element from the array's storage; a
             // non-addressable array value is spilled to a temp slot first
-            // (never `index_get` on the loaded VALUE — the 0124 lesson).
+            // (never `index_get` on the loaded VALUE).
             const storage = self.getExprAlloca(operand) orelse blk: {
                 const v = self.lowerExpr(operand);
                 const slot = self.builder.alloca(ty);
@@ -238,7 +238,7 @@ pub fn isPackName(self: *Lowering, name: []const u8) bool {
 /// `xx <pack>` with a slice target: materialize the comptime pack into a
 /// runtime `[]elem` by lowering each element node and boxing (`[]Any`) or
 /// `xx`-erasing (`[]P`) it into a stack `[N]elem`, then return the slice.
-/// This is the explicit pack→slice bridge (issue 0053).
+/// This is the explicit pack→slice bridge.
 pub fn lowerPackToSlice(self: *Lowering, pack_name: []const u8, slice_ty: TypeId) Ref {
     const arg_nodes = (self.pack_arg_nodes orelse return self.builder.constInt(0, .unresolved)).get(pack_name) orelse
         return self.builder.constInt(0, .unresolved);
@@ -411,7 +411,7 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
     // Only a SLICE/ARRAY operand passes through whole: a tuple operand was
     // already expanded element-wise at the call's arg loop (value spread) and
     // repacks via the generic path below — passing a tuple through as-is was
-    // a call-signature mismatch that failed LLVM verification (issue 0156p2).
+    // a call-signature mismatch that fails LLVM verification.
     if (variadic_count == 1 and fixed_count < c.args.len) {
         const arg_node = c.args[fixed_count];
         if (arg_node.data == .spread_expr) {
@@ -421,8 +421,8 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
             if (arr_info != null and (arr_info.? == .array or arr_info.? == .slice)) {
                 const arr_val = self.lowerExpr(spread.operand);
                 // Convert array to slice. For an ADDRESSABLE array build a
-                // zero-copy VIEW over its storage (issue 0264 — consistent
-                // with the direct-arg array→slice coercion and 0225's aliasing
+                // zero-copy VIEW over its storage (consistent
+                // with the direct-arg array→slice coercion and the aliasing
                 // subslice), so `sum(..arr)` sees the same backing as `arr`. A
                 // NON-addressable rvalue array (`sum(..makeArr())`) keeps the
                 // copying `array_to_slice` op: this is a call ARGUMENT, so the
@@ -598,8 +598,7 @@ pub fn buildPackSliceValue(self: *Lowering, arg_types: []const TypeId) Ref {
     // A bare `$<pack>` is a `[]Type` value whose element is the dedicated
     // `Type` builtin (`.type_value`, 8 bytes). Building it as `[]Any` would
     // store 8-byte `const_type` words into 16-byte slots, so a `[]Type` reader
-    // (8-byte stride) reads `[t0, pad, t1, …]` instead of `[t0, t1, …]`
-    // (issue 0143).
+    // (8-byte stride) reads `[t0, pad, t1, …]` instead of `[t0, t1, …]`.
     const ty_slice_ty = self.module.types.sliceOf(.type_value);
     const ty_ptr_ty = self.module.types.ptrTo(.type_value);
 
@@ -978,8 +977,7 @@ pub fn lowerPackFnCallNamed(
     // A spread that could not be expanded at AST level has already lost the
     // static element shape required by a pack call (notably `..make_tuple()`).
     // Diagnose that one operand and stop before monomorphizing a one-element
-    // pack whose body then emits a misleading secondary index-OOB error
-    // (issue 0252.2).
+    // pack whose body then emits a misleading secondary index-OOB error.
     for (call_node.args) |arg| {
         if (arg.data != .spread_expr) continue;
         if (spreadElemNodes(self, arg.data.spread_expr.operand, arg.span) != null) continue;
@@ -1038,7 +1036,7 @@ pub fn lowerPackFnCallNamed(
     // A pack arg is a VALUE position: a block-form `if C { A } else { B }`
     // / `match` passed directly (e.g. `print("{}", if b { x } else { y })`)
     // must yield its branch value, not lower as a statement-if that returns a
-    // bare void 0 (or overruns for a wider branch type → segfault, issue 0268).
+    // bare void 0 (or overruns for a wider branch type → segfault).
     const saved_pack_fbv = self.force_block_value;
     self.force_block_value = true;
     var pack_refs = std.ArrayList(Ref).empty;
@@ -1050,7 +1048,7 @@ pub fn lowerPackFnCallNamed(
             const it = self.inferExprType(a);
             // The lowered ref is the fallback type source, but a bare fn value
             // rides in the integer word — take its signature so the
-            // element stays callable in the mono (issue 0368).
+            // element stays callable in the mono.
             pack_arg_types.append(self.alloc, if (it == .unresolved) self.valueTypeOfRef(r, self.builder.getRefType(r)) else it) catch return self.builder.constInt(0, .void);
         } else {
             pack_arg_types.append(self.alloc, self.builder.getRefType(r)) catch return self.builder.constInt(0, .void);
@@ -1089,7 +1087,7 @@ pub fn lowerPackFnCallNamed(
                 const saved_tt = self.target_type;
                 const pty = self.resolveDeclParamType(fd, param_idx);
                 if (pty != .unresolved) self.target_type = pty;
-                // Prefix arg is a value position (issue 0268 — see the pack-arg
+                // Prefix arg is a value position (see the pack-arg
                 // loop above): force block-form if/match to yield its value.
                 const saved_prefix_fbv = self.force_block_value;
                 self.force_block_value = true;
@@ -1210,7 +1208,7 @@ pub fn monomorphizePackFn(
     const owned_name = self.alloc.dupe(u8, mangled_name) catch return;
     self.lowered_functions.put(owned_name, {}) catch {};
 
-    // Flow narrowing (issue 0179) is per-function: this monomorphized pack body
+    // Flow narrowing is per-function: this monomorphized pack body
     // has its own `Ref` space (overlapping the caller's), so isolate it from the
     // caller's `narrowed`/`narrowed_refs` to avoid a false-positive unwrap gate.
     var nested_guard = Lowering.NestedBodyGuard.enter(self);

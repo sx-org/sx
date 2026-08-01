@@ -501,7 +501,7 @@ pub const TypeTable = struct {
     /// display name. The nominal intern map keys these kinds by name, and
     /// every anonymous decl displays as `__anon`, so routing them through
     /// `intern` would collapse differently-shaped anonymous types onto
-    /// whichever shape interned first (the issue-0294 class — untyped `.{ }`
+    /// whichever shape interned first (untyped `.{ }`
     /// literals, inline `struct { … }` / `union { … }` / `enum { … }`
     /// annotations). The entry is appended to `infos` directly and NOT added
     /// to the name-keyed map; `anon_struct_map` alone owns identity, so
@@ -708,7 +708,7 @@ pub const TypeTable = struct {
     /// Null → the type gets a null master-table slot. Every runtime member
     /// table (names / types / offsets) and the GEP sizing on its readers
     /// derive from THIS, so a kind that answers `memberType` can never meet
-    /// a null or short row (issue 0300: runtime slice tags dereferenced a
+    /// a null or short row (runtime slice tags dereferenced a
     /// null row).
     pub fn memberTableLen(self: *const TypeTable, id: TypeId) ?i64 {
         if (self.memberCount(id)) |n| return n;

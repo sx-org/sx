@@ -759,7 +759,7 @@ pub const Ops = struct {
             const slot = i + 2 + sret_off;
             // Large non-HFA structs (MTLRegion, MTLScissorRect, ...) pass by
             // reference: caller copy + ptr — same marshaling as the abi(.c)
-            // fn-pointer path (issue 0347). coerceArg can't spill these
+            // fn-pointer path. coerceArg can't spill these
             // (its struct→ptr arm is the 2-field fat-pointer decay only).
             if (self.e.needsByval(raw_ty, raw_llvm)) {
                 param_types[slot] = self.e.cached_ptr;
@@ -1413,7 +1413,7 @@ pub const Ops = struct {
             //     (`emitGlobals` → `error: comptime init of 'X' failed: <reason>`,
             //     `comptime_failed`): emit the located diagnostic and gate the
             //     build, NEVER fall through to a runtime call over `---` storage
-            //     (issue 0182 — that produced exit-0 garbage with no diagnostic).
+            //     (that produced exit-0 garbage with no diagnostic).
             const evaluation = comptime_vm.tryEval(self.e.alloc, self.e.ir_mod, call_op.callee, &self.e.build_config, self.e.import_sources, null);
             defer evaluation.destroy();
             if (evaluation.completed()) |result| {
@@ -1441,7 +1441,7 @@ pub const Ops = struct {
                 // to a host value (e.g. an unbridgeable `[2][]i64` — array of
                 // slices). Re-emitting a runtime `call` would re-run the SAME body
                 // over its (possibly `---`) storage and produce DIFFERENT garbage
-                // with no diagnostic — the exact silent miscompile of issue 0182.
+                // with no diagnostic — a silent miscompile.
                 // Mirror the GLOBAL `#run` path (`emitGlobals` → `error: comptime
                 // init of 'X' failed: <reason>`, `comptime_failed`): surface the
                 // bridge bail loudly and gate the build.
@@ -1557,7 +1557,7 @@ pub const Ops = struct {
 
         // Read the fn-pointer type's calling convention. A `.c` fn pointer's
         // call site must mirror declareFunction's C-ABI signature for an
-        // sx-defined abi(.c) callee (issue 0295): coerced params, coerced
+        // sx-defined abi(.c) callee: coerced params, coerced
         // small-struct return, sret for >16 B non-HFA returns.
         const fp_is_c_abi: bool = if (callee_ir_ty) |cty| blk: {
             if (!cty.isBuiltin()) {
@@ -2419,7 +2419,7 @@ pub const Ops = struct {
             // Many-pointer `[*]T` (or a raw `*T`): the base value IS the data
             // pointer — GEP by `lo` for the new start, `len = hi - lo`. The
             // caller supplies the bound via `hi`; no length is read from the
-            // unbounded pointer (issue 0159).
+            // unbounded pointer.
             var lo_indices = [_]c.LLVMValueRef{lo};
             const new_ptr = c.LLVMBuildGEP2(self.e.builder, elem_ty, base, &lo_indices, 1, "ss.ptr");
             var new_len = c.LLVMBuildSub(self.e.builder, hi, lo, "ss.len");
@@ -2684,12 +2684,12 @@ pub const Ops = struct {
                 // lowering with a located type error: `checkConditionType` in
                 // src/ir/lower/expr.zig gates every condition site (`if` /
                 // `while` / `and` / `or`), and optionals are reduced to their
-                // has_value i1 before reaching here (issue 0164). Folding such a
+                // has_value i1 before reaching here. Folding such a
                 // condition truthy is a silent miscompile (`if opt { }` always
                 // takes the present branch); reaching this @panic means a
                 // condition site bypassed `checkConditionType` — add the check
                 // there, don't fold truthy.
-                @panic("emitCondBr: non-boolean condition reached condBr — should have been rejected at lowering as a type error (issue 0164; see checkConditionType in src/ir/lower/expr.zig)");
+                @panic("emitCondBr: non-boolean condition reached condBr — should have been rejected at lowering as a type error (see checkConditionType in src/ir/lower/expr.zig)");
             }
         }
         _ = c.LLVMBuildCondBr(self.e.builder, cond, then_bb, else_bb);
@@ -2771,9 +2771,8 @@ pub const Ops = struct {
         const string_ty = self.e.getStringStructType();
         // Size the GEP's array type from the SAME single source of truth
         // (`memberTableLen`) that `getOrBuildFieldNameArray` uses to build the
-        // name array, so the two can never disagree (a mismatch was issue 0195:
-        // the array was built zero-length for tuples/arrays while this count said
-        // N → an out-of-bounds GEP → segfault).
+        // name array, so the two can never disagree: a zero-length name array
+        // against a count of N is an out-of-bounds GEP → segfault.
         const field_count: u32 = @intCast(self.e.ir_mod.types.memberTableLen(fr.struct_type) orelse 0);
         const array_ty = c.LLVMArrayType(string_ty, field_count);
         const zero = c.LLVMConstInt(self.e.cached_i64, 0, 0);

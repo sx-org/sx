@@ -193,7 +193,7 @@ const DimCtx = struct {
         return std.mem.eql(u8, name, "F") or std.mem.eql(u8, name, "K");
     }
     // This test ctx models no namespace imports — qualified-member consts
-    // (`m.CAP`, issue 0192) are exercised end-to-end by the corpus, not here.
+    // (`m.CAP`) are exercised end-to-end by the corpus, not here.
     pub fn lookupQualifiedConst(_: DimCtx, _: []const u8, _: []const u8) ?i64 {
         return null;
     }

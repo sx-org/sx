@@ -987,7 +987,7 @@ pub const LLVMEmitter = struct {
             }
         }
         // A relocatable global initializer is a real use of its target even
-        // when no function references that target directly (issue 0248).
+        // when no function references that target directly.
         for (self.ir_mod.globals.items) |global| {
             if (global.init_val) |iv| markConstGlobalRefs(iv, &used);
         }
@@ -1443,7 +1443,7 @@ pub const LLVMEmitter = struct {
         // C ABI (extern / abi(.c)): full size-bucket coercion (string→ptr, ≤8→i64, …).
         // Default sx ABI: still pack ≤8-byte non-HFA structs into i64 so AArch64
         // does not expand `{i8×4}` (e.g. Color) into four i8 args that mis-spill
-        // when a second such param overflows the integer registers (issue 0286).
+        // when a second such param overflows the integer registers.
         // When uses_sret, prepend the sret pointer at index 0.
         const sret_offset: usize = if (uses_sret) 1 else 0;
         const param_count: c_uint = @intCast(func.params.len + sret_offset);
@@ -2024,7 +2024,7 @@ pub const LLVMEmitter = struct {
 
     /// Only real aggregate representations are valid source element types for
     /// struct_gep/union_gep. A scalar type must never double as a failed-lookup
-    /// sentinel (issue 0319).
+    /// sentinel.
     pub fn isGepAggregateLLVMType(llvm_ty: c.LLVMTypeRef) bool {
         if (llvm_ty == null) return false;
         return switch (c.LLVMGetTypeKind(llvm_ty)) {

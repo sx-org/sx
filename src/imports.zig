@@ -67,7 +67,7 @@ fn relativeTo(path: []const u8, base: []const u8) ?[]const u8 {
 
 /// Canonicalize a resolved import path so the SAME source file gets ONE
 /// spelling everywhere it is keyed — module cache, `flat_import_graph`,
-/// `module_decls`, decl table, namespace edges (issue 0148). Lexically
+/// `module_decls`, decl table, namespace edges. Lexically
 /// normalizes (strip `./`, collapse `a/../b`) and re-relativizes an
 /// absolute path against the process CWD when the file lives under it, so
 /// an absolute entry path produces the same cwd-relative keys (and the same
@@ -132,7 +132,7 @@ const c_stat = @extern(*const fn ([*:0]const u8, *std.c.Stat) callconv(.c) c_int
 
 /// Canonicalize an ENTRY path (CLI ingestion) with the same identity guard
 /// `resolveImportPath` applies to import keys: accept the respelling only
-/// when it provably names the same file on disk (issue 0148 fold — an
+/// when it provably names the same file on disk (an
 /// absolute entry under the CWD then displays/keys cwd-relative, matching a
 /// relative invocation); otherwise keep the user's spelling (nonexistent
 /// entry, symlinked `..` component, stale `$PWD`).
@@ -914,7 +914,7 @@ pub fn stampFnBodySource(decl: *Node, file_path: []const u8) void {
         // `fn_ast_map` and their declared param/return types may name a type
         // bare-visible only in this module. Stamp each method body's source so a
         // cross-module conformance check (erasure to an imported protocol) pins
-        // the impl-side type resolution to the impl's OWN module (issue 0208),
+        // the impl-side type resolution to the impl's OWN module,
         // not the erasure site.
         .impl_block => |ib| stampImplMethodSources(ib, file_path),
         .const_decl => |cd| switch (cd.value.data) {
@@ -951,7 +951,7 @@ fn stampStructMethodSources(sd: ast.StructDecl, file_path: []const u8) void {
 
 /// Stamp the defining module path onto every method body of an `impl P for T`
 /// block, so a cross-module protocol conformance check resolves the impl
-/// method's declared param/return types in the impl's OWN module (issue 0208).
+/// method's declared param/return types in the impl's OWN module.
 fn stampImplMethodSources(ib: ast.ImplBlock, file_path: []const u8) void {
     for (ib.methods) |m| {
         if (m.data == .fn_decl) m.data.fn_decl.body.source_file = file_path;

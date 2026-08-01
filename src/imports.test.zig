@@ -99,7 +99,7 @@ test "imports: module_decls retains same-name cross-module fns; flat_import_grap
     const absdir = dirbuf[0..dirlen];
 
     const main_path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{absdir});
-    // Imported modules are keyed by their CANONICAL path (issue 0148) — e.g.
+    // Imported modules are keyed by their CANONICAL path — e.g.
     // re-relativized against the CWD when the tmp dir lives under it — so the
     // expected keys go through the same chokepoint. `main_path` stays as
     // passed: the entry is keyed literally.
@@ -272,7 +272,7 @@ test "buildImportFacts: flat imports keep same-name fn/struct + value-vs-type pe
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
     const main_path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{absdir});
-    // Canonical keys for imported modules (issue 0148).
+    // Canonical keys for imported modules.
     const a_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/a.sx", .{absdir}));
     const b_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/b.sx", .{absdir}));
 
@@ -330,7 +330,7 @@ test "buildImportFacts: directory import unions member-file decls under the dir 
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
     const main_path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{absdir});
-    // Canonical key for the imported directory module (issue 0148).
+    // Canonical key for the imported directory module.
     const lib_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/lib", .{absdir}));
 
     var facts = try buildFacts(alloc, io, absdir, main_path);
@@ -358,7 +358,7 @@ test "buildImportFacts: namespaced file import captures target_module_path" {
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
     const main_path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{absdir});
-    // Canonical key for the imported module (issue 0148).
+    // Canonical key for the imported module.
     const point_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/point.sx", .{absdir}));
 
     var facts = try buildFacts(alloc, io, absdir, main_path);
@@ -392,7 +392,7 @@ test "buildImportFacts: namespaced directory import captures dir path as target"
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
     const main_path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{absdir});
-    // Canonical key for the imported directory module (issue 0148).
+    // Canonical key for the imported directory module.
     const pkg_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/pkg", .{absdir}));
 
     var facts = try buildFacts(alloc, io, absdir, main_path);
@@ -512,12 +512,12 @@ test "buildImportFacts: namespace-alias-then-fn same-module collision is diagnos
     try expectTag(m_idx.names.get("dup") orelse return error.MissingDup, .namespace_decl);
 }
 
-// ── canonicalizePath (issue 0148) ──
+// ── canonicalizePath ──
 
 // One file, many spellings: absolute (under CWD), cwd-relative, redundant-`./`,
 // and `seg/../` all canonicalize to the SAME key. This is the mechanism that
 // keeps an absolute entry path from splitting the module cache into two
-// identities for the same source file (issue 0148).
+// identities for the same source file.
 test "canonicalizePath: abs + cwd-relative + redundant ./ and .. spellings unify" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -573,7 +573,7 @@ test "buildDeclTable: stable DeclId per decl, round-trip, struct keying, namespa
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
     const main_path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{absdir});
-    // Canonical key for the imported module (issue 0148).
+    // Canonical key for the imported module.
     const lib_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/lib.sx", .{absdir}));
 
     const main_bytes = try std.Io.Dir.readFileAlloc(.cwd(), io, main_path, alloc, .limited(1 << 20));

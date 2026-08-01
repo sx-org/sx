@@ -253,7 +253,7 @@ pub const ErrorAnalysis = struct {
         // (body.source_file, stamped by resolveImports) — a closure literal's
         // param/return annotations must resolve where the fn is written, not
         // against whatever module the previous pipeline phase happened to
-        // leave as the ambient context (issue 0122).
+        // leave as the ambient context.
         const saved = self.l.current_source_file;
         defer self.l.setCurrentSourceFile(saved);
         var it = self.l.program_index.fn_ast_map.iterator();

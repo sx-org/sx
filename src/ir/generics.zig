@@ -200,7 +200,7 @@ pub const GenericResolver = struct {
     /// argument: `resolveTypeArg`'s identifier arm resolves it through the
     /// active `type_bindings` — but `isTypeShapedAstNode` only knows
     /// REGISTERED type names, so Strategy 1 skipped it and the callee
-    /// diagnosed "cannot infer" (issue 0339). Folded type expressions
+    /// diagnosed "cannot infer". Folded type expressions
     /// (`struct_field_type(T, i)`) already passed; a bound `T` must too.
     fn argIsBoundTypeParam(self: GenericResolver, arg: *const Node) bool {
         if (arg.data != .identifier) return false;
@@ -256,7 +256,7 @@ pub const GenericResolver = struct {
                         // A bare fn NAME has no inferable expression type — it
                         // is a value whose type lives in its declaration. Bind
                         // `$F` to that signature so the instance's param is a
-                        // callable, not a bare integer word (issue 0367).
+                        // callable, not a bare integer word.
                         const arg_ty = if (inferred == .unresolved)
                             self.l.bareFnNameSignature(args_ast[s2_arg_idx]) orelse inferred
                         else
@@ -325,7 +325,7 @@ pub const GenericResolver = struct {
         // alias at the call site resolves it to. Without this pin a re-exported
         // generic value-failable's `!E` resolved to a non-`.error_set` alias,
         // so the planned call result was a plain tuple and `errorChannelOf`
-        // missed the failable channel (issue 0153). The binding-building above
+        // missed the failable channel. The binding-building above
         // stays in the call-site context (its args are typed there).
         const saved_src = self.l.current_source_file;
         defer self.l.setCurrentSourceFile(saved_src);

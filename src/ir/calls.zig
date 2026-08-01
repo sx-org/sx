@@ -302,7 +302,7 @@ pub const CallResolver = struct {
                 TypeId.unresolved;
             // Receiver is a protocol type → protocol method dispatch. The
             // receiver may be erased directly (`P`), a view (`*P`), or the
-            // optional of either (`?P` / `?*P`, issue 0312/0310 — the
+            // optional of either (`?P` / `?*P` — the
             // lowering dispatches all four; the plan must agree or the call
             // types as unresolved and e.g. `for v.items()` refuses).
             {
@@ -360,8 +360,8 @@ pub const CallResolver = struct {
             // lowering dispatch (call.zig closure-field arm) which runs in the
             // value-receiver path BEFORE instance-method dispatch — so a
             // closure-typed field shadows a same-named method, exactly as
-            // lowering binds it. Without this the call typed as `.unresolved`
-            // (issue 0201): value returns marshalled as garbage, failable
+            // lowering binds it. Without this the call typed as `.unresolved`:
+            // value returns marshalled as garbage, failable
             // returns couldn't be `try`/`catch`-ed. Lowering owns the dispatch;
             // plan only needs the field's `.ret` so typing matches.
             {
@@ -410,7 +410,7 @@ pub const CallResolver = struct {
                         // through the SAME stamped-author reader the dispatch
                         // uses (CP-4), return type under the instance's
                         // bindings — call-result typing must work before the
-                        // method has ever monomorphized (issue 0341: with no
+                        // method has ever monomorphized (with no
                         // plan arm, a first-use `inst.method()` chain typed
                         // `.unresolved` and lowered to a silent zero).
                         {
@@ -483,8 +483,8 @@ pub const CallResolver = struct {
                         // `fd0p` can be a wrong-receiver overload (e.g. a
                         // `*Other($T)->string` winner over the `*Box($T)->i64`
                         // receiver-match); typing the call by `fd0p` while
-                        // lowering calls the other one misboxes the result
-                        // (issue 0157). A `*const Node` view of the
+                        // lowering calls the other one misboxes the result.
+                        // A `*const Node` view of the
                         // args drives the receiver-aware selection.
                         const sel_args = self.l.alloc.alloc(*const ast.Node, c.args.len + 1) catch
                             return .{ .kind = .unresolved, .return_type = .unresolved };
@@ -639,7 +639,7 @@ pub const CallResolver = struct {
                     // fall back to the CALL SITE's context — wrongly rejecting a
                     // return type (e.g. a `(Thing, !E)` multi-return whose
                     // `Thing` is bare-visible only inside the callee's module) as
-                    // "not visible" (issue 0207). The authoritative defining
+                    // "not visible". The authoritative defining
                     // module is `bfd`'s own source.
                     return .{
                         .kind = .namespace_fn,
@@ -653,7 +653,7 @@ pub const CallResolver = struct {
             // An immediately-invoked lambda carries its callable signature in
             // the lambda expression itself.  Type the call from that closure
             // instead of leaving a module-level `#run` const `.unresolved`
-            // until global emission (issue 0263).
+            // until global emission.
             const callee_ty = self.l.inferExprType(c.callee);
             if (!callee_ty.isBuiltin()) {
                 const info = self.l.module.types.get(callee_ty);

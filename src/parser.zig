@@ -34,7 +34,7 @@ pub const Parser = struct {
     in_for_header: bool = false,
     /// While parsing an if-condition, a `{` immediately after an anonymous
     /// struct literal starts the if body, not the literal's optional init
-    /// block (`if x != .{1, 2} { ... }`, issue 0246).
+    /// block (`if x != .{1, 2} { ... }`).
     in_if_condition: bool = false,
     /// Trailing-block T5 (specs: Trailing Blocks): while parsing a header
     /// expression whose `{` opens the statement body (`while cond {`,
@@ -2948,7 +2948,7 @@ pub const Parser = struct {
 
         // `#import "path";` / `#framework "Name";` inside a block body.
         // Only meaningful inside an `inline if OS == ... { ... }` arm —
-        // the imports.zig flatten pass (issue-0042) surfaces those
+        // the imports.zig flatten pass surfaces those
         // declarations to the top level before resolution. Anywhere else
         // these nodes survive into lowering and produce a clear error.
         if (self.current.tag == .hash_import) {
@@ -4910,7 +4910,7 @@ pub const Parser = struct {
             // An inline `struct { … }` / `union { … }` / `enum { … }` return
             // type: the brace group after the keyword belongs to the TYPE,
             // not the body — skip it balanced and keep scanning for the real
-            // body `{` (issue 0291). The bodyless alias edge still holds:
+            // body `{`. The bodyless alias edge still holds:
             // `F :: () -> struct { x: i64; };` resumes the scan at `;`,
             // finds no body, and classifies as a type alias.
             if (self.current.tag == .kw_struct or self.current.tag == .kw_union or

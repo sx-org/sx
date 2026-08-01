@@ -167,13 +167,13 @@ test "comptime_vm exec: loop with block params sums i..1" {
     try std.testing.expectEqual(@as(i64, 0), toI64(try v.run(&fb.func, &.{fromI64(0)})));
 }
 
-test "comptime_vm exec: nested value-merge threads inner if value (issue 0259)" {
+test "comptime_vm exec: nested value-merge threads inner if value" {
     // f(a, b) = if a { 100 } else { if b { 42 } else { 0 } }
     // The correct IR (what lowering emits for both #run forms) chains two
     // value-merge blocks: the OUTER merge's else-edge value IS the INNER merge's
     // block_param result. The VM must thread that inner phi word into the outer
-    // phi — the shape the issue-0259 lowering fix relies on being interpreted
-    // faithfully. a=false, b=true must yield 42 (not the outer else-const 0).
+    // phi — the shape lowering relies on being interpreted faithfully.
+    // a=false, b=true must yield 42 (not the outer else-const 0).
     const params = [_]Function.Param{ param(.bool), param(.bool) };
     var fb = Fb.init(std.testing.allocator, &params, .i64);
     defer fb.deinit();

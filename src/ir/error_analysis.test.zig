@@ -98,7 +98,7 @@ test "error_analysis: empty-inferred warnings are emitted in source order, not h
     // `work` is a StringHashMap, so iterating it to emit diagnostics yields hash
     // order. Zig and Odin do not share a hash, so a faithful port would reorder
     // this output — hence the sort. Names here are deliberately chosen so hash
-    // order != source order (see issues/0133).
+    // order != source order.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();

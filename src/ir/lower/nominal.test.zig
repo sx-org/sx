@@ -18,7 +18,7 @@ const error_set_info: TypeInfo = .{ .error_set = .{ .name = StringId.empty, .tag
 const struct_info: TypeInfo = .{ .@"struct" = .{ .name = StringId.empty, .fields = &.{} } };
 
 test "adoptsForwardStructStub: every non-struct nominal kind adopts a forward struct stub" {
-    // The adopting-kind list (issue 0211 folded `.error_set` in): a forward
+    // The adopting-kind list, `.error_set` included: a forward
     // struct stub must be RE-KEYED (replaceKeyedInfo), never body-filled in
     // place (updatePreservingKey's kind-stability assert would trip).
     try std.testing.expect(nominal.adoptsForwardStructStub(stub, enum_info));

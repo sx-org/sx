@@ -118,7 +118,7 @@ test "resolveAstType: threaded alias_map resolves named alias" {
     try std.testing.expectEqual(TypeInfo{ .pointer = .{ .pointee = .u64 } }, table.get(ptr_id));
 }
 
-test "resolveAstType: named-const array dimension resolves to the same length as a literal (issue 0083)" {
+test "resolveAstType: named-const array dimension resolves to the same length as a literal" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();

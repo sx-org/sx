@@ -407,7 +407,7 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
         return error.CompileError;
     }
 
-    // Defensive backstop (issue 0137): ORC has been observed reporting
+    // Defensive backstop: ORC has been observed reporting
     // success from the `main` lookup while leaving `main_addr` at 0 — calling
     // @ptrFromInt(0) then segfaults. The real fix is the pre-JIT entry-point
     // check in main.zig (which also catches the observed NON-zero garbage

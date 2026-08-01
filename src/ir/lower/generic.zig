@@ -31,7 +31,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     const owned_name = self.alloc.dupe(u8, mangled_name) catch return;
     self.lowered_functions.put(owned_name, {}) catch {};
 
-    // Flow narrowing (issue 0179) is per-function: this monomorphized body has
+    // Flow narrowing is per-function: this monomorphized body has
     // its own `Ref` space (overlapping the caller's), so isolate it from the
     // caller's `narrowed`/`narrowed_refs` to avoid a false-positive unwrap gate.
     var nested_guard = Lowering.NestedBodyGuard.enter(self);
@@ -54,7 +54,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     // intercept would otherwise constant-fold the callee's
     // same-named param to whichever shape triggered the first mono
     // and bake the wrong arity into the cached IR. Same shape of
-    // fix as `lazyLowerFunction` (issue-0048, commit 0ede097).
+    // fix as `lazyLowerFunction` (commit 0ede097).
     const saved_pan = self.pack_arg_nodes;
     const saved_ppc = self.pack_param_count;
     const saved_pat = self.pack_arg_types;
@@ -159,7 +159,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     // return from them. The decl path (`lowerFunctionBodyInto`) does this too —
     // without it a GENERIC named multi-return never sets `named_return_names`, so
     // the implicit return isn't synthesized and the body wrongly reports
-    // "produces no value" (issue 0200). Save/restore the state so a monomorph
+    // "produces no value". Save/restore the state so a monomorph
     // doesn't leak its named-return slots to the enclosing lowering.
     const saved_nrn_mono = self.named_return_names;
     const saved_nrd_mono = self.named_return_defaults;
@@ -183,7 +183,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
             // recognizer (atomics/reflection are handled earlier in call.zig).
             // Emitting `ensureTerminator(ret_ty)` here would synthesize a
             // silent `constInt(0, ret_ty)` for a non-void return — a silent
-            // fallback default (issue 0144). Surface the failure loudly.
+            // fallback default. Surface the failure loudly.
             const span = if (fd.name_span.end != 0) fd.name_span else fd.body.span;
             if (self.diagnostics) |d|
                 d.addFmt(.err, span, "unknown intrinsic '{s}'", .{fd.name});
@@ -598,8 +598,8 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         // A module-alias-qualified type name in a type-arg slot
         // (`size_of(sel.Selection)`) parses as a field-access EXPRESSION — unlike
         // the dotted `.type_expr` a declaration annotation produces — so without
-        // this arm it fell through to `else` and resolved to `.unresolved`
-        // (issue 0147). Reconstruct the qualified `obj.field` name and resolve it
+        // this arm it falls through to `else` and resolves to `.unresolved`.
+        // Reconstruct the qualified `obj.field` name and resolve it
         // through the same alias map a declaration uses. Look it up EXPLICITLY
         // (findByName + alias map) rather than via `resolveNamed`, whose
         // empty-struct-stub fallback would silently fabricate a 0-sized type for
@@ -732,7 +732,7 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
         // A function TYPE renders as its signature (same spelling as
         // `formatFnTypeString` / the TypeTable formatter: `-> void` omitted) —
         // a diagnostic naming a bare-fn value must show the signature, never
-        // the `function` tag (issue 0338).
+        // the `function` tag.
         .function => |f| blk: {
             var buf = std.ArrayList(u8).empty;
             buf.append(self.alloc, '(') catch break :blk "function";
@@ -921,7 +921,7 @@ pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId,
             // arg_ty should be a slice → extract element type. An array
             // arg coerces to a slice at a `[]T` param (the same promotion
             // concrete slice params perform), so it binds from its
-            // element type too (issue 0126).
+            // element type too.
             if (arg_ty.isBuiltin()) break :blk null;
             const info = self.module.types.get(arg_ty);
             break :blk switch (info) {
@@ -938,7 +938,7 @@ pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId,
                 // Auto-address-of: a `*Box($T)` param accepts a by-value
                 // `Box($T)` arg (the UFCS receiver `b.m()` / a value passed to a
                 // pointer param). Match the pointee against the value arg so the
-                // type-var still binds (issue 0151).
+                // type-var still binds.
                 else => self.extractTypeParam(pt.pointee_type, arg_ty, tp_name),
             };
         },
@@ -1016,7 +1016,7 @@ pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId,
             // (`struct_instance_bindings`). Recover the concrete type the i-th
             // template param bound and recurse against the i-th param-head arg,
             // so `$T` is inferred from `Box($T)` ⇔ `Box(i64)` exactly as it is
-            // from `[]$T` ⇔ `[]i64` (issue 0151).
+            // from `[]$T` ⇔ `[]i64`.
             if (arg_ty.isBuiltin()) break :blk null;
             const info = self.module.types.get(arg_ty);
             if (info != .@"struct") break :blk null;
@@ -1054,7 +1054,7 @@ pub fn mangleTypeName(self: *Lowering, ty: TypeId) []const u8 {
 /// resolved signature, not something a `case slice:` arm could ever receive.
 /// The category scan skips these; without that, a type-category dispatch
 /// stamps a monomorphized body whose element type is `.unresolved` and the
-/// backend panics on it instead of any error being reported (issue 0288).
+/// backend panics on it instead of any error being reported.
 fn hasUnresolvedElement(info: types.TypeInfo) bool {
     return switch (info) {
         .slice => |s| s.element == .unresolved,
@@ -1192,7 +1192,7 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
 /// subject's type: a tagged-union arm captures its variant's payload, an
 /// optional arm captures the unwrapped child (mirrors `lowerMatch`'s capture
 /// lowering). Null when the subject/pattern supplies no typed payload — the
-/// arm-level binding guard (issue 0163) diagnoses those at lowering.
+/// arm-level binding guard diagnoses those at lowering.
 fn matchCaptureType(self: *Lowering, subject_ty: TypeId, pattern: ?*const Node) ?TypeId {
     if (subject_ty.isBuiltin()) return null;
     switch (self.module.types.get(subject_ty)) {
@@ -1219,7 +1219,7 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
     // the lowering (`lowerMatch`), so normalize to the pointee here too —
     // otherwise a `*TaggedUnion` subject types every capture-using arm
     // `.unresolved` and a VALUE-position match leaks an unresolved result
-    // type to its consumer (issue 0226).
+    // type to its consumer.
     var subject_ty = self.inferExprType(me.subject);
     if (!subject_ty.isBuiltin()) {
         const sinfo = self.module.types.get(subject_ty);
@@ -1228,14 +1228,14 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
             if (pinfo == .tagged_union or pinfo == .@"enum") subject_ty = sinfo.pointer.pointee;
         }
     }
-    // Unify the result type across ALL value-producing arms (issue 0236).
+    // Unify the result type across ALL value-producing arms.
     // `null` arms contribute optionality (?T), diverging (`noreturn`) and
     // non-inferable (`.unresolved`) arms don't decide, and the remaining arm
     // types fold through `unifyMatchArmTypes` — the same implicit-coercion
     // lattice the if/else-expression merge feeds `coerceToType`, but joined
     // SYMMETRICALLY so arm order never picks the type (int ⊔ float = the
-    // float in BOTH orders, preserving the issue-0226 pinned "f64 payload
-    // arm + int-literal arm → f64"). A pair with no safe coercion in either
+    // float in BOTH orders, so an f64 payload-capture arm and an int-literal
+    // arm join to f64). A pair with no safe coercion in either
     // direction is a true mismatch: diagnose at the offending arm rather than
     // let it reach the backend as a mixed-type phi (LLVM verifier failure, no
     // diagnostic).
@@ -1246,7 +1246,7 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
     for (me.arms) |arm| {
         // A DIVERGING arm (`return`/`raise`/`break`/`continue`, or a `noreturn`
         // expression) never reaches the merge, so it must NOT decide the result
-        // type (issue 0269 match analog): letting a diverging FIRST arm decide
+        // type (match analog): letting a diverging FIRST arm decide
         // makes `last_node` a void inner block and returns `.void` early,
         // collapsing a real value-`match` (`z := if e == { case .A: { return
         // -9; } case .B: { 20 } }`) to a void statement that `alloca void`s.
@@ -1271,7 +1271,7 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
 
         // Type the arm body with its payload capture in scope — bound by TYPE
         // only (`Ref.none`; nothing is lowered here). Without it, an arm whose
-        // value depends on the capture types `.unresolved` (issue 0226).
+        // value depends on the capture types `.unresolved`.
         var cap_scope: ?Scope = null;
         defer if (cap_scope) |*cs| cs.deinit();
         const saved_scope = self.scope;
@@ -1331,17 +1331,17 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
     return .void;
 }
 
-/// Join two match-arm result types over the implicit-coercion lattice
-/// (issue 0236). Numerics join SYMMETRICALLY — a float beats an int, a wider
+/// Join two match-arm result types over the implicit-coercion lattice.
+/// Numerics join SYMMETRICALLY — a float beats an int, a wider
 /// width beats a narrower one — so arm order never decides the type. This
 /// deliberately diverges from the if/else-expression merge (first-branch-wins,
 /// which silently truncates `i64` into an `i32`-typed first branch) to
-/// preserve the issue-0226 pinned outcome: an f64 payload-capture arm and an
-/// int-literal arm yield f64 in BOTH orders. Every non-numeric pair mirrors
+/// keep an f64 payload-capture arm and an int-literal arm yielding f64 in
+/// BOTH orders. Every non-numeric pair mirrors
 /// if/else exactly: the earlier type wins when the later arm's value can
 /// safely become it — a modeled coercion or a same-width bit-compatible
 /// reinterpret, i.e. NOT `noneReinterpretIsUnsafe`, the same predicate the
-/// store guard (issue 0197) uses — else the join flips to the later type when
+/// store guard uses — else the join flips to the later type when
 /// only that direction coerces. Null = no safe direction either way: a true
 /// mismatch the caller diagnoses.
 pub fn unifyValueArmTypes(self: *Lowering, a: TypeId, b: TypeId) ?TypeId {
@@ -1606,7 +1606,7 @@ pub fn selectGenericStructHead(self: *Lowering, name: []const u8, qualified_path
             .not_qualified => return .not_generic,
         }
     }
-    // Const-alias head (`BoxAlias :: Box;` / `Box :: r.Box;`, issue 0120):
+    // Const-alias head (`BoxAlias :: Box;` / `Box :: r.Box;`):
     // follow the alias decl hop-by-hop to its authoring template, each hop
     // resolved from that alias author's own source. Checked BEFORE the map:
     // the alias may share its name with a same-name template that is NOT
@@ -1894,8 +1894,8 @@ pub fn visibleTypeFnHead(self: *Lowering, name: []const u8) ?*const ast.FnDecl {
 /// element, a `union` field, the element type of an array/vector (index
 /// ignored — every element shares it), a slice's element (index 0 — the
 /// static length doesn't exist), or an optional's child (index 0). Matches
-/// what the runtime member-type tables answer for the same tags (issue
-/// 0300). Out-of-range or a memberless type diagnoses and poisons to
+/// what the runtime member-type tables answer for the same tags.
+/// Out-of-range or a memberless type diagnoses and poisons to
 /// `.unresolved` (never a silent default).
 pub fn fieldTypeOf(self: *Lowering, t: TypeId, idx: usize, span: ?ast.Span) TypeId {
     const oob = struct {
@@ -2065,7 +2065,7 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
 
     // Vector(N, T) — built-in parameterized type. A backtick raw base
     // (`` `Vector(…) ``) is the LITERAL user type named `Vector`, so it
-    // skips this intrinsic and resolves through the template map (0089).
+    // skips this intrinsic and resolves through the template map.
     if (!pt.is_raw and std.mem.eql(u8, base_name, "Vector")) {
         if (pt.args.len == 2) {
             const length = self.resolveVectorLane(pt.args[0]) orelse return .unresolved;
@@ -2143,7 +2143,7 @@ pub const GenericStructMethod = struct {
 /// The RETURN type of a selected generic-instance method, resolved under the
 /// instance's stored bindings in the method's defining module — the plan-side
 /// twin of `ensureGenericInstanceMethodLowered`, so call-result typing works
-/// BEFORE the method has ever monomorphized (issue 0341: with no plan arm the
+/// BEFORE the method has ever monomorphized (with no plan arm the
 /// first use of `inst.method()` in a chain typed `.unresolved` and the chain
 /// lowered to a silent zero).
 pub fn genericInstanceMethodReturnType(self: *Lowering, gm: GenericStructMethod) TypeId {
@@ -2409,7 +2409,7 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
             const ue = tmpl.decl.using_entries[using_idx];
             // current_source_file is the TEMPLATE's file here (set above), so
             // the base selects from the declaring module's authority, not the
-            // global name table (issue 0320).
+            // global name table.
             if (self.resolveUsingBase(ue.type_name, self.current_source_file, tmpl.name)) |used_ty| {
                 const used_info = table.get(used_ty);
                 if (used_info == .@"struct") for (used_info.@"struct".fields) |f| {
@@ -2468,7 +2468,7 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
     self.struct_instance_author.put(owned_mangled, tmpl.decl) catch {};
 
     // Carry the template's field-default expressions onto the MONOMORPHIZED
-    // instance so struct-literal lowering finds them (issue 0221). The literal
+    // instance so struct-literal lowering finds them. The literal
     // path (`lower/expr.zig`) keys `struct_defaults_map` off the instance's
     // struct name (`name_id` == `mangled_name`); a generic instance's mangled
     // name never matched the template's plain name, so declared defaults were

@@ -193,7 +193,7 @@ pub const ProtocolResolver = struct {
         // own visibility domain before consulting the process-global protocol
         // spelling map. A namespaced-only foreign `P` may coexist with a local
         // alias `P :: Q`; looking up `protocol_ast_map["P"]` first would let
-        // the hidden foreign declaration hijack the local impl (issue 0320).
+        // the hidden foreign declaration hijack the local impl.
         // Unit/comptime registration hosts intentionally omit import facts, so
         // retain their explicit-spelling fallback below.
         if (self.l.program_index.module_decls == null or self.l.program_index.flat_import_graph == null) {
@@ -574,7 +574,7 @@ pub const ProtocolResolver = struct {
         // (`pd.source_file`, stamped by `resolveImports`), via the
         // visibility-aware stateful resolver — NOT the flat, visibility-unaware
         // `type_bridge.resolveAstType`. The flat lookup picks the WRONG author
-        // when the type name collides across modules (issue 0132: the user's
+        // when the type name collides across modules (the user's
         // `Event` enum vs the stdlib `event.Event` struct pulled in by
         // `modules/std.sx`). This mirrors the parameterized-protocol path
         // (`instantiateParamProtocol`, lower/protocol.zig) and concrete-fn
@@ -718,7 +718,7 @@ pub const ProtocolResolver = struct {
         // declaration, so leave the impl unregistered and let scanDecls retry
         // it after declaration/alias fixpoints settle. Proceeding with a null
         // identity would create name-keyed stubs but permanently omit the
-        // exact impl maps (issue 0320).
+        // exact impl maps.
         if (ib.target_type_params.len == 0 and ib.target_type.len > 0 and concrete_ty == null) return;
         if (concrete_ty) |cty| {
             // Protocols are not concrete types, so they never conform (§10).
@@ -803,7 +803,7 @@ pub const ProtocolResolver = struct {
         self.l.registered_protocol_impls.put(ib, {}) catch @panic("out of memory");
     }
 
-    /// Issue 0346: an impl block still unregistered after every registration
+    /// An impl block still unregistered after every registration
     /// pass (scan, order retry, body lowering) has an unresolvable protocol
     /// head, type argument, or target — the impl is dead code no consumer can
     /// see (an `xx` site silently degrades to the reinterpret spill). Runs at
