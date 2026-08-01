@@ -975,7 +975,7 @@ Workers complete in deadline order, not spawn or await order. The runtime offers
 
 It's an M:1 model (cooperative, no preemption — so no data races between fibers
 and no atomics needed across them), built on `abi(.naked)` context switching over
-guarded `mmap` stacks. Currently aarch64-pinned (macOS + Linux).
+guarded `mmap` stacks. It is aarch64-pinned (macOS + Linux).
 
 ### Command-line interface (`modules/std/cli.sx`)
 

@@ -677,8 +677,8 @@ qn  := f64.nan;           // a quiet NaN
 - **Receiver.** `f32` or `f64`.
 - **Shared with integers.** `.min` / `.max` are valid on BOTH integer and float
   types. `.min` is the most-NEGATIVE finite value, i.e. `-max` — consistent with
-  the integer `.min`, and deliberately **NOT** C's `DBL_MIN`/`FLT_MIN` (which is
-  the smallest positive normal; that is `.min_positive` here).
+  the integer `.min`. It is **NOT** C's `DBL_MIN`/`FLT_MIN`, which is the
+  smallest positive normal; that is `.min_positive` here.
 - **Float-only accessors.**
   - `.epsilon` — the ULP of `1.0`: the gap between `1.0` and the next
     representable value (`f64 = 2^-52 ≈ 2.22e-16`, `f32 = 2^-23`). This is the
@@ -1239,10 +1239,9 @@ Each unrolled iteration is an ordinary impl with a concrete `T`:
 membership, coherence (two iterations landing on one `(P, T)` pair
 are the ordinary duplicate error, naming the unrolled sites), and
 every downstream rule apply to the expanded program unchanged. The
-curated-list form is the supported spelling for "one body, a
-deliberate set of types" — the bound-blanket (`impl Show for
-$T/Ord`, §6.5) is refused precisely because a list keeps the set
-intentional.
+curated-list form is the supported spelling for "one body, a chosen
+set of types" — the bound-blanket (`impl Show for $T/Ord`, §6.5) is
+refused precisely because a list keeps the set explicit.
 
 **Expansion is monotone and deterministic.** Expansion only *adds*
 conformances — nothing retracts. Expansion-driving comptime may
@@ -1894,7 +1893,7 @@ once instantiated and not otherwise. An instantiation nobody
 value-uses emits nothing at all; a tagged protocol used only as a
 bound costs exactly what a constraint protocol costs.
 
-Membership is deliberately stable: it does not depend on which code
+Membership is stable: it does not depend on which code
 executes, so dead-code edits never change what typechecks. Every
 member receives a tag, switch arm, and table row. (A stricter
 emission-level shake is possible without touching these semantics —
@@ -2219,9 +2218,8 @@ under the same rules. What a probe answers is **per kind**:
 
 - `constraint` and the erased kinds: **site-local impl
   visibility** — the same static fact that decides whether the site
-  could erase. (For erased kinds this is deliberately a different
-  question from the dynamic re-erasure check, which consults
-  program-wide uniqueness, §7.4.) Under the discipline, a negative
+  could erase. (For erased kinds this is a different question from the
+  dynamic re-erasure check, which consults program-wide uniqueness, §7.4.) Under the discipline, a negative
   gates on declaration-space finality — impls are declarations.
 - `tagged`: whole-program membership of the instantiation's set,
   under the discipline's polarity rules.
@@ -3587,9 +3585,9 @@ On an **`any` receiver** the assertion has three temperaments:
 - **`.(T)` unconsumed = panic on mismatch**: `v := av.(i64);` yields the
   value on a tag match and otherwise prints `type assertion failed at
   file:line: expected T, got U` (runtime type names) and exits 1. This is
-  a deliberate carve-out from the unconsumed-failable rule, scoped to
-  assertion forms — the implicit handler is `catch { panic }`, never a
-  silent default.
+  a carve-out from the unconsumed-failable rule, scoped to assertion
+  forms — the implicit handler is `catch { panic }`, never a silent
+  default.
 - **`.(?T)` = soft**: mismatch is a *value* — `null` — never a failure or
   panic; the optional IS the check (comma-ok parity). The asserted type is
   the inner `T`, the result exactly `?T`, composing with the optional
@@ -5560,7 +5558,7 @@ lowered, yet `atomic_load` evaluates under `#run` and `sqrt` does not: the
 evaluator interprets the atomic ops, but has no arm for the math call `sqrt`
 lowers to. A `#run sqrt(x)` fails loudly rather than folding to a wrong value.
 
-Two categories are deliberately **not** intrinsics. `string` and `Vector` are
+Two categories are **not** intrinsics. `string` and `Vector` are
 language primitives, resolved by name by the type system like `int` / `bool` /
 `f64`. And a handful of keywords (`type_eq`, `has_impl`, `is_struct`,
 `is_comptime`) are recognized bare, declared nowhere. `has_impl(P, T)`
@@ -5924,7 +5922,7 @@ Semantics:
 - **No suppression, no ambiguity.** A private declaration never shadows or
   ambiguates a public same-name declaration from another module — for every
   other file it simply does not exist.
-- **A public same-file alias may deliberately expose a private declaration**
+- **A public same-file alias may expose a private declaration**
   (`Public :: PrivateImpl;`) — resolution follows the alias in its author
   file, where the private name is legal.
 - **Privacy authority is the exact declaring source file**, not a directory
@@ -6573,11 +6571,11 @@ trace** — the chain of `raise` / `try` sites the error passed through.
   identical across OS/target, works under the JIT and a signed iOS `.app`). A
   comptime frame is `(func_id, ir_offset)` resolved via the interpreter's
   in-memory IR/source tables.
-- **Mode.** On by default in debug; release no-ops the push points
-  (opt back in with `--release-traces`). **Comptime (`#run`) is always traced.**
+- **Mode.** On by default in debug; release no-ops the push points.
+  **Comptime (`#run`) is always traced.**
 - **Formatting** lives in `library/modules/trace.sx` (`trace.print_current()`),
   rendering `func at file:line:col` per frame plus the source line and a `^`
-  caret. DWARF line-info is still emitted (debug, strippable) so `lldb` / `gdb`
+  caret. DWARF line-info is emitted (debug, strippable) so `lldb` / `gdb`
   can step sx source — that is a debugger artifact, separate from trace
   resolution.
 
