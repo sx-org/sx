@@ -3850,6 +3850,26 @@ fail :: () -> !ParseErr {
 }
 ```
 
+This is a property of the SIGNATURE, so every body form reads it the same way —
+a closure body reads like a named one, and so do a generic instance, a nested
+local function and an inlined comptime callee:
+
+```sx
+report := () -> !ParseErr => measure();   // discarded, then the success exit
+raise_it := () -> !ParseErr => error.BadDigit;
+```
+
+It is also decided per live path: where the tail is an `if` or a `match`, each
+arm is its own tail. An arm that yields an error returns it; an arm that yields
+anything else is discarded and reaches the success exit, whichever order the
+arms are written in.
+
+```sx
+pick :: (b: bool) -> !ParseErr {
+  if b { fail() } else { measure() }   // error arm returns; value arm discards
+}
+```
+
 A block in **value position** that produces no value is a compile error (rather
 than silently returning a zero default). Both spellings of the ending are
 refused, because both are the same statement:
