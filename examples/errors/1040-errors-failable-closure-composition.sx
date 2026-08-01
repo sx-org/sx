@@ -4,7 +4,7 @@
 // (try-propagated), and ∅-widening of a NON-failable closure literal into a
 // failable slot (the generated adapter wraps the value into `{value, 0}`).
 //
-// NOTE: the adapter is generated when the closure LITERAL flows directly into
+// The adapter is generated when the closure LITERAL flows directly into
 // the bare-fn slot. Passing a pre-bound closure *variable* into a bare-fn slot
 // is a separate coercion-site path, not handled.
 

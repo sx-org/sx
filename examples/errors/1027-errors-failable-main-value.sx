@@ -3,7 +3,6 @@
 // with the integer value (truncated to u8, like a plain integer main); on an
 // escaping error it prints the header + trace to stderr and exits 1 (the same
 // reporter as the pure `-> !` form — see 244). This run takes the success path.
-// Expected exit code: 64 (the returned value).
 
 #import "modules/std.sx";
 

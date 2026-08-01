@@ -1,5 +1,5 @@
 error: `return` is not allowed inside a `defer` body — cleanup runs while the function is already exiting, so there is nothing to transfer control to
-  --> examples/errors/1020-errors-cleanup-body-restrictions.sx:18:14
+  --> examples/errors/1020-errors-cleanup-body-restrictions.sx:15:14
    |
-18 |     defer  { return; }                 // ERROR: return in defer body
+15 |     defer  { return; }                 // ERROR: return in defer body
    |              ^^^^^^

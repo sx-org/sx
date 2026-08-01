@@ -4,12 +4,10 @@
 // comptime interpreter) and folds to `false` in compiled code, so a gated
 // branch dead-codes out of the runtime binary.
 //
-// (`log.error` is spelled `log.err` — `error` is a reserved keyword. The
-// `process.exit` / `assert` surface is not exercised here — it needs
-// `noreturn` codegen.)
+// (`log.error` is spelled `log.err` — `error` is a reserved keyword.)
 //
 // The test runner merges stderr+stdout; the log lines (stderr) precede the
-// single stdout line. Expected exit code: 0.
+// single stdout line.
 
 #import "modules/std.sx";
 log :: #import "modules/std/log.sx";

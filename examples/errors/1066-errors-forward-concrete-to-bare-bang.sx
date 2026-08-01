@@ -3,23 +3,19 @@
 // Error tags are GLOBAL ids (one shared u32 repr; 0 = "no error"), so a
 // concrete error set forwards soundly through the open bare-`!` channel:
 // the compiler re-packs the value slots plus the raw tag. Covered here:
-//   - concrete `!MyErr` → bare `!`, success value forwards;
-//   - concrete → bare, ERROR forwards and the tag keeps its identity
-//     (`catch` sees `error.Boom`);
-//   - matched-set forward (`!MyErr` → `!MyErr`) still works;
-//   - concrete → concrete where callee ⊆ caller;
-//   - multi-value `(i64, i64, !MyErr)` → `(i64, i64, !)`;
-//   - pure failable `!MyErr` → `!`, `!MyErr` → `!MyErr`, `!MyErr` → `!WideErr`;
-//   - `try` / `or` interop with a forwarded result;
-//   - the arity/slot-fit TIE-BREAK: a returned VALUE tuple whose last element
-//     is error-set-typed (`return v, e` into `(i64, MyErr, !)`) is the value
-//     list, NOT a forward.
+// - concrete `!MyErr` → bare `!`, success value forwards;
+// - concrete → bare, ERROR forwards and the tag keeps its identity
+//   (`catch` sees `error.Boom`);
+// - matched-set forward (`!MyErr` → `!MyErr`) still works;
+// - concrete → concrete where callee ⊆ caller;
+// - multi-value `(i64, i64, !MyErr)` → `(i64, i64, !)`;
+// - pure failable `!MyErr` → `!`, `!MyErr` → `!MyErr`, `!MyErr` → `!WideErr`;
+// - `try` / `or` interop with a forwarded result;
+// - the arity/slot-fit TIE-BREAK: a returned VALUE tuple whose last element
+//   is error-set-typed (`return v, e` into `(i64, MyErr, !)`) is the value
+//   list, NOT a forward.
 // (Bare `!` → NAMED set is rejected — the inferred set can't be proven ⊆;
 // see examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx.)
-//
-// Packing the whole callee `{value, err}` aggregate
-// as element 0 of the caller's own tuple on the concrete→bare forward is
-// invalid LLVM IR (`Invalid InsertValueInst operands!`).
 
 #import "modules/std.sx";
 

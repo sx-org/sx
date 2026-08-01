@@ -4,7 +4,7 @@
 // entry-point wrapper prints the unhandled-error header + return trace to
 // stderr and exits 1. Each failed attempt contributes its `raise` frame plus
 // the chain-attempt frame, so three all-failing attempts leave six frames
-// (the frames carry placeholder locations, not DWARF). Expected exit code: 1.
+// (the frames carry placeholder locations, not DWARF).
 
 #import "modules/std.sx";
 

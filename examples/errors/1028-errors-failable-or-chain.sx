@@ -6,7 +6,7 @@
 // terminator absorbs it. A `catch` over a parenthesized chain redirects the
 // chain's total failure to the handler instead of the function. Absorbed
 // failures clear the trace buffer; `onfail` does not fire for a failure that
-// never leaves its block. This run takes only absorbed paths → exit 120.
+// never leaves its block. This run takes only absorbed paths.
 
 #import "modules/std.sx";
 

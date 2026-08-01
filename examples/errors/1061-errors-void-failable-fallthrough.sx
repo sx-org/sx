@@ -1,13 +1,12 @@
 // A pure-failable function (`-> !`) that succeeds by IMPLICIT fall-through —
-// no explicit `return;` — must initialize its error-channel slot to 0 ("no
-// error"), exactly like an explicit `return;` would. Otherwise the slot is
-// left undefined and a caller's `catch` (or `main`) reads a garbage tag and
-// reports a phantom unhandled error.
+// no explicit `return;` — initializes its error-channel slot to 0 ("no
+// error"), exactly like an explicit `return;` does, so a caller's `catch` (or
+// `main`) never reads a garbage tag as a phantom unhandled error.
 //
 // This exercises:
-//   - a `-> !` callee that falls off the end (no `return;`) — its `catch`
-//     handler must NOT fire;
-//   - a `main :: () -> !` that falls off the end — must exit 0.
+// - a `-> !` callee that falls off the end (no `return;`) — its `catch`
+//   handler must NOT fire;
+// - a `main :: () -> !` that falls off the end — must exit 0.
 //
 // `noop`'s `!` really is redundant, so the "drop the `!`" warning fires and
 // is pinned; the shape under test is exactly that redundant channel.

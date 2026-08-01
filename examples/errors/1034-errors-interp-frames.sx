@@ -2,8 +2,8 @@
 // dumps the interpreter's active sx call-frame chain (most recent call last) to
 // the build output; in compiled code it folds to nothing (no interpreter stack
 // — the only real caller is `process.exit`'s dead `is_comptime()` branch). The
-// dump frame itself is omitted; frame source locations await IR-offset
-// resolution, so only names print today. Expected exit: 0.
+// dump frame itself is omitted, and a frame prints its name without a source
+// location.
 
 #import "modules/std.sx";
 trace :: #import "modules/std/trace.sx";

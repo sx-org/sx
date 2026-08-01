@@ -1,8 +1,6 @@
-// `!` on an error binding is the truthiness complement of `if e`.
-// Lowering `!` as a bitwise not leaves a nonzero error tag
-// nonzero, so `if !e` holds even on a SET error and the success
-// value reads as garbage. Integer operands get the same `!x ≡ x == 0`
-// semantics.
+// `!` on an error binding is the truthiness complement of `if e`: `!x ≡ x == 0`,
+// never a bitwise not — which would leave a nonzero error tag nonzero. Integer
+// operands get the same semantics.
 #import "modules/std.sx";
 
 E :: error { Boom }

@@ -1,19 +1,18 @@
 // Enum-valued value-carrying failables, two paths the bare-success rule
 // does not itself cover.
 //
-//   F1 — EXPLICIT full failable tuple return `return (.v, error.X)`. The
-//   return target stays the FULL failable tuple for an explicit tuple literal
-//   of full arity, and narrows to the value type only for a BARE value —
-//   otherwise the trailing error element does not resolve against the error
-//   set. This pins both branches in one fn: bare-value success +
-//   explicit-tuple error.
+// F1 — EXPLICIT full failable tuple return `return (.v, error.X)`. The
+// return target stays the FULL failable tuple for an explicit tuple literal
+// of full arity, and narrows to the value type only for a BARE value —
+// otherwise the trailing error element does not resolve against the error
+// set. This pins both branches in one fn: bare-value success +
+// explicit-tuple error.
 //
-//   F2 — COMPTIME-PARAM ($n) value-failable. The body is INLINED at the call
-//   site (lowerComptimeCall), so the success return takes the inline-return path,
-//   which the original fix skipped — it stored `{value, undef}` (error slot
-//   undefined) on success. Read the error slot at RUNTIME on the success path
-//   (cast, bare `if`, `== error.X`) so an undef slot is caught, not masked by the
-//   `if !e` proof.
+// F2 — COMPTIME-PARAM ($n) value-failable. The body is INLINED at the call
+// site (lowerComptimeCall), so the success return takes the inline-return path,
+// which zeroes the error slot there as well. Read the error slot at RUNTIME on
+// the success path (cast, bare `if`, `== error.X`) so an undef slot is caught,
+// not masked by the `if !e` proof.
 
 #import "modules/std.sx";
 

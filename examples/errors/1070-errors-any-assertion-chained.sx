@@ -1,14 +1,13 @@
-// Optional-chained postfix cast `o?.(T)` — the full matrix (ruled
-// 2026-07-17). Chain-null is ALWAYS a value (null result), never a
-// failure; each temperament's failure handling applies only to a
-// PRESENT payload. A typed optional receiver maps the CONVERSION
-// regime (never fails); a `?any` receiver maps the assertion:
-//   try o?.(T)  → (?T, !CastError): null → null, match → value,
-//                 present mismatch → raises `mismatch`
-//   o?.(T) or d → same failable through `or`
-//   o?.(T)      → unconsumed: panics only on a present mismatch
-//                 (pinned separately, exits 1)
-//   o?.(?T)     → soft: chain-null and mismatch-null CONFLATE
+// Optional-chained postfix cast `o?.(T)` — the full matrix. Chain-null is
+// ALWAYS a value (null result), never a failure; each temperament's failure
+// handling applies only to a PRESENT payload. A typed optional receiver maps
+// the CONVERSION regime (never fails); a `?any` receiver maps the assertion:
+//     try o?.(T)  → (?T, !CastError): null → null, match → value,
+//                   present mismatch → raises `mismatch`
+//     o?.(T) or d → same failable through `or`
+//     o?.(T)      → unconsumed: panics only on a present mismatch
+//                   (pinned separately, exits 1)
+//     o?.(?T)     → soft: chain-null and mismatch-null CONFLATE
 // An optional TARGET flattens (`ap?.(?i64)` is ?i64, one null level).
 #import "modules/std.sx";
 

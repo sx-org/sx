@@ -5,8 +5,7 @@
 // fall through. `catch` needs no failable *enclosing* function — it handles
 // the error locally. All four body forms appear below: block, no-binding
 // block, match-body (`== { case ... }`), and the selective handle + re-raise
-// pattern. Value-carrying `-> (T, !)` catch (binding the success value) lands
-// with the tuple ABI in E2.
+// pattern. Value-carrying `-> (T, !)` catch is exercised in 1012.
 
 #import "modules/std.sx";
 

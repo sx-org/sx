@@ -1,7 +1,6 @@
 // A braced `defer { … }` body parses as a full statement block (like `onfail`),
 // so it supports every statement form — a destructure decl, a `catch`-statement,
-// nested var decls — not just a single bare expression. Routing `defer { … }`
-// through the expression parser rejects those with "expected ';'".
+// nested var decls — not just a single bare expression.
 
 #import "modules/std.sx";
 

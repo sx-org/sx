@@ -3,10 +3,6 @@
 // keeping the `.x`/`.y` names addressable on both the success value and the
 // `or` fallback. Exercises the success path, a `raise` path, and an
 // `or .(x=.., y=..)` terminator.
-//
-// A named failable tuple WRAPPED as `{ {A,B}, err }` against a value-return
-// lowering that inserts the value slots FLAT produces invalid LLVM
-// (`Invalid InsertValueInst operands`).
 #import "modules/std.sx";
 
 E :: error { Bad }

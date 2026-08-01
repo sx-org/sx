@@ -1,12 +1,9 @@
 // Generic value-carrying failable functions (`($T) -> (T, !E)`) whose body ends in
-// a trailing success EXPRESSION (no explicit `return`) must set the success
+// a trailing success EXPRESSION (no explicit `return`) set the success
 // error slot to 0 — the caller's `catch` must NOT fire and the value must be
 // intact across instantiations (i64 / string / struct), and `or` must yield the
-// real value not the fallback.
-// A hand-rolled body-return in `lowerGenericInstance` (coerceToType+ret) that
-// misses the value-failable success routing leaves the error-tag slot
-// uninitialized → phantom catch on success / value corruption for generic
-// instantiations.
+// real value not the fallback. `lowerGenericInstance` takes the same
+// value-failable success routing as the non-generic body.
 #import "modules/std.sx";
 
 E :: error { Bad }
