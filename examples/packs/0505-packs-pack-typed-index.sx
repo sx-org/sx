@@ -1,16 +1,7 @@
-// Variadic heterogeneous type packs — step 2: typed pack indexing.
-//
-// `args[$i]` (with `$i` a comptime-known integer) inside a pack-fn
-// body should resolve to the i-th call-site argument with its
-// CONCRETE type, not the boxed `any` that today's `[]any` slice
-// path yields. Without typed access, downstream operations on the
-// element (field access, typed coercion, passing to a typed slot)
-// either fail with "field 'X' not found on type 'any'" or silently
-// box/unbox through any.
-//
-// This file pins the failure: `args[0].x` on a struct-typed call arg
-// trips "field 'x' not found on type 'any'" because the AST-level type
-// inference for `args[0]` returns any.
+// `args[$i]`, with `$i` a comptime-known integer, resolves inside a pack-fn
+// body to the i-th call-site argument at its CONCRETE type rather than a
+// boxed `any`, so field access, typed coercion and typed slots reach the
+// element directly: `args[0].x` on a struct-typed call arg reads the field.
 
 #import "modules/std.sx";
 

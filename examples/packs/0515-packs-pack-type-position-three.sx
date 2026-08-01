@@ -1,12 +1,8 @@
-// Variadic heterogeneous type packs — step 3 complex smoke.
-//
-// Three-element pack with `$args[2]` (the third element) used in
-// the return-type position. Confirms:
-// - Multi-arg packs index past the zeroth element correctly.
+// A three-element pack uses `$args[2]` in the return-type position:
+// - Multi-arg packs index past the zeroth element.
 // - Three distinct call shapes get three distinct monos.
-// - The return-type slot is correctly substituted per-mono so
-//   the inferred caller type matches what the body actually
-//   returns (string / i64 / bool here).
+// - The return-type slot is substituted per-mono, so the inferred caller
+//   type matches what the body returns (string / i64 / bool here).
 
 #import "modules/std.sx";
 

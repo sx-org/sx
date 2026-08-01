@@ -1,7 +1,6 @@
-// Variadic heterogeneous type packs — step 2b: per-call-shape
-// monomorphisation. Each unique call signature gets ONE mono fn;
-// repeat calls with the same signature share it. The runtime output
-// confirms correct semantics; the IR (visible via `sx ir`) shows
+// A pack-fn monomorphises per call SHAPE: each unique call signature gets ONE
+// mono fn and repeat calls with the same signature share it, so IR size scales
+// with the number of unique shapes rather than with call sites. `sx ir` shows
 // the distinct mono symbols:
 //
 //   call @count__pack(ctx)
@@ -9,11 +8,6 @@
 //   call @count__pack_i64(ctx, 2)              ← shares with the 1-arg i64 call
 //   call @count__pack_i64_i64_i64(ctx, 1, 2, 3)
 //   call @count__pack_string_bool(ctx, ..)
-//
-// Before step 2b, each call inlined a fresh copy of the body into
-// main's basic block — no shared symbols, IR size grew linearly in
-// call sites. After 2b, distinct shapes get distinct functions,
-// repeats share, IR scales with unique shapes.
 
 #import "modules/std.sx";
 

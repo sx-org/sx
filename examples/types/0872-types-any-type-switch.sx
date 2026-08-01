@@ -1,4 +1,4 @@
-// The TYPE SWITCH (Step-4 phase 2): an `any` subject dispatches on its
+// The TYPE SWITCH: an `any` subject dispatches on its
 // runtime type TAG — never the payload. Arms name concrete types (named,
 // builtin, or COMPOSITE — `[]u8`, `?i64`), which may bind `(v)` as the
 // typed value (exactly what `v := av.(T)` produces, with the tag

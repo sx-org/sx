@@ -5,13 +5,11 @@
 // builder with concrete types bound, so each closure shape gets its
 // own dedicated `__invoke` trampoline + Block literal.
 //
-// This test exercises the builder directly (no `#insert`, no impl
-// wiring) — three pack shapes through the same `void`-returning
-// wrapper plus one non-void `i32`-returning wrapper to pin the
-// `return typed_fn(...)` branch. The expected output captures the
-// generated source verbatim so any formatting drift surfaces here
-// rather than as a downstream compile error inside the eventual
-// step-5.2 impl.
+// The builder is exercised directly (no `#insert`, no impl wiring) — three
+// pack shapes through the same `void`-returning wrapper plus one non-void
+// `i32`-returning wrapper to pin the `return typed_fn(...)` branch. The
+// expected output captures the generated source verbatim, so formatting
+// drift surfaces here rather than as a downstream compile error.
 
 #import "modules/std.sx";
 #import "modules/ffi/objc_block.sx";

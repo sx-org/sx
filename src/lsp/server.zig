@@ -3448,8 +3448,6 @@ test "findCaptureVariant: no capture" {
     try std.testing.expect(result == null);
 }
 
-// ---- Helper function tests ----
-
 test "extractQualifiedName: namespace.member at member offset" {
     const source = "pkg.mul(3, 4)";
     // offset inside "mul" (index 4)

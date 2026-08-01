@@ -2564,7 +2564,7 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
 }
 
 /// Self-type an UNTYPED `.{ ... }` literal as an anonymous STRUCTURAL
-/// struct (the aggregate-ladder Step-2 resolution): every element is
+/// struct: every element is
 /// positional (fields "0"/"1"/…) or every element is named — the
 /// bare-identifier shorthand `.{ x }` counts as NAMED (field `x`;
 /// `.{ (x) }` is the positional escape), a spread splices positionally.

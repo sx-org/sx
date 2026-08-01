@@ -236,8 +236,8 @@ path_join :: (..parts: []string) -> string {
 }
 
 struct_to_string :: (s: $T) -> string {
-    // No type-name prefix (Step-2 print decision): a struct VALUE prints
-    // `{x: 1, y: 2}`; a TYPE value keeps printing its name.
+    // No type-name prefix: a struct VALUE prints `{x: 1, y: 2}`; a TYPE
+    // value prints its name.
     result := "{";
     i := 0;
     while i < struct_field_count(T) {
@@ -344,10 +344,10 @@ any_to_string :: (val: any) -> string {
         // boxed value (no per-type struct_to_string instantiation, no
         // copies). Output is identical to struct_to_string's.
         case struct: {
-            // No type-name prefix (Step-2 print decision): a struct VALUE
-            // prints `{x: 1, y: 2}`; a TYPE value keeps printing its name
-            // (the `case type:` arm below). Also kills the `List__i32{…}`
-            // monomorph-name and `__anon{…}` leakage in prints.
+            // No type-name prefix: a struct VALUE prints `{x: 1, y: 2}`; a
+            // TYPE value prints its name (the `case type:` arm below), so
+            // neither `List__i32{…}` monomorph names nor `__anon{…}` leak
+            // into prints.
             r := "{";
             fi := 0;
             n := struct_field_count(type);

@@ -1,8 +1,5 @@
-// Variadic heterogeneous type packs — step 3: type-reflection
-// intrinsics.
-//
-// Three comptime helpers used by pack-fn bodies to branch on
-// type identity / protocol membership:
+// Three comptime intrinsics let a pack-fn body branch on type identity /
+// protocol membership:
 //
 //   type_name(T)     -> string  // display name of T
 //   type_eq(T1, T2)  -> bool    // structural TypeId equality

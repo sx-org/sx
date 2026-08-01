@@ -1213,11 +1213,10 @@ fn lowerComptimeCallArgsMode(
     var call_arg_idx: usize = 0;
     var runtime_args = std.ArrayList(StagedRuntimeArg).empty;
     defer runtime_args.deinit(self.alloc);
-    // Pack-arg-node registration (step 2 of the variadic heterogeneous
-    // type packs feature): when the fn declares a pack param, record
-    // the slice of call-site arg nodes under the pack name so the
-    // body's `args[$i]` lowering can substitute the i-th arg with
-    // its concrete-typed value instead of the `[]Any` slice load.
+    // When the fn declares a pack param, the slice of call-site arg nodes is
+    // recorded under the pack name so the body's `args[$i]` lowering can
+    // substitute the i-th arg with its concrete-typed value instead of the
+    // `[]Any` slice load.
     var pack_arg_name: ?[]const u8 = null;
     var pack_arg_slice: []const *const Node = &.{};
 

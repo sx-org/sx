@@ -1,20 +1,6 @@
-// Variadic heterogeneous type packs — step 4 final slice (4A
-// bare): `$args` referenced bare (without `[...]` indexing) in
-// expression position should evaluate to a comptime `[]Type`
-// slice value — the whole pack passed through as data so
-// builder fns can walk it.
-//
-// Use case (eventual): step 5's generic Into(Block) impl body
-//   convert :: (self: Closure(..$args) -> $R) -> Block {
-//       #insert build_block_convert($args, $R);
-//   }
-// where `build_block_convert(args: []Type, ret: Type) -> string`
-// is a regular sx fn the interp executes — it walks `args` to
-// emit a trampoline fn matching the per-mono signature.
-//
-// The parser arm for `$<ident>[<int>]` REQUIRES the `[` after the pack
-// name; bare `$args` hits a focused diagnostic. This file pins that
-// rejection.
+// Bare `$args` — no `[...]` index — in expression position evaluates to a
+// comptime `[]Type` slice: the whole pack as data, so a body can walk it and
+// read `.len`.
 
 #import "modules/std.sx";
 

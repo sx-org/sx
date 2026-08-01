@@ -8,13 +8,10 @@
 // `ev := g_plat.one_event()` infers that type, so the `case .key_up:(e)`
 // payload binds a `KeyData` and `.escape` resolves against `Keycode`.
 //
-// Resolving method signature types in
-// `registerProtocolDecl` through the flat, visibility-UNAWARE `type_bridge`
-// resolver picks the stdlib `event.Event` struct instead — typing
-// `ev` as a fieldless struct, binding `.unresolved`, and emitting
-// "enum literal '.escape' has no destination type to resolve against". The
-// fix pins resolution to `pd.source_file`, mirroring the parameterized-
-// protocol and concrete-fn signature paths.
+// `registerProtocolDecl` anchors signature resolution to `pd.source_file`, as
+// the parameterized-protocol and concrete-fn signature paths do; the flat,
+// visibility-unaware `type_bridge` resolver would bind the stdlib
+// `event.Event` struct here.
 //
 // Expect: prints `escape!`, exit 0.
 

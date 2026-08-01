@@ -33,8 +33,7 @@ system :: (cmd: [:0]u8) -> i32 extern libc;
 
 ProcessResult :: struct {
     /// Exit code as reported by `WEXITSTATUS(status)`. 0 = success.
-    /// Note: doesn't distinguish "killed by signal" from "exited
-    /// non-zero"; phase 1B will return a tagged union.
+    /// Does not distinguish "killed by signal" from "exited non-zero".
     exit_code: i32;
     stdout:    string;
 }
