@@ -1,8 +1,3 @@
-// The vendored SQLite is built with SQLITE_ENABLE_FTS5, so full-text
-// search needs no binding surface of its own — the virtual table is
-// created, queried and ranked through plain SQL. Pins the round trip:
-// MATCH selects the indexed row, bm25 scores the hits best-first, and a
-// term absent from the corpus selects nothing.
 #import "modules/std.sx";
 sq :: #import "vendors/sqlite/sqlite.sx";
 
@@ -11,8 +6,7 @@ Hit :: struct {
     score: f64;
 }
 
-// Up to `out.len` hits for `query`, best-ranked first — fts5's `rank`
-// is bm25, which scores a better match more negative.
+// The default rank is bm25; more-negative scores rank first.
 match_hits :: (db: *sq.Sqlite, query: string, out: []Hit) -> (i64, !) {
     st := try db.prepare("SELECT rowid, bm25(docs) FROM docs WHERE docs MATCH ?1 ORDER BY rank");
     defer st.finalize();
@@ -27,7 +21,6 @@ match_hits :: (db: *sq.Sqlite, query: string, out: []Hit) -> (i64, !) {
     return n;
 }
 
-// The title of the first row matching `query` ("" when none does).
 match_title :: (db: *sq.Sqlite, query: string) -> (string, !) {
     st := try db.prepare("SELECT title FROM docs WHERE docs MATCH ?1");
     defer st.finalize();
