@@ -291,7 +291,7 @@ pub const Op = union(enum) {
     // value (lowering borrows an lvalue's storage or spills an rvalue
     // to a frame temp); unbox_any is a typed LOAD through the data
     // pointer; any_data reads the data word itself (no load); make_any
-    // assembles a view from a RUNTIME tag + address (the C2 raw layer).
+    // assembles a view from a RUNTIME tag + address (the raw `any` layer).
     box_any: BoxAny, // *T → any (erase type; operand is the value's address)
     unbox_any: UnaryOp, // any → T (typed load through the view)
     any_data: UnaryOp, // any → data pointer (the view address, no load)
@@ -584,7 +584,7 @@ pub const BuiltinId = enum(u16) {
     // implements them; emit_llvm bails (Type is comptime-only).
     type_name,
     is_unsigned,
-    // Runtime-Type scalar reflection (1a-S2): tag-indexed table reads
+    // Runtime-Type scalar reflection: tag-indexed table reads
     // (sizes/aligns/counts/flag-bits); type_eq is a plain tag compare.
     rt_size_of,
     rt_align_of,
@@ -596,7 +596,7 @@ pub const BuiltinId = enum(u16) {
     // negative = sign-extend). Internal — serves fmt's `__sx_any_tag_word`.
     rt_variant_tag_width,
     rt_type_eq,
-    // Field-family runtime paths (1a-S3b): master-index [N x ptr] tables →
+    // Field-family runtime paths: master-index [N x ptr] tables →
     // per-type arrays (names reuse the per-type name arrays; type tags,
     // offsets, and variant values get their own). variant_* shares the same
     // member arrays.

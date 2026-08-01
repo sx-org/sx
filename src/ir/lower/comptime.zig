@@ -542,8 +542,8 @@ pub fn lowerInsertExprValue(self: *Lowering, expr: *const Node) Ref {
         const stmt = p.parseStmt() catch break;
         if (p.current.tag == .eof) {
             // Last statement — try to capture as expression value
-            // Note: tryLowerAsExpr internally calls lowerStmt for statement nodes,
-            // so we must NOT call lowerStmt again in the else branch.
+            // tryLowerAsExpr internally calls lowerStmt for statement nodes,
+            // so the else branch must not call lowerStmt again.
             if (self.tryLowerAsExpr(stmt)) |val| {
                 last_val = val;
             }

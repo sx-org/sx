@@ -2639,7 +2639,7 @@ const FieldLvalue = struct { ptr: Ref, ty: TypeId };
 /// shape, add an arm here and a matching GEP arm in `fieldLvaluePtr`; both fail
 /// to compile until the union is exhaustive, forcing the two to stay in lockstep.
 ///
-/// NOTE: the READ path (`lowerFieldAccess`, expr.zig) and the TYPE-INFER path
+/// The READ path (`lowerFieldAccess`, expr.zig) and the TYPE-INFER path
 /// (`ExprTyper.inferType`, expr_typer.zig) still carry their OWN parallel field
 /// matchers (emitting `union_get`/`enum_payload`/`struct_get` value reads, and
 /// returning a bare `TypeId`, respectively). They do not route through here,

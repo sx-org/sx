@@ -734,11 +734,12 @@ pub const ErrorDirective = struct {
 /// program-global Context namespace, collected across all modules.
 pub const ContextExtendDecl = struct {
     name: []const u8,
-    /// Span of the field-name token (collision / L5 diagnostics anchor here).
+    /// Span of the field-name token (collision / missing-default diagnostics
+    /// anchor here).
     name_span: Span,
     type_expr: *Node,
     /// null = the `= default` clause is absent. The parser accepts it so the
-    /// collection pass can reject it with the L5 wording (defaults are
+    /// collection pass can reject it with the tailored wording (defaults are
     /// mandatory and comptime-evaluable) instead of a bare parse error.
     default_expr: ?*Node,
 };

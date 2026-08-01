@@ -322,10 +322,10 @@ pub const GenericResolver = struct {
         // as `monomorphizeFunction` does — so a name in the return type (e.g.
         // the error set of a value-failable `(… , !E)`) resolves to the SAME
         // TypeId the instance's real signature uses, not whatever a re-export
-        // alias at the call site resolves it to. Without this pin a re-exported
-        // generic value-failable's `!E` resolved to a non-`.error_set` alias,
-        // so the planned call result was a plain tuple and `errorChannelOf`
-        // missed the failable channel. The binding-building above
+        // alias at the call site resolves it to. The pin is what keeps a
+        // re-exported generic value-failable's `!E` an `.error_set`, so the
+        // planned call result carries a channel `errorChannelOf` can read.
+        // The binding-building above
         // stays in the call-site context (its args are typed there).
         const saved_src = self.l.current_source_file;
         defer self.l.setCurrentSourceFile(saved_src);

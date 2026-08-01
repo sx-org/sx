@@ -75,7 +75,7 @@ HitPolicy :: enum {
 // A focus declaration (G5): focusable elements declare beside their
 // hit regions; DECLARATION order is the tab-traversal order — no
 // registry. on_key/on_text fire at delivery from the CURRENT
-// committed snapshot (C8), re-supplied each frame like hit-region
+// committed snapshot, re-supplied each frame like hit-region
 // closures; wants_keyboard is what the platform shell polls to drive
 // the soft keyboard.
 FocusRegion :: struct {
@@ -96,7 +96,7 @@ HitRegion :: struct {
     policy: ?Closure(Point) -> HitPolicy = null;   // null = .tap everywhere
     // Tap registration IS the region declaration (§6.9): the router
     // runs the CURRENT committed snapshot's handler at recognition —
-    // fire-time resolution, never a retained callback (C8).
+    // fire-time resolution, never a retained callback.
     on_tap: ?Closure() = null;
 }
 

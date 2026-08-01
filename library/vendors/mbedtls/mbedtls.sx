@@ -187,7 +187,7 @@ mbedtls_ssl_conf_rng :: (
 ) extern mbedtls;
 
 mbedtls_ssl_conf_own_cert :: (conf: *SslConfig, own_cert: *X509Crt, pk_key: *PkContext) -> i32 extern mbedtls;
-// NOTE: mbedtls_ssl_conf_min/max_tls_version are `static inline` in ssl.h (they
+// mbedtls_ssl_conf_min/max_tls_version are `static inline` in ssl.h (they
 // assign an opaque config field), so they expose NO linkable symbol and cannot
 // be bound here as extern. Pinning a min version needs a small C wrapper.
 

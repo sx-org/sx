@@ -1,4 +1,4 @@
-// The C7 normalized input surface — host-independent: no ffi, no SDL;
+// The normalized input surface — host-independent: no ffi, no SDL;
 // each backend translates its native events into these (through the
 // platform layer's PlatformEvent stream) and pushes them into a
 // per-root InputQueue. The §6.9 router consumes the drained stream

@@ -1353,7 +1353,7 @@ pub const Analyzer = struct {
             },
             .error_set_decl => |esd| {
                 // Register the set name; error-set semantics arrive in the ERR
-                // stream's E1 sema steps.
+                // stream's sema steps.
                 try self.addSymbol(esd.name, .type_alias, null, node.span);
             },
             // Leaf nodes — nothing to recurse into

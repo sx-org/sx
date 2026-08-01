@@ -433,9 +433,8 @@ test "buildImportFacts: c-import namespace recorded as an edge" {
 
 // Duplicate-name invariant: a same-module authored duplicate top-level
 // name is DIAGNOSED, not silently dropped. The parser/decl-checker does not
-// catch this today (verified: `sx run` of a same-file double decl exits 0 with
-// no diagnostic), so `resolveImports` surfaces it where `addOwnDecl` refuses the
-// second author. This test FAILS on the pre-diagnostic code and PASSES after.
+// catch it, so `resolveImports` surfaces it where `addOwnDecl` refuses the
+// second author.
 test "buildImportFacts: same-module duplicate top-level name is diagnosed" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

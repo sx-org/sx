@@ -224,8 +224,8 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     const decls = self.expandModuleDrivers(source_decls);
     root.data.root.decls = decls;
     // Pass 0b: collect every `#context_extend` declaration program-wide into
-    // ProgramIndex (L6 order, L4/L5 validation). Runs UNCONDITIONALLY — in a
-    // no-context build the declarations are inert (O3) but the collected list
+    // ProgramIndex (sorted, validated). Runs UNCONDITIONALLY — in a
+    // no-context build the declarations are inert but the collected list
     // still powers the registered-field diagnostic.
     self.collectContextExtensions(decls);
     // Pass 1: scan — register all function ASTs, struct types, extern stubs
@@ -240,7 +240,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // registered) and before `emitDefaultContextGlobal` / any body lowering
     // (both consume the assembled layout via findByName("Context")).
     self.assembleContext();
-    // A Context STRUCTURAL error (L4 collision / L5 missing default /
+    // A Context STRUCTURAL error (field-name collision / missing default /
     // unresolvable field type) poisons every downstream `context.field`
     // access — halt here so the primary diagnostics stand alone instead of
     // cascading a field-not-found per use site. `core.zig` gates on
@@ -1761,7 +1761,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
             // A global initialized from a module constant copies the
             // constant's recorded value (typed module consts land in
             // `module_const_map` via `registerTypedModuleConst`, run in the
-            // same pass-2 before this). F1/F2: copy the SOURCE-AWARE author's
+            // same pass-2 before this). Copy the SOURCE-AWARE author's
             // value (own-wins), folding its RHS in the author's context, and
             // reject a ≥2-flat ambiguity loudly.
             if (self.program_index.module_const_map.get(id.name)) |ci_global| {
@@ -1828,7 +1828,7 @@ pub fn diagnoseNonConstGlobal(self: *Lowering, vd: *const ast.VarDecl, v: *const
 ///
 /// SOURCE-AWARE. The target `B` is resolved AS SEEN FROM `A`'s
 /// OWN source via the source-aware nominal leaf (`selectNominalLeaf` over
-/// `type_aliases_by_source` / `moduleTypeAuthor` — E1), NEVER the global
+/// `type_aliases_by_source` / `moduleTypeAuthor`), NEVER the global
 /// `type_alias_map` / global `findByName`. The "already resolved" guard is
 /// likewise per-source. When a same-name `B` is authored by a *different*
 /// source (e.g. a namespaced import polluting the global alias map last-wins),
@@ -2748,7 +2748,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
     //
     // The TYPE reachability here is SINGLE-HOP — `from`'s own author plus its
     // DIRECT flat-import edges (`flatTypeAuthorCount`), the same non-transitive
-    // set the bare VALUE / FUNCTION / CONST leaves use (E4, consistent with
+    // set the bare VALUE / FUNCTION / CONST leaves use (consistent with
     // 0706). A library template's INTERNAL type refs (`List.append`'s
     // `alloc: Allocator`) still resolve because every instantiation kind
     // (generic struct / fn / pack fn / param protocol / type fn) is

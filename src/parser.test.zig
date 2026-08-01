@@ -385,7 +385,7 @@ test "parser: non-Closure call followed by '->' still fails" {
 // Lock: `#context_extend name: Type = default;` parses at top level to a
 // `.context_extend_decl` node carrying {name, name_span, type_expr,
 // default_expr}; the `= default` clause may be ABSENT (default_expr == null —
-// the collection pass rejects it with the L5 wording, not the parser); and it
+// the collection pass rejects it, not the parser); and it
 // declares no module-scope name (`declName` is null — the field lives in the
 // program-global Context namespace).
 test "parser: #context_extend parses to context_extend_decl" {
@@ -416,8 +416,8 @@ test "parser: #context_extend parses to context_extend_decl" {
     try std.testing.expect(bare.default_expr == null);
 }
 
-// Lock: `#context_extend` is top-level-only (L7) — statement position is a
-// parse error, not a generic expression-parse fallthrough.
+// `#context_extend` is top-level-only — statement position is a parse error,
+// not a generic expression-parse fallthrough.
 test "parser: #context_extend rejected in statement position" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -967,7 +967,7 @@ test "parser: a newline ends the last declaration in a file" {
 // stop; an `export` definition and an `extern` struct still owe a body, so
 // nothing there can end and the tail reads straight through a line break.
 
-// L1/L2 — a function `extern` tail may end, so it binds only on its own line.
+// A function `extern` tail may end, so it binds only on its own line.
 test "parser: a terminable extern tail binds only on its own line" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1000,7 +1000,7 @@ test "parser: a terminable extern tail binds only on its own line" {
     try std.testing.expectEqualStrings("puts", bound.extern_name.?);
 }
 
-// L6/L7 — the data-global `extern` tail is terminable for the same reason.
+// The data-global `extern` tail is terminable for the same reason.
 test "parser: a terminable extern data tail binds only on its own line" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1029,8 +1029,8 @@ test "parser: a terminable extern data tail binds only on its own line" {
     try std.testing.expectEqualStrings("__error", bound.extern_name.?);
 }
 
-// L3/L4 — an `export` still owes a body, so nothing in its tail can end and the
-// break is ordinary whitespace.
+// An `export` still owes a body, so nothing in its tail can end and the break
+// is ordinary whitespace.
 test "parser: an export tail reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1146,7 +1146,7 @@ test "parser: a complete binding asks whether it ended before its tail" {
     try std.testing.expect(plain_decls[1].data == .const_decl);
 }
 
-// E1/E2 — the suppression list is the enumeration of a property, not a
+// The suppression list is the enumeration of a property, not a
 // whitelist: a binary operator below a complete statement continues it whether
 // or not it is a member, because the Pratt loop consumes it before any
 // terminator query runs.

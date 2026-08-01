@@ -53,7 +53,7 @@ TupleInfo :: struct {
     elements: []Type;
 }
 
-// Per-kind payload shapes for the reflect side (1a-S3). `elem`/`pointee`/
+// Per-kind payload shapes for the reflect side. `elem`/`pointee`/
 // `inner` carry the component type; sizes are NOT stored here — `size_of(tp)`
 // answers that for any tag.
 IntInfo      :: struct { bits: i64; signed: bool; }

@@ -934,9 +934,9 @@ test "pack projection: same-name type-arg + method warns" {
 }
 
 test "converge inferred error sets: empty -> warning, raising -> converged set" {
-    // The empty-inferred warning isn't user-visible yet (the compile driver
-    // only renders diagnostics on failure — a LANG follow-up), so validate the
-    // SCC's emission + set computation directly on the DiagnosticList.
+    // The compile driver renders diagnostics only on failure, so the
+    // empty-inferred warning is validated on the DiagnosticList directly —
+    // the SCC's emission plus its set computation.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2714,10 +2714,9 @@ test "type alias: pack-spread tuple alias poisons to .unresolved with a diagnost
 }
 
 test "type alias: tuple element referencing a LATER-declared alias resolves via the deferred fixpoint" {
-    // `A :: Tuple(a: B, c: bool); B :: i64;` — eager in-loop resolution would
-    // mint a permanent empty-struct stub under `B` (aliases never adopt
-    // stubs), silently corrupting the layout. The deferred fixpoint registers
-    // A only after B is known, so the element binds the real i64.
+    // `A :: Tuple(a: B, c: bool); B :: i64;` — aliases never adopt stubs, so
+    // the deferred fixpoint registers A only after B is known and the element
+    // binds the real i64.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2822,10 +2821,9 @@ test "type alias: mutually-recursive tuple aliases diagnose a reference cycle an
 }
 
 test "type alias: array element referencing a LATER-declared alias resolves via the deferred fixpoint" {
-    // `A :: [2]B; B :: i64;` — eager in-loop resolution would mint a permanent
-    // empty-struct stub under `B` (aliases never adopt stubs), silently
-    // registering a size-0 element layout. The deferred composite-alias
-    // fixpoint registers A only after B is known, so the element binds i64.
+    // `A :: [2]B; B :: i64;` — aliases never adopt stubs, so the deferred
+    // composite-alias fixpoint registers A only after B is known and the
+    // element binds i64, not a size-0 layout.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2858,8 +2856,7 @@ test "type alias: array element referencing a LATER-declared alias resolves via 
 
 test "type alias: forward composite elements across all shapes adopt the real element type" {
     // The deferred composite-alias fixpoint, generalized to every kind. Each
-    // alias' element is declared LATER; the eager path would mint a permanent
-    // size-0 empty-struct stub for it. The fixpoint adopts the real i64
+    // alias' element is declared LATER, and the fixpoint adopts the real i64
     // element/pointee/param in all shapes — array / slice / optional / pointer
     // / function.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -3149,7 +3146,7 @@ fn checkInlineExitCell(cell: InlineExitCell) !void {
         }
     }
 
-    // L1/L2 hold for the WHOLE module: a body that emitted into an already
+    // The block invariants hold for the WHOLE module: a body that emitted into an already
     // closed block, or branched to a block of another function, is malformed
     // wherever it landed.
     for (module.functions.items) |func| {

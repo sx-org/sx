@@ -2535,7 +2535,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
                 return @as(Reg, @intFromBool(table.isUnsignedInt(tid)));
             },
-            // Runtime-Type scalar reflection (1a-S2): the tag resolves the same
+            // Runtime-Type scalar reflection: the tag resolves the same
             // way type_name's does; answers come straight from the type table.
             .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_variant_tag_width => {
                 const table = try self.requireTable();

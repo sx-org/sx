@@ -140,7 +140,7 @@ pub const ErrorAnalysis = struct {
     /// error sets registered) and before body lowering, so `lowerTry`'s
     /// named-caller widening sees the converged callee sets. Also emits the
     /// empty-inferred warning. Scope: pure-failable functions (value-carrying
-    /// raise/try aren't lowered yet — E2).
+    /// raise/try aren't lowered yet).
     pub fn convergeInferredErrorSets(self: ErrorAnalysis) void {
         const Node_ = struct {
             tags: std.ArrayList(u32),

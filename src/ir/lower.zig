@@ -710,7 +710,7 @@ pub const Lowering = struct {
     /// then adds exactly what the taken groups contributed since.
     scanned_decls: std.AutoHashMap(*const Node, void),
     incremental_scan: bool = false,
-    /// Set when a Context STRUCTURAL error was diagnosed (L4 collision, L5
+    /// Set when a Context STRUCTURAL error was diagnosed (field-name collision,
     /// missing default, unresolvable field type). Such an error poisons
     /// every downstream `context.field` access — `lowerRoot` halts after
     /// assembly so the primary diagnostics stand alone instead of cascading
@@ -721,7 +721,7 @@ pub const Lowering = struct {
     /// source. A local type registers into the global type table and CLOBBERS a
     /// same-name top-level entry (`registerStructDecl`'s `findByName … orelse intern`
     /// + `updatePreservingKey`), so after it lowers the name IS the local type
-    /// program-wide (single-author, pre-E2). The source-aware bare-TYPE gate consults
+    /// program-wide (single-author). The source-aware bare-TYPE gate consults
     /// this so a legitimately block-local type resolves in ITS OWN source (never
     /// mistaken for a namespaced-only leak, even when a namespaced-only import authors
     /// a same-name top-level type). It is keyed by source because a local is
@@ -1434,7 +1434,7 @@ pub const Lowering = struct {
     /// DEFINING module of a namespaced callee, restoring the caller's context
     /// after. A namespaced callee's declared return type may name a type that is
     /// bare-visible only inside the callee's own module — namespaced-only from the
-    /// call site's view. Post-E1 the bare leaf is source-aware, so resolving that
+    /// call site's view. The bare leaf is source-aware, so resolving that
     /// return type in the CALL SITE's context would wrongly reject it (the type
     /// analog of the namespaced-fn-body source pin that lowers a namespaced fn body in
     /// its own module's context). `src == null` falls back to the call site's
@@ -2140,7 +2140,7 @@ pub const Lowering = struct {
                 const ty_name = self.formatTypeName(obj_ty);
                 const id = diags.addFmtId(.err, span, "field '{s}' not found on type '{s}'", .{ field, ty_name });
                 // An unknown field on the CONTEXT enumerates the program's
-                // registered `#context_extend` fields (shared O3 helper) —
+                // registered `#context_extend` fields (shared enumeration helper) —
                 // covers both `context.typo` reads and `push .{ typo = … }`.
                 if (self.module.types.findByName(self.module.types.internString("Context"))) |ctx_ty| {
                     if (obj_ty == ctx_ty) self.noteRegisteredContextFields(id);

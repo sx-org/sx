@@ -3296,7 +3296,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                                     break :blk self.emitPlaceholder(eff_fn_name);
                                 }
                             }
-                            // NOTE: `xx <sx_fn> : *void` (e.g.
+                            // `xx <sx_fn> : *void` (e.g.
                             // `class_addMethod(_, _, xx my_imp, _)`)
                             // is intentionally NOT diagnosed here.
                             // Manually-constructed Closure values

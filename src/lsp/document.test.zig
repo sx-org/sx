@@ -228,7 +228,7 @@ test "analyzeDocument: #context_extend records a Context member def" {
 
 // A `context.field` read records a member USE owned by "Context" — WITHOUT
 // the declaring module (or even core.sx) being imported: the implicit
-// `context` types as the Context struct by name (the L3 pin's LSP twin).
+// `context` types as the Context struct by name.
 test "analyzeDocument: context.field read records a Context member use" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

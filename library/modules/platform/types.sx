@@ -2,10 +2,10 @@
 #import "modules/ui/types.sx";
 #import "modules/ui/input.sx";
 
-// The one host event stream. INPUT is the C7-normalized InputEvent —
+// The one host event stream. INPUT is the normalized InputEvent —
 // consumers push `.input` payloads into their root's InputQueue for
-// the §6.9 router. quit/window_resize are lifecycle, deliberately
-// outside C7.
+// the §6.9 router. quit/window_resize are lifecycle events, outside the
+// normalized input surface.
 PlatformEvent :: enum {
     quit;
     window_resize: Size;

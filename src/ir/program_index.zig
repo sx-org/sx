@@ -849,24 +849,24 @@ pub const GlobalInfo = struct { id: inst.GlobalId, ty: TypeId };
 /// diagnostic, and LSP per-field provenance — so each entry keeps its spans
 /// and declaring file alongside the field data.
 pub const ContextFieldDecl = struct {
-    /// Context field name (the program-global Context namespace, L4).
+    /// Context field name (the program-global Context namespace).
     name: []const u8,
     /// Span of the field-name token in the declaring file.
     name_span: ast.Span,
     /// Declared field type (unresolved AST — resolution happens at assembly).
     type_expr: *const ast.Node,
-    /// Declared default value; null = missing (rejected, L5).
+    /// Declared default value; null = missing, which the collection pass rejects.
     default_expr: ?*const ast.Node,
     /// Span of the whole `#context_extend … ;` declaration.
     span: ast.Span,
     /// Declaring source file — `Node.source_file` as stamped by import
     /// resolution. This is the same normalized spelling the program index
     /// uses for module identity everywhere (the by-source caches), so it
-    /// doubles as the module path and as the L6 primary sort key.
+    /// doubles as the module path and as the primary sort key.
     module_path: []const u8,
-    /// False when the entry failed collection validation (L4 collision / L5
+    /// False when the entry failed collection validation (field-name collision /
     /// missing default — the error is already emitted). Assembly and default
-    /// emission skip invalid entries; the O3 field enumeration keeps them.
+    /// emission skip invalid entries; the field enumeration keeps them.
     valid: bool = true,
 };
 
@@ -969,12 +969,12 @@ pub const ProgramIndex = struct {
     globals_by_source: std.StringHashMap(std.StringHashMap(GlobalInfo)),
 
     // ── Context extension (design/context-extension.md) ──
-    /// Every `#context_extend` declaration in the compilation, sorted per L6
-    /// by (declaring module path, field name). Collected UNCONDITIONALLY —
+    /// Every `#context_extend` declaration in the compilation, sorted by
+    /// (declaring module path, field name). Collected UNCONDITIONALLY —
     /// also in no-context builds, where the declarations are inert but the
     /// list still powers the registered-field diagnostic. Set once by
-    /// `collectContextExtensions`; entries that failed validation (L4
-    /// collision / L5 missing default) are kept with `valid = false` so
+    /// `collectContextExtensions`; entries that failed validation (collision /
+    /// missing default) are kept with `valid = false` so
     /// downstream diagnostics can still enumerate them.
     context_extensions: []ContextFieldDecl = &.{},
 

@@ -2,16 +2,16 @@
 //! (design/context-extension.md).
 //!
 //! Gathers every `#context_extend` declaration across the compilation into
-//! `ProgramIndex.context_extensions`, sorted per L6 by (declaring module
-//! path, field name), and validates:
-//!   - L4: one flat program-global namespace — a field name declared twice
+//! `ProgramIndex.context_extensions`, sorted by (declaring module path, field
+//! name), and validates:
+//!   - one flat program-global namespace — a field name declared twice
 //!     (or colliding with a field of the declared `Context` struct) is a
 //!     hard error naming both declaration sites.
-//!   - L5: a declaration without a default is an error (the default context
+//!   - a declaration without a default is an error (the default context
 //!     must be constructible before `main` runs).
 //!
 //! The pass runs UNCONDITIONALLY — also in no-context builds, where the
-//! declarations are inert (O3) but the collected list still powers the
+//! declarations are inert but the collected list still powers the
 //! registered-field diagnostic.
 //!
 //! `assembleContext` (run after `scanDecls`, once every named type is
@@ -89,8 +89,7 @@ pub fn collectContextExtensions(self: *Lowering, decls: []const *const Node) voi
         diags.current_source_file = saved;
     }
 
-    // L4, builtin half: collision with a field the declared `Context` struct
-    // already carries (allocator/io; gone post-L8-retrofit).
+    // Collision with a field the declared `Context` struct already carries.
     if (findContextStructDecl(decls)) |ctx| {
         for (ext) |*e| {
             for (ctx.decl.field_names) |fname| {
@@ -110,7 +109,7 @@ pub fn collectContextExtensions(self: *Lowering, decls: []const *const Node) voi
 
 /// Assemble the program Context: append every valid collected field to the
 /// registered `Context` struct type (declared EMPTY in core.sx — 100% of the
-/// fields come from `#context_extend` declarations, in L6 order). The
+/// fields come from `#context_extend` declarations, in sort order). The
 /// authoritative call is pass 1a' in `lowerRoot` (after `scanDecls` — every
 /// named type registered, diagnostics live). Each field's type resolves in
 /// its DECLARING module's visibility context, exactly like a namespaced
@@ -156,7 +155,7 @@ fn assembleContextImpl(self: *Lowering, mode: enum { early, final }) bool {
     // the scan loop re-derives the TypeInfo from the — empty — declaration,
     // wiping appended fields). Every call re-appends whatever valid
     // extensions the CURRENT TypeInfo is missing; with none missing it is a
-    // cheap no-op. Convergent: same fields, same L6 order, every time.
+    // cheap no-op. Convergent: same fields, same order, every time.
     var fields = std.ArrayList(types_mod.TypeInfo.StructInfo.Field).empty;
     fields.appendSlice(self.alloc, info.@"struct".fields) catch return false;
     var appended = false;
@@ -251,7 +250,7 @@ pub const ContextFieldRef = struct { index: u32, ty: types_mod.TypeId };
 
 /// Attach the registered `#context_extend` field list (name, declared type
 /// spelling, declaring module) as a note under the primary diagnostic `id`.
-/// The O3 enumeration — shared by the no-context error ("what would the
+/// The registered-field enumeration — shared by the no-context error ("what would the
 /// context have been?") and the Context unknown-field error ("what fields
 /// are there?"). No-op when nothing is registered. Invalid entries are
 /// listed too: a field that failed validation is still part of the program's
@@ -307,11 +306,11 @@ pub fn contextFieldByName(self: *Lowering, fname: []const u8) ?ContextFieldRef {
 /// Serialize the `#context_extend` declaration named `fname`'s default into a
 /// static ConstantValue against the assembled field type — the extension
 /// half of the `__sx_default_context` initializer. Reuses the global-
-/// initializer serializer (L5: defaults are exactly the compile-time-constant
-/// class), evaluated in the DECLARING module's visibility context so a
+/// initializer serializer — defaults are exactly the compile-time-constant
+/// class — evaluated in the DECLARING module's visibility context so a
 /// default naming the author's own consts resolves there. Null = the default
 /// failed to serialize (the serializer already emitted the diagnostic) or
-/// the entry is invalid (its L4/L5 error is already out).
+/// the entry is invalid (its collection error is already out).
 pub fn contextExtensionDefault(self: *Lowering, fname: []const u8, fty: types_mod.TypeId) ?inst_mod.ConstantValue {
     for (self.program_index.context_extensions) |e| {
         if (!std.mem.eql(u8, e.name, fname)) continue;
@@ -364,8 +363,8 @@ fn gatherEntries(
                 }) catch {};
             },
             // A namespaced import wraps its module's decls inline — descend so
-            // `ns :: #import "m"` still contributes m's context fields (L3:
-            // imports gate existence, never visibility).
+            // `ns :: #import "m"` still contributes m's context fields —
+            // imports gate existence, never visibility.
             .namespace_decl => |ns| gatherEntries(self, ns.decls, entries, seen_nodes),
             else => {},
         }

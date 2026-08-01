@@ -2693,7 +2693,7 @@ pub const Parser = struct {
         if (self.current.tag == .hash_error) {
             return self.parseErrorDirective();
         }
-        // `#context_extend` is a top-level-only directive (L7): the Context is
+        // `#context_extend` is a top-level-only directive: the Context is
         // assembled once per program, so a function-local declaration is
         // meaningless — reject it here with a placement error rather than
         // letting it fall through to a generic expression-parse failure. A

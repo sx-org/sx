@@ -367,7 +367,7 @@ pub const ResolvedModule = struct {
                     // per-source decl (a named type, or any non-function const:
                     // type alias + value const), each of which must reach
                     // registration as a distinct same-name author of its own
-                    // module (types and aliases; step E5 value consts). Only
+                    // module (types, aliases and value consts). Only
                     // FUNCTIONS keep first-wins (the shadowed author
                     // stays reachable via its qualified name / SelectedFunc).
                     // Node identity (above) still de-dups a diamond import of the
@@ -387,7 +387,7 @@ pub const ResolvedModule = struct {
     /// first-wins winner. NAMED types and every non-function `const_decl` (type
     /// aliases + inline type decls + VALUE consts, source-keyed via the alias /
     /// const caches) are per-source — that is what prevents same-name collapse for
-    /// types/aliases and supports same-name value consts (step E5). Everything
+    /// types/aliases and supports same-name value consts. Everything
     /// else keeps the first-wins name-merge: FUNCTIONS (the shadowed
     /// author stays reachable via its qualified name / SelectedFunc), and crucially
     /// `var_decl`s, including a `extern` extern global declared in two files
@@ -921,7 +921,7 @@ pub fn stampFnBodySource(decl: *Node, file_path: []const u8) void {
             .fn_decl => |fd| fd.body.source_file = file_path,
             // `List :: struct { … append :: (…) { … } }` — the methods of a
             // (possibly generic) struct are monomorphized in their template's
-            // OWN module (the E4 instantiation source-pin), so their
+            // OWN module (the instantiation source-pin), so their
             // bodies need the defining path stamped just like a top-level fn.
             .struct_decl => |sd| stampStructMethodSources(sd, file_path),
             .protocol_decl => cd.value.data.protocol_decl.source_file = file_path,

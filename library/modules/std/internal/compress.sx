@@ -1443,7 +1443,7 @@ Deflater :: struct {
     hash_shift: i64;
     // Never read: retained solely for struct layout. Removing these two
     // slots shifts the hot match-search fields across a cache line and
-    // costs ~1.5% encode time at levels 6-9 (61-trial paired benchmark).
+    // costs measurable encode time at levels 6-9.
     nondeterministic: bool;
     less_memory: bool;
     flush_mode: Flush;

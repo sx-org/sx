@@ -2197,7 +2197,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         const has_ctx = func.has_implicit_ctx;
                         self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
                         if (plain_method_fd) |fd| self.appendDefaultArgs(fd, &method_args, c.callee);
-                        // Note: coerceCallArgs can trigger protocol thunk creation
+                        // coerceCallArgs can trigger protocol thunk creation
                         // (module.addFunction), invalidating func pointer.
                         // Use pre-extracted params/ret_ty (+ has_ctx) instead of
                         // func.* after this.
@@ -2669,7 +2669,7 @@ pub fn resolveFuncByName(self: *Lowering, name: []const u8) ?FuncId {
 /// instruction carries — and is deliberately NOT the same axis as the registry's
 /// `Id`, which says which DECLARATION was called.
 ///
-/// Note: "print" is not here — it's a comptime-expanded function, not a builtin.
+/// "print" is not here — it's a comptime-expanded function, not a builtin.
 /// "out" is not either — it's a plain sx function over libc `write`.
 pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
     // Every name must be a registered intrinsic to get a builtin op at all.
@@ -3199,9 +3199,9 @@ fn rmwKindFromName(name: []const u8) ?inst_mod.RmwKind {
 
 /// Is `name` dispatched by `tryLowerReflectionCall`? Either a registered
 /// reflection intrinsic, or one of the bare KEYWORDS the compiler recognizes with
-/// no declaration at all (`type_eq`, `has_impl`, …). The two are listed apart on
-/// purpose: only the first group answers to the registry, and conflating them is
-/// what let a name with no declaration look like an intrinsic.
+/// no declaration at all (`type_eq`, `has_impl`, …). The two are listed apart
+/// because only the first group answers to the registry; conflating them makes a
+/// name with no declaration look like an intrinsic.
 fn isReflectionCall(name: []const u8) bool {
     const keywords = [_][]const u8{
         "type_eq",               "has_impl",
@@ -3362,13 +3362,13 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             return Ref.none;
         };
         if (!self.isStaticTypeArg(c.args[0])) {
-            // Runtime Type (1a-S3b-3): load the const record by tag.
+            // Runtime Type: load the const record by tag.
             const tp = self.lowerExpr(c.args[0]);
             const args_owned = self.alloc.dupe(Ref, &.{tp}) catch return Ref.none;
             return self.builder.callBuiltin(.type_info, args_owned, ti_ty);
         }
         const t = self.resolveTypeArg(c.args[0]);
-        // Every type-table kind reflects (1a-S3a — TypeInfo is exhaustive
+        // Every type-table kind reflects (TypeInfo is exhaustive
         // over kinds; the VM's record builder classifies each and fails
         // loudly on an unclassified one). Only an unresolved arg rejects.
         if (t == .unresolved) {
@@ -3381,7 +3381,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     }
     if (std.mem.eql(u8, name, "size_of")) {
         // size_of(T) → const_int(sizeof(T)); runtime Type arg → tag-indexed
-        // size-table read (1a-S2). Same static/dynamic split as type_name —
+        // size-table read. Same static/dynamic split as type_name —
         // the dynamic path never touches resolveTypeArg.
         if (!self.isStaticTypeArg(c.args[0])) {
             const arg_ref = self.lowerExpr(c.args[0]);
@@ -3410,7 +3410,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         return self.builder.constInt(a, .i64);
     }
     if (std.mem.eql(u8, name, "struct_field_count") or std.mem.eql(u8, name, "variant_count")) {
-        // Runtime Type arg (1a-S2): tag-indexed count-table read. Kind gates
+        // Runtime Type arg: tag-indexed count-table read. Kind gates
         // are a STATIC-arg feature; at runtime the table answers (a wrong-kind
         // tag reads 0 — kind discrimination at runtime is type_info's job).
         if (!self.isStaticTypeArg(c.args[0])) {
@@ -3488,7 +3488,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const a_static = self.isStaticTypeArg(c.args[0]);
         const b_static = self.isStaticTypeArg(c.args[1]);
         if (!a_static or !b_static) {
-            // Runtime tag compare (1a-S2): Type is an i64 tag at runtime, so
+            // Runtime tag compare: Type is an i64 tag at runtime, so
             // equality is a plain integer compare — no table involved. A
             // static side lowers to its constant tag.
             const ra = if (a_static) self.builder.constType(self.resolveTypeArg(c.args[0])) else self.lowerExpr(c.args[0]);
@@ -3612,7 +3612,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     if (std.mem.eql(u8, name, "struct_field_name") or std.mem.eql(u8, name, "variant_name")) {
         if (c.args.len < 2) return self.builder.constString(self.module.types.internString(""));
         if (!self.isStaticTypeArg(c.args[0])) {
-            // Runtime Type (1a-S3b): master-index member-name table read.
+            // Runtime Type: master-index member-name table read.
             const tp = self.lowerExpr(c.args[0]);
             const idx = self.lowerExpr(c.args[1]);
             const args_owned = self.alloc.dupe(Ref, &.{ tp, idx }) catch return self.builder.constString(self.module.types.internString(""));
@@ -3777,13 +3777,13 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         return self.builder.makeAny(tag, addr);
     }
     if (std.mem.eql(u8, name, "raw_any_data")) {
-        // raw_any_data(av) → the view's data pointer (C2 raw layer).
+        // raw_any_data(av) → the view's data pointer (raw `any` layer).
         if (c.args.len < 1) return self.builder.constInt(0, .i64);
         const av = self.lowerExpr(c.args[0]);
         return self.builder.anyData(av, self.module.types.ptrTo(.void));
     }
     if (std.mem.eql(u8, name, "raw_make_any")) {
-        // raw_make_any(tp, data) → assemble a view (C2 raw layer, UNCHECKED
+        // raw_make_any(tp, data) → assemble a view (raw `any` layer, UNCHECKED
         // at runtime: the caller asserts `data` points at a live, aligned
         // value of `tp`). The data arg lowers under its DECLARED param type
         // (*void) — without this, an ambient target (e.g. this call in
@@ -3848,7 +3848,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         // element types; untagged-union arms overlay at 0.
         if (c.args.len < 2) return self.builder.constInt(0, .i64);
         if (!self.isStaticTypeArg(c.args[0])) {
-            // Runtime Type (1a-S3b): field-offset table read.
+            // Runtime Type: field-offset table read.
             const tp = self.lowerExpr(c.args[0]);
             const idx = self.lowerExpr(c.args[1]);
             const args_owned = self.alloc.dupe(Ref, &.{ tp, idx }) catch return self.builder.constInt(0, .i64);
@@ -3883,7 +3883,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     }
     if (std.mem.eql(u8, name, "struct_field_type") or std.mem.eql(u8, name, "variant_type") or std.mem.eql(u8, name, "pointee_type")) {
         if (!std.mem.eql(u8, name, "pointee_type") and c.args.len == 2 and !self.isStaticTypeArg(c.args[0])) {
-            // Runtime Type (1a-S3b): member-type tag table read → Type value.
+            // Runtime Type: member-type tag table read → Type value.
             const tp = self.lowerExpr(c.args[0]);
             const idx = self.lowerExpr(c.args[1]);
             const args_owned = self.alloc.dupe(Ref, &.{ tp, idx }) catch return self.builder.constType(.void);
@@ -4974,7 +4974,7 @@ pub fn userParamTypes(self: *Lowering, func: *const Function) []TypeId {
 }
 
 /// Param types of a not-yet-lowered AST callee for arg target-typing,
-/// resolved in the callee's own module context (the E4 source pin — see
+/// resolved in the callee's own module context (the source pin — see
 /// `resolveParamTypeInSource`). A generic callee's bare `T` leaves mean
 /// nothing as nominal names in that module: without this call's inferred
 /// `$T → concrete` bindings the pin would resolve `T` as an undeclared

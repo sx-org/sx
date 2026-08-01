@@ -570,7 +570,7 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
             if !nok { context.allocator.dealloc_bytes(xx pathp); raise error.Url; }
             u = nu;   // host/path view pathp — copied into hostb / kept owned next iteration
         } else if locv.len > 0 and locv[0] == '/' {   // '/'-relative: keep authority
-            u.path = strip_fragment(locv);   // review L4 — parse_url strips the absolute arm
+            u.path = strip_fragment(locv);   // parse_url strips the absolute arm
         } else {
             context.allocator.dealloc_bytes(xx pathp);
             raise error.Url;   // relative-without-slash — unsupported

@@ -1564,7 +1564,7 @@ const HeadTemplate = union(enum) {
 ///   - qualified, every namespace edge is proved and the exact terminal author
 ///     is a generic struct → rebuild that author's template.
 ///   - qualified, a namespace edge/member is missing → diagnose and poison,
-///     `.poisoned` (never the bare global map, E4 #2).
+///     `.poisoned` (never the bare global map).
 ///   - qualified, namespace authors `name` but NOT as a generic struct (a
 ///     type-fn / named type) → `.not_generic` (caller's non-struct path).
 ///   - qualified but not a namespace path → `.not_generic`; NEVER use a global
@@ -1662,12 +1662,12 @@ pub fn headNameOfCallee(callee: *const Node) ?HeadName {
 /// direct flat author resolves to ITS source-keyed TypeId. Falls open
 /// (`.proceed`) when import facts are unwired, the source context is absent,
 /// the default-Context emitter is running (built-in infrastructure resolves
-/// independent of the user's import style, F1), the querying source is the OWN
+/// independent of the user's import style), the querying source is the OWN
 /// author, a single flat author is not registered yet (a forward / extern /
 /// generic template — the caller instantiates it), or `name` is a block-local
 /// of this source / no type author at all. Library-internal heads stay visible
 /// because every instantiation kind is source-pinned to the template's defining
-/// module (E3/E4 #1): the query originates THERE, where the head is a direct
+/// module: the query originates THERE, where the head is a direct
 /// flat import. A namespaced `ns.Box(..)` head is an explicit qualified reach
 /// and is exempt (the caller skips this gate).
 const HeadTypeGate = union(enum) {

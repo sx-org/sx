@@ -369,7 +369,7 @@ pub fn reserveShadowProtocolSlot(self: *Lowering, pd: *const ast.ProtocolDecl) v
 /// same-name authors of DIFFERENT kinds (a `struct Foo` and an `enum Foo`) are
 /// NOT mistaken for one shadow group. Carries the stable decl pointer (the
 /// `decl_key` / raw-facts identity) so the scan de-dups by decl identity, and
-/// dispatches the per-kind reservation. Later E6 sub-steps add their kind here.
+/// dispatches the per-kind reservation; a new kind is added here.
 const ShadowTypeDecl = union(enum) {
     @"struct": *const ast.StructDecl,
     @"enum": *const ast.EnumDecl,
@@ -792,7 +792,7 @@ pub fn aliasedFnDecl(self: *Lowering, cd: *const ast.ConstDecl, from: []const u8
 
 /// The bare-VISIBLE single generic-struct author of `name` (its `StructDecl` +
 /// defining source) when that author is NOT the one the global last-wins
-/// `struct_template_map` already holds — the E4 non-transitive selection for a
+/// `struct_template_map` already holds — the non-transitive selection for a
 /// bare generic head / alias / static-method head whose visible author (own or
 /// a single 1-hop flat import) is shadowed in the global map by a NON-visible
 /// (≥2-flat-hop) same-name template. Exposing the decl (not just a

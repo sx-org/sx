@@ -496,8 +496,8 @@ const Expansion = struct {
     /// driver could still write a `#context_extend`, the fact is not
     /// publishable and the asking driver parks against it exactly as it parks
     /// against an open conformer set. Once nothing can contribute, the decided
-    /// space registers (incrementally — a declaration is scanned once), the L6
-    /// layout assembles, and the exact `__sx_default_context` is emitted. A
+    /// space registers (incrementally — a declaration is scanned once), the
+    /// Context layout assembles, and the exact `__sx_default_context` is emitted. A
     /// field type a taken group has not declared yet is the same wait: another
     /// driver's group can still supply it.
     fn contextReady(ex: *Expansion) bool {

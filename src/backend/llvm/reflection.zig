@@ -90,7 +90,7 @@ pub const Reflection = struct {
         return global;
     }
 
-    /// 1a-S2: the per-builtin runtime scalar tables — lazy `[N x i64]` (or
+    /// The per-builtin runtime scalar tables — lazy `[N x i64]` (or
     /// `[N x i1]` for flags), tag-indexed, one row per TypeId in table order.
     /// Values come from the SAME type-table queries the comptime folds use,
     /// so the static and dynamic answers can never diverge.
@@ -177,7 +177,7 @@ pub const Reflection = struct {
         return global;
     }
 
-    /// 1a-S3b master-index tables: `[N x ptr]` keyed by TypeId, each slot the
+    /// Field-family master-index tables: `[N x ptr]` keyed by TypeId, each slot the
     /// per-type member array (names / member-type tags / field offsets /
     /// variant values), or null for memberless types. Values from the same
     /// TypeTable queries the comptime folds use. Per-type arrays are built
@@ -266,7 +266,7 @@ pub const Reflection = struct {
         return global;
     }
 
-    // ── 1a-S3b-3: runtime `type_info(tp)` const records ────────────────
+    // ── Runtime `type_info(tp)` const records ────────────────
     //
     // One constant per TypeId whose BYTES match the sx `TypeInfo` tagged
     // union (tag word at 0, payload at tag_size — buildTypeInfo's layout

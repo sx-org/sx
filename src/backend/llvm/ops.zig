@@ -1806,7 +1806,7 @@ pub const Ops = struct {
                 self.e.mapRef(result);
             },
             .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_variant_tag_width => {
-                // Runtime-Type scalar reflection (1a-S2): resolve the tag the
+                // Runtime-Type scalar reflection: resolve the tag the
                 // arg denotes (any → its type-tag), GEP the builtin's lazy
                 // table, load. Same shape as the type_name/is_unsigned arms.
                 const kind: @import("reflection.zig").Reflection.ScalarTableKind = switch (bi.builtin) {
@@ -1838,7 +1838,7 @@ pub const Ops = struct {
                 self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, elem_ty, gep, "rts.load"));
             },
             .rt_member_name, .rt_member_type, .rt_field_offset, .rt_variant_value => {
-                // Field-family runtime reads (1a-S3b): master [N x ptr] by
+                // Field-family runtime reads: master [N x ptr] by
                 // tag → per-type array → [idx]. OOB idx is documented UB
                 // (inbounds GEP), same as the static per-type name arrays.
                 const refl = self.e.reflection();

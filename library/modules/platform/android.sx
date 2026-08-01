@@ -420,11 +420,10 @@ impl Platform for AndroidPlatform {
         true
     }
 
-    // NOTE: method order must match the `Platform` protocol declaration
+    // Method order must match the `Platform` protocol declaration
     // in modules/platform/api.sx. The vtable is built in impl source
-    // order; mismatched order silently routes calls to the wrong method
-    // (chess on Android lost touch entirely because poll_events sat in
-    // begin_frame's slot, etc.).
+    // order, so a mismatched order silently routes calls to the wrong
+    // method.
 
     run_frame_loop :: (self: *AndroidPlatform, frame_fn: Closure()) {
         self.frame_closure = frame_fn;

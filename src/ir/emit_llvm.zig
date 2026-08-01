@@ -209,7 +209,7 @@ pub const LLVMEmitter = struct {
     // `type_is_unsigned(t)` call site (the `{}` formatter's int branch).
     type_is_unsigned_array: ?c.LLVMValueRef = null,
     type_is_unsigned_array_len: u32 = 0,
-    // 1a-S2 runtime-reflection scalar tables (lazy, tag-indexed [N x i64] /
+    // Runtime-reflection scalar tables (lazy, tag-indexed [N x i64] /
     // [N x i1]); built on the first dynamic call site of their builtin.
     type_size_array: ?c.LLVMValueRef = null,
     type_size_array_len: u32 = 0,
@@ -225,7 +225,7 @@ pub const LLVMEmitter = struct {
     vector_lanes_array_len: u32 = 0,
     variant_tag_width_array: ?c.LLVMValueRef = null,
     variant_tag_width_array_len: u32 = 0,
-    // 1a-S3b field-family master-index tables: [N x ptr] → per-type arrays.
+    // Field-family master-index tables: [N x ptr] → per-type arrays.
     member_name_ptrs: ?c.LLVMValueRef = null,
     member_name_ptrs_len: u32 = 0,
     member_type_ptrs: ?c.LLVMValueRef = null,
@@ -234,7 +234,7 @@ pub const LLVMEmitter = struct {
     field_offset_ptrs_len: u32 = 0,
     member_value_ptrs: ?c.LLVMValueRef = null,
     member_value_ptrs_len: u32 = 0,
-    // 1a-S3b-3: runtime type_info records — [N x ptr] master to per-type
+    // Runtime type_info records — [N x ptr] master to per-type
     // TypeInfo constants (each its own global; bytes match the sx layout).
     type_info_records: ?c.LLVMValueRef = null,
     type_info_records_len: u32 = 0,
