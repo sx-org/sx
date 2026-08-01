@@ -55,9 +55,7 @@ timp :: #import "modules/std/time.sx";
 // top-level `#import "epoll.sx"` would register epoll's types into EVERY std
 // program's type table on darwin too — drifting every `.ir` snapshot. Scoping
 // the import to the linux branch keeps darwin's type graph unchanged. (kqb
-// stays top-level: it was already there before the epoll split, so darwin's
-// table — and the snapshots — match; on linux its kqueue externs are unused
-// declares.)
+// stays top-level; on linux its kqueue externs are unused declares.)
 
 EventErr :: error {
     Init,       // the kernel queue could not be created

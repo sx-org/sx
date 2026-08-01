@@ -29,8 +29,6 @@ impl Summable for Point {
 }
 
 // `inline`-kind protocol for dynamic dispatch
-
-// `inline`-kind protocol for dynamic dispatch
 Adder :: protocol inline {
     add :: (self: *Self, n: i32);
     value :: (self: *Self) -> i32;

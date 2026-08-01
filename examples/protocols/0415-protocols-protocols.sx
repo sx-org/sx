@@ -89,15 +89,11 @@ vec3 :: (x: f32, y: f32, z: f32) -> Vector(3, f32) {
 point_sum :: (p: Point) -> i32 { p.x + p.y }
 
 // #run compile-time constants
-
-// #run compile-time constants
 CT_VAL :: #run add(10, 15);
 
 CT_MUL :: #run mul(6, 7);
 
 CT_CHAIN :: #run add(CT_VAL, 5);
-
-// #run compile-time optional tests
 
 // #run compile-time optional tests
 ct_opt_coalesce :: () -> i32 {
@@ -124,8 +120,6 @@ CT_OPT_UNWRAP :: #run ct_opt_unwrap();
 CT_OPT_GUARD :: #run ct_opt_guard();
 
 // #insert helpers
-
-// #insert helpers
 gen_code :: () -> string {
     return "print(\"insert-ok\\n\");";
 }
@@ -139,8 +133,6 @@ gen_val :: () -> string {
 SmokeErr :: error { Empty, BadDigit, Overflow }
 
 // value-carrying, named set: raise three tags or succeed
-
-// value-carrying, named set: raise three tags or succeed
 sm_parse :: (n: i32) -> (i32, !SmokeErr) {
     if n < 0  { raise error.BadDigit; }
     if n == 0 { raise error.Empty; }
@@ -149,14 +141,10 @@ sm_parse :: (n: i32) -> (i32, !SmokeErr) {
 }
 
 // pure failable, inferred set (ad-hoc tag minted into `!`)
-
-// pure failable, inferred set (ad-hoc tag minted into `!`)
 sm_check :: (ok: bool) -> ! {
     if !ok { raise error.NotReady; }
     return;
 }
-
-// multi-value, inferred set: `try` propagates; the SCC pass absorbs SmokeErr
 
 // multi-value, inferred set: `try` propagates; the SCC pass absorbs SmokeErr
 sm_pair :: (a: i32, b: i32) -> (i32, i32, !) {
@@ -164,8 +152,6 @@ sm_pair :: (a: i32, b: i32) -> (i32, i32, !) {
     y := try sm_parse(b);
     return .{x, y};
 }
-
-// `catch` block that diverges (logs the tag, then returns a fallback)
 
 // `catch` block that diverges (logs the tag, then returns a fallback)
 sm_or_default :: (n: i32) -> i32 {
@@ -176,8 +162,6 @@ sm_or_default :: (n: i32) -> i32 {
 }
 
 // `onfail` + `defer` interleave: cleanup runs only on the error path
-
-// `onfail` + `defer` interleave: cleanup runs only on the error path
 sm_acquire :: (fail: bool) -> (i32, !) {
     defer  print("  smoke defer A\n");
     onfail print("  smoke onfail B\n");
@@ -186,14 +170,10 @@ sm_acquire :: (fail: bool) -> (i32, !) {
 }
 
 // `or`-chain: try a, fall to try b; propagate if both fail
-
-// `or`-chain: try a, fall to try b; propagate if both fail
 sm_first :: (a: i32, b: i32) -> (i32, !) {
     v := try sm_parse(a) or try sm_parse(b);
     return v;
 }
-
-// --- Extern function binding ---
 
 // --- Extern function binding ---
 libc :: #library "c";
@@ -223,8 +203,6 @@ impl Summable for Point {
 }
 
 // `inline`-kind protocol for dynamic dispatch
-
-// `inline`-kind protocol for dynamic dispatch
 Adder :: protocol inline {
     add :: (self: *Self, n: i32);
     value :: (self: *Self) -> i32;
@@ -247,8 +225,6 @@ impl Adder for Doubler {
 }
 
 // default methods
-
-// default methods
 Repeater :: protocol vtable {
     say :: (self: *Self, msg: string);
     say_twice :: (self: *Self, msg: string) {
@@ -266,9 +242,7 @@ impl Repeater for Printer {
     }
 }
 
-// P4 edge: Chained default→default calls
-
-// P4 edge: Chained default→default calls
+// Chained default→default calls
 Chained :: protocol vtable {
     base :: (self: *Self, msg: string) -> i32;
     wrap :: (self: *Self, msg: string) -> i32 {
@@ -286,8 +260,6 @@ impl Chained for ChainImpl {
         msg.len
     }
 }
-
-// Self type
 
 // Self type
 Eq :: protocol {
@@ -317,8 +289,6 @@ impl Eq for i64 {
 }
 
 // Generic constraints
-
-// Generic constraints
 are_equal :: ($T: Type/Eq, a: T, b: T) -> bool {
     a.eq(b)
 }
@@ -338,14 +308,10 @@ eq_and_hash :: ($T: Type/Eq/Hashable, a: T, b: T) -> bool {
     a.eq(b)
 }
 
-// P6.4: inline constraint syntax ($T/Protocol)
-
-// P6.4: inline constraint syntax ($T/Protocol)
+// inline constraint syntax ($T/Protocol)
 sum_of_inline :: (a: $T/Summable, b: T) -> i32 {
     a.sum() + b.sum()
 }
-
-// Generic struct impls
 
 // Generic struct impls
 Pair :: struct ($T: Type) {
@@ -359,9 +325,7 @@ impl Summable for Pair($T) {
     }
 }
 
-// P6.5: Struct type param constraints
-
-// P6.5: Struct type param constraints
+// Struct type param constraints
 SumBox :: struct ($T: Type/Summable) {
     val: T;
 }
@@ -378,8 +342,6 @@ Phys :: struct {
 }
 
 // Init block test struct
-
-// Init block test struct
 Builder :: struct {
     total: i32;
     count: i32;
@@ -389,8 +351,6 @@ Builder :: struct {
         self.count += 1;
     }
 }
-
-// Global variable for address-of test
 
 // Global variable for address-of test
 g_smoke_val : i32 = 42;
