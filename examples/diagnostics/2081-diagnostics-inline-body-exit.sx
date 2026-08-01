@@ -2,10 +2,11 @@
 // not against whichever caller it was inlined into. The body shares the caller's
 // instruction stream, so without an exit context of its own it read the caller's
 // signature: a `try` in a void callee borrowed the CALLER's error channel and
-// propagated silently through it, and a `-> T` callee that produced no value
+// propagated silently through it, an `onfail` registered a cleanup on an error
+// exit the callee does not have, and a `-> T` callee that produced no value
 // filled the caller's slot with whatever its uninitialized alloca held.
 //
-// Both are the same rule the real body path already applies — the refusals name
+// Each is the same rule the real body path already applies — the refusals name
 // the callee's type because the callee's type is what the exit has to satisfy.
 // Expected: exit 1.
 Bad :: error { Nope }
@@ -26,6 +27,12 @@ raising :: ($tag: string) {
     raise error.Nope;
 }
 
+// Refused the same way: `onfail` runs on an error exit, and a `-> void` callee
+// has no error exit to run on. The caller's is not its to hang a cleanup on.
+cleaning :: ($tag: string) {
+    onfail { }
+}
+
 // Refused: the body ends in a valueless statement, so nothing fills the `i64`.
 novalue :: ($tag: string, n: i64) -> i64 {
     if n > 0 { n = n + 1; }
@@ -34,5 +41,6 @@ novalue :: ($tag: string, n: i64) -> i64 {
 main :: () -> (i64, !Bad) {
     absorbing("a");
     raising("b");
-    novalue("c", 1)
+    cleaning("c");
+    novalue("d", 1)
 }
