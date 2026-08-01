@@ -72,17 +72,16 @@ No row may be called complete while it contains a pending gate.
 ## Completion status
 
 Every row above is closed by fresh stdlib evidence or an explicit reviewed
-supersession; the disposition manifest's gate keys are all closed. Residual
-items tracked OUTSIDE this crosswalk:
+supersession; the disposition manifest's gate keys are all closed. Constraints
+tracked OUTSIDE this crosswalk:
 
-1. compiler-internal issues 0323 and 0325 are follow-up work
-   (`current/PLAN-COMPRESS.md` Step 6); the rest of the resolver/protocol
-   set is resolved with permanent regressions. Issue 0321
-   (module-private struct state) awaits a language-design decision;
+1. compiler-internal issues 0323 and 0325 are open against the resolver and
+   protocol paths this tree exercises; issue 0321 (module-private struct
+   state) awaits a language-design decision;
 2. the final-tree 61-trial benchmark (exact 110-case matrix, timed-artifact
-   byte identity, gain-versus-regression gate) is recorded in
+   byte identity, gain-versus-regression gate) lives in
    `docs/benchmarks/compression.md` — the accepted differential for every
    superseded C transcript;
 3. the HTTP slice's evidence (framing, negotiation, range/validator,
    failure propagation, bounded work, namespace, `.tgs`) at opt 0/3 is the
-   HTTP slice's own gate and is tracked with that commit.
+   HTTP slice's own gate.
