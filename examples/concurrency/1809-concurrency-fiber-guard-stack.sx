@@ -1,7 +1,6 @@
 // Fiber stacks are `mmap`'d with a PROT_NONE GUARD
-// PAGE at their low end (§8.1.1: a fixed stack without a guard silently
-// corrupts neighbors on overflow — the guard turns overflow into an immediate,
-// loud fault instead). The stack grows DOWN, so the guard sits at the lowest
+// PAGE at their low end: a fixed stack without a guard silently corrupts its
+// neighbors on overflow, and the guard turns that into an immediate loud fault. The stack grows DOWN, so the guard sits at the lowest
 // address; when a fiber's SP descends past the usable region it hits the
 // unwritable guard and faults at the boundary.
 //
@@ -10,8 +9,8 @@
 // asserted to have succeeded (`mprotect` → 0). The guard FIRING on overflow is
 // validated separately (a fiber recursing past its 128KB stack faults with
 // "Bus error" at the guard page, address = region+GUARD) — a deterministic
-// corpus assertion for it is omitted because a deliberate stack-overflow crash
-// is host/runtime-fragile (the sx crash handler turns the fault into SIGABRT,
+// corpus assertion for it is omitted because a stack-overflow crash is
+// host/runtime-fragile (the sx crash handler turns the fault into SIGABRT,
 // and the fault address varies run-to-run).
 //
 // aarch64-macos-pinned: the `mmap` flag constants (MAP_ANON = 0x1000) and the

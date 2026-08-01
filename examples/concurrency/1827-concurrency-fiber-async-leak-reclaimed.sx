@@ -4,7 +4,7 @@
 // env, and the spawn_raw fiber-body env. With ownership wired through, ALL of it is
 // freed: the box + envs by `sx_run_boxed_closure` the instant the worker completes,
 // the fiber-body env at fiber reap, and the `Future` by the last of {worker,
-// `await`} (the two-flag handshake). Verified by a tracking `GPA`: after running +
+// `await`} (the two-flag handshake). A tracking `GPA` shows that after running +
 // awaiting three workers and `deinit`, the live-allocation count returns to the
 // pre-spawn baseline — zero residual.
 //

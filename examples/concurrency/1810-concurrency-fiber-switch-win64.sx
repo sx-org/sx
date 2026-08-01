@@ -1,5 +1,5 @@
 // Win64 fiber context-switch STRESS GATE (x86_64-windows-gnu).
-// Mirrors the aarch64 §10.7 gate (examples/1808) for the Win64 ABI:
+// Mirrors the aarch64 register-survival gate (examples/1808) for the Win64 ABI:
 //   - callee-saved: rbx,rbp,rdi,rsi,r12-r15 (8 GP) + rsp + xmm6-xmm15 (10 XMM,
 //     128-bit — Win64 HAS callee-saved XMM, unlike SysV/aarch64).
 //   - args rcx,rdx,r8,r9; result rax; 32-byte shadow + 16-align at each call;

@@ -1,6 +1,6 @@
 // `Scheduler.deinit` releases the scheduler's owned heap
 // + fd resources, closing the documented bounded leaks (kq fd / List backings).
-// Verified by a tracking `GPA`: deinit drives the live allocation count DOWN,
+// A tracking `GPA` shows deinit driving the live allocation count DOWN,
 // and resets the kqueue fd to -1.
 //
 // Scenario (one run that touches every freed resource):

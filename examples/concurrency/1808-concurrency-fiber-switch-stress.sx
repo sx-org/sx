@@ -1,7 +1,6 @@
-// The context-switch STRESS GATE (design §10.7):
-// explicitly scribble EVERY callee-saved register with a sentinel, switch, and
-// verify every one survived. This is the correctness gate the run/snapshot
-// tests can't be — a switch that drops a register "happens to print right".
+// Every callee-saved register is scribbled with a sentinel, switched, and
+// checked for survival. A run or snapshot test cannot catch this: a switch that
+// drops a register still "happens to print right".
 //
 // `swap_context` here saves the COMPLETE AAPCS64 callee-saved set: the integer
 // regs x19-x28 + x29(fp) + x30(lr) + sp, AND the FP regs d8-d15. Per AAPCS64

@@ -14,11 +14,11 @@
 //   - a deep recursive chain (64 frames) suspended at the bottom and resumed —
 //     every frame's stack-local is verified on the unwind.
 //
-// It does NOT explicitly scribble every callee-saved GP (x19-x28) + FP
-// (d8-d15) register with sentinels and check them in asm — the full §10.7
-// gate. This harness exercises preservation indirectly (via
-// compiler-allocated live values), which catches a broken SP/LR or a dropped
-// callee-saved, but not a single specific register the allocator didn't use.
+// It does NOT scribble every callee-saved GP (x19-x28) + FP (d8-d15) register
+// with sentinels and check them in asm — 1808 is that gate. This harness
+// exercises preservation indirectly, through compiler-allocated live values,
+// which catches a broken SP/LR or a dropped callee-saved register but not a
+// specific register the allocator did not use.
 //
 // aarch64-pinned (the asm + the 13-slot save area are per-arch); runs
 // end-to-end here, ir-only on a mismatch. The x86_64 sibling + `mmap` guard-

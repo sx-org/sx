@@ -17,7 +17,7 @@
 //     2 and completes; A resumes, records 3, completes → interleave order 1 2 3.
 //   - awaited VALUES: A returns 42, B returns 100 (recorded after both awaits).
 //     → sequence: 1 2 3 42 100.
-//   - cancel rides the `!` channel (model (a), like 1806): a canceled worker's
+//   - cancel rides the `!` channel (like 1806): a canceled worker's
 //     `await()` raises `.Canceled`, taken by the `or` default → -99.
 //
 // `wait` must run inside a fiber (it parks `self.current`), so the "main task"

@@ -1,5 +1,4 @@
-// / B2 — the async ergonomic layer over the `Io` capability, blocking
-// default. `context.io.async(worker)` submits a NULLARY `worker: Closure() -> $R`
+// The async ergonomic layer over the `Io` capability, blocking default. `context.io.async(worker)` submits a NULLARY `worker: Closure() -> $R`
 // and returns a `*Future($R)` handle; under the blocking `CBlockingIo` the worker
 // runs to completion inline, so the Future is born `.ready`. `f.await()` yields
 // the result (a value-failable `($R, !IoErr)`, handled with `or`).
