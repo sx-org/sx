@@ -42,7 +42,7 @@ error: cannot spread this value into a closure — a runtime slice/array has no 
 
 help: spread a tuple (or a comptime pack) instead, or pass the elements individually
    |
-45 |     print("{}\n", two(..sl));
+44 |     print("{}\n", two(..sl));
    |                       ^^^^
 
 error: cannot spread this value into a function pointer — a runtime slice/array has no statically-known length to expand into positional arguments
@@ -53,7 +53,7 @@ error: cannot spread this value into a function pointer — a runtime slice/arra
 
 help: spread a tuple (or a comptime pack) instead, or pass the elements individually
    |
-48 |     print("{}\n", f(..sl));
+47 |     print("{}\n", f(..sl));
    |                     ^^^^
 
 error: cannot spread this value into 'addfn' — a runtime slice/array has no statically-known length to expand into positional arguments
@@ -64,7 +64,7 @@ error: cannot spread this value into 'addfn' — a runtime slice/array has no st
 
 help: spread a tuple (or a comptime pack) instead, or pass the elements individually
    |
-52 |     print("{}\n", addfn(..sl));
+51 |     print("{}\n", addfn(..sl));
    |                         ^^^^
 
 error: cannot spread this value into 'take1' — a runtime slice/array has no statically-known length to expand into positional arguments
@@ -75,5 +75,5 @@ error: cannot spread this value into 'take1' — a runtime slice/array has no st
 
 help: spread a tuple (or a comptime pack) instead, or pass the elements individually
    |
-53 |     print("{}\n", take1(..sl));
+52 |     print("{}\n", take1(..sl));
    |                         ^^^^
