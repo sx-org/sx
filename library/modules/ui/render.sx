@@ -59,10 +59,10 @@ RenderTree :: struct {
     }
 }
 
-// Per-point policy (§6.9): what a region allows AT a point — the
-// tapActionAtPoint shape. Declared as a closure on the region so the
-// answer may depend on point and content; the hit list is rebuilt every
-// commit, so policies are re-supplied each frame by construction.
+// Per-point policy: what a region allows AT a point — the tapActionAtPoint
+// shape. Declared as a closure on the region so the answer may depend on point
+// and content; the hit list is rebuilt every commit, so policies are
+// re-supplied each frame by construction.
 HitPolicy :: enum {
     tap;          // default: a single tap fires on release
     wait_double;  // the release arms a pending tap — a second tap within
@@ -86,17 +86,16 @@ FocusRegion :: struct {
     wants_keyboard: bool = false;
 }
 
-// An interactive region declared during render (§6.9): paint order =
-// emission order, so the last containing region whose policy does not
-// fail the point is the top hit. The id is the raw ElementId hash —
-// render.sx sits below compose.sx.
+// An interactive region declared during render: paint order = emission order,
+// so the last containing region whose policy does not fail the point is the
+// top hit. The id is the raw ElementId hash — render.sx sits below compose.sx.
 HitRegion :: struct {
     id: u64;
     frame: Frame;
     policy: ?Closure(Point) -> HitPolicy = null;   // null = .tap everywhere
-    // Tap registration IS the region declaration (§6.9): the router
-    // runs the CURRENT committed snapshot's handler at recognition —
-    // fire-time resolution, never a retained callback.
+    // Tap registration IS the region declaration: the router runs the CURRENT
+    // committed snapshot's handler at recognition — fire-time resolution,
+    // never a retained callback.
     on_tap: ?Closure() = null;
 }
 

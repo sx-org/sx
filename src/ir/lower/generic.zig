@@ -463,9 +463,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
     // `resolveTypeWithBindings` arm — looks up the bound pack types
     // and returns the i-th. OOB and no-active-binding emit focused
     // diagnostics rather than silently defaulting to .i64 (the
-    // catch-all `else` below) — that fall-through is exactly the
-    // "silent unimplemented arm" the project's REJECTED PATTERNS
-    // forbid.
+    // catch-all `else` below) — a silent unimplemented arm.
     if (node.data == .pack_index_type_expr) {
         const pi = node.data.pack_index_type_expr;
         if (self.pack_arg_types) |pat| {

@@ -1,4 +1,4 @@
-// The fluent library's stacks and containers (revision §13.1).
+// The fluent library's stacks and containers.
 //
 // A container is an ordinary struct value and its child list is an explicit field
 // initializer — `children = collectViews() { … }`. There is no ambient emitter and

@@ -361,9 +361,8 @@ fn moduleConstFloatValuedFramed(consts: *const std.StringHashMap(ModuleConstInfo
 /// int via `floatToIntExact`). `moduleConstIntFramed` consults this so a count
 /// is gated on `ModuleConstInfo.ty`, not just the shape of the initializer node:
 /// a `string`/`bool`/pointer/struct-typed const can never be folded into a count
-/// off an integer-looking initializer (the second symptom, where
-/// `N : string : 4` folded `[N]i64` to 4 by reading the `int_literal` node and
-/// ignoring the `string` annotation).
+/// off an integer-looking initializer — reading the `int_literal` node of
+/// `N : string : 4` would fold `[N]i64` to 4 and ignore the `string` annotation.
 pub fn isCountableConstType(table: *const types.TypeTable, ty: TypeId) bool {
     return switch (ty) {
         .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .usize, .isize, .f32, .f64 => true,

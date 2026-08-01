@@ -1,4 +1,4 @@
-// The compose library's root and rendering entry points (revision §13.3).
+// The compose library's root and rendering entry points.
 #import "modules/std.sx";
 #import "modules/ui/compose/geometry.sx";
 #import "modules/ui/compose/render.sx";

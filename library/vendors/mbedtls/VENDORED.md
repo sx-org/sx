@@ -70,8 +70,8 @@ external openssl, corpus/sandbox-friendly).
   aarch64 ELF that prints `3.6.6` under Apple `container` (musl, exit 0); same
   for `--target x86_64-linux`. The embedded clang is pointed at the bundled-zig
   libc include dirs for the target (see `src/target.zig` `linuxLibcIncludeDirs`
-  + `src/c_import.zig`). The fix is general — sqlite/stb cross-compile the same
-  way.
+  + `src/c_import.zig`). That wiring is general — sqlite/stb cross-compile the
+  same way.
 
 ## Updating
 

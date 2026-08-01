@@ -168,8 +168,8 @@ pub const Site = struct {
 /// EVERY node the walk reaches inside a named declaration is indexed, in
 /// pre-order, so any node a consumer can point at is a site: a call (what
 /// `@caller` substitutes at) and a reached expression in a build block alike.
-/// Restricting the set to one node kind would have made the numbering depend
-/// on which consumers existed when it was written.
+/// Restricting the set to one node kind would make the numbering depend on
+/// which consumers exist.
 pub const SiteIndex = struct {
     alloc: std.mem.Allocator,
     sites: std.AutoHashMapUnmanaged(*const Node, Site) = .empty,

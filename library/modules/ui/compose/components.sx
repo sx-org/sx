@@ -1,4 +1,4 @@
-// The compose library's leaf components (revision §13.3).
+// The compose library's leaf components.
 //
 // Each declares itself into `compose.View` and answers the three methods the set
 // declares, at the types the set declares them.

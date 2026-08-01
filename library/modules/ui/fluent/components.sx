@@ -1,4 +1,4 @@
-// The fluent library's leaf components (revision §13.1).
+// The fluent library's leaf components.
 //
 // Each declares itself into `fluent.View` and answers the three methods the set
 // declares, at the types the set declares them.

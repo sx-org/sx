@@ -1,4 +1,4 @@
-// The emit UI library (revision §13.2) — public facade.
+// The emit UI library — public facade.
 //
 // One import gets a consumer the library. Its product story is an ambient child
 // list plus an explicit terminal `.emit()`: there is no interception, so a child

@@ -37,11 +37,11 @@
 //   word, `data_lo`.) The struct-per-arch shape buys idiomatic field reads: no
 //   scalar-pointer indexing, no unaligned u64.
 //
-// The suite verifies this module through IR only: the arch-correct layout
+// The suite covers this module through IR only: the arch-correct layout
 // (12-byte / 16-byte stride, fd offset) surfaces as the struct shape under
 // `sx ir --target *-linux`, and the whole module lowers clean. Runtime
 // correctness (syscall behavior, the kernel-filled event array, EPOLLRDHUP
-// semantics) needs a linux runner, as the Win64 switch needs a Windows one.
+// semantics) needs a linux runner.
 //
 // No `#import "modules/build.sx"` despite the `inline if ARCH` below: a
 // top-level `inline if OS/ARCH/POINTER_SIZE` conditional is resolved by the

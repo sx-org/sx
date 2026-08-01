@@ -29,21 +29,13 @@
 // deadline math the caller does with `deadline_in`/`expired` between
 // waits, passing the nearest deadline as `wait`'s timeout.
 //
-// VALIDATION: the kqueue path runs end-to-end on the macOS dev host
-// (examples/event/1632 — full facade surface: add_read/write, add_wake/wake,
-// wait, del_*, EOF). The epoll path is RUNTIME-VALIDATED on real Linux: a
-// static aarch64-linux build of the 1632-equivalent test (plus the eventfd
-// wake path) runs 6/6 green inside an Apple `container` Linux VM (kernel
-// 6.18 aarch64) — add_read, idle-timeout, readable+fd+udata, the MOD-mask
-// add_write path, the eventfd wake channel, and EPOLLRDHUP/EPOLLHUP eof all
-// behave identically to kqueue. The one intentional backend difference is
-// `nbytes` (kqueue reports the pending byte count; epoll reports 0). Re-run:
-//   sx build --target aarch64-linux --self-contained -o /tmp/ev <test>.sx
-//   container run --rm -v "$PWD/.sx-tmp:/work" alpine /work/ev
-// It is NOT corpus-snapshotted (a Loop example pulls in the std barrel → an
-// ~18k-line IR dump that churns on any unrelated std change, and the corpus
-// runner is host-based, not container-aware). The epoll ABI itself (the
-// layout-sensitive part) IS corpus-locked by examples/event/1633.
+// The two backends behave identically apart from `nbytes`: kqueue reports the
+// pending byte count, epoll reports 0. examples/event/1632 exercises the whole
+// facade surface (add_read/write, add_wake/wake, wait, del_*, EOF) on the
+// kqueue path; examples/event/1633 corpus-locks the layout-sensitive epoll ABI.
+// A Loop example pulls in the std barrel — an ~18k-line IR dump that churns on
+// any unrelated std change — so the epoll runtime path is not corpus-snapshotted
+// and is exercised by a static aarch64-linux build run under a Linux VM.
 
 #import "modules/std/core.sx";       // Allocator
 #import "modules/std/list.sx";       // List

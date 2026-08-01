@@ -1773,7 +1773,7 @@ Server :: struct {
             // `closing` is flipped in the SAME critical section so a worker
             // that has not registered YET (still mid-handler) aborts at its
             // own register instead of escaping this one-shot sweep and
-            // blocking the join (reproduced deadlock).
+            // deadlocking the join.
             self.ps.mu.lock();
             self.ps.closing = true;
             oi : i64 = 0;

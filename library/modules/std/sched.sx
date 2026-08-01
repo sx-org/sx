@@ -1,15 +1,15 @@
 // The M:1 cooperative fiber scheduler core.
 //
 // A `Scheduler` drives any number of `Fiber`s, each running a stackful
-// `body: Closure() -> void` on its own guarded `mmap` stack (the §8.1.1 guard
-// page turns a stack overflow into an immediate fault instead of silent
-// neighbor corruption). Fibers cooperate: a running fiber hands control back to
-// the scheduler loop via `yield_now` (re-enqueued, round-robin) or
+// `body: Closure() -> void` on its own guarded `mmap` stack, whose guard page
+// turns a stack overflow into an immediate fault instead of silent neighbor
+// corruption. Fibers cooperate: a running fiber hands control back to the
+// scheduler loop via `yield_now` (re-enqueued, round-robin) or
 // `suspend_self` (parked off-queue until an external `wake`). When a body
 // returns, the fiber reaches `.done`, its stack is `munmap`'d and its heap
 // `Fiber` freed.
 //
-// Built on the proven primitives from examples/concurrency/1807-1809:
+// The primitives it stands on, corpus-pinned by examples/concurrency/1807-1809:
 //   - `swap_context` (aarch64 `abi(.naked)`, 13-slot save area: x19..x28, fp,
 //     lr, sp) saves the callee-saved registers + SP into `*from` and loads them
 //     from `*to`, then `ret`s onto `to`'s stack.
@@ -875,9 +875,9 @@ boot_stack :: (f: *Fiber, size: i64) -> u64 {
     f.stack_region = region;
     f.stack_len = total;
     // Guard-arm: turn the low page unwritable so overflow faults at the
-    // boundary. The guard is mandatory (§8.1.1); a stack handed out without it
-    // would silently corrupt a neighbor on overflow, so a failed mprotect is
-    // fatal, not ignorable.
+    // boundary. The guard is mandatory; a stack handed out without it would
+    // silently corrupt a neighbor on overflow, so a failed mprotect is fatal,
+    // not ignorable.
     if c.mprotect(region, GUARD, PROT_NONE) != 0 {
         print("sched: mprotect(PROT_NONE) failed to arm the stack guard page\n");
         c.abort();

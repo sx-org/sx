@@ -319,8 +319,7 @@ pub fn lowerRuntimeMethodCall(
     // Call<T>Method switch only covers void / bool / i32 / i64 / f32 / f64
     // / pointer-returning. Anything else (i8 / i16 / u8 / u16 / aggregates)
     // would silently lower to LLVMGetUndef and produce wrong arguments at
-    // the call site (chess Android touch shipped broken because i32→i32+
-    // f32 returns hit the undef path before .f32 was wired up).
+    // the call site.
     if (!jni_descriptor.isJniReturnTypeSupported(&self.module.types, ret_ty)) {
         if (self.diagnostics) |d| {
             d.addFmt(.err, span, "JNI method '{s}.{s}' returns '{s}', which isn't supported by the JNI call-method lowering yet — only void/bool/i32/i64/f32/f64 and pointers are wired up", .{ fcd.name, method.name, self.module.types.typeName(ret_ty) });

@@ -518,9 +518,8 @@ impl GPU for MetalGPU {
 
         base := mbuf.contents();
         if base == null { return; }
-        // Add byte_offset via integer arithmetic — `@dst[i]` on `[*]u8`
-        // already does this, but we keep this form explicit so a future
-        // pointer-arithmetic regression here can't hide.
+        // Add byte_offset via integer arithmetic. `@dst[i]` on `[*]u8` does
+        // the same thing; the explicit form keeps the arithmetic visible.
         base_i : i64 = xx base;
         dst_at : *void = xx (base_i + byte_offset);
         c.memcpy(dst_at, data, size_bytes);

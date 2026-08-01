@@ -1,14 +1,13 @@
 // The normalized input surface — host-independent: no ffi, no SDL;
 // each backend translates its native events into these (through the
 // platform layer's PlatformEvent stream) and pushes them into a
-// per-root InputQueue. The §6.9 router consumes the drained stream
+// per-root InputQueue. The router consumes the drained stream
 // against the committed snapshot's hit list — the only dispatch path.
 //
 // Separations the contract pins:
 // - physical key (position on the board) / logical key (meaning) / TEXT
 //   are three different things; text is never synthesized from key
-//   events, and IME rides TextInputSession when the text gates land —
-//   never key events.
+//   events, and IME rides TextInputSession, never key events.
 // - hover (no button/contact) is not a move.
 // - every pointer arm carries its pointer id — that continuity is what
 //   the router's capture routes by.

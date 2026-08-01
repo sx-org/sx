@@ -1,4 +1,4 @@
-// The compose UI library (revision §13.3) — public facade.
+// The compose UI library — public facade.
 //
 // One import gets a consumer the library; the modules behind this file are its
 // implementation. Each name below is re-exported explicitly, because an import

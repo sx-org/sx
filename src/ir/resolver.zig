@@ -7,7 +7,7 @@
 //!
 //! Two collectors sit on top of these facts:
 //!   - `collectVisibleAuthors` — own author ∪ the flat-import edge walk. THE one
-//!     graph-walk; the permanent flat-import F-series root.
+//!     graph-walk, and the permanent root of flat-import name resolution.
 //!   - `collectNamespaceAuthors` — a single already-selected namespace target's
 //!     members. NO graph walk.
 //!

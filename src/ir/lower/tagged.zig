@@ -443,7 +443,8 @@ pub fn refuseEmptySet(self: *Lowering, proto: TypeId, span: ?ast.Span) bool {
 
 /// The other instantiations of `proto`'s family that DO have conformers,
 /// rendered for the empty-set diagnostic: an empty `Series(bool)` is almost
-/// always a wrong argument, and the tuples that do exist are the fix.
+/// always a wrong argument, and the instantiations that do exist are what the
+/// caller meant.
 fn siblingInstantiations(self: *Lowering, proto: TypeId) []const u8 {
     const inst = self.param_protocol_instances.get(proto).?;
     const own = self.protocolResolver().paramProtocolInstanceName(inst.base, inst.args);

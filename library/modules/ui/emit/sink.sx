@@ -1,4 +1,4 @@
-// `EmitSink` — the ambient buffer a child publishes into (revision §13.2).
+// `EmitSink` — the ambient buffer a child publishes into.
 //
 // It points at the `List(View)` currently being filled, usually a container's
 // own field, so a child appends to whichever list is in scope. This is not the
