@@ -1,11 +1,8 @@
 // Postfix `!` (optional force-unwrap) chained directly with a member access.
-// `opt!.field`, `opt!.method()`, `opt!.a.b`, and `opt![i]` must read the same
-// value the bind-first form (`v := opt!; v.field`) produces — the unwrapped
-// value's type has to flow into the chained access.
-//
-// An `inferExprType` with no force_unwrap arm types the receiver of a chained
-// `opt!.field` as `.unresolved`, so a string field reads as garbage and
-// `opt!.method()` fails to resolve at all.
+// `opt!.field`, `opt!.method()`, `opt!.a.b`, and `opt![i]` read the same
+// value the bind-first form (`v := opt!; v.field`) produces — `inferExprType`
+// has a force_unwrap arm, so the unwrapped value's type flows into the
+// chained access.
 
 #import "modules/std.sx";
 

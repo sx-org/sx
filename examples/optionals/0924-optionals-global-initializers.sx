@@ -1,16 +1,11 @@
 // Optional-typed module globals with static initializers.
 //
-// An optional global `g : ?T = <present>;` must carry the 2-field
+// An optional global `g : ?T = <present>;` carries the 2-field
 // `{ payload, has_value }` aggregate the optional's LLVM layout expects,
-// NOT the raw payload constant. Covers: non-null scalar init read back,
+// not the raw payload constant. Covers: non-null scalar init read back,
 // null init read back, and a runtime set/clear round-trip in both
 // directions. Also exercises a nested optional payload and an optional
 // struct payload (both wrap correctly).
-//
-// A non-null-initialized optional global used
-// to emit the raw payload constant into the `{T, i1}` global type,
-// failing LLVM verification ("Global variable initializer type does not
-// match global variable type!").
 
 #import "modules/std.sx";
 

@@ -1,20 +1,14 @@
 // Optional-chain `?.` reaching an indexable field, then indexing it:
 // `opt?.xs[i]`. The `?.` makes the whole expression optional — it short-
 // circuits to null when the receiver is null, else unwraps and indexes —
-// so `opt?.xs[i]` is `?ElemType`, coalesced/unwrapped at the use site.
-//
-// `opt?.xs[i]` typed its element through
-// `getElementType(?[N]T)` as `.unresolved`, and an `index_get` on the
-// optional value reached LLVM emission (panic: "unresolved type reached
-// LLVM emission", exit 134). This is the `?.`-chain analogue of the
-// `!`-unwrap form.
+// so `opt?.xs[i]` is `?ElemType`, coalesced/unwrapped at the use site. This
+// is the `?.`-chain analogue of the `!`-unwrap form.
 //
 // Also covers the `?*[N]T` shape — a `?.` field that is a POINTER to an
 // array. Indexing auto-derefs (GEP the pointee array element through the
 // unwrapped pointer), so `opt?.p[i]` is `?ElemType` too. `getElementType`
-// has no pointer arm, so the dispatch guard / typer consult
-// `ptrToArrayElem` first — otherwise this branch is unreachable and the
-// `?*[N]T` case falls through to the same exit-134 panic.
+// has no pointer arm, so the dispatch guard and the typer consult
+// `ptrToArrayElem` first.
 
 #import "modules/std.sx";
 

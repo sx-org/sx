@@ -1,11 +1,11 @@
-// Indexing an array whose element type is an optional `[N]?T` must load the
+// Indexing an array whose element type is an optional `[N]?T` loads the
 // full `{T,i1}` element aggregate: a positional `.{ ... }` literal coerces each
 // element to the optional element type, so a present element reads back present
 // and an absent one absent. Covers a scalar payload (`?i64`), a struct payload
 // (`?Pt`), write-then-read, and direct-use of the indexed value (`??`, `if`).
 //
-// The positional struct-literal path coerces per element even for an array
-// target: a bare `T`/`null` stored into a `{T,i1}` slot corrupts the array.
+// The positional struct-literal path coerces per element for an array target
+// too, so no bare `T`/`null` lands in a `{T,i1}` slot.
 #import "modules/std.sx";
 
 Pt :: struct { x: i64; y: i64; }

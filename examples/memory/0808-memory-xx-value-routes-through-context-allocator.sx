@@ -1,10 +1,10 @@
 // The compiler-internal heap-copy that backs `xx <rvalue>`
-// protocol erasure must dispatch through `context.allocator`, not call
-// libc malloc directly. So when a `push .{ allocator = tracer }`
-// block is active, a `xx StructLiteral{}` inside it MUST be allocated
+// protocol erasure dispatches through `context.allocator`, not libc
+// malloc directly. So when a `push .{ allocator = tracer }`
+// block is active, a `xx StructLiteral{}` inside it is allocated
 // by the tracker.
 //
-// Note: `xx` only heap-copies for RVALUES (struct literals, call results).
+// `xx` only heap-copies for RVALUES (struct literals, call results).
 // `xx <lvalue>` (an identifier, field access, index, or deref) borrows
 // the operand's storage, so it never allocates and never reaches this
 // path. See specs.md §3 — Protocol value ownership and lifetime.

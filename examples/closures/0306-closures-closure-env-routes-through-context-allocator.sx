@@ -1,13 +1,12 @@
-// The closure env-buffer heap-copy in `lowerLambda` must
-// dispatch through `context.allocator`, not `.heap_alloc` directly.
-// So when a `push .{ allocator = tracer }` block is active, a
-// capturing closure created inside it MUST allocate its env through
-// the tracker.
+// The closure env-buffer heap-copy in `lowerLambda` dispatches through
+// `context.allocator`, not `.heap_alloc` directly. So when a
+// `push .{ allocator = tracer }` block is active, a capturing closure
+// created inside it allocates its env through the tracker.
 //
-// Mirrors the shape of `130-xx-value-routes-through-context-allocator.sx`
-// for the protocol-erasure heap path — same Tracer, same install via
-// `push Context`, same `Tracer.count = 1` assertion. Different
-// allocation site (closure env vs xx-value heap copy).
+// Same shape as the protocol-erasure heap path in
+// examples/memory/0808-memory-xx-value-routes-through-context-allocator.sx
+// — same Tracer, same install via `push Context`, same `Tracer.count = 1`
+// assertion, different allocation site (closure env vs xx-value heap copy).
 
 #import "modules/std.sx";
 

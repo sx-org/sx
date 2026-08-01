@@ -1,12 +1,11 @@
 // A block-body lambda (`(params) { ... }`) with an INFERRED return
-// type whose value is produced via early `return`s must infer the return type
-// from the `return` operands — not fall through to void.
+// type whose value is produced via early `return`s infers the return type
+// from the `return` operands.
 //
-// `() { if c { return 11; } return 22; }`
-// infers `void` if the block's last stmt (the `return`) is read as its value,
-// so the call site feeds an `i64 undef` to `print` and LLVM verification
-// fails. Closure return-type inference mirrors the function-decl path,
-// scanning the body's `return` statements.
+// Closure return-type inference mirrors the function-decl path, scanning the
+// body's `return` statements, so `() { if c { return 11; } return 22; }`
+// infers `i64` rather than reading the trailing `return` as the block's
+// (void) value.
 //
 // Syntax note: a block body is the `(params) -> R? { ... }` form; the
 // bare `(params) => expr` lambda is arrow + EXPRESSION only (no block).

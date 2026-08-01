@@ -3,9 +3,8 @@
 // named argument's value (`f(b = side)`), and a trailing block's lambda
 // (`f(1.0) { … side … }`).
 // `collectCaptures` carries an arm for `postfix_cast`, `named_arg` and
-// `trailing_block`; without one, names under them never enter the env and the
-// body reports them unresolved, while the same names in a bare struct literal
-// or a positional argument capture fine.
+// `trailing_block`, so names under them enter the env exactly as they do
+// from a bare struct literal or a positional argument.
 #import "modules/std.sx";
 
 Shape :: protocol vtable { area :: (self: *Self) -> f32; }

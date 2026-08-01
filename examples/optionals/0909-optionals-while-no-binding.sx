@@ -1,9 +1,6 @@
-// Bindingless `while <optional>` must test the optional's has_value flag,
-// exactly like `if <optional>` — not fold the `{T,i1}` aggregate truthy.
-//
-// A bare optional loop condition folded truthy emits `br i1 true`, so the loop
-// never observes `null` and either spins forever (present→drained) or runs when
-// it should have been skipped (already-null).
+// Bindingless `while <optional>` tests the optional's has_value flag,
+// exactly like `if <optional>` — not folding the `{T,i1}` aggregate truthy,
+// so the loop observes `null` and stops.
 #import "modules/std.sx";
 
 main :: () {

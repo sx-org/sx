@@ -1,14 +1,12 @@
 // When a `#jni_call` method returns a type the
 // `Call<T>Method` switch in `emit_llvm.zig` can't dispatch
 // (anything outside void/bool/i32/i64/f32/f64/pointer), the
-// compiler must emit a DIAGNOSTIC at lower time rather than
-// silently producing `LLVMGetUndef` at codegen time. Without
-// this guard an unsupported return type becomes `undef` and
-// shows up as garbage arguments downstream.
+// compiler emits a DIAGNOSTIC at lower time rather than
+// silently producing `LLVMGetUndef` at codegen time.
 //
-// Here we declare a JNI method returning `i8` (jbyte, which the
-// call-method switch does not carry). The compile must fail
-// with a clear message naming the method + return type.
+// Here a JNI method returns `i8` (jbyte, which the call-method switch does
+// not carry). The compile fails with a clear message naming the method +
+// return type.
 
 #import "modules/std.sx";
 

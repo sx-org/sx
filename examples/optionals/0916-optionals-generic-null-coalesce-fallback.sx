@@ -1,11 +1,6 @@
-// Generic `??` preserves the optional's presence across monomorphization.
-//
-// A `??` inside a generic fn whose lhs is a
-// type-param-typed optional `?T` drops the RHS default and returns the
-// zero payload when a null `?i32` arriving as the `?T` arg is coerced
-// to the monomorphized `?i64` with the has-bit hardcoded to `true` (an
-// optional→optional arg coercion that unwraps then rewraps present), so
-// `x ?? d` saw a present zero and returned 0 instead of `d`.
+// Generic `??` preserves the optional's presence across monomorphization: a
+// null `?i32` arriving as a `?T` arg coerces to the monomorphized `?i64` with
+// its has-bit intact, so `x ?? d` inside the generic returns `d`.
 #import "modules/std.sx";
 
 Pt :: struct { x: i64 = 0; y: i64 = 0; }

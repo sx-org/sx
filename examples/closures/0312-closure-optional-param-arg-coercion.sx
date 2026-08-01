@@ -3,9 +3,7 @@
 // wraps to a present optional, and `null` becomes an absent optional.
 //
 // Args are typed against the closure's params (`resolveCallParamTypes`) AND
-// coerced at the call site (`coerceClosureCallArgs`). Lowering them without
-// that coercion makes a concrete `7` arrive as a bare payload (read ABSENT) and
-// `null` reach a `{T,i1}` slot as a bare pointer (LLVM verifier failure).
+// coerced at the call site (`coerceClosureCallArgs`).
 #import "modules/std.sx";
 
 main :: () {

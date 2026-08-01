@@ -1,10 +1,8 @@
 // Closure literal declared (and used) inside a `defer` body.
 //
-// A lambda that inherits the enclosing function's
-// `func_defer_base` re-drains the enclosing function's defers on its own
-// `return` — and when the defer body itself declares the lambda, that
-// re-lowers the lambda forever (infinite recursion). A lambda
-// opens its own defer window (like every other function-lowering entry).
+// A lambda opens its own defer window, like every other function-lowering
+// entry: it does not inherit the enclosing function's `func_defer_base`, so
+// its own `return` drains only its own defers.
 
 #import "modules/std.sx";
 

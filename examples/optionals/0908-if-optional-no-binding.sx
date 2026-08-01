@@ -1,9 +1,6 @@
-// Bindingless `if <optional>` must test the optional's has_value flag, not
-// fold the `{T,i1}` aggregate truthy. Covers struct-form optionals (`?i64`,
+// Bindingless `if <optional>` tests the optional's has_value flag rather than
+// folding the `{T,i1}` aggregate truthy. Covers struct-form optionals (`?i64`,
 // `?P`) in both states, exercising BOTH branches — without any `|x|` binding.
-//
-// A bare `if opt {}` over a struct-repr optional
-// emitted `br i1 true`, so a null optional took the present branch.
 #import "modules/std.sx";
 
 P :: struct { x: i64; }
