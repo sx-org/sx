@@ -1,0 +1,76 @@
+// A PURE-failable function (`-> !E`) has no success value — its whole return IS
+// the error channel. So only a trailing ERROR value is its return; a tail of any
+// other type is demanded by nothing. It is evaluated for its effects and its
+// value is discarded, and the function takes the ordinary success exit.
+//
+// Nothing in such a body is in RETURN position, so the §6.2 return refusals do
+// not reach the tail: an rvalue erased into a tagged handle is refused at a
+// `return` (the frame that would hold it is about to die) and accepted here,
+// where the handle is dropped along with the frame.
+//
+// `;` is a pure separator, so a tail written with one and a tail written
+// without one are the same tail.
+// Expected: exit 0.
+#import "modules/std.sx";
+
+Failed :: error { Nope }
+
+Drawable :: protocol tagged {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+tick :: (label: string) -> i32 {
+    print("tick {}\n", label);
+    42
+}
+
+// The tail is an rvalue erased into a tagged handle — refused at a `return`,
+// undemanded here.
+erase_tail :: () -> !Failed {
+    Label{ text = "hi" }.(Drawable);
+}
+
+// The same tail where the caller consumes the result with `catch` instead of
+// binding it.
+ignore :: () -> !Failed {
+    Label{}.(Drawable);
+}
+
+// The tail's EFFECT still happens; only its value is dropped.
+effect_tail :: () -> !Failed {
+    tick("with-semi");
+}
+
+// The same tail without the terminator.
+effect_tail_no_semi :: () -> !Failed {
+    tick("no-semi")
+}
+
+// An ERROR tail is the one thing a pure-failable body does return.
+fails :: () -> !Failed {
+    error.Nope
+}
+
+main :: () -> i32 {
+    ignore() catch { print("NOT REACHED\n"); }
+
+    a := erase_tail();
+    b := effect_tail();
+    c := effect_tail_no_semi();
+    d := fails();
+
+    // Only `fails` reached the caller through the error channel — the three
+    // discarded tails took the success exit instead of faking a raise.
+    r : i32 = 0;
+    if a == error.Nope { r = r + 1; }
+    if b == error.Nope { r = r + 2; }
+    if c == error.Nope { r = r + 4; }
+    if d == error.Nope { r = r + 8; }
+    print("r={}\n", r);
+    0
+}
