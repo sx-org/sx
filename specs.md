@@ -440,27 +440,45 @@ report :: (quiet: bool) -> void {
 
 The end of the file ends the declaration it lands on, so a file's last
 declaration needs no terminator either. The rule does not reach inside a fixed
-form's own list — a runtime class's members, the entries of `#import c { … }`,
-and the one-line `match` arm bodies (`case .x: break;`,
-`case .x: (e) => expr;`) each keep the `;` their grammar asks for. An arm
-written as a statement list is not one of those: its statements end at a line
-break like any others. `case` and `else` are on the suppression list below, so
-the break before one implies no terminator — an ordinary expression or
-declaration statement written there carries its `;`, while a statement that IS
-a block already ended at its own `}` and takes nothing.
+form's own list — a runtime class's members and the entries of
+`#import c { … }` each keep the `;` their grammar asks for. A `match` arm is
+not one of those. `case` heads an arm, and an arm is a statement in the only
+position where `case` is legal, so the break before the next `case` ends the
+statement above it exactly as any other break does. That holds for every arm
+body: a statement list, `case .x: break`, and `case .x: (e) => expr` alike.
 
 ```sx
 if c == {
     case .a:
         setup()
-        report();     // `case` cannot start a statement — this `;` is required
+        report()      // the next `case` starts an arm — the break ends this
     case .b:
         if ready {
             report()
         }             // a statement that is a block ended at its `}`
-    case .c:
+    case .c: break
+    else:
         done()        // the match's `}` ends it
 }
+```
+
+`else` reads two ways and a glued `:` is what tells them apart: `else:` heads
+the default arm and ends the statement above it, while every other `else` —
+before a block, an `if`, or an expression — chains the `if` above it and reads
+straight through the break.
+
+A statement whose last token is a `}` that closes a block form takes no
+terminator at all, written or implied: a statement that IS a block (`if`,
+`while`, `for`, `match`, a `push` body, a bare scope), a call ending in a
+trailing block, and a declaration whose INITIALIZER is one of those.
+
+```sx
+kind := if c { "hot" } else { "cold" }   // block-form initializer — no `;`
+row  := vstack(8.0) {
+    body()
+}                                        // trailing block — no `;`
+n    := compute(3)                       // any other initializer takes the
+                                         // terminator, here the line break
 ```
 
 **`;` is a pure separator.** Ending a statement is all it does. It carries no
@@ -483,12 +501,14 @@ ok := ready
 
 "Cannot start a statement" is the rule; the list below is its enumeration, and
 a token joins it as soon as some form can reach a terminator with that token in
-hand. Today that list is `and`, `or`, `then`, `else`, `case`, `catch`, `|`,
-`+`, `==`, `!=`, `<=`, `>=`, `<<`, `>>`, `|>`, `??`, `?.`, `,`, `=`, `::`,
-`->`, `=>`, `:`, `extern`, and `intrinsic`. `-` and `*` are absent because the
-spacing rule above already decided them: a leading `- b` keeps its gaps matched
-and reads as subtraction, while `-b` opens a fresh operand and so begins a
-statement. A form that is simply still open — an unclosed `(`, an argument
+hand. Today that list is `and`, `or`, `then`, `else`, `catch`, `|`, `+`, `==`,
+`!=`, `<=`, `>=`, `<<`, `>>`, `|>`, `??`, `?.`, `,`, `=`, `::`, `->`, `=>`,
+`:`, `extern`, and `intrinsic`. `else` is on it only where it chains an `if`;
+`else:` heads a `match` default arm, which starts one. `-` and `*` are absent
+because the spacing rule above already decided them: a leading `- b` keeps its
+gaps matched and reads as subtraction, while `-b` opens a fresh operand and so
+begins a statement. `case` is absent because it heads a `match` arm, and an arm
+is a statement. A form that is simply still open — an unclosed `(`, an argument
 list, a `{` with no `}` yet — reads on for the same reason: nothing has ended.
 
 The last three are the tails a completed declaration may still take, so each
@@ -3911,9 +3931,9 @@ separates it from the next `case`:
 ```sx
 classify :: (n: i32) -> i32 {
   if n == {
-    case 0: 100;            // arm value is 100
+    case 0: 100             // arm value is 100
     case 1: { x := 5; x*2 } // braced block → value 10
-    else:   7;
+    else:   7
   }
 }
 ```
@@ -4786,14 +4806,14 @@ Matches `subject` against each `case`. Patterns can be:
 - **Integer/bool literals**: `42`, `true` — matches a specific value.
 - **Type categories**: `struct`, `enum`, `union` — matches all types in that category (used with `type_of` values).
 
-`break` exits a case arm without producing a value. The optional `else:` arm matches when no `case` pattern matches.
+`break` exits a case arm without producing a value. The optional `else:` arm matches when no `case` pattern matches — its `:` is glued to the `else`, which is what separates it from an `else` that chains an `if`.
 ```sx
 if z == {
-  case .variant1: break;
+  case .variant1: break
   case .variant2:
-    print("z: {z}");
+    print("z: {z}")
   else:
-    print("unknown");
+    print("unknown")
 }
 ```
 
@@ -6640,13 +6660,15 @@ field_init_list = field_init (',' field_init)* ','?
 field_init      = IDENT '=' expr | IDENT | '..' expr | expr
 if_expr         = 'if' expr 'then' expr ('else' expr)?
                 | 'if' expr block ('else' block)?
+                  // the 'else' of an if is any 'else' NOT glued to a ':' —
+                  // one token of lookahead separates it from an else_arm head
 match_expr      = 'if' expr '==' '{' case_arm* else_arm? '}'
 case_arm        = 'case' pattern ':' arm_capture? arm_body
 arm_capture     = '(' IDENT ')'         // payload binding — a LONE identifier
-arm_body        = 'break' ';'           // one-line form: keeps the match grammar's `;`
-                | '=>' expr ';'         // one-line form: keeps the match grammar's `;`
-                | stmt*                 // statement list: statements end as they do anywhere
-else_arm        = 'else' ':' stmt*
+arm_body        = 'break' end
+                | '=>' expr end         // the last arm's expr may drop `end`
+                | stmt*                 // every form ends as a statement does
+else_arm        = 'else' ':' stmt*      // the ':' is GLUED to the 'else'
 pattern         = '.' IDENT | INT | BOOL | IDENT
 lambda          = '(' params? ')' ('->' type)? '=>' expr
 args            = expr (',' expr)* ','?

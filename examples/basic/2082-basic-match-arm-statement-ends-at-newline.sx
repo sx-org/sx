@@ -1,12 +1,13 @@
-// Whitespace is syntax (specs §1), inside a `match` arm. An arm written as a
-// statement LIST holds ordinary statements, so each one ends at the line break
-// where its `;` would have gone. `case` and `else` cannot start a statement, so
-// the break before one implies no terminator: an ordinary statement written
-// there carries its `;`, while a statement that IS a block already ended at its
-// own `}`. The last arm's last statement is ended by the match's `}` instead.
+// Whitespace is syntax (specs §1), inside a `match` arm. `case` heads an arm,
+// and an arm is a statement, so the break before the next `case` ends the
+// statement above it. `else:` — a `:` glued to the `else` — heads the default
+// arm and ends it the same way, while every other `else` chains the `if` above
+// it. The last arm's last statement is ended by the match's `}`.
 //
-// The two ONE-LINE arm bodies are the fixed forms that keep the `;` the match
-// grammar asks for: `case .x: break;` and `case .x: (e) => expr;`.
+// Every arm body ends this way: a statement LIST, `case .x: break`, and
+// `case .x: (e) => expr` alike. A written `;` stays legal in each — it is a
+// separator. A statement that IS a block, and a declaration whose INITIALIZER
+// is block-form, end at that `}` and take nothing after it.
 // Expected: exit 0.
 #import "modules/std.sx"
 
@@ -21,18 +22,18 @@ Shape :: enum {
     dot
 }
 
-// Three statements per arm, terminated by their line breaks. Only the last
-// statement of a NON-final arm carries a written `;`.
+// Three statements per arm, each ended by its line break — the last one by the
+// `case` / `else` / `}` that follows it.
 trace :: (c: Color) -> i64 {
     n := 0
     if c == {
         case .Red:
             n = n + 1
             n = n + 10
-            n = n + 100;
+            n = n + 100
         case .Green:
             n = n + 2
-            n = n + 20;
+            n = n + 20
         else:
             n = n + 3
             n = n + 30
@@ -40,9 +41,27 @@ trace :: (c: Color) -> i64 {
     n
 }
 
-// A NON-final arm that closes on a statement which IS a block writes no `;`:
-// the `if` and the bare scope each end at their own `}`, and the next `case` /
-// `else` follows with nothing between.
+// The same arms with the separator written out: every `;` here is legal and
+// changes nothing.
+trace_semi :: (c: Color) -> i64 {
+    n := 0
+    if c == {
+        case .Red:
+            n = n + 1;
+            n = n + 10;
+            n = n + 100;
+        case .Green:
+            n = n + 2;
+            n = n + 20;
+        else:
+            n = n + 3;
+            n = n + 30;
+    }
+    n
+}
+
+// An arm closing on a statement which IS a block writes no `;`: the `if` and
+// the bare scope each end at their own `}`.
 shade :: (c: Color) -> i64 {
     n := 0
     if c == {
@@ -61,17 +80,63 @@ shade :: (c: Color) -> i64 {
     n
 }
 
+// `}` NEWLINE `else` chains the `if` — the glued `:` is what makes the default
+// arm's `else` a different token. Both spellings meet here: the first arm's
+// `if` takes the chaining `else`, the second arm's `if` takes none and the
+// `else:` under it opens the default arm.
+tone :: (c: Color) -> i64 {
+    n := 0
+    if c == {
+        case .Red:
+            if n == 0 {
+                n = 1
+            }
+            else {
+                n = 2
+            }
+        case .Green:
+            hot := if n == 0 { 10 } else { 20 }
+            if hot == 10 {
+                n = hot
+            }
+        else:
+            n = 3
+    }
+    n
+}
+
 // An arm's last expression is the arm's value, with or without the `;`.
 classify :: (n: i64) -> i64 {
     if n == {
-        case 0: 100;
+        case 0: 100
         case 1: { x := 5; x * 2 }
+        else:   7
+    }
+}
+
+classify_semi :: (n: i64) -> i64 {
+    if n == {
+        case 0: 100;
+        case 1: { x := 5; x * 2 };
         else:   7;
     }
 }
 
-// `break;` is one of the two one-line bodies, and keeps its `;`.
+// `break` ends where a `break` statement anywhere ends.
 first :: (c: Color) -> string {
+    out := "none"
+    if c == {
+        case .Red:
+            out = "red"
+        case .Green:
+            break
+        else:
+            out = "other"
+    }
+    out
+}
+
+first_semi :: (c: Color) -> string {
     out := "none"
     if c == {
         case .Red:
@@ -79,19 +144,28 @@ first :: (c: Color) -> string {
         case .Green:
             break;
         else:
-            out = "other"
+            out = "other";
     }
     out
 }
 
 main :: () -> i32 {
     print("{} {} {}\n", trace(Color.Red), trace(Color.Green), trace(Color.Blue))
+    print("{} {} {}\n", trace_semi(Color.Red), trace_semi(Color.Green), trace_semi(Color.Blue))
     print("{} {} {}\n", shade(Color.Red), shade(Color.Green), shade(Color.Blue))
+    print("{} {} {}\n", tone(Color.Red), tone(Color.Green), tone(Color.Blue))
     print("{} {} {}\n", classify(0), classify(1), classify(2))
+    print("{} {} {}\n", classify_semi(0), classify_semi(1), classify_semi(2))
     print("{} {} {}\n", first(Color.Red), first(Color.Green), first(Color.Blue))
+    print("{} {} {}\n", first_semi(Color.Red), first_semi(Color.Green), first_semi(Color.Blue))
 
-    // `(e) => expr;` is the other one-line body, and keeps its `;` too.
+    // `(e) => expr` ends at the break before the next arm head.
     s := Shape.rect(4)
+    if s == {
+        case .rect: (size) => print("rect {}\n", size)
+        case .dot:
+            print("dot\n")
+    }
     if s == {
         case .rect: (size) => print("rect {}\n", size);
         case .dot:
