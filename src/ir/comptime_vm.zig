@@ -749,9 +749,10 @@ pub const Vm = struct {
         return r;
     }
 
-    /// Convert a static `ConstantValue` (a global's `init_val`) to a Reg. Scalars
-    /// only (float regs hold f64 bits — storage narrows f32); aggregate /
-    /// string / vtable / func_ref bail loudly.
+    /// Convert a static `ConstantValue` (a global's `init_val`) to a Reg. An
+    /// aggregate-kinded type is laid out in comptime memory and the Reg is its
+    /// address; a scalar converts to the value word (float regs hold f64 bits —
+    /// storage narrows f32). Any other constant kind bails loudly.
     fn constToReg(self: *Vm, cv: inst_mod.ConstantValue, ty: TypeId) Error!Reg {
         const table = try self.requireTable();
         if (kindOf(table, ty) == .aggregate) {

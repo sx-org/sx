@@ -1,9 +1,9 @@
 // Host/GPU-agnostic pixel-golden core: compares a rendered RGBA buffer
 // against a repo-stored reference PNG, or rewrites the reference when
 // SX_UPDATE_PIXELS is set. Rendering is a BACKEND concern — this module
-// never touches SDL/GL/Metal; the backend ui/surface_select.sx binds
-// (gpu/offscreen_metal.sx on macOS, gpu/offscreen_gl.sx elsewhere) produces
-// the buffer and hands it here.
+// never touches SDL/GL/Metal. ui/surface_select.sx picks the backend that
+// produces the buffer — gpu/offscreen_metal.sx on macOS, gpu/offscreen_gl.sx
+// elsewhere — and hands it here.
 //
 // Pixel examples live OUTSIDE the byte-exact corpus: the test suite
 // must pass on hosts with no GPU or display, so pixel goldens run as

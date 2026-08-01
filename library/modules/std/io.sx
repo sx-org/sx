@@ -12,9 +12,9 @@
 // directly.
 //
 // BLOCKING SEMANTICS: the M:1 default has no scheduler and no
-// suspension. `async(worker, ..args)` runs the worker to COMPLETION
-// inline, so the returned `Future` is born `.ready` and `await` yields
-// immediately. `spawn_raw`/`suspend_raw`/`ready`/`poll`/`arm_timer` are
+// suspension. `async(worker)` runs the worker to COMPLETION inline, so the
+// returned `Future` is born `.ready` and `await` yields immediately.
+// `spawn_raw`/`suspend_raw`/`ready`/`poll`/`arm_timer` are
 // trivial no-ops/0 — they exist for the fiber scheduler.
 // `now_ms` returns a real monotonic clock. Fully deterministic/testable.
 //

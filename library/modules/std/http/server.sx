@@ -3299,17 +3299,16 @@ Server :: struct {
 
         // Treating a TE request as bodyless is a smuggling vector, so an
         // unsupported coding is refused outright → 501 (the accepted set is
-        // narrowed below). Detection is by header PRESENCE, not
-        // value length: an empty or whitespace-only TE value ("TE:\r\n",
-        // "TE:   \r\n") still smuggles, so a single present TE line is enough.
+        // narrowed below). Detection is by header PRESENCE, not value length:
+        // an empty or whitespace-only TE value ("TE:\r\n", "TE:   \r\n") still
+        // smuggles, so a single present TE line is enough.
         te_count := count_header(*req, "transfer-encoding");
 
         // Duplicate / conflicting Transfer-Encoding is a smuggling vector. Two
         // TE lines (e.g. `chunked` then `gzip`) are equivalent to the coding
         // list `chunked, gzip` per RFC 7230 §3.3.1, where chunked is not the
-        // final coding. find_header sees only the first
-        // value, so a downstream that honors the second would frame the body
-        // differently → 400.
+        // final coding. find_header sees only the first value, so a downstream
+        // that honors the second would frame the body differently → 400.
         if te_count > 1 {
             self.respond_error_close(slot, 400);
             return false;

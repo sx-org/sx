@@ -1,6 +1,6 @@
 # Inline assembly — design
 
-**Scope:** how Zig implements inline assembly end-to-end, and the
+This doc covers how Zig implements inline assembly end-to-end, and the
 minimal-deviation model sx takes from it.
 
 > Guiding constraint for this doc: **mirror Zig's design; deviate only where sx's
@@ -816,7 +816,7 @@ optional `extern` library tail · `src/ir/expr_typer.zig` · `src/ir/inst.zig`
 `src/ir/comptime_vm.zig` (the `error.Unsupported` bail) · `src/llvm_api.zig` ·
 `build.zig` (LLVM prefix).
 
-## Appendix C — Cookbook (final form: `asm { … }`, `->`/`=`, `clobbers(.…)`, pure AT&T)
+## Appendix C — Cookbook (`asm { … }`, `->`/`=`, `clobbers(.…)`, pure AT&T)
 
 ```sx
 // ── value outputs and inputs ──────────────────────────────────────────────────

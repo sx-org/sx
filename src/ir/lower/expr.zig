@@ -2452,11 +2452,10 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
 /// means the base is a shape those resolvers don't index — a single pointer
 /// `*T` or a struct, non-indexable by design (specs.md Pointer Types).
 /// Emitting an `index_get`/`index_gep` whose element type is `.unresolved`
-/// would slip past
-/// lowering and panic at LLVM emission ("unresolved type reached LLVM
-/// emission") on the read, write, address-of and lvalue paths alike. The
-/// caller must bail with a placeholder after calling this; hasErrors() aborts
-/// before codegen.
+/// would slip past lowering and panic at LLVM emission ("unresolved type
+/// reached LLVM emission") on the read, write, address-of and lvalue paths
+/// alike. The caller must bail with a placeholder after calling this;
+/// hasErrors() aborts before codegen.
 ///
 /// An already-`.unresolved` object type is skipped: it comes from a PRIOR
 /// error (e.g. an undefined name) already diagnosed — re-reporting would
