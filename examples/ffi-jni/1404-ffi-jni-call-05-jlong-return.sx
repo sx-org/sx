@@ -1,9 +1,5 @@
-// `#jni_call(i64)` (jlong return).
-// The non-void switch falls through to `LLVMGetUndef`; the IR
-// snapshot captures the placeholder. The make-green commit adds the
-// `.i64 => Jni.CallLongMethod` arm and the snapshot updates to show
-// the full dispatch through vtable slot 52, reusing the 1.17 slot
-// interning.
+// `#jni_call(i64)` (jlong return) dispatches through `CallLongMethod`,
+// vtable slot 52.
 
 #import "modules/std.sx";
 

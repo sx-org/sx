@@ -1,5 +1,5 @@
 // Free-function UFCS with a pointer first-param. `recv.fn(args)`
-// on a value `recv` whose matching free function takes `*T` now takes the
+// on a value `recv` whose matching free function takes `*T` takes the
 // receiver's address (the same implicit address-of as a struct-defined method),
 // so mutations through the pointer are visible. Also: a function reached ONLY
 // via UFCS is lazily lowered — declared-but-never-emitted is an undefined

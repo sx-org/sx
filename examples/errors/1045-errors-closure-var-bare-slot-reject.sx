@@ -5,8 +5,8 @@
 // capturing closure). Only a closure LITERAL crosses this boundary (lowerLambda
 // emits a static adapter); a variable is rejected with a pointer to the idiom.
 //
-// The fix for these is either to pass the literal directly, or to type the
-// parameter `Closure(...)` so the environment is carried (the idiomatic form).
+// The alternatives are to pass the literal directly, or to type the parameter
+// `Closure(...)` so the environment is carried (the idiomatic form).
 
 #import "modules/std.sx";
 

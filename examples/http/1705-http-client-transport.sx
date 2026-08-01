@@ -285,7 +285,7 @@ run :: () -> i32 {
     if mte { socket.close(mute_l); srv.stop(); t.join(); return 53; }
     opts_io : http.ClientOpts = .{ connect_timeout_ms = 2000, io_timeout_ms = 500 };
     conn_f, ef := http.Client.open("127.0.0.1", PORT_MUTE, opts_io);
-    // review L4: on an open failure the holder thread is still blocked in
+    // On an open failure the holder thread is still blocked in
     // accept(), which close(mute_l) does NOT reliably wake — skip the join
     // on this failure path (process exit reaps it) rather than deadlock.
     if ef { socket.close(mute_l); srv.stop(); t.join(); return 54; }

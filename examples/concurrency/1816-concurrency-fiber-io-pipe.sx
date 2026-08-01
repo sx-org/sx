@@ -3,7 +3,7 @@
 // nothing else is runnable and wakes that fiber when the kernel reports the fd
 // readable.
 //
-// Scenario: a unix `pipe` (read_fd, write_fd). A READER fiber is spawned FIRST,
+// A unix `pipe` (read_fd, write_fd). A READER fiber is spawned FIRST,
 // so it runs while the pipe is EMPTY — it calls `block_on_fd(read_fd)` and parks
 // (genuinely blocked: there is no data yet, the writer has not run). A WRITER
 // fiber, spawned second, then writes 3 bytes to write_fd. Now the ready queue is

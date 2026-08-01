@@ -1,8 +1,7 @@
 // Two `#jni_call` sites against the
 // same (class, method, sig) tuple. Each site emits its own
-// `GetObjectClass` + `GetMethodID` call (no caching yet); after 1.17
-// the lowering collapses to one cached `jmethodID` per unique
-// (class, method, sig).
+// `GetObjectClass` + `GetMethodID` call — the method ID is not cached
+// across sites.
 //
 // Runtime: unreachable. The JNI dispatch is all indirect through
 // `*env` — no external symbol declarations — so the IR loads cleanly

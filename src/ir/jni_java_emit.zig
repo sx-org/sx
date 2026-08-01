@@ -12,11 +12,11 @@
 //     that calls `super` then a private native delegate `sx_<method>`;
 //   - emits the matching `private native ... sx_<method>(...)` decls.
 //
-// The downstream pipeline feeds this through `javac` + `d8` and bundles
-// the resulting `.dex` into the APK, points the manifest's
-// `<activity android:name="...">` at this class, and emits a synthetic
-// `JNI_OnLoad` that calls `RegisterNatives` to bind the `sx_<method>`
-// symbols.
+// The downstream pipeline feeds this through `javac` + `d8`, bundles the
+// resulting `.dex` into the APK, and points the synthesized manifest's
+// `<activity android:name="...">` at this class. Each `private native
+// sx_<method>` binds by name to the .so's mangled
+// `Java_<pkg>_<Class>_sx_1<method>` export (`jni_descriptor.zig`).
 //
 // Type matrix covered:
 //   - void return + primitive returns (i8/i16/i32/i64, u8/u16, bool,

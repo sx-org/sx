@@ -689,10 +689,10 @@ pub fn link(allocator: std.mem.Allocator, io: std.Io, output_obj: []const u8, ex
         //   - **#jni_main path (`has_jni_main = true`)** — the Java side
         //     drives lifecycle (the bundled classes.dex declares an
         //     Activity that overrides `onCreate` etc.). The .so just
-        //     provides JNI implementations bound at load time via the
-        //     `JNI_OnLoad` synthesized in slice R.3. No native_app_glue
-        //     is needed: there's no `ANativeActivity_onCreate` to host,
-        //     no `android_main` event loop to run.
+        //     provides the JNI implementations, bound by their mangled
+        //     `Java_*` export names. No native_app_glue is needed: there's
+        //     no `ANativeActivity_onCreate` to host, no `android_main`
+        //     event loop to run.
         //
         //   - **Legacy NativeActivity path (`has_jni_main = false`)** —
         //     native_app_glue.c is compiled and linked alongside the sx

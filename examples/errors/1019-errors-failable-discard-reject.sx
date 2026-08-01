@@ -7,7 +7,7 @@
 //   (2) binding it to `_`.
 // This file is expected to FAIL compilation (exit 1).
 //
-// Run: ./zig-out/bin/sx run examples/236-failable-discard-reject.sx
+// Run: ./zig-out/bin/sx run examples/errors/1019-errors-failable-discard-reject.sx
 
 #import "modules/std.sx";
 

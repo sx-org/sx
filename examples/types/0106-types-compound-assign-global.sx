@@ -1,5 +1,5 @@
-// Test: compound assignment operators on global variables
-// Ensures += -= *= /= %= &= |= ^= <<= >>= all do load-modify-store
+// Compound assignment operators on global variables: += -= *= /= %= &= |= ^=
+// <<= >>= all do load-modify-store.
 
 #import "modules/std.sx";
 

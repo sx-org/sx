@@ -1,7 +1,7 @@
 // An array dimension that folds to a valid compile-time integer but exceeds a
 // `u32` is a hard error — and it must report the SAME precise diagnostic whether
 // the array is written directly (`a : [5_000_000_000]i64`, see example 1130) or
-// behind a type ALIAS (`Big :: [5_000_000_000]i64`, here). Both forms now route
+// behind a type ALIAS (`Big :: [5_000_000_000]i64`, here). Both forms route
 // the dimension through one shared folder + one shared message map, so they
 // cannot diverge.
 //

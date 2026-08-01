@@ -362,8 +362,8 @@ run :: (acc: *FakeAcceptor) -> i32 {
     if !read_response(*srv, c4, *rbuf[0], 4096, "ok-h") { srv.close(); return 17; }
     socket.close(c4);
 
-    // sanity: both read-cross injections fired (R and B) + the dispatch-
-    // cross want (H) actually surfaced before its request was served.
+    // Both read-cross injections fired (R and B) and the dispatch-cross
+    // want (H) surfaced before its request was served.
     if acc.rd_injections != 2 { srv.close(); return 16; }
     if acc.h_injections != 1 { srv.close(); return 18; }
 

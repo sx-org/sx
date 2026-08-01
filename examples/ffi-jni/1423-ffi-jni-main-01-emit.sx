@@ -2,15 +2,10 @@
 // `.java` source for a `#jni_main #jni_class("...")` declaration, runs
 // `javac` + `d8`, and bundles `classes.dex` into the APK.
 //
-// Slice 2 only wires the plumbing — the manifest still points at
-// `android.app.NativeActivity`, so the user's class isn't loaded at
-// runtime. Slice 3 (manifest synthesis) and slice 4 (RegisterNatives)
-// land in follow-up commits.
-//
 // Build to inspect APK contents (requires Android SDK + JDK):
 //   /Users/agra/projects/sx/zig-out/bin/sx build --target android \
 //       --apk /tmp/sxjnimain.apk --bundle-id co.swipelab.sxjnimain \
-//       -o /tmp/libsxjnimain.so examples/ffi-jni-main-01-emit.sx
+//       -o /tmp/libsxjnimain.so examples/ffi-jni/1423-ffi-jni-main-01-emit.sx
 //   unzip -l /tmp/sxjnimain.apk | grep classes.dex
 
 #import "modules/std.sx";

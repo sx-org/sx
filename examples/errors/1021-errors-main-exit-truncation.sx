@@ -4,7 +4,7 @@
 // binary agree. Here 1105 & 0xFF == 81, so this program exits 81 (NOT 1, which
 // an "out of 0..255 range -> failure" rule would give).
 //
-// Run: ./zig-out/bin/sx run examples/238-main-exit-truncation.sx ; echo $?   # 81
+// Run: ./zig-out/bin/sx run examples/errors/1021-errors-main-exit-truncation.sx ; echo $?   # 81
 
 #import "modules/std.sx";
 

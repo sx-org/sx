@@ -6,7 +6,7 @@
 // shapes are exercised elsewhere (238 integer-exit truncation, 244 `-> !`,
 // 245 `-> (int, !)`). This file is expected to FAIL compilation (exit 1).
 //
-// Run: ./zig-out/bin/sx run examples/239-main-signature-reject.sx
+// Run: ./zig-out/bin/sx run examples/errors/1022-errors-main-signature-reject.sx
 
 #import "modules/std.sx";
 

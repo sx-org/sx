@@ -5,12 +5,10 @@
 // through it and returns void.
 //
 // Register a runtime-built Obj-C class with a method that returns
-// a fixed `Triple`. The IMP is a plain sx fn (abi .c) — its
-// sret-shaped lowering already works (the plain
-// `extern` returns). The `#objc_call` dispatch side now produces
-// the matching call shape: `call void @objc_msgSend(ptr sret %slot,
-// ...)` + load. The two halves must agree on the ABI for the
-// round-trip to return the right bytes.
+// a fixed `Triple`. The IMP is a plain sx fn (abi .c), sret-shaped like any
+// plain `extern` return; the `#objc_call` dispatch side produces the matching
+// call shape: `call void @objc_msgSend(ptr sret %slot, ...)` + load. The two
+// halves must agree on the ABI for the round-trip to return the right bytes.
 
 #import "modules/std.sx";
 #import "modules/build.sx";

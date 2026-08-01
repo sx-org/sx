@@ -6,7 +6,7 @@
 // boundary).
 // This file is expected to FAIL compilation (exit 1).
 //
-// Run: ./zig-out/bin/sx run examples/237-cleanup-body-restrictions.sx
+// Run: ./zig-out/bin/sx run examples/errors/1020-errors-cleanup-body-restrictions.sx
 
 #import "modules/std.sx";
 

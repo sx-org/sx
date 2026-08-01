@@ -1,7 +1,7 @@
 // Extern data globals via `<name> : <type> extern;`. Lets sx code
 // reference libSystem / framework symbols (NSConcreteStackBlock,
-// __stdinp, etc.) for FFI bridges. Mirrors the long-standing
-// `<fn> :: (...) -> ... extern;` form on the function side.
+// __stdinp, etc.) for FFI bridges. Mirrors the `<fn> :: (...) -> ... extern;`
+// form on the function side.
 //
 // Cross-file dimension: the helper companion
 // `1205-ffi-extern-global-helper.sx` ALSO declares `__stdinp : *void extern;`.
@@ -9,10 +9,9 @@
 // LLVM dedupes the named global, the C linker resolves both refs to
 // the one libSystem symbol.
 //
-// We *don't* check that the helper computes the same address —
-// helper-function-scoped `@extern_global` lowers to undef today, so
-// only the direct read is compared here. The helper still takes part
-// in the link.
+// Only the direct read is compared: a helper-function-scoped
+// `@extern_global` lowers to undef, so the helper's address is not checked
+// against it. The helper still takes part in the link.
 
 #import "modules/std.sx";
 #import "1205-ffi-extern-global-helper.sx";

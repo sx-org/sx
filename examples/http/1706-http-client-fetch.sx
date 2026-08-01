@@ -180,7 +180,7 @@ run :: () -> i32 {
     }
     st1 := srv_a.stats();
     // the direct fetches above used their own conns; the POOLED five must
-    // have added exactly ONE accept (review L5: now actually asserted)
+    // have added exactly ONE accept
     if st1.accepted_total != accepts_before + 1 { pool.close(); return teardown(21, *srv_a, *ta, *srv_b, *tb); }
     base := st1.accepted_total;
     rp2, ep2 := pool.fetch("GET", "http://127.0.0.1:19027/hello", "", *buf[0], 8192);
