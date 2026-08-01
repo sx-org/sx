@@ -4116,7 +4116,7 @@ pub const Parser = struct {
             self.in_if_condition = saved_if_cond;
             const then_branch = try self.parseBlock();
             var else_branch: ?*Node = null;
-            if (self.current.tag == .kw_else) {
+            if (self.atChainingElse()) {
                 self.advance();
                 if (self.current.tag == .kw_if) {
                     else_branch = try self.parseIfExpr();
@@ -4199,7 +4199,7 @@ pub const Parser = struct {
             self.advance();
             const then_branch = try self.parseExpr();
             var else_branch: ?*Node = null;
-            if (self.current.tag == .kw_else) {
+            if (self.atChainingElse()) {
                 self.advance();
                 else_branch = try self.parseExpr();
             }
@@ -4214,7 +4214,7 @@ pub const Parser = struct {
         // Block form: if cond { ... } else { ... }
         const then_branch = try self.parseBlock();
         var else_branch: ?*Node = null;
-        if (self.current.tag == .kw_else) {
+        if (self.atChainingElse()) {
             self.advance();
             if (self.current.tag == .kw_if) {
                 else_branch = try self.parseIfExpr();
@@ -4435,16 +4435,17 @@ pub const Parser = struct {
 
             if (self.current.tag == .kw_break) {
                 self.advance();
-                try self.expect(.semicolon);
+                // The arm's `break` ends like a `break` statement anywhere.
+                try self.expectStatementEnd();
                 const body = try self.createNode(arm_start, .{ .block = .{ .stmts = &.{} } });
                 try arms.append(self.allocator, .{ .pattern = pattern, .body = body, .is_break = true, .capture = capture, .capture_span = capture_span, .capture_is_raw = capture_is_raw });
             } else if (self.current.tag == .fat_arrow) {
-                // Short form: (ident) => expr;
+                // Short form: (ident) => expr
                 self.advance();
                 const expr = try self.parseExpr();
-                try self.expect(.semicolon);
-                // The short form's `;` is the match grammar's, not the statement
-                // one — the arm body is its expression.
+                // The arm body is its expression, so it ends like an expression
+                // statement — including at the match's own `}`.
+                try self.expectSemicolonAfter(expr);
                 const body = try self.createNode(arm_start, .{ .block = .{ .stmts = try self.allocator.dupe(*Node, &.{expr}), .produces_value = true } });
                 try arms.append(self.allocator, .{ .pattern = pattern, .body = body, .is_break = false, .capture = capture, .capture_span = capture_span, .capture_is_raw = capture_is_raw });
             } else {
@@ -5696,17 +5697,22 @@ pub const Parser = struct {
     /// continues the statement above instead of ending it. `-` and `*` are
     /// deliberately absent: the spacing rule already decided them — a leading
     /// `- b` keeps the gaps matched and never reaches a terminator, while `-b`
-    /// opens a fresh operand and so is a statement of its own.
+    /// opens a fresh operand and so is a statement of its own. `case` is absent
+    /// too: it heads a `match` arm, and an arm is a statement in the only
+    /// position where `case` is legal.
     ///
     /// The property is the rule and this list is its enumeration, so a token
     /// belongs here as soon as some construct parser can reach a terminator
     /// query with it current. `:`, `extern` and `intrinsic` are here because
     /// the typed-binding and typed-constant parsers ask `atStatementEnd` before
     /// dispatching on them; should `extern` ever become a declaration head
-    /// (issues/0030) it stops satisfying the property and leaves.
+    /// (issues/0030) it stops satisfying the property and leaves. `else`
+    /// satisfies the property only where it chains an `if` — the default-arm
+    /// spelling starts an arm, and `implicitTerminator` tells the two apart
+    /// through `atMatchDefaultArm`.
     fn continuesStatement(tag: Tag) bool {
         return switch (tag) {
-            .kw_and, .kw_or, .kw_then, .kw_else, .kw_case, .kw_catch => true,
+            .kw_and, .kw_or, .kw_then, .kw_else, .kw_catch => true,
             .pipe, .plus, .equal_equal, .bang_equal, .less_equal, .greater_equal => true,
             .less_less, .greater_greater, .pipe_arrow, .question_question, .question_dot => true,
             .comma, .equal, .colon_colon, .arrow, .fat_arrow => true,
@@ -5738,8 +5744,25 @@ pub const Parser = struct {
     /// no next statement for the one below to run into.
     fn implicitTerminator(self: *const Parser) bool {
         if (self.current.tag == .eof) return true;
-        if (continuesStatement(self.current.tag)) return false;
+        if (continuesStatement(self.current.tag) and !self.atMatchDefaultArm()) return false;
         return self.gapCrossesLine();
+    }
+
+    /// `else` with a GLUED `:` heads a `match`'s default arm; every other
+    /// `else` chains the enclosing `if`. One token of lookahead is the whole
+    /// disambiguation, and it decides both readings: an arm head ends the
+    /// statement above it, a chaining `else` reads on through the break.
+    fn atMatchDefaultArm(self: *const Parser) bool {
+        if (self.current.tag != .kw_else) return false;
+        var lex = self.lexer;
+        const tok = lex.next();
+        return tok.tag == .colon and writtenStart(tok) == self.current.loc.end;
+    }
+
+    /// True at an `else` that chains the enclosing `if` — every `else` but a
+    /// `match` default-arm head.
+    fn atChainingElse(self: *const Parser) bool {
+        return self.current.tag == .kw_else and !self.atMatchDefaultArm();
     }
 
     /// True where the statement or declaration could end right here — at its
@@ -5908,7 +5931,7 @@ pub const Parser = struct {
 test "continuesStatement: the suppression set member by member" {
     const members = [_]Tag{
         .kw_and,          .kw_or,     .kw_then,          .kw_else,
-        .kw_case,         .kw_catch,  .pipe,             .plus,
+        .kw_catch,        .pipe,      .plus,
         .equal_equal,     .bang_equal, .less_equal,      .greater_equal,
         .less_less,       .greater_greater, .pipe_arrow, .question_question,
         .question_dot,    .comma,     .equal,            .colon_colon,
@@ -5921,9 +5944,11 @@ test "continuesStatement: the suppression set member by member" {
     for (members) |tag| try std.testing.expect(Parser.continuesStatement(tag));
 
     // Statement heads, literals, openers, and the operators the spacing/glue
-    // rules own — none of them suppresses a terminator.
+    // rules own — none of them suppresses a terminator. `case` heads a `match`
+    // arm, which is a statement, so it ends the statement above it.
     const negatives = [_]Tag{
-        .identifier, .int_literal, .string_literal, .l_brace,  .r_brace,
+        .kw_case,    .identifier,  .int_literal,    .string_literal,
+        .l_brace,    .r_brace,
         .l_paren,    .l_bracket,   .bang,           .dot,      .minus,
         .star,       .semicolon,   .eof,            .kw_if,    .kw_while,
         .kw_for,     .kw_return,   .kw_defer,       .kw_onfail, .kw_break,

@@ -1526,8 +1526,8 @@ test "parser: `?.` and `catch` continue across a line break" {
     try std.testing.expect(failable.data.block.stmts[0].data == .catch_expr);
 }
 
-// X1 — a fixed form's own list keeps its literal separator. These are S3's
-// baseline: a newline is NOT a terminator inside them.
+// A fixed form's own list keeps its literal separator: a newline is NOT a
+// terminator inside one.
 test "parser: a fixed form's list still demands its `;`" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1552,14 +1552,100 @@ test "parser: a fixed form's list still demands its `;`" {
         \\    length :: (self: *Self) -> i32
         \\}
     );
+}
 
-    // Match arms.
-    _ = try parseErrMsg(alloc,
+// `case` heads an arm, and an arm is a statement, so the break before the next
+// arm head ends the statement above it — in every arm body form.
+test "parser: an arm ends at the break before the next `case`" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const body = try parseBody(alloc,
         \\f :: (v: i64) -> i64 {
-        \\    v == {
-        \\        case 1: 10
-        \\        case _: 0;
+        \\    if v == {
+        \\        case 1:
+        \\            g()
+        \\            10
+        \\        case 2: break
+        \\        case 3: (e) => e
+        \\        else:
+        \\            0
         \\    }
         \\}
     );
+    const match = body.data.block.stmts[0].data.match_expr;
+    try std.testing.expectEqual(@as(usize, 4), match.arms.len);
+    try std.testing.expectEqual(@as(usize, 2), match.arms[0].body.data.block.stmts.len);
+    try std.testing.expect(match.arms[1].is_break);
+    try std.testing.expect(match.arms[3].pattern == null);
+
+    // On ONE line nothing implies the terminator, so the separator is written.
+    _ = try parseErrMsg(alloc, "f :: (v: i64) -> i64 { if v == { case 1: 10 case 2: 20 } }");
+}
+
+// `else` glued to a `:` heads the default arm; every other `else` chains the
+// `if` above it, across a line break included.
+test "parser: a glued `:` separates a default arm from a chaining `else`" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // An arm-final `if` with no `else` of its own: the `else:` below it is the
+    // default arm, not that `if`'s branch.
+    const body = try parseBody(alloc,
+        \\f :: (v: i64) -> i64 {
+        \\    n := 0
+        \\    if v == {
+        \\        case 1:
+        \\            if n == 0 {
+        \\                n = 1
+        \\            }
+        \\        else:
+        \\            n = 3
+        \\    }
+        \\    n
+        \\}
+    );
+    const match = body.data.block.stmts[1].data.match_expr;
+    try std.testing.expectEqual(@as(usize, 2), match.arms.len);
+    try std.testing.expect(match.arms[0].body.data.block.stmts[0].data.if_expr.else_branch == null);
+    try std.testing.expect(match.arms[1].pattern == null);
+
+    // The arm-final `if` DOES take a chaining `else`, and `else:` still opens
+    // the default arm after it.
+    const chained_arm = try parseBody(alloc,
+        \\f :: (v: i64) -> i64 {
+        \\    n := 0
+        \\    if v == {
+        \\        case 1:
+        \\            if n == 0 {
+        \\                n = 1
+        \\            }
+        \\            else {
+        \\                n = 2
+        \\            }
+        \\        else:
+        \\            n = 3
+        \\    }
+        \\    n
+        \\}
+    );
+    const chained_match = chained_arm.data.block.stmts[1].data.match_expr;
+    try std.testing.expectEqual(@as(usize, 2), chained_match.arms.len);
+    try std.testing.expect(chained_match.arms[0].body.data.block.stmts[0].data.if_expr.else_branch != null);
+    try std.testing.expect(chained_match.arms[1].pattern == null);
+
+    // Without the match, the same `}` NEWLINE `else` still chains.
+    const chain = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    if c {
+        \\        1
+        \\    }
+        \\    else {
+        \\        2
+        \\    }
+        \\}
+    );
+    try std.testing.expect(chain.data.block.stmts[0].data.if_expr.else_branch != null);
 }
