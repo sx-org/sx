@@ -94,11 +94,10 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     self.checkBoundBindings(fd.type_params, bindings, self.current_source_file);
 
     // Resolve return type with type bindings active. The body's tail
-    // expression inherits this as its target_type so bare `.{...}`
-    // literals resolve to the monomorphised return type instead of
-    // whatever leaked in from the caller (e.g. caller's xx target).
+    // expression inherits it as its target_type — installed by the shared body
+    // owner, so bare `.{...}` literals resolve to the monomorphised return type
+    // instead of whatever leaked in from the caller (e.g. caller's xx target).
     const ret_ty = self.resolveReturnType(fd);
-    self.target_type = ret_ty;
 
     const wants_ctx = self.funcWantsImplicitCtx(fd);
     const saved_ctx_ref_mono = self.current_ctx_ref;
@@ -196,27 +195,11 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
             self.ensureTerminator(ret_ty);
         }
         self.builder.finalize();
-    } else if (self.builder.currentFunc().is_naked) {
-        // `abi(.naked)`: asm-only body that rets itself — no sx value return.
-        // Lower the statements + cap with `unreachable` (mirrors the decl path).
-        // emit_llvm bails on `is_naked` until B1.0b implements `naked` emission.
-        self.lowerBlock(fd.body);
-        if (!self.currentBlockHasTerminator()) self.builder.emitUnreachable();
-        self.builder.finalize();
     } else {
-        // Lower the function body. Delegate the trailing-value return to the
-        // shared `lowerValueBody` so the generic-instantiation path can't drift
-        // from the decl path — it handles all three body-return shapes: the
-        // value-failable success routing (append the success error slot via
-        // `lowerFailableSuccessReturn`, NOT a bare coerce+ret that leaves the
-        // error-tag slot uninitialized — issue 0190), the pure-failable
-        // fall-through, and the missing-value diagnostic.
-        if (ret_ty != .void) {
-            self.lowerValueBody(fd.body, ret_ty);
-        } else {
-            self.lowerBlock(fd.body);
-            self.ensureTerminator(ret_ty);
-        }
+        // Delegate to the shared body owner so the generic-instantiation path
+        // can't drift from the decl path: it decides the demand from `ret_ty`
+        // and owns every implicit exit.
+        self.lowerFunctionBody(fd.body, ret_ty);
         self.builder.finalize();
     }
 

@@ -1462,24 +1462,9 @@ pub fn monomorphizePackFn(
     defer self.setCurrentSourceFile(saved_source);
     if (fd.body.source_file) |src| self.setCurrentSourceFile(src);
 
-    if (self.builder.currentFunc().is_naked) {
-        // `abi(.naked)`: asm-only body that rets itself — no sx value return.
-        // Lower statements + cap with `unreachable` (mirrors the decl path).
-        // emit_llvm bails on `is_naked` until B1.0b implements `naked` emission.
-        self.lowerBlock(fd.body);
-        if (!self.currentBlockHasTerminator()) self.builder.emitUnreachable();
-    } else if (ret_ty != .void) {
-        // Delegate the trailing-value return to the shared `lowerValueBody`
-        // (mirrors the decl + generic paths) so this pack-fn instance can't
-        // drift — it routes the value-failable success through
-        // `lowerFailableSuccessReturn` (appending the success error slot)
-        // instead of a bare coerce+ret that leaves the error-tag slot
-        // uninitialized (issue 0190).
-        self.lowerValueBody(fd.body, ret_ty);
-    } else {
-        self.lowerBlock(fd.body);
-        self.ensureTerminator(ret_ty);
-    }
+    // Delegate to the shared body owner (mirrors the decl + generic paths) so
+    // this pack-fn instance can't drift from them.
+    self.lowerFunctionBody(fd.body, ret_ty);
     self.builder.finalize();
 }
 

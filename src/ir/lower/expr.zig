@@ -3542,8 +3542,8 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             };
         },
 
-        .if_expr => |ie| self.lowerIfExpr(&ie),
-        .match_expr => |me| self.lowerMatch(&me),
+        .if_expr => |ie| self.lowerIfExpr(&ie, .value),
+        .match_expr => |me| self.lowerMatch(&me, .value),
         .while_expr => |we| self.lowerWhile(&we),
         .for_expr => |fe| self.lowerFor(&fe),
         .break_expr => self.lowerBreak(node.span),
