@@ -7,7 +7,9 @@
 //      refused exactly as `return wide();` is: an inferred set is not
 //      statically known, so it cannot be proven a subset of the named one.
 //   2. A tail whose type never resolves is reported once and poisons the body
-//      — it is never reinterpreted as an error tag.
+//      — it is never reinterpreted as an error tag. So is a contextual `.X`
+//      naming a tag the declared set does not have: the tail reads the declared
+//      set, so a nonmember is caught there rather than discarded as a value.
 //   3. A closure body that produces no value gets the same missing-value
 //      diagnostic as a named function, instead of returning `undef`.
 //   4. A native `#jni_main` method cannot be failable: Java has no error
@@ -41,6 +43,12 @@ irreducible :: () -> !Named {
     no_such_name
 }
 
+// The contextual spelling still resolves against the declared set — so a tag
+// that set does not have is refused, not silently discarded.
+nonmember :: () -> !Named {
+    .Missing
+}
+
 // 4. Refused at the declaration: an sx error channel has no Java counterpart.
 Bundle :: #jni_class("android/os/Bundle") extern {}
 
@@ -58,6 +66,7 @@ main :: () -> i32 {
     forward_same_set() catch { print("caught\n"); }
     implicit_forward() catch { print("caught\n"); }
     irreducible() catch { print("caught\n"); }
+    nonmember() catch { print("caught\n"); }
 
     // 3. Refused: a value-returning closure whose body produces no value.
     empty := () -> i32 { x := 1; };
