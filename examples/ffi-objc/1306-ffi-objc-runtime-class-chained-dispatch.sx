@@ -2,7 +2,7 @@
 // resolves the inner call's return type so the outer dispatch's
 // receiver type is known. Collapsing it to i64 in `inferExprType` misses
 // the runtime_class_map lookup and lowering emits `error: unresolved 'init'`
-// (or 'initWithWindowScene' etc.) — see issues/0043.
+// (or 'initWithWindowScene' etc.).
 //
 // Two return-type shapes covered: explicit `*ClassName` (alloc here)
 // and `*Self` (init). Both must propagate through the chain so the

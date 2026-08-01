@@ -6,7 +6,7 @@
 // the field's own type (`*Pair`, an opaque pointer) instead of the pointee
 // aggregate (`Pair`).
 //
-// Regression (issue 0094): typing struct/tuple GEPs in the shared
+// Regression: typing struct/tuple GEPs in the shared
 // `fieldLvaluePtr` resolver with the bare field value type promotes a `*Pair`
 // field stored via the multi-assign / address-of paths to a 16-byte struct and
 // clobbers the next field (`sentinel` reads 0).

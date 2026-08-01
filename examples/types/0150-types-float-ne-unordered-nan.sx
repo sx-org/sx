@@ -4,7 +4,7 @@
 // For all non-NaN operands unordered `!=` matches ordered `!=`, so finite
 // comparisons are unchanged. The native backend agrees with the interpreter.
 //
-// Regression (issue 0091): the LLVM backend lowered float `!=` to ordered
+// Regression: the LLVM backend lowered float `!=` to ordered
 // not-equal (LLVMRealONE), so `nan != nan` was false in native code.
 #import "modules/std.sx";
 

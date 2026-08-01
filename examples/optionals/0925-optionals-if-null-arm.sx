@@ -2,7 +2,7 @@
 // The `null` arm lowers to `none` and the concrete arm to `some T`, so the
 // result type unifies to `?T` — driven either by an optional target (`: ?T`)
 // or, with no annotation, synthesized from the concrete arm's type.
-// Regression (issue 0272 + the match path): coercing the `null` arm in a
+// Regression, `if` and `match` paths alike: coercing the `null` arm in a
 // concrete `T` context builds a bogus present optional, so the result
 // reads as PRESENT. The match path additionally fabricates a present `{0,true}`
 // when EVERY value arm is `null` (all-null, or null + diverging arms).
@@ -51,7 +51,7 @@ main :: () {
     h : ?string = if f { "hi" } else { null };
     print("h null={}\n", if x := h { false } else { true });   // true
 
-    // ── match path (issue 0272 extension) ──────────────────────────────
+    // ── match path ──────────────────────────────
     ea := E.A;
 
     // all-null match arms under a `?i64` target → `none`, not a present `{0,true}`

@@ -7,7 +7,7 @@
 // param → LLVM verifier abort). The declaration-site diagnostic comes from one
 // EXHAUSTIVE binding-name walk, so no syntactic binding form can slip through.
 //
-// Regression (issue 0076). Expected: one error per
+// Regression. Expected: one error per
 // offending name; exit 1 — NOT an LLVM verifier abort.
 #import "modules/std.sx";
 

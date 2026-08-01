@@ -1,4 +1,4 @@
-// Default-ABI small byte-struct params (issue 0286).
+// Default-ABI small byte-struct params.
 //
 // The default ABI packs ≤8-byte non-HFA structs into i64 (same bucket as the
 // C ABI). Left as a raw LLVM struct, `{i8×4}` expands into four i8 args; when

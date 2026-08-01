@@ -2,7 +2,7 @@
 // be rejected loudly (not infinite-loop the size computation into a crash). A
 // pointer payload (`*Tree`) would break the cycle and is the fix the message
 // suggests. Covers both source decls and comptime-constructed types — this is
-// the source form (regression for issue 0139).
+// the source form (regression).
 #import "modules/std.sx";
 
 Tree :: enum {

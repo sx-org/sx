@@ -16,7 +16,7 @@
 // `!E` channel) even though it is parser-banned in the cleanup body directly.
 //
 // Locks the closure-boundary arms of the error-flow pass. A closure literal in
-// a `defer` body lowers without segfaulting (issue 0073 — see 0310).
+// a `defer` body lowers without segfaulting (see 0310).
 
 #import "modules/std.sx";
 

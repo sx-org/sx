@@ -1,11 +1,11 @@
 // Implicit array→slice COERCION is a zero-copy VIEW for an addressable array,
-// matching the explicit `arr[0..]` subslice (issue 0225). Passing a named
+// matching the explicit `arr[0..]` subslice. Passing a named
 // array where a `[]T` is expected — `fill(arr)` with `fill :: (s: []T)` — now
 // aliases the array's storage, so a write through the slice param lands in the
 // caller's array. Covers the local, global, and struct-field legs, plus a
 // slice-typed local bound from a named array (`s : []T = arr`).
 //
-// Regression (issue 0264). Sibling of 0842 (the 0225 explicit-subslice alias).
+// Regression. Sibling of 0842 (the 0225 explicit-subslice alias).
 
 #import "modules/std.sx";
 

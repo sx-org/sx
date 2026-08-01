@@ -1,6 +1,6 @@
 // Protocol impl lookup, conformance, thunk creation, and vtable caching use the
 // concrete nominal TypeId, so same-display-name structs dispatch independently.
-// Regression (issue 0320): both `Thing` impls used one `Thing.value` body/thunk.
+// Regression: both `Thing` impls used one `Thing.value` body/thunk.
 
 #import "0884-protocols-nominal-impl-thunk-identity/contract.sx";
 a :: #import "0884-protocols-nominal-impl-thunk-identity/a.sx";

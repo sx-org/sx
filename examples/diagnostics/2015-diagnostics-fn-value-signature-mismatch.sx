@@ -1,7 +1,7 @@
 // A function VALUE carries its whole signature. A parameter with a default
 // is still a parameter of the value — the default is a call-site convenience
 // the indirect caller never sees — so `one` is `(i64) -> i64` and does not
-// fit a `() -> i64` slot. Welding it in silently (issue 0369) makes the
+// fit a `() -> i64` slot. Welding it in silently makes the
 // call through the slot pass no argument, so the callee reads whatever the
 // argument register happens to hold.
 #import "modules/std.sx";

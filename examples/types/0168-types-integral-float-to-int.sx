@@ -15,7 +15,7 @@
 // including a non-integral const expression (`xx (M + 0.5)` / `xx (F + 0.25)`).
 //
 // Companion to the negative example 1146 (non-integral floats error).
-// Regression (issue 0095): a typed local/param/field silently truncated a float
+// Regression: a typed local/param/field silently truncated a float
 // initializer (`y : i64 = 1.5` → 1) with no diagnostic; a non-integral const
 // EXPRESSION (`M + 0.5`) and a non-integral float-const-LEAF expression
 // (`F + 0.25`) truncated even when written through an int binding; the rule now
@@ -42,7 +42,7 @@ KD : i64 : 12.0 / 4.0;   // integral float-DIVISION module const → folds to 3
 
 ArrFE :: [F + 1.5]i64;   // array-dim type ALIAS over a float-const-leaf expr → [4]i64
                          // (the stateless registration path must agree with the
-                         //  direct form `a : [F + 1.5]i64` below — issue 0083).
+                         //  direct form `a : [F + 1.5]i64` below).
 
 main :: () {
     // Typed local: integral float folds (literal + int-const expr + float-const leaf).

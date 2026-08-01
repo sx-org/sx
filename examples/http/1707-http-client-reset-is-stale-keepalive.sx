@@ -1,5 +1,5 @@
 // std.http client — a peer RST before any response byte is the stale-keep-alive
-// signature, exactly like a clean EOF (issue 0285).
+// signature, exactly like a clean EOF.
 //
 // When a server drops an idle keep-alive conn, the request the client writes
 // into it provokes an RST, and that RST DISCARDS the FIN's queued EOF. So the
@@ -57,7 +57,7 @@ main :: () -> i32 {
     if re != error.Closed {
         // error.Recv is a class ClientPool.hop does NOT retry, so the pool
         // would surface the error instead of redialing.
-        print("FAIL: reset classified as Recv, not Closed (issue 0285)\n");
+        print("FAIL: reset classified as Recv, not Closed\n");
         return 6;
     }
 

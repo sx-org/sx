@@ -5,7 +5,7 @@
 // gracefully on the `.unresolved` type rather than `@panic` in `sizeOf` or pile
 // on cascade errors.
 //
-// Regression (issue 0083): a `resolveArrayLen` that emits the diagnostic then
+// Regression: a `resolveArrayLen` that emits the diagnostic then
 // `return 0` fabricates a 0-length array (0-byte alloca, OOB access) to dodge
 // the `sizeOf` panic. It returns null → the `.unresolved` sentinel; the
 // binding's lowering bails on it (a field access on an already-diagnosed

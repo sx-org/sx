@@ -1,4 +1,4 @@
-// std.http client response framing/content-coding regressions (issue 0327).
+// std.http client response framing/content-coding regressions.
 // HEAD and no-body statuses never consume advertised bodies; interim responses
 // are skipped; raw codings are preserved on opt-out/ranges; gzip and zlib are
 // bounded identically across fixed, chunked, and close-delimited framing.

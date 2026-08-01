@@ -4,7 +4,7 @@
 // forward-declared element aliases, generic-instantiation elements, and
 // forward tuple-in-tuple chains all resolve to the same structural tuple
 // TypeId with a truthful layout.
-// Regression (issue 0196): the alias registration kind-list omitted
+// Regression: the alias registration kind-list omitted
 // `.tuple_type_expr`, leaving the alias an opaque nominal ("field 'a' not
 // found on type 'NT'" / "unresolved type: 'NT'"). The review fold added the
 // deferred fixpoint (forward elements), stateful element resolution (real

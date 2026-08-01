@@ -2,7 +2,7 @@
 // compile-time error — never a silent `0` (call-argument case) nor an
 // `alloca void` backend crash (`:=` declaration case).
 //
-// Regression (issue 0270): the `:=` RHS below is a value context whose `if`
+// Regression: the `:=` RHS below is a value context whose `if`
 // has no `else`, so it has no value. The compiler must reject it up front with
 // "an `if` used as a value must have an `else` branch".
 //

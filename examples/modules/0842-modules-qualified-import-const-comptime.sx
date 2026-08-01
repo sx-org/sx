@@ -3,7 +3,7 @@
 // dimensions, const arithmetic, an integral-float dimension, a Vector lane
 // count, and a generic value-param argument.
 //
-// Regression (issue 0192): a namespaced import's const reached the const
+// Regression: a namespaced import's const reached the const
 // folders only as a runtime value — `evalConstIntExpr`'s field_access arm had
 // no namespace-member arm, and a qualified ref in type-argument position
 // (`Vector(m.LANES, …)`) arrives as a single dotted name. Both now resolve

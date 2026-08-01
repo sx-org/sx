@@ -1,4 +1,4 @@
-// Backtick raw identifier in TYPE position (the universal model, issue 0089):
+// Backtick raw identifier in TYPE position (the universal model):
 // `` `name `` is the LITERAL identifier `name` used as a type reference, never
 // the builtin/reserved spelling. A reserved type spelling (`i2`, `u8`, …) can
 // therefore both DECLARE a type (struct / enum / union / error-set / alias) and
@@ -6,7 +6,7 @@
 // position remains the signed-int type (see `add` below) and a bare reserved-
 // name declaration still errors (see examples/1141). The backtick is required
 // to declare or reference these names; it is never part of the name's text.
-// Regression (issue 0089): the universal raw identifier.
+// Regression: the universal raw identifier.
 #import "modules/std.sx";
 
 // Type-introducing decls whose NAME is a reserved spelling.

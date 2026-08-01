@@ -1,4 +1,4 @@
-// Issue 0348, the genuine-collision arm: one sx name binding two
+// The genuine-collision arm: one sx name binding two
 // DIFFERENT runtime classes across modules is an error naming both
 // declaration sites, never a silent last-wins registry race.
 #import "modules/std.sx";

@@ -8,7 +8,7 @@
 //
 // Negative companion to 0169 (the FLOAT-field narrowing half, exit 0).
 //
-// Regression (issue 0095).
+// Regression.
 #import "modules/std.sx";
 
 DimBox :: struct { max: i64; }

@@ -2,7 +2,7 @@
 // param type, just like a call to a top-level function does: a concrete arg
 // wraps to a present optional, and `null` becomes an absent optional.
 //
-// Regression (issue 0186): the closure-value call path lowered args without
+// Regression: the closure-value call path lowered args without
 // coercing to the closure's declared param types, so a concrete `7` arrived as
 // a bare payload (read ABSENT) and `null` reached a `{T,i1}` slot as a bare
 // pointer (LLVM verifier failure). Fixed by typing args against the closure's

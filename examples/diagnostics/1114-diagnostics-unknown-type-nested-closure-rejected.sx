@@ -2,7 +2,7 @@
 // with the enclosing function's generic params still in scope. A body walk
 // that stops at closure / nested-function boundaries lets a typo'd type
 // inside a closure slip through and become a 0-field struct.
-// Regression (issue 0064, nested scopes). Expected: error at the annotation; exit 1.
+// Regression (nested scopes). Expected: error at the annotation; exit 1.
 main :: () -> i32 {
     f := () -> i32 {
         bad: Coordnate = ---;

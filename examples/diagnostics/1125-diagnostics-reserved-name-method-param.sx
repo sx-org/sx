@@ -6,7 +6,7 @@
 // `#objc_class` block — each method's `param_name_spans` is threaded from the
 // parser so the caret lands on the parameter token.
 //
-// Regression (issue 0076). Expected: one error per
+// Regression. Expected: one error per
 // offending parameter, each caret on the parameter name; exit 1.
 #import "modules/std.sx";
 #import "modules/build.sx";

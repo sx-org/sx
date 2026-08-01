@@ -2,7 +2,7 @@
 // its own heap copy and resolves to its OWN concrete type's method (IntCell.get
 // vs Doubler.get), proving the per-element erasure picks the right vtable.
 //
-// Regression (issue 0135): single-element `xx pack[i]` erasure to a protocol
+// Regression: single-element `xx pack[i]` erasure to a protocol
 // scalar was unsupported (the bare pack lowered as a value and errored).
 
 #import "modules/std.sx";

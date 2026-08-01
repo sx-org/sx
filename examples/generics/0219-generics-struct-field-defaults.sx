@@ -2,7 +2,7 @@
 // literals — a generic instance's declared defaults are carried onto the
 // monomorphized type, not silently zero-filled.
 //
-// Regression (issue 0221): `struct_defaults_map` was keyed by the plain decl
+// Regression: `struct_defaults_map` was keyed by the plain decl
 // name, so an instantiated generic's mangled struct name never matched and
 // unset defaulted fields read 0. Now `instantiateGenericStruct` registers the
 // template's defaults under the mangled instance name, and dependent defaults

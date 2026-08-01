@@ -1,8 +1,8 @@
-// Regression (issue 0100 F2): lowering a QUALIFIED imported function whose
+// Regression: lowering a QUALIFIED imported function whose
 // body terminates must leave the CALLER's lowering state untouched.
 //
 // `m :: #import …` registers `m.foo` as a module-qualified alias with a unique
-// FuncId (the identity fix, issue 0100 / example 0719) and lowers it through
+// FuncId (example 0719) and lowers it through
 // `lazyLowerFunction`'s null-FuncId `lowerFunction` path. `foo`'s body folds
 // `if true { return helper(); }` to an unconditional return, so its lowering
 // ends with `block_terminated = true`. A null-FuncId path that restores

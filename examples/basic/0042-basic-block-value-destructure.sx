@@ -3,7 +3,7 @@
 // trailing expression as the value. Routing a braced value block through a
 // restricted expression parser rejects destructures with "expected ';'".
 //
-// Regression (issue 0065).
+// Regression.
 
 #import "modules/std.sx";
 

@@ -4,7 +4,7 @@
 // type resolver's unknown-name fallback then fabricated an empty struct — the
 // program ran and printed `NotAType{}`. Now only consts whose value introduces a
 // type (declarations / type-expression aliases) count as type names.
-// Regression (issue 0068).
+// Regression.
 // Expected: a clean "unknown type 'NotAType'" error at the annotation; exit 1.
 
 #import "modules/std.sx";

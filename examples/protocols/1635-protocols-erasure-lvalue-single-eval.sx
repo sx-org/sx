@@ -2,7 +2,7 @@
 // ONCE. `arr[next()].(P)` lowers the receiver a single time — the
 // side-effectful index runs once, and the copied element is the one that
 // single evaluation picked. Re-lowering the AST for a second address
-// (issue 0214: `xx arr[next()]` running `next()` twice) breaks it. It holds
+// (`xx arr[next()]` running `next()` twice) breaks it. It holds
 // for the postfix
 // owning copy, for every index base shape: a LOCAL array, a module-GLOBAL
 // array, and a STRUCT-FIELD array — and for `?P` destinations.
@@ -10,7 +10,7 @@
 // source element is untouched by mutations through it. Transient
 // write-through lives in `*P` views (pinned in 0829); the by-REF capture
 // leg below drives one through a view.
-// Regression (issue 0214).
+// Regression.
 
 #import "modules/std.sx";
 

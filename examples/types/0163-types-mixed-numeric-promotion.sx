@@ -10,7 +10,7 @@
 // applies for the value), so an int operand with a float operand promotes to the
 // float in either order.
 //
-// Regression (issue 0088).
+// Regression.
 
 #import "modules/std.sx";
 

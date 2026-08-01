@@ -1,6 +1,6 @@
 // An UNKNOWN type name inside a NON-TUPLE composite type-alias RHS is a hard
 // error at the alias declaration, not a silently size-0 empty-struct stub that
-// miscompiles every use (issue 0230, generalizing the 0196 tuple case). Every
+// miscompiles every use (generalizing the 0196 tuple case). Every
 // composite RHS kind — array / slice / optional / pointer / many-pointer /
 // function / closure, and nested combinations — routes the element/pointee/
 // param/return through the `UnknownTypeChecker` walk, so `NoSuchType` gets the
@@ -10,7 +10,7 @@
 // snapshot focused); the slice / optional / pointer / function / nested shapes
 // are covered by the compiler's unit tests in src/ir/lower.test.zig.
 //
-// Regression (issue 0230).
+// Regression.
 #import "modules/std.sx";
 
 Bad :: [3]NoSuchType;

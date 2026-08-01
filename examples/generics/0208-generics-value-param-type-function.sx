@@ -5,7 +5,7 @@
 // the SAME type — the array copy `b : Make(3, i64) = a` type-checks only because
 // the three spellings name one `[3]i64`.
 //
-// Regression (issue 0083): an unknown-type checker that walks the value-param
+// Regression: an unknown-type checker that walks the value-param
 // position as a type name reports "unknown type 'N'"; a parameterized
 // type-annotation path that never routes to `instantiateTypeFunction`, or a
 // binder that handles no non-struct/union return shape (`return [K]T`), loses

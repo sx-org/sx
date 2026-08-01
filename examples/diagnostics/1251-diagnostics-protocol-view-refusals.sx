@@ -1,4 +1,4 @@
-// `*P` view refusals (erasure model, first slice; issues 0303/0304):
+// `*P` view refusals (erasure model, first slice):
 //   - an RVALUE has no durable storage to borrow — both the decl form and
 //     the argument form are compile errors, never a silent pun of the
 //     struct's bytes into a pointer slot.

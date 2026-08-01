@@ -10,9 +10,9 @@
 //     wrap a PRESENT Some(0) into the optional);
 //   - an enum-literal RHS resolves against the enum target's type.
 // The optional global is null-INITIALIZED and set at runtime because a
-// non-null optional-global initializer miscompiles today (issue 0234).
+// non-null optional-global initializer miscompiles today.
 //
-// Regression (issues 0218 and 0249).
+// Regression.
 //
 // An INDEX target on a GLOBAL array base must address it in place through
 // `global_addr`: a `lowerExpr` load of the whole array yields a throwaway
@@ -51,7 +51,7 @@ main :: () -> i32 {
     g_col, a = .red, 4;
     print("col_red={} a={}\n", g_col == Color.red, a);
 
-    // GLOBAL array index target (issue 0249) — the store must land in the
+    // GLOBAL array index target — the store must land in the
     // global's storage in place, not a loaded copy. Mixed with a local target.
     g_arr[1], a = 77, 5;
     print("arr1={} a={}\n", g_arr[1], a);            // arr1=77

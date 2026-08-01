@@ -1,4 +1,4 @@
-// Own-wins (0754 / issue 0105 case 3) holds at EVERY non-leaf bare-type site,
+// Own-wins (example 0754) holds at EVERY non-leaf bare-type site,
 // not just the nominal leaf annotation. `main` flat-imports `dep.sx` (which
 // authors a same-name `Widget { a, b }` = 16 bytes and `Nums :: [2]i32` = 8
 // bytes) AND authors its OWN `Widget { a }` = 8 bytes and `Nums :: [2]i64` = 16

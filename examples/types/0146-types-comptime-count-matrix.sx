@@ -8,7 +8,7 @@
 // (`F :: 4.0` ≡ 4), and an ALIASED integer constraint (`Count :: u32`,
 // `Small :: i8`) on a value-param.
 //
-// Regression (issue 0083): two cells of this surface are easy to diverge.
+// Regression: two cells of this surface are easy to diverge.
 // (1) A `moduleConstInt` that reads only a literal RHS fails to fold a named
 // const whose RHS is an expression (`N :: M + 1`) as a count ("not a
 // compile-time integer constant"); it folds the RHS through the shared

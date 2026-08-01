@@ -2,7 +2,7 @@
 // ints serialize directly, an integral negative float narrows into an
 // integer global (non-integral errors), and boundary values fit exactly.
 // Out-of-range negatives get the literal fits-check, not "non-constant".
-// Regression (issue 0113): `g : i64 = -1;` was rejected as not a
+// Regression: `g : i64 = -1;` was rejected as not a
 // compile-time constant (globalInitValue had no unary_op arm).
 
 #import "modules/std.sx";

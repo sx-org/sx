@@ -2,7 +2,7 @@
 // (`Vector(3, f32).[…]`, an array-type alias) — never the element type.
 // A prefix resolving to a non-array/vector/slice (scalar `i32.[…]`,
 // struct `Pt.[…]`) is refused with a pointer at the annotated form.
-// Regression (issue 0293).
+// Regression.
 #import "modules/std.sx";
 
 Pt :: struct { x: i64; }

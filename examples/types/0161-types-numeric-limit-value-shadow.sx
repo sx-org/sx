@@ -14,12 +14,12 @@
 // `` `i16 ``, and LOCAL `` `f64 ``/`` `i32 ``/`` `u8 `` — each reads its field,
 // and the bare spelling of each STILL folds.
 //
-// Regression (issues 0092 local, 0093 global + module-const): an intercept
+// Regression, at local, global and module-const scope alike: an intercept
 // that treats any identifier whose text matches a builtin numeric type name
 // as a TYPE receiver shadows the in-scope value binding
 // (`` `f64.epsilon `` folds to 2^-52, `` `i32.max `` to 2147483647 —
 // a silent wrong value). Guarding lexical scope alone is not enough, so
-// GLOBAL and MODULE-CONST raw bindings still folded (issue 0093).
+// GLOBAL and MODULE-CONST raw bindings still folded.
 #import "modules/std.sx";
 
 FBox :: struct { epsilon: i64; max: i64; min_positive: i64; }
@@ -27,11 +27,11 @@ IBox :: struct { max: i64; min: i64; }
 UBox :: struct { max: i64; }
 
 // GLOBAL raw value binding whose spelling shadows the builtin `f32`. Reachable
-// via `program_index.global_names`, not lexical scope (issue 0093).
+// via `program_index.global_names`, not lexical scope.
 `f32 := FBox{ epsilon = 44, max = 55, min_positive = 66 };
 
 // MODULE-CONST raw value binding whose spelling shadows the builtin `i16`.
-// Reachable via `program_index.module_const_map` (issue 0093, const variant).
+// Reachable via `program_index.module_const_map` (const variant).
 `i16 :: IBox{ max = 99, min = -99 };
 
 main :: () -> i32 {
@@ -46,10 +46,10 @@ main :: () -> i32 {
     print("local i32: max={} min={}\n", `i32.max, `i32.min); // 78 -78
     print("local u8: max={}\n", `u8.max);                    // 7
 
-    // GLOBAL raw receiver → ordinary field READ (issue 0093).
+    // GLOBAL raw receiver → ordinary field READ.
     print("global f32: epsilon={} max={} min_positive={}\n",
           `f32.epsilon, `f32.max, `f32.min_positive);    // 44 55 66
-    // MODULE-CONST raw receiver → ordinary field READ (issue 0093).
+    // MODULE-CONST raw receiver → ordinary field READ.
     print("const i16: max={} min={}\n", `i16.max, `i16.min); // 99 -99
 
     // The value-field read carries the field type (i64 here): round-trips
@@ -65,7 +65,7 @@ main :: () -> i32 {
     print("lim u8.max={}\n", u8.max);                       // 255
     print("lim i16.max={} i16.min={}\n", i16.max, i16.min); // 32767 -32768
 
-    // Bare float accessors still fold; the formatter is crude (issue 0090), so
+    // Bare float accessors still fold; the formatter is crude, so
     // pin the values by their defining properties rather than by printing.
     print("lim (1.0+f64.epsilon)!=1.0: {}\n", (1.0 + f64.epsilon) != 1.0); // true
     print("lim f64.inf > f64.max: {}\n", f64.inf > f64.max);               // true

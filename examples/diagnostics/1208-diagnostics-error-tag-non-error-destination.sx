@@ -5,7 +5,7 @@
 // and a raw-u32 fallback reinterprets the tag id as the aggregate's bytes
 // (a struct param reads the id back as its first field).
 //
-// Regression (issue 0212, sub-defect 2): unchecked, `f(error.Fault)` into a
+// Regression (sub-defect 2): unchecked, `f(error.Fault)` into a
 // struct-typed param compiles silently and produces garbage (r=5, the global
 // tag id), and an annotated init `s : S = error.Fault` does the same. The
 // integer context stays valid: `id : u32 = error.X`.

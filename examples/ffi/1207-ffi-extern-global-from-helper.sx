@@ -5,7 +5,7 @@
 // pointers), and a `u64`-returning function correctly returns
 // the address.
 //
-// Issue 0037: without a pointer↔integer case in `coerceToType` the
+// Without a pointer↔integer case in `coerceToType` the
 // explicit `xx ptr` cast yields an unchanged pointer value handed to a
 // `ret i64` slot, and the helper emits `ret i64 undef`.
 

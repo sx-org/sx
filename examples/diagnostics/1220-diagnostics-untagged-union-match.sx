@@ -3,9 +3,9 @@
 // no discriminant, so there is nothing to dispatch on (specs §Unions,
 // Restrictions: "Pattern matching is not supported on unions"). The gate is
 // subject-level, so it fires with or without payload bindings (subsuming the
-// arm-level issue-0163 rejection for union subjects — see example 1211 for
+// arm-level rejection for union subjects — see example 1211 for
 // the binding forms) and for a POINTER to an untagged union.
-// Regression (issue 0222): unrejected, the no-binding form reaches the backend
+// Regression: unrejected, the no-binding form reaches the backend
 // as invalid IR — a raw `[8 x i8]` union scrutinee switched against `i0` case
 // constants ("Switch constants must all be same type as switch value!").
 #import "modules/std.sx";
@@ -15,7 +15,7 @@ Shape :: union { circle: i64; rect: i64; }
 main :: () {
     s : Shape = .{ circle = 5 };
 
-    // No payload binding (the 0222 repro shape).
+    // No payload binding.
     r := if s == { case .circle: { 1 } case .rect: { 2 } };
     print("{}\n", r);
 
@@ -30,7 +30,7 @@ main :: () {
     // A TYPE-NAME pattern doesn't smuggle the union past the gate: the
     // type-category exemption is a property of the SUBJECT (a Type value),
     // never of the patterns — `case Shape:` over a union VALUE is the same
-    // rejection (review fold on issue 0222).
+    // rejection.
     t := if s == { case Shape: { 1 } else: { 0 } };
     print("{}\n", t);
 }

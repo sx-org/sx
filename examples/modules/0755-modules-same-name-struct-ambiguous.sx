@@ -1,4 +1,4 @@
-// issue 0105 case 4 — two-flat-visible → AMBIGUOUS. `main` flat-imports two
+// Two-flat-visible → AMBIGUOUS. `main` flat-imports two
 // modules that each author a same-name `Thing`, and authors none itself. A bare
 // `Thing` reference can't be disambiguated, so the compiler emits a LOUD
 // diagnostic ("ambiguous … qualify the reference or remove the duplicate

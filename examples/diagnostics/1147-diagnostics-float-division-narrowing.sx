@@ -15,7 +15,7 @@
 // an INTEGRAL float division (`6.0 / 2.0` → 3) folds — both exercised on the
 // POSITIVE side (example 0168).
 //
-// Regression (issue 0095, F0.11-6): `5.0 / 2.0` at a typed local, field default,
+// Regression: `5.0 / 2.0` at a typed local, field default,
 // param default, typed const, and array dimension all silently folded to 2 via
 // integer truncating division; each now rejects the non-integral float.
 #import "modules/std.sx";

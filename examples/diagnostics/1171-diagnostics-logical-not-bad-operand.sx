@@ -1,6 +1,6 @@
 // `!` on an operand that has no truthiness (neither bool, integer, nor
-// an error binding) is diagnosed instead of silently bit-flipped
-// (issue 0129's diagnostic half).
+// an error binding) is diagnosed instead of being silently
+// bit-flipped.
 #import "modules/std.sx";
 
 main :: () -> i32 {

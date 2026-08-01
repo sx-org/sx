@@ -16,8 +16,8 @@
 NSPoint :: struct { x: f64; y: f64; }
 
 // 16 B integer aggregate (Apple ARM64 — x0/x1 register pair, coerced
-// via `[2 x i64]` in our extern-decl path; same trip-up that
-// issue-0036 surfaced).
+// via `[2 x i64]` in our extern-decl path — the same trip-up the
+// extern struct ABI has).
 NSRange :: struct { location: u64; length: u64; }
 
 // 32 B HFA (Apple ARM64 — 4×f64 stays in v0..v3). NSRect / CGRect

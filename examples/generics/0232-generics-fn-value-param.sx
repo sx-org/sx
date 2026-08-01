@@ -1,6 +1,6 @@
 // A function VALUE passed to an inferred generic parameter binds `$F` to the
 // function's SIGNATURE type, so the instance's parameter is a callable — not
-// the integer word a bare fn value rides in (issue 0367).
+// the integer word a bare fn value rides in.
 //
 // The binding is a real type: `type_of` answers it inside the instance, it
 // compares equal to the written signature, and the value passes on to a

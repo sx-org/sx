@@ -1,4 +1,4 @@
-// Issue 0102: two flat FILE imports each author a same-name
+// Two flat FILE imports each author a same-name
 // free function `cfg` with a DIFFERENT default value for its trailing param —
 // a.sx defaults to 10, b.sx to 20. Each module calls `cfg()` bare with the arg
 // OMITTED. The omitted trailing arg must be filled from the RESOLVED author's

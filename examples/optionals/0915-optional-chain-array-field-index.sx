@@ -3,11 +3,11 @@
 // circuits to null when the receiver is null, else unwraps and indexes —
 // so `opt?.xs[i]` is `?ElemType`, coalesced/unwrapped at the use site.
 //
-// Regression (issue 0181): `opt?.xs[i]` typed its element through
+// Regression: `opt?.xs[i]` typed its element through
 // `getElementType(?[N]T)` as `.unresolved`, and an `index_get` on the
 // optional value reached LLVM emission (panic: "unresolved type reached
-// LLVM emission", exit 134). This is the `?.`-chain analogue of issue 0101
-// (the `!`-unwrap form, fixed earlier).
+// LLVM emission", exit 134). This is the `?.`-chain analogue of the
+// `!`-unwrap form.
 //
 // Also covers the `?*[N]T` shape — a `?.` field that is a POINTER to an
 // array. Indexing auto-derefs (GEP the pointee array element through the

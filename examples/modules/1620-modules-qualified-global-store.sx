@@ -5,7 +5,7 @@
 // "unresolved 'lib'". The store now mirrors the read: it resolves the member as
 // a mutable global in the imported module's context and emits `global_set`.
 //
-// Regression (issue 0223): qualified module-global assignment.
+// Regression: qualified module-global assignment.
 
 #import "modules/std.sx";
 lib :: #import "1620-modules-qualified-global-store/lib.sx";

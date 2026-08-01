@@ -4,7 +4,7 @@
 // disabled feature const) must not error from a pruned branch. Covers
 // the bool-const, `OS ==` binary, and/or, and `OS == { case }` match
 // forms; the taken branch always runs.
-// Regression (issue 0290): the unknown-type checker walked BOTH
+// Regression: the unknown-type checker walked BOTH
 // branches unconditionally, so `x : *Missing` in a dead branch failed
 // the build even though lowering discarded it.
 #import "modules/std.sx";

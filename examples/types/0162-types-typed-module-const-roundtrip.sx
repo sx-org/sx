@@ -12,7 +12,7 @@
 //     unified narrowing rule, usable as a count too
 //   - INTEGRAL float EXPRESSION → integer (`KFE : i64 : M + 2.0` → 4)
 //
-// Companion to the negative example 1143: the issue-0088 fix rejects a typed
+// Companion to the negative example 1143: lowering rejects a typed
 // const whose initializer mismatches its annotation, and these correctly-typed
 // consts must keep working (no over-rejection) — including const-EXPRESSION
 // initializers, whose type-based validation must accept a correctly

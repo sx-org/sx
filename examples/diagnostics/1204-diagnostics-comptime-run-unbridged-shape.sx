@@ -4,7 +4,7 @@
 // diagnostic — the SAME loud failure a GLOBAL `#run` const produces — NOT
 // silently fall back to a runtime call over the wrapper's `---` storage.
 //
-// Regression (issue 0182): the body-local `#run` fold left the runtime call in
+// Regression: the body-local `#run` fold left the runtime call in
 // place when the result couldn't bridge, so `mk()` ran at runtime over
 // uninitialized storage → garbage, exit 0, no diagnostic (a silent miscompile).
 // The fix surfaces the BRIDGE bail loudly and gates the build (exit 1). An

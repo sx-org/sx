@@ -1,4 +1,4 @@
-// Regression for issue 0057: a match (`if subject == { case ... }`) whose arms
+// Regression: a match (`if subject == { case ... }`) whose arms
 // ALL diverge (each `return`s) fails LLVM verification (a `void` phi +
 // "terminator in the middle of a basic block") if lowerMatch emits a
 // value-merge phi and a fallback `const` into arm blocks that have already

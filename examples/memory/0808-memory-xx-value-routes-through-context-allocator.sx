@@ -33,7 +33,7 @@ impl Allocator for Tracer {
 
 // The rvalue erasure target must be a VALUE/OWN protocol — `Allocator`
 // itself is `#identity` (borrow-only; rvalue erasure to it refuses,
-// pinned in diagnostics/1255), and erasure is impl-driven (issue 0176),
+// pinned in diagnostics/1255), and erasure is impl-driven,
 // so a small owning protocol impl'd by Tracer stands in.
 Boxed :: protocol vtable { count_of :: (self: *Self) -> i64; }
 impl Boxed for Tracer {

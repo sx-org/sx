@@ -1,4 +1,4 @@
-// Issue 0102: two flat FILE imports each author a same-name
+// Two flat FILE imports each author a same-name
 // free function `bump` (a.sx adds 1, b.sx adds 100). Each module dispatches it
 // via free-function UFCS — `v.bump()` lowers to `bump(v)`. The dispatched
 // author must be the RESOLVED one for the receiver's source (own-author wins),

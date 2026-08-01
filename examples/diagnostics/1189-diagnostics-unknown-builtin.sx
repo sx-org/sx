@@ -5,7 +5,7 @@
 // builtin-body branch) now diagnoses an unresolved builtin name instead of
 // falling through to `ensureTerminator`'s `constInt(0)`.
 //
-// Regression (issue 0144).
+// Regression.
 #import "modules/std.sx";
 
 // `mystery` is not a recognized intrinsic.

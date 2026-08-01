@@ -1,4 +1,4 @@
-// issue 0329: monomorph keys are built in dynamic storage — a base and type
+// Monomorph keys are built in dynamic storage — a base and type
 // arguments whose mangled key runs well past 256 bytes must stay distinct all
 // the way to the last byte. Both authors' long spelling is identical, so a
 // truncated or display-only key would collapse them onto one layout and one

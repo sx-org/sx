@@ -1,6 +1,6 @@
 // The soft ctx recovery `p.(?*T)` tests T, so its pointee must NAME a
 // concrete type. A protocol pointee is the type lie the hard recovery
-// refuses (issue 0306); `void` names nothing to test; and off a TAGGED
+// refuses; `void` names nothing to test; and off a TAGGED
 // receiver the conformer set is whole-program, so a non-conformer pointee
 // can never match and is refused exactly like `p.(?T)`.
 // The diagnostics are the success criterion.

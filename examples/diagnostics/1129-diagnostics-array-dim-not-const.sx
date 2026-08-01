@@ -7,7 +7,7 @@
 // folds; see examples/0144-types-const-expr-array-dim.sx. Only a dimension with
 // a genuinely runtime operand halts here.)
 //
-// Regression (issue 0083): a resolver that warns non-fatally and fabricates
+// Regression: a resolver that warns non-fatally and fabricates
 // length 0, letting compilation continue, produces a 0-byte alloca and
 // corrupt element access. The resolver yields the `.unresolved` sentinel
 // instead, which the alias registration surfaces as this diagnostic, aborting

@@ -17,7 +17,7 @@
 // (Bare `!` → NAMED set is rejected — the inferred set can't be proven ⊆;
 // see examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx.)
 //
-// Regression (issue 0205): packing the whole callee `{value, err}` aggregate
+// Regression: packing the whole callee `{value, err}` aggregate
 // as element 0 of the caller's own tuple on the concrete→bare forward is
 // invalid LLVM IR (`Invalid InsertValueInst operands!`).
 
@@ -31,7 +31,7 @@ inner :: (x: i64) -> (i64, !MyErr) {
     return x;
 }
 
-// concrete → bare `!` (the issue-0205 shape)
+// concrete → bare `!`
 fwd :: (x: i64) -> (i64, !) {
     return inner(x);
 }

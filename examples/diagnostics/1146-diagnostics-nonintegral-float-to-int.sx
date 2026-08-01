@@ -7,8 +7,8 @@
 // with `M :: 2`), a FLOAT-const-leaf expression (`F + 0.25`, with `F : f64 : 2.5`,
 // = 2.75), a builtin FLOAT numeric-limit leaf inside an expression
 // (`f64.true_min + 0.5` = 0.5), or a float `%` whose remainder is non-integral
-// (`5.5 % 2.0` = 1.5) — all of these are the core of issue 0095, where an
-// unguarded narrowing truncates. The integral-fold / non-integral-error
+// (`5.5 % 2.0` = 1.5) — an unguarded narrowing truncates every one of
+// these. The integral-fold / non-integral-error
 // rule is shared across all five sites (local, field, param, const, and array
 // dimension), applied to ANY compile-time-constant float expression (literal,
 // int-const leaf, float-const leaf, numeric-limit leaf, `+ - * / %`, and
@@ -20,7 +20,7 @@
 // float literal needs parens: `(1.5).(i64)`) truncates with no error —
 // exercised on the POSITIVE side (example 0168).
 //
-// Regression (issue 0095): `y : i64 = 1.5` silently truncated to 1,
+// Regression: `y : i64 = 1.5` silently truncated to 1,
 // `y : i64 = M + 0.5` to 2, and `y : i64 = F + 0.25` (float-const leaf) to 2.
 #import "modules/std.sx";
 

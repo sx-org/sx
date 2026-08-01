@@ -1,7 +1,7 @@
 // A Vector lane count accepts an integral float constant — `L : f64 : 4.0` lays
 // out the same `Vector(4, f32)` as the literal `4`. The lane resolver shares the
 // const-int evaluator with the array-dim path, so the integral-float rule
-// (issue 0083) applies uniformly.
+// applies uniformly.
 #import "modules/std.sx";
 
 L : f64 : 4.0;

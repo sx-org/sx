@@ -1,4 +1,4 @@
-// Statement keywords are member names (issue 0345): every keyword except
+// Statement keywords are member names: every keyword except
 // `inline` bare-names struct fields, struct methods/constants, protocol
 // methods — impl definitions included, so a keyword-named protocol
 // method is implementable without ceremony — and enum/tagged-union

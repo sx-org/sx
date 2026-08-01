@@ -2,7 +2,7 @@
 // return (assign the named slot locals, no explicit `return`), works for both a
 // generic free function and a generic struct method.
 //
-// Regression (issue 0200): a generic monomorph path (`monomorphizeFunction`)
+// Regression: a generic monomorph path (`monomorphizeFunction`)
 // that binds params without calling `bindNamedReturnSlots` leaves
 // `named_return_names` null, so the implicit-return synthesis never fires and
 // the body wrongly reports "produces no value". The binder runs on the generic

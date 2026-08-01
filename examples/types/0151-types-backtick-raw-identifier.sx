@@ -7,7 +7,7 @@
 // backtick-declared type instead — see examples/0154.) A *bare* `i2` is still
 // the reserved type name (see examples/1119), so the escape is the only way to
 // spell these as values.
-// Regression (issue 0089).
+// Regression.
 #import "modules/std.sx";
 
 // Global named with a reserved type spelling.

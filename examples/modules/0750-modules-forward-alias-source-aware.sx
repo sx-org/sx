@@ -6,8 +6,8 @@
 // import `ns :: #import ".../dep.sx"` ALSO authors a top-level `B :: u8`; being
 // scanned after main's `B`, dep's alias is what the GLOBAL `type_alias_map["B"]`
 // ends up holding (last-wins). A global forward-alias fixpoint therefore bound
-// `A` to dep's `u8` — re-opening 0105 one layer down. The source-aware fixpoint
-// resolves `A`'s target against MAIN's source, binding the local `B :: u64`.
+// `A` to dep's `u8`, re-opening the same-name collision one layer down. The
+// source-aware fixpoint resolves `A` against MAIN's source: the local `B :: u64`.
 //
 // Observable: a runtime 300 coerced into an `A`-typed slot round-trips as 300
 // when `A` is `u64` (correct) and truncates to 44 when `A` is wrongly `u8`.

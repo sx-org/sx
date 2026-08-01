@@ -2,7 +2,7 @@
 // generic-struct TYPE ARGUMENT inside a variadic-pack function's body —
 // `Box($R)` / `size_of(Box($R))` — must resolve `$R` to its bound TypeId.
 //
-// Regression (issue 0156, part 1): the parser tags every `$name` expression as
+// Regression (part 1): the parser tags every `$name` expression as
 // `comptime_pack_ref`, so a single-type `$R` arrived at `resolveTypeWithBindings`
 // (the resolver `instantiateGenericStruct` uses for each type-arg) as a
 // `comptime_pack_ref` it had no arm for → fell to the catch-all → `.unresolved`

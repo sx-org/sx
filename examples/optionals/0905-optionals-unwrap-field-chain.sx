@@ -3,7 +3,7 @@
 // value the bind-first form (`v := opt!; v.field`) produces — the unwrapped
 // value's type has to flow into the chained access.
 //
-// Regression (issue 0101): chained `opt!.field` typed its receiver as
+// Regression: chained `opt!.field` typed its receiver as
 // `.unresolved` (inferExprType had no force_unwrap arm), so a string field read
 // as garbage and `opt!.method()` failed to resolve at all.
 

@@ -1,4 +1,4 @@
-// Ctx-recovery refusal (issue 0306): the postfix recovery on a protocol
+// Ctx-recovery refusal: the postfix recovery on a protocol
 // value refuses a pointer-to-PROTOCOL target — ctx addresses the CONCRETE
 // value, so `s.(*Sizable)` would be a type lie that `*P` dispatch (0829)
 // would garbage-load. The concrete recovery (`s.(*Widget)`, `s.(*void)`)

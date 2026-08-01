@@ -1,4 +1,4 @@
-// Regression (issue 0143): a variadic `..$args` pack forwarded as a `[]Type`
+// Regression: a variadic `..$args` pack forwarded as a `[]Type`
 // ARGUMENT across a call must read the right element types. The pack-slice
 // materialization (`buildPackSliceValue`) built a `[]any` (16-byte) array while
 // `Type` is `.type_value` (8 bytes), so a `[]Type` reader (8-byte stride)

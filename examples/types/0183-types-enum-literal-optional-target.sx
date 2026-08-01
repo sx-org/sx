@@ -1,5 +1,5 @@
 // Enum literals flowing into OPTIONAL destinations resolve against the
-// optional's CHILD type and wrap (issue 0098). Falling into
+// optional's CHILD type and wrap. Falling into
 // resolveVariantValue's non-enum fallback gives variant 0, mis-typed as
 // the optional itself — callers observe `return .android_apk;` as
 // `.ios` or even null, layout-dependent.

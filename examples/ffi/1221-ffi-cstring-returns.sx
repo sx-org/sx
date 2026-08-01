@@ -1,6 +1,6 @@
 // Extern `-> [:0]u8` / `-> ?[:0]u8` returns: C hands back ONE `char *`;
 // the fat sx string is synthesized at the call boundary ({ptr, strlen};
-// NULL maps to the optional's null / an empty string) — issue 0128.
+// NULL maps to the optional's null / an empty string).
 // Reading the pointer register pair as {ptr, len} leaves the length garbage
 // (bus error on print).
 #import "modules/std.sx";

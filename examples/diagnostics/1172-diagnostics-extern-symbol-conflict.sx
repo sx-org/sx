@@ -1,5 +1,5 @@
 // One C symbol bound twice with DIFFERENT sx signatures is diagnosed
-// (issue 0128): letting the first registration silently win mis-types
+// — letting the first registration silently win mis-types
 // every call through the second declaration. Equal signatures share one
 // registration silently (see std's read/write bound by several modules).
 #import "modules/std.sx";

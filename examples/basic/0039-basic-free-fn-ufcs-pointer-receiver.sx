@@ -1,4 +1,4 @@
-// Free-function UFCS with a pointer first-param (issue 0063). `recv.fn(args)`
+// Free-function UFCS with a pointer first-param. `recv.fn(args)`
 // on a value `recv` whose matching free function takes `*T` now takes the
 // receiver's address (the same implicit address-of as a struct-defined method),
 // so mutations through the pointer are visible. Also: a function reached ONLY

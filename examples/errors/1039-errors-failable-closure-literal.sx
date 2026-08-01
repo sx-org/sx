@@ -4,7 +4,7 @@
 // error channel is consumed by `catch` / `or`; passed as a `Closure(...)`
 // parameter, it composes through the callee (here absorbed with `catch`).
 // (A capturing closure into a bare `(T)->U` slot, and a failable closure into a
-// non-failable slot, are rejected — see issue 0060 / the FFI-boundary rule.)
+// non-failable slot, are rejected — see the FFI-boundary rule.)
 
 #import "modules/std.sx";
 

@@ -1,8 +1,8 @@
 // The experiment/ui target spelling compiles as written:
 // trailing blocks + named arguments over the ambient-sink emit
 // model — scope fns, slots, handlers, `place` writing through
-// `context.<field>` directly (issue 0337), and point-free `?Closure` slots
-// (issue 0338). Stubbed View/Ui types; the pin is the SPELLING, end to end.
+// `context.<field>` directly, and point-free `?Closure` slots
+// Stubbed View/Ui types; the pin is the SPELLING, end to end.
 #import "modules/std.sx";
 
 View :: struct { tag: string; }

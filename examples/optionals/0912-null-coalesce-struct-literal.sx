@@ -1,5 +1,5 @@
 // Struct literal as the default of `??` (null-coalesce).
-// Regression (issue 0166): a bare `.{ ... }` default lowered with no target
+// Regression: a bare `.{ ... }` default lowered with no target
 // type leaves `struct_init.ty` at `.unresolved` and panics at LLVM emission
 // ("unresolved type reached LLVM emission"). The RHS lowering threads the
 // optional's child type `T`, so the literal resolves to `T`. Covers both

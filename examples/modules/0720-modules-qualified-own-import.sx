@@ -1,9 +1,9 @@
-// Regression (issue 0100 F1): a QUALIFIED imported function that calls a
+// Regression: a QUALIFIED imported function that calls a
 // function from its OWN flat import.
 //
 // `calc :: #import …` registers `calc.compute` as a module-qualified alias
 // with a unique FuncId (the identity fix that resolves the cross-module
-// same-name `parse` collision, issue 0100 / example 0719). That alias is
+// same-name `parse` collision — example 0719). That alias is
 // lowered through `lazyLowerFunction`'s null-FuncId `lowerFunction` path,
 // which has no declared `Function.source_file` to restore. Lowering
 // `calc.compute`'s body in the CALLER's (this file's) visibility

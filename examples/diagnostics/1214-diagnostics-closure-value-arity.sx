@@ -6,7 +6,7 @@
 // slice-spread rejection covers the DECL path — a NON-variadic top-level fn
 // has no variadic slot to consume the spread, so it must diagnose (never
 // emit undef, even when the placeholder count happens to match the arity).
-// Regression (issues 0188 + 0239).
+// Regression.
 #import "modules/std.sx";
 
 S :: struct { cb: Closure(i64) -> i64; }
@@ -46,7 +46,7 @@ main :: () {
     // …into a fn-pointer value…
     print("{}\n", f(..sl));
 
-    // …and into a NON-variadic top-level fn (issue 0239: even when the
+    // …and into a NON-variadic top-level fn (even when the
     // placeholder count lines up with the arity, as for 1-param take1).
     print("{}\n", addfn(..sl));
     print("{}\n", take1(..sl));

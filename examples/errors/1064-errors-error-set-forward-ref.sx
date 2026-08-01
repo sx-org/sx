@@ -3,7 +3,7 @@
 // (`-> !E`), and value-failable tuple return (`-> (i32, !E)`) all resolve
 // through the forward struct stub, which the real `E :: error { ... }` decl
 // then adopts (re-keys) with full member identity intact.
-// Regression (issue 0211): the error_set kind was missing from
+// Regression: the error_set kind was missing from
 // `adoptsForwardStructStub`, so the stub adoption fell into
 // `updatePreservingKey` and tripped its kind-stability assert.
 

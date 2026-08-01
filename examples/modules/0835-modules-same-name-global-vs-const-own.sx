@@ -3,7 +3,7 @@
 // OWN author. The global registry is last-wins across modules, so without
 // source-aware selection a.sx's `K` read the array global's address.
 //
-// Regression (issue 0115): a.sx printed the array's address; h.sx's reads
+// Regression: a.sx printed the array's address; h.sx's reads
 // stayed correct only by registration order.
 
 #import "modules/std.sx";

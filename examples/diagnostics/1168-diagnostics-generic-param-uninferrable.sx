@@ -5,7 +5,7 @@
 // otherwise stamps `.unresolved` through the body and PANICs the compiler
 // at LLVM emission via the sentinel tripwire.
 //
-// Regression (issue 0126, diagnostic half).
+// Regression (diagnostic half).
 
 #import "modules/std.sx";
 

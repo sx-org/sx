@@ -6,7 +6,7 @@
 // constants), driven by `TypeResolver.floatLimitFor`.
 //
 // The lexer has no exponent notation and the default float formatter is crude
-// (issue 0090), so these limits can be pinned NEITHER by literal comparison NOR
+// so these limits can be pinned NEITHER by literal comparison NOR
 // by printing. Every accessor is asserted instead by reinterpreting its bits
 // through an untagged union and comparing against the exact IEEE-754 hex
 // pattern — plus the defining-property checks that no other value could satisfy.
@@ -20,7 +20,7 @@
 //   .inf          = +infinity
 //   .nan          = a quiet NaN
 //
-// Regression (issue 0091): `f64.nan != f64.nan` is true — native float `!=`
+// Regression: `f64.nan != f64.nan` is true — native float `!=`
 // lowers UNORDERED, so a NaN compares unequal to everything including itself.
 #import "modules/std.sx";
 

@@ -4,7 +4,7 @@
 // reconstructs the dotted name and resolves it through the alias map instead of
 // returning `.unresolved`.
 //
-// Regression (issue 0147).
+// Regression.
 #import "modules/std.sx";
 sel :: #import "0192-types-size-of-qualified-alias-mod.sx";
 

@@ -11,7 +11,7 @@
 //   - `_ OP= expr` — the discard has no value to read; only the plain
 //     `_ = expr` discard idiom is allowed.
 //
-// Regression (issue 0216): `totl = 42;` compiled and ran silently — the RHS
+// Regression: `totl = 42;` compiled and ran silently — the RHS
 // lowered and the store was dropped because the failed global lookup had no
 // else branch. Same gap for compound assignment (`cnt += 1;`), for the
 // by-ref capture store, and for `_ += 1;`.

@@ -5,7 +5,7 @@
 // The per-element array->slice materialization recurses with the nesting, so
 // every level coerces: a raw `[N]T` left under an element type of `[]T` gives
 // the outer aggregate array elements where slice {ptr,len} headers belong.
-// Regression (issue 0085).
+// Regression.
 #import "modules/std.sx";
 
 sum_nested :: (xss: [][]i64) -> i64 {

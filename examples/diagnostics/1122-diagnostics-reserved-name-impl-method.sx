@@ -6,7 +6,7 @@
 // `@i2` mis-lowers (a loaded aggregate passed by value to a `*Box` param →
 // LLVM verifier abort).
 //
-// Regression (issue 0076). Expected: one error for the
+// Regression. Expected: one error for the
 // param and one for the local; exit 1.
 #import "modules/std.sx";
 

@@ -2,7 +2,7 @@
 // declared tag — scalar, inside a global array, and as a struct field, for both
 // a plain enum (tag == declaration index) and an explicit-value enum (`enum u16
 // { ok :: 200; ... }`, larger backing for element-stride coverage).
-// Regression (issue 0082): `globalInitValue` had an `.enum_literal => null`
+// Regression: `globalInitValue` had an `.enum_literal => null`
 // carve-out (kept for the compiler-injected `OS`/`ARCH` globals) that silently
 // zero-initialized EVERY enum global to the first tag — so `chosen : Color =
 // .green` read back as `.red` — while a global array/struct of enums was

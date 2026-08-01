@@ -1,7 +1,7 @@
 // Erasing a builtin VALUE to a protocol, and passing an already-erased
 // protocol value to a generic `$T` parameter.
 //
-// Regression (issue 0279): a builtin scalar (`f32`) erased to a protocol
+// Regression: a builtin scalar (`f32`) erased to a protocol
 // took a code path that passed the raw scalar as the erased value's ctx
 // pointer, producing a malformed `insertvalue {ptr,ptr} undef, float, 0`
 // and an LLVM verification failure. Erasing a value (not a `*T` pointer)

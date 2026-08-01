@@ -1,5 +1,5 @@
 // A function VALUE in a comptime pack keeps its signature as the element type,
-// so the element stays callable inside the monomorph (issue 0368). Two
+// so the element stays callable inside the monomorph. Two
 // different signatures in one pack each keep their own, and a fn element mixes
 // freely with ordinary value elements.
 #import "modules/std.sx";

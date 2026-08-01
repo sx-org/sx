@@ -1,6 +1,6 @@
 // Regression: `#import` inside the body of a top-level
 // `inline if OS == .X { ... }` block. The imports.zig flatten pass
-// (issue-0042) lifts these to the top level before resolution; the
+// lifts these to the top level before resolution; the
 // parser arm in `parseStmt` that accepts them was missing on macOS /
 // iOS / linux until this commit, so chess's
 // `inline if OS == .android { #import "modules/platform/android.sx"; }`

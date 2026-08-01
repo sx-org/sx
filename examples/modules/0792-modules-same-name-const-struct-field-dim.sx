@@ -1,4 +1,4 @@
-// Issue 0105 — a same-name VALUE const used as
+// A same-name VALUE const used as
 // a STRUCT FIELD array dimension, baked into the layout at REGISTRATION time, is
 // source-aware. Two flat-imported modules each declare a same-name `K` and a
 // same-name struct `Box { arr: [K]u8 }`. `size_of(Box)` in each module must use

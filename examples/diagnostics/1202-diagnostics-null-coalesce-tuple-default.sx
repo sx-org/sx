@@ -1,7 +1,7 @@
 // `??` default whose type can't match a 1-tuple optional payload is a clean
 // diagnostic, not an LLVM PHI-type crash.
 //
-// Regression (issue 0180): undiagnosed, `?(i32,) ?? 5` builds a merge PHI of
+// Regression: undiagnosed, `?(i32,) ?? 5` builds a merge PHI of
 // `{i32}` (the unwrapped 1-tuple payload) vs `i32` (the scalar default) and
 // aborts the LLVM verifier. There is no implicit scalar->1-tuple coercion (a
 // 1-tuple value is written `(5,)`), so the mismatch reports at the default.

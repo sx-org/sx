@@ -3,7 +3,7 @@
 // properly wrapped `{T,i1}` value, an int element narrows/widens to a float
 // field, etc.
 //
-// Regression (issue 0174): the positional struct-literal path coerced
+// Regression: the positional struct-literal path coerced
 // array/vector elements and struct fields but NOT tuple fields, so a bare
 // `i64` was stored straight into a `{i64,i1}` optional slot — a present
 // optional read back as absent.

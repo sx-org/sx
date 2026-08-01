@@ -1,4 +1,4 @@
-// issue 0330: a bare TYPE-FUNCTION head instantiates the author visible where
+// A bare TYPE-FUNCTION head instantiates the author visible where
 // the head is written. Both flat-imported modules author `Make :: ($T) -> Type`
 // with different layouts; b.sx also names its own through an alias. Each
 // module's `Make(i64)` must be its own author's type — proving one visible

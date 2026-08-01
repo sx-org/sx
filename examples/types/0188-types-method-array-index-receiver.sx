@@ -4,7 +4,7 @@
 // `lowerExprAsPtr`), mirroring the explicit-argument path — instead of falling
 // through to an alloca+store-of-value that the callee then mutates in vain.
 //
-// Regression (issue 0145).
+// Regression.
 #import "modules/std.sx";
 
 S :: struct {

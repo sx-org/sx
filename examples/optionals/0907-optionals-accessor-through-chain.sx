@@ -6,7 +6,7 @@
 // is warmed so its return type resolves, not `?unresolved`). Real fields read
 // correctly through `?.` for both `?T` and `?*T` (the pointer is loaded, not
 // reinterpreted). All type correctly without an explicit annotation.
-// Regression (issue 0160).
+// Regression.
 #import "modules/std.sx";
 
 Temp :: struct {

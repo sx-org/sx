@@ -8,8 +8,8 @@
 //
 // Pair64 / Quad32 need emit_llvm.zig's coerceArg to bridge struct <->
 // array via the abi.struct2arr / abi.arr2struct branches; without that
-// bridge the LLVM verifier rejects the struct<->[2 x i64] type mismatch
-// (issue 0036).
+// bridge the LLVM verifier rejects the struct<->[2 x i64] type
+// mismatch.
 
 #import "modules/std.sx";
 

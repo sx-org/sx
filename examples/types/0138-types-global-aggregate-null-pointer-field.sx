@@ -3,7 +3,7 @@
 // as null with NO prior store, and its non-pointer neighbors keep their declared
 // values. Covered shapes: an array-of-struct with a null pointer field, a global
 // array of all-null pointers, and a nested struct-in-struct with a null pointer.
-// Regression (issue 0081): the constant-aggregate serializer had no
+// Regression: the constant-aggregate serializer had no
 // `.null_literal` arm, so a `null` in a pointer field made the whole aggregate
 // look non-constant and the global was rejected with "must be initialized by a
 // compile-time constant". The fix serializes a null literal to a constant zero

@@ -1,7 +1,7 @@
 // Comptime field reflection (`struct_field_count` / `struct_field_name` / `struct_field_type`) over
 // ALL aggregate kinds — struct, enum, tuple (positional + named), array, vector.
 //
-// Regression (issue 0195): a count switch missing its `.tuple` arm makes
+// Regression: a count switch missing its `.tuple` arm makes
 // `struct_field_count` silently return 0 on tuples and arrays/vectors, and a
 // backend that builds a zero-length name array for those kinds while sizing the
 // GEP at the (sometimes non-zero) count makes `struct_field_name(T, i)` index

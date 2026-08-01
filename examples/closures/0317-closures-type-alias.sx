@@ -4,7 +4,7 @@
 // return type, and as the target of an `xx` protocol erasure. Parses the
 // `-> R` tail that a bare `Closure(i32)` call would leave dangling.
 //
-// Regression (issue 0231): the const-RHS grammar parsed `Closure(i32)` as a
+// Regression: the const-RHS grammar parsed `Closure(i32)` as a
 // call expression and errored "expected ';'" at `->`. Fixed by routing a
 // `Closure(...)` head in expression position through the closure-type parse
 // (mirrors the existing `Tuple(...)` magic) + registering the resulting

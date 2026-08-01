@@ -4,7 +4,7 @@
 // copy. Handing a `*T` to the const's `.rodata` would slip past the
 // `cannot assign through constant` guard and SIGBUS in an AOT binary.
 //
-// Regression (issue 0202): const globals stay on the copy path, unlike
+// Regression: const globals stay on the copy path, unlike
 // mutable globals, whose address the receiver may take.
 
 Counter :: struct {

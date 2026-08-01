@@ -1,4 +1,4 @@
-// Regression test for issue-0039 — directory-import scan order.
+// Regression test — directory-import scan order.
 //
 // When a directory is imported, the resolver iterates files
 // alphabetically. Inside the directory, `aaa_uses.sx` comes BEFORE

@@ -1,4 +1,4 @@
-// issue 0330: a bare call/value through an `alias :: target` chain binds the
+// A bare call/value through an `alias :: target` chain binds the
 // author VISIBLE where the alias is written. Both flat-imported modules author
 // `target` and an alias for it — a.sx directly, b.sx through a second hop — and
 // b.sx's uses must reach b.sx's `target` (body `x + 100`, default 20), never

@@ -3,7 +3,7 @@
 // exits 1 — never the `.unresolved` LLVM-emission panic, never a silent store
 // into a neighbouring field.
 //
-// Regression (issue 0094): an lvalue field lookup that leaves `field_ty =
+// Regression: an lvalue field lookup that leaves `field_ty =
 // .unresolved` (lowerAssignment's target path) or silently GEPs field 0 as
 // `.i64` (lowerExprAsPtr's fallback / lowerMultiAssign's struct loop) makes a
 // missing-field store build a pointer-to-`.unresolved` that panics at LLVM

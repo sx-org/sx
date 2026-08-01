@@ -4,7 +4,7 @@
 // The `on_build` override. A user `#run on_build(build);` replaces the
 // stdlib `default_pipeline` as the build driver; the compiler invokes it after
 // codegen with the `BuildOptions` handle. This build GROWS a `List` on the build
-// VM (issue 0141) then DELEGATES to `default_pipeline` for the real emit + link, so a
+// VM then DELEGATES to `default_pipeline` for the real emit + link, so a
 // working binary is still produced → "runtime main".
 
 build :: (opt: BuildOptions) -> bool {

@@ -1,4 +1,4 @@
-// Generic-struct → parameterized-protocol erasure (issue 0054).
+// Generic-struct → parameterized-protocol erasure.
 //   - A generic-struct impl method `self: *Box` now resolves `self.field` to the
 //     concrete INSTANCE (the template name binds to the instance type), so
 //     `self.x` works (was "field not found on type 'Box'").

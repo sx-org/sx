@@ -1,4 +1,4 @@
-// Bare-name visibility under a NAMESPACED-only import (regression, issue 0106).
+// Bare-name visibility under a NAMESPACED-only import (regression).
 // `a.sx` is imported only as `m :: #import` — its top-level `secret` is reachable
 // ONLY as `m.secret`. A BARE `secret()` must error: bare-name visibility joins
 // over the FLAT import edges (`flat_import_graph`), and a namespaced alias is not

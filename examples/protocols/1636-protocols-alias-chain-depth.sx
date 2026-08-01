@@ -1,5 +1,5 @@
 // A protocol alias chain resolves at any acyclic depth; the impl head may
-// name the deepest alias. Regression (issue 0331): protocol/pending-type
+// name the deepest alias. Regression: protocol/pending-type
 // alias resolution walked at most 16 hops, so the 18-hop chain below left
 // the impl unbound and `d.say()` unresolved.
 #import "modules/std.sx";

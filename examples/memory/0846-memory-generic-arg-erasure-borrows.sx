@@ -5,7 +5,7 @@
 // param target, so the erasure keeps its node-aware lvalue-borrow
 // discipline. Mutations made through the protocol value hit the CALLER'S
 // local — never a silent heap copy through the ambient allocator.
-// Regression (issue 0302): clearing the param target for the arg loop drops
+// Regression: clearing the param target for the arg loop drops
 // the erasure to a value-wise coercion that heap-copies the local through
 // context.allocator — counters land on the copy, and the copy leaks.
 #import "modules/std.sx";

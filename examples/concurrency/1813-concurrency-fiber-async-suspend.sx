@@ -8,8 +8,8 @@
 // interleaving).
 //
 // `work` is a NULLARY worker: any inputs are captured in the lambda at the call
-// site (no `..args` pack crosses the fiber boundary — that would hit issue 0156
-// Part 2). Outputs flow OUT through pointers captured in the worker (the shared
+// site (no `..args` pack crosses the fiber boundary). Outputs flow OUT through
+// pointers captured in the worker (the shared
 // `Log` struct), since closure capture-by-value does not write back.
 //
 // What this proves:

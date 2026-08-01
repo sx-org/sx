@@ -2,7 +2,7 @@
 // classifies like the owned-receiver form — the call plan resolves the
 // protocol method's return type through the view (and through `?P`/`?*P`
 // receivers), so the for-iterable classifier sees the `[]T`.
-// Regression (issue 0312): the plan only recognized bare `P` receivers;
+// Regression: the plan only recognized bare `P` receivers;
 // a view receiver typed as unresolved and the loop refused with
 // "cannot iterate this expression" (m3te's
 // `for (g_plat.poll_events()) (*ev)` frame loop).

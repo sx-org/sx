@@ -4,7 +4,7 @@
 // flat-imports facade2) the alias is NOT visible — the carry does not
 // chain, mirroring bare-name non-transitivity (0763).
 //
-// Regression (issue 0114): a bare `alias.fn()` call path served from the
+// Regression: a bare `alias.fn()` call path served from the
 // global qualified registration resolves this at any import depth.
 
 #import "modules/std.sx";

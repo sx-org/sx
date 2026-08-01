@@ -2,7 +2,7 @@
 // pointer `*T`, a pointer-to-slice `*[]T`, or a plain struct — is a type
 // error, diagnosed at lowering with a located message.
 //
-// Regression (issue 0183): without the guard, `expr[i]` on a non-indexable
+// Regression: without the guard, `expr[i]` on a non-indexable
 // base falls through `lowerIndexExpr` to an `index_get` carrying an
 // `.unresolved` element type, which reaches emit_llvm and panics
 // ("unresolved type reached LLVM emission", exit 134) with no source

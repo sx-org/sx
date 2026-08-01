@@ -1,7 +1,7 @@
 // Same-display-name structs imported through distinct namespaces keep their
 // own method declarations, signatures, defaults, generic/pack monomorphs,
 // accessors, and source visibility.
-// Regression (issue 0320): `Thing.method` must not select one global AST body.
+// Regression: `Thing.method` must not select one global AST body.
 
 a :: #import "0851-modules-nominal-struct-method-authors/a.sx";
 b :: #import "0851-modules-nominal-struct-method-authors/b.sx";

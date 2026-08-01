@@ -4,7 +4,7 @@
 // the object (not `U`) and a lib-less `extern` can call it. The branch body
 // is statement-parsed, so the flatten pass retags a surfaced template-only
 // asm from `.asm_expr` to `.asm_global` — lowering's decl walk sees only
-// the latter. Regression (issue 0194).
+// the latter. Regression.
 // Per-OS arms carry the platform symbol spelling (darwin `_`-prefixes exported
 // symbols, linux does not). Built+run via `aot` (a module-asm symbol lives in
 // the final linked binary, not the JIT host); aarch64-pinned via `target:

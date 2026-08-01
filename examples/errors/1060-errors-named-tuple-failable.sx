@@ -4,7 +4,7 @@
 // `or` fallback. Exercises the success path, a `raise` path, and an
 // `or .(x=.., y=..)` terminator.
 //
-// Regression (issue 0179-adjacent named-tuple-failable miscompile): a named
+// Regression (adjacent named-tuple-failable miscompile): a named
 // failable tuple WRAPPED as `{ {A,B}, err }` against a value-return lowering
 // that inserts the value slots FLAT produces invalid LLVM
 // (`Invalid InsertValueInst operands`).

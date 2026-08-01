@@ -1,6 +1,6 @@
-// Multi-assign shares single-assign's write guards (issues 0229 + 0228):
+// Multi-assign shares single-assign's write guards:
 //
-// 1. Root-const rejection (issue 0116 machinery): a MEMBER or INDEX target
+// 1. Root-const rejection: a MEMBER or INDEX target
 //    whose chain roots at a `::` constant is rejected per-target; guarding
 //    IDENT targets alone lets `CP.x, a = 9, 9;` write through the
 //    const. A deref target (`GP.*`) is accepted: writing through a pointer
@@ -10,7 +10,7 @@
 //    after `o, a = null, 1;` diagnoses instead of reading a null optional as
 //    its payload.
 //
-// Regression (issues 0228, 0229). All diagnostics batch; exit 1.
+// Regression. All diagnostics batch; exit 1.
 #import "modules/std.sx";
 
 P :: struct { x: i64 = 0; y: i64 = 0; }

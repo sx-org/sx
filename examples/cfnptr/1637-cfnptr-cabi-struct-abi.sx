@@ -5,7 +5,7 @@
 // convention, as for block trampolines); a <=16-byte struct RETURN
 // comes back register-coerced and a >16-byte non-HFA return uses the
 // sret hidden out-pointer.
-// Regression (issue 0295): the indirect call site used raw LLVM types
+// Regression: the indirect call site used raw LLVM types
 // (second field of a packed struct arg arrived zeroed; sret returns
 // read garbage). Also pins the sret callee body reading its params
 // AFTER the hidden out-pointer slot (they were off by one).

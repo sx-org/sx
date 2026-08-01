@@ -1,4 +1,4 @@
-// Issue 0352: guard-narrowing (0179) covers MEMBER positions with the
+// Guard-narrowing (0179) covers MEMBER positions with the
 // same proof it always gave coercion sites. After `if p == null
 // { return; }`:
 //   - plain field reads through `?*T` and `?Struct`, including

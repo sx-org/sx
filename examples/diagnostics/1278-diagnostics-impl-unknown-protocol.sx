@@ -1,4 +1,4 @@
-// Issue 0346: an impl whose protocol head does not resolve in the
+// An impl whose protocol head does not resolve in the
 // declaring module must not be dropped SILENTLY — the impl is then dead
 // and every consumer degrades (an `xx` site falls through to the
 // aggregate↔scalar reinterpret, producing garbage values or a segfault

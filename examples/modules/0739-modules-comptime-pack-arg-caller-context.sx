@@ -1,6 +1,6 @@
 // Caller-owned helpers passed as VARIADIC comptime-pack args (`..$args`) to a
 // NAMESPACED imported metaprogram resolve in the CALLER's visibility context —
-// not the metaprogram's defining module (regression, issue 0106 follow-up).
+// not the metaprogram's defining module (regression).
 //
 // `std.print :: ($fmt: string, ..$args)` is authored in `std.sx`; the pack args
 // `caller_num()` / `caller_two()` are authored HERE in the caller. The body's

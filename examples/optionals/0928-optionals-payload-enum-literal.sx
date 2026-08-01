@@ -1,4 +1,4 @@
-// Issue 0351: a payload-carrying enum literal resolves against an
+// A payload-carrying enum literal resolves against an
 // OPTIONAL destination exactly like a bare one — the literal
 // constructs the union's child type and wraps at the coercion site.
 // Pinned in every destination position (return, typed local, call

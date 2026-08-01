@@ -1,4 +1,4 @@
-// issue 0105 case 2 — same-name struct, SAME fields. Two flat-imported modules
+// Same-name struct, SAME fields. Two flat-imported modules
 // each declare `Pair { x, y }` with identical shape. They are STILL distinct
 // nominal identities (each holds its own per-source TypeId / nominal id), not
 // folded into one — both register, both monomorphize their own formatter, and

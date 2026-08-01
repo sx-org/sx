@@ -3,7 +3,7 @@
 // `[]` wrapper (and the `*Self` receiver), so a correct `[]T` impl is
 // accepted and dispatched — not falsely rejected as `[]Self` ≠ `[]T`.
 //
-// Regression (issue 0178): a `Self`-substitution that reaches only the
+// Regression: a `Self`-substitution that reaches only the
 // bare leaf and a one-level pointer/optional wrapper resolves `[]Self`
 // to a real slice named `[]Self`, so a correct `[]T` impl is WRONGLY
 // flagged.

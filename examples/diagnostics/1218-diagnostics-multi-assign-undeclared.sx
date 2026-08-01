@@ -1,7 +1,7 @@
 // A multi-assign target that resolves to no assignable storage is a compile
 // error — an identifier target in `a, b = x, y;` with no local slot and no
 // visible global must diagnose, never silently discard the store. Parity with
-// the single-assign diagnostic (issue 0216 / example 1212).
+// the single-assign diagnostic (example 1212).
 //
 // Also pinned here (same lowering arm, diagnostics accumulate so none masks
 // another):
@@ -10,9 +10,9 @@
 //     `x.* = ...` (and the capture SHADOWS a same-named global: the store
 //     must never resolve past it to different storage);
 //   - a `::` constant as a multi-assign target — the global fallback must
-//     reject it, mirroring single-assign's const-write rejection (issue 0116).
+//     reject it, mirroring single-assign's const-write rejection.
 //
-// Regression (issue 0218): `a, undeclared_b = b, a;` compiled and ran — the
+// Regression: `a, undeclared_b = b, a;` compiled and ran — the
 // ident-target arm of lowerMultiAssign only consulted local scope and dropped
 // the store on lookup failure; a module-global target was also dropped (no
 // global fallback at all — the positive global case is pinned by

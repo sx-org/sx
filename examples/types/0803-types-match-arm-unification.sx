@@ -1,13 +1,13 @@
 // Value-position match arms UNIFY their result types over the implicit-
 // coercion lattice, symmetrically — arm order never picks the type:
-//   - int ⊔ float = the float type, in BOTH orders (preserves the
-//     issue-0226 pinned "f64 payload arm + int-literal arm → f64");
+//   - int ⊔ float = the float type, in BOTH orders (an f64 payload-capture
+//     arm and an int-literal arm join to f64);
 //   - narrower ⊔ wider int = the wider int (no silent truncation);
 //   - a `null` arm makes the result optional (?T) wherever it appears.
 // Arm values coerce to the unified type before the merge, exactly like the
 // if/else-expression merge's `coerceToType` — but joined instead of
 // first-branch-wins.
-// Regression (issue 0236): letting the first decisive arm's type win turns a
+// Regression: letting the first decisive arm's type win turns a
 // 2.5 payload into 2 with `.other` first (f64 fptosi'd to i64), truncates a
 // 9000000000 i64 arm behind an i32 first arm, and hides a trailing `null` arm
 // from the result type.

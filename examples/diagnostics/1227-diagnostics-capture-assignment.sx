@@ -1,5 +1,5 @@
 // Assigning to a by-VALUE capture is a compile error, not a silent no-op
-// (issue 0219). A capture is a read-only alias into storage the loop / match
+// — a capture is a read-only alias into storage the loop / match
 // / error machinery owns — mutating it bare would corrupt nothing (the store
 // would be dropped silently, reaching neither the container nor the copy),
 // so it is rejected. Every by-value capture family is covered here; each `=`
@@ -10,7 +10,7 @@
 // them, so they get the copy-into-a-`:=`-local advice alone. A function-local
 // `::` const rides the same enforcement but gets the constant-family message.
 //
-// The sibling by-REF misuse (`for xs (*x) { x = v }`) is issue 0216.
+// The sibling by-REF misuse is `for xs (*x) { x = v }`.
 
 #import "modules/std.sx";
 

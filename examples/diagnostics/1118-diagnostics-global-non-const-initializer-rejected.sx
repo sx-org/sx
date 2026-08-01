@@ -4,7 +4,7 @@
 // / array / struct literals / identifiers and let every other shape fall through
 // to a null payload, so the global silently zero-initialized (`g=0`) — a wrong
 // value with no error.
-// Regression (issue 0072).
+// Regression.
 // Expected: "global 'g' must be initialized by a compile-time constant"; exit 1.
 
 #import "modules/std.sx";

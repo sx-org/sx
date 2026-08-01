@@ -1,5 +1,5 @@
 // Own-wins for ENUM-PAYLOAD type registration over a NAMESPACED import.
-// Regression (issue 0132, broader class).
+// Regression (broader class).
 //
 // `#import "modules/std.sx"` carries the stdlib `event.Event` struct — it is
 // NAMESPACED (reachable only as `event.Event`), never flat-visible. This file

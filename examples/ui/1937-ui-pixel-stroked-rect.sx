@@ -1,4 +1,4 @@
-// Host-GPU pixel golden for stroked rects (issue 0357): a fill and a
+// Host-GPU pixel golden for stroked rects: a fill and a
 // stroke are two independent colours, and the ring composites ON the
 // fill rather than replacing it.
 //

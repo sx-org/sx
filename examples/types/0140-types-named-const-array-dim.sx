@@ -6,7 +6,7 @@
 // (`[N][M]T`), and inline union fields. The named dim must resolve to the
 // same length whether it flows through the stateful body-lowering resolver
 // or the stateless registration-time resolver (type_bridge).
-// Regression (issue 0083): a named-const dim resolved to length 0, giving a
+// Regression: a named-const dim resolved to length 0, giving a
 // 0-byte alloca — scalar reads returned garbage and string/struct elements
 // bus-errored. The alias and union-field paths went through the stateless
 // resolver, which had no const table and silently fabricated a 0 length.

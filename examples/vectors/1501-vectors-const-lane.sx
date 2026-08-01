@@ -4,7 +4,7 @@
 // `M + 1`) prove the lane VALUE is folded, not fabricated: reading `.w` requires
 // the 4-lane vector to actually have four lanes.
 //
-// Regression (issue 0083): the stateful Vector lane resolvers hand-rolled an
+// Regression: the stateful Vector lane resolvers hand-rolled an
 // `else => 0` switch, so a module-const lane (`Vector(N, f32)`) lowered a 0-lane
 // `<0 x float>` and died in LLVM verification ("huge alignment values are
 // unsupported"); a const-expr lane (`Vector(M + 1, f32)`) was rejected at parse.

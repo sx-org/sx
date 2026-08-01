@@ -1,4 +1,4 @@
-// Issue 0102: two flat FILE imports each author a
+// Two flat FILE imports each author a
 // same-name free function `dup`, and the MAIN file (which authors neither)
 // dispatches it via free-function UFCS `v.dup()`. With two distinct flat
 // authors reachable and no own-author to prefer, the call is ambiguous — the

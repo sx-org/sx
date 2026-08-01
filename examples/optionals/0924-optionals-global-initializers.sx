@@ -7,7 +7,7 @@
 // directions. Also exercises a nested optional payload and an optional
 // struct payload (both wrap correctly).
 //
-// Regression (issue 0234) — a non-null-initialized optional global used
+// Regression — a non-null-initialized optional global used
 // to emit the raw payload constant into the `{T, i1}` global type,
 // failing LLVM verification ("Global variable initializer type does not
 // match global variable type!").

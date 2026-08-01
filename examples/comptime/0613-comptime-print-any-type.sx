@@ -10,7 +10,7 @@
 // the `#run` truncates. Reflection over the same `any` (`type_name`,
 // `is_unsigned`) already works; the value-print must match.
 //
-// Regression (issue 0096): a comptime `#run` print of an `any`-held
+// Regression: a comptime `#run` print of an `any`-held
 // `Type` silently stopped (omitted `value=` + every later line) yet still
 // built with exit 0.
 

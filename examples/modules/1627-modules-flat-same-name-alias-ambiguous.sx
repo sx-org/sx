@@ -1,4 +1,4 @@
-// issue 0330: an alias participates in the bare-call author verdict like the
+// An alias participates in the bare-call author verdict like the
 // function it names. Two flat imports each author `pick` as an alias of their
 // own function and `main` authors neither — the call cannot pick one, so it is
 // rejected loudly instead of silently binding the first-wins winner.

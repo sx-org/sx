@@ -5,7 +5,7 @@
 // through a type alias (`A :: [M + 1]T`), and for scalar, string (slice/pointer
 // class), and struct element types.
 //
-// Regression (issue 0083): an array-dimension resolver that looks up only a
+// Regression: an array-dimension resolver that looks up only a
 // bare named const or a literal rejects any const-foldable EXPRESSION
 // dimension as "not a compile-time integer constant". It routes the dimension
 // through the shared comptime integer-expression evaluator

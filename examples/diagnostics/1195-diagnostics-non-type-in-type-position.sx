@@ -1,4 +1,4 @@
-// Regression (issue 0189): a non-type expression used in TYPE position must be
+// Regression: a non-type expression used in TYPE position must be
 // rejected with a clear diagnostic — never silently resolved to a fabricated
 // zero-field empty struct `{}` that ships to codegen as a real type.
 //

@@ -4,7 +4,7 @@
 // integer/bool literals, and type categories). A `string` subject (and a
 // float subject) has no such discriminant and is rejected up front with a
 // located diagnostic.
-// Regression (issue 0224): unrejected, a string subject reaches the backend as
+// Regression: unrejected, a string subject reaches the backend as
 // invalid IR — `switch ptr %etag` against integer case constants ("Switch
 // constants must all be same type as switch value!"); an f64 subject gives
 // the same verifier failure via `switch double`.
@@ -21,7 +21,7 @@ main :: () {
 
     // A type-CATEGORY pattern doesn't smuggle the string past the gate: the
     // exemption is a property of the SUBJECT (a Type value — `type_of(...)`
-    // / `$T`), never of the patterns (review fold on issue 0224).
+    // / `$T`), never of the patterns.
     u := if s == { case string: { 1 } else: { 0 } };
     print("{}\n", u);
 

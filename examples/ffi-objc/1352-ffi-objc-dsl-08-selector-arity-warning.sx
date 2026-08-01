@@ -4,7 +4,7 @@
 // override paths are covered — the static call (`lowerObjcStaticCall`) and
 // the instance call (`lowerObjcMethodCall`). The compile succeeds, so the
 // warnings only surface because diagnostics render on the success path
-// (issue 0283). The mismatching-arity ERROR arm (no override) is
+// path. The mismatching-arity ERROR arm (no override) is
 // examples/ffi-objc/1344-ffi-objc-dsl-04-mismatch.sx.
 #import "modules/std.sx";
 #import "modules/build.sx";

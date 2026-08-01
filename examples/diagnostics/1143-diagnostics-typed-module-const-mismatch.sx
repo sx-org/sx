@@ -6,13 +6,13 @@
 //
 // The rejection lands at the declaration, and the validation is type-based:
 // a const-EXPRESSION initializer (`E : string : M + 2`, `V : string : -M`)
-// is rejected just like a literal. Regression (issue 0088).
+// is rejected just like a literal. Regression.
 //
 // The mixed-numeric pair (`i64 : M + 0.5`, `i64 : 0.5 + M`) is rejected in BOTH
 // operand orders: arithmetic binary-op inference promotes int+float to the
 // float result (`Lowering.arithResultType`), so an i64 annotation does not
 // match a float-producing initializer regardless of which operand is the
-// float (issue 0088).
+// float.
 
 #import "modules/std.sx";
 

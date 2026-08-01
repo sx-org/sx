@@ -1,5 +1,5 @@
-// `!` on an error binding is the truthiness complement of `if e` (issue
-// 0129). Lowering `!` as a bitwise not leaves a nonzero error tag
+// `!` on an error binding is the truthiness complement of `if e`.
+// Lowering `!` as a bitwise not leaves a nonzero error tag
 // nonzero, so `if !e` holds even on a SET error and the success
 // value reads as garbage. Integer operands get the same `!x ≡ x == 0`
 // semantics.

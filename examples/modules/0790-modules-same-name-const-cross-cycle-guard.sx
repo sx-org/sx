@@ -1,4 +1,4 @@
-// issue 0105 / F3 — the const cycle guard must key on (name, AUTHOR-source), not
+// The const cycle guard must key on (name, AUTHOR-source), not
 // name alone. `a.sx` declares `M :: 1` and `K :: M + 1` (= 2). `b.sx` flat-imports
 // `a.sx` and declares a DIFFERENT same-name `M :: K + 1` (= 3) — so the SAME name
 // `M` appears at two levels of one fold chain, in two different modules

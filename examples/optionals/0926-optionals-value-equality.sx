@@ -1,4 +1,4 @@
-// Optional value-equality (issue 0344): `?T == ?T` is defined whenever T
+// Optional value-equality: `?T == ?T` is defined whenever T
 // has value-equality — equal iff both are null, or both are present with
 // `==`-equal payloads (each payload compared by its own type's rule). The
 // mixed `?T == T` compares a present payload and is simply false on null.

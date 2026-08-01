@@ -1,4 +1,4 @@
-// Regression for issue 0057: `xx <int>` as a variadic `format` arg inside an
+// Regression: `xx <int>` as a variadic `format` arg inside an
 // imported-module function auto-boxes to any like the bare form. Mis-typing it
 // as the enclosing fn's return type monomorphizes __pack_string and
 // ABI-coerces the int as a 16-byte string fat pointer — a segfault.

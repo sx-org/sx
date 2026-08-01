@@ -3,7 +3,7 @@
 // same encoding `match` switches on and C-interop uses — NOT the sequential
 // ordinal.
 //
-// Regression (issue 0281):
+// Regression:
 //   Defect 1 — a call-shaped construction `Ev.key(5)` that stores the ORDINAL
 //   (1) while `match` switches on the explicit tag (0x300 = 768) makes a
 //   payloadful match match no case and fall through to `else`/unreachable
@@ -17,7 +17,7 @@
 //   `insertvalue i64`. Both construct the variant with payload 42.
 //
 // All FOUR paths must agree on the explicit tag encoding: call-shaped
-// construction, struct-literal construction, `match`, and the formatter (0280).
+// construction, struct-literal construction, `match`, and the formatter.
 
 #import "modules/std.sx";
 
@@ -50,8 +50,8 @@ main :: () {
     // Payload-less variant still dispatches.
     print("{}\n", handle(Ev.quit));          // 1
 
-    // (d) The formatter prints the variant by name (issue 0280 reverse-map),
-    // consistent with the explicit encoding both construction forms now store.
+    // (d) The formatter prints the variant by name (a tag → ordinal
+    // reverse-map), consistent with the explicit encoding both forms store.
     print("{}\n", Ev.key(5));                // .key(5)
     print("{}\n", Ev.key{ 42 });            // .key(42)
     print("{}\n", Ev.quit);                  // .quit

@@ -3,7 +3,7 @@
 // (`$K: Count` where `Count :: u32`, `$K: Small` where `Small :: i8`) — a clean
 // diagnostic + non-zero exit, NOT a silent truncating bind.
 //
-// Regression (issue 0083): the value-param range gate matched only BUILTIN
+// Regression: the value-param range gate matched only BUILTIN
 // constraint names, so an aliased constraint slipped past `intTypeRange` and
 // `Box(5_000_000_000)` with `$K: Count` compiled and bound a truncated value.
 // The constraint now resolves to its underlying builtin (`Count` → u32,

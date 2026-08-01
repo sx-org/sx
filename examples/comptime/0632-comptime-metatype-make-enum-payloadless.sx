@@ -1,4 +1,4 @@
-// Regression (issue 0142): a comptime-minted FULLY payloadless enum (every
+// Regression: a comptime-minted FULLY payloadless enum (every
 // variant tagless) must mint as a real `.@"enum"`, not an all-void tagged_union
 // — the latter has an IR/LLVM size mismatch that tripped `verifySizes` at
 // codegen. `make_enum` (declare/define) with an all-void variant list now

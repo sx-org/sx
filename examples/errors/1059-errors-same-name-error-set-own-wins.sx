@@ -1,5 +1,5 @@
-// issue 0134 — a same-name `error` set collapses into a namespaced import's
-// set (error sets lack per-decl nominal identity).
+// A same-name `error` set collapses into a namespaced import's set (error
+// sets lack per-decl nominal identity).
 //
 // `EventErr` is declared locally as `error { Boom }`, but
 // `#import "modules/std.sx"` also carries `event.EventErr` (an error set with
@@ -17,7 +17,7 @@
 //
 // Proof it's the collision: rename `EventErr` -> `MyErr` and it compiles and
 // prints. The reference side (`!EventErr` → resolveNominalLeaf) is already
-// visibility-aware from issue 0132's broader fix, but it is dormant until the
+// visibility-aware, but it is dormant until the
 // local declaration gets its own TypeId. See the .md.
 
 #import "modules/std.sx";

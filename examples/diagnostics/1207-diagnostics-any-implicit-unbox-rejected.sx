@@ -5,7 +5,7 @@
 // unbox at compile time — like the no-implicit-optional-unwrap rule — and
 // directs the user to `match` on the value's type or an explicit `xx`.
 //
-// Regression (issue 0198): unchecked, `s : S = some_any` segfaults and
+// Regression: unchecked, `s : S = some_any` segfaults and
 // `f : f64 = some_any` silently produces 0.0. The guard sits in `coerceMode`
 // (`.unbox_any` arm, mode == .implicit). The `xx` escape hatch and the
 // compiler-generated type-dispatch / pack-extraction unboxes are unaffected.

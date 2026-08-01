@@ -1,5 +1,5 @@
 // A CONCRETE builtin arm (`case i64:`, `case u8:`, `case f32:`) matches in
-// an `inline if T ==` static type dispatch (issue 0342): the static fold
+// an `inline if T ==` static type dispatch: the static fold
 // resolves the primitive spelling exactly like the runtime type switch;
 // without that fold these arms are unreachable and fall to `else:`
 // (`case string:` matches only by doubling as a category name). Both the

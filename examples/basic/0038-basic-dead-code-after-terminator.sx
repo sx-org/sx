@@ -1,6 +1,6 @@
 // Dead statements after a block-terminating statement (`return` / `raise`) are
 // dropped instead of being emitted into the already-closed basic block.
-// Regression (issue 0061): a bare `return X;` / `raise` mid-block closed the
+// Regression: a bare `return X;` / `raise` mid-block closed the
 // LLVM basic block but lowering kept emitting the trailing statements into it
 // → "Terminator found in the middle of a basic block". The canonical failable
 // closure form `{ raise error.X; return x; }` hits exactly this shape.

@@ -1,9 +1,9 @@
 // A body-local `#run` const of a BRIDGEABLE shape — a scalar, a struct, an
 // array, or an `?Array` optional — evaluates and produces its const value.
-// These are the common cases that must keep working alongside the issue-0182
-// fix (which fails ONLY the unbridgeable-result case, e.g. `[2][]i64`).
+// These are the common cases that must keep working; only an unbridgeable
+// result (e.g. `[2][]i64`) fails.
 //
-// Regression (issue 0182): the body-local `#run` fold must not regress the
+// Regression: the body-local `#run` fold must not regress the
 // bridgeable cases when it learned to fail loudly on an unbridgeable result.
 #import "modules/std.sx";
 

@@ -3,7 +3,7 @@
 // value is lowered against the merge's result type, so the phi operands all
 // share one width.
 //
-// Regression (issue 0066): a negated-literal arm (`else: -1`) lowered at a
+// Regression: a negated-literal arm (`else: -1`) lowered at a
 // narrower width than the positive arms trips LLVM's
 // "PHI node operands are not the same type as the result".
 

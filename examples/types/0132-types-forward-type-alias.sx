@@ -2,7 +2,7 @@
 // in the file resolves the same as an ordered one. `MyChain :: MyInt;`
 // appears before `MyInt :: i32;`, yet `MyChain` resolves to `i32` and a
 // forward chain (`A :: B; B :: C; C :: u8;`) converges too.
-// Regression (issue 0069): a scan that registers only identifier aliases
+// Regression: a scan that registers only identifier aliases
 // whose target is already known falsely flags a forward alias `unknown type`.
 // A fixpoint pass over the scanned decls resolves them.
 #import "modules/std.sx";

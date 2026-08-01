@@ -1,5 +1,5 @@
 // The FIRST use of a generic-instance method types correctly inside a chain
-// (issue 0341): plan-side call-result inference resolves through the
+// — plan-side call-result inference resolves through the
 // instance's stamped author + bindings BEFORE the method has ever
 // monomorphized. Inferring `.unresolved` for `xx b.get().data[0]` — with no
 // earlier call to `get` anywhere — lowers the whole chain to a SILENT zero.

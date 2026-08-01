@@ -1,10 +1,10 @@
 // A store into ANY annotated slot whose value type has no coercion to the slot
 // AND a different byte width is a type error — the raw `.none` passthrough would
-// overrun the slot and corrupt adjacent memory (issue 0197). The guard covers
+// overrun the slot and corrupt adjacent memory. The guard covers
 // every store site, not just plain var-decls: a struct field, an array element,
 // a pointer deref, and a multi-assignment target.
 //
-// Regression (issue 0197): `struct{ a:i32; b:i32}` is 8 bytes, but a 16-byte
+// Regression: `struct{ a:i32; b:i32}` is 8 bytes, but a 16-byte
 // `string` stored raw into one of its fields (or into an i32 array element, or
 // through an `*i32`) overran the slot and SIGSEGV'd / clobbered neighbors. The
 // discriminator is BYTE WIDTH (via `typeSizeBytes`), so a same-width

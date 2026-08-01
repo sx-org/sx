@@ -1,8 +1,8 @@
-// Explicit aggregate↔scalar reinterprets are SPILL-MEDIATED (issue 0305):
+// Explicit aggregate↔scalar reinterprets are SPILL-MEDIATED:
 // the escape hatch's promise ("reinterpret the bits, width be damned") is
 // delivered through a memory slot typed as the larger side — so the result
 // is a genuinely target-typed value in EVERY context (icmp, call args,
-// arithmetic), not just store positions. Regression (issue 0305): a raw
+// arithmetic), not just store positions. Regression: a raw
 // SSA passthrough crashes the LLVM verifier at the first value-context use.
 #import "modules/std.sx";
 

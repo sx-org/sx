@@ -1,4 +1,4 @@
-// issue 0105 / F1 / R1 — a MULTI-LEVEL cross-module const chain pins EACH fold
+// A MULTI-LEVEL cross-module const chain pins EACH fold
 // level to its own author. `a.sx` declares `M :: 1`, `K :: M + 1` (= 2). `b.sx`
 // declares a full same-name shadow `M :: 10`, `K :: M + 1` (= 11). `c.sx`
 // flat-imports `a.sx` only and declares `BIG :: K + 100` — its `K` is A's, so

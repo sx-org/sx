@@ -4,7 +4,7 @@
 // `.unresolved` (the diagnosed-poison sentinel) — exactly like the struct binder —
 // so the downstream `.len` is suppressed, not reported as a second error.
 //
-// Regression (issue 0083): the type-fn path (`instantiateTypeFunction`) fell
+// Regression: the type-fn path (`instantiateTypeFunction`) fell
 // through to an empty-struct placeholder named after the function on a failed
 // value-param bind, so `a.len` produced a second `field 'len' not found on
 // 'MakeC'` error. The struct binder already returned `.unresolved` here; the

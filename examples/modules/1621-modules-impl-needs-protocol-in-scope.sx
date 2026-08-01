@@ -1,4 +1,4 @@
-// Issue 0346, cross-module production shape: the imported module
+// Cross-module production shape: the imported module
 // declares `impl Into(*DeadBox) for string` but imports nothing, so
 // `Into` is not nameable in ITS scope. Dropping the impl silently
 // degrades `xx "abc"` here to the reinterpret

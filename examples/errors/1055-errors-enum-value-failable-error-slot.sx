@@ -1,5 +1,5 @@
 // Enum-valued value-carrying failable: the SUCCESS path must zero the trailing
-// error slot. Regression (issue 0097). A `-> (Enum, !E)` `return .variant`
+// error slot. Regression. A `-> (Enum, !E)` `return .variant`
 // resolves the enum literal against the function's VALUE type (the enum), not
 // the failable tuple — otherwise the literal mis-resolves (tag 0) and is stamped
 // with the tuple type, which the success-return lowering mistakes for a forwarded

@@ -1,4 +1,4 @@
-// Issue 0102: the first-wins winner's body is
+// The first-wins winner's body is
 // independently BROKEN (references an undefined symbol) and is never used. A
 // shadow author from a later flat import takes its OWN `pick` as a function
 // VALUE (`g : () -> i64 = pick`). The value must bind the shadow (own-author

@@ -3,7 +3,7 @@
 // reader) — imported into ONE program under DISTINCT namespaces, with
 // BOTH `parse`s actually called.
 //
-// Regression (issue 0100): same-name cross-module functions collided in
+// Regression: same-name cross-module functions collided in
 // the bare-name function table during IR lowering. Lowering re-resolved a
 // call by SHORT name, so importing both modules and calling one bound the
 // wrong-arity same-named function and tripped `lazyLowerFunction`'s

@@ -1,10 +1,10 @@
-// Variadic heterogeneous type packs — control-flow follow-up to
-// issue-0045 fix (commit 9e78790).
+// Variadic heterogeneous type packs — the control-flow edge of
+// inline-comptime-body returns.
 //
-// issue-0045's fix routes inline-comptime-body `return X;` into a
-// result slot so the caller's basic block isn't terminated
-// mid-flight. But the fix sets `block_terminated = true` after
-// the inline return — which leaks PAST the enclosing `if`'s
+// An inline-comptime-body `return X;` routes into a result slot so
+// the caller's basic block isn't terminated mid-flight, and sets
+// `block_terminated = true` after the inline return — which must not
+// leak PAST the enclosing `if`'s
 // merge block. When the body shape is
 //   if cond { return X; }
 //   return Y;

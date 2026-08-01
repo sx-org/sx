@@ -4,7 +4,7 @@
 // return-position `T` resolving to the element type. The slice
 // spelling keeps working unchanged.
 //
-// Regression (issue 0126): the binding extractor only accepted slice
+// Regression: the binding extractor only accepted slice
 // args, so `first(a)` left T unbound and the monomorphized body
 // reached LLVM emission with the `.unresolved` sentinel (panic).
 

@@ -3,7 +3,7 @@
 // overload is dispatched — else the result is typed by one function but produced
 // by another, misboxing it.
 //
-// Regression (issue 0157 review, P1-a + P2-b): the planner (calls.zig) used the
+// Regression: the planner (calls.zig) used the
 // last-wins `fn_ast_map` winner while lowering reselected by receiver, so a
 // `*$T->string` winner could type a call that lowering dispatched to
 // `*Box($T)->i64` — boxing the i64 as a string pointer. And boolean specificity

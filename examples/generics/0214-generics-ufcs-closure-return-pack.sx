@@ -2,7 +2,7 @@
 // through a variadic `..$args` pack — both the DIRECT spelling
 // `mymk(bx, worker, 40, 2)` and the UFCS dot-call `bx.mymk(worker, 40, 2)`
 // resolve `$R = i64` identically and build `Wrap($R)` correctly.
-// Regression (issue 0151): the UFCS path must run the direct path's
+// Regression: the UFCS path must run the direct path's
 // pack/closure-return binding, not just splice the receiver as arg 0 —
 // otherwise `$R` stays `.unresolved` and SIGTRAPs at LLVM emission.
 #import "modules/std.sx";

@@ -2,7 +2,7 @@
 // A `$T: Type` generic whose return is `(T, !E)` monomorphizes
 // per call: `return try f()` propagates the closure's error, and each
 // monomorphization's success value flows through as the concrete `T`.
-// Regression (issue 0062).
+// Regression.
 
 #import "modules/std.sx";
 

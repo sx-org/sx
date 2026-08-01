@@ -6,7 +6,7 @@
 // chain, so a `*Layer` produced by one chain typechecks in a function from
 // another.
 //
-// Regression (issue 0148): without canonicalized import-path keys, an
+// Regression: without canonicalized import-path keys, an
 // ABSOLUTE entry path splits the same file into two cache keys (abs via the
 // entry's base_dir, cwd-relative via a sibling's fallback) → two `Layer`
 // identities → "type 'Layer' is not visible". The corpus runs relative entry

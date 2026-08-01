@@ -4,7 +4,7 @@
 // tag never reaches the address-of lowering, so the rejection must land at the
 // binding's declaration.
 //
-// Regression (issue 0076). Expected: one error for each
+// Regression. Expected: one error for each
 // binding; exit 1.
 #import "modules/std.sx";
 

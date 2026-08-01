@@ -3,7 +3,7 @@
 // scalar — type inference must not borrow the array global's type either
 // (borrowing it makes the print pack format the whole 4-element array).
 //
-// Regression (issue 0115).
+// Regression.
 
 #import "modules/std.sx";
 h :: #import "0836-modules-own-const-vs-ns-array-global/h.sx";

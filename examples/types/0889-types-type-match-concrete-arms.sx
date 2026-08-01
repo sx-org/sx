@@ -4,7 +4,7 @@
 // type expressions (`case ?i64:`, `case []u8:`) work the same way.
 // `string` / `bool` / `void` are single-type arms.
 // A builtin name resolved through the user-type name map alone yields zero
-// tags and a dead arm. Regression (issue 0315).
+// tags and a dead arm. Regression.
 #import "modules/std.sx";
 
 conc :: (t: Type) -> string {

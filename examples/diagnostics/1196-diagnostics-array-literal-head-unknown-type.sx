@@ -9,7 +9,7 @@
 // walk the head resolver hands back a forward-reference empty-struct STUB
 // rather than `.unresolved`, and the literal compiles silently to exit 0.
 //
-// Regression: issues 0173–0175.
+// Regression.
 #import "modules/std.sx";
 
 main :: () {

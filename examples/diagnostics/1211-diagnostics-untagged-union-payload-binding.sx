@@ -2,11 +2,11 @@
 // binding is only valid on a tagged union (enum with payloads). Non-bindable
 // subjects are rejected at lowering with a located diagnostic:
 //   - a plain UNTAGGED `union` (no discriminant) and a POINTER to one — the
-//     subject-level match gate rejects the whole match up front (issue 0222
-//     fold; see example 1220 for the no-binding forms);
+//     subject-level match gate rejects the whole match up front (see
+//     example 1220 for the no-binding forms);
 //   - a payload-less enum (the most plausible user typo) — the arm-level
 //     binding rejection, generic wording.
-// Regression (issue 0163): undiagnosed these leak an .unresolved binding type
+// Regression: undiagnosed these leak an .unresolved binding type
 // and panic in the LLVM backend ("unresolved type reached LLVM emission").
 #import "modules/std.sx";
 

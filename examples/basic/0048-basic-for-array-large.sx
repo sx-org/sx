@@ -1,10 +1,10 @@
 // Collection-form `for` over an array, by-value capture: each iteration
 // reads ONE element from the array's storage (GEP + load), and the capture
-// is a read-only alias — it is IMMUTABLE (issue 0219), so `x = v` bare is a
+// is a read-only alias — it is IMMUTABLE, so `x = v` bare is a
 // compile error, not a silent no-op. To mutate, copy into a `:=` local (the
 // copy is yours to change and never writes back); to write into the array,
 // use a by-REFERENCE capture (`for small (*x)`) and store through it.
-// Regression (issue 0110): an element fetch of `index_get` on the array
+// Regression: an element fetch of `index_get` on the array
 // VALUE spills a full copy of the array to a stack temp per iteration —
 // O(N²) bytes copied, plus per-iteration stack growth that segfaults this
 // 4096-element loop.

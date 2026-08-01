@@ -1,4 +1,4 @@
-// Issue 0102 regression: two flat FILE imports each `extern`
+// Two flat FILE imports each `extern`
 // the SAME libc symbol under the SAME sx name `absval`. The bare-call resolver
 // must NOT count `extern` (non-plain) authors when deciding ambiguity — it
 // filters them out, returns "no rerouting", and the existing first-wins extern

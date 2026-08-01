@@ -4,7 +4,7 @@
 // return the SEQUENTIAL variant ordinal (the inverse of `variant_value`) —
 // NOT the raw explicit value — otherwise `struct_field_name` is indexed out of range.
 //
-// Regression (issue 0277): `variant_index` lowered to a bare `enum_tag`, so for
+// Regression: `variant_index` lowered to a bare `enum_tag`, so for
 // an explicit-valued variant it returned the value (7) instead of the ordinal
 // (2); `struct_field_name(E, 7)` then did an out-of-bounds GEP on the 3-entry name
 // array → segfault. `K :: 7` inside an enum body is an explicit-valued

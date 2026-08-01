@@ -4,7 +4,7 @@
 // unwrapping the outer to recover the inner `?i64`, and unwrapping that all
 // round-trip cleanly.
 //
-// Regression (issue 0165): the type-table interning always produced the
+// Regression: the type-table interning always produced the
 // correct `{ {i64,i1}, i1 }` for a genuine nested optional — this locks that in.
 #import "modules/std.sx";
 

@@ -1,4 +1,4 @@
-// Cross-module name isolation. Regression (issue 0217): a module-scope fn in
+// Cross-module name isolation. Regression: a module-scope fn in
 // the IMPORTER named like a LOCAL inside an imported module's function body
 // broke that module's own `h := ...; h(...)` sites with "'h' is not visible"
 // — call-position resolution consulted the program-wide fn table before the

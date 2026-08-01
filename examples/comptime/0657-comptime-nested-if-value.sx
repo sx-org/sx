@@ -4,7 +4,7 @@
 // statement, so a trailing (possibly deeply nested) if-else produces a phi'd
 // value instead of being demoted to a statement whose result is dropped.
 //
-// Regression (issue 0259): `K :: #run { ...; if a {100} else {if b {42} else
+// Regression: `K :: #run { ...; if a {100} else {if b {42} else
 // {0}} }` (a=false, b=true) returned 0 instead of 42 — the inner if's value
 // was lost because `lowerExpr`'s `.block` arm lowered the tail without
 // `force_block_value`.

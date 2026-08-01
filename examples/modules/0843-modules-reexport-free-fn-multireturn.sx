@@ -4,7 +4,7 @@
 // `r, e := fac.make(...)` binds (the struct member of the return tuple is
 // resolved in the callee's defining module, not the call site's).
 //
-// Regression (issue 0207): the bare-name call-plan fallback pinned the callee's
+// Regression: the bare-name call-plan fallback pinned the callee's
 // return type to the facade-qualified name (absent from `qualified_fn_source`
 // for an alias re-export) → null source → the tuple's struct member resolved in
 // the CALL SITE's context and was reported "not visible". Fix pins resolution

@@ -3,12 +3,12 @@
 // (`lib.lib_fn = 3`) each diagnose cleanly at the assignment site, rather than
 // silently dropping the write or failing "unresolved 'lib'". A TRANSITIVE
 // member (`amb.shared`, authored only by modules that `amb` flat-imports) is
-// not a namespace member at all (issue 0326). ALL errors point at THIS file —
+// not a namespace member at all. ALL errors point at THIS file —
 // classification runs in the target module's context, but diagnostics are
 // emitted after source-file restore, so caller spans never render against an
 // imported module's (shorter) text.
 //
-// Regression (issue 0223): qualified module-global assignment — non-lvalue
+// Regression: qualified module-global assignment — non-lvalue
 // member rejection + ambiguous-member attribution (review fold).
 
 #import "modules/std.sx";

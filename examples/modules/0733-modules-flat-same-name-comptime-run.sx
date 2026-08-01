@@ -1,4 +1,4 @@
-// Issue 0102: two flat FILE imports each author a same-name
+// Two flat FILE imports each author a same-name
 // free function `compute` (a.sx returns 7, b.sx returns 70) and each evaluates
 // it at comptime via `NAME :: #run compute();`. The #run body must resolve the
 // bare callee from ITS OWN module's source context (own-author wins), so a.sx's

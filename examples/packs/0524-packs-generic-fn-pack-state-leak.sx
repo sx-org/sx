@@ -6,8 +6,8 @@
 // the arity of whichever pack shape triggered the first mono;
 // every subsequent shape read the same baked-in constant.
 //
-// Same root cause as issue-0048 (`lazyLowerFunction`), in a
-// different lowering path (`monomorphizeFunction`).
+// Same root cause as `lazyLowerFunction`'s, in a different
+// lowering path (`monomorphizeFunction`).
 
 #import "modules/std.sx";
 

@@ -1,4 +1,4 @@
-// issue 0329: a parameterized protocol instance is keyed by the protocol
+// A parameterized protocol instance is keyed by the protocol
 // DECLARATION's identity, not by its spelling. Two modules author `P($T)` with
 // different method sets; each module's own erasure and each qualified `P(i64)`
 // head must reach its own instance type, impl set, thunks and vtable.
