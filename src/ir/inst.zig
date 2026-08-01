@@ -267,10 +267,10 @@ pub const Op = union(enum) {
     jni_msg_send: JniMsgSend,
 
     /// `asm volatile? { "tmpl", operands…, clobbers(.…) }` — inline assembly
-    /// (ASM stream, design §II.6). emit_llvm.zig assembles the LLVM constraint
+    /// (design §II.6). The LLVM backend assembles the constraint
     /// string + rewrites the `%[name]` template, then `LLVMGetInlineAsm` +
     /// `LLVMBuildCall2`. The result rides on `Inst.ty` (void / a scalar / a tuple
-    /// of the `out_value` types). Never comptime-evaluable — the interp bails.
+    /// of the `out_value` types). Never comptime-evaluable — the VM bails.
     inline_asm: InlineAsm,
 
     // ── Closure creation ────────────────────────────────────────────

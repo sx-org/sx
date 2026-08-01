@@ -18,10 +18,9 @@
 // trivial no-ops/0 — they exist for the fiber scheduler.
 // `now_ms` returns a real monotonic clock. Fully deterministic/testable.
 //
-// Worker form: a `Closure(..$args) -> $R` whose params are
-// annotated at the call site (a lambda `(a: i64) -> i64 => ...`).
-// A named fn is not a worker: that needs a `::` callable-parameter language
-// feature, which does not exist.
+// Worker form: a nullary failable `Closure() -> ($R, !)`, written as a lambda
+// at the call site (`() -> (i64, !) => compute(a, b)`). A named fn does not
+// coerce to a closure, so it is not a worker.
 #import "modules/std/core.sx";
 #import "modules/std/atomic.sx";
 c    :: #import "modules/std/c.sx";
@@ -90,9 +89,7 @@ impl Io for CBlockingIo {
 // --- Future($R): the handle to an async task's eventual result ---
 //
 // Fixed-shape product (NOT the metatype sum machinery). `Value :: $R`
-// exposes the projection `Future(X) → X`. Only a NON-void `$R` is
-// supported — `Future(void)` needs a `void` struct field, which SIGTRAPs
-// the compiler.
+// exposes the projection `Future(X) → X`.
 FutureState :: enum { pending; ready; failed; canceled; }
 
 Future :: struct ($R: Type) {
@@ -162,10 +159,8 @@ sx_run_boxed_closure :: (arg: *void) {
     context.allocator.dealloc_bytes(xx b);
 }
 
-// `async(io, worker)` — submit a NULLARY `worker: Closure() -> $R` and get a
-// `*Future($R)` handle. The worker must be nullary because under the fiber impl
-// the body crosses a fiber boundary, and a captured variadic pack segfaults there
-// — so any inputs are captured at the CALL SITE in the lambda
+// `async(io, worker)` — submit a NULLARY `worker: Closure() -> ($R, !)` and get
+// a `*Future($R)` handle. Inputs are captured at the CALL SITE in the lambda
 // (`context.io.async(() -> (i64, !) => compute(a, b))`).
 //
 // The Future (and the completion-closure `ThunkBox`) are HEAP-allocated (not

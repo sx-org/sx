@@ -635,9 +635,9 @@ impl Io for Scheduler {
     }
 
     // Park the running fiber until a matching `ready`. `-> !` is the cancellation
-    // channel the protocol mandates: a suspending impl raises `IoErr.Canceled`
-    // out here when the parked task was cancelled. The M:1
-    // impl does not raise yet — it just parks the current fiber.
+    // channel the protocol mandates: `error.Canceled` is raised INSTEAD of
+    // parking when the task is already cancelled, and again on resumption when
+    // a `cancel` landed while parked.
     suspend_raw :: (self: *Scheduler, park: *ParkToken) -> ! {
         // PRE-PARK check: if this fiber's task was
         // already cancelled before it reached this suspend, deliver immediately —

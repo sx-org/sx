@@ -4,7 +4,7 @@
 // sentinel and alias registration surfaces this diagnostic.
 //
 // A const-FOLDABLE expression dimension such as `[M + 1]` folds instead — see
-// examples/0144-types-const-expr-array-dim.sx.
+// examples/types/0144-types-const-expr-array-dim.sx.
 #import "modules/std.sx";
 
 get :: () -> i64 { return 5; }

@@ -3561,7 +3561,7 @@ pub const Parser = struct {
         return self.current.tag == .identifier and std.mem.eql(u8, self.tokenSlice(self.current), word);
     }
 
-    /// Inline assembly expression (ASM stream, design §II.2–II.4):
+    /// Inline assembly expression (design §II.2–II.4):
     ///   `asm volatile? { "tmpl", [name]? "constraint" (-> Type | = expr), …,
     ///                     clobbers(.name, …) }`
     /// A flat, comma-separated brace block: the template first, then operands

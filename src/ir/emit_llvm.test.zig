@@ -100,15 +100,9 @@ test "emit: add(a, b) returns a + b" {
     const entry = b.appendBlock(str(&module, "entry"), &.{});
     b.switchToBlock(entry);
 
-    // Parameters are refs 0 and 1 — but in our IR they're passed as
-    // arguments to the interpreter. For the LLVM emitter, we need to
-    // load them from LLVM function params. constInt stands in as a
-    // placeholder — this test does not exercise param→ref mapping.
-    //
-    // Actually, looking at the IR design: the Builder's inst_counter starts
-    // at 0, and params are accessed differently. The lowering pass emits
-    // alloca+store for params. For this test, we use const_int to test
-    // the add instruction directly.
+    // Params reach the emitter as LLVM function params, materialized by the
+    // lowering pass as alloca+store. Both operands here are constants: this
+    // test covers the add instruction, not the param→ref mapping.
     const a = b.constInt(10, .i64);
     const a_b = b.constInt(32, .i64);
     const sum = b.add(a, a_b, .i64);

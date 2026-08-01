@@ -54,7 +54,7 @@ Result :: enum {
 
 main :: () {
     // ============================================================
-    // SECTION 1: Tagged enum payload construction
+    // Tagged enum payload construction
     // ============================================================
     print("--- tagged enum compat ---\n");
 
@@ -81,7 +81,7 @@ main :: () {
         print("T3: {} {}\n", sh.rect.w, sh.rect.h);
     }
 
-    // T4: Qualified Type.variant(payload) still works
+    // T4: Qualified Type.variant(payload)
     {
         sh := Shape.circle(2.71);
         print("T4: {}\n", sh.circle);
@@ -158,7 +158,7 @@ main :: () {
     }
 
     // ============================================================
-    // SECTION 2: Struct static method shorthand
+    // Struct static method shorthand
     // ============================================================
     print("--- struct static shorthand ---\n");
 
@@ -229,7 +229,7 @@ main :: () {
     }
 
     // ============================================================
-    // SECTION 3: Edge cases mixing both
+    // Edge cases mixing both
     // ============================================================
     print("--- edge cases ---\n");
 
@@ -277,7 +277,7 @@ main :: () {
         print("E5: {}\n", r);
     }
 
-    // Color enum (plain, not tagged) still works with bare .variant
+    // Color enum (plain, not tagged) accepts bare .variant
     {
         c : Color = .green;
         ci : i32 = xx c;

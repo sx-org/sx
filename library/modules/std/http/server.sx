@@ -3297,17 +3297,17 @@ Server :: struct {
             else if exv.len > 0 { self.respond_error_close(slot, 417); return false; }
         }
 
-        // Transfer-Encoding is unimplemented.
-        // Treating a TE request as bodyless is a smuggling vector, so we
-        // refuse it outright → 501. Detection is by header PRESENCE, not
+        // Treating a TE request as bodyless is a smuggling vector, so an
+        // unsupported coding is refused outright → 501 (the accepted set is
+        // narrowed below). Detection is by header PRESENCE, not
         // value length: an empty or whitespace-only TE value ("TE:\r\n",
         // "TE:   \r\n") still smuggles, so a single present TE line is enough.
         te_count := count_header(*req, "transfer-encoding");
 
         // Duplicate / conflicting Transfer-Encoding is a smuggling vector. Two
         // TE lines (e.g. `chunked` then `gzip`) are equivalent to the coding
-        // list `chunked, gzip` per RFC 7230 §3.3.1 — chunked is no longer the
-        // final coding, which is unacceptable. find_header sees only the first
+        // list `chunked, gzip` per RFC 7230 §3.3.1, where chunked is not the
+        // final coding. find_header sees only the first
         // value, so a downstream that honors the second would frame the body
         // differently → 400.
         if te_count > 1 {
@@ -3922,8 +3922,8 @@ Server :: struct {
             }
             if done.streamed {
                 // Chunked: stage the worker-built head into a bounded scratch
-                // and wire up the worker-fed channel (— the loop never
-                // runs producer code); write_more pulls the body from there.
+                // and wire up the worker-fed channel — the loop never
+                // runs producer code; write_more pulls the body from there.
                 // Free the worker's head buffer once copied.
                 cap := STREAM_BUF_CAP;
                 if done.out.len > cap { cap = done.out.len; }

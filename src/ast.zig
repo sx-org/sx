@@ -310,8 +310,8 @@ pub const AsmOperand = struct {
     };
 };
 
-/// Top-level (module-scope) global assembly: `asm { "tmpl", };` (ASM stream
-/// design §II.2 Deviation 6). Template only — no operands, no `volatile`, no
+/// Top-level (module-scope) global assembly: `asm { "tmpl", };` (design
+/// §II.2 Deviation 6). Template only — no operands, no `volatile`, no
 /// `clobbers`, no `%` substitution. Lowers to `LLVMAppendModuleInlineAsm`;
 /// multiple blocks concatenate in source order. Symbols it defines are reached
 /// with a lib-less `extern` declaration.

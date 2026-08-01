@@ -5,7 +5,7 @@
 // - bitwise    `& | ^`      (integer / enum operands)
 // - shift      `<< >>`      (integer / enum operands)
 // Int+float promotion, flags-enum bitwise and enum/pointer comparison are
-// legitimate mixes — see `examples/50-smoke.sx`.
+// legitimate mixes.
 
 #import "modules/std.sx";
 

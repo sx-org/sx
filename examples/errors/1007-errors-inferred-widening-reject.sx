@@ -4,7 +4,7 @@
 // bare-`!` placeholder would pass it trivially as a false negative.
 // `deep`'s converged set is {Foo} (raised transitively through `via`),
 // which is not in A = {Bar}. The positive case lives in
-// `examples/223-inferred-error-sets.sx`.
+// `examples/errors/1006-errors-inferred-error-sets.sx`.
 
 #import "modules/std.sx";
 

@@ -2429,14 +2429,14 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     }
     const elem_ty = self.getElementType(obj_ty);
     // Final guard: the object is not an indexable shape here. `getElementType`
-    // recognizes `[N]T` array, `[]T` slice, `[*]T` many-pointer, `Vector`,
-    // `string`, and `ptrToArrayElem` handled `*[N]T` above; an `.unresolved`
-    // element means the base is a single pointer `*T` / a struct (non-indexable
-    // by design), or a pointer-to-slice `*[]T` (indexable per spec,
-    // unimplemented). Emitting an `index_get` with `.unresolved`
-    // would slip past lowering and panic in emit_llvm ("unresolved type
-    // reached LLVM emission"). Diagnose (see diagNonIndexable) and
-    // return a placeholder so hasErrors() aborts before codegen.
+    // recognizes `[N]T` array, `[]T` slice, `[*]T` many-pointer, `Vector` and
+    // `string`; `ptrToArrayElem`/`ptrToSliceElem` handled `*[N]T` and `*[]T`
+    // above. An `.unresolved` element means the base is a single pointer `*T`
+    // or a struct — non-indexable by design. Emitting an `index_get` with
+    // `.unresolved` would slip past lowering and panic in emit_llvm
+    // ("unresolved type reached LLVM emission"). Diagnose (see
+    // diagNonIndexable) and return a placeholder so hasErrors() aborts before
+    // codegen.
     if (elem_ty == .unresolved) {
         self.diagNonIndexable(obj_ty, ie.object.span);
         return self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts before codegen
@@ -2448,11 +2448,11 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
 /// read (`p[i]`), write (`p[i] = v`), address-of (`@p[i]`), and the L-value
 /// pointer path (`p[i].field` as an assignment/GEP base). Each of those paths
 /// computes the element type via `ptrToArrayElem(..) orelse
-/// getElementType(..)`; an `.unresolved` result means the base is a shape
-/// those resolvers don't index — a single pointer `*T` or a struct
-/// (non-indexable by design, specs.md Pointer Types), or a pointer-to-slice
-/// `*[]T` (indexable per spec but unimplemented; it lands here). Emitting an
-/// `index_get`/`index_gep` whose element type is `.unresolved` would slip past
+/// ptrToSliceElem(..) orelse getElementType(..)`; an `.unresolved` result
+/// means the base is a shape those resolvers don't index — a single pointer
+/// `*T` or a struct, non-indexable by design (specs.md Pointer Types).
+/// Emitting an `index_get`/`index_gep` whose element type is `.unresolved`
+/// would slip past
 /// lowering and panic at LLVM emission ("unresolved type reached LLVM
 /// emission") on the read, write, address-of and lvalue paths alike. The
 /// caller must bail with a placeholder after calling this; hasErrors() aborts
@@ -3305,7 +3305,6 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                             // through the closure trampoline ABI. The
                             // compiler can't distinguish C-side vs
                             // sx-side use from the cast alone.
-                            // examples/50-smoke.sx has both shapes.
                         }
                     }
                     // A bare function value keeps the integer-shaped IR
@@ -4078,9 +4077,9 @@ pub fn asmResultType(self: *Lowering, ae: *const ast.AsmExpr) TypeId {
 }
 
 /// Inline assembly lowering: validate the asm shape with specific named
-/// diagnostics, THEN bail on the unimplemented codegen so the user sees the
-/// real problem first. Always returns a placeholder Ref so `hasErrors()`
-/// aborts the build on whichever diagnostic fired.
+/// diagnostics, then emit the `inline_asm` op. Every rejection returns a
+/// placeholder Ref instead of the op, so `hasErrors()` aborts the build on
+/// whichever diagnostic fired.
 pub fn lowerAsmExpr(self: *Lowering, ae: *const ast.AsmExpr, span: ast.Span) Ref {
     const diags = self.diagnostics orelse return self.emitPlaceholder("inline_asm");
 

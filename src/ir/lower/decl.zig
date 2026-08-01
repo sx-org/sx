@@ -354,15 +354,14 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     self.assertInstanceMapsCoincide();
 }
 
-/// The entry-point signature gate. `main` must take no parameters
-/// and have a SINGLE-slot return: void (`()` / `-> ()` / `-> void`), an
-/// integer (POSIX exit code, truncated to u8), or `-> !` / `-> !Named` (the
-/// error tag rides the single return register). The multi-slot
-/// `-> (T, !)` tuple return is NOT supported — the JIT calls main as
-/// `() -> i32`, so a 2-slot `{value, error}` return ABI-mismatches and
-/// segfaults; that shape is unsupported here. Any other
-/// shape (`-> string`, `-> f64`, a non-failable tuple, …) is a clean
-/// diagnostic rather than a silent miscompile.
+/// The entry-point signature gate. `main` takes no parameters and returns
+/// void (`()` / `-> ()` / `-> void`), an integer (POSIX exit code, truncated
+/// to u8), a pure failable `-> !` / `-> !Named` (the error tag rides the
+/// single return register), or a value-carrying `-> (int, !)` whose lone value
+/// slot is an integer — the entry-point wrapper maps that slot to the exit
+/// code. Any other shape (`-> string`, `-> f64`, a non-failable tuple, a
+/// multi-value failable, …) is a clean diagnostic rather than a silent
+/// miscompile.
 pub fn validateMainSignature(self: *Lowering) void {
     const fd = self.program_index.fn_ast_map.get("main") orelse return;
 

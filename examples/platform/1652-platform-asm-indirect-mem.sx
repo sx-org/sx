@@ -1,4 +1,4 @@
-// ASM stream — indirect-memory (`=*m`) place output. The place address is passed
+// Indirect-memory (`=*m`) place output. The place address is passed
 // to the asm as a pointer and the asm writes THROUGH it (no return slot): here
 // `str x9, %[out]` stores 42 into `x`'s storage directly. Distinct from a
 // write-through `=` output (which returns a value that is then stored). Mixes a

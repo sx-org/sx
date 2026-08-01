@@ -1019,10 +1019,11 @@ pub const Ops = struct {
         self.e.mapRef(result);
     }
 
-    /// Inline assembly — the port of Zig's `airAssembly`. Handles 0 value
-    /// outputs (void) and 1 (scalar); lowering bails on multi-output tuples
-    /// before reaching here. Builds the LLVM constraint string, rewrites the
-    /// `%[name]` template, then `LLVMGetInlineAsm` + `LLVMBuildCall2`.
+    /// Inline assembly — the port of Zig's `airAssembly`. Builds the LLVM
+    /// constraint string, rewrites the `%[name]` template, then
+    /// `LLVMGetInlineAsm` + `LLVMBuildCall2`. The combined LLVM return covers
+    /// the DIRECT outputs: void for none, the scalar for one, a struct for N
+    /// (sx's tuple representation).
     pub fn emitInlineAsm(self: Ops, instruction: *const Inst, a: InlineAsm) void {
         const e = self.e;
         const alloc = e.alloc;

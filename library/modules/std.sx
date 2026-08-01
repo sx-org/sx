@@ -109,8 +109,6 @@ IoErr       :: io_mod.IoErr;
 async       :: io_mod.async;
 await       :: io_mod.await;
 cancel      :: io_mod.cancel;
-// `timeout` / `Future(void)` are absent from the facade: `Future(void)` needs a
-// `void` struct field, and a `void` struct field SIGTRAPs the compiler (0150).
 
 // --- The stdlib namespace tail: flat-importing std.sx carries these ---
 

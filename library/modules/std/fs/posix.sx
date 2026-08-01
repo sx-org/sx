@@ -14,9 +14,9 @@
 // POSIX file descriptor. Methods are provided for read/write/close;
 // the value is invalid (fd == -1) after `close()`.
 //
-// The surface is file I/O + directory creation/deletion + the path
-// helpers `.app` bundling needs. Recursive walkers, `stat`, and a full
-// path module are not here.
+// The surface is file I/O + directory creation/deletion + a whole-second
+// modification time + the path helpers `.app` bundling needs. No recursive
+// walker, no exposed `stat` layout, no path module.
 // =====================================================================
 
 // The backend owns only hidden primitive operations. std/fs.sx owns every

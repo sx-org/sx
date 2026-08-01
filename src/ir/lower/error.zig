@@ -248,11 +248,9 @@ pub fn diagTagsNotInSet(self: *Lowering, src_tags: []const u32, dst: TypeId, spa
 }
 
 /// `raise EXPR;` — terminate the enclosing failable function via the error
-/// channel. The **pure-failable** shape (`-> !` / `-> !Named`, whose return
-/// type IS the error set) emits `ret(EXPR)`. The value-carrying
-/// shape (`-> (T..., !)`) needs the value slots set to `undef` alongside the
-/// error slot; that tuple ABI is unimplemented here, so this bails loudly
-/// rather than ship a half-built return that silently corrupts value slots.
+/// channel. A pure-failable return (`-> !` / `-> !Named`, whose return type
+/// IS the error set) emits `ret(EXPR)`; a value-carrying one
+/// (`-> (T..., !)`) returns the tuple `{undef value slots..., EXPR}`.
 pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) void {
     // (1) `raise` is legal only inside a failable function.
     const ret_ty = self.effectiveReturnType() orelse {
@@ -612,14 +610,6 @@ pub fn exprIsFailable(self: *Lowering, node: *const Node) bool {
     return self.errorChannelOf(self.inferExprType(node)) != null;
 }
 
-/// `try X` — a fallible attempt (the STANDALONE form, whose failure target
-/// is function-propagation). Evaluates X; on failure, runs
-/// the function's defers and returns the error to the caller; on success,
-/// continues with X's value. This lowers the pure-failable shape (callee
-/// `-> !` / `-> !Named`, caller likewise pure-failable). Value-carrying
-/// callees, propagation from a value-carrying caller, and `try` inside an
-/// `or` chain need the error-channel tuple ABI / fallback routing, which is
-/// unimplemented here, so those bail loudly.
 /// Build the `@SourceSite` a `@caller` marker stands for.
 ///
 /// `file` / `declaration` / `ordinal` / `id` come from the source-site index,
@@ -730,6 +720,11 @@ pub fn currentFunctionName(self: *Lowering) []const u8 {
     return self.module.types.getString(self.module.functions.items[@intFromEnum(fid)].name);
 }
 
+/// `try X` — a fallible attempt whose failure target is function
+/// propagation. Evaluates X, then branches on its error tag: the failure
+/// path runs the function's cleanups and returns the caller's failure
+/// carrying that tag; the success path continues with X's value — the value
+/// part for a value-carrying callee, `void` for a pure-failable one.
 pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
     // A direct assertion operand (`try av.(T)`) desugars to the failable
     // runtime call and consumes through the ordinary machinery below.
@@ -829,15 +824,13 @@ pub fn diagTryNotFailable(self: *Lowering, span: ast.Span) void {
     }
 }
 
-/// `expr catch [e] BODY` — inline failure handler for a pure-failable
-/// LHS. Evaluates `expr`; on failure, binds the tag to
-/// `e` (if present) and runs BODY; on success, the value is `void` (a
-/// pure-failable LHS has no success value). BODY either diverges (via
-/// `noreturn`) or falls through. `catch` consumes the error
-/// locally, so — unlike `try` / `raise` — it needs no failable *enclosing*
-/// function. Value-carrying LHS (binding the success value / a
-/// value-producing body unifying with the success tuple) needs the
-/// error-channel tuple ABI, which is unimplemented — bail loudly here.
+/// `expr catch [e] BODY` — inline failure handler. Evaluates `expr`; on
+/// failure binds the tag to `e` (if present) and runs BODY, which either
+/// diverges or falls through. A pure-failable LHS has no success value, so
+/// both paths merge at `void`; a value-carrying LHS yields its value part on
+/// success and BODY's value on failure, merged through a block parameter.
+/// `catch` consumes the error locally, so — unlike `try` / `raise` — it needs
+/// no failable *enclosing* function.
 pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) Ref {
     // A direct assertion operand (`av.(T) catch …`) desugars to the
     // failable runtime call; the ordinary paths below consume it.
@@ -1026,12 +1019,6 @@ pub fn runCatchBody(self: *Lowering, ce: *const ast.CatchExpr, err_val: Ref, err
     return if (ce.body.data == .block) self.lowerBlockValue(ce.body) else self.lowerExpr(ce.body);
 }
 
-/// `lhs or rhs` with a failable LHS (the value-terminator
-/// form). On LHS success the result is its value part (the lone value, or a
-/// value-tuple); on failure the LHS error is discarded and the result is
-/// `rhs` (a plain value of the success type), so the whole expression is
-/// non-failable. The CHAIN form (`... or try ...` / a failable RHS) needs
-/// fallback-target routing, which is unimplemented here — bail.
 /// Widening at an escape (function-propagation) site: the escaping set must
 /// be ⊆ the caller's named set. An inferred caller (`!`) absorbs everything
 /// via the whole-program SCC — no check. A bare-`!` callee carries
@@ -1404,8 +1391,8 @@ pub fn namedSetTags(self: *Lowering, name: []const u8) ?[]const u32 {
 
 /// Whole-program inferred-error-set convergence. Thin delegation to the
 /// canonical owner (`ErrorAnalysis`, `error_analysis.zig`); kept on
-/// `Lowering` as a `pub` entry point because the lowering pipeline + the
-/// the convergence unit test call it.
+/// `Lowering` as a `pub` entry point because the lowering pipeline and the
+/// convergence unit test call it.
 pub fn convergeInferredErrorSets(self: *Lowering) void {
     self.errorAnalysis().convergeInferredErrorSets();
 }

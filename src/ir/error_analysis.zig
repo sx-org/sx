@@ -136,11 +136,12 @@ pub const ErrorAnalysis = struct {
     }
 
     /// Whole-program fix-point that converges each top-level bare-`!` function's
-    /// inferred error set. Runs after `scanDecls` (ASTs + named
+    /// inferred error set. The seed loop admits exactly the
+    /// `astIsPureBareInferred` return types (`-> !`) — not `!Named`, not a
+    /// value-carrying `-> (T..., !)`. Runs after `scanDecls` (ASTs + named
     /// error sets registered) and before body lowering, so `lowerTry`'s
     /// named-caller widening sees the converged callee sets. Also emits the
-    /// empty-inferred warning. Scope: pure-failable functions (value-carrying
-    /// raise/try aren't lowered yet).
+    /// empty-inferred warning.
     pub fn convergeInferredErrorSets(self: ErrorAnalysis) void {
         const Node_ = struct {
             tags: std.ArrayList(u32),

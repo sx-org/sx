@@ -444,8 +444,9 @@ pub fn runBuildCallback(gpa: std.mem.Allocator, module: *const Module, func_id: 
 // Walks the SSA IR over comptime frames: each SSA result is a `Reg` word
 // (immediate scalar bits, or an `Addr`). Integer math is 64-bit wrapping/signed
 // (`+%`, `@divTrunc`, signed compares — a scalar `.int` is i64 regardless of the
-// declared width), float math is f64. Memory/aggregate/call ops are not ported
-// yet — they bail loudly (`error.Unsupported` + `detail`), never silently.
+// declared width), float math is f64. Alloca/load/store, aggregate init and
+// projection, and calls execute over comptime memory; an op with no arm bails
+// loudly (`error.Unsupported` + `detail`), never silently.
 
 pub const Error = error{ DivisionByZero, TypeError, Unsupported, OutOfBounds };
 
@@ -2224,9 +2225,9 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         }
         // `link(objects, output, libraries, frameworks, flags, target)` — the one
         // genuine ACTION: dispatch to the host-installed linker (the VM can't link
-        // itself). Void return (the build callback isn't fallible
-        // decision); a link failure bails loudly → hard build error. `ref_types`
-        // gives each List(string) arg its concrete type for the comptime reader.
+        // itself). Void return, because the build callback is not fallible; a
+        // link failure bails loudly → hard build error. `ref_types` gives each
+        // List(string) arg its concrete type for the comptime reader.
         if (intr == .link) {
             if (args.len != 6) return self.failMsg("comptime link: expected (objects, output, libraries, frameworks, flags, target)");
             const bc = self.build_config orelse
@@ -3086,9 +3087,11 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         return .{ .aggregate = out };
     }
 
-    /// How a value of type `ty` is held: a register word (scalar/pointer, ≤8
-    /// bytes) or by-address in comptime memory (struct). Anything else is
-    /// unsupported (slice/string/any/optional/enum/union/array/tuple/vector).
+    /// How a value of type `ty` is held: a register word (scalar, pointer,
+    /// func-ref, enum tag, error tag, pointer-child optional) or by-address in
+    /// comptime memory (struct, array, tuple, slice, string, `any`, tagged
+    /// union, non-pointer optional). Everything else — `void`, `noreturn`,
+    /// `unresolved`, vectors — is `.unsupported`.
     const Kind = enum { word, aggregate, unsupported };
 
     fn kindOf(table: *const types.TypeTable, ty: TypeId) Kind {
