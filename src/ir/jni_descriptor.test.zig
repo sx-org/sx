@@ -1,6 +1,5 @@
-// Tests for jni_descriptor.zig step 2.8.
-// Table-driven golden test for the primitive / array / *Self JNI
-// signature alphabet. Cross-class references land in 2.9.
+// Tests for jni_descriptor.zig. Table-driven golden test for the primitive /
+// array / *Self JNI signature alphabet.
 
 const std = @import("std");
 const ast = @import("../ast.zig");

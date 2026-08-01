@@ -6,8 +6,8 @@ const emit = @import("../../ir/emit_llvm.zig");
 const LLVMEmitter = emit.LLVMEmitter;
 const JniSlotPair = LLVMEmitter.JniSlotPair;
 
-/// Obj-C / JNI runtime-constructor emission, extracted
-/// from `LLVMEmitter`. A backend `*LLVMEmitter` facade (field `e`): it builds the
+/// Obj-C / JNI runtime-constructor emission. A backend `*LLVMEmitter` facade
+/// (field `e`): it builds the
 /// module-init constructors that populate the cached selector / class slots and
 /// register sx-defined `#objc_class` class pairs (IMP tables, ivars, +alloc /
 /// -dealloc / property IMPs, `#implements` protocol conformances). Reads the

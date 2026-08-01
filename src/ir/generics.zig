@@ -8,8 +8,7 @@ const Node = ast.Node;
 const TypeId = types.TypeId;
 const Lowering = lower.Lowering;
 
-/// Generic substitution + monomorphization-key construction (architecture
-/// phase A4.1). Owns:
+/// Generic substitution + monomorphization-key construction. Owns:
 ///   - the type-name mangler (`mangleTypeName` / `mangleParamList`) — the leaf
 ///     fragment every mono key is built from,
 ///   - the generic mono key (`mangleGenericName`) and the comptime-value mono

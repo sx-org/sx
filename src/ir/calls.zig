@@ -91,8 +91,8 @@ pub const CallPlan = struct {
     };
 };
 
-/// Call result typing, extracted from
-/// `Lowering.inferExprType`'s call arm. Discovers the IR type a call
+/// Call result typing for the call arm of expression typing. Discovers the
+/// IR type a call
 /// expression evaluates to — across builtins / reflection builtins, generic
 /// and plain free functions (lowered or lazy via `fn_ast_map`), closure /
 /// function-typed locals, protocol dispatch, runtime-class instance/static

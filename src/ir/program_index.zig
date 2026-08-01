@@ -912,7 +912,7 @@ pub const ProgramIndex = struct {
     namespace_edges: ?*imports.NamespaceEdges = null,
     /// Stable `DeclId` for every declaration, built by `imports.buildDeclTable`
     /// in parallel with the import facts. Borrowed view; nothing in lowering
-    /// consumes it for selection yet (additive — S4 makes it the fact-store key).
+    /// consumes it for selection.
     decl_table: ?*imports.DeclTable = null,
     /// Every resolved module keyed by canonical path. A `#import` written
     /// inside a module-scope expansion body resolves re-entrantly but stays
@@ -940,8 +940,7 @@ pub const ProgramIndex = struct {
     struct_template_map: std.StringHashMap(StructTemplate),
     /// `DeclId` → generic struct template — the DeclId-keyed analogue of
     /// `struct_template_map`, built in parallel during `registerStructDecl`.
-    /// Nothing reads it for selection yet; `struct_template_map` stays the live
-    /// consumer until the S4 cutover.
+    /// Nothing reads it for selection; `struct_template_map` is the live consumer.
     struct_template_by_decl: std.AutoHashMap(imports.DeclId, StructTemplate),
     /// Protocol name → protocol info.
     protocol_decl_map: std.StringHashMap(ProtocolDeclInfo),

@@ -127,7 +127,7 @@ CADisplayLink :: #objc_class("CADisplayLink") extern {
 // ── View tree + GL drawables ────────────────────────────
 // (Declared before UIView so `layer :: (...) -> *CALayer` can reference it.)
 
-// CALayer / CAEAGLLayer / CAMetalLayer moved to modules/ffi/quartzcore.sx
+// CALayer / CAEAGLLayer / CAMetalLayer live in modules/ffi/quartzcore.sx
 // (shared with gpu/metal.sx — one decl per runtime class).
 
 EAGLContext :: #objc_class("EAGLContext") extern {

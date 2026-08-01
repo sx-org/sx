@@ -12,9 +12,7 @@ trace :: #import "modules/std/trace.sx";
 // invoke `codesign`, `plutil`, `security`, `aapt2`, `javac`, `d8`,
 // `keytool`, `apksigner`.
 //
-// Roadmap: phase 1B replaces `popen` with `posix_spawn` + pipes so
-// we can capture stderr separately and pass argv without shell
-// quoting. Until then, callers responsible for quoting + use 2>&1
+// `run` goes through /bin/sh, so the caller owns quoting and uses `2>&1`
 // to fold stderr into the captured stream.
 // =====================================================================
 

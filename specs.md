@@ -2721,8 +2721,8 @@ by context:
 
 A `::` **const** array coerces to a *mutable* `[]T` as a view exactly like
 the explicit `constArr[0..]` subslice; a write through such a slice is not
-yet diagnosed (there is no `[]const T` slice type yet — const-slice
-propagation is future work). The direct `constArr[i] = …` write IS rejected.
+diagnosed (there is no `[]const T` slice type). The direct `constArr[i] = …`
+write IS rejected.
 
 Slice ranges take the same bound markers as for-header ranges — `=`
 inclusive / `<` exclusive on either side of `..`, defaulting to

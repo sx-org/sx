@@ -2999,7 +2999,7 @@ pub const Lowering = struct {
         return 0;
     }
 
-    // --- moved to lower/error.zig (lower_error) ---
+    // --- lower/error.zig (lower_error) ---
     pub const getTraceFids = lower_error.getTraceFids;
     pub const tracesEnabled = lower_error.tracesEnabled;
     pub const emitTracePush = lower_error.emitTracePush;
@@ -3062,7 +3062,7 @@ pub const Lowering = struct {
     pub const returnValuePart = lower_error.returnValuePart;
     pub const shapeKeyOfCallee = lower_error.shapeKeyOfCallee;
 
-    // --- moved to lower/comptime.zig (lower_comptime) ---
+    // --- lower/comptime.zig (lower_comptime) ---
     pub const SelectedConst = lower_comptime.SelectedConst;
     pub const evalComptimeCondition = lower_comptime.evalComptimeCondition;
     pub const evalComptimeMatch = lower_comptime.evalComptimeMatch;
@@ -3123,7 +3123,7 @@ pub const Lowering = struct {
     pub const pinConstAuthorSource = lower_comptime.pinConstAuthorSource;
     pub const foldComptimeFloatInit = lower_comptime.foldComptimeFloatInit;
 
-    // --- moved to lower/stmt.zig (lower_stmt) ---
+    // --- lower/stmt.zig (lower_stmt) ---
     pub const lowerBlock = lower_stmt.lowerBlock;
     pub const lowerInlineBranch = lower_stmt.lowerInlineBranch;
     pub const lowerBlockValue = lower_stmt.lowerBlockValue;
@@ -3164,7 +3164,7 @@ pub const Lowering = struct {
     pub const lowerCleanupBody = lower_stmt.lowerCleanupBody;
     pub const emitErrorCleanup = lower_stmt.emitErrorCleanup;
 
-    // --- moved to lower/control_flow.zig (lower_control_flow) ---
+    // --- lower/control_flow.zig (lower_control_flow) ---
     pub const lowerIfExpr = lower_control_flow.lowerIfExpr;
     pub const armStaticallyDiverges = lower_control_flow.armStaticallyDiverges;
     pub const armYieldsVoid = lower_control_flow.armYieldsVoid;
@@ -3191,7 +3191,7 @@ pub const Lowering = struct {
     pub const currentBlockHasTerminator = lower_control_flow.currentBlockHasTerminator;
     pub const ensureTerminator = lower_control_flow.ensureTerminator;
 
-    // --- moved to lower/decl.zig (lower_decl) ---
+    // --- lower/decl.zig (lower_decl) ---
     pub const checkInfiniteSize = lower_decl.checkInfiniteSize;
     pub const dfsByValueCycle = lower_decl.dfsByValueCycle;
     pub const poisonAggregateField = lower_decl.poisonAggregateField;
@@ -3272,7 +3272,7 @@ pub const Lowering = struct {
     pub const emitModuleConst = lower_decl.emitModuleConst;
     pub const emitPlaceholder = lower_decl.emitPlaceholder;
 
-    // --- moved to lower/nominal.zig (lower_nominal) ---
+    // --- lower/nominal.zig (lower_nominal) ---
     pub const registerErrorSetDecl = lower_nominal.registerErrorSetDecl;
     pub const PlainStructMethod = lower_nominal.PlainStructMethod;
     pub const StaticStructHead = lower_nominal.StaticStructHead;
@@ -3313,7 +3313,7 @@ pub const Lowering = struct {
     pub const bareVisibleStructTemplate = lower_nominal.bareVisibleStructTemplate;
     pub const registerGenericStructAlias = lower_nominal.registerGenericStructAlias;
 
-    // --- moved to lower/protocol.zig (lower_protocol) ---
+    // --- lower/protocol.zig (lower_protocol) ---
     pub const ProjectionPosition = lower_pack.ProjectionPosition;
     pub const PackProjection = lower_pack.PackProjection;
     pub const registerProtocolDecl = lower_protocol.registerProtocolDecl;
@@ -3372,7 +3372,7 @@ pub const Lowering = struct {
     pub const taggedMembershipOf = lower_protocol.taggedMembershipOf;
     pub const factScheduler = lower_tagged.factScheduler;
 
-    // --- moved to lower/coerce.zig (lower_coerce) ---
+    // --- lower/coerce.zig (lower_coerce) ---
     pub const lowerXX = lower_coerce.lowerXX;
     pub const refuseIdentityRvalueErasure = lower_coerce.refuseIdentityRvalueErasure;
     pub const protocolIsIdentity = lower_coerce.protocolIsIdentity;
@@ -3409,7 +3409,7 @@ pub const Lowering = struct {
     pub const promoteCVariadicArgs = lower_coerce.promoteCVariadicArgs;
     pub const coerceCallArgs = lower_coerce.coerceCallArgs;
 
-    // --- moved to lower/ffi.zig (lower_ffi) ---
+    // --- lower/ffi.zig (lower_ffi) ---
     pub const internObjcSelector = lower_ffi.internObjcSelector;
     pub const internObjcClassObject = lower_ffi.internObjcClassObject;
     pub const getSelRegisterNameFid = lower_ffi.getSelRegisterNameFid;
@@ -3435,7 +3435,7 @@ pub const Lowering = struct {
     pub const synthesizeJniMainStubs = lower_ffi.synthesizeJniMainStubs;
     pub const synthesizeJniMainStub = lower_ffi.synthesizeJniMainStub;
 
-    // --- moved to lower/objc_class.zig (lower_objc_class) ---
+    // --- lower/objc_class.zig (lower_objc_class) ---
     pub const lowerObjcDefinedClassMethods = lower_objc_class.lowerObjcDefinedClassMethods;
     pub const lookupObjcPropertyOnPointer = lower_objc_class.lookupObjcPropertyOnPointer;
     pub const findRuntimeMethodInChain = lower_objc_class.findRuntimeMethodInChain;
@@ -3460,7 +3460,7 @@ pub const Lowering = struct {
     pub const internStringConstantGlobal = lower_objc_class.internStringConstantGlobal;
     pub const lookupGlobalIdByName = lower_objc_class.lookupGlobalIdByName;
 
-    // --- moved to lower/call.zig (lower_call) ---
+    // --- lower/call.zig (lower_call) ---
     pub const CaptureInfo = lower_closure.CaptureInfo;
     pub const lowerCall = lower_call.lowerCall;
     pub const ufcsGenericBindsAll = lower_call.ufcsGenericBindsAll;
@@ -3484,7 +3484,7 @@ pub const Lowering = struct {
     pub const userParamTypes = lower_call.userParamTypes;
     pub const resolveCallParamTypes = lower_call.resolveCallParamTypes;
 
-    // --- moved to lower/pack.zig (lower_pack) ---
+    // --- lower/pack.zig (lower_pack) ---
     pub const lowerPackElems = lower_pack.lowerPackElems;
     pub const lowerPackValueProjection = lower_pack.lowerPackValueProjection;
     pub const packSpreadRefs = lower_pack.packSpreadRefs;
@@ -3509,7 +3509,7 @@ pub const Lowering = struct {
     pub const isPackFn = lower_pack.isPackFn;
     pub const isPackParam = lower_pack.isPackParam;
 
-    // --- moved to lower/generic.zig (lower_generic) ---
+    // --- lower/generic.zig (lower_generic) ---
     pub const monomorphizeFunction = lower_generic.monomorphizeFunction;
     pub const instantiateGenericStruct = lower_generic.instantiateGenericStruct;
     pub const instantiateTypeFunction = lower_generic.instantiateTypeFunction;
@@ -3563,7 +3563,7 @@ pub const Lowering = struct {
     pub const diagValueParamNotConst = lower_generic.diagValueParamNotConst;
     pub const diagValueParamRange = lower_generic.diagValueParamRange;
 
-    // --- moved to lower/expr.zig (lower_expr) ---
+    // --- lower/expr.zig (lower_expr) ---
     pub const lowerStructLiteral = lower_expr.lowerStructLiteral;
     pub const synthesizeAnonStruct = lower_expr.synthesizeAnonStruct;
     pub const lowerInitBlock = lower_expr.lowerInitBlock;
@@ -3624,7 +3624,7 @@ pub const Lowering = struct {
     pub const lowerChainedComparison = lower_expr.lowerChainedComparison;
     pub const emitCmp = lower_expr.emitCmp;
 
-    // --- moved to lower/closure.zig (lower_closure) ---
+    // --- lower/closure.zig (lower_closure) ---
     pub const lowerLambda = lower_closure.lowerLambda;
     pub const createBareFnTrampoline = lower_closure.createBareFnTrampoline;
     pub const createClosureToBareFnAdapter = lower_closure.createClosureToBareFnAdapter;

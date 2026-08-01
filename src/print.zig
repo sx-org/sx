@@ -1,12 +1,10 @@
 //! Focused AST round-trip printer.
 //!
 //! Reconstructs sx source text from AST nodes. The scope is intentionally
-//! narrow: it covers the declaration, type-expression, and (since ERR E0.2)
-//! the error-handling expression/statement node kinds the ERR stream's parser
-//! tests round-trip, and bails loudly (`error.UnsupportedNode`) on anything it
-//! does not yet handle — so an unsupported node can never be silently
-//! mis-printed (no silent arms). Later steps
-//! extend it as new surface syntax lands.
+//! narrow: it covers the declaration, type-expression, and error-handling
+//! expression/statement node kinds the parser tests round-trip, and bails
+//! loudly (`error.UnsupportedNode`) on anything else — so an unsupported node
+//! can never be silently mis-printed (no silent arms).
 
 const std = @import("std");
 const ast = @import("ast.zig");

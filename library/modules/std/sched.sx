@@ -1053,7 +1053,7 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 // time. The result is a comptime-synthesized tagged-union (`RaceResult`) mirroring
 // the input tuple's labels: each variant's NAME is the tuple label, its payload is
 // that future's result type. The tuple must be NAMED (`(a: fa, b: fb)`); a
-// positional-tuple form (`._0`/`._1`) is future work — `struct_field_name` yields "" for
+// positional-tuple form (`._0`/`._1`) is rejected — `struct_field_name` yields "" for
 // an unnamed element, which `make_enum` rejects as a duplicate-name collision.
 //
 // It runs over the `Io` PROTOCOL (`current_park`/`suspend_raw`/`ready`), so it is

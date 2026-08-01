@@ -1129,7 +1129,7 @@ pub const RuntimeFieldDecl = struct {
 
 pub const RuntimeClassMember = union(enum) {
     method: RuntimeMethodDecl,
-    field: RuntimeFieldDecl, // JNI runtime only (sema-checked in later step)
+    field: RuntimeFieldDecl, // JNI runtime only
     extends: []const u8, // sx-side alias name (right of `#extends`)
     implements: []const u8, // sx-side alias name (right of `#implements`)
 };

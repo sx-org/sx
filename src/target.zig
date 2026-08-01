@@ -430,7 +430,7 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
 
 // Android APK bundling (createApk, compileJniMainSources,
 // buildAndroidManifest, buildJniMainManifest, ensureDebugKeystore,
-// libNameFromSoBasename + helpers) has moved to
+// libNameFromSoBasename + helpers) lives in
 // `library/modules/platform/bundle.sx`. `src/main.zig` invokes it
 // post-link via the BuildOptions callback registered from sx code.
 // `--apk <path>` on the CLI is a transitional alias that feeds
@@ -871,7 +871,7 @@ pub fn link(allocator: std.mem.Allocator, io: std.Io, output_obj: []const u8, ex
 }
 
 // Apple .app bundling (createBundle, embedFramework, extractEntitlements,
-// buildInfoPlist, codesign) has moved to
+// buildInfoPlist, codesign) lives in
 // `library/modules/platform/bundle.sx`. `src/main.zig` invokes it
 // post-link via the BuildOptions callback registered from sx code.
 
