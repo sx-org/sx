@@ -1,0 +1,76 @@
+// Demand semantics: a block's tail value flows to whatever its position
+// demands, and `;` never enters into it. `;` is a statement separator — it
+// separates, and decides nothing about a value.
+//
+//   -> T body      → the tail is the RETURN value
+//   value position → the tail is the block's VALUE
+//   nothing demands it → silently discarded
+//
+// So the two spellings below are the same function. This file writes the
+// `;` one everywhere the value still has to flow, because that is the
+// spelling the old rule refused.
+
+#import "modules/std.sx";
+
+// A `-> T` body ending in `expr;` returns `expr`.
+double :: (n: i32) -> i32 {
+    n * 2;
+}
+
+// Identical, without the terminator.
+double_bare :: (n: i32) -> i32 {
+    n * 2
+}
+
+// Every branch of a value `if` ends with `;` and still yields its value.
+sign :: (n: i32) -> i32 {
+    if n < 0 { -1; } else if n > 0 { 1; } else { 0; }
+}
+
+// A value-bound block: the binding demands a value, so the tail flows to it.
+sum3 :: (a: i32, b: i32, c: i32) -> i32 {
+    t := { x := a + b; x + c; };
+    t
+}
+
+// Match arms keep their arm `;`, as they always have.
+classify :: (n: i32) -> i32 {
+    if n == {
+        case 0:  100;
+        case 1:  10;
+        else:    7;
+    }
+}
+
+// No demand, no value: a void function's tail is discarded either way. The
+// counter proves the expression still RUNS — only its value goes nowhere.
+calls : i32 = 0;
+
+bump :: () -> i32 {
+    calls = calls + 1;
+    calls
+}
+
+silent :: () {
+    bump();
+}
+
+silent_bare :: () {
+    bump()
+}
+
+main :: () -> i32 {
+    total : i32 = 0;
+    total = total + double(10);        // 20
+    total = total + double_bare(10);   // 20
+    total = total + sign(-7);          // -1
+    total = total + sum3(1, 2, 3);     // 6
+    total = total + classify(1);       // 10
+
+    silent();
+    silent_bare();
+    print("discarded tails ran: {}\n", calls);
+
+    print("block-tail total: {}\n", total);   // 20 + 20 - 1 + 6 + 10 = 55
+    total
+}

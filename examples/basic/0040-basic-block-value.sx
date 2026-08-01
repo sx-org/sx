@@ -1,20 +1,20 @@
-// Block value rule: a block's value is its last statement ONLY when that
-// statement is a trailing expression with NO `;`. A trailing `;` discards the
-// value, leaving the block void. This makes value-vs-statement explicit and lets
-// the compiler reject "forgot to produce a value".
+// Block value rule: a block's value is its last statement, when that statement
+// is an expression. The value flows to whatever the block's position demands —
+// the return of a `-> T` body, the value of a value-bound block — and is
+// discarded when nothing demands it.
 //
 //   { … expr }    → value is `expr`
-//   { … expr; }   → void (value discarded)
+//   { … n := 1; } → void (a declaration is not a value)
 //
-// Match arms are exempt: the arm `;` is an arm terminator, so `case .x: expr;`
-// still yields `expr` (only an explicit inner braced block follows the rule).
+// The terminator plays no part: `;` separates statements. 0041 writes the same
+// shapes with `;` and gets the same values.
 
 #import "modules/std.sx";
 
-// Implicit return: trailing expression, no `;`.
+// Implicit return: the body's trailing expression.
 double :: (n: i32) -> i32 { n * 2 }
 
-// if/else as a value — each branch's last expression has no `;`.
+// if/else as a value — each branch's value is its last expression.
 sign :: (n: i32) -> i32 {
     if n < 0 { -1 } else if n > 0 { 1 } else { 0 }
 }
@@ -25,8 +25,8 @@ sum3 :: (a: i32, b: i32, c: i32) -> i32 {
     t
 }
 
-// Match arms keep their `;` (exempt): the arm `;` is an arm terminator, so each
-// arm still yields its expression as the match value.
+// The arm `;` is the arm's terminator, from the match grammar rather than the
+// statement one; each arm yields its expression as the match value.
 classify :: (n: i32) -> i32 {
     if n == {
         case 0:  100;

@@ -16,49 +16,48 @@ const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const Binding = lower.Binding;
 
+/// What a position DEMANDS of the value under it. A block's tail flows to
+/// whatever demands it and is discarded when nothing does; `;` decides nothing.
+/// Build publication is deliberately absent: a `@BuildBlock` body publishes per
+/// STATEMENT through `lowerStmt`'s intercept, so it consumes no tail.
+pub const TailDemand = union(enum) {
+    /// Nothing demands the tail: a void/noreturn body, a statement block.
+    none,
+    /// An ordinary expression position — a binding, an argument, a `catch` body.
+    value,
+    /// The implicit return of a function whose return type carries a value.
+    /// Its tail is in RETURN position (the §6.2 refusals apply).
+    return_value: TypeId,
+    /// A PURE-failable body (`-> !` / `-> !Named`, whose whole return IS the
+    /// error channel): only an ERROR tail is the return. A tail of any other
+    /// type is demanded by nothing, so nothing about it is return position.
+    error_only: TypeId,
+};
+
+/// What a demanded body yielded, once its scopes and defers have unwound.
+pub const BodyTail = union(enum) {
+    /// Control left the body (`return` / `raise` / a diverging call).
+    terminated,
+    /// The body ran to its end with nothing to hand back.
+    no_value,
+    /// The tail's value, for a position that demanded one.
+    value: Ref,
+    /// An error tail that has ALREADY taken the function's exit.
+    error_channel: Ref,
+    /// The tail's type never resolved; one diagnostic was reported for it.
+    poisoned,
+};
+
+/// The demand a body inherits from its DECLARED return type, decided before the
+/// body is lowered. `.value` belongs to expression positions, never to a body.
+pub fn bodyDemand(self: *Lowering, ret_ty: TypeId) TailDemand {
+    if (ret_ty == .void or ret_ty == .noreturn) return .none;
+    if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) return .{ .error_only = ret_ty };
+    return .{ .return_value = ret_ty };
+}
+
 pub fn lowerBlock(self: *Lowering, node: *const Node) void {
-    // Statement-mode lowering: every statement here is a STATEMENT, not a value.
-    // Clear `force_block_value` so it can't LEAK from an enclosing value context
-    // (e.g. a void closure body lowered inside `f := closure((..) { if c {..} })`
-    // — the outer `:=` RHS left `force_block_value` set) and make a no-`else`
-    // guard-`if` look like a value use (0270 false positive). Value-producing
-    // sub-lowerings (var-decl / assignment RHS, etc.) re-enable it locally.
-    const saved_fbv_block = self.force_block_value;
-    self.force_block_value = false;
-    defer self.force_block_value = saved_fbv_block;
-    switch (node.data) {
-        .block => |blk| {
-            // Create a child scope for block-level variable shadowing
-            var block_scope = Scope.init(self.alloc, self.scope);
-            const saved_scope = self.scope;
-            self.scope = &block_scope;
-            const saved_defer_len = self.defer_stack.items.len;
-            // Flow narrowing (issue 0179) is block-scoped: a guard inside this
-            // block narrows the rest of THIS block, no further.
-            var narrow_snap = self.narrowSnapshot();
-            defer {
-                self.emitBlockDefers(saved_defer_len);
-                self.scope = saved_scope;
-                block_scope.deinit();
-                self.narrowRestore(&narrow_snap);
-            }
-            for (blk.stmts) |stmt| {
-                if (self.block_terminated) break;
-                self.lowerStmt(stmt);
-                // A bare `return`/`raise` mid-block terminates the current
-                // basic block but deliberately does NOT set `block_terminated`
-                // (that flag would leak past an `if cond { return }` merge
-                // block, skipping its trailing statements — see lowerReturn).
-                // Stop here so dead statements after the terminator aren't
-                // emitted into an already-closed block (invalid LLVM IR).
-                if (self.currentBlockHasTerminator()) break;
-            }
-        },
-        else => {
-            // Single expression as body (arrow functions)
-            self.lowerStmt(node);
-        },
-    }
+    _ = lowerDemandedBody(self, node, .none);
 }
 
 /// Lower an `inline if` branch — block body emits statements, expression returns value.
@@ -85,33 +84,34 @@ fn isNoElseValuelessIf(node: *const Node) bool {
         !node.data.if_expr.is_inline;
 }
 
-/// Lower a block's trailing value. When the enclosing body is a function's
-/// returned value (`return_value_body`), this tail is in return position —
-/// the same §6.2 refusals as an explicit `return <expr>;`. Nested statements
-/// clear `in_return_expr` in `lowerStmt` so only the value chain is armed.
-fn lowerTailAsExpr(self: *Lowering, tail: *const Node) ?Ref {
-    if (!self.return_value_body) return self.tryLowerAsExpr(tail);
-    const old_in_return = self.in_return_expr;
-    self.in_return_expr = true;
-    defer self.in_return_expr = old_in_return;
-    return self.tryLowerAsExpr(tail);
-}
-
-/// Lower a block and return the last expression's value (for implicit returns).
-pub fn lowerBlockValue(self: *Lowering, node: *const Node) ?Ref {
-    // Set force_block_value so nested if-else expressions produce values
-    const saved = self.force_block_value;
-    self.force_block_value = true;
-    defer self.force_block_value = saved;
+/// Lower a body under an explicit demand: its prefix statements first, then its
+/// tail dispatched by what the position demands. THE traversal — every function
+/// body and every value block goes through it, so no caller decides for itself
+/// what a tail means.
+pub fn lowerDemandedBody(self: *Lowering, node: *const Node, demand: TailDemand) BodyTail {
+    // A demanded VALUE needs nested if-else expressions to produce values.
+    // Nothing else does, and clearing the flag stops an enclosing value context
+    // from leaking in (e.g. a void closure body lowered inside `f :=
+    // closure((..) { if c {..} })` — the outer `:=` RHS left it set) and making
+    // a no-`else` guard-`if` look like a value use (0270 false positive).
+    // Value-producing sub-lowerings (var-decl / assignment RHS, etc.) re-enable
+    // it locally.
+    const saved_fbv = self.force_block_value;
+    self.force_block_value = switch (demand) {
+        .value, .return_value => true,
+        .none, .error_only => false,
+    };
+    defer self.force_block_value = saved_fbv;
 
     switch (node.data) {
         .block => |blk| {
-            if (blk.stmts.len == 0) return null;
             // Create a child scope for block-level variable shadowing
             var block_scope = Scope.init(self.alloc, self.scope);
             const saved_scope = self.scope;
             self.scope = &block_scope;
             const saved_defer_len = self.defer_stack.items.len;
+            // Flow narrowing (issue 0179) is block-scoped: a guard inside this
+            // block narrows the rest of THIS block, no further.
             var narrow_snap = self.narrowSnapshot();
             defer {
                 self.emitBlockDefers(saved_defer_len);
@@ -119,53 +119,182 @@ pub fn lowerBlockValue(self: *Lowering, node: *const Node) ?Ref {
                 block_scope.deinit();
                 self.narrowRestore(&narrow_snap);
             }
-            // A block whose last statement is `;`-terminated (or not an
-            // expression) discards its value: lower every statement as a
-            // statement and yield nothing.
-            if (!blk.produces_value) {
-                self.force_block_value = false;
-                for (blk.stmts) |stmt| {
-                    if (self.block_terminated) return null;
-                    self.lowerStmt(stmt);
-                    if (self.currentBlockHasTerminator()) return null;
-                }
-                return null;
-            }
-            // Lower all statements except the last normally
-            self.force_block_value = false; // don't force for non-last statements
-            for (blk.stmts[0 .. blk.stmts.len - 1]) |stmt| {
-                if (self.block_terminated) return null;
+            // A block whose last statement is not an expression has no tail to
+            // hand anywhere, and a statement position demands none: every
+            // statement is then just a statement.
+            const tail_len: usize = if (demand != .none and blk.produces_value and blk.stmts.len > 0) 1 else 0;
+            self.force_block_value = false;
+            for (blk.stmts[0 .. blk.stmts.len - tail_len]) |stmt| {
+                if (self.block_terminated) return .terminated;
                 self.lowerStmt(stmt);
-                // A bare `return`/`raise` mid-block closes the current basic
-                // block (without setting `block_terminated`); the remaining
-                // statements — including the value-expr — are dead.
-                if (self.currentBlockHasTerminator()) return null;
+                // A bare `return`/`raise` mid-block terminates the current
+                // basic block but deliberately does NOT set `block_terminated`
+                // (that flag would leak past an `if cond { return }` merge
+                // block, skipping its trailing statements — see lowerReturn).
+                // Stop here so dead statements after the terminator aren't
+                // emitted into an already-closed block (invalid LLVM IR).
+                if (self.currentBlockHasTerminator()) return .terminated;
             }
-            if (self.block_terminated) return null;
-            // Last statement (no trailing `;`): its value is the block's.
-            const last = blk.stmts[blk.stmts.len - 1];
-            // A no-`else` block-`if` tail is a valueless GUARD statement, not a
-            // value expression — e.g. `-> !MyErr { if x < 0 { raise … } }`, where
-            // falling off the end is a success return. Do NOT force value-mode for
-            // it (that would make `lowerIfExpr` flag it as "an `if` used as a value
-            // must have an `else` branch"). Lowered as a statement it yields no
-            // value; a value-returning function's missing tail value is still
-            // caught downstream by `lowerValueBody`'s "body produces no value".
-            self.force_block_value = !isNoElseValuelessIf(last);
-            return lowerTailAsExpr(self, last);
+            if (tail_len == 0) return .no_value;
+            if (self.block_terminated) return .terminated;
+            return lowerTail(self, blk.stmts[blk.stmts.len - 1], demand);
         },
-        else => {
-            // Single expression as body (arrow functions)
-            return lowerTailAsExpr(self, node);
-        },
+        // Single expression as body (arrow functions)
+        else => return lowerTail(self, node, demand),
     }
 }
 
-/// Lower a value-returning function body and emit the implicit return.
-/// Emits a hard error when the body yields no value — its last statement is
-/// `;`-terminated (value discarded) or void — and the body doesn't already
-/// terminate via `return`/`raise`. Replaces the old silent default-return.
-pub fn lowerValueBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
+/// Whether an evaluated expression left this position live, closing the block
+/// where it stands if it did not. Divergence is normalized the INSTANT the
+/// value exists, so nothing downstream — a coercion, a defer, a store, a branch
+/// or a `ret` — can be emitted after a `proc.exit(0)` that stands in its place.
+pub fn expressionDiverged(self: *Lowering, v: Ref) bool {
+    if (self.currentBlockHasTerminator()) return true;
+    if (self.builder.getRefType(v) != .noreturn) return false;
+    self.builder.emitUnreachable();
+    return true;
+}
+
+/// The block's last statement, dispatched by what the position demands of it.
+fn lowerTail(self: *Lowering, tail: *const Node, demand: TailDemand) BodyTail {
+    switch (demand) {
+        .none => {
+            self.lowerStmt(tail);
+            return if (self.currentBlockHasTerminator()) .terminated else .no_value;
+        },
+        .value, .return_value => {
+            // A no-`else` block-`if` tail is a valueless GUARD statement, not a
+            // value expression — e.g. `-> i32 { if x < 0 { return 0 } }`. Do NOT
+            // force value-mode for it (that would make `lowerIfExpr` flag it as
+            // "an `if` used as a value must have an `else` branch"). Lowered as a
+            // statement it yields no value; a value-returning function's missing
+            // tail value is caught by the missing-value diagnostic instead.
+            self.force_block_value = !isNoElseValuelessIf(tail);
+            const saved_in_return = self.in_return_expr;
+            // A function's returned value is in RETURN position — the same §6.2
+            // refusals as an explicit `return <expr>;`. Nested statements clear
+            // `in_return_expr` in `lowerStmt`, so only the value chain is armed.
+            if (demand == .return_value) self.in_return_expr = true;
+            defer self.in_return_expr = saved_in_return;
+            const v = self.tryLowerAsExpr(tail) orelse return .no_value;
+            if (expressionDiverged(self, v)) return .terminated;
+            return .{ .value = v };
+        },
+        .error_only => |ret_ty| return lowerErrorOnlyTail(self, tail, ret_ty),
+    }
+}
+
+/// POSITIVE evidence that a tail is NOT an error value: `---` and `null` are
+/// typeless placeholders and are syntactically never error values, and any
+/// other statically resolved type speaks for itself. Absence of evidence is
+/// never a discard, so no classification miss can swallow an error.
+fn tailIsKnownNonError(self: *Lowering, tail: *const Node) bool {
+    if (tail.data == .undef_literal or tail.data == .null_literal) return true;
+    const t = self.inferExprType(tail);
+    if (t == .unresolved) return false;
+    if (t.isBuiltin()) return true;
+    return self.module.types.get(t) != .error_set;
+}
+
+/// The tail of a PURE-failable body, per live control-flow path: an error leaf
+/// takes the function's exit where it stands, anything else is evaluated for
+/// its effects and discarded, and control falls through to the success exit.
+fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTail {
+    const demand: TailDemand = .{ .error_only = ret_ty };
+    switch (tail.data) {
+        .block => return lowerDemandedBody(self, tail, demand),
+        // Every live arm carries the same demand: the construct itself yields
+        // nothing, so no merge is typed and no arm decides for another.
+        .if_expr => |ie| {
+            _ = self.lowerIfExpr(&ie, demand);
+            return if (self.currentBlockHasTerminator()) .terminated else .no_value;
+        },
+        .match_expr => |me| {
+            _ = self.lowerMatch(&me, demand);
+            return if (self.currentBlockHasTerminator()) .terminated else .no_value;
+        },
+        else => {},
+    }
+    const saved_target = self.target_type;
+    defer self.target_type = saved_target;
+    if (tailIsKnownNonError(self, tail)) {
+        // Nothing demands this value: it has no destination, and it is
+        // evaluated purely for its effects.
+        self.target_type = null;
+        const disposed = self.tryLowerAsExpr(tail) orelse return if (self.currentBlockHasTerminator()) .terminated else .no_value;
+        return if (expressionDiverged(self, disposed)) .terminated else .no_value;
+    }
+    // An error leaf, or one not yet typed: the declared set IS its destination
+    // — both contextual spellings read it, `error.X` while lowering and `.X`
+    // from the target — so lower it once and dispose by what it ACTUALLY
+    // lowered to, never by the prediction.
+    self.target_type = ret_ty;
+    const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
+    const maybe_val = self.tryLowerAsExpr(tail);
+    if (self.currentBlockHasTerminator()) return .terminated;
+    const val = maybe_val orelse return .no_value;
+    if (expressionDiverged(self, val)) return .terminated;
+    const val_ty = self.builder.getRefType(val);
+    if (val_ty == .unresolved) {
+        // Never reinterpreted as a tag. Report it unless lowering the tail
+        // already said why it could not be typed.
+        if (self.diagnostics) |d| {
+            if (d.errorCount() == errs_before) {
+                d.addFmt(.err, tail.span, "cannot resolve the type of this trailing expression — a pure-failable function returns only an error value, and this tail's type is unknown here", .{});
+            }
+        }
+        return .poisoned;
+    }
+    if (!val_ty.isBuiltin() and self.module.types.get(val_ty) == .error_set) {
+        emitImplicitErrorReturn(self, val, ret_ty, tail.span);
+        return .{ .error_channel = val };
+    }
+    return .no_value;
+}
+
+/// Lower a block and return the last expression's value — an ordinary VALUE
+/// position (a `catch` body, a `match` arm, a `#jni_env` block), never a
+/// function body.
+pub fn lowerBlockValue(self: *Lowering, node: *const Node) ?Ref {
+    return switch (lowerDemandedBody(self, node, .value)) {
+        .value => |v| v,
+        else => null,
+    };
+}
+
+/// The span the implicit return is reported at: the tail statement's, or the
+/// whole body's when there is no tail.
+fn bodyTailSpan(body: *const Node) ast.Span {
+    if (body.data == .block) {
+        const stmts = body.data.block.stmts;
+        if (stmts.len > 0) return stmts[stmts.len - 1].span;
+    }
+    return body.span;
+}
+
+/// THE entry for every user-authored function body. Callers pass a body and a
+/// declared return type and decide nothing else: the demand, the tail's
+/// destination, return position and the implicit exit are all owned here.
+pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
+    // The body types against its OWN return type: a bare `.{...}` / `.X` in the
+    // tail resolves to it rather than to whatever leaked in from the caller.
+    const saved_target = self.target_type;
+    self.target_type = if (ret_ty != .void and ret_ty != .noreturn) ret_ty else null;
+    defer self.target_type = saved_target;
+
+    // `currentFunc` is the CALLER while an inlined body is being lowered, so a
+    // naked caller must not make the inlined callee naked.
+    if (self.inline_return_target == null and self.builder.currentFunc().is_naked) {
+        // `abi(.naked)`: the body is a single asm block that emits its own `ret`.
+        // There is no sx-level value return — lower the statements and cap the
+        // block with `unreachable` (control never falls back into sx). This
+        // bypasses the implicit-return machinery, which would otherwise reject
+        // the missing return.
+        self.lowerBlock(body);
+        if (!self.currentBlockHasTerminator()) self.builder.emitUnreachable();
+        return;
+    }
+
     // Snapshot the ERROR count so the missing-value error below can be
     // suppressed when the body ALREADY reported a real error (e.g. an explicit
     // `return <pack>` where the pack has no runtime value). Count only `.err`
@@ -173,46 +302,53 @@ pub fn lowerValueBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
     // ObjC selector arity warning) must NOT suppress a genuine missing-value
     // error, or we'd ship an uninitialized return at exit 0.
     const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
-    const saved_rvb = self.return_value_body;
-    self.return_value_body = true;
-    defer self.return_value_body = saved_rvb;
-    const body_val = self.lowerBlockValue(body);
+    const demand = self.bodyDemand(ret_ty);
+    const tail = lowerDemandedBody(self, body, demand);
     if (self.currentBlockHasTerminator()) return;
-    if (body_val) |val| {
-        const val_ty = self.builder.getRefType(val);
-        if (val_ty != .void) {
-            const span = blk: {
-                if (body.data == .block) {
-                    const stmts = body.data.block.stmts;
-                    if (stmts.len > 0) break :blk stmts[stmts.len - 1].span;
+    switch (tail) {
+        // The error leaf already took this function's exit.
+        .error_channel => return,
+        .poisoned => {
+            self.ensureTerminator(ret_ty);
+            return;
+        },
+        .value => |val| {
+            const val_ty = self.builder.getRefType(val);
+            if (val_ty != .void) {
+                const span = bodyTailSpan(body);
+                if (self.rejectBlockReturn(val_ty, span)) return;
+                // Value-carrying failable `-> (T..., !)`: a trailing success
+                // EXPRESSION (no explicit `return`) yields just the value part —
+                // the compiler must append the success error slot (0). Mirror the
+                // explicit-`return EXPR;` path; a plain `coerceToType` would leave
+                // the error-tag slot uninitialized (phantom catch on success).
+                if (!ret_ty.isBuiltin() and
+                    self.module.types.get(ret_ty) == .tuple and
+                    self.errorChannelOf(ret_ty) != null)
+                {
+                    self.lowerFailableSuccessReturn(val, ret_ty, span);
+                    return;
                 }
-                break :blk body.span;
-            };
-            if (self.rejectBlockReturn(val_ty, span)) return;
-            // Value-carrying failable `-> (T..., !)`: a trailing success
-            // EXPRESSION (no explicit `return`) yields just the value part —
-            // the compiler must append the success error slot (0). Mirror the
-            // explicit-`return EXPR;` path; a plain `coerceToType` would leave
-            // the error-tag slot uninitialized (phantom catch on success).
-            if (!ret_ty.isBuiltin() and
-                self.module.types.get(ret_ty) == .tuple and
-                self.errorChannelOf(ret_ty) != null)
-            {
-                self.lowerFailableSuccessReturn(val, ret_ty, span);
+                // Issue 0191: a trailing value with NO modeled coercion to the
+                // declared return type used to be bit-welded into the return slot
+                // (a `string` body "returning" i64 shipped the pointer as the
+                // int). Diagnose; on failure skip the coerce (the build aborts
+                // via hasErrors before this ret could run).
+                const coerced = if (self.checkReturnable(val, val_ty, ret_ty, span))
+                    self.coerceToType(val, val_ty, ret_ty)
+                else
+                    val;
+                emitBodyExit(self, coerced, ret_ty, .fallthrough);
                 return;
             }
-            // Issue 0191: a trailing value with NO modeled coercion to the
-            // declared return type used to be bit-welded into the return slot
-            // (a `string` body "returning" i64 shipped the pointer as the
-            // int). Diagnose; on failure skip the coerce (the build aborts
-            // via hasErrors before this ret could run).
-            const coerced = if (self.checkReturnable(val, val_ty, ret_ty, span))
-                self.coerceToType(val, val_ty, ret_ty)
-            else
-                val;
-            self.builder.ret(coerced, ret_ty);
-            return;
-        }
+        },
+        .terminated, .no_value => {},
+    }
+    // void / noreturn: nothing was demanded, so `ensureTerminator` closes the
+    // block (ret void / unreachable).
+    if (demand == .none) {
+        self.ensureTerminator(ret_ty);
+        return;
     }
     // A NAMED multi-return function (`-> (x: A, y: B)`) with no explicit
     // `return`: synthesize the implicit return from the named slot LOCALS (which
@@ -224,15 +360,12 @@ pub fn lowerValueBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
         self.synthesizeNamedReturn(body, ret_ty, names);
         return;
     }
-    // A PURE-failable function (`-> !` / `-> !Named`, whose entire return IS
-    // the error channel) carries no success value — a void body is a normal
+    // A PURE-failable function reaching here produced no error at all — a normal
     // success exit, not a missing value. `ensureTerminator` emits the
     // error-slot-zero success return.
-    if (self.errorChannelOf(ret_ty)) |chan| {
-        if (chan == ret_ty) {
-            self.ensureTerminator(ret_ty);
-            return;
-        }
+    if (demand == .error_only) {
+        self.ensureTerminator(ret_ty);
+        return;
     }
     if (self.diagnostics) |diags| {
         // Only the body produced no value AND no error was reported while
@@ -240,21 +373,91 @@ pub fn lowerValueBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
         // an already-diagnosed failed return. (If a real error fired, surfacing
         // the redundant missing-value note would just be noise.)
         if (diags.errorCount() == errs_before) {
-            if (body.data == .block and body.data.block.discarded_semi != null) {
-                diags.addFmt(.err, body.data.block.discarded_semi.?, "function returns '{s}' but the last expression's value is discarded by this `;` — drop the `;` to return it (or use an explicit `return`)", .{self.formatTypeName(ret_ty)});
-            } else {
-                const span = blk: {
-                    if (body.data == .block) {
-                        const stmts = body.data.block.stmts;
-                        if (stmts.len > 0) break :blk stmts[stmts.len - 1].span;
-                    }
-                    break :blk body.span;
-                };
-                diags.addFmt(.err, span, "function returns '{s}' but its body produces no value — end it with a trailing expression (no `;`) or an explicit `return`", .{self.formatTypeName(ret_ty)});
-            }
+            diags.addFmt(.err, bodyTailSpan(body), "function returns '{s}' but its body produces no value — end it with a trailing expression or an explicit `return`", .{self.formatTypeName(ret_ty)});
         }
     }
     self.ensureTerminator(ret_ty);
+}
+
+/// What ENDED a body at an exit — the cause, not the shape. A body's own
+/// trailing position falls through; every written `return`, error leaf, `raise`
+/// and total propagation is return-like. The two differ only where the language
+/// treats reaching the end differently from writing the exit (`-> noreturn`).
+pub const ExitForm = enum { fallthrough, return_like };
+
+/// THE destination of a completed body exit. Its callers own evaluation,
+/// validation, coercion, failable assembly and cleanup; this decides only where
+/// the finished exit goes — a real `ret`, or the inlined body's slot and join.
+/// `value` is null when the exit carries nothing to hand back.
+pub fn emitBodyExit(self: *Lowering, value: ?Ref, ret_ty: TypeId, form: ExitForm) void {
+    // An exit of a PURE failable (`-> !` / `-> !Named`, whose return type IS
+    // the error set) that carries no error IS its success value: the error slot
+    // must hold 0 ("no error"), whether the body fell off the end or wrote
+    // `return;`. Without it the slot keeps whatever it held and the caller
+    // reads a garbage tag, reporting a phantom unhandled error (issue 0190).
+    const carried: ?Ref = value orelse
+        if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set)
+            self.builder.constInt(0, ret_ty)
+        else
+            null;
+
+    if (self.inline_return_target) |exit| {
+        switch (exit.dest) {
+            .value => |v| {
+                // A `return 5;` in a `-> void` body is accepted, so a value can
+                // arrive with nowhere to go — but never the reverse.
+                if (carried) |ref| self.builder.store(v.slot, ref);
+                self.builder.br(v.join, &.{});
+            },
+            .unit, .poison => |join| self.builder.br(join, &.{}),
+            // A `-> noreturn` body has no continuation to reach: the exit ends
+            // where it stands, exactly as the real body's does.
+            .diverges => self.builder.emitUnreachable(),
+        }
+        return;
+    }
+    if (carried) |ref| {
+        // A value returned from a `-> void` function was evaluated for its
+        // effects and has nowhere to go.
+        if (ret_ty == .void) self.builder.retVoid() else self.builder.ret(ref, ret_ty);
+        return;
+    }
+    if (ret_ty == .noreturn) {
+        // Reaching the end of a `-> noreturn` body is genuinely unreachable
+        // (the body is expected to diverge — call another noreturn, loop
+        // forever). A written `return;` there keeps its accepted behaviour.
+        if (form == .fallthrough) self.builder.emitUnreachable() else self.builder.retVoid();
+        return;
+    }
+    if (ret_ty == .void) {
+        self.builder.retVoid();
+        return;
+    }
+    // A value-returning function with nothing to return: the written form is
+    // already refused by `rejectValuelessReturn`, so only the terminator's
+    // well-formedness is at stake. Falling off the end fills the slot.
+    if (form == .return_like) {
+        self.builder.retVoid();
+        return;
+    }
+    const default_val = if (ret_ty == .string or !ret_ty.isBuiltin())
+        self.builder.constUndef(ret_ty)
+    else
+        self.builder.constInt(0, ret_ty);
+    self.builder.ret(default_val, ret_ty);
+}
+
+/// The PURE-failable return tail: the forward rules, then the exit. Defers have
+/// already run.
+fn retPureFailable(self: *Lowering, ref: Ref, ret_ty: TypeId, span: ast.Span) void {
+    emitBodyExit(self, self.coercePureFailableReturn(ref, ret_ty, span), ret_ty, .return_like);
+}
+
+/// An implicit ERROR tail is exactly `return <error>;` — it unwinds this
+/// function's defers and takes the same exit, wherever in the body it stands.
+fn emitImplicitErrorReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, span: ast.Span) void {
+    emitReturnDefers(self, self.func_defer_base);
+    retPureFailable(self, ref, ret_ty, span);
 }
 
 /// Definite-assignment check for the named-return must-set rule: true iff every
@@ -401,7 +604,7 @@ pub fn synthesizeNamedReturn(self: *Lowering, body: *const Node, ret_ty: TypeId,
     const tl = self.alloc.create(Node) catch return;
     tl.* = .{ .span = body.span, .data = .{ .tuple_literal = .{ .elements = elems.toOwnedSlice(self.alloc) catch return } } };
     const rs = ast.ReturnStmt{ .value = tl };
-    self.lowerReturn(&rs);
+    self.lowerReturn(&rs, body.span);
 }
 
 /// Try to lower a node as an expression, returning its value.
@@ -419,16 +622,9 @@ pub fn tryLowerAsExpr(self: *Lowering, node: *const Node) ?Ref {
 pub fn lowerStmt(self: *Lowering, node: *const Node) void {
     // Statement context is never return-position for §6.2: a binding like
     // `v := Widget{}.(View)` inside a returned block/if arm must stay legal.
-    // Clear both the flag and the body mode so nested match/if value contexts
-    // and local function bodies do not re-arm via lowerTailAsExpr.
     const saved_in_return = self.in_return_expr;
-    const saved_rvb = self.return_value_body;
     self.in_return_expr = false;
-    self.return_value_body = false;
-    defer {
-        self.in_return_expr = saved_in_return;
-        self.return_value_body = saved_rvb;
-    }
+    defer self.in_return_expr = saved_in_return;
     // Stamp this statement's span onto its instructions (ERR E3.0); see
     // `lowerExpr`.
     const saved_span = self.builder.current_span;
@@ -441,7 +637,7 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
         // decl pointer in `fn_ast_map`, so it must point into the AST node,
         // not at a stack temporary that the next statement reuses.
         .fn_decl => |*fd| self.lowerLocalFnDecl(fd),
-        .return_stmt => |rs| self.lowerReturn(&rs),
+        .return_stmt => |rs| self.lowerReturn(&rs, node.span),
         .raise_stmt => |rs| self.lowerRaise(&rs, node.span),
         .assignment => |asgn| self.lowerAssignment(&asgn),
         .defer_stmt => |ds| self.lowerDefer(&ds),
@@ -503,19 +699,15 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
             // exactly why a declaration, an assignment (`_ = e` included), and a
             // `return` are never intercepted — their value belongs to them.
             if (self.interceptBuildExpression(node)) return;
-            const v = self.lowerExpr(node);
             // A statement-position expression that DIVERGES — a call to a
             // `-> noreturn` fn such as `proc.exit` — ends the basic block. A
             // bare `.call` op is NOT a terminator (see currentBlockHasTerminator),
-            // so without emitting `unreachable` here the block stays "open": the
-            // statements after it would be lowered into a closed-in-spirit block,
-            // and — the bug this fixes — a diverging statement as the live branch
-            // of an `inline if` leaves the enclosing function looking value-less,
-            // tripping the "produces no value" check (issue 0209). Guard on the
-            // block not already being terminated so we never double-terminate.
-            if (!self.currentBlockHasTerminator() and self.builder.getRefType(v) == .noreturn) {
-                self.builder.emitUnreachable();
-            }
+            // so without closing the block here it stays "open": the statements
+            // after it would be lowered into a closed-in-spirit block, and — the
+            // bug this fixes — a diverging statement as the live branch of an
+            // `inline if` leaves the enclosing function looking value-less,
+            // tripping the "produces no value" check (issue 0209).
+            _ = expressionDiverged(self, self.lowerExpr(node));
         },
     }
 }
@@ -1061,28 +1253,39 @@ fn tupleFormOfBareBraceLiteral(self: *Lowering, node: *const Node, ret_ty: TypeI
     return n;
 }
 
-pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt) void {
+/// Diagnose a value-less `return` (`return;`, or a bare `return` a line break
+/// ended) in a function whose return type demands a value. Two shapes legitimately
+/// return nothing: a `-> void` body, and a PURE failable (`-> !` / `-> !Named`,
+/// whose whole return IS the error channel) where `return;` is the success exit.
+/// Everything else — a plain `-> T`, a value-carrying `-> (T…, !)`, a named
+/// multi-return — has slots to fill, and without this the `ret void` reaches the
+/// LLVM verifier as "Function return type does not match operand type".
+fn rejectValuelessReturn(self: *Lowering, span: ast.Span) void {
+    const ret_ty: TypeId = self.effectiveReturnType() orelse return;
+    if (ret_ty == .void or ret_ty == .noreturn or ret_ty == .unresolved) return;
+    if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) return;
+    if (self.diagnostics) |d| {
+        d.addFmt(.err, span, "function returns '{s}' but this `return` carries no value — return a value of that type", .{self.formatTypeName(ret_ty)});
+    }
+}
+
+pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) void {
+    if (rs.value == null) rejectValuelessReturn(self, span);
     // Normalize a bare `.{ … }` against a tuple return to the tuple-literal
     // node shape FIRST — the intercepts below key on it.
-    const norm_ret_ty: TypeId = if (self.inline_return_target) |iri|
-        iri.ret_ty
-    else if (self.builder.func) |fid|
-        self.module.functions.items[@intFromEnum(fid)].ret
-    else
-        .i64;
+    const norm_ret_ty: TypeId = self.effectiveReturnType() orelse .i64;
     const rs_value: ?*const Node = if (rs.value) |val| tupleFormOfBareBraceLiteral(self, val, norm_ret_ty) else null;
     if (rs_value) |val| {
         if (val.data == .identifier and self.isPackName(val.data.identifier.name)) {
             _ = self.diagPackAsValue(val.data.identifier.name, val.span, .return_value);
             return;
         }
-        // Validate a multi-value return against the function's slots: arity, a
-        // bare value where multiple are required, and named-element/slot
-        // agreement. Catches silent garbage (`return 5` for `-> (i64, i64)`) and
-        // silently-wrong named returns (`return b = …, a = …` ignoring names).
-        if (self.builder.func) |fid| {
-            self.validateMultiReturn(val, self.module.functions.items[@intFromEnum(fid)].ret);
-        }
+        // Validate a multi-value return against the slots THIS body returns
+        // through: arity, a bare value where multiple are required, and
+        // named-element/slot agreement. Catches silent garbage (`return 5` for
+        // `-> (i64, i64)`) and silently-wrong named returns (`return b = …,
+        // a = …` ignoring names).
+        if (self.effectiveReturnType()) |slots_ty| self.validateMultiReturn(val, slots_ty);
     }
     // Erasing an rvalue into a tagged value borrows a frame temp, which at a
     // `return` would outlive its frame — the flag is what the erasure path
@@ -1095,12 +1298,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt) void {
     // over the caller's — otherwise `return 42` inside a `-> i64` body lowered into
     // a `-> i32` caller would coerce 42 to i32 before storing into the i64 slot.
     const old_target = self.target_type;
-    const ret_ty_for_target: TypeId = if (self.inline_return_target) |iri|
-        iri.ret_ty
-    else if (self.builder.func) |fid|
-        self.module.functions.items[@intFromEnum(fid)].ret
-    else
-        TypeId.i64;
+    const ret_ty_for_target: TypeId = self.effectiveReturnType() orelse TypeId.i64;
     // A value-carrying failable (`-> (T..., !)`) returns its VALUE part and
     // the success error slot (0) is appended by lowerFailableSuccessReturn.
     // Resolve a BARE returned value against that value type, NOT the failable
@@ -1134,104 +1332,61 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt) void {
     // right tuple either way).
     const ret_val = if (rs_value) |val| self.lowerExpr(reorderNamedReturn(self, val, ret_ty_for_target)) else null;
     if (ret_val) |rv| {
+        // `return proc.exit(0);` never returns: the operand took control where
+        // it stands, so no defer, coercion or exit follows it.
+        if (expressionDiverged(self, rv)) {
+            self.force_block_value = saved_fbv_ret;
+            self.target_type = old_target;
+            return;
+        }
         if (self.rejectBlockReturn(self.builder.getRefType(rv), (rs_value orelse rs.value.?).span)) return;
     }
     self.force_block_value = saved_fbv_ret;
     self.target_type = old_target;
 
-    // Inlined-comptime-body return: store into the slot the inliner
-    // gave us and branch to the inliner's "return-done" basic block.
-    // The branch is the basic block's terminator — so subsequent
-    // dead code in the same block trips the LLVM verifier (the
-    // SAME behaviour as a regular `return X;` followed by code).
-    //
-    // We DO NOT set `block_terminated = true`: that flag would
-    // leak past structured control flow (e.g. an `if cond { return
-    // X; }` whose merge block continues to subsequent statements)
-    // and incorrectly skip the trailing statements. CFG-level
-    // termination is what we actually want — let the basic-block
-    // terminator do its job.
-    if (self.inline_return_target) |iri| {
-        if (ret_val) |ref| {
-            // Value-carrying failable inlined body: append the success error
-            // slot (0) exactly like the real-return path below.
-            // lowerFailableSuccessReturn routes through emitTupleRet, which
-            // stores into iri.slot and branches to iri.done_bb for an inline
-            // target. Defers first, so the returned SSA value is materialized
-            // before they run (matching the real-return ordering).
-            if (!iri.ret_ty.isBuiltin() and
-                self.module.types.get(iri.ret_ty) == .tuple and
-                self.errorChannelOf(iri.ret_ty) != null)
-            {
-                emitReturnDefers(self, self.func_defer_base);
-                self.lowerFailableSuccessReturn(ref, iri.ret_ty, rs.value.?.span);
-                return;
-            }
-            const val_ty = self.builder.getRefType(ref);
-            const coerced = if (!iri.ret_ty.isBuiltin() and self.module.types.get(iri.ret_ty) == .error_set)
-                // Pure-failable inlined body — same forward rules as the
-                // real-return path below (set compat / no tuple truncation).
-                self.coercePureFailableReturn(ref, iri.ret_ty, rs.value.?.span)
-            else if (val_ty != iri.ret_ty and self.checkReturnable(ref, val_ty, iri.ret_ty, rs.value.?.span))
-                self.coerceToType(ref, val_ty, iri.ret_ty)
-            else
-                ref;
-            self.builder.store(iri.slot, coerced);
-        }
-        // Drain block-scoped defers up to the inlined-body base so
-        // they fire on this return path the same as a real fn return.
-        emitReturnDefers(self, self.func_defer_base);
-        self.builder.br(iri.done_bb, &.{});
-        return;
-    }
-
-    // Emit ALL pending defers for THIS function in LIFO order before the return
+    // Emit ALL pending defers for THIS function in LIFO order before the exit.
+    // An inlined body drains only to its own base, so a caller defer that
+    // happens to precede the inline call does not fire here.
     emitReturnDefers(self, self.func_defer_base);
 
+    // The exit is typed by the body being lowered — the INLINED fn's declared
+    // return type while inlining, the real function's otherwise. Neither
+    // present means there is no function to return from; keep the historical
+    // fallbacks so the shape of the written return still decides.
+    const exit_ty: TypeId = self.effectiveReturnType() orelse
+        (if (ret_val != null) TypeId.i64 else TypeId.void);
+
     if (ret_val) |ref| {
-        const ret_ty = if (self.builder.func) |fid|
-            self.module.functions.items[@intFromEnum(fid)].ret
-        else
-            TypeId.i64;
-        if (ret_ty == .void) {
-            // Void function — just return void (the value expression was evaluated for side effects)
-            self.builder.retVoid();
-        } else if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .tuple and self.errorChannelOf(ret_ty) != null) {
+        if (exit_ty == .void) {
+            // The value expression was evaluated for its side effects.
+            emitBodyExit(self, null, exit_ty, .return_like);
+        } else if (!exit_ty.isBuiltin() and self.module.types.get(exit_ty) == .tuple and self.errorChannelOf(exit_ty) != null) {
             // Value-carrying failable `-> (T..., !)`: the user returns the
             // value part; the compiler appends the success error slot (0).
-            self.lowerFailableSuccessReturn(ref, ret_ty, rs.value.?.span);
-        } else if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) {
+            self.lowerFailableSuccessReturn(ref, exit_ty, rs.value.?.span);
+        } else if (!exit_ty.isBuiltin() and self.module.types.get(exit_ty) == .error_set) {
             // PURE failable (`-> !` / `-> !Named`, ret type IS the error set)
             // returning a value: the pure→pure forward path. Set compat is
             // checked; a value-carrying failable result is rejected (its
             // value slots have nowhere to go — the plain coerce silently
             // truncated the tuple into a garbage tag).
-            self.builder.ret(self.coercePureFailableReturn(ref, ret_ty, rs.value.?.span), ret_ty);
+            retPureFailable(self, ref, exit_ty, rs.value.?.span);
         } else {
-            // Coerce return value to match function return type (e.g., ?i32 → i32).
+            // Coerce return value to match the return type (e.g., ?i32 → i32).
             // Issue 0191: reject an un-coercible value instead of bit-welding
             // it into the return slot; on failure skip the coerce (the build
             // aborts via hasErrors before this ret could run).
             const val_ty = self.builder.getRefType(ref);
-            const coerced = if (self.checkReturnable(ref, val_ty, ret_ty, rs.value.?.span))
-                self.coerceToType(ref, val_ty, ret_ty)
+            const coerced = if (self.checkReturnable(ref, val_ty, exit_ty, rs.value.?.span))
+                self.coerceToType(ref, val_ty, exit_ty)
             else
                 ref;
-            self.builder.ret(coerced, ret_ty);
+            emitBodyExit(self, coerced, exit_ty, .return_like);
         }
     } else {
-        // A bare `return;` in a pure failable function (`-> !` / `-> !Named`,
-        // whose return type IS the error set) is the success exit — the
-        // error slot carries 0 ("no error"). Everything else is a void return.
-        const ret_ty = if (self.builder.func) |fid|
-            self.module.functions.items[@intFromEnum(fid)].ret
-        else
-            TypeId.void;
-        if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) {
-            self.builder.ret(self.builder.constInt(0, ret_ty), ret_ty);
-        } else {
-            self.builder.retVoid();
-        }
+        // A bare `return;` carries nothing; what that MEANS for the exit — a
+        // void return, or a pure failable's success tag — the emitter owns.
+        emitBodyExit(self, null, exit_ty, .return_like);
     }
 }
 
@@ -3036,8 +3191,8 @@ pub fn emitLoopExitDefers(self: *Lowering) void {
 }
 
 /// Run a `defer`/`onfail` cleanup body for its side effects (void context).
-/// A braced body lowers as statements (NOT as a value) so a trailing-`;`
-/// last expression is fine here — cleanup bodies never yield a value.
+/// A braced body lowers as statements (NOT as a value): nothing demands a
+/// cleanup body's tail, so its value is discarded.
 pub fn lowerCleanupBody(self: *Lowering, body: *const Node) void {
     if (body.data == .block) self.lowerBlock(body) else _ = self.lowerExpr(body);
 }

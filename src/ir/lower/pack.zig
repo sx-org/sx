@@ -1233,9 +1233,8 @@ pub fn monomorphizePackFn(
     }
     if (pack_param_idx == std.math.maxInt(usize)) return;
 
-    // Save state — mirrors monomorphizeFunction but also captures
-    // pack/inline-return state since the mono body must NOT route
-    // returns through any caller's inline slot.
+    // Save state — mirrors monomorphizeFunction. The mono body's exit is
+    // isolated by the guard above, which owns the inline-return target.
     const saved_func = self.builder.func;
     const saved_block = self.builder.current_block;
     const saved_counter = self.builder.inst_counter;
@@ -1247,12 +1246,10 @@ pub fn monomorphizePackFn(
     const saved_ppc = self.pack_param_count;
     const saved_pat = self.pack_arg_types;
     const saved_pcon = self.pack_constraint;
-    const saved_iri = self.inline_return_target;
     const saved_ctx_ref = self.current_ctx_ref;
     const saved_type_bindings = self.type_bindings;
     self.func_defer_base = self.defer_stack.items.len;
     self.block_terminated = false;
-    self.inline_return_target = null;
     // Generic type-params inferred at the call site (e.g. `$R` from the
     // mapper's closure return). Installed for the whole mono so
     // return-type resolution and body lowering substitute them.
@@ -1267,7 +1264,6 @@ pub fn monomorphizePackFn(
         self.pack_param_count = saved_ppc;
         self.pack_arg_types = saved_pat;
         self.pack_constraint = saved_pcon;
-        self.inline_return_target = saved_iri;
         self.current_ctx_ref = saved_ctx_ref;
         self.builder.func = saved_func;
         self.builder.current_block = saved_block;
@@ -1462,24 +1458,9 @@ pub fn monomorphizePackFn(
     defer self.setCurrentSourceFile(saved_source);
     if (fd.body.source_file) |src| self.setCurrentSourceFile(src);
 
-    if (self.builder.currentFunc().is_naked) {
-        // `abi(.naked)`: asm-only body that rets itself — no sx value return.
-        // Lower statements + cap with `unreachable` (mirrors the decl path).
-        // emit_llvm bails on `is_naked` until B1.0b implements `naked` emission.
-        self.lowerBlock(fd.body);
-        if (!self.currentBlockHasTerminator()) self.builder.emitUnreachable();
-    } else if (ret_ty != .void) {
-        // Delegate the trailing-value return to the shared `lowerValueBody`
-        // (mirrors the decl + generic paths) so this pack-fn instance can't
-        // drift — it routes the value-failable success through
-        // `lowerFailableSuccessReturn` (appending the success error slot)
-        // instead of a bare coerce+ret that leaves the error-tag slot
-        // uninitialized (issue 0190).
-        self.lowerValueBody(fd.body, ret_ty);
-    } else {
-        self.lowerBlock(fd.body);
-        self.ensureTerminator(ret_ty);
-    }
+    // Delegate to the shared body owner (mirrors the decl + generic paths) so
+    // this pack-fn instance can't drift from them.
+    self.lowerFunctionBody(fd.body, ret_ty);
     self.builder.finalize();
 }
 

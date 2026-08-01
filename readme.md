@@ -95,6 +95,16 @@ token below cannot start one (`and`, `or`, `catch`, `|>`, an operator, a
 comma). Statements break and expressions chain: a block statement ends at its
 `}`, while a trailing-block call keeps its postfix chain across the line.
 
+Ending a statement is all `;` does — it is a pure separator. A block's value is
+its last statement whenever that statement is an expression, and that value
+flows to whatever the position demands: the return of a `-> T` body, the value
+of a value-bound block, a published child in a build body. Where nothing demands
+it, it is discarded. The terminator never enters into any of that.
+
+```sx
+double :: (n: i32) -> i32 { n * 2; }   // returns n * 2 — as does `{ n * 2 }`
+```
+
 ### Types
 
 | Type | Description |

@@ -58,16 +58,13 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     const saved_pan = self.pack_arg_nodes;
     const saved_ppc = self.pack_param_count;
     const saved_pat = self.pack_arg_types;
-    const saved_iri = self.inline_return_target;
     self.pack_arg_nodes = null;
     self.pack_param_count = null;
     self.pack_arg_types = null;
-    self.inline_return_target = null;
     defer {
         self.pack_arg_nodes = saved_pan;
         self.pack_param_count = saved_ppc;
         self.pack_arg_types = saved_pat;
-        self.inline_return_target = saved_iri;
     }
     self.func_defer_base = self.defer_stack.items.len;
     self.block_terminated = false;
@@ -94,11 +91,10 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     self.checkBoundBindings(fd.type_params, bindings, self.current_source_file);
 
     // Resolve return type with type bindings active. The body's tail
-    // expression inherits this as its target_type so bare `.{...}`
-    // literals resolve to the monomorphised return type instead of
-    // whatever leaked in from the caller (e.g. caller's xx target).
+    // expression inherits it as its target_type — installed by the shared body
+    // owner, so bare `.{...}` literals resolve to the monomorphised return type
+    // instead of whatever leaked in from the caller (e.g. caller's xx target).
     const ret_ty = self.resolveReturnType(fd);
-    self.target_type = ret_ty;
 
     const wants_ctx = self.funcWantsImplicitCtx(fd);
     const saved_ctx_ref_mono = self.current_ctx_ref;
@@ -159,7 +155,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     }
 
     // Named multi-return (`-> (x: A, y: B)`): bind the slots as in-scope locals
-    // for the body to assign; `lowerValueBody` then synthesizes the implicit
+    // for the body to assign; `lowerFunctionBody` then synthesizes the implicit
     // return from them. The decl path (`lowerFunctionBodyInto`) does this too —
     // without it a GENERIC named multi-return never sets `named_return_names`, so
     // the implicit return isn't synthesized and the body wrongly reports
@@ -196,27 +192,11 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
             self.ensureTerminator(ret_ty);
         }
         self.builder.finalize();
-    } else if (self.builder.currentFunc().is_naked) {
-        // `abi(.naked)`: asm-only body that rets itself — no sx value return.
-        // Lower the statements + cap with `unreachable` (mirrors the decl path).
-        // emit_llvm bails on `is_naked` until B1.0b implements `naked` emission.
-        self.lowerBlock(fd.body);
-        if (!self.currentBlockHasTerminator()) self.builder.emitUnreachable();
-        self.builder.finalize();
     } else {
-        // Lower the function body. Delegate the trailing-value return to the
-        // shared `lowerValueBody` so the generic-instantiation path can't drift
-        // from the decl path — it handles all three body-return shapes: the
-        // value-failable success routing (append the success error slot via
-        // `lowerFailableSuccessReturn`, NOT a bare coerce+ret that leaves the
-        // error-tag slot uninitialized — issue 0190), the pure-failable
-        // fall-through, and the missing-value diagnostic.
-        if (ret_ty != .void) {
-            self.lowerValueBody(fd.body, ret_ty);
-        } else {
-            self.lowerBlock(fd.body);
-            self.ensureTerminator(ret_ty);
-        }
+        // Delegate to the shared body owner so the generic-instantiation path
+        // can't drift from the decl path: it decides the demand from `ret_ty`
+        // and owns every implicit exit.
+        self.lowerFunctionBody(fd.body, ret_ty);
         self.builder.finalize();
     }
 

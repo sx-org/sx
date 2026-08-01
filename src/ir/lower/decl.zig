@@ -3820,7 +3820,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
     };
 
     // Named multi-return (`-> (x: A, y: B)`): bind the slots as in-scope locals
-    // for the body to assign; `lowerValueBody` synthesizes the implicit return.
+    // for the body to assign; `lowerFunctionBody` synthesizes the implicit return.
     const saved_nrn = self.named_return_names;
     const saved_nrd = self.named_return_defaults;
     self.named_return_names = null;
@@ -3839,26 +3839,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
         }
     }
 
-    // Lower the function body (set target_type to return type for implicit returns)
-    const saved_target = self.target_type;
-    self.target_type = if (ret_ty != .void and ret_ty != .noreturn) ret_ty else null;
-    if (self.builder.currentFunc().is_naked) {
-        // `abi(.naked)`: the body is a single asm block that emits its own `ret`.
-        // There is no sx-level value return — lower the statements and cap the
-        // block with `unreachable` (control never falls back into sx). This
-        // bypasses the implicit-return machinery, which would otherwise reject
-        // the missing return. LLVM emission lands in B1.0b.
-        self.lowerBlock(fd.body);
-        if (!self.currentBlockHasTerminator()) self.builder.emitUnreachable();
-    } else if (ret_ty != .void and ret_ty != .noreturn) {
-        self.lowerValueBody(fd.body, ret_ty);
-    } else {
-        // void / noreturn: no value to return — lower as statements and let
-        // `ensureTerminator` close the block (ret void / unreachable).
-        self.lowerBlock(fd.body);
-        self.ensureTerminator(ret_ty);
-    }
-    self.target_type = saved_target;
+    self.lowerFunctionBody(fd.body, ret_ty);
 
     self.builder.finalize();
 }
@@ -4010,23 +3991,7 @@ pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, i
         }
     }
 
-    // Lower the function body, capturing the last expression's value for implicit return
-    const saved_target = self.target_type;
-    self.target_type = if (ret_ty != .void and ret_ty != .noreturn) ret_ty else null;
-    if (self.builder.currentFunc().is_naked) {
-        // `abi(.naked)`: asm-only body that rets itself — see the sibling path
-        // above. Lower statements, cap with `unreachable`; emission is B1.0b.
-        self.lowerBlock(fd.body);
-        if (!self.currentBlockHasTerminator()) self.builder.emitUnreachable();
-    } else if (ret_ty != .void and ret_ty != .noreturn) {
-        self.lowerValueBody(fd.body, ret_ty);
-    } else {
-        // void / noreturn: no value to return — lower as statements and
-        // let `ensureTerminator` close the block (ret void / unreachable).
-        self.lowerBlock(fd.body);
-        self.ensureTerminator(ret_ty);
-    }
-    self.target_type = saved_target;
+    self.lowerFunctionBody(fd.body, ret_ty);
 
     self.builder.finalize();
 }

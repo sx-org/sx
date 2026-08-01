@@ -132,8 +132,8 @@ pub const ExprTyper = struct {
             // success type (ERR E1.4c / E1.5).
             .return_stmt, .raise_stmt, .break_expr, .continue_expr => .noreturn,
             .block => |blk| {
-                // A block's type is its last expression's type only when it
-                // produces a value (no trailing `;`); otherwise it is void.
+                // A block's type is its last statement's type when that
+                // statement is an expression; otherwise it is void.
                 if (blk.produces_value and blk.stmts.len > 0) {
                     return self.l.inferExprType(blk.stmts[blk.stmts.len - 1]);
                 }

@@ -404,7 +404,7 @@ expressions chain** draws at the end of this section.
 
 **Line breaks — a newline ends a statement.** A `;` terminates a statement, and
 so does the line break where the `;` would have gone. The two spellings are the
-same statement, and either terminator discards the statement's value:
+same statement:
 
 ```sx
 a := 1
@@ -442,6 +442,13 @@ The end of the file ends the declaration it lands on, so a file's last
 declaration needs no terminator either. The rule does not reach inside a fixed
 form's own list — a runtime class's members, the entries of `#import c { … }`,
 and a `match` arm each keep the `;` their grammar asks for.
+
+**`;` is a pure separator.** Ending a statement is all it does. It carries no
+other meaning anywhere in the language: it never discards a value, never decides
+what a block's value is, and never decides whether a build body's child
+publishes. Wherever a value can flow, it flows the same with the `;` written and
+with it left out — see [Block values](#block-values) and
+[`@BuildBlock(P)`](#buildblockp).
 
 A line break does not end a statement that is still running. When the token
 below cannot START a statement, it continues the one above:
@@ -492,8 +499,9 @@ sx_double :: (n: i32) -> i32 export
     { n * 2 }                 // the definition owes a body — the tail reads on
 ```
 
-The last expression before a `}` has no terminator at all, which is what makes
-it the block's value (§6.3). A newline never supplies one there:
+The last expression before a `}` may leave its terminator out entirely, and a
+newline never supplies one there. Written or not, that expression is the block's
+value (see [Block values](#block-values)):
 
 ```sx
 tight  :: () -> i64 { 41 }
@@ -501,6 +509,7 @@ spread :: () -> i64 {
     n := 41
     n                         // no terminator — the block's value, as above
 }
+ended  :: () -> i64 { 41; }   // the `;` separates; the value is still 41
 ```
 
 **Statements break, expressions chain.** Whether a `}` can be continued is
@@ -3767,9 +3776,9 @@ name :: (params) -> return_type {
 
 - Parameters: `name: type` separated by commas
 - Return type: `-> type` (omit for void). A multi-value return is a tuple: `-> Tuple(T1, T2)`.
-- Body: a block whose **value** is its last statement when that statement is a
-  trailing expression with **no** `;` (see [Block values](#block-values)). That
-  value is the implicit return; an explicit `return` works too.
+- Body: a block whose **value** is its last statement when that statement is an
+  expression (see [Block values](#block-values)). That value is the implicit
+  return; an explicit `return` works too.
 
 A trailing `!` in the return type marks the function **failable** — it adds a
 separate error channel alongside the normal returns. The `!` sits **outside**
@@ -3780,7 +3789,7 @@ See [§12 Error Handling](#12-error-handling).
 Examples:
 ```sx
 compute :: (x: i32) -> i32 {
-  x * x          // trailing expression, no `;` → the return value
+  x * x          // trailing expression → the return value
 }
 
 square :: (x: i32) -> i32 {
@@ -3794,42 +3803,100 @@ main :: () {
 
 #### Block values
 
-A block's **value** is its last statement, but only when that statement is a
-trailing expression with **no** trailing `;`. A trailing `;` discards the value,
-leaving the block void. This applies uniformly to every block used in value
-position: function bodies, `if` / `else` branches, value-bound blocks
-(`x := { … }`), and `catch` bodies.
+A block's **value** is its last statement, whenever that statement is an
+expression. A last statement that is a declaration — or an empty block — leaves
+the block with no value. The terminator plays no part: `;` separates statements
+and decides nothing, so a block ends in the same value with it and without it.
 
 ```sx
 a := { f(); g() };    // value is g()
-b := { f(); g(); };   // void — the `;` discards g()'s value
+b := { f(); g(); };   // value is g() — the `;` only separates
 ```
 
-A block in **value position** that produces no value is a compile error (rather
-than silently returning a zero default):
+**The value flows to whatever the position demands.** A block's value is
+demanded by a `-> T` function body (it becomes the return), by value position
+(`x := { … }`, an `if`/`else` used as a value, a `catch` body, an argument), and
+by a build body's statement position (it publishes — see
+[`@BuildBlock(P)`](#buildblockp)). Where nothing demands a value — a `-> void`
+body, a `defer` / `onfail` cleanup body, a loop body, a statement `if` — the
+expression still runs and its value is silently discarded.
 
 ```sx
 double :: (n: i32) -> i32 {
-  n * 2;   // error: value discarded by `;` — drop it, or use `return`
+  n * 2;   // the return value; the `;` changes nothing
+}
+
+log_size :: () {
+  measure();   // nothing demands the value — discarded
 }
 ```
 
-**Match arms are exempt.** In `case .x: expr;` the `;` is an arm terminator, not
-a value-discard, so the arm still yields `expr`. Only an explicit inner braced
-block inside an arm follows the rule:
+A **pure failable** (`-> !` / `-> !Named`) has no success value — its whole
+return is the error channel — so only a trailing ERROR value is demanded there.
+A tail of any other type is discarded like any other undemanded expression, and
+the function takes the ordinary success exit. Because nothing in such a body is
+in return position, the return-position restrictions do not reach its tail
+(erasing an rvalue into a tagged handle is refused at a `return`, and accepted
+here, where the handle dies with the frame).
+
+```sx
+check :: (n: i32) -> !ParseErr {
+  if n < 0 { raise error.BadDigit; }
+  measure();          // undemanded — discarded, then the success exit
+}
+
+fail :: () -> !ParseErr {
+  error.BadDigit;     // an ERROR tail IS the return
+}
+```
+
+This is a property of the SIGNATURE, so every body form reads it the same way —
+a closure body reads like a named one, and so do a generic instance, a nested
+local function and an inlined comptime callee:
+
+```sx
+report := () -> !ParseErr => measure();   // discarded, then the success exit
+raise_it := () -> !ParseErr => error.BadDigit;
+```
+
+It is also decided per live path: where the tail is an `if` or a `match`, each
+arm is its own tail. An arm that yields an error returns it; an arm that yields
+anything else is discarded and reaches the success exit, whichever order the
+arms are written in.
+
+```sx
+pick :: (b: bool) -> !ParseErr {
+  if b { fail() } else { measure() }   // error arm returns; value arm discards
+}
+```
+
+A block in **value position** that produces no value is a compile error (rather
+than silently returning a zero default). Both spellings of the ending are
+refused, because both are the same statement:
+
+```sx
+double :: (n: i32) -> i32 {
+  total := n * 2;   // error: the body produces no value — end it with a
+}                   //        trailing expression, or use `return`
+
+c := { f(); x := 1 };  // error: this block is used as a value but produces none
+```
+
+An EMPTY block is exempt — `{}` is how the void value itself is written, as in
+`.{ {}, 9 }` for a `Tuple(void, i32)`.
+
+A `match` arm's `;` comes from the match grammar rather than the statement one,
+so `case .x: expr;` yields `expr` like any other arm:
 
 ```sx
 classify :: (n: i32) -> i32 {
   if n == {
-    case 0: 100;            // arm value is 100 (the `;` is just the separator)
-    case 1: { x := 5; x*2 } // braced block, no trailing `;` → value 10
+    case 0: 100;            // arm value is 100
+    case 1: { x := 5; x*2 } // braced block → value 10
     else:   7;
   }
 }
 ```
-
-A `defer` / `onfail` cleanup body and loop bodies are statement (void) contexts,
-so a trailing `;` there is fine and changes nothing.
 
 #### Default Parameter Values
 
@@ -4025,21 +4092,26 @@ ordinary code: a binding, an assignment, a call whose value is discarded, and a
 statement of any other type all run where they are written and are not published.
 A subexpression never publishes, whatever its type.
 
-**A child that would vanish is refused.** Inside a build body, a
-statement-position block — an `if`/`else` branch, a loop body, bare braces —
-whose trailing expression has no `;` and is non-void is an error:
+**A nested statement publishes too.** Publishing keys off statement POSITION and
+type acceptance, never off a terminator. A statement-position block — an
+`if`/`else` branch, a loop body, bare braces — is a statement, so its trailing
+child publishes exactly like a child written at the body's own top level, with
+or without a `;`:
 
-```text
-error: this value is neither published nor used
-help: publish it as a statement (end it with `;`) or discard it (`_ = …;`)
+```sx
+collect() {
+    if show { Label{ text = "in a branch" } }        // publishes
+    for rows (row) { Label{ text = row } }           // publishes, once per row
+    { Label{ text = "in bare braces" }; }            // publishes; the `;` only separates
+    Label{ text = "at the top level" }               // publishes
+}
 ```
 
-That value would be the inner block's value, which the enclosing statement
-discards — a child lost with no signal. A void trailing expression is exempt, a
-value-**position** block is unaffected (`x := if c { … } else { … };` stays
-legal), and the body's own top level needs no rule for the opposite reason: a
-trailing expression there is a child like any other and publishes, so nothing
-vanishes.
+Three shapes mark the rule's edges. A void trailing expression has no child to
+publish. A value-**position** block's tail is its value rather than a statement,
+so it goes to the binding (`x := if c { … } else { … };`) and it is `x`, in
+statement position, that publishes. And a value in statement position whose type
+`P` does not accept is discarded like any other unused value.
 
 **A build block is frame-bound.** What the value carries is the environment of
 the frame that formed it, captured **by reference**: forming allocates nothing,
@@ -6509,7 +6581,8 @@ struct_member   = field_group | '#using' IDENT ';'
 field_group     = IDENT (',' IDENT)* ':' type ('=' expr)? ';'
 params          = param (',' param)* ','?
 param           = IDENT ':' type ('=' expr)?
-block           = '{' stmt* '}'     // the LAST expr may drop `end` — it is the value
+block           = '{' stmt* '}'     // the LAST expr may drop `end`; written or
+                  // not, that expr is the block's value — `;` only separates
 stmt            = decl | assignment end | multi_assign end | return_stmt | defer_stmt | insert_stmt
                 | push_stmt | break_stmt | continue_stmt | raise_stmt | onfail_stmt
                 | scope_stmt | expr end

@@ -10,6 +10,7 @@ const Ref = inst_mod.Ref;
 const BlockId = inst_mod.BlockId;
 
 const lower = @import("../lower.zig");
+const lower_stmt = @import("stmt.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const ComptimeValue = Lowering.ComptimeValue;
@@ -135,7 +136,7 @@ pub fn armStaticallyDiverges(self: *Lowering, node: *const Node) bool {
     return self.inferExprType(body) == .noreturn;
 }
 
-/// An `if`/`match` arm body that yields NO value: a block with a `;`-discarded
+/// An `if`/`match` arm body that yields NO value: a block with no expression
 /// tail (`produces_value == false`), an empty block, or a tail that is a
 /// no-`else` `if` / statically types `void`. A DIVERGING arm (returns / breaks /
 /// raises) is NOT "valueless" — it legitimately never reaches the merge — so
@@ -149,8 +150,7 @@ pub fn armYieldsVoid(self: *Lowering, node: *const Node) bool {
         break :blk body.data.block.stmts[body.data.block.stmts.len - 1];
     } else body;
     // `null` contributes optionality (`?T`) — a real value in a value-`match`,
-    // never void. (A trailing `;` on a `match` arm does NOT discard, so the arm
-    // value is its tail EXPRESSION's type, not the block's `produces_value`.)
+    // never void.
     if (tail.data == .null_literal) return false;
     // A no-`else` `if` tail yields no value.
     if (tail.data == .if_expr and tail.data.if_expr.else_branch == null and !tail.data.if_expr.is_inline) return true;
@@ -214,7 +214,30 @@ pub fn setMergeParamType(self: *Lowering, block: BlockId, ty: TypeId) void {
     }
 }
 
-pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
+/// An `if`/`match` arm body under the enclosing demand. Only a PURE-failable
+/// body's demand travels into the arms — every other position lowers them as
+/// statements, exactly as before.
+fn lowerArmBody(self: *Lowering, node: *const Node, demand: lower_stmt.TailDemand) void {
+    _ = self.lowerDemandedBody(node, if (demand == .error_only) demand else .none);
+}
+
+/// One `inline if` / const-folded branch, selected at compile time: the whole
+/// construct collapses to it, so it inherits the demand the construct carried.
+fn lowerSelectedBranch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDemand) Ref {
+    if (demand != .error_only) return self.lowerInlineBranch(node);
+    lowerArmBody(self, node, demand);
+    if (self.currentBlockHasTerminator()) {
+        self.block_terminated = true;
+        return .none;
+    }
+    return self.builder.constInt(0, .void);
+}
+
+pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.TailDemand) Ref {
+    // A PURE-failable body's tail `if` yields nothing: each live arm is its own
+    // demanded tail, an error arm takes the function's exit where it stands,
+    // and the merge carries no value for an arm's type to decide.
+    const error_only = demand == .error_only;
     // 0270: an `if` used in VALUE position (a value context — `:=`/`=` RHS,
     // call arg, `return`, operand, struct-literal field, array element, index)
     // MUST have an `else` branch. Without one the expression has no value: the
@@ -239,9 +262,9 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
     if (ie.is_comptime) {
         if (self.evalComptimeCondition(ie.condition)) |is_true| {
             if (is_true) {
-                return self.lowerInlineBranch(ie.then_branch);
+                return lowerSelectedBranch(self, ie.then_branch, demand);
             } else if (ie.else_branch) |eb| {
-                return self.lowerInlineBranch(eb);
+                return lowerSelectedBranch(self, eb, demand);
             }
             return self.builder.constInt(0, .void);
         }
@@ -252,10 +275,10 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
     if (self.tryConstBoolCondition(ie.condition)) |is_true| {
         if (is_true) {
             // Condition always true: only lower then-branch
-            if ((ie.is_inline or self.force_block_value) and ie.else_branch != null) {
+            if (!error_only and (ie.is_inline or self.force_block_value) and ie.else_branch != null) {
                 return self.lowerExpr(ie.then_branch);
             }
-            self.lowerBlock(ie.then_branch);
+            lowerArmBody(self, ie.then_branch, demand);
             // If then-branch terminated (return/break), mark block as dead
             if (self.currentBlockHasTerminator()) {
                 self.block_terminated = true;
@@ -265,10 +288,10 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
         } else {
             // Condition always false: only lower else-branch (if any)
             if (ie.else_branch) |eb| {
-                if (ie.is_inline or self.force_block_value) {
+                if (!error_only and (ie.is_inline or self.force_block_value)) {
                     return self.lowerExpr(eb);
                 }
-                self.lowerBlock(eb);
+                lowerArmBody(self, eb, demand);
                 if (self.currentBlockHasTerminator()) {
                     self.block_terminated = true;
                     return .none;
@@ -310,8 +333,10 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
     else
         self.builder.constBool(false);
     const has_else = ie.else_branch != null;
-    // If-else produces a value when inline OR when in value position (force_block_value)
-    var is_value = (ie.is_inline or self.force_block_value) and has_else;
+    // If-else produces a value when inline OR when in value position
+    // (force_block_value) — and never under `error_only`, where the ternary
+    // form is value-mode by its own shape yet still yields nothing.
+    var is_value = (ie.is_inline or self.force_block_value) and has_else and !error_only;
 
     // Which arms statically DIVERGE (never reach the merge). A diverging arm
     // contributes no value, so it must not decide `result_type` — the LIVE arm's
@@ -389,9 +414,9 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
 
     // Demote to a statement-`if` only when the arms genuinely yield no value:
     // BOTH arms diverge (merge unreachable), or the live arm(s) are void blocks
-    // (`;`-terminated → `result_type == .void`). An `.unresolved` result is NOT
-    // valueless — it is a live arm we simply couldn't type statically (resolved
-    // after lowering); demoting it would `alloca void` a real value (Bug B).
+    // (`result_type == .void`). An `.unresolved` result is NOT valueless — it is
+    // a live arm we simply couldn't type statically (resolved after lowering);
+    // demoting it would `alloca void` a real value (Bug B).
     if (is_value and ((then_div and else_div) or result_type == .void or result_type == .noreturn)) {
         is_value = false;
         result_type = .void;
@@ -473,7 +498,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
             self.builder.br(merge_bb, &.{v});
         }
     } else {
-        self.lowerBlock(ie.then_branch);
+        lowerArmBody(self, ie.then_branch, demand);
         then_diverged = self.currentBlockHasTerminator();
         if (!self.currentBlockHasTerminator()) {
             self.builder.br(merge_bb, &.{});
@@ -508,7 +533,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
                 self.builder.br(merge_bb, &.{v});
             }
         } else {
-            self.lowerBlock(ie.else_branch.?);
+            lowerArmBody(self, ie.else_branch.?, demand);
             else_diverged = self.currentBlockHasTerminator();
             if (!self.currentBlockHasTerminator()) {
                 self.builder.br(merge_bb, &.{});
@@ -1108,18 +1133,20 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     return self.builder.constInt(0, .void);
 }
 
-pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
+pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.TailDemand) Ref {
+    // A PURE-failable body's tail `match` yields nothing — see `lowerIfExpr`.
+    const error_only = demand == .error_only;
     // inline if match: evaluate at compile time, only lower the matching arm
     if (me.is_comptime) {
         if (self.evalComptimeMatch(me)) |arm_body| {
-            return self.lowerInlineBranch(arm_body);
+            return lowerSelectedBranch(self, arm_body, demand);
         }
         // `inline if T == { case <category|Type>: … }` over a BOUND generic
         // type param: select the arm by T's kind at lower time, siblings
         // dropped whole (each kind arm only type-checks for its own kind).
         if (self.evalStaticTypeMatch(me)) |sel| {
             switch (sel) {
-                .body => |arm_body| return self.lowerInlineBranch(arm_body),
+                .body => |arm_body| return lowerSelectedBranch(self, arm_body, demand),
                 // No arm matched, no `else:` — the runtime form's
                 // skip-to-merge, statically: nothing to lower.
                 .none_matched => return self.builder.constInt(0, .void),
@@ -1278,7 +1305,10 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
     // Determine if the match produces a value (has non-void arms)
     // For type-category matches (inside any_to_string), only produce value when force_block_value
     // For regular enum/optional matches, always produce value if arms are non-void
-    var inferred_result = self.inferMatchResultType(me);
+    // Under `error_only` no merge is typed, so the ordinary arm-type
+    // unification never runs: an error arm and an ordinary arm are not
+    // candidates for one result type, they are separate exits.
+    var inferred_result: TypeId = if (error_only) .void else self.inferMatchResultType(me);
     // Arms not statically inferable (bare enum literals etc.): only a
     // value-position match (`force_block_value`) needs a concrete result —
     // use the contextually expected type. A statement match with non-value
@@ -1338,7 +1368,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
             }
         }
     }
-    const is_value = if (is_type_match) self.force_block_value else (self.force_block_value or (inferred_result != .void and inferred_result != .unresolved));
+    const is_value = if (error_only) false else if (is_type_match) self.force_block_value else (self.force_block_value or (inferred_result != .void and inferred_result != .unresolved));
     const result_type: TypeId = if (is_value) inferred_result else .void;
     // A fully-diverging match (`result_type == .noreturn` — every arm
     // `return`s / `raise`s / etc.) produces no value, so it builds no
@@ -1819,7 +1849,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
                 self.builder.br(merge_bb, &.{v});
             }
         } else {
-            self.lowerBlock(arm.body);
+            lowerArmBody(self, arm.body, demand);
             self.current_match_tags = saved_match_tags;
             self.scope = old_scope;
             arm_scope.deinit();
@@ -1932,29 +1962,10 @@ pub fn currentBlockHasTerminator(self: *Lowering) bool {
     return false;
 }
 
+/// The FALLTHROUGH half of the body exit: control reached the end of a body
+/// with no exit of its own, so this one closes the block. Every call site is a
+/// function-body end.
 pub fn ensureTerminator(self: *Lowering, ret_ty: TypeId) void {
     if (self.currentBlockHasTerminator()) return;
-    if (ret_ty == .noreturn) {
-        // A `-> noreturn` function never returns; if control reaches the
-        // end of the body it's genuinely unreachable (the body is expected
-        // to diverge — call another noreturn, loop forever, etc.).
-        self.builder.emitUnreachable();
-    } else if (ret_ty == .void) {
-        self.builder.retVoid();
-    } else if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) {
-        // A pure-failable function (`-> !` / `-> !Named`, whose return type IS
-        // the error set) that falls off the end with no explicit `return;` is
-        // a SUCCESS exit — the error slot must carry 0 ("no error"), exactly
-        // like the bare-`return;` path in lowerReturn. Without this the slot is
-        // left undefined and the caller (or main) reads a garbage tag and
-        // reports a phantom unhandled error (issue 0190).
-        self.builder.ret(self.builder.constInt(0, ret_ty), ret_ty);
-    } else {
-        // Use const_undef for complex types (string, struct, etc.)
-        const default_val = if (ret_ty == .string or !ret_ty.isBuiltin())
-            self.builder.constUndef(ret_ty)
-        else
-            self.builder.constInt(0, ret_ty);
-        self.builder.ret(default_val, ret_ty);
-    }
+    self.emitBodyExit(null, ret_ty, .fallthrough);
 }

@@ -1,0 +1,23 @@
+error: this block is used as a value but produces none — end it with a trailing expression
+  --> examples/diagnostics/2074-diagnostics-value-block-no-value.sx:18:20
+   |
+18 |     a := { seed(); n := 1; };
+   |                    ^^^^^^^
+
+error: this block is used as a value but produces none — end it with a trailing expression
+  --> examples/diagnostics/2074-diagnostics-value-block-no-value.sx:21:20
+   |
+21 |     b := { seed(); n := 1 }
+   |                    ^^^^^^
+
+error: this block is used as a value but produces none — end it with a trailing expression
+  --> examples/diagnostics/2074-diagnostics-value-block-no-value.sx:26:9
+   |
+26 |         local :: () -> i32 { 42; }
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this block is used as a value but produces none — end it with a trailing expression
+  --> examples/diagnostics/2074-diagnostics-value-block-no-value.sx:32:9
+   |
+32 |         slot = if true { 1; } else { 2; }
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

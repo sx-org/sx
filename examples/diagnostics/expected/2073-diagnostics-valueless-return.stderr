@@ -1,0 +1,17 @@
+error: function returns '(i32, error_set)' but this `return` carries no value — return a value of that type
+  --> examples/diagnostics/2073-diagnostics-valueless-return.sx:31:16
+   |
+31 |     if x > 0 { return; }
+   |                ^^^^^^^
+
+error: function returns 'i32' but this `return` carries no value — return a value of that type
+  --> examples/diagnostics/2073-diagnostics-valueless-return.sx:16:9
+   |
+16 |         return;
+   |         ^^^^^^^
+
+error: function returns 'i32' but this `return` carries no value — return a value of that type
+  --> examples/diagnostics/2073-diagnostics-valueless-return.sx:24:9
+   |
+24 |         return
+   |         ^^^^^^

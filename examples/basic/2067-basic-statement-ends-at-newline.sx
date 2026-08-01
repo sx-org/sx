@@ -2,8 +2,9 @@
 // statement, and so does the line break where the `;` would have gone. This
 // file is written WITHOUT terminators wherever one is optional — top-level
 // declarations, bindings, calls, assignments, `return`, `defer` — and pins the
-// two things the newline must NOT do: end a statement that is still running,
-// and terminate the tail expression a block returns.
+// one thing the newline must NOT do: end a statement that is still running.
+// Neither spelling of the terminator touches a value — `;` separates statements
+// and decides nothing about what they produce (0041).
 // Expected: exit 0.
 #import "modules/std.sx"
 
@@ -51,7 +52,8 @@ accumulate :: (v: i64) -> i64 {
     return total
 }
 
-// A `;` still discards, so this one returns 0 and not `v`.
+// Nothing demands a mid-block statement's value, so `v`'s goes nowhere and the
+// tail `0` is the return. The `;` only separates the two lines.
 discarded :: (v: i64) -> i64 {
     v;
     0

@@ -245,17 +245,12 @@ pub const Param = struct {
 
 pub const Block = struct {
     stmts: []const *Node,
-    /// True when the block's last statement is its value — i.e. a trailing
-    /// expression with NO `;`. A trailing `;` (or a non-expression last
-    /// statement) discards the value and leaves the block void. Match-arm and
-    /// else-arm bodies are built with this forced true (the arm `;` is an arm
-    /// terminator, not a value-discard).
+    /// True when the block's last statement is an EXPRESSION statement, so the
+    /// block has a value to hand to whatever position demands one. A
+    /// non-expression last statement (a declaration, an empty block) leaves it
+    /// false. The statement's terminator is not part of this: `;` separates
+    /// statements and never discards a value.
     produces_value: bool = false,
-    /// When `produces_value` is false *because* the last statement was an
-    /// expression terminated by `;` (as opposed to a decl/return/empty block),
-    /// the span of that discarding `;`. Lets a value-position diagnostic point
-    /// precisely at the semicolon to drop. Null otherwise.
-    discarded_semi: ?Span = null,
 };
 
 pub const IntLiteral = struct {

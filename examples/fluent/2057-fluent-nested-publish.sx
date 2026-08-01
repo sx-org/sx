@@ -1,0 +1,77 @@
+// Publishing keys off STATEMENT POSITION and type acceptance (fluent spec
+// §6.3), never off a terminator. Inside a build body a nested block — an
+// `if`/`else` branch, a loop body, bare braces — is a statement, so its
+// trailing child publishes exactly like a child written at the body's own top
+// level, with or without a `;`.
+//
+// Three shapes carry the rule's edges: a void trailing expression has no child
+// to publish, a value-POSITION block's tail is its value rather than a
+// statement, and the body's own top level publishes like any nested statement.
+// Expected: exit 0.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol tagged {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+Tally :: struct {
+    n: i32 = 0;
+    expression :: (self: *Tally, value: $I/@Init($V/Drawable)) { self.n += 1; }
+}
+
+side :: () {}
+
+collect :: (content: $B/@BuildBlock(Drawable)) -> i32 {
+    sink := Tally{};
+    content.run(*sink);
+    sink.n
+}
+
+main :: () -> i32 {
+    show := true;
+    rows := .["a", "b"];
+
+    published := collect() {
+        // A branch is a statement, so its trailing child is one too.
+        if show {
+            Label{ text = "in a branch" }
+        }
+
+        // Once per iteration, for the same reason.
+        for rows (row) {
+            Label{ text = row }
+        }
+
+        // A bare scope block is a statement as well.
+        {
+            Label{ text = "in bare braces" }
+        }
+
+        // The terminator changes nothing: this one publishes too.
+        if show {
+            Label{ text = "with a terminator" };
+        }
+
+        // A void trailing expression has no child to publish.
+        if show {
+            side()
+        }
+
+        // A value-POSITION block's tail is its value, which the binding takes.
+        // The bound name is what stands in statement position, and publishes.
+        chosen := if show { Label{ text = "chosen" } } else { Label{ text = "other" } };
+        chosen;
+
+        // The body's own top level publishes like any nested statement.
+        Label{ text = "at the top level" }
+    };
+
+    print("published={}\n", published);
+    0
+}

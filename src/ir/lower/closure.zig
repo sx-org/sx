@@ -327,47 +327,22 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     const saved_in_return_lam = self.in_return_expr;
     self.in_return_expr = false;
     defer self.in_return_expr = saved_in_return_lam;
-    // The body types against the lambda's OWN return type, exactly as a
-    // named fn's body does (lowerFunction): enum literals in an arrow body
-    // resolve against `-> E`, and the enclosing expression's target — the
-    // closure type itself when the literal sits in a call argument — must
-    // not leak in as the body's destination (issue 0350).
-    const saved_target_lam = self.target_type;
-    self.target_type = if (ret_ty != .void and ret_ty != .noreturn) ret_ty else null;
-    // Lambda bodies are separate functions: arm return-value mode for their
-    // body's value chain (same §6.2 rule as named fns). Nested statements
-    // clear `in_return_expr` in lowerStmt.
-    const saved_rvb_lam = self.return_value_body;
-    self.return_value_body = ret_ty != .void;
-    defer self.return_value_body = saved_rvb_lam;
-    if (ret_ty != .void) {
-        if (self.lowerBlockValue(lam.body)) |val| {
-            if (!self.currentBlockHasTerminator()) {
-                const val_ty = self.builder.getRefType(val);
-                // A value-carrying failable arrow lambda (`-> (T, !) => expr`)
-                // yields the bare success value; the compiler appends the
-                // no-error slot (0) — same as a `return v` in a block body.
-                if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .tuple and self.errorChannelOf(ret_ty) != null) {
-                    self.lowerFailableSuccessReturn(val, ret_ty, lam.body.span);
-                } else if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set and val_ty != .void) {
-                    // Pure-failable lambda tail value — same forward rules as
-                    // a fn's `return` (set compat / no tuple truncation).
-                    self.builder.ret(self.coercePureFailableReturn(val, ret_ty, lam.body.span), ret_ty);
-                } else {
-                    // Issue 0191: reject an un-coercible lambda tail value
-                    // instead of bit-welding it into the return slot.
-                    const coerced = if (val_ty != .void and self.checkReturnable(val, val_ty, ret_ty, lam.body.span))
-                        self.coerceToType(val, val_ty, ret_ty)
-                    else
-                        val;
-                    self.builder.ret(coerced, ret_ty);
-                }
-            }
-        }
-    } else {
-        self.lowerBlock(lam.body);
+    // A lambda is its own function boundary: an enclosing `-> (x: A, y: B)`
+    // function's named-return slots are not this body's to synthesize.
+    const saved_nrn_lam = self.named_return_names;
+    const saved_nrd_lam = self.named_return_defaults;
+    self.named_return_names = null;
+    self.named_return_defaults = null;
+    defer {
+        self.named_return_names = saved_nrn_lam;
+        self.named_return_defaults = saved_nrd_lam;
     }
-    self.target_type = saved_target_lam;
+    // The body reads its OWN declared return type through the shared owner,
+    // exactly as a named fn's body does: enum literals in an arrow body resolve
+    // against `-> E`, and the enclosing expression's target — the closure type
+    // itself when the literal sits in a call argument — does not leak in as the
+    // body's destination (issue 0350).
+    self.lowerFunctionBody(lam.body, ret_ty);
     self.in_lambda_body = saved_in_lambda;
     self.ensureTerminator(ret_ty);
     self.builder.finalize();

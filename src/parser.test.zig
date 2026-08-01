@@ -755,10 +755,10 @@ test "parser: a newline ends a top-level declaration" {
     try std.testing.expect(decls[4].data.fn_decl.is_arrow);
 }
 
-// Demand semantics is a later step: until it lands, `;` before `}` still means
-// "discard", so ASI must never insert a terminator there — a `;`-less tail is
-// the block's value however it is written.
-test "parser: a newline never terminates the tail before `}`" {
+// The tail before `}` reads the same in all three spellings: `;` is a
+// separator, so writing one, omitting one, or letting a line break stand in
+// leaves the same block value.
+test "parser: the tail before `}` is the block's value however it is written" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -766,17 +766,55 @@ test "parser: a newline never terminates the tail before `}`" {
     for ([_][:0]const u8{
         "f :: () -> i32 { x }",
         "f :: () -> i32 {\nx\n}",
+        "f :: () -> i32 { x; }",
+        "f :: () -> i32 {\nx;\n}",
     }) |src| {
         const body = try parseBody(alloc, src);
         try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
         try std.testing.expect(body.data.block.produces_value);
-        try std.testing.expect(body.data.block.discarded_semi == null);
     }
+}
 
-    // The `;` still discards, and still names itself for the diagnostic.
-    const discarded = try parseBody(alloc, "f :: () -> i32 {\nx;\n}");
-    try std.testing.expect(!discarded.data.block.produces_value);
-    try std.testing.expect(discarded.data.block.discarded_semi != null);
+// A nested body classifies its own statements only. Each of these ends its
+// INNER tail with a `;`-ended expression while the OUTER tail is a form that
+// carries no value — a `::` binding, an assignment, a `defer`. The outer block
+// must stay value-less: a nested tail that reclassified its enclosing statement
+// would hand the position a void to bind.
+test "parser: a nested tail never reclassifies the statement that encloses it" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for ([_][:0]const u8{
+        // A local function whose body ends in a `;`-ended expression.
+        "f :: () -> i32 {\nlocal :: () -> i32 { 42; }\n}",
+        // A `::` binding to a block expression with a `;`-ended tail.
+        "f :: () -> i32 {\nv :: { 1; }\n}",
+        // An assignment whose RHS branches both end in `;`.
+        "f :: () -> i32 {\nz = if c { 1; } else { 2; }\n}",
+        // A match arm ending in a `;`-ended expression.
+        "f :: () -> i32 {\nz = if s == { case 0: 1; else: 2; }\n}",
+        // A `for` arrow body — one statement parsed in place, not a block.
+        "f :: () -> i32 {\ndefer for xs => g(x);\n}",
+        // A `defer` whose braced body ends in a `;`-ended expression.
+        "f :: () -> i32 {\ndefer { 1; }\n}",
+    }) |src| {
+        const body = try parseBody(alloc, src);
+        try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
+        try std.testing.expect(!body.data.block.produces_value);
+    }
+}
+
+// The other half of the isolation: the nested body still classifies ITSELF
+// correctly — the local function's `42;` is that function's return value.
+test "parser: an isolated nested body keeps its own tail" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const body = try parseBody(alloc, "f :: () -> i32 {\nlocal :: () -> i32 { 42; }\n}");
+    const inner = body.data.block.stmts[0].data.fn_decl.body;
+    try std.testing.expect(inner.data.block.produces_value);
 }
 
 // A token that cannot start a statement continues the one above it.
