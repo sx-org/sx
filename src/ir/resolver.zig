@@ -33,7 +33,7 @@ const imports = @import("../imports.zig");
 const program_index = @import("program_index.zig");
 const ProgramIndex = program_index.ProgramIndex;
 
-// ── Raw-fact aliases (defined in imports.zig by buildImportFacts, Phase A) ──
+// ── Raw-fact aliases (defined in imports.zig by buildImportFacts) ──────────
 pub const RawDeclRef = imports.RawDeclRef;
 pub const RawAuthor = imports.RawAuthor;
 pub const NamespaceTarget = imports.NamespaceTarget;
@@ -63,7 +63,7 @@ pub const VisibilityMode = enum {
     /// own scope ∪ `flat_import_graph`. The PERMANENT core for bare-name lookup
     /// under flat imports (Agra constraint) — never a transitional path.
     user_bare_flat,
-    /// `user_bare_flat` plus the extern-C gate (today's `isCImportVisible`):
+    /// `user_bare_flat` plus the extern-C gate (`isCImportVisible`):
     /// only C-import `fn_decl`s without a `library_ref` are policed; everything
     /// else is unconditionally visible.
     c_import_bare,

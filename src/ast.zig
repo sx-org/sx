@@ -1118,7 +1118,7 @@ pub const RuntimeFieldDecl = struct {
     /// For runtime classes, that means synthesize getter/setter
     /// dispatch through `objc_msgSend`; for sx-defined classes it adds
     /// runtime-introspectable property metadata + ARC-aware setter
-    /// emission (Month 4 wires the latter).
+    /// emission.
     is_property: bool = false,
     /// Comma-separated modifier names from `#property(strong, weak, ...)`.
     /// Stored verbatim; the semantic interpretation lives downstream.

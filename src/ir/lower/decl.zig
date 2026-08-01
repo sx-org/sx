@@ -2214,8 +2214,8 @@ fn nodeTypeLeafName(node: *const Node) ?[]const u8 {
 /// (`x : [2]List(i64)`, `x : Tuple(a: List(i64), b: string)`) uses, so
 /// generic-instantiation elements instantiate for real instead of stubbing
 /// into an empty nominal with a lying `size_of`, and a LATER-declared element
-/// (`A :: [2]B; B :: i64`) is ADOPTED once the fixpoint reaches it — the
-/// deferred-fixpoint POSITIVE fix, never a permanent size-0 stub.
+/// (`A :: [2]B; B :: i64`) is ADOPTED once the fixpoint reaches it, never
+/// left as a permanent size-0 stub.
 /// A dirty RHS (transitively carrying `.unresolved` — bad dims, unbound
 /// generics, undeclared names, `..pack` spreads) poisons the alias with
 /// `.unresolved` (clean follow-ons at every use) via
@@ -2238,9 +2238,9 @@ fn registerCompositeAlias(self: *Lowering, cd: *const ast.ConstDecl, source: ?[]
         // names such an alias above its decl (e.g. `body_read_fn: BodyReadFn`
         // above `BodyReadFn :: (...) -> i64`) is patched by the struct/field
         // re-resolution machinery — a working forward-reference pattern the
-        // stdlib http module relies on — so scoping MED-4 to tuple keeps the
-        // over-eager rejection from firing on it. A genuine same-name type
-        // authored by another module is a legal shadow, not a stub — excluded
+        // stdlib http module relies on — so scoping the rejection to tuple
+        // keeps it from firing on them. A genuine same-name type authored by
+        // another module is a legal shadow, not a stub — excluded
         // via the raw import facts.
         if (cd.value.data == .tuple_type_expr) {
             const name_id = self.module.types.internString(cd.name);
@@ -2444,8 +2444,7 @@ pub fn lowerRetainedSameNameAuthors(self: *Lowering) void {
     }
 }
 
-/// Result of bare-call disambiguation (now over the Phase B
-/// author collector).
+/// Result of bare-call disambiguation over the author collector.
 pub const BareCallee = union(enum) {
     /// Bind the call to this specific author, carried as the shared
     /// `SelectedFunc`: its `*FnDecl` + authoring source, FuncId
@@ -2590,7 +2589,7 @@ fn selectableFn(fd: *const ast.FnDecl, kinds: CallableKinds) bool {
     };
 }
 
-/// THE bare-name callable selector, over the Phase B author collector
+/// THE bare-name callable selector, over the author collector
 /// (`resolver.collectVisibleAuthors` — the ONE graph-walk). Routes a bare
 /// reference to `name` from `caller_file` to the author that spelling actually
 /// denotes there, following `alias :: target` chains to their exact terminal

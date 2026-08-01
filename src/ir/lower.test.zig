@@ -1736,7 +1736,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
     while (cache_it.next()) |entry| {
         try module_scopes.put(entry.key_ptr.*, entry.value_ptr.scope);
     }
-    // Phase A raw facts: both `selectCallableAuthor` and
+    // Raw import facts: both `selectCallableAuthor` and
     // `lowerRetainedSameNameAuthors` read function authors out of `module_decls`.
     // Wired exactly as `core.zig` does.
     var facts = try imports.buildImportFacts(alloc, main_path, mod, &cache);
@@ -1808,9 +1808,9 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
     try std.testing.expect(shadow_fid != null);
     try std.testing.expect(shadow_fid.? != winner_fid.?);
 
-    // Phase C: THE bare-name selector routes per caller file over the
-    // Phase A author collector. `main` flat-imports two `greet` authors and is its
-    // own author of neither → a bare `greet()` from `main` is ambiguous. a.sx
+    // THE bare-name selector routes per caller file over the author collector.
+    // `main` flat-imports two `greet` authors and is its own author of
+    // neither → a bare `greet()` from `main` is ambiguous. a.sx
     // authors the WINNER, so its bare `greet` resolves through the existing path
     // (`.none`). b.sx authors the SHADOW, so own-author-wins selects b.sx's
     // author — its `*FnDecl` + source, NOT first-wins. The selector does NOT
@@ -2392,13 +2392,12 @@ test "scope: lookupBoundary flags a value binding reached across a nested-fn bou
 }
 
 test "lower: getExprAlloca diagnoses + returns null across a nested-fn boundary, resolves same-function allocas" {
-    // The review fold: getExprAlloca is the storage resolver behind the
-    // indexed-read fast path and the lvalue helpers — pre-fold it handed a
-    // nested static fn the ENCLOSING function's alloca Ref (dead in this
-    // function's SSA context → segfault / Bus error). Across the boundary it
-    // must diagnose and return null (callers fall to their boundary-guarded
-    // lowering paths); a SAME-function alloca must keep resolving with no
-    // diagnostic (no false positives on ordinary lookups).
+    // getExprAlloca is the storage resolver behind the indexed-read fast path
+    // and the lvalue helpers. Handing a nested static fn the ENCLOSING
+    // function's alloca Ref yields a Ref that is dead in this function's SSA
+    // context (segfault / Bus error), so across the boundary it diagnoses and
+    // returns null (callers fall to their boundary-guarded lowering paths); a
+    // SAME-function alloca resolves with no diagnostic.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -3046,7 +3045,7 @@ test "lower: assignment to a by-value loop capture is diagnosed as immutable, a 
     try std.testing.expect(found_immutable);
 }
 
-test "lower: assignment to a function-local '::' const gets the constant message, not the capture one (0219 review fold)" {
+test "lower: assignment to a function-local '::' const gets the constant message, not the capture one" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();

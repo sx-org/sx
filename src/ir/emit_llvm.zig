@@ -2968,7 +2968,7 @@ pub const LLVMEmitter = struct {
     /// Expand a JNI constructor dispatch (`Foo.new(args)` in sx). Chain:
     /// `FindClass(env, parent_class_path)` → `GetMethodID(env, clazz,
     /// "<init>", sig)` → `NewObject(env, clazz, mid, args...)`. Returns
-    /// the new jobject. Per-call lookups — no caching yet.
+    /// the new jobject. The lookups run per call; nothing is cached.
     pub fn emitJniConstructor(self: *LLVMEmitter, msg: ir_inst.JniMsgSend, ret_ty_id: TypeId) void {
         const env = self.resolveRef(msg.env);
         const sig_ptr = self.extractSlicePtr(self.resolveRef(msg.sig));

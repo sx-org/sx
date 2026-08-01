@@ -1,4 +1,4 @@
-// GLES3 backend for the GPU protocol. Android today.
+// GLES3 backend for the GPU protocol, on Android.
 //
 // We use opengl.sx's runtime-loaded function-pointer variables for every
 // GL call, populated via `load_gl(@eglGetProcAddress)` in `init()`.

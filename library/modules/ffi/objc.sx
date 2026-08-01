@@ -129,7 +129,7 @@ impl Into(*NSString) for string {
     }
 }
 
-// ─── Autoreleasepool (M4.A) ──────────────────────────────────────────────
+// ─── Autoreleasepool ─────────────────────────────────────────────────────
 // Foundation factory methods (`NSString.stringWithUTF8String:`,
 // `[NSArray array]`, ...) return autoreleased objects — valid until the
 // current pool drains. Wrap such code in `autoreleasepool(() { ... })`

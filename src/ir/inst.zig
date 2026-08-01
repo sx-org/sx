@@ -552,7 +552,7 @@ pub const JniMsgSend = struct {
     /// Runtime path of the parent class (e.g. `android/app/Activity`) when
     /// `is_nonvirtual` is true, OR of the class being constructed when
     /// `is_constructor` is true. emit_llvm uses `FindClass` to materialise
-    /// the jclass at the call site (per-call; caching is follow-up).
+    /// the jclass at the call site, per call (no cache).
     parent_class_path: ?[]const u8 = null,
     cache_key: ?CacheKey = null,
 };
@@ -574,7 +574,7 @@ pub const BuiltinId = enum(u16) {
     floor,
     size_of,
     align_of,
-    // Comptime-only reflection builtins. Today's `tryLowerReflectionCall`
+    // Comptime-only reflection builtins. `tryLowerReflectionCall`
     // folds these at lower time when the type argument is statically
     // resolvable — emits a `const_string` / `const_bool` directly.
     // These BuiltinId entries are the FALLBACK path: when the arg is

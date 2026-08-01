@@ -1,6 +1,6 @@
 // The shared author-collection layer of resolver.zig.
 //
-// collectVisibleAuthors is exercised over REAL Phase A facts (parse →
+// collectVisibleAuthors is exercised over REAL import facts (parse →
 // resolveImports → buildImportFacts, the exact path core.zig drives) plus one
 // synthetic diamond fixture for pointer-identity dedup. The visibility-adapter
 // tests pin the nameVisibleOverEdges edge-walk that isNameVisible /

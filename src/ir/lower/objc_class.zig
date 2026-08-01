@@ -433,10 +433,9 @@ pub fn emitObjcDefinedPropertyGetter(self: *Lowering, fcd: *const ast.RuntimeCla
 
     const field_addr = self.builder.emit(.{ .struct_gep = .{ .base = state_ptr, .field_index = fidx, .base_type = state_ty } }, ptr_void);
 
-    // M4.B getter — weak fields go through objc_loadWeakRetained +
-    // objc_autorelease for race-safe reads. The bare-load path
-    // (strong/copy/assign) is the common case and reads the slot
-    // directly.
+    // Weak fields go through objc_loadWeakRetained + objc_autorelease for
+    // race-safe reads. The bare-load path (strong/copy/assign) is the common
+    // case and reads the slot directly.
     const kind = self.objc().objcPropertyKind(field);
     if (kind == .weak) {
         self.ensureArcRuntimeDecls();
@@ -522,7 +521,7 @@ pub fn emitObjcDefinedPropertySetter(self: *Lowering, fcd: *const ast.RuntimeCla
 
     const field_addr = self.builder.emit(.{ .struct_gep = .{ .base = state_ptr, .field_index = fidx, .base_type = state_ty } }, ptr_void);
 
-    // M4.B setter — emit ARC ops based on the property's modifier kind.
+    // The ARC ops emitted follow the property's modifier kind.
     const kind = self.objc().objcPropertyKind(field);
     switch (kind) {
         .assign => {
@@ -1092,8 +1091,8 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
     get_args[1] = ivar_handle;
     const state = self.builder.emit(.{ .call = .{ .callee = get_ivar_fid, .args = get_args } }, ptr_void);
 
-    // (2) M4.B dealloc — release strong/copy property ivars and
-    // destroyWeak weak property ivars BEFORE freeing the state struct
+    // (2) Release strong/copy property ivars and destroyWeak weak property
+    // ivars BEFORE freeing the state struct
     // (which would invalidate the pointers we need to read). Property
     // metadata is re-derived from `fcd.members`; the state struct is
     // already interned via objcDefinedStateStructType.

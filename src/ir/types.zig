@@ -1108,8 +1108,8 @@ pub const TypeTable = struct {
     }
 
     /// Compute the ABI size in bytes for a type, matching LLVM's struct layout rules.
-    /// This is the authoritative size computation used for closure env sizing and
-    /// verified against LLVMABISizeOfType.
+    /// This is the authoritative size computation used for closure env sizing;
+    /// `LLVMEmitter.verifySizes` cross-checks it against LLVMABISizeOfType.
     fn intAbiBytes(w: u16) usize {
         // LLVM ABI size for iN: round w up to the next power of 2, then /8.
         // Sub-byte widths (i1, i2, ..., i7) are 1 byte.

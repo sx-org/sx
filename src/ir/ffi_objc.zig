@@ -317,7 +317,7 @@ pub const ObjcLowering = struct {
     }
 
     /// Resolve a `#property(...)` field's ARC kind. Loud at compile time
-    /// for known footguns (per the silent-error budget in the plan):
+    /// for known footguns:
     ///   - unknown modifier name (typo) → diagnostic
     ///   - `weak` on a non-object field type → diagnostic
     ///   - `strong` (explicit or defaulted) on `*void` (ambiguous: Obj-C

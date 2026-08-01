@@ -235,11 +235,10 @@ TlsServer :: struct {
         return ok;
     }
 
-    // (Minimum TLS version: the config default already floors at TLS 1.2 and
-    // prefers 1.3, which satisfies the plan's policy. An explicit version pin
-    // would need a tiny C shim — mbedTLS's `mbedtls_ssl_conf_min_tls_version`
-    // is a `static inline` over an opaque field, so it exposes no linkable
-    // symbol to bind. Deferred until a consumer needs to REQUIRE 1.3.)
+    // (Minimum TLS version: the config default floors at TLS 1.2 and prefers
+    // 1.3, and there is no explicit pin — mbedTLS's
+    // `mbedtls_ssl_conf_min_tls_version` is a `static inline` over an opaque
+    // field, so it exposes no linkable symbol to bind.)
 
     // ── ALPN ───────────────────────────────────────────────────
     // Advertise the given protocols (preference order; e.g. .["http/1.1"]).
@@ -360,8 +359,7 @@ TlsServer :: struct {
         if rc != 0 {
             // x509_crt_parse APPENDS and can partially succeed (positive rc
             // = some certs parsed). Reset the chain so a retried call can't
-            // silently trust anchors from a call that reported failure
-            // (review P1).
+            // silently trust anchors from a call that reported failure.
             mbedtls.mbedtls_x509_crt_free(*self.ca);
             mbedtls.mbedtls_x509_crt_init(*self.ca);
             return false;

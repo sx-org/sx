@@ -197,7 +197,7 @@ Scheduler :: struct {
     // leaks until program exit. Bounded by the spawn count; under the default
     // GPA (which frees at exit) it is invisible, but a long-running scheduler
     // under an arena/tracking allocator accumulates one env per fiber. Freeing
-    // it needs a language affordance for closure-env ownership — deferred.
+    // it needs a language affordance for closure-env ownership.
     spawn :: (self: *Scheduler, body: Closure() -> void) -> *Fiber {
         raw := self.own_allocator.alloc_bytes(size_of(Fiber));
         if raw == null {
@@ -521,8 +521,8 @@ Scheduler :: struct {
         // fired and every io-waiter has been woken, `n_suspended` counts only
         // these true orphans.)
         //
-        // SCOPE — fd waiters are NOT covered by this check, BY DESIGN, not as an
-        // oversight. While `io_waiters.len > 0` the loop above blocks in
+        // fd waiters are NOT covered by this check. While `io_waiters.len > 0`
+        // the loop above blocks in
         // `kq_wait(-1)` and never reaches here. A fiber blocked on an fd that the
         // OS never reports ready blocks FOREVER — which is the correct semantics
         // of an event loop (a server idling on a socket is indistinguishable from
@@ -586,7 +586,7 @@ Scheduler :: struct {
     }
 }
 
-// --- B2/A1: the fiber scheduler AS an `Io` capability vtable -----------------
+// --- The fiber scheduler AS an `Io` capability vtable ------------------------
 //
 // `impl Io for Scheduler` folds the M:1 fiber scheduler behind `context.io` —
 // the same `Io` protocol (core.sx) the blocking `CBlockingIo` (io.sx) implements,
@@ -597,7 +597,7 @@ Scheduler :: struct {
 //     s := Scheduler.init();
 //     push .{ io = s } {
 //         … context.io.async(…) / await / race …
-//         s.run();    // the explicit driver loop (stays as today)
+//         s.run();    // the explicit driver loop
 //     }
 //
 // (fibers inherit the spawn-time context) is what makes this reach a
@@ -847,7 +847,7 @@ T
 // `allocator`) borrow a receiver (often a stack local via `xx`); that receiver,
 // and any `data` pointee, must stay alive until the fiber is reaped. A fiber that
 // grows a long-lived container through the inherited `context.allocator` is
-// subject to the usual long-lived-container rule (CLAUDE.md).
+// subject to the usual long-lived-container rule.
 fib_dispatch :: (self: *Fiber) abi(.c) {
     // Run the body under the context captured at spawn (`Fiber.dctx`), so the
     // fiber inherits its spawner's `context` — notably `context.io` resolves to a
@@ -1033,8 +1033,8 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
             wf := self.io_waiters.items[i].fiber;
             remove_io_waiter(self, i);
             self.wake(wf);   // re-enqueues the parked fiber (also calls
-                             // cancel_io_waiter_for, now a harmless no-op —
-                             // the record is already removed)
+                             // cancel_io_waiter_for, a no-op here — the
+                             // record is already removed)
             return;
         }
         i = i + 1;
@@ -1044,7 +1044,7 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 // The public API lives as methods on `Scheduler` (above): `init`, `spawn`,
 // `yield_now`, `suspend_self`, `wake`, `run`, `now_ms`, `sleep`.
 
-// --- B2/A1: structured first-wins `race` over `context.io` Futures -----------
+// --- Structured first-wins `race` over `context.io` Futures ------------------
 //
 // `context.io.race((a: fa, b: fb, …))` starts from N already-spawned `*Future(..)`
 // handles (from `context.io.async`), returns when the FIRST is `.ready`, and

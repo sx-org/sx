@@ -70,7 +70,7 @@ UnionInfo    :: struct { arms: []StructField; }
 // type table's kinds (a kind the compiler adds fails the record builder until
 // classified; no catch-all). Only `.enum` / `.struct` / `.tuple` can be
 // MINTED via `define`; every other variant is reflect-only. The first
-// three variants keep their historical order (write-side ordinals).
+// three variants are ordinal-pinned (the write side keys on them).
 // Keyword-colliding variant names declare bare, like every other member
 // position.
 TypeInfo :: enum {
@@ -107,7 +107,7 @@ TypeInfo :: enum {
 // These `intrinsic` functions are the compiler's type-construction
 // primitives — serviced by `comptime_vm.callCompilerFn`. They run at LOWERING
 // time (when a `-> Type` builder's result is first referenced), where the
-// compiler still resolves references to the new types. The DSL's `declare` /
+// compiler can still resolve references to the minted types. The DSL's `declare` /
 // `define` below are ordinary sx written over them. (Declared here, not imported
 // from `modules/compiler.sx`, so `meta.sx` stays self-contained and doesn't
 // intern `compiler.sx`'s `List(string)` types into every importer's table.)

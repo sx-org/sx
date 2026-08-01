@@ -36,8 +36,8 @@ const corpus_paths = @import("corpus_paths");
 // IS the program's run phase. AOT examples get the split for free (separate
 // build/exec subprocesses). After each sweep a sorted per-example report is
 // written to `.sx-tmp/corpus-timing-<root>.txt`; examples whose RUN phase
-// exceeds the 1-second budget (AGENTS.md) are flagged there. The report is
-// diagnostic output only — it never affects pass/fail.
+// exceeds the 1-second budget are flagged there. The report is diagnostic
+// output only — it never affects pass/fail.
 //
 // Paths + the `sx` binary path are injected at configure time (build.zig
 // `corpus_paths`); the FILE LIST is enumerated at test time, so new examples are
@@ -58,7 +58,7 @@ const corpus_paths = @import("corpus_paths");
 const TIMEOUT_SECS = 30;
 const MAX_OUTPUT = 16 * 1024 * 1024;
 
-/// AGENTS.md budget: an example's RUN phase (post-compile) must fit in 1s.
+/// An example's RUN phase (post-compile) must fit in 1s.
 const RUN_BUDGET_NS: u64 = 1_000_000_000;
 
 /// The one directory a corpus run owns. Everything an example's build sidecar
@@ -375,8 +375,7 @@ const BuildConfig = struct {
     /// compiled for the target and asserts exit code + stderr ONLY — no `.ir`
     /// snapshot exists or is compared. This is the cross-target mode for
     /// examples whose point is "this compiles (or diagnoses) for the target":
-    /// IR text tracks LLVM's printer, so snapshotting it tests LLVM, not sx
-    /// (AGENTS.md: never snapshot LLVM IR).
+    /// IR text tracks LLVM's printer, so snapshotting it tests LLVM, not sx.
     compile_only: bool = false,
 
     /// Symbols that must NOT appear in the built binary (requires `aot`).

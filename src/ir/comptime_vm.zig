@@ -211,10 +211,10 @@ pub var last_bail_was_bridge: bool = false;
 
 // ── Fact-await seam ─────────────────────────────────────────────────────────
 //
-// A comptime evaluation can reach a question whose answer is not yet FINAL —
-// today only "which conformer arm implements this symbolic dispatch", since a
-// conformance admitted later still grows the routine's member set. Instead of
-// failing on the spot, the evaluation awaits that fact: it parks, the driver
+// A comptime evaluation can reach a question whose answer is not yet FINAL. The
+// one such question is "which conformer arm implements this symbolic dispatch",
+// since a conformance admitted later still grows the routine's member set.
+// Instead of failing on the spot, the evaluation awaits that fact: it parks, the driver
 // asks the evaluation's own scheduler, and the same continuation resumes with
 // the answer. A scheduler that cannot answer YET leaves the evaluation parked
 // and its owner — the expansion worklist — resumes it once the fact fires.

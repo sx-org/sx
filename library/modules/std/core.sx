@@ -187,9 +187,8 @@ Allocator :: protocol inline #identity {
 //   arm_timer  — register a timer; backs `timeout`.
 //
 // `ParkToken` is an opaque per-suspension token (unused by the blocking
-// impl). `SpawnOpts.pin` is inert in the M:1 model. (`PinTarget.on` —
-// pin to a specific `Thread` — is deferred with the M:N model; the
-// `on_thread` variant is a placeholder until a `Thread` type exists.)
+// impl). `SpawnOpts.pin` is inert in the M:1 model, and `PinTarget.on_thread`
+// is a placeholder: there is no `Thread` type to pin to.
 PinTarget :: enum { any; main; on_thread; }
 
 SpawnOpts :: struct {

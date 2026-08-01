@@ -1,17 +1,16 @@
 // std.http — a minimal blocking HTTP/1.1 client.
 //
-// Factored out of the loopback round-trip helpers the server tests hand-rolled
-// (connect → send a request → read the response). It SHARES the parsing types
-// with the server (types.sx): a response's `Content-Length` is found via the
-// very same `find_header`. The facade re-exports it as http.Client /
-// http.ClientResponse / http.dial.
+// One round trip is connect → send a request → read the response. It SHARES
+// the parsing types with the server (types.sx): a response's `Content-Length`
+// is found via the very same `find_header`. The facade re-exports it as
+// http.Client / http.ClientResponse / http.dial.
 //
 // Sockets are BLOCKING — open a connection and call `request`. NOTE: a blocking
 // client cannot interleave a server driven by `tick` on the SAME thread; run
 // such a server on another thread (thread.Thread.spawn(... srv.run ...)) and
 // drive the client from the main thread (see the corpus example).
 //
-// SCOPE (deliberately blocking):
+// The blocking surface:
 //   • `recv`/`recv_on` read Content-Length, close-delimited, or chunked
 //     responses. Chunk framing is removed, and gzip/deflate is decoded
 //     incrementally unless ClientOpts.accept_compression is false. Output is
@@ -1147,9 +1146,9 @@ ClientPool :: struct {
             }
             // The server may close after this response (its request_count
             // cap / an error close): drop the conn when it SAID so —
-            // "close" as a token of the comma-separated list, per RFC
-            // (review M2: a length-only match dropped on any 5-char value
-            // and MISSED "close, ..." lists).
+            // "close" as a token of the comma-separated list, per RFC. A
+            // length-only match would accept any 5-char value and miss
+            // "close, ..." lists.
             if connection_says_close(r.header("connection")) { self.drop(idx); }
             return r;
         }

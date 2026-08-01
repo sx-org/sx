@@ -315,7 +315,7 @@ pub fn evalStaticTypeMatch(self: *Lowering, me: *const ast.MatchExpr) ?StaticTyp
 /// runtime classification arm for arm so the static fold and the runtime
 /// tag switch can never disagree on what a category means — plus the
 /// `protocol` category, which exists ONLY here (a protocol value carries
-/// no runtime tag to switch on until the phase-2 RTTI story).
+/// no runtime tag to switch on).
 pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8) bool {
     const tt = &self.module.types;
     if (std.mem.eql(u8, name, "int")) {
@@ -2156,8 +2156,8 @@ pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8
     return program_index_mod.evalConstIntExpr(e, SourceConstCtx{ .lowering = self, .frame = &f });
 }
 
-/// `source`'s per-source const cache entry for `name` (E0's
-/// `module_consts_by_source` write side), or null.
+/// `source`'s per-source const cache entry for `name` — the read side of
+/// `module_consts_by_source` — or null.
 pub fn sourceModuleConst(self: *Lowering, source: []const u8, name: []const u8) ?ModuleConstInfo {
     const inner = self.program_index.module_consts_by_source.get(source) orelse return null;
     return inner.get(name);

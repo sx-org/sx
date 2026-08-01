@@ -178,8 +178,8 @@ pub fn plainStructAdoptableMethod(self: *Lowering, ty: TypeId, method: []const u
 }
 
 /// Internal dispatch key for a selected plain-struct method. The first/single
-/// author preserves the historical `Name.method` key. A shadow author includes
-/// its nominal id so independently monomorphized generic methods cannot collide;
+/// author takes the plain `Name.method` key. A shadow author includes its
+/// nominal id so independently monomorphized generic methods cannot collide;
 /// this key is compiler-internal and does not alter SX spelling.
 pub fn plainStructMethodName(self: *Lowering, method: PlainStructMethod) []const u8 {
     const info = self.module.types.get(method.owner_ty);

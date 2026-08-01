@@ -101,7 +101,7 @@ fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: 
         // dispatch arm keeps it — and cannot form the receiver there, so a case that
         // REACHES this line is a hole. Two destination-first declarations present
         // the same first-parameter shape, so the ranking above cannot separate them
-        // and lands on `amb` first; that is what makes this unreachable today.
+        // and lands on `amb` first; that is what makes this unreachable.
         if (fd != fd0) return null;
     }
     if (fd.params.len == 0) return null;
@@ -2606,8 +2606,8 @@ pub fn allocViaContext(self: *Lowering, size_ref: Ref) Ref {
 
 /// Emit a call to a extern-declared function looked up by name.
 /// Used for the compiler-internal byte-copy in the protocol-erasure
-/// heap path and the closure env-copy path, both of which need
-/// libc `memcpy` after the `intrinsic` form was dropped.
+/// heap path and the closure env-copy path, both of which reach libc
+/// `memcpy` by name.
 pub fn callExtern(self: *Lowering, name: []const u8, args: []const Ref, ret_ty: TypeId) Ref {
     const fid = self.resolveFuncByName(name) orelse @panic("extern symbol missing — std.sx not imported?");
     return self.builder.call(fid, args, ret_ty);
@@ -3735,7 +3735,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
                 self.builder.store(slot, base_val);
                 break :blk slot;
             }
-            // Builtin receiver (`any` today) — the fields-empty arm never
+            // Builtin receiver (`any`) — the fields-empty arm never
             // dereferences the base; pass the value through.
             break :blk base_val;
         };

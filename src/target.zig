@@ -407,12 +407,11 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
         return error.CompileError;
     }
 
-    // Defensive backstop: ORC has been observed reporting
-    // success from the `main` lookup while leaving `main_addr` at 0 — calling
-    // @ptrFromInt(0) then segfaults. The real fix is the pre-JIT entry-point
-    // check in main.zig (which also catches the observed NON-zero garbage
-    // address case); this guard is a last line of defense so a null entry can
-    // never be called regardless of how we got here.
+    // ORC can report success from the `main` lookup while leaving `main_addr`
+    // at 0 — calling @ptrFromInt(0) then segfaults. The pre-JIT entry-point
+    // check in main.zig rejects a program with no `main` (and catches the
+    // NON-zero garbage address too); this guard keeps a null entry from being
+    // called on any path that reaches here.
     if (main_addr == 0) {
         std.debug.print("error: no 'main' function found in JIT module\n", .{});
         return error.CompileError;

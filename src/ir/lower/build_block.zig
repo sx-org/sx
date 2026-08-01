@@ -42,7 +42,7 @@ pub const Site = struct {
     /// Where the block was WRITTEN — the file its site reports, which is the
     /// forming caller's, not the accepting function's.
     source_file: ?[]const u8,
-    /// Locals the body reads, captured BY REFERENCE (N49): the environment holds
+    /// Locals the body reads, captured BY REFERENCE: the environment holds
     /// their addresses, so a replay in another frame reads them live and a
     /// second `run` observes a mutation.
     captures: []const lower_closure.CaptureInfo,
@@ -191,7 +191,7 @@ fn siteFor(self: *Lowering, arg: *const Node, protocol: TypeId) u32 {
 /// formation request names `protocol` (§6.2 rule 1). The body is NOT lowered
 /// here: it belongs to the site, and each `run` replays it. What the value
 /// carries is the capture environment — addresses of the forming frame's locals,
-/// in a stack struct, so forming allocates nothing (N49).
+/// in a stack struct, so forming allocates nothing.
 ///
 /// An argument that already IS an implementor is passed through unchanged
 /// (rule 2), which is how a block is handed down without being re-formed.
@@ -231,7 +231,7 @@ pub fn formBlock(self: *Lowering, arg: *const Node, protocol: TypeId) Ref {
 /// the RECEIVING function's instruction stream: control flow is ordinary sx
 /// control flow, and the block's free names are read through the environment the
 /// forming frame handed over, so a replay one call down still reads that frame's
-/// locals (N49).
+/// locals.
 pub fn lowerRun(self: *Lowering, block: *const Node, block_ty: TypeId, args: []const *const Node, span: ast.Span) Ref {
     const record = siteRecord(self, block_ty) orelse return Ref.none;
     if (args.len != 1) {
@@ -569,7 +569,7 @@ fn blanketSeed(self: *Lowering, scope: *const Scope) ?std.StringHashMap(TypeId) 
 ///   - an OPEN SET: its MEMBERS publish too. A set carries its member inside the
 ///     slot, so a member statement type-checked at the expected `P` IS a complete
 ///     `P` value — the same allocator-free formation the expected type performs
-///     anywhere else, not a sink-side widening (A1, spec: Open Sets — formation).
+///     anywhere else, not a sink-side widening (spec: Open Sets — formation).
 ///   - anything else: the statement's type IS `P`. Identity only — a type that
 ///     merely converts to `P` is an ordinary statement, not a child.
 fn publishesAt(self: *Lowering, protocol: TypeId, protocol_name: []const u8, v: TypeId) bool {
@@ -609,11 +609,12 @@ pub fn lowerSite(self: *Lowering, block_ty: TypeId, args: []const *const Node, s
     return self.builder.emit(.{ .optional_wrap = .{ .operand = value } }, opt_ty);
 }
 
-// ── Frame-bound values (§6.2, N49) ─────────────────────────────────────────
+// ── Frame-bound values (§6.2) ──────────────────────────────────────────────
 // A block implementor holds the ADDRESSES of the forming frame's locals, so it
-// is valid exactly as long as that frame. Handing it to a callee is what N45
-// rule 2 is for — the callee runs within the call. Everything that would outlive
-// the call is refused: a local binding, a closure capture, and a return.
+// is valid exactly as long as that frame. Handing it to a callee is what the
+// pass-through rule is for — the callee runs within the call. Everything that
+// would outlive the call is refused: a local binding, a closure capture, and a
+// return.
 
 /// Refuse binding a block to a local (`saved := content`). The value would
 /// outlive nothing by itself, but a name is what a closure captures and what a

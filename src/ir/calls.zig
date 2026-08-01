@@ -507,10 +507,10 @@ pub const CallResolver = struct {
                 // routes through the SAME author producer `selectedFreeAuthor` as a
                 // bare call, so the planned target / return type IS the author
                 // lowering dispatches — they can't disagree under a flat same-name
-                // collision. Without this, plan typed the
-                // first-wins winner while lowering bound the selected shadow,
-                // mis-tagging the call's result (a string-typed winner over an i64
-                // shadow boxes a raw int as a string pointer → segfault).
+                // collision. Without this, the plan types the first-wins winner
+                // while lowering binds the selected shadow, mis-tagging the call's
+                // result (a string-typed winner over an i64 shadow boxes a raw int
+                // as a string pointer → segfault).
                 // `.ambiguous` / `.none` fall through to the first-wins path below,
                 // unchanged.
                 switch (self.selectedFreeAuthor(c)) {

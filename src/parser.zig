@@ -36,7 +36,7 @@ pub const Parser = struct {
     /// struct literal starts the if body, not the literal's optional init
     /// block (`if x != .{1, 2} { ... }`).
     in_if_condition: bool = false,
-    /// Trailing-block T5 (specs: Trailing Blocks): while parsing a header
+    /// Trailing blocks (specs: Trailing Blocks): while parsing a header
     /// expression whose `{` opens the statement body (`while cond {`,
     /// `push expr {`), a call may not take a trailing block. `if`/`for`
     /// headers are covered by `in_if_condition`/`in_for_header`. Cleared
@@ -881,7 +881,7 @@ pub const Parser = struct {
             // Closure type: Closure(params...) -> R
             //   Variadic-pack trailing form: `Closure(Prefix..., ..$pack) -> R`
             //   binds `pack` to a heterogeneous comptime type list at impl
-            //   match time (see plan: variadic heterogeneous type packs).
+            //   match time.
             if (std.mem.eql(u8, name, "Closure") and self.current.tag == .l_paren) {
                 return self.parseClosureTypeBody(start);
             }
@@ -3307,7 +3307,7 @@ pub const Parser = struct {
                         } });
                         try args.append(self.allocator, try self.createNode(block.span.start, .{ .trailing_block = .{ .lambda = lambda } }));
                         expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
-                        // T7′: after the block's `}` only DOT-led postfix
+                        // After the block's `}` only DOT-led postfix
                         // continues the chain (`f() { … }.map()`); every other
                         // token ends it.
                         if (self.current.tag != .dot) break;

@@ -228,7 +228,7 @@ pub fn main(init: std.process.Init) !void {
         if (!explicit_opt) target_config.opt_level = .none;
         var timer = Timing.init(io, show_timing);
 
-        // Phase A: read + parse + resolveImports (for cache key)
+        // Read + parse + resolveImports (for cache key)
         timer.mark();
         const source = readSource(allocator, io, path) catch std.process.exit(1);
         timer.record("read");
@@ -249,11 +249,11 @@ pub fn main(init: std.process.Init) !void {
         const root = comp.resolved_root orelse comp.root orelse return;
 
         // Pre-JIT entry-point check. The ORC `main` lookup in
-        // runJITFromObject does NOT reliably report "no main" — it has been
-        // observed reporting success while leaving the address at garbage
-        // (0x0 or a small non-zero value), which then gets called and
-        // segfaults. Reject programs with no `main` here, before
-        // any codegen/JIT, with a clean diagnostic + non-zero exit.
+        // runJITFromObject does NOT reliably report "no main" — it can report
+        // success while leaving the address at garbage (0x0 or a small
+        // non-zero value), which then gets called and segfaults. Reject
+        // programs with no `main` here, before any codegen/JIT, with a clean
+        // diagnostic + non-zero exit.
         if (!hasMainEntry(root)) {
             std.debug.print("error: no 'main' function found — 'sx run' requires a top-level 'main' entry point\n", .{});
             std.process.exit(1);
@@ -619,7 +619,7 @@ const BuildHooksCtx = struct {
 };
 
 fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []const u8, output_path: []const u8, target_config: sx.target.TargetConfig, timer: *Timing, enable_cache: bool, stdlib_paths: []const []const u8) !void {
-    // Phase A: read + parse + resolveImports (fast: ~0.5ms)
+    // Read + parse + resolveImports (fast: ~0.5ms)
     timer.mark();
     const source = try readSource(allocator, io, input_path);
     timer.record("read");

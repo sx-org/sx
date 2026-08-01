@@ -341,8 +341,8 @@ test "buildImportFacts: directory import unions member-file decls under the dir 
 }
 
 // Namespaced file import (`g :: #import "point.sx"`): recorded as a namespace
-// edge whose `target_module_path` is the aliased file (the fact lost today),
-// AND as a `.namespace_decl` in the importer's scalar index.
+// edge whose `target_module_path` is the aliased file, AND as a
+// `.namespace_decl` in the importer's scalar index.
 test "buildImportFacts: namespaced file import captures target_module_path" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

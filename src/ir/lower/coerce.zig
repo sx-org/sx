@@ -206,8 +206,8 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
     // `Into` applied; the ORDER matters: a spill here must never pre-empt
     // Into or its visibility diagnostics). The raw SSA passthrough would
     // hand codegen a value whose IR type contradicts its sx type — fine in
-    // store positions (memory is untyped; the historic escape-hatch uses),
-    // but the first VALUE-context use (icmp, call arg, arithmetic) aborts
+    // store positions (memory is untyped), but the first VALUE-context use
+    // (icmp, call arg, arithmetic) aborts
     // the LLVM verifier. Deliver the promised reinterpretation
     // for real: spill through a zero-initialized slot typed as the larger
     // side, load back as the target — a genuine dst-typed value in every

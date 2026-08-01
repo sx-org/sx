@@ -260,8 +260,8 @@ mbedtls_ctr_drbg_random :: (p_rng: *void, output: [*]u8, len: usize) -> i32 abi(
 
 // ── TLS verification mode (client/peer-auth) ────────────────────────
 // authmode controls whether the peer certificate is verified. The server
-// provider leaves it at the preset default; a client (T5 loopback test)
-// sets VERIFY_NONE to accept the self-signed fixture cert.
+// provider leaves it at the preset default; the loopback client sets
+// VERIFY_NONE to accept the self-signed fixture cert.
 mbedtls_ssl_conf_authmode :: (conf: *SslConfig, authmode: i32) extern mbedtls;
 
 // ── Version ─────────────────────────────────────────────────────────

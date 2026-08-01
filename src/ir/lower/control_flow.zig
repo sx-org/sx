@@ -1240,8 +1240,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // `switch double` against integer case constants). Reject up front with a
     // located diagnostic and bail — the arms are never lowered.
     //
-    // Type-category matches get NO exemption here (review fold): a genuine
-    // type match's subject is a Type VALUE — a `type_of(...)` result or a
+    // Type-category matches get NO exemption here: a genuine type match's
+    // subject is a Type VALUE — a `type_of(...)` result or a
     // `$T` binding — which types `.type_value` and passes the allowlist below
     // on its own. Exempting on `is_type_match` (a property of the PATTERNS,
     // not the subject) let a single `case U:` / `case string:` pattern token
@@ -1490,8 +1490,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             };
             // The `protocol` category exists only in the STATIC fold (an
             // `inline if` over a bound generic type param) — a protocol
-            // value carries no runtime tag to switch on until the phase-2
-            // RTTI story, so a runtime arm would be silently dead.
+            // value carries no runtime tag to switch on, so a runtime arm
+            // would be silently dead.
             if (std.mem.eql(u8, name, "protocol")) {
                 if (self.diagnostics) |d|
                     d.addFmt(.err, pat.span, "'case protocol:' needs a compile-time subject — use `inline if` over a generic type param (a protocol value carries no runtime type tag)", .{});

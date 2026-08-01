@@ -72,8 +72,8 @@ HitPolicy :: enum {
                   // the region below in paint order
 }
 
-// A focus declaration (G5): focusable elements declare beside their
-// hit regions; DECLARATION order is the tab-traversal order — no
+// A focus declaration: focusable elements declare beside their hit regions;
+// DECLARATION order is the tab-traversal order — no
 // registry. on_key/on_text fire at delivery from the CURRENT
 // committed snapshot, re-supplied each frame like hit-region
 // closures; wants_keyboard is what the platform shell polls to drive

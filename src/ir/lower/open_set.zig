@@ -67,7 +67,7 @@ const payload_field = "payload";
 const tag_field = "tag";
 
 /// `align` when the declaration omits it: the alignment ordinary allocators
-/// guarantee, which is what a `List(P)` can honour today.
+/// guarantee, which is what a `List(P)` can honour.
 pub const default_align: u32 = 8;
 
 /// A member whose own size depends on another set's layout: it holds that set BY

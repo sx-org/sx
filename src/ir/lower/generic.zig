@@ -748,7 +748,7 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
             break :blk buf.toOwnedSlice(self.alloc) catch "function";
         },
         // A compiler-formed `@` type renders through the type table's canonical
-        // spelling; a plain closure keeps the historical bare `closure` tag.
+        // spelling; a plain closure renders as the bare `closure` tag.
         .closure => |co| if (co.init_target != null or co.build_protocol != null)
             self.module.types.formatTypeName(self.alloc, ty)
         else

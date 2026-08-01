@@ -1904,10 +1904,9 @@ pub const Lowering = struct {
                     // fabricate a zero-field empty-struct stub (`{}`) and ship it
                     // to codegen as a real type — a silent-default
                     // miscompile. Reject loudly and poison with `.unresolved`.
-                    // A genuinely registered dotted type (none today, but a
-                    // forward-declared stub could exist) is still honored before
-                    // we reject, so we never reject a name that resolves to a
-                    // real type.
+                    // A genuinely registered dotted type (a forward-declared
+                    // stub, say) is still honored before we reject, so we never
+                    // reject a name that resolves to a real type.
                     if (!self.aliasDeclaredAnywhere(te.name[0..dot])) {
                         const sid = self.module.types.internString(te.name);
                         if (self.module.types.findByName(sid)) |tid| {

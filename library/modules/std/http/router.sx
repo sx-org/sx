@@ -12,7 +12,7 @@
 //
 // MEMORY: route registration captures the Router's owning allocator
 // (init) and grows the route table through it — the table outlives any
-// transient per-request scope (CLAUDE.md long-lived-container rule). The
+// transient per-request scope, per the long-lived-container rule. The
 // HOT PATH allocates NOTHING: path params, query pairs, and form pairs all
 // land in FIXED-CAPACITY arrays on the stack-resident RouteCtx — no
 // per-request heap, so the server's leak gate stays net-zero. Decoded
@@ -31,8 +31,8 @@
 // memory-safe, but a handler treating such a value as a C string should know.
 //
 // multipart/form-data is OUT OF SCOPE (it is large — boundary framing,
-// streamed parts, per-part headers); a follow-up. This layer covers
-// application/x-www-form-urlencoded only.
+// streamed parts, per-part headers). This layer covers only
+// application/x-www-form-urlencoded.
 
 #import "modules/std/fmt.sx";          // concat
 types :: #import "modules/std/http/types.sx";

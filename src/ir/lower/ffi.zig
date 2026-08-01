@@ -772,7 +772,7 @@ pub fn lowerSuperCall(
         .is_static = false,
         .is_nonvirtual = true,
         .parent_class_path = self.alloc.dupe(u8, parent_path) catch parent_path,
-        .cache_key = null, // per-call FindClass + GetMethodID; caching is a follow-up
+        .cache_key = null, // per-call FindClass + GetMethodID
     } }, ret_ty);
 }
 

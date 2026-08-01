@@ -8,8 +8,7 @@
 // as event.sx's per-OS `Loop`). An unsupported target (e.g. windows) matches
 // NEITHER block, so
 // `SockAddr` / `O_NONBLOCK` / `errno_slot` / … stay undefined and the first use
-// is a loud compile error — never a silent darwin-default fallback (CLAUDE.md
-// REJECTED PATTERNS).
+// is a loud compile error — never a silent darwin-default fallback.
 //
 // VALIDATION: the darwin path runs on the macOS dev host; the linux path is
 // IR-locked cross-target by examples (the `.build` `target` sidecar) and

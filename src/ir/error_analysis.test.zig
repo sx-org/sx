@@ -96,9 +96,8 @@ test "error_analysis: convergeClosureShapeSets unions a bare-! closure literal's
 
 test "error_analysis: empty-inferred warnings are emitted in source order, not hashmap order" {
     // `work` is a StringHashMap, so iterating it to emit diagnostics yields hash
-    // order. Zig and Odin do not share a hash, so a faithful port would reorder
-    // this output — hence the sort. Names here are deliberately chosen so hash
-    // order != source order.
+    // order — hence the sort. These names are chosen so hash order != source
+    // order.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();

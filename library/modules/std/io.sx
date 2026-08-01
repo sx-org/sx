@@ -20,8 +20,8 @@
 //
 // Worker form: a `Closure(..$args) -> $R` whose params are
 // annotated at the call site (a lambda `(a: i64) -> i64 => ...`).
-// Named-fn workers need a `::` callable-parameter language feature that
-// does not exist yet and are DEFERRED.
+// A named fn is not a worker: that needs a `::` callable-parameter language
+// feature, which does not exist.
 #import "modules/std/core.sx";
 #import "modules/std/atomic.sx";
 c    :: #import "modules/std/c.sx";
@@ -177,17 +177,16 @@ sx_run_boxed_closure :: (arg: *void) {
 // `fut_release` (see the `Future` fields). The remaining leak is a future that is
 // never awaited (fire-and-forget, or a `race` loser) — `consumed` stays false so
 // its `Future` struct is kept; reclaiming that needs a structured-concurrency
-// scope (deferred).
+// scope.
 //
 // ALLOCATOR-LIFETIME CONTRACT: all are allocated from the `context.allocator`
 // in force at the `async` CALL, and that allocator MUST outlive the future —
 // i.e. survive until the worker has run and the result is consumed. This is the
-// long-lived-container rule (CLAUDE.md): calling `async` inside a transient
-// `push Context{ allocator = arena }` that is torn down before `run()`/`await`
+// long-lived-container rule: calling `async` inside a transient `push
+// Context{ allocator = arena }` that is torn down before `run()`/`await`
 // drives the worker frees the Future while it is still live (use-after-free).
 // The common case (the program-stable default GPA, or a scheduler set up under a
-// long-lived allocator) is safe. A deeper fix — `async` capturing the scheduler's
-// own long-lived allocator — needs a protocol affordance to reach it; deferred.
+// long-lived allocator) is safe.
 // Release one owner's hold on a Future and free it once BOTH the worker and the
 // awaiter are done (the two-flag handshake). Idempotent in effect: the caller sets
 // its own flag first, so only the LAST releaser sees both set and frees — exactly

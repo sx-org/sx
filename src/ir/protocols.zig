@@ -467,8 +467,8 @@ pub const ProtocolResolver = struct {
             if (entry.ret_var_name == null and ent_ci.ret != src_ret) continue;
             // First match wins for v1; concrete-wins-over-pack already
             // happened by the caller checking concrete first. Multiple
-            // overlapping pack impls would be a separate diagnostic
-            // (deferred — same module duplicates are caught at registration).
+            // overlapping pack impls get no diagnostic here; same-module
+            // duplicates are caught at registration.
             matched_idx = i;
             break;
         }

@@ -2,8 +2,8 @@ const std = @import("std");
 const corpus_paths = @import("corpus_paths");
 const doc_mod = @import("document.zig");
 
-// Permanent LSP corpus-sweep test (distribution step B). Drives the editor
-// analyzer (`DocumentStore.analyzeDocument` — the exact path `server.zig`'s
+// The LSP corpus sweep drives the editor analyzer
+// (`DocumentStore.analyzeDocument` — the exact path `server.zig`'s
 // `textDocument/didOpen` handler uses) over EVERY `.sx` file in the example +
 // issue corpora, in process. The contract is simply: analysis must complete
 // without a panic/abort for any file. A panic aborts the whole test binary —

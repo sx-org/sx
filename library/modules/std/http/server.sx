@@ -810,8 +810,8 @@ PoolState :: struct {
 // stream larger than the channel would deadlock the worker.)
 // A full queue can only mean the sizing invariant broke (done_cap covers
 // max_conn + backlog + workers — see init); the drop is still handled
-// LOUDLY per CLAUDE.md: the response bytes are freed and a streamed chan
-// is aborted + released (never a silently pinned worker or leaked chan) —
+// LOUDLY: the response bytes are freed and a streamed chan is aborted +
+// released (never a silently pinned worker or leaked chan) —
 // the conn is evicted at its deadline .
 queue_completion :: (ps: *PoolState, alloc: Allocator, done: Completion) {
     dropped := false;
@@ -1605,7 +1605,7 @@ Server :: struct {
             raise error.Config;
         }
         // the listener address — AF_UNIX on a path, or TCP on the
-        // family bind_addr picks ("" keeps today's v4 INADDR_ANY).
+        // family bind_addr picks ("" is v4 INADDR_ANY).
         lfd : i32 = -1;
         if cfg.unix_path.len > 0 {
             // Port sharing and bind addresses are meaningless on a path —
@@ -2472,9 +2472,9 @@ Server :: struct {
         // Reading just parked for the handler stretch —
         // drop any unresolved cross-direction want + cross-armed watch.
         self.tls_want_drop(slot);
-        // hygiene: fiber mode keeps handler_deadline 0 (cooperative —
-        // the sweep can never preempt a fiber, and arming here would only
-        // push a spurious heap hint; review INFO).
+        // Fiber mode keeps handler_deadline 0 (cooperative — the sweep can
+        // never preempt a fiber, and arming here would only push a spurious
+        // heap hint).
         if self.cfg.handler_timeout_ms > 0 and self.cfg.fibers == null {
             c.handler_deadline = event.deadline_in(self.cfg.handler_timeout_ms);
             self.arm_slot(slot, c.handler_deadline);
@@ -2783,7 +2783,7 @@ Server :: struct {
     // ── Transport seam ────────────────────────────────────
     // read_more / write_more go through these instead of calling
     // socket.*_nb directly, so a connection is transport-agnostic:
-    // plaintext today, TLS app-data once cfg.tls negotiated the session.
+    // plaintext, or TLS app-data once cfg.tls negotiated the session.
     // The (i64, !) contract is IDENTICAL to socket.read_nb/write_nb
     // — error.WouldBlock to pause (re-arm), error.Closed/Fault to drop —
     // so the callers stay unchanged. The TLS branch maps the abstract
@@ -3469,7 +3469,7 @@ Server :: struct {
                 // empty channel; the pump wakes it. Completion is the
                 // fiber tail + finalize_fibers.
                 c.fiber_h = self.cfg.fibers.spawn(xx run_fiber_job, xx job);
-                self.fiber_spawned = true;   // tick re-drives until quiescent (review MED)
+                self.fiber_spawned = true;   // tick re-drives until quiescent
             } else if !self.ps.pool.submit(run_handler_job, xx job) {
                 // Backlog full: shed 503 — undo the dispatch (the worker
                 // never saw the job; both channel refs die here).
@@ -3650,7 +3650,7 @@ Server :: struct {
                 // Request.deadline_ms stays the advisory budget).
                 c.handler_deadline = 0;
                 c.fiber_h = self.cfg.fibers.spawn(xx run_fiber_job, xx job);
-                self.fiber_spawned = true;   // tick re-drives until quiescent (review MED)
+                self.fiber_spawned = true;   // tick re-drives until quiescent
             } else {
                 // Arm the handler deadline as the slot enters
                 // CONN_HANDLING. The tick sweep enforces it (504 + close)

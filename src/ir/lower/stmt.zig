@@ -1101,8 +1101,8 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
 /// value slots). Emits diagnostics; does not rewrite. Covers: a bare value where
 /// multiple are required (`return 5` for `-> (i64, i64)`), wrong arity (too few /
 /// too many), and named elements that disagree with the slot at their position
-/// (named return elements must currently be IN SLOT ORDER — reordering by name is
-/// a future nicety, but a mismatch is an error, never a silent wrong result).
+/// (named return elements must be IN SLOT ORDER; a mismatch is an error, never
+/// a silent wrong result).
 /// A single-value or single-failable return is left to the existing path.
 pub fn validateMultiReturn(self: *Lowering, value_node: *const Node, ret_ty: TypeId) void {
     const diags = self.diagnostics orelse return;
@@ -1346,8 +1346,8 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
 
     // The exit is typed by the body being lowered — the INLINED fn's declared
     // return type while inlining, the real function's otherwise. Neither
-    // present means there is no function to return from; keep the historical
-    // fallbacks so the shape of the written return still decides.
+    // present means there is no function to return from, so the shape of the
+    // written return decides: `i64` with a value, `void` without.
     const exit_ty: TypeId = self.effectiveReturnType() orelse
         (if (ret_val != null) TypeId.i64 else TypeId.void);
 
@@ -2421,8 +2421,8 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
             // `obj.field = val` for an Obj-C `#property` field
             // dispatches via objc_msgSend `setField:`. Skip struct-
             // pointer / GEP entirely; receivers are opaque Obj-C ids.
-            // Compound ops on properties are deferred (need load-via-
-            // getter + op + store-via-setter — Month 4 ARC territory).
+            // Only `=` lowers here: a compound op would need
+            // load-via-getter + op + store-via-setter.
             if (asgn.op == .assign) {
                 if (self.lookupObjcPropertyOnPointer(fa.object, fa.field)) |prop| {
                     self.lowerObjcPropertySetter(fa.object, prop, val);
@@ -3150,7 +3150,7 @@ fn emitReturnDefers(self: *Lowering, base: usize) void {
 /// SUCCESS exit: only `defer` entries run; `onfail` entries are skipped
 /// (and discarded by the truncation). Truncates the stack to saved_len.
 pub fn emitBlockDefers(self: *Lowering, saved_len: usize) void {
-    // Guard: if stack was already drained (e.g., by a return that emitted all defers)
+    // A return that already emitted every defer leaves the stack shorter.
     if (saved_len > self.defer_stack.items.len) return;
     if (self.currentBlockHasTerminator()) {
         // Block already terminated (e.g., by return) — cleanups were already emitted

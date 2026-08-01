@@ -417,7 +417,6 @@ pub const Ops = struct {
     pub fn emitStore(self: Ops, st: Store) void {
         const ptr = self.e.resolveRef(st.ptr);
         var val = self.e.resolveRef(st.val);
-        // Guard: don't store void types or store to non-pointer
         const ptr_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(ptr));
         const val_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(val));
         if (ptr_kind == c.LLVMPointerTypeKind and val_kind != c.LLVMVoidTypeKind) {
