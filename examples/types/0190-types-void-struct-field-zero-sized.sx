@@ -4,8 +4,6 @@
 // into it (emitStructInit) — so the struct stays sized and field access past
 // the void field is correct, never an unsized-type SIGTRAP or a corrupt
 // aggregate constant.
-//
-// Regression.
 #import "modules/std.sx";
 
 Holder :: struct { v: void; ok: bool; }

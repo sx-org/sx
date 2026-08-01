@@ -1,7 +1,6 @@
 // A method absent from one nominal struct must not fall through to a
 // same-display-name struct's global compatibility entry, for either instance
 // or static dispatch.
-// Regression.
 
 a :: #import "0854-modules-nominal-missing-method-no-crossbind/a.sx";
 b :: #import "0854-modules-nominal-missing-method-no-crossbind/b.sx";

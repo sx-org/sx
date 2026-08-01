@@ -5,8 +5,6 @@
 // slice / optional / pointer / function RHS). A generic-instantiation element
 // (`List(i64)`) instantiates for REAL, so its `size_of` matches the inline
 // spelling — no lying size-0 nominal.
-//
-// Regression.
 #import "modules/std.sx";
 
 // Element alias declared AFTER the array alias — adopted via the fixpoint.

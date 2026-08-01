@@ -1,7 +1,6 @@
-// Tests for expr_typer.zig — focused on the structural (non-call) expression
-// shapes ExprTyper owns, reached via the public `Lowering.inferExprType`
-// delegation. These cases need no lexical scope / program-index state, so a
-// bare `Lowering.init` suffices.
+// The structural (non-call) expression shapes ExprTyper owns, reached via the
+// public `Lowering.inferExprType` delegation. These cases need no lexical scope
+// / program-index state, so a bare `Lowering.init` suffices.
 
 const std = @import("std");
 const ast = @import("../ast.zig");

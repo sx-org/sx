@@ -5,7 +5,7 @@
 // racer keeps its real outcome label (`.failed`) — `race` only cancels still-
 // in-flight (`.pending`) losers, so it never stomps `a`'s `.failed` to `.canceled`.
 //
-// (Regression: an all-FAILING racer set instead bails loudly — "race — all
+// (An all-FAILING racer set instead bails loudly — "race — all
 // futures settled without a winner" — rather than dead-locking the scheduler.)
 //
 // aarch64-pinned (the scheduler's per-arch asm): runs end-to-end on a matching

@@ -1,4 +1,4 @@
-// Tests for resolver.zig — the shared author-collection layer.
+// The shared author-collection layer of resolver.zig.
 //
 // collectVisibleAuthors is exercised over REAL Phase A facts (parse →
 // resolveImports → buildImportFacts, the exact path core.zig drives) plus one

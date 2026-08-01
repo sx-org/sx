@@ -1,5 +1,3 @@
-// Tests for lower.zig
-
 const std = @import("std");
 const ast = @import("../ast.zig");
 const Node = ast.Node;

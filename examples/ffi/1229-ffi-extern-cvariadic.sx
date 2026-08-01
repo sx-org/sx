@@ -3,7 +3,7 @@
 // slot with standard default argument promotion (i8/i16/bool → i32,
 // f32 → f64), NOT packed into an sx slice.
 //
-// Regression (FFI-linkage): the `is_variadic` drop in `declareFunction`
+// The `is_variadic` drop in `declareFunction`
 // and the call-site early-out in `packVariadicCallArgs` cover every
 // `extern` shape; gating them narrowly drops the `...` tail and
 // slice-packs the extras (garbage at the C ABI).

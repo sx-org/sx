@@ -1,5 +1,3 @@
-// Tests for the IR-to-LLVM emitter (emit_llvm.zig).
-
 const std = @import("std");
 const types = @import("types.zig");
 const inst_mod = @import("inst.zig");
@@ -1311,7 +1309,7 @@ test "emit: DWARF debug info (compile unit + subprogram + per-inst location)" {
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "\"Debug Info Version\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "\"Dwarf Version\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "DICompileUnit") != null);
-    // Regression: a bare filename (no directory component) must
+    // A bare filename (no directory component) must
     // still get a NON-EMPTY `directory:` — an empty `DW_AT_comp_dir` makes ld
     // silently drop the whole debug map, so the binary becomes undebuggable.
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "DIFile(filename: \"probe.sx\", directory: \".\")") != null);

@@ -10,9 +10,9 @@
 // the `#run` truncates. Reflection over the same `any` (`type_name`,
 // `is_unsigned`) already works; the value-print must match.
 //
-// Regression: a comptime `#run` print of an `any`-held
-// `Type` silently stopped (omitted `value=` + every later line) yet still
-// built with exit 0.
+// A struct_get that reads a different layout makes the `#run` print stop
+// silently — `value=` and every later line omitted — while the build still
+// exits 0.
 
 #import "modules/std.sx";
 

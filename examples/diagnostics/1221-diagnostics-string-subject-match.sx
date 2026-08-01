@@ -4,7 +4,7 @@
 // integer/bool literals, and type categories). A `string` subject (and a
 // float subject) has no such discriminant and is rejected up front with a
 // located diagnostic.
-// Regression: unrejected, a string subject reaches the backend as
+// Unrejected, a string subject reaches the backend as
 // invalid IR — `switch ptr %etag` against integer case constants ("Switch
 // constants must all be same type as switch value!"); an f64 subject gives
 // the same verifier failure via `switch double`.

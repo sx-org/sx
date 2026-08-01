@@ -3,7 +3,7 @@
 // circuits to null when the receiver is null, else unwraps and indexes —
 // so `opt?.xs[i]` is `?ElemType`, coalesced/unwrapped at the use site.
 //
-// Regression: `opt?.xs[i]` typed its element through
+// `opt?.xs[i]` typed its element through
 // `getElementType(?[N]T)` as `.unresolved`, and an `index_get` on the
 // optional value reached LLVM emission (panic: "unresolved type reached
 // LLVM emission", exit 134). This is the `?.`-chain analogue of the
@@ -13,8 +13,8 @@
 // array. Indexing auto-derefs (GEP the pointee array element through the
 // unwrapped pointer), so `opt?.p[i]` is `?ElemType` too. `getElementType`
 // has no pointer arm, so the dispatch guard / typer consult
-// `ptrToArrayElem` first (else this branch was unreachable dead code and
-// the `?*[N]T` case fell through to the same exit-134 panic).
+// `ptrToArrayElem` first — otherwise this branch is unreachable and the
+// `?*[N]T` case falls through to the same exit-134 panic.
 
 #import "modules/std.sx";
 

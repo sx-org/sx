@@ -2,7 +2,6 @@
 // site — bare calls, flat-imported stdlib fns, method dot-calls, and ufcs
 // dot-calls — instead of reaching LLVM verification ("Incorrect number of
 // arguments passed to called function!").
-// Regression.
 
 #import "modules/std.sx";
 

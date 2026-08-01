@@ -4,7 +4,7 @@
 // scalar global array, a struct-element global array (element-stride), and a
 // nested-array global (recursive lvalue).
 // The indexed lvalue base addresses the global's storage; loading it by
-// value into a temp would drop the store. Regression.
+// value into a temp would drop the store.
 
 #import "modules/std.sx";
 

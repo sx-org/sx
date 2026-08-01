@@ -1,6 +1,6 @@
 #import "modules/std.sx";
 
-// Regression: an aggregate (struct) returned from a `#run`
+// An aggregate (struct) returned from a `#run`
 // initializer must serialize correctly into the static binary, not
 // silently collapse to a zero-init constant.
 //

@@ -7,7 +7,7 @@
 // / member access resolves to the binding. A *bare* binding name is still the
 // reserved type (see examples/1121), so the escape is the only way to spell
 // these as values.
-// Regression: completeness across binding forms.
+// Completeness across binding forms.
 #import "modules/std.sx";
 
 pair :: () -> Tuple(i64, i64) { .{1, 2} }

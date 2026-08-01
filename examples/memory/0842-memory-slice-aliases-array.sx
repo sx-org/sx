@@ -5,7 +5,7 @@
 // slice. Covers write-through, read-through, an offset (partial) slice,
 // and a struct-field array — for local, global, and field-array bases.
 //
-// Regression: VALUE-lowering the array into a fresh temp for
+// VALUE-lowering the array into a fresh temp for
 // `arr[0..3]` makes the slice view a COPY, so mutations never reach `arr`.
 #import "modules/std.sx";
 

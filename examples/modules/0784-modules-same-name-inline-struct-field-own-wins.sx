@@ -1,5 +1,4 @@
 // Own-wins for an INLINE struct field's member type over a NAMESPACED import.
-// Regression (the inline-decl resolution boundary).
 //
 // `Holder.inner` is an inline `struct { e: Event }`. The member type `Event`
 // must resolve to THIS file's `Event` (which has `code`), not the namespaced

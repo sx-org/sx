@@ -1,14 +1,14 @@
 // Annotated local var-decl `x : ?B = <a ?A value>` preserves the SOURCE
 // optional's presence across a payload coercion.
 //
-// Regression: `lowerVarDecl`'s optional-target branch hand-rolled
-// the optional handling — for a non-null initializer it coerced to the
-// optional's CHILD (classifying `?A → child_B` as an unconditional unwrap → 0
-// for a null source) then re-wrapped with a hardcoded present has-bit. So a
-// null `?A` source became a PRESENT `?B` carrying zero. The fix routes an
-// optional source through the presence-preserving `.optional_to_optional`
-// coercion (the general trailing coerce) instead of the wrap-present path,
-// which now only handles a genuine non-optional `T → ?T` wrap.
+// An optional source routes through the presence-preserving
+// `.optional_to_optional` coercion (the general trailing coerce); the
+// wrap-present path handles only a genuine non-optional `T → ?T` wrap. Hand-
+// rolling the optional handling in `lowerVarDecl`'s optional-target branch —
+// coercing a non-null initializer to the optional's CHILD (classifying
+// `?A → child_B` as an unconditional unwrap → 0 for a null source), then
+// re-wrapping with a hardcoded present has-bit — turns a null `?A` source into
+// a PRESENT `?B` carrying zero.
 #import "modules/std.sx";
 
 Shape :: protocol vtable { area :: (self: *Self) -> i64; }

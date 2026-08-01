@@ -2,13 +2,12 @@
 // name is a HARD ERROR, not a silent construction of the zeroth variant. The
 // payloadless `.Variant` literal and the `case .Variant` pattern already
 // validated the tag against the enum; the payload-carrying construction path
-// (`resolveVariantIndex`, which returns 0 for an unknown name) skipped that
-// check and silently built the first variant.
+// (`resolveVariantIndex`, which returns 0 for an unknown name) needs the same
+// gate, or it silently builds the first variant.
 //
-// Regression: surfaced while renaming `json.Value`'s tags — a stale
-// `.int_(7)` (a stale tag) constructs `.null` instead of failing the
-// build, masking the incomplete rename. `hasVariant` gates all three
-// call-shaped construction sites in lower/call.zig.
+// Ungated, a stale `.int_(7)` left behind by a tag rename constructs `.null`
+// instead of failing the build, masking the incomplete rename. `hasVariant`
+// gates all three call-shaped construction sites in lower/call.zig.
 #import "modules/std.sx";
 
 V :: enum {

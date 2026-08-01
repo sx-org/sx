@@ -1,6 +1,6 @@
 // Generic `??` preserves the optional's presence across monomorphization.
 //
-// Regression: a `??` inside a generic fn whose lhs is a
+// A `??` inside a generic fn whose lhs is a
 // type-param-typed optional `?T` drops the RHS default and returns the
 // zero payload when a null `?i32` arriving as the `?T` arg is coerced
 // to the monomorphized `?i64` with the has-bit hardcoded to `true` (an

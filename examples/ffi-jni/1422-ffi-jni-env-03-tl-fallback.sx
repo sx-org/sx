@@ -11,8 +11,8 @@
 
 g_should_call : bool = false;
 
-// Helper fn — no `#jni_env` block in scope. Without TL fallback this
-// errors because the omitted env can't be resolved.
+// No `#jni_env` block in scope: without the TL fallback the omitted env
+// cannot be resolved and this errors.
 helper :: (target: *void) {
     #jni_call(void)(target, "noop", "()V");
 }

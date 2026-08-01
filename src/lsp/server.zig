@@ -4115,12 +4115,11 @@ test "lsp/context: bare context hover enumerates the assembled struct" {
     try std.testing.expect(std.mem.indexOf(u8, hover, "main.sx") != null);
 }
 
-// Regression (QA 2026-07-19): go-to-definition into an imported stdlib file
-// produced `file://modules/ffi/objc_block.sx` — import resolution keys
-// documents CWD-RELATIVE (the compiler's diagnostic-spelling contract), and
-// the editor reads a relative `file://` URI as authority + absolute path,
-// landing on a nonexistent `/modules/…`. Every outgoing URI now routes
-// through `fileUri`, which absolutizes relative paths against the server CWD.
+// Import resolution keys documents CWD-RELATIVE (the compiler's
+// diagnostic-spelling contract), and the editor reads a relative `file://` URI
+// as authority + absolute path — a bare `file://modules/ffi/objc_block.sx`
+// lands on a nonexistent `/modules/…`. Every outgoing URI routes through
+// `fileUri`, which absolutizes relative paths against the server CWD.
 test "lsp/uri: relative document paths absolutize against the server cwd" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -4136,8 +4135,8 @@ test "lsp/uri: relative document paths absolutize against the server cwd" {
     try std.testing.expectEqualStrings("file:///tmp/x.sx", abs);
 }
 
-// The payload-level pin of the same regression: a references payload over
-// relative-keyed documents carries only absolute file:// URIs.
+// A references payload over relative-keyed documents carries only absolute
+// file:// URIs.
 test "lsp/uri: references payload URIs are absolute for relative-keyed docs" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

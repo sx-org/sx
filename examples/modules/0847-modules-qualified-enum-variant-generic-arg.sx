@@ -3,7 +3,7 @@
 // the variant read (`lib.Mode`) is a namespace-rooted member resolving to an
 // enum in the aliased module.
 //
-// Regression: an inferExprType field_access arm that handles only
+// An inferExprType field_access arm that handles only
 // a BARE-identifier enum object (`E.on`) returns .unresolved for a
 // module-qualified object, so `id(lib.Mode.on)` binds T = .unresolved and mints
 // a __unresolved monomorph that panics at LLVM emission. The arm resolves a

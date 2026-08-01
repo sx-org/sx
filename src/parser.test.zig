@@ -356,7 +356,7 @@ test "parser: bare-paren grouping (a + b) still parses" {
     try std.testing.expect(root.data.root.decls[0].data == .fn_decl);
 }
 
-// Regression: a closure-type alias `CB :: Closure(i32) -> i32;`
+// A closure-type alias `CB :: Closure(i32) -> i32;`
 // parses. The const-decl RHS routes a `Closure(...)` head through the
 // closure-type parse so the `-> R` tail is consumed. Node shape: a
 // `const_decl` whose value is a `closure_type_expr` carrying the return type.

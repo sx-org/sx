@@ -6,7 +6,6 @@
 // env pointer. Every consumer shape is a located compile error naming the
 // closure alternative: bare read, indexed read, indexed write, field write,
 // closure-value call, and multi-assign write.
-// Regression.
 #import "modules/std.sx";
 Pt :: struct { v: i64; }
 main :: () -> i32 {

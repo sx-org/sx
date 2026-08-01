@@ -4,8 +4,6 @@
 // ambient default `i64`.
 //
 // A literal that genuinely overflows the cast's target still errors.
-//
-// Regression.
 
 #import "modules/std.sx";
 

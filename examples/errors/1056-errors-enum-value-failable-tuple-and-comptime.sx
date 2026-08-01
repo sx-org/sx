@@ -1,5 +1,5 @@
 // Enum-valued value-carrying failables, two paths the bare-success rule
-// does not itself cover. Regression.
+// does not itself cover.
 //
 //   F1 — EXPLICIT full failable tuple return `return (.v, error.X)`. The
 //   return target stays the FULL failable tuple for an explicit tuple literal

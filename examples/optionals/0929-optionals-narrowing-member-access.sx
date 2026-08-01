@@ -56,7 +56,7 @@ guard_or :: (a: ?*T, b: ?*V) -> i64 {
 
 // The lvalue/receiver route (lowerExprAsPtr): a #get accessor chain
 // (`List.len`) and an address-of chain both root through the narrowed
-// pointer — the resolver that surfaced last in the fix.
+// pointer.
 W :: struct { xs: List(i64) = .{}; }
 mkw :: (w: *W) -> ?*W { w }
 accessor_chain :: (w: *W) -> i64 {

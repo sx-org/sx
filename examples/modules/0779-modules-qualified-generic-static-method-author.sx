@@ -5,7 +5,7 @@
 // b: two fields, sets `y = v+100`). `a.Box(i64).make(7)` and `b.Box(i64).make(9)`
 // must select their OWN module's author.
 //
-// Regression (qualified static-method site): a static-head path that handles
+// A static-head path that handles
 // only an IDENTIFIER inner callee (`Box(..)`) leaves the qualified inner
 // callee `a.Box(..)` (a `.field_access`) un-routed through
 // `qualifiedStructTemplate`, so `a.Box(i64).make(7)` resolves to nothing

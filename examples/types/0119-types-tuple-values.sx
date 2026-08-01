@@ -1,8 +1,7 @@
 // Tuple values: construction, element access, struct-field storage,
-// return, and operators. Regression for the tuple-construction bug where
-// an inferred `:=` tuple literal lowered its element values under the
-// enclosing fn's (narrower) return `target_type`, mismatching the
-// independently-inferred i64 field types and yielding garbage on read.
+// return, and operators. An inferred `:=` tuple literal lowering its element
+// values under the enclosing fn's (narrower) return `target_type` mismatches
+// the independently-inferred i64 field types and yields garbage on read.
 
 #import "modules/std.sx";
 

@@ -7,7 +7,7 @@
 // Arm values coerce to the unified type before the merge, exactly like the
 // if/else-expression merge's `coerceToType` — but joined instead of
 // first-branch-wins.
-// Regression: letting the first decisive arm's type win turns a
+// Letting the first decisive arm's type win turns a
 // 2.5 payload into 2 with `.other` first (f64 fptosi'd to i64), truncates a
 // 9000000000 i64 arm behind an i32 first arm, and hides a trailing `null` arm
 // from the result type.

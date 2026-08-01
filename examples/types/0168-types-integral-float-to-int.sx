@@ -15,12 +15,11 @@
 // including a non-integral const expression (`xx (M + 0.5)` / `xx (F + 0.25)`).
 //
 // Companion to the negative example 1146 (non-integral floats error).
-// Regression: a typed local/param/field silently truncated a float
-// initializer (`y : i64 = 1.5` → 1) with no diagnostic; a non-integral const
-// EXPRESSION (`M + 0.5`) and a non-integral float-const-LEAF expression
-// (`F + 0.25`) truncated even when written through an int binding; the rule now
-// folds an integral float (literal, int-const expr, or float-const leaf) and
-// rejects a non-integral one.
+// The rule folds an integral float (literal, int-const expr, or float-const
+// leaf) and rejects a non-integral one. Unguarded, a typed local/param/field
+// truncates a float initializer (`y : i64 = 1.5` → 1) with no diagnostic, and a
+// non-integral const EXPRESSION (`M + 0.5`) or float-const-LEAF expression
+// (`F + 0.25`) truncates even when written through an int binding.
 #import "modules/std.sx";
 
 M :: 2;          // int module const, for the INT-const-EXPRESSION cases

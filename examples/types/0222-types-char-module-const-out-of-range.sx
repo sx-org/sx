@@ -4,8 +4,8 @@
 // truncated). The diagnostic names it as a char literal and suggests a wider
 // type. `'🦀'` is U+1F980 = 129408, which does not fit in `u8`.
 //
-// Regression: `emitModuleConst` folded the initializer and emitted the raw
-// value with no range check, so `C : u8 : '🦀'` silently truncated to 128.
+// An `emitModuleConst` that folds the initializer and emits the raw value with
+// no range check truncates `C : u8 : '🦀'` silently to 128.
 
 #import "modules/std.sx";
 

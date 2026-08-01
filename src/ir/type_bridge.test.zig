@@ -1,4 +1,3 @@
-// Tests for type_bridge.zig
 const std = @import("std");
 const types = @import("types.zig");
 const type_bridge = @import("type_bridge.zig");

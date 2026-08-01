@@ -53,8 +53,8 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     // caller's pack maps — `lowerFieldAccess`'s `<pack_name>.len`
     // intercept would otherwise constant-fold the callee's
     // same-named param to whichever shape triggered the first mono
-    // and bake the wrong arity into the cached IR. Same shape of
-    // fix as `lazyLowerFunction` (commit 0ede097).
+    // and bake the wrong arity into the cached IR. `lazyLowerFunction`
+    // isolates the same maps for the same reason.
     const saved_pan = self.pack_arg_nodes;
     const saved_ppc = self.pack_param_count;
     const saved_pat = self.pack_arg_types;

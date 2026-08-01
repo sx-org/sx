@@ -4,7 +4,7 @@
 // diagnostic — the bogus library reference is caught BEFORE the symbol
 // would silently resolve through whatever image happens to carry it.
 //
-// Regression (FFI-linkage): a `checkExternRefs` that validates only the
+// A `checkExternRefs` that validates only the
 // extern-import-shape `library_ref` and skips the `extern` keyword's
 // `extern_lib` lets a bogus lib reference compile silently — the symbol
 // resolves via the default image and runs. Both shapes route through the

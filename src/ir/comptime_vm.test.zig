@@ -1,5 +1,3 @@
-// Tests for the byte-addressable comptime machine.
-
 const std = @import("std");
 const vm = @import("comptime_vm.zig");
 const inst_mod = @import("inst.zig");
@@ -680,8 +678,8 @@ test "comptime_vm exec: a negative i32 stored and reloaded stays negative (sign-
 }
 
 test "comptime_vm exec: storing a null non-pointer optional into a slot reads back as none" {
-    // Regression for the implicit-ctx coverage pass: `y: ?i64 = null` lowers to a
-    // store of the `null_addr` optional sentinel into an aggregate slot. writeField
+    // `y: ?i64 = null` lowers to a store of the `null_addr` optional sentinel
+    // into an aggregate slot. writeField
     // must ZERO the slot (→ flag byte 0 → none), not memcpy from address 0 (OOB).
     const alloc = std.testing.allocator;
     var table = types.TypeTable.init(alloc);
@@ -875,7 +873,7 @@ test "comptime_vm exec: deref a pointer; addr_of passes through a struct address
 
 test "comptime_vm exec: f32 store/load round-trips through 4-byte memory" {
     // Float registers hold f64 bits; f32 memory is the 4-byte IEEE-754 single.
-    // Regression: storing an f32 must @floatCast (NOT truncate the f64 bits — that
+    // Storing an f32 must @floatCast (NOT truncate the f64 bits — that
     // wrote zeros for 1.0, since 1.0f64 = 0x3FF0000000000000, low 4 bytes = 0).
     const alloc = std.testing.allocator;
     var table = types.TypeTable.init(alloc);

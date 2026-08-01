@@ -1,4 +1,4 @@
-// Tests for protocols.zig — the protocol/impl LOOKUP owner (`ProtocolResolver`).
+// The protocol/impl LOOKUP owner (`ProtocolResolver`).
 // Reached via `ir.ProtocolResolver{ .l = &lowering }`, mirroring calls.test.zig /
 // generics.test.zig. Covers the pure conformance queries; registration and
 // emission stay in `Lowering`.

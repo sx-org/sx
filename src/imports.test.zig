@@ -1,4 +1,4 @@
-// Tests for imports.zig — flat-import name-resolution data retention.
+// Flat-import name-resolution data retention.
 
 const std = @import("std");
 const ast = @import("ast.zig");

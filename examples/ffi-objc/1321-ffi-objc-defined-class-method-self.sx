@@ -1,13 +1,11 @@
 // `xx self` inside a BOOL-returning `#objc_class` method must
 // resolve to the full receiver pointer at a runtime-class method
 // call site, not get truncated to i8 by the enclosing function's
-// BOOL return type. Regression locks in the
-// `resolveCallParamTypes` fix that threads runtime-class method
-// param types correctly even when the receiver is a `extern
-// #objc_class` alias. Every probe round-trips the receiver pointer
-// — a regression would read only the low byte and the observer
-// pointer would appear as e.g. 0xC0 / 0x20 instead of its real
-// 64-bit value.
+// BOOL return type. `resolveCallParamTypes` threads runtime-class
+// method param types even when the receiver is an `extern
+// #objc_class` alias. Every probe round-trips the receiver pointer:
+// truncation reads only the low byte, so the observer pointer
+// appears as e.g. 0xC0 / 0x20 instead of its real 64-bit value.
 #import "modules/std.sx";
 #import "modules/ffi/objc.sx";
 #import "modules/build.sx";

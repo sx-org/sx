@@ -2,7 +2,6 @@
 // condition each iteration and binds the unwrapped payload `v` in the loop
 // body, looping while the expression is non-null (mirrors `if v := opt {}`).
 // Prints v=0 / v=1 / v=2.
-// Regression.
 #import "modules/std.sx";
 
 next3 :: (n: *i64) -> ?i64 {

@@ -4,12 +4,11 @@
 // `.unresolved` (the diagnosed-poison sentinel) — exactly like the struct binder —
 // so the downstream `.len` is suppressed, not reported as a second error.
 //
-// Regression: the type-fn path (`instantiateTypeFunction`) fell
-// through to an empty-struct placeholder named after the function on a failed
-// value-param bind, so `a.len` produced a second `field 'len' not found on
-// 'MakeC'` error. The struct binder already returned `.unresolved` here; the
-// type-fn binder now matches it. Three failure modes, three clean diagnostics,
-// zero field cascades:
+// The type-fn binder returns `.unresolved` on a failed value-param bind, like
+// the struct binder. A type-fn path (`instantiateTypeFunction`) that falls
+// through to an empty-struct placeholder named after the function instead makes
+// `a.len` produce a second `field 'len' not found on 'MakeC'` error. Three
+// failure modes, three clean diagnostics, zero field cascades:
 //   - value-param overflow via an aliased integer constraint (`$K: Count`),
 //   - a non-const value-param arg (`get()`),
 //   - an unknown TYPE arg (`NoSuchType`) — must still report the unknown type.

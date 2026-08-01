@@ -9,8 +9,6 @@
 // Only the ARRAY form is exercised here (one diagnostic per file keeps the
 // snapshot focused); the slice / optional / pointer / function / nested shapes
 // are covered by the compiler's unit tests in src/ir/lower.test.zig.
-//
-// Regression.
 #import "modules/std.sx";
 
 Bad :: [3]NoSuchType;

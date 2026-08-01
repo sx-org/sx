@@ -2,10 +2,10 @@
 // module-global value to a `*T` parameter must pass the global's live address —
 // mutations through the pointer land on the global, not a throwaway copy.
 //
-// Regression: the implicit address-of for a `*T` arg only
-// handled local allocas; a global identifier fell through to a loaded copy, so
-// `f(g)` silently mutated nothing. Const globals stay on the copy path (a `*T`
-// into `.rodata` would SIGBUS) — covered by 0058.
+// An implicit address-of that handles only local allocas lets a global
+// identifier fall through to a loaded copy, so `f(g)` silently mutates nothing.
+// Const globals stay on the copy path (a `*T` into `.rodata` would SIGBUS) —
+// covered by 0058.
 
 Counter :: struct {
     n: i64 = 0;

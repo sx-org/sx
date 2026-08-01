@@ -15,9 +15,9 @@
 // an INTEGRAL float division (`6.0 / 2.0` → 3) folds — both exercised on the
 // POSITIVE side (example 0168).
 //
-// Regression: `5.0 / 2.0` at a typed local, field default,
-// param default, typed const, and array dimension all silently folded to 2 via
-// integer truncating division; each now rejects the non-integral float.
+// Each of the five sites — typed local, field default, param default, typed
+// const, array dimension — rejects the non-integral float instead of folding
+// `5.0 / 2.0` to 2 via integer truncating division.
 #import "modules/std.sx";
 
 // An UNTYPED float-EXPRESSION const carries a placeholder `i64` type, yet its

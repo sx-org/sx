@@ -1,5 +1,3 @@
-// Tests for lower/nominal.zig
-
 const std = @import("std");
 const types = @import("../types.zig");
 const nominal = @import("nominal.zig");

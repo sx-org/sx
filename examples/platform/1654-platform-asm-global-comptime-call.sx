@@ -5,7 +5,7 @@
 // clear diagnostic instead of silently misfiring. (Calling the same symbol at
 // RUNTIME works under both JIT and AOT — see 1648/1653.) The failure is at
 // dlsym resolution, before any asm is assembled, so it is arch-independent —
-// no `.build` target needed. Regression guard for the comptime boundary.
+// no `.build` target needed.
 asm {
     #string ASM
 .global _my_add

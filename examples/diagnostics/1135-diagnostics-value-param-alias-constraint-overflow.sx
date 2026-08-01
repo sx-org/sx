@@ -3,12 +3,12 @@
 // (`$K: Count` where `Count :: u32`, `$K: Small` where `Small :: i8`) — a clean
 // diagnostic + non-zero exit, NOT a silent truncating bind.
 //
-// Regression: the value-param range gate matched only BUILTIN
-// constraint names, so an aliased constraint slipped past `intTypeRange` and
-// `Box(5_000_000_000)` with `$K: Count` compiled and bound a truncated value.
-// The constraint now resolves to its underlying builtin (`Count` → u32,
-// `Small` → i8) before range-checking, so an aliased integer constraint behaves
-// exactly like the builtin it names — at both the struct and type-fn binders.
+// The constraint resolves to its underlying builtin (`Count` → u32, `Small` →
+// i8) before range-checking, so an aliased integer constraint behaves exactly
+// like the builtin it names — at both the struct and type-fn binders. A range
+// gate that matches only BUILTIN constraint names lets an aliased constraint
+// slip past `intTypeRange`, so `Box(5_000_000_000)` with `$K: Count` compiles
+// and binds a truncated value.
 #import "modules/std.sx";
 
 Count :: u32;

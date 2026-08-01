@@ -1,4 +1,4 @@
-// Regression: an imported pack function whose fixed-prefix param
+// An imported pack function whose fixed-prefix param
 // type is visible only in its defining module must resolve during pack
 // monomorphization. `lib.sx` imports `dep.sx` (which defines `Needs`) and
 // exposes `make() -> Needs` plus `use_pack(n: Needs, ..$args)`. `main` imports

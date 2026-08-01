@@ -8,8 +8,6 @@
 // `checkTypeNodeForUnknown` walk a declaration annotation uses. Without that
 // walk the head resolver hands back a forward-reference empty-struct STUB
 // rather than `.unresolved`, and the literal compiles silently to exit 0.
-//
-// Regression.
 #import "modules/std.sx";
 
 main :: () {

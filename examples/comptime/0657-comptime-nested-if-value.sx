@@ -4,10 +4,9 @@
 // statement, so a trailing (possibly deeply nested) if-else produces a phi'd
 // value instead of being demoted to a statement whose result is dropped.
 //
-// Regression: `K :: #run { ...; if a {100} else {if b {42} else
-// {0}} }` (a=false, b=true) returned 0 instead of 42 — the inner if's value
-// was lost because `lowerExpr`'s `.block` arm lowered the tail without
-// `force_block_value`.
+// A `lowerExpr` `.block` arm that lowers the tail without `force_block_value`
+// loses the inner if's value, so `K :: #run { ...; if a {100} else {if b {42}
+// else {0}} }` (a=false, b=true) yields 0 instead of 42.
 
 #import "modules/std.sx";
 

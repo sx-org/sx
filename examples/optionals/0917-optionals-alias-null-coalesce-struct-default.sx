@@ -1,6 +1,6 @@
 // `??` on an alias-of-optional with a struct-literal default — present + null.
 //
-// Regression: `?Opt ?? S{ ...}` where `Opt :: ?S` must resolve
+// `?Opt ?? S{ ...}` where `Opt :: ?S` must resolve
 // the alias child to the same struct TypeId on both branches and lower the
 // struct-literal default against that resolved child,
 // so the present-payload and the default share the merge TypeId. Both the

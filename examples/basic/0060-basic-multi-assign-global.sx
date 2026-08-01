@@ -12,8 +12,6 @@
 // The optional global is null-INITIALIZED and set at runtime because a
 // non-null optional-global initializer miscompiles today.
 //
-// Regression.
-//
 // An INDEX target on a GLOBAL array base must address it in place through
 // `global_addr`: a `lowerExpr` load of the whole array yields a throwaway
 // register copy that the GEP+store then writes into. Also covers a two-index

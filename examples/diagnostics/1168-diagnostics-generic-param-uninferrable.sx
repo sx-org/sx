@@ -4,8 +4,6 @@
 // uninferrable shape (string deliberately does not bind `[]$T`); it
 // otherwise stamps `.unresolved` through the body and PANICs the compiler
 // at LLVM emission via the sentinel tripwire.
-//
-// Regression (diagnostic half).
 
 #import "modules/std.sx";
 

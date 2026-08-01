@@ -6,7 +6,7 @@
 // and the pointer-to-slice `*[]T`; `*T` converts implicitly to `[*]T` when
 // buffer indexing is intended.
 //
-// Regression: undiagnosed, `pc[0]` on a `*i64` panics the
+// Undiagnosed, `pc[0]` on a `*i64` panics the
 // compiler at LLVM emission ("unresolved type reached LLVM emission", exit
 // 134). The WRITE, ADDRESS-OF, and L-VALUE-POINTER (`lowerExprAsPtr`) paths
 // each emit an `index_gep` typed `ptrTo(.unresolved)` without the guard; the

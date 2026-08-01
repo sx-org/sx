@@ -3,9 +3,8 @@
 // definition uses (≤8-byte non-HFA structs → i64), so every field
 // survives the register handoff. Wide (>8 B) and HFA structs stay
 // unpacked on both sides.
-// Regression: the closure/fn-pointer call site built its
-// signature from the raw LLVM type, so the second field of a packed
-// struct arg arrived zeroed.
+// A closure/fn-pointer call site that builds its signature from the raw
+// LLVM type delivers the second field of a packed struct arg zeroed.
 #import "modules/std.sx";
 
 Point :: struct { x: i32; y: i32; }

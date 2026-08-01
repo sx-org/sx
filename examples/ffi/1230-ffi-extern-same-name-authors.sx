@@ -5,7 +5,7 @@
 // and a same-name extern collision compiles + runs (prints 7) rather than
 // erroring as ambiguous.
 //
-// Regression (FFI-linkage): `isPlainFreeFn` / `isPlainFreeFnDecl` exclude
+// `isPlainFreeFn` / `isPlainFreeFnDecl` exclude
 // every `extern` shape. Classifying an empty-block `extern` fn as a plain
 // free function counts the two extern authors as an ambiguous bare-call
 // collision.

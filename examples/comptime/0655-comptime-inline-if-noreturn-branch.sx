@@ -3,7 +3,7 @@
 // host-agnostic: the live branch (`.macos` on macOS, `else` on Linux) prints
 // "reached" then exits 0; the trailing `print` is never reached.
 //
-// Regression: lowering must not reject this with
+// Lowering must not reject this with
 // "function returns 'i64' but its body produces no value" — a
 // statement-position `-> noreturn` call emits only a `.call` (not a block
 // terminator), so the diverging live branch left the function looking

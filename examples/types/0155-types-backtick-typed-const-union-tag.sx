@@ -4,7 +4,7 @@
 // check; a bare `i2 : i64 : 5` is rejected with the caret ON the name (see
 // examples/1141). A union tag spelled with a reserved name works and is
 // accessible bare or backticked.
-// Regression: typed const + union tag.
+// Typed const + union tag.
 #import "modules/std.sx";
 
 // Typed constant whose name is a reserved type spelling.

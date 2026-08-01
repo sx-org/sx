@@ -1,17 +1,17 @@
 // std.http — pool-mode job-owned request bytes (no use-after-free).
 //
-// Regression: HandlerJob.req must not hold string VIEWS into the connection's
+// HandlerJob.req must not hold string VIEWS into the connection's
 // read_buf. When a handler overruns handler_timeout_ms, the loop 504s and
 // frees the slot (handler_timeout_sweep) while the worker is still running —
 // a NEW connection then reuses the slot, overwrites the read buffer with
-// its own request, and (past READ_BUF_INITIAL) grow_read_buf would dealloc
-// the very buffer the stuck worker was still reading: silent corruption or a
-// use-after-free. The gen check only protected the completion, never the
+// its own request, and (past READ_BUF_INITIAL) grow_read_buf deallocs the very
+// buffer the stuck worker is still reading: silent corruption or a
+// use-after-free. The gen check protects only the completion, never the
 // worker's live reads.
 //
-// The fix: at dispatch the job takes ownership of a COPY of the raw request
-// bytes (one allocation: job header + bytes tail, freed together in
-// run_handler_job); the worker never touches the conn's read buffer.
+// At dispatch the job takes ownership of a COPY of the raw request bytes (one
+// allocation: job header + bytes tail, freed together in run_handler_job); the
+// worker never touches the conn's read buffer.
 //
 // This test forces the exact overlap:
 //   1. Connection A POSTs /slow with a known body; its handler sleeps 200 ms
@@ -24,8 +24,8 @@
 //      checksum it computed must match A's body exactly — proof the worker
 //      read job-owned bytes, not the recycled/freed connection buffer.
 //   5. GPA leak gate: net-zero after close (the job's single allocation —
-//      header + bytes — was freed in run_handler_job; the discarded late
-//      completion's buffer was freed in drain_completions).
+//      header + bytes — is freed in run_handler_job; the discarded late
+//      completion's buffer is freed in drain_completions).
 #import "modules/std.sx";
 http :: #import "modules/std/http.sx";
 

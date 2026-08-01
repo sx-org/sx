@@ -1,11 +1,10 @@
 // std.http — lingering close: error responses must actually reach the client.
 //
-// Regression: error paths (400/413/431/...) wrote the response and then
-// close()d the fd immediately. When the client's request bytes were still
-// unread in the server's receive queue — the NORMAL case for a flood/overrun
-// rejection — close() made the kernel send RST and DISCARD the server's
-// unsent send buffer: the client usually got a reset instead of the error
-// response it was owed.
+// An error path (400/413/431/...) that writes the response and then close()s
+// the fd immediately loses it: when the client's request bytes are still unread
+// in the server's receive queue — the NORMAL case for a flood/overrun rejection
+// — close() makes the kernel send RST and DISCARD the server's unsent send
+// buffer, so the client gets a reset instead of the error response it is owed.
 //
 // Config.linger_timeout_ms (default 1000; 0 selects the abrupt
 // close): after an error response drains, the server shutdown(SHUT_WR)s

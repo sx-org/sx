@@ -3,11 +3,11 @@
 // std.sx (io.sx's `cancel :: ufcs (f: *Future($R))`); calling `(@x).cancel()` on
 // a `*Box(i64)` must pick the user's `cancel(*Box($R))` and bind `$R := i64`.
 //
-// Regression: UFCS dispatch resolved the name via a single
-// last-wins `fn_ast_map` entry with no receiver filtering, so the stdlib
-// `*Future($R)` overload won, `$R` never bound, and `.unresolved` reached LLVM
-// → panic. Fixed by selecting the most receiver-specific binding author across
-// all module authors (src/ir/lower/call.zig `selectUfcsGenericByReceiver`).
+// UFCS dispatch selects the most receiver-specific binding author across all
+// module authors (src/ir/lower/call.zig `selectUfcsGenericByReceiver`).
+// Resolving the name through a single last-wins `fn_ast_map` entry with no
+// receiver filtering lets the stdlib `*Future($R)` overload win, leaves `$R`
+// unbound, and reaches LLVM with `.unresolved` → panic.
 #import "modules/std.sx";
 
 Box :: struct ($R: Type) { value: R; flag: i64; }

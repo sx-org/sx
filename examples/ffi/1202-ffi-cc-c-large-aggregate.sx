@@ -1,4 +1,4 @@
-// Regression test, direct-call path.
+// Direct-call path.
 //
 // sx functions declared with `abi(.c)` that take a composite > 16 bytes
 // by value must marshal the arg through `ptr byval(<T>)` per AAPCS64 / SysV

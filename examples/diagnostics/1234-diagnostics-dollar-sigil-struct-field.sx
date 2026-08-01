@@ -4,7 +4,7 @@
 // leaves `T` unbound; resolving the field type to the `.unresolved`
 // sentinel panics the LLVM backend ("unresolved type
 // reached LLVM emission"). It must be a clean located diagnostic.
-// Regression. Expected: one located error; exit 1; no panic.
+// Expected: one located error; exit 1; no panic.
 #import "modules/std.sx";
 
 Gen :: struct { v: $T; }

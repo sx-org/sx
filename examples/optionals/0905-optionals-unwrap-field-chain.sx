@@ -3,9 +3,9 @@
 // value the bind-first form (`v := opt!; v.field`) produces — the unwrapped
 // value's type has to flow into the chained access.
 //
-// Regression: chained `opt!.field` typed its receiver as
-// `.unresolved` (inferExprType had no force_unwrap arm), so a string field read
-// as garbage and `opt!.method()` failed to resolve at all.
+// An `inferExprType` with no force_unwrap arm types the receiver of a chained
+// `opt!.field` as `.unresolved`, so a string field reads as garbage and
+// `opt!.method()` fails to resolve at all.
 
 #import "modules/std.sx";
 

@@ -1,7 +1,7 @@
 // `#run` of a function returning an OPTIONAL value must bridge the comptime
 // VM register → host Value through the reg→value optional arm.
 //
-// Regression: a `#run` whose function returns `?T` / `?i64`
+// A `#run` whose function returns `?T` / `?i64`
 // fails comptime evaluation with
 //   "reg→value: aggregate shape not bridged yet"
 // if the VM's regToValue bridge covers scalars/structs/slices/tuples but

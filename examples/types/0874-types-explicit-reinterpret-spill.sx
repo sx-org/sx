@@ -2,7 +2,7 @@
 // the escape hatch's promise ("reinterpret the bits, width be damned") is
 // delivered through a memory slot typed as the larger side — so the result
 // is a genuinely target-typed value in EVERY context (icmp, call args,
-// arithmetic), not just store positions. Regression: a raw
+// arithmetic), not just store positions. A raw
 // SSA passthrough crashes the LLVM verifier at the first value-context use.
 #import "modules/std.sx";
 

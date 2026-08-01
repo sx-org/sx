@@ -1,5 +1,5 @@
 // `.*` on a non-pointer must be a clean compile diagnostic, NOT a codegen
-// panic. Regression: a stale `value.*` (e.g. after a parameter changed from
+// panic. A stale `value.*` (e.g. after a parameter changed from
 // `*T` to `T` by value) lowering a `.deref` with an `.unresolved` result
 // type slips through to emit_llvm's "unresolved type reached LLVM
 // emission" panic with no source location. `lowerDerefExpr` diagnoses it.

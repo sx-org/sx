@@ -1,5 +1,5 @@
-// Tests for sema.zig — the editor/LSP type classifier (the SECOND resolver,
-// distinct from the codegen-side `ir/type_resolver.zig`). These pin behavior
+// sema.zig is the editor/LSP type classifier (the SECOND resolver, distinct
+// from the codegen-side `ir/type_resolver.zig`). These pin behavior
 // the example suite can't reach: the example runner exercises the codegen
 // path (`sx run`), never sema's hover/completion/index resolution.
 

@@ -4,7 +4,7 @@
 // the data (garbage length, mis-aligned element reads). The compiler rejects it
 // loudly and tells the user to supply the length via `ptr[0..len]`.
 //
-// Regression: admitted, this silent mis-coercion segfaults the
+// Admitted, this silent mis-coercion segfaults the
 // comptime VM and fails LLVM verification at runtime.
 #import "modules/std.sx";
 

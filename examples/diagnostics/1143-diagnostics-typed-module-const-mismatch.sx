@@ -6,7 +6,7 @@
 //
 // The rejection lands at the declaration, and the validation is type-based:
 // a const-EXPRESSION initializer (`E : string : M + 2`, `V : string : -M`)
-// is rejected just like a literal. Regression.
+// is rejected just like a literal.
 //
 // The mixed-numeric pair (`i64 : M + 0.5`, `i64 : 0.5 + M`) is rejected in BOTH
 // operand orders: arithmetic binary-op inference promotes int+float to the

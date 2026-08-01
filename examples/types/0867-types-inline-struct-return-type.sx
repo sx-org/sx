@@ -5,7 +5,7 @@
 // and (shape-keyed anon identity) a function whose return
 // shape matches is assignable to it.
 // isFunctionDef's after-arrow scan walks past the inline decl's brace group
-// to find the real body `{`. Regression.
+// to find the real body `{`.
 #import "modules/std.sx";
 
 make :: () -> struct { x: i64; y: i64; } { .{ x = 3, y = 4 } }

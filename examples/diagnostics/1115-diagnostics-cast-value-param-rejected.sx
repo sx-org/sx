@@ -2,7 +2,7 @@
 // generic sigil) is rejected with the generic-param hint, never cast to a
 // fabricated empty struct (an unknown *literal* cast target errors via value
 // resolution; the value-param case needs its own guard).
-// Regression (cast position). Expected: tailored error; exit 1.
+// Expected: tailored error; exit 1.
 conv :: (T: Type, x: i32) -> i32 {
     return x.(T);
 }

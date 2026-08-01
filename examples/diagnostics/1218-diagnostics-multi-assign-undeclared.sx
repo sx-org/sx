@@ -12,10 +12,10 @@
 //   - a `::` constant as a multi-assign target — the global fallback must
 //     reject it, mirroring single-assign's const-write rejection.
 //
-// Regression: `a, undeclared_b = b, a;` compiled and ran — the
-// ident-target arm of lowerMultiAssign only consulted local scope and dropped
-// the store on lookup failure; a module-global target was also dropped (no
-// global fallback at all — the positive global case is pinned by
+// Undiagnosed, `a, undeclared_b = b, a;` compiles and runs: an ident-target arm
+// of lowerMultiAssign that consults only local scope drops the store on lookup
+// failure, and with no global fallback it drops a module-global target too (the
+// positive global case is pinned by
 // examples/basic/0060-basic-multi-assign-global.sx).
 
 #import "modules/std.sx";

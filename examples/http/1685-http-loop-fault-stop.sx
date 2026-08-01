@@ -1,10 +1,10 @@
 // std.http — a persistently failing loop must surface and stop, not spin.
 //
-// Regression: run() swallowed every tick() error (`catch {}`), so a
-// persistent Loop.wait() failure — e.g. the kernel queue fd dying — became
-// a silent 100% CPU spin forever. No log, no return, no recovery.
+// A run() that swallows every tick() error (`catch {}`) turns a persistent
+// Loop.wait() failure — e.g. the kernel queue fd dying — into a silent 100% CPU
+// spin forever: no log, no return, no recovery.
 //
-// The fix: run() counts CONSECUTIVE tick failures, emits LISTEN_ERROR (the
+// run() counts CONSECUTIVE tick failures, emits LISTEN_ERROR (the
 // observability hook; detail = the consecutive count) on each, backs off
 // between retries, and after LOOP_FAULT_LIMIT consecutive failures gives up
 // cleanly — quiesces (skipping the drain, whose ticks would also fail) and

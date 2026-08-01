@@ -8,14 +8,13 @@
 // entirely leaves the field's type leaf at the `.unresolved` sentinel, which
 // PANICS at LLVM emission ("unresolved type reached LLVM emission").
 //
-// The checker now distinguishes TYPE params (`$T: Type`, `$T: SomeProtocol`,
+// The checker distinguishes TYPE params (`$T: Type`, `$T: SomeProtocol`,
 // the `..$Ts` pack) from VALUE params (`$N: u32`) using the binder's own rule:
 // a value param named in a type position gets the tailored hint. A value param
 // in a VALUE position (a `[N]u8` array dimension, a `Vector` lane count) still
 // works (see 0147 / 0201).
 //
 // Expected: `error: 'N' is a value parameter, not a type`; exit 1.
-// Regression.
 #import "modules/std.sx";
 
 Bad :: struct($N: u32) {

@@ -3,7 +3,7 @@
 // each offending arm gets a located "match arms have incompatible types"
 // diagnostic. Covers the value-position literal shape, a capture-typed arm
 // against a string arm, and a match whose arm tails are calls.
-// Regression: without unification the first decisive arm's type
+// Without unification the first decisive arm's type
 // wins and the raw arm values feed a mixed-type
 // phi, failing LLVM verification ("PHI node operands are not the same type
 // as the result!") with no diagnostic.

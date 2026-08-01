@@ -3,7 +3,7 @@
 // `K : [4]i64 : .[...]` coexist — each module's bare `K` binds its OWN
 // author (h's use_k reads ITS array, main's K stays the scalar 4).
 //
-// Regression: h.sx's read borrowing main's scalar K
+// h.sx's read borrowing main's scalar K
 // panics at LLVM emission.
 
 #import "modules/std.sx";

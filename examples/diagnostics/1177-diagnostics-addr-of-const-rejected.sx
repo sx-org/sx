@@ -4,7 +4,7 @@
 // const, a local const, and an inline-asm `-> @const` write-through.
 // Unrejected, `@N` lowers to `inttoptr (i64 40 to
 // ptr)` — a wild pointer that segfaults on deref and emits invalid stores
-// for asm `-> @const`. Regression.
+// for asm `-> @const`.
 
 takes :: (p: *i64) {}
 

@@ -4,10 +4,10 @@
 // diagnostic — the SAME loud failure a GLOBAL `#run` const produces — NOT
 // silently fall back to a runtime call over the wrapper's `---` storage.
 //
-// Regression: the body-local `#run` fold left the runtime call in
-// place when the result couldn't bridge, so `mk()` ran at runtime over
-// uninitialized storage → garbage, exit 0, no diagnostic (a silent miscompile).
-// The fix surfaces the BRIDGE bail loudly and gates the build (exit 1). An
+// A body-local `#run` fold that leaves the runtime call in place when the
+// result cannot bridge runs `mk()` at runtime over uninitialized storage →
+// garbage, exit 0, no diagnostic (a silent miscompile). The BRIDGE bail
+// surfaces loudly and gates the build (exit 1) instead. An
 // EXECUTION bail (a body the VM can't run but the runtime computes correctly,
 // e.g. `0.0/0.0` → NaN) still falls through to the runtime call — only an
 // unbridgeable RESULT fails here.

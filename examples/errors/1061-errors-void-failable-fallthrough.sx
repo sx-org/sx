@@ -11,8 +11,6 @@
 //
 // `noop`'s `!` really is redundant, so the "drop the `!`" warning fires and
 // is pinned; the shape under test is exactly that redundant channel.
-//
-// Regression.
 
 #import "modules/std.sx";
 

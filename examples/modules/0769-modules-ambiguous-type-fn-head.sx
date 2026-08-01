@@ -6,10 +6,10 @@
 // it must emit the LOUD "type 'Make' is ambiguous" diagnostic and poison, NEVER
 // silently instantiate whichever single author `fn_ast_map` happens to hold.
 //
-// Regression: a `headFnLeak` that only checks `isNameVisible` (both authors
-// ARE visible) instead of doing bare-call ambiguity selection lets
-// two flat `Make` type-fns instantiate one author — `size_of(Make(i64))`
-// printed 16 (a.sx's two-field body) at exit 0 instead of the ambiguity diagnostic.
+// A `headFnLeak` that only checks `isNameVisible` (both authors ARE visible)
+// instead of doing bare-call ambiguity selection lets two flat `Make` type-fns
+// instantiate one author — `size_of(Make(i64))` prints 16 (a.sx's two-field
+// body) at exit 0 instead of the ambiguity diagnostic.
 
 #import "modules/std.sx";
 #import "0769-modules-ambiguous-type-fn-head/a.sx";

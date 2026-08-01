@@ -4,7 +4,7 @@
 // `*void` outside a `Self`-disguise is a real pointer whose pointee
 // size is unknown.
 //
-// Regression: target_type leaks from the surrounding scope (e.g. the
+// target_type leaks from the surrounding scope (e.g. the
 // enclosing function's return type). A dispatcher that auto-loads
 // `sizeof(target_type)` bytes from every `*void` return mistakes
 // real pointers for Self-encoded boxes, so

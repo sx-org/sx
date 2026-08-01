@@ -9,8 +9,6 @@
 // shared promotion rule (`Lowering.arithResultType`, the same one `lowerBinaryOp`
 // applies for the value), so an int operand with a float operand promotes to the
 // float in either order.
-//
-// Regression.
 
 #import "modules/std.sx";
 

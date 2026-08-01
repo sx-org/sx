@@ -2,12 +2,10 @@
 // param type, just like a call to a top-level function does: a concrete arg
 // wraps to a present optional, and `null` becomes an absent optional.
 //
-// Regression: the closure-value call path lowered args without
-// coercing to the closure's declared param types, so a concrete `7` arrived as
-// a bare payload (read ABSENT) and `null` reached a `{T,i1}` slot as a bare
-// pointer (LLVM verifier failure). Fixed by typing args against the closure's
-// params (`resolveCallParamTypes`) AND coercing them at the call site
-// (`coerceClosureCallArgs`).
+// Args are typed against the closure's params (`resolveCallParamTypes`) AND
+// coerced at the call site (`coerceClosureCallArgs`). Lowering them without
+// that coercion makes a concrete `7` arrive as a bare payload (read ABSENT) and
+// `null` reach a `{T,i1}` slot as a bare pointer (LLVM verifier failure).
 #import "modules/std.sx";
 
 main :: () {

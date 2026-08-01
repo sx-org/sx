@@ -4,7 +4,7 @@
 //
 // Both whole-aggregate shapes — the undef store from `---` and
 // `index_get` on the loaded array value — would scalarize into one
-// SelectionDAG node per element. Regression.
+// SelectionDAG node per element.
 //
 // Results print via out/int_to_string: `{}` formatting would pull the
 // any_to_string dispatcher, whose array arms materialize every interned

@@ -105,7 +105,7 @@ public:
     }
 };
 
-/// Helper: build a CompilerInstance from user args + filename using the Driver.
+/// Build a CompilerInstance from user args + filename using the Driver.
 /// Returns nullptr on failure (sets out_error).
 static std::unique_ptr<clang::CompilerInstance>
 buildCompilerInstance(const char *filename,

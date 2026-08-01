@@ -2,7 +2,7 @@
 // type whose value is produced via early `return`s must infer the return type
 // from the `return` operands — not fall through to void.
 //
-// Regression: `() { if c { return 11; } return 22; }`
+// `() { if c { return 11; } return 22; }`
 // infers `void` if the block's last stmt (the `return`) is read as its value,
 // so the call site feeds an `i64 undef` to `print` and LLVM verification
 // fails. Closure return-type inference mirrors the function-decl path,

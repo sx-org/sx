@@ -5,7 +5,7 @@
 // started in. The `and`/`or` merge PHI must take that actual block as the
 // incoming predecessor.
 //
-// Regression: taking the wrong predecessor emits invalid LLVM
+// Taking the wrong predecessor emits invalid LLVM
 // for string equality under `and`/`or` (`PHI node entries do not match
 // predecessors!`).
 #import "modules/std.sx";

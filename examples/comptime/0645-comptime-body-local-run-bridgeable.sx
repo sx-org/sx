@@ -3,8 +3,8 @@
 // These are the common cases that must keep working; only an unbridgeable
 // result (e.g. `[2][]i64`) fails.
 //
-// Regression: the body-local `#run` fold must not regress the
-// bridgeable cases when it learned to fail loudly on an unbridgeable result.
+// Failing loudly on an unbridgeable result must not cost the bridgeable cases
+// their fold.
 #import "modules/std.sx";
 
 Pt :: struct { x: i64; y: i64; }

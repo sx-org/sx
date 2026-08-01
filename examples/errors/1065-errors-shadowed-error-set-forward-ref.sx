@@ -5,7 +5,7 @@
 // signature, the body, and the call site must all agree on the LOCAL error
 // set, so `f(error.Fault)` takes the `e == error.Fault` arm (r=1).
 //
-// Regression: a signature that binds the IMPORTED struct via
+// A signature that binds the IMPORTED struct via
 // the findByName first-author fallback while the body binds the local error
 // set ABI-mangles the param value through the empty struct, and the
 // comparison evaluates false (r=0, exit 0, no diagnostic).

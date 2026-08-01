@@ -1,10 +1,9 @@
 // A top-level global initialized from a non-constant expression (here a field
-// access on a module constant, `K.x`) is rejected with a diagnostic. Without
-// the fix `registerTopLevelGlobal`'s init_val serializer handled only literals
-// / array / struct literals / identifiers and let every other shape fall through
-// to a null payload, so the global silently zero-initialized (`g=0`) — a wrong
+// access on a module constant, `K.x`) is rejected with a diagnostic. A
+// `registerTopLevelGlobal` init_val serializer that handles only literals /
+// array / struct literals / identifiers lets every other shape fall through to
+// a null payload, so the global silently zero-initializes (`g=0`) — a wrong
 // value with no error.
-// Regression.
 // Expected: "global 'g' must be initialized by a compile-time constant"; exit 1.
 
 #import "modules/std.sx";

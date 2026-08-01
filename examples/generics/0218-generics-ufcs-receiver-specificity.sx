@@ -3,12 +3,12 @@
 // overload is dispatched — else the result is typed by one function but produced
 // by another, misboxing it.
 //
-// Regression: the planner (calls.zig) used the
-// last-wins `fn_ast_map` winner while lowering reselected by receiver, so a
-// `*$T->string` winner could type a call that lowering dispatched to
-// `*Box($T)->i64` — boxing the i64 as a string pointer. And boolean specificity
-// treated `*$T` and `*Box($T)` as equal (false ambiguity). Fixed by sharing one
-// receiver-aware, pointer-peeling selection between planner and lowering.
+// Planner and lowering share one receiver-aware, pointer-peeling selection. A
+// planner (calls.zig) that takes the last-wins `fn_ast_map` winner while
+// lowering reselects by receiver lets a `*$T->string` winner type a call that
+// lowering dispatches to `*Box($T)->i64` — boxing the i64 as a string pointer —
+// and boolean specificity treats `*$T` and `*Box($T)` as equal (false
+// ambiguity).
 #import "modules/std.sx";
 #import "0218-generics-ufcs-receiver-specificity/0218-shared.sx";
 #import "0218-generics-ufcs-receiver-specificity/anyref.sx";

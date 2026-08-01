@@ -1,5 +1,5 @@
 // Dispatch a protocol method THROUGH a protocol-typed struct field.
-// Regression: a plain free function does NOT "satisfy" the
+// A plain free function does NOT "satisfy" the
 // protocol — conformance is impl-driven, and accepting one builds a vtable of
 // unreachable thunks whose first dispatch SIGABRTs with no diagnostic. With a
 // real `impl` block the field dispatch works; the non-conforming case is a

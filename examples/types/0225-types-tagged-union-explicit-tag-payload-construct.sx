@@ -3,18 +3,17 @@
 // same encoding `match` switches on and C-interop uses — NOT the sequential
 // ordinal.
 //
-// Regression:
-//   Defect 1 — a call-shaped construction `Ev.key(5)` that stores the ORDINAL
-//   (1) while `match` switches on the explicit tag (0x300 = 768) makes a
-//   payloadful match match no case and fall through to `else`/unreachable
-//   (mis-dispatch / UB). Construction stores the explicit value; the ordinal
-//   indexes `fields[]` for the payload-type lookup only.
+//   A call-shaped construction `Ev.key(5)` that stores the ORDINAL (1) while
+//   `match` switches on the explicit tag (0x300 = 768) makes a payloadful match
+//   match no case and fall through to `else`/unreachable (mis-dispatch / UB).
+//   Construction stores the explicit value; the ordinal indexes `fields[]` for
+//   the payload-type lookup only.
 //
-//   Defect 2 — the struct-literal construction form `Ev.key{ 42 }` with a
-//   SCALAR payload panics ("unresolved type reached LLVM emission") when the
-//   qualified `Ev.key` field_access is not routed to the tagged-enum path, and
-//   the inferred `.key{ 42 }` form wraps the scalar in an invalid
-//   `insertvalue i64`. Both construct the variant with payload 42.
+//   The struct-literal construction form `Ev.key{ 42 }` with a SCALAR payload
+//   panics ("unresolved type reached LLVM emission") when the qualified
+//   `Ev.key` field_access is not routed to the tagged-enum path, and the
+//   inferred `.key{ 42 }` form wraps the scalar in an invalid `insertvalue
+//   i64`. Both construct the variant with payload 42.
 //
 // All FOUR paths must agree on the explicit tag encoding: call-shaped
 // construction, struct-literal construction, `match`, and the formatter.

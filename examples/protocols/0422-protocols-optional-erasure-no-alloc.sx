@@ -5,7 +5,7 @@
 // each OWNING erasure (`s.(P)`, rvalue `xx`) allocates exactly once and
 // `free` returns it; the null form allocates nothing. Owned copies are
 // INDEPENDENT of their source; borrowing lives in `*P` views (pinned in 0829).
-// Regression: re-boxing the receiver through
+// Re-boxing the receiver through
 // context.allocator on the optional wrap leaks one block per wrap.
 // Zero-alloc BORROW spellings are the demand error (1256).
 

@@ -4,7 +4,7 @@
 // (undefined) init write, writes to every lane of a 4-lane vector, the colour
 // aliases, and a compound lane assignment (`+= / *=`).
 //
-// Regression: a lane STORE path that falls through to struct-field
+// A lane STORE path that falls through to struct-field
 // lookup matches no field for a vector lane, leaving the lane pointer's pointee
 // as the `.unresolved` sentinel — which panics at LLVM emission ("unresolved
 // type reached LLVM emission"). The store path resolves the lane index via the

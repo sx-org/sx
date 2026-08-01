@@ -1,18 +1,17 @@
-// any_to_string didn't handle optionals. A struct field of type `?T`
-// printed as `<?>` (any_to_string's "no case matched" default)
-// because there was no `case optional:` arm, and no dispatch table
-// entry mapping `?T` TypeIds to the optional category.
+// any_to_string handles optionals through a `case optional:` arm and a dispatch
+// table entry mapping `?T` TypeIds to the optional category. Without them a
+// struct field of type `?T` prints as `<?>`, any_to_string's "no case matched"
+// default.
 //
-// The variadic auto-unwrap path (packVariadicCallArgs) papered over
-// this for direct `print("{}\n", opt)` calls — it stringified
-// optionals to either the inner value's repr or `"null"` BEFORE
-// boxing as any. But anywhere else that boxes an optional and reads
-// it back through any_to_string (struct field printing,
-// `xx opt : any`, future user code) hit the `<?>` floor.
+// The variadic auto-unwrap path (packVariadicCallArgs) hides that for direct
+// `print("{}\n", opt)` calls — it stringifies optionals to either the inner
+// value's repr or `"null"` BEFORE boxing as any. Everywhere else that boxes an
+// optional and reads it back through any_to_string (struct field printing,
+// `xx opt : any`) hits the `<?>` floor.
 //
-// Locks in the fix: each ?T variant routes through `case optional:` —
-// the repr-classified table walk — to either the inner value's
-// `any_to_string` representation or the literal `"null"`.
+// Each ?T variant routes through `case optional:` — the repr-classified
+// table walk — to either the inner value's `any_to_string` representation
+// or the literal `"null"`.
 
 #import "modules/std.sx";
 

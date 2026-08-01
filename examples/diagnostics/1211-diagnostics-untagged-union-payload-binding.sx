@@ -6,7 +6,7 @@
 //     example 1220 for the no-binding forms);
 //   - a payload-less enum (the most plausible user typo) — the arm-level
 //     binding rejection, generic wording.
-// Regression: undiagnosed these leak an .unresolved binding type
+// Undiagnosed these leak an .unresolved binding type
 // and panic in the LLVM backend ("unresolved type reached LLVM emission").
 #import "modules/std.sx";
 

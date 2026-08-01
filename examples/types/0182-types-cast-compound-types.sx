@@ -2,8 +2,8 @@
 // including compound shapes: `*T`, `[*]T`, `?T`, `[]T`. The same lowering
 // makes a compound type literal a first-class `Type` value in expression
 // position (`t : Type = *i64;`), mirroring named types (`t : Type = f64;`).
-// Regression: compound casts fell into the runtime-dispatch
-// path and died with "unresolved 'unknown_expr'".
+// A compound cast that falls into the runtime-dispatch path dies with
+// "unresolved 'unknown_expr'".
 
 #import "modules/std.sx";
 

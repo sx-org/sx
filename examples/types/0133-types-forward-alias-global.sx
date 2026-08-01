@@ -2,7 +2,7 @@
 // and a typed module constant whose annotation is a forward alias
 // (`A :: B; B :: i32;`) resolve to the alias target, the same as the
 // ordered form, instead of a fabricated stub.
-// Regression: resolving top-level global / typed-const
+// Resolving top-level global / typed-const
 // annotations inside the scan loop, BEFORE the forward-alias fixpoint, gives
 // `g : A` a stub type that mismatches its initializer at LLVM verification.
 // Global/const annotation resolution runs in scan pass 2, after the

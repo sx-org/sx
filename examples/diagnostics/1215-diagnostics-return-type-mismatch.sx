@@ -3,7 +3,6 @@
 // return slot (a 16-byte string "returned" as i64 would ship the string's
 // pointer as the integer, exit 0). Both the trailing-expression and the
 // explicit-`return` forms diagnose.
-// Regression.
 #import "modules/std.sx";
 
 bad_trailing :: () -> i64 { "not an int" }

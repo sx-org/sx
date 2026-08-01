@@ -1,4 +1,4 @@
-// Regression: a generic function (with `$T: Type` type params)
+// A generic function (with `$T: Type` type params)
 // called from inside a pack-fn mono must NOT inherit the outer
 // pack maps during its own body lowering. Without that isolation
 // in `monomorphizeFunction`, the cached mono of a generic with

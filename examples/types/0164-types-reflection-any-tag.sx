@@ -8,7 +8,7 @@
 //   - holds a value   → report the type OF that value (the tag).
 //   - holds a Type     → name the held type (the payload).
 //
-// Regression: `type_name` / `is_unsigned`
+// `type_name` / `is_unsigned`
 // read the runtime tag, not the any's payload as a TypeId index — the
 // latter answers `u8` (types[6]) for `type_name(av)` with `av : any = 6`
 // and true for `is_unsigned(av)`.

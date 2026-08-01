@@ -2,8 +2,6 @@
 // so it supports every statement form — a destructure decl, a `catch`-statement,
 // nested var decls — not just a single bare expression. Routing `defer { … }`
 // through the expression parser rejects those with "expected ';'".
-//
-// Regression.
 
 #import "modules/std.sx";
 

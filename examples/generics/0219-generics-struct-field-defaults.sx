@@ -2,12 +2,12 @@
 // literals — a generic instance's declared defaults are carried onto the
 // monomorphized type, not silently zero-filled.
 //
-// Regression: `struct_defaults_map` was keyed by the plain decl
-// name, so an instantiated generic's mangled struct name never matched and
-// unset defaulted fields read 0. Now `instantiateGenericStruct` registers the
-// template's defaults under the mangled instance name, and dependent defaults
-// (a default referencing a bare type param `T`) are monomorphized at the
-// literal site with the instance's type bindings installed.
+// `instantiateGenericStruct` registers the template's defaults under the
+// mangled instance name, and dependent defaults (a default referencing a bare
+// type param `T`) are monomorphized at the literal site with the instance's
+// type bindings installed. A `struct_defaults_map` keyed by the plain decl name
+// instead never matches an instantiated generic's mangled struct name, so unset
+// defaulted fields read 0.
 #import "modules/std.sx";
 
 Inner :: struct { v: i64 = 11; }

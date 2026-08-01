@@ -1,4 +1,4 @@
-// Regression: a function with NO explicit return type infers it
+// A function with NO explicit return type infers it
 // from the body, which references the function's own parameters. The inference
 // must see those params: out of scope during return-type resolution the
 // inferred type comes out `.unresolved` and trips

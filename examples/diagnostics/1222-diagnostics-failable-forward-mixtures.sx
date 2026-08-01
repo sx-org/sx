@@ -8,7 +8,6 @@
 //   3. pure bare-`!` callee → NAMED-set caller: the callee's inferred error
 //      set is not statically known at the forward site, so it cannot be
 //      proven ⊆ the named set — destructure and re-raise instead.
-// Regression.
 
 #import "modules/std.sx";
 

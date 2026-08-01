@@ -23,8 +23,7 @@
 // `AndroidPlatform` (the EGL handles, the ANativeWindow, the render
 // thread, the touch ring, the frame closure, the user main fn, the
 // touch mutex). Module-level globals are out — they shadow consumer
-// globals on `#import` and produced an integer/float-shadowing render
-// regression on chess before we eliminated them.
+// globals on `#import`.
 //
 // Vulkan-compatible: same ANativeWindow drives `vkCreate*SurfaceKHR`
 // without changing the lifecycle.

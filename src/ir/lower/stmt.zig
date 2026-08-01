@@ -1179,8 +1179,8 @@ fn reorderNamedReturn(self: *Lowering, value_node: *const Node, ret_ty: TypeId) 
     // value slot, the ergonomic `return a = …, b = …` form) and the FULL-TUPLE
     // list (a trailing element for the error slot too, `els.len == fields_len`).
     // BOTH must be reordered/validated — otherwise a fully-named full-tuple
-    // failable return silently lands values positionally (regression found in
-    // review). `match_count` slots participate; the error slot (when present)
+    // failable return silently lands values positionally. `match_count` slots
+    // participate; the error slot (when present)
     // joins by its own slot name.
     const match_count = els.len;
     if (match_count != value_count and match_count != fields_len) return value_node;

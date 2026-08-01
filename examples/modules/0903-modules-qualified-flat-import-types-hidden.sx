@@ -1,4 +1,4 @@
-// Regression: a namespace exposes declarations authored by its
+// A namespace exposes declarations authored by its
 // target module, not declarations merely visible there through a flat import.
 // Every qualified hidden type surface below must fail at the namespace edge.
 

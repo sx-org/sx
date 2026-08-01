@@ -5,7 +5,7 @@
 // captured into the env, resolves against an empty scope inside the lambda, and
 // the call types as `unresolved` (so `catch`/`try` reject it).
 //
-// Regression: the async completion closure
+// The async completion closure
 // `() { f.value = worker() catch {…} }` captures a `Closure() -> ($R, !)`
 // worker and consumes its error channel — exactly this shape.
 #import "modules/std.sx";

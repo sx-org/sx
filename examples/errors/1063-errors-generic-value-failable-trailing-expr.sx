@@ -3,10 +3,10 @@
 // error slot to 0 — the caller's `catch` must NOT fire and the value must be
 // intact across instantiations (i64 / string / struct), and `or` must yield the
 // real value not the fallback.
-// Regression: `lowerGenericInstance` hand-rolled a body-return
-// (coerceToType+ret) that missed the value-failable success routing, leaving
-// the error-tag slot uninitialized → phantom catch on success / value
-// corruption for generic instantiations.
+// A hand-rolled body-return in `lowerGenericInstance` (coerceToType+ret) that
+// misses the value-failable success routing leaves the error-tag slot
+// uninitialized → phantom catch on success / value corruption for generic
+// instantiations.
 #import "modules/std.sx";
 
 E :: error { Bad }

@@ -1,4 +1,4 @@
-// Companion module for the regression. An `xx <int>` argument to
+// Companion module. An `xx <int>` argument to
 // a variadic `format` (a comptime `..$args` pack), inside a function living
 // in an IMPORTED module, auto-boxes to `any`: lowering pack args clears the
 // enclosing fn's `target_type` (here `string`), which would otherwise

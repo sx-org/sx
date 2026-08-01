@@ -1,5 +1,5 @@
 error: type 'Make' is not visible; #import the module that declares it
-  --> examples/modules/0770-modules-type-fn-head-non-transitive.sx:21:32
+  --> examples/modules/0770-modules-type-fn-head-non-transitive.sx:20:32
    |
-21 |     print("size={}\n", size_of(Make(i64)));
+20 |     print("size={}\n", size_of(Make(i64)));
    |                                ^^^^

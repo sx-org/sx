@@ -5,7 +5,7 @@
 // const is 7 and b.sx's is 70. Lowering the #run body with the
 // main file's source perspective — where `compute` is authored by two flat
 // imports and neither is main's own — reports AMBIGUOUS and fails the
-// build. Regression: per-source comptime #run callee resolution.
+// build. Per-source comptime #run callee resolution.
 #import "modules/std.sx";
 #import "0733-modules-flat-same-name-comptime-run/a.sx";
 #import "0733-modules-flat-same-name-comptime-run/b.sx";

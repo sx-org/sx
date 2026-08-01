@@ -1,9 +1,9 @@
-// Regression test, fn-pointer path.
+// Fn-pointer path.
 //
 // When a fn-pointer's type is spelled with `abi(.c)`, the indirect
 // call must apply the same C-ABI byval coercion that direct C-ABI calls
 // do at the call site (path A): >16-byte non-HFA aggregates are passed
-// as `ptr byval(<T>)`. Without the fix, the indirect call site builds
+// as `ptr byval(<T>)`. Without that coercion the indirect call site builds
 // an LLVM function type whose param slot is the raw struct, which the
 // AArch64/x86_64 backend tries to lay out across registers + stack in
 // ways that don't match the byval-attributed callee signature — the

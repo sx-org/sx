@@ -2,10 +2,10 @@
 // struct literal from the POINTEE of the assignment target — never from the
 // enclosing function's return type — and fills omitted fields from the
 // struct's field defaults, exactly like `t : T = .{ x = 5 }`.
-// Regression: the deref-LHS assign arm did not seed target_type,
-// so the literal leaked the ambient fn-return-type context — .unresolved
-// LLVM-emission panic (void fn), bogus "cannot assign"/"field not found"
-// (i64 / struct returns), invalid insertvalue (?i64 return).
+// A deref-LHS assign arm that does not seed target_type lets the literal leak
+// the ambient fn-return-type context — an `.unresolved` LLVM-emission panic
+// (void fn), bogus "cannot assign"/"field not found" (i64 / struct returns),
+// invalid insertvalue (?i64 return).
 #import "modules/std.sx";
 
 T :: struct { x: i64 = 1; y: i64 = 2; }

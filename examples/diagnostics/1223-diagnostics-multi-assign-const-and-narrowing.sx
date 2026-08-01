@@ -10,7 +10,7 @@
 //    after `o, a = null, 1;` diagnoses instead of reading a null optional as
 //    its payload.
 //
-// Regression. All diagnostics batch; exit 1.
+// All diagnostics batch; exit 1.
 #import "modules/std.sx";
 
 P :: struct { x: i64 = 0; y: i64 = 0; }

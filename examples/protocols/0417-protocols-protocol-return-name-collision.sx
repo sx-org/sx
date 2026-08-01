@@ -8,7 +8,7 @@
 // `ev := g_plat.one_event()` infers that type, so the `case .key_up:(e)`
 // payload binds a `KeyData` and `.escape` resolves against `Keycode`.
 //
-// Regression: resolving method signature types in
+// Resolving method signature types in
 // `registerProtocolDecl` through the flat, visibility-UNAWARE `type_bridge`
 // resolver picks the stdlib `event.Event` struct instead — typing
 // `ev` as a fieldless struct, binding `.unresolved`, and emitting

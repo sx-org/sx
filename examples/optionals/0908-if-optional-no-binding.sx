@@ -2,7 +2,7 @@
 // fold the `{T,i1}` aggregate truthy. Covers struct-form optionals (`?i64`,
 // `?P`) in both states, exercising BOTH branches — without any `|x|` binding.
 //
-// Regression: a bare `if opt {}` over a struct-repr optional
+// A bare `if opt {}` over a struct-repr optional
 // emitted `br i1 true`, so a null optional took the present branch.
 #import "modules/std.sx";
 

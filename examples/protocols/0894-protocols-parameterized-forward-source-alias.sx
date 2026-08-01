@@ -1,6 +1,5 @@
 // A parameterized impl whose concrete source is a forward alias must be
 // retried after the alias fixpoint instead of being keyed as unresolved.
-// Regression.
 
 Value :: protocol (T: Type) vtable #identity {
     get :: (self: *Self) -> T;

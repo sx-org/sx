@@ -1,4 +1,4 @@
-// Regression: lowering a QUALIFIED imported function whose
+// Lowering a QUALIFIED imported function whose
 // body terminates must leave the CALLER's lowering state untouched.
 //
 // `m :: #import …` registers `m.foo` as a module-qualified alias with a unique
@@ -9,8 +9,8 @@
 // every saved caller field EXCEPT `block_terminated` leaks that flag back
 // into `main`, so `main`'s own trailing `print` / `return 0` read as
 // dead-after-terminator and the compiler rejects `return 0` with "body produces
-// no value". The fix routes all exit paths through one save/restore defer, so
-// the qualified alias is transparent to the caller. (`helper` also lives in
+// no value". All exit paths route through one save/restore defer, so the
+// qualified alias is transparent to the caller. (`helper` also lives in
 // m.sx's own flat import, exercising the F1 source-context restore too.)
 
 #import "modules/std.sx";

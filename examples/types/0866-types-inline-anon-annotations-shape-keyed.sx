@@ -2,7 +2,7 @@
 // `: enum { … }`) are SHAPE-keyed, like untyped `.{}` literals: identical
 // shapes unify to one TypeId, distinct shapes are distinct types — including
 // across annotation/literal sites and inside anon-enum payload structs.
-// Regression: every inline decl displays as `__anon`, and the
+// Every inline decl displays as `__anon`, and the
 // name-keyed intern path let the FIRST inline shape in a program claim the
 // name — every later, differently-shaped inline annotation resolved to it
 // ("field 'y' not found on type '__anon'").

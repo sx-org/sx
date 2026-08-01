@@ -1,10 +1,9 @@
-// Regression: `#jni_call(f32)` (jfloat return).
+// `#jni_call(f32)` (jfloat return).
 // The Call<T>Method switch in `src/ir/emit_llvm.zig` covers `.f32`.
 // Without that arm a JNI method returning `float` falls through to the
-// `else` arm and emits `LLVMGetUndef` — a
-// silent-undef footgun on Android (chess
-// `MotionEvent.getX()` / `getY()` came through as `undef` arguments
-// to `sx_android_push_touch`, breaking every touch).
+// `else` arm and emits `LLVMGetUndef` — a silent-undef footgun on
+// Android, where a `MotionEvent.getX()` / `getY()` result reaches
+// `sx_android_push_touch` as `undef` and every touch is lost.
 //
 // This test exercises the `.f32` slot (CallFloatMethod, vtable 55) +
 // proves the build doesn't error out the JNI dispatch path for it.

@@ -7,8 +7,6 @@
 // read (`b.max`) earns — the backtick spelling changes nothing.
 //
 // Negative companion to 0169 (the FLOAT-field narrowing half, exit 0).
-//
-// Regression.
 #import "modules/std.sx";
 
 DimBox :: struct { max: i64; }

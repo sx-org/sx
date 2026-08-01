@@ -3,7 +3,7 @@
 // message — for the named form, the empty `.{}`, and through the optional
 // `?T = .{...}` recursion (which unwraps to the scalar child).
 //
-// Regression: undiagnosed these reach LLVM emission and fail
+// Undiagnosed these reach LLVM emission and fail
 // verification ("Invalid InsertValueInst operands!"), and the empty
 // `.{}`-against-scalar produces garbage with no diagnostic at all.
 // Aggregate targets — struct / tuple / array / vector / slice / `string` (the

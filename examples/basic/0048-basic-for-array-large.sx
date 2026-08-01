@@ -4,7 +4,7 @@
 // compile error, not a silent no-op. To mutate, copy into a `:=` local (the
 // copy is yours to change and never writes back); to write into the array,
 // use a by-REFERENCE capture (`for small (*x)`) and store through it.
-// Regression: an element fetch of `index_get` on the array
+// An element fetch of `index_get` on the array
 // VALUE spills a full copy of the array to a stack temp per iteration —
 // O(N²) bytes copied, plus per-iteration stack growth that segfaults this
 // 4096-element loop.

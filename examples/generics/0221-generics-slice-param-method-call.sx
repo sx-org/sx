@@ -1,7 +1,7 @@
 // A generic method taking a slice (`xs: []$T`), reached through method-call
 // syntax (`b.take(a)`) rather than the explicit `Box.take(@b, a)` form.
 //
-// Regression: resolving the callee's declared params eagerly in
+// Resolving the callee's declared params eagerly in
 // `resolveCallParamTypes` to give each arg a target type, with NO bindings
 // installed for a generic method, resolves `[]$T` to `[]unresolved` and
 // interns that poison into the TypeTable. Nothing consumes it until a

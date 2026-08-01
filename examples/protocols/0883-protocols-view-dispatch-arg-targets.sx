@@ -4,7 +4,6 @@
 // LITERAL argument (`.bgra8`): it can only type itself from the param
 // target; through a view it must not fall back to the ambient
 // destination and refuse.
-// Regression.
 #import "modules/std.sx";
 
 Fmt :: enum { rgba8; bgra8; }

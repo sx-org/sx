@@ -5,7 +5,6 @@
 // corrupts the value (the has_value flag clobbers a multi-field payload's
 // first field, or a `?T` arg reads as null) or fails LLVM verification on a
 // double wrap.
-// Regression.
 #import "modules/std.sx";
 
 T :: struct { a: i64 = 0; b: i64 = 0; }

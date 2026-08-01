@@ -14,7 +14,7 @@
 // `` `i16 ``, and LOCAL `` `f64 ``/`` `i32 ``/`` `u8 `` — each reads its field,
 // and the bare spelling of each STILL folds.
 //
-// Regression, at local, global and module-const scope alike: an intercept
+// At local, global and module-const scope alike: an intercept
 // that treats any identifier whose text matches a builtin numeric type name
 // as a TYPE receiver shadows the in-scope value binding
 // (`` `f64.epsilon `` folds to 2^-52, `` `i32.max `` to 2147483647 —

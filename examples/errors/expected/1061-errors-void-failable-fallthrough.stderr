@@ -1,5 +1,5 @@
 warning: function 'noop' is declared `!` but never errors — drop the `!`
-  --> examples/errors/1061-errors-void-failable-fallthrough.sx:19:15
+  --> examples/errors/1061-errors-void-failable-fallthrough.sx:17:15
    |
-19 | noop :: () -> ! { }                 // success by fall-through, no `return;`
+17 | noop :: () -> ! { }                 // success by fall-through, no `return;`
    |               ^

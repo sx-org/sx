@@ -1,4 +1,4 @@
-// Tests for error_analysis.zig — the error-set convergence owner
+// The error-set convergence owner
 // (`ErrorAnalysis`). Reached via `ir.ErrorAnalysis{ .l = &lowering }`, mirroring
 // the other facade tests. Covers the whole-program fix-point and the
 // closure-shape union.

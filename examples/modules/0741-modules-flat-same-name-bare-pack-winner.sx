@@ -1,4 +1,4 @@
-// Regression (Phase C): a BARE call whose own author is a plain free
+// A BARE call whose own author is a plain free
 // fn must DISPATCH to that author, not the first-wins winner — even when the
 // winner is a comptime PACK (`..$args`) of the same name. a.sx (imported first)
 // authors `f` as a pack → first-wins winner; b.sx authors its OWN plain `f`. In

@@ -3,7 +3,7 @@
 // `sx run` take ~12s). The array any-unbox formats via a SLICE VIEW of its
 // storage — no whole-array load.
 //
-// Regression: loading the whole [65536]u8 by value in
+// Loading the whole [65536]u8 by value in
 // `any_to_string`'s `case array:` arm (per-type monomorphized formatting) and
 // reading each element off the loaded aggregate is what blows up. The
 // dispatcher builds a `{ptr,len}` slice view of the payload pointer — output is

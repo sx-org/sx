@@ -3,8 +3,8 @@
 // instance's stamped author + bindings BEFORE the method has ever
 // monomorphized. Inferring `.unresolved` for `xx b.get().data[0]` — with no
 // earlier call to `get` anywhere — lowers the whole chain to a SILENT zero.
-// No other use of `get` may precede f1 in this file: the first-use ordering
-// is the regression.
+// No other use of `get` may precede f1 in this file, so f1's call is the
+// first use.
 #import "modules/std.sx";
 
 Buf :: struct { data: []u8; }

@@ -1,6 +1,5 @@
 // A flat import and a namespaced import both exporting `B :: u8` must not
 // preempt the own module's `A :: B; B :: u64;` forward alias chain.
-// Regression.
 
 std :: #import "modules/std.sx";
 #import "0830-modules-flat-ns-same-name-forward-alias/flat.sx";

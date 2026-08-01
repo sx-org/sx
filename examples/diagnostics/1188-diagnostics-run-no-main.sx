@@ -2,8 +2,6 @@
 // non-zero — never call into a garbage JIT address and segfault. A pre-JIT
 // entry-point check in main.zig (plus a defensive `main_addr == 0` backstop in
 // target.zig's runJITFromObject) guards the garbage-pointer call.
-//
-// Regression.
 #import "modules/std.sx";
 
 // Intentionally no `main` — only a helper.

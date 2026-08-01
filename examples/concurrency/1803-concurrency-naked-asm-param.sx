@@ -10,7 +10,7 @@
 // (spilling them would emit `store i64 %0, …` → "cannot use argument of naked
 // function"). aarch64-pinned; runs end-to-end (exit 42), ir-only on a mismatch.
 //
-// Regression: without the param-alloca guard, a param-bearing `.naked` fn
+// Without the param-alloca guard, a param-bearing `.naked` fn
 // emits invalid LLVM (loud verifier error) instead of a working naked
 // function.
 add :: (a: i64, b: i64) -> i64 abi(.naked) {

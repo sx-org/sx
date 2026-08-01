@@ -1,4 +1,4 @@
-// Regression: `==` / `!=` between two untagged-`union` VALUES
+// `==` / `!=` between two untagged-`union` VALUES
 // is rejected with a located diagnostic instead of emitting invalid LLVM IR.
 //
 // An untagged union is a raw byte aggregate (`[N x i8]` storage); its

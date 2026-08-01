@@ -4,9 +4,9 @@
 // `i64 undef` backend crash. Mirrors the value-`if`-without-`else`
 // diagnostic; every arm of a value `match` must produce a value.
 //
-// Regression: value-`match` arms lower via `lowerBlockValue`, whose
-// no-`else`-`if` exemption cleared `force_block_value`, so a void arm value was
-// fed into the i64 merge phi and reached the backend. (A `match` used purely as
+// Value-`match` arms lower via `lowerBlockValue`, whose no-`else`-`if`
+// exemption must not clear `force_block_value`: cleared, a void arm value feeds
+// the i64 merge phi and reaches the backend. (A `match` used purely as
 // a STATEMENT — all arms void — and a diverging arm in a value `match` both
 // remain valid; only the value/void MIX is rejected.)
 #import "modules/std.sx";

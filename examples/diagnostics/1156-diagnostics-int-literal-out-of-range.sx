@@ -1,6 +1,6 @@
 // An integer literal that does not fit its integer target type is a
 // compile error (no silent wrap): both faces diagnosed in one run.
-// Regression: `x : i8 = 300` bound 44, `y : u8 = 256` bound 0.
+// Unchecked, `x : i8 = 300` binds 44 and `y : u8 = 256` binds 0.
 
 #import "modules/std.sx";
 

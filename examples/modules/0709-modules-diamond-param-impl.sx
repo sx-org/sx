@@ -1,4 +1,4 @@
-// Regression: a parameterised-protocol (`Into`) impl living in a
+// A parameterised-protocol (`Into`) impl living in a
 // module reached through more than one import path must register exactly once.
 //
 //   main ─┬─ mid_a ─┐

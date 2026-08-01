@@ -2,7 +2,7 @@
 // like any other binding — the lexical scope wins over the program-wide fn
 // table (specs §Variable Shadowing — innermost wins).
 //
-// Regression: consulting `fn_ast_map` BEFORE the lexical scope in
+// Consulting `fn_ast_map` BEFORE the lexical scope in
 // `collectCaptures` leaves a local named like ANY program fn (here `out`,
 // which the std prelude declares) uncaptured — the closure body then
 // reads/writes a garbage address (silent wrong behavior / crash). The rule

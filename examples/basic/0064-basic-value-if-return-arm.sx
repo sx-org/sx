@@ -8,8 +8,6 @@
 // resolves from its lowered value, never from the diverging arm's void.
 // The "terminator in the middle of a basic block" shape (a block arm ending
 // in `return` getting both the terminator AND a `br` to merge) is covered too.
-//
-// Regression.
 #import "modules/std.sx";
 
 // Return position, ELSE arm diverges.

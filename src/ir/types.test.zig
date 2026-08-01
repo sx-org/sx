@@ -1,4 +1,3 @@
-// Tests for types.zig
 const std = @import("std");
 const types = @import("types.zig");
 const ast = @import("../ast.zig");

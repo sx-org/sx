@@ -4,11 +4,10 @@
 // return type, and as the target of an `xx` protocol erasure. Parses the
 // `-> R` tail that a bare `Closure(i32)` call would leave dangling.
 //
-// Regression: the const-RHS grammar parsed `Closure(i32)` as a
-// call expression and errored "expected ';'" at `->`. Fixed by routing a
-// `Closure(...)` head in expression position through the closure-type parse
-// (mirrors the existing `Tuple(...)` magic) + registering the resulting
-// `closure_type_expr` node as a type alias in scanDecls.
+// A `Closure(...)` head in expression position routes through the closure-type
+// parse (mirroring the existing `Tuple(...)` magic), and scanDecls registers
+// the resulting `closure_type_expr` node as a type alias. Read as an ordinary
+// call expression instead, the const RHS errors "expected ';'" at `->`.
 #import "modules/std.sx";
 
 CB   :: Closure(i32) -> i32;      // single-arg alias

@@ -1,11 +1,11 @@
-// Regression: `obj.method()` runtime-class dispatch with a `float`
+// `obj.method()` runtime-class dispatch with a `float`
 // return type needs the `.f32` arm of the `Call<T>Method` switch in
 // `emit_llvm.zig`; without it the call emits `LLVMGetUndef`.
 // Combined with multiple such calls inlined as args to a single
 // outer call (`f(o.a(), o.b(), o.c())`), every arg after the first
-// went out as `undef` — exactly the chess Android touch failure
-// (`MotionEvent.getX()` + `getY()` came through as `undef`s into
-// `sx_android_push_touch`).
+// goes out as `undef` — the shape that loses an Android
+// `MotionEvent.getX()` + `getY()` pair on the way into
+// `sx_android_push_touch`.
 //
 // This test exercises BOTH the `.f32` jdispatch slot AND the
 // "multiple runtime-class method calls as args to one outer call"

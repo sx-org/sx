@@ -1,4 +1,4 @@
-// Regression — HashMap / IndexMap struct keys are hashed
+// HashMap / IndexMap struct keys are hashed
 // STRUCTURALLY (field-by-field, padding skipped), consistent with `==`, so a
 // separately-constructed field-equal key is FOUND even when the padding bytes
 // of the two keys differ. Hashing all size_of(K) bytes in `map_hash_key`,

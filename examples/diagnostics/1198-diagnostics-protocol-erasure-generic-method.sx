@@ -1,5 +1,5 @@
 // Erasing a concrete type to a protocol whose `impl` method introduces its OWN
-// type parameter is a hard error, not a silent SIGABRT. Regression:
+// type parameter is a hard error, not a silent SIGABRT.
 // `impl Speaker for Dog { speak :: (self: *Dog, $T:
 // Type) }` has a matching qualified name `Dog.speak`, so a name-only
 // conformance gate ACCEPTS it — but the thunk's `lazyLowerFunction("Dog.speak")`

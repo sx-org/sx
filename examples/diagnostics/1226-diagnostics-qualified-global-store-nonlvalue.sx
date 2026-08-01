@@ -8,7 +8,7 @@
 // emitted after source-file restore, so caller spans never render against an
 // imported module's (shorter) text.
 //
-// Regression: qualified module-global assignment — non-lvalue
+// Qualified module-global assignment — non-lvalue
 // member rejection + ambiguous-member attribution (review fold).
 
 #import "modules/std.sx";

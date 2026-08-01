@@ -9,7 +9,7 @@
 //   • `!err and <reads v>`          — short-circuit keeps the proof
 //
 // A bare tag-compare (`if err == error.X`) proves NOTHING about absence — see the
-// rejection regression in 1047.
+// rejection in 1047.
 
 #import "modules/std.sx";
 

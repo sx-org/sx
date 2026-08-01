@@ -7,12 +7,11 @@
 // "type 'Make' is not visible" diagnostic and poison — the visible 1-hop
 // `Make :: 123` const must NOT vouch for it.
 //
-// Regression (type-fn head hidden by a visible non-fn):
-// `headFnLeak` decides visibility from the ELIGIBLE FUNCTION
-// authors, not the module-scope NAME predicate (`isNameVisible`), which the
-// visible non-fn `Make :: 123` satisfied — so the global `fn_ast_map` type-fn
-// silently instantiated and `size_of(Make(i64))` printed 8 at exit 0 instead of
-// the visibility diagnostic.
+// `headFnLeak` decides visibility from the ELIGIBLE FUNCTION authors, not the
+// module-scope NAME predicate (`isNameVisible`) that the visible non-fn
+// `Make :: 123` satisfies: deciding it from the name alone lets the global
+// `fn_ast_map` type-fn instantiate silently, so `size_of(Make(i64))` prints 8
+// at exit 0 instead of the visibility diagnostic.
 
 #import "modules/std.sx";
 #import "0770-modules-type-fn-head-non-transitive/b.sx";

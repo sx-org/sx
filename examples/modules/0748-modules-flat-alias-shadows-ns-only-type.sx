@@ -7,7 +7,7 @@
 // the only flat-visible TYPE author. A leaf that sees the global
 // `findByName` struct and finds no NAMED-type author in `main` (an alias is a
 // `const_decl`, not a named type) rejects the bare reference as "not
-// visible". Regression (issue R4).
+// visible".
 ns :: #import "0748-modules-flat-alias-shadows-ns-only-type/dep.sx";
 
 Secret :: i32;

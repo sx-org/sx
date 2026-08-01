@@ -20,7 +20,7 @@
 //   .inf          = +infinity
 //   .nan          = a quiet NaN
 //
-// Regression: `f64.nan != f64.nan` is true — native float `!=`
+// `f64.nan != f64.nan` is true — native float `!=`
 // lowers UNORDERED, so a NaN compares unequal to everything including itself.
 #import "modules/std.sx";
 

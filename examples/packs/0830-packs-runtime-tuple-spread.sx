@@ -1,5 +1,5 @@
 // Value spread (specs.md §"Tuple parallels") + pack capture materialization.
-// Regression: a `..` spread crossing a deferred / value
+// A `..` spread crossing a deferred / value
 // boundary crashes when a comptime pack captured into a closure re-expands
 // the spawner's dead locals in the deferred body, and spreading a concrete
 // tuple panics ("unresolved type reached LLVM emission").

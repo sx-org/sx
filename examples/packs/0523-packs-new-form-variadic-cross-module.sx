@@ -1,4 +1,4 @@
-// Regression: new-form variadic `..name: []T` defined in an imported
+// New-form variadic `..name: []T` defined in an imported
 // module is callable from another module without crashing LLVM emit.
 //
 // `resolveParamType` + `packVariadicCallArgs` must not put the

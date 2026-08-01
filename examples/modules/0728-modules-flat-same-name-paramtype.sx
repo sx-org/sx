@@ -6,7 +6,7 @@
 // pointer-param `apply` via implicit address-of; typing the arg against the
 // first-wins (value) winner lowers it as a value, and the
 // resolved pointer-param author is then called with that value bit-cast to a
-// pointer — a segfault. Regression: per-source parameter target typing.
+// pointer — a segfault. Per-source parameter target typing.
 #import "modules/std.sx";
 #import "0728-modules-flat-same-name-paramtype/a.sx";
 #import "0728-modules-flat-same-name-paramtype/b.sx";

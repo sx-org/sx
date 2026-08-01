@@ -11,10 +11,10 @@
 //   - `_ OP= expr` — the discard has no value to read; only the plain
 //     `_ = expr` discard idiom is allowed.
 //
-// Regression: `totl = 42;` compiled and ran silently — the RHS
-// lowered and the store was dropped because the failed global lookup had no
-// else branch. Same gap for compound assignment (`cnt += 1;`), for the
-// by-ref capture store, and for `_ += 1;`.
+// Undiagnosed, `totl = 42;` compiles and runs silently: the RHS lowers and the
+// store is dropped because the failed global lookup has no else branch. The
+// same gap reaches compound assignment (`cnt += 1;`), the by-ref capture store,
+// and `_ += 1;`.
 
 #import "modules/std.sx";
 

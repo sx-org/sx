@@ -4,9 +4,9 @@
 // `catch`-able. The call-type resolver mirrors the lowering dispatch: a
 // closure/fn-ptr field is called directly (and shadows a same-named method).
 //
-// Regression: the field-access call path typed such calls as
-// `unresolved` — value returns came out as garbage, failable returns rejected
-// `catch`/`try` ("operand has type 'unresolved'").
+// A field-access call path that types such calls as `unresolved` yields
+// garbage value returns, and failable returns reject `catch`/`try` ("operand
+// has type 'unresolved'").
 #import "modules/std.sx";
 
 CB :: struct {

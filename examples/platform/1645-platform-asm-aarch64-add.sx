@@ -3,7 +3,7 @@
 // returned from the function. The `.build` pins aarch64-macOS: on a matching
 // host the runner executes it (exit 42); elsewhere it falls to ir-only mode and
 // asserts the `.ir` snapshot (the inline_asm op + LLVM `call asm` are target-
-// independent in the IR text). Regression for the full lower→emit→JIT path.
+// independent in the IR text).
 add_asm :: (a: i64, b: i64) -> i64 {
     return asm { "add %[out], %[a], %[b]", [out] "=r" -> i64, [a] "r" = a, [b] "r" = b };
 }

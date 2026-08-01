@@ -3,9 +3,9 @@
 // temporary — and the object/index expressions evaluate exactly once.
 // Covers: a pointer receiver (`table.fast[index]`), a side-effecting index,
 // a nested field/index chain, and a module-global root.
-// Regression: the addressable-array read path accepted only
-// simple identifiers, so a field expression lowered as an array VALUE and
-// every read copied all 4 KiB of the field.
+// An addressable-array read path that accepts only simple identifiers lowers a
+// field expression as an array VALUE, so every read copies all 4 KiB of the
+// field.
 
 Table :: struct {
     fast: [1024]i32;

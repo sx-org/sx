@@ -3,7 +3,7 @@
 // length of its own). This makes a `List` (whose `items` is `[*]T`) iterable
 // with a `for`-each over `items[0..len]`.
 //
-// Regression: a many-pointer base falling through the subslice
+// A many-pointer base falling through the subslice
 // emitter's `else` arm yields an undefined slice (`LLVMGetUndef`) whose
 // `.len` is garbage, and iterating it segfaults.
 #import "modules/std.sx";

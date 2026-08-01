@@ -4,7 +4,7 @@
 // (a const expression) are both `Vec(3, f32)`. The struct-copy assignment is the
 // proof — it type-checks only because the two spellings name one instantiation.
 //
-// Regression: a hand-rolled `else => 0` switch in the value-param
+// A hand-rolled `else => 0` switch in the value-param
 // binder either fabricates a 0 binding under a wrong mangled name for a
 // named-const value arg or rejects it as "unknown type 'N'". The binder folds
 // through the shared const-int evaluator (`program_index.evalConstIntExpr`).

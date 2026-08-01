@@ -1,5 +1,4 @@
 // Own-wins for ENUM-PAYLOAD type registration over a NAMESPACED import.
-// Regression (broader class).
 //
 // `#import "modules/std.sx"` carries the stdlib `event.Event` struct — it is
 // NAMESPACED (reachable only as `event.Event`), never flat-visible. This file
@@ -7,13 +6,13 @@
 // enum `Wrap`. The payload type name `Event` must resolve at REGISTRATION to
 // THIS file's own `Event` (which has `code`), not the namespaced stdlib struct.
 //
-// Building the tagged-union body in `registerEnumDecl` through the
-// stateless `type_bridge.buildEnumInfo`, whose flat `findByName` picks the
-// wrong same-name author, makes `got`'s payload the stdlib `Event`, so
-// `e.code` errored "field 'code' not found on type 'Event'". Fixed by threading
-// the visibility-aware resolver (`*Lowering` as the `resolveInner` hook) through
-// `buildEnumInfo` / `buildUnionInfo`, matching what `registerStructDecl` already
-// does for struct fields.
+// The visibility-aware resolver (`*Lowering` as the `resolveInner` hook) is
+// threaded through `buildEnumInfo` / `buildUnionInfo`, matching what
+// `registerStructDecl` does for struct fields. Building the tagged-union body
+// in `registerEnumDecl` through the stateless `type_bridge.buildEnumInfo`
+// instead — whose flat `findByName` picks the wrong same-name author — makes
+// `got`'s payload the stdlib `Event`, so `e.code` errors "field 'code' not
+// found on type 'Event'".
 
 #import "modules/std.sx";
 

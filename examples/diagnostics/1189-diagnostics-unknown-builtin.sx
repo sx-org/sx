@@ -2,10 +2,8 @@
 // compiler does not recognize, must fail LOUDLY with an "unknown intrinsic"
 // diagnostic — not silently evaluate to 0 (the CLAUDE.md silent-fallback
 // pattern). The generic monomorphization path (monomorphizeFunction's
-// builtin-body branch) now diagnoses an unresolved builtin name instead of
+// builtin-body branch) diagnoses an unresolved builtin name instead of
 // falling through to `ensureTerminator`'s `constInt(0)`.
-//
-// Regression.
 #import "modules/std.sx";
 
 // `mystery` is not a recognized intrinsic.

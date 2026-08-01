@@ -3,12 +3,11 @@
 // `case enum:` matches payload-less enums AND tagged unions. The overlap
 // resolves FIRST-WINS — a tag belongs to the first arm that names it —
 // and a specific user type name claims its tag ahead of the category
-// that contains it (before the claim set, any overlap was an LLVM
-// duplicate-switch-case crash). Untagged unions box into `any` and
-// their tags classify like every other registered type.
-// Regression: runtime "union" aliased the enum category —
-// it matched plain enums and missed untagged unions, disagreeing with
-// the static `inline if T ==` classifier in both directions.
+// that contains it — without the claim set any overlap is an LLVM
+// duplicate-switch-case crash. Untagged unions box into `any` and their tags
+// classify like every other registered type. A runtime "union" aliased to the
+// enum category matches plain enums and misses untagged unions, disagreeing
+// with the static `inline if T ==` classifier in both directions.
 #import "modules/std.sx";
 
 TU :: union { i: i64; f: f64; }

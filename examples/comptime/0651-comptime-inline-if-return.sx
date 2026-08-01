@@ -1,4 +1,4 @@
-// Regression: a `return` inside an `inline if` (a comptime-folded branch),
+// A `return` inside an `inline if` (a comptime-folded branch),
 // itself inside an `inline for`, must NOT make the compiler drop the function's
 // trailing statements. The `inline if`/`case` branch sets a "block terminated"
 // flag when its taken arm returns; leaking that flag past the enclosing

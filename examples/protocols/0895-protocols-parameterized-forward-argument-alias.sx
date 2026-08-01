@@ -1,6 +1,5 @@
 // Concrete protocol arguments may also be forward aliases. Registration must
 // wait until the alias has a concrete TypeId before constructing its key.
-// Regression.
 
 Value :: protocol (T: Type) vtable #identity {
     get :: (self: *Self) -> T;

@@ -1,4 +1,4 @@
-// Regression: bare `$args` slice survives crossing a function-call
+// Bare `$args` slice survives crossing a function-call
 // boundary — both `.len` AND per-element values come through.
 //
 // `lazyLowerFunction` must not let the callee's `args.len` be

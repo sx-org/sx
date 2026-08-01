@@ -6,7 +6,7 @@
 // the array to a local first (mirrors Zig, which also rejects slicing an
 // rvalue array).
 //
-// Regression: a value-lowering path slices a hidden temp
+// A value-lowering path slices a hidden temp
 // instead of diagnosing.
 #import "modules/std.sx";
 

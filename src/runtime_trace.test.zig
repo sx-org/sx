@@ -1,4 +1,4 @@
-// Unit tests for the error return-trace ring buffer
+// The error return-trace ring buffer
 // (library/vendors/sx_trace_runtime/sx_trace.c). The .c is linked into the
 // module via build.zig, so these extern symbols resolve at test-link time.
 // This grounds the buffer logic: push / overflow-survives-newest / clear /

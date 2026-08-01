@@ -1,4 +1,4 @@
-// Regression: a closure LITERAL passed directly as a bare
+// A closure LITERAL passed directly as a bare
 // function-type argument `(T) -> U` and then called inside the callee. The
 // closure's underlying function takes a hidden env arg that a bare fn-ptr slot
 // doesn't pass, so the compiler bridges a capture-free closure to the bare ABI

@@ -2,8 +2,6 @@
 // statement form in its body — including a destructure decl — and yields its
 // trailing expression as the value. Routing a braced value block through a
 // restricted expression parser rejects destructures with "expected ';'".
-//
-// Regression.
 
 #import "modules/std.sx";
 

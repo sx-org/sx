@@ -6,7 +6,6 @@
 //
 // The positional struct-literal path coerces per element even for an array
 // target: a bare `T`/`null` stored into a `{T,i1}` slot corrupts the array.
-// Regression.
 #import "modules/std.sx";
 
 Pt :: struct { x: i64; y: i64; }

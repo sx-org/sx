@@ -1,5 +1,4 @@
-// Tests for jni_java_emit.zig — #jni_main pipeline slice 1.
-// Locks in the Java source emitted from `RuntimeClassDecl` AST nodes:
+// The Java source emitted from `RuntimeClassDecl` AST nodes:
 // package split, class header, @Override delegate pattern, primitive
 // type mapping, cross-class refs through the runtime_class registry.
 

@@ -1,5 +1,5 @@
-// Tests for jni_descriptor.zig. Table-driven golden test for the primitive /
-// array / *Self JNI signature alphabet.
+// Table-driven goldens over the primitive / array / *Self JNI signature
+// alphabet.
 
 const std = @import("std");
 const ast = @import("../ast.zig");

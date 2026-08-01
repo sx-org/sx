@@ -3,7 +3,7 @@
 // matches through the deref"), payload captures bind the variant payload, and
 // the match RESULT TYPE is inferred from the arms even when every arm's value
 // depends on its capture.
-// Regression: result-type inference that types capture-dependent
+// Result-type inference that types capture-dependent
 // arms against the RAW pointer subject leaks `.unresolved` as the match
 // expression's type and panics at LLVM emission ("unresolved type reached
 // LLVM emission" via declareFunction) — statement position and value subjects

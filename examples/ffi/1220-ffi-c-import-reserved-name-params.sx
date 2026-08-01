@@ -7,7 +7,6 @@
 // but resolves to the extern fn). Without the exemption the params error with
 // "'i1' is a reserved type name and cannot be used as an identifier", and the
 // bare call errors with "unresolved 'i2'".
-// Regression.
 #import "modules/std.sx";
 
 #import c {

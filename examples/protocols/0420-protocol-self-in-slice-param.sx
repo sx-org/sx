@@ -3,7 +3,7 @@
 // `[]` wrapper (and the `*Self` receiver), so a correct `[]T` impl is
 // accepted and dispatched — not falsely rejected as `[]Self` ≠ `[]T`.
 //
-// Regression: a `Self`-substitution that reaches only the
+// A `Self`-substitution that reaches only the
 // bare leaf and a one-level pointer/optional wrapper resolves `[]Self`
 // to a real slice named `[]Self`, so a correct `[]T` impl is WRONGLY
 // flagged.
@@ -26,7 +26,7 @@ impl P for T {
 
 main :: () {
     t := T{ n = 10 };
-    // The ERASURE runs the conformance gate (the regression under test);
+    // The ERASURE runs the conformance gate;
     // `total` itself is not dispatchable through the erased value (Era-2:
     // `xs: []Self` past the receiver — refusal pinned in diagnostics/1253),
     // so the call below is the static one.

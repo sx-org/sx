@@ -4,7 +4,7 @@
 // on field access. Writes through the pointer are visible in the
 // original array and vice versa.
 //
-// Regression: this shape reaching LLVM emission with an
+// This shape reaching LLVM emission with an
 // unresolved element type panics.
 
 #import "modules/std.sx";

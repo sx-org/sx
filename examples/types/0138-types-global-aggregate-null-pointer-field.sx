@@ -3,12 +3,12 @@
 // as null with NO prior store, and its non-pointer neighbors keep their declared
 // values. Covered shapes: an array-of-struct with a null pointer field, a global
 // array of all-null pointers, and a nested struct-in-struct with a null pointer.
-// Regression: the constant-aggregate serializer had no
-// `.null_literal` arm, so a `null` in a pointer field made the whole aggregate
-// look non-constant and the global was rejected with "must be initialized by a
-// compile-time constant". The fix serializes a null literal to a constant zero
-// pointer (the same way a top-level pointer global `p : *i64 = null;` does)
-// while still rejecting genuinely non-constant fields (see diagnostics 1126).
+// The constant-aggregate serializer serializes a null literal to a constant
+// zero pointer (the same way a top-level pointer global `p : *i64 = null;`
+// does) while still rejecting genuinely non-constant fields (see diagnostics
+// 1126). Without a `.null_literal` arm a `null` in a pointer field makes the
+// whole aggregate look non-constant and the global is rejected with "must be
+// initialized by a compile-time constant".
 
 #import "modules/std.sx";
 

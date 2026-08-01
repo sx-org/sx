@@ -3,7 +3,7 @@
 // equal. This mirrors the tuple element-wise policy (structs share the tuple
 // layout) and is the only compare that correctly ignores padding bytes.
 //
-// Regression: a struct-compare arm in `emit_llvm` that handles
+// A struct-compare arm in `emit_llvm` that handles
 // only a 2-scalar-field shape emits invalid IR for a 1-field struct, compares
 // a 3+-field struct on fields 0/1 alone (`S{ 1,2,3} == S{ 1,2,999}` yields
 // true), and crashes the LLVM verifier on any non-scalar field (float /

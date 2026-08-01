@@ -3,10 +3,9 @@
 // — local or module-global — materializes the same {ctx, __type_id,
 // vtable} view the decl-position form builds. The view aliases the
 // pointee; dispatch and mutation work through every shape.
-// Regression: the assignment path classified `*C → *P` as
-// a plain pointer store — only the ctx word was written, and the first
-// dispatch read a "vtable" out of the concrete struct's bytes
-// (EXC_BAD_ACCESS on ARM64; the m3te `g_plat = s` shape).
+// An assignment path that classifies `*C → *P` as a plain pointer store writes
+// only the ctx word, so the first dispatch reads a "vtable" out of the concrete
+// struct's bytes (EXC_BAD_ACCESS on ARM64; the m3te `g_plat = s` shape).
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 

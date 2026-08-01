@@ -7,7 +7,7 @@
 // spell these names in handwritten sx; `#import c` extern decls stay exempt
 // (examples/1220).
 //
-// Regression: the rejection holds across every decl kind.
+// The rejection holds across every decl kind.
 // Expected: one error per declaration, each caret ON the declared name; exit 1.
 #import "modules/std.sx";
 

@@ -12,8 +12,8 @@
 // sits under a GPA: net-zero alloc_count at the end is the leak gate (one
 // server reused across all iterations, so a per-request leak accumulates).
 //
-// This guards H1 (parser hardening) + S2 (chunked decode) against
-// regression. It is DETERMINISTIC (seeded xorshift, NO time/Math.random)
+// This guards parser hardening and chunked decode. It is DETERMINISTIC
+// (seeded xorshift, NO time/Math.random)
 // so its golden output is stable, and BOUNDED (ITERATIONS small enough
 // that wall-clock is comfortably under the corpus 10s/example timeout).
 //

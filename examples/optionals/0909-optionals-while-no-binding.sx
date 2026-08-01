@@ -1,9 +1,9 @@
 // Bindingless `while <optional>` must test the optional's has_value flag,
 // exactly like `if <optional>` — not fold the `{T,i1}` aggregate truthy.
 //
-// Regression: a bare optional loop condition emitted `br i1 true`,
-// so the loop never observed `null` and either spun forever (present→drained)
-// or ran when it should have been skipped (already-null).
+// A bare optional loop condition folded truthy emits `br i1 true`, so the loop
+// never observes `null` and either spins forever (present→drained) or runs when
+// it should have been skipped (already-null).
 #import "modules/std.sx";
 
 main :: () {

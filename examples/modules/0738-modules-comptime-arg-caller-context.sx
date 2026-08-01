@@ -1,6 +1,6 @@
 // A caller-owned helper passed as a comptime-ONLY `$`-arg to a NAMESPACED
 // imported metaprogram resolves in the CALLER's visibility context — not the
-// metaprogram's defining module (regression).
+// metaprogram's defining module.
 //
 // `emit` is reachable only as `m.emit`; the comptime arg `caller_name()` is
 // authored HERE in the caller. When `emit` splices that arg into its `#insert`

@@ -1,7 +1,5 @@
-// end-to-end allocator threading regression.
-//
-// Verifies that the per-instance allocator design
-// is actually wired:
+// End-to-end allocator threading. The per-instance allocator design is
+// wired through every step:
 //   1. `push .{ allocator = tracker } { SxFoo.alloc(); }` →
 //      the state struct is allocated via tracker (not libc).
 //   2. The state struct's first field is `__sx_allocator` (captures the

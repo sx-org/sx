@@ -1,4 +1,4 @@
-// Regression: a QUALIFIED imported function that calls a
+// A QUALIFIED imported function that calls a
 // function from its OWN flat import.
 //
 // `calc :: #import …` registers `calc.compute` as a module-qualified alias

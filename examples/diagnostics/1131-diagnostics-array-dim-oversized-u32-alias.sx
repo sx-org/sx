@@ -5,14 +5,13 @@
 // the dimension through one shared folder + one shared message map, so they
 // cannot diverge.
 //
-// Regression: the stateless alias-registration
-// path collapsed `foldDimU32`'s distinct `.too_large` outcome into `null` and
-// emitted ONE generic "an array dimension is not a compile-time integer
-// constant" message — FALSE, since 5_000_000_000 IS a compile-time integer
-// constant; it merely doesn't fit a `u32`. The alias path now consults the
-// shared fold and emits the precise "does not fit in u32" message, matching the
-// direct form. (A genuinely non-const alias dim still gets the generic message —
-// see example 1129.)
+// The alias path consults the shared fold and emits the precise "does not fit
+// in u32" message, matching the direct form. A stateless alias-registration path
+// that collapses `foldDimU32`'s distinct `.too_large` outcome into `null` emits
+// ONE generic "an array dimension is not a compile-time integer constant"
+// message — FALSE, since 5_000_000_000 IS a compile-time integer constant; it
+// merely doesn't fit a `u32`. (A genuinely non-const alias dim still gets the
+// generic message — see example 1129.)
 #import "modules/std.sx";
 
 Big :: [5000000000]i64;

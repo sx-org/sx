@@ -12,7 +12,7 @@
 //   - type-as-value                  `t : Type = Thing`
 //   - type-category match arm        `case Thing:`
 //
-// Regression: unless the bare-type gate carries the full
+// Unless the bare-type gate carries the full
 // source-aware author outcome, these non-leaf sites use a boolean leak-check
 // that drops the AMBIGUOUS outcome — two direct flat same-name authors fall
 // through to a global pick (exit 0 / cascade) instead of the loud diagnostic.

@@ -1,4 +1,4 @@
-// Tests for the demanded-body owner in lower/stmt.zig: the table that decides
+// The demanded-body owner in lower/stmt.zig: the table that decides
 // what a function body's tail flows to, read off the DECLARED return type
 // alone. `.value` belongs to expression positions and is never a body's demand.
 

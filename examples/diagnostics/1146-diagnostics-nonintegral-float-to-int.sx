@@ -20,8 +20,8 @@
 // float literal needs parens: `(1.5).(i64)`) truncates with no error —
 // exercised on the POSITIVE side (example 0168).
 //
-// Regression: `y : i64 = 1.5` silently truncated to 1,
-// `y : i64 = M + 0.5` to 2, and `y : i64 = F + 0.25` (float-const leaf) to 2.
+// Unguarded, `y : i64 = 1.5` truncates to 1, `y : i64 = M + 0.5` to 2, and
+// `y : i64 = F + 0.25` (float-const leaf) to 2.
 #import "modules/std.sx";
 
 M :: 2;          // int module const, for the INT-const-EXPRESSION cases

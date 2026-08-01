@@ -1,4 +1,4 @@
-// Regression: a module-scope `inline if` whose condition does not
+// A module-scope `inline if` whose condition does not
 // fold is a diagnostic, never a silent drop — a live function, import, or asm
 // block would otherwise vanish and resurface as a distant unresolved name.
 //

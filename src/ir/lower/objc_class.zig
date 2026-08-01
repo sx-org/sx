@@ -174,8 +174,8 @@ pub fn lowerObjcDefinedStateFieldRead(
     return self.builder.load(field_addr, info.field_ty);
 }
 
-/// `state = object_getIvar(obj, load(__<Cls>_state_ivar))`. Shared
-/// helper for state-field read + write
+/// `state = object_getIvar(obj, load(__<Cls>_state_ivar))`, shared by
+/// state-field read and write.
 pub fn lowerObjcDefinedStateForObj(self: *Lowering, obj_ref: Ref, fcd: *const ast.RuntimeClassDecl) ?Ref {
     const ptr_void = self.module.types.ptrTo(.void);
     const ivar_global_name = std.fmt.allocPrint(self.alloc, "__{s}_state_ivar", .{fcd.name}) catch return null;

@@ -6,7 +6,7 @@
 // uses the winner. A fn-value site that lazily lowers the name-keyed winner
 // BEFORE the resolver reroutes surfaces the winner's
 // `unresolved 'missing_from_a'` for a function the value never touches.
-// Regression: per-source function-value conversion must not pre-lower the winner.
+// Per-source function-value conversion must not pre-lower the winner.
 #import "modules/std.sx";
 #import "0735-modules-flat-same-name-fn-value-winner/a.sx";
 #import "0735-modules-flat-same-name-fn-value-winner/b.sx";

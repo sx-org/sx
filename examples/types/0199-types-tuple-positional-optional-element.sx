@@ -3,10 +3,9 @@
 // properly wrapped `{T,i1}` value, an int element narrows/widens to a float
 // field, etc.
 //
-// Regression: the positional struct-literal path coerced
-// array/vector elements and struct fields but NOT tuple fields, so a bare
-// `i64` was stored straight into a `{i64,i1}` optional slot — a present
-// optional read back as absent.
+// A positional struct-literal path that coerces array/vector elements and
+// struct fields but NOT tuple fields stores a bare `i64` straight into a
+// `{i64,i1}` optional slot, so a present optional reads back as absent.
 #import "modules/std.sx";
 
 main :: () {

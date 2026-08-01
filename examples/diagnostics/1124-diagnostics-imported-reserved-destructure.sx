@@ -5,7 +5,7 @@
 // applied to the destructure form). Without it the binding reaches
 // lowering and aborts LLVM verification.
 //
-// Regression. Expected: one clean
+// Expected: one clean
 // diagnostic pointing at the imported module's `i2, rest := ...`, exit 1.
 #import "modules/std.sx";
 mod :: #import "1124-diagnostics-imported-reserved-destructure/mod.sx";

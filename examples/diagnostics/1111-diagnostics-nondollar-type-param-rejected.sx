@@ -2,7 +2,7 @@
 // a type position is rejected with a hint to write `$T: Type`. A type
 // resolver that fabricates a 0-field struct named `T` lets the call
 // compile and render as `T{}` at runtime with no diagnostic.
-// Regression. Expected: one error per `T` use site; exit 1.
+// Expected: one error per `T` use site; exit 1.
 idwrap :: (T: Type, f: Closure() -> T) -> T { return f(); }
 
 main :: () -> i32 {

@@ -1,8 +1,8 @@
-// Regression: a comptime-minted FULLY payloadless enum (every
-// variant tagless) must mint as a real `.@"enum"`, not an all-void tagged_union
-// — the latter has an IR/LLVM size mismatch that tripped `verifySizes` at
-// codegen. `make_enum` (declare/define) with an all-void variant list now
-// produces an ordinary enum, usable like a hand-written one.
+// A comptime-minted FULLY payloadless enum (every variant tagless) mints as a
+// real `.@"enum"`, not an all-void tagged_union — the latter has an IR/LLVM size
+// mismatch that trips `verifySizes` at codegen. `make_enum` (declare/define)
+// with an all-void variant list produces an ordinary enum, usable like a
+// hand-written one.
 
 #import "modules/std.sx";
 #import "modules/std/meta.sx";

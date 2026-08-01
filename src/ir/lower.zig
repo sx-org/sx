@@ -2423,7 +2423,7 @@ pub const Lowering = struct {
     /// their existing non-type/value resolution domains; the dotted selector
     /// must fall back rather than misdiagnose them as a missing namespace
     /// member. In particular stdlib's `libc :: c.libc` re-export is a library
-    /// handle alias, not a value/type alias (issue 0325 regression guard).
+    /// handle alias, not a value/type alias (issue 0325).
     pub fn namespaceOwnSpecialMember(self: *Lowering, target: imports_mod.NamespaceTarget, name: []const u8) bool {
         for (target.own_decls) |decl| {
             // A private special member (library handle, UFCS alias, …) is not

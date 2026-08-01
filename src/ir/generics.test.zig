@@ -1,4 +1,4 @@
-// Tests for generics.zig — the generic substitution + mono-key owner
+// The generic substitution + mono-key owner
 // (`GenericResolver`). Reached via `ir.GenericResolver{ .l = &lowering }`,
 // mirroring how calls.test.zig drives `CallResolver`.
 

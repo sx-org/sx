@@ -1,4 +1,4 @@
-// Tests for conversions.zig — the coercion-planning classifier
+// The coercion-planning classifier
 // (`CoercionResolver`). Reached via `ir.CoercionResolver{ .l = &lowering }`,
 // mirroring the other facade tests. These pin the `classify` / `classifyXX`
 // DECISIONS; `coerceToType` / `lowerXX` emit them (emission stays in Lowering).

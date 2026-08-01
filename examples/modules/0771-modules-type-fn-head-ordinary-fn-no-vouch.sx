@@ -7,13 +7,12 @@
 // emit the "type 'Make' is not visible" diagnostic and poison — the visible 1-hop
 // ordinary `Make :: () -> i32` must NOT vouch for it.
 //
-// Regression (type-fn head hidden by a visible non-type-fn):
-// a `headFnLeak` that decides visibility from any FUNCTION
-// author (`fnDeclOfRaw != null`) lets the visible ordinary `Make` function (which
-// CANNOT be the type head being instantiated) still vouched — the global
-// `fn_ast_map` type-fn silently instantiated and `size_of(Make(i64))` printed 8
-// at exit 0 instead of the visibility diagnostic. The fix narrows the author view
-// to TYPE-FUNCTIONS (`typeFnAuthor`: a `fn_decl` with ≥1 `$`-param), the same
+// A `headFnLeak` that decides visibility from any FUNCTION author
+// (`fnDeclOfRaw != null`) lets the visible ordinary `Make` function — which
+// CANNOT be the type head being instantiated — vouch anyway, so the global
+// `fn_ast_map` type-fn instantiates silently and `size_of(Make(i64))` prints 8
+// at exit 0 instead of the visibility diagnostic. The author view is narrowed to
+// TYPE-FUNCTIONS (`typeFnAuthor`: a `fn_decl` with ≥1 `$`-param), the same
 // discriminator every instantiation site uses to recognize a type-fn head.
 
 #import "modules/std.sx";

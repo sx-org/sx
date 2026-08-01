@@ -4,11 +4,11 @@
 // `r, e := fac.make(...)` binds (the struct member of the return tuple is
 // resolved in the callee's defining module, not the call site's).
 //
-// Regression: the bare-name call-plan fallback pinned the callee's
-// return type to the facade-qualified name (absent from `qualified_fn_source`
-// for an alias re-export) → null source → the tuple's struct member resolved in
-// the CALL SITE's context and was reported "not visible". Fix pins resolution
-// to the callee AST's own `body.source_file`.
+// Resolution is pinned to the callee AST's own `body.source_file`. A bare-name
+// call-plan fallback that pins the callee's return type to the facade-qualified
+// name (absent from `qualified_fn_source` for an alias re-export) yields a null
+// source, so the tuple's struct member resolves in the CALL SITE's context and
+// is reported "not visible".
 fac :: #import "0843-modules-reexport-free-fn-multireturn/facade.sx";
 main :: () -> i32 {
     r, e := fac.make(false);

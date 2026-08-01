@@ -5,7 +5,7 @@
 // The forward-alias fixpoint resolves a qualified-RHS alias (`A :: ns.Type`,
 // RHS a field_access) by pinning the namespace to its target module and
 // resolving the leaf there — the same path the qualified `: ns.Type`
-// annotation uses. Regression.
+// annotation uses.
 
 fac :: #import "0800-modules-reexported-enum-alias/facade.sx";
 

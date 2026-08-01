@@ -1,4 +1,4 @@
-// Regression (Phase C): value-receiver free-function UFCS under a
+// Value-receiver free-function UFCS under a
 // flat same-name collision must be TYPED as the author lowering dispatches.
 // a.sx (imported first → first-wins winner) authors `tag -> string`; b.sx
 // authors its OWN `tag -> i64`. In b.sx, `v.tag()` dispatches b.tag (i64), but

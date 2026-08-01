@@ -12,7 +12,7 @@
 // Observable: a runtime 300 coerced into an `A`-typed slot round-trips as 300
 // when `A` is `u64` (correct) and truncates to 44 when `A` is wrongly `u8`.
 // The direct reference `b : B` already resolves source-aware via the nominal
-// leaf, so it pins the same `u64` for contrast. Regression.
+// leaf, so it pins the same `u64` for contrast.
 #import "modules/std.sx";
 
 A :: B;

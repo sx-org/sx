@@ -3,7 +3,7 @@
 // million-iteration loops run in constant stack. Covers body locals,
 // nested loops (the inner loop's hidden index slot), and element reads.
 // LLVM only reclaims allocas at `ret`, so a per-iteration alloca exhausts
-// the stack. Regression.
+// the stack.
 
 #import "modules/std.sx";
 

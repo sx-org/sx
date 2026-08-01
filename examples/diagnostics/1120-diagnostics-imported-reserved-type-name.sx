@@ -5,7 +5,7 @@
 // binding reaches lowering and aborts LLVM verification (a loaded aggregate
 // passed by value to a `*Box` param).
 //
-// Regression: the imported-module facet of the same rule. Expected:
+// The imported-module facet of the same rule. Expected:
 // one clean diagnostic pointing at the imported module's `i2 := ...`, exit 1 —
 // NOT an LLVM verifier abort.
 #import "modules/std.sx";

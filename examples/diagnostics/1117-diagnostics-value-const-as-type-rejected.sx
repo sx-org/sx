@@ -1,10 +1,9 @@
-// A top-level VALUE constant name used in a type position is rejected. Without
-// the fix the unknown-type pass added every `const_decl` name to its declared-
-// type set, so a value const (`NotAType :: 123`) satisfied the check and the
-// type resolver's unknown-name fallback then fabricated an empty struct — the
-// program ran and printed `NotAType{}`. Now only consts whose value introduces a
-// type (declarations / type-expression aliases) count as type names.
-// Regression.
+// A top-level VALUE constant name used in a type position is rejected. Only
+// consts whose value introduces a type (declarations / type-expression aliases)
+// count as type names: an unknown-type pass that adds every `const_decl` name
+// to its declared-type set lets a value const (`NotAType :: 123`) satisfy the
+// check, and the type resolver's unknown-name fallback then fabricates an empty
+// struct — the program runs and prints `NotAType{}`.
 // Expected: a clean "unknown type 'NotAType'" error at the annotation; exit 1.
 
 #import "modules/std.sx";

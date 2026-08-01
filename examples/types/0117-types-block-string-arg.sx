@@ -6,7 +6,7 @@
 // trampoline's 8-byte `ptr` slot. Result: segfault inside the
 // trampoline's first read.
 //
-// The fix lives in `abiCoerceParamTypeEx`: the `string`/`slice` →
+// `abiCoerceParamTypeEx` owns the rule: the `string`/`slice` →
 // `ptr` collapse only applies to `is_extern` extern decls (libc
 // interop). sx-internal `abi(.c)` keeps the full slice
 // shape, which lands as `[2 x i64]` at the LLVM signature site

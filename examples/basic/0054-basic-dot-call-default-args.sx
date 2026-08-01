@@ -2,7 +2,6 @@
 // receiver-prepending dispatch paths), matching bare-call expansion (0044);
 // a `@caller` default and a slice variadic keep their flexible
 // arity under the call-arity check.
-// Regression.
 
 #import "modules/std.sx";
 #import "modules/std/core.sx";

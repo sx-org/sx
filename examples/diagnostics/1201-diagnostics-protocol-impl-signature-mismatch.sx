@@ -1,6 +1,6 @@
 // A protocol-method impl with the right NAME but a mismatched RETURN type (or
-// parameter type) is a hard error, not a silent miscompile. Regression:
-// a NAME-based conformance gate admits an `impl P for T` whose method
+// parameter type) is a hard error, not a silent miscompile.
+// A NAME-based conformance gate admits an `impl P for T` whose method
 // returns `bool` where the protocol method returns `i64`, building a wrong-ABI
 // thunk so dispatch through the erased protocol silently returns the wrong
 // value (exit 0, no diagnostic). The conformance gate validates each impl

@@ -4,7 +4,7 @@
 // (`M :: 4.0`), and a direct float literal (`[4.0]i64`) all lay out the same
 // `[4]i64` as the integer spelling, so element store/read is in bounds.
 //
-// Regression: the shared const-int evaluator folds an integral
+// The shared const-int evaluator folds an integral
 // float literal (and a float-typed module const) via
 // `program_index.floatToIntExact`, so an integral float dimension is not
 // rejected as "must be a compile-time integer constant"; a non-integral float

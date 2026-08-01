@@ -1,7 +1,7 @@
 // An un-narrowed `?T` does NOT implicitly unwrap to its concrete payload in a
 // value position — it is a compile error pointing at the explicit forms.
 //
-// Regression: compiling a `?i64` passed where `i32` is expected
+// Compiling a `?i64` passed where `i32` is expected
 // unconditionally extracts the payload, so a NULL optional yields
 // `0` with no diagnostic (a silent miscompile across the whole `?T → concrete`
 // family, incl. `?bool → bool`). The legal extractions are `!` / `??` /

@@ -1,4 +1,3 @@
-// Tests for module.zig
 const std = @import("std");
 const types = @import("types.zig");
 const inst_mod = @import("inst.zig");

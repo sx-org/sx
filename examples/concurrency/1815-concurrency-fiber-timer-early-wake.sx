@@ -10,7 +10,6 @@
 // to 100. Here `wake` evicts the timer, so the clock stays at 0 and nothing
 // dereferences freed memory.
 //
-// Regression: the timer-vs-early-wake use-after-free.
 // Contract: `log: 2 1` (waker records 2, then the early-woken sleeper records 1),
 // `clock: 0` (no stale timer fired), `n_suspended: 0` (balanced).
 //

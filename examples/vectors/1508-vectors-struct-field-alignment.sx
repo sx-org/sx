@@ -5,10 +5,9 @@
 // offset (struct_field_offset) must agree because interior `any` views
 // (struct_field_value) GEP with it.
 //
-// Regression: the sx layout walk used element alignment, silently
-// diverging from LLVM for every vector field (wrong reflection offsets;
-// total-size mismatches tripped emit_llvm's verifySizes assert, so most
-// such structs could not compile at all).
+// An sx layout walk that uses element alignment diverges silently from LLVM for
+// every vector field: wrong reflection offsets, and total-size mismatches that
+// trip emit_llvm's verifySizes assert so most such structs cannot compile.
 
 #import "modules/std.sx";
 

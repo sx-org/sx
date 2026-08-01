@@ -11,12 +11,12 @@
 //   - type-as-value                 `t : Type = Widget`
 //   - type-category match arm       `case Widget:`          → own identity
 //
-// Regression: unless the bare-type gate carries
-// the OWN author's source-keyed TypeId into the non-leaf sites, an own author
-// produces `.proceed` and these sites fall through to a global `findByName` — so
-// `size_of(Widget)` printed the IMPORTED type's 16 and `case Widget:` matched the
-// imported nominal identity (describe → 222). `dep_sizes` proves dep's distinct
-// types still resolve to THEIR own 16 + 8 = 24 inside dep.
+// Unless the bare-type gate carries the OWN author's source-keyed TypeId into
+// the non-leaf sites, an own author produces `.proceed` and these sites fall
+// through to a global `findByName` — `size_of(Widget)` prints the IMPORTED
+// type's 16 and `case Widget:` matches the imported nominal identity
+// (describe → 222). `dep_sizes` proves dep's distinct types still resolve to
+// THEIR own 16 + 8 = 24 inside dep.
 
 #import "modules/std.sx";
 #import "0768-modules-own-wins-nonleaf-bare-type/dep.sx";

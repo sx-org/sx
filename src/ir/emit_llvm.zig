@@ -1275,8 +1275,8 @@ pub const LLVMEmitter = struct {
         };
     }
 
-    /// Helper for `valueToLLVMConst` — serialize an aggregate value
-    /// against an IR TypeId. Splits on the type:
+    /// Serializes an aggregate value against an IR TypeId for
+    /// `valueToLLVMConst`. Splits on the type:
     ///
     ///   - `string` / `slice` — fat pointer `{ data, len }`. The data
     ///     field can be a heap_ptr (interp-managed memory), byte_ptr

@@ -2,7 +2,7 @@
 // whose type has NO coercion to the annotation is a type error, diagnosed at
 // lowering with a located message.
 //
-// Regression: unguarded, `x : i32 = "hi"` passes through a
+// Unguarded, `x : i32 = "hi"` passes through a
 // `.none` coercion plan UNCHANGED, storing a 16-byte `string` into a 4-byte
 // `i32` slot — the slot is bit-mangled and the program SIGSEGVs at run time
 // (`sx ir` lowers fine; only the run crashes). The guard (`checkAssignable`)

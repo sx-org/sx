@@ -1,5 +1,3 @@
-// Tests for calls.zig.
-//
 // Two layers:
 //   1. Result-type delegation reached via the public `Lowering.inferExprType`
 //      (builtin / reflection classification, cast, dot-shorthand fallthrough) —

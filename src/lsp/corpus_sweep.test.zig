@@ -84,7 +84,7 @@ fn sweepFilesIn(
         const source = try alloc.dupeZ(u8, bytes);
         const doc = try store.openOrUpdate(path, source, 1);
         // didOpen swallows analyze errors (clean failures); a genuine crash
-        // panics and aborts here — exactly the regression signal we want.
+        // panics and aborts here.
         store.analyzeDocument(doc) catch {};
     }
     return files.len;

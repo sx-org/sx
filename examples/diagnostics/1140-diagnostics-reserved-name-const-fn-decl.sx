@@ -7,7 +7,7 @@
 // The backtick escape (`` `i2 :: … ``, examples/0153) is the only way to spell
 // these names; `#import c` extern decls remain exempt (examples/1220).
 //
-// Regression. Expected: one error per declaration, each caret on
+// Expected: one error per declaration, each caret on
 // the declared name; exit 1.
 #import "modules/std.sx";
 

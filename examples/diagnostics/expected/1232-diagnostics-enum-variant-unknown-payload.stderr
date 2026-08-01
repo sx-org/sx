@@ -1,5 +1,5 @@
 error: 'nope' is not a variant of 'V' (variants are: a, b)
-  --> examples/diagnostics/1232-diagnostics-enum-variant-unknown-payload.sx:20:13
+  --> examples/diagnostics/1232-diagnostics-enum-variant-unknown-payload.sx:19:13
    |
-20 |     x : V = .nope(7);   // `nope` is not a variant of V — must be a compile error
+19 |     x : V = .nope(7);   // `nope` is not a variant of V — must be a compile error
    |             ^^^^^

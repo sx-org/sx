@@ -1,4 +1,4 @@
-// Regression — a comptime-dead `inline if is_struct(T)` branch that
+// A comptime-dead `inline if is_struct(T)` branch that
 // reflects with `struct_field_type(T, i)` must be ELIDED from type resolution when T is
 // a non-indexable type (an enum), so `struct_field_type(enum)` never lowers `.unresolved`
 // to the backend. The `is_struct($T)` comptime predicate gates the branch, and a

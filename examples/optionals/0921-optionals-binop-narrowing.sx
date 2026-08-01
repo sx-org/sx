@@ -1,7 +1,7 @@
 // Flow narrowing extends to binary-op OPERANDS: a `?T` proven present by a
 // `!= null` guard reads as its concrete payload in arithmetic / comparison.
 //
-// Regression: unwrapping an un-narrowed `?T` operand
+// Unwrapping an un-narrowed `?T` operand
 // unconditionally makes `null + 10` yield `10` (the zero payload).
 // Narrowing is the only implicit operand unwrap; everything else is a
 // compile error (see 0922).
