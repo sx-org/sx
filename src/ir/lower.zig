@@ -677,11 +677,11 @@ pub const Lowering = struct {
     /// Per-function (the `Ref` space is per-function), cleared alongside
     /// `narrowed_refs`.
     xx_passthrough_refs: std.AutoHashMap(Ref, void) = undefined,
-    force_block_value: bool = false, // set by lowerBlockValue to extract if-else values
+    force_block_value: bool = false, // set by lowerDemandedBody for a demand that wants a value, to extract if-else values
     // Set while lowering a NAMED multi-return function body (`-> (x: A, y: B)`):
     // the slot names (1:1 with the return tuple's fields; a trailing "!" marks
     // the failable error slot). The slots are bound as in-scope assignable locals;
-    // at end-of-body with no explicit `return`, `lowerValueBody` synthesizes the
+    // at end-of-body with no explicit `return`, `lowerFunctionBody` synthesizes the
     // implicit return from them (must-set rule: an unset, undefaulted slot errors).
     named_return_names: ?[]const []const u8 = null,
     // Per-slot default exprs (1:1 with the return tuple's fields; null where the

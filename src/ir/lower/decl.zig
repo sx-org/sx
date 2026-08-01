@@ -3820,7 +3820,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
     };
 
     // Named multi-return (`-> (x: A, y: B)`): bind the slots as in-scope locals
-    // for the body to assign; `lowerValueBody` synthesizes the implicit return.
+    // for the body to assign; `lowerFunctionBody` synthesizes the implicit return.
     const saved_nrn = self.named_return_names;
     const saved_nrd = self.named_return_defaults;
     self.named_return_names = null;

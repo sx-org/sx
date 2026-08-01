@@ -158,7 +158,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     }
 
     // Named multi-return (`-> (x: A, y: B)`): bind the slots as in-scope locals
-    // for the body to assign; `lowerValueBody` then synthesizes the implicit
+    // for the body to assign; `lowerFunctionBody` then synthesizes the implicit
     // return from them. The decl path (`lowerFunctionBodyInto`) does this too —
     // without it a GENERIC named multi-return never sets `named_return_names`, so
     // the implicit return isn't synthesized and the body wrongly reports
