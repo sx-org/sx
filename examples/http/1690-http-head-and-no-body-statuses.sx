@@ -1,6 +1,6 @@
 // std.http — automatic HEAD + no body on 204/304 (RFC 9110 §9.3.2, §6.4.1).
 //
-// a HEAD request runs the handler exactly like GET, and the response
+// A HEAD request runs the handler exactly like GET, and the response
 // carries the SAME headers — including the Content-Length of the body the
 // handler produced — but the body bytes never go on the wire. A streamed
 // (chunked) response to HEAD emits the chunked head alone: the producer is
@@ -9,10 +9,10 @@
 // body is suppressed and Content-Length is omitted entirely (a 204 MUST
 // NOT have one; for 304 omitting is the safe MAY).
 //
-// Framing is the point: a HEAD response that wrongly ships body bytes
-// desynchronizes every keep-alive client. The HEAD case here pipelines a
-// GET behind the HEAD on ONE connection and asserts the HEAD's blank line
-// is immediately followed by the GET's status line.
+// Framing is the point — body bytes on a HEAD response desynchronize every
+// keep-alive client — so the HEAD case here pipelines a GET behind the HEAD
+// on ONE connection and asserts the HEAD's blank line is immediately
+// followed by the GET's status line.
 //
 // Asserts: GET control (200, CL 11, body); pipelined HEAD+GET framing
 // (CL 11 on the HEAD, exactly one body, back-to-back statuses); 204 with a

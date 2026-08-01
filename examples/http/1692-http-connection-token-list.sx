@@ -4,8 +4,7 @@
 // tokens with optional OWS around each — `Connection: close, TE` MUST
 // read as close, and `Connection: closefoo` must NOT (token match, not
 // substring/prefix). If both `close` and `keep-alive` appear, close
-// wins. Exact-matching the whole value leaves any request with more than
-// one Connection option in the wrong mode.
+// wins.
 //
 // Close cases assert the response's own `Connection: close` header AND
 // a real EOF. Keep cases prove liveness by pipelining a second request

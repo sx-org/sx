@@ -223,7 +223,7 @@ run :: () -> i32 {
         tcc.deinit(); srv_t.stop(); tt.join(); srv_t.close();
         return teardown(34, *srv_a, *ta, *srv_b, *tb);
     }
-    // pooled https (review I3): two pooled fetches must ride ONE TLS conn.
+    // pooled https: two pooled fetches must ride ONE TLS conn.
     tls_accepts0 := srv_t.stats().accepted_total;
     tpool := http.ClientPool.init(opts_tls);
     rq1, eq1 := tpool.fetch("GET", "https://127.0.0.1:19029/hello", "", *buf[0], 8192);

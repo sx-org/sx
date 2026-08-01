@@ -1,22 +1,21 @@
 // std.http — no busy-poll while a pooled handler runs (CONN_HANDLING).
 //
-// Read interest left armed while a slot sits in CONN_HANDLING busy-polls:
-// both backends (kqueue/epoll) are level-triggered, so a client that sends
-// MORE bytes (pipelining) while the worker holds the request makes
-// Loop.wait() return the same readable event instantly, every tick, until
-// the handler finishes — 100% CPU for the whole handler runtime, with the
-// event ignored each time (tick skips CONN_HANDLING slots).
-//
 // Read interest is dropped when a slot enters CONN_HANDLING and re-armed
-// when the completion is drained. This test proves BOTH halves:
-//   1. NO SPIN: with a 300 ms pooled handler running and pipelined bytes
-//      sitting unread in the kernel buffer, the tick loop stays asleep —
-//      the number of tick(30) iterations until the response arrives is
-//      ~10, not thousands. Asserted < 100.
-//   2. RE-ARM: after the completion is drained the pipelined second request
-//      IS served — read interest is re-added; without it the bytes sit in
-//      the kernel until the keepalive deadline kills the conn.
-//   3. GPA leak gate: net-zero after close.
+// when the completion is drained. Both backends (kqueue/epoll) are
+// level-triggered, so read interest left armed across a handler run makes
+// Loop.wait() return the same readable event every tick, for the whole
+// handler runtime, with the event ignored each time (tick skips
+// CONN_HANDLING slots).
+//
+// This test proves BOTH halves:
+// 1. NO SPIN: with a 300 ms pooled handler running and pipelined bytes
+//    sitting unread in the kernel buffer, the tick loop stays asleep —
+//    the number of tick(30) iterations until the response arrives is
+//    ~10, not thousands. Asserted < 100.
+// 2. RE-ARM: after the completion is drained the pipelined second request
+//    IS served — read interest is re-added, so the bytes do not sit in
+//    the kernel until the keepalive deadline kills the conn.
+// 3. GPA leak gate: net-zero after close.
 #import "modules/std.sx";
 http :: #import "modules/std/http.sx";
 

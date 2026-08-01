@@ -1,18 +1,18 @@
 // std.http: explicit errors + observability.
 //
 // Accept/read/write/parse/timeout/503 faults close a connection
-// SILENTLY. H4 adds two opt-in observers, BOTH driven from the loop
-// thread so no cross-thread atomics are needed:
-//   1. a pluggable on_event hook (Config.on_event + on_event_ctx) called
-//      at every fault / key lifecycle site — the user formats however
-//      they want; a null hook (default) = today's silent behavior.
-//   2. plain i64 counters exposed by Server.stats() -> Stats.
+// SILENTLY unless an observer is installed. Two opt-in observers, BOTH
+// driven from the loop thread so no cross-thread atomics are needed:
+// 1. a pluggable on_event hook (Config.on_event + on_event_ctx) called
+//    at every fault / key lifecycle site — the user formats however
+//    they want; a null hook (the default) stays silent.
+// 2. plain i64 counters exposed by Server.stats() -> Stats.
 //
 // This drives a single-thread tick harness (the 1633 shape) through a
 // mix of outcomes against ONE server:
-//   - several successful GET/POST requests (200),
-//   - a parser error (bad HTTP version → 400),
-//   - an unknown path (404, also a 4xx),
+// - several successful GET/POST requests (200),
+// - a parser error (bad HTTP version → 400),
+// - an unknown path (404, also a 4xx),
 // then asserts Server.stats() reflects the right counts AND that the
 // on_event hook actually fired for the fault events (recorded into a
 // fixed array reached through the ctx word — NO heap alloc in the hook,

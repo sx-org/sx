@@ -1,21 +1,18 @@
 // std.http — a persistently failing loop must surface and stop, not spin.
 //
-// A run() that swallows every tick() error (`catch {}`) turns a persistent
-// Loop.wait() failure — e.g. the kernel queue fd dying — into a silent 100% CPU
-// spin forever: no log, no return, no recovery.
-//
 // run() counts CONSECUTIVE tick failures, emits LISTEN_ERROR (the
 // observability hook; detail = the consecutive count) on each, backs off
 // between retries, and after LOOP_FAULT_LIMIT consecutive failures gives up
 // cleanly — quiesces (skipping the drain, whose ticks would also fail) and
-// returns. A single transient failure resets the count.
+// returns. A single transient failure resets the count. A persistent
+// Loop.wait() failure — e.g. the kernel queue fd dying — therefore ends the
+// loop instead of spinning it at 100% CPU.
 //
 // This test kills the loop's kernel queue out from under a running server
-// and calls run() on the main thread:
-// run() returns in ~100 ms after 5 LISTEN_ERROR emissions; a loop that never
-// gives up never returns and the example TIMES OUT.
-// Asserts the hook saw >= LOOP_FAULT_LIMIT consecutive-failure events and
-// the GPA gate stays net-zero after close.
+// and calls run() on the main thread: run() returns in ~100 ms after 5
+// LISTEN_ERROR emissions (a loop that never gives up would time the example
+// out). Asserts the hook saw >= LOOP_FAULT_LIMIT consecutive-failure events
+// and the GPA gate stays net-zero after close.
 #import "modules/std.sx";
 http :: #import "modules/std/http.sx";
 

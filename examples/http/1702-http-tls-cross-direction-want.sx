@@ -219,9 +219,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/a"  { resp.body = "ok-a"; return; }
     if req.path == "/b"  { resp.body = "ok-b"; return; }
     if req.path == "/h"  {
-        // Review F1's damage needed a SLOW pooled handler: the cross-armed
-        // watch spun the loop for the handler's whole runtime and the
-        // completion never landed. Keep the window wide.
+        // A SLOW pooled handler keeps the cross-armed-watch window wide.
         usleep(80000);
         resp.body = "ok-h";
         return;

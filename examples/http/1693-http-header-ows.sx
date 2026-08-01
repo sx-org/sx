@@ -2,13 +2,11 @@
 //
 // A field value is `OWS field-value OWS` — optional whitespace is
 // SP *or* HTAB on both sides, and it is not part of the value. find_header
-// trims BOTH sides; skipping only leading spaces (not tabs) and leaving
-// trailing OWS breaks legal requests wherever a header value is compared:
-//   • `Content-Length:\t5`      → the tab reached the digit parser → 400;
-//   • `Transfer-Encoding: chunked ` (trailing SP) → not "chunked" → 501;
-//   • `Expect: 100-continue `   → not "100-continue" → 417 (a request
-//     that should be served becomes a hard reject);
-// Interior whitespace is NOT OWS and must be preserved verbatim.
+// trims BOTH sides, so a value reaches every comparison site clean:
+// • `Content-Length:\t5`      → the digit parser sees "5", not a tab;
+// • `Transfer-Encoding: chunked ` (trailing SP) → matches "chunked";
+// • `Expect: 100-continue `   → matches "100-continue".
+// Interior whitespace is NOT OWS and is preserved verbatim.
 //
 // The handler echoes `[<X-Echo value>]` so trimming is byte-observable.
 //

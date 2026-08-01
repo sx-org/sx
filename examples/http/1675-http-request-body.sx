@@ -10,11 +10,11 @@
 // across partial reads: the body is sent split across multiple ticks so a
 // chunk straddles read boundaries.
 //
-// Honest model note: the handler runs to completion and receives the
-// FULLY-ASSEMBLED (decoded, bounded) body in Request.body. S2 is bounded
-// incremental ACCUMULATION (decode chunks as they arrive, enforce max
-// early, present the assembled body), NOT handler-visible per-chunk
-// streaming — the run-to-completion handler model can't yield/await.
+// The handler runs to completion and receives the FULLY-ASSEMBLED
+// (decoded, bounded) body in Request.body. The model is bounded
+// incremental ACCUMULATION — decode chunks as they arrive, enforce max
+// early, present the assembled body — NOT handler-visible per-chunk
+// streaming, which a run-to-completion handler cannot yield/await for.
 //
 // The whole run is under a GPA; net-zero alloc_count after close proves
 // no per-request / decode leak. Single-thread tick harness (1633-style).

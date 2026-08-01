@@ -30,9 +30,7 @@ main :: () -> i32 {
     if a.sin_port   != 0x901F { return 10; }      // htons(8080)
     if !socket.is_wouldblock(11) { return 11; }
 
-    // ── additions (review MED-2: pin the linux side of the new
-    // address surface — the base commit's declare-only IR drift pinned
-    // none of it) ──
+    // ── the linux side of the address surface ──
     if socket.AF_INET6     != 10  { return 12; }
     if socket.IPV6_V6ONLY  != 26  { return 13; }
     if socket.IPPROTO_IPV6 != 41  { return 14; }

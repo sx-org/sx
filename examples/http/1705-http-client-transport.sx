@@ -155,7 +155,7 @@ run :: () -> i32 {
         http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(xx bc); srv.stop(); t.join(); return 17;
     }
     http.Client.close_conn(*conn_c);
-    // C2 (review M1): the same chunked response into a buffer that cannot
+    // The same chunked response into a buffer that cannot
     // hold it must be error.TooLarge — the grow-and-retry signal — never
     // "malformed framing".
     conn_c2, ec2 := http.Client.open("127.0.0.1", PORT_MAIN, opts_plain);

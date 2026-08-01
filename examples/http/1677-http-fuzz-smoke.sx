@@ -17,19 +17,14 @@
 // so its golden output is stable, and BOUNDED (ITERATIONS small enough
 // that wall-clock is comfortably under the corpus 10s/example timeout).
 //
-// ── Running a LONGER fuzz (CI, NOT the corpus) ───────────────────────────
-// The corpus runner (10s/example, no network) cannot host a long-running
-// fuzzer. To fuzz harder OUTSIDE the corpus:
-//   • bump ITERATIONS (e.g. 200_000) and/or sweep SEED across many runs —
-//     each SEED is a fresh deterministic stream of mutations; a crash is
-//     then reproducible by pinning the failing SEED + iteration index.
-//   • a future libFuzzer/AFL target would feed raw bytes straight into a
-//     decode_chunked / try_serve_one harness (no socket) — sx has no
-//     libFuzzer integration today, so that target lives as a separate CI
-//     job, never in examples/. See tests/fuzz-http.md.
-// A crash/hang/leak found here is a REAL parser bug:
-// the failing SEED + iteration + the exact bytes are the repro — fix the
-// parser, do not weaken the assertions here.
+// To fuzz harder outside the corpus, bump ITERATIONS (e.g. 200_000) and/or
+// sweep SEED across many runs — each SEED is a fresh deterministic stream
+// of mutations, so a crash is reproducible by pinning the failing SEED +
+// iteration index. See tests/fuzz-http.md.
+//
+// A crash/hang/leak found here is a REAL parser bug: the failing SEED +
+// iteration + the exact bytes are the repro — fix the parser, do not
+// weaken the assertions here.
 #import "modules/std.sx";
 http :: #import "modules/std/http.sx";
 

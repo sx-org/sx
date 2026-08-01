@@ -1,4 +1,4 @@
-// std.http H5 — per-request handler timeout (pool mode).
+// std.http — per-request handler timeout (pool mode).
 //
 // A slow handler that overruns Config.handler_timeout_ms must NOT
 // permanently consume server capacity. In POOL mode the handler runs on a
@@ -8,22 +8,22 @@
 // drain_completions) — no double-response, no double-free.
 //
 // This drives a single-thread tick harness (the 1633/1670 shape) and proves:
-//   1. A request whose handler exceeds handler_timeout_ms → the client gets
-//      504, the connection is freed.
-//   2. The server stays RESPONSIVE: a second, fast request on another
-//      connection gets a normal 200 (the loop was never blocked, capacity
-//      remained).
-//   3. The slow worker's LATE completion is discarded cleanly (ticks driven
-//      past the slow handler's return — no crash, no double-response).
-//   4. Run under a GPA: net-zero allocations after close (the timed-out
-//      completion's response buffer was freed when discarded).
-//   5. Server.stats().timeouts reflects the timeout.
+// 1. A request whose handler exceeds handler_timeout_ms → the client gets
+//    504, the connection is freed.
+// 2. The server stays RESPONSIVE: a second, fast request on another
+//    connection gets a normal 200 (the loop was never blocked, capacity
+//    remained).
+// 3. The slow worker's LATE completion is discarded cleanly (ticks driven
+//    past the slow handler's return — no crash, no double-response).
+// 4. Run under a GPA: net-zero allocations after close (the timed-out
+//    completion's response buffer was freed when discarded).
+// 5. Server.stats().timeouts reflects the timeout.
 //
-// LIMITATION (intentional): the slow handler RETURNS (usleep, then sets a
-// body) rather than looping forever. A never-returning handler would hang
-// the worker join inside Server.close(), making this test un-exitable —
-// there is no pthread_cancel. Pool mode bounds a slow handler's *impact*
-// (the connection is freed on time); it does not kill the worker.
+// The slow handler RETURNS (usleep, then sets a body) rather than looping
+// forever: a never-returning handler hangs the worker join inside
+// Server.close(), and there is no pthread_cancel. Pool mode bounds a slow
+// handler's *impact* (the connection is freed on time); it does not kill
+// the worker.
 #import "modules/std.sx";
 http :: #import "modules/std/http.sx";
 

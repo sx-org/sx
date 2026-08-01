@@ -5,9 +5,9 @@
 // into it provokes an RST, and that RST DISCARDS the FIN's queued EOF. So the
 // same fact — "the peer had already closed, the request never executed" —
 // reaches the client as either a clean 0 or an ECONNRESET depending purely on
-// which lands first. `recv_on` must report both as `error.Closed`; that is the
-// class `ClientPool.hop` retries on, so classifying the RST as `Recv` made the
-// pool's transparent redial fire only sometimes (~8% of 1706 runs failed).
+// which lands first. `recv_on` reports both as `error.Closed`, which is the
+// class `ClientPool.hop` retries on, so the pool's transparent redial fires
+// either way.
 //
 // Forcing the RST deterministically, single-threaded, no timing race: close a
 // socket that still has UNREAD data in its receive queue and the kernel sends
@@ -38,7 +38,7 @@ main :: () -> i32 {
     afd := socket.accept(lfd, null, null);
     if afd < 0 { print("accept failed\n"); return 3; }
 
-    // The request lands in afd's receive queue and is deliberately never read.
+    // The request lands in afd's receive queue and is never read.
     se := http.Client.send_on(*c, "GET", "/hello", "127.0.0.1", "", "");
     if se { print("send_on failed\n"); return 4; }
 

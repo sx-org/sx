@@ -1,32 +1,31 @@
 // std.http — stream producers run OFF the loop thread (pool mode).
 //
-// Pulling a streamed response's producer on the LOOP thread after the
-// worker's job — and the per-request arena — is freed makes producer_ctx
-// pointing at request-derived or arena memory a use-after-free class
-// (the "ctx must be caller-owned" footgun), and a slow producer
-// stalled every other connection. The pulls run on the WORKER that
-// ran the handler, inside the job's push scope, feeding the loop through a
-// bounded channel — so ctx may now reference per-request-arena memory and
-// req views, and the loop never runs producer code.
+// The pulls run on the WORKER that ran the handler, inside the job's push
+// scope, feeding the loop through a bounded channel — so ctx may reference
+// per-request-arena memory and req views, and the loop never runs producer
+// code. Pulling on the LOOP thread instead, after the worker's job and its
+// per-request arena are freed, makes any request-derived or arena-backed
+// producer_ctx a use-after-free, and a slow producer there stalls every
+// other connection.
 //
 // Cases (pool(1) server — a single worker makes pinning observable):
-//   1. POST /stream: the handler allocates its producer state IN THE
-//      PER-REQUEST ARENA (the exact UAF class), seeded from req.body; the
-//      producer streams 1 MB derived from that state — 16x the 64 KB channel,
-//      so the worker-side blocking feed + loop-side hungry/wake cycle is
-//      exercised throughout. The client de-chunks and verifies every byte.
-//      The producer also records its thread id: it must NOT be the loop
-//      thread (the tick harness runs the loop on main) — the deterministic
-//      assertion.
-//   2. SAME connection: /ping still answers (keep-alive after a worker-fed
-//      chunked response; the slot's channel was released).
-//   3. GET /big (4 MB): the client reads ~64 KB and disconnects mid-stream —
-//      the write fault aborts the channel, the blocked feeder unblocks and
-//      the worker exits its pump. Proven by case 4: with pool(1), a
-//      still-pinned worker would hang every later request.
-//   4. /ping on a fresh connection answers (the single worker survived the
-//      aborted stream).
-//   5. GPA leak gate: net-zero after srv.close() (channel, job, scratch).
+// 1. POST /stream: the handler allocates its producer state IN THE
+//    PER-REQUEST ARENA (the exact UAF class), seeded from req.body; the
+//    producer streams 1 MB derived from that state — 16x the 64 KB channel,
+//    so the worker-side blocking feed + loop-side hungry/wake cycle is
+//    exercised throughout. The client de-chunks and verifies every byte.
+//    The producer also records its thread id: it must NOT be the loop
+//    thread (the tick harness runs the loop on main) — the deterministic
+//    assertion.
+// 2. SAME connection: /ping still answers (keep-alive after a worker-fed
+//    chunked response; the slot's channel was released).
+// 3. GET /big (4 MB): the client reads ~64 KB and disconnects mid-stream —
+//    the write fault aborts the channel, the blocked feeder unblocks and
+//    the worker exits its pump. Case 4 is the proof: with pool(1), any
+//    later request needs that one worker free.
+// 4. /ping on a fresh connection answers (the single worker survived the
+//    aborted stream).
+// 5. GPA leak gate: net-zero after srv.close() (channel, job, scratch).
 #import "modules/std.sx";
 http :: #import "modules/std/http.sx";
 
@@ -43,7 +42,7 @@ Obs :: struct {
     main_tid: usize = 0;   // the loop (tick-harness main) thread id
 }
 
-// Producer state — deliberately allocated in the PER-REQUEST ARENA by the
+// Producer state — allocated in the PER-REQUEST ARENA by the
 // handler: valid because the worker pumps inside the push scope; pumping
 // after the arena is freed is the UAF class.
 StreamState :: struct {
@@ -316,7 +315,7 @@ main :: () -> i32 {
         socket.close(c3);
 
         // ── case 5: close() while a worker is mid-handler, PRE-register ──
-        // (reproduced deadlock): the /slowbig worker is
+        // the /slowbig worker is
         // still SLEEPING — its stream channel does not exist yet — when
         // close() runs, so the one-shot registry sweep cannot see it. The
         // closing flag makes the late registration abort the pump; close()

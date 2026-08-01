@@ -1,10 +1,10 @@
 // NOT a corpus test (no expected/ marker): the allocation matrix is slow
 // (its --opt 3 LLVM build alone takes ~24 minutes). Run manually as
 // content-encoding evidence: `sx run <this file>` and `--opt 3`.
-// Allocation-failure sweep for the state introduced by HTTP content coding.
-// Each allocation is failed in turn; constructors must return failure and
-// release every earlier allocation. The public client maps decoder allocation
-// failure without leaking or returning a partial response.
+// Allocation-failure sweep over the HTTP content-coding state. Each
+// allocation is failed in turn; constructors must return failure and
+// release every earlier allocation. The public client maps decoder
+// allocation failure without leaking or returning a partial response.
 
 #import "modules/std.sx";
 http :: #import "modules/std/http.sx";
