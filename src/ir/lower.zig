@@ -1118,7 +1118,10 @@ pub const Lowering = struct {
     ///   across a function boundary;
     /// - build replays: a `@BuildBlock` scope intercepts expression statements
     ///   of ITS OWN block only (spec §7.2), never of a function lowered while
-    ///   that replay happens to be on the stack.
+    ///   that replay happens to be on the stack;
+    /// - the inlined-body exit: `inline_return_target` names a slot in the
+    ///   ENCLOSING function's `Ref` space and a block of its CFG, so a `return`
+    ///   in the nested body would store and branch across a function boundary.
     pub const NestedBodyGuard = struct {
         l: *Lowering,
         narrowed: std.StringHashMap(void),
@@ -1128,6 +1131,7 @@ pub const Lowering = struct {
         continue_target: ?BlockId,
         loop_defer_base: usize,
         build_scopes: std.ArrayList(lower_build_block.Scope),
+        inline_return_target: ?InlineReturnInfo,
 
         pub fn enter(l: *Lowering) NestedBodyGuard {
             const g = NestedBodyGuard{
@@ -1139,6 +1143,7 @@ pub const Lowering = struct {
                 .continue_target = l.continue_target,
                 .loop_defer_base = l.loop_defer_base,
                 .build_scopes = l.build_scopes,
+                .inline_return_target = l.inline_return_target,
             };
             l.narrowed = std.StringHashMap(void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
@@ -1147,6 +1152,7 @@ pub const Lowering = struct {
             l.continue_target = null;
             l.loop_defer_base = 0;
             l.build_scopes = .empty;
+            l.inline_return_target = null;
             return g;
         }
 
@@ -1162,6 +1168,7 @@ pub const Lowering = struct {
             g.l.loop_defer_base = g.loop_defer_base;
             g.l.build_scopes.deinit(g.l.alloc);
             g.l.build_scopes = g.build_scopes;
+            g.l.inline_return_target = g.inline_return_target;
         }
     };
 

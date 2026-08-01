@@ -1741,22 +1741,18 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     defer nested_guard.restore();
 
     // Save current builder + lowering state. The wrapper fn we're
-    // about to build runs the comptime expression in isolation —
-    // it must NOT inherit the enclosing call's `inline_return_target`
-    // (which would re-route a `return` inside the wrapper into a
-    // slot belonging to a different basic block), pack bindings
-    // (which would substitute caller's `args` inside the wrapper),
-    // or comptime-param bindings (which would substitute caller's
-    // `$fmt` inside the wrapper's #insert children). Without these
-    // saves, nested comptime calls leak outer state into the
-    // interp-executed wrapper, producing garbage stores (issue-0046
-    // face 1 — storeAtRawPtr null).
+    // about to build runs the comptime expression in isolation — it must NOT
+    // inherit pack bindings (which would substitute caller's `args` inside
+    // the wrapper) or comptime-param bindings (which would substitute
+    // caller's `$fmt` inside the wrapper's #insert children). Without these
+    // saves, nested comptime calls leak outer state into the interp-executed
+    // wrapper, producing garbage stores (issue-0046 face 1 — storeAtRawPtr
+    // null). The guard above owns the inlined-body exit.
     const saved_func = self.builder.func;
     const saved_block = self.builder.current_block;
     const saved_counter = self.builder.inst_counter;
     const saved_scope = self.scope;
     const saved_ctx_ref = self.current_ctx_ref;
-    const saved_iri = self.inline_return_target;
     const saved_pan = self.pack_arg_nodes;
     const saved_ppc = self.pack_param_count;
     const saved_pat = self.pack_arg_types;
@@ -1764,7 +1760,6 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     const saved_block_terminated = self.block_terminated;
     const saved_target_type = self.target_type;
     const saved_func_defer_base = self.func_defer_base;
-    self.inline_return_target = null;
     self.pack_arg_nodes = null;
     self.pack_param_count = null;
     self.pack_arg_types = null;
@@ -1780,7 +1775,6 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     defer {
         self.comptime_phase = saved_phase;
         self.current_ctx_ref = saved_ctx_ref;
-        self.inline_return_target = saved_iri;
         self.pack_arg_nodes = saved_pan;
         self.pack_param_count = saved_ppc;
         self.pack_arg_types = saved_pat;

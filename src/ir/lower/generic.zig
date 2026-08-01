@@ -58,16 +58,13 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     const saved_pan = self.pack_arg_nodes;
     const saved_ppc = self.pack_param_count;
     const saved_pat = self.pack_arg_types;
-    const saved_iri = self.inline_return_target;
     self.pack_arg_nodes = null;
     self.pack_param_count = null;
     self.pack_arg_types = null;
-    self.inline_return_target = null;
     defer {
         self.pack_arg_nodes = saved_pan;
         self.pack_param_count = saved_ppc;
         self.pack_arg_types = saved_pat;
-        self.inline_return_target = saved_iri;
     }
     self.func_defer_base = self.defer_stack.items.len;
     self.block_terminated = false;
