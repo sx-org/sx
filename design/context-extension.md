@@ -36,7 +36,7 @@ extensible:
 Explored options (conversation, 2026-07-19): X1 module-declared
 assembly (CHOSEN) · X2 app-declared struct + `#context` directive ·
 X3 typed runtime chain (rejected: can't reach field spelling without
-compiler work; O(depth) walks; reserves `data`; depends on open 0298).
+compiler work; O(depth) walks; reserves `data`).
 
 ## Locked decisions (binding)
 

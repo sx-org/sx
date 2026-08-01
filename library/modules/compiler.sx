@@ -6,7 +6,7 @@
 // them lives in `modules/build.sx`. They are reached from the post-link build
 // driver (a callback registered via `set_post_link_callback`), which always runs
 // on the comptime VM (`core.invokeByFuncId`) — the one evaluator that can
-// allocate/grow the `List`s the driver builds (issue 0141).
+// allocate/grow the `List`s the driver builds.
 //
 // Only `List` is needed here (`string` is a builtin), so import just the List
 // part-file, not the whole std barrel — keeps compiler.sx's transitive graph

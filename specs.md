@@ -38,7 +38,7 @@ and `` obj.`i2 `` both resolve. The exemption covers member *signatures* only: a
 slot), so a reserved-spelled impl method still needs the backtick
 (`` `i2 :: (self) ``), exactly like a free function. See `examples/0158`.
 
-**Statement keywords are member names too (issue 0345).**
+**Statement keywords are member names too.**
 Every keyword except `inline` — `if`, `push`, `while`, `for`, `case`, `return`,
 `f32`, `f64`, `try`, `defer`, … — may bare-name a struct **field**, a struct
 **method or constant**, a protocol **method**, and an enum/tagged-union
@@ -71,7 +71,7 @@ to call such a value. Prefer different names.
 Every reserved spelling except `inline` bare-names member slots — the
 identifier-classified spellings (`i1`..`i64`, `u1`..`u64`, `bool`, `string`,
 `cstring`, `void`, `usize`, `isize`, `any`) and the keyword-classified `f32` /
-`f64` alike (issue 0345): `` struct { f32: i64; } `` and
+`f64` alike: `` struct { f32: i64; } `` and
 `` protocol { f32 :: (self: *Self) -> i64; } `` are legal as written; the
 backtick forms remain available but are never required for them.
 
@@ -703,13 +703,13 @@ qn  := f64.nan;           // a quiet NaN
   - `.inf` — positive infinity (`inf > max`).
   - `.nan` — a quiet NaN. The exact mantissa bits are not pinned; the only
     guaranteed property is that it is unequal to everything, itself included
-    (`nan != nan` is `true` — native float `!=` lowers unordered, issue 0091).
+    (`nan != nan` is `true` — native float `!=` lowers unordered).
 - **Float-only on an integer is an error.** `.epsilon` / `.min_positive` /
   `.true_min` / `.inf` / `.nan` applied to an integer type (`i32.epsilon`,
   `u8.inf`, `i64.true_min`) is a clean compile error — integer types expose only
   `.min` / `.max`.
 - **Pinning the values.** The lexer has no exponent notation and the default
-  float formatter is crude (issue 0090), so float limits can be asserted neither
+  float formatter is crude, so float limits can be asserted neither
   by literal comparison nor by printing. Reinterpret the bits through an untagged
   union (`union { f: f64; bits: u64 }`) and compare against the exact IEEE-754
   pattern — `f64.max = 0x7FEFFFFFFFFFFFFF`, `min = 0xFFEFFFFFFFFFFFFF`,
@@ -946,7 +946,7 @@ alias).
 Anonymous type identity is by **shape**, never by name: two anonymous types
 with the same canonical field sequence (names + types, in order) are the SAME
 type — across literal and annotation sites — and differently-shaped ones are
-always distinct types (issue 0294):
+always distinct types:
 
 ```sx
 a : struct { x: i64; } = .{ x = 1 };
@@ -2876,7 +2876,7 @@ than allowed.
 #### Value Equality
 
 `==` / `!=` are defined on optionals whenever the payload type has
-value-equality (issue 0344). Equality extracts nothing — null is a legitimate
+value-equality. Equality extracts nothing — null is a legitimate
 comparison value — so this is not an exception to the no-implicit-unwrap rule,
 and arithmetic / ordering on un-narrowed optionals stay rejected.
 
@@ -5022,7 +5022,7 @@ iterate a call result without one, parenthesize (`for (f(n)) { }`) or bind
 it to a local first. A leading paren group is a normal grouped expression
 (`for (a ++ b) (x)` iterates the grouped value).
 
-**By-value captures are immutable** (issue 0219). This rule is not
+**By-value captures are immutable.** This rule is not
 specific to for-loop element captures — it holds for *every* by-value
 capture binding: the for-loop element and the paired range index
 (`for xs, 0.. (x, i)` — both `x` and `i`), a match-arm payload capture
@@ -5045,7 +5045,7 @@ compile error with the constant-family message, mirroring module-level
 `::` consts. (Rationale: mutating a per-iteration
 copy that vanishes at the next iteration is almost always a bug — the
 author meant `(*x)`. This also matches the copy-semantics chosen for the
-issue-0214 `xx`-erasure materialization, where a by-value capture is
+`xx`-erasure materialization, where a by-value capture is
 likewise snapshotted into a fresh temp rather than written back.)
 
 **By-reference capture (`*elem`)** binds the element to a *pointer* into the collection (`*T`) instead of a value — no per-element copy. It GEPs straight into the array/slice backing, so:
@@ -5886,7 +5886,7 @@ Collision rules mirror ordinary declarations:
   locally to disambiguate.
 - **One level only** — carry does not chain: a flat import of a flat import
   does not surface the inner file's aliases. (The bare `alias.fn()` call path
-  does not enforce this gate — issue 0114.)
+  does not enforce this gate.)
 
 `#import c { ... }` aliases (`tc :: #import c { ... }`) carry the same way.
 
@@ -6701,6 +6701,6 @@ tuple_type_elem = IDENT ':' type | '..' type | type
   the CLOSURE's job — spell it `x := () => …` (`:=` + `=>`), which captures by
   pointer. (Enclosing local consts are rejected too rather than comptime-folded:
   a static nested fn's frame cannot carry them, and the closure spelling captures
-  them uniformly.) Resolved: issue 0250.
+  them uniformly.)
 - **Operator overloading**: Not shown — presumably no.
 - **Top-level expressions**: Are bare expressions allowed at the top level or only declarations?

@@ -74,7 +74,7 @@ map_capacity_for :: (n: i64) -> i64 {
 //               indeterminate; `==` is field-wise and ignores padding, so the
 //               hash must too — otherwise two field-equal keys built with
 //               different stack garbage in the padding hash differently and a
-//               lookup on a present, logically-equal key misses (issue 0273).
+//               lookup on a present, logically-equal key misses.
 //   • scalar / enum / bool / pointer leaf → raw `size_of` bytes (these have a
 //               unique byte representation — no padding to skip).
 map_hash_key :: (key: $K) -> u64 {

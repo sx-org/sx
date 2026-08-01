@@ -24,7 +24,7 @@
 
 // `build_block_convert` (below) is a comptime metaprogram that emits sx source
 // with `concat` / `int_to_string`; those live in std.sx. A metaprogram body
-// resolves its bare names in its OWN module (issue 0106), so this module must
+// resolves its bare names in its OWN module, so this module must
 // import std.sx itself rather than relying on the call site's visibility.
 #import "modules/std.sx";
 

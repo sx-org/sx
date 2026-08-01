@@ -32,8 +32,8 @@ Today the compiler↔sx boundary is **two ad-hoc mechanisms**:
 Both are the SAME idea — comptime sx interacting with the compiler — implemented
 twice, differently. And the metatype path carries real costs: a projected data
 model that drifts from `types.zig`, hand-written marshaling, and the staging
-fragility of issue 0141 (constructor bodies lowered at `scanDecls` in a half-built
-world → wrong IR).
+fragility of constructor bodies lowered at `scanDecls` in a half-built world →
+wrong IR.
 
 **This unifies them.** One mechanism: a named `compiler` library that exposes a
 curated set of the compiler's real types (welded by layout) and functions
@@ -149,7 +149,8 @@ readers (`type_of`, field/variant iteration) over the welded records.
 ## What it buys (and the one honest limit)
 
 Dissolves: the bespoke `declare`/`define` surface, the projected `TypeInfo` model,
-the hand-marshaling, the `#compiler` duplication, and the **0141 class of bugs** —
+the hand-marshaling, the `#compiler` duplication, and the **half-built-stage
+lowering class of bugs** —
 registration becomes a direct, guarded API call, not "evaluate an sx stdlib body
 (List/append) at `scanDecls`," so there's no body to mis-lower at a half-built
 stage.

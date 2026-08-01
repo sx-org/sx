@@ -75,14 +75,14 @@ Every row above is closed by fresh stdlib evidence or an explicit reviewed
 supersession; the disposition manifest's gate keys are all closed. Residual
 items tracked OUTSIDE this crosswalk:
 
-1. compiler-internal issues 0320, 0322, 0323, 0325, 0330 and 0331 are
-   follow-up work (`current/PLAN-COMPRESS.md` Step 6); 0324, 0326, 0328,
-   0329, 0332, and 0334 are resolved with permanent regressions. Issue 0321
+1. compiler-internal issues 0323 and 0325 are follow-up work
+   (`current/PLAN-COMPRESS.md` Step 6); the rest of the resolver/protocol
+   set is resolved with permanent regressions. Issue 0321
    (module-private struct state) awaits a language-design decision;
 2. the final-tree 61-trial benchmark (exact 110-case matrix, timed-artifact
    byte identity, gain-versus-regression gate) is recorded in
    `docs/benchmarks/compression.md` — the accepted differential for every
    superseded C transcript;
-3. HTTP issue 0327's evidence (framing, negotiation, range/validator,
+3. the HTTP slice's evidence (framing, negotiation, range/validator,
    failure propagation, bounded work, namespace, `.tgs`) at opt 0/3 is the
    HTTP slice's own gate and is tracked with that commit.

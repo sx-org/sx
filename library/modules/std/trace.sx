@@ -23,7 +23,7 @@ c :: #import "modules/std/c.sx"; // libc write
 
 // The compiled return-trace frame. Named `TraceFrame` (not `Frame`) so it never
 // collides with a UI / geometry `Frame` a consumer flat-imports — same-name
-// types are distinct nominal identities (issue 0105), so a bare `Frame`
+// types are distinct nominal identities, so a bare `Frame`
 // resolves unambiguously to the consumer's own. Layout MUST match
 // `getFrameStructType` in src/ir/emit_llvm.zig and `SxFrame` in
 // library/vendors/sx_trace_runtime/sx_trace.c.

@@ -144,9 +144,8 @@ Positional, from token neighbors: `decl-const` (`name ::`), `decl-local`
   `1e9` lexes as the number `1` plus the identifier `e9`, and `1package`
   exposes the identifier `package`; the scanner deliberately matches both.
 - `inventory` reports *every* identifier occurrence of the four words,
-  including deliberate future-syntax fixtures (e.g.
-  `issues/0288-directory-import-cascade-wording/bad.sx` uses `package
-  alpha;` on purpose). Deciding what to migrate vs preserve is D9's call,
+  including deliberate future-syntax fixtures that use `package alpha;`
+  on purpose. Deciding what to migrate vs preserve is D9's call,
   not the tool's.
 
 ## Verification (all run 2026-07-11, all green)

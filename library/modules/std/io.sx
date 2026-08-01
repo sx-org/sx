@@ -92,7 +92,7 @@ impl Io for CBlockingIo {
 // Fixed-shape product (NOT the metatype sum machinery). `Value :: $R`
 // exposes the projection `Future(X) → X`. Only a NON-void `$R` is
 // supported — `Future(void)` needs a `void` struct field, which SIGTRAPs
-// the compiler (issue 0150).
+// the compiler.
 FutureState :: enum { pending; ready; failed; canceled; }
 
 Future :: struct ($R: Type) {
@@ -165,7 +165,7 @@ sx_run_boxed_closure :: (arg: *void) {
 // `async(io, worker)` — submit a NULLARY `worker: Closure() -> $R` and get a
 // `*Future($R)` handle. The worker must be nullary because under the fiber impl
 // the body crosses a fiber boundary, and a captured variadic pack segfaults there
-// (issue 0156 Part 2) — so any inputs are captured at the CALL SITE in the lambda
+// — so any inputs are captured at the CALL SITE in the lambda
 // (`context.io.async(() -> (i64, !) => compute(a, b))`).
 //
 // The Future (and the completion-closure `ThunkBox`) are HEAP-allocated (not
