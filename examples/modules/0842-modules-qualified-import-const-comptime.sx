@@ -6,8 +6,8 @@
 // `evalConstIntExpr`'s field_access arm carries a namespace-member arm, and a
 // qualified ref in type-argument position (`Vector(m.LANES, …)`) arrives as a
 // single dotted name. Both resolve through the namespace alias to the target
-// module's per-source const; without them a namespaced import's const reaches
-// the const folders only as a runtime value.
+// module's per-source const, so the value reaches the const folders rather than
+// only the runtime path.
 #import "modules/std.sx";
 m :: #import "0842-modules-qualified-import-const-comptime/layout.sx";
 

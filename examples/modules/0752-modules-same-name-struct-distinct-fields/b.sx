@@ -1,5 +1,5 @@
 // Module B authors a DIFFERENT `Box` (two fields `p`, `q`) — a same-name shadow
-// of A's `Box`. Each `Box` is a distinct nominal type; collapsing them
-// last-wins in the type table would drop one module's field set.
+// of A's `Box`. Each `Box` is a distinct nominal type, so each module's field
+// set survives.
 Box :: struct { p: i64; q: i64; }
 b_box :: () -> Box { return Box{ p = 3, q = 4 }; }

@@ -1,12 +1,10 @@
 // Two flat FILE imports each author a same-name free
 // function `apply` with a DIFFERENT parameter TYPE — a.sx takes a value
 // (`x: i64`), b.sx takes a pointer (`x: *i64`). The first-wins import merge
-// keeps a.sx's value-typed `apply`, but each module's bare call must type its
+// keeps a.sx's value-typed `apply`, but each module's bare call types its
 // arguments against ITS OWN author. b.sx's `from_b` passes a local `v` to its
-// pointer-param `apply` via implicit address-of; typing the arg against the
-// first-wins (value) winner lowers it as a value, and the
-// resolved pointer-param author is then called with that value bit-cast to a
-// pointer — a segfault. Per-source parameter target typing.
+// pointer-param `apply` via implicit address-of, which is per-source parameter
+// target typing at work.
 #import "modules/std.sx";
 #import "0728-modules-flat-same-name-paramtype/a.sx";
 #import "0728-modules-flat-same-name-paramtype/b.sx";

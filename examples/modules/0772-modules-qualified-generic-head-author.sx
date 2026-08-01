@@ -1,19 +1,16 @@
-// A qualified generic type head `ns.Box(args)` must instantiate the template
+// A qualified generic type head `ns.Box(args)` instantiates the template
 // AUTHORED by `ns`'s module — not the global same-name template that happened to
 // win the last-wins `struct_template_map`. `main` imports two namespaces that
 // each author a same-name generic `Box($T)` with a DIFFERENT layout (a: one
-// field, b: two fields). `a.Box(i64)` and `b.Box(i64)` must resolve to their OWN
-// module's template (sizes 8 and 16) and be DISTINCT types, so a field unique to
+// field, b: two fields). `a.Box(i64)` and `b.Box(i64)` resolve to their OWN
+// module's template (sizes 8 and 16) and are DISTINCT types, so a field unique to
 // b's layout (`y`) is reachable only through `b.Box`.
 //
 // This is the ambiguity escape hatch made real: when a bare `Box(i64)` is
 // ambiguous (two flat same-name authors), the diagnostic tells the user to
-// "qualify the reference"; that advice only works if `ns.Box(..)` actually
-// selects ns's author.
-//
-// The qualifier is honoured: the head is NOT stripped to its bare name and
-// read from the global `struct_template_map`, which would make `a.Box(i64)`
-// and `b.Box(i64)` share the last-wins template.
+// "qualify the reference"; that advice only works because `ns.Box(..)` actually
+// selects ns's author. The qualifier is honoured — the head is not stripped to
+// its bare name and read from the global `struct_template_map`.
 
 #import "modules/std.sx";
 a :: #import "0772-modules-qualified-generic-head-author/a.sx";

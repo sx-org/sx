@@ -1,10 +1,8 @@
 // Cross-module production shape: the imported module
 // declares `impl Into(*DeadBox) for string` but imports nothing, so
-// `Into` is not nameable in ITS scope. Dropping the impl silently
-// degrades `xx "abc"` here to the reinterpret
-// spill (b.v reads the string's header bytes; pointer targets then
-// segfault — the objc.sx NSString bridge fails exactly this way).
-// The build rejects the dead impl at its declaration.
+// `Into` is not nameable in ITS scope and the impl cannot register.
+// The build rejects the dead impl at its declaration rather than letting
+// `xx "abc"` here fall through to a reinterpret spill.
 #import "modules/std.sx";
 #import "1621-modules-impl-needs-protocol-in-scope/dead_impl.sx";
 

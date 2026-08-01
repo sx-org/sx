@@ -1,9 +1,8 @@
 // Companion module. An `xx <int>` argument to
 // a variadic `format` (a comptime `..$args` pack), inside a function living
 // in an IMPORTED module, auto-boxes to `any`: lowering pack args clears the
-// enclosing fn's `target_type` (here `string`), which would otherwise
-// monomorphize `__pack_string` and ABI-coerce the 4-byte int as a 16-byte
-// string fat pointer.
+// enclosing fn's `target_type` (here `string`), so the 4-byte int is not
+// forced through `__pack_string`'s 16-byte fat-pointer ABI.
 
 #import "modules/std.sx";
 

@@ -1,11 +1,11 @@
 // A BARE generic static-method head `Box(i64).make(7)` whose name has ≥2 DISTINCT
-// directly-visible (1-hop flat) same-name authors is AMBIGUOUS — the head must
-// diagnose the ambiguity (consistent with the leaf / 0755 / 0767) BEFORE any
-// instantiation or method lookup, never silently pick a global last-wins author.
+// directly-visible (1-hop flat) same-name authors is AMBIGUOUS — the head
+// diagnoses the ambiguity (consistent with the leaf / 0755 / 0767) BEFORE any
+// instantiation or method lookup, never picking a global last-wins author.
 //
 // `p.sx` and `q.sx` each author a generic `Box($T)` and are BOTH flat-imported
 // here, so a bare `Box` reference has two visible authors and cannot be resolved
-// without qualification. The fix is to `p.Box(i64)` / `q.Box(i64)` (0779).
+// without qualification. `p.Box(i64)` / `q.Box(i64)` is the qualified form (0779).
 
 #import "modules/std.sx";
 #import "0782-modules-bare-generic-instance-ambiguous-authors/p.sx";

@@ -1,11 +1,9 @@
 // Value-receiver free-function UFCS under a
 // flat same-name collision must be TYPED as the author lowering dispatches.
 // a.sx (imported first → first-wins winner) authors `tag -> string`; b.sx
-// authors its OWN `tag -> i64`. In b.sx, `v.tag()` dispatches b.tag (i64), but
-// a call PLAN that types it as a.tag (string, first-wins) makes the
-// pack-fn `print` box the raw i64 110 as a string pointer and dereference
-// 0x6e → segfault. `CallResolver.plan` selects the SAME author the lowering
-// call-path binds, so plan-typing and dispatch cannot disagree.
+// authors its OWN `tag -> i64`. In b.sx, `v.tag()` dispatches b.tag (i64), and
+// `CallResolver.plan` selects the SAME author the lowering call-path binds, so
+// plan-typing and dispatch cannot disagree.
 #import "modules/std.sx";
 #import "0740-modules-flat-same-name-ufcs-typing/a.sx";
 #import "0740-modules-flat-same-name-ufcs-typing/b.sx";

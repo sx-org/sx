@@ -6,9 +6,8 @@
 //
 // Reading `BIG` walks BIG (c) → K (a) → M (a): each level resolves in its OWN
 // author's context, so `BIG` folds A's chain (= 102) even though `main` itself
-// sees only B's `K` (= 11) bare. If any level leaked to the reader's view, `BIG`
-// would fold B's `K` (→ 111). `#import` is non-transitive, so `K` bare in `main`
-// is B's (A is reachable only through C) → bk=11. Output: big=102 bk=11.
+// sees only B's `K` (= 11) bare. `#import` is non-transitive, so `K` bare in
+// `main` is B's (A is reachable only through C) → bk=11. Output: big=102 bk=11.
 #import "modules/std.sx";
 #import "0791-modules-same-name-const-multi-level-cross-module/b.sx";
 #import "0791-modules-same-name-const-multi-level-cross-module/c.sx";

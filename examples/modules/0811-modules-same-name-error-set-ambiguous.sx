@@ -3,8 +3,8 @@
 // leaf (0755) and the enum/union leaves (0795/0797). `main` flat-imports two
 // modules that each author a same-name `IoErr` error set and authors none itself,
 // so EACH of the following bare ERROR-SET forms is a genuine collision the source
-// cannot disambiguate — and each must emit the LOUD "type 'IoErr' is ambiguous"
-// diagnostic and poison the result, NEVER silently pick a global `findByName`
+// cannot disambiguate — and each emits the LOUD "type 'IoErr' is ambiguous"
+// diagnostic and poisons the result, never picking a global `findByName`
 // last-wins author:
 //
 //   - reflection / type-arg slot     `size_of(IoErr)`
@@ -13,11 +13,9 @@
 //   - type-category match arm         `case IoErr:`
 //   - `!Named` failable channel       `-> !IoErr`   (audited use surface)
 //
-// A stateless `type_bridge.resolveInlineErrorSet`
-// `findByName` short-circuit interns ONE global last-wins `IoErr`, so every bare
-// form resolves to it; the `!IoErr` channel resolves through
-// `resolveErrorType -> resolveTypeName` straight to that global slot. The program
-// exited 0.
+// `type_bridge.resolveInlineErrorSet` routes through the source-aware author
+// selection, and the `!IoErr` channel reaches it through
+// `resolveErrorType -> resolveTypeName` rather than a global slot.
 
 #import "modules/std.sx";
 #import "0811-modules-same-name-error-set-ambiguous/a.sx";

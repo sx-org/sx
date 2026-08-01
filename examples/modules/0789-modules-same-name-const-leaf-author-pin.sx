@@ -2,11 +2,9 @@
 // const's AUTHOR source, not the reading module's. `a.sx` declares `M :: 1` and
 // `K :: M + 1` (= 2); `b.sx` declares a DIFFERENT same-name `M :: 10` (no `K`).
 // `main` flat-imports both, so the reader sees two `M`s — but it reads only `K`,
-// which is unique to `a.sx`. Folding `K`'s RHS must pin `M` to A's source (→ 1),
+// which is unique to `a.sx`. Folding `K`'s RHS pins `M` to A's source (→ 1),
 // giving `K = 2`, coherently whether `K` is read as a runtime VALUE (`print K`)
-// or used as an array DIMENSION (`[K]u8`) → val=2 len=2. Without the author pin
-// the nested leaf would re-select `M` from `main`'s view (two `M`s → ambiguous /
-// non-const dimension).
+// or used as an array DIMENSION (`[K]u8`) → val=2 len=2.
 #import "modules/std.sx";
 #import "0789-modules-same-name-const-leaf-author-pin/a.sx";
 #import "0789-modules-same-name-const-leaf-author-pin/b.sx";

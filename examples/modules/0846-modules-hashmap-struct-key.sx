@@ -1,13 +1,12 @@
 // HashMap / IndexMap struct keys are hashed
 // STRUCTURALLY (field-by-field, padding skipped), consistent with `==`, so a
 // separately-constructed field-equal key is FOUND even when the padding bytes
-// of the two keys differ. Hashing all size_of(K) bytes in `map_hash_key`,
-// indeterminate padding included, hashes equal keys differently, so
-// a lookup misses (HashMap) / appends a phantom duplicate (IndexMap).
+// of the two keys differ. `map_hash_key` skips the indeterminate padding rather
+// than hashing all size_of(K) bytes.
 //
-// Covers: padded struct key found after stack churn (both map kinds), struct
-// with a string field (content-hashed), struct with an enum field, a nested
-// struct key, and distinct keys not colliding.
+// The shapes here: padded struct key found after stack churn (both map kinds),
+// struct with a string field (content-hashed), struct with an enum field, a
+// nested struct key, and distinct keys not colliding.
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 
@@ -79,7 +78,7 @@ main :: () {
     report("nested found", if v := nm.get(nk2) { v == 55 } else { false });
     nm.deinit(gpa);
 
-    // ── G2: non-scalar VALUES round-trip ────────────────────────────────
+    // ── non-scalar VALUES round-trip ────────────────────────────────
     // Aggregate K *and* V are supported. The section above covers struct KEYS;
     // here the focus is struct VALUES (multi-field, incl. a large-ish V that
     // exercises the `size_of(V)` array stride) and a struct-KEY→struct-VALUE map.

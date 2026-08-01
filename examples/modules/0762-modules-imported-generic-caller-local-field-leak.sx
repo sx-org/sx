@@ -7,12 +7,7 @@
 // lib file.
 //
 // `local_type_names` is keyed by declaring source, so a cross-source
-// block-local cannot leak into another source's resolution. Were the set
-// source-insensitive, the template's field resolution (run in the template's
-// source context) would find the caller's `LocalOnly` and compile, printing a
-// value and exiting 0.
-//
-// Expected: `error: unknown type 'LocalOnly'` pointing into lib.sx; exit 1.
+// block-local cannot leak into another source's resolution.
 #import "modules/std.sx";
 #import "0762-modules-imported-generic-caller-local-field-leak/lib.sx";
 

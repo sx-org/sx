@@ -2,8 +2,8 @@
 // not just the nominal leaf annotation. `main` flat-imports `dep.sx` (which
 // authors a same-name `Widget { a, b }` = 16 bytes and `Nums :: [2]i32` = 8
 // bytes) AND authors its OWN `Widget { a }` = 8 bytes and `Nums :: [2]i64` = 16
-// bytes. Each bare reference below must resolve to MAIN's own author — the gate's
-// source-keyed `.resolved` author — NOT whichever same-name flat import a global
+// bytes. Each bare reference below resolves to MAIN's own author — the gate's
+// source-keyed `.resolved` author — not whichever same-name flat import a global
 // `findByName` / `struct_template_map` pick would return:
 //
 //   - reflection / type-arg slot   `size_of(Widget)`        → 8  (own)
@@ -11,11 +11,8 @@
 //   - type-as-value                 `t : Type = Widget`
 //   - type-category match arm       `case Widget:`          → own identity
 //
-// Unless the bare-type gate carries the OWN author's source-keyed TypeId into
-// the non-leaf sites, an own author produces `.proceed` and these sites fall
-// through to a global `findByName` — `size_of(Widget)` prints the IMPORTED
-// type's 16 and `case Widget:` matches the imported nominal identity
-// (describe → 222). `dep_sizes` proves dep's distinct types still resolve to
+// The bare-type gate carries the OWN author's source-keyed TypeId into the
+// non-leaf sites. `dep_sizes` proves dep's distinct types still resolve to
 // THEIR own 16 + 8 = 24 inside dep.
 
 #import "modules/std.sx";

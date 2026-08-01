@@ -5,13 +5,11 @@
 // FuncId (example 0719) and lowers it through
 // `lazyLowerFunction`'s null-FuncId `lowerFunction` path. `foo`'s body folds
 // `if true { return helper(); }` to an unconditional return, so its lowering
-// ends with `block_terminated = true`. A null-FuncId path that restores
-// every saved caller field EXCEPT `block_terminated` leaks that flag back
-// into `main`, so `main`'s own trailing `print` / `return 0` read as
-// dead-after-terminator and the compiler rejects `return 0` with "body produces
-// no value". All exit paths route through one save/restore defer, so the
-// qualified alias is transparent to the caller. (`helper` also lives in
-// m.sx's own flat import, exercising the F1 source-context restore too.)
+// ends with `block_terminated = true`. All exit paths route through one
+// save/restore defer — `block_terminated` included — so the flag does not leak
+// into `main` and the qualified alias is transparent to the caller. (`helper`
+// also lives in m.sx's own flat import, exercising the source-context restore
+// too.)
 
 #import "modules/std.sx";
 m :: #import "0721-modules-qualified-terminating-callee/m.sx";

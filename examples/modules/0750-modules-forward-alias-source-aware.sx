@@ -1,16 +1,15 @@
 // Source-aware forward-alias fixpoint. A forward identifier alias
-// `A :: B` must resolve its target `B` AS SEEN FROM ITS OWN SOURCE, not via the
+// `A :: B` resolves its target `B` AS SEEN FROM ITS OWN SOURCE, not via the
 // global `type_alias_map` (which is last-wins across every module).
 //
 // `main` authors a forward alias `A :: B` and its own `B :: u64`. The namespaced
 // import `ns :: #import ".../dep.sx"` ALSO authors a top-level `B :: u8`; being
 // scanned after main's `B`, dep's alias is what the GLOBAL `type_alias_map["B"]`
-// ends up holding (last-wins). A global forward-alias fixpoint therefore bound
-// `A` to dep's `u8`, re-opening the same-name collision one layer down. The
-// source-aware fixpoint resolves `A` against MAIN's source: the local `B :: u64`.
+// ends up holding. The source-aware fixpoint resolves `A` against MAIN's source:
+// the local `B :: u64`.
 //
 // Observable: a runtime 300 coerced into an `A`-typed slot round-trips as 300
-// when `A` is `u64` (correct) and truncates to 44 when `A` is wrongly `u8`.
+// under `u64` and would truncate to 44 under `u8`.
 // The direct reference `b : B` already resolves source-aware via the nominal
 // leaf, so it pins the same `u64` for contrast.
 #import "modules/std.sx";

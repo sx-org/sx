@@ -3,15 +3,13 @@
 // NON-function. `main` flat-imports `b.sx`; `b.sx` declares `Make :: 123` (a
 // value const, not a type-fn) AND flat-imports `c.sx`, whose `Make` IS the
 // type-returning function. The only TYPE-FN author of `Make` is two flat hops
-// away (main → b → c), so the bare `Make(i64)` head must emit the
-// "type 'Make' is not visible" diagnostic and poison — the visible 1-hop
-// `Make :: 123` const must NOT vouch for it.
+// away (main → b → c), so the bare `Make(i64)` head emits the
+// "type 'Make' is not visible" diagnostic and poisons — the visible 1-hop
+// `Make :: 123` const does NOT vouch for it.
 //
 // `headFnLeak` decides visibility from the ELIGIBLE FUNCTION authors, not the
 // module-scope NAME predicate (`isNameVisible`) that the visible non-fn
-// `Make :: 123` satisfies: deciding it from the name alone lets the global
-// `fn_ast_map` type-fn instantiate silently, so `size_of(Make(i64))` prints 8
-// at exit 0 instead of the visibility diagnostic.
+// `Make :: 123` satisfies.
 
 #import "modules/std.sx";
 #import "0770-modules-type-fn-head-non-transitive/b.sx";
