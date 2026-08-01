@@ -1,8 +1,7 @@
-# Inline Assembly for sx — Design Doc & Proposal
+# Inline assembly — design
 
-**Status:** proposal / not yet scheduled into a workstream
-**Author:** research pass over the Zig compiler (`~/projects/zig`, 0.16-dev) + the sx compiler
-**Scope:** how Zig implements inline assembly end-to-end, and a minimal-deviation proposal to bring the same model to sx.
+**Scope:** how Zig implements inline assembly end-to-end, and the
+minimal-deviation model sx takes from it.
 
 > Guiding constraint for this doc: **mirror Zig's design; deviate only where sx's
 > grammar or stdlib makes a 1:1 copy impossible, and call every deviation out
@@ -13,10 +12,9 @@
 
 ## 0. TL;DR + feasibility
 
-* **Feasible today, no new infrastructure.** sx already links LLVM (`build.zig:10`
-  → `/opt/homebrew/opt/llvm@22`) and `@cImport`s `llvm-c/Core.h`
-  (`src/llvm_api.zig:1-17`). That header exposes everything inline asm needs,
-  reachable right now through `llvm_api.c.*`:
+* **No new infrastructure is needed.** sx links LLVM (`build.zig`) and
+  `@cImport`s `llvm-c/Core.h` (`src/llvm_api.zig`). That header exposes
+  everything inline asm needs, reachable through `llvm_api.c.*`:
   * `LLVMGetInlineAsm(Ty, AsmString, AsmStringSize, Constraints, ConstraintsSize, HasSideEffects, IsAlignStack, Dialect, CanThrow)` — builds the asm callee (LLVM 19–22 share this 9-arg signature).
   * `LLVMInlineAsmDialectATT` / `LLVMInlineAsmDialectIntel`.
   * `LLVMBuildCall2(...)` — already used pervasively in `src/ir/emit_llvm.zig` (e.g. the Obj-C msgSend path) — calls the asm value like a function.
@@ -30,7 +28,7 @@
   sections); enum-literal `clobbers(.…)`; and N `-> Type` outputs return a
   **tuple** (sx has tuples — Zig caps at one output).
 * **Inline asm is never comptime-evaluable.** The interpreter must bail loudly
-  (`bailDetail`), per CLAUDE.md's "no silent unimplemented arms" rule.
+  (`bailDetail`) — no silent unimplemented arm.
 * **One naming note:** sx already has a `sx asm <file>` *CLI subcommand*
   (`src/main.zig:203,386`) that emits a `.s` file. That is a compiler output
   mode, a different namespace from a language token. No conflict, but worth
@@ -407,7 +405,7 @@ q, r := divmod(17, 5);                // q = 3, r = 2
 * **[DEVIATION 3 — clobbers are an enum-literal list `clobbers(.cc, .memory)`.]**
   Zig 0.16 uses a struct literal `: .{ .rcx = true }` coerced to a per-arch
   `std.lang.assembly.Clobbers`; older Zig used a string list. sx uses a dot-literal
-  list, cleaner than both. **v1:** each `.name` is a dot-name lowered straight to
+  list, cleaner than both. **Phase 1:** each `.name` is a dot-name lowered straight to
   `~{name}` (`.memory`/`.cc` are recognized specials; register names pass through
   verbatim; LLVM validates). **Phase 4:** upgrade `.name` to members of a
   compile-time-checked per-arch `Clobber` enum — *same syntax*, gains typo-checking.
@@ -419,7 +417,7 @@ q, r := divmod(17, 5);                // q = 3, r = 2
   `volatile` appears *only* right after `asm`, so it can be recognized contextually
   (a plain identifier everywhere else), avoiding reserving it globally. The surface
   is byte-identical to Zig. (Alternative: reserve globally — simpler lexer, small
-  source-compat risk. Recommend contextual.)
+  source-compat risk.)
 
 * **[DEVIATION 5 — multiple value-outputs return a tuple (sx ⊃ Zig).]** Zig allows
   at most one `-> T` output; the rest must be pointer/lvalue outputs. sx has
@@ -445,7 +443,7 @@ q, r := divmod(17, 5);                // q = 3, r = 2
 ATT,
   };
 
-  my_func :: (a: i32, b: i32) -> i32 extern;   // extern, no library — valid sx today
+  my_func :: (a: i32, b: i32) -> i32 extern;   // extern, no library
   ```
 
   Only the `comptime {}` wrapper is dropped; lowers to `LLVMAppendModuleInlineAsm`.
@@ -538,7 +536,7 @@ Lexer/token: add `kw_asm` to the `Token.Tag` enum + keyword `StaticStringMap` in
   (`(name1: T1, …)`), positional otherwise. Implement in the expression typer
   (`src/ir/expr_typer.zig` / wherever `inferExprType` lives), returning the resolved
   `TypeId` (a tuple `TypeId` for N>1). **Do not** fall back to a silent default — an
-  unresolvable output type is a real error (CLAUDE.md silent-default rule): emit a
+  unresolvable output type is a real error, never a silent default: emit a
   diagnostic and return the project's `.unresolved` sentinel.
 * Port Zig's validation checklist (these are the user-facing error messages):
   1. no output operand ⇒ the asm **must** be `volatile`;
@@ -583,7 +581,7 @@ Corollaries:
   (null when no `[name]` was written); Sema computes the effective name. No
   parser change.
 
-Note: there is **no** "≤1 output" rule (that was Zig's limit; sx's tuples lift it).
+There is **no** "≤1 output" rule — Zig's limit, which sx's tuples lift.
 
 ## II.6 sx IR + LLVM codegen (the part that must match Zig bit-for-bit)
 
@@ -694,7 +692,7 @@ state modifier:']' -> emit accumulated modifier, emit '}', start
 ```
 
 An unknown `%[name]` is a hard error (mirror Zig's `todo`/diagnostic — **not** a
-silent pass-through; CLAUDE.md no-silent-arms rule).
+silent pass-through).
 
 ### Interpreter — `src/ir/interp.zig`
 
@@ -719,7 +717,7 @@ lib-less `extern` (Deviation 6, §II.2): `my_func :: (sig) -> R extern;` emits
 an external-linkage, raw-named, C-ABI extern that the linker resolves against the
 `.global` the asm block defines.
 
-**Guard (CLAUDE.md no-silent-arms):** a global-asm symbol exists only in the final
+**Guard:** a global-asm symbol exists only in the final
 linked binary, not in the `#run`/JIT host process. The interpreter resolves
 externs via `dlsym(RTLD_DEFAULT)` (`host_ffi.zig`), which won't find it — calling
 such a symbol at comptime must fail **loudly** (it should already, via the
@@ -743,30 +741,31 @@ dead-stripping; the common "sx references it" case is safe.
 
 No change to `src/codegen.zig` is needed (the IR/LLVM path owns this).
 
-## II.8 Phasing
+## II.8 Capability tiers
 
-* **Phase 1 (MVP).** `asm { … }` block; `asm volatile`; string-literal/`#string`
+The tiers this document refers to as Phase 1–5:
+
+* **Phase 1.** `asm { … }` block; `asm volatile`; string-literal/`#string`
   template; `= expr` inputs; `-> Type` outputs **including N→tuple multi-return**;
-  `clobbers(.…)` dot-name list; `%[name]`/`%%` substitution; "no-output ⇒ volatile"
-  check; AT&T. Target: Linux/macOS `x86_64` + `aarch64` syscalls, intrinsics, and
-  multi-value ops (`divmod`, `cpuid`, `add_carry`).
+  `clobbers(.…)` dot-name list; `%[name]`/`%%` substitution; the
+  "no-output ⇒ volatile" check; AT&T. Covers Linux/macOS `x86_64` + `aarch64`
+  syscalls, intrinsics, and multi-value ops (`divmod`, `cpuid`, `add_carry`).
 * **Phase 2.** `-> @place` write-through outputs, read-write (`"+r" -> @place`) and
   indirect-memory (`"=*m"`) constraints, `%=` unique-id, output-to-const rejection.
 * **Phase 3.** Global/module asm decl (`LLVMAppendModuleInlineAsm`) + the
-  comptime-call guard, plus Intel-dialect opt-in. Small: the extern-call path
-  already exists (lib-less `extern`).
-* **Phase 4 (optional).** Upgrade `clobbers(.name)` from dot-name sugar to a
-  compile-time-checked per-architecture `Clobber` enum (typo-checking; same syntax).
-* **Phase 5 (optional).** Naked functions (`callconv`-equivalent) for full
-  freestanding entry points.
+  comptime-call guard, plus Intel-dialect opt-in. Small, because the extern-call
+  path exists (lib-less `extern`).
+* **Phase 4.** `clobbers(.name)` as a compile-time-checked per-architecture
+  `Clobber` enum rather than dot-name sugar (typo-checking; same syntax).
+* **Phase 5.** Naked functions (`callconv`-equivalent) for full freestanding
+  entry points.
 
 ## II.9 Testing
 
 asm output is target-specific, so tests must pin a target and assert on
 emitted IR/exit, not run host-natively unless the host matches. Use the existing
 corpus harness and the **`16xx` platform block** (the closest fit in the
-`XXXX-category` scheme; `specs.md`/CLAUDE.md test-layout). Mirror Zig's own
-matrix:
+`XXXX-category` scheme). Mirror Zig's own matrix:
 
 * `examples/16xx-platform-asm-syscall-write.sx` — x86_64-linux write(2), assert exit/stdout.
 * `examples/16xx-platform-asm-register-read.sx` — `mov %%rsp,%[out]`, no-input output.
@@ -780,41 +779,17 @@ matrix:
 
 Add an IR/`.s` snapshot (`expected/*.ir`) for the substitution test so the
 constraint-string + template-rewrite output is locked. Seed markers and
-regenerate with `zig build test -Dupdate-goldens`, then review the diff
-(CLAUDE.md snapshot-integrity rule).
-
-## II.10 Open decisions for the user
-
-Largely settled through design review; what remains:
-
-1. **Dialect:** AT&T only (Zig's default) for v1, or expose an Intel opt-in
-   (`LLVMInlineAsmDialectIntel`) from the start? **Recommend AT&T-only v1.**
-2. **`volatile` keyword (Deviation 4):** contextual *(recommended, no
-   source-compat risk)* vs globally reserved *(simpler lexer)*.
-3. **Brace separator:** comma *(recommended — trailing-comma-friendly,
-   literal-style)* vs `;` *(matches sx statement blocks)*.
-4. **Asm-symbol extern spelling (Deviation 6): RESOLVED** — use the lib-less `extern`
-   keyword to call *into* an asm symbol (import), and `export` for the reverse
-   direction (an sx function asm can call *back into*). The dedicated linkage
-   keywords landed (FFI-linkage stream), so no new surface is needed and both
-   directions are covered.
-
-*Decided:* brace block `{ … }` (Dev 1) · `->`/`=` markers, `:` sections dropped,
-`<-` rejected (Dev 2) · `clobbers(.…)` enum-literal list, dot-name sugar now →
-checked enum later (Dev 3) · multiple value-outputs return a tuple (Dev 5). For
-global asm (Dev 6) the call-*into*-asm direction reuses lib-less `extern` (Decision
-4, resolved).
+regenerate with `zig build test -Dupdate-goldens`, then review the diff.
 
 ## II.11 Risks
 
 * **Constraint/template correctness is silent if wrong** — a bad constraint
   string miscompiles with no diagnostic. Mitigation: port Zig's assembler/rewrite
-  verbatim (don't paraphrase) and lock IR snapshots in tests.
-* **Register-name validity is unchecked** in v1's `clobbers(.name)` dot-name form —
-  a typo'd register (`.raxx`) surfaces only as an LLVM error. This is exactly the
-  gap the Phase-4 checked `Clobber` enum closes; acceptable for v1 (LLVM validates
-  the emitted `~{…}`).
-* **`#string` heredoc + AT&T `%`/`$`** interplay: ensure the heredoc delivers the
+  verbatim rather than paraphrasing it, and lock IR snapshots in tests.
+* **Register-name validity is unchecked** in the `clobbers(.name)` dot-name form —
+  a typo'd register (`.raxx`) surfaces only as an LLVM error. The Phase-4 checked
+  `Clobber` enum closes that gap; without it, LLVM validates the emitted `~{…}`.
+* **`#string` heredoc + AT&T `%`/`$`** interplay: the heredoc must deliver the
   template bytes literally (no sx-level escape processing of `%`/`$`) before the
   rewrite stage.
 * **Target gating:** asm examples must declare their target or they break the
@@ -858,7 +833,7 @@ library tail · `src/ir/expr_typer.zig` · `src/ir/inst.zig:80,219,260` ·
 ## Appendix C — Cookbook (final form: `asm { … }`, `->`/`=`, `clobbers(.…)`, pure AT&T)
 
 ```sx
-// ── v1 ────────────────────────────────────────────────────────────────────
+// ── Phase 1 ────────────────────────────────────────────────────────────────────
 
 asm volatile { "nop" };                          // bare side-effecting
 
@@ -919,7 +894,7 @@ ATT,
     };
 }
 
-// ── multi-return (v1; sx has tuples, Zig caps at one output) ────────────────
+// ── multi-return (sx has tuples, Zig caps at one output) ────────────────
 
 // 64-bit divide → (quotient, remainder)
 divmod :: (n: u64, d: u64) -> (quot: u64, rem: u64) {

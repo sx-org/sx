@@ -1,21 +1,11 @@
-# Packages — design contract (locked)
+# Packages — design contract
 
-This document is the stable design contract for the sx package system: the
-goal, all 49 user-locked decisions, the resolved design-gate rationale
-(D1–D11), the compiler audit anchors, target semantics, the library mapping,
-the verification matrix, and the definition of done.
+The design contract for the sx package system: the goal, all 49 decisions, the
+design-gate rationale (D1–D11), the compiler audit anchors, target semantics,
+the library mapping, the verification matrix, and the definition of done.
 
-It was extracted unchanged from the superseded staged plan (abandoned chain,
-last at `packages/phase3-round13-resume`; master was reset before that chain
-started). Any reference to a phase or step number (P0.x … P10.x, "Phase 9
-cutover", etc.) refers to that superseded plan and is retained only for
-provenance. The ACTIVE execution order is `current/PLAN-PACKAGES.md`, which
-replaces the staged strategy with atomic cutover landings (L0–L6). Where this
-document says a migration/compat mode exists "during migration", the active
-plan overrides it: no compatibility mode, shim, or dual import style may exist
-at any time on master.
-
-The decisions themselves (## Locked decisions, 1–49) remain binding verbatim.
+No compatibility mode, shim, or dual import style exists at any point: a
+provider and every one of its consumers move in one batch.
 
 ## Goal
 
@@ -65,7 +55,7 @@ types/fields/hooks once, and passes stable handles through lowering. No later
 phase searches globally for `"Context"`, assumes that its allocator is field
 zero, or dispatches compiler services through a second name list.
 
-## Locked decisions
+## Decisions
 
 1. **Packages replace namespaces/modules as the language boundary.** A package
    is a directory of `.sx` files that all declare the same package name.
@@ -199,18 +189,16 @@ zero, or dispatches compiler services through a second name list.
     `source_location.sx`, `default_allocator_linux.sx`, and `objc_block.sx` may
     contain declarations named `SourceLocation`, `defaultAllocator`, and
     `ObjcBlock`; filename casing does not affect package or declaration identity.
-39. **There is no final `core:std` package — and no compatibility-facade
-    phase.** (Amended 2026-07-11 to align with locked decision 46.) `std.sx`
-    never becomes a temporary compatibility package: it is deleted in the
-    same single batch that rewrites every remaining consumer to qualified
-    imports of the owning packages, using the P0.4 migration tool with
-    per-file reports. No compatibility surface persists at any point.
-40. **(D9) The four additive words are reserved immediately.** `package`,
-    `import`, `private`, and `intrinsic` become real reserved keywords at
-    P1.1; there is no contextual-keyword migration mode and no Phase 9
-    keyword flip. The P0.4 inventory found exactly two real-code identifier
-    collisions (`library/modules/platform/bundle.sx:949–950`, a parameter
-    named `package`), which are renamed before P1.1 reserves the words.
+39. **There is no final `core:std` package, and no compatibility facade.**
+    `std.sx` never becomes a temporary compatibility package: it is deleted in
+    the same single batch that rewrites every remaining consumer to qualified
+    imports of the owning packages, using the migration tool with per-file
+    reports. No compatibility surface persists at any point.
+40. **(D9) The four additive words are reserved outright.** `package`,
+    `import`, `private`, and `intrinsic` are real reserved keywords: there is
+    no contextual-keyword mode and no later keyword flip. The two real-code
+    identifier collisions (`library/modules/platform/bundle.sx:949–950`, a
+    parameter named `package`) are renamed before the words are reserved.
     Out-of-repo sx code using these words as identifiers breaks with a parse
     error at its next compile; this was explicitly accepted.
 41. **(D5b) Extra collections are top-layer.** A `--collection name=path`
@@ -221,12 +209,12 @@ zero, or dispatches compiler services through a second name list.
     public-interface path — signatures, layouts, fields, protocol methods,
     generic constraints, constants, and implementation facts — that reaches a
     `private` declaration is a compile error. There are no opaque private ABI
-    facts. The narrow callable-alias re-export exception is defined by locked
+    facts. The narrow callable-alias re-export exception is defined by
     decision 48: the private target declaration itself is not a forbidden
     reachability edge, but its externally observable signature and other
     interface facts remain subject to this rule. `.si` emission reruns the same
     check. Function-parameter default expressions are not public-interface
-    reachability edges under locked decision 49; parameter types and
+    reachability edges under decision 49; parameter types and
     constraints remain edges.
 43. **(D4e) Impl methods stay dot-callable; helpers are excluded.** Protocol
     impl methods participate in ordinary receiver method lookup. When two
@@ -257,11 +245,11 @@ zero, or dispatches compiler services through a second name list.
     using package-private helpers. No `base:` leaf packages are introduced
     for them, preventing the protocol/implementer dependency cycle and
     keeping the entire compiler/runtime contract auditable in one package.
-46. **(D10) No legacy shims, ever.** A Phase 8 relocation batch moves a
-    provider together with the rewrite of ALL its direct consumers (driven by
-    the P0.4 migration tool with per-file reports); no legacy-path forwarder
-    is ever created. P8 substeps are expanded as provider-plus-consumer-set
-    batches in dependency order.
+46. **(D10) No legacy shims, ever.** A relocation batch moves a provider
+    together with the rewrite of ALL its direct consumers (driven by the
+    migration tool with per-file reports); no legacy-path forwarder is ever
+    created. Relocation proceeds as provider-plus-consumer-set batches in
+    dependency order.
 47. **(D11) Self-contained interfaces and standard coalescing.** `.si` files
     serialize the closed, non-importable support IR/facts (private helpers,
     types, constants, implementation facts) that downstream generic
@@ -271,7 +259,7 @@ zero, or dispatches compiler services through a second name list.
     specializations differing in selected `ImplKey` evidence emit distinct
     symbols and never coalesce.
 48. **Public callable aliases are re-exports; protocol methods have fixed
-    public visibility.** A package may deliberately expose one of its private
+    public visibility.** A package may expose one of its private
     functions through a public declaration alias. The alias declaration's
     author must be allowed to resolve the target; an external use checks the
     selected alias's visibility and does not re-check the canonical target as
@@ -296,7 +284,7 @@ zero, or dispatches compiler services through a second name list.
 These decisions have real syntax/API blast radius. Do not silently choose them
 during implementation.
 
-### D1 — import token (resolved)
+### D1 — import token
 
 The final surface uses the `import` keyword while retaining sx's declaration
 form for an explicit local rename:
@@ -306,10 +294,10 @@ import "core:fmt";
 fmt2 :: import "core:fmt";
 ```
 
-The existing `#import` spelling is accepted only during migration and is
-removed at the Phase 9 semantic cutover.
+The existing `#import` spelling is accepted only until the semantic cutover,
+which removes it.
 
-### D2 — default local import name (resolved)
+### D2 — default local import name
 
 A bare import binds the target's declared package name:
 
@@ -335,7 +323,7 @@ format.print("hello");
 Changing `package fmt;` itself is an API/package-identity change and therefore
 changes the default binding for consumers.
 
-### D2b — stable package key (resolved: Odin-style ABI)
+### D2b — stable package key (Odin-style ABI)
 
 `PackageId` is a compact compilation-local handle interned from the declared
 package name. The portable semantic key is simply that name:
@@ -360,7 +348,7 @@ the declared name, so checkout and directory moves preserve identity. Interface
 and content hashes remain separate compatibility/cache facts. No project or
 package metadata file participates in identity.
 
-### D2c — mutable-global declaration aliases (resolved: constant storage alias)
+### D2c — mutable-global declaration aliases (constant storage alias)
 
 Declaration aliasing includes mutable globals, but the `::` binding itself is a
 constant view of the target declaration:
@@ -377,7 +365,7 @@ constant binding. SX's existing explicit pointer escape hatch may still mutate
 the underlying storage at runtime, and subsequent reads through the alias see
 that mutation.
 
-### D3a — visibility default (resolved)
+### D3a — visibility default
 
 Declarations are public by default. An explicit `private` marker makes a
 declaration package-private: every sibling file in the package may use it, but
@@ -388,7 +376,7 @@ This rule applies uniformly to functions, globals, constants, types, protocols,
 intrinsics, declaration aliases, and foreign bindings. Unnamed `impl`
 participation remains the separate D4 coherence decision.
 
-### D3b — package-private marker (resolved)
+### D3b — package-private marker
 
 The keyword is `private` and is written as a prefix:
 
@@ -404,7 +392,7 @@ no `public` keyword because public is the default, and no narrower or wider
 privacy tier. Imports and locals do not accept `private`: imports are already
 file-local bindings and locals already have lexical scope.
 
-### D3c — private declarations in public interfaces (resolved: strict rejection; locked decision 42)
+### D3c — private declarations in public interfaces (strict rejection; decision 42)
 
 Decide whether a public declaration may expose a private declaration through an
 externally observable signature, layout, constraint, alias target, constant, or
@@ -423,8 +411,8 @@ Two coherent policies are available:
   in interfaces, with explicit construction, layout, reflection, and diagnostic
   rules for importers.
 
-The first policy is locked, with decision 48's narrow callable-alias rule: a
-public alias may deliberately re-export a private function, so the target
+The first policy holds, with decision 48's narrow callable-alias rule: a
+public alias may re-export a private function, so the target
 declaration's private marker alone is not rejected. The alias still exposes the
 target's signature, and every private type, constraint, or other interface fact
 reachable through that signature remains an error.
@@ -435,11 +423,11 @@ edge. Its type and constraints still participate in D3c, but declarations
 referenced only while computing the omitted argument do not. This clarification
 does not generalize to struct field defaults.
 
-Do not let `.si` serialization accidentally decide this. Settle D3c before
-P3.4 implements visibility across declaration categories; the same validator
-must later gate P10 interface emission.
+Do not let `.si` serialization accidentally decide this. D3c is settled before
+visibility is implemented across declaration categories, and the same validator
+gates interface emission.
 
-### D4a — impl visibility (resolved: file-local direct package import)
+### D4a — impl visibility (file-local direct package import)
 
 An unnamed external `impl` is visible only in the source file that directly
 imports its defining package. A sibling file's import and a transitive package
@@ -482,7 +470,7 @@ declaration or implementation, ordinary unused-import diagnostics may still
 apply. No `_ :: import`, `import impl`, or named-implementation activation syntax
 is introduced for this purpose.
 
-### D4b — package-local impl coherence (resolved)
+### D4b — package-local impl coherence
 
 A declared package is one implementation scope. It may define at most one
 implementation for a canonical `(protocol, protocol type arguments, concrete
@@ -513,7 +501,7 @@ impl fmt.Display for models.Box($T) { ... }
 impl fmt.Display for models.Box(i64) { ... } // error: overlaps for Box(i64)
 ```
 
-### D4c — cross-package impl collisions (resolved: contextual)
+### D4c — cross-package impl collisions (contextual)
 
 Different packages may define implementations for the same canonical pair and
 coexist in the final package graph. Protocol resolution uses only the current
@@ -587,12 +575,12 @@ callers. Generic instantiation keys include selected implementation identity,
 so the same generic may be instantiated separately from files selecting
 different implementations. Erased protocol values retain the selected vtable.
 
-This deliberately makes implementation selection contextual: moving a
+This makes implementation selection contextual: moving a
 protocol-using function to a file with different direct imports can change its
 implementation. The required direct imports make that context explicit at the
 top of the destination file.
 
-### D4d — implementation ownership (resolved: adapters with type-side reservation)
+### D4d — implementation ownership (adapters with type-side reservation)
 
 A package may define `impl P for T` when it owns neither `P` nor `T`, enabling
 dedicated adapter packages such as `compactDisplay` and `verboseDisplay`.
@@ -618,7 +606,7 @@ packages may define the pair and coexist under D4c's file-contextual selection.
 Adding a type-side implementation later invalidates those adapters and is
 therefore a compatibility-breaking change for that protocol/type pair.
 
-### D4e — static impl-method lookup (resolved: dot-call preserved, helpers excluded; locked decision 43)
+### D4e — static impl-method lookup (dot-call preserved, helpers excluded; decision 43)
 
 The contextual candidate rules start from a requested canonical protocol/type
 pair, but current sx also makes impl methods directly dot-callable. A call such
@@ -626,7 +614,7 @@ as `user.print()` does not identify that pair when two visible protocols both
 declare `print` for the receiver type, even if each pair has exactly one
 implementation.
 
-Choose one source-level model before implementing P4.4:
+Choose one source-level model:
 
 - preserve impl-method-as-struct-method lookup and add a protocol-qualified
   disambiguation form plus diagnostics that list every `(protocol, impl)`
@@ -639,14 +627,14 @@ The decision must also state whether extra helper methods written inside an
 `impl` participate in direct method lookup. Do not infer a protocol from import
 or declaration order.
 
-### D4f — type ownership and decidable impl heads (resolved: propagated ownership + first-order heads; locked decision 44)
+### D4f — type ownership and decidable impl heads (propagated ownership + first-order heads; decision 44)
 
 D4d's reservation rule is defined for a nominal `T`, but sx implementations can
 also target builtins and structural types such as slices, tuples, closures, and
 function types. Generic overlap also needs a terminating, deterministic rule
 when heads contain value parameters, packs, or type-function expressions.
 
-Before P4.4, decide both:
+Decide both:
 
 - whether ownership follows only the outer nominal constructor (making builtin
   and structural heads unowned), propagates through structural wrappers to an
@@ -660,7 +648,7 @@ The selected normalized-head grammar, ownership function, substitutions, and
 overlap algorithm are semantic interface data. Source and precompiled-package
 checks must produce the same answer.
 
-### D5 — collection configuration (resolved)
+### D5 — collection configuration
 
 The compiler discovers its distribution library root relative to the executable,
 as it does today. `SX_STDLIB_PATH` is the single environment override for that
@@ -690,13 +678,13 @@ invocation is an error rather than last-wins behavior. There is no special
 valid package-binding identifiers; roots are canonicalized, and a
 `collection:path` import must not escape its configured root through `..`.
 
-### D5b — custom-collection layering (resolved: top-layer extra collections; locked decision 41)
+### D5b — custom-collection layering (top-layer extra collections; decision 41)
 
 D14 fixes the order of the shipped collection names, including when their roots
 are overridden: `base` may depend only on `base`, `core` on `base`/`core`, and
 `vendors` on lower shipped layers. A newly configured collection has no layer in
-the resolved `--collection name=path` syntax, however. Choose one policy before
-P2.4 creates collection records:
+the resolved `--collection name=path` syntax, however. Choose one policy before collection
+records are created:
 
 - treat additional collections as application/top-layer collections that may
   depend on shipped collections, while shipped collections may not depend on
@@ -707,7 +695,7 @@ P2.4 creates collection records:
 The package loader must validate the selected policy on every resolved import
 edge. Cycle detection alone is not layering enforcement.
 
-### D6 — default runtime implementations (resolved: inside base:runtime; locked decision 45)
+### D6 — default runtime implementations (inside base:runtime; decision 45)
 
 `base:runtime` cannot depend on `core:mem`, `core:io`, or `core:c`. Decide where
 the default allocator, default I/O, and minimal platform/CRT calls live:
@@ -728,7 +716,7 @@ base root and reimplements the compiler-required runtime declarations. Aligning
 SX with this structure keeps the required contract and its default
 implementations auditable in one cycle-free package.
 
-### D7 — intrinsic token (resolved)
+### D7 — intrinsic token
 
 ```sx
 sizeOf :: ($T: Type) -> i64 intrinsic;
@@ -737,12 +725,11 @@ sizeOf :: ($T: Type) -> i64 intrinsic;
 `intrinsic` is a declaration keyword/modifier without a `#` prefix. The compiler
 does not accept or document `#intrinsic`.
 
-### D8 — package artifacts (resolved: separate `.si` and `.o`)
+### D8 — package artifacts (separate `.si` and `.o`)
 
 Each compiled package emits a semantic `.si` interface and a paired `.o`
-compiled object. A combined package container is not introduced. The semantic
-contents, target/compiler ABI data, and hashes described in Phase 10 remain
-mandatory. Using the conventional relocatable-object suffix avoids colliding
+compiled object. A combined package container is not introduced. The semantic contents, target/compiler ABI data, and hashes described under
+interface emission are mandatory. Using the conventional relocatable-object suffix avoids colliding
 with Unix `.so` shared libraries; SX associates the object with its package
 through the paired `.si` metadata.
 
@@ -754,36 +741,35 @@ companion objects cannot overwrite one another. Emission publishes the two files
 atomically (or through an atomic completed-directory rename), and consumers
 reject stale, missing, cross-target, or mixed pairs before invoking the linker.
 
-### D9 — additive-keyword collisions (resolved: reserve immediately; locked decision 40)
+### D9 — additive-keyword collisions (reserve immediately; decision 40)
 
 The current corpus uses future keywords as ordinary identifiers; for example,
 `library/modules/platform/bundle.sx` has a parameter named `package`. Choose how
 the additive parser remains behavior-compatible before reserving tokens:
 
 - recognize `package`, `import`, `private`, and `intrinsic` contextually in their
-  new grammar positions until the Phase 9 cutover (**recommended**), or
+  new grammar positions until the semantic cutover (**recommended**), or
 - use the migration tool to rename/backtick every colliding identifier before
   each word becomes globally reserved.
 
-P0.4 must produce a collision inventory either way. Phase 1 may not break a
-legacy-mode file merely because it used one of the new words as an identifier.
+Either way a collision inventory is produced first, and the additive parser may
+not break a file merely because it used one of the new words as an identifier.
 
-### D10 — moved-library compatibility (resolved: no shims, same-batch consumer migration; locked decision 46)
+### D10 — moved-library compatibility (no shims, same-batch consumer migration; decision 46)
 
-The suite must stay green while library packages move in Phase 8 but most corpus
-imports are not rewritten until Phase 9. Choose one transition discipline:
+The suite must stay green while library packages move, though most corpus
+imports are rewritten only at the cutover. Choose one transition discipline:
 
 - leave a legacy-path shim for every relocated module, not only `std.sx`, until
-  its last consumer migrates (**recommended for small, reviewable P8 batches**),
-  or
+  its last consumer migrates (**recommended for small, reviewable batches**), or
 - migrate every direct consumer, including compiler-synthesized imports and LSP
   fixtures, in the same batch that relocates its provider.
 
-Do not move a provider while leaving an unresolved legacy path. Packages first
-created in Phases 6–7 are audited/finished in P8; P8 must not independently
-recreate or remigrate them.
+Do not move a provider while leaving an unresolved legacy path. A package
+created by an earlier batch is audited and finished by the relocation batch,
+which never independently recreates or remigrates it.
 
-### D11 — downstream generic ownership/support facts (resolved: self-contained .si + COMDAT coalescing; locked decision 47)
+### D11 — downstream generic ownership/support facts (self-contained .si + COMDAT coalescing; decision 47)
 
 A public generic or type-function body may depend on package-private helpers,
 types, constants, and implementation facts. Decide how `.si` provides that
@@ -799,31 +785,27 @@ coalescing or dedicated owner/instantiation objects. The policy must distinguish
 full mono keys with different selected `ImplKey` evidence and work on Mach-O,
 ELF, and COFF; ordinary strong duplicate definitions are not acceptable.
 
-### Blocking adversarial-review gates (all resolved 2026-07-11)
+### The eight design gates and their resolutions
 
-All eight gates were resolved by the user on 2026-07-11 and recorded as locked
-decisions 40–47:
+| Gate | Resolution |
+|---|---|
+| D9 | reserve `package`/`import`/`private`/`intrinsic` outright; rename the two `bundle.sx` collisions first (decision 40) |
+| D5b | extra collections are top-layer (decision 41) |
+| D3c | strictly reject public interfaces reaching private declarations, excluding declaration-author function-parameter default expressions (decision 42, refined by 48 and 49) |
+| D4e | keep direct impl-method lookup with protocol-qualified disambiguation; impl helper methods are excluded (decision 43) |
+| D4f | ownership propagates through builtin shells with co-ownership and unlimited depth; first-order unifiable impl-head grammar (decision 44) |
+| D6 | default runtime implementations live inside `base:runtime` as target-selected files (decision 45) |
+| D10 | no shims ever; provider and all direct consumers migrate in one batch (decision 46) |
+| D11 | `.si` serializes closed support facts; COMDAT/linkonce specialization coalescing with ImplKey-distinct symbols (decision 47) |
 
-| Gate | Boundary | Resolution |
-|---|---|---|
-| D9 | P1.1 | RESOLVED: reserve `package`/`import`/`private`/`intrinsic` immediately; migrate the two bundle.sx collisions first (LD 40) |
-| D5b | P2.4 | RESOLVED: extra collections are top-layer (LD 41) |
-| D3c | P3.4 | RESOLVED: strictly reject public interfaces reaching private declarations, excluding declaration-author function-parameter default expressions (LD 42 amended by LD 48 and LD 49) |
-| D4e | P4.4 | RESOLVED: keep direct impl-method lookup with protocol-qualified disambiguation; impl helper methods excluded (LD 43) |
-| D4f | P4.4 | RESOLVED: ownership propagates through builtin shells with co-ownership and unlimited depth; first-order unifiable impl-head grammar (LD 44) |
-| D6 | Phase 6 | RESOLVED: default runtime implementations live inside `base:runtime` as target-selected files (LD 45) |
-| D10 | Phase 8 | RESOLVED: no shims ever; provider + all direct consumers migrate in one batch (LD 46) |
-| D11 | P10.1 | RESOLVED: `.si` serializes closed support facts; COMDAT/linkonce specialization coalescing with ImplKey-distinct symbols (LD 47) |
-
-The remaining planned user decision is the P8 API-placement batch: at the
-start of Phase 8, the coordinator presents every API-placement/scope choice
-(`out` placement, `core:target` retention, UI/GPU/math/platform package
-boundaries, and the `hash -> fs` / `mem -> fmt` layering knots) to the user as
-one batched decision session, with audit evidence gathered beforehand. No
-agent decides these silently.
+API placement is one batched decision for the user: every API-placement and
+scope choice (`out` placement, `core:target` retention, UI/GPU/math/platform
+package boundaries, and the `hash -> fs` / `mem -> fmt` layering knots) is
+presented together, with audit evidence gathered beforehand. No agent decides
+these silently.
 Portable entity keys, generic evidence separation, contextual vtable identity,
 and cryptographic `.si`/`.o` pairing are engineering requirements derived from
-already locked semantics, not additional user-facing choices.
+the settled semantics, not additional user-facing choices.
 
 ## Current-state audit
 
@@ -906,7 +888,7 @@ second `PackageId`.
 
 `PackageId`, `FileId`, `DeclId`, `TypeId`, and `FuncId` are compilation-local
 table handles. None may be serialized or used directly in a linker name. Before
-Phase 4 makes these handles authoritative, define and test portable keys:
+these handles become authoritative, define and test portable keys:
 
 ```text
 DeclKey = PackageKey + canonical authored declaration identity
@@ -956,8 +938,8 @@ For a declaration body authored in file `F` of package `P`:
 4. universal/predeclared language names.
 
 There is no flat-import visibility walk. An external declaration is reachable
-only through a file-local package binding, unless it has been deliberately
-aliased into `P` as a declaration.
+only through a file-local package binding, unless it has been aliased into
+`P` as a declaration.
 
 ### Imports and collections
 
@@ -1078,8 +1060,7 @@ default_context_decl
 ```
 
 All lowering code consumes this resolved object. Direct string lookups for
-contract declarations and direct numeric field assumptions are forbidden after
-Phase 6.
+contract declarations and direct numeric field assumptions are forbidden.
 
 ### Intrinsics
 
@@ -1172,10 +1153,10 @@ Initial migration map:
 | `modules/ffi/*.sx` | one package directory per binding under `vendors:` or `core:` |
 | `library/vendors/<name>/<name>.sx` | `vendors:<name>` |
 
-The current `modules/std.sx` facade gets no compatibility-package phase
-(amended 2026-07-11 per locked decisions 39/46): it remains the legacy flat
-facade until the single dissolution batch deletes it together with the rewrite
-of every remaining consumer. There is no final `core:std` convenience package.
+The current `modules/std.sx` facade gets no compatibility package (decisions
+39 and 46): it remains a flat facade until the single dissolution batch deletes
+it together with the rewrite of every remaining consumer. There is no final
+`core:std` convenience package.
 
 ## Verification matrix
 

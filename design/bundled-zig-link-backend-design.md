@@ -1,86 +1,66 @@
-# Bundled `zig` Link Backend for sx — Design Doc & Proposal
+# Bundled `zig` link backend
 
-> Status: **core landed (macOS / Linux / Windows).** This is the
-> design-of-record for how a distributed sx links native binaries
-> hermetically. The phased plan lives in
-> [../current/PLAN-DIST.md](../current/PLAN-DIST.md); keep the two in sync.
-> User-facing surface is documented in `readme.md` (Cross-Compilation §).
+> The design-of-record for how a distributed sx links native binaries
+> hermetically. User-facing surface is documented in `readme.md`
+> (Cross-Compilation §).
 
 ---
 
-## Implementation status (landed)
+## The backend at a glance
 
-The core backend is implemented and verified on a macOS host:
-
-| Target | Result | Notes |
-|--------|--------|-------|
+| Target | Result | Link invocation |
+|--------|--------|-----------------|
 | `--target linux-musl` | static ELF | `zig cc -target x86_64-linux-musl -static` |
 | `--target windows-gnu` | PE32+ | `zig cc -target x86_64-windows-gnu` |
-| `--target macos` | Mach-O (runs) | `zig cc -target <arch>-macos`, no `-static` |
+| `--target macos` | Mach-O | `zig cc -target <arch>-macos`, no `-static` |
 
-What shipped, and where it **refined** the original locked decisions:
-
-- **Scope = macOS + Linux + Windows** (not Linux-first). iOS/Android/wasm keep
-  their specialized toolchains. (`TargetConfig.zigBackendInScope`.)
-- **Auto-activation = a *bundled* zig is found** (a real distribution, or a
-  pinned `$SX_ZIG`). A `PATH`-only zig is the dev fallback and engages **only**
-  under `--self-contained` — so native dev/CI builds are never silently
-  rerouted, across all three OSes. This is the precise meaning of the §5.5
-  "zig found (B)" column: **B = bundled**. *(Refinement of "auto when zig
-  found": PATH-zig does not auto-engage; the musl-only auto gating considered
-  mid-design was dropped in favor of bundled-vs-PATH, which is OS-agnostic.)*
-- **No translation table** (per the triple-scheme decision): sx triples are
-  passed straight to `zig cc`, and `emit_llvm` runs them through
-  `LLVMNormalizeTargetTriple` so vendor-less zig triples (e.g.
-  `x86_64-windows-gnu`) land their OS/env in LLVM's canonical positions —
-  otherwise "windows" sits in the vendor slot and the object silently falls
-  back to ELF. The one unavoidable exception is **macOS**: the object must be
-  emitted from Apple's `apple-darwin` triple (LLVM needs it for Mach-O), but
-  zig's `-target` parser rejects that scheme, so the *linker* triple alone is
-  the vendor-less `<arch>-macos`. One OS-specific line, not a table.
-- **New shorthands:** `linux-musl`, `linux-musl-arm`, `windows-gnu` (zig
-  scheme). The existing `linux`/`linux-arm` shorthands were also de-vendored
-  (`x86_64-linux-gnu`, matching the corpus runner's own expander).
+- **Scope = macOS + Linux + Windows** (`TargetConfig.zigBackendInScope`).
+  iOS/Android/wasm keep their specialized toolchains.
+- **Auto-activation needs a *bundled* zig** — a real distribution, or a pinned
+  `$SX_ZIG`. A `PATH`-only zig engages **only** under `--self-contained`, so
+  native dev/CI builds are never silently rerouted on any of the three OSes.
+  That is what the "zig found (B)" column of §5.5 means: **B = bundled**.
+- **No translation table:** sx triples are passed straight to `zig cc`, and
+  `emit_llvm` runs them through `LLVMNormalizeTargetTriple` so vendor-less zig
+  triples (e.g. `x86_64-windows-gnu`) land their OS/env in LLVM's canonical
+  positions — otherwise "windows" sits in the vendor slot and the object
+  silently falls back to ELF. **macOS** is the one exception: the object must
+  be emitted from Apple's `apple-darwin` triple (LLVM needs it for Mach-O),
+  which zig's `-target` parser rejects, so the *linker* triple alone is the
+  vendor-less `<arch>-macos`. One OS-specific line, not a table.
 
 Files: `src/zig_backend.zig` (discovery), `src/target.zig`
 (`selectZigLinker` / `emitZigLinkArgv` / `zigTargetTriple` / dispatch in
 `link`), `src/ir/emit_llvm.zig` (triple normalization), `src/main.zig`
 (`--self-contained` / `--no-self-contained` + shorthands).
 
-Not yet done: distribution packaging (Phase 3 — vendoring `zig` into
-`libexec/`), and a corpus regression test (needs the runner to thread
-`--self-contained`; manual verification only so far).
-
-The sections below are the original proposal; where they say "Linux-first" or
-"follow-up" for macOS/Windows, the table above supersedes them.
-
 ---
 
-## 0. TL;DR + feasibility
+## 0. The gap this closes
 
-**Problem.** A distributed `sx` compiler can run on a Linux box (static-LLVM
-binary + relocatable `library/`), but it cannot *finish a build*: the final
-link step shells out to the host's `cc`, and relies on the host's libc + CRT
-objects. No `cc`/glibc/SDK on the box → no binary. That is the gap between
-"sx runs here" and "sx is a toolchain here."
+**The gap.** A distributed `sx` compiler runs on a Linux box (static-LLVM
+binary + relocatable `library/`), but without a link backend it cannot
+*finish a build*: the final link step shells out to the host's `cc`, and
+relies on the host's libc + CRT objects. No `cc`/glibc/SDK on the box → no
+binary. That is the distance between "sx runs here" and "sx is a toolchain
+here."
 
-**Proposal.** Bundle a pinned `zig` binary inside the sx distribution and use
-`zig cc` as the link backend for `sx build`. `zig cc` brings its own lld,
+**The approach.** Bundle a pinned `zig` binary inside the sx distribution and
+use `zig cc` as the link backend for `sx build`. `zig cc` brings its own lld,
 CRT objects, and libc (musl or glibc) for the chosen target. Default Linux
 output is **statically-linked musl**, which runs on any Linux with zero
 dependencies — the property that makes Zig's own output portable.
 
-**Feasibility: high.** The change is contained:
-- The linker is selected through a single hook —
-  `TargetConfig.getLinker()` at `src/target.zig:194-196` — and the final
-  link argv is built in one place, the Unix `cc`-style branch at
-  `src/target.zig:524-564`.
+The seam is narrow:
+- The linker is selected through a single hook, `TargetConfig.getLinker()`,
+  and the final link argv is built in one place, the Unix `cc`-style branch
+  of `src/target.zig`.
 - `zig cc` is a clang-compatible driver, so `-o` / `-L` / `-l` / extra
-  objects pass through that branch unchanged. The backend only has to
-  prepend `zig cc` and add `-target …` / `-static`.
-- Exe-relative resolution (for finding the bundled zig) is already solved
-  for the stdlib in `src/imports.zig:204-227` and can be mirrored.
-- `sx run` is JIT and never links, so it is wholly unaffected.
+  objects pass through that branch unchanged. The backend only prepends
+  `zig cc` and adds `-target …` / `-static`.
+- Exe-relative resolution (for finding the bundled zig) mirrors how
+  `src/imports.zig` resolves the stdlib.
+- `sx run` is JIT and never links, so it is unaffected.
 
 The cost is a ~50–60 MB vendored `zig` (binary + its `lib/`) in the
 distribution, and version-pinning discipline.
@@ -89,16 +69,16 @@ distribution, and version-pinning discipline.
 
 ## 1. Motivation & background
 
-### 1.1 Current state
+### 1.1 What the host still supplies
 
-| Concern | Today | File |
+| Concern | Where it comes from | File |
 |---------|-------|------|
 | Compiler binary | Self-containable via `-Dstatic-llvm` (no system LLVM) | `build.zig:9-10,156-162` |
 | Stdlib | Relocatable, found relative to the exe | `src/imports.zig:204-227` |
 | **Linking** | **Shells to system `cc`** | `src/target.zig:524-564` |
 | **libc / CRT** | **Provided by the host `cc` driver implicitly** | (no `-lc`/crt passed) |
 
-So two of three legs of a portable toolchain already stand. The third — the
+Two of three legs of a portable toolchain stand on their own. The third — the
 linker and the libc/CRT it pulls in — is the host dependency this design
 removes.
 
@@ -106,10 +86,9 @@ removes.
 
 The goal is to hand someone a tarball and have `sx build app.sx` produce a
 working binary on a stock Linux machine — a fresh container, a minimal CI
-image, a box without `build-essential`. Today that fails at the link step.
-Zig solved exactly this problem for its own users; since sx is *built with*
-Zig, the cleanest fix is to stand on Zig's hermetic toolchain rather than
-re-implement it.
+image, a box without `build-essential`. A host `cc` link step cannot do that.
+Zig solves exactly this problem for its own users; since sx is *built with*
+Zig, standing on Zig's hermetic toolchain is cheaper than re-implementing it.
 
 ---
 
@@ -125,18 +104,16 @@ re-implement it.
 - No regression for existing users: system `cc` remains a fallback, and any
   explicit `--linker` still wins.
 
-### Non-goals (this iteration)
-- Reimplementing lld in-process or building libc from source (see §7 —
-  Zig already does both; we reuse it).
-- First-class Windows/macOS cross-compilation (nearly free as a follow-up,
-  but unverified — §11).
+### Non-goals
+- Reimplementing lld in-process or building libc from source (see §7 — Zig
+  does both, and the backend reuses it).
 - Routing C-import compilation (`src/c_import.zig`, which also shells `cc`)
   through the backend.
-- Glibc-floor version pinning (`…-gnu.2.28`); exposed only if needed.
+- Glibc-floor version pinning (`…-gnu.2.28`).
 
 ---
 
-## 3. How Zig achieves hermetic builds (the model we're borrowing)
+## 3. How Zig achieves hermetic builds
 
 Zig's turnkey cross-compilation rests on bundling the two things sx borrows
 from the host:
@@ -151,16 +128,16 @@ from the host:
 `zig cc` exposes all of this behind a clang-compatible driver: `zig cc
 -target x86_64-linux-musl -static foo.o -o foo` yields a portable binary on
 any host, with nothing installed. **This design consumes that driver rather
-than rebuilding its internals** — the whole second column above arrives for
-free by vendoring the `zig` binary.
+than rebuilding its internals** — vendoring the `zig` binary brings the whole
+second column with it.
 
 ---
 
 ## 4. Design overview
 
-`sx build` gains a **link backend** abstraction with two implementations:
+`sx build` has a **link backend** abstraction with two implementations:
 
-- `system_cc` — today's behavior (shell `cc`, host libc).
+- `system_cc` — shell `cc`, host libc.
 - `bundled_zig` — shell `<zig> cc -target <triple> [-static] …`.
 
 Selection is automatic (§5.5): if a usable `zig` is discovered and the user
@@ -169,9 +146,9 @@ The backend plugs into the existing Unix link branch — it contributes the
 leading `zig cc` tokens and the `-target`/`-static` flags; the rest of the
 argv assembly is unchanged because `zig cc` is clang-compatible.
 
-One supporting change: when `bundled_zig` is active, the triple handed to
-LLVM in `src/ir/emit_llvm.zig` is aligned to the link target (`x86_64-linux`)
-so the emitted object links cleanly against the selected musl CRT.
+When `bundled_zig` is active, the triple handed to LLVM in
+`src/ir/emit_llvm.zig` is aligned to the link target (`x86_64-linux`) so the
+emitted object links cleanly against the selected musl CRT.
 
 ---
 
@@ -179,12 +156,12 @@ so the emitted object links cleanly against the selected musl CRT.
 
 ### 5.1 zig discovery — resolution order
 
-`discoverZig()` (new `src/zig_backend.zig`) returns the first hit:
+`discoverZig()` (`src/zig_backend.zig`) returns the first hit:
 
 1. `$SX_ZIG` — explicit override.
 2. `<exe_dir>/../libexec/zig/zig` — **install layout** (§6).
 3. `<exe_dir>/../../zig-bundle/zig` — **dev vendored layout** (§6).
-4. `zig` on `PATH` — **dev fallback** (the only one active today).
+4. `zig` on `PATH` — **dev fallback**, active only under `--self-contained`.
 
 `<exe_dir>` is resolved exactly as `src/imports.zig` resolves the stdlib.
 If none resolve, behavior depends on activation (§5.5): auto-mode silently
@@ -212,20 +189,21 @@ falls back to `system_cc`; `--self-contained` errors.
 
 ### 5.4 Target → ABI mapping
 
-The default (no `--target`) deliberately differs from the legacy `linux`
-shorthand, because portable static output is the entire point.
+The default (no `--target`) differs from the `linux` shorthand, because
+portable static output is the entire point.
 
 | `sx` invocation | zig `-target` | Link mode | Portable? |
 |-----------------|---------------|-----------|-----------|
 | *(no `--target`, Linux host)* | `x86_64-linux-musl` | `-static` | ✅ any Linux |
 | `--target linux-musl` *(new)* | `x86_64-linux-musl` | `-static` | ✅ |
 | `--target linux` / `linux-x86` | `x86_64-linux-gnu` | dynamic | ❌ host glibc, versioned |
-| `--target linux-arm` | `aarch64-linux-musl` | `-static` | ✅ |
-| `--target windows` | `x86_64-windows-gnu` | per zig | follow-up (§11) |
-| `--target macos` / `macos-arm` | `aarch64-macos` | per zig | follow-up (§11) |
+| `--target linux-arm` | `aarch64-linux-gnu` | dynamic | ❌ host glibc, versioned |
+| `--target linux-musl-arm` | `aarch64-linux-musl` | `-static` | ✅ |
+| `--target windows-gnu` | `x86_64-windows-gnu` | per zig | ✅ |
+| `--target macos` / `macos-arm` | `aarch64-macos` | per zig | ✅ |
 
-- A **new** `linux-musl` shorthand is added; the existing `linux` shorthand
-  keeps its current gnu/dynamic meaning for back-compat.
+- `linux-musl` and `linux-musl-arm` select static musl; the `linux` and
+  `linux-arm` shorthands stay gnu/dynamic.
 - The LLVM emit triple is aligned to the link target so the `.o` links
   cleanly against the selected libc/CRT (§4).
 
@@ -249,12 +227,12 @@ shorthand, because portable static output is the entire point.
 
 ### 5.6 Emit-triple alignment
 
-`src/ir/emit_llvm.zig` (`LLVMSetTarget`, ~L246-284) currently uses the host
-default triple when `--target` is unspecified (on Linux,
-`x86_64-unknown-linux-gnu`). When `bundled_zig` is active, set the module
-triple to match the link target (`x86_64-linux`) so codegen and the musl CRT
-agree. Pure codegen objects are ABI-compatible across gnu/musl; aligning the
-triple removes the edge-case risk (TLS model, stack protector) up front.
+`src/ir/emit_llvm.zig` (`LLVMSetTarget`) uses the host default triple when
+`--target` is unspecified (on Linux, `x86_64-unknown-linux-gnu`). When
+`bundled_zig` is active, the module triple is set to match the link target
+(`x86_64-linux`) so codegen and the musl CRT agree. Pure codegen objects are
+ABI-compatible across gnu/musl; aligning the triple removes the edge-case risk
+(TLS model, stack protector).
 
 ---
 
@@ -286,55 +264,22 @@ Rules:
 
 ---
 
-## 7. Alternatives considered
+## 7. Why not the alternatives
 
-| Alternative | Why not (now) |
+| Alternative | Why not |
 |-------------|---------------|
-| **In-process lld + bundled musl sysroot** (sx owns the pipeline; no zig) | Requires a custom LLVM build *with* lld — the Homebrew `llvm@22` here ships none (`liblld*.a`, headers, `ld.lld` all absent) — plus a C++ lld shim and per-arch prebuilt musl. Strictly more work for the same user-visible result. The right *eventual* target if we want zero foreign binaries; tracked as a follow-up. |
-| **Full Zig-style: build libc from source on demand** | Most flexible (any arch/libc version, no prebuilt blobs) but the most work; only worth it after the in-process-lld path exists. |
-| **Document a hard dependency on system `cc`** | Zero engineering, but defeats the goal — the box still needs `build-essential`. Acceptable only as the current fallback, not the distribution story. |
-| **Bundle just `ld.lld` + a musl sysroot (no full zig)** | Smaller than a whole zig, but we'd hand-manage crt object selection, dynamic-linker paths, and import libs — i.e. re-derive what `zig cc` already encapsulates. Bundle-size saving doesn't justify the fragility. |
+| **In-process lld + bundled musl sysroot** (sx owns the pipeline; no zig) | Requires a custom LLVM build *with* lld — the Homebrew `llvm@22` here ships none (`liblld*.a`, headers, `ld.lld` all absent) — plus a C++ lld shim and per-arch prebuilt musl. Strictly more work for the same user-visible result. |
+| **Full Zig-style: build libc from source on demand** | Most flexible (any arch/libc version, no prebuilt blobs) and the most work. |
+| **Document a hard dependency on system `cc`** | Zero engineering, but defeats the goal — the box still needs `build-essential`. It is the fallback, not the distribution story. |
+| **Bundle just `ld.lld` + a musl sysroot (no full zig)** | Smaller than a whole zig, but it hand-manages crt object selection, dynamic-linker paths, and import libs — re-deriving what `zig cc` already encapsulates. The bundle-size saving does not justify the fragility. |
 
 Vendoring `zig` wins on effort-to-result because sx already builds with Zig:
-it's a first-party dependency, not a foreign toolchain, and it unlocks
-Windows/macOS targets later for nearly free.
+it is a first-party dependency, not a foreign toolchain, and the same driver
+covers the Windows and macOS targets.
 
 ---
 
-## 8. Phasing
-
-Detail in [../current/PLAN-DIST.md](../current/PLAN-DIST.md). Summary:
-
-0. **Resolve zig** — `discoverZig()` + `SX_DEBUG_ZIG`; PATH fallback only.
-1. **Link backend** — generalize the linker to a driver argv; emit
-   `zig cc -target … -static`; align the emit triple.
-2. **Auto activation** — wire the §5.5 truth table; `cc` fallback intact.
-3. **Packaging** — `build.zig` `dist` step assembling the §6 tree.
-4. **Verify & lock** — `file`/`ldd` shows "statically linked"; host/arch-gated
-   corpus test honoring the snapshot-integrity + FFI-cadence rules.
-
-The minimum end-to-end proof is Phases 0+1 against PATH zig.
-
----
-
-## 9. Open decisions
-
-**Locked:**
-- Default Linux ABI = **static musl** (portable output).
-- Activation = **auto** when a usable zig is found and no `--linker`.
-- Dev uses **PATH zig**; vendoring deferred to Phase 3.
-
-**Still open:**
-- Exact spelling of the force flags (`--self-contained` vs e.g.
-  `--bundled-linker`); name chosen here pending review.
-- Whether auto-mode should *warn* on silent `cc` fallback or stay quiet
-  (leaning quiet, with `SX_DEBUG_ZIG` for diagnosis).
-- Whether to gate the Phase-4 corpus test behind a `.build` `target`
-  sidecar or keep it manual until a Linux CI runner exists.
-
----
-
-## 10. Risks
+## 8. Risks
 
 - **Bundle size** ≈ 50–60 MB (zig + `lib/`). Acceptable for a toolchain;
   call it out in release notes.
@@ -348,19 +293,16 @@ The minimum end-to-end proof is Phases 0+1 against PATH zig.
 
 ---
 
-## 11. Out of scope / follow-ups
+## 9. Not covered
 
-- **Windows / macOS targets** via the same `zig cc -target`: nearly free
-  after the Linux path, but Apple-SDK and Windows specifics need their own
-  verification — not documented as supported until tested.
-- **`src/c_import.zig`** still shells system `cc` for C imports in JIT mode;
-  route through the backend later.
-- **In-process lld** (alternative in §7) as the eventual zero-foreign-binary
-  endgame.
+- **`src/c_import.zig`** shells system `cc` for C imports in JIT mode; it does
+  not go through the backend.
+- **In-process lld** (the first alternative in §7) — the zero-foreign-binary
+  shape, which this design does not take.
 
 ---
 
-## Appendix — quick recipes (once implemented)
+## Appendix — quick recipes
 
 ```sh
 # Portable static Linux binary (default when a bundled zig is present):

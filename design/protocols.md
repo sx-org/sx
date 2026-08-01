@@ -765,11 +765,10 @@ it must still fetch through. **The cost is prediction failure, not
 switch width** — rotate20 (20 arms, predictable) is 1845, while inter2
 (2 arms, unpredictable) is 5719: a mispredicted switch pays for the
 whole arm it guessed wrong, where an indirect call pays one fetch. The
-25-member set lowers to a compressed jump table, not a compare tree
-(verified in the emitted asm), so width itself is nearly free. **And
-`#expand` costs text** — the 13-dispatch-site benchmark grew +45%
-`__text` over the outlined routine (14320 vs 9844 bytes); the
-7-dispatch-site version had grown 0.3%. One switch per call site is
+25-member set lowers to a compressed jump table, not a compare tree,
+so width itself is nearly free. **And `#expand` costs text** — the
+13-dispatch-site benchmark takes +45% `__text` over the outlined
+routine (14320 vs 9844 bytes); the 7-dispatch-site version, 0.3%. One switch per call site is
 the price.
 
 An allocator's conformer population is exactly what a library cannot
@@ -911,7 +910,7 @@ once instantiated and not otherwise. An instantiation nobody
 value-uses emits nothing at all; a tagged protocol used only as a
 bound costs exactly what a constraint protocol costs.
 
-Membership is deliberately stable: it does not depend on which code
+Membership is stable: it does not depend on which code
 executes, so dead-code edits never change what typechecks. Every
 member receives a tag, switch arm, and table row. (A stricter
 emission-level shake is possible without touching these semantics —
@@ -1233,9 +1232,8 @@ under the same rules. What a probe answers is **per kind**:
 
 - `constraint` and the erased kinds: **site-local impl
   visibility** — the same static fact that decides whether the site
-  could erase. (For erased kinds this is deliberately a different
-  question from the dynamic re-erasure check, which consults
-  program-wide uniqueness, §7.4.) Under the discipline, a negative
+  could erase. (For erased kinds this is a different question from the
+  dynamic re-erasure check, which consults program-wide uniqueness, §7.4.) Under the discipline, a negative
   gates on declaration-space finality — impls are declarations.
 - `tagged`: whole-program membership of the instantiation's set,
   under the discipline's polarity rules.
