@@ -3,9 +3,6 @@
 // float input — including NaN, where `nan == nan` is false (ordered `==`).
 // For all non-NaN operands unordered `!=` matches ordered `!=`, so finite
 // comparisons are unchanged. The native backend agrees with the interpreter.
-//
-// An LLVM backend that lowers float `!=` to ordered not-equal (LLVMRealONE)
-// makes `nan != nan` false in native code.
 #import "modules/std.sx";
 
 main :: () {

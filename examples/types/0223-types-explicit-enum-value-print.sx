@@ -1,14 +1,11 @@
 // Printing a payload-less enum variant that carries an EXPLICIT value
 // (`K :: 7`). `enum_to_string` maps the runtime value back to a variant name
-// via `variant_index(T, val)` then `struct_field_name(T, idx)`. `variant_index` must
-// return the SEQUENTIAL variant ordinal (the inverse of `variant_value`) —
-// NOT the raw explicit value — otherwise `struct_field_name` is indexed out of range.
+// via `variant_index(T, val)` then `struct_field_name(T, idx)`. `variant_index`
+// returns the SEQUENTIAL variant ordinal (the inverse of `variant_value`), not
+// the raw explicit value, so `struct_field_name` is indexed in range.
 //
-// `variant_index` lowered to a bare `enum_tag`, so for
-// an explicit-valued variant it returned the value (7) instead of the ordinal
-// (2); `struct_field_name(E, 7)` then did an out-of-bounds GEP on the 3-entry name
-// array → segfault. `K :: 7` inside an enum body is an explicit-valued
-// variant (specs.md §7, `esc :: '\x1b'`), not an associated constant.
+// `K :: 7` inside an enum body is an explicit-valued variant (specs.md §7,
+// `esc :: '\x1b'`), not an associated constant.
 
 #import "modules/std.sx";
 

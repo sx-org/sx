@@ -1,7 +1,6 @@
 // Tuple values: construction, element access, struct-field storage,
-// return, and operators. An inferred `:=` tuple literal lowering its element
-// values under the enclosing fn's (narrower) return `target_type` mismatches
-// the independently-inferred i64 field types and yields garbage on read.
+// return, and operators. An inferred `:=` tuple literal lowers its elements
+// under their own inferred types, not the enclosing fn's return `target_type`.
 
 #import "modules/std.sx";
 

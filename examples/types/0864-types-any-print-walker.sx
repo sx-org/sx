@@ -1,9 +1,8 @@
-// The 1b acceptance walker (current/sketch-reflect-print.sx): ONE
-// compiled function walks ANY value — kind dispatch is a runtime
-// type_info match, struct fields are interior views
-// (struct_field_value), array/vector elements are stride views
-// (any_element), and the leaves feed the tag-driven formatter. One
-// erasure at the root; every inner step is view math, zero copies.
+// ONE compiled function walks ANY value — kind dispatch is a runtime
+// type_info match, struct fields are interior views (struct_field_value),
+// array/vector elements are stride views (any_element), and the leaves feed
+// the tag-driven formatter. One erasure at the root; every inner step is view
+// math, zero copies.
 
 #import "modules/std.sx";
 meta :: #import "modules/std/meta.sx";

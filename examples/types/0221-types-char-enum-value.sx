@@ -4,8 +4,7 @@
 // backing (`enum u32`), and `enum flags`.
 //
 // `type_bridge.buildEnumInfo` extracts explicit values from a `char_literal`
-// as well as an `int_literal`; without that, `esc :: '\x1b'` would fall to the
-// ordinal fallback and ship tag 0 instead of 27 with no diagnostic.
+// as well as an `int_literal`, so `esc :: '\x1b'` ships tag 27.
 
 #import "modules/std.sx";
 

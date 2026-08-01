@@ -3,20 +3,16 @@
 // (struct_field_count / struct_field_name), use as a fn param / return type, alias-of-alias,
 // forward-declared element aliases, generic-instantiation elements, and
 // forward tuple-in-tuple chains all resolve to the same structural tuple
-// TypeId with a truthful layout.
-// The alias registration kind-list omitted
-// `.tuple_type_expr`, leaving the alias an opaque nominal ("field 'a' not
-// found on type 'NT'" / "unresolved type: 'NT'"). The review fold added the
-// deferred fixpoint (forward elements), stateful element resolution (real
-// List(i64) instantiation instead of an empty stub with a lying size_of),
-// and stub/cycle poisoning.
+// TypeId with a truthful layout. Alias registration covers `.tuple_type_expr`,
+// with a deferred fixpoint for forward elements, stateful element resolution
+// (a real `List(i64)` instantiation), and stub/cycle poisoning.
 #import "modules/std.sx";
 
 NT :: Tuple(a: i64, b: bool);   // named tuple alias
 PT :: Tuple(i64, bool);          // positional tuple alias
 NT2 :: NT;                       // alias-of-alias
 
-// Element referencing an alias declared LATER (0196 review): registration is
+// Element referencing an alias declared LATER: registration is
 // deferred past the forward-alias fixpoint, so FwdB binds i64 — never a stub.
 FwdT :: Tuple(a: FwdB, c: bool);
 FwdB :: i64;

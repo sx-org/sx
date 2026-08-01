@@ -3,9 +3,6 @@
 // array, and `Box(0)` is a length-0 instantiation. (A `Vector` lane count
 // rejects zero — see 1505.) This pins the zero-accepting half of the
 // context-dependent count rule documented in specs.md (Array Types).
-//
-// A blanket "every count is positive integral" rule would wrongly make
-// `[0]T` / `Box(0)` illegal.
 #import "modules/std.sx";
 
 Box :: struct($N: u32) { items: [N]i64; }

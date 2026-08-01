@@ -1,9 +1,5 @@
 // A local declared with a reserved/builtin type-name spelling (`i2` is the
 // arbitrary-width `sN` integer type) is rejected at the declaration site.
-// Parsing such a name as a `.type_expr` mis-lowers address-of sites
-// (load-by-value to a `ptr` param → LLVM verifier abort, or a silent
-// `*self`-mutation-losing copy). Expected:
-// error at the declaration; exit 1.
 #import "modules/std.sx";
 
 main :: () -> i32 {

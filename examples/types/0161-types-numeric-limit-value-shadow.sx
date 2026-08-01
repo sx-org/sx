@@ -13,13 +13,6 @@
 // consts). This example exercises all three: a GLOBAL `` `f32 ``, a MODULE-CONST
 // `` `i16 ``, and LOCAL `` `f64 ``/`` `i32 ``/`` `u8 `` — each reads its field,
 // and the bare spelling of each STILL folds.
-//
-// At local, global and module-const scope alike: an intercept
-// that treats any identifier whose text matches a builtin numeric type name
-// as a TYPE receiver shadows the in-scope value binding
-// (`` `f64.epsilon `` folds to 2^-52, `` `i32.max `` to 2147483647 —
-// a silent wrong value). Guarding lexical scope alone is not enough, so
-// GLOBAL and MODULE-CONST raw bindings still folded.
 #import "modules/std.sx";
 
 FBox :: struct { epsilon: i64; max: i64; min_positive: i64; }
@@ -52,8 +45,8 @@ main :: () -> i32 {
     // MODULE-CONST raw receiver → ordinary field READ.
     print("const i16: max={} min={}\n", `i16.max, `i16.min); // 99 -99
 
-    // The value-field read carries the field type (i64 here): round-trips
-    // through a typed binding, so a mistyped/boxed read would not type-check.
+    // The value-field read carries the field type (i64 here) and round-trips
+    // through a typed binding.
     e : i64 = `f64.epsilon;
     print("typed val e={}\n", e);                          // 11
 

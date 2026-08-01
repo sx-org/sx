@@ -1,8 +1,7 @@
 // A real struct member named `ptr` or `len` resolves to its DECLARED type —
-// the `.len`/`.ptr` pseudo-fields belong to the special containers only
-// (the unconditional pseudo arm typed a struct's own `ptr: *T`
-// as `[*]unresolved` and its `len` as `i64`). Plain and generic structs,
-// method-interior reads, and the untouched container pseudo-fields.
+// the `.len`/`.ptr` pseudo-fields belong to the special containers only.
+// Plain and generic structs, method-interior reads, and the untouched
+// container pseudo-fields.
 #import "modules/std.sx";
 
 Plain :: struct {

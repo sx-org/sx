@@ -3,12 +3,10 @@
 // `print("{}", expr)` selects integer- vs float-formatting from the STATIC type
 // `inferExprType` reports for the argument (not the lowered value's type), so it
 // exercises the binary-op inference arm directly — distinct from the typed-const
-// validation path. LHS-biased binary-op inference gives
-// `n + 0.5` (int LHS) `i64` and prints a truncated `2`, while `0.5 + n`
-// (float LHS) infers `f64` and prints `2.5`. Both route through the
-// shared promotion rule (`Lowering.arithResultType`, the same one `lowerBinaryOp`
-// applies for the value), so an int operand with a float operand promotes to the
-// float in either order.
+// validation path. Both operand orders route through the shared promotion rule
+// (`Lowering.arithResultType`, the same one `lowerBinaryOp` applies for the
+// value), so an int operand with a float operand promotes to the float in
+// either order.
 
 #import "modules/std.sx";
 

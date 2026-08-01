@@ -4,10 +4,7 @@
 // { ok :: 200; ... }`, larger backing for element-stride coverage).
 // `globalInitValue` serializes the enum literal to its tag value (respecting
 // explicit variant values) against the destination enum type, for the scalar
-// global, the array element, and the nested aggregate field. An
-// `.enum_literal => null` carve-out instead zero-initializes EVERY enum global
-// to the first tag — `chosen : Color = .green` reads back as `.red` — and
-// rejects a global array/struct of enums outright as non-constant.
+// global, the array element, and the nested aggregate field.
 // (Explicit-value enums print as `.` because the `{}` formatter indexes
 // variants by position — a separate limitation — so those are asserted by
 // equality, not by their printed name.)

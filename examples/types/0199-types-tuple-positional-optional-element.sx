@@ -2,10 +2,6 @@
 // element to the tuple's per-position field type — so an optional field gets a
 // properly wrapped `{T,i1}` value, an int element narrows/widens to a float
 // field, etc.
-//
-// A positional struct-literal path that coerces array/vector elements and
-// struct fields but NOT tuple fields stores a bare `i64` straight into a
-// `{i64,i1}` optional slot, so a present optional reads back as absent.
 #import "modules/std.sx";
 
 main :: () {

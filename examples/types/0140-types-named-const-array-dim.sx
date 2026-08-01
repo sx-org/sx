@@ -3,13 +3,10 @@
 // (`[16]T`): correct length and element stride for scalar, slice/pointer
 // (string), and struct element types — on EVERY type-resolution path:
 // direct local decls, type aliases (`Arr :: [N]T`), nested fixed arrays
-// (`[N][M]T`), and inline union fields. The named dim must resolve to the
-// same length whether it flows through the stateful body-lowering resolver
-// or the stateless registration-time resolver (type_bridge).
-// A named-const dim resolved to length 0 gives a 0-byte alloca — scalar reads
-// return garbage and string/struct elements bus-error. The alias and
-// union-field paths run on the stateless resolver, which needs the const table
-// to avoid fabricating a 0 length.
+// (`[N][M]T`), and inline union fields. The named dim resolves to the same
+// length whether it flows through the stateful body-lowering resolver or the
+// stateless registration-time resolver (type_bridge); the alias and
+// union-field paths run on the stateless one, which reads the const table.
 #import "modules/std.sx";
 
 N :: 4;

@@ -6,9 +6,7 @@
 // The constant-aggregate serializer serializes a null literal to a constant
 // zero pointer (the same way a top-level pointer global `p : *i64 = null;`
 // does) while still rejecting genuinely non-constant fields (see diagnostics
-// 1126). Without a `.null_literal` arm a `null` in a pointer field makes the
-// whole aggregate look non-constant and the global is rejected with "must be
-// initialized by a compile-time constant".
+// 1126).
 
 #import "modules/std.sx";
 

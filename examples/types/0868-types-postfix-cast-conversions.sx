@@ -6,7 +6,7 @@
 // definition. Postfix-tier precedence (`-x.(i8)` = `-(x.(i8))`);
 // `56.(i8)` lexes as a cast, not a float; `0..(5)` stays a range.
 // Type-erased receivers (`any` / protocol values) are the CHECKED
-// assertion regime and land in S2.
+// assertion regime.
 #import "modules/std.sx";
 
 Point :: struct { x: i32; y: i32; }

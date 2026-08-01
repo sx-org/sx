@@ -2,10 +2,6 @@
 // len = hi - lo }` slice — the caller supplies the bounds (a `[*]T` carries no
 // length of its own). This makes a `List` (whose `items` is `[*]T`) iterable
 // with a `for`-each over `items[0..len]`.
-//
-// A many-pointer base falling through the subslice
-// emitter's `else` arm yields an undefined slice (`LLVMGetUndef`) whose
-// `.len` is garbage, and iterating it segfaults.
 #import "modules/std.sx";
 
 main :: () -> i64 {

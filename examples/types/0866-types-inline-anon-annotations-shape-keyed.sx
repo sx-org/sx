@@ -2,10 +2,7 @@
 // `: enum { … }`) are SHAPE-keyed, like untyped `.{}` literals: identical
 // shapes unify to one TypeId, distinct shapes are distinct types — including
 // across annotation/literal sites and inside anon-enum payload structs.
-// Every inline decl displays as `__anon`, and the
-// name-keyed intern path let the FIRST inline shape in a program claim the
-// name — every later, differently-shaped inline annotation resolved to it
-// ("field 'y' not found on type '__anon'").
+// Every inline decl displays as `__anon`.
 #import "modules/std.sx";
 
 g :: (v: struct { x: i64; }) -> i64 { return v.x; }

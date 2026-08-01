@@ -1,11 +1,8 @@
 // A char literal assigned to a typed MODULE-LEVEL `::` const whose storage
 // can't hold the code point is a compile error — same rule as a local var
-// initializer, surfaced from the module-const emit path (not silently
-// truncated). The diagnostic names it as a char literal and suggests a wider
-// type. `'🦀'` is U+1F980 = 129408, which does not fit in `u8`.
-//
-// An `emitModuleConst` that folds the initializer and emits the raw value with
-// no range check truncates `C : u8 : '🦀'` silently to 128.
+// initializer, surfaced from the module-const emit path. The diagnostic names
+// it as a char literal and suggests a wider type. `'🦀'` is U+1F980 = 129408,
+// which does not fit in `u8`.
 
 #import "modules/std.sx";
 

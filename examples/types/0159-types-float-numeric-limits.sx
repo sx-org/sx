@@ -82,8 +82,7 @@ main :: () -> i32 {
     print("nan!=nan         {}\n", f64.nan != f64.nan);               // true
 
     // Result carries the QUERIED type: each binding is declared with the float
-    // type and round-trips, so a mistyped fold (boxed as any / wrong width) would
-    // not type-check here.
+    // type and round-trips through it.
     e64 : f64 = f64.epsilon;
     e32 : f32 = f32.epsilon;
     q : Uf64 = ---;  q.f = e64;

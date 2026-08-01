@@ -5,13 +5,11 @@
 // (whose runtime tag names the value's type) or a *Type value* (the
 // `{ .any, tid }` shape `type_of` / a `Type` literal produce). A
 // reflection builtin must branch on the tag:
-//   - holds a value   → report the type OF that value (the tag).
-//   - holds a Type     → name the held type (the payload).
+// - holds a value   → report the type OF that value (the tag).
+// - holds a Type     → name the held type (the payload).
 //
-// `type_name` / `is_unsigned`
-// read the runtime tag, not the any's payload as a TypeId index — the
-// latter answers `u8` (types[6]) for `type_name(av)` with `av : any = 6`
-// and true for `is_unsigned(av)`.
+// `type_name` / `is_unsigned` read the runtime tag, not the any's payload as a
+// TypeId index.
 
 #import "modules/std.sx";
 

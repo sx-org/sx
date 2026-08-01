@@ -2,9 +2,6 @@
 // integer converts through the enum's backing type and the result takes
 // the OTHER side's type, so `n.(Zone)` is a `Zone` value everywhere —
 // wrapped into `?Zone`, passed as an argument, matched on, compared.
-// Before this was modeled the pass-through kept the SOURCE type and
-// `type_of(n.(Zone))` answered `i64`, which only ever surfaced at a
-// typed destination that checks (the `?Zone` wrap).
 //
 // It is the CONVERSION regime, not the checked-assertion regime: the
 // three temperaments (`.(T)` panic / `.(?T)` null / `try .(T)` raise)

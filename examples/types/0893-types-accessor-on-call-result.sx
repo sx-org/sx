@@ -1,11 +1,8 @@
 // A `#get` accessor reached through a CALL RESULT reads the same value it
 // would through a bound local. The object of a field chain is only a SLOT for
-// field/index/deref shapes; a call result already IS the value, and must not
-// be loaded again on the way to the accessor's receiver.
-// Loading it again makes `box.snap().xs.len` answer 1, 0, or garbage while
-// `s := box.snap(); s.xs.len` answers correctly, and leaves the plain field
-// `.cap` next to it right — only the synthesized getter call materializes its
-// receiver through the address path.
+// field/index/deref shapes; a call result already IS the value, and is not
+// loaded again on the way to the accessor's receiver. Only the synthesized
+// getter call materializes its receiver through the address path.
 #import "modules/std.sx";
 
 Snap :: struct { xs: List(i64) = .{}; n: i64 = 0; }

@@ -2,10 +2,6 @@
 // `u.b = .{ code = 9 }` types the literal as the union member's struct type
 // `S` and stores it — the target type propagates to a union-member lvalue
 // exactly as it does to a struct field.
-//
-// A target-type path that inspects struct fields
-// only, not union members, lowers the literal as `.unresolved` and trips the
-// LLVM-emission tripwire in emitStructInit.
 
 #import "modules/std.sx";
 

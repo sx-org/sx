@@ -4,9 +4,8 @@
 // so a reserved type spelling (`i2`, `u8`) needs the backtick to be used as the
 // constant's name; the value is read back via `Holder.`name`. A *bare*
 // reserved-name struct const still errors with the caret on the name (see
-// examples/1142). The backtick is never part of the name's text.
-// Struct-body const decls thread is_raw + the
-// precise name_span; dropping either gives a false reject / 1:1 caret.
+// examples/1142). The backtick is never part of the name's text. Struct-body
+// const decls thread is_raw and the precise name_span.
 #import "modules/std.sx";
 
 Holder :: struct {

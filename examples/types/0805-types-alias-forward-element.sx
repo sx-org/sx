@@ -1,10 +1,8 @@
 // A composite type alias whose element is declared LATER in the file is ADOPTED
-// once the forward-alias fixpoint reaches that decl — it compiles and works with
-// the correct layout, instead of freezing a permanent size-0 empty-struct stub
-// (generalizing the 0196 tuple-alias deferred-fixpoint to array /
-// slice / optional / pointer / function RHS). A generic-instantiation element
-// (`List(i64)`) instantiates for REAL, so its `size_of` matches the inline
-// spelling — no lying size-0 nominal.
+// once the forward-alias fixpoint reaches that decl, so it has the correct
+// layout — for array / slice / optional / pointer / function RHS alike. A
+// generic-instantiation element (`List(i64)`) instantiates for REAL, so its
+// `size_of` matches the inline spelling.
 #import "modules/std.sx";
 
 // Element alias declared AFTER the array alias — adopted via the fixpoint.

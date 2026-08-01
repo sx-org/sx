@@ -1,13 +1,9 @@
 // Union struct-literal initialization — a union may be built with a struct
 // literal that sets a SINGLE arm: one direct member, or several promoted
 // members of the same anonymous-struct arm. Equivalent to the `--- `+per-field
-// form, and the two views stay consistent (type-punning still works).
-//
-// A union literal falling through the generic
-// struct-literal path (getStructFields returns empty for a union) builds a
-// malformed structInit whose overlapping zero-fill clobbers the named member —
-// `b : Overlay = .{ f = 3.14 }` reads back 0.0. It lowers like the
-// `--- `+member-write form: each named member is written into a union-sized slot.
+// form, and the two views stay consistent (type-punning still works). A union
+// literal lowers like the `--- `+member-write form: each named member is
+// written into a union-sized slot.
 #import "modules/std.sx";
 
 Overlay :: union { f: f32; i: i32; }

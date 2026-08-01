@@ -3,8 +3,6 @@
 // it first-wins ahead of the category that contains it, and composite
 // type expressions (`case ?i64:`, `case []u8:`) work the same way.
 // `string` / `bool` / `void` are single-type arms.
-// A builtin name resolved through the user-type name map alone yields zero
-// tags and a dead arm.
 #import "modules/std.sx";
 
 conc :: (t: Type) -> string {

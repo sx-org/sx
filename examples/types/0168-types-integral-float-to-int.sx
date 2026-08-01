@@ -10,16 +10,13 @@
 // FLOAT numeric-limit leaf in an integral expression (`f64.max - f64.max` = 0),
 // and an integral float `%` (`6.0 % 4.0` = 2). The compile-time float evaluator
 // is at parity with the integer one, so integer numeric-limit accessors (`i8.max`,
-// `[u8.max]` count) keep folding through the shared int folder, unregressed.
+// `[u8.max]` count) keep folding through the shared int folder.
 // The escape hatch (`xx` / `cast`) still TRUNCATES any float, integral or not —
 // including a non-integral const expression (`xx (M + 0.5)` / `xx (F + 0.25)`).
 //
-// Companion to the negative example 1146 (non-integral floats error).
-// The rule folds an integral float (literal, int-const expr, or float-const
-// leaf) and rejects a non-integral one. Unguarded, a typed local/param/field
-// truncates a float initializer (`y : i64 = 1.5` → 1) with no diagnostic, and a
-// non-integral const EXPRESSION (`M + 0.5`) or float-const-LEAF expression
-// (`F + 0.25`) truncates even when written through an int binding.
+// Companion to the negative example 1146 (non-integral floats error). The rule
+// folds an integral float (literal, int-const expr, or float-const leaf) and
+// rejects a non-integral one.
 #import "modules/std.sx";
 
 M :: 2;          // int module const, for the INT-const-EXPRESSION cases

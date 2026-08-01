@@ -4,10 +4,7 @@
 // `target_type` steers integer-literal lowering (a literal in an `f32` slot
 // lowers as an `f32` constant — correct for a VALUE). The index operand of a
 // subscript is not a value in that type, so it lowers with the ambient target
-// cleared; leaving it installed folds the `0` of `s[0]` under an `f32` target
-// to `0.0` and reaches the backend as `getelementptr float, ptr %d, float 0.0`
-// — "GEP indexes must be integers" from the LLVM verifier, naming no source
-// location. Indexing via an i64 local is unaffected.
+// cleared. Indexing via an i64 local takes the same path.
 
 #import "modules/std.sx";
 

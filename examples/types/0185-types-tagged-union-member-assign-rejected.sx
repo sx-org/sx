@@ -2,9 +2,6 @@
 // rejected: a tagged union is laid out `{ tag, payload }`, and a member write
 // would set the payload but leave the tag stale. The variant is set via
 // construction (`s = .rect(...)`), which writes both tag and payload.
-//
-// Storing only the payload for `s.rect = .{...}`
-// desyncs the tag, so a later `match` takes the wrong arm. It errors instead.
 
 #import "modules/std.sx";
 

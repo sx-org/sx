@@ -3,9 +3,6 @@
 // `p[i] += v` store through it — mirroring the struct-pointer auto-deref
 // on field access. Writes through the pointer are visible in the
 // original array and vice versa.
-//
-// This shape reaching LLVM emission with an
-// unresolved element type panics.
 
 #import "modules/std.sx";
 

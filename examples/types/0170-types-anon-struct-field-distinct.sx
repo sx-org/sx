@@ -1,10 +1,8 @@
 // Two top-level structs each carry an inline anonymous-struct field named
-// `inner`, but of DIFFERENT shapes. Each `inner` must resolve to its OWN
-// anonymous type (`A.inner` has `x`; `B.inner` has `y, z`) — they must not
-// cross-bind on the shared field spelling.
-//
-// Cross-bound anon types make `b.inner.y` fail with "field 'y' not found on
-// type 'B.inner'"; the per-parent anon rename keys each `inner` separately.
+// `inner`, but of DIFFERENT shapes. Each `inner` resolves to its OWN
+// anonymous type (`A.inner` has `x`; `B.inner` has `y, z`) — they do not
+// cross-bind on the shared field spelling. The per-parent anon rename keys
+// each `inner` separately.
 #import "modules/std.sx";
 
 A :: struct { inner: struct { x: i64; }; }
