@@ -1710,7 +1710,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
             const u = v.data.unary_op;
             // `xx <global>` at an `inline`-protocol-typed global folds to the
             // inline protocol constant (identity erasure of the global's
-            // stable storage — L8 rider a). Non-protocol `xx` falls through
+            // stable storage). Non-protocol `xx` falls through
             // to the ordinary const-expr fold below.
             if (u.op == .xx) {
                 if (self.protocolErasureConst(u.operand, var_ty)) |cv| break :blk cv;

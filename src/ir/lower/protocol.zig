@@ -520,14 +520,14 @@ pub fn getOrCreateThunks(self: *Lowering, proto_ty: TypeId, concrete_type_name: 
 
 /// Fold `<global>` / `xx <global>` at a BORROW-kind protocol-typed static
 /// initializer into that kind's constant: `{ ctx, __type_id, thunk fn-refs… }`
-/// for `inline`, `{ ctx, __tag }` for `tagged` (L8 rider a). Only an
-/// IDENTIFIER naming a registered top-level global qualifies: the erasure
-/// BORROWS the global's stable storage (identity semantics), so ctx is the
-/// global's address — ALWAYS, stateless impls included (ruled 2026-07-19: no
-/// null-receiver shortcut; a null ctx is the `?Protocol` "absent" sentinel
-/// and must never appear in a live protocol value). The tagged form's number
-/// is not known here at all — the pair travels in the constant and resolves
-/// where every other tag does (§7.9). Null result = not this shape / not
+/// for `inline`, `{ ctx, __tag }` for `tagged`. Only an IDENTIFIER naming a
+/// registered top-level global qualifies: the erasure BORROWS the global's
+/// stable storage (identity semantics), so ctx is the global's address —
+/// ALWAYS, stateless impls included: there is no null-receiver shortcut,
+/// because a null ctx is the `?Protocol` "absent" sentinel and must never
+/// appear in a live protocol value. The tagged form's number is not known here
+/// at all — the pair travels in the constant and resolves where every other tag
+/// does (§7.9). Null result = not this shape / not
 /// resolvable; the caller falls through to its non-const diagnostic.
 pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: TypeId) ?inst_mod.ConstantValue {
     const tbl = &self.module.types;

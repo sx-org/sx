@@ -268,7 +268,7 @@ inline if OS == .linux or OS == .android or OS == .wasm {
     SO_SNDBUF    :i32: 7;
     SO_RCVBUF    :i32: 8;
     O_NONBLOCK   :i32: 2048;     // 0o4000
-    // errno location + per-OS errno constants now live in std/posix.sx.
+    // errno location + per-OS errno constants live in std/posix.sx.
 
     // Build an AF_INET sockaddr for `port` (host order) at `addr` (network
     // order; 0 = INADDR_ANY). No sin_len on linux or Android.
@@ -390,7 +390,7 @@ inline if OS == .macos or OS == .ios {
     SO_SNDBUF    :i32: 0x1001;
     SO_RCVBUF    :i32: 0x1002;
     O_NONBLOCK   :i32: 0x4;
-    // errno location + per-OS errno constants now live in std/posix.sx.
+    // errno location + per-OS errno constants live in std/posix.sx.
 
     // Build an AF_INET sockaddr for `port` (host order) at `addr` (network
     // order; 0 = INADDR_ANY). The leading sin_len:u8 is darwin-only.

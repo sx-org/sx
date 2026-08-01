@@ -145,9 +145,9 @@ pub const ExprTyper = struct {
                     }
                 }
                 // Struct constant access: `Struct.CONST` — mirrors the
-                // lowerFieldAccess intercept (line 3851). Without this,
-                // `Phys.GRAVITY` (f64) inferred as i64 and pack-fn
-                // callers boxed the float into the int slot.
+                // `lowerFieldAccess` intercept. Without it, `Phys.GRAVITY`
+                // (f64) infers as i64 and pack-fn callers box the float into
+                // the int slot.
                 if (fa.object.data == .identifier) {
                     const obj_name = fa.object.data.identifier.name;
                     // Nominal-authority selection first, mirroring the

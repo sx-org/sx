@@ -28,10 +28,8 @@
 //   pthread_cond_t   48 on all of the above
 // Max mutex = 64 (darwin), cond = 48 (uniform) → `MutexBuf` 64, `CondBuf` 48
 // cover them all. NB: do NOT "right-size" the mutex down to musl's 40 — that
-// would UNDERsize glibc-aarch64 (48) and reintroduce heap corruption on a
-// dynamically-linked linux build. Validated: the pool runs correct on real
-// aarch64-linux (static musl) under Apple `container` (examples/concurrency/
-// 1828 covers it on the host).
+// would UNDERsize glibc-aarch64 (48) and corrupt the heap on a
+// dynamically-linked linux build.
 
 #import "modules/std/core.sx";
 #import "modules/std/mem.sx";

@@ -123,8 +123,8 @@ Config :: struct {
     request_count: i64 = 100;        // requests per connection, then close
     // Handler dispatch. 0 (default) runs handlers INLINE on the loop
     // thread — measured ~1.7x faster than pool(4) for a trivial handler
-    // (bench/BENCH-HTTPZ.md, 2026-07-02: one hand-off + completion
-    // drain saved per request).
+    // (bench/BENCH-HTTPZ.md: one hand-off + completion drain saved per
+    // request).
     // N > 0 dispatches each parsed request to a thread pool of N
     // workers (slow handlers stop stalling the loop, httpz's shape);
     // requires the Server's constructing allocator to be THREAD-SAFE
@@ -2273,7 +2273,7 @@ Server :: struct {
         return n;
     }
 
-    // The forever loop, now stoppable. Serves until stop() is requested,
+    // The forever loop. Serves until stop() is requested,
     // then quiesces (stop accepting, close idles) and drains in-flight
     // requests until none remain OR shutdown_timeout_ms elapses — any
     // stragglers past the deadline are force-closed. run() returns

@@ -917,7 +917,7 @@ pub const NamedArg = struct {
 /// `f(args) { body }` trailing block (specs: Trailing Blocks). `lambda` is
 /// the zero-param closure literal the parser built from the block. Exists
 /// only as the LAST element of `Call.args`; the mapping pass binds it to the
-/// callee's last declared parameter (T1/N4 checks live there).
+/// callee's last declared parameter, which is where its checks live.
 pub const TrailingBlock = struct {
     lambda: *Node,
 };

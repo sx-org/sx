@@ -2913,9 +2913,9 @@ pub fn resolveOptionalInner(self: *Lowering, ty: TypeId) TypeId {
 // ── Core expression dispatch ───────────────────────────────────
 
 pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
-    // A named-argument value pre-lowered in written order (N3 pin,
-    // `mapNamedArgs`) already produced its ref — return it; re-lowering
-    // would evaluate the value's side effects a second time.
+    // A named-argument value pre-lowered in written order by `mapNamedArgs`
+    // already produced its ref — return it; re-lowering would evaluate the
+    // value's side effects a second time.
     if (self.precomputed_args.count() > 0) {
         if (self.precomputed_args.get(node)) |pre| return pre;
     }

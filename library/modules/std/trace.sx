@@ -11,13 +11,11 @@ c :: #import "modules/std/c.sx"; // libc write
 // clears the buffer. So at format time the buffer holds exactly the frames
 // of failures that escaped to where you're formatting — typically inside a
 // `catch` handler (the clear fires when the handler completes, so the body
-// still sees the chain) or the (future) failable-`main` wrapper.
+// still sees the chain) or the failable-`main` wrapper.
 //
 // Frame resolution: in compiled code a frame is a pointer
 // to an interned `TraceFrame` the compiler stamped in at the push site, so the
-// location resolves in-process with no DWARF and no symbolizer. (The comptime
-// path — a packed `(func_id, ir_offset)` resolved via the interpreter's IR
-// tables — lands with slice 3b.)
+// location resolves in-process with no DWARF and no symbolizer.
 // =====================================================================
 
 

@@ -7,12 +7,8 @@ c :: #import "modules/std/c.sx"; // libc write
 // error channel. Each entry is written to stderr as `LEVEL: <msg>\n`,
 // where <msg> is the formatted `fmt` + args (same `{}` interpolation as
 // `print`). Sink is stderr (fd 2) so log output stays out of a program's
-// stdout data stream.
-//
-// Note: a `LEVEL ts msg` line with an ISO-8601
-// UTC timestamp. The timestamp is deferred — it needs a clock binding
-// and would make golden tests time-dependent; the level + message are
-// the load-bearing parts. Add `ts` once a pinnable clock lands.
+// stdout data stream. A line carries no timestamp: the level and the message
+// are the whole record, which keeps goldens time-independent.
 // =====================================================================
 
 // Prefix the level, append a newline, write the whole line to stderr.

@@ -86,8 +86,7 @@ is_android :: ufcs (self: BuildOptions) -> bool intrinsic;
 // framework_at(i)` to find each `-framework` name and recursively
 // copies its `<Name>.framework` directory from one of
 // `framework_path_at(0..framework_path_count())` into
-// `<bundle>/Frameworks/`. Indexed form (slice returns are expressible
-// now via `List`, but the bundler still walks these by index).
+// `<bundle>/Frameworks/`. Indexed form — the bundler walks these by index.
 framework_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
 framework_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
 framework_path_count :: ufcs (self: BuildOptions) -> i64 intrinsic;

@@ -211,8 +211,7 @@ define :: (handle: Type, info: TypeInfo) -> Type {
 // The channel result types, expressed as type-fns over declare/define. They
 // demonstrate that a programmatically-built enum carries a full enum through
 // codegen: `RecvResult(i64)` constructs and matches like any hand-written enum,
-// and is one nominal type across sites (the type-fn identity path). The channel
-// library (N3) consumes these once it lands.
+// and is one nominal type across sites (the type-fn identity path).
 
 // The GENERAL enum constructor: mint a nominal enum NAMED `name` from a variant
 // list passed as a VALUE (a `[]EnumVariant`), rather than a hardcoded literal.

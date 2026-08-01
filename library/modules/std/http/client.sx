@@ -397,8 +397,8 @@ parse_url :: (url: string) -> (Url, bool) {
             ps += 1;
             d += 1;
         }
-        // review L2: bound the digit COUNT too — an attacker-controlled
-        // Location with 2^64-ish digits wrapped i64 back into range.
+        // Bound the digit COUNT too — an attacker-controlled Location with
+        // 2^64-ish digits wraps i64 back into range.
         if d == 0 or d > 5 or v < 1 or v > 65535 { return u, false; }
         u.port = v;
     }
@@ -406,7 +406,7 @@ parse_url :: (url: string) -> (Url, bool) {
         if rest[ps] != '/' { return u, false; }   // junk between port and path
         u.path = string{ ptr = *rest.ptr[ps], len = rest.len - ps };
     }
-    // review L4 (RFC 9112): the fragment is never part of the request
+    // RFC 9112: the fragment is never part of the request
     // target — strip it here so neither fetch loop sends one on the wire.
     fi : i64 = 0;
     while fi < u.path.len {

@@ -3280,7 +3280,7 @@ pub const Parser = struct {
                 // govern the nested argument list). The block becomes a
                 // zero-param closure literal in a `trailing_block` marker
                 // appended as the last argument; the mapping pass binds it to
-                // the callee's last declared param (T1/T3/N4 live there).
+                // the callee's last declared param, where its checks live.
                 // Use the OUTER if-header flag (`saved_if_args`), not the
                 // cleared `self.in_if_condition`: args may parse Type{} freely,
                 // but `if f(x) { body }` must not steal the if-body as a trailing

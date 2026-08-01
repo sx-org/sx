@@ -3461,7 +3461,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         //   - Dynamic arg (e.g. `list[i]` indexing into a
         //     `$args`-derived []Type slice) → emit a
         //     `callBuiltin(.type_name, [arg_ref])`. The interp's
-        //     arm (commit 9600ba5) reads the runtime `.type_tag`
+        //     arm reads the runtime `.type_tag`
         //     and returns the per-position name. Without this
         //     split, the catch-all `else => .i64` in
         //     `resolveTypeArg` silently returns "i64" for every
@@ -4552,7 +4552,7 @@ pub fn mapNamedArgs(
     var seen_named = false;
     var errored = false;
     // Named bindings in WRITTEN order (param index + value) — consumed by
-    // the N3 displacement check below.
+    // the displacement check below.
     var named_seq = std.ArrayList(struct { i: usize, v: *Node }).empty;
     defer named_seq.deinit(self.alloc);
     for (c.args) |a| {
@@ -4623,10 +4623,10 @@ pub fn mapNamedArgs(
             },
             .trailing_block => |tb| {
                 // Trailing block binds the callee's LAST declared parameter
-                // (specs: Trailing Blocks): T1 non-variadic Closure (an
-                // optional closure slot wraps like any named closure
-                // argument), T3 zero-param, N4 duplicate against a named or
-                // positional binding of the same parameter.
+                // (specs: Trailing Blocks): a non-variadic zero-param
+                // Closure (an optional closure slot wraps like any named
+                // closure argument), rejected as a duplicate against a named
+                // or positional binding of the same parameter.
                 if (nparams == off) {
                     errored = true;
                     if (self.diagnostics) |d|
@@ -4728,7 +4728,7 @@ pub fn mapNamedArgs(
             },
         }
     }
-    // N3: evaluation order is written order. The rewrite hands the call
+    // Evaluation order is written order. The rewrite hands the call
     // machinery param-ordered nodes, so when the named values' param indices
     // are not already ascending, evaluate EVERY argument now — positional
     // and named, in written order, each typed by its param's declaration —

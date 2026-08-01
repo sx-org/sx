@@ -288,8 +288,8 @@ fn typeSpelling(self: *Lowering, e: ContextFieldDecl) []const u8 {
     return "?";
 }
 
-/// Resolve a Context field BY NAME against the assembled layout (L8 rider b:
-/// no compiler-internal access may assume a field index). Null = Context is
+/// Resolve a Context field BY NAME against the assembled layout — no
+/// compiler-internal access may assume a field index. Null = Context is
 /// not a registered struct or carries no such field — callers diagnose; a
 /// positional fallback here would be the classic silent-clobber.
 pub fn contextFieldByName(self: *Lowering, fname: []const u8) ?ContextFieldRef {

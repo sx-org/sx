@@ -505,7 +505,7 @@ pub const Lowering = struct {
     /// `lowerExpr` temporarily hide the caller scope for these roots while the
     /// node's source pin remains active through all recursive children.
     authored_call_defaults: std.AutoHashMap(*const Node, DefaultCallSite),
-    /// Named-argument N3 pin (specs: Named Arguments): argument values
+    /// Named-argument pin (specs: Named Arguments): argument values
     /// PRE-LOWERED in written order by `mapNamedArgs` when the mapped
     /// declaration order would displace evaluation. `lowerExpr` returns the
     /// recorded ref instead of re-lowering the node, so each value evaluates
