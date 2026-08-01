@@ -372,7 +372,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     // the slot, emit an adapter with the bare ABI. Reject the cases the bare
     // ABI can't represent: a capturing closure (env has nowhere to live), and
     // a failable closure into a non-failable slot (extern code can't observe
-    // the error channel — ERR E5.1 FFI-boundary rule).
+    // the error channel).
     if (self.target_type) |tt| {
         if (!tt.isBuiltin() and self.module.types.get(tt) == .function) {
             const slot_ret = self.module.types.get(tt).function.ret;
@@ -526,7 +526,7 @@ pub fn createBareFnTrampoline(self: *Lowering, bare_func_id: FuncId, closure_inf
 /// When `closure_ret` differs from `fn_info.ret`, this is the ∅-widening
 /// case (a non-failable closure into a failable slot): the closure returns
 /// the success value and the adapter wraps it into the slot's `{value, 0}`
-/// failable tuple (ERR E5.1 non-failable→failable widening).
+/// failable tuple.
 pub fn createClosureToBareFnAdapter(self: *Lowering, closure_func_id: FuncId, fn_info: types.TypeInfo.FunctionInfo, closure_ret: TypeId, span: ast.Span) FuncId {
     var params = std.ArrayList(inst_mod.Function.Param).empty;
     defer params.deinit(self.alloc);

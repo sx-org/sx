@@ -1,4 +1,4 @@
-// ffi-objc-arc-00 — M4.0 end-to-end allocator threading regression.
+// end-to-end allocator threading regression.
 //
 // Verifies that the per-instance allocator design
 // is actually wired:

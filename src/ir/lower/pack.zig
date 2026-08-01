@@ -213,7 +213,7 @@ pub fn comptimeIndexOf(self: *Lowering, index: *const Node) ?i64 {
 const PackValueKind = enum { storage, call_arg, return_value, runtime_iter, generic };
 
 /// `xs` is a pack name used where a runtime value is required. A pack is
-/// comptime-only (Decision 1), so this is an error — with a context-tailored
+/// comptime-only, so this is an error — with a context-tailored
 /// suggestion for how to express the intent instead.
 pub fn diagPackAsValue(self: *Lowering, name: []const u8, span: ast.Span, kind: PackValueKind) Ref {
     if (self.diagnostics) |d| {
@@ -1485,7 +1485,7 @@ pub fn isPackParam(p: ast.Param) bool {
     return p.is_variadic and (p.is_comptime or p.is_pack);
 }
 
-/// Resolve `..pack.<name>` against `protocol_name` by position (Decision 4).
+/// Resolve `..pack.<name>` against `protocol_name` by position.
 /// No cross-namespace fallback: a value-position name that exists only as a
 /// type-arg (or vice versa) is `.not_found`, letting the caller emit a
 /// position-specific diagnostic (G3, Step 2.7).

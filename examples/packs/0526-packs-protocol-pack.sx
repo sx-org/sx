@@ -1,7 +1,7 @@
 // Heterogeneous protocol-constrained variadic pack (binding).
 //
 // `..xs: Show` (no `[]`, no `$`) is a pack, not a slice: each call site
-// monomorphizes with the concrete per-position arg types (Decision 1 — a pack
+// monomorphizes with the concrete per-position arg types (a pack
 // is a comptime mechanism, no runtime pack value), and `xs.len` is a comptime
 // constant. Arity and element types vary per call; each call is a distinct
 // specialization.

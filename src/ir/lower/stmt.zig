@@ -625,7 +625,7 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
     const saved_in_return = self.in_return_expr;
     self.in_return_expr = false;
     defer self.in_return_expr = saved_in_return;
-    // Stamp this statement's span onto its instructions (ERR E3.0); see
+    // Stamp this statement's span onto its instructions; see
     // `lowerExpr`.
     const saved_span = self.builder.current_span;
     defer self.builder.current_span = saved_span;
@@ -1517,8 +1517,8 @@ fn diagContextRootWrite(self: *Lowering, target: *const Node) bool {
 
 /// Shape-aware diagnostic for an assignment whose target is a NON-ALLOCA
 /// scope binding — a name that resolves but has no storable slot. Shared by
-/// lowerAssignment's ident arm and lowerMultiAssign's ident arm (issue 0219
-/// + its review folds; the by-ref arm is issue 0216). A store that lands here
+/// lowerAssignment's ident arm and lowerMultiAssign's ident arm (issue 0219;
+/// the by-ref arm is issue 0216). A store that lands here
 /// reaches neither a container nor the binding's own copy, so it must not be
 /// dropped silently. The binding's `origin` picks the message:
 /// - by-ref capture       → write through it (`x.* = ...`)
@@ -3113,7 +3113,7 @@ pub fn lowerDefer(self: *Lowering, ds: *const ast.DeferStmt) void {
     self.defer_stack.append(self.alloc, .{ .body = ds.expr, .is_onfail = false }) catch {};
 }
 
-/// `onfail [e] BODY` (ERR E1.7) — cleanup that runs only when an error
+/// `onfail [e] BODY` — cleanup that runs only when an error
 /// leaves the enclosing block. Recorded on the shared cleanup stack;
 /// emitted (interleaved with defers, reverse) at error exits by
 /// `emitErrorCleanup`, and discarded — never run — on a success exit.
@@ -3704,7 +3704,7 @@ pub fn lowerDestructureDecl(self: *Lowering, dd: *const ast.DestructureDecl) voi
     const tuple = ti.tuple;
     if (dd.names.len > tuple.fields.len) return;
 
-    // E1.8 (discard rejection): when the RHS is a value-carrying failable,
+    // Discard rejection: when the RHS is a value-carrying failable,
     // the error slot (always the LAST tuple field) cannot be dropped. It is
     // dropped when the destructure omits it (fewer names than fields, so the
     // trailing error slot is never reached) or binds it to `_`. The `try` /
@@ -3739,6 +3739,6 @@ pub fn lowerDestructureDecl(self: *Lowering, dd: *const ast.DestructureDecl) voi
 
     // Destructuring a failable's result binds the error slot to a variable:
     // the user now owns the error explicitly, so the trace is absorbed
-    // (ERR E3.2). A plain (non-failable) tuple destructure clears nothing.
+    // A plain (non-failable) tuple destructure clears nothing.
     if (self.errorChannelOf(ty) != null) self.emitTraceClear();
 }

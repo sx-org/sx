@@ -15,7 +15,7 @@
 // suspension. `async(worker, ..args)` runs the worker to COMPLETION
 // inline, so the returned `Future` is born `.ready` and `await` yields
 // immediately. `spawn_raw`/`suspend_raw`/`ready`/`poll`/`arm_timer` are
-// trivial no-ops/0 — they exist for the fiber scheduler [B1.3+].
+// trivial no-ops/0 — they exist for the fiber scheduler.
 // `now_ms` returns a real monotonic clock. Fully deterministic/testable.
 //
 // Worker form: a `Closure(..$args) -> $R` whose params are
@@ -55,7 +55,7 @@ c_blocking_io : CBlockingIo = .{};
 impl Io for CBlockingIo {
     // No fiber bootstrap in the blocking model: the generic `async`
     // free-fn calls the worker directly and fills the Future. `spawn_raw`
-    // is here for the protocol shape the scheduler [B1.3] will use; the
+    // is here for the protocol shape the scheduler will use; the
     // blocking impl never routes through it, so it is a no-op handle.
     spawn_raw :: (self: *CBlockingIo, entry: *void, arg: *void, opts: SpawnOpts) -> *void {
         // The blocking model has no scheduler: run the worker thunk INLINE to
@@ -90,9 +90,9 @@ impl Io for CBlockingIo {
 // --- Future($R): the handle to an async task's eventual result ---
 //
 // Fixed-shape product (NOT the metatype sum machinery). `Value :: $R`
-// exposes the projection `Future(X) → X`. B1.2 supports NON-void `$R`
-// only — `Future(void)` (a `void` struct field) SIGTRAPs the compiler
-// (issue 0150, deferred to B1.4 along with `timeout`).
+// exposes the projection `Future(X) → X`. Only a NON-void `$R` is
+// supported — `Future(void)` needs a `void` struct field, which SIGTRAPs
+// the compiler (issue 0150).
 FutureState :: enum { pending; ready; failed; canceled; }
 
 Future :: struct ($R: Type) {

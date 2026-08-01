@@ -1,6 +1,6 @@
 // std.http — request-target forms (RFC 9112 §3.2).
 //
-// Q1.2: the server must handle all four request-target forms:
+// the server must handle all four request-target forms:
 //   origin-form    "/path?query"       — the normal case (unchanged).
 //   absolute-form  "http://auth/path"  — an origin server MUST accept it
 //                  (§3.2.2): the embedded authority is exposed on

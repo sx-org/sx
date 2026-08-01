@@ -165,7 +165,7 @@ test "expr_typer: raw value binding shadows numeric-limit, bare type still folds
 // so a global `` `f32 := Box{…} `` and a module-const `` `i16 :: Box{…} `` each
 // read the value's field (NOT the numeric-limit fold), while a bare `f32.max` /
 // `i16.max` (a `.type_expr` receiver) still folds. Pins the guard across the two
-// non-lexical sources the attempt-3 scope-only fix missed.
+// non-lexical sources a scope-only guard would miss.
 test "expr_typer: global and module-const raw bindings shadow numeric-limit" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

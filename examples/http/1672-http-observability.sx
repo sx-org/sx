@@ -169,7 +169,7 @@ main :: () -> i32 {
     if !contains(r2, "pong") { print("case2: echo failed\n"); return 1; }
 
     // ── 2. parser error: a malformed version token → 400 ───────────────
-    // (a well-formed unsupported version like HTTP/9.9 is 505 since Q0.7 —
+    // (a well-formed unsupported version like HTTP/9.9 is 505 —
     // a garbage token keeps this case a 400 PARSE_ERROR for the counters)
     c2 := dial();
     if c2 < 0 { print("dial2 failed\n"); return 1; }

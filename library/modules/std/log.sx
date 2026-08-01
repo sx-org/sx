@@ -3,7 +3,7 @@
 c :: #import "modules/std/c.sx"; // libc write
 
 // =====================================================================
-// log.sx — plain leveled logging (ERR step E4.1), orthogonal to the
+// log.sx — plain leveled logging, orthogonal to the
 // error channel. Each entry is written to stderr as `LEVEL: <msg>\n`,
 // where <msg> is the formatted `fmt` + args (same `{}` interpolation as
 // `print`). Sink is stderr (fd 2) so log output stays out of a program's

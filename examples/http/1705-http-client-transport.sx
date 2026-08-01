@@ -1,4 +1,4 @@
-// std.http — Q3.6a client transport parity: resolve/Addr dialing, connect +
+// std.http — client transport parity: resolve/Addr dialing, connect +
 // I/O timeouts, client-side TLS through the transport seam, and chunked
 // response decoding.
 //

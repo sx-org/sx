@@ -740,7 +740,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
             break :blk scoped;
         };
-        // R5 §C: the early pack/comptime/generic dispatch reads
+        // The early pack/comptime/generic dispatch reads
         // the SAME author the call resolver SELECTED — not the first-wins
         // winner. A bare call selects every sx-bodied shape, so a selected
         // pack / comptime / generic author monomorphizes HERE, from the
@@ -1349,7 +1349,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     },
                 };
             }
-            // R5 §C: a genuine flat same-name collision — bind the
+            // A genuine flat same-name collision — bind the
             // author the call resolver selected (own-author-wins, or the single
             // flat-reachable author), or reject a bare call to a name ≥2
             // imported modules author. `selectedFreeAuthor` (computed once
@@ -1559,7 +1559,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // qualified `a.Box(i64).make(..)`): the layout author is chosen
                 // by the single head choke-point (CP-1) and the method body by
                 // the instance's STAMPED author (CP-4), so layout-author ≡
-                // body-author for BOTH bare and qualified heads (E4 #1 / #2).
+                // body-author for BOTH bare and qualified heads (#1 / #2).
                 switch (self.selectGenericStructCallee(inner_call.callee, inner_call.callee.span)) {
                     .poisoned => return Ref.none,
                     .template => |t| {
@@ -2223,7 +2223,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // callable directly or via `|>` only — a dot-call on one gets a
             // tailored diagnostic rather than silently becoming a method.
             //
-            // R5 §C: a free-function UFCS target with a
+            // A free-function UFCS target with a
             // genuine flat same-name collision dispatches to the author the
             // call PLAN selected for the receiver's source — the SAME author
             // plan typed the call's result as, so dispatch and typing can't
@@ -3657,14 +3657,14 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     }
     if (std.mem.eql(u8, name, "__interp_print_frames")) {
         // Backs `trace.print_interpreter_frames()`: dumps the interp call
-        // chain at comptime, no-op in compiled code (ERR E4.1).
+        // chain at comptime, no-op in compiled code.
         return self.builder.emit(.{ .interp_print_frames = {} }, .void);
     }
     if (std.mem.eql(u8, name, "__trace_resolve_frame")) {
         // Backs `trace.sx`'s formatter: a raw trace-buffer u64 → a `TraceFrame`.
         // Compiled code reinterprets the operand as `*TraceFrame` and loads it;
-        // the interp unpacks (func_id, span.start) and resolves (ERR E3.0
-        // slice 3b). Result type is the `TraceFrame` struct from trace.sx.
+        // the interp unpacks (func_id, span.start) and resolves it.
+        // Result type is the `TraceFrame` struct from trace.sx.
         const frame_ty = self.module.types.findByName(self.module.types.internString("TraceFrame")) orelse {
             if (self.diagnostics) |d| d.addFmt(.err, null, "`__trace_resolve_frame` needs `TraceFrame` (from trace.sx) in scope", .{});
             return self.builder.constInt(0, .void);
@@ -4836,7 +4836,7 @@ pub fn expandCallDefaults(
                     }
                     break :blk2 scoped;
                 };
-                // R5 §C: for a genuine flat same-name
+                // For a genuine flat same-name
                 // collision the omitted trailing args are filled from the
                 // author the call resolver selected — its `*FnDecl` defaults —
                 // not the first-wins winner's. lowering consumes the ONE author
@@ -5336,7 +5336,7 @@ pub fn resolveCallParamTypes(
         break :blk scoped;
     };
 
-    // R5 §C: a genuine flat same-name collision must type this
+    // A genuine flat same-name collision must type this
     // call's args against the author the call resolver selected, not the
     // first-wins winner's params. lowering consumes the ONE author verdict
     // (`selectedFreeAuthor`, computed once in `lowerCall`) rather than

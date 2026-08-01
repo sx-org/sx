@@ -1,4 +1,4 @@
-// fix-0102c F2 (issue 0102): two flat FILE imports each author a same-name free
+// Issue 0102: two flat FILE imports each author a same-name free
 // function `apply` with a DIFFERENT parameter TYPE — a.sx takes a value
 // (`x: i64`), b.sx takes a pointer (`x: *i64`). The first-wins import merge
 // keeps a.sx's value-typed `apply`, but each module's bare call must type its

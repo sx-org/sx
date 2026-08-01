@@ -48,13 +48,13 @@ pub const Parser = struct {
     /// Call trailing stays off via `no_trailing_block`.
     in_push_context: bool = false,
     /// When true (set while parsing an `onfail` body), a `raise` statement is
-    /// rejected — an error during cleanup has no propagation target. E1.7
-    /// extends this to the full {try, return, break, continue} set.
+    /// rejected — an error during cleanup has no propagation target. The
+    /// error-flow pass extends this to the full {try, return, break, continue} set.
     in_onfail_body: bool = false,
     /// When true (set while parsing a `defer` body), a `raise` statement is
     /// rejected — same reason as `onfail`: cleanup runs while the function is
-    /// already exiting, so there is nothing to propagate to. E1.7 extends this
-    /// to the full {try, return, break, continue} set.
+    /// already exiting, so there is nothing to propagate to. The error-flow pass
+    /// extends this to the full {try, return, break, continue} set.
     in_defer_body: bool = false,
     /// Set for the statement just parsed: true when it is an EXPRESSION
     /// statement, whose value the enclosing block can hand on (`endExprStatement`);
@@ -6399,7 +6399,7 @@ test "parse pack expansion: call-arg spread q(..xs) reuses spread_expr" {
     try std.testing.expect(call.data.call.args[0].data == .spread_expr);
 }
 
-// ── ERR step E0.1 — `error { ... }` decls + `!` / `!Named` type exprs ──
+// ── `error { ... }` decls + `!` / `!Named` type exprs ──
 
 test "parse error-set decl: tags collected" {
     const source = "ParseErr :: error { BadDigit, Overflow, Empty }";
@@ -6553,7 +6553,7 @@ test "round-trip print: bare inferred and named error types" {
     }
 }
 
-// ── ERR step E0.2 — raise / try / catch / onfail + precedence + pipe ──
+// ── raise / try / catch / onfail + precedence + pipe ──
 
 /// Parse `src` (a single `f :: () { ... }` decl) and return its body's first
 /// statement node.
@@ -6895,7 +6895,7 @@ test "round-trip print: catch match-body form" {
     try e02ExpectPrints(a, v, "foo() catch (e) == { case .Empty: 0; else: 1; }");
 }
 
-// ── ERR step E0.3 — coverage consolidation (gaps + integration) ──
+// ── coverage consolidation (gaps + integration) ──
 
 test "try in statement position (propagate, discard value)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

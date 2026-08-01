@@ -1,6 +1,6 @@
 // std.http — HTTP/1.1 requires exactly one Host header (RFC 9112 §3.2).
 //
-// Q1.1: an HTTP/1.1 request without a Host header, or with more than one,
+// an HTTP/1.1 request without a Host header, or with more than one,
 // is malformed and MUST be rejected with 400 — a proxy/origin disagreement
 // about which Host applies is a classic cache-poisoning / routing vector,
 // and silently serving Host-less 1.1 hides broken clients. HTTP/1.0

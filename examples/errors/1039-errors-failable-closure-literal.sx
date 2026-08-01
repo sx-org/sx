@@ -1,4 +1,4 @@
-// Failable closure literals (ERR E5.1): a lambda literal may declare a
+// Failable closure literals: a lambda literal may declare a
 // failable return type — `-> (T, !)` / `-> !Named` — in both block and arrow
 // body forms, and `raise` inside. Called directly through the bound local, the
 // error channel is consumed by `catch` / `or`; passed as a `Closure(...)`

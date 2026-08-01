@@ -2,7 +2,7 @@
 // malformed / smuggling-shaped requests with the correct HTTP status —
 // overflowing or duplicate Content-Length → 400, Transfer-Encoding → 501,
 // malformed version / control chars → 400, unsupported well-formed
-// version → 505 (Q0.7), over-long or too-many headers → 431 — while a
+// version → 505, over-long or too-many headers → 431 — while a
 // well-formed request still returns 200 (no false positives). Mirrors
 // the 1633 single-thread tick harness.
 #import "modules/std.sx";
@@ -168,7 +168,7 @@ main :: () -> i32 {
     if !contains(r, "HTTP/1.1 200 OK") { print("value-with-colon: expected 200\n"); return 1; }
     print("header value with colon/spaces -> 200\n");
 
-    // ── unsupported (well-formed) HTTP version → 505 (Q0.7) ───────────
+    // ── unsupported (well-formed) HTTP version → 505 ───────────
     r = roundtrip(*srv, "GET /ok HTTP/2.0\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r, "HTTP/1.1 505 HTTP Version Not Supported") { print("unsupported version: expected 505\n"); return 1; }
     print("unsupported HTTP version -> 505\n");

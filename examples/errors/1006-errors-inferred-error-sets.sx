@@ -1,4 +1,4 @@
-// Whole-program inferred error sets (ERR step E1.4b). A bare `-> !` function's
+// Whole-program inferred error sets. A bare `-> !` function's
 // error set is INFERRED: the union of the tags it raises directly plus the
 // sets of the failable functions it `try`s, converged across the whole call
 // graph by a fix-point pass. Here `leaf` raises {Foo}; `mid` try-propagates

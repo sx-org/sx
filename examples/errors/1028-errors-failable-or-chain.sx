@@ -1,4 +1,4 @@
-// Failable `or` chains (ERR step E2.4b). `lhs or rhs` with failable operands
+// Failable `or` chains. `lhs or rhs` with failable operands
 // is a left-to-right, short-circuit chain: each failing attempt routes to the
 // next operand; the chain resolves when an operand succeeds (or a value
 // terminator absorbs). `try` marks an operand whose failure is visible routing

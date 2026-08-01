@@ -14,7 +14,7 @@
 // is still skipped, so a valid generic struct keeps compiling unchanged.
 //
 // Expected: `error: unknown type 'MissingType'` pointing at the field; exit 1.
-// Regression (stdlib E3).
+// Regression.
 #import "modules/std.sx";
 
 Box :: struct($T: Type) {

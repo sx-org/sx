@@ -2,7 +2,7 @@
 //
 // Exercises:
 //   1. NSObject is declared in std/objc.sx and reachable from user code.
-//      `obj.retain()` / `obj.release()` dispatch via the M2.3 #extends-aware
+//      `obj.retain()` / `obj.release()` dispatch via the #extends-aware
 //      method chain. Pattern: `defer obj.release();` as the canonical
 //      sx idiom for owned Obj-C handles.
 //   2. `autoreleasepool(body)` stdlib helper wraps `body` in a

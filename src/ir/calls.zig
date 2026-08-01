@@ -99,7 +99,7 @@ pub const CallPlan = struct {
 /// methods, struct (UFCS) methods, qualified namespace calls, and
 /// enum/tagged-union construction.
 ///
-/// A `*Lowering` facade (Principle 5, like `ExprTyper` / `PackResolver`): call
+/// A `*Lowering` facade (like `ExprTyper` / `PackResolver`): call
 /// typing reads live lexical-scope / target-type state and the function /
 /// runtime-class / protocol resolver helpers, so it borrows `*Lowering` rather
 /// than re-threading every field.
@@ -182,7 +182,7 @@ pub const CallResolver = struct {
             if (std.mem.eql(u8, bare_name, "__interp_print_frames")) return refl(bare_name, .void);
             if (std.mem.eql(u8, bare_name, "__trace_resolve_frame"))
                 return refl(bare_name, self.l.module.types.findByName(self.l.module.types.internString("TraceFrame")) orelse .unresolved);
-            // Bare same-name flat collision (R5 §C): route through the ONE
+            // Bare same-name flat collision: route through the ONE
             // author producer `selectedFreeAuthor` so `plan` types the call as the
             // SAME author the lowering call-path binds — the two cannot
             // disagree. `.ambiguous` / `.none` fall through to the first-wins
@@ -507,7 +507,7 @@ pub const CallResolver = struct {
                 // routes through the SAME author producer `selectedFreeAuthor` as a
                 // bare call, so the planned target / return type IS the author
                 // lowering dispatches — they can't disagree under a flat same-name
-                // collision (R5 §C). Without this, plan typed the
+                // collision. Without this, plan typed the
                 // first-wins winner while lowering bound the selected shadow,
                 // mis-tagging the call's result (a string-typed winner over an i64
                 // shadow boxes a raw int as a string pointer → segfault).
@@ -695,7 +695,7 @@ pub const CallResolver = struct {
     }
 
     /// THE single producer of the bare / value-UFCS same-name call author
-    /// verdict (R5 §#3). Both `plan` (typing, via its `.selected` arm) and
+    /// verdict. Both `plan` (typing, via its `.selected` arm) and
     /// `lowerCall` (default expansion / param typing / dispatch) consume THIS one
     /// result, so they can never pick different same-name authors for the same
     /// call. Side-effect-free: it consults ONLY the author selector

@@ -233,14 +233,14 @@ main :: () {
     // ============================================================
     print("--- edge cases ---\n");
 
-    // E1: Both tagged enum and struct shorthand in same scope
+    // Both tagged enum and struct shorthand in same scope
     {
         sh : Shape = .circle(5.0);
         v : Vec2 = .create(1.0, 2.0);
         print("E1: {} {} {}\n", sh.circle, v.x, v.y);
     }
 
-    // E2: Function taking both types — each resolves correctly
+    // Function taking both types — each resolves correctly
     {
         use_both :: (sh: Shape, v: Vec2) {
             ms : i32 = 0;
@@ -250,7 +250,7 @@ main :: () {
         use_both(.circle(9.0), .create(1.0, 2.0));
     }
 
-    // E3: Bare .variant (no parens) as function arg
+    // Bare .variant (no parens) as function arg
     {
         check_none :: (sh: Shape) -> i32 {
             if sh == { case .none: 1; else: 0; }
@@ -258,14 +258,14 @@ main :: () {
         print("E3: {}\n", check_none(.none));
     }
 
-    // E4: Nested shorthand — .method takes a struct param created with shorthand
+    // Nested shorthand — .method takes a struct param created with shorthand
     // (inner .create must resolve via the method's parameter type, not the outer type)
     {
         v : Vec2 = .add(Vec2.create(1.0, 2.0), Vec2.create(3.0, 4.0));
         print("E4: {} {}\n", v.x, v.y);
     }
 
-    // E5: Tagged enum .variant(payload) in match-as-expression
+    // Tagged enum .variant(payload) in match-as-expression
     {
         sh : Shape = .circle(42.0);
         r : i32 = 0;
@@ -277,14 +277,14 @@ main :: () {
         print("E5: {}\n", r);
     }
 
-    // E6: Color enum (plain, not tagged) still works with bare .variant
+    // Color enum (plain, not tagged) still works with bare .variant
     {
         c : Color = .green;
         ci : i32 = xx c;
         print("E6: {}\n", ci);
     }
 
-    // E7: Struct shorthand in typed variable, then pass to function
+    // Struct shorthand in typed variable, then pass to function
     {
         ei : EdgeInsets = .symmetric(10.0, 20.0);
         show :: (e: EdgeInsets) { print("E7: {} {}\n", e.top, e.left); }

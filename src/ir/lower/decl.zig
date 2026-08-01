@@ -253,18 +253,18 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // Allocator + CAllocator are all registered).
     self.emitDefaultContextGlobal();
     // Pass 1d: converge inferred (`bare !`) error sets across the whole
-    // program (ERR E1.4b). Runs before body lowering so `lowerTry`'s
+    // program. Runs before body lowering so `lowerTry`'s
     // named-caller widening sees each bare-`!` callee's converged set; also
     // emits the empty-inferred warning.
     self.convergeInferredErrorSets();
     // Pass 1d': converge inferred (`bare !`) error sets per closure/fn-type
-    // SHAPE (ERR E5.1 sub-feature 2). Runs after the name-keyed pass so a
+    // SHAPE. Runs after the name-keyed pass so a
     // closure's `try named_fn()` edge resolves against the converged
     // top-level sets; before body lowering so `try slot(x)` widening sees
     // the full per-shape union.
     self.convergeClosureShapeSets();
-    // Pass 1e: error-flow checks (ERR E1.8 value-slot liveness + E1.7
-    // cleanup-body absorption) over the main file's functions. Runs after
+    // Pass 1e: error-flow checks (value-slot liveness + cleanup-body
+    // absorption) over the main file's functions. Runs after
     // the error-set convergence passes (so failable callees resolve) and
     // before body lowering — purely a diagnostic pass; `core.zig` halts on
     // any error before codegen.
@@ -320,7 +320,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     self.lowerDeferredTypeFns();
     // Pass 4: target-specific entry-point sanity checks
     self.checkRequiredEntryPoints();
-    // Pass 4a: validate main's signature (ERR E4.2 entry-point gate).
+    // Pass 4a: validate main's signature.
     self.validateMainSignature();
     // Pass 4b: eagerly lower bodied methods on sx-defined `#objc_class`
     // declarations. The Obj-C runtime calls these via IMP pointers
@@ -354,13 +354,13 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     self.assertInstanceMapsCoincide();
 }
 
-/// ERR E4.2: the entry-point signature gate. `main` must take no parameters
+/// The entry-point signature gate. `main` must take no parameters
 /// and have a SINGLE-slot return: void (`()` / `-> ()` / `-> void`), an
 /// integer (POSIX exit code, truncated to u8), or `-> !` / `-> !Named` (the
 /// error tag rides the single return register). The multi-slot
 /// `-> (T, !)` tuple return is NOT supported — the JIT calls main as
 /// `() -> i32`, so a 2-slot `{value, error}` return ABI-mismatches and
-/// segfaults; that shape lands with the E4.2 entry-point wrapper. Any other
+/// segfaults; that shape is unsupported here. Any other
 /// shape (`-> string`, `-> f64`, a non-failable tuple, …) is a clean
 /// diagnostic rather than a silent miscompile.
 pub fn validateMainSignature(self: *Lowering) void {
@@ -408,7 +408,7 @@ pub fn validateMainSignature(self: *Lowering) void {
     }
 }
 
-// ERR E1.7 / E1.8 — path-sensitive error-flow diagnostics (Pass 1e) live in
+// Path-sensitive error-flow diagnostics (Pass 1e) live in
 // `error_flow.zig` (`ErrorFlow`, a `*Lowering` facade). `lowerRoot` calls
 // `self.errorFlow().checkErrorFlow(decls)`.
 
@@ -681,7 +681,7 @@ pub fn fnPtrTypeWantsCtx(self: *const Lowering, ty: TypeId) bool {
     return ti.function.call_conv != .c;
 }
 
-// ── Unified declaration-fact writers (R5 §#4) ──
+// ── Unified declaration-fact writers ──
 // The SOLE writers of the three semantic maps — global
 // `type_alias_map` / `module_const_map` / `global_names` AND their
 // source-partitioned analogues (`*_by_source`). Invariant: the global and
@@ -956,7 +956,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     if (cd.value.data == .identifier) {
                         // Identifier-RHS alias: MyAlias :: MyInt;  WideAlias :: Wide.
                         // SOURCE-AWARE. Resolve the RHS `B` AS SEEN FROM this
-                        // alias's OWN source via `selectNominalLeaf` (E1's source-
+                        // alias's OWN source via `selectNominalLeaf` (the source-
                         // keyed nominal leaf), NEVER the global `type_alias_map` /
                         // global `findByName` (last-wins across modules). Only the
                         // `.resolved` outcome is written; `.pending` (B is itself a
@@ -967,8 +967,8 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                         // the local B registers. A GLOBAL selection here would bind A
                         // to a namespaced same-name B, and the per-source fixpoint
                         // guard (`aliasResolvedInSource`) would then SKIP A — leaving
-                        // the wrong global TypeId and re-opening 0105 one layer down
-                        // (R1, E1.5). Same unified `putTypeAlias` writer (no-drift).
+                        // the wrong global TypeId and re-opening 0105 one layer down.
+                        // Same unified `putTypeAlias` writer (no-drift).
                         const rhs = cd.value.data.identifier;
                         if (self.current_source_file orelse self.main_file) |from| {
                             switch (self.selectNominalLeaf(rhs.name, from, rhs.is_raw)) {
@@ -1827,7 +1827,7 @@ pub fn diagnoseNonConstGlobal(self: *Lowering, vd: *const ast.VarDecl, v: *const
 /// const stays unresolved, so neither this pass nor the unknown-type suppression can register a
 /// non-type name.
 ///
-/// SOURCE-AWARE (R5 §4, E1.5). The target `B` is resolved AS SEEN FROM `A`'s
+/// SOURCE-AWARE. The target `B` is resolved AS SEEN FROM `A`'s
 /// OWN source via the source-aware nominal leaf (`selectNominalLeaf` over
 /// `type_aliases_by_source` / `moduleTypeAuthor` — E1), NEVER the global
 /// `type_alias_map` / global `findByName`. The "already resolved" guard is
@@ -1840,7 +1840,7 @@ pub fn diagnoseNonConstGlobal(self: *Lowering, vd: *const ast.VarDecl, v: *const
 /// and converges on a later iteration. `.undeclared` (no type author) and
 /// `.not_visible` (a namespaced-only type, not bare-aliasable) leave `A`
 /// unwritten; its uses surface the stub / diagnostic, never a silent global
-/// leak. The write stays on the unified `putTypeAlias` helper (E1 no-drift
+/// leak. The write stays on the unified `putTypeAlias` helper (no-drift
 /// invariant — only the helper touches the maps).
 pub fn resolveForwardIdentifierAliases(self: *Lowering, decls: []const *const Node) void {
     var progressed = true;
@@ -2265,8 +2265,8 @@ fn registerCompositeAlias(self: *Lowering, cd: *const ast.ConstDecl, source: ?[]
 }
 
 /// Fixpoint registration for COMPOSITE-type aliases whose elements reference
-/// decls registered LATER in the scan (issue 0196, extended to
-/// every composite kind in 0230): `A :: [2]B; B :: i64;` /
+/// decls registered LATER in the scan (issues 0196 and 0230, every composite
+/// kind): `A :: [2]B; B :: i64;` /
 /// `A :: Tuple(a: B, c: bool); B :: i64;` — A's in-loop registration was
 /// deferred (resolving `B` then would mint a permanent stub); now that every
 /// top-level name has been seen, re-probe readiness to a fixpoint.
@@ -2455,7 +2455,7 @@ pub fn lowerRetainedSameNameAuthors(self: *Lowering) void {
 /// author collector).
 pub const BareCallee = union(enum) {
     /// Bind the call to this specific author, carried as the shared
-    /// `SelectedFunc` (R5 §#3): its `*FnDecl` + authoring source, FuncId
+    /// `SelectedFunc`: its `*FnDecl` + authoring source, FuncId
     /// materialized on demand. Every callee-signature decision in the call
     /// path (variadic packing, param typing, default expansion) reads the
     /// RESOLVED author from this one object — never a first-wins re-lookup
@@ -2488,7 +2488,7 @@ pub const CallableKinds = enum {
     any_body,
 };
 
-/// The single bare-call author object (R5 §#3): the `*FnDecl` that defines
+/// The single bare-call author object: the `*FnDecl` that defines
 /// the call and the SOURCE file that authors it, kept together so the call
 /// path has ONE source of truth for the callee. `materialized` holds the
 /// author's FuncId once a site needs it; it is filled on demand by
@@ -2501,7 +2501,7 @@ pub const SelectedFunc = struct {
     materialized: ?FuncId = null,
 };
 
-/// Outcome of the source-aware bare TYPE leaf (`selectNominalLeaf`, R5 §E).
+/// Outcome of the source-aware bare TYPE leaf (`selectNominalLeaf`).
 /// The type-position analogue of `BareCallee`: the nominal author is selected
 /// over the ONE graph-walk collector and resolved against the source-keyed
 /// caches, never the global `findByName` first-match / global alias map.
@@ -2510,7 +2510,7 @@ pub const TypeHeadResolution = union(enum) {
     resolved: TypeId,
     /// A const author is visible but its alias target is not resolved yet —
     /// a forward identifier alias. Routes back into the existing
-    /// `resolveForwardIdentifierAliases` fixpoint (source-aware in E1.5).
+    /// `resolveForwardIdentifierAliases` fixpoint.
     /// `resolveNominalLeaf` keeps the empty-struct stub (the alias resolves on
     /// a later fixpoint round).
     pending,
@@ -2744,11 +2744,11 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
     // reachable module authors it AS A TYPE — and a TYPE author is EITHER a
     // named type (struct/enum/union/error-set/protocol/runtime class) OR a
     // type ALIAS (`Name :: <type>`, a `const_decl` whose value resolved to a
-    // type, recorded in E0's `type_aliases_by_source`). Both kinds are gated
+    // type, recorded in the `type_aliases_by_source`). Both kinds are gated
     // identically: `moduleTypeAuthor` is the SINGLE source of truth, so a
     // namespaced-only alias leaks no more than a namespaced-only named type,
     // and a flat-visible alias is never poisoned by an invisible same-name
-    // named type (and vice-versa) — R4. A same-name flat VALUE/FUNCTION is
+    // named type (and vice-versa). A same-name flat VALUE/FUNCTION is
     // NOT a type author; a value-const (`N :: 7`) lives in
     // `module_consts_by_source`, never in `type_aliases_by_source`, so it is
     // correctly excluded too.
@@ -2991,7 +2991,7 @@ pub fn namedRefTid(self: *Lowering, ref: resolver_mod.RawDeclRef, name: []const 
 /// ANY module's raw facts. The leak detector: a name that is a type author
 /// somewhere but not flat-visible from the querying module is reachable only
 /// over a namespace edge. Both kinds are checked: named types via
-/// `module_decls`, aliases via E0's `type_aliases_by_source`. Distinguishes a
+/// `module_decls`, aliases via the `type_aliases_by_source`. Distinguishes a
 /// real cross-module TYPE author from a LOCAL type / generic-param /
 /// fabricated empty-struct stub (findByName-registered but authored in no
 /// module) and from a same-name VALUE/FUNCTION author (not a type). Unwired

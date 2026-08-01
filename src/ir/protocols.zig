@@ -74,12 +74,12 @@ fn typeContainsUnresolved(table: *const types.TypeTable, ty: TypeId) bool {
 ///     impl maps + the `0410`/`0411`/`0412` visibility/duplicate diagnostics),
 ///     and the default-method synthesis they use.
 ///
-/// A `*Lowering` facade (Principle 5, like `GenericResolver` / `CallResolver`):
+/// A `*Lowering` facade (like `GenericResolver` / `CallResolver`):
 /// it reads/writes the protocol/impl registries (`protocol_decl_map` /
 /// `protocol_ast_map` in `ProgramIndex`; `protocol_thunk_map` / `param_impl_map`
 /// / `param_impl_pack_map` / `protocol_vtable_type_map` on `Lowering`) plus the
 /// type table, so it borrows `*Lowering` rather than re-threading every map.
-/// IR EMISSION stays in `Lowering` for the later A4.2 increment — registration
+/// IR EMISSION stays in `Lowering` — registration
 /// calls `self.l.declareFunction` (the emission primitive) but the thunk/value
 /// builders (`createProtocolThunk` / `buildProtocolValue` / `tryUserConversion`)
 /// do NOT live here.
@@ -490,7 +490,7 @@ pub const ProtocolResolver = struct {
         if (self.l.registered_protocol_decls.contains(pd)) return;
         self.l.registered_protocol_decls.put(pd, {}) catch @panic("out of memory");
 
-        // Decision 4 soft-convention warning: a type-arg and a method (the
+        // Soft-convention warning: a type-arg and a method (the
         // "runtime accessor" namespace — protocols have no fields) sharing a
         // name is allowed, but `..pack.<name>` then resolves by *position*
         // rather than by precedence, which surprises readers. Alert at decl.

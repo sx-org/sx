@@ -53,7 +53,7 @@ const ObjcPropertyKind = enum {
     }
 };
 
-/// Pure Obj-C decision helpers. A `*Lowering` facade (Principle 5, like `ErrorAnalysis`/
+/// Pure Obj-C decision helpers. A `*Lowering` facade (like `ErrorAnalysis`/
 /// `CoercionResolver`): selector derivation, type-encoding-string derivation,
 /// ARC property-kind classification, Obj-C class-pointer recognition, and
 /// hidden-state-struct planning. No IR is emitted here — the emission-heavy IMP
@@ -247,17 +247,16 @@ pub const ObjcLowering = struct {
     /// opaque. Layout:
     ///
     ///   __<ClassName>State {
+    ///       __sx_allocator,   // present only when `objcStateAllocatorType()` resolves
     ///       user_field_0,
     ///       user_field_1,
     ///       ...
     ///   }
     ///
-    /// Field 0 is `__sx_allocator: Allocator`, so `-dealloc`
-    /// can free through the per-instance allocator and method bodies can
-    /// access `self.allocator`. For A.2 the struct holds only the
-    /// user-declared fields — sufficient for the body lowering +
-    /// `self.field` access work in A.2/A.3. Field-by-name resolution
-    /// stays correct across the future repositioning.
+    /// `__sx_allocator: Allocator` leads, so `-dealloc` can free through the
+    /// per-instance allocator and method bodies can reach `self.allocator`.
+    /// The user-declared fields follow at the shifted indices; every consumer
+    /// resolves them by NAME, so the shift is invisible to callers.
     ///
     /// Runtime-class members other than `.field` are ignored here —
     /// methods / `#extends` / `#implements` don't contribute to the
@@ -275,9 +274,7 @@ pub const ObjcLowering = struct {
         var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
         // Prepend __sx_allocator at field index 0 — captured at +alloc
         // time, read at -dealloc time to free the state struct through the
-        // same allocator. Lookup by name (the existing by-name resolution in
-        // emitObjcDefinedClassPropertyImps + lookupObjcDefinedStateFieldOnPointer)
-        // naturally finds user fields at their post-shift indices.
+        // same allocator.
         if (self.objcStateAllocatorType()) |allocator_ty| {
             fields.append(field_alloc, .{
                 .name = self.l.module.types.internString("__sx_allocator"),

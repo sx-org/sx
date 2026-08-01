@@ -1,4 +1,4 @@
-// std.http — Q3.6b client conveniences: URL fetch, redirect following, and
+// std.http — client conveniences: URL fetch, redirect following, and
 // keep-alive connection pooling.
 //
 //   Client.fetch(method, url, body, opts, buf, cap)

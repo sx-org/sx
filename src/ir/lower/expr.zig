@@ -2303,7 +2303,7 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     if (self.diagPackIndexOOB(ie)) {
         return self.builder.constInt(0, .i64);
     }
-    // Runtime index into a comptime-only pack (Decision 1): a pack has no
+    // Runtime index into a comptime-only pack: a pack has no
     // runtime representation, so the index must be a compile-time constant.
     // A runtime index is a hard error — clearer than the "unresolved
     // '<pack>'" the slice-index fall-through would otherwise produce.
@@ -2937,8 +2937,8 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         self.active_default_call_site = saved_default_call_site;
     };
 
-    // Stamp this node's source span onto the instructions it emits (ERR
-    // E3.0 — feeds DWARF line-info + comptime frame resolution). Save/
+    // Stamp this node's source span onto the instructions it emits (it
+    // feeds DWARF line-info + comptime frame resolution). Save/
     // restore so a parent's later emits keep the parent's span after a
     // child lowers. Skip the empty default so synthetic nodes don't reset
     // a meaningful enclosing span to offset 0.
@@ -3073,7 +3073,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
 
         .identifier => |id| blk: {
             // A bare pack name in value position has no runtime
-            // representation (Decision 1). Projections (`xs.len`, `xs[i]`,
+            // representation. Projections (`xs.len`, `xs[i]`,
             // `xs.value`) are field/index nodes handled elsewhere, so a bare
             // `xs` reaching here is always a pack-as-value misuse.
             if (self.isPackName(id.name)) {

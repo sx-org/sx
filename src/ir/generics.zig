@@ -16,7 +16,7 @@ const Lowering = lower.Lowering;
 ///   - type-parameter substitution: `buildTypeBindings` (call-site inference)
 ///     and `inferGenericReturnType` (generic return resolution).
 ///
-/// A `*Lowering` facade (Principle 5, like `CallResolver` / `ExprTyper`):
+/// A `*Lowering` facade (like `CallResolver` / `ExprTyper`):
 /// substitution reads live type-binding / scope state and the type resolver
 /// helpers, so it borrows `*Lowering` rather than re-threading every field.
 /// `Lowering` keeps a thin `mangleTypeName` wrapper (it has ~30 cross-cutting
@@ -311,12 +311,11 @@ pub const GenericResolver = struct {
         // Resolve return type with whatever bindings we built. Even an
         // empty `tmp_bindings` is a valid input — non-generic literal
         // return types (e.g. `walk(..$args) -> string`) still need to
-        // resolve through `resolveTypeWithBindings`, not fall through
-        // to the historical `.i64` default. The default silently
-        // misclassified pack-fn calls whose return type was a fixed
-        // literal — every consumer (e.g. print's pack-shape mangling)
-        // inferred `i64` and routed the value through the wrong Any
-        // tag.
+        // resolve through `resolveTypeWithBindings` rather than fall back
+        // to `.i64`. A blanket `.i64` silently misclassifies a pack-fn call
+        // whose return type is a fixed literal: every consumer (e.g. print's
+        // pack-shape mangling) then infers `i64` and routes the value through
+        // the wrong Any tag.
         var scope = TypeBindingScope.enter(self.l, tmp_bindings);
         defer scope.exit();
         // Resolve the return type in the function's DEFINING module, exactly

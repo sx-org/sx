@@ -5,25 +5,25 @@ const lower = @import("lower.zig");
 const Node = ast.Node;
 const Lowering = lower.Lowering;
 
-// ── ERR E1.7 / E1.8 — error-flow analysis ───────────────────────────────────
+// ── error-flow analysis ────────────────────────────────────────────
 //
 // One structured, path-sensitive walk over each MAIN-file function body
 // (imported modules are trusted) drives two checks:
 //
-//  • E1.8 (value-slot liveness): a `v, err := failable()` destructure binds
+//  • Value-slot liveness: a `v, err := failable()` destructure binds
 //    `v` "live only where `err` is proven absent". A read of `v` is legal
 //    iff `err` is proven null on the current path — established by
 //    `if !err { … }` (proven inside) or `if err { return/raise }` (proven on
 //    the fall-through). Error-set `==`/tag-compares do NOT prove absence.
 //
-//  • E1.7 (cleanup absorption): a bare failable call in a `defer`/`onfail`
+//  • Cleanup absorption: a bare failable call in a `defer`/`onfail`
 //    body (with no `catch` / `or value`) is rejected — its error has nowhere
 //    to propagate (the block is already exiting). See `checkCleanupBody`.
 //
-// This is the diagnostic-only Pass 1e. A `*Lowering` facade (Principle 5, like
-// `ErrorAnalysis`/`CoercionResolver`): it reads AST decls + `ProgramIndex` and emits diagnostics
-// via `self.l.diagnostics`; lowering proceeds only if the diagnostics are clean
-// (`core.zig` halts before codegen on any error). External `Lowering` helpers it
+// This is the diagnostic-only Pass 1e. A `*Lowering` facade (like
+// `ErrorAnalysis`/`CoercionResolver`): it reads AST decls + `ProgramIndex` and
+// emits diagnostics via `self.l.diagnostics`; lowering proceeds only if those
+// are clean (`core.zig` halts before codegen on any error). External helpers it
 // consumes: `inferExprType`, `errorChannelOf`, `exprIsFailable`.
 
 /// The proven-null set: error-variable names known to be absent on the
@@ -484,7 +484,7 @@ pub const ErrorFlow = struct {
         }
     }
 
-    /// E1.7: a `defer`/`onfail` body runs while the block is already exiting, so
+    /// A `defer`/`onfail` body runs while the block is already exiting, so
     /// a bare failable call has nowhere to send its error. Reject any failable
     /// expression-statement that isn't absorbed locally by `catch` / `or value`
     /// / a destructure binding. (Parser already bans `try`/`raise`/`return`/

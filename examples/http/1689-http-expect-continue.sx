@@ -1,6 +1,6 @@
 // std.http — Expect: 100-continue (RFC 9110 §10.1.1).
 //
-// Q1.3: an HTTP/1.1 request that declares a body (Content-Length > 0 or
+// an HTTP/1.1 request that declares a body (Content-Length > 0 or
 // chunked) and carries `Expect: 100-continue` is answered with a ONE-OFF
 // interim `HTTP/1.1 100 Continue\r\n\r\n` as soon as the headers are
 // complete and the body has not fully arrived — so a client holding back

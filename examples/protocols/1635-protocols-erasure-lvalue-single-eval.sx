@@ -10,7 +10,7 @@
 // source element is untouched by mutations through it. Transient
 // write-through lives in `*P` views (pinned in 0829); the by-REF capture
 // leg below drives one through a view.
-// Regression (issue 0214 lineage).
+// Regression (issue 0214).
 
 #import "modules/std.sx";
 

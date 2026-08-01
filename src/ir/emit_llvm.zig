@@ -245,7 +245,7 @@ pub const LLVMEmitter = struct {
     // Build configuration accumulated from #run blocks
     build_config: compiler_hooks.BuildConfig,
 
-    // ── DWARF debug info (ERR E3.0) ──────────────────────────────────
+    // ── DWARF debug info ──────────────────────────────────
     // Emitted only when the build keeps error traces (opt_level
     // none/less, matching lower.zig's `tracesEnabled`) AND a source map
     // is wired in via `setDebugContext`. One `DICompileUnit` (on the
@@ -270,7 +270,7 @@ pub const LLVMEmitter = struct {
     // fallback for functions with no recorded source file.
     main_file: []const u8 = "",
 
-    // ── Error-trace `Frame` (ERR E3.0 slice 3a) ──────────────────────
+    // ── Error-trace `Frame` ──────────────────────
     // The compiled return-trace frame type: `{ string file, i32 line,
     // i32 col, string func }`. Hand-built here (not looked up from a sx
     // `TypeId`) so traces work even when the program doesn't import the
@@ -515,7 +515,7 @@ pub const LLVMEmitter = struct {
         self.debugInfo().finalizeDebugInfo();
     }
 
-    // ── DWARF debug info (ERR E3.0) ──────────────────────────────────
+    // ── DWARF debug info ──────────────────────────────────
 
     /// Wire the source map + main file so spans can resolve to
     /// file:line:col. Called by the driver after `init`; absent in unit
@@ -3015,7 +3015,7 @@ pub const LLVMEmitter = struct {
         self.mapRef(result);
     }
 
-    /// Failable main entry-point wrapper (ERR E4.2). At the LLVM level main
+    /// Failable main entry-point wrapper. At the LLVM level main
     /// returns i32. `tag_val` is the u32 error tag (0 = "no error"); `value` is
     /// the integer value slot for a value-carrying `-> (int, !)` main, or null
     /// for a pure `-> !` main. Emit the branch: tag == 0 → `ret i32 <value-or-0>`

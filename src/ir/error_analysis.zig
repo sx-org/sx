@@ -18,7 +18,7 @@ pub const ErrorFacts = struct {
 /// converge inferred `!` error sets (`convergeInferredErrorSets`) and bare-`!` closure-shape sets
 /// (`convergeClosureShapeSets`), plus the AST collectors that feed them.
 ///
-/// A `*Lowering` facade (Principle 5, like `CallResolver`/`ProtocolResolver`):
+/// A `*Lowering` facade (like `CallResolver`/`ProtocolResolver`):
 /// it reads the declaration map (`fn_ast_map`) + tag registry and writes the
 /// `inferred_error_sets` / `shape_inferred_sets` maps that live on
 /// `Lowering` (consumers read them there). The per-closure-literal contribution
@@ -136,7 +136,7 @@ pub const ErrorAnalysis = struct {
     }
 
     /// Whole-program fix-point that converges each top-level bare-`!` function's
-    /// inferred error set (ERR E1.4b). Runs after `scanDecls` (ASTs + named
+    /// inferred error set. Runs after `scanDecls` (ASTs + named
     /// error sets registered) and before body lowering, so `lowerTry`'s
     /// named-caller widening sees the converged callee sets. Also emits the
     /// empty-inferred warning. Scope: pure-failable functions (value-carrying
@@ -243,7 +243,7 @@ pub const ErrorAnalysis = struct {
     }
 
     /// Whole-program union of each bare-`!` closure/fn-type SHAPE's escape set
-    /// (ERR E5.1 sub-feature 2). Walks every function body for closure literals;
+    /// Walks every function body for closure literals;
     /// each bare-`!` failable literal contributes its raises (+ `try named_fn()`
     /// edges, resolved against the name-keyed converged sets) to the node shared
     /// by all occurrences of its value-signature shape. A `try slot(x)` against

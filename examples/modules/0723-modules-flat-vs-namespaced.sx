@@ -1,4 +1,4 @@
-// fix-0102c (issue 0102): one FLAT and one NAMESPACED author of `value`. The
+// Issue 0102: one FLAT and one NAMESPACED author of `value`. The
 // bare call `value()` binds the FLAT author (10); the namespaced author is
 // reached only through `nm.value()` (20). A namespaced author must NOT make the
 // bare call ambiguous — only flat authors collide.

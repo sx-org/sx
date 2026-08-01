@@ -1,4 +1,4 @@
-// Entry-point exit-code truncation (ERR step E4.2, non-failable integer main).
+// Entry-point exit-code truncation (non-failable integer main).
 // `main :: () -> T` (integer) exits with the return value truncated to u8 —
 // matching C `main` / the OS exit-status byte, so the JIT (`sx run`) and an AOT
 // binary agree. Here 1105 & 0xFF == 81, so this program exits 81 (NOT 1, which

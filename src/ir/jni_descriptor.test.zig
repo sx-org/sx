@@ -352,7 +352,7 @@ test "deriveMethod with slice param" {
     try std.testing.expectEqualStrings("([B)I", out);
 }
 
-// ── A6.2: native-name mangling + return-type dispatchability ─────────
+// ── native-name mangling + return-type dispatchability ───────────────
 
 const types = @import("types.zig");
 

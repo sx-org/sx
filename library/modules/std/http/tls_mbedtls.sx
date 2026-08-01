@@ -86,7 +86,7 @@ impl TlsConn for TlsSession {
             if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return 0, TlsStep.WantRead; }
             if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 0, TlsStep.WantWrite; }
             if r == mbedtls.MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY { return 0, TlsStep.Closed; }
-            // Q3.6a-review H2: a TLS 1.3 server (nginx/Go-class) sends 1-2
+            // a TLS 1.3 server (nginx/Go-class) sends 1-2
             // NewSessionTickets right after the handshake; mbedTLS surfaces
             // each as this NON-FATAL signal from ssl_read. Without the retry
             // the very first read against a mainstream server died Fatal.
@@ -121,7 +121,7 @@ impl TlsConn for TlsSession {
 // `ok` gates accept: a failed setup never mints a session, so a misconfigured
 // server drops every connection rather than serving it in the clear.
 
-// Q3.4: one SNI table entry — an extra identity served when the client's
+// one SNI table entry — an extra identity served when the client's
 // server_name matches. Heap-created via the TlsServer's allocator (stable
 // address: the handshake callback dereferences it); freed by deinit.
 SniEntry :: struct {
@@ -145,7 +145,7 @@ TlsServer :: struct {
     entropy: mbedtls.Entropy;
     a:       Allocator;
     ok:      bool = false;
-    // Q3.4 — ALPN / SNI / client-cert state. All owned via `a` (captured at
+    // ALPN / SNI / client-cert state. All owned via `a` (captured at
     // setup — the SNI table grows through it explicitly, never through
     // whatever context.allocator is current at the add call) and freed by
     // deinit. alpn_vec is the NULL-terminated pointer array mbedTLS keeps a
@@ -241,7 +241,7 @@ TlsServer :: struct {
     // is a `static inline` over an opaque field, so it exposes no linkable
     // symbol to bind. Deferred until a consumer needs to REQUIRE 1.3.)
 
-    // ── Q3.4: ALPN ───────────────────────────────────────────────────
+    // ── ALPN ───────────────────────────────────────────────────
     // Advertise the given protocols (preference order; e.g. .["http/1.1"]).
     // Call after `setup`, before serving. mbedTLS keeps a POINTER to the
     // list, so the entries are copied into provider-owned NUL-terminated
@@ -278,7 +278,7 @@ TlsServer :: struct {
         return true;
     }
 
-    // ── Q3.4: SNI multi-cert ─────────────────────────────────────────
+    // ── SNI multi-cert ─────────────────────────────────────────
     // Serve an extra cert/key when the client's SNI names `name` (exact,
     // ASCII-case-insensitive). No match → the `setup` cert stands. The first
     // add registers the handshake callback; entries live until deinit.
@@ -345,7 +345,7 @@ TlsServer :: struct {
         return ok;
     }
 
-    // ── Q3.4: client-cert auth (mTLS) ────────────────────────────────
+    // ── client-cert auth (mTLS) ────────────────────────────────
     // Require every client to present a certificate that verifies against
     // `ca_pem` (a CA chain, or the client cert itself when self-signed —
     // mbedTLS trusts an exact match in the CA list). A client that presents
@@ -385,7 +385,7 @@ TlsServer :: struct {
     // Free the shared mbedTLS state. Call after the Server is fully torn down
     // (no session may still reference `conf`). Per-session state is freed by
     // each TlsConn.close; this releases the shared config/cert/key/RNG plus
-    // the Q3.4 ALPN list, SNI table, and client-cert trust anchor.
+    // the ALPN list, SNI table, and client-cert trust anchor.
     deinit :: (self: *TlsServer) {
         mbedtls.mbedtls_ssl_config_free(*self.conf);
         mbedtls.mbedtls_x509_crt_free(*self.cert);
@@ -432,7 +432,7 @@ free_alpn :: (a: Allocator, vec: [*][*]u8, n: i64) {
     a.dealloc_bytes(xx vec);
 }
 
-// Q3.4: the SNI handshake callback (abi(.c) — mbedTLS calls it mid-handshake
+// the SNI handshake callback (abi(.c) — mbedTLS calls it mid-handshake
 // with p_sni = the *TlsServer). Exact ASCII-case-insensitive match against
 // the table selects that entry's cert/key for THIS handshake; no match keeps
 // the default own_cert (return 0 either way — never abort on unknown names,
@@ -495,7 +495,7 @@ impl TlsAcceptor for TlsServer {
     }
 }
 
-// ── client-side config (impls TlsDialer, Q3.6a) ─────────────────────
+// ── client-side config (impls TlsDialer) ─────────────────────
 // The shared client TLS state: trust anchor + RNG + SslConfig. MUST outlive
 // every connection it minted (ClientOpts.tls borrows `xx @this`). Two
 // setups, both loud:

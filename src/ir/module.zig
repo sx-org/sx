@@ -317,7 +317,7 @@ pub const Builder = struct {
     /// Running instruction counter within the current function (for Ref assignment).
     inst_counter: u32 = 0,
     /// Source span stamped onto every instruction emitted via `emit`/`emitVoid`
-    /// (ERR E3.0). Lowering sets it (save/restore) at each AST node so the IR
+    /// Lowering sets it (save/restore) at each AST node so the IR
     /// carries per-instruction locations for DWARF `.debug_line` + comptime
     /// frame resolution. Defaults empty for instructions emitted outside a
     /// node context (synthetic prologue/epilogue, etc.).

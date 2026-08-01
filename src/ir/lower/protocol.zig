@@ -346,7 +346,7 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
     return id;
 }
 
-// ── Protocol namespace lookups (pack projection, Feature 1, Decision 4) ──
+// ── Protocol namespace lookups (pack projection) ─────────────────────
 // (The position-driven orchestrator `resolvePackProjection` lives in
 // lower/pack.zig; these two lookups are its per-namespace halves.)
 //

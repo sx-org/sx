@@ -446,11 +446,11 @@ dispatch :: (req: *types.Request, resp: *types.Response, ctx: usize) {
         i += 1;
     }
 
-    // Q1.10 (RFC 9110 §9.3.2): HEAD must be supported wherever GET is —
+    // (RFC 9110 §9.3.2): HEAD must be supported wherever GET is —
     // a HEAD request with no HEAD route of its own (the exact pass above
     // found nothing, so an explicitly registered HEAD route still wins)
     // dispatches the matching GET route. The SERVER layer suppresses the
-    // response body (automatic HEAD, Q1.4), so the handler needs no HEAD
+    // response body (automatic HEAD), so the handler needs no HEAD
     // awareness.
     if ci_eq(req.method, "HEAD") {
         i = 0;
@@ -489,7 +489,7 @@ dispatch :: (req: *types.Request, resp: *types.Response, ctx: usize) {
         }
         i += 1;
     }
-    // Q1.10 (RFC 9110 §10.2.1): HEAD is implicitly supported wherever GET
+    // (RFC 9110 §10.2.1): HEAD is implicitly supported wherever GET
     // is (the fallback pass above dispatches it), so Allow must say so —
     // unless an explicit HEAD route already put it in the list.
     if has_get and !has_head { allow = concat(allow, ", HEAD"); }

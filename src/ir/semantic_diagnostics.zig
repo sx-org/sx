@@ -643,7 +643,7 @@ pub const UnknownTypeChecker = struct {
         // (`$T`, `$N`, the `..$Ts` pack) — those are IN SCOPE here, so pass them
         // through rather than skipping the whole decl. Skipping silently let a
         // genuinely-undeclared field type (`bad: MissingType`) fall through the
-        // type leaf's empty-struct stub and compile (stdlib E3). A value-param
+        // type leaf's empty-struct stub and compile. A value-param
         // position (a `Vector` lane count, a `$N: u32` arg) is still skipped
         // inside `checkTypeNodeForUnknown` / `isValueParamPosition`.
         for (sd.field_types) |ft| self.checkTypeNodeForUnknown(ft, declared, sd.type_params, &.{}, true);

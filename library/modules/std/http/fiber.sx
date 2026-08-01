@@ -1,4 +1,4 @@
-// std.http — the fiber-handler seam (Q3.3).
+// std.http — the fiber-handler seam.
 //
 // server.sx never imports sched.sx — the fiber runtime's context-switch is
 // aarch64-pinned naked asm, and importing it would break std/http on every
@@ -15,7 +15,7 @@
 // WAKES it when body bytes arrive (or the connection dies), and DRIVES
 // all ready fibers at tick boundaries. A handler inside a fiber may call
 // req.read_body, which SUSPENDS the fiber until the wake — this is what
-// lifts Q3.1's pool-only streaming restriction. Handlers must not use the
+// lifts the pool-only streaming restriction. Handlers must not use the
 // scheduler's own sleep()/block_on_fd() (the server drives fibers with a
 // non-blocking poll that cannot serve them; the provider bails loudly).
 FiberRunner :: protocol vtable #identity {

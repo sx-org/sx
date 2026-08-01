@@ -1082,7 +1082,7 @@ pub const ProtocolDecl = struct {
     is_raw: bool = false,
     /// Defining module path (stamped by `resolveImports`), so a parameterized
     /// protocol instantiated cross-module resolves its method signature types in
-    /// the module that declares it (E4 — the protocol analog of
+    /// the module that declares it (— the protocol analog of
     /// `StructTemplate.source_file`). Null for a synthesized/sourceless decl.
     source_file: ?[]const u8 = null,
 };

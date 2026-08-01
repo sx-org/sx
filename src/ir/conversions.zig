@@ -13,7 +13,7 @@ const Lowering = lower.Lowering;
 /// actual IR emission — `unbox_any`/`optional_wrap`/`int_to_float`/protocol
 /// erasure/the `Into` call — stays in `Lowering`.
 ///
-/// A `*Lowering` facade (Principle 5, like `CallResolver`/`GenericResolver`/
+/// A `*Lowering` facade (like `CallResolver`/`GenericResolver`/
 /// `ProtocolResolver`). Two entry points:
 ///   - `classify(src, dst)` — the built-in coercion ladder consumed by
 ///     `coerceToType` (the shared, recursive value-conversion path).

@@ -174,7 +174,7 @@ Allocator :: protocol inline #identity {
 // is installed in the process-wide `__sx_default_context`. Async runtime
 // is sx LIBRARY code — the compiler provides only the primitives (inline
 // asm, `abi(.naked)`, atomics) + fiber-safe codegen. The protocol is the
-// minimum the fiber scheduler [B1.3+] needs; everything ergonomic
+// minimum the fiber scheduler needs; everything ergonomic
 // (`async` / `await` / `cancel` / `timeout`) is a generic free-fn on top
 // (std/io.sx), the same way `alloc(T,n)` sits over `alloc_bytes`.
 //
@@ -183,7 +183,7 @@ Allocator :: protocol inline #identity {
 //   ready      — wake a parked fiber.
 //   poll       — drive one step; blocking impl returns 0.
 //   now_ms     — clock hook (a PROTOCOL method so the deterministic-sim
-//                Io [B1.4] can return a fake clock — the B1.4 keystone).
+//                Io can return a fake clock).
 //   arm_timer  — register a timer; backs `timeout`.
 //
 // `ParkToken` is an opaque per-suspension token (unused by the blocking

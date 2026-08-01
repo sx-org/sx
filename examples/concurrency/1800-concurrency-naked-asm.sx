@@ -11,8 +11,8 @@
 // `attributes #N = { naked noinline nounwind }` and the bare asm. aarch64-pinned
 // (the asm body is per-arch); runs end-to-end here (exit 42), ir-only on a
 // mismatch. See the x86_64 sibling 1802. NOTE: the `.ir` proves the `naked`
-// keyword + asm emitted, NOT register-save correctness (that's the B1.3
-// switch-stress harness's job).
+// keyword + asm emitted, NOT register-save correctness (1808's
+// switch-stress harness covers that).
 answer :: () -> i64 abi(.naked) {
     asm volatile {
         #string ASM

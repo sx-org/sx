@@ -2,13 +2,12 @@
 // the generic-struct sibling of 0747 (plain alias) and 0743 (named type). A
 // generic-struct instantiation alias (`Secret :: Box(i32)`) registers ONLY a
 // named struct type in the TypeTable; its raw import fact stays `.const_decl`,
-// so unrecognised as a type author it lets a BARE `Secret`
-// leak to the registered struct with NO diagnostic (the value comes
-// out 42). The unified declaration-fact writer routes the instantiation alias
+// so left unrecognised as a type author it would let a BARE `Secret` leak to
+// the registered struct with NO diagnostic, compiling to 42 instead of
+// erroring. The unified declaration-fact writer routes the instantiation alias
 // through `type_aliases_by_source`, so the bare-TYPE gate treats it like any
 // other alias: `dep.sx` is imported only as `dep :: #import`, so bare `Secret`
-// is reachable ONLY as `dep.Secret` and must NOT resolve. Regression
-// (R4 parameterized-alias leak).
+// is reachable ONLY as `dep.Secret` and must NOT resolve.
 dep :: #import "0749-modules-namespaced-only-bare-param-alias-not-visible/dep.sx";
 
 main :: () -> i32 {

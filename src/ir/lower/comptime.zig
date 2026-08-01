@@ -875,7 +875,7 @@ pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {
         return self.alloc.dupeZ(u8, str) catch null;
     }
 
-    // Case 2: evaluate on the comptime VM (the SOLE evaluator — P5.7), reusing
+    // Case 2: evaluate on the comptime VM (the SOLE evaluator), reusing
     // the parent module. The parent's `scanDecls` pass has already registered
     // every type / protocol / impl / thunk the comptime call may need
     // (Allocator, CAllocator, Context, the per-impl thunks); a fresh empty
@@ -1853,7 +1853,7 @@ pub fn comptimeValueRefNamed(self: *Lowering, name: []const u8) ?Ref {
     return null;
 }
 
-/// Source-aware INTEGER fold of a module const `name` (E2/F2/R1). Select the
+/// Source-aware INTEGER fold of a module const `name`. Select the
 /// SOURCE-AWARE author (own-wins; ≥2 flat-visible → ambiguous → null, the loud
 /// diagnostic is the reference site's job), then fold ITS RHS with nested const
 /// leaves resolved through `SourceConstCtx` — each leaf re-selects its OWN
@@ -1970,7 +1970,7 @@ pub fn qualifiedConstNodeIsFloatTyped(self: *Lowering, node: *const Node, frame:
     return self.qualifiedConstIsFloatTyped(path[0..dot], path[dot + 1 ..], frame);
 }
 
-/// Float counterpart of `foldSourceConstInt` (E2/F2/R1).
+/// Float counterpart of `foldSourceConstInt`.
 pub fn foldSourceConstFloat(self: *Lowering, name: []const u8, frame: ?*const ConstFoldFrame) ?f64 {
     return switch (self.selectModuleConst(name)) {
         .resolved => |sel| {
@@ -1985,7 +1985,7 @@ pub fn foldSourceConstFloat(self: *Lowering, name: []const u8, frame: ?*const Co
     };
 }
 
-/// Source-aware "is `name` a FLOAT-valued module const" (E2/F2/R1): judge the
+/// Source-aware "is `name` a FLOAT-valued module const": judge the
 /// SELECTED author's value, with nested const leaves resolved source-aware.
 pub fn sourceConstIsFloatTyped(self: *Lowering, name: []const u8, frame: ?*const ConstFoldFrame) bool {
     return switch (self.selectModuleConst(name)) {
@@ -2023,8 +2023,8 @@ const ConstAuthor = union(enum) {
     none,
 };
 
-/// The source-aware module-const author of `name` from the querying module
-/// (E2/F2) — the value-const analogue of `selectNominalLeaf` (types) and
+/// The source-aware module-const author of `name` from the querying module —
+/// the value-const analogue of `selectNominalLeaf` (types) and
 /// `selectCallableAuthor` (functions). Selects over the ONE graph-walk
 /// collector and reads the value from the SELECTED author's per-source cache
 /// (`module_consts_by_source`), never the global last-wins `module_const_map`:

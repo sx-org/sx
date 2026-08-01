@@ -85,18 +85,18 @@ pub const Op = union(enum) {
     const_string: StringId,
     const_null,
     const_undef, // `---` undefined initializer
-    /// ERR E4.1 — `is_comptime()` builtin. The SAME lowered IR is run by both
+    /// `is_comptime()` builtin. The SAME lowered IR is run by both
     /// the comptime interpreter and the compiled backend, so this can't fold at
     /// lower time: the interp evaluates it to `true`, emit_llvm emits constant
     /// `false`. Lets stdlib (`process.exit`, `assert`) take a comptime-only
     /// diagnostic branch that dead-codes out of compiled binaries.
     is_comptime,
-    /// ERR E4.1 — `trace.print_interpreter_frames()`. At comptime the interp
+    /// `trace.print_interpreter_frames()`. At comptime the interp
     /// walks its sx call-frame chain and appends it to the output; in compiled
     /// code it's a no-op (only ever reached from a dead `is_comptime()` branch,
     /// where there is no interpreter stack to walk).
     interp_print_frames,
-    /// ERR E3.0 slice 3a — a return-trace frame value (`u64`) for the push site.
+    /// a return-trace frame value (`u64`) for the push site.
     /// Niladic + span-stamped: it carries NO operands; each backend derives the
     /// frame from its own context. `emit_llvm` resolves this instruction's span
     /// + the current function → `{file,line,col,func}`, interns a `Frame` global,
@@ -104,7 +104,7 @@ pub const Op = union(enum) {
     /// `(func_id << 32 | span.start)` for the comptime resolver (slice 3b). The
     /// result feeds the existing `sx_trace_push(u64)` call.
     trace_frame,
-    /// ERR E3.0 slice 3b — the read-side resolver: a raw trace-buffer `u64` →
+    /// the read-side resolver: a raw trace-buffer `u64` →
     /// a `Frame` value. The mirror of `trace_frame`'s context split.
     /// `emit_llvm` reinterprets the operand as `*Frame` and loads it (the value
     /// `trace_frame` stamped in). `interp` unpacks `(func_id, span.start)` and

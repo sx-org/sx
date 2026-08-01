@@ -3,7 +3,7 @@
 // Regression (issue 0061): a bare `return X;` / `raise` mid-block closed the
 // LLVM basic block but lowering kept emitting the trailing statements into it
 // → "Terminator found in the middle of a basic block". The canonical failable
-// closure form `{ raise error.X; return x; }` tripped this, blocking ERR E5.1.
+// closure form `{ raise error.X; return x; }` hits exactly this shape.
 //
 // The fix must NOT over-reach: a CONDITIONAL `if cond { return }` (and the
 // `inline if` pack form) leaves a fresh merge block, so its trailing statements

@@ -22,7 +22,7 @@
 //
 // aarch64-pinned (the asm + the 13-slot save area are per-arch); runs
 // end-to-end here, ir-only on a mismatch. The x86_64 sibling + `mmap` guard-
-// page stacks are B1.3b.
+// page stacks are covered by 1809.
 #import "modules/std.sx";
 
 // Saved context: x19..x28 (10), x29/fp, x30/lr, sp — 13 u64 slots.

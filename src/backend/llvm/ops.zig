@@ -2584,8 +2584,8 @@ pub const Ops = struct {
     pub fn emitRet(self: Ops, un: UnaryOp) void {
         var val = self.e.resolveRef(un.operand);
         const func = &self.e.ir_mod.functions.items[self.e.current_func_idx];
-        // Failable main: wrap the return in the entry-point reporter
-        // (ERR E4.2) — exit 0 (or the value) on success, else print the
+        // Failable main: wrap the return in the entry-point reporter —
+        // exit 0 (or the value) on success, else print the
         // trace + tag to stderr and exit 1 — instead of returning the
         // tag/tuple as the raw exit code. Two shapes:
         //   `-> !`        → `val` is the bare u32 error tag.

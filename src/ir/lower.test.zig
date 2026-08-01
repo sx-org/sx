@@ -683,7 +683,7 @@ test "lower: objcTypeEncodingFromSignature emits nested structs (CGRect)" {
     try std.testing.expectEqualStrings("v@:{CGRect={CGPoint=dd}{CGSize=dd}}", e2);
 }
 
-// ── A6.1 scaffolding: pure Obj-C decision helpers ───────────────────
+// ── pure Obj-C decision helpers ──────────────────────────────────
 // Lock selector derivation, property-kind classification, and Obj-C
 // class-pointer recognition before they move to `ffi_objc.zig`.
 
@@ -877,7 +877,7 @@ test "pack projection: type-arg vs method namespace lookups" {
     try std.testing.expectEqual(@as(?u32, null), lowering.lookupProtocolField("Wrap", "Target"));
 }
 
-test "pack projection: position-driven resolution (Decision 4)" {
+test "pack projection: position-driven resolution" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -901,7 +901,7 @@ test "pack projection: position-driven resolution (Decision 4)" {
     try std.testing.expectEqual(Lowering.PackProjection.not_found, lowering.resolvePackProjection("Wrap", "Target", .value_position));
 }
 
-test "pack projection: same-name type-arg + method warns (Decision 4)" {
+test "pack projection: same-name type-arg + method warns" {
     // Arena: DiagnosticList.addFmt allocates messages it never frees in deinit
     // (mixed ownership with borrowed literals) — an arena keeps the leak
     // checker clean without changing diagnostic semantics.
@@ -1053,7 +1053,7 @@ test "noreturn typing: divergence shapes + if-else unification + block propagati
     try std.testing.expectEqual(TypeId.noreturn, lowering.inferExprType(both_div));
 }
 
-// ── A4.2 test-first scaffolding: protocol-decl registration ──────────
+// ── protocol-decl registration ───────────────────────────────────
 // Lock `registerProtocolDecl`'s method-table output, consumed by protocol
 // dispatch + impl planning. Public surface only (registerProtocolDecl +
 // getProtocolInfo are pub). Arena: a non-parameterized protocol dupes its
@@ -1106,7 +1106,7 @@ test "protocols: registerProtocolDecl builds the dispatch method table" {
     try std.testing.expectEqual(module.types.ptrTo(.void), info.methods[1].ret_type);
 }
 
-// ── A4.3 test-first scaffolding: coercion planning ───────────────────
+// ── coercion planning ────────────────────────────────────────────
 // Lock the one coercion-plan decision reachable via the public surface — the
 // optional wrap/flatten rule. The lowerXX / coerceToType / coerceOrErase /
 // buildProtocolErasure decisions are private + emission-bound; the `.ir`
@@ -1682,7 +1682,7 @@ fn countRealBodies(module: *ir_mod.Module, name: []const u8) usize {
 // `lowerRetainedSameNameAuthors` declares the shadowed author its OWN same-name
 // FuncId and lowers its body there, so BOTH authors carry distinct, non-extern
 // bodies, and `resolveFuncByName` still returns the winner (the name-keyed slot).
-test "lower: shadowed same-name author gets its own FuncId + real body (fix-0102b)" {
+test "lower: shadowed same-name author gets its own FuncId + real body (issue 0102)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1786,7 +1786,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body (fix-0102
     try std.testing.expect(first != null and second != null);
     try std.testing.expect(first.? != second.?);
 
-    // F1 (attempt-2): the identity map must be keyed by the STABLE AST field
+    // The identity map must be keyed by the STABLE AST field
     // pointer for BOTH same-name authors — the exact pointers `fn_ast_map` and
     // the `module_decls` raw facts carry — not a per-iteration switch-capture
     // temporary. If the winner were keyed by `&fd` (the scanDecls bug), this
@@ -3274,7 +3274,7 @@ fn checkInlineExitCell(cell: InlineExitCell) !void {
     if (cell.divergent_path) try std.testing.expect(diverged_blocks > 0);
 }
 
-test "inline exit: every inlined body form exits to its own destination, never the caller's `ret` (S3 matrix)" {
+test "inline exit: every inlined body form exits to its own destination, never the caller's `ret` (matrix)" {
     // The matrix is (declared return family) × (a completed explicit return) ×
     // (a path that diverges), plus the subentries whose written return operand
     // is ITSELF divergent. The callee takes a comptime `$t` so every cell is

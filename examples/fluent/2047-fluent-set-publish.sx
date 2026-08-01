@@ -1,10 +1,10 @@
 // Publishing into a block that intercepts at an OPEN SET (fluent spec §6.1/§6.3
-// rule 2, A1).
+// rule 2).
 //
 // A set carries its member inside the slot, so a member statement type-checked at
 // the expected `P` IS a complete `P` value — the same allocator-free formation the
 // expected type performs at a local, an argument, or a return. So both halves of
-// A1 publish here: a value that already is a `View`, and a member the expected type
+// publish here: a value that already is a `View`, and a member the expected type
 // lifts. The sink takes `@Init(View)` — the set is a by-value carrier, so the
 // initializer's type argument is the set itself and `write` is a plain slot copy.
 //

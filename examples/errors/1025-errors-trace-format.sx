@@ -1,8 +1,8 @@
-// Error return-trace formatting (ERR step E3.3). `library/modules/std/trace.sx`
+// Error return-trace formatting. `library/modules/std/trace.sx`
 // reads the trace buffer (populated by the raise/try push wiring) and
 // renders it. `trace.print_current()` writes the trace to stderr; the catch
 // handler sees the full chain because the absorption clear fires at handler
-// EXIT, not entry. Frame locations are placeholders until DWARF (ERR E3.0)
+// EXIT, not entry. Frame locations are placeholders until DWARF
 // resolves PCs to file:line; the count + ordering are already meaningful.
 //
 // Note: the trace goes to stderr. The test runner merges stderr+stdout, so the

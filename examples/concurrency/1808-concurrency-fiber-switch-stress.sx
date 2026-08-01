@@ -27,7 +27,7 @@
 // stages, not for the single-thread switch this gate proves.
 //
 // aarch64-pinned (per-arch asm + 21-slot save area); runs end-to-end here,
-// ir-only on a mismatch. x86_64 sibling + mmap guard-page stacks are B1.3b.
+// ir-only on a mismatch.
 #import "modules/std.sx";
 
 // 21 slots: [0..9]=x19..x28 [10]=fp [11]=lr [12]=sp [13..20]=d8..d15.

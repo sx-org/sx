@@ -1,4 +1,4 @@
-// fix-0102c F1 (issue 0102): two flat FILE imports each author same-name free
+// Issue 0102: two flat FILE imports each author same-name free
 // functions whose VARIADIC SHAPE differs. `combine` is fixed-arity in a.sx
 // (the first-wins winner) but variadic in b.sx (the shadow); `pick` is the
 // reverse. Each module's bare call must pack arguments against ITS OWN

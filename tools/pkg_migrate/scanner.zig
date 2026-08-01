@@ -1,5 +1,5 @@
 //! Minimal syntax-aware scanner for sx source, dedicated to the pkg_migrate
-//! tool (P0.4). It is NOT the compiler lexer — it cannot be, because this tool
+//! tool. It is NOT the compiler lexer — it cannot be, because this tool
 //! is deliberately unwired from build.zig — but it mirrors the exact lexical
 //! surface of `src/lexer.zig` that matters for migration correctness:
 //!

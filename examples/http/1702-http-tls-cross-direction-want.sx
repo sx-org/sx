@@ -1,4 +1,4 @@
-// std.http — Q3.4 DATA-phase TLS cross-direction wants. The transport seam
+// std.http — DATA-phase TLS cross-direction wants. The transport seam
 // (TlsConn) may return WantWrite from a READ (the session must flush a
 // pending record before it can deliver plaintext) or WantRead from a WRITE
 // (the session needs a peer message before its ciphertext can proceed) —

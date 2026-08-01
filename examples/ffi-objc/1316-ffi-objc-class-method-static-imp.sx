@@ -1,4 +1,4 @@
-// M2.1(b) — class methods (no `*Self` first param) on a
+// class methods (no `*Self` first param) on a
 // sx-defined `#objc_class`.
 //
 // The user declares a method without `self: *Self`. The compiler

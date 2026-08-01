@@ -21,12 +21,11 @@ const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 
 /// Lazily declare the `sx_trace_push(u64)` / `sx_trace_clear()` runtime
-/// externs (ERR E3.1). Storage is a `_Thread_local` ring buffer in
+/// externs. Storage is a `_Thread_local` ring buffer in
 /// `library/vendors/sx_trace_runtime/sx_trace.c` — kept OUT of the user's IR
 /// module (same JIT-TLS reason as the JNI env slot). Setting
 /// `needs_trace_runtime` signals Compilation to auto-link the .c for AOT.
-/// Wired into the `raise` / `try` push sites and the absorbing clear sites
-/// at ERR E3.2.
+/// Wired into the `raise` / `try` push sites and the absorbing clear sites.
 pub fn getTraceFids(self: *Lowering) struct { push: FuncId, clear: FuncId } {
     self.needs_trace_runtime = true;
     if (self.trace_push_fid == null) {
@@ -48,7 +47,7 @@ pub fn getTraceFids(self: *Lowering) struct { push: FuncId, clear: FuncId } {
 }
 
 /// Error return-traces are emitted in debug-ish builds and skipped in
-/// release (ERR E3.2 build-mode gating). `sx run` defaults to `-O0`
+/// release. `sx run` defaults to `-O0`
 /// (`.none`), the common dev path; `.default`/`.aggressive` are release.
 /// The opt level is the gate.
 pub fn tracesEnabled(self: *Lowering) bool {
@@ -75,7 +74,7 @@ pub fn emitTraceClear(self: *Lowering) void {
     _ = self.builder.emit(.{ .call = .{ .callee = fids.clear, .args = &.{} } }, .void);
 }
 
-/// The trace frame value for a failure site (ERR E3.0 slice 3a). Emits the
+/// The trace frame value for a failure site. Emits the
 /// niladic `.trace_frame` op (span-stamped via `Builder.current_span`); each
 /// backend resolves it to a real frame — `emit_llvm` to a `Frame*`, `interp`
 /// to a packed `(func_id, offset)`. The result feeds `sx_trace_push`.
@@ -225,7 +224,7 @@ pub fn checkErrorSetValueCoercion(self: *Lowering, src: TypeId, dst: TypeId, spa
 }
 
 /// Diagnose every tag id in `src_tags` that is not a member of the named
-/// error set `dst`. Shared by the named-set subset check and E1.4b's
+/// error set `dst`. Shared by the named-set subset check and the inferred-set
 /// inferred-callee widening (where the callee's tags come from the SCC,
 /// not a `.error_set` TypeId).
 pub fn diagTagsNotInSet(self: *Lowering, src_tags: []const u32, dst: TypeId, span: ast.Span) void {
@@ -249,10 +248,10 @@ pub fn diagTagsNotInSet(self: *Lowering, src_tags: []const u32, dst: TypeId, spa
 }
 
 /// `raise EXPR;` — terminate the enclosing failable function via the error
-/// channel. E1.3 lowers the **pure-failable** shape (`-> !` / `-> !Named`,
-/// whose return type IS the error set): emit `ret(EXPR)`. The value-carrying
+/// channel. The **pure-failable** shape (`-> !` / `-> !Named`, whose return
+/// type IS the error set) emits `ret(EXPR)`. The value-carrying
 /// shape (`-> (T..., !)`) needs the value slots set to `undef` alongside the
-/// error slot — that tuple ABI lands in E2.1/E2.2, so we bail loudly here
+/// error slot; that tuple ABI is unimplemented here, so this bails loudly
 /// rather than ship a half-built return that silently corrupts value slots.
 pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) void {
     // (1) `raise` is legal only inside a failable function.
@@ -281,7 +280,7 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
         }
     }
 
-    // (3) Push a trace frame: `raise` always escapes the function (ERR E3.2).
+    // (3) Push a trace frame: `raise` always escapes the function.
     //     Before cleanup, so the frame records the raise site itself.
     self.emitTracePush(self.placeholderTraceFrame());
 
@@ -296,7 +295,7 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
         self.emitBodyExit(coerced, err_set, .return_like);
     } else {
         // Value-carrying `-> (T..., !)`: the error path leaves the value
-        // slots undefined and carries the tag in the error slot (ERR E2.1).
+        // slots undefined and carries the tag in the error slot.
         const tag_ty = self.builder.getRefType(tag_ref);
         const coerced_tag = if (tag_ty != err_set) self.coerceExplicit(tag_ref, tag_ty, err_set) else tag_ref;
         self.emitErrorCleanup(self.func_defer_base, coerced_tag);
@@ -613,14 +612,14 @@ pub fn exprIsFailable(self: *Lowering, node: *const Node) bool {
     return self.errorChannelOf(self.inferExprType(node)) != null;
 }
 
-/// `try X` — a fallible attempt (ERR step E1.4a: the STANDALONE form, whose
-/// failure target is function-propagation). Evaluates X; on failure, runs
+/// `try X` — a fallible attempt (the STANDALONE form, whose failure target
+/// is function-propagation). Evaluates X; on failure, runs
 /// the function's defers and returns the error to the caller; on success,
-/// continues with X's value. E1.4a lowers the pure-failable shape (callee
+/// continues with X's value. This lowers the pure-failable shape (callee
 /// `-> !` / `-> !Named`, caller likewise pure-failable). Value-carrying
 /// callees, propagation from a value-carrying caller, and `try` inside an
-/// `or` chain need the error-channel tuple ABI / fallback routing — those
-/// land in E1.4b/E2, so we bail loudly here.
+/// `or` chain need the error-channel tuple ABI / fallback routing, which is
+/// unimplemented here, so those bail loudly.
 /// Build the `@SourceSite` a `@caller` marker stands for.
 ///
 /// `file` / `declaration` / `ordinal` / `id` come from the source-site index,
@@ -746,7 +745,7 @@ pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
     };
 
     // (2) The operand must be failable. This is the sole failable-operand
-    //     check (the parser imposes none — see E0.2).
+    //     check (the parser imposes none).
     const op_ty = self.inferExprType(operand);
     const callee_set = self.errorChannelOf(op_ty) orelse {
         if (self.diagnostics) |diags| {
@@ -781,7 +780,7 @@ pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
     self.builder.condBr(is_err, prop_bb, &.{}, ok_bb, &.{});
 
     // Propagation: push a trace frame (this `try` failure escapes to the
-    // caller — ERR E3.2), run the function's cleanups (defers + onfails,
+    // caller), run the function's cleanups (defers + onfails,
     // since this is an error exit), then return the caller's failure
     // carrying this tag (pure caller → `ret(tag)`; value-carrying →
     // `ret {undef…, tag}`).
@@ -830,11 +829,11 @@ pub fn diagTryNotFailable(self: *Lowering, span: ast.Span) void {
     }
 }
 
-/// `expr catch [e] BODY` — inline failure handler (ERR step E1.5,
-/// pure-failable slice). Evaluates `expr`; on failure, binds the tag to
+/// `expr catch [e] BODY` — inline failure handler for a pure-failable
+/// LHS. Evaluates `expr`; on failure, binds the tag to
 /// `e` (if present) and runs BODY; on success, the value is `void` (a
 /// pure-failable LHS has no success value). BODY either diverges (via
-/// `noreturn` — E1.4c) or falls through. `catch` consumes the error
+/// `noreturn`) or falls through. `catch` consumes the error
 /// locally, so — unlike `try` / `raise` — it needs no failable *enclosing*
 /// function. Value-carrying LHS (binding the success value / a
 /// value-producing body unifying with the success tuple) needs the
@@ -850,7 +849,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
     } else ce_in;
     // A failable `or` chain operand (`(try a or try b) catch e …`) routes
     // its total failure to the catch handler — not the function — via the
-    // chain-fail target (ERR E2.4). A chain's value type is non-failable
+    // chain-fail target. A chain's value type is non-failable
     // `T`, so it wouldn't pass the `errorChannelOf` check below.
     if (ce.operand.data == .binary_op and ce.operand.data.binary_op.op == .or_op and
         self.orIsFailableChain(&ce.operand.data.binary_op))
@@ -879,7 +878,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
         // The handler can inspect the trace (`trace.print_current()`); the
         // absorption clear fires once it completes WITHOUT re-raising (a
         // fall-through). A diverging body (`raise` / `return`) keeps /
-        // discards the buffer on its own path (ERR E3.2; reconciles
+        // discards the buffer on its own path (reconciles
         // §clear-points "cleared before body" with §catch-over-or
         // "frames still in the buffer when the body runs").
         if (!self.currentBlockHasTerminator()) {
@@ -915,7 +914,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
     return self.builder.blockParam(merge_bb, 0, succ_ty);
 }
 
-/// `(failable or-chain) catch [e] BODY` (ERR E2.4). The chain's operands
+/// `(failable or-chain) catch [e] BODY`. The chain's operands
 /// route per the chain rules; its TOTAL failure (the final operand failing)
 /// is redirected to the catch handler via `chain_fail_target` rather than
 /// propagating to the function. `e` binds the final error tag; the handler's
@@ -1027,12 +1026,12 @@ pub fn runCatchBody(self: *Lowering, ce: *const ast.CatchExpr, err_val: Ref, err
     return if (ce.body.data == .block) self.lowerBlockValue(ce.body) else self.lowerExpr(ce.body);
 }
 
-/// `lhs or rhs` with a failable LHS (ERR step E2.4a — the value-terminator
+/// `lhs or rhs` with a failable LHS (the value-terminator
 /// form). On LHS success the result is its value part (the lone value, or a
 /// value-tuple); on failure the LHS error is discarded and the result is
 /// `rhs` (a plain value of the success type), so the whole expression is
 /// non-failable. The CHAIN form (`... or try ...` / a failable RHS) needs
-/// the fallback-target routing deferred from E1.4 — bail.
+/// fallback-target routing, which is unimplemented here — bail.
 /// Widening at an escape (function-propagation) site: the escaping set must
 /// be ⊆ the caller's named set. An inferred caller (`!`) absorbs everything
 /// via the whole-program SCC — no check. A bare-`!` callee carries
@@ -1058,7 +1057,7 @@ pub fn checkEscapeWidening(self: *Lowering, callee_node: *const Node, callee_set
             self.diagTagsNotInSet(tags, caller_set, span);
         }
         // Empty union (no closure of this shape ever raises) → silently
-        // allowed: the slot's `!` resolves to ∅ (ERR E5.1 sub-feature 6).
+        // allowed: the slot's `!` resolves to ∅.
     }
 }
 
@@ -1234,7 +1233,7 @@ pub fn flattenOrChain(self: *Lowering, bop: *const ast.BinaryOp, list: *std.Arra
     list.append(self.alloc, self.desugarErasedAssert(bop.rhs) orelse bop.rhs) catch unreachable;
 }
 
-/// Lower a failable `or` (ERR E2.4): a value-terminator (`lhs or value`) or
+/// Lower a failable `or`: a value-terminator (`lhs or value`) or
 /// a chain (`try a or try b or …`, possibly with a trailing value
 /// terminator). Left-to-right, short-circuit: each failable operand's
 /// failure routes to the next operand; the final operand either absorbs
@@ -1366,10 +1365,10 @@ pub fn lowerFailableOr(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     return if (has_value) self.builder.blockParam(merge_bb, 0, succ_ty) else self.builder.constInt(0, .void);
 }
 
-// ── ERR E1.4b: whole-program inferred-error-set convergence ──────────
+// ── whole-program inferred-error-set convergence ──────────
 
 /// The bare callee name of a call expression (`g(...)` → "g"), or null if
-/// the node isn't a direct call to a named function. E1.4b resolves only
+/// the node isn't a direct call to a named function. Convergence resolves only
 /// the bare identifier (top-level functions); UFCS / mangled-local callees
 /// aren't tracked by the SCC.
 pub fn callTargetName(node: *const Node) ?[]const u8 {
@@ -1406,7 +1405,7 @@ pub fn namedSetTags(self: *Lowering, name: []const u8) ?[]const u32 {
 /// Whole-program inferred-error-set convergence. Thin delegation to the
 /// canonical owner (`ErrorAnalysis`, `error_analysis.zig`); kept on
 /// `Lowering` as a `pub` entry point because the lowering pipeline + the
-/// E1.4b unit test call it.
+/// the convergence unit test call it.
 pub fn convergeInferredErrorSets(self: *Lowering) void {
     self.errorAnalysis().convergeInferredErrorSets();
 }

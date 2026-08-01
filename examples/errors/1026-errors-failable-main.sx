@@ -1,4 +1,4 @@
-// Failable `-> !` main entry-point wrapper (ERR step E4.2). A pure-failable
+// Failable `-> !` main entry-point wrapper. A pure-failable
 // main that lets an error reach the function boundary exits 1 and prints the
 // unhandled-error header (with the tag name, via the always-linked tag-name
 // table) plus the return trace to stderr — never the raw tag id as the
@@ -7,7 +7,7 @@
 //
 // Note: the header + trace go to stderr. The test runner merges stderr+stdout,
 // so the snapshot shows them interleaved with the `print` (stdout) lines.
-// Frame locations are placeholders until DWARF (ERR E3.0); count + ordering +
+// Frame locations are placeholders until DWARF; count + ordering +
 // the tag name are already meaningful. Expected exit code: 1.
 
 #import "modules/std.sx";

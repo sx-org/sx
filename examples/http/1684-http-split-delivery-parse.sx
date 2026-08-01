@@ -1,4 +1,4 @@
-// std.http — parsing correctness under heavily split delivery (Q0.5 lock).
+// std.http — parsing correctness under heavily split delivery (lock).
 //
 // Locks the behavior the incremental-parse optimization must preserve: a
 // request whose bytes dribble in across MANY partial reads — the header

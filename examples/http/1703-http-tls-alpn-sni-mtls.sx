@@ -1,6 +1,6 @@
-// std.http — Q3.4 TLS features: ALPN, SNI multi-cert, client-cert auth
+// std.http — TLS features: ALPN, SNI multi-cert, client-cert auth
 // (mTLS). A real http.Server over the mbedTLS provider serves in-process
-// loopback TLS clients (the 1679 harness shape), exercising the Q3.4
+// loopback TLS clients (the 1679 harness shape), exercising the
 // TlsServer surface:
 //   set_alpn            — advertise ["http/1.1"]; negotiation is proven
 //                         client-side via mbedtls_ssl_get_alpn_protocol,

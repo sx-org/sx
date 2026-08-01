@@ -196,7 +196,7 @@ mbedtls_ssl_conf_own_cert :: (conf: *SslConfig, own_cert: *X509Crt, pk_key: *PkC
 // null (bound as *void — we never build CRLs).
 mbedtls_ssl_conf_ca_chain :: (conf: *SslConfig, ca_chain: *X509Crt, ca_crl: *void) extern mbedtls;
 
-// ── ALPN (Q3.4) ─────────────────────────────────────────────────────
+// ── ALPN ────────────────────────────────────────────────────────────
 // protos: NULL-terminated array of NUL-terminated protocol names, in
 // preference order. mbedTLS stores the POINTER — the array and every string
 // must outlive the config.
@@ -204,7 +204,7 @@ mbedtls_ssl_conf_alpn_protocols :: (conf: *SslConfig, protos: [*][*]u8) -> i32 e
 // The negotiated protocol after the handshake (null = none negotiated).
 mbedtls_ssl_get_alpn_protocol :: (ssl: *SslContext) -> [*]u8 extern mbedtls;
 
-// ── SNI (Q3.4) ──────────────────────────────────────────────────────
+// ── SNI ─────────────────────────────────────────────────────────────
 // f_sni fires during the server handshake with the client's server_name
 // (NOT NUL-terminated — name_len bytes). Return 0 to continue (after an
 // optional mbedtls_ssl_set_hs_own_cert to switch certs); nonzero aborts

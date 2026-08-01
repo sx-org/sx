@@ -1,4 +1,4 @@
-// Value-carrying failable main `-> (int, !)` (ERR step E4.2). The entry-point
+// Value-carrying failable main `-> (int, !)`. The entry-point
 // wrapper extracts the `{value, error}` tuple main returns: on success it exits
 // with the integer value (truncated to u8, like a plain integer main); on an
 // escaping error it prints the header + trace to stderr and exits 1 (the same

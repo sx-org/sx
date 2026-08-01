@@ -59,7 +59,7 @@ htons :: (port: i64) -> u16 {
     (((port & 0xFF) << 8) | ((port >> 8) & 0xFF)).(u16)
 }
 
-// ── generic addresses (Q3.5) ─────────────────────────────────────────
+// ── generic addresses ─────────────────────────────────────────
 // One address value for EVERY family: `buf` is sockaddr_storage-sized on
 // both OSes and holds the family-specific sockaddr bytes; `len` is what the
 // syscall gets. Constructors return (Addr, bool) — a false is LOUD (the
@@ -88,7 +88,7 @@ copy_bytes :: (dst: [*]u8, src: [*]u8, n: i64) {
     while i < n { dst[i] = src[i]; i += 1; }
 }
 
-// ── poll + socket-level error/timeouts (Q3.6a — timed client dials) ──
+// ── poll + socket-level error/timeouts (— timed client dials) ──
 // pollfd is byte-identical on darwin + linux; nfds is declared usize so the
 // full zero-extended register is correct against BOTH ABIs (darwin nfds_t
 // is u32 — reads the low word; linux is u64).
@@ -166,14 +166,14 @@ freeaddrinfo :: (res: *AddrInfo) extern libc;
 parse_addr :: (text: string, port: i64) -> (Addr, bool) {
     a : Addr = .{};
     if text.len == 0 or text.len > 63 { return a, false; }
-    // Q3.5-review MED-1: an out-of-range port silently truncated through
+    // an out-of-range port silently truncated through
     // htons (65536 → port 0 = a kernel-chosen ephemeral bind) — the exact
     // silent-wrong-result class this API's (Addr, bool) contract rejects.
     if port < 0 or port > 65535 { return a, false; }
     tb : [64]u8 = ---;
     i : i64 = 0;
     while i < text.len {
-        // Q3.5-review LOW-5: an embedded NUL would silently truncate the
+        // an embedded NUL would silently truncate the
         // literal at the C boundary ("127.0.0.1\0junk" parsing as
         // 127.0.0.1) — reject; the WHOLE string must be the address.
         if text[i] == 0 { return a, false; }
@@ -276,7 +276,7 @@ inline if OS == .linux or OS == .android or OS == .wasm {
         return .{ sin_family = xx AF_INET, sin_port = htons(port), sin_addr = addr };
     }
 
-    // ── Q3.6a per-OS io-timeout surface ──────────────────────────────
+    // ── per-OS io-timeout surface ──────────────────────────────
     SO_ERROR :i32: 4;
     inline if OS == {
         case .wasm:
@@ -303,7 +303,7 @@ inline if OS == .linux or OS == .android or OS == .wasm {
         return .{ tv_sec = ms / 1000, tv_usec = xx ((ms % 1000) * 1000) };
     }
 
-    // ── Q3.5 per-OS address surface ──────────────────────────────────
+    // ── per-OS address surface ──────────────────────────────────
     AF_INET6    :i32: 10;
     IPV6_V6ONLY :i32: 26;
 
@@ -355,7 +355,7 @@ inline if OS == .linux or OS == .android or OS == .wasm {
 
     accept4 :: (fd: i32, addr: *SockAddr, addrlen: *u32, flags: i32) -> i32 extern libc;
 
-    // Q2.1: accept one pending connection with O_NONBLOCK + FD_CLOEXEC
+    // accept one pending connection with O_NONBLOCK + FD_CLOEXEC
     // already applied — accept4 does both ATOMICALLY (no fd ever exists
     // without CLOEXEC, so a concurrent fork/exec on another thread can't
     // inherit it) and saves two fcntl syscalls per accept. Same error
@@ -398,7 +398,7 @@ inline if OS == .macos or OS == .ios {
         return .{ sin_len = 16, sin_family = xx AF_INET, sin_port = htons(port), sin_addr = addr };
     }
 
-    // ── Q3.6a per-OS io-timeout surface ──────────────────────────────
+    // ── per-OS io-timeout surface ──────────────────────────────
     SO_ERROR   :i32: 0x1007;
     SO_RCVTIMEO :i32: 0x1006;
     SO_SNDTIMEO :i32: 0x1005;
@@ -413,7 +413,7 @@ inline if OS == .macos or OS == .ios {
         return .{ tv_sec = ms / 1000, tv_usec = xx ((ms % 1000) * 1000) };
     }
 
-    // ── Q3.5 per-OS address surface ──────────────────────────────────
+    // ── per-OS address surface ──────────────────────────────────
     AF_INET6    :i32: 30;
     IPV6_V6ONLY :i32: 27;
 
@@ -459,7 +459,7 @@ inline if OS == .macos or OS == .ios {
         ai_next:      usize = 0;   // *addrinfo
     }
 
-    // Q2.1: accept one pending connection with O_NONBLOCK + FD_CLOEXEC
+    // accept one pending connection with O_NONBLOCK + FD_CLOEXEC
     // applied. darwin has NO accept4, so this is accept + two fcntls —
     // NOT atomic w.r.t. a concurrent fork/exec on another thread (the
     // fd exists briefly without CLOEXEC); the best darwin offers. A
@@ -504,7 +504,7 @@ set_nonblocking :: (fd: i32) -> bool {
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK) >= 0;
 }
 
-// Q2.1: mark `fd` close-on-exec so a fork/exec'd child (process.run)
+// mark `fd` close-on-exec so a fork/exec'd child (process.run)
 // never inherits it. FD_CLOEXEC is the only fd flag, so F_SETFD can set
 // the word directly — no read-modify-write. False when fcntl refuses.
 set_cloexec :: (fd: i32) -> bool {

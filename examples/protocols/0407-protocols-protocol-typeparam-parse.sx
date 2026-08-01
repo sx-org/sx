@@ -1,8 +1,7 @@
-// Proves the new syntax parses + lowers
-// without error. The parameterised protocol Into(Target: Type) and the
-// matching `impl Into(Block) for Closure() -> void` declarations are
-// registered but unused. Resolution is what makes the impl
-// reachable from `xx`.
+// A parameterised protocol type parameter parses and lowers without error.
+// The protocol `Into(Target: Type)` and the matching
+// `impl Into(Block) for Closure() -> void` declarations are registered but
+// unused — resolution is what makes the impl reachable from `xx`.
 
 #import "modules/std.sx";
 

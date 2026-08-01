@@ -1,6 +1,6 @@
 // std.http — automatic HEAD + no body on 204/304 (RFC 9110 §9.3.2, §6.4.1).
 //
-// Q1.4: a HEAD request runs the handler exactly like GET, and the response
+// a HEAD request runs the handler exactly like GET, and the response
 // carries the SAME headers — including the Content-Length of the body the
 // handler produced — but the body bytes never go on the wire. A streamed
 // (chunked) response to HEAD emits the chunked head alone: the producer is

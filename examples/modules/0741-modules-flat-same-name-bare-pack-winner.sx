@@ -6,7 +6,7 @@
 // dispatch in lowerCall keyed off the first-wins winner (a's pack)
 // invokes it (returns 1) BEFORE consuming the selected author — so plan-selected
 // author and lowered+dispatched author disagree. The early dispatch reads
-// the SAME `SelectedFunc` the main dispatch binds (fix-0102 F2).
+// the SAME `SelectedFunc` the main dispatch binds.
 #import "modules/std.sx";
 #import "0741-modules-flat-same-name-bare-pack-winner/a.sx";
 #import "0741-modules-flat-same-name-bare-pack-winner/b.sx";

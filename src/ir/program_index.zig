@@ -955,7 +955,7 @@ pub const ProgramIndex = struct {
     /// behavior). Present = the alias rewrites calls only in that file.
     private_ufcs_alias_source: std.StringHashMap([]const u8),
 
-    // ── Source-keyed semantic caches (R5 §#4) ──
+    // ── Source-keyed semantic caches ──
     // The source-partitioned analogues of `type_alias_map` / `module_const_map`
     // / `global_names`, keyed `source path → name → X`. Written by the same scan
     // (`scanDecls` in lower.zig), keyed by the registering decl's source. The

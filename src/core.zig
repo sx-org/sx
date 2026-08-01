@@ -340,7 +340,7 @@ pub const Compilation = struct {
             }
         }
 
-        // Same pattern for the ERR E3.1 error return-trace runtime.
+        // Same pattern for the error return-trace runtime.
         if (lowering.needs_trace_runtime) {
             if (try self.resolveStdlibPath("vendors/sx_trace_runtime/sx_trace.c")) |abs_path| {
                 var sources = std.ArrayList([]const u8).empty;

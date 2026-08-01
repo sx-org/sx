@@ -1,4 +1,4 @@
-// M2.2 second pass — `#property` on sx-defined `#objc_class`
+// second pass — `#property` on sx-defined `#objc_class`
 // synthesizes getter/setter IMPs that read/write the hidden
 // state struct.
 //

@@ -116,7 +116,7 @@ find_executable :: (name: [:0]u8) -> ?string {
     null
 }
 
-// ── Process termination (ERR step E4.1) ───────────────────────────────
+// ── Process termination ───────────────────────────────
 
 // Bound to POSIX `_exit(2)` (immediate termination — no atexit, no stdio
 // flush), NOT libc `exit(3)`. Two reasons: (1) it matches `process.exit`'s

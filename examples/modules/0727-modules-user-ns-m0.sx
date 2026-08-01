@@ -1,5 +1,5 @@
-// fix-0102c (issue 0102): a user namespace alias literally named `__m0`
-// coexists with flat same-name imports. fix-0102 resolves same-name authors by
+// Issue 0102: a user namespace alias literally named `__m0`
+// coexists with flat same-name imports. Same-name authors resolve by
 // FnDecl IDENTITY — there are no synthetic `__m0`-style names to collide with —
 // so a user namespace spelled `__m0` is just an ordinary namespace: `call_a`
 // binds a.ping (1), `call_b` binds b.ping (2), and `__m0.ping` reaches m.ping (99).

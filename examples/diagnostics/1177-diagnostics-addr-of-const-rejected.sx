@@ -1,8 +1,8 @@
 // Taking the address of a scalar `::` constant is a compile error: a scalar
 // constant folds to its value and has NO storage (only array/struct constants
 // are immutable globals with a real address — see 0177). Covers a module-scope
-// const, a local const, and an inline-asm `-> @const` write-through (the path
-// that surfaced the bug). Unrejected, `@N` lowers to `inttoptr (i64 40 to
+// const, a local const, and an inline-asm `-> @const` write-through.
+// Unrejected, `@N` lowers to `inttoptr (i64 40 to
 // ptr)` — a wild pointer that segfaults on deref and emits invalid stores
 // for asm `-> @const`. Regression (issue 0138).
 

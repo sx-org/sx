@@ -5,7 +5,7 @@
 //! `import_graph` / `flat_import_graph` views. It OWNS nothing import-derived;
 //! those maps live in `imports.zig`/`core.zig` and are borrowed here.
 //!
-//! Two collectors sit on top of these facts (R5 §1 #1):
+//! Two collectors sit on top of these facts:
 //!   - `collectVisibleAuthors` — own author ∪ the flat-import edge walk. THE one
 //!     graph-walk; the permanent flat-import F-series root.
 //!   - `collectNamespaceAuthors` — a single already-selected namespace target's
@@ -19,9 +19,9 @@
 //!
 //! Both are RAW-author collectors returning verdicts: they say WHO authors a name
 //! and whether that author wins outright, is ambiguous, not-visible, etc.
-//! Per-domain lowering (R2+) decides what to do with the verdict.
+//! Per-domain lowering decides what to do with the verdict.
 //!
-//! Falsifiable invariant (R5 §1 #1): there is EXACTLY ONE iterator over
+//! Falsifiable invariant: there is EXACTLY ONE iterator over
 //! `flat_import_graph`/`import_graph` in this file — inside
 //! `collectVisibleAuthors`. `collectNamespaceAuthors` iterates one
 //! `NamespaceTarget.own_decls` slice and touches no graph. This is what keeps
@@ -89,7 +89,7 @@ pub const Verdict = enum {
     /// single-author path.
     single,
     /// ≥2 distinct eligible flat-visible authors, no own — a genuine collision
-    /// the source cannot disambiguate (the LOUD diagnostic at R2+).
+    /// the source cannot disambiguate (the LOUD diagnostic in lowering).
     ambiguous,
     /// No eligible author is flat-visible, but the name IS authored for this
     /// domain in some module — reachable only over a namespace edge ⇒ a
@@ -258,7 +258,7 @@ pub const Resolver = struct {
         return .{ .index = index, .alloc = alloc };
     }
 
-    /// THE single graph-walk in this file (falsifiable invariant, R5 §1 #1):
+    /// THE single graph-walk in this file (falsifiable invariant):
     /// the own author declared in `from` ∪ the flat-import authors reachable
     /// over the edge set `vis` chooses. RAW — selectors decide eligibility, not
     /// this. `from` is the querying module's source path.
@@ -310,7 +310,7 @@ pub const Resolver = struct {
     }
 
     /// Container collector for ONE already-selected namespace target. Iterates
-    /// the target's `own_decls` and touches NO import graph (R5 §1 #1). A
+    /// the target's `own_decls` and touches NO import graph. A
     /// namespace's `own_decls` is name-deduped, so a name has at most one author
     /// here — returned as `own`, sourced to the target's module path.
     pub fn collectNamespaceAuthors(

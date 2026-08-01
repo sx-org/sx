@@ -6,14 +6,13 @@
 // module cannot see a caller block-local, so `y: LocalOnly` is undeclared in the
 // lib file.
 //
-// A source-insensitive global `local_type_names` set lets the
-// template's field resolution (run in the template's source context)
-// find the caller's `LocalOnly` and compile
-// (printing a value, exit 0). `local_type_names` is keyed by declaring source,
-// so a cross-source block-local cannot leak into another source's resolution.
+// `local_type_names` is keyed by declaring source, so a cross-source
+// block-local cannot leak into another source's resolution. Were the set
+// source-insensitive, the template's field resolution (run in the template's
+// source context) would find the caller's `LocalOnly` and compile, printing a
+// value and exiting 0.
 //
 // Expected: `error: unknown type 'LocalOnly'` pointing into lib.sx; exit 1.
-// Regression (stdlib E3).
 #import "modules/std.sx";
 #import "0762-modules-imported-generic-caller-local-field-leak/lib.sx";
 

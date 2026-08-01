@@ -1,4 +1,4 @@
-// M1.1 — Obj-C primitive type aliases.
+// Obj-C primitive type aliases.
 //
 // `id`, `Class`, `SEL`, `BOOL` from `modules/ffi/objc.sx` stand in
 // for the three opaque Obj-C runtime types and Apple's signed-char

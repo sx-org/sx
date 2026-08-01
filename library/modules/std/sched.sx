@@ -126,7 +126,7 @@ Timer :: struct {
     fiber: *Fiber;
 }
 
-// B1.4c: a fiber parked on REAL fd readiness. Unlike a `Timer` (virtual
+// a fiber parked on REAL fd readiness. Unlike a `Timer` (virtual
 // time), an `IoWaiter` blocks the whole scheduler on `kevent` until the
 // kernel reports `fd` readable, then wakes `fiber`. Stored in
 // `Scheduler.io_waiters`; the registration is one-shot (EV_ONESHOT), so the
@@ -148,7 +148,7 @@ Scheduler :: struct {
     n_spawned: i64;
     n_suspended: i64;           // fibers parked off-queue (suspend_self minus wake)
 
-    // --- B1.4b: deterministic virtual-time timer scheduling ----------------
+    // --- deterministic virtual-time timer scheduling ----------------
     clock_ms: i64;              // the VIRTUAL clock (ms). Starts 0; advances ONLY
                                 // when the ready queue drains and the earliest
                                 // pending timer fires. No real wall clock is ever
@@ -157,7 +157,7 @@ Scheduler :: struct {
                                 // through `own_allocator` (long-lived-container
                                 // rule: a timer outlives the `sleep` call's scope).
 
-    // --- B1.4c: real fd-readiness blocking via kqueue ----------------------
+    // --- real fd-readiness blocking via kqueue ----------------------
     kq: i32;                    // the kqueue fd. LAZY: -1 until the first
                                 // `block_on_fd` opens it, so a pure-compute /
                                 // virtual-timer scheduler never opens a kqueue
@@ -337,7 +337,7 @@ Scheduler :: struct {
         self.suspend_self();   // parks `cur` off-queue; the timer fire re-wakes it
     }
 
-    // --- B1.4c: block the running fiber until `fd` is readable --------------
+    // --- block the running fiber until `fd` is readable --------------
     //
     // Register `fd` for EVFILT_READ with the scheduler's kqueue (lazily
     // opening it on first use), record an `IoWaiter`, then park the fiber
@@ -979,7 +979,7 @@ cancel_timer_for :: (self: *Scheduler, f: *Fiber) {
     }
 }
 
-// --- B1.4c: fd-waiter set (linear scan, fd-keyed) --------------------------
+// --- fd-waiter set (linear scan, fd-keyed) --------------------------
 //
 // Like the timer set, a plain `List(IoWaiter)` scanned linearly — fiber counts
 // are tiny. Removal shifts the tail down one slot.

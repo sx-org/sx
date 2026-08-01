@@ -78,12 +78,12 @@ objc_registerClassPair :: (cls: *void)                                        ->
 // NSLog takes an NSString format; the variadic tail is not exposed here.
 NSLog :: (fmt: *NSString) extern;
 
-// ─── NSObject ( M4.A) ───────────────────────────────────────────
+// ─── NSObject ──────────────────────────────────────────────────────────
 // Root of every Obj-C class hierarchy. Apple's runtime supplies the IMPs;
 // sx declares the method surface so user code can write
 // `defer view.release();` and `view.retain()` directly instead of going
-// through `objc_msgSend` casts. M2.3's `#extends`-aware dispatch finds
-// these methods automatically once a class roots its `#extends` chain at
+// through `objc_msgSend` casts. `#extends`-aware dispatch finds these
+// methods automatically once a class roots its `#extends` chain at
 // NSObject (runtime classes in uikit.sx etc. add `#extends NSObject;` to
 // inherit the surface).
 //

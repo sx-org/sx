@@ -561,7 +561,7 @@ fn blanketSeed(self: *Lowering, scope: *const Scope) ?std.StringHashMap(TypeId) 
 }
 
 /// Does a statement of type `v` publish to a block intercepting at `protocol`
-/// (§6.3 rule 2)? `P` may be ANY type (H8):
+/// (§6.3 rule 2)? `P` may be ANY type:
 ///
 ///   - a PROTOCOL: the statement's type conforms to it — or IS it, which is the
 ///     identity publish: a value that already is a `P` is written into the
@@ -589,7 +589,7 @@ pub fn appendIntField(self: *Lowering, list: *std.ArrayList(ast.StructFieldInit)
 
 /// `content.site()` — the trailing block's own `@SourceSite` (spec §6.2), or
 /// null when the block has no indexed site. The block is a compile-time
-/// binding, so this resolves to a constant: the site the P3c index recorded for
+/// binding, so this resolves to a constant: the site the index recorded for
 /// the lambda the trailing block parsed to.
 pub fn lowerSite(self: *Lowering, block_ty: TypeId, args: []const *const Node, span: ast.Span) Ref {
     if (args.len != 0) {

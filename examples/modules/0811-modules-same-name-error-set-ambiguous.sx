@@ -11,7 +11,7 @@
 //   - typed error-value annotation    `e : IoErr = error.Disk`
 //   - type-as-value                   `t : Type = IoErr`
 //   - type-category match arm         `case IoErr:`
-//   - `!Named` failable channel       `-> !IoErr`   (E6b audited use surface)
+//   - `!Named` failable channel       `-> !IoErr`   (audited use surface)
 //
 // A stateless `type_bridge.resolveInlineErrorSet`
 // `findByName` short-circuit interns ONE global last-wins `IoErr`, so every bare

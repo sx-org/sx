@@ -15,7 +15,7 @@
 // works (see 0147 / 0201).
 //
 // Expected: `error: 'N' is a value parameter, not a type`; exit 1.
-// Regression (stdlib E3).
+// Regression.
 #import "modules/std.sx";
 
 Bad :: struct($N: u32) {

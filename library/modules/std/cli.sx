@@ -20,8 +20,7 @@
 //   accessor reports the real process argv truthfully and does NOT strip
 //   the interpreter prefix. Mapping process argv -> a program's logical
 //   args (dropping the `sx run prog.sx` prefix, or via an sx-run
-//   convention) is a CONSUMER concern handled later (distribution P3.1),
-//   NOT here.
+//   convention) is a CONSUMER concern, NOT here.
 //
 // Platform: macOS only, via the C runtime's `_NSGetArgv()`
 // (char***) and `_NSGetArgc()` (int*). On any other OS the accessors bail

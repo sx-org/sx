@@ -16,7 +16,7 @@ const TypeResolver = @import("type_resolver.zig").TypeResolver;
 /// typing is owned by `CallResolver` (`calls.zig`); a call node reaching here is
 /// routed to it via `Lowering.inferExprType`.
 ///
-/// A `*Lowering` facade (Principle 5), like `PackResolver`: expression typing
+/// A `*Lowering` facade like `PackResolver`: expression typing
 /// reads live lexical-scope / pack / target-type state and dozens of resolver
 /// helpers, so it borrows `Lowering` rather than re-threading every field.
 pub const ExprTyper = struct {
@@ -111,7 +111,7 @@ pub const ExprTyper = struct {
                 // If-else types as its branches' unified type. A `noreturn`
                 // branch (one that diverges — `return` / `raise` / `break` /
                 // `continue`) unifies away, so the expression takes the other
-                // branch's type; both diverging → `noreturn` (ERR E1.4c).
+                // branch's type; both diverging → `noreturn`.
                 if (ie.else_branch) |eb| {
                     const then_ty = self.l.inferExprType(ie.then_branch);
                     if (then_ty == .noreturn) return self.l.inferExprType(eb);
@@ -126,7 +126,7 @@ pub const ExprTyper = struct {
             // produce no value at their site. A block whose last statement is
             // one of these propagates `noreturn` (block arm below), which lets
             // a `catch` body that ends in `return` / `raise` unify with the
-            // success type (ERR E1.4c / E1.5).
+            // success type.
             .return_stmt, .raise_stmt, .break_expr, .continue_expr => .noreturn,
             .block => |blk| {
                 // A block's type is its last statement's type when that

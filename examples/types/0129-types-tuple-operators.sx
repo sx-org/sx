@@ -26,7 +26,7 @@ apply :: (f: (i32, i32) -> i32, x: i32, y: i32) -> i32 {
     f(x, y)
 }
 
-// P4 edge: Chained default→default calls
+// edge: Chained default→default calls
 Chained :: protocol {
     base :: (self: *Self, msg: string) -> i32;
     wrap :: (self: *Self, msg: string) -> i32 {
@@ -941,7 +941,7 @@ main :: () {
         //     cl_arr[i_loop] = (x: i32) -> i32 => x + val_loop;
         //     i_loop += 1;
         // }
-        // I2: calling closures from array
+        // calling closures from array
         // tmp_cl := cl_arr[0]; print("closure-loop-0: {}\n", tmp_cl(1));
         // tmp_cl = cl_arr[1]; print("closure-loop-1: {}\n", tmp_cl(1));
         // tmp_cl = cl_arr[4]; print("closure-loop-4: {}\n", tmp_cl(1));

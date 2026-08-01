@@ -10,11 +10,10 @@ const TypeTable = types.TypeTable;
 const StringId = types.StringId;
 const ProgramIndex = program_index_mod.ProgramIndex;
 
-/// Explicit, caller-supplied resolution context (architecture Principle 2):
+/// Explicit, caller-supplied resolution context:
 /// the inputs that steer AST type-node resolution, replacing ad-hoc mutable
 /// `Lowering` fields (`type_bindings`, `pack_*`, `comptime_value_bindings`,
-/// `target_type`, …). A2.1 defines the shape; fields are consumed as later
-/// phases move the cases that need them (generics/aliases A2.2, packs A2.3).
+/// `target_type`, …).
 pub const ResolveEnv = struct {
     type_bindings: ?*const std.StringHashMap(TypeId) = null,
     pack_bindings: ?*const std.StringHashMap([]const TypeId) = null,
@@ -188,7 +187,7 @@ pub const TypeResolver = struct {
     /// the caller's resolution mode is preserved — the compiler's stateful path
     /// passes `*Lowering` (generic/pack-binding aware), `type_bridge` passes a
     /// binding-free adapter. Both call THIS; there is no second compound/shape
-    /// algorithm (architecture A2.3b — `resolveCompound` is the single owner).
+    /// algorithm — `resolveCompound` is the single owner.
     ///
     /// Namespaced (no `self`): only the `TypeTable` is needed, so `type_bridge`
     /// (which has no `ProgramIndex`/diagnostics) can call it too.

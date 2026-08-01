@@ -196,7 +196,7 @@ test "pack type: formatTypeName" {
     try std.testing.expectEqualStrings("pack()", table.formatTypeName(arena.allocator(), empty));
 }
 
-// ── ERR E1.1 (Slice 1) — error sets + tag registry ──
+// ── error sets + tag registry ──
 
 test "TagRegistry interns tags, id 0 reserved, global identity" {
     const alloc = std.testing.allocator;

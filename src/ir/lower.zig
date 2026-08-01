@@ -157,7 +157,7 @@ fn sourcesEql(a: ?[]const u8, b: ?[]const u8) bool {
     return std.mem.eql(u8, a.?, b.?);
 }
 
-/// Folding context for a SOURCE-AWARE module-const EXPRESSION RHS (E2/F2/R1).
+/// Folding context for a SOURCE-AWARE module-const EXPRESSION RHS.
 /// The leaf-resolution twin of `program_index.ModuleConstCtx`, but every leaf
 /// name resolves through the querying source's OWN const author
 /// (`selectModuleConst`, own-wins / ambiguous) instead of the GLOBAL last-wins
@@ -369,7 +369,7 @@ pub const Scope = struct {
 /// A pending block-scoped cleanup: `defer` (runs on every block exit) or
 /// `onfail` (runs only when an error leaves the block, binding the in-flight
 /// tag). Both share one declaration-ordered stack so error-exit cleanup runs
-/// them interleaved in reverse order (ERR E1.7).
+/// them interleaved in reverse order.
 const CleanupEntry = struct {
     body: *const Node,
     is_onfail: bool,
@@ -548,11 +548,10 @@ pub const Lowering = struct {
     local_fn_counter: u32 = 0, // unique counter for mangling local function names
     /// Per-declaration nominal identity bookkeeping. The FIRST source to
     /// register a given top-level type NAME keeps `nominal_id = 0` (structural);
-    /// a later registration
-    /// of the same name from a DIFFERENT source is a same-name SHADOW and gets a
-    /// fresh id from `next_nominal_id`, so the two authors intern to DISTINCT
-    /// TypeIds (closing the last-wins collapse). `nominal_name_authors`
-    /// records each name's first author source to make that decision.
+    /// a later registration of the same name from a DIFFERENT source is a
+    /// same-name SHADOW and gets a fresh id from `next_nominal_id`, so the two
+    /// authors intern to DISTINCT TypeIds. `nominal_name_authors` records each
+    /// name's first author source to make that decision.
     nominal_name_authors: std.AutoHashMap(types.StringId, []const u8),
     next_nominal_id: u32 = 0,
     /// Declaration-identity bookkeeping for every NAME-KEYED instantiation cache
@@ -633,10 +632,10 @@ pub const Lowering = struct {
     jni_env_tl_get_fid: ?FuncId = null, // extern `sx_jni_env_tl_get` (from library/vendors/sx_jni_runtime/sx_jni_env_tl.c)
     jni_env_tl_set_fid: ?FuncId = null, // extern `sx_jni_env_tl_set`
     needs_jni_env_tl_runtime: bool = false, // set when lowering touches the JNI env TL; signals Compilation to auto-link the runtime .c
-    trace_push_fid: ?FuncId = null, // extern `sx_trace_push` (ERR E3.1, from library/vendors/sx_trace_runtime/sx_trace.c)
+    trace_push_fid: ?FuncId = null, // extern `sx_trace_push` (from library/vendors/sx_trace_runtime/sx_trace.c)
     trace_clear_fid: ?FuncId = null, // extern `sx_trace_clear`
     needs_trace_runtime: bool = false, // set when lowering emits a trace push/clear; signals Compilation to auto-link sx_trace.c
-    chain_fail_target: ?ChainFailTarget = null, // ERR E2.4: when set, a failable `or` chain routes its TOTAL failure here (an absorbing consumer like `catch`) instead of propagating to the function
+    chain_fail_target: ?ChainFailTarget = null, // when set, a failable `or` chain routes its TOTAL failure here (an absorbing consumer like `catch`) instead of propagating to the function
     current_runtime_class: ?*const ast.RuntimeClassDecl = null, // set while lowering a `#jni_main` (or any sx-defined `#jni_class`) bodied method — `super.method(args)` dispatch resolves the parent class against this fcd's `#extends`
     current_runtime_method: ?ast.RuntimeMethodDecl = null, // the specific method whose body is being lowered; `super.<same_name>(...)` reuses its signature
     type_bindings: ?std.StringHashMap(TypeId) = null, // generic type param bindings ($T → concrete TypeId)
@@ -689,7 +688,7 @@ pub const Lowering = struct {
     // and exempt from the must-set rule.
     named_return_defaults: ?[]const ?*const ast.Node = null,
     block_terminated: bool = false, // set when constant-folded if emits a return/br into current block
-    in_lambda_body: bool = false, // true while lowering a closure-literal body; sharpens the `raise`-not-failable diagnostic (ERR E5.1: tell the user to annotate `-> (T, !)`)
+    in_lambda_body: bool = false, // true while lowering a closure-literal body; sharpens the `raise`-not-failable diagnostic (tell the user to annotate `-> (T, !)`)
     defer_stack: std.ArrayList(CleanupEntry) = std.ArrayList(CleanupEntry).empty, // block-scoped defer + onfail cleanup stack
     func_defer_base: usize = 0, // defer stack base for current function (lowerReturn drains to this)
     deferred_type_fns: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty, // functions deferred until all types registered
@@ -725,9 +724,9 @@ pub const Lowering = struct {
     /// program-wide (single-author, pre-E2). The source-aware bare-TYPE gate consults
     /// this so a legitimately block-local type resolves in ITS OWN source (never
     /// mistaken for a namespaced-only leak, even when a namespaced-only import authors
-    /// a same-name top-level type — R2). It is keyed by source because a local is
+    /// a same-name top-level type). It is keyed by source because a local is
     /// visible ONLY within the source that declares it: an imported template's field
-    /// resolution (run in the template's source context, E3 attempt-4) must NOT bind a
+    /// resolution (run in the template's source context) must NOT bind a
     /// name the CALLER declared block-local.
     local_type_names: std.StringHashMap(std.StringHashMap(void)),
     struct_defaults_map: std.StringHashMap([]const ?*const Node), // struct name → field defaults
@@ -874,7 +873,7 @@ pub const Lowering = struct {
     comptime_type_list_aliases: std.StringHashMap([]const u8),
     diagnostics: ?*errors.DiagnosticList = null, // error reporting with source locations
     xx_reentrancy: std.AutoHashMap(u64, void), // (src_ty, dst_ty) pairs currently being resolved through user-space Into; prevents infinite monomorphisation when a convert body re-enters the same xx
-    /// Whole-program-converged inferred error sets (ERR E1.4b): top-level
+    /// Whole-program-converged inferred error sets: top-level
     /// bare-`!` function name → its sorted escape-tag ids (literal raises +
     /// pure-failable `try` edges, fix-pointed across the call graph). The
     /// shared `!` placeholder TypeId stays empty; this side map holds the real
@@ -882,7 +881,7 @@ pub const Lowering = struct {
     /// `lowerTry`'s named-caller widening and the empty-inferred warning.
     inferred_error_sets: std.StringHashMap([]const u32),
     /// Whole-program-converged inferred error sets keyed by closure/function
-    /// VALUE-signature shape (ERR E5.1 sub-feature 2): every occurrence of
+    /// VALUE-signature shape: every occurrence of
     /// `Closure(<sig>) -> (T, !)` with a structurally identical value-signature
     /// shares one node; each bare-`!` closure literal of that shape unions its
     /// escape tags in. Read by `checkEscapeWidening` when a `try` operand is a
@@ -990,7 +989,7 @@ pub const Lowering = struct {
         },
     };
 
-    /// ERR E2.4 — where a failable `or` chain's TOTAL failure routes when the
+    /// Where a failable `or` chain's TOTAL failure routes when the
     /// chain is the operand of an absorbing consumer (`catch`). `bb` is a block
     /// with a single parameter typed `set` (the error tag); the chain branches
     /// there with its final error instead of propagating to the function.
@@ -1452,7 +1451,7 @@ pub const Lowering = struct {
     /// DEFINING module of the param's function. An imported method's
     /// default-param type (`alloc: Allocator`) is bare-visible only inside its
     /// own module, so typing a cross-module call's args against it must resolve
-    /// in that module's context, not the call site's (E4 — the param analog of
+    /// in that module's context, not the call site's (— the param analog of
     /// `resolveTypeInSource`). `src == null` falls back unchanged.
     pub fn resolveParamTypeInSource(self: *Lowering, src: ?[]const u8, p: *const ast.Param) TypeId {
         const pinned = src orelse return self.resolveParamType(p);
@@ -1486,9 +1485,7 @@ pub const Lowering = struct {
         };
     }
 
-    /// Snapshot the active resolution context (Principle 2) for `TypeResolver`.
-    /// A2.2 wires the type bindings + literal target; the pack/comptime fields
-    /// are populated as A2.3 moves the cases that consume them.
+    /// Snapshot the active resolution context for `TypeResolver`.
     fn resolveEnv(self: *Lowering) ResolveEnv {
         return .{
             .type_bindings = if (self.type_bindings) |*tb| tb else null,
@@ -1959,7 +1956,7 @@ pub const Lowering = struct {
 
     /// Bind a `PackResolver` to this Lowering for pack-aware TYPE-position
     /// resolution (`Closure(..p)` / `(Params...) -> R` / `(..xs)` tuples and
-    /// their `..xs.T` projections). A2.3 moved that logic into `packs.zig`.
+    /// their `..xs.T` projections). That logic lives in `packs.zig`.
     pub fn packResolver(self: *Lowering) PackResolver {
         return .{ .l = self };
     }

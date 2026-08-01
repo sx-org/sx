@@ -1,5 +1,5 @@
-// std.http — path percent-decode + dot-segment normalization (Q1.8;
-// RFC 3986 §2.1, §5.2.4).
+// std.http — path percent-decode + dot-segment normalization
+// (RFC 3986 §2.1, §5.2.4).
 //
 // The server decodes the ROUTABLE PATH (never the query — the router's
 // permissive query/form decode is unchanged) and removes dot segments

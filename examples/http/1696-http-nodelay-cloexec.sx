@@ -1,4 +1,4 @@
-// std.http — accepted sockets get TCP_NODELAY + CLOEXEC (Q2.1).
+// std.http — accepted sockets get TCP_NODELAY + CLOEXEC.
 //
 // TCP_NODELAY: a response written in one write_more pass otherwise sits in
 // the kernel's Nagle buffer waiting for the peer's ACK — 40 ms latency

@@ -798,7 +798,7 @@ const IterPrep = struct {
 pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     if (fe.is_inline) return self.lowerInlineRangeFor(fe);
 
-    // A pack has no runtime value to iterate (Decision 1) — point the user
+    // A pack has no runtime value to iterate — point the user
     // at `inline for`.
     for (fe.iterables) |it| {
         if (!it.is_range and it.expr.data == .identifier and self.isPackName(it.expr.data.identifier.name)) {
@@ -1226,7 +1226,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     };
     // An error-set subject (`catch e == { case .X: ... }` / `if e == { ... }`):
     // the value IS its u32 tag id, and `case .X` matches the global tag id
-    // of `X`. Used by ERR E1.5's catch match-body form.
+    // of `X`. Used by the catch match-body form.
     const is_error_set_match = blk: {
         if (!subject_ty.isBuiltin()) {
             break :blk self.module.types.get(subject_ty) == .error_set;

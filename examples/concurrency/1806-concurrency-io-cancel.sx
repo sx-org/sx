@@ -1,4 +1,4 @@
-// B1.2 — cancellation rides the `!` error channel (model (a)). `f.cancel()`
+// Cancellation rides the `!` error channel (model (a)). `f.cancel()`
 // sets the per-future cancel flag + marks `state = .canceled`, so a
 // subsequent `f.await()` raises `error.Canceled` out of its value-failable
 // `($R, !IoErr)` — caught here with `or`. A future that is NOT canceled

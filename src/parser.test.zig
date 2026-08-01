@@ -1209,7 +1209,7 @@ test "parser: an assignment operator below a target continues it" {
 // dot-led postfixes are the other camp: `.`, `?.`, and `catch` chain across a
 // break, which P4 below pins.
 
-// P2 — `!` is postfix force-unwrap and prefix `not`, so which one a leading `!`
+// `!` is postfix force-unwrap and prefix `not`, so which one a leading `!`
 // spells is decided by the line it sits on.
 test "parser: a postfix `!` binds only on its own line" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -1236,7 +1236,7 @@ test "parser: a postfix `!` binds only on its own line" {
     try std.testing.expect(same.data.block.stmts[0].data == .force_unwrap);
 }
 
-// P3 — a named aggregate's `{` binds only on the same line as its head. Across
+// A named aggregate's `{` binds only on the same line as its head. Across
 // a break the head is an expression of its own and the brace is a scope block,
 // whatever the head was: a type name, a type application, or a value call.
 test "parser: a named aggregate `{` binds only on its head's line" {
@@ -1310,7 +1310,7 @@ test "parser: a named aggregate `{` binds only on its head's line" {
 // ordinary whitespace. Each of these has an identifier-shaped slot, which is
 // exactly the shape a future sweep could mistake for a statement head.
 
-// M1 — enum `flags` and the backing type.
+// Enum `flags` and the backing type.
 test "parser: an enum header reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1333,7 +1333,7 @@ test "parser: an enum header reads through a line break" {
     try std.testing.expect(same_ed.backing_type != null);
 }
 
-// M2 — a `ufcs` alias target is mandatory, so the break cannot end the alias.
+// A `ufcs` alias target is mandatory, so the break cannot end the alias.
 test "parser: a ufcs alias target reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1351,7 +1351,7 @@ test "parser: a ufcs alias target reads through a line break" {
     try std.testing.expectEqualStrings("mat4_multiply", (try same.parse()).data.root.decls[0].data.ufcs_alias.target);
 }
 
-// M3 — a runtime class's linkage word sits in front of a mandatory body.
+// A runtime class's linkage word sits in front of a mandatory body.
 test "parser: a runtime-class linkage word reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1369,7 +1369,7 @@ test "parser: a runtime-class linkage word reads through a line break" {
     try std.testing.expect((try same.parse()).data.root.decls[0].data.runtime_class_decl.is_extern);
 }
 
-// M4 — a struct's type-parameter list sits in front of a mandatory `{`.
+// A struct's type-parameter list sits in front of a mandatory `{`.
 test "parser: a struct type-parameter list reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1388,7 +1388,7 @@ test "parser: a struct type-parameter list reads through a line break" {
     try std.testing.expectEqual(@as(usize, 1), (try same.parse()).data.root.decls[0].data.struct_decl.type_params.len);
 }
 
-// M5 — a protocol's kind word sits in front of a mandatory `{`.
+// A protocol's kind word sits in front of a mandatory `{`.
 test "parser: a protocol kind word reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1499,7 +1499,7 @@ test "parser: values inside fixed delimiters read through a line break" {
     try std.testing.expect(agg.data.block.stmts[0].data.var_decl.value.?.data == .struct_literal);
 }
 
-// P4 — the suppressed postfixes still chain across a break, on the paths that
+// The suppressed postfixes still chain across a break, on the paths that
 // own them.
 test "parser: `?.` and `catch` continue across a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

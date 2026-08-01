@@ -1,6 +1,6 @@
 // std.http — 408 on request-delivery timeout; 505 on unsupported versions.
 //
-// Two protocol-semantics fixes (Q0.7):
+// Two protocol-semantics fixes:
 //
 //   • A connection evicted at the DELIVERY deadline while a partial request
 //     sits buffered receives `408 Request Timeout` + `Connection: close`

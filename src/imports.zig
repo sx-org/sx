@@ -712,8 +712,8 @@ fn structDeclPtrOf(decl: *const Node) ?*const ast.StructDecl {
 }
 
 /// A stable identifier for one declaration, assigned by `DeclTable` in module-
-/// walk order. Process-local: it indexes the table's `entries` (S5 stabilizes it
-/// to `(source, index)` for the LSP, per the deep-dive's R5).
+/// walk order. Process-local: it indexes the table's `entries`; the LSP
+/// stabilizes it to `(source, index)`.
 pub const DeclId = enum(u32) { _ };
 
 /// One `DeclTable` row: a `RawDeclRef` lifted to a stable `DeclId`, with its

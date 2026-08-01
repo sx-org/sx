@@ -42,7 +42,7 @@ impl Summable for Pair($T) {
     }
 }
 
-// P6.5: Struct type param constraints
+// Struct type param constraints
 
 // Init block test struct
 Builder :: struct {

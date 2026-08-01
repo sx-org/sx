@@ -1789,8 +1789,8 @@ pub fn headFnLeak(self: *Lowering, name: []const u8, span: ?ast.Span) bool {
         return true;
     }
     // KIND-AWARE: visible iff a directly-reachable (own or 1-hop flat) author
-    // is itself a TYPE-FUNCTION. A same-name 1-hop non-function (attempt-7) OR
-    // ordinary non-type function (attempt-8) does NOT vouch for a type-fn head
+    // is itself a TYPE-FUNCTION. A same-name 1-hop non-function OR an
+    // ordinary non-type function does NOT vouch for a type-fn head
     // whose real author is 2 flat hops away.
     if (self.flatFnAuthorVisible(name, from)) return false;
     if (self.diagnostics) |d|
@@ -1835,10 +1835,10 @@ pub fn flatFnAuthorAmbiguous(self: *Lowering, name: []const u8, from: []const u8
 /// querying source's OWN author or a 1-hop flat-import author — that is a
 /// TYPE-FUNCTION (a `fn_decl` with ≥1 `$`-param, or an alias naming one). The
 /// KIND-AWARE analogue of `isNameVisible` for a type-fn head: a same-name 1-hop
-/// NON-function (a value const `Make :: 123`, a named type) does NOT vouch
-/// (attempt-7), and — crucially — neither does a same-name 1-hop ORDINARY
+/// NON-function (a value const `Make :: 123`, a named type) does NOT vouch,
+/// and — crucially — neither does a same-name 1-hop ORDINARY
 /// function (`Make :: () -> i32`, zero `$`-params), which cannot be the type
-/// head being instantiated (attempt-8). So a type-fn whose only directly-
+/// head being instantiated. So a type-fn whose only directly-
 /// visible same-name author is a non-fn OR a non-type-fn — its real author 2
 /// flat hops away — is correctly invisible. Mirrors `flatFnAuthorAmbiguous`'s
 /// type-fn-only author view.

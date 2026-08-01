@@ -1,4 +1,4 @@
-// Failable error-slot discard rejection (ERR step E1.8 — discard slice). The
+// Failable error-slot discard rejection (discard slice). The
 // error slot of a value-carrying failable cannot be dropped on a bare
 // destructure: it must be bound (`v, err := …`) and handled, or the failure
 // routed through `try` / `catch` / `or value` (all of which strip the error

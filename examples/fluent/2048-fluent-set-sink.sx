@@ -1,4 +1,4 @@
-// The stdlib `Sink($T)` at an OPEN SET (fluent spec §6.1, A1).
+// The stdlib `Sink($T)` at an OPEN SET (fluent spec §6.1).
 //
 // `T` is the interception type and what the list holds. A set carries its member
 // inside the slot, so an element IS the published value: the sink writes it into a

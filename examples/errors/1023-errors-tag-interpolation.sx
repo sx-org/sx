@@ -1,4 +1,4 @@
-// Error-tag `{}` interpolation (ERR step E3 — tag-name table). Formatting an
+// Error-tag `{}` interpolation (tag-name table). Formatting an
 // error-set value with `{}` renders the tag NAME (`BadDigit`), not the raw id,
 // reusing the `any_to_string` dispatch (new `error_set` category → the
 // `error_name` builtin → the always-linked tag-name table indexed by global

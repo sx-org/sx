@@ -42,7 +42,7 @@ main :: () -> i32 {
 
             parent := SxStrongParent.alloc();
             child  := SxStrongChild.alloc();
-            parent.child = child;   // dispatches setChild: via M2.2 property machinery
+            parent.child = child;   // dispatches setChild: via the property machinery
             child.release();
 
             // Midpoint: with strong setter, child is retained by parent;

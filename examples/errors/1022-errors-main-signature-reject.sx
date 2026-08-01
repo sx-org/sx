@@ -1,4 +1,4 @@
-// Entry-point signature gate (ERR step E4.2). `main` must take no parameters
+// Entry-point signature gate. `main` must take no parameters
 // and have one of: void, an integer (POSIX exit code), `-> !` (failable, no
 // value), or `-> (int, !)` (failable + integer exit code). Anything else is a
 // clean diagnostic — ungated, `main :: () -> string` SEGFAULTS (the JIT

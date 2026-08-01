@@ -1,5 +1,5 @@
-// std.http — Q3.3 fiber-mode coverage: the paths 1700 doesn't reach
-// (Q3.3-review LOW). One fiber server with stream_request_body = FALSE:
+// std.http — fiber-mode coverage: the paths 1700 doesn't reach
+// . One fiber server with stream_request_body = FALSE:
 //   1. POST /sum with a Content-Length body — ACCUMULATE-fiber dispatch
 //      (full-request job copy; req.read_body serves the cursor over the
 //      complete body, so handler code is mode-agnostic) — byte-exact

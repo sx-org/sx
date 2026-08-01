@@ -1,10 +1,10 @@
-// std.http — Q3.2 stream producers run OFF the loop thread (pool mode).
+// std.http — stream producers run OFF the loop thread (pool mode).
 //
 // Pulling a streamed response's producer on the LOOP thread after the
 // worker's job — and the per-request arena — is freed makes producer_ctx
 // pointing at request-derived or arena memory a use-after-free class
 // (the "ctx must be caller-owned" footgun), and a slow producer
-// stalled every other connection. Q3.2 moves the pulls onto the WORKER that
+// stalled every other connection. The pulls run on the WORKER that
 // ran the handler, inside the job's push scope, feeding the loop through a
 // bounded channel — so ctx may now reference per-request-arena memory and
 // req views, and the loop never runs producer code.
@@ -81,7 +81,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         obs : *Obs = xx ctx;
         // /slowbig: sleep BEFORE streaming so Server.close can run while
         // this worker is still mid-handler — before the stream channel is
-        // registered (the Q3.2-review HIGH close-deadlock window).
+        // registered (the close-deadlock window).
         if req.path == "/slowbig" { usleep(300000); }
         st : *StreamState = xx context.allocator.alloc_bytes(size_of(StreamState));
         st.* = StreamState{
@@ -316,7 +316,7 @@ main :: () -> i32 {
         socket.close(c3);
 
         // ── case 5: close() while a worker is mid-handler, PRE-register ──
-        // (Q3.2-review HIGH, reproduced deadlock): the /slowbig worker is
+        // (reproduced deadlock): the /slowbig worker is
         // still SLEEPING — its stream channel does not exist yet — when
         // close() runs, so the one-shot registry sweep cannot see it. The
         // closing flag makes the late registration abort the pump; close()

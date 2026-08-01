@@ -1,17 +1,15 @@
-// Tuple baseline probe (gate for Decision 2:
-// "tuples are first-class for pack storage").
+// Tuple baseline probe: tuples are first-class for pack storage.
 //
-// This file is the audit artifact: it exercises every tuple operation the
-// canonical `Combined`/`map` body relies on, EXCEPT the two pack/tuple
-// projection+spread sugars (documented as gaps at the bottom).
-// Everything here RUNS.
+// Exercises every tuple operation the canonical `Combined`/`map` body relies
+// on, EXCEPT the two pack/tuple projection+spread sugars (listed as gaps at
+// the bottom). Everything here RUNS.
 //
 // Run:  ./zig-out/bin/sx run examples/probes/tuple-baseline.sx
 
 #import "modules/std.sx";
 
 Listenable :: struct { value: i64; }      // stand-in element struct
-Combined   :: struct { sources: Tuple(i32, i32); }  // tuple-typed field (Decision 2)
+Combined   :: struct { sources: Tuple(i32, i32); }  // tuple-typed field
 
 swap :: (a: i64, b: i64) -> Tuple(i64, i64) { .{b, a} }
 fst  :: (t: Tuple(i64, i64)) -> i64 { t.0 }
@@ -27,7 +25,7 @@ main :: () -> i32 {
     a : i64 = pair.0;                      // element into typed local
     print("A.local   {}\n", a);
 
-    // ── Block B — storage in a struct field (WORKS; core of Decision 2)
+    // ── Block B — storage in a struct field (WORKS; the core storage shape)
     c : Combined = ---;
     c.sources = .{7, 9};                    // assign tuple value to field
     print("B.field   {} {}\n", c.sources.0, c.sources.1);
@@ -47,12 +45,12 @@ main :: () -> i32 {
 //
 //   G1. Tuple field projection across elements:
 //         t := .(Listenable{ value=1}, Listenable{ value=2});
-//         v := t.value;        // expected: .(1, 2)   — Decision 3 "tuple.field"
+//         v := t.value;        // expected: .(1, 2)
 //       Yields `error: field 'value' not found on type 'tuple'`.
 //       Needed by canonical `self.sources.value`.
 //
 //   G2. Tuple spread into call args:
 //         p := .(10, 20);
-//         add(..p);            // expected: add(10, 20) — Decision 3 "..tuple"
+//         add(..p);            // expected: add(10, 20)
 //       Lowers to one `undef` arg → LLVM arity verification failure.
 //       Needed by canonical `mapper(..sources.value)` and `.(..sources)`.

@@ -1,7 +1,7 @@
 // std.http — Router: HEAD falls back to GET routes (RFC 9110 §9.3.2).
 //
-// Q1.10 follow-through: "GET and HEAD MUST be supported" — the server's
-// automatic HEAD (Q1.4: run the handler, keep Content-Length, ship no
+// follow-through: "GET and HEAD MUST be supported" — the server's
+// automatic HEAD (run the handler, keep Content-Length, ship no
 // body) only works if the ROUTER dispatches a HEAD request at all. It
 // 405ing any HEAD without an explicitly registered HEAD route makes
 // every Router-based app nonconformant for HEAD. A HEAD

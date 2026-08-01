@@ -1,6 +1,6 @@
 // std.http — Connection header as a token list (RFC 9110 §7.6.1).
 //
-// Q1.6: `Connection` is a comma-separated list of case-insensitive
+// `Connection` is a comma-separated list of case-insensitive
 // tokens with optional OWS around each — `Connection: close, TE` MUST
 // read as close, and `Connection: closefoo` must NOT (token match, not
 // substring/prefix). If both `close` and `keep-alive` appear, close

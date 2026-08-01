@@ -1,7 +1,7 @@
 // Variadic heterogeneous type packs — indexing a pack with a
 // RUNTIME index is a compile error.
 //
-// Per locked Decision 1, a pack is comptime-only and has NO runtime
+// A pack is comptime-only and has NO runtime
 // representation — so `args[i]` is valid only when `i` is a compile-time
 // constant (a literal, or an `inline for` cursor). A runtime index (here a
 // `while`-loop counter) must produce a clear diagnostic, not the confusing

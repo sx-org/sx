@@ -302,8 +302,7 @@ pub fn build(b: *std.Build) void {
     // `zig build test -Dupdate-goldens` flips src/corpus_run.test.zig from
     // verify mode to regenerate mode: it overwrites each example's expected
     // .exit/.stdout/.stderr (+ .ir where one exists) with freshly-normalized
-    // output instead of asserting against it. The in-build equivalent of the
-    // legacy `run_examples.sh --update`.
+    // output instead of asserting against it.
     const update_goldens = b.option(
         bool,
         "update-goldens",
