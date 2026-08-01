@@ -46,8 +46,8 @@ Image :: struct {
 }
 
 EncodeOptions :: struct {
-    // Miniz-compatible compression levels. Unlike the old C-shaped helper,
-    // values outside this range are rejected instead of silently clamped.
+    // Miniz-compatible compression levels. A value outside this range is
+    // rejected, never silently clamped.
     level: i64 = 6;
 }
 

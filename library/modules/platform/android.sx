@@ -159,8 +159,7 @@ AndroidPlatform :: struct {
 
     // Set by consumer code BEFORE `init` if a fixed design width is
     // wanted (chess uses 414). When 0, the platform reports
-    // viewport = pixel (1:1 logical/physical) — same as the legacy
-    // hardcoded `dpi_scale = 1.0` behaviour.
+    // viewport = pixel (1:1 logical/physical), i.e. `dpi_scale = 1.0`.
     logical_w: f32 = 0.0;
 
     // Panel refresh rate in Hz, used to pace run_frame_loop. Consumers

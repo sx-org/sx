@@ -241,8 +241,8 @@ ChunkResult :: struct {
     // the raw offset of the first incomplete chunk element and the decoded
     // total before it. Feed them back as the next call's ChunkScan so the
     // validator re-scans ONLY the incomplete element, never all prior
-    // framing (a slow-dripped body used to revalidate from byte 0 every
-    // read cycle — O(n²), a slowloris CPU amplifier).
+    // framing — revalidating a slow-dripped body from byte 0 every read
+    // cycle is O(n²), a slowloris CPU amplifier.
     resume_rp: i64 = 0;
     resume_decoded: i64 = 0;
 }

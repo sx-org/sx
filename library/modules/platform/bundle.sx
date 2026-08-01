@@ -10,8 +10,8 @@
 // macOS, iOS simulator, iOS device. Per-platform branching is keyed
 // off `BuildOptions.is_macos()` / `is_ios_simulator()` / `is_ios_device()`
 // so the bundle layout, Info.plist shape, framework embedding,
-// provisioning, entitlements, and codesigning ceremony all match what
-// the Zig `createBundle` used to produce.
+// provisioning, entitlements, and codesigning ceremony each match the
+// platform's requirements.
 //
 // Wiring: users opt in by registering `bundle_main` as the post-link
 // callback in their own `#run` block. Example:
@@ -58,8 +58,7 @@ bundle_main :: (opts: BuildOptions) -> bool {
     }
 
     // Device builds without a real identity will be rejected by the
-    // device, so fail fast with a clear hint — matches what the legacy
-    // Zig path did at the top of createBundle.
+    // device, so fail fast with a clear hint.
     if opts.is_ios_device() {
         if opts.codesign_identity().len == 0 or opts.provisioning_profile().len == 0 {
             out("error: --target ios requires --codesign-identity (e.g. \"Apple Development: ...\") and --provisioning-profile <path>\n");
@@ -618,7 +617,7 @@ codesign :: (bundle: string, identity: string, ent_path: string) -> bool {
 // =====================================================================
 // Android APK pipeline.
 //
-// Same shape as the legacy Zig `createApk`:
+// Steps:
 //   1. Discover SDK root + highest build-tools / platforms version.
 //   2. Stage `<apk>.stage/lib/arm64-v8a/<libfoo.so>`.
 //   3. Use the user-supplied AndroidManifest.xml or synthesize one

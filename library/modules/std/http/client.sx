@@ -274,9 +274,9 @@ recv :: (fd: i32, buf: [*]u8, cap: i64, request_method: string = "GET") -> (Clie
 }
 
 // Send one HTTP/1.1 request on an open ClientConn (TLS-aware `send`).
-// Unlike the legacy `send`, the request is built into ONE allocation and
-// freed before returning — no arena required, nothing retained (a concat
-// chain would leak every intermediate into the caller's context).
+// The request is built into ONE allocation and freed before returning — no
+// arena required, nothing retained (a concat chain would leak every
+// intermediate into the caller's context).
 send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_headers: string, body: string) -> !ClientErr {
     advertise := c.accept_compression
         and !has_header(extra_headers, "accept-encoding")

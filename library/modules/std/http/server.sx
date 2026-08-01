@@ -160,7 +160,7 @@ Config :: struct {
     // response bytes, so the client sees a reset instead of the error it is
     // owed. Instead the server shutdown(SHUT_WR)s (FIN after the response),
     // then reads and DISCARDS inbound bytes until EOF or this deadline, and
-    // only then closes. 0 restores the old abrupt close. Normal keep-alive
+    // only then closes. 0 selects the abrupt close. Normal keep-alive
     // closes don't linger (nothing is pending by protocol contract).
     linger_timeout_ms: i64 = 1000;
     // Graceful shutdown (Server.stop): after stop is requested the loop
@@ -1295,7 +1295,7 @@ resp_head_len :: (resp: *Response, keep: bool, date: string, server_name: string
 }
 
 // Write the head into dst (caller sized it via resp_head_len); returns
-// the bytes written. Byte-identical to the old concat-chain layout.
+// the bytes written.
 resp_head_write :: (resp: *Response, keep: bool, date: string, server_name: string, no_body_status: bool, chunked: bool, dst: [*]u8) -> i64 {
     off : i64 = 0;
     sl := status_line_for(resp.status);
@@ -1705,9 +1705,9 @@ Server :: struct {
             // Max completions pending between two drains: every conn has at
             // most ONE job in flight, and within one tick's serve storm the
             // loop can submit up to max_conn replacements while backlog +
-            // workers earlier jobs finish into the queue (Q3.2-review MED -
-            // the old backlog + workers sizing under-counted the same-tick
-            // refill; queue_completion still handles a drop loudly as belt).
+            // workers earlier jobs finish into the queue — backlog + workers
+            // alone under-counts that same-tick refill; queue_completion
+            // still handles a drop loudly as belt.
             ps.done_cap = cfg.max_conn + cfg.thread_pool_backlog + cfg.thread_pool_count;
             ps.done = xx oa.alloc_bytes(ps.done_cap * size_of(Completion));
             ps.done_len = 0;
@@ -1988,8 +1988,8 @@ Server :: struct {
     // Waits at most `max_wait_ms` (sooner when a connection deadline is
     // nearer), services every ready fd, then evicts expired connections.
     tick :: (self: *Server, max_wait_ms: i64) -> !HttpErr {
-        // Q2.2: the nearest wake-up hint is the heap min — O(1) instead of
-        // the old full-slot scan. A stale top (recycled slot, extended
+        // Q2.2: the nearest wake-up hint is the heap min — O(1), not a
+        // full-slot scan. A stale top (recycled slot, extended
         // deadline) only wakes the loop early; the sweep discards it.
         wait_ms := max_wait_ms;
         if self.dheap_len > 0 {
@@ -3065,9 +3065,9 @@ Server :: struct {
 
         // headers complete? Q0.5: resume the terminator scan where the last
         // cycle left off (scan_pos bytes are known clean; back up 3 so a
-        // terminator straddling the old boundary is caught) and cache the
-        // hit — a slow-dripped request no longer rescans from byte 0 every
-        // read cycle.
+        // terminator straddling the previous boundary is caught) and cache
+        // the hit, so a slow-dripped request does not rescan from byte 0
+        // every read cycle.
         he := c.hdr_end;
         if he < 0 {
             i := c.scan_pos - 3;
@@ -3099,8 +3099,7 @@ Server :: struct {
         hdr_start := p + 2;
         // hdr_start == he + 2 is the LEGAL zero-header shape (the request
         // line's own CRLF is the first half of the terminator); anything
-        // beyond is malformed. (Q1.1: this used to reject every header-less
-        // request — a legal HTTP/1.0 form.)
+        // beyond is malformed. A header-less request is a legal HTTP/1.0 form.
         if req.method.len == 0 or req.path.len == 0 or hdr_start > he + 2 {
             self.respond_error_close(slot, 400);
             return false;

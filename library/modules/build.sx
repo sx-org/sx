@@ -26,8 +26,7 @@
 // itself is a null-sentinel word (never dereferenced) — every accessor below takes
 // it as an ignored `self` and reads/writes the `BuildConfig` instead. The accessors
 // are free `intrinsic` functions (resolved on `opt.method(...)` via UFCS) and
-// serviced by `comptime_vm.callCompilerFn` — migrated off the old `struct #compiler`
-// hook surface (Phase 5.5).
+// serviced by `comptime_vm.callCompilerFn`.
 BuildOptions :: struct { }
 
 build_options :: () -> BuildOptions intrinsic;
