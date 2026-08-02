@@ -1,8 +1,7 @@
-// First runnable `raise` (ERR step E1.3). A `-> !Named` (pure failable)
+// First runnable `raise`. A `-> !Named` (pure failable)
 // function terminates via the error channel with `raise error.X`; a plain
 // `return;` is the success exit (error slot 0). The caller binds the result
-// and inspects it with the enum-like `==`. The value-carrying `-> (T, !)`
-// shape lands with the error-channel tuple ABI in ERR phase E2.
+// and inspects it with the enum-like `==`.
 
 #import "modules/std.sx";
 

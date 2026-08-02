@@ -19,10 +19,8 @@ const Lowering = lower.Lowering;
 /// that path implies.
 ///
 /// `plan(c)` is the single point that recognises a call form; `resultType(c)`
-/// is the thin "just the type" projection (`plan(c).return_type`). This step
-/// (A3.2 convergence sub-step 2) builds the plan object and routes typing
-/// through it; `lowerCall` still owns its own dispatch and is rerouted onto
-/// the plan in sub-step 3.
+/// is the thin "just the type" projection (`plan(c).return_type`). `lowerCall`
+/// owns its own dispatch.
 pub const CallPlan = struct {
     kind: Kind,
     return_type: TypeId,
@@ -93,15 +91,15 @@ pub const CallPlan = struct {
     };
 };
 
-/// Call result typing (architecture phase A3.2), extracted from
-/// `Lowering.inferExprType`'s call arm. Discovers the IR type a call
+/// Call result typing for the call arm of expression typing. Discovers the
+/// IR type a call
 /// expression evaluates to — across builtins / reflection builtins, generic
 /// and plain free functions (lowered or lazy via `fn_ast_map`), closure /
 /// function-typed locals, protocol dispatch, runtime-class instance/static
 /// methods, struct (UFCS) methods, qualified namespace calls, and
 /// enum/tagged-union construction.
 ///
-/// A `*Lowering` facade (Principle 5, like `ExprTyper` / `PackResolver`): call
+/// A `*Lowering` facade (like `ExprTyper` / `PackResolver`): call
 /// typing reads live lexical-scope / target-type state and the function /
 /// runtime-class / protocol resolver helpers, so it borrows `*Lowering` rather
 /// than re-threading every field.
@@ -184,9 +182,9 @@ pub const CallResolver = struct {
             if (std.mem.eql(u8, bare_name, "__interp_print_frames")) return refl(bare_name, .void);
             if (std.mem.eql(u8, bare_name, "__trace_resolve_frame"))
                 return refl(bare_name, self.l.module.types.findByName(self.l.module.types.internString("TraceFrame")) orelse .unresolved);
-            // Bare same-name flat collision (R5 §C): route through the ONE
+            // Bare same-name flat collision: route through the ONE
             // author producer `selectedFreeAuthor` so `plan` types the call as the
-            // SAME author the lowering call-path binds — they can no longer
+            // SAME author the lowering call-path binds — the two cannot
             // disagree. `.ambiguous` / `.none` fall through to the first-wins
             // path below, byte-for-byte; `.not_callable` means the visible
             // author is a value, so the name-keyed function arms below must not
@@ -304,7 +302,7 @@ pub const CallResolver = struct {
                 TypeId.unresolved;
             // Receiver is a protocol type → protocol method dispatch. The
             // receiver may be erased directly (`P`), a view (`*P`), or the
-            // optional of either (`?P` / `?*P`, issue 0312/0310 — the
+            // optional of either (`?P` / `?*P` — the
             // lowering dispatches all four; the plan must agree or the call
             // types as unresolved and e.g. `for v.items()` refuses).
             {
@@ -362,8 +360,8 @@ pub const CallResolver = struct {
             // lowering dispatch (call.zig closure-field arm) which runs in the
             // value-receiver path BEFORE instance-method dispatch — so a
             // closure-typed field shadows a same-named method, exactly as
-            // lowering binds it. Without this the call typed as `.unresolved`
-            // (issue 0201): value returns marshalled as garbage, failable
+            // lowering binds it. Without this the call typed as `.unresolved`:
+            // value returns marshalled as garbage, failable
             // returns couldn't be `try`/`catch`-ed. Lowering owns the dispatch;
             // plan only needs the field's `.ret` so typing matches.
             {
@@ -412,7 +410,7 @@ pub const CallResolver = struct {
                         // through the SAME stamped-author reader the dispatch
                         // uses (CP-4), return type under the instance's
                         // bindings — call-result typing must work before the
-                        // method has ever monomorphized (issue 0341: with no
+                        // method has ever monomorphized (with no
                         // plan arm, a first-use `inst.method()` chain typed
                         // `.unresolved` and lowered to a silent zero).
                         {
@@ -485,8 +483,8 @@ pub const CallResolver = struct {
                         // `fd0p` can be a wrong-receiver overload (e.g. a
                         // `*Other($T)->string` winner over the `*Box($T)->i64`
                         // receiver-match); typing the call by `fd0p` while
-                        // lowering calls the other one misboxes the result
-                        // (issue 0157 review P1). A `*const Node` view of the
+                        // lowering calls the other one misboxes the result.
+                        // A `*const Node` view of the
                         // args drives the receiver-aware selection.
                         const sel_args = self.l.alloc.alloc(*const ast.Node, c.args.len + 1) catch
                             return .{ .kind = .unresolved, .return_type = .unresolved };
@@ -509,10 +507,10 @@ pub const CallResolver = struct {
                 // routes through the SAME author producer `selectedFreeAuthor` as a
                 // bare call, so the planned target / return type IS the author
                 // lowering dispatches — they can't disagree under a flat same-name
-                // collision (R5 §C). Without this, plan typed the
-                // first-wins winner while lowering bound the selected shadow,
-                // mis-tagging the call's result (a string-typed winner over an i64
-                // shadow boxes a raw int as a string pointer → segfault).
+                // collision. Without this, the plan types the first-wins winner
+                // while lowering binds the selected shadow, mis-tagging the call's
+                // result (a string-typed winner over an i64 shadow boxes a raw int
+                // as a string pointer → segfault).
                 // `.ambiguous` / `.none` fall through to the first-wins path below,
                 // unchanged.
                 switch (self.selectedFreeAuthor(c)) {
@@ -641,7 +639,7 @@ pub const CallResolver = struct {
                     // fall back to the CALL SITE's context — wrongly rejecting a
                     // return type (e.g. a `(Thing, !E)` multi-return whose
                     // `Thing` is bare-visible only inside the callee's module) as
-                    // "not visible" (issue 0207). The authoritative defining
+                    // "not visible". The authoritative defining
                     // module is `bfd`'s own source.
                     return .{
                         .kind = .namespace_fn,
@@ -655,7 +653,7 @@ pub const CallResolver = struct {
             // An immediately-invoked lambda carries its callable signature in
             // the lambda expression itself.  Type the call from that closure
             // instead of leaving a module-level `#run` const `.unresolved`
-            // until global emission (issue 0263).
+            // until global emission.
             const callee_ty = self.l.inferExprType(c.callee);
             if (!callee_ty.isBuiltin()) {
                 const info = self.l.module.types.get(callee_ty);
@@ -697,7 +695,7 @@ pub const CallResolver = struct {
     }
 
     /// THE single producer of the bare / value-UFCS same-name call author
-    /// verdict (R5 §#3). Both `plan` (typing, via its `.selected` arm) and
+    /// verdict. Both `plan` (typing, via its `.selected` arm) and
     /// `lowerCall` (default expansion / param typing / dispatch) consume THIS one
     /// result, so they can never pick different same-name authors for the same
     /// call. Side-effect-free: it consults ONLY the author selector
@@ -896,11 +894,11 @@ pub const CallResolver = struct {
             } },
             .not_qualified => self.l.alloc.free(object_path),
         }
-        // Source-less unit/comptime hosts predate import facts and register
-        // namespace functions only under their qualified compatibility key.
-        // Preserve that narrow legacy form without weakening source-backed
-        // programs (where an unknown dotted root remains a value/unresolved
-        // receiver and cannot cross-bind by terminal name).
+        // Source-less unit/comptime hosts carry no import facts and register
+        // namespace functions only under their qualified key. That narrow form
+        // must not weaken source-backed programs (where an unknown dotted root
+        // remains a value/unresolved receiver and cannot cross-bind by
+        // terminal name).
         if (self.l.current_source_file == null and self.l.main_file == null and fa.object.data == .identifier) {
             const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ fa.object.data.identifier.name, fa.field }) catch
                 @panic("out of memory while classifying source-less qualified call");

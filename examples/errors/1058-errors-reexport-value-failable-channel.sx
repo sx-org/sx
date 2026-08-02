@@ -2,11 +2,10 @@
 // keeps its `!` error channel at the call site — the result types as a
 // value-failable, so `or` / `try` accept it. Mirrors std.sx's
 // `await :: io_mod.await` (+ `IoErr :: io_mod.IoErr`) re-export.
-// Regression (issue 0153): the planned call-result type was resolved in the
-// CALL-SITE module (where `LE` is a re-export alias → a non-`.error_set`
-// TypeId), so `errorChannelOf` saw a plain tuple and `b.get() or {…}` built a
-// malformed i1 PHI. The fix pins return-type resolution to the fn's defining
-// module, matching `monomorphizeFunction`. Needs BOTH generic + re-export.
+// Return-type resolution is pinned to the fn's defining module, matching
+// `monomorphizeFunction`: in the CALL-SITE module `LE` is a re-export alias
+// whose TypeId is not `.error_set`, so `errorChannelOf` would see a plain
+// tuple there. Needs BOTH generic + re-export.
 #import "modules/std.sx";
 lib :: #import "1058-errors-reexport-value-failable-channel/lib.sx";
 

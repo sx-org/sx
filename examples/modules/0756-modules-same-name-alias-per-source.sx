@@ -1,4 +1,4 @@
-// issue 0105 case 5 — same-name type ALIAS, per-source visibility. Two
+// Same-name type ALIAS, per-source visibility. Two
 // flat-imported modules each alias `Id` to a DIFFERENT type (A: `i32`, B:
 // `f64`). Each module's bare `Id` resolves against its OWN source alias, so A's
 // `x : Id` is a 32-bit integer (prints 100) and B's `x : Id` is a float (prints

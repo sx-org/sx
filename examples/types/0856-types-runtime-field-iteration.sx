@@ -1,11 +1,10 @@
-// 1a-S3b — the field family accepts RUNTIME Type values: struct_field_
-// name/type/offset and variant_name/type read master-index tables
-// ([N x ptr] by tag → per-type arrays). This is the PLAN's `describe`
-// acceptance shape: full metadata walk from a Type value obtained at
-// runtime (incl. via an any's tag). Layout matches the comptime folds
-// by construction (same TypeTable queries) — pinned by the parity
-// lines. An index >= the member count is undefined behavior (caller
-// gates on the counts, exactly like the static forms).
+// The field family accepts RUNTIME Type values: struct_field_name/type/offset
+// and variant_name/type read master-index tables ([N x ptr] by tag → per-type
+// arrays) — a full metadata walk from a Type value obtained at runtime (incl.
+// via an any's tag). Layout matches the comptime folds by construction (same
+// TypeTable queries), pinned by the parity lines. An index >= the member count
+// is undefined behavior (the caller gates on the counts, exactly like the
+// static forms).
 #import "modules/std.sx";
 
 Header  :: struct { magic: u16; flags: u8; }

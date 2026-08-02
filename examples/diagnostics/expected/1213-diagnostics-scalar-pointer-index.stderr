@@ -1,23 +1,23 @@
 error: cannot index a value of type '*i64' — use a many-pointer '[*]T', or dereference first
-  --> examples/diagnostics/1213-diagnostics-scalar-pointer-index.sx:22:5
+  --> examples/diagnostics/1213-diagnostics-scalar-pointer-index.sx:17:5
    |
-22 |     pc[0] = 7;      // error: cannot index '*i64' (write position)
+17 |     pc[0] = 7;      // error: cannot index '*i64' (write position)
    |     ^^
 
 error: cannot index a value of type '*i64' — use a many-pointer '[*]T', or dereference first
-  --> examples/diagnostics/1213-diagnostics-scalar-pointer-index.sx:23:11
+  --> examples/diagnostics/1213-diagnostics-scalar-pointer-index.sx:18:11
    |
-23 |     q := *pc[0];    // error: cannot index '*i64' (address-of position)
+18 |     q := *pc[0];    // error: cannot index '*i64' (address-of position)
    |           ^^
 
 error: cannot index a value of type '*S' — use a many-pointer '[*]T', or dereference first
-  --> examples/diagnostics/1213-diagnostics-scalar-pointer-index.sx:26:5
+  --> examples/diagnostics/1213-diagnostics-scalar-pointer-index.sx:21:5
    |
-26 |     ps[0].a = 9;    // error: cannot index '*S' (field-lvalue-through-index)
+21 |     ps[0].a = 9;    // error: cannot index '*S' (field-lvalue-through-index)
    |     ^^
 
 error: cannot index a value of type '*i64' — use a many-pointer '[*]T', or dereference first
-  --> examples/diagnostics/1213-diagnostics-scalar-pointer-index.sx:27:12
+  --> examples/diagnostics/1213-diagnostics-scalar-pointer-index.sx:22:12
    |
-27 |     return pc[0];   // error: cannot index '*i64' (read position)
+22 |     return pc[0];   // error: cannot index '*i64' (read position)
    |            ^^

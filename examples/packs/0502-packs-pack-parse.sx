@@ -1,14 +1,8 @@
 // Variadic heterogeneous type packs — `..$args` — parse smoke.
 //
-// First positive slice of the pack feature: the parser accepts
-// `..$args` (variadic marker + comptime sigil + name) as a
-// parameter declaration. No semantic effect yet — the function
-// is declared but never instantiated; main exists so the example
-// has runnable output.
-//
-// Next slices: type-system representation of the pack, impl
-// matching for `Closure(..$args) -> $R`, runtime indexing
-// (`args[$i]`), and the `#insert build_x($args, ...)` pattern.
+// The parser accepts `..$args` (variadic marker + comptime sigil + name) as a
+// parameter declaration. The function is declared but never instantiated, so
+// nothing here binds the pack.
 
 #import "modules/std.sx";
 

@@ -5,7 +5,7 @@ error: duplicate context field 'allocator': the Context namespace is program-glo
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: 'allocator' first declared here, by examples/diagnostics/1261-diagnostics-context-extend-collision-stdlib.sx
-  --> examples/diagnostics/1261-diagnostics-context-extend-collision-stdlib.sx:9:1
+  --> examples/diagnostics/1261-diagnostics-context-extend-collision-stdlib.sx:7:1
    |
- 9 | #context_extend allocator: i64 = 0;
+ 7 | #context_extend allocator: i64 = 0;
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

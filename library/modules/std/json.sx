@@ -4,7 +4,7 @@
 // This module delivers the JSON VALUE MODEL, the WRITER, and the READER
 // (parser). The model is built once and shared by both directions.
 //
-// NUMBERS ARE INTEGERS ONLY (i64) for this milestone — there is no
+// NUMBERS ARE INTEGERS ONLY (i64) — there is no
 // fraction or exponent. A JSON value is one of: null, bool, integer,
 // string, array, object. The reader REJECTS a fraction or exponent
 // (`error.BadNumber`) rather than silently truncating it.

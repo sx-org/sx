@@ -32,7 +32,7 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
 /// carries. `result_ty` must have the same closure shape the lambda lowers to —
 /// it renames the value (`@Init(V)` instead of `Closure(*V)`), never reshapes it.
 pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: EnvStorage, result_ty: ?TypeId) Ref {
-    // Flow narrowing (issue 0179) does NOT cross into the lambda body: the
+    // Flow narrowing does NOT cross into the lambda body: the
     // body is a separate function whose `Ref` space overlaps the enclosing
     // function's, so the outer `narrowed_refs` would falsely match body `Ref`s
     // (unsound unwrap of a captured-but-not-proven-present optional). The body
@@ -195,11 +195,10 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
         //                         block's tail is a discarded statement, not an
         //                         implicit return — only an explicit `-> R`,
         //                         handled above, makes the tail the value).
-        // The old code always used inferExprType(lam.body); for a block body
-        // that mis-inferred — void/noreturn when the value came only from early
-        // `return`s (issue 0187), or `.unresolved` when the tail referenced a
-        // block-local the temp scope never bound (a variant the same fix
-        // subsumes) → LLVM panic.
+        // A block body needs its own inference: plain `inferExprType(lam.body)`
+        // yields void/noreturn when the value comes only from early `return`s,
+        // or `.unresolved` when the tail references a block-local
+        // the temp scope never bound — both panic in LLVM.
         const inferred = if (lam.body.data == .block)
             self.findReturnValueType(lam.body) orelse .void
         else
@@ -251,8 +250,8 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
 
     // The enclosing pack-fn mono's pack state must NOT leak into the lambda
     // body: its `args[i]` substitution nodes name the mono's `__pack_*`
-    // params, which don't exist in this function (issue 0156p2 — the deferred
-    // re-expansion read a dead frame). The body is a separate function; a
+    // params, which don't exist in this function (a deferred re-expansion
+    // would read a dead frame). The body is a separate function; a
     // captured pack was materialized into a TUPLE by `collectCaptures` and is
     // bound from the env like any capture, so `..args` / `args[i]` lower
     // through the ordinary tuple paths here. Mirrors the clears in
@@ -341,7 +340,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     // exactly as a named fn's body does: enum literals in an arrow body resolve
     // against `-> E`, and the enclosing expression's target — the closure type
     // itself when the literal sits in a call argument — does not leak in as the
-    // body's destination (issue 0350).
+    // body's destination.
     self.lowerFunctionBody(lam.body, ret_ty);
     self.in_lambda_body = saved_in_lambda;
     self.ensureTerminator(ret_ty);
@@ -373,7 +372,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     // the slot, emit an adapter with the bare ABI. Reject the cases the bare
     // ABI can't represent: a capturing closure (env has nowhere to live), and
     // a failable closure into a non-failable slot (extern code can't observe
-    // the error channel — ERR E5.1 FFI-boundary rule).
+    // the error channel).
     if (self.target_type) |tt| {
         if (!tt.isBuiltin() and self.module.types.get(tt) == .function) {
             const slot_ret = self.module.types.get(tt).function.ret;
@@ -527,7 +526,7 @@ pub fn createBareFnTrampoline(self: *Lowering, bare_func_id: FuncId, closure_inf
 /// When `closure_ret` differs from `fn_info.ret`, this is the ∅-widening
 /// case (a non-failable closure into a failable slot): the closure returns
 /// the success value and the adapter wraps it into the slot's `{value, 0}`
-/// failable tuple (ERR E5.1 non-failable→failable widening).
+/// failable tuple.
 pub fn createClosureToBareFnAdapter(self: *Lowering, closure_func_id: FuncId, fn_info: types.TypeInfo.FunctionInfo, closure_ret: TypeId, span: ast.Span) FuncId {
     var params = std.ArrayList(inst_mod.Function.Param).empty;
     defer params.deinit(self.alloc);
@@ -599,7 +598,7 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         .identifier => |id| {
             // Skip lambda params
             if (param_names.contains(id.name)) return;
-            // A comptime PACK captured into a closure (issue 0156p2): the pack
+            // A comptime PACK captured into a closure: the pack
             // is comptime state of the enclosing mono — its `args[i]`
             // substitution nodes name the mono's `__pack_*` params, which do
             // not exist in the lambda's function (re-expanding them there read
@@ -623,11 +622,10 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
                 }) catch {};
                 return;
             }
-            // Lexical scope wins over program-wide fn/type tables (issue 0251,
-            // same family as 0217 for call dispatch): a local or param that
+            // Lexical scope wins over program-wide fn/type tables, here as in
+            // call dispatch: a local or param that
             // shadows a global fn/type name is a real value binding and MUST
-            // be captured — skipping it (as the old `fn_ast_map.contains`
-            // check did, before the scope lookup) left the closure body
+            // be captured; skipping it would leave the closure body
             // reading/writing garbage. `lookupNearest` consults BOTH per-level
             // namespaces (value bindings + nested local fns) at the nearest
             // declaring depth, so a shadowing local wins over an outer fn name

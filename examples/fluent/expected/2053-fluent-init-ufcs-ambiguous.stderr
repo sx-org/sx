@@ -1,5 +1,5 @@
 error: ambiguous ufcs call 'publish': multiple overloads' receivers match — qualify the call
-  --> examples/fluent/2053-fluent-init-ufcs-ambiguous.sx:15:20
+  --> examples/fluent/2053-fluent-init-ufcs-ambiguous.sx:14:20
    |
-15 |     print("{}\n", (7).publish());
+14 |     print("{}\n", (7).publish());
    |                    ^^^^^^^^^^

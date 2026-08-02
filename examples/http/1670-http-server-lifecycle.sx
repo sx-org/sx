@@ -1,4 +1,4 @@
-// std.http H2 (PLAN-HTTPZ): memory lifecycle / leak gate.
+// std.http: memory lifecycle / leak gate.
 //
 // Server.init allocates the conns array, each connection's read buffer
 // (grown lazily), and — in pooled mode — the PoolState struct, its
@@ -15,8 +15,8 @@
 //      handlers are dispatched to workers, the loop is ticked just enough
 //      that connections sit in CONN_HANDLING (not yet drained), then
 //      close runs. Workers finish during pool shutdown and queue
-//      completions into ps.done that were never drained; close must free
-//      each completion's response bytes (the in-flight-close leak fix).
+//      completions into ps.done that nothing drains; close must free
+//      each completion's response bytes.
 // The whole loop runs under a GPA whose alloc_count is bumped atomically
 // on every alloc/dealloc — so a non-zero alloc_count at the end is a leak.
 // The atomic counter is what makes the pooled gate trustworthy: the loop

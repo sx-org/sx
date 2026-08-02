@@ -48,7 +48,7 @@ Three dispatch models, chosen by `Config`:
 - **Inline** (default): handlers run on the loop thread, run-to-completion.
 - **Pool** (`thread_pool_count > 0`): handlers run on worker threads; slow
   handlers stop stalling the loop; hard `handler_timeout_ms` enforcement.
-- **Fibers** (`Config.fibers`, Q3.3): handlers run as M:1 fibers ON the
+- **Fibers** (`Config.fibers`): handlers run as M:1 fibers ON the
   loop thread. A fiber handler may block-style `req.read_body` — the fiber
   suspends and the loop wakes it when body bytes arrive — so
   `stream_request_body` works WITHOUT a pool, while everything stays
@@ -286,7 +286,7 @@ is bounded by the caller's buffer. After transparent decoding,
 `http.ContentCoding.gzip` or `.deflate`; null means no transform. Stale
 `Content-Encoding` plus encoded `Content-Length` fields are removed from
 `headers_raw`, and `body.len` is the authoritative decoded size. Coded 206/416
-or any `Content-Range` response is deliberately returned unchanged.
+or any `Content-Range` response is returned unchanged.
 
 Set `ClientOpts.accept_compression = false` to neither advertise nor
 transparently decode. If the caller manually sends an `Accept-Encoding` in that
@@ -613,7 +613,7 @@ subprocess-isolated, on macOS and validated end-to-end on aarch64-Linux.
   fresh-dial retry for the stale-keep-alive race. System trust roots are
   not discovered — pass a CA explicitly.
 
-**Experimental / not yet present:**
+**Not covered:**
 
 - **Inline handler timeout** — cooperative only; no hard preemption (use pool
   mode).

@@ -2,7 +2,6 @@
 // statement only when the token below can START one. A `,` cannot, so this is
 // not two statements — it is one statement missing its terminator, and the
 // report names the terminator rather than blaming the `,`.
-// Expected: exit 1.
 #import "modules/std.sx";
 
 main :: () -> i32 {

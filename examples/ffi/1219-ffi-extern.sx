@@ -9,7 +9,7 @@ libc :: #library "c";
 
 c_abs :: (n: i32) -> i32 extern libc "abs";
 
-// --- Protocol declarations (Phase 1: static dispatch only) ---
+// --- Protocol declarations (static dispatch only) ---
 
 main :: () {
 

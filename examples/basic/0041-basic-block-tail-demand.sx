@@ -7,8 +7,7 @@
 //   nothing demands it → silently discarded
 //
 // So the two spellings below are the same function. This file writes the
-// `;` one everywhere the value still has to flow, because that is the
-// spelling the old rule refused.
+// `;` one everywhere the value has to flow.
 
 #import "modules/std.sx";
 

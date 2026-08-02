@@ -1,4 +1,4 @@
-// `content.site()` — a build block's own `@SourceSite` (fluent spec §6.2).
+// `content.site()` — a build block's own `@SourceSite`.
 //
 // The block is a compile-time binding, so its site is a compile-time constant:
 // the file, line, and enclosing declaration where the trailing block was

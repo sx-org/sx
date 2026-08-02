@@ -1,2 +1,2 @@
-// Shared type for 180-impl-duplicate.
+// Shared type for 0411-protocols-impl-duplicate.
 Wrap :: struct { v: i64 = 0; }

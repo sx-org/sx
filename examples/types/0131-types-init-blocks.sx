@@ -28,9 +28,9 @@ impl Summable for Point {
     sum :: (self: *Point) -> i32 { self.x + self.y }
 }
 
-// Phase 2: `inline`-kind protocol for dynamic dispatch
+// `inline`-kind protocol for dynamic dispatch
 
-// Phase 7: Generic struct impls
+// Generic struct impls
 Pair :: struct ($T: Type) {
     a: T;
     b: T;
@@ -42,7 +42,7 @@ impl Summable for Pair($T) {
     }
 }
 
-// P6.5: Struct type param constraints
+// Struct type param constraints
 
 // Init block test struct
 Builder :: struct {

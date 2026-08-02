@@ -2,7 +2,6 @@
 // prefix reading. `a* b` is glued on its left and spaced on its right: it is
 // not infix (the gaps do not match) and it is not a prefix `*` either (a
 // prefix binds only when glued to its operand), so it has no reading at all.
-// Expected: exit 1.
 #import "modules/std.sx";
 
 main :: () -> i32 {

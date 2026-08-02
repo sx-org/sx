@@ -2,9 +2,8 @@
 // by-value (`Box($T)`) and pointer-wrapped (`*Box($T)`), the latter also
 // via a UFCS dot-call (auto-address-of receiver). Multi-param heads
 // (`Pair($A, $B)`) and nested heads (`Box(Box($T))`) bind positionally.
-// Regression (issue 0151, widened): `extractTypeParam` had no
-// `parameterized_type_expr` arm, so `$T` never bound from a generic-struct
-// param — the call failed with "cannot infer generic type parameter 'T'".
+// `extractTypeParam`'s `parameterized_type_expr` arm is what binds `$T` from a
+// generic-struct param.
 #import "modules/std.sx";
 
 Box  :: struct ($T: Type) { v: T; }

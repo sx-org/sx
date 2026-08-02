@@ -1,6 +1,6 @@
 # 0323 — a qualified protocol alias is ABI-lowered as one `i64`
 
-> **NULLARY PATH GREEN (2026-07-21).** Pending identifier/qualified alias chains are now
+> The nullary path resolves. Pending identifier/qualified alias chains are
 > canonicalized from raw source/import facts before any ABI consumer interns
 > its type, independent of declaration/import order. A terminal nullary
 > protocol is materialized exactly once and every alias binds its exact nominal
@@ -38,17 +38,14 @@ main :: () -> i32 {
 }
 ```
 
-Run:
-
 ```sh
 ./zig-out/bin/sx run issues/0323-qualified-protocol-alias-abi-truncation.sx --opt 0
 ./zig-out/bin/sx run issues/0323-qualified-protocol-alias-abi-truncation.sx --opt 3
 ```
 
-Before the fix on arm64 macOS, opt 0 exited 134 with a garbage indirect-call
-target and opt 3 exited 133. Both now exit 0. The focused corpus also places
-parameters, returns, fields, optionals, pointers, views, nested aliases and the
-namespace import before/after one another adversarially at both opt levels.
+Both opt levels exit 0. The focused corpus also places parameters, returns,
+fields, optionals, pointers, views, nested aliases and the namespace import on
+either side of one another adversarially at both opt levels.
 
 ## IR evidence
 

@@ -1,10 +1,9 @@
-// Regression: a `return` inside an `inline if` (a comptime-folded branch),
+// A `return` inside an `inline if` (a comptime-folded branch),
 // itself inside an `inline for`, must NOT make the compiler drop the function's
 // trailing statements. The `inline if`/`case` branch sets a "block terminated"
-// flag when its taken arm returns; that flag used to leak past the enclosing
-// runtime `if`'s merge block, so the trailing `return -1` was skipped and the
-// function was wrongly rejected as "produces no value". Now the runtime-`if`
-// merge resets the flag to the merge's actual reachability.
+// flag when its taken arm returns; the enclosing runtime `if`'s merge resets
+// that flag to the merge's actual reachability, so the trailing `return -1`
+// still lowers.
 #import "modules/std.sx";
 
 // nested inline-if/else with returns, inside an inline-for, under a runtime if:

@@ -4,8 +4,7 @@
 
 #import "modules/std.sx";
 
-// 40-byte struct — triggers the bug.
-// Shrink to [4]i64 (32 bytes) and the bug goes away.
+// 40-byte element: wider than the items pointer it sits beside.
 BigNode :: struct {
     data: [5]i64;   // 40 bytes
 }

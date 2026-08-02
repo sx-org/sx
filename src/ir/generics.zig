@@ -8,8 +8,7 @@ const Node = ast.Node;
 const TypeId = types.TypeId;
 const Lowering = lower.Lowering;
 
-/// Generic substitution + monomorphization-key construction (architecture
-/// phase A4.1), extracted from `Lowering`. Owns:
+/// Generic substitution + monomorphization-key construction. Owns:
 ///   - the type-name mangler (`mangleTypeName` / `mangleParamList`) — the leaf
 ///     fragment every mono key is built from,
 ///   - the generic mono key (`mangleGenericName`) and the comptime-value mono
@@ -17,7 +16,7 @@ const Lowering = lower.Lowering;
 ///   - type-parameter substitution: `buildTypeBindings` (call-site inference)
 ///     and `inferGenericReturnType` (generic return resolution).
 ///
-/// A `*Lowering` facade (Principle 5, like `CallResolver` / `ExprTyper`):
+/// A `*Lowering` facade (like `CallResolver` / `ExprTyper`):
 /// substitution reads live type-binding / scope state and the type resolver
 /// helpers, so it borrows `*Lowering` rather than re-threading every field.
 /// `Lowering` keeps a thin `mangleTypeName` wrapper (it has ~30 cross-cutting
@@ -56,7 +55,7 @@ pub const GenericResolver = struct {
             // DISTINCT monomorph symbols (`struct_to_string__Box` vs
             // `struct_to_string__Box__n1`) instead of one symbol with conflicting
             // signatures. `nominal_id == 0` (the single-author / structural case)
-            // appends nothing — byte-identical to the pre-E2 mangle.
+            // appends nothing.
             .@"struct" => |s| self.mangleNominalName(self.l.module.types.getString(s.name), s.nominal_id),
             .@"union" => |u| self.mangleNominalName(self.l.module.types.getString(u.name), u.nominal_id),
             .tagged_union => |u| self.mangleNominalName(self.l.module.types.getString(u.name), u.nominal_id),
@@ -201,7 +200,7 @@ pub const GenericResolver = struct {
     /// argument: `resolveTypeArg`'s identifier arm resolves it through the
     /// active `type_bindings` — but `isTypeShapedAstNode` only knows
     /// REGISTERED type names, so Strategy 1 skipped it and the callee
-    /// diagnosed "cannot infer" (issue 0339). Folded type expressions
+    /// diagnosed "cannot infer". Folded type expressions
     /// (`struct_field_type(T, i)`) already passed; a bound `T` must too.
     fn argIsBoundTypeParam(self: GenericResolver, arg: *const Node) bool {
         if (arg.data != .identifier) return false;
@@ -257,7 +256,7 @@ pub const GenericResolver = struct {
                         // A bare fn NAME has no inferable expression type — it
                         // is a value whose type lives in its declaration. Bind
                         // `$F` to that signature so the instance's param is a
-                        // callable, not the legacy integer word (issue 0367).
+                        // callable, not a bare integer word.
                         const arg_ty = if (inferred == .unresolved)
                             self.l.bareFnNameSignature(args_ast[s2_arg_idx]) orelse inferred
                         else
@@ -302,33 +301,31 @@ pub const GenericResolver = struct {
 
         // ONE binding builder: the same `buildTypeBindings` the lowering /
         // monomorphization path uses, so plan-side return typing can't
-        // disagree with the instance actually dispatched. (The previous
-        // local strategies only bound BARE `$T` value params — a structured
-        // param (`[]$T`, `*$T`) never bound, so the planned return type of
-        // e.g. `gfirst(xs: []$T) -> T` was the `T` stub and print's Any
-        // boxing mis-tagged the value.)
+        // disagree with the instance actually dispatched. A builder that binds
+        // only BARE `$T` value params leaves a structured param (`[]$T`, `*$T`)
+        // unbound, so the planned return type of e.g. `gfirst(xs: []$T) -> T`
+        // is the `T` stub and print's Any boxing mis-tags the value.
         var tmp_bindings = self.buildTypeBindings(fd, c.args);
         defer tmp_bindings.deinit();
 
         // Resolve return type with whatever bindings we built. Even an
         // empty `tmp_bindings` is a valid input — non-generic literal
         // return types (e.g. `walk(..$args) -> string`) still need to
-        // resolve through `resolveTypeWithBindings`, not fall through
-        // to the historical `.i64` default. The default silently
-        // misclassified pack-fn calls whose return type was a fixed
-        // literal — every consumer (e.g. print's pack-shape mangling)
-        // inferred `i64` and routed the value through the wrong Any
-        // tag.
+        // resolve through `resolveTypeWithBindings` rather than fall back
+        // to `.i64`. A blanket `.i64` silently misclassifies a pack-fn call
+        // whose return type is a fixed literal: every consumer (e.g. print's
+        // pack-shape mangling) then infers `i64` and routes the value through
+        // the wrong Any tag.
         var scope = TypeBindingScope.enter(self.l, tmp_bindings);
         defer scope.exit();
         // Resolve the return type in the function's DEFINING module, exactly
         // as `monomorphizeFunction` does — so a name in the return type (e.g.
         // the error set of a value-failable `(… , !E)`) resolves to the SAME
         // TypeId the instance's real signature uses, not whatever a re-export
-        // alias at the call site resolves it to. Without this pin a re-exported
-        // generic value-failable's `!E` resolved to a non-`.error_set` alias,
-        // so the planned call result was a plain tuple and `errorChannelOf`
-        // missed the failable channel (issue 0153). The binding-building above
+        // alias at the call site resolves it to. The pin is what keeps a
+        // re-exported generic value-failable's `!E` an `.error_set`, so the
+        // planned call result carries a channel `errorChannelOf` can read.
+        // The binding-building above
         // stays in the call-site context (its args are typed there).
         const saved_src = self.l.current_source_file;
         defer self.l.setCurrentSourceFile(saved_src);
@@ -339,8 +336,7 @@ pub const GenericResolver = struct {
 
 /// Scoped override of `Lowering.type_bindings`: install a binding set for the
 /// duration of a substitution, restoring the prior set on `exit`. Replaces the
-/// manual save/restore the generic-return resolution used (PLAN-ARCH A4.1
-/// "scoped substitution envs").
+/// manual save/restore the generic-return resolution would otherwise need.
 const TypeBindingScope = struct {
     l: *Lowering,
     saved: ?std.StringHashMap(TypeId),

@@ -93,7 +93,7 @@ pub fn lowerDemandedBody(self: *Lowering, node: *const Node, demand: TailDemand)
     // Nothing else does, and clearing the flag stops an enclosing value context
     // from leaking in (e.g. a void closure body lowered inside `f :=
     // closure((..) { if c {..} })` — the outer `:=` RHS left it set) and making
-    // a no-`else` guard-`if` look like a value use (0270 false positive).
+    // a no-`else` guard-`if` look like a value use.
     // Value-producing sub-lowerings (var-decl / assignment RHS, etc.) re-enable
     // it locally.
     const saved_fbv = self.force_block_value;
@@ -110,7 +110,7 @@ pub fn lowerDemandedBody(self: *Lowering, node: *const Node, demand: TailDemand)
             const saved_scope = self.scope;
             self.scope = &block_scope;
             const saved_defer_len = self.defer_stack.items.len;
-            // Flow narrowing (issue 0179) is block-scoped: a guard inside this
+            // Flow narrowing is block-scoped: a guard inside this
             // block narrows the rest of THIS block, no further.
             var narrow_snap = self.narrowSnapshot();
             defer {
@@ -329,11 +329,11 @@ pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty: TypeId) voi
                     self.lowerFailableSuccessReturn(val, ret_ty, span);
                     return;
                 }
-                // Issue 0191: a trailing value with NO modeled coercion to the
-                // declared return type used to be bit-welded into the return slot
-                // (a `string` body "returning" i64 shipped the pointer as the
-                // int). Diagnose; on failure skip the coerce (the build aborts
-                // via hasErrors before this ret could run).
+                // A trailing value with NO modeled coercion to the
+                // declared return type must not be bit-welded into the return
+                // slot (a `string` body "returning" i64 would ship the pointer
+                // as the int). Diagnose; on failure skip the coerce (the build
+                // aborts via hasErrors before this ret could run).
                 const coerced = if (self.checkReturnable(val, val_ty, ret_ty, span))
                     self.coerceToType(val, val_ty, ret_ty)
                 else
@@ -394,7 +394,7 @@ pub fn emitBodyExit(self: *Lowering, value: ?Ref, ret_ty: TypeId, form: ExitForm
     // the error set) that carries no error IS its success value: the error slot
     // must hold 0 ("no error"), whether the body fell off the end or wrote
     // `return;`. Without it the slot keeps whatever it held and the caller
-    // reads a garbage tag, reporting a phantom unhandled error (issue 0190).
+    // reads a garbage tag, reporting a phantom unhandled error.
     const carried: ?Ref = value orelse
         if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set)
             self.builder.constInt(0, ret_ty)
@@ -549,7 +549,7 @@ pub fn bindNamedReturnSlots(self: *Lowering, fd: *const ast.FnDecl, ret_ty: Type
             // mismatched byte width (e.g. `sum: i32 = "hi"`) — a `.none` plan
             // would pass the value through unchanged and overrun / under-fill the
             // slot, corrupting memory (the same guard as plain annotated
-            // assignment, issue 0197). A same-width `.none` (`p: *void = typed_ptr`)
+            // assignment). A same-width `.none` (`p: *void = typed_ptr`)
             // is a legitimate reinterpretation and stays allowed.
             if (!self.externalErrorsExist() and dval_ty != .unresolved and self.noneReinterpretIsUnsafe(dval_ty, fty)) {
                 if (self.diagnostics) |d| {
@@ -625,7 +625,7 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
     const saved_in_return = self.in_return_expr;
     self.in_return_expr = false;
     defer self.in_return_expr = saved_in_return;
-    // Stamp this statement's span onto its instructions (ERR E3.0); see
+    // Stamp this statement's span onto its instructions; see
     // `lowerExpr`.
     const saved_span = self.builder.current_span;
     defer self.builder.current_span = saved_span;
@@ -648,16 +648,13 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
         .insert_expr => |ins| self.lowerInsertExpr(ins.expr),
         .block => self.lowerBlock(node),
         .jni_env_block => |eb| {
-            // Compile-time stack push for lexical-direct env resolution
-            // (2.16b — `#jni_call` in the same fn picks up env from
-            // jni_env_stack directly, no TL read).
-            //
-            // Runtime TL save/set/restore (2.16c) for cross-function
-            // helpers: callees in OTHER fns invoked from inside the
-            // body read the slot via `sx_jni_env_tl_get`. Storage
-            // lives in a separately-linked C helper (see
-            // library/vendors/sx_jni_runtime/sx_jni_env_tl.c) so the
-            // JIT doesn't need orc_rt for TLS.
+            // A compile-time stack push resolves the env lexically: a
+            // `#jni_call` in the same fn reads `jni_env_stack` directly, no TL
+            // read. Callees in OTHER fns invoked from inside the body reach the
+            // slot via `sx_jni_env_tl_get`, so the env is also saved/set/
+            // restored in thread-local storage. That storage lives in a
+            // separately-linked C helper (library/vendors/sx_jni_runtime/
+            // sx_jni_env_tl.c) so the JIT doesn't need orc_rt for TLS.
             const env_ref = self.lowerExpr(eb.env);
             const fids = self.getJniEnvTlFids();
             const ptr_ty = self.module.types.ptrTo(.void);
@@ -703,10 +700,10 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
             // `-> noreturn` fn such as `proc.exit` — ends the basic block. A
             // bare `.call` op is NOT a terminator (see currentBlockHasTerminator),
             // so without closing the block here it stays "open": the statements
-            // after it would be lowered into a closed-in-spirit block, and — the
-            // bug this fixes — a diverging statement as the live branch of an
-            // `inline if` leaves the enclosing function looking value-less,
-            // tripping the "produces no value" check (issue 0209).
+            // after it lower into a closed-in-spirit block, and a diverging
+            // statement as the live branch of an `inline if` leaves the
+            // enclosing function looking value-less, tripping the "produces no
+            // value" check.
             _ = expressionDiverged(self, self.lowerExpr(node));
         },
     }
@@ -757,7 +754,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                 // `---` on an array: explicitly uninitialized — no store.
                 // A whole-array undef store is a store of nothing that
                 // LLVM's legalizer scalarizes into one DAG node per
-                // element (issue 0124: SelectionDAG segfault at ~64K).
+                // element (SelectionDAG segfault at ~64K).
                 if (ti == .array) {
                     if (self.scope) |scope| {
                         scope.put(vd.name, .{ .ref = slot, .ty = ty, .is_alloca = true });
@@ -788,7 +785,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
             // — UNLESS the value is already that optional (e.g. a `?T`-returning
             // call, or a struct literal that lowered straight to `?T`); wrapping
             // again would build a `??`-shaped value typed `?T` and corrupt it /
-            // fail LLVM verification (issue 0160).
+            // fail LLVM verification.
             if (!ty.isBuiltin()) {
                 const ty_info = self.module.types.get(ty);
                 // Is the initializer value ITSELF an optional (`?A`)? If so the
@@ -796,7 +793,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                 // NOT a wrap-present. The manual unwrap-to-child + `optionalWrap(present)`
                 // below classifies `?A → child_B` as an unconditional unwrap (→ 0 for a
                 // null source) then wraps it as always-present, so a null `?A` becomes a
-                // present `?B` carrying zero (issue 0180). Route an optional source through
+                // present `?B` carrying zero. Route an optional source through
                 // the trailing general `coerceToType(?A → ?B)` instead, which dispatches to
                 // the presence-preserving arm. The wrap-present path below stays correct for
                 // a non-optional source `T → ?T`.
@@ -815,7 +812,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                         // `p : P = s` decl branch below) instead of through
                         // the node-less `coerceToType` value arm, which
                         // heap-boxes the receiver via context.allocator with
-                        // no owner to ever free it (issue 0213).
+                        // no owner to ever free it.
                         if (self.getProtocolInfo(child) != null) {
                             ref = self.buildProtocolErasure(ref, val, rt, child);
                             // No progress (e.g. a builtin source with no
@@ -833,7 +830,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                     // flowing into `?(?i64)`, whose payload is the 1-tuple
                     // `(?i64)`), wrapping anyway inserts a `{i64,i1}` into a
                     // `{{i64,i1}}` slot and builds malformed IR that aborts the
-                    // LLVM verifier (issue 0165). Diagnose loudly instead.
+                    // LLVM verifier. Diagnose loudly instead.
                     const post_rt = self.builder.getRefType(ref);
                     if (post_rt != child and post_rt != .void and child != .void) {
                         if (self.diagnostics) |d| {
@@ -861,9 +858,9 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                     // Array → slice promotion when the initializer is an array
                     // value bound into a slice-typed local (`s : []T = arr`).
                     // For an ADDRESSABLE array (a named local/global/field)
-                    // build a zero-copy VIEW over its storage (issue 0264,
-                    // consistent with 0225's aliasing `arr[0..]` subslice), so
-                    // a write through `s` reaches `arr`.
+                    // build a zero-copy VIEW over its storage (consistent with
+                    // the aliasing `arr[0..]` subslice), so a write through `s`
+                    // reaches `arr`.
                     //
                     // For a NON-addressable rvalue array — an array LITERAL
                     // (`s : []string = .["a","b"]`) or a call result — KEEP the
@@ -871,7 +868,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                     // FUNCTION-ENTRY alloca (`buildEntryAlloca`) that lives as
                     // long as the binding `s` itself, so the view is NOT
                     // dangling — unlike a STORED SUBSLICE of a temporary
-                    // (0225's rejected `makeArr()[0..]`, whose temp dies at the
+                    // (the rejected `makeArr()[0..]`, whose temp dies at the
                     // statement's end). The literal-into-a-slice-local form is
                     // ubiquitous and sound; nothing else aliases the copy, so
                     // there is no aliasing surprise to preserve. Do NOT reject.
@@ -894,9 +891,8 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                     // (erasure model). An lvalue initializer borrows its real
                     // storage (ctx = its address); a pointer-to-concrete makes
                     // the view of the pointee directly. An RVALUE has no
-                    // durable storage to borrow — diagnose (issue 0304's
-                    // silent accept: the struct's bytes were stored into the
-                    // pointer slot).
+                    // durable storage to borrow — diagnose, rather than store
+                    // the struct's bytes into the pointer slot.
                     const ref_ty = self.builder.getRefType(ref);
                     if (ref_ty != ty and !ref_ty.isBuiltin() and self.getProtocolInfo(ref_ty) == null) {
                         const ri = self.module.types.get(ref_ty);
@@ -942,7 +938,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                 if (ref_ty != ty and ref_ty != .void and ty != .void) {
                     // An initializer with NO coercion to the annotated slot type
                     // (`x : i32 = "hi"`) would otherwise pass through unchanged and
-                    // bit-mangle the slot (issue 0197). Diagnose and store a safe
+                    // bit-mangle the slot. Diagnose and store a safe
                     // default so the build aborts cleanly instead of segfaulting.
                     if (!self.checkAssignable(ref_ty, ty, val.span, "initialize", vd.name, val)) {
                         self.builder.store(slot, self.buildDefaultValue(ty));
@@ -977,12 +973,12 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         const ref = self.lowerExpr(val);
         self.force_block_value = saved_fbv;
         self.target_type = saved_target;
-        // A bare function reference is deliberately represented by the legacy
+        // A bare function reference is deliberately represented by the
         // `.i64`-typed `func_ref` op because several async/fiber paths consume
         // that exact IR shape.  For an unannotated local, however, the binding
         // must carry the user-visible function type so a later `f(...)` is
         // planned as an indirect function call rather than as a call through an
-        // integer (issue 0237).  Keep the emitted ref unchanged and specialize
+        // integer.  Keep the emitted ref unchanged and specialize
         // only this declaration-inference boundary.
         const ty = inferBareFnBindingType(self, val) orelse self.builder.getRefType(ref);
         // Asked on the LOWERED type, so every shape a block can arrive through
@@ -1077,7 +1073,7 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
 
     // For a body-local `#run` const (`L :: #run f()`), record the const NAME so
     // the `__ct` wrapper carries it as a display name — a comptime-init failure
-    // then reports `comptime init of 'L' failed` instead of `__ct_N` (issue 0182).
+    // then reports `comptime init of 'L' failed` instead of `__ct_N`.
     const saved_ct_name = self.comptime_const_name;
     if (cd.value.data == .comptime_expr) self.comptime_const_name = cd.name;
     defer self.comptime_const_name = saved_ct_name;
@@ -1090,7 +1086,7 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
         self.builder.getRefType(ref);
 
     // An annotated constant whose initializer cannot coerce to the declared type
-    // would be bound under a type its bytes don't match (issue 0197) — diagnose
+    // would be bound under a type its bytes don't match — diagnose
     // rather than let a later read reinterpret the wrong-shape value.
     if (cd.type_annotation != null) {
         _ = self.checkAssignable(self.builder.getRefType(ref), ty, cd.value.span, "initialize", cd.name, cd.value);
@@ -1105,8 +1101,8 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
 /// value slots). Emits diagnostics; does not rewrite. Covers: a bare value where
 /// multiple are required (`return 5` for `-> (i64, i64)`), wrong arity (too few /
 /// too many), and named elements that disagree with the slot at their position
-/// (named return elements must currently be IN SLOT ORDER — reordering by name is
-/// a future nicety, but a mismatch is an error, never a silent wrong result).
+/// (named return elements must be IN SLOT ORDER; a mismatch is an error, never
+/// a silent wrong result).
 /// A single-value or single-failable return is left to the existing path.
 pub fn validateMultiReturn(self: *Lowering, value_node: *const Node, ret_ty: TypeId) void {
     const diags = self.diagnostics orelse return;
@@ -1137,7 +1133,7 @@ pub fn validateMultiReturn(self: *Lowering, value_node: *const Node, ret_ty: Typ
             diags.addFmt(.err, value_node.span, "this function returns {d} values, but {d} {s} given", .{ value_count, els.len, if (els.len == 1) @as([]const u8, "is") else @as([]const u8, "are") });
             return;
         }
-        // Named elements no longer need to be in slot order — `reorderNamedReturn`
+        // Named elements need not be in slot order — `reorderNamedReturn`
         // (called from `lowerReturn` before lowering) permutes them to match the
         // slots and diagnoses unknown / duplicate / missing names. Arity is
         // checked above; nothing more to validate here.
@@ -1180,9 +1176,8 @@ fn reorderNamedReturn(self: *Lowering, value_node: *const Node, ret_ty: TypeId) 
     // value slot, the ergonomic `return a = …, b = …` form) and the FULL-TUPLE
     // list (a trailing element for the error slot too, `els.len == fields_len`).
     // BOTH must be reordered/validated — otherwise a fully-named full-tuple
-    // failable return silently lands values positionally (regression found in
-    // review). `match_count` slots participate; the error slot (when present)
-    // joins by its own slot name.
+    // failable return silently lands values positionally. `match_count` slots
+    // participate; the error slot (when present) joins by its own slot name.
     const match_count = els.len;
     if (match_count != value_count and match_count != fields_len) return value_node;
     if (match_count > slot_names.len) return value_node;
@@ -1236,8 +1231,8 @@ fn reorderNamedReturn(self: *Lowering, value_node: *const Node, ret_ty: TypeId) 
     return node;
 }
 
-/// A bare `.{ … }` in a TUPLE-returning position behaves as the old `.( )`
-/// tuple literal — rewrite the node shape so every downstream intercept
+/// A bare `.{ … }` in a TUPLE-returning position is a tuple literal —
+/// rewrite the node shape so every downstream intercept
 /// (multi-return arity validation, named-element reorder, the
 /// full-failable-tuple detection in `failableReturnTarget`) sees the tuple
 /// form it keys on.
@@ -1317,7 +1312,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     // produce a value (a phi'd merge), not be demoted to a statement whose result
     // is dropped. Force value-mode so `return if c { 7 } else { return -1; }`
     // lowers the live `{7}` arm into the merge phi instead of collapsing to a
-    // void statement-`if` that returns 0 (issue 0269 Bug A). The ambient flag is
+    // void statement-`if` that returns 0. The ambient flag is
     // unreliable here — a trailing arm's `produces_value` leaks up through the
     // parser (`last_stmt_produces_value`), so a diverging vs live arm alone would
     // flip it. A void return carries no value, so leave the flag clear for it (a
@@ -1351,8 +1346,8 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
 
     // The exit is typed by the body being lowered — the INLINED fn's declared
     // return type while inlining, the real function's otherwise. Neither
-    // present means there is no function to return from; keep the historical
-    // fallbacks so the shape of the written return still decides.
+    // present means there is no function to return from, so the shape of the
+    // written return decides: `i64` with a value, `void` without.
     const exit_ty: TypeId = self.effectiveReturnType() orelse
         (if (ret_val != null) TypeId.i64 else TypeId.void);
 
@@ -1373,7 +1368,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
             retPureFailable(self, ref, exit_ty, rs.value.?.span);
         } else {
             // Coerce return value to match the return type (e.g., ?i32 → i32).
-            // Issue 0191: reject an un-coercible value instead of bit-welding
+            // Reject an un-coercible value instead of bit-welding
             // it into the return slot; on failure skip the coerce (the build
             // aborts via hasErrors before this ret could run).
             const val_ty = self.builder.getRefType(ref);
@@ -1419,7 +1414,7 @@ pub fn rootIsConstant(self: *Lowering, root: []const u8) bool {
     };
 }
 
-/// Enclosing-local write guard (issue 0250 + review fold), shared by
+/// Enclosing-local write guard, shared by
 /// lowerAssignment and lowerMultiAssign: peel the target chain (`arr[0]`,
 /// `p.v`, `px.*`, and nestings — deref INCLUDED, unlike assignmentRootIdent:
 /// writing through an enclosing pointer VALUE still requires reading that
@@ -1448,8 +1443,8 @@ fn diagEnclosingRootWrite(self: *Lowering, target: *const Node) bool {
     return true;
 }
 
-/// Root-const write guard (issue 0116), shared by lowerAssignment and
-/// lowerMultiAssign (issue 0229 — the multi-assign member/index arms bypassed
+/// Root-const write guard, shared by lowerAssignment and
+/// lowerMultiAssign (the multi-assign member/index arms bypassed
 /// it and wrote through `::` struct consts): when `target`'s chain roots at a
 /// module CONSTANT not shadowed by a local, diagnose and return true (the
 /// caller skips the store). A deref along the chain breaks the walk
@@ -1471,7 +1466,7 @@ fn diagConstRootWrite(self: *Lowering, target: *const Node) bool {
 /// crossing a pointer hop writes the Context storage itself — but the context
 /// is immutable within its scope; only `push` installs new field values.
 /// Diagnose and return true (the caller skips the store). A chain that
-/// dereferences into pointee memory stays allowed (issue 0337): a pointer
+/// dereferences into pointee memory stays allowed: a pointer
 /// field along the chain (`context.s.n = 5`), an explicit deref, or indexing
 /// a slice/string field's backing data.
 fn diagContextRootWrite(self: *Lowering, target: *const Node) bool {
@@ -1517,10 +1512,9 @@ fn diagContextRootWrite(self: *Lowering, target: *const Node) bool {
 
 /// Shape-aware diagnostic for an assignment whose target is a NON-ALLOCA
 /// scope binding — a name that resolves but has no storable slot. Shared by
-/// lowerAssignment's ident arm and lowerMultiAssign's ident arm (issue 0219
-/// + its review folds; the by-ref arm is issue 0216). Every store that lands
-/// here was previously dropped silently: it reached neither a container nor
-/// the binding's own copy. The binding's `origin` picks the message:
+/// lowerAssignment's ident arm and lowerMultiAssign's ident arm. A store that
+/// lands here reaches neither a container nor the binding's own copy, so it
+/// must not be dropped silently. The binding's `origin` picks the message:
 /// - by-ref capture       → write through it (`x.* = ...`)
 /// - local `::` const     → constant-family message (a const is not a capture)
 /// - for-loop element     → `(*x)` write-back hint (container storage exists)
@@ -1954,7 +1948,7 @@ fn tryLowerQualifiedGlobalStore(
         if (op == .assign) {
             const val_ty = self.builder.getRefType(val);
             if (val_ty != gi.ty and val_ty != .void and gi.ty != .void) {
-                // No coercion to the global's type — bit-mangle guard (issue 0197).
+                // No coercion to the global's type — bit-mangle guard.
                 if (!self.checkAssignable(val_ty, gi.ty, val_span, "assign", member, val_node)) return .handled;
             }
             const store_val = if (val_ty != gi.ty and val_ty != .void and gi.ty != .void)
@@ -2159,7 +2153,7 @@ fn tryLowerPropertyAssignment(self: *Lowering, asgn: *const ast.Assignment) bool
 /// a leaked enclosing `target_type` (e.g. the function's return type while
 /// lowering its body, decl.zig) reaches `constNull`/`constUndef` and builds
 /// a WHOLE-STRUCT-typed null, emitting an oversized store that overruns the
-/// slot and corrupts neighboring stack (issue 0154). Enum/struct/tuple
+/// slot and corrupts neighboring stack. Enum/struct/tuple
 /// literals, branch arms, and `xx` casts resolve against it too. Skipped for
 /// forms that would forward the type unchanged into method-call arg slots
 /// (`resolveCallParamTypes` can't override target_type per-arg).
@@ -2172,20 +2166,20 @@ fn rhsNeedsTargetType(value: *const ast.Node) bool {
 }
 
 pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
-    // Reassignment kills flow narrowing (issue 0179 / specs.md §Flow-Sensitive
-    // Narrowing): a fresh value may be null, so the name is no longer proven
+    // Reassignment kills flow narrowing (specs.md §Flow-Sensitive
+    // Narrowing): a fresh value may be null, so the name is not proven
     // present. Drop it from the narrowed set before lowering the store.
     if (asgn.target.data == .identifier) {
         _ = self.narrowed.remove(asgn.target.data.identifier.name);
     }
 
-    // Writes through a constant are rejected at compile time (issue 0116):
+    // Writes through a constant are rejected at compile time:
     // the target chain's root naming a const global (array/struct consts,
-    // #run consts) or a module value const cannot be stored to — for a
-    // struct const the store previously compiled and bus-errored at
-    // runtime; for scalars it silently misfired.
+    // #run consts) or a module value const cannot be stored to — an
+    // unguarded store to a struct const bus-errors at runtime, and to a
+    // scalar it silently misfires.
     if (diagConstRootWrite(self, asgn.target)) return;
-    // Context-root write guard (issue 0337): the context is immutable within
+    // Context-root write guard: the context is immutable within
     // its scope — only pointer-hop chains (pointee writes) may proceed.
     if (diagContextRootWrite(self, asgn.target)) return;
     // `#set` property accessor: `obj.prop = rhs` (or `OP=`) dispatches to the
@@ -2232,7 +2226,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
         // For array[i] = val, set target_type to the element type. An
         // `.unresolved` element (non-indexable base — diagnosed by the store
         // arm below) must not become the RHS target type: it would mistype
-        // RHS literals before the diagnostic fires (issue 0155).
+        // RHS literals before the diagnostic fires.
         const tgt_obj_ty = self.inferExprType(asgn.target.data.index_expr.object);
         const elem_ty = self.ptrToArrayElem(tgt_obj_ty) orelse self.ptrToSliceElem(tgt_obj_ty) orelse self.getElementType(tgt_obj_ty);
         if (elem_ty != .void and elem_ty != .unresolved) self.target_type = elem_ty;
@@ -2258,7 +2252,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
                 // direct + promoted members, tuple/vector lanes, and structs —
                 // not just structs (a plain getStructFields loop returned nothing
                 // for a union member, leaving a struct-literal RHS untyped →
-                // struct_init.ty == .unresolved → LLVM-emission panic; issue 0133).
+                // struct_init.ty == .unresolved → LLVM-emission panic).
                 if (self.fieldLvalueResolve(obj_ty, fa.field)) |res| {
                     self.target_type = res.valueType();
                 } else {
@@ -2267,7 +2261,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
                     // resolver returns null — without a target the AMBIENT one
                     // (the enclosing fn's return type, per decl.zig) leaks into
                     // the RHS and mis-types `s.ptr = xx raw` as an xx-to-string
-                    // (surfaced by the 0305 explicit-pun refusal). Mirror the
+                    // (surfaced by the explicit-pun refusal). Mirror the
                     // store arm's field types.
                     const is_special = obj_ty == .string or (!obj_ty.isBuiltin() and blk: {
                         const oi = self.module.types.get(obj_ty);
@@ -2289,7 +2283,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
         // resolve against the assignment target. Without this the RHS fell
         // back to the ambient target_type — the ENCLOSING FUNCTION'S RETURN
         // TYPE while lowering its body (decl.zig) — so `p.* = .{...}` typed
-        // the literal from whatever the fn returned (issue 0215): .unresolved
+        // the literal from whatever the fn returned: .unresolved
         // → LLVM-emission panic for a void fn, bogus "cannot assign"/"field
         // not found" for scalar/struct returns, invalid insertvalue for `?T`.
         if (rhsNeedsTargetType(asgn.value)) {
@@ -2304,7 +2298,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
     }
     // The RHS is a VALUE position: a block-form `if C { A } else { B }` /
     // `match` on the RHS of an assignment must yield its branch value, not
-    // lower as a statement-if that returns a bare void 0 (issue 0268). Mirrors
+    // lower as a statement-if that returns a bare void 0. Mirrors
     // `lowerVarDecl` (the `:=` path); a plain `z = if false { 100 } else { 200 }`
     // — and the compound / index / field target forms — otherwise stored 0.
     const saved_fbv = self.force_block_value;
@@ -2313,9 +2307,9 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
     self.force_block_value = saved_fbv;
     self.target_type = old_target;
 
-    // A static nested `::` fn writing through an ENCLOSING local/param is the
-    // write-side of issue 0250: bare stores silently no-op'd; indexed / member
-    // stores Bus-errored through the enclosing frame's dead alloca.
+    // A static nested `::` fn writing through an ENCLOSING local/param has no
+    // frame to reach: a bare store silently no-ops, and an indexed / member
+    // store Bus-errors through the enclosing frame's dead alloca.
     if (diagEnclosingRootWrite(self, asgn.target)) return;
     if (qualified_store_target) |target| {
         lowerSelectedQualifiedGlobalStore(self, target, asgn.op, val, asgn.value.span, asgn.value);
@@ -2327,7 +2321,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
             // A scope binding that is NOT an alloca (loop/match/error capture,
             // pack-element alias, synthetic receiver) has no storable slot in
             // this arm — remember it so the fall-through can tell "declared
-            // but not storable here" apart from "resolves nowhere" (0216).
+            // but not storable here" apart from "resolves nowhere".
             var nonstore_binding: ?Binding = null;
             if (self.scope) |scope| {
                 if (scope.lookup(id.name)) |binding| {
@@ -2341,7 +2335,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
                             if (val_ty != binding.ty and val_ty != .void and binding.ty != .void) {
                                 // A reassignment with no coercion to the slot type
                                 // (`x = "hi"` for `x: i32`) would pass through and
-                                // bit-mangle the slot (issue 0197) — diagnose instead.
+                                // bit-mangle the slot — diagnose instead.
                                 if (!self.checkAssignable(val_ty, binding.ty, asgn.value.span, "reassign", id.name, asgn.value)) return;
                                 store_val = self.coerceToType(val, val_ty, binding.ty);
                             }
@@ -2355,27 +2349,27 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
                     }
                 }
             }
-            // Fallback: global variable assignment — source-aware (issue
-            // 0115): write the AUTHOR's global, never an unrelated module's
+            // Fallback: global variable assignment — source-aware: write
+            // the AUTHOR's global, never an unrelated module's
             // same-named one.
             if (!handled) {
                 if (nonstore_binding) |b| {
                     // A scope binding SHADOWS any same-named global — without
                     // this arm, `for xs (*g) { g = 77; }` with a module global
                     // `g` fell through to resolveGlobalRef and silently wrote
-                    // the GLOBAL instead of addressing the capture (0216 review
-                    // fold 1). Reads resolve the capture; writes must never
-                    // resolve past it to different storage. Every non-alloca
-                    // binding here previously accepted the store as a silent
-                    // no-op (issues 0216/0219) — diagNonstoreBindingAssign
-                    // picks the shape-correct rejection (by-ref write-through
-                    // hint / immutable capture / local `::` const).
+                    // the GLOBAL instead of addressing the capture. Reads
+                    // resolve the capture; writes must never
+                    // resolve past it to different storage. A non-alloca
+                    // binding has nowhere to store, so
+                    // diagNonstoreBindingAssign picks the shape-correct
+                    // rejection (by-ref write-through hint / immutable
+                    // capture / local `::` const).
                     diagNonstoreBindingAssign(self, asgn.target.span, id.name, b);
                 } else if (self.resolveGlobalRef(id.name, asgn.target.span)) |gi| {
                     if (asgn.op == .assign) {
                         const val_ty = self.builder.getRefType(val);
                         if (val_ty != gi.ty and val_ty != .void and gi.ty != .void) {
-                            // No coercion to the global's type — bit-mangle guard (issue 0197).
+                            // No coercion to the global's type — bit-mangle guard.
                             if (!self.checkAssignable(val_ty, gi.ty, asgn.value.span, "reassign", id.name, asgn.value)) return;
                         }
                         const store_val = if (val_ty != gi.ty and val_ty != .void and gi.ty != .void)
@@ -2391,17 +2385,16 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
                     }
                 } else if (std.mem.eql(u8, id.name, "_")) {
                     // `_ = expr;` is the discard idiom — plain assign only.
-                    // A compound `_ OP= expr` has no current value to read
-                    // and was silently accepted (0216 review fold 3).
+                    // A compound `_ OP= expr` has no current value to read.
                     if (asgn.op != .assign) {
                         if (self.diagnostics) |d|
                             d.addFmt(.err, asgn.target.span, "cannot use compound assignment on '_' — the discard has no value to read; only '_ = expr' is allowed", .{});
                     }
                 } else {
                     // The LHS name resolves to no assignable storage anywhere:
-                    // no local slot, no visible global. Previously the RHS
-                    // lowered and the store was DISCARDED silently — a typo'd
-                    // assignment (`totl = 42;`) compiled and ran (issue 0216).
+                    // no local slot, no visible global. Without a diagnostic
+                    // the store is DISCARDED silently and a typo'd assignment
+                    // (`totl = 42;`) compiles and runs.
                     // `resolveGlobalRef` already diagnosed the ambiguous /
                     // not-visible outcomes itself; don't stack a second error.
                     const already_diagnosed = self.program_index.global_names.get(id.name) != null and
@@ -2418,25 +2411,25 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
         },
         .field_access => |fa| {
             // `alias.member = val` where `alias` is a module namespace edge:
-            // store into the imported module's mutable global (issue 0223).
+            // store into the imported module's mutable global.
             // Runs BEFORE the value-lvalue path below — a module alias is not
             // a value, so `lowerExprAsPtr(fa.object)` would fail "unresolved".
             switch (tryLowerQualifiedGlobalStore(self, fa, asgn.op, val, asgn.target.span, asgn.value.span, asgn.value)) {
                 .handled => return,
                 .not_applicable => {},
             }
-            // M2.2 — `obj.field = val` for an Obj-C `#property` field
+            // `obj.field = val` for an Obj-C `#property` field
             // dispatches via objc_msgSend `setField:`. Skip struct-
             // pointer / GEP entirely; receivers are opaque Obj-C ids.
-            // Compound ops on properties are deferred (need load-via-
-            // getter + op + store-via-setter — Month 4 ARC territory).
+            // Only `=` lowers here: a compound op would need
+            // load-via-getter + op + store-via-setter.
             if (asgn.op == .assign) {
                 if (self.lookupObjcPropertyOnPointer(fa.object, fa.field)) |prop| {
                     self.lowerObjcPropertySetter(fa.object, prop, val);
                     return;
                 }
             }
-            // M1.2 A.3 — `self.field [op]= val` on a sx-defined Obj-C
+            // `self.field [op]= val` on a sx-defined Obj-C
             // class instance field (NOT a #property): write through
             // the __sx_state ivar. Handles plain assignment AND
             // compound ops (+=, -=, etc.) via storeOrCompound.
@@ -2457,7 +2450,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
             var obj_ty = self.inferExprType(fa.object);
             // A guard-narrowed `?*T` local writes through implicitly:
             // load the optional, unwrap to the pointer, store through it
-            // — parity with reads/receivers (issue 0352). A narrowed
+            // — parity with reads/receivers. A narrowed
             // `?Struct` VALUE keeps the explicit spelling (an in-place
             // payload write is a different lvalue).
             if (fa.object.data == .identifier and !obj_ty.isBuiltin()) {
@@ -2484,7 +2477,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
                 }
             }
 
-            // Reject a direct write to a tagged-union variant (issue 0136): it
+            // Reject a direct write to a tagged-union variant: it
             // sets the payload but not the tag. Construct via `x = .variant(...)`.
             if (self.diagTaggedUnionVariantWrite(obj_ty, fa.field, asgn.target.span)) return;
 
@@ -2514,7 +2507,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
                 const src_ty = self.builder.getRefType(val);
                 // Guard a width-mismatched `.none` store into the field slot
                 // (`w.s = "hi"` for a struct field `s`) — it would overrun the
-                // slot and corrupt neighbors (issue 0197). Plain `=` only;
+                // slot and corrupt neighbors. Plain `=` only;
                 // compound ops load-op-store through the field type.
                 if (asgn.op == .assign and !self.checkAssignable(src_ty, fl.ty, asgn.value.span, "assign", fa.field, asgn.value)) return;
                 const coerced = self.coerceToType(val, src_ty, fl.ty);
@@ -2564,7 +2557,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
             const elem_ty = self.ptrToArrayElem(obj_ty) orelse self.ptrToSliceElem(obj_ty) orelse self.getElementType(obj_ty);
             // Non-indexable assignment base (`pc[i] = v` on a `*T`, a struct,
             // ...): an `index_gep` typed `ptrTo(.unresolved)` panics at LLVM
-            // emission (issue 0155) — diagnose (same message as the read
+            // emission — diagnose (same message as the read
             // path) and bail instead.
             if (elem_ty == .unresolved) {
                 self.diagNonIndexable(obj_ty, ie.object.span);
@@ -2573,7 +2566,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
             const ptr_ty = self.module.types.ptrTo(elem_ty);
             // Guard a width-mismatched `.none` store into an element slot
             // (`arr[0] = "hi"` for an i32 array) — it would overrun the element
-            // and corrupt neighbors (issue 0197). Plain `=` only.
+            // and corrupt neighbors. Plain `=` only.
             if (asgn.op == .assign and !self.checkAssignable(self.builder.getRefType(val), elem_ty, asgn.value.span, "assign", "element", asgn.value)) return;
             // For fixed-size array assignment targets, use the alloca pointer directly
             // so that the store modifies the original variable (not a loaded copy).
@@ -2609,7 +2602,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
                 };
                 const val_ty = self.builder.getRefType(val);
                 // Guard a width-mismatched `.none` store through the pointer
-                // (`p.* = "hi"` for a `*i32`) — overruns the pointee (issue 0197).
+                // (`p.* = "hi"` for a `*i32`) — overruns the pointee.
                 if (!self.checkAssignable(val_ty, pointee_ty, asgn.value.span, "assign", "target", asgn.value)) return;
                 const store_val = if (val_ty != pointee_ty and val_ty != .void and pointee_ty != .void)
                     self.coerceToType(val, val_ty, pointee_ty)
@@ -2646,13 +2639,11 @@ const FieldLvalue = struct { ptr: Ref, ty: TypeId };
 /// shape, add an arm here and a matching GEP arm in `fieldLvaluePtr`; both fail
 /// to compile until the union is exhaustive, forcing the two to stay in lockstep.
 ///
-/// NOTE: the READ path (`lowerFieldAccess`, expr.zig) and the TYPE-INFER path
+/// The READ path (`lowerFieldAccess`, expr.zig) and the TYPE-INFER path
 /// (`ExprTyper.inferType`, expr_typer.zig) still carry their OWN parallel field
 /// matchers (emitting `union_get`/`enum_payload`/`struct_get` value reads, and
-/// returning a bare `TypeId`, respectively). They are not yet routed through
-/// here, so a new aggregate shape must currently be taught to all three. Folding
-/// read + infer onto this resolver (switching the descriptor to value-read ops /
-/// `.valueType()`) would make it the genuine compiler-wide single matcher.
+/// returning a bare `TypeId`, respectively). They do not route through here,
+/// so a new aggregate shape must be taught to all three.
 const FieldResolution = union(enum) {
     /// Direct union/tagged-union member: union_gep(index) into the aggregate.
     union_direct: struct { index: u32, ty: TypeId },
@@ -2795,8 +2786,8 @@ pub fn fieldLvaluePtr(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, field: []co
 /// Lower a plain (untagged) `union` struct-literal `.{ member = value, ... }`.
 /// The generic struct-literal path can't build a union — `getStructFields`
 /// returns empty for a union, so a union literal would fall through to a
-/// malformed `structInit` whose overlapping zero-fill clobbers the named member
-/// (issue 0158). Instead, mirror the spec's `--- `+per-field form: write each
+/// malformed `structInit` whose overlapping zero-fill clobbers the named
+/// member. Instead, mirror the spec's `--- `+per-field form: write each
 /// named member into an (otherwise-undefined) union-sized slot via the SAME
 /// lvalue resolver the assignment path uses, then load the union value back.
 ///
@@ -2865,7 +2856,7 @@ pub fn lowerUnionLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Type
 
 /// True (and emits the diagnostic) when `obj.field` names a DIRECT variant of a
 /// tagged union — a store target that would set the payload but NOT the tag
-/// (issue 0136): a tagged union is laid out `{ tag, payload }`, the write path
+/// — a tagged union is laid out `{ tag, payload }`, the write path
 /// emits a `union_gep` into the payload only, so the discriminant goes stale and
 /// a later `match`/`==` takes the wrong arm. The variant is set via construction
 /// (`x = .variant(...)`, which writes both), so a direct member write is rejected.
@@ -2895,8 +2886,8 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
     switch (node.data) {
         .identifier => |id| {
             // An lvalue reached only ACROSS a nested-fn boundary is the
-            // enclosing function's storage — dead here (issue 0250 fold: the
-            // field-write path Bus-errored through it). Diagnose; the
+            // enclosing function's storage — dead here (the field-write path
+            // would Bus-error through it). Diagnose; the
             // placeholder Ref is never emitted (hasErrors() aborts).
             if (self.scope) |scope| {
                 if (scope.lookupBoundary(id.name).crossed_fn_boundary) {
@@ -2923,7 +2914,7 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
                 // itself, so a member chain GEPs the live ambient context like
                 // any named pointer local — the fallback below would lower the
                 // VALUE load, whose struct_gep has no pointer base and dies at
-                // LLVM emission (issue 0337). Stores that would land in the
+                // LLVM emission. Stores that would land in the
                 // context storage itself are rejected by diagContextRootWrite;
                 // only chains crossing a pointer field reach a store.
                 return self.current_ctx_ref;
@@ -2967,9 +2958,9 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
             var obj_ty = self.inferExprType(fa.object);
             // A guard-narrowed `?*T` local roots the lvalue chain through
             // its pointer: load the optional, unwrap, GEP through the
-            // pointee — narrowing parity for address-of chains (issue
-            // 0352; the getter-receiver and address-of routes both land
-            // here). A narrowed `?Struct` VALUE keeps the explicit
+            // pointee — narrowing parity for address-of chains (the
+            // getter-receiver and address-of routes both land here). A
+            // narrowed `?Struct` VALUE keeps the explicit
             // spelling, same as the store path.
             if (fa.object.data == .identifier and !obj_ty.isBuiltin()) {
                 const ninfo = self.module.types.get(obj_ty);
@@ -2993,7 +2984,7 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
             // Only those slot-producing kinds. Everything else — a call result, a
             // force-unwrap, any shape that reaches lowerExprAsPtr's value fallback —
             // already IS the pointer, and loading it again GEPs through the pointee's
-            // first bytes as if they were an address (issue 0359).
+            // first bytes as if they were an address.
             const obj_is_slot = fa.object.data == .field_access or
                 fa.object.data == .index_expr or
                 fa.object.data == .deref_expr;
@@ -3052,7 +3043,7 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
             const elem_ty = self.ptrToArrayElem(obj_ty) orelse self.ptrToSliceElem(obj_ty) orelse self.getElementType(obj_ty);
             // Non-indexable L-value base (`ps[i].field = v` / `@ps[i].field`
             // where `ps: *S`): an `index_gep` typed `ptrTo(.unresolved)`
-            // panics at LLVM emission (issue 0155) — diagnose and bail.
+            // panics at LLVM emission — diagnose and bail.
             if (elem_ty == .unresolved) {
                 self.diagNonIndexable(obj_ty, ie.object.span);
                 return self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts before codegen
@@ -3115,7 +3106,7 @@ pub fn lowerDefer(self: *Lowering, ds: *const ast.DeferStmt) void {
     self.defer_stack.append(self.alloc, .{ .body = ds.expr, .is_onfail = false }) catch {};
 }
 
-/// `onfail [e] BODY` (ERR E1.7) — cleanup that runs only when an error
+/// `onfail [e] BODY` — cleanup that runs only when an error
 /// leaves the enclosing block. Recorded on the shared cleanup stack;
 /// emitted (interleaved with defers, reverse) at error exits by
 /// `emitErrorCleanup`, and discarded — never run — on a success exit.
@@ -3159,7 +3150,7 @@ fn emitReturnDefers(self: *Lowering, base: usize) void {
 /// SUCCESS exit: only `defer` entries run; `onfail` entries are skipped
 /// (and discarded by the truncation). Truncates the stack to saved_len.
 pub fn emitBlockDefers(self: *Lowering, saved_len: usize) void {
-    // Guard: if stack was already drained (e.g., by a return that emitted all defers)
+    // A return that already emitted every defer leaves the stack shorter.
     if (saved_len > self.defer_stack.items.len) return;
     if (self.currentBlockHasTerminator()) {
         // Block already terminated (e.g., by return) — cleanups were already emitted
@@ -3293,8 +3284,7 @@ pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {
             // NODE-AWARE so an lvalue BORROWS (`push .{ allocator = gpa }`
             // aliases `gpa`) — the node-less path would misread the lvalue
             // as an rvalue and refuse. Other fields keep the node-less
-            // coercion (value/own protocol fields own their copy until the
-            // ownership cutover).
+            // coercion (value/own protocol fields own their copy).
             const fl_pi = self.getProtocolInfo(fl.ty);
             const store_val = if (fval_ty != fl.ty and fval_ty != .void and fl.ty != .void)
                 (if (fl_pi != null and fl_pi.?.ownership == .identity)
@@ -3325,7 +3315,7 @@ pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {
 /// against the AMBIENT target_type — the enclosing function's RETURN TYPE
 /// while lowering its body — so `go, a = null, 2;` with `go: ?i64` typed the
 /// `null` as a zero of i32 and coerceToType then wrapped a PRESENT optional
-/// (Some(0)) into the target (0218 review fold); enum/struct literals
+/// (Some(0)) into the target; enum/struct literals
 /// diagnosed against the wrong destination the same way. Pure typing — emits
 /// no ops, so it cannot reorder the left-to-right evaluate-all-then-store-all
 /// semantics. Caller saves/restores the ambient target_type around the loop.
@@ -3360,8 +3350,8 @@ fn setMultiAssignTargetType(self: *Lowering, target: *const Node, value: *const 
         .field_access => |fa| {
             // For `obj.field = val`, type the RHS against the field's type —
             // via the SAME resolver the lvalue-pointer store path uses, so
-            // the RHS target type and the store slot can't diverge (issue
-            // 0133). Gated like single-assign: only for RHS forms that
+            // the RHS target type and the store slot can't diverge.
+            // Gated like single-assign: only for RHS forms that
             // consume a target type.
             if (rhsNeedsTargetType(value)) {
                 const obj_ty_raw = self.inferExprType(fa.object);
@@ -3375,7 +3365,7 @@ fn setMultiAssignTargetType(self: *Lowering, target: *const Node, value: *const 
             }
         },
         .deref_expr => |de| {
-            // For `p.* = val`, type the RHS against the POINTEE (issue 0215).
+            // For `p.* = val`, type the RHS against the POINTEE.
             if (rhsNeedsTargetType(value)) {
                 const ptr_ty = self.inferExprType(de.operand);
                 if (!ptr_ty.isBuiltin()) {
@@ -3391,8 +3381,8 @@ fn setMultiAssignTargetType(self: *Lowering, target: *const Node, value: *const 
 }
 
 pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
-    // Reassignment kills flow narrowing (issue 0179; multi-assign sibling
-    // 0228): a fresh value may be null, so an assigned name is no longer
+    // Reassignment kills flow narrowing: a fresh value may be null, so an
+    // assigned name is not
     // proven present. Mirror lowerAssignment exactly — IDENT targets only
     // (narrowing keys are bare local names, never field/index/deref paths),
     // removed BEFORE any RHS lowers, so `o, a = o + 1, 2;` inside an
@@ -3439,19 +3429,19 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
     for (ma.targets, 0..) |target, i| {
         if (i >= vals.items.len) break;
         const val = vals.items[i];
-        // Root-const write guard (issue 0116 / 0229) — same helper single-
+        // Root-const write guard — same helper single-
         // assign runs, applied PER TARGET before its store: a member/index
-        // target rooted at a `::` const (`CP.x, a = 9, 9;`) previously wrote
-        // through the constant (only IDENT targets were guarded, by the arm
-        // below). Diagnose this target and keep going so every bad target in
+        // target rooted at a `::` const (`CP.x, a = 9, 9;`) would otherwise
+        // write through the constant, since the arm below guards IDENT targets
+        // only. Diagnose this target and keep going so every bad target in
         // the statement is reported (batched, like consecutive single-assigns).
         if (diagConstRootWrite(self, target)) continue;
-        // Context-root write guard (issue 0337) — same helper single-assign
+        // Context-root write guard — same helper single-assign
         // runs, per target: only pointer-hop chains (pointee writes) proceed.
         if (diagContextRootWrite(self, target)) continue;
-        // Enclosing-local write guard (issue 0250 fold) — same helper single-
+        // Enclosing-local write guard — same helper single-
         // assign runs, per target: a nested static fn's multi-assign to an
-        // enclosing local previously stored into the dead alloca (silent no-op).
+        // enclosing local would store into the dead alloca (silent no-op).
         if (diagEnclosingRootWrite(self, target)) continue;
         if (qualified_store_verdicts[i] == .target) {
             const selected = qualified_store_verdicts[i].target;
@@ -3460,12 +3450,12 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
         }
         switch (target.data) {
             .identifier => |id| {
-                // Mirror of lowerAssignment's ident arm (issue 0218, the
-                // multi-assign sibling of 0216): local alloca slot → non-alloca
+                // Mirror of lowerAssignment's ident arm: local alloca slot
+                // → non-alloca
                 // scope binding (captures shadow globals) → global fallback →
-                // `_` discard → unresolved diagnostic. Previously only the
-                // alloca case existed — an undeclared or module-global target
-                // was silently dropped.
+                // `_` discard → unresolved diagnostic. Without the non-alloca
+                // arms an undeclared or module-global target is silently
+                // dropped.
                 var handled = false;
                 // A scope binding that is NOT an alloca (loop/match/error
                 // capture, pack-element alias, synthetic receiver) has no
@@ -3479,7 +3469,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                         if (binding.is_alloca) {
                             handled = true;
                             const val_ty = self.builder.getRefType(val);
-                            // Width-mismatched `.none` store guard (issue 0197).
+                            // Width-mismatched `.none` store guard.
                             if (!self.checkAssignable(val_ty, binding.ty, ma.values[i].span, "assign", id.name, ma.values[i])) continue;
                             const store_val = if (val_ty != binding.ty and val_ty != .void and binding.ty != .void)
                                 self.coerceToType(val, val_ty, binding.ty)
@@ -3493,11 +3483,11 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                     if (nonstore_binding) |b| {
                         // A scope binding SHADOWS any same-named global —
                         // reads resolve the capture; writes must never resolve
-                        // past it to different storage (0216 review fold 1).
-                        // The multi-assign spelling (`x, a = v, w`) previously
-                        // dropped the store silently, same as single-assign
-                        // (issues 0216/0219) — diagNonstoreBindingAssign picks
-                        // the shape-correct rejection identically.
+                        // past it to different storage.
+                        // The multi-assign spelling (`x, a = v, w`) rejects it
+                        // exactly as single-assign does:
+                        // diagNonstoreBindingAssign picks the shape-correct
+                        // message.
                         diagNonstoreBindingAssign(self, target.span, id.name, b);
                     } else if (std.mem.eql(u8, id.name, "_")) {
                         // `_` discards this position's value — the multi-assign
@@ -3506,15 +3496,14 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                         // so no `_ OP=` case exists here.
                         // (A `::`-const ident target never reaches this chain:
                         // the per-target diagConstRootWrite guard above already
-                        // diagnosed it — issue 0116 / 0229.)
+                        // diagnosed it.)
                     } else if (self.resolveGlobalRef(id.name, target.span)) |gi| {
-                        // Module-global target — source-aware (issue 0115):
+                        // Module-global target — source-aware:
                         // write the AUTHOR's global, never an unrelated
-                        // module's same-named one. Previously multi-assign had
-                        // NO global fallback and dropped the store (0218).
+                        // module's same-named one.
                         const val_ty = self.builder.getRefType(val);
                         if (val_ty != gi.ty and val_ty != .void and gi.ty != .void) {
-                            // No coercion to the global's type — bit-mangle guard (issue 0197).
+                            // No coercion to the global's type — bit-mangle guard.
                             if (!self.checkAssignable(val_ty, gi.ty, ma.values[i].span, "assign", id.name, ma.values[i])) continue;
                         }
                         const store_val = if (val_ty != gi.ty and val_ty != .void and gi.ty != .void)
@@ -3524,10 +3513,10 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                         self.builder.emitVoid(.{ .global_set = .{ .global = gi.id, .value = store_val } }, .void);
                     } else {
                         // The target name resolves to no assignable storage
-                        // anywhere: no local slot, no visible global.
-                        // Previously the store was DISCARDED silently — a
-                        // typo'd target in `a, totl = x, y;` compiled and ran
-                        // (issue 0218). `resolveGlobalRef` already diagnosed
+                        // anywhere: no local slot, no visible global. Without a
+                        // diagnostic the store is DISCARDED silently and a
+                        // typo'd target in `a, totl = x, y;` compiles and runs.
+                        // `resolveGlobalRef` already diagnosed
                         // the ambiguous / not-visible outcomes itself; don't
                         // stack a second error.
                         const already_diagnosed = self.program_index.global_names.get(id.name) != null and
@@ -3582,7 +3571,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 // `ps: *S`, a struct, etc.): an `index_gep` typed
                 // `ptrTo(.unresolved)` panics at LLVM emission — diagnose (same
                 // message as single-assign / the read path) and bail instead of
-                // building it (issue 0155; this arm previously lacked the guard).
+                // building it.
                 if (elem_ty == .unresolved) {
                     self.diagNonIndexable(obj_ty, ie.object.span);
                     continue; // hasErrors() aborts before codegen
@@ -3596,12 +3585,11 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                     val;
                 // For fixed-size arrays, address the storage IN PLACE — a local
                 // alloca, or a MODULE-GLOBAL array via `global_addr`
-                // (lowerExprAsPtr resolves both). Previously a global-array base
-                // missed the alloca and fell through to `lowerExpr` (a load of
-                // the whole array into a register); the GEP+store hit that
-                // throwaway COPY and the write was silently dropped (issue 0249;
-                // single-assign already took the `is_array → lowerExprAsPtr`
-                // path). A slice/pointer base still loads the pointer VALUE.
+                // (lowerExprAsPtr resolves both). A global-array base that fell
+                // through to `lowerExpr` would load the whole array into a
+                // register, and the GEP+store would hit that throwaway COPY
+                // with the write silently dropped. A slice/pointer
+                // base loads the pointer VALUE.
                 const is_array = !obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .array;
                 var base = if (is_array)
                     (self.getExprAlloca(ie.object) orelse self.lowerExprAsPtr(ie.object))
@@ -3613,7 +3601,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
             },
             .field_access => |fa| {
                 // `alias.member, a = v, w` — store into an imported module's
-                // mutable global (issue 0223, the multi-assign sibling). Runs
+                // mutable global (the multi-assign sibling). Runs
                 // BEFORE lowerExprAsPtr, which cannot address a module alias.
                 // Multi-assign is always plain `=`.
                 switch (tryLowerQualifiedGlobalStore(self, fa, .assign, val, target.span, ma.values[i].span, ma.values[i])) {
@@ -3626,13 +3614,13 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 if (tryLowerPropertyStore(self, fa, val, target.span)) continue;
                 const obj_ptr = self.lowerExprAsPtr(fa.object);
                 const obj_ty = self.inferExprType(fa.object);
-                // Reject a direct write to a tagged-union variant (issue 0136).
+                // Reject a direct write to a tagged-union variant.
                 if (self.diagTaggedUnionVariantWrite(obj_ty, fa.field, target.span)) continue;
                 // Resolve the target field via the shared lvalue resolver —
                 // the same one address-of uses — so a missing field emits a
                 // diagnostic instead of defaulting to field 0 / field_ty
-                // .unresolved, which silently corrupted a neighbouring field
-                // (or panicked at LLVM emission).
+                // .unresolved, which silently corrupts a neighbouring field
+                // (or panics at LLVM emission).
                 if (self.fieldLvaluePtr(obj_ptr, obj_ty, fa.field)) |r| {
                     const val_ty = self.builder.getRefType(val);
                     if (!self.checkAssignable(val_ty, r.ty, ma.values[i].span, "assign", fa.field, ma.values[i])) continue;
@@ -3687,7 +3675,7 @@ pub fn lowerDestructureDecl(self: *Lowering, dd: *const ast.DestructureDecl) voi
     if (ty.isBuiltin()) return;
     const ti = self.module.types.get(ty);
     // A STRUCT RHS destructures field-wise like a tuple — `a, b := .{10, 20}`
-    // is the post-cutover spelling (an untyped `.{ }` self-types as an
+    // is the spelling (an untyped `.{ }` self-types as an
     // anonymous positional struct), and any struct value destructures in
     // declaration order (tuple parity).
     if (ti == .@"struct") {
@@ -3709,7 +3697,7 @@ pub fn lowerDestructureDecl(self: *Lowering, dd: *const ast.DestructureDecl) voi
     const tuple = ti.tuple;
     if (dd.names.len > tuple.fields.len) return;
 
-    // E1.8 (discard rejection): when the RHS is a value-carrying failable,
+    // Discard rejection: when the RHS is a value-carrying failable,
     // the error slot (always the LAST tuple field) cannot be dropped. It is
     // dropped when the destructure omits it (fewer names than fields, so the
     // trailing error slot is never reached) or binds it to `_`. The `try` /
@@ -3744,6 +3732,6 @@ pub fn lowerDestructureDecl(self: *Lowering, dd: *const ast.DestructureDecl) voi
 
     // Destructuring a failable's result binds the error slot to a variable:
     // the user now owns the error explicitly, so the trace is absorbed
-    // (ERR E3.2). A plain (non-failable) tuple destructure clears nothing.
+    // A plain (non-failable) tuple destructure clears nothing.
     if (self.errorChannelOf(ty) != null) self.emitTraceClear();
 }

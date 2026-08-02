@@ -5,7 +5,6 @@
 // reading waiting on the other side of the break — a scope block, and the
 // prefix `not`. The dot-led postfixes are the other camp: `.`, `?.`, and
 // `catch` carry no second reading, so each chains across a break instead.
-// Expected: exit 0.
 #import "modules/std.sx"
 
 Pair :: struct { a: i64; b: i64 }

@@ -1,12 +1,12 @@
-// Postfix cast `expr.(T)` — the conversion regime (aggregate ladder
-// Step 4, S1). A statically-typed receiver converts through the
+// Postfix cast `expr.(T)` — the conversion regime. A
+// statically-typed receiver converts through the
 // explicit-target `xx` engine: same coercion ladder, same
 // protocol-erasure ownership modes — one engine. "Safe" means
 // WELL-DEFINED, not value-preserving: `1000.(i8)` truncates by
 // definition. Postfix-tier precedence (`-x.(i8)` = `-(x.(i8))`);
 // `56.(i8)` lexes as a cast, not a float; `0..(5)` stays a range.
 // Type-erased receivers (`any` / protocol values) are the CHECKED
-// assertion regime and land in S2.
+// assertion regime.
 #import "modules/std.sx";
 
 Point :: struct { x: i32; y: i32; }
@@ -44,7 +44,7 @@ main :: () {
     o := 5.(?i64);
     print("opt: {}\n", o != null);
     // Protocol erasure: postfix on an lvalue receiver is the OWNING copy
-    // (E4 — the value is independent of its source; borrow-for-transient
+    // (— the value is independent of its source; borrow-for-transient
     // moved to `*Speaker` views).
     d := Dog{ n = 42 };
     s := d.(Speaker);

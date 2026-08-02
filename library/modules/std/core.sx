@@ -174,27 +174,26 @@ Allocator :: protocol inline #identity {
 // is installed in the process-wide `__sx_default_context`. Async runtime
 // is sx LIBRARY code — the compiler provides only the primitives (inline
 // asm, `abi(.naked)`, atomics) + fiber-safe codegen. The protocol is the
-// minimum the fiber scheduler [B1.3+] needs; everything ergonomic
+// minimum the fiber scheduler needs; everything ergonomic
 // (`async` / `await` / `cancel` / `timeout`) is a generic free-fn on top
 // (std/io.sx), the same way `alloc(T,n)` sits over `alloc_bytes`.
 //
-//   spawn_raw  — submit a task; opaque handle (B1.3 fiber bootstrap).
+//   spawn_raw  — submit a task; opaque handle (fiber bootstrap).
 //   suspend_raw— suspend current fiber; `!` so cancel can raise out.
-//   ready      — wake a parked fiber (B1.4/B1.5).
+//   ready      — wake a parked fiber.
 //   poll       — drive one step; blocking impl returns 0.
 //   now_ms     — clock hook (a PROTOCOL method so the deterministic-sim
-//                Io [B1.4] can return a fake clock — the B1.4 keystone).
-//   arm_timer  — register a timer; backs `timeout` (B1.4).
+//                Io can return a fake clock).
+//   arm_timer  — register a timer; backs `timeout`.
 //
 // `ParkToken` is an opaque per-suspension token (unused by the blocking
-// impl). `SpawnOpts.pin` is inert in the M:1 model. (`PinTarget.on` —
-// pin to a specific `Thread` — is deferred with the M:N model; the
-// `on_thread` variant is a placeholder until a `Thread` type exists.)
+// impl). `SpawnOpts.pin` is inert: no impl reads it, and the M:1 model runs
+// every fiber on the spawning thread.
 PinTarget :: enum { any; main; on_thread; }
 
 SpawnOpts :: struct {
     pin: PinTarget = .any;
-    // Cancellation back-ref (Phase 3 — true cancellation). A pointer to the
+    // Cancellation back-ref (true cancellation). A pointer to the
     // spawned task's cancel flag (the `Future.canceled` `Atomic(bool)`, erased to
     // `*void` so this foundation type stays free of the atomic dependency). A
     // suspending impl stashes it on the spawned execution context so its

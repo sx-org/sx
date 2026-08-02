@@ -1,4 +1,4 @@
-// Stream B1 (fibers) B1.4b — deterministic VIRTUAL-TIME timer scheduling (the
+// Deterministic VIRTUAL-TIME timer scheduling (the
 // KEYSTONE), in pure sx over the M:1 scheduler. A fiber `sleep(ms)`s in
 // SIMULATED time; the scheduler wakes fibers in DEADLINE order, advancing a
 // virtual clock that moves only when the ready queue drains and the earliest
@@ -18,18 +18,17 @@
 //     A sleep(30), B sleep(10), C sleep(20). Wakes fire B(10), C(20), A(30) —
 //     reordered by deadline, not by spawn order.
 //   - Virtual timestamps: each fiber on wake reads `now_ms()` == its deadline
-//     (10, 20, 30) — the virtual clock landed exactly on the firing deadline.
+//     (10, 20, 30) — the virtual clock lands exactly on the firing deadline.
 //   - FIFO tiebreak: two fibers D, E both sleep(15) — they wake in spawn
 //     (insertion) order D then E, the deterministic equal-deadline contract.
 //
-// §8.1.3 CALIBRATION NOTE. The deterministic virtual-time wake ORDER equals
-// what real `sleep`s would produce: under real blocking sleeps the OS would
-// also wake the shortest sleeper first, i.e. in deadline order. The sim
-// reproduces blocking semantics' OBSERVABLE ordering (and the relative
-// timestamps) without consuming real time or admitting nondeterminism — so a
-// harness can assert exact orderings that a wall-clock test could only
-// approximate. (No real-time variant is run here; the equivalence is the
-// contract the deterministic test relies on.)
+// The deterministic virtual-time wake ORDER equals what real `sleep`s produce:
+// under real blocking sleeps the OS also wakes the shortest sleeper first, in
+// deadline order. The sim reproduces that observable ordering (and the relative
+// timestamps) without consuming real time or admitting nondeterminism, so a
+// harness can assert exact orderings a wall-clock test could only approximate.
+// No real-time variant runs here; the equivalence is the contract the
+// deterministic test relies on.
 //
 // aarch64-macOS-pinned (the scheduler's `swap_context` asm + guard-page mmap
 // constants are per-arch / Apple-specific): runs end-to-end on a matching host,

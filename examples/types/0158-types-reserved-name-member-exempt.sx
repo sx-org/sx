@@ -2,16 +2,15 @@
 // a bare reserved spelling (`i2`, `u8`, `i1`, …) is legal as a struct FIELD
 // name, a union TAG name, and a protocol METHOD-SIGNATURE name. These are
 // unambiguous — the name sits in a member slot and is reached via `obj.name`
-// (or dispatched by string), so it is never type-classified and never
-// mislowers. The backtick form is optional there and resolves to the same
-// member. Backtick access (`obj.`i2`) and bare access (`obj.i2`) both work.
+// (or dispatched by string), so it is never type-classified. The backtick form
+// is optional there and resolves to the same member. Backtick access
+// (`obj.`i2`) and bare access (`obj.i2`) both work.
 //
 // The exemption stops at member SIGNATURES: an `impl` method DEFINITION is a
 // real function, so its name is a declaration site (like a free function) and a
-// reserved spelling still needs the backtick (`` `i2 :: (self) ``) — bare would
-// be type-classified and mislower (the issue-0076 protection). A bare reserved
-// VALUE binding / declaration name still errors (see examples/1119, 1141, 1142).
-// Regression (issue 0089 — attempt-7: pins the Agra-ruled member-name exemption).
+// reserved spelling still needs the backtick (`` `i2 :: (self) ``). A bare
+// reserved VALUE binding / declaration name still errors (see examples/1119,
+// 1141, 1142).
 #import "modules/std.sx";
 
 // Struct fields spelled with reserved type names — bare is legal.

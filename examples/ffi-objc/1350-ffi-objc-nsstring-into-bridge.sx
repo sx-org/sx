@@ -1,10 +1,9 @@
 // The objc.sx literal→NSString bridge: `xx "..."` in a *NSString slot
 // routes through `impl Into(*NSString) for string` (stringWithUTF8String:),
 // declared in modules/ffi/objc.sx — i.e. in an IMPORTED module, not the
-// consumer. Pins issue 0346's production instance: the impl registers
-// only because objc.sx imports std (an impl whose protocol name is not
-// nameable in its own module is silently dropped); without it, `xx`
-// degrades to the reinterpret spill and this segfaults inside libobjc.
+// consumer. The impl registers only because objc.sx imports std: an impl
+// whose protocol name is not nameable in its own module is silently
+// dropped.
 #import "modules/std.sx";
 #import "modules/ffi/objc.sx";
 

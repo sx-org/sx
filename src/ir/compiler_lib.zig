@@ -1,6 +1,6 @@
 //! The comptime `compiler` library's name registry — the curated set of the
 //! compiler's own functions reachable from comptime sx via
-//! `abi(.zig) extern compiler`. See `current/PLAN-COMPILER-VM.md`.
+//! `abi(.zig) extern compiler`.
 //!
 //! **This registry IS the safety boundary.** Only the names registered here are
 //! bindable from user comptime code; a name not on the export list is rejected
@@ -8,11 +8,9 @@
 //! (`comptime_vm.callCompilerFn`) services every welded call by name — this file
 //! only carries the list of recognized names.
 //!
-//! **Direction note (2026-06-17 pivot).** The byte-weld of TYPES (sx structs whose
-//! layout was validated to mirror the compiler's Zig records) was stripped — it
-//! bolted a parallel layout regime + hand-marshaling onto a comptime value model
-//! that isn't bytes. The replacement is a comptime VM where values are
-//! native bytes, so the compiler-API needs no weld/validation/marshaling.
+//! Comptime values are native bytes in the VM, so the compiler API welds no
+//! TYPES: no parallel layout regime, no layout validation, no hand-marshaling.
+//! Only names cross the boundary.
 
 const std = @import("std");
 
@@ -20,6 +18,5 @@ const std = @import("std");
 /// different `<lib>` is rejected — `compiler` is the sole comptime bind source.
 pub const lib_name = "compiler";
 
-// The function-export list that used to live here is gone: `ir/intrinsics.zig`
-// is the allow-list now, and it binds by (module, name) rather than by a bare
-// name matched against a second list that nothing kept in sync with the sx.
+// `ir/intrinsics.zig` is the allow-list for compiler-lib exports; it binds by
+// (module, name).

@@ -1,5 +1,5 @@
 // Checked assertions: `av.(T)` on an `any` receiver is failable `(T, !)`
-// with ONE spelling and two temperaments (aggregate ladder Step 4, S2).
+// with ONE spelling and two temperaments.
 // CONSUMED via the error channel = graceful: `try av.(T)` propagates
 // (the caller's set absorbs the global `mismatch` tag), `av.(T) or d`
 // falls back, `av.(T) catch (e) { … }` binds the tag. UNCONSUMED with a

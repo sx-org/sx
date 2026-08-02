@@ -1,4 +1,4 @@
-// `try` rejections (ERR step E1.4a):
+// `try` rejections:
 //   - `try` is only valid inside a failable function,
 //   - the operand must be failable (the sole failable-operand check —
 //     the parser imposes none),

@@ -2,7 +2,7 @@
 // comptime pack `..xs: P`. Each trailing arg is `xx`-erased to a `P` protocol
 // value {ctx, vtable} and packed into a runtime `[]P`, so the elements can be
 // indexed by a RUNTIME index and dispatched through the protocol interface
-// (unlike a pack, which is comptime-only — see examples/163).
+// (unlike a pack, which is comptime-only — see 0526).
 //
 // This is the type-safe way to iterate a heterogeneous arg list at runtime:
 // concrete per-position types are erased to the constraint protocol.

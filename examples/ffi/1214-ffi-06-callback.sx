@@ -1,14 +1,14 @@
-// Phase 0 baseline (PLAN-FFI.md step 0.6): sx function passed to C
+// An sx function passed to C
 // as a function pointer; C invokes it; sx-side observable effect.
 // Mirrors the `app->onInputEvent` install pattern in
 // library/modules/platform/android.sx.
 //
 // Two arities covered:
-//   1. (i32) -> i32                — single-arg callback
-//   2. (*void, i32) -> i32         — pointer + value (onInputEvent shape)
+// 1. (i32) -> i32                — single-arg callback
+// 2. (*void, i32) -> i32         — pointer + value (onInputEvent shape)
 //
-// Plus a side-effect via a global so we can confirm the callback
-// actually fired (return value + state mutation both observable).
+// A global side effect makes the firing observable alongside the
+// return value.
 
 #import "modules/std.sx";
 

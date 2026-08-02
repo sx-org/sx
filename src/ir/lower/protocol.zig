@@ -268,7 +268,7 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
     table.updatePreservingKey(id, struct_info);
 
     // Method infos resolved with the type-arg binding (T → i64), pinned to
-    // the protocol's OWN module (E4) so a method-signature type visible only
+    // the protocol's OWN module so a method-signature type visible only
     // there resolves correctly when instantiated cross-module. `Self` and the
     // bound type-args short-circuit before the leaf; a concrete library type
     // in a signature is the case this pin protects.
@@ -346,7 +346,7 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
     return id;
 }
 
-// ── Protocol namespace lookups (pack projection, Feature 1, Decision 4) ──
+// ── Protocol namespace lookups (pack projection) ─────────────────────
 // (The position-driven orchestrator `resolvePackProjection` lives in
 // lower/pack.zig; these two lookups are its per-namespace halves.)
 //
@@ -520,14 +520,14 @@ pub fn getOrCreateThunks(self: *Lowering, proto_ty: TypeId, concrete_type_name: 
 
 /// Fold `<global>` / `xx <global>` at a BORROW-kind protocol-typed static
 /// initializer into that kind's constant: `{ ctx, __type_id, thunk fn-refs… }`
-/// for `inline`, `{ ctx, __tag }` for `tagged` (L8 rider a). Only an
-/// IDENTIFIER naming a registered top-level global qualifies: the erasure
-/// BORROWS the global's stable storage (identity semantics), so ctx is the
-/// global's address — ALWAYS, stateless impls included (ruled 2026-07-19: no
-/// null-receiver shortcut; a null ctx is the `?Protocol` "absent" sentinel
-/// and must never appear in a live protocol value). The tagged form's number
-/// is not known here at all — the pair travels in the constant and resolves
-/// where every other tag does (§7.9). Null result = not this shape / not
+/// for `inline`, `{ ctx, __tag }` for `tagged`. Only an IDENTIFIER naming a
+/// registered top-level global qualifies: the erasure BORROWS the global's
+/// stable storage (identity semantics), so ctx is the global's address —
+/// ALWAYS, stateless impls included: there is no null-receiver shortcut,
+/// because a null ctx is the `?Protocol` "absent" sentinel and must never
+/// appear in a live protocol value. The tagged form's number is not known here
+/// at all — the pair travels in the constant and resolves where every other tag
+/// does (§7.9). Null result = not this shape / not
 /// resolvable; the caller falls through to its non-const diagnostic.
 pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: TypeId) ?inst_mod.ConstantValue {
     const tbl = &self.module.types;
@@ -628,10 +628,9 @@ pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Nod
 /// constant can never drift positionally from the layout `assembleContext`
 /// produced.
 ///
-/// Used by FFI inbound wrappers (Step 4) and the interp's default-
-/// context call entry (Step 7). Only emitted when the program imports
-/// `std.sx` — without that, Context / Allocator / CAllocator aren't
-/// registered and the global has no purpose.
+/// Used by FFI inbound wrappers and the interp's default-context call entry.
+/// Only emitted when the program imports `std.sx` — without that, Context /
+/// Allocator / CAllocator aren't registered and the global has no purpose.
 pub fn emitDefaultContextGlobal(self: *Lowering) void {
     emitDefaultContextGlobalImpl(self, .final);
 }
@@ -927,7 +926,7 @@ const NonConformance = struct {
         /// the RETURN type differs from the protocol method's declared type
         /// (e.g. impl returns `bool` where the protocol method returns `i64`).
         /// The thunk would call the impl with the wrong ABI and silently
-        /// miscompile (issue 0178). `detail` names the mismatching position.
+        /// miscompile. `detail` names the mismatching position.
         type_mismatch,
         /// A body exists but its arity (after self) differs from the protocol
         /// method's parameter count. `detail` carries the "expected N, got M"
@@ -978,8 +977,8 @@ fn firstUnimplementedMethod(self: *Lowering, proto_ty: TypeId, concrete_type_nam
             // A method with its own type params bails there → unreachable thunk.
             if (fd.type_params.len > 0) return .{ .method = m.name, .kind = .signature_mismatch };
             // Validate the impl method's SIGNATURE against the protocol method
-            // (issue 0178): a right-NAME but wrong-TYPE impl otherwise builds a
-            // wrong-ABI thunk and silently miscompiles.
+            // — a right-NAME but wrong-TYPE impl otherwise builds a wrong-ABI
+            // thunk and silently miscompiles.
             if (pd_ast) |pda| {
                 if (methodAst(pda, m.name)) |mast| {
                     if (signatureMismatch(self, mast, m, fd, concrete_ty, pda.source_file)) |nc| return nc;
@@ -1009,7 +1008,7 @@ fn methodAst(pd: *const ast.ProtocolDecl, name: []const u8) ?ast.ProtocolMethodD
 /// nested inside any compound (`*Self`, `[]Self`, `[2]*Self`, `?[]Self`,
 /// `Box(Self)`, fn/closure types, …). Used to decide whether a node needs
 /// structural `Self`-substitution or can be resolved wholesale. Shared with
-/// the Era-2 erasability classifier.
+/// the erasability classifier.
 const containsSelf = program_index_mod.typeNodeContainsSelf;
 
 /// Resolve a protocol-method type node to a TypeId, substituting any `Self`
@@ -1022,8 +1021,7 @@ const containsSelf = program_index_mod.typeNodeContainsSelf;
 /// Recurses structurally so a nested `Self` (e.g. `[]Self`, `[2]*Self`,
 /// `?[]Self`) is replaced at EVERY level before the type is rebuilt — without
 /// this, `[]Self` would resolve to a real `.slice` named `[]Self` ≠ `[]T` and
-/// the conformance gate would FALSELY reject a correct `[]T` impl (the gap from
-/// the 0178 adversarial review).
+/// the conformance gate would FALSELY reject a correct `[]T` impl.
 pub fn resolveProtoTypeSubSelf(self: *Lowering, node: *const Node, concrete_ty: TypeId, proto_src: ?[]const u8) TypeId {
     switch (node.data) {
         .type_expr => |te| {
@@ -1054,7 +1052,7 @@ pub fn resolveProtoTypeSubSelf(self: *Lowering, node: *const Node, concrete_ty: 
             // yield `.unresolved` so the gate stays conservative (a correct
             // `Box(T)` impl is NOT falsely flagged). A genuine generic-arg
             // mismatch through `Self` is then simply not caught here — acceptable:
-            // the gate's job is to never produce a FALSE positive; the 0178
+            // the gate's job is to never produce a FALSE positive, and the
             // miscompiles it guards are leaf / pointer / slice / array shaped.
             if (containsSelf(node)) return .unresolved;
             return self.resolveTypeInSource(proto_src, node);
@@ -1082,7 +1080,7 @@ pub fn resolveProtoTypeSubSelf(self: *Lowering, node: *const Node, concrete_ty: 
 /// because the impl's param/return type may name a module-local type that is
 /// bare-visible only inside the impl's module (namespaced-only from the erasure
 /// site). Resolving it in the erasure-site context would hit the `.not_visible`
-/// arm of `resolveNominalLeaf` and emit a hard diagnostic (issue 0208) instead of
+/// arm of `resolveNominalLeaf` and emit a hard diagnostic instead of
 /// resolving-and-comparing structurally.
 fn signatureMismatch(self: *Lowering, mast: ast.ProtocolMethodDecl, m: ProtocolMethodInfo, fd: *const ast.FnDecl, concrete_ty: TypeId, proto_src: ?[]const u8) ?NonConformance {
     // The concrete VALUE type (strip a single pointer): `*Self` substitutes to
@@ -1110,7 +1108,7 @@ fn signatureMismatch(self: *Lowering, mast: ast.ProtocolMethodDecl, m: ProtocolM
     // Per-parameter type check. Protocol types resolve in the protocol's own
     // module (`proto_src`) with `Self → value_ty`; impl types resolve in the
     // IMPL's own module (`fd.body.source_file`), so a module-local impl type
-    // resolves where it's visible rather than at the erasure site (issue 0208).
+    // resolves where it's visible rather than at the erasure site.
     // Canonical TypeIds remain equal when the same type resolves through either
     // source, and remain distinct for separate same-display-name nominals.
     for (mast.params, impl_extra) |proto_pnode, impl_param| {
@@ -1446,7 +1444,7 @@ fn probeReceiverAddress(self: *Lowering, node: *const ast.Node, recv_ty: TypeId)
 /// The conformance gate shared by every erasure spelling: a concrete type may
 /// only become a protocol value of a protocol it actually `impl`-ements.
 /// Without it, thunk synthesis falls through to `unreachable` — a silent
-/// SIGABRT at the first dispatch with no diagnostic (issue 0176). `at`
+/// SIGABRT at the first dispatch with no diagnostic. `at`
 /// defaults to the builder's current span.
 pub fn refuseNonConformer(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId, at: ?ast.Span) bool {
     const proto_name = self.getProtocolInfo(proto_ty).?.name;
@@ -1472,7 +1470,7 @@ pub fn refuseNonConformer(self: *Lowering, proto_ty: TypeId, concrete_type_name:
             // never set `self.diagnostics`). Emitting the placeholder here would
             // ship LLVM `undef` with `hasErrors() == false`: a non-conforming
             // erasure reaching codegen silently. That is a compiler-invariant
-            // violation, so trip loudly per CLAUDE.md's "hard tripwire" guidance
+            // violation, so trip loudly per the hard tripwire rule
             // rather than fall through to the placeholder. The normal
             // compilation path always sets `diagnostics`, so this never fires
             // there — it only catches a future caller that forgets to plumb one.
@@ -1595,8 +1593,8 @@ pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: Protocol
 
     // Arity is exact: a protocol signature has no defaults, packs, or
     // variadics, so the user-arg count must equal its parameter list
-    // (issue 0131: extra args were silently dropped here; missing args
-    // left the thunk reading garbage).
+    // — an extra arg would be dropped and a missing one would leave the
+    // thunk reading garbage.
     if (args.len != mi.param_types.len) {
         if (self.diagnostics) |d| {
             const s: []const u8 = if (mi.param_types.len == 1) "" else "s";

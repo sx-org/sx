@@ -10,8 +10,8 @@
 // macOS, iOS simulator, iOS device. Per-platform branching is keyed
 // off `BuildOptions.is_macos()` / `is_ios_simulator()` / `is_ios_device()`
 // so the bundle layout, Info.plist shape, framework embedding,
-// provisioning, entitlements, and codesigning ceremony all match what
-// the Zig `createBundle` used to produce.
+// provisioning, entitlements, and codesigning ceremony each match the
+// platform's requirements.
 //
 // Wiring: users opt in by registering `bundle_main` as the post-link
 // callback in their own `#run` block. Example:
@@ -58,8 +58,7 @@ bundle_main :: (opts: BuildOptions) -> bool {
     }
 
     // Device builds without a real identity will be rejected by the
-    // device, so fail fast with a clear hint — matches what the legacy
-    // Zig path did at the top of createBundle.
+    // device, so fail fast with a clear hint.
     if opts.is_ios_device() {
         if opts.codesign_identity().len == 0 or opts.provisioning_profile().len == 0 {
             out("error: --target ios requires --codesign-identity (e.g. \"Apple Development: ...\") and --provisioning-profile <path>\n");
@@ -209,8 +208,6 @@ bundle_main :: (opts: BuildOptions) -> bool {
     true
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────
-
 // Copy a sx string (slice) into a freshly-allocated null-terminated
 // buffer for libc / `[:0]u8` callees. Allocated from
 // `context.allocator` like the rest of the bundling stage.
@@ -331,7 +328,7 @@ embed_provisioning_profile :: (profile: string, bundle: string) -> bool {
 // `<bundle>/<dest>/`. Creates intermediate dirs as needed. Returns
 // true if `src_dir` doesn't exist (callers can register optional
 // asset trees without failing the build). Shells out to `cp -R`
-// because fs.sx Phase 1A doesn't expose `list_dir` / `walk` yet.
+// because fs.sx exposes no `list_dir` / `walk`.
 copy_asset_dir :: (src: string, dest: string, bundle: string) -> bool {
     src_z := str_to_cstr(src);
     if !exists(src_z) {
@@ -375,7 +372,7 @@ copy_asset_dir :: (src: string, dest: string, bundle: string) -> bool {
 
 // Recursive-copy `<name>.framework` from one of the user's `-F` search
 // paths into `<dest_dir>`. Walks the framework paths in order; first
-// hit wins. Falls back to a `cp -R` subprocess because fs.sx Phase 1A
+// hit wins. Falls back to a `cp -R` subprocess because fs.sx
 // doesn't expose `list_dir` / `walk` yet.
 embed_framework :: (opts: BuildOptions, name: string, dest_dir: string) -> bool {
     subdir := concat(name, ".framework");
@@ -618,7 +615,7 @@ codesign :: (bundle: string, identity: string, ent_path: string) -> bool {
 // =====================================================================
 // Android APK pipeline.
 //
-// Same shape as the legacy Zig `createApk`:
+// Steps:
 //   1. Discover SDK root + highest build-tools / platforms version.
 //   2. Stage `<apk>.stage/lib/arm64-v8a/<libfoo.so>`.
 //   3. Use the user-supplied AndroidManifest.xml or synthesize one
@@ -857,7 +854,7 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
 // ── Android helpers ──────────────────────────────────────────────────
 
 // Run `cmd` under a `cd <dir> && ...` shell wrapping. process.run
-// doesn't have a cwd arg in Phase 1A, so we compose it via the shell.
+// has no cwd arg, so it is composed via the shell.
 // Output is folded via `2>&1` so failures hand the user one stream.
 run_in_dir :: (dir: string, cmd: string) -> bool {
     wrapped := concat("cd \"", dir);

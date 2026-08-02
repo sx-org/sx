@@ -1,4 +1,3 @@
-// Tests for type_bridge.zig
 const std = @import("std");
 const types = @import("types.zig");
 const type_bridge = @import("type_bridge.zig");
@@ -93,7 +92,7 @@ test "resolveAstType: threaded alias_map resolves named alias" {
     try std.testing.expectEqual(@as(usize, 0), empty_info.@"struct".fields.len);
 
     // With an explicit alias map (threaded, not borrowed via a TypeTable field),
-    // a previously-unseen name resolves to the alias target instead of a stub.
+    // an unseen name resolves to the alias target instead of a stub.
     var aliases = std.StringHashMap(TypeId).init(alloc);
     defer aliases.deinit();
     try aliases.put("ShaderHandle", .u32);
@@ -118,7 +117,7 @@ test "resolveAstType: threaded alias_map resolves named alias" {
     try std.testing.expectEqual(TypeInfo{ .pointer = .{ .pointee = .u64 } }, table.get(ptr_id));
 }
 
-test "resolveAstType: named-const array dimension resolves to the same length as a literal (issue 0083)" {
+test "resolveAstType: named-const array dimension resolves to the same length as a literal" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -174,7 +173,7 @@ test "resolveAstType: error_set_decl registers an error-set type + interns tags"
     try std.testing.expectEqual(id, type_bridge.resolveAstType(node, &table, null, null));
 }
 
-// ── ERR E1.2 — failable-signature error channel resolution ──
+// ── failable-signature error channel resolution ──
 
 test "resolveAstType: `!Named` resolves to the declared error set" {
     const alloc = std.testing.allocator;
@@ -207,8 +206,8 @@ test "resolveAstType: bare `!` resolves to a shared inferred placeholder set" {
     const ib = type_bridge.resolveAstType(b, &table, null, null);
     try std.testing.expect(table.get(ia) == .error_set);
     try std.testing.expectEqualStrings("!", table.getString(table.get(ia).error_set.name));
-    try std.testing.expectEqual(@as(usize, 0), table.get(ia).error_set.tags.len); // empty until E1.4 SCC
-    try std.testing.expectEqual(ia, ib); // all bare `!` share the placeholder for now
+    try std.testing.expectEqual(@as(usize, 0), table.get(ia).error_set.tags.len); // empty until the SCC convergence pass runs
+    try std.testing.expectEqual(ia, ib); // all bare `!` share the placeholder
 }
 
 test "resolveAstType: `(i32, !Named)` result list is a tuple ending in the error set" {

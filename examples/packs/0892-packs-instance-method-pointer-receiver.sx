@@ -1,7 +1,7 @@
 // A heterogeneous-pack instance method must pass its implicit receiver with
-// the same pointer semantics as an ordinary method. The receiver AST is
-// prepended to the pack call's fixed prefix; lowering that prefix as a value
-// mutates only a copy of `t`.
+// the same pointer semantics as an ordinary method: the receiver AST is
+// prepended to the pack call's fixed prefix and lowered as a place, so the
+// method mutates `t` itself.
 #import "modules/std.sx";
 
 Thing :: struct {

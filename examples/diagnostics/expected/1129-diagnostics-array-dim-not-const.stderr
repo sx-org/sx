@@ -1,5 +1,5 @@
 error: array dimension must be a compile-time integer constant
-  --> examples/diagnostics/1129-diagnostics-array-dim-not-const.sx:18:12
+  --> examples/diagnostics/1129-diagnostics-array-dim-not-const.sx:11:12
    |
-18 | BadArr :: [get()]i64;
+11 | BadArr :: [get()]i64;
    |            ^^^^^

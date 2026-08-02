@@ -1,11 +1,8 @@
-// Regression (issue 0059): a function with NO explicit return type infers it
-// from the body, which references the function's own parameters. The inference
-// must see those params — before the fix they weren't in scope during
-// return-type resolution, so the inferred type came out `.unresolved` and tripped
-// the LLVM-emission guard ("unresolved type reached LLVM emission"). Whether it
-// slipped through used to depend on a same-named binding lingering from earlier
-// lowering. Covers the arrow (`=>`) and inferred-via-`return` forms, at top level
-// and as locals.
+// A function with NO explicit return type infers it
+// from the body, which references the function's own parameters. The
+// function's params are in scope during return-type resolution, so the
+// inference sees them. Covers the arrow (`=>`) and inferred-via-`return`
+// forms, at top level and as locals.
 
 #import "modules/std.sx";
 

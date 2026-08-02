@@ -1,5 +1,5 @@
 // `@BuildSink(P)` is an ordinary constraint protocol, and `expression` is an
-// ordinary generic method (fluent spec §6.3, §9.1, §9.5).
+// ordinary generic method.
 //
 //     @BuildSink :: protocol(P: Type) constraint {
 //         expression :: (self: *Self, value: $I/@Init($V/P));
@@ -32,7 +32,7 @@ impl Drawable for Rule {
 }
 
 // Sink 1 — measures. It never writes, so no reached expression is evaluated at
-// all: a sink that returns without writing declines the value (§6.5).
+// all: a sink that returns without writing declines the value.
 Measure :: struct {
     bytes: i64 = 0;
     count: i32 = 0;

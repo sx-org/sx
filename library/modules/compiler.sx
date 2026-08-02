@@ -2,11 +2,11 @@
 //
 // These primitives run in the comptime evaluator (mode `evaluate`), serviced by
 // `comptime_vm.callCompilerFn`. They are the building blocks of the sx-driven
-// build pipeline (Phase 5); the default `build` implementation that orchestrates
+// build pipeline; the default `build` implementation that orchestrates
 // them lives in `modules/build.sx`. They are reached from the post-link build
 // driver (a callback registered via `set_post_link_callback`), which always runs
-// on the comptime VM (`core.invokeByFuncId`) — the VM, unlike the legacy
-// interpreter, can allocate/grow the `List`s the driver builds (issue 0141).
+// on the comptime VM (`core.invokeByFuncId`) — the one evaluator that can
+// allocate/grow the `List`s the driver builds.
 //
 // Only `List` is needed here (`string` is a builtin), so import just the List
 // part-file, not the whole std barrel — keeps compiler.sx's transitive graph
@@ -22,7 +22,7 @@ c_object_paths :: () -> List(string) intrinsic;
 link_libraries :: () -> List(string) intrinsic;
 
 // Verify + emit the codegen'd module to its object file; returns the path. An
-// ACTION — the compiler no longer auto-emits; the sx driver calls this.
+// ACTION — the sx driver calls this; the compiler does not emit on its own.
 emit_object :: () -> string intrinsic;
 
 // Build-config metadata the sx driver passes to `link` (the merged CLI + `#run`
@@ -33,8 +33,8 @@ build_frameworks :: () -> List(string) intrinsic;  // `-framework` names
 build_flags      :: () -> List(string) intrinsic;  // extra link flags
 
 // Link `objects` into `output`, with the given libraries / frameworks / link
-// flags / target triple. The one genuine ACTION primitive — the compiler keeps
-// the proven linker (Option B); the sx driver orchestrates. Not fallible (the
-// build callback isn't): a link failure fails the build directly.
+// flags / target triple. The one genuine ACTION primitive — the compiler owns
+// the linker; the sx driver orchestrates. Not fallible (the build callback
+// isn't): a link failure fails the build directly.
 link :: (objects: List(string), output: string, libraries: List(string),
          frameworks: List(string), flags: List(string), target: string) intrinsic;

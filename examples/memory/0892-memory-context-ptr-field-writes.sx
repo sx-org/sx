@@ -1,4 +1,4 @@
-// Writes through a `#context_extend` pointer field's pointee (issue 0337):
+// Writes through a `#context_extend` pointer field's pointee:
 // `context.s.n = 5` mutates the POINTEE, exactly like a named local pointer.
 // Covers 1-hop and 2-hop chains × plain write / compound assign / method-call
 // mutation, and pins that the mutation is visible through every alias of the

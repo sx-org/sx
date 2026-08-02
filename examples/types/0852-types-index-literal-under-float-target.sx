@@ -1,14 +1,10 @@
 // A subscript's index is an integer position, independent of the type of the
 // element it selects — including when the surrounding slot is a float.
 //
-// Regression: `target_type` steers integer-literal lowering (a literal in an
-// `f32` slot lowers as an `f32` constant — correct for a VALUE). The index
-// operand of a subscript is not a value in that type, but it was lowered with
-// the ambient target still installed, so `s[0]` under an `f32` target folded
-// the `0` to `0.0` and reached the backend as
-// `getelementptr float, ptr %d, float 0.0` — "GEP indexes must be integers"
-// from the LLVM verifier, naming no source location. Indexing via an i64 local
-// was unaffected, which is what made it look generic-specific at first.
+// `target_type` steers integer-literal lowering (a literal in an `f32` slot
+// lowers as an `f32` constant — correct for a VALUE). The index operand of a
+// subscript is not a value in that type, so it lowers with the ambient target
+// cleared. Indexing via an i64 local takes the same path.
 
 #import "modules/std.sx";
 

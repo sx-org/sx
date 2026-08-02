@@ -1,4 +1,4 @@
-// ASM stream — indirect-memory (`=*m`) place output on x86_64 (cross-arch sibling
+// Indirect-memory (`=*m`) place output on x86_64 (cross-arch sibling
 // of the aarch64 1652). `movq $42, %[out]` stores straight through the place's
 // address — the address is passed as an opaque `ptr` with an `elementtype(i64)`
 // attribute, no return slot. Note `$42`: a literal `$` in the template is escaped

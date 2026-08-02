@@ -65,8 +65,7 @@ fn typeContainsUnresolved(table: *const types.TypeTable, ty: TypeId) bool {
     };
 }
 
-/// Protocol / impl LOOKUP + REGISTRATION (architecture phase A4.2), extracted
-/// from `Lowering`. Owns:
+/// Protocol / impl LOOKUP + REGISTRATION. Owns:
 ///   - read-only conformance queries: `getProtocolInfo` (is a type a registered
 ///     protocol + its method table), `packArgConformsTo` (impl-declaration
 ///     conformance for protocol-pack `..xs: P` elements),
@@ -75,15 +74,15 @@ fn typeContainsUnresolved(table: *const types.TypeTable, ty: TypeId) bool {
 ///     impl maps + the `0410`/`0411`/`0412` visibility/duplicate diagnostics),
 ///     and the default-method synthesis they use.
 ///
-/// A `*Lowering` facade (Principle 5, like `GenericResolver` / `CallResolver`):
+/// A `*Lowering` facade (like `GenericResolver` / `CallResolver`):
 /// it reads/writes the protocol/impl registries (`protocol_decl_map` /
 /// `protocol_ast_map` in `ProgramIndex`; `protocol_thunk_map` / `param_impl_map`
 /// / `param_impl_pack_map` / `protocol_vtable_type_map` on `Lowering`) plus the
 /// type table, so it borrows `*Lowering` rather than re-threading every map.
-/// IR EMISSION stays in `Lowering` for the later A4.2 increment — registration
+/// IR EMISSION stays in `Lowering` — registration
 /// calls `self.l.declareFunction` (the emission primitive) but the thunk/value
 /// builders (`createProtocolThunk` / `buildProtocolValue` / `tryUserConversion`)
-/// are NOT moved here.
+/// do NOT live here.
 pub const ProtocolResolver = struct {
     l: *Lowering,
 
@@ -162,8 +161,8 @@ pub const ProtocolResolver = struct {
     /// Concrete method selected for dispatch through an explicitly declared
     /// protocol impl. Exact bodies/defaults on that impl win. An empty/partial
     /// impl may adopt a uniquely selected body already owned by the SAME
-    /// concrete TypeId (inline or another protocol impl), matching the legacy
-    /// `Type.method` behavior without cross-binding display-name collisions.
+    /// concrete TypeId (inline or another protocol impl), matching
+    /// `Type.method` selection without cross-binding display-name collisions.
     pub fn protocolDispatchMethod(self: ProtocolResolver, proto_ty: ?TypeId, p_name: []const u8, ty: TypeId, method: []const u8) ?ProtocolImplMethod {
         if (self.protocolImplMethod(proto_ty, p_name, ty, method)) |exact| return exact;
         if (!self.l.protocol_impl_decls.contains(self.protocolConcreteKey(proto_ty, p_name, ty))) return null;
@@ -194,7 +193,7 @@ pub const ProtocolResolver = struct {
         // own visibility domain before consulting the process-global protocol
         // spelling map. A namespaced-only foreign `P` may coexist with a local
         // alias `P :: Q`; looking up `protocol_ast_map["P"]` first would let
-        // the hidden foreign declaration hijack the local impl (issue 0320).
+        // the hidden foreign declaration hijack the local impl.
         // Unit/comptime registration hosts intentionally omit import facts, so
         // retain their explicit-spelling fallback below.
         if (self.l.program_index.module_decls == null or self.l.program_index.flat_import_graph == null) {
@@ -468,8 +467,8 @@ pub const ProtocolResolver = struct {
             if (entry.ret_var_name == null and ent_ci.ret != src_ret) continue;
             // First match wins for v1; concrete-wins-over-pack already
             // happened by the caller checking concrete first. Multiple
-            // overlapping pack impls would be a separate diagnostic
-            // (deferred — same module duplicates are caught at registration).
+            // overlapping pack impls get no diagnostic here; same-module
+            // duplicates are caught at registration.
             matched_idx = i;
             break;
         }
@@ -491,7 +490,7 @@ pub const ProtocolResolver = struct {
         if (self.l.registered_protocol_decls.contains(pd)) return;
         self.l.registered_protocol_decls.put(pd, {}) catch @panic("out of memory");
 
-        // Decision 4 soft-convention warning: a type-arg and a method (the
+        // Soft-convention warning: a type-arg and a method (the
         // "runtime accessor" namespace — protocols have no fields) sharing a
         // name is allowed, but `..pack.<name>` then resolves by *position*
         // rather than by precedence, which surprises readers. Alert at decl.
@@ -575,13 +574,13 @@ pub const ProtocolResolver = struct {
         // (`pd.source_file`, stamped by `resolveImports`), via the
         // visibility-aware stateful resolver — NOT the flat, visibility-unaware
         // `type_bridge.resolveAstType`. The flat lookup picks the WRONG author
-        // when the type name collides across modules (issue 0132: the user's
+        // when the type name collides across modules (the user's
         // `Event` enum vs the stdlib `event.Event` struct pulled in by
         // `modules/std.sx`). This mirrors the parameterized-protocol path
         // (`instantiateParamProtocol`, lower/protocol.zig) and concrete-fn
-        // signatures, which already pin to the defining module. `Self` short-
-        // circuits to `*void` before the leaf, as before. `pd.source_file ==
-        // null` (synthesized decl) falls back to the current context.
+        // signatures, which also pin to the defining module. `Self` short-
+        // circuits to `*void` before the leaf. `pd.source_file == null`
+        // (synthesized decl) falls back to the current context.
         var method_infos = std.ArrayList(ProtocolMethodInfo).empty;
         for (pd.methods) |method| {
             var ptypes = std.ArrayList(TypeId).empty;
@@ -719,7 +718,7 @@ pub const ProtocolResolver = struct {
         // declaration, so leave the impl unregistered and let scanDecls retry
         // it after declaration/alias fixpoints settle. Proceeding with a null
         // identity would create name-keyed stubs but permanently omit the
-        // exact impl maps (issue 0320).
+        // exact impl maps.
         if (ib.target_type_params.len == 0 and ib.target_type.len > 0 and concrete_ty == null) return;
         if (concrete_ty) |cty| {
             // Protocols are not concrete types, so they never conform (§10).
@@ -804,7 +803,7 @@ pub const ProtocolResolver = struct {
         self.l.registered_protocol_impls.put(ib, {}) catch @panic("out of memory");
     }
 
-    /// Issue 0346: an impl block still unregistered after every registration
+    /// An impl block still unregistered after every registration
     /// pass (scan, order retry, body lowering) has an unresolvable protocol
     /// head, type argument, or target — the impl is dead code no consumer can
     /// see (an `xx` site silently degrades to the reinterpret spill). Runs at
@@ -956,7 +955,7 @@ pub fn paramImplExists(
 
 /// Which KIND of parameterized impl answers, in the specificity order. Callers
 /// that can only consume one kind (a build sink needs a substituted method body,
-/// which a blanket impl does not yet have) branch on this instead of re-deriving
+/// which a blanket impl does not have) branch on this instead of re-deriving
 /// the lookup.
 pub const ParamImplKind = enum { none, concrete, blanket };
 
@@ -1167,9 +1166,9 @@ fn carrierMatches(
             arg_tys.append(self.l.alloc, t) catch return;
         }
 
-        // Resolve the source type. Parser stores it on `target_type_expr` for
-        // parameterised impls (back-compat `target_type` string is kept for
-        // simple cases but the canonical form is the TypeExpr).
+        // Resolve the source type. The parser stores it on `target_type_expr`
+        // for parameterised impls; `target_type` carries only a display string
+        // for simple cases, so the TypeExpr is canonical.
         const src_ty: TypeId = if (ib.target_type_expr) |te| blk: {
             // Generic/pack impl sources are templates, not concrete nominal
             // leaves. Preserve their binding-aware structural resolver; only
@@ -1224,7 +1223,7 @@ fn carrierMatches(
             gop.value_ptr.* = std.ArrayList(Lowering.ParamImplEntry).empty;
         } else {
             // Same-file duplicate is an immediate error. Cross-file overlaps
-            // are deferred to the xx resolution site (Phase 5) so the impl
+            // are deferred to the xx resolution site so the impl
             // surface can be richer than any one file's view.
             for (gop.value_ptr.items) |existing| {
                 if (std.mem.eql(u8, existing.defining_module, defining_module)) {

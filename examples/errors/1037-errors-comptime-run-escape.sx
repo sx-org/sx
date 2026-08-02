@@ -1,7 +1,7 @@
 // Comptime `#run` of a failable whose error ESCAPES (no `catch` / `or`): the
 // compiler reports the raised tag name + the return trace at the `#run` site and
-// halts with a non-zero exit (E5.2). Before this, a bare failable `#run`
-// segfaulted (const form) or silently succeeded (statement form).
+// halts with a non-zero exit — never a segfault (const form) or a silent
+// success (statement form).
 
 #import "modules/std.sx";
 

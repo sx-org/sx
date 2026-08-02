@@ -1,11 +1,10 @@
 // A captured FAILABLE closure stays failable when CALLED inside a nested
-// closure body. The free-variable capture analysis must descend into the
+// closure body. The free-variable capture analysis descends into the
 // error-handling expressions (`catch`, `try`) that the nested closure uses to
-// consume the captured worker's error channel — otherwise the worker is never
-// captured into the env, resolves against an empty scope inside the lambda, and
-// the call types as `unresolved` (so `catch`/`try` reject it).
+// consume the captured worker's error channel, so the worker enters the env
+// and the call keeps its type.
 //
-// Regression (PLAN-IO-UNIFY Phase 3 blocker): the async completion closure
+// The async completion closure
 // `() { f.value = worker() catch {…} }` captures a `Closure() -> ($R, !)`
 // worker and consumes its error channel — exactly this shape.
 #import "modules/std.sx";

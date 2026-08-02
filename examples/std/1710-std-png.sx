@@ -99,9 +99,9 @@ allocation_case :: (fail_at: i64) -> (bool, i64) {
 }
 
 main :: () -> i32 {
-    // These fixtures were archived from miniz 3.1.2's
-    // tdefl_write_image_to_png_file_in_memory_ex at level 6. They pin the
-    // complete PNG bytes, including the zlib stream and every chunk CRC.
+    // The fixtures are miniz 3.1.2's tdefl_write_image_to_png_file_in_memory_ex
+    // output at level 6. They pin the complete PNG bytes, including the zlib
+    // stream and every chunk CRC.
     gray : [76]u8 = .[
         0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00,0x00,0x00,0x0d,0x49,0x48,0x44,0x52,
         0x00,0x00,0x00,0x03,0x00,0x00,0x00,0x02,0x08,0x00,0x00,0x00,0x00,0xb8,0x1f,0x39,
@@ -180,8 +180,8 @@ main :: () -> i32 {
     if !raises(base, .{ level = -1 }, error.InvalidCompressionLevel, gpa) { return 14; }
     if !raises(base, .{ level = 11 }, error.InvalidCompressionLevel, gpa) { return 15; }
 
-    // Dimensions above the obsolete miniz helper ceiling reach pixel-length
-    // validation rather than being rejected solely for exceeding 65,535.
+    // Dimensions above miniz's 65,535 helper ceiling reach pixel-length
+    // validation rather than being rejected for the ceiling alone.
     if !raises(.{ pixels = "", width = 65536, height = 1, format = .gray }, .{}, error.PixelDataTooShort, gpa) { return 16; }
     if !raises(.{ pixels = "", width = 0x7fffffff, height = 1, format = .gray }, .{}, error.PixelDataTooShort, gpa) { return 17; }
 

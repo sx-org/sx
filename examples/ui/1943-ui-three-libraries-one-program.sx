@@ -1,4 +1,4 @@
-// The three UI libraries in one program (revision §13, §14).
+// The three UI libraries in one program.
 //
 // They are separate libraries, not modes of one. Each is imported under its own
 // name, and each `View` is its own open set: three sets declaring the same three
@@ -7,7 +7,6 @@
 // A component joins a set by DECLARING itself into it, and each of these
 // declared itself into exactly one — so `compose.Label` is a member of
 // `compose.View` and of nothing else.
-// Expected: exit 0.
 #import "modules/std.sx";
 
 c :: #import "modules/ui/compose.sx";

@@ -1,4 +1,4 @@
-// std.http — TLS transport seam (Phase T).
+// std.http — TLS transport seam.
 //
 // http.sx never imports a TLS library — that would force every program that
 // merely touches std/http to compile the (large) crypto C even when it serves
@@ -50,7 +50,7 @@ TlsAcceptor :: protocol vtable #identity {
     accept :: (self: *Self, fd: i32) -> ?TlsConn;
 }
 
-// Client-side TLS provider (Q3.6a): mints a session for an already-CONNECTED
+// Client-side TLS provider: mints a session for an already-CONNECTED
 // fd and drives the handshake TO COMPLETION (the client is blocking, so the
 // Want steps never surface to the caller — over a blocking fd the provider
 // just retries them). `host` drives SNI + certificate verification. null =

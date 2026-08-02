@@ -1,19 +1,19 @@
 // std.http — Expect: 100-continue (RFC 9110 §10.1.1).
 //
-// Q1.3: an HTTP/1.1 request that declares a body (Content-Length > 0 or
+// An HTTP/1.1 request that declares a body (Content-Length > 0 or
 // chunked) and carries `Expect: 100-continue` is answered with a ONE-OFF
 // interim `HTTP/1.1 100 Continue\r\n\r\n` as soon as the headers are
 // complete and the body has not fully arrived — so a client holding back
 // a large body learns it may proceed. Rules locked here:
-//   • the interim is sent EXACTLY ONCE per request, even when the body
-//     trickles in across many read cycles;
-//   • a request the server rejects up front (413 for an over-max declared
-//     length) gets the FINAL status directly — never a 100 first;
-//   • a request whose body already arrived in full gets no 100 (nothing
-//     to wait for — the RFC lets the server skip it);
-//   • HTTP/1.0: the expectation is ignored (no 100, request still served);
-//   • an Expect with any OTHER value on 1.1 → 417 Expectation Failed;
-//   • works for both framings: Content-Length and chunked.
+// • the interim is sent EXACTLY ONCE per request, even when the body
+//   trickles in across many read cycles;
+// • a request the server rejects up front (413 for an over-max declared
+//   length) gets the FINAL status directly — never a 100 first;
+// • a request whose body already arrived in full gets no 100 (nothing
+//   to wait for — the RFC lets the server skip it);
+// • HTTP/1.0: the expectation is ignored (no 100, request still served);
+// • an Expect with any OTHER value on 1.1 → 417 Expectation Failed;
+// • works for both framings: Content-Length and chunked.
 //
 // Asserts: two-phase CL POST sees one 100 then the 200 echo (body split
 // across two sends → still exactly one 100); over-max CL → 413 with no

@@ -1,9 +1,6 @@
-// Phase 1 step 1.18 (PLAN-FFI.md): `#jni_call(i32)` (jint return).
-// Today the lowering for any non-void return drops to `LLVMGetUndef`
-// — the IR snapshot captures that placeholder. Step 1.18-fix wires
-// the `.i32 => 49` (`CallIntMethod`) arm and the snapshot updates to
-// show the full GetObjectClass + GetMethodID + CallIntMethod
-// sequence (using the cache machinery landed in 1.17).
+// `#jni_call(i32)` (jint return).
+// The lowering for a non-void return drops to `LLVMGetUndef` — the
+// IR snapshot captures that placeholder.
 //
 // Runtime: unreachable. Same `g_should_call` global pattern as
 // `ffi-jni-call-03` — keeps `read_int` alive so the IR snapshot has

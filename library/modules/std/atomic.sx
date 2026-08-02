@@ -1,5 +1,5 @@
 // Atomics — `Atomic($T)` wrapper + `Ordering`, over the compiler's atomic
-// load/store (later: rmw/cas/fence) IR ops. Consumers reach these through
+// load/store/rmw/cas/fence IR ops. Consumers reach these through
 // std.sx (`Atomic` / `Ordering` re-exports), never by importing this file.
 //
 // Atomicity is a property of the OPERATION, not the storage: `Atomic(T)` is a

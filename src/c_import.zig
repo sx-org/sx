@@ -560,8 +560,8 @@ pub fn compileCToObjects(
 
     // Cross-object duplicate exports are diagnosed HERE, before they
     // surface as an opaque dylib/binary link failure: every `#import c`
-    // unit shares one link namespace (per-unit symbol isolation is
-    // PLAN-C C3.2, deferred). Scan failures are non-fatal — the linker
+    // unit shares one link namespace — there is no per-unit symbol
+    // isolation. Scan failures are non-fatal — the linker
     // remains the backstop.
     var sym_owner = std.StringHashMap(usize).init(allocator);
     defer sym_owner.deinit();
@@ -833,7 +833,7 @@ pub fn collectCImportSources(allocator: std.mem.Allocator, root: *const Node) ![
     // namespaced module declares its own named unit — recurse, or a
     // unit two aliases deep is silently never compiled and its symbols
     // resolve from whatever process image carries the same names (the
-    // extractLibraries depth bug, issue 0130, in c_import form).
+    // extractLibraries depth bug in c_import form).
     //
     // Dedup is by CONTENT (sources + includes + defines + flags), not
     // node identity: one module imported through several aliased paths

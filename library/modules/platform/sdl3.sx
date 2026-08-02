@@ -85,7 +85,7 @@ sdl_modifiers :: (m: SDL_Keymod) -> InputModifiers {
     }
 }
 
-// Translate one SDL event into the platform stream — C7-faithful:
+// Translate one SDL event into the platform stream — normalization-faithful:
 // buttonless motion is a HOVER, not a move; wheel deltas normalize the
 // flipped direction; timestamps are SDL's nanosecond event times.
 translate_sdl_event :: (sdl: *SDL_Event) -> ?PlatformEvent {

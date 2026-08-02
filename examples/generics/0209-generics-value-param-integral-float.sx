@@ -1,7 +1,7 @@
 // A generic value parameter (`$K: u32`) binds a literal (`Vec(3, i64)`) and an
 // integral-float named const (`Vec(L, i64)` with `L : f64 : 4.0`) to the same
 // integer a plain `4` would — the value-param arg folds through the shared
-// const-int evaluator, so the integral-float rule (F0.4 attempt 8, Agra ruling)
+// const-int evaluator, so the integral-float rule
 // reaches value params too. The folded value is the array length `[K]i64`.
 //
 // The bind is range-checked against the declared `u32` (an out-of-range arg is a

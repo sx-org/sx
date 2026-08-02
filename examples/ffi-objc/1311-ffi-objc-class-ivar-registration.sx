@@ -1,7 +1,7 @@
-// M1.2 A.4b.i — '__sx_state' ivar registration on sx-defined
+// '__sx_state' ivar registration on sx-defined
 // '#objc_class'.
 //
-// Class-pair init now:
+// Class-pair init:
 //   1. allocs the class pair
 //   2. registers a single '__sx_state : *void' ivar
 //   3. finalises the class
@@ -13,8 +13,8 @@
 // the runtime if SxFoo has an Ivar named '__sx_state'. Returns
 // non-null iff registration succeeded.
 //
-// IMP trampolines (A.4b.ii) and the '+alloc' / '-dealloc'
-// overrides (A.5 / A.6) come next.
+// IMP trampolines and the '+alloc' / '-dealloc' overrides are pinned
+// by the sibling examples.
 
 #import "modules/std.sx";
 #import "modules/build.sx";

@@ -21,8 +21,8 @@ GlOffscreen :: struct {
     h: i32 = 0;
 
     // Open BEFORE building frames: measure_text must use the same font
-    // metrics the render uses. The font is machine-pinned by design
-    // (revised I9 — the reference shows what THIS machine renders).
+    // metrics the render uses. The font is machine-pinned by design: the
+    // reference shows what THIS machine renders.
     open :: (self: *GlOffscreen, w: i32, h: i32,
              font_path: [:0]u8 = "/System/Library/Fonts/Supplemental/Arial.ttf",
              font_size: f32 = 14.0) -> bool {

@@ -1,54 +1,22 @@
-// std.http S3 (PLAN-HTTPZ): BOUNDED, DETERMINISTIC in-process fuzz SMOKE.
-//
-// A seeded PRNG throws hundreds of mutated / malformed / random HTTP
-// requests at one live server (driven single-thread via Server.tick) and
-// asserts the server never crashes, panics, aborts, or hangs — it only
-// ever (a) sends a syntactically-plausible response ("HTTP/1.1 " + a
-// 3-digit status) or (b) cleanly closes the connection. Partial / split
-// sends (the bytes dribbled across ticks in random-sized pieces) exercise
-// the partial-read resume paths in read_more / try_serve_one. A clean GET
-// is interleaved through the noise to confirm LIVENESS — the server still
-// serves correctly amid garbage, not merely "doesn't crash". The WHOLE run
-// sits under a GPA: net-zero alloc_count at the end is the leak gate (one
-// server reused across all iterations, so a per-request leak accumulates).
-//
-// This guards H1 (parser hardening) + S2 (chunked decode) against
-// regression. It is DETERMINISTIC (seeded xorshift, NO time/Math.random)
-// so its golden output is stable, and BOUNDED (ITERATIONS small enough
-// that wall-clock is comfortably under the corpus 10s/example timeout).
-//
-// ── Running a LONGER fuzz (CI, NOT the corpus) ───────────────────────────
-// The corpus runner (10s/example, no network) cannot host a long-running
-// fuzzer. To fuzz harder OUTSIDE the corpus:
-//   • bump ITERATIONS (e.g. 200_000) and/or sweep SEED across many runs —
-//     each SEED is a fresh deterministic stream of mutations; a crash is
-//     then reproducible by pinning the failing SEED + iteration index.
-//   • a future libFuzzer/AFL target would feed raw bytes straight into a
-//     decode_chunked / try_serve_one harness (no socket) — sx has no
-//     libFuzzer integration today, so that target lives as a separate CI
-//     job, never in examples/. See tests/fuzz-http.md.
-// If THIS smoke ever finds a crash/hang/leak, that is a REAL parser bug:
-// the failing SEED + iteration + the exact bytes are the repro — fix the
-// parser, do not weaken the assertions here.
+// std.http: a seeded PRNG feeds mutated and malformed requests to one live
+// server driven single-thread through Server.tick. Every reply is either
+// "HTTP/1.1 " + a 3-digit status or a clean close; split sends drive the
+// partial-read resume paths in read_more / try_serve_one; an interleaved
+// plain GET keeps proving liveness. One server serves every iteration under
+// a GPA, so net-zero alloc_count at the end is the leak gate.
 #import "modules/std.sx";
 http :: #import "modules/std/http.sx";
 
-// Reproducibility knobs — CONSTANTS so the run is deterministic + bounded.
-// SEED fits in i64 (the corpus has no >i64 literal); it is just a nonzero
-// starting state for the xorshift below — any nonzero value works.
-SEED   :: 0x2545F4914F6CDD1D;   // fixed nonzero PRNG state (< i64.max)
+// Any nonzero i64 starts the xorshift; a fixed one keeps the byte stream —
+// and so the golden output — the same on every run.
+SEED   :: 0x2545F4914F6CDD1D;
 PORT   :: 18977;
 
-// Iteration count. Tuned so the run phase fits the corpus 1s post-compile
-// budget on the dev host (~0.74s) while still exercising hundreds of
-// mutated requests. Bump it (and/or sweep SEED) for a longer
-// out-of-corpus fuzz — see the CI note in the header + tests/fuzz-http.md.
+// Sized so the run phase fits the corpus 1s post-compile budget.
 ITERATIONS :: 400;
 
-// Deterministic xorshift PRNG over i64 — NO time, NO Math.random (the corpus
-// has no nondeterministic RNG anyway). The shifts/xors wrap in i64, which is
-// exactly what an xorshift wants; the result is masked non-negative before
-// use. Same SEED ⇒ same byte stream every run.
+// The shifts and xors wrap in i64, which is what an xorshift wants; the
+// result is masked non-negative before use.
 Rng :: struct {
     s: i64 = 0;
     next :: (self: *Rng) -> i64 {

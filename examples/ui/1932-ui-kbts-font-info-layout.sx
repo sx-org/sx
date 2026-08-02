@@ -2,10 +2,10 @@
 // kbts_GetFontInfo2 dispatches on the caller-supplied `Size`, so a layout one
 // array element short computes a size that matches NO version, the call fills
 // nothing, and units_per_em reads back 0.
-// Regression (issue 0355): the string arrays were declared [7] against an
-// upstream COUNT of 13. `scale = font_size / units_per_em` then divided by
-// zero, so every shaped (non-ASCII) run measured NaN and drew nothing —
-// silently, since ASCII takes a separate stbtt path and was unaffected.
+// The string arrays carry the upstream COUNT of 13. Declaring them [7] makes
+// `scale = font_size / units_per_em` divide by zero, so every shaped
+// (non-ASCII) run measures NaN and draws nothing — silently, since ASCII takes
+// a separate stbtt path.
 //
 // A layout pin rather than a shaping run: this belongs in the byte-exact
 // corpus, and shaping needs a font and a GPU-backed atlas.

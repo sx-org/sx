@@ -1,4 +1,4 @@
-// issue 0105 / F1 regression — FORWARD + MUTUAL refs between same-name struct
+// FORWARD + MUTUAL refs between same-name struct
 // shadows. Two flat-imported modules each declare `Box` and `Node`; module B's
 // `Box` forward-refs B's `Node` (declared later) and B's `Node` back-refs B's
 // `Box`. Every cross-reference must bind to B's OWN nominal identities, proving

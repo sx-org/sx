@@ -1,9 +1,8 @@
 // Tuple element assignment + named tuples.
-//   - `t.0 = v` writes one element in place (was a known gap: the lvalue path
-//     looked the element up by name via getStructFields and left the pointee
-//     `.unresolved`; now it indexes the tuple positionally like the read path).
-//   - Named tuples `Tuple(x: T, y: U)` keep their field names through parsing and
-//     type resolution, so `t.x` reads/writes by name (and `.0` by position).
+// - `t.0 = v` writes one element in place — the lvalue path indexes the
+//   tuple positionally like the read path.
+// - Named tuples `Tuple(x: T, y: U)` keep their field names through parsing and
+//   type resolution, so `t.x` reads/writes by name (and `.0` by position).
 
 #import "modules/std.sx";
 

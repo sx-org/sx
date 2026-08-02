@@ -1,31 +1,30 @@
 // std.http — pool-mode job-owned request bytes (no use-after-free).
 //
-// Regression: HandlerJob.req used to hold string VIEWS into the connection's
-// read_buf. When a handler overran handler_timeout_ms, the loop 504'd and
-// freed the slot (handler_timeout_sweep) while the worker was still running —
-// a NEW connection could then reuse the slot, overwrite the read buffer with
-// its own request, and (past READ_BUF_INITIAL) grow_read_buf would dealloc
-// the very buffer the stuck worker was still reading: silent corruption or a
-// use-after-free. The gen check only protected the completion, never the
-// worker's live reads.
+// HandlerJob.req holds no string VIEWS into the connection's read_buf. At
+// dispatch the job takes ownership of a COPY of the raw request bytes (one
+// allocation: job header + bytes tail, freed together in run_handler_job);
+// the worker never touches the conn's read buffer.
 //
-// The fix: at dispatch the job takes ownership of a COPY of the raw request
-// bytes (one allocation: job header + bytes tail, freed together in
-// run_handler_job); the worker never touches the conn's read buffer.
+// The connection's buffer is not stable for the worker's lifetime: when a
+// handler overruns handler_timeout_ms the loop 504s and frees the slot
+// (handler_timeout_sweep) while the worker is still running, a NEW
+// connection reuses the slot and overwrites the read buffer, and (past
+// READ_BUF_INITIAL) grow_read_buf deallocs the buffer entirely. The gen
+// check protects only the completion, never the worker's live reads.
 //
 // This test forces the exact overlap:
-//   1. Connection A POSTs /slow with a known body; its handler sleeps 200 ms
-//      (past the 40 ms handler deadline), THEN checksums req.body + req.path.
-//   2. The loop 504s A and frees its slot at ~40 ms.
-//   3. Connection B immediately reuses the slot with a DIFFERENT body big
-//      enough (~24 KB) to force grow_read_buf — which reallocs (and deallocs)
-//      the buffer the worker's views used to point into. B gets a normal 200.
-//   4. After the worker returns and the pool is joined (srv.close), the
-//      checksum it computed must match A's body exactly — proof the worker
-//      read job-owned bytes, not the recycled/freed connection buffer.
-//   5. GPA leak gate: net-zero after close (the job's single allocation —
-//      header + bytes — was freed in run_handler_job; the discarded late
-//      completion's buffer was freed in drain_completions).
+// 1. Connection A POSTs /slow with a known body; its handler sleeps 200 ms
+//    (past the 40 ms handler deadline), THEN checksums req.body + req.path.
+// 2. The loop 504s A and frees its slot at ~40 ms.
+// 3. Connection B immediately reuses the slot with a DIFFERENT body big
+//    enough (~24 KB) to force grow_read_buf — which reallocs (and deallocs)
+//    the buffer a view-holding worker would point into. B gets a normal 200.
+// 4. After the worker returns and the pool is joined (srv.close), the
+//    checksum it computed must match A's body exactly — proof the worker
+//    read job-owned bytes, not the recycled/freed connection buffer.
+// 5. GPA leak gate: net-zero after close (the job's single allocation —
+//    header + bytes — is freed in run_handler_job; the discarded late
+//    completion's buffer is freed in drain_completions).
 #import "modules/std.sx";
 http :: #import "modules/std/http.sx";
 
@@ -63,8 +62,8 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         // Sleep PAST the handler deadline — the loop 504s + frees the slot,
         // and connection B reuses/rewrites/grows the read buffer meanwhile.
         usleep(SLOW_SLEEP_US);
-        // NOW read the request views. Pre-fix these pointed into the
-        // recycled (then freed) conn buffer; post-fix they are job-owned.
+        // NOW read the request views — they are job-owned, not pointers into
+        // the recycled (then freed) conn buffer.
         obs.sum = checksum(req.body);
         obs.body_len = req.body.len;
         if req.path == "/slow" { obs.path_ok = 1; }
@@ -164,8 +163,8 @@ main :: () -> i32 {
 
         // ── connection B: immediately reuse the slot, overwrite + GROW ──
         // the read buffer while the worker still holds its request. B's body
-        // is a DIFFERENT pattern, so pre-fix the worker's checksum would see
-        // B's bytes (or freed memory), never A's.
+        // is a DIFFERENT pattern, so a view-holding worker's checksum would
+        // see B's bytes (or freed memory), never A's.
         b_body : [*]u8 = xx context.allocator.alloc_bytes(B_BODY_LEN);
         i = 0;
         while i < B_BODY_LEN { b_body[i] = xx (255 - (i % 199)); i += 1; }

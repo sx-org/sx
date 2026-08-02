@@ -1,12 +1,10 @@
-// A block-accepting function is an ordinary function, so it may also be generic
-// (fluent spec §6.2). The block parameter binds a value like any other, and the
+// A block-accepting function is an ordinary function, so it may also be
+// generic. The block parameter binds a value like any other, and the
 // enclosing declaration's own type parameters monomorphize alongside it — one
 // instance per (block, type argument) pair, each with its own replay.
 //
-// Issue 0418: mixing a generic type parameter with a block parameter used to
-// reach LLVM emission with an unresolved type, because a block parameter forced
-// the whole call through comptime inlining, which never monomorphized the
-// generic one.
+// A block parameter does not force the whole call through comptime inlining,
+// which never monomorphizes the generic parameter.
 #import "modules/std.sx";
 #import "modules/fluent.sx";
 

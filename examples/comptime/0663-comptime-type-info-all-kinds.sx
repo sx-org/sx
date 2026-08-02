@@ -1,6 +1,6 @@
-// 1a-S3a — `type_info` is kind-first and EXHAUSTIVE: every type-table
-// kind reflects into its TypeInfo variant (previously only enum/
-// struct/tuple). Also pins StructField.offset (from the same layout
+// `type_info` is kind-first and EXHAUSTIVE: every type-table
+// kind reflects into its TypeInfo variant, not just enum/
+// struct/tuple. Also pins StructField.offset (from the same layout
 // walk the field accessors use) and the union arm (arms overlay at 0).
 #import "modules/std.sx";
 meta :: #import "modules/std/meta.sx";
@@ -33,8 +33,7 @@ describe :: ($T: Type) -> string {
 }
 
 // The TypeInfo VALUE lives in comptime memory — consume it there (#run
-// folds each description to a string constant). Runtime `type_info(tp)`
-// consumption is S3b's const-record path, pinned separately.
+// folds each description to a string constant).
 D_STRUCT  :: #run describe(Padded);
 D_UNION   :: #run describe(Overlay);
 D_I16     :: #run describe(i16);

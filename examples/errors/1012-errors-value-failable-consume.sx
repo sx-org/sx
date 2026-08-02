@@ -1,5 +1,5 @@
-// Consuming value-carrying failables with `try` and `catch` (ERR step E2.1b —
-// the consumer side of the error-channel tuple ABI). `try f()` on a
+// Consuming value-carrying failables with `try` and `catch` (the
+// consumer side of the error-channel tuple ABI). `try f()` on a
 // `-> (T, !E)` callee binds the value slot on success and propagates the error
 // on failure (a pure-failable caller returns the tag; a value-carrying caller
 // returns `{undef, tag}`). `f() catch (e) BODY` yields the value slot on success

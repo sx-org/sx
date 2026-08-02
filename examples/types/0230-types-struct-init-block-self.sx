@@ -1,6 +1,5 @@
 // Struct self-trailing: after a named aggregate, `.{ stmts }` binds `self`.
 // Bare `T{ fields } { stmts }` is a plain post-scope (no `self`) — legal, untaught.
-// Expected: exit 0.
 
 #import "modules/std.sx";
 

@@ -14,9 +14,9 @@ const ModuleConstInfo = program_index_mod.ModuleConstInfo;
 /// The single-source type-alias table (`ProgramIndex.type_alias_map`), threaded
 /// explicitly through every name-resolving entry point so a bare name like
 /// `ShaderHandle` (declared `ShaderHandle :: u32`) resolves to its target
-/// rather than a fresh empty-struct stub. Replaces the old `TypeTable.aliases`
-/// borrow (A2.3): there is no hidden alias state — callers pass the map (or
-/// `null` for contexts that never see aliases, e.g. unit tests).
+/// rather than a fresh empty-struct stub. There is no hidden alias state —
+/// callers pass the map (or `null` for contexts that never see aliases, e.g.
+/// unit tests).
 pub const AliasMap = ?*const std.StringHashMap(TypeId);
 
 /// The module-global constant table (`ProgramIndex.module_const_map`), threaded
@@ -32,7 +32,7 @@ pub const ConstMap = ?*const std.StringHashMap(ModuleConstInfo);
 /// nested element types resolve through `type_bridge.resolveAstType` (the
 /// registration-time path — no generic/pack bindings). Lets type_bridge reuse
 /// the single canonical structural-shape constructor instead of carrying its
-/// own compound algorithm (A2.3b).
+/// own compound algorithm.
 const StatelessInner = struct {
     table: *TypeTable,
     alias_map: AliasMap,
@@ -52,8 +52,8 @@ const StatelessInner = struct {
     /// Folds and narrows through the shared `program_index.foldDimU32` (min 0) —
     /// the SAME range-checked fold-to-u32 the stateful body-lowering path uses —
     /// so a dimension resolves to one length on every registration-time path
-    /// (aliases, inline union/enum fields) and matches the direct form (issue
-    /// 0083), and an oversized-but-valid `i64` dim returns null instead of
+    /// (aliases, inline union/enum fields) and matches the direct form, and
+    /// an oversized-but-valid `i64` dim returns null instead of
     /// panicking the `@intCast`. Returns null when the dimension
     /// isn't a compile-time integer (a runtime value / non-comptime call, or a
     /// name not bound to an integer const), is negative, or doesn't fit a `u32`.
@@ -103,8 +103,8 @@ const StatelessInner = struct {
     }
     // The registration-time path holds only the flat global const map — no
     // namespace-import facts (`namespace_edges` / per-source cache) — so a
-    // qualified-member const `m.CAP` is not a compile-time leaf here (issue
-    // 0192). It resolves on the stateful body-lowering path (`Lowering`); a
+    // qualified-member const `m.CAP` is not a compile-time leaf here.
+    // It resolves on the stateful body-lowering path (`Lowering`); a
     // qualified-const dimension reached ONLY through this path (e.g. a type
     // alias `Arr :: [m.CAP]T`) stays unresolved and surfaces the clean dim
     // diagnostic rather than a fabricated length.
@@ -184,7 +184,7 @@ pub fn resolveAstType(node: ?*const Node, table: *TypeTable, alias_map: AliasMap
         // Structural shapes (`*T`/`[*]T`/`[]T`/`?T`/`[N]T`, functions, plain
         // closures, plain tuples) are owned by the single canonical
         // `TypeResolver.resolveCompound` — no independent compound algorithm
-        // lives here (A2.3b). resolveCompound never returns null for these
+        // lives here. resolveCompound never returns null for these
         // kinds, so `.?` is total.
         .pointer_type_expr,
         .many_pointer_type_expr,
@@ -244,7 +244,7 @@ pub fn resolveAstType(node: ?*const Node, table: *TypeTable, alias_map: AliasMap
         // it's a placeholder the stateful `PackResolver` expands once bindings
         // exist. Return the `.unresolved` sentinel (same as the `else`, so an
         // unexpanded spread still trips the sizeOf/toLLVMType tripwire if it ever
-        // reaches codegen — see issue 0196's poison-to-unresolved path), but
+        // reaches codegen), but
         // WITHOUT the `else`'s "caller bug" debug print, which this expected case
         // does not warrant.
         .spread_expr => .unresolved,
@@ -269,10 +269,9 @@ fn resolveTypeName(name: []const u8, table: *TypeTable, alias_map: AliasMap, ski
     return type_resolver.TypeResolver.resolveNamed(name, table, alias_map, skip_builtin);
 }
 
-/// Builtin primitive keyword → TypeId. The keyword table now lives in
-/// `type_resolver.zig` (architecture phase A2.1, `TypeResolver.resolvePrimitive`);
-/// re-exported here so existing callers are unaffected while `type_bridge` is
-/// retired (A2.2). Single source of truth: the table is defined once, there.
+/// Builtin primitive keyword → TypeId. The keyword table lives in
+/// `type_resolver.zig` (`TypeResolver.resolvePrimitive`); re-exported here.
+/// Single source of truth: the table is defined once, there.
 pub const resolveTypePrimitive = type_resolver.TypeResolver.resolvePrimitive;
 
 /// Pack-shaped `Closure(..p)` resolved without bindings: the canonical
@@ -430,12 +429,12 @@ fn resolveParameterizedType(pt: *const ast.ParameterizedTypeExpr, table: *TypeTa
 /// type NAMES resolve through the injected `inner` recursion hook: the stateless
 /// `StatelessInner` (flat) when reached from `resolveAstType`, or `*Lowering`
 /// (visibility-aware) when reached from `Lowering.resolveTypeWithBindings` — so a
-/// payload name resolves in the enclosing module's context (issue 0132's class).
+/// payload name resolves in the enclosing module's context.
 /// The TOP-LEVEL per-decl nominal identity path (`Lowering.registerEnumDecl`)
 /// shares the body via `buildEnumInfo` but interns under its own nominal id.
 pub fn resolveInlineEnum(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype) TypeId {
     const name_id = table.internString(ed.name);
-    // Anonymous inline enums are shape-keyed, same as structs (issue 0294);
+    // Anonymous inline enums are shape-keyed, same as structs;
     // buildEnumInfo yields `.enum` or `.tagged_union` — both shape-key.
     if (std.mem.eql(u8, ed.name, "__anon")) {
         return table.internAnonShape(buildEnumInfo(ed, table, inner));
@@ -456,12 +455,11 @@ pub fn resolveInlineEnum(ed: *const ast.EnumDecl, table: *TypeTable, inner: anyt
 /// Decode an explicit enum-variant value node (`esc :: '\x1b'`, `quit :: 0x100`)
 /// to its integer, or `null` if it isn't a constant the enum machinery
 /// understands (the caller supplies the positional / power-of-2 fallback).
-/// A `char_literal` value is an integer code point — without this arm it
-/// silently fell through to the ordinal fallback, shipping the wrong tag value
-/// with no diagnostic. (Negated values like `lo :: -1` are intentionally NOT
-/// handled here: they still take the positional fallback, matching prior
-/// behavior — a signed tag value is a separate, pre-existing gap the downstream
-/// `@bitCast`-to-u64 tag path can't yet represent.)
+/// A `char_literal` value is an integer code point — without this arm it falls
+/// through to the ordinal fallback, shipping the wrong tag value with no
+/// diagnostic. (Negated values like `lo :: -1` are deliberately NOT handled
+/// here: they take the positional fallback, because the downstream
+/// `@bitCast`-to-u64 tag path cannot represent a signed tag value.)
 fn enumVariantConst(vv: *const Node) ?i64 {
     return switch (vv.data) {
         .int_literal => |il| il.value,
@@ -488,7 +486,7 @@ pub fn buildEnumInfo(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype)
                     // Only when the enum itself is NAMED: an anonymous enum
                     // would qualify every payload as `__anon.<variant>`, and
                     // two anon enums sharing a variant name would collide on
-                    // it (issue 0294's class one level down) — those route
+                    // it — those route
                     // through the shape-keyed path instead.
                     if (vt.data == .struct_decl and !std.mem.eql(u8, ed.name, "__anon")) {
                         const sd = &vt.data.struct_decl;
@@ -627,7 +625,7 @@ pub fn buildEnumInfo(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype)
 /// Inline-struct resolution for a FIELD-type position (`x: struct {...}`). Field
 /// type NAMES resolve through the injected `inner` hook (flat `StatelessInner`
 /// from `resolveAstType`, or visibility-aware `*Lowering` from
-/// `resolveTypeWithBindings` — issue 0132's class). The TOP-LEVEL struct path
+/// `resolveTypeWithBindings`). The TOP-LEVEL struct path
 /// (`Lowering.registerStructDecl`) builds its own field list directly via
 /// `self.resolveType` (it also expands `#using` and qualifies `__anon` names),
 /// so it does not route through here.
@@ -637,9 +635,9 @@ pub fn resolveInlineStruct(sd: *const ast.StructDecl, table: *TypeTable, inner: 
 
     // An anonymous inline decl has no name to key by — every one displays as
     // `__anon`, so the name-keyed lookup/intern below would collapse
-    // differently-shaped annotations onto whichever shape interned first
-    // (issue 0294). Shape-keyed identity instead: identical shapes unify,
-    // distinct shapes separate.
+    // differently-shaped annotations onto whichever shape interned first.
+    // Shape-keyed identity instead: identical shapes unify, distinct shapes
+    // separate.
     const is_anon = std.mem.eql(u8, sd.name, "__anon");
     if (!is_anon) {
         if (table.findByName(name_id)) |existing| return existing;
@@ -665,13 +663,13 @@ pub fn resolveInlineStruct(sd: *const ast.StructDecl, table: *TypeTable, inner: 
 
 /// Inline-union resolution for a FIELD-type position. Field type NAMES resolve
 /// through the injected `inner` hook (flat `StatelessInner` from `resolveAstType`,
-/// or visibility-aware `*Lowering` from `resolveTypeWithBindings` — issue 0132's
-/// class). The TOP-LEVEL per-decl nominal identity path
+/// or visibility-aware `*Lowering` from `resolveTypeWithBindings`). The
+/// TOP-LEVEL per-decl nominal identity path
 /// (`Lowering.registerUnionDecl`) shares the body via `buildUnionInfo` but interns
 /// under its own nominal id.
 pub fn resolveInlineUnion(ud: *const ast.UnionDecl, table: *TypeTable, inner: anytype) TypeId {
     const name_id = table.internString(ud.name);
-    // Anonymous inline unions are shape-keyed, same as structs (issue 0294).
+    // Anonymous inline unions are shape-keyed, same as structs.
     if (std.mem.eql(u8, ud.name, "__anon")) {
         return table.internAnonShape(buildUnionInfo(ud, table, inner));
     }
@@ -713,7 +711,7 @@ pub fn buildUnionInfo(ud: *const ast.UnionDecl, table: *TypeTable, inner: anytyp
 /// anonymous / re-resolved set re-uses an existing same-name slot. The
 /// declaration-side per-decl nominal path (`Lowering.registerErrorSetDecl`)
 /// builds the body via `buildErrorSetInfo` and interns under its own nominal id
-/// instead — see issue 0134.
+/// instead.
 fn resolveInlineErrorSet(esd: *const ast.ErrorSetDecl, table: *TypeTable) TypeId {
     const name_id = table.internString(esd.name);
 
@@ -747,9 +745,8 @@ pub fn buildErrorSetInfo(esd: *const ast.ErrorSetDecl, table: *TypeTable) TypeIn
 /// The error channel of a failable signature: `!Named` → the declared error
 /// set (registered by `resolveInlineErrorSet`); bare `!` → a shared inferred
 /// placeholder set. The placeholder's members are refined per failable
-/// function by the whole-program SCC pass (E1.4); for now every bare `!`
-/// resolves to the same empty inferred set, which is correct while no
-/// function raises (E1.3+).
+/// function by the whole-program SCC pass; every bare `!` resolves to the
+/// same empty inferred set, which is correct while no function raises.
 pub fn resolveErrorType(ete: *const ast.ErrorTypeExpr, table: *TypeTable, inner: anytype) TypeId {
     if (ete.name) |name| return inner.resolveName(name);
     // `!` is not a legal type/identifier name, so this reserved StringId can

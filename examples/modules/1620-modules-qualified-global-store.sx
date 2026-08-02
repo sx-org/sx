@@ -1,11 +1,9 @@
 // Store through a QUALIFIED module global reached via a namespace-import alias:
 // `lib.g = v` and the compound `lib.g += v`. The READ (`x := lib.g`) and the
-// qualified CALL (`lib.fn()`) already worked; the STORE path resolved the base
-// `lib` as a VALUE expression — a module alias is not one — and failed
-// "unresolved 'lib'". The store now mirrors the read: it resolves the member as
-// a mutable global in the imported module's context and emits `global_set`.
-//
-// Regression (issue 0223): qualified module-global assignment.
+// qualified CALL (`lib.fn()`) share the path. The store mirrors the read: it
+// resolves the member as a mutable global in the imported module's context and
+// emits `global_set`. Resolving the base `lib` as a VALUE expression — a module
+// alias is not one — fails with "unresolved 'lib'".
 
 #import "modules/std.sx";
 lib :: #import "1620-modules-qualified-global-store/lib.sx";

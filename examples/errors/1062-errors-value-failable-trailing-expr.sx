@@ -1,10 +1,8 @@
 // Value-carrying failable functions (`-> (T, !E)`) whose body ends in a trailing
-// success EXPRESSION (no explicit `return`) must set the success error slot to
+// success EXPRESSION (no explicit `return`) set the success error slot to
 // 0 — the caller's `catch` must NOT fire and the success value must be intact.
-// Regression (issue 0190): `lowerValueBody` used to `coerceToType`+`ret` the
-// bare success value to the full failable tuple, leaving the error-tag slot
-// uninitialized → phantom catch on success (and dropped value for string /
-// multi-value returns).
+// `lowerValueBody` routes the trailing value through the value-failable success
+// path rather than coercing the bare value straight to the full failable tuple.
 #import "modules/std.sx";
 
 E :: error { Bad }

@@ -1,6 +1,6 @@
 // A const-alias cycle can never resolve; it is detected by declaration
 // identity (not a hop budget) and reported ONCE per cycle, whether or not
-// any use site touches it (issue 0331).
+// any use site touches it.
 #import "modules/std.sx";
 
 A :: B;     // direct cycle

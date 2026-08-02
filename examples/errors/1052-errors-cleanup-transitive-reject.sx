@@ -1,9 +1,9 @@
-// The cleanup-absorption check (ERR step E1.7) is TRANSITIVE: a bare,
+// The cleanup-absorption check is TRANSITIVE: a bare,
 // un-absorbed failable call is rejected no matter how deeply it is nested
 // inside a `defer` / `onfail` body's control flow — through `if` (both
 // branches), nested blocks, and loops. 1049 covers the direct-body case; this
 // pins the recursive arms of `checkCleanupNode` (`.if_expr`, `.block`,
-// `.while_expr`) before A5.2 extracts the pass into its own module.
+// `.while_expr`).
 //
 // Three bare failables, three rejections; the program never runs (exit 1).
 

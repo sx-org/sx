@@ -1,4 +1,4 @@
-// Phase 1 step 1.22 (PLAN-FFI.md): `#jni_call(*void)` (jobject
+// `#jni_call(*void)` (jobject
 // return). Last return-type variant in the matrix. The returned
 // jobject is a JNI LocalRef — its lifetime is bounded by the native
 // frame, so chains of calls within one frame don't need explicit

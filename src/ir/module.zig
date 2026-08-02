@@ -38,13 +38,13 @@ pub const Module = struct {
     /// `objc_selector_cache` — kept as an insertion-ordered list of
     /// (class_name, slot_GlobalId) so the constructor that calls
     /// `objc_getClass` per slot at module load is deterministic.
-    /// Used by static method dispatch (Phase 3.1) — every
+    /// Used by static method dispatch — every
     /// `Cls.static_method(...)` against an `#objc_class` alias resolves
     /// the class object through this cache once per module.
     objc_class_cache: std.ArrayList(ObjcClassEntry),
     /// sx-defined Obj-C classes — every `Cls :: #objc_class("Cls") { ... }`
     /// declaration WITHOUT `extern`. Insertion-ordered so the
-    /// class-registration constructors (M1.2 A.4) emit in source order
+    /// class-registration constructors emit in source order
     /// — parent classes register before children, which matters because
     /// `objc_allocateClassPair(super, ...)` resolves `super` by lookup.
     /// Each entry holds a pointer back into the AST so later passes
@@ -80,7 +80,7 @@ pub const Module = struct {
     /// concrete type instead of a tag (§7.9). The entry lets the VM select
     /// the arm by that type — devirtualizing against the carried impl.
     tagged_dispatch: std.ArrayList(TaggedDispatchEntry),
-    /// Top-level `asm { … }` blocks (ASM stream Phase F), in source order.
+    /// Top-level `asm { … }` blocks, in source order.
     /// Each is verbatim assembly appended to the LLVM module via
     /// `LLVMAppendModuleInlineAsm` at emit time; multiple blocks concatenate.
     global_asm: std.ArrayList([]const u8),
@@ -136,7 +136,7 @@ pub const Module = struct {
         sel: []const u8, // mangled Obj-C selector (`add:and:`)
         encoding: []const u8, // Apple-runtime type encoding (`v@:ii`)
         imp_name: []const u8, // C-ABI trampoline symbol (`__Cls_method_imp`)
-        is_class: bool = false, // true ⇒ register on the metaclass (M2.1 class methods)
+        is_class: bool = false, // true ⇒ register on the metaclass (class methods)
     };
 
     pub fn init(alloc: Allocator) Module {
@@ -317,7 +317,7 @@ pub const Builder = struct {
     /// Running instruction counter within the current function (for Ref assignment).
     inst_counter: u32 = 0,
     /// Source span stamped onto every instruction emitted via `emit`/`emitVoid`
-    /// (ERR E3.0). Lowering sets it (save/restore) at each AST node so the IR
+    /// Lowering sets it (save/restore) at each AST node so the IR
     /// carries per-instruction locations for DWARF `.debug_line` + comptime
     /// frame resolution. Defaults empty for instructions emitted outside a
     /// node context (synthetic prologue/epilogue, etc.).

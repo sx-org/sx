@@ -47,7 +47,6 @@ StackA :: struct {
     children: List(Container);
 
     add :: (self: *StackA, d: Drawable) {
-        // BUG: `.{ child = d }` causes LLVM error when 2+ structs do this
         self.children.append(.{ child = d });
     }
 }
@@ -56,10 +55,7 @@ StackB :: struct {
     children: List(Container);
 
     add :: (self: *StackB, d: Drawable) {
-        // BUG: second struct doing `.{ child = d }` triggers the error
         self.children.append(.{ child = d });
-        // FIX: explicit `Container{ child = d }` works
-        // self.children.append(Container{ child = d });
     }
 }
 

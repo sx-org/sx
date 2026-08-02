@@ -1,16 +1,12 @@
-// Struct value equality (issue 0245): `==` / `!=` on two struct values is a
+// Struct value equality: `==` / `!=` on two struct values is a
 // recursive FIELD-WISE compare — two structs are equal iff every field is
 // equal. This mirrors the tuple element-wise policy (structs share the tuple
 // layout) and is the only compare that correctly ignores padding bytes.
 //
-// Regression (issue 0245): before the fix, `emit_llvm`'s struct-compare arm
-// only handled a 2-scalar-field shape — a 1-field struct emitted invalid IR, a
-// 3+-field struct SILENTLY compared only fields 0/1 (`S{ 1,2,3} == S{ 1,2,999}`
-// returned true), and any non-scalar field (float / nested struct / string)
-// crashed the LLVM verifier. The compare is now lowered field-wise in
-// src/ir/lower/expr.zig (lowerStructEquality) so every field participates and
-// each field is compared against its own type (float→fcmp, string→str_eq,
-// nested struct→recurse, tagged-union field→tag-only).
+// The compare lowers field-wise in src/ir/lower/expr.zig (lowerStructEquality)
+// so every field participates and each field is compared against its own type
+// (float→fcmp, string→str_eq, nested struct→recurse, tagged-union field→
+// tag-only).
 #import "modules/std.sx";
 
 S1 :: struct { a: i64; }
@@ -29,19 +25,19 @@ report :: (label: string, cond: bool) {
 }
 
 main :: () -> i32 {
-    // 1-field: no longer invalid IR.
+    // 1-field: valid IR.
     a1 : S1 = .{ a = 7 };
     b1 : S1 = .{ a = 7 };
     c1 : S1 = .{ a = 8 };
     report("s1 eq", a1 == b1);          // true
     report("s1 neq", a1 != c1);         // true
 
-    // 3-field: field `c` is no longer silently ignored.
+    // 3-field: field `c` participates in the compare.
     a3 : S3 = .{ a = 1, b = 2, c = 3 };
     b3 : S3 = .{ a = 1, b = 2, c = 3 };
     c3 : S3 = .{ a = 1, b = 2, c = 999 };
     report("s3 eq", a3 == b3);          // true
-    report("s3 c-differs", a3 == c3);   // false (was silently true)
+    report("s3 c-differs", a3 == c3);   // false
     report("s3 neq", a3 != c3);         // true
 
     // 5-field: every field participates.

@@ -43,7 +43,7 @@ validate_output_limit :: (max_output: i64) -> !Error {
 adler32 :: (data: string, initial: i64 = 1) -> i64 {
     // An empty slice is an ordinary zero-byte update, independently of its
     // pointer representation. This keeps the native checksum API composable;
-    // the old C null-pointer initializer query is not part of std.zlib.
+    // a C null-pointer initializer query is not part of std.zlib.
     // miniz keeps both accumulators in mz_uint32. A 5,552-byte block is
     // specifically small enough to avoid overflow, so widening these to i64
     // only makes the hot dependency chain and modulo operations more costly.
@@ -1443,7 +1443,7 @@ Deflater :: struct {
     hash_shift: i64;
     // Never read: retained solely for struct layout. Removing these two
     // slots shifts the hot match-search fields across a cache line and
-    // costs ~1.5% encode time at levels 6-9 (61-trial paired benchmark).
+    // costs measurable encode time at levels 6-9.
     nondeterministic: bool;
     less_memory: bool;
     flush_mode: Flush;

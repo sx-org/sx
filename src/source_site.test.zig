@@ -1,5 +1,3 @@
-//! Source-site identity tests.
-//!
 //! Expected ids are computed by the independent FNV implementation at the
 //! bottom of this file, never by calling the code under test — the encoding is
 //! normative, so the test states it rather than observing it.

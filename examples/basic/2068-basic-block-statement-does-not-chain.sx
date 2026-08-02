@@ -4,7 +4,6 @@
 // starts a new statement. An EXPRESSION that merely ends in a block — a
 // trailing-block call, an aggregate literal — is still an expression, and its
 // postfix chain reads on across the line.
-// Expected: exit 0.
 #import "modules/std.sx";
 
 Color :: enum { red; green; blue }

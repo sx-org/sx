@@ -1,7 +1,6 @@
-// Stream B1 (fibers) B1.3a-2 — the context-switch STRESS GATE (design §10.7):
-// explicitly scribble EVERY callee-saved register with a sentinel, switch, and
-// verify every one survived. This is the correctness gate the run/snapshot
-// tests can't be — a switch that drops a register "happens to print right".
+// Every callee-saved register is scribbled with a sentinel, switched, and
+// checked for survival. A run or snapshot test cannot catch this: a switch that
+// drops a register still "happens to print right".
 //
 // `swap_context` here saves the COMPLETE AAPCS64 callee-saved set: the integer
 // regs x19-x28 + x29(fp) + x30(lr) + sp, AND the FP regs d8-d15. Per AAPCS64
@@ -15,8 +14,8 @@
 // sentinels into the same physical registers; when A resumes it checks every reg
 // still holds base_A — which is only possible if `swap_context` saved+restored
 // it. (A single fiber yielding to an idle peer would NOT exercise preservation —
-// the peer must clobber the registers. Validated adversarially: dropping the
-// d8-d15 save/restore makes this report 8 mismatches; dropping x27/x28 reports 2.)
+// the peer must clobber the registers. Dropping the d8-d15 save/restore
+// makes this report 8 mismatches; dropping x27/x28 reports 2.)
 //
 // Honest scope (what a register-sentinel gate does NOT cover, all spec-correct
 // for a call-boundary swap but worth stating): NZCV flags, FPSR, FPCR (rounding
@@ -27,7 +26,7 @@
 // stages, not for the single-thread switch this gate proves.
 //
 // aarch64-pinned (per-arch asm + 21-slot save area); runs end-to-end here,
-// ir-only on a mismatch. x86_64 sibling + mmap guard-page stacks are B1.3b.
+// ir-only on a mismatch.
 #import "modules/std.sx";
 
 // 21 slots: [0..9]=x19..x28 [10]=fp [11]=lr [12]=sp [13..20]=d8..d15.
@@ -236,7 +235,7 @@ boot :: (f: *Fiber) {
     f.ctx.regs[11] = xx fib_tramp;   // lr → trampoline
     f.ctx.regs[12] = top;            // sp
     // Zero the FP save slots so the first switch-to loads 0 (not garbage) into
-    // d8-d15 — removes the first-entry foot-gun (adversarial-review note).
+    // d8-d15 — removes the first-entry foot-gun.
     i := 13;
     while i < 21 { f.ctx.regs[i] = 0; i = i + 1; }
     f.mismatches = -1;

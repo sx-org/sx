@@ -1,4 +1,4 @@
-// Bare fn → `?Closure` (issue 0338): fn → Closure promotion (null-env static
+// Bare fn → `?Closure`: fn → Closure promotion (null-env static
 // thunk) composes with T → ?T wrapping in every position where each step
 // applies individually — call args, struct-literal fields, decl targets, and
 // returns. The point-free slot idiom (`opt_slot(toolbar)`,

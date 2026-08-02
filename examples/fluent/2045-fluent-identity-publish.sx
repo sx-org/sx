@@ -1,5 +1,4 @@
-// A statement whose type already IS the interception type publishes by IDENTITY
-// (fluent spec §6.3 rule 2, A1).
+// A statement whose type already IS the interception type publishes by IDENTITY.
 //
 // The sink's `expression` is monomorphized per published type, so a value that is
 // already a `P` arrives with `V = P`: the initializer writes the `P` it was formed
@@ -11,7 +10,7 @@
 // Identity is observable: a tagged handle carries the address of its payload, so
 // mutating the payload after publishing shows through the handle the sink kept —
 // it copied the handle, not the value behind it. The payload is allocator-owned,
-// which is what a handle a sink RETAINS requires (spec §8): a handle borrowing a
+// which is what a handle a sink RETAINS requires: a handle borrowing a
 // caller local would outlive it.
 #import "modules/std.sx";
 #import "modules/fluent.sx";

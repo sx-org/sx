@@ -1,14 +1,11 @@
-// Regression: `#import` inside the body of a top-level
-// `inline if OS == .X { ... }` block. The imports.zig flatten pass
-// (issue-0042) lifts these to the top level before resolution; the
-// parser arm in `parseStmt` that accepts them was missing on macOS /
-// iOS / linux until this commit, so chess's
-// `inline if OS == .android { #import "modules/platform/android.sx"; }`
-// pattern broke parse on every non-Android target.
+// `#import` inside the body of a top-level `inline if OS == .X { ... }` block.
+// The imports.zig flatten pass lifts these to the top level before resolution,
+// and `parseStmt` accepts them on every target — including where the branch is
+// dead, as in `inline if OS == .android { #import "modules/platform/android.sx"; }`.
 //
-// The body here also carries a global decl to mirror chess's shape —
-// the prior bug was specifically about hash_import inside an inline-if
-// body, not the global decl alongside it.
+// The body also carries a global decl alongside the import, so the arm is
+// exercised for the import itself and not just for a body that happens to
+// contain declarations.
 
 #import "modules/std.sx";
 

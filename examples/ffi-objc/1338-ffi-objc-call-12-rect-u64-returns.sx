@@ -1,13 +1,8 @@
-// Backfill for Phase 1D cluster 1.32 (PLAN-FFI.md): `#objc_call(CGRect)`
-// and `#objc_call(u64)` against `class_addMethod`-registered IMPs.
-// Both shapes were already exercised transitively in earlier work —
-// CGRect is structurally a 4×f64 HFA (same as UIEdgeInsets from
-// ffi-objc-call-07), and u64 is i64 at the LLVM level (same as the
-// i64 return from ffi-objc-call-04's `hash`). The cluster-1.32
-// migration of `uikit_keyboard_will_change_frame` was the first
-// place we used both shapes through `#objc_call` directly, but the
-// keyboard-change-frame callback isn't reached by the chess launch
-// path, so this test gives the two shapes their own runtime lockdown.
+// `#objc_call(CGRect)` and `#objc_call(u64)` against
+// `class_addMethod`-registered IMPs. CGRect is structurally a 4×f64 HFA
+// (the UIEdgeInsets shape from ffi-objc-call-07) and u64 is i64 at the
+// LLVM level (the `hash` return from ffi-objc-call-04); this pins both
+// shapes directly rather than transitively.
 
 #import "modules/std.sx";
 #import "modules/build.sx";

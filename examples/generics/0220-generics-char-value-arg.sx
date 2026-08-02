@@ -2,10 +2,8 @@
 // char literal is an integer code point, so `Buf('A')` binds `$N = 65` exactly
 // as `Buf(65)` would — and the two are distinct monomorphizations.
 //
-// Regression: the parser's generic type-argument path special-cased only
-// `int_literal` in a value position, so `Buf('A')` failed to parse with
-// "expected type name" even though the value-mangling half (generics.zig) was
-// already char-aware.
+// The parser's generic type-argument path accepts a char literal in a value
+// position, and the value-mangling half (generics.zig) is char-aware.
 
 #import "modules/std.sx";
 

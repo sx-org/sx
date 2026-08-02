@@ -1,5 +1,5 @@
-// The pre-multi-iterable `for xs: (x)` syntax (colon before the capture) is
-// rejected with a migration hint.
+// A `:` between a for-loop's iterable and its capture (`for xs: (x)`) is
+// rejected; the capture follows the iterable directly.
 
 #import "modules/std.sx";
 

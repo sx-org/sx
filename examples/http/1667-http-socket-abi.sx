@@ -1,4 +1,4 @@
-// PLAN-HTTPZ C3a — std/socket per-OS ABI (host run). The sockaddr_in
+// Std/socket per-OS ABI (host run). The sockaddr_in
 // constructor + the nonblocking-I/O classifiers resolve against the host OS and
 // behave identically on darwin (dev host) and a linux runner: every assertion is
 // phrased against the module's OWN per-OS constants, so it is correct on

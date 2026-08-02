@@ -85,26 +85,26 @@ pub const Op = union(enum) {
     const_string: StringId,
     const_null,
     const_undef, // `---` undefined initializer
-    /// ERR E4.1 — `is_comptime()` builtin. The SAME lowered IR is run by both
+    /// `is_comptime()` builtin. The SAME lowered IR is run by both
     /// the comptime interpreter and the compiled backend, so this can't fold at
     /// lower time: the interp evaluates it to `true`, emit_llvm emits constant
     /// `false`. Lets stdlib (`process.exit`, `assert`) take a comptime-only
     /// diagnostic branch that dead-codes out of compiled binaries.
     is_comptime,
-    /// ERR E4.1 — `trace.print_interpreter_frames()`. At comptime the interp
+    /// `trace.print_interpreter_frames()`. At comptime the interp
     /// walks its sx call-frame chain and appends it to the output; in compiled
     /// code it's a no-op (only ever reached from a dead `is_comptime()` branch,
     /// where there is no interpreter stack to walk).
     interp_print_frames,
-    /// ERR E3.0 slice 3a — a return-trace frame value (`u64`) for the push site.
+    /// a return-trace frame value (`u64`) for the push site.
     /// Niladic + span-stamped: it carries NO operands; each backend derives the
     /// frame from its own context. `emit_llvm` resolves this instruction's span
     /// + the current function → `{file,line,col,func}`, interns a `Frame` global,
     /// and yields its address (`ptrtoint`). `interp` yields a packed
-    /// `(func_id << 32 | span.start)` for the comptime resolver (slice 3b). The
+    /// `(func_id << 32 | span.start)` for the comptime resolver. The
     /// result feeds the existing `sx_trace_push(u64)` call.
     trace_frame,
-    /// ERR E3.0 slice 3b — the read-side resolver: a raw trace-buffer `u64` →
+    /// the read-side resolver: a raw trace-buffer `u64` →
     /// a `Frame` value. The mirror of `trace_frame`'s context split.
     /// `emit_llvm` reinterprets the operand as `*Frame` and loads it (the value
     /// `trace_frame` stamped in). `interp` unpacks `(func_id, span.start)` and
@@ -264,14 +264,13 @@ pub const Op = union(enum) {
     /// emit_llvm.zig expands this into the JNI vtable indirection:
     /// `(*env)->GetObjectClass` (instance only) → `GetMethodID` /
     /// `GetStaticMethodID` → `Call<Type>Method` / `CallStatic<Type>Method`.
-    /// Method-ID caching across call sites is added in step 1.17.
     jni_msg_send: JniMsgSend,
 
     /// `asm volatile? { "tmpl", operands…, clobbers(.…) }` — inline assembly
-    /// (ASM stream, design §II.6). emit_llvm.zig assembles the LLVM constraint
+    /// (design §II.6). The LLVM backend assembles the constraint
     /// string + rewrites the `%[name]` template, then `LLVMGetInlineAsm` +
     /// `LLVMBuildCall2`. The result rides on `Inst.ty` (void / a scalar / a tuple
-    /// of the `out_value` types). Never comptime-evaluable — the interp bails.
+    /// of the `out_value` types). Never comptime-evaluable — the VM bails.
     inline_asm: InlineAsm,
 
     // ── Closure creation ────────────────────────────────────────────
@@ -292,7 +291,7 @@ pub const Op = union(enum) {
     // value (lowering borrows an lvalue's storage or spills an rvalue
     // to a frame temp); unbox_any is a typed LOAD through the data
     // pointer; any_data reads the data word itself (no load); make_any
-    // assembles a view from a RUNTIME tag + address (the C2 raw layer).
+    // assembles a view from a RUNTIME tag + address (the raw `any` layer).
     box_any: BoxAny, // *T → any (erase type; operand is the value's address)
     unbox_any: UnaryOp, // any → T (typed load through the view)
     any_data: UnaryOp, // any → data pointer (the view address, no load)
@@ -553,7 +552,7 @@ pub const JniMsgSend = struct {
     /// Runtime path of the parent class (e.g. `android/app/Activity`) when
     /// `is_nonvirtual` is true, OR of the class being constructed when
     /// `is_constructor` is true. emit_llvm uses `FindClass` to materialise
-    /// the jclass at the call site (per-call; caching is follow-up).
+    /// the jclass at the call site, per call (no cache).
     parent_class_path: ?[]const u8 = null,
     cache_key: ?CacheKey = null,
 };
@@ -575,7 +574,7 @@ pub const BuiltinId = enum(u16) {
     floor,
     size_of,
     align_of,
-    // Comptime-only reflection builtins. Today's `tryLowerReflectionCall`
+    // Comptime-only reflection builtins. `tryLowerReflectionCall`
     // folds these at lower time when the type argument is statically
     // resolvable — emits a `const_string` / `const_bool` directly.
     // These BuiltinId entries are the FALLBACK path: when the arg is
@@ -585,7 +584,7 @@ pub const BuiltinId = enum(u16) {
     // implements them; emit_llvm bails (Type is comptime-only).
     type_name,
     is_unsigned,
-    // Runtime-Type scalar reflection (1a-S2): tag-indexed table reads
+    // Runtime-Type scalar reflection: tag-indexed table reads
     // (sizes/aligns/counts/flag-bits); type_eq is a plain tag compare.
     rt_size_of,
     rt_align_of,
@@ -597,7 +596,7 @@ pub const BuiltinId = enum(u16) {
     // negative = sign-extend). Internal — serves fmt's `__sx_any_tag_word`.
     rt_variant_tag_width,
     rt_type_eq,
-    // Field-family runtime paths (1a-S3b): master-index [N x ptr] tables →
+    // Field-family runtime paths: master-index [N x ptr] tables →
     // per-type arrays (names reuse the per-type name arrays; type tags,
     // offsets, and variant values get their own). variant_* shares the same
     // member arrays.
@@ -605,9 +604,8 @@ pub const BuiltinId = enum(u16) {
     rt_member_type,
     rt_field_offset,
     rt_variant_value,
-    // (`declare` and `define` are no longer builtins — they're plain sx over the
-    // `declare_type` / `register_type` compiler-API primitives in
-    // `modules/std/meta.sx`.)
+    // (`declare` and `define` are plain sx over the `declare_type` /
+    // `register_type` compiler-API primitives in `modules/std/meta.sx`.)
     // The comptime reflection INVERSE of `define`: read a type's variants
     // (name + payload type) out of the type table and CONSTRUCT the same
     // `.enum(EnumInfo{ variants })` value `define` decodes. Comptime-only
@@ -758,8 +756,8 @@ pub const Function = struct {
 
     /// For a body-local `#run` wrapper (`L :: #run f()` → an `is_comptime`
     /// `__ct_N` function): the user-facing const NAME the `#run` initializes, so
-    /// a comptime-init failure can report `comptime init of 'L' failed` (issue
-    /// 0182) rather than the internal `__ct_N` wrapper name. Null when the `#run`
+    /// a comptime-init failure can report `comptime init of 'L' failed` rather
+    /// than the internal `__ct_N` wrapper name. Null when the `#run`
     /// is not bound to a named const (a bare inline `#run`).
     comptime_display_name: ?StringId = null,
 

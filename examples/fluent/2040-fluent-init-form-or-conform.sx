@@ -1,5 +1,5 @@
 // An `$I/@Init(T)` parameter either FORMS an initializer from the argument or
-// takes one that already conforms (fluent spec §5.2).
+// takes one that already conforms.
 //
 // Forming is what an ordinary expression gets: nothing is evaluated at the call,
 // and `$I` binds to the initializer the compiler minted for that expression. The

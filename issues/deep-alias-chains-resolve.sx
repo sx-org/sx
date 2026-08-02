@@ -1,9 +1,5 @@
-// Issue 0331: alias resolution depth caps silently rejected valid chains.
-// Generic template aliases stopped at 8 hops, function aliases at 9,
-// protocol/pending-type aliases at 16, and reverse-order module-constant
-// aliases got only 16 fixpoint rounds. All four families below exceed the
-// old caps and must resolve; cycle detection is by declaration identity
-// (see examples/diagnostics/1269-diagnostics-alias-cycle.sx).
+// Module-constant, function, generic-template and protocol alias chains resolve
+// at 20, 12, 10 and 18 hops.
 #import "modules/std.sx";
 
 // 20-hop module-const chain, declared head-first (worst fixpoint order).

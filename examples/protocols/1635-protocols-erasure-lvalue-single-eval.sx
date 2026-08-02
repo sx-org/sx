@@ -1,16 +1,13 @@
 // The OWNING erasure of an effectful operand evaluates the expression
 // ONCE. `arr[next()].(P)` lowers the receiver a single time — the
 // side-effectful index runs once, and the copied element is the one that
-// single evaluation picked. This held for the pre-E4 borrow erasure
-// (issue 0214: `xx arr[next()]` used to re-lower the AST for the borrow
-// address and run `next()` twice) and must keep holding for the postfix
-// owning copy, for every index base shape: a LOCAL array, a module-GLOBAL
-// array, and a STRUCT-FIELD array — and for `?P` destinations.
-// Ownership contract (E4): the erased value is an independent COPY — the
+// single evaluation picked. It holds for the postfix owning copy, for every
+// index base shape: a LOCAL array, a module-GLOBAL array, and a STRUCT-FIELD
+// array — and for `?P` destinations.
+// Ownership contract: the erased value is an independent COPY — the
 // source element is untouched by mutations through it. Transient
 // write-through lives in `*P` views (pinned in 0829); the by-REF capture
 // leg below drives one through a view.
-// Regression (issue 0214 lineage; rewritten at the E4 cutover).
 
 #import "modules/std.sx";
 

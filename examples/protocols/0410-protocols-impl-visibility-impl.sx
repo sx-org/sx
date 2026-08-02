@@ -1,5 +1,5 @@
-// Helper that defines the impl. 179-impl-visibility's user file does NOT
-// directly import this — that's the whole point of the test.
+// Defines the impl. 0410-protocols-impl-visibility.sx does NOT import this
+// directly — the impl must still be visible there.
 #import "modules/std.sx";
 #import "./0410-protocols-impl-visibility-types.sx";
 

@@ -54,7 +54,7 @@ Options:
 ## Standard library guides
 
 - [Compression, PNG, and ZIP](docs/compression.md)
-- [Compression migration coverage](docs/compression-coverage.md)
+- [Miniz-to-stdlib crosswalk](docs/compression-miniz-crosswalk.md)
 
 Third-party attributions for stdlib-derived code are recorded in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
@@ -975,7 +975,7 @@ Workers complete in deadline order, not spawn or await order. The runtime offers
 
 It's an M:1 model (cooperative, no preemption — so no data races between fibers
 and no atomics needed across them), built on `abi(.naked)` context switching over
-guarded `mmap` stacks. Currently aarch64-pinned (macOS + Linux).
+guarded `mmap` stacks. It is aarch64-pinned (macOS + Linux).
 
 ### Command-line interface (`modules/std/cli.sx`)
 

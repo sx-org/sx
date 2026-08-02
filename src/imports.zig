@@ -67,7 +67,7 @@ fn relativeTo(path: []const u8, base: []const u8) ?[]const u8 {
 
 /// Canonicalize a resolved import path so the SAME source file gets ONE
 /// spelling everywhere it is keyed — module cache, `flat_import_graph`,
-/// `module_decls`, decl table, namespace edges (issue 0148). Lexically
+/// `module_decls`, decl table, namespace edges. Lexically
 /// normalizes (strip `./`, collapse `a/../b`) and re-relativizes an
 /// absolute path against the process CWD when the file lives under it, so
 /// an absolute entry path produces the same cwd-relative keys (and the same
@@ -132,7 +132,7 @@ const c_stat = @extern(*const fn ([*:0]const u8, *std.c.Stat) callconv(.c) c_int
 
 /// Canonicalize an ENTRY path (CLI ingestion) with the same identity guard
 /// `resolveImportPath` applies to import keys: accept the respelling only
-/// when it provably names the same file on disk (issue 0148 fold — an
+/// when it provably names the same file on disk (an
 /// absolute entry under the CWD then displays/keys cwd-relative, matching a
 /// relative invocation); otherwise keep the user's spelling (nonexistent
 /// entry, symlinked `..` component, stale `$PWD`).
@@ -308,7 +308,7 @@ pub const ResolvedModule = struct {
 
     /// Add a declaration authored in this file. Updates scope + own_decls +
     /// the global flat decl list; dedups by name through `seen_list` (which
-    /// already holds names previously appended via `mergeFlat`, so an
+    /// already holds the names `mergeFlat` appended, so an
     /// authored decl that collides with a transitively-imported one stays
     /// out of the global list while still entering `own_decls` for
     /// importer-visibility purposes).
@@ -367,7 +367,7 @@ pub const ResolvedModule = struct {
                     // per-source decl (a named type, or any non-function const:
                     // type alias + value const), each of which must reach
                     // registration as a distinct same-name author of its own
-                    // module (types and aliases; step E5 value consts). Only
+                    // module (types, aliases and value consts). Only
                     // FUNCTIONS keep first-wins (the shadowed author
                     // stays reachable via its qualified name / SelectedFunc).
                     // Node identity (above) still de-dups a diamond import of the
@@ -387,7 +387,7 @@ pub const ResolvedModule = struct {
     /// first-wins winner. NAMED types and every non-function `const_decl` (type
     /// aliases + inline type decls + VALUE consts, source-keyed via the alias /
     /// const caches) are per-source — that is what prevents same-name collapse for
-    /// types/aliases and supports same-name value consts (step E5). Everything
+    /// types/aliases and supports same-name value consts. Everything
     /// else keeps the first-wins name-merge: FUNCTIONS (the shadowed
     /// author stays reachable via its qualified name / SelectedFunc), and crucially
     /// `var_decl`s, including a `extern` extern global declared in two files
@@ -482,7 +482,7 @@ pub const ModuleCache = std.StringHashMap(ResolvedModule);
 
 /// A named top-level declaration the resolver may select, kept as the raw AST
 /// node pointer (NOT pre-classified — a `const_decl` whose value is a function
-/// stays a `.const_decl`; classification is a later phase's job). `impl_block`
+/// stays a `.const_decl`). `impl_block`
 /// is deliberately absent: it has no `declName` and is deduped by node identity
 /// (`mergeFlat`), so it never enters the scalar index.
 pub const RawDeclRef = union(enum) {
@@ -545,7 +545,7 @@ pub const NamespaceTarget = struct {
     target_module_path: []const u8,
     own_decls: []const *Node,
     /// The `DeclId` of each member in `own_decls`, in slice order. Filled by
-    /// `buildDeclTable` (empty until then). Lets a member be addressed by stable
+    /// `buildDeclTable`. Lets a member be addressed by stable
     /// id without re-deriving it from the node pointer.
     member_ids: []const DeclId = &.{},
     /// The alias declaration's own visibility (`private ns :: #import "…"`).
@@ -654,13 +654,10 @@ pub fn buildImportFacts(
     return .{ .decls = decls, .ns_edges = ns_edges };
 }
 
-// ── DeclTable: a stable DeclId for every declaration (Fork C S1, additive) ──
+// ── DeclTable: a stable DeclId for every declaration ──
 //
 // `buildDeclTable` lifts every `RawDeclRef` the import facts hold into a stable
-// `DeclId` carrying source + name + AST node identity + span + `DeclKind`. It is
-// built in PARALLEL with the old maps and nothing in lowering consumes it for
-// selection yet (S4 makes it the fact-store key), so generated IR + bytes are
-// unchanged by construction.
+// `DeclId` carrying source + name + AST node identity + span + `DeclKind`.
 
 /// The taxonomy of a declaration, mirroring the `RawDeclRef` variants so a
 /// `DeclTable` row carries its kind without re-switching on the AST node.
@@ -715,8 +712,8 @@ fn structDeclPtrOf(decl: *const Node) ?*const ast.StructDecl {
 }
 
 /// A stable identifier for one declaration, assigned by `DeclTable` in module-
-/// walk order. Process-local: it indexes the table's `entries` (S5 stabilizes it
-/// to `(source, index)` for the LSP, per the deep-dive's R5).
+/// walk order. Process-local: it indexes the table's `entries`; the LSP
+/// stabilizes it to `(source, index)`.
 pub const DeclId = enum(u32) { _ };
 
 /// One `DeclTable` row: a `RawDeclRef` lifted to a stable `DeclId`, with its
@@ -800,7 +797,7 @@ pub const DeclTable = struct {
         }
     }
 
-    /// Debug cross-check (S1.1 acceptance): every `RawDeclRef` the import facts
+    /// Debug cross-check: every `RawDeclRef` the import facts
     /// hold round-trips `RawDeclRef → DeclId → AST node ptr` back to the same
     /// node, with matching name. Asserts; call only under `builtin.mode == .Debug`.
     pub fn verifyRoundTrip(self: *const DeclTable, decls: *const ModuleDecls, ns_edges: *const NamespaceEdges) void {
@@ -904,11 +901,11 @@ pub fn stampFnBodySource(decl: *Node, file_path: []const u8) void {
         .struct_decl => |sd| stampStructMethodSources(sd, file_path),
         // A parameterized protocol is instantiated cross-module; record its
         // defining path so the instantiation resolves method-signature types in
-        // this module (E4).
+        // this module.
         .protocol_decl => decl.data.protocol_decl.source_file = file_path,
         // An sx-defined `#objc_class` / `#jni_class`: its IMP trampolines are
         // emitted at lowering time (possibly from another module's context), so
-        // record the defining path AND stamp each method body (E4).
+        // record the defining path AND stamp each method body.
         .runtime_class_decl => {
             decl.data.runtime_class_decl.source_file = file_path;
             stampRuntimeClassMethodSources(decl.data.runtime_class_decl, file_path);
@@ -917,14 +914,14 @@ pub fn stampFnBodySource(decl: *Node, file_path: []const u8) void {
         // `fn_ast_map` and their declared param/return types may name a type
         // bare-visible only in this module. Stamp each method body's source so a
         // cross-module conformance check (erasure to an imported protocol) pins
-        // the impl-side type resolution to the impl's OWN module (issue 0208),
+        // the impl-side type resolution to the impl's OWN module,
         // not the erasure site.
         .impl_block => |ib| stampImplMethodSources(ib, file_path),
         .const_decl => |cd| switch (cd.value.data) {
             .fn_decl => |fd| fd.body.source_file = file_path,
             // `List :: struct { … append :: (…) { … } }` — the methods of a
             // (possibly generic) struct are monomorphized in their template's
-            // OWN module (the E4 instantiation source-pin), so their
+            // OWN module (the instantiation source-pin), so their
             // bodies need the defining path stamped just like a top-level fn.
             .struct_decl => |sd| stampStructMethodSources(sd, file_path),
             .protocol_decl => cd.value.data.protocol_decl.source_file = file_path,
@@ -954,7 +951,7 @@ fn stampStructMethodSources(sd: ast.StructDecl, file_path: []const u8) void {
 
 /// Stamp the defining module path onto every method body of an `impl P for T`
 /// block, so a cross-module protocol conformance check resolves the impl
-/// method's declared param/return types in the impl's OWN module (issue 0208).
+/// method's declared param/return types in the impl's OWN module.
 fn stampImplMethodSources(ib: ast.ImplBlock, file_path: []const u8) void {
     for (ib.methods) |m| {
         if (m.data == .fn_decl) m.data.fn_decl.body.source_file = file_path;
@@ -1026,8 +1023,8 @@ pub fn resolveImports(
     var decl_list = std.ArrayList(*Node).empty;
     var own_decl_list = std.ArrayList(*Node).empty;
     // Name set spanning every decl already appended to `decl_list` — used
-    // by `mergeFlat` to dedupe across diamond imports now that `mod.scope`
-    // is non-transitive and can no longer serve as the dedup key.
+    // by `mergeFlat` to dedupe across diamond imports; `mod.scope` is
+    // non-transitive and cannot serve as the dedup key.
     var seen_in_list = std.StringHashMap(void).init(allocator);
     // Node-identity set for the same purpose, covering anonymous decls
     // (impl blocks) that carry no name to dedupe on.

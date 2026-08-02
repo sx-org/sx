@@ -20,10 +20,9 @@
 //   accessor reports the real process argv truthfully and does NOT strip
 //   the interpreter prefix. Mapping process argv -> a program's logical
 //   args (dropping the `sx run prog.sx` prefix, or via an sx-run
-//   convention) is a CONSUMER concern handled later (distribution P3.1),
-//   NOT here.
+//   convention) is a CONSUMER concern, NOT here.
 //
-// Platform: macOS only for now, via the C runtime's `_NSGetArgv()`
+// Platform: macOS only, via the C runtime's `_NSGetArgv()`
 // (char***) and `_NSGetArgc()` (int*). On any other OS the accessors bail
 // loudly (message + `EX_UNAVAILABLE` exit via `process.exit`) rather than
 // returning a silent empty.
@@ -48,7 +47,7 @@ ns_get_argv :: () -> *i64 extern libc "_NSGetArgv";
 ns_get_argc :: () -> *i32 extern libc "_NSGetArgc";
 
 // =====================================================================
-// EXIT-CODE & `--json` CONTRACT (F3.3) — the minimal surface `dist` (and
+// EXIT-CODE & `--json` CONTRACT — the minimal surface `dist` (and
 // any sx CLI front-end) relies on. Two pieces:
 //
 //   1. NAMED EXIT CODES (sysexits.h subset). A front-end ends with the
@@ -130,12 +129,12 @@ os_args :: (buf: []string) -> []string {
 
 // =====================================================================
 // Argument PARSER — subcommand dispatch + `--flag` over an EXPLICIT
-// logical argv (F3.2).
+// logical argv.
 //
 // `parse(args, commands, diag)` reads a caller-supplied logical argument
 // vector `[]string` — NOT the process argv. (Mapping process argv ->
 // logical args, e.g. dropping the `sx run prog.sx` prefix, is the
-// consumer's job; see the `os_args` note above and F3.1.) The grammar:
+// consumer's job; see the `os_args` note above.) The grammar:
 //
 //     <group> <command> [--flag VALUE | --bool]... [--json] [-- rest...]
 //

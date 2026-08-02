@@ -1,5 +1,5 @@
-// Publishing keys off STATEMENT POSITION and type acceptance (fluent spec
-// §6.3), never off a terminator. Inside a build body a nested block — an
+// Publishing keys off STATEMENT POSITION and type acceptance, never off a
+// terminator. Inside a build body a nested block — an
 // `if`/`else` branch, a loop body, bare braces — is a statement, so its
 // trailing child publishes exactly like a child written at the body's own top
 // level, with or without a `;`.
@@ -7,7 +7,6 @@
 // Three shapes carry the rule's edges: a void trailing expression has no child
 // to publish, a value-POSITION block's tail is its value rather than a
 // statement, and the body's own top level publishes like any nested statement.
-// Expected: exit 0.
 #import "modules/std.sx";
 #import "modules/fluent.sx";
 

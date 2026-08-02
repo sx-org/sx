@@ -1,18 +1,18 @@
-// M2.2 (first pass) — `#property` directive on runtime-class
-// fields synthesizes Obj-C-runtime getter/setter dispatch.
+// `#property` directive on runtime-class fields synthesizes
+// Obj-C-runtime getter/setter dispatch.
 //
-//   field: T #property[(modifiers)];
+// field: T #property[(modifiers)];
 //
 // `obj.field`      → [obj field]         (selector = field name)
 // `obj.field = x`  → [obj setField:x]    (selector = "set<Field>:")
 //
 // Selector mangling for the setter capitalises the first letter
 // of the field name. Modifiers (strong, weak, copy, readonly, ...)
-// parse but don't yet drive ARC ops — that's Month 4.
+// parse; on a runtime class they drive no ARC ops.
 //
-// This slice covers RUNTIME-class properties. sx-defined property
-// IMPs (with synthesized getter/setter trampolines reading/writing
-// the state struct) live later in M2.2.
+// This pins RUNTIME-class properties. sx-defined property IMPs (with
+// synthesized getter/setter trampolines reading/writing the state
+// struct) are pinned by 1319.
 
 #import "modules/std.sx";
 #import "modules/build.sx";

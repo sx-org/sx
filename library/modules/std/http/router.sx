@@ -1,4 +1,4 @@
-// std.http_router (PLAN-HTTPZ D2): a thin ergonomic layer over the
+// std.http_router: a thin ergonomic layer over the
 // std.http server core. Method+path ROUTING with path PARAMS (/users/:id),
 // QUERY-string parsing, urlencoded FORM parsing, and JSON request/response
 // helpers over std/json — so apps stop hand-rolling `if req.path == …`.
@@ -12,7 +12,7 @@
 //
 // MEMORY: route registration captures the Router's owning allocator
 // (init) and grows the route table through it — the table outlives any
-// transient per-request scope (CLAUDE.md long-lived-container rule). The
+// transient per-request scope, per the long-lived-container rule. The
 // HOT PATH allocates NOTHING: path params, query pairs, and form pairs all
 // land in FIXED-CAPACITY arrays on the stack-resident RouteCtx — no
 // per-request heap, so the server's leak gate stays net-zero. Decoded
@@ -31,8 +31,8 @@
 // memory-safe, but a handler treating such a value as a C string should know.
 //
 // multipart/form-data is OUT OF SCOPE (it is large — boundary framing,
-// streamed parts, per-part headers); a follow-up. This layer covers
-// application/x-www-form-urlencoded only.
+// streamed parts, per-part headers). This layer covers only
+// application/x-www-form-urlencoded.
 
 #import "modules/std/fmt.sx";          // concat
 types :: #import "modules/std/http/types.sx";
@@ -446,11 +446,11 @@ dispatch :: (req: *types.Request, resp: *types.Response, ctx: usize) {
         i += 1;
     }
 
-    // Q1.10 (RFC 9110 §9.3.2): HEAD must be supported wherever GET is —
+    // (RFC 9110 §9.3.2): HEAD must be supported wherever GET is —
     // a HEAD request with no HEAD route of its own (the exact pass above
     // found nothing, so an explicitly registered HEAD route still wins)
     // dispatches the matching GET route. The SERVER layer suppresses the
-    // response body (automatic HEAD, Q1.4), so the handler needs no HEAD
+    // response body (automatic HEAD), so the handler needs no HEAD
     // awareness.
     if ci_eq(req.method, "HEAD") {
         i = 0;
@@ -489,7 +489,7 @@ dispatch :: (req: *types.Request, resp: *types.Response, ctx: usize) {
         }
         i += 1;
     }
-    // Q1.10 (RFC 9110 §10.2.1): HEAD is implicitly supported wherever GET
+    // (RFC 9110 §10.2.1): HEAD is implicitly supported wherever GET
     // is (the fallback pass above dispatches it), so Allow must say so —
     // unless an explicit HEAD route already put it in the list.
     if has_get and !has_head { allow = concat(allow, ", HEAD"); }

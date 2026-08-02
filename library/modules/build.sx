@@ -26,8 +26,7 @@
 // itself is a null-sentinel word (never dereferenced) — every accessor below takes
 // it as an ignored `self` and reads/writes the `BuildConfig` instead. The accessors
 // are free `intrinsic` functions (resolved on `opt.method(...)` via UFCS) and
-// serviced by `comptime_vm.callCompilerFn` — migrated off the old `struct #compiler`
-// hook surface (Phase 5.5).
+// serviced by `comptime_vm.callCompilerFn`.
 BuildOptions :: struct { }
 
 build_options :: () -> BuildOptions intrinsic;
@@ -87,8 +86,7 @@ is_android :: ufcs (self: BuildOptions) -> bool intrinsic;
 // framework_at(i)` to find each `-framework` name and recursively
 // copies its `<Name>.framework` directory from one of
 // `framework_path_at(0..framework_path_count())` into
-// `<bundle>/Frameworks/`. Indexed form (slice returns are expressible
-// now via `List`, but the bundler still walks these by index).
+// `<bundle>/Frameworks/`. Indexed form — the bundler walks these by index.
 framework_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
 framework_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
 framework_path_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
@@ -112,7 +110,7 @@ jni_main_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
 jni_main_runtime_path_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
 jni_main_java_source_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
 
-// The build callback registrar (Phase 5). Registers the sx function that drives
+// The build callback registrar. Registers the sx function that drives
 // the build — the compiler invokes it after codegen with the `BuildOptions`
 // handle. `#run on_build(build);` (from inside a `#run` block) is the override
 // form, where `build :: (opt: BuildOptions) -> bool { … }`; the

@@ -230,11 +230,7 @@ main :: () {
     report("iter", cnt == 5 and sum_k == 10 and sum_v == 100);
     it_m.deinit(gpa);
 
-    // ═════════════════════════════════════════════════════════════════════
-    // Coverage backfill (G1,G3,G4,G5,G6,G8,G9,G11,G14,G15,G16).
-    // ═════════════════════════════════════════════════════════════════════
-
-    // ── G1: find_index skips tombstones ACROSS a collision chain ─────────
+    // ── find_index skips tombstones ACROSS a collision chain ─────────
     // Keys 1,9,17,25 all hash to bucket 4 at cap 8 → linear-probe chain in
     // buckets 4,5,6,7. Removing the head (1) and a middle (9) leaves live
     // tombstones the TAIL keys' probe must cross. A find_index that stopped
@@ -256,7 +252,7 @@ main :: () {
     report("g1-reinsert2", t1.get(9)! == 999 and t1.len == 4 and t1.capacity() == 8);
     t1.deinit(gpa);
 
-    // ── G3: iterate a map holding LIVE tombstones — only live entries seen ─
+    // ── iterate a map holding LIVE tombstones — only live entries seen ─
     // Fill 0..15, remove the 8 evens (tombstones, no realloc). The iterator
     // must visit exactly the 8 odds; a next_used that failed to skip
     // tombstoned buckets would re-yield the removed evens (stale data lives
@@ -273,7 +269,7 @@ main :: () {
     report("g3-iter-skips-tombstones", tb_cnt == 8 and tb_sum == 64 and tb_all_odd);
     tb.deinit(gpa);
 
-    // ── G4: ensure_unused_capacity(n>1) GROW branch, then n put_assume_cap ─
+    // ── ensure_unused_capacity(n>1) GROW branch, then n put_assume_cap ─
     uc : HashMap(i64, i64) = .{};
     uc.ensure_unused_capacity(200, gpa);              // cap==0 → grow(map_capacity_for(200))
     uc_cap := uc.capacity();
@@ -284,7 +280,7 @@ main :: () {
     report("g4-all-retrievable", uc_all and uc.len == 200 and uc.capacity() == uc_cap);
     uc.deinit(gpa);
 
-    // ── G5: clone with LIVE tombstones sitting mid probe-chain ───────────
+    // ── clone with LIVE tombstones sitting mid probe-chain ───────────
     // Same 1,9,17,25 chain; remove 1 & 9 → tombstones @buckets 4,5. The clone
     // c.memcpy's metadata verbatim, so the tail keys' probe must cross the
     // carried tombstones in the CLONE too. A clone that freed tombstones
@@ -303,7 +299,7 @@ main :: () {
     c5.deinit(gpa);
     c5g.deinit(gpa);
 
-    // ── G6: clone independence vs GROWTH (either side) ───────────────────
+    // ── clone independence vs GROWTH (either side) ───────────────────
     c6 : HashMap(i64, i64) = .{};
     c6.put(1, 1, gpa); c6.put(2, 2, gpa); c6.put(3, 3, gpa);
     c6cap := c6.capacity();
@@ -320,7 +316,7 @@ main :: () {
     g6c.deinit(gpa);
     g6b.deinit(gpa);
 
-    // ── G8: HashIter.reset re-iterates all entries ───────────────────────
+    // ── HashIter.reset re-iterates all entries ───────────────────────
     r8 : HashMap(i64, i64) = .{};
     i = 0; while i < 6 { r8.put(i, i * 10, gpa); i += 1; }
     it8 := r8.iterator();
@@ -332,9 +328,9 @@ main :: () {
     report("g8-reset", c8a == 6 and c8b == 6 and s8a == 150 and s8b == 150);
     r8.deinit(gpa);
 
-    // ── G9: remove during iteration is SAFE (tombstone, no realloc) ──────
+    // ── remove during iteration is SAFE (tombstone, no realloc) ──────
     // Grow-during-iteration is UB by contract (see the map.sx `iterator`
-    // doc WARNING) and is deliberately NOT exercised. Removing mid-iteration
+    // doc WARNING) and is not exercised. Removing mid-iteration
     // only tombstones a bucket: no realloc, live pointers stay valid, and a
     // not-yet-visited removed key is simply skipped.
     di : HashMap(i64, i64) = .{};
@@ -352,7 +348,7 @@ main :: () {
            di.capacity() == di_cap and !di.contains(3) and di.len == 7 and (di_cnt == 7 or di_cnt == 8));
     di.deinit(gpa);
 
-    // ── G11: fetch_put_assume_capacity OVERWRITE arm returns old value ───
+    // ── fetch_put_assume_capacity OVERWRITE arm returns old value ───
     f11 : HashMap(i64, i64) = .{};
     f11.ensure_total_capacity(10, gpa);
     f11.put_assume_capacity(5, 50);
@@ -360,21 +356,21 @@ main :: () {
     report("g11-old-returned", old11! == 50 and f11.get(5)! == 500 and f11.len == 1);
     f11.deinit(gpa);
 
-    // ── G14: iterate a never-allocated (cap 0) map — no crash, zero ──────
+    // ── iterate a never-allocated (cap 0) map — no crash, zero ──────
     z14 : HashMap(i64, i64) = .{};
     z14c := 0;
     z14it := z14.iterator();
     while kv := z14it.next() { z14c += 1; }
     report("g14-empty-iter", z14c == 0 and z14.len == 0 and z14.capacity() == 0);
 
-    // ── G15: clear() and first deinit() on a PRISTINE (cap 0) map ────────
+    // ── clear() and first deinit() on a PRISTINE (cap 0) map ────────
     p15 : HashMap(i64, i64) = .{};
     p15.clear();                                         // no-op, must not crash
     report("g15-clear-pristine", p15.len == 0 and p15.capacity() == 0);
     p15.deinit(gpa);                                  // idempotent no-op
     report("g15-deinit-pristine", p15.len == 0 and p15.capacity() == 0);
 
-    // ── G16: get_ptr returns null on a miss ──────────────────────────────
+    // ── get_ptr returns null on a miss ──────────────────────────────
     gp16 : HashMap(i64, i64) = .{};
     gp16.put(1, 100, gpa);
     hit16  := if p := gp16.get_ptr(1)   { p.* == 100 } else { false };

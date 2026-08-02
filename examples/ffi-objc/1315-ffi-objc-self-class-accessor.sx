@@ -1,9 +1,9 @@
-// M1.3 — `obj.class` accessor on Obj-C pointers.
+// `obj.class` accessor on Obj-C pointers.
 //
 // Any Obj-C-class pointer (runtime or sx-defined) can be probed
 // for its runtime class object via `obj.class`. Lowers to
 // `object_getClass(obj)`. Returns `Class` (alias for *void —
-// parameterized `Class(T)` covariance is M1.1.b).
+// parameterized `Class(T)` covariance is unsupported).
 //
 // Verifies both shapes:
 //   1. (*SxFoo).class — sx-defined class. Returns the SxFoo Class.

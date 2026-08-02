@@ -134,7 +134,7 @@ pub const ProtocolDefaultDispatchDomain = struct {
 /// allocation — the source-aware analogue of `program_index.ModuleConstFrame`,
 /// which guards the GLOBAL-map fold (`moduleConstInt`). The frame keys on the
 /// const's (name, author-source) pair, NOT name alone: same-name nested consts
-/// across modules (`a.M` ≠ `b.M`) must NOT trip a false cycle (F3). A pair
+/// across modules (`a.M` ≠ `b.M`) must NOT trip a false cycle. A pair
 /// already on the chain is a cyclic definition (`N :: N`; `N :: M + 1; M :: N`)
 /// with no compile-time value → folds to null.
 pub const ConstFoldFrame = struct {
@@ -157,7 +157,7 @@ fn sourcesEql(a: ?[]const u8, b: ?[]const u8) bool {
     return std.mem.eql(u8, a.?, b.?);
 }
 
-/// Folding context for a SOURCE-AWARE module-const EXPRESSION RHS (E2/F2/R1).
+/// Folding context for a SOURCE-AWARE module-const EXPRESSION RHS.
 /// The leaf-resolution twin of `program_index.ModuleConstCtx`, but every leaf
 /// name resolves through the querying source's OWN const author
 /// (`selectModuleConst`, own-wins / ambiguous) instead of the GLOBAL last-wins
@@ -218,7 +218,7 @@ pub const SourceConstCtx = struct {
 
 pub const Binding = struct {
     /// Where a NON-ALLOCA binding came from. Drives the shape-specific
-    /// "cannot assign" diagnostic (issue 0219 + review folds): a for-loop
+    /// "cannot assign" diagnostic: a for-loop
     /// element can point at the `(*x)` by-ref spelling, while a range index /
     /// match payload / catch binding has no container storage to write back
     /// into and gets copy-into-a-`:=`-local advice only; a function-local
@@ -268,8 +268,8 @@ pub const Scope = struct {
     /// `parent` chain so SIBLING nested fns (`fn_names`) and comptime constants
     /// still resolve, but a plain VALUE binding reached by crossing this
     /// boundary is an enclosing local/param/const — which a static nested fn has
-    /// no env to reach — and must be diagnosed, not silently read as a dead Ref
-    /// (issue 0250). Closures capture explicitly and do NOT set this.
+    /// no env to reach — and must be diagnosed, not silently read as a dead
+    /// Ref. Closures capture explicitly and do NOT set this.
     is_fn_boundary: bool = false,
 
     pub fn init(alloc: Allocator, parent: ?*Scope) Scope {
@@ -300,7 +300,7 @@ pub const Scope = struct {
     /// `::` fn has no environment, so such a binding is an enclosing
     /// local/param/const it cannot legitimately read — the identifier site turns
     /// `crossed_fn_boundary = true` into the tailored "use a closure to capture"
-    /// diagnostic instead of silently emitting the dead Ref (issue 0250).
+    /// diagnostic instead of silently emitting the dead Ref.
     /// `binding` is null when the name is absent entirely (the ordinary
     /// unresolved path); non-null with `crossed_fn_boundary = false` is a normal
     /// in-scope hit.
@@ -327,7 +327,7 @@ pub const Scope = struct {
     /// (specs §Variable Shadowing — innermost wins), never by namespace:
     /// an inner nested fn shadows an outer callable var and vice versa,
     /// which the independent full-chain walks of `lookup` / `lookupFn`
-    /// cannot express (issue 0217 review F1). Within a single level the
+    /// cannot express. Within a single level the
     /// value binding wins; both coexisting at one level is a same-scope
     /// redeclaration shape, not a shadowing one.
     pub const NearestName = union(enum) {
@@ -346,7 +346,7 @@ pub const Scope = struct {
         return null;
     }
 
-    /// `lookupNearest` + the fn-boundary report (issue 0250 fold): call-site
+    /// `lookupNearest` + the fn-boundary report: call-site
     /// dispatch needs BOTH the nearest-declaration verdict and whether that
     /// declaration lives across a nested-fn boundary. A `.local_fn` found
     /// across the boundary is a SIBLING nested fn — static, legally callable.
@@ -369,7 +369,7 @@ pub const Scope = struct {
 /// A pending block-scoped cleanup: `defer` (runs on every block exit) or
 /// `onfail` (runs only when an error leaves the block, binding the in-flight
 /// tag). Both share one declaration-ordered stack so error-exit cleanup runs
-/// them interleaved in reverse order (ERR E1.7).
+/// them interleaved in reverse order.
 const CleanupEntry = struct {
     body: *const Node,
     is_onfail: bool,
@@ -413,13 +413,13 @@ pub const Lowering = struct {
     continue_target: ?BlockId = null,
     loop_defer_base: usize = 0, // defer-stack height at the innermost loop's body start (break/continue drain to here)
     suppress_int_fit_check: bool = false, // inside an explicit `xx` cast operand: truncation is requested, skip the literal fits-check
-    int_lit_extra_fit_ty: ?TypeId = null, // inside a `cast(T)` operand (T is the ambient type here): an ADDITIONAL range the literal may fit — set to i64 so a value fitting i64 but not T still truncates rather than erroring (issue 0275)
+    int_lit_extra_fit_ty: ?TypeId = null, // inside a `cast(T)` operand (T is the ambient type here): an ADDITIONAL range the literal may fit — set to i64 so a value fitting i64 but not T still truncates rather than erroring
     block_counter: u32 = 0,
     comptime_counter: u32 = 0,
     /// Transient: the user-facing const name of the body-local `#run` currently
     /// being lowered (`L :: #run f()`), so `lowerInlineComptime` can stamp the
     /// `__ct` wrapper's `comptime_display_name` for a friendly comptime-init
-    /// failure diagnostic (issue 0182). Set/cleared around the const's value
+    /// failure diagnostic. Set/cleared around the const's value
     /// lowering; null for a bare inline `#run`.
     comptime_const_name: ?[]const u8 = null,
     main_file: ?[]const u8 = null, // path of the main file; imported functions are declared extern
@@ -505,7 +505,7 @@ pub const Lowering = struct {
     /// `lowerExpr` temporarily hide the caller scope for these roots while the
     /// node's source pin remains active through all recursive children.
     authored_call_defaults: std.AutoHashMap(*const Node, DefaultCallSite),
-    /// Named-argument N3 pin (specs: Named Arguments): argument values
+    /// Named-argument pin (specs: Named Arguments): argument values
     /// PRE-LOWERED in written order by `mapNamedArgs` when the mapped
     /// declaration order would displace evaluation. `lowerExpr` returns the
     /// recorded ref instead of re-lowering the node, so each value evaluates
@@ -521,7 +521,7 @@ pub const Lowering = struct {
     mono_sites: std.ArrayList(DefaultCallSite),
     active_default_call_site: ?DefaultCallSite = null,
     // Count of diagnostics emitted by the annotated-store assignability guard
-    // (`checkAssignable` / the named-return-default guard, issue 0197). Lets the
+    // (`checkAssignable` / the named-return-default guard). Lets the
     // guard skip when ANY OTHER error already exists (`errorCount() > this`) —
     // suppressing cascades onto a pre-lowering error (an unknown annotation
     // type) or a failed initializer, while still reporting multiple INDEPENDENT
@@ -546,13 +546,12 @@ pub const Lowering = struct {
     /// records which specific FuncIds have had a real body lowered.
     lowered_fids: std.AutoHashMap(FuncId, void),
     local_fn_counter: u32 = 0, // unique counter for mangling local function names
-    /// Per-declaration nominal identity bookkeeping (E2). The FIRST source to
-    /// register a given top-level type NAME keeps `nominal_id = 0` (structural —
-    /// byte-identical to pre-E2 single-author registration); a later registration
-    /// of the same name from a DIFFERENT source is a same-name SHADOW and gets a
-    /// fresh id from `next_nominal_id`, so the two authors intern to DISTINCT
-    /// TypeIds (closing the last-wins collapse). `nominal_name_authors`
-    /// records each name's first author source to make that decision.
+    /// Per-declaration nominal identity bookkeeping. The FIRST source to
+    /// register a given top-level type NAME keeps `nominal_id = 0` (structural);
+    /// a later registration of the same name from a DIFFERENT source is a
+    /// same-name SHADOW and gets a fresh id from `next_nominal_id`, so the two
+    /// authors intern to DISTINCT TypeIds. `nominal_name_authors` records each
+    /// name's first author source to make that decision.
     nominal_name_authors: std.AutoHashMap(types.StringId, []const u8),
     next_nominal_id: u32 = 0,
     /// Declaration-identity bookkeeping for every NAME-KEYED instantiation cache
@@ -571,8 +570,8 @@ pub const Lowering = struct {
     /// than from the global last-wins `fn_ast_map["Struct.method"]` entry.
     plain_struct_authors: std.AutoHashMap(TypeId, PlainStructAuthor),
     /// Explicit nullary-protocol impl methods, addressed by protocol + nominal
-    /// concrete TypeId + method. The legacy `Type.method` AST map is only a
-    /// compatibility surface and cannot distinguish same-display-name types.
+    /// concrete TypeId + method. The `Type.method` AST map cannot distinguish
+    /// same-display-name types.
     protocol_impl_methods: std.AutoHashMap(ProtocolImplMethodKey, ProtocolImplMethod),
     /// Explicit nullary-protocol impl declarations, including empty/partial
     /// impl bodies. Keeping the pair separate from its methods lets a declared
@@ -605,14 +604,14 @@ pub const Lowering = struct {
     /// The normal scan consults the same guard and therefore remains exactly-
     /// once even for forward/import-after-alias source order (issue 0323).
     registered_protocol_decls: std.AutoHashMap(*const ast.ProtocolDecl, void),
-    /// Runtime protocol metadata keyed by the exact protocol TypeId. The
-    /// legacy name maps remain for parameterized-template discovery and
-    /// source-less unit hosts, but runtime ABI/dispatch never round-trips a
-    /// nominal protocol through its display name.
+    /// Runtime protocol metadata keyed by the exact protocol TypeId. The name
+    /// maps serve parameterized-template discovery and source-less unit hosts,
+    /// but runtime ABI/dispatch never round-trips a nominal protocol through
+    /// its display name.
     protocol_info_by_type: std.AutoHashMap(TypeId, program_index_mod.ProtocolDeclInfo),
     protocol_ast_by_type: std.AutoHashMap(TypeId, *const ast.ProtocolDecl),
-    /// Declaration-name / import / visibility facts (architecture phase A1,
-    /// `ProgramIndex`). Owns `import_flags`; borrows `module_scopes` /
+    /// Declaration-name / import / visibility facts (`ProgramIndex`).
+    /// Owns `import_flags`; borrows `module_scopes` /
     /// `import_graph` from the compilation driver. Reached via
     /// `self.program_index.<field>`; populated by scan/registration code.
     program_index: ProgramIndex,
@@ -633,15 +632,15 @@ pub const Lowering = struct {
     jni_env_tl_get_fid: ?FuncId = null, // extern `sx_jni_env_tl_get` (from library/vendors/sx_jni_runtime/sx_jni_env_tl.c)
     jni_env_tl_set_fid: ?FuncId = null, // extern `sx_jni_env_tl_set`
     needs_jni_env_tl_runtime: bool = false, // set when lowering touches the JNI env TL; signals Compilation to auto-link the runtime .c
-    trace_push_fid: ?FuncId = null, // extern `sx_trace_push` (ERR E3.1, from library/vendors/sx_trace_runtime/sx_trace.c)
+    trace_push_fid: ?FuncId = null, // extern `sx_trace_push` (from library/vendors/sx_trace_runtime/sx_trace.c)
     trace_clear_fid: ?FuncId = null, // extern `sx_trace_clear`
     needs_trace_runtime: bool = false, // set when lowering emits a trace push/clear; signals Compilation to auto-link sx_trace.c
-    chain_fail_target: ?ChainFailTarget = null, // ERR E2.4: when set, a failable `or` chain routes its TOTAL failure here (an absorbing consumer like `catch`) instead of propagating to the function
+    chain_fail_target: ?ChainFailTarget = null, // when set, a failable `or` chain routes its TOTAL failure here (an absorbing consumer like `catch`) instead of propagating to the function
     current_runtime_class: ?*const ast.RuntimeClassDecl = null, // set while lowering a `#jni_main` (or any sx-defined `#jni_class`) bodied method — `super.method(args)` dispatch resolves the parent class against this fcd's `#extends`
     current_runtime_method: ?ast.RuntimeMethodDecl = null, // the specific method whose body is being lowered; `super.<same_name>(...)` reuses its signature
     type_bindings: ?std.StringHashMap(TypeId) = null, // generic type param bindings ($T → concrete TypeId)
     current_match_tags: ?[]const u64 = null, // type tags for current match arm (for runtime dispatch)
-    /// Flow-sensitive narrowing (issue 0179). The set of local variable names
+    /// Flow-sensitive narrowing. The set of local variable names
     /// currently PROVEN present (`?T` known to carry a value) by a `!= null`
     /// guard / branch. Region-scoped: `lowerBlock` snapshots+restores it, the
     /// if-then branch narrows on `!= null`, a divergent `== null` guard narrows
@@ -650,7 +649,7 @@ pub const Lowering = struct {
     /// a non-narrowed unwrap is REJECTED instead of silently yielding the zero
     /// payload of a null optional.
     narrowed: std.StringHashMap(void) = undefined,
-    /// Dedupe for the issue-0250 "nested fn references enclosing local"
+    /// Dedupe for the "nested fn references enclosing local"
     /// diagnostic, keyed `"<fn-index>:<name>"`. The boundary guard fires at
     /// EVERY resolution layer (identifier read, getExprAlloca fast path,
     /// lvalue helper, call dispatch); a single bad reference would otherwise
@@ -659,7 +658,7 @@ pub const Lowering = struct {
     /// identifier machinery. First site wins; later sites stay silent-but-
     /// poisoned (they still return placeholders, and hasErrors() aborts).
     diag_enclosing_seen: std.StringHashMap(void) = undefined,
-    /// Dedupe for the issue-0331 const-alias-cycle diagnostic, keyed by the
+    /// Dedupe for the const-alias-cycle diagnostic, keyed by the
     /// cycle's minimum participant decl address: `followAliasChain` is probed
     /// speculatively from several resolution layers and from EACH member
     /// decl's registration, all of which close the same loop.
@@ -689,7 +688,7 @@ pub const Lowering = struct {
     // and exempt from the must-set rule.
     named_return_defaults: ?[]const ?*const ast.Node = null,
     block_terminated: bool = false, // set when constant-folded if emits a return/br into current block
-    in_lambda_body: bool = false, // true while lowering a closure-literal body; sharpens the `raise`-not-failable diagnostic (ERR E5.1: tell the user to annotate `-> (T, !)`)
+    in_lambda_body: bool = false, // true while lowering a closure-literal body; sharpens the `raise`-not-failable diagnostic (tell the user to annotate `-> (T, !)`)
     defer_stack: std.ArrayList(CleanupEntry) = std.ArrayList(CleanupEntry).empty, // block-scoped defer + onfail cleanup stack
     func_defer_base: usize = 0, // defer stack base for current function (lowerReturn drains to this)
     deferred_type_fns: std.ArrayList([]const u8) = std.ArrayList([]const u8).empty, // functions deferred until all types registered
@@ -699,7 +698,7 @@ pub const Lowering = struct {
     /// (`CAllocator`/`Allocator`/`Context`) is resolved as compiler internals,
     /// independent of the user program's import STYLE (a `std :: #import` puts
     /// `CAllocator` behind a namespace edge from `main`, so the user-visibility
-    /// gate would reject it) — so the bare TYPE leaf falls open here (F1).
+    /// gate would reject it) — so the bare TYPE leaf falls open here.
     emitting_default_context: bool = false,
     /// Set once `assembleContext` has extended the registered Context struct
     /// (possibly EARLY, from a scan-time type-fn eval; the assembly is
@@ -711,7 +710,7 @@ pub const Lowering = struct {
     /// then adds exactly what the taken groups contributed since.
     scanned_decls: std.AutoHashMap(*const Node, void),
     incremental_scan: bool = false,
-    /// Set when a Context STRUCTURAL error was diagnosed (L4 collision, L5
+    /// Set when a Context STRUCTURAL error was diagnosed (field-name collision,
     /// missing default, unresolvable field type). Such an error poisons
     /// every downstream `context.field` access — `lowerRoot` halts after
     /// assembly so the primary diagnostics stand alone instead of cascading
@@ -722,26 +721,26 @@ pub const Lowering = struct {
     /// source. A local type registers into the global type table and CLOBBERS a
     /// same-name top-level entry (`registerStructDecl`'s `findByName … orelse intern`
     /// + `updatePreservingKey`), so after it lowers the name IS the local type
-    /// program-wide (single-author, pre-E2). The source-aware bare-TYPE gate consults
+    /// program-wide (single-author). The source-aware bare-TYPE gate consults
     /// this so a legitimately block-local type resolves in ITS OWN source (never
     /// mistaken for a namespaced-only leak, even when a namespaced-only import authors
-    /// a same-name top-level type — R2). It is keyed by source because a local is
+    /// a same-name top-level type). It is keyed by source because a local is
     /// visible ONLY within the source that declares it: an imported template's field
-    /// resolution (run in the template's source context, E3 attempt-4) must NOT bind a
-    /// name the CALLER declared block-local (E3 attempt-5).
+    /// resolution (run in the template's source context) must NOT bind a
+    /// name the CALLER declared block-local.
     local_type_names: std.StringHashMap(std.StringHashMap(void)),
     struct_defaults_map: std.StringHashMap([]const ?*const Node), // struct name → field defaults
     /// Concrete plain-struct TypeId → field defaults ALIGNED WITH THE
     /// FLATTENED layout (a `#using`-embedded base field holds null — base
-    /// defaults do not flow through `#using`, matching generic instantiation;
-    /// issue 0335 records the open design question). Literal lowering selects
+    /// defaults do not flow through `#using`, matching generic instantiation).
+    /// Literal lowering selects
     /// through this identity first; the display-name map above stays only as
     /// the generic-instance / alias fallback, because its name key is
-    /// last-wins across same-name authors (issue 0320).
+    /// last-wins across same-name authors.
     struct_defaults_by_tid: std.AutoHashMap(TypeId, []const ?*const Node),
     /// (concrete TypeId, const name) → struct-level constant. TypeId-keyed
     /// twin of `struct_const_map`: the `"Struct.CONST"` string key is
-    /// last-wins across same-name authors (issue 0320). When the head type
+    /// last-wins across same-name authors. When the head type
     /// has a tracked author, this map is AUTHORITATIVE — a miss means the
     /// selected struct has no such constant, never "try the global name".
     struct_const_by_tid: std.AutoHashMap(StructConstTidKey, StructConstInfo),
@@ -798,7 +797,7 @@ pub const Lowering = struct {
     /// RVALUE into a tagged value there has nothing durable to borrow — the
     /// frame is about to die (spec §6.2).
     in_return_expr: bool = false,
-    param_impl_map: std.StringHashMap(std.ArrayList(ParamImplEntry)), // "Proto\x00<arg_mangled>\x00<src_mangled>" → impl entries (parameterised protocols only; list lets Phase 4/5 detect cross-module overlap)
+    param_impl_map: std.StringHashMap(std.ArrayList(ParamImplEntry)), // "Proto\x00<arg_mangled>\x00<src_mangled>" → impl entries (parameterised protocols only; the list lets overlap detection see cross-module duplicates)
     /// One materialized instantiation of a parameterized protocol family, by
     /// its protocol TypeId. The base identity name plus the canonical argument
     /// tuple ARE the instantiation's identity: membership, tables, and
@@ -874,7 +873,7 @@ pub const Lowering = struct {
     comptime_type_list_aliases: std.StringHashMap([]const u8),
     diagnostics: ?*errors.DiagnosticList = null, // error reporting with source locations
     xx_reentrancy: std.AutoHashMap(u64, void), // (src_ty, dst_ty) pairs currently being resolved through user-space Into; prevents infinite monomorphisation when a convert body re-enters the same xx
-    /// Whole-program-converged inferred error sets (ERR E1.4b): top-level
+    /// Whole-program-converged inferred error sets: top-level
     /// bare-`!` function name → its sorted escape-tag ids (literal raises +
     /// pure-failable `try` edges, fix-pointed across the call graph). The
     /// shared `!` placeholder TypeId stays empty; this side map holds the real
@@ -882,7 +881,7 @@ pub const Lowering = struct {
     /// `lowerTry`'s named-caller widening and the empty-inferred warning.
     inferred_error_sets: std.StringHashMap([]const u32),
     /// Whole-program-converged inferred error sets keyed by closure/function
-    /// VALUE-signature shape (ERR E5.1 sub-feature 2): every occurrence of
+    /// VALUE-signature shape: every occurrence of
     /// `Closure(<sig>) -> (T, !)` with a structurally identical value-signature
     /// shares one node; each bare-`!` closure literal of that shape unions its
     /// escape tags in. Read by `checkEscapeWidening` when a `try` operand is a
@@ -914,7 +913,7 @@ pub const Lowering = struct {
     };
 
     /// Identity key for a struct-level constant: the declaring struct's
-    /// concrete TypeId + the interned const name (issue 0320).
+    /// concrete TypeId + the interned const name.
     pub const StructConstTidKey = struct {
         ty: TypeId,
         name: types.StringId,
@@ -990,7 +989,7 @@ pub const Lowering = struct {
         },
     };
 
-    /// ERR E2.4 — where a failable `or` chain's TOTAL failure routes when the
+    /// Where a failable `or` chain's TOTAL failure routes when the
     /// chain is the operand of an absorbing consumer (`catch`). `bb` is a block
     /// with a single parameter typed `set` (the error tag); the chain branches
     /// there with its final error instead of propagating to the function.
@@ -1130,7 +1129,7 @@ pub const Lowering = struct {
     /// stubs. Each lowers a SEPARATE function, so none of the enclosing body's
     /// per-body state may be visible inside it:
     ///
-    /// - flow narrowing (issue 0179): the nested body's `Ref` space (reset by
+    /// - flow narrowing: the nested body's `Ref` space (reset by
     ///   `beginFunction`) OVERLAPS the outer function's, so the outer
     ///   `narrowed_refs` indices would falsely match and permit an UNSOUND
     ///   unwrap of a non-present optional;
@@ -1308,8 +1307,8 @@ pub const Lowering = struct {
         // params aren't pushed into `self.scope` until body lowering, so bind
         // them into a temporary scope here; otherwise `inferExprType` can't
         // resolve `x`, the inference yields `.unresolved`, and that reaches LLVM
-        // emission as `func.ret`. Whether it slipped through used to
-        // depend on a same-named binding lingering from earlier lowering.
+        // emission as `func.ret`. Without the temporary scope, whether it slips
+        // through depends on a same-named binding lingering from earlier lowering.
         var tmp_scope = Scope.init(self.alloc, self.scope);
         defer tmp_scope.deinit();
         const saved_scope = self.scope;
@@ -1411,9 +1410,9 @@ pub const Lowering = struct {
         }
         if (p.is_variadic) {
             // Two surface forms:
-            //   - legacy `name: ..T` — declared_ty is the element type;
+            //   - `name: ..T` — declared_ty is the element type;
             //     wrap to receive a `[]T` slice.
-            //   - new     `..name: []T` — declared_ty is already the slice
+            //   - `..name: []T` — declared_ty is already the slice
             //     type; use it as-is. Wrapping here would double up to
             //     `[][]T` and downstream LLVM emission crashes when the
             //     caller's argument-marshal pack produces a `[]T` that
@@ -1435,7 +1434,7 @@ pub const Lowering = struct {
     /// DEFINING module of a namespaced callee, restoring the caller's context
     /// after. A namespaced callee's declared return type may name a type that is
     /// bare-visible only inside the callee's own module — namespaced-only from the
-    /// call site's view. Post-E1 the bare leaf is source-aware, so resolving that
+    /// call site's view. The bare leaf is source-aware, so resolving that
     /// return type in the CALL SITE's context would wrongly reject it (the type
     /// analog of the namespaced-fn-body source pin that lowers a namespaced fn body in
     /// its own module's context). `src == null` falls back to the call site's
@@ -1452,7 +1451,7 @@ pub const Lowering = struct {
     /// DEFINING module of the param's function. An imported method's
     /// default-param type (`alloc: Allocator`) is bare-visible only inside its
     /// own module, so typing a cross-module call's args against it must resolve
-    /// in that module's context, not the call site's (E4 — the param analog of
+    /// in that module's context, not the call site's (— the param analog of
     /// `resolveTypeInSource`). `src == null` falls back unchanged.
     pub fn resolveParamTypeInSource(self: *Lowering, src: ?[]const u8, p: *const ast.Param) TypeId {
         const pinned = src orelse return self.resolveParamType(p);
@@ -1486,9 +1485,7 @@ pub const Lowering = struct {
         };
     }
 
-    /// Snapshot the active resolution context (Principle 2) for `TypeResolver`.
-    /// A2.2 wires the type bindings + literal target; the pack/comptime fields
-    /// are populated as A2.3 moves the cases that consume them.
+    /// Snapshot the active resolution context for `TypeResolver`.
     fn resolveEnv(self: *Lowering) ResolveEnv {
         return .{
             .type_bindings = if (self.type_bindings) |*tb| tb else null,
@@ -1506,7 +1503,7 @@ pub const Lowering = struct {
     /// Bare TYPE-NAME twin of `resolveInner` for callers holding a name rather
     /// than an AST node (e.g. an error-set reference `!Named`) — routed through
     /// the visibility-aware `resolveNominalLeaf`, so a same-name-shadowed set
-    /// resolves to the querying module's own author (issue 0132's class).
+    /// resolves to the querying module's own author.
     pub fn resolveName(self: *Lowering, name: []const u8) TypeId {
         return self.resolveNominalLeaf(name, false, null);
     }
@@ -1639,7 +1636,7 @@ pub const Lowering = struct {
     pub fn lookupConstStructField(self: *Lowering, name: []const u8, field: []const u8) ?i64 {
         return self.foldConstStructField(name, field, null);
     }
-    /// Qualified-import-member const leaf (`m.CAP`, issue 0192) for the shared
+    /// Qualified-import-member const leaf (`m.CAP`) for the shared
     /// dimension evaluator — resolves the namespace alias `ns` to its target
     /// module and folds its `field` const there.
     pub fn lookupQualifiedConst(self: *Lowering, ns: []const u8, field: []const u8) ?i64 {
@@ -1673,12 +1670,11 @@ pub const Lowering = struct {
             return self.module.types.ptrTo(inner);
         }
         // Pack-index in a type position: `$<pack>[<lit>]` resolves to the
-        // i-th element type of the active pack binding (step 3 of the
-        // variadic heterogeneous type packs feature). Unblocks parametric
+        // i-th element type of the active pack binding — what parametric
         // trampoline bodies (`(*void, $args[0]) -> $args[1]`) in stdlib's
-        // generic Into(Block) impl. OOB indices / a missing binding emit a
-        // diagnostic and return the `.unresolved` sentinel — never a plausible
-        // `.i64`, which would silently fabricate an 8-byte int.
+        // generic Into(Block) impl are spelled with. OOB indices / a missing
+        // binding emit a diagnostic and return the `.unresolved` sentinel —
+        // never a plausible `.i64`, which would silently fabricate an 8-byte int.
         if (node.data == .pack_index_type_expr) {
             const pi = node.data.pack_index_type_expr;
             if (self.pack_arg_types) |pat| {
@@ -1707,8 +1703,8 @@ pub const Lowering = struct {
         // same way `resolveTypeArg` does (so `Box($R)` / `size_of(Box($R))` /
         // a bare `-> $R` return inside a pack-fn mono resolve `$R` to its bound
         // TypeId). Without this arm the node fell through to the catch-all
-        // `else` → `type_bridge` → `.unresolved` → an LLVM-emission panic
-        // (issue 0156). A name that is genuinely a value PACK (no single-type
+        // `else` → `type_bridge` → `.unresolved` → an LLVM-emission panic.
+        // A name that is genuinely a value PACK (no single-type
         // binding) used where one type is required is a real error — diagnose
         // it, never silently fabricate a default type.
         if (node.data == .comptime_pack_ref) {
@@ -1727,7 +1723,7 @@ pub const Lowering = struct {
         // This matches the Obj-C idiom where `self` IS the object.
         // `self.field` access on sx-defined classes is rewritten by
         // lowerFieldAccess to go through the `__sx_state` ivar
-        // (object_getIvar + struct_gep) when needed — see M1.2 A.3.
+        // (object_getIvar + struct_gep) when needed.
         if (node.data == .type_expr and std.mem.eql(u8, node.data.type_expr.name, "Self")) {
             if (self.current_runtime_class) |fcd| {
                 if (fcd.runtime == .objc_class or fcd.runtime == .objc_protocol) {
@@ -1737,7 +1733,7 @@ pub const Lowering = struct {
         }
         // A qualified type reference reaching type position as an EXPRESSION
         // `field_access` node — e.g. `m.Cfg` written as a struct-literal prefix
-        // (`m.Cfg{...}`, issue 0204). Resolve it the SAME way a dotted
+        // (`m.Cfg{...}`). Resolve it the SAME way a dotted
         // `type_expr` annotation (`x : m.Cfg`) does (see the `.type_expr` arm
         // below): the prefix is a namespace alias — pin the source to its target
         // module and resolve the leaf there. NOT `resolveNominalLeaf("m.Cfg")`,
@@ -1804,16 +1800,13 @@ pub const Lowering = struct {
         }
         // Structural type shapes — `*T`, `[*]T`, `[]T`, `?T`, `[N]T`, functions,
         // PLAIN closures, and PLAIN tuples — are owned by
-        // `TypeResolver.resolveCompound` (A2.3b). Element types recurse through
+        // `TypeResolver.resolveCompound`. Element types recurse through
         // the full stateful resolver (`resolveInner` → here) so generic structs
         // / bindings keep their resolution. resolveCompound returns null only
         // for the pack-shaped forms (`Closure(..p)`, spread tuples) below.
         if (TypeResolver.resolveCompound(&self.module.types, node, self)) |t| return t;
         // Generic type-param binding (`$T`, or a bare return-type `T` without
         // the `$` prefix) — owned by TypeResolver via the explicit ResolveEnv.
-        // The parameterized / call / closure / function arms that used to live
-        // here were redundant with the unconditional handling just below (both
-        // read the active bindings through the same resolvers), so they're gone.
         if (TypeResolver.resolveBinding(node, self.resolveEnv())) |t| return t;
         // Even without active type_bindings, handle parameterized types with struct templates
         if (node.data == .parameterized_type_expr) {
@@ -1871,11 +1864,11 @@ pub const Lowering = struct {
             return .unresolved;
         }
         // Bare type names resolve through the source-aware `selectNominalLeaf`
-        // (E1): the nominal author is selected over the ONE graph-walk collector
+        // the nominal author is selected over the ONE graph-walk collector
         // and resolved against the source-keyed caches, not the global
         // `findByName` first-match / global alias map. Other node kinds (inline
-        // type decls, error types) still route through type_bridge, which reads
-        // the global compat maps (cut over in a later phase).
+        // type decls, error types) route through type_bridge, which reads the
+        // global compat maps.
         switch (node.data) {
             .type_expr => |te| {
                 // Qualified namespace type (including nested aliases): prove
@@ -1909,12 +1902,11 @@ pub const Lowering = struct {
                     // (`g.a` where `g` is a value) sitting in a type position.
                     // Without this guard `resolveNominalLeaf("g.a")` would
                     // fabricate a zero-field empty-struct stub (`{}`) and ship it
-                    // to codegen as a real type (issue 0189) — a silent-default
+                    // to codegen as a real type — a silent-default
                     // miscompile. Reject loudly and poison with `.unresolved`.
-                    // A genuinely registered dotted type (none today, but a
-                    // forward-declared stub could exist) is still honored before
-                    // we reject, so we never reject a name that resolves to a
-                    // real type.
+                    // A genuinely registered dotted type (a forward-declared
+                    // stub, say) is still honored before we reject, so we never
+                    // reject a name that resolves to a real type.
                     if (!self.aliasDeclaredAnywhere(te.name[0..dot])) {
                         const sid = self.module.types.internString(te.name);
                         if (self.module.types.findByName(sid)) |tid| {
@@ -1939,7 +1931,7 @@ pub const Lowering = struct {
             // THIS lowering as the `inner` recursion hook, so a payload / field
             // type NAME resolves in the enclosing module's visibility context —
             // the SAME own-wins-over-namespaced rule the top-level registration
-            // uses (issue 0132's class). Delegating to the flat `else` below
+            // uses. Delegating to the flat `else` below
             // dropped `self`, leaving inline-decl payloads on the global
             // `findByName` first-match.
             .enum_decl => return type_bridge.resolveInlineEnum(&node.data.enum_decl, &self.module.types, self),
@@ -1947,14 +1939,12 @@ pub const Lowering = struct {
             .union_decl => return type_bridge.resolveInlineUnion(&node.data.union_decl, &self.module.types, self),
             // A NAMED error-set reference (`!Named`) resolves its name through
             // `self` (visibility-aware) too; the bare `!` inferred set has no name
-            // to shadow. NOTE: this reference-side resolution is currently DORMANT
-            // for same-name error-set collisions — error-set DECLARATIONS don't
-            // yet get per-decl nominal identity (E6a covers struct/enum/union
-            // only), so a same-name set collapses to one TypeId at registration
-            // and there is nothing distinct for the reference to select. See issue
-            // 0134; once decls get nominal identity this activates with no change
-            // here. `error_set_decl` is NOT in this switch: it interns only tag
-            // names, resolving no type names, so it stays on the flat `else`.
+            // to shadow. Same-name error-set collisions have nothing for the
+            // reference to select: error-set DECLARATIONS carry no per-decl
+            // nominal identity (struct/enum/union do), so a same-name set
+            // collapses to one TypeId at registration. `error_set_decl` is NOT
+            // in this switch: it interns only tag names, resolving no type
+            // names, so it stays on the flat `else`.
             .error_type_expr => return type_bridge.resolveErrorType(&node.data.error_type_expr, &self.module.types, self),
             else => return type_bridge.resolveAstType(node, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map),
         }
@@ -1962,7 +1952,7 @@ pub const Lowering = struct {
 
     /// Bind a `PackResolver` to this Lowering for pack-aware TYPE-position
     /// resolution (`Closure(..p)` / `(Params...) -> R` / `(..xs)` tuples and
-    /// their `..xs.T` projections). A2.3 moved that logic into `packs.zig`.
+    /// their `..xs.T` projections). That logic lives in `packs.zig`.
     pub fn packResolver(self: *Lowering) PackResolver {
         return .{ .l = self };
     }
@@ -2024,7 +2014,7 @@ pub const Lowering = struct {
         return .{ .l = self };
     }
 
-    /// A `Resolver` facade over the borrowed Phase A import facts (Phase B). Cheap
+    /// A `Resolver` facade over the borrowed import facts. Cheap
     /// by-value; `collectVisibleAuthors`'s `AuthorSet.flat` slice is backed by
     /// `self.alloc` and owned by the caller (`selectCallableAuthor` frees it).
     pub fn resolver(self: *Lowering) resolver_mod.Resolver {
@@ -2115,9 +2105,9 @@ pub const Lowering = struct {
 
     /// A static nested `::` function referenced an ENCLOSING function's local /
     /// param / local-const `name`. It has no environment to reach it — the only
-    /// spelling that captures is a closure. Diagnose loudly (was a silent dead
-    /// Ref → `undef` read, issue 0250) and emit a placeholder; `hasErrors()`
-    /// aborts before codegen so the placeholder never runs. Deduped per
+    /// spelling that captures is a closure. Diagnose loudly and emit a
+    /// placeholder; `hasErrors()` aborts before codegen so the placeholder
+    /// never runs. Deduped per
     /// (function, name): the guard sits at every resolution layer and a
     /// speculative fast path's diagnostic would otherwise repeat when its
     /// null-fallback re-lowers the same identifier through another guard.
@@ -2141,7 +2131,7 @@ pub const Lowering = struct {
         // piling a second "field not found on unresolved" onto the real one is
         // pure noise. But the sentinel's invariant is "never without an
         // accompanying error": when NO diagnostic precedes it, the resolution
-        // failure was SILENT (issue 0341's class — a plan-side inference gap
+        // failure was SILENT (a plan-side inference gap
         // lowered a whole chain to a placeholder zero at run time). Suppress
         // only a genuine cascade; surface a silent one loudly.
         if (obj_ty != .unresolved) {
@@ -2149,7 +2139,7 @@ pub const Lowering = struct {
                 const ty_name = self.formatTypeName(obj_ty);
                 const id = diags.addFmtId(.err, span, "field '{s}' not found on type '{s}'", .{ field, ty_name });
                 // An unknown field on the CONTEXT enumerates the program's
-                // registered `#context_extend` fields (shared O3 helper) —
+                // registered `#context_extend` fields (shared enumeration helper) —
                 // covers both `context.typo` reads and `push .{ typo = … }`.
                 if (self.module.types.findByName(self.module.types.internString("Context"))) |ctx_ty| {
                     if (obj_ty == ctx_ty) self.noteRegisteredContextFields(id);
@@ -2166,9 +2156,9 @@ pub const Lowering = struct {
     /// Get the alloca Ref for an expression, if it's a simple variable reference.
     /// Returns null for complex expressions (field access, function calls, etc.)
     /// An alloca reached only ACROSS a nested-fn boundary is an enclosing
-    /// function's storage — dead in this function's SSA context (issue 0250
-    /// fold: the indexed-read fast path / lvalue helpers segfaulted through
-    /// it). Diagnose and return null; every caller's null path lowers the
+    /// function's storage — dead in this function's SSA context, and the
+    /// indexed-read fast path / lvalue helpers dereference it.
+    /// Diagnose and return null; every caller's null path lowers the
     /// expression through the identifier machinery, which is boundary-guarded
     /// (the duplicate diagnostic is suppressed via `diag_enclosing_seen`).
     pub fn getExprAlloca(self: *Lowering, node: *const Node) ?Ref {
@@ -2197,7 +2187,7 @@ pub const Lowering = struct {
     /// capture, `::` const) or an rvalue root (call result, literal) would
     /// make its value fallback fire, handing back a VALUE where the caller
     /// expects a pointer — those return false. A comptime pack index is
-    /// excluded too: a pack element has no runtime storage (issue 0135).
+    /// excluded too: a pack element has no runtime storage.
     pub fn exprHasAddressableStorage(self: *Lowering, node: *const Node) bool {
         switch (node.data) {
             .identifier => |id| {
@@ -2403,7 +2393,7 @@ pub const Lowering = struct {
                     // the declaration's own source so calls through the outer
                     // namespace inherit the terminal function's signature and
                     // dispatch, instead of falling through to an unrelated
-                    // same-named global winner (issue 0282).
+                    // same-named global winner.
                     const from = decl.source_file orelse target.target_module_path;
                     if (self.aliasedFnDecl(cd, from)) |fd| return fd;
                 },
@@ -2417,7 +2407,7 @@ pub const Lowering = struct {
     /// the name is merely visible to the target through one of its flat
     /// imports. Qualified access exposes only authored members; the target's
     /// direct flat imports remain available while lowering its own bodies but
-    /// are not re-exported (specs.md §9, issue 0326).
+    /// are not re-exported (specs.md §9).
     pub fn namespaceOwnMember(self: *Lowering, target: imports_mod.NamespaceTarget, name: []const u8) ?resolver_mod.RawAuthor {
         var res = self.resolver();
         return res.collectNamespaceAuthors(target, name).own;
@@ -2429,7 +2419,7 @@ pub const Lowering = struct {
     /// their existing non-type/value resolution domains; the dotted selector
     /// must fall back rather than misdiagnose them as a missing namespace
     /// member. In particular stdlib's `libc :: c.libc` re-export is a library
-    /// handle alias, not a value/type alias (issue 0325 regression guard).
+    /// handle alias, not a value/type alias (issue 0325).
     pub fn namespaceOwnSpecialMember(self: *Lowering, target: imports_mod.NamespaceTarget, name: []const u8) bool {
         for (target.own_decls) |decl| {
             // A private special member (library handle, UFCS alias, …) is not
@@ -2623,7 +2613,7 @@ pub const Lowering = struct {
     /// Reconstruct a dotted name from a pure identifier/field_access chain
     /// (`a.b.C` → "a.b.C"); null if any segment isn't a plain name. The caller
     /// owns and frees the returned slice. Used to resolve a qualified type
-    /// prefix written in expression position (`m.Cfg{...}` — issue 0204).
+    /// prefix written in expression position (`m.Cfg{...}`).
     pub fn qualifiedTypeName(self: *Lowering, node: *const Node) ?[]const u8 {
         var parts = std.ArrayList([]const u8).empty;
         defer parts.deinit(self.alloc);
@@ -2799,7 +2789,7 @@ pub const Lowering = struct {
         const cap = self.intLiteralMaxMagnitude(ty) orelse return;
         const mag: u64 = @bitCast(value);
         if (mag <= cap) return;
-        // Cast operand (issue 0275): a `cast(T) <lit>` folds against T (the
+        // Cast operand: a `cast(T) <lit>` folds against T (the
         // ambient `ty` here) but still TRUNCATES, so a literal that fits i64
         // yet overflows a narrower T (`cast(i8) 300`) must be accepted, not
         // rejected. `int_lit_extra_fit_ty` (set to i64 for the cast operand)
@@ -2856,8 +2846,8 @@ pub const Lowering = struct {
 
     /// Diagnose a char literal whose code point cannot be represented in `ty`.
     /// Same range logic as `checkIntLiteralFits`, but a char-specific message:
-    /// the value is a code point the user wants to KEEP, so the fix is a wider
-    /// storage type (u32 holds any Unicode scalar), not truncation. The source
+    /// the value is a code point the user wants to KEEP, so the remedy is a
+    /// wider storage type (u32 holds any Unicode scalar), not truncation. The source
     /// `'raw'` is included so the user sees which literal overflowed. The
     /// constant is still emitted by the caller so lowering continues.
     pub fn checkCharLiteralFits(self: *Lowering, cl: ast.CharLiteral, ty: TypeId, span: ast.Span) void {
@@ -3002,7 +2992,7 @@ pub const Lowering = struct {
         return 0;
     }
 
-    // --- moved to lower/error.zig (lower_error) ---
+    // --- lower/error.zig (lower_error) ---
     pub const getTraceFids = lower_error.getTraceFids;
     pub const tracesEnabled = lower_error.tracesEnabled;
     pub const emitTracePush = lower_error.emitTracePush;
@@ -3065,7 +3055,7 @@ pub const Lowering = struct {
     pub const returnValuePart = lower_error.returnValuePart;
     pub const shapeKeyOfCallee = lower_error.shapeKeyOfCallee;
 
-    // --- moved to lower/comptime.zig (lower_comptime) ---
+    // --- lower/comptime.zig (lower_comptime) ---
     pub const SelectedConst = lower_comptime.SelectedConst;
     pub const evalComptimeCondition = lower_comptime.evalComptimeCondition;
     pub const evalComptimeMatch = lower_comptime.evalComptimeMatch;
@@ -3126,7 +3116,7 @@ pub const Lowering = struct {
     pub const pinConstAuthorSource = lower_comptime.pinConstAuthorSource;
     pub const foldComptimeFloatInit = lower_comptime.foldComptimeFloatInit;
 
-    // --- moved to lower/stmt.zig (lower_stmt) ---
+    // --- lower/stmt.zig (lower_stmt) ---
     pub const lowerBlock = lower_stmt.lowerBlock;
     pub const lowerInlineBranch = lower_stmt.lowerInlineBranch;
     pub const lowerBlockValue = lower_stmt.lowerBlockValue;
@@ -3167,7 +3157,7 @@ pub const Lowering = struct {
     pub const lowerCleanupBody = lower_stmt.lowerCleanupBody;
     pub const emitErrorCleanup = lower_stmt.emitErrorCleanup;
 
-    // --- moved to lower/control_flow.zig (lower_control_flow) ---
+    // --- lower/control_flow.zig (lower_control_flow) ---
     pub const lowerIfExpr = lower_control_flow.lowerIfExpr;
     pub const armStaticallyDiverges = lower_control_flow.armStaticallyDiverges;
     pub const armYieldsVoid = lower_control_flow.armYieldsVoid;
@@ -3194,7 +3184,7 @@ pub const Lowering = struct {
     pub const currentBlockHasTerminator = lower_control_flow.currentBlockHasTerminator;
     pub const ensureTerminator = lower_control_flow.ensureTerminator;
 
-    // --- moved to lower/decl.zig (lower_decl) ---
+    // --- lower/decl.zig (lower_decl) ---
     pub const checkInfiniteSize = lower_decl.checkInfiniteSize;
     pub const dfsByValueCycle = lower_decl.dfsByValueCycle;
     pub const poisonAggregateField = lower_decl.poisonAggregateField;
@@ -3275,7 +3265,7 @@ pub const Lowering = struct {
     pub const emitModuleConst = lower_decl.emitModuleConst;
     pub const emitPlaceholder = lower_decl.emitPlaceholder;
 
-    // --- moved to lower/nominal.zig (lower_nominal) ---
+    // --- lower/nominal.zig (lower_nominal) ---
     pub const registerErrorSetDecl = lower_nominal.registerErrorSetDecl;
     pub const PlainStructMethod = lower_nominal.PlainStructMethod;
     pub const StaticStructHead = lower_nominal.StaticStructHead;
@@ -3316,7 +3306,7 @@ pub const Lowering = struct {
     pub const bareVisibleStructTemplate = lower_nominal.bareVisibleStructTemplate;
     pub const registerGenericStructAlias = lower_nominal.registerGenericStructAlias;
 
-    // --- moved to lower/protocol.zig (lower_protocol) ---
+    // --- lower/protocol.zig (lower_protocol) ---
     pub const ProjectionPosition = lower_pack.ProjectionPosition;
     pub const PackProjection = lower_pack.PackProjection;
     pub const registerProtocolDecl = lower_protocol.registerProtocolDecl;
@@ -3375,7 +3365,7 @@ pub const Lowering = struct {
     pub const taggedMembershipOf = lower_protocol.taggedMembershipOf;
     pub const factScheduler = lower_tagged.factScheduler;
 
-    // --- moved to lower/coerce.zig (lower_coerce) ---
+    // --- lower/coerce.zig (lower_coerce) ---
     pub const lowerXX = lower_coerce.lowerXX;
     pub const refuseIdentityRvalueErasure = lower_coerce.refuseIdentityRvalueErasure;
     pub const protocolIsIdentity = lower_coerce.protocolIsIdentity;
@@ -3412,7 +3402,7 @@ pub const Lowering = struct {
     pub const promoteCVariadicArgs = lower_coerce.promoteCVariadicArgs;
     pub const coerceCallArgs = lower_coerce.coerceCallArgs;
 
-    // --- moved to lower/ffi.zig (lower_ffi) ---
+    // --- lower/ffi.zig (lower_ffi) ---
     pub const internObjcSelector = lower_ffi.internObjcSelector;
     pub const internObjcClassObject = lower_ffi.internObjcClassObject;
     pub const getSelRegisterNameFid = lower_ffi.getSelRegisterNameFid;
@@ -3438,7 +3428,7 @@ pub const Lowering = struct {
     pub const synthesizeJniMainStubs = lower_ffi.synthesizeJniMainStubs;
     pub const synthesizeJniMainStub = lower_ffi.synthesizeJniMainStub;
 
-    // --- moved to lower/objc_class.zig (lower_objc_class) ---
+    // --- lower/objc_class.zig (lower_objc_class) ---
     pub const lowerObjcDefinedClassMethods = lower_objc_class.lowerObjcDefinedClassMethods;
     pub const lookupObjcPropertyOnPointer = lower_objc_class.lookupObjcPropertyOnPointer;
     pub const findRuntimeMethodInChain = lower_objc_class.findRuntimeMethodInChain;
@@ -3463,7 +3453,7 @@ pub const Lowering = struct {
     pub const internStringConstantGlobal = lower_objc_class.internStringConstantGlobal;
     pub const lookupGlobalIdByName = lower_objc_class.lookupGlobalIdByName;
 
-    // --- moved to lower/call.zig (lower_call) ---
+    // --- lower/call.zig (lower_call) ---
     pub const CaptureInfo = lower_closure.CaptureInfo;
     pub const lowerCall = lower_call.lowerCall;
     pub const ufcsGenericBindsAll = lower_call.ufcsGenericBindsAll;
@@ -3487,7 +3477,7 @@ pub const Lowering = struct {
     pub const userParamTypes = lower_call.userParamTypes;
     pub const resolveCallParamTypes = lower_call.resolveCallParamTypes;
 
-    // --- moved to lower/pack.zig (lower_pack) ---
+    // --- lower/pack.zig (lower_pack) ---
     pub const lowerPackElems = lower_pack.lowerPackElems;
     pub const lowerPackValueProjection = lower_pack.lowerPackValueProjection;
     pub const packSpreadRefs = lower_pack.packSpreadRefs;
@@ -3512,7 +3502,7 @@ pub const Lowering = struct {
     pub const isPackFn = lower_pack.isPackFn;
     pub const isPackParam = lower_pack.isPackParam;
 
-    // --- moved to lower/generic.zig (lower_generic) ---
+    // --- lower/generic.zig (lower_generic) ---
     pub const monomorphizeFunction = lower_generic.monomorphizeFunction;
     pub const instantiateGenericStruct = lower_generic.instantiateGenericStruct;
     pub const instantiateTypeFunction = lower_generic.instantiateTypeFunction;
@@ -3566,7 +3556,7 @@ pub const Lowering = struct {
     pub const diagValueParamNotConst = lower_generic.diagValueParamNotConst;
     pub const diagValueParamRange = lower_generic.diagValueParamRange;
 
-    // --- moved to lower/expr.zig (lower_expr) ---
+    // --- lower/expr.zig (lower_expr) ---
     pub const lowerStructLiteral = lower_expr.lowerStructLiteral;
     pub const synthesizeAnonStruct = lower_expr.synthesizeAnonStruct;
     pub const lowerInitBlock = lower_expr.lowerInitBlock;
@@ -3627,7 +3617,7 @@ pub const Lowering = struct {
     pub const lowerChainedComparison = lower_expr.lowerChainedComparison;
     pub const emitCmp = lower_expr.emitCmp;
 
-    // --- moved to lower/closure.zig (lower_closure) ---
+    // --- lower/closure.zig (lower_closure) ---
     pub const lowerLambda = lower_closure.lowerLambda;
     pub const createBareFnTrampoline = lower_closure.createBareFnTrampoline;
     pub const createClosureToBareFnAdapter = lower_closure.createClosureToBareFnAdapter;

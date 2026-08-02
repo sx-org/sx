@@ -8,7 +8,6 @@
 // front-end diagnostic naming the offending tail, never a backend failure.
 //
 // An empty block is exempt: `{}` is how the void value itself is written.
-// Expected: exit 1.
 #import "modules/std.sx";
 
 seed :: () -> i32 { 1 }

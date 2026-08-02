@@ -9,10 +9,6 @@
 // Different ABI path from 8-byte register-pair structs (coerce to
 // i64), HFAs at the same total size (Vec4f stays a struct), and
 // >16-byte aggregates (passed via pointer + byval).
-//
-// This file was originally filed as issue-0036 (LLVM verifier
-// failure repro). Promoted to a focused feature example once the
-// emit_llvm.zig coerceArg branches landed.
 
 #import "modules/std.sx";
 

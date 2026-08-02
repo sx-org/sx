@@ -1,8 +1,8 @@
-// extern function binding (FFI-linkage stream, Phase 1): bind libc's `abs`
-// directly via the bare `extern` linkage modifier — no `extern`, no
-// `#library`. `extern` ⇒ external linkage + C ABI + no sx ctx; the symbol
-// resolves against the default-linked libc at link time. The sx name `abs`
-// IS the C symbol (no rename — the `extern LIB "csym"` forms land in 1.2).
+// An `extern` function binding: bind libc's `abs` directly via the bare
+// `extern` linkage modifier — no `#library`. `extern` ⇒ external linkage +
+// C ABI + no sx ctx; the symbol resolves against the default-linked libc at
+// link time. The sx name `abs` IS the C symbol; `extern LIB "csym"` is the
+// rename form.
 #import "modules/std.sx";
 
 abs :: (n: i32) -> i32 extern;

@@ -38,7 +38,7 @@ and `` obj.`i2 `` both resolve. The exemption covers member *signatures* only: a
 slot), so a reserved-spelled impl method still needs the backtick
 (`` `i2 :: (self) ``), exactly like a free function. See `examples/0158`.
 
-**Statement keywords are member names too (issue 0345, decided 2026-07-22).**
+**Statement keywords are member names too.**
 Every keyword except `inline` — `if`, `push`, `while`, `for`, `case`, `return`,
 `f32`, `f64`, `try`, `defer`, … — may bare-name a struct **field**, a struct
 **method or constant**, a protocol **method**, and an enum/tagged-union
@@ -56,8 +56,8 @@ backtick-only (`` `inline ``); a bare `inline` in member position rejects with
 a targeted escape-hint. In a struct literal, a keyword field name takes only
 the `name = value` form — without the `=`, the token reads as a positional
 expression head, so `.{ if x > 1 then 10 else 20, 2 }` stays an if-expression
-element. Value-binding positions (locals, params, function names) are
-unchanged: keywords stay rejected there.
+element. Value-binding positions (locals, params, function names) reject
+keywords.
 
 **`Tuple(` and `Closure(` are reserved in expression head position.** The
 type constructors `Tuple(...)` and `Closure(...) -> R` parse as TYPE
@@ -71,7 +71,7 @@ to call such a value. Prefer different names.
 Every reserved spelling except `inline` bare-names member slots — the
 identifier-classified spellings (`i1`..`i64`, `u1`..`u64`, `bool`, `string`,
 `cstring`, `void`, `usize`, `isize`, `any`) and the keyword-classified `f32` /
-`f64` alike (issue 0345): `` struct { f32: i64; } `` and
+`f64` alike: `` struct { f32: i64; } `` and
 `` protocol { f32 :: (self: *Self) -> i64; } `` are legal as written; the
 backtick forms remain available but are never required for them.
 
@@ -655,7 +655,7 @@ n      := u64.max;   // 18446744073709551615 (all-ones)
   `18446744073709551615` (and any unsigned value across all 64 bits), while a
   signed value — including `i64.min` — prints with all its digits. A bit
   reinterpret (`union { u: u64; s: i64 }`) is still a valid way to inspect the
-  raw bits, but is no longer needed merely to print the value.
+  raw bits, but is not needed merely to print the value.
 - **Non-numeric receivers.** `.min` / `.max` on a non-numeric type (`bool`,
   `string`, a pointer, a `struct`, `void`, an `enum`) is a compile error, never
   a silent value.
@@ -677,8 +677,8 @@ qn  := f64.nan;           // a quiet NaN
 - **Receiver.** `f32` or `f64`.
 - **Shared with integers.** `.min` / `.max` are valid on BOTH integer and float
   types. `.min` is the most-NEGATIVE finite value, i.e. `-max` — consistent with
-  the integer `.min`, and deliberately **NOT** C's `DBL_MIN`/`FLT_MIN` (which is
-  the smallest positive normal; that is `.min_positive` here).
+  the integer `.min`. It is **NOT** C's `DBL_MIN`/`FLT_MIN`, which is the
+  smallest positive normal; that is `.min_positive` here.
 - **Float-only accessors.**
   - `.epsilon` — the ULP of `1.0`: the gap between `1.0` and the next
     representable value (`f64 = 2^-52 ≈ 2.22e-16`, `f32 = 2^-23`). This is the
@@ -703,13 +703,13 @@ qn  := f64.nan;           // a quiet NaN
   - `.inf` — positive infinity (`inf > max`).
   - `.nan` — a quiet NaN. The exact mantissa bits are not pinned; the only
     guaranteed property is that it is unequal to everything, itself included
-    (`nan != nan` is `true` — native float `!=` lowers unordered, issue 0091).
+    (`nan != nan` is `true` — native float `!=` lowers unordered).
 - **Float-only on an integer is an error.** `.epsilon` / `.min_positive` /
   `.true_min` / `.inf` / `.nan` applied to an integer type (`i32.epsilon`,
   `u8.inf`, `i64.true_min`) is a clean compile error — integer types expose only
   `.min` / `.max`.
 - **Pinning the values.** The lexer has no exponent notation and the default
-  float formatter is crude (issue 0090), so float limits can be asserted neither
+  float formatter is crude, so float limits can be asserted neither
   by literal comparison nor by printing. Reinterpret the bits through an untagged
   union (`union { f: f64; bits: u64 }`) and compare against the exact IEEE-754
   pattern — `f64.max = 0x7FEFFFFFFFFFFFFF`, `min = 0xFFEFFFFFFFFFFFFF`,
@@ -720,7 +720,7 @@ qn  := f64.nan;           // a quiet NaN
 - **Type receiver vs. a shadowing value binding.** A numeric-limit access folds
   only when the receiver is a builtin numeric **type name** (`f64.epsilon`,
   `i32.max`, `u8.max`). A backtick raw identifier that binds a *value* whose
-  spelling shadows a type name (F0.6) is an ordinary value: `` `f64.epsilon ``
+  spelling shadows a type name is an ordinary value: `` `f64.epsilon ``
   reads that value's `epsilon` field — it does **not** fold to the limit. This
   holds for **every** value-binding kind — a `` `f64 := … `` local, a module-scope
   global, or a `` `f64 :: … `` module constant — so the fold can never silently
@@ -900,9 +900,9 @@ type 'T'`) — it is never silently dropped, so a typo or a field removed by an
 no field is instead read as a *positional* element, not an error.)
 
 Named aggregates place `{` directly after the type designator: `Point{ x = 1 }`,
-`List(i64){}`, `mod.Config{ port = 80 }`. The old separator-dot form `Type.{…}`
-is a hard error with a fix-it to the compact spelling. Contextual `.{…}` is
-unchanged.
+`List(i64){}`, `mod.Config{ port = 80 }`. The separator-dot form `Type.{…}`
+is a hard error with a fix-it to the compact spelling. Contextual `.{…}` keeps
+its leading-dot form.
 
 After a completed aggregate, a following block may appear in two forms:
 
@@ -946,7 +946,7 @@ alias).
 Anonymous type identity is by **shape**, never by name: two anonymous types
 with the same canonical field sequence (names + types, in order) are the SAME
 type — across literal and annotation sites — and differently-shaped ones are
-always distinct types (issue 0294):
+always distinct types:
 
 ```sx
 a : struct { x: i64; } = .{ x = 1 };
@@ -1239,10 +1239,9 @@ Each unrolled iteration is an ordinary impl with a concrete `T`:
 membership, coherence (two iterations landing on one `(P, T)` pair
 are the ordinary duplicate error, naming the unrolled sites), and
 every downstream rule apply to the expanded program unchanged. The
-curated-list form is the supported spelling for "one body, a
-deliberate set of types" — the bound-blanket (`impl Show for
-$T/Ord`, §6.5) is refused precisely because a list keeps the set
-intentional.
+curated-list form is the supported spelling for "one body, a chosen
+set of types" — the bound-blanket (`impl Show for $T/Ord`, §6.5) is
+refused precisely because a list keeps the set explicit.
 
 **Expansion is monotone and deterministic.** Expansion only *adds*
 conformances — nothing retracts. Expansion-driving comptime may
@@ -1894,11 +1893,9 @@ once instantiated and not otherwise. An instantiation nobody
 value-uses emits nothing at all; a tagged protocol used only as a
 bound costs exactly what a constraint protocol costs.
 
-Membership is deliberately stable: it does not depend on which code
+Membership is stable: it does not depend on which code
 executes, so dead-code edits never change what typechecks. Every
-member receives a tag, switch arm, and table row. (A stricter
-emission-level shake is possible without touching these semantics —
-see the appendix note on liveness shaking.)
+member receives a tag, switch arm, and table row.
 
 ##### 6.7 Templated tagged protocols
 
@@ -2219,9 +2216,8 @@ under the same rules. What a probe answers is **per kind**:
 
 - `constraint` and the erased kinds: **site-local impl
   visibility** — the same static fact that decides whether the site
-  could erase. (For erased kinds this is deliberately a different
-  question from the dynamic re-erasure check, which consults
-  program-wide uniqueness, §7.4.) Under the discipline, a negative
+  could erase. (For erased kinds this is a different question from the
+  dynamic re-erasure check, which consults program-wide uniqueness, §7.4.) Under the discipline, a negative
   gates on declaration-space finality — impls are declarations.
 - `tagged`: whole-program membership of the instantiation's set,
   under the discipline's polarity rules.
@@ -2448,11 +2444,10 @@ Anonymous product types with optional field names. Tuples are first-class values
 
 The tuple TYPE is always written `Tuple(...)`; a tuple VALUE is built with the
 ONE aggregate literal `.{ ... }` against a tuple-typed target — an annotation,
-a typed prefix, a call slot, or a return slot (aggregate ladder Step 1: the old
-`.( )` spelling was removed). An UNTYPED `.{ ... }` is NOT a tuple — it
+a typed prefix, a call slot, or a return slot. An UNTYPED `.{ ... }` is NOT a tuple — it
 self-types as an anonymous structural STRUCT (see "Struct Literals"); tuples
 are explicit-target-only. Bare parentheses `(...)` are **grouping only,
-everywhere** — a comma inside bare parens is a hard error with a migration hint.
+everywhere** — a comma inside bare parens is a hard error naming the tuple spelling.
 
 #### Construction
 ```sx
@@ -2722,8 +2717,8 @@ by context:
 
 A `::` **const** array coerces to a *mutable* `[]T` as a view exactly like
 the explicit `constArr[0..]` subslice; a write through such a slice is not
-yet diagnosed (there is no `[]const T` slice type yet — const-slice
-propagation is future work). The direct `constArr[i] = …` write IS rejected.
+diagnosed (there is no `[]const T` slice type). The direct `constArr[i] = …`
+write IS rejected.
 
 Slice ranges take the same bound markers as for-header ranges — `=`
 inclusive / `<` exclusive on either side of `..`, defaulting to
@@ -2877,7 +2872,7 @@ than allowed.
 #### Value Equality
 
 `==` / `!=` are defined on optionals whenever the payload type has
-value-equality (issue 0344). Equality extracts nothing — null is a legitimate
+value-equality. Equality extracts nothing — null is a legitimate
 comparison value — so this is not an exception to the no-implicit-unwrap rule,
 and arithmetic / ordering on un-narrowed optionals stay rejected.
 
@@ -3039,7 +3034,7 @@ SxFoo     :: #objc_class("SxFoo")    export { counter: i32; bump :: (self: *Self
 | C type | sx type | Notes |
 |--------|---------|-------|
 | `const char*` (input) | `cstring` | the pointer, verbatim; literals coerce |
-| `const char*` (input, legacy) | `[:0]u8` | compiler extracts `.ptr` at call site |
+| `const char*` (input, sentinel slice) | `[:0]u8` | compiler extracts `.ptr` at call site |
 | `const char*` (return) | `cstring` | the pointer, verbatim; `from_cstring` to view |
 | nullable `const char*` (both directions) | `?cstring` | null pointer = `null` |
 | `char*` (output buffer) | `[*]u8` | raw buffer, no length |
@@ -3126,8 +3121,8 @@ ordinary OWN declaration of the aliasing file, so it is visible to that
 file's direct flat importers like any other declaration (this is how a
 facade re-exports another module's generic struct). Each hop of an alias
 chain resolves with the visibility of the file that declares THAT hop,
-not the use site's. Not yet supported: a qualified head whose namespace
-member is itself an alias (`ns.BoxAlias(..)`).
+not the use site's. A qualified head whose namespace member is itself an
+alias (`ns.BoxAlias(..)`) is unsupported.
 
 ### Function Aliases
 
@@ -3588,9 +3583,9 @@ On an **`any` receiver** the assertion has three temperaments:
 - **`.(T)` unconsumed = panic on mismatch**: `v := av.(i64);` yields the
   value on a tag match and otherwise prints `type assertion failed at
   file:line: expected T, got U` (runtime type names) and exits 1. This is
-  a deliberate carve-out from the unconsumed-failable rule, scoped to
-  assertion forms — the implicit handler is `catch { panic }`, never a
-  silent default.
+  a carve-out from the unconsumed-failable rule, scoped to assertion
+  forms — the implicit handler is `catch { panic }`, never a silent
+  default.
 - **`.(?T)` = soft**: mismatch is a *value* — `null` — never a failure or
   panic; the optional IS the check (comma-ok parity). The asserted type is
   the inner `T`, the result exactly `?T`, composing with the optional
@@ -3646,7 +3641,7 @@ The `::` operator creates an immutable binding. The value is evaluated at
 compile time when possible.
 
 `::` is the one and only constant spelling in sx. `const` is not a keyword
-and never will be — it is an ordinary identifier.
+and is not reserved — it is an ordinary identifier.
 
 Examples:
 ```sx
@@ -4850,7 +4845,7 @@ Available categories: `int`, `float`, `bool`, `string`, `void`, `struct`, `enum`
 > silently dead arm. Unknown names and value patterns are pointed
 > compile errors.
 
-Inside a category arm the subject stays an `any` and the matched `type` a runtime `Type` — arms handle the value through the runtime reflection surface (the table-backed builtins, `any` views like `struct_field_value` / `variant_payload` / `any_element`, `raw_make_any`) with ONE compiled body per arm; `xx val` in the `int`/`float` arms width-dispatches over the arm's tag set. An EXACT-tag walk asserts with `val.(T)`. (The old `cast(type, val)` per-type monomorphizing fan-out is removed with `cast`.)
+Inside a category arm the subject stays an `any` and the matched `type` a runtime `Type` — arms handle the value through the runtime reflection surface (the table-backed builtins, `any` views like `struct_field_value` / `variant_payload` / `any_element`, `raw_make_any`) with ONE compiled body per arm; `xx val` in the `int`/`float` arms width-dispatches over the arm's tag set. An EXACT-tag walk asserts with `val.(T)`.
 
 #### Type Switch (`any` subjects)
 
@@ -4930,7 +4925,7 @@ carries no runtime type tag, so a runtime `case protocol:` is a pointed
 compile error rather than a silently dead arm. Inline branches lower in
 statement position (like `inline if OS`), so value-producing arms use
 explicit `return`. A NON-inline type match keeps its runtime tag-switch
-semantics unchanged.
+semantics.
 
 ### While Loop
 ```sx
@@ -5011,8 +5006,7 @@ its own cursor; consequences:
 order — range positions bind the cursor value (i64), collection positions
 bind the element. An empty group is omitted entirely (no parens). Capture
 names shadow outer bindings, like any inner declaration. Use `_` to discard
-a position. The old single-iterable index form `for xs: (x, i)` is gone —
-write `for xs, 0.. (x, i)`.
+a position. An index alongside the elements is written `for xs, 0.. (x, i)`.
 
 **The capture/call rule.** In a for header, the parenthesized group
 immediately before `{` or `=>` is the capture; every earlier top-level paren
@@ -5024,7 +5018,7 @@ iterate a call result without one, parenthesize (`for (f(n)) { }`) or bind
 it to a local first. A leading paren group is a normal grouped expression
 (`for (a ++ b) (x)` iterates the grouped value).
 
-**By-value captures are immutable** (issue 0219). This rule is not
+**By-value captures are immutable.** This rule is not
 specific to for-loop element captures — it holds for *every* by-value
 capture binding: the for-loop element and the paired range index
 (`for xs, 0.. (x, i)` — both `x` and `i`), a match-arm payload capture
@@ -5047,7 +5041,7 @@ compile error with the constant-family message, mirroring module-level
 `::` consts. (Rationale: mutating a per-iteration
 copy that vanishes at the next iteration is almost always a bug — the
 author meant `(*x)`. This also matches the copy-semantics chosen for the
-issue-0214 `xx`-erasure materialization, where a by-value capture is
+`xx`-erasure materialization, where a by-value capture is
 likewise snapshotted into a fresh temp rather than written back.)
 
 **By-reference capture (`*elem`)** binds the element to a *pointer* into the collection (`*T`) instead of a value — no per-element copy. It GEPs straight into the array/slice backing, so:
@@ -5461,11 +5455,11 @@ sentinel, per the pointer contract.
 - **Access is global and unconditional**: after assembly, `context.field` works in ANY module of the program with no import requirement. Imports gate existence only (an uncompiled module contributes nothing); there is no per-source scoping of context fields.
 - **One flat namespace, loud collisions**: two declarations with the same field name (or colliding with a builtin field) are a hard compile error naming both declaration sites.
 - **Defaults are mandatory and comptime-evaluable**: a declaration without a default — or with one that doesn't fold to a compile-time constant — is a compile error; the default context must be constructible before `main` runs. Defaults fold into `__sx_default_context`. A protocol-typed context field is legal only at a borrow-kind protocol (`#identity` or tagged) — its default folds as the identity erasure of a named instance global; a value/own protocol-typed field is refused at its declaration (an owning constant cannot exist before `main`). `*T = null` is the idiom for handle fields (`?*T = null` where checked absence is wanted); the root `push` in `main` is the idiom for wiring real values.
-- **`push` semantics unchanged**: added fields patch exactly like builtin ones.
+- **`push` semantics**: added fields patch exactly like builtin ones.
 - **Comptime**: `#run` bodies execute under a VM-LOCAL copy of the assembled default context (see Protocols, compile-time execution): an added field's default is readable at comptime; protocol-typed fields reference VM-owned instances whose mutations are execution-local and discarded — comptime code cannot mutate globals (the VM reads globals into VM-local copies and never writes back).
 - **Cost guideline** (not enforced): reads are a constant-offset load and calls share the pusher's slot — the only growth cost is the spread-copy at `push` (and the per-fiber snapshot). Prefer one POINTER per concern (`*Ui`, `*Logger`) over fat inline values; a 2 KB inline field makes every push a 2 KB memcpy. Small inline value fields are fine.
 
-There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`#context_extend logger: *Logger = null;` replaces the old `data: *void` idiom).
+There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`#context_extend logger: *Logger = null;`).
 
 ---
 
@@ -5562,7 +5556,7 @@ lowered, yet `atomic_load` evaluates under `#run` and `sqrt` does not: the
 evaluator interprets the atomic ops, but has no arm for the math call `sqrt`
 lowers to. A `#run sqrt(x)` fails loudly rather than folding to a wrong value.
 
-Two categories are deliberately **not** intrinsics. `string` and `Vector` are
+Two categories are **not** intrinsics. `string` and `Vector` are
 language primitives, resolved by name by the type system like `int` / `bool` /
 `f64`. And a handful of keywords (`type_eq`, `has_impl`, `is_struct`,
 `is_comptime`) are recognized bare, declared nowhere. `has_impl(P, T)`
@@ -5597,8 +5591,8 @@ main :: () { rt := shared(10); } // and emitted into the binary
 Two consequences follow, and neither needs an annotation:
 
 - A function nothing runtime-reachable calls is **not emitted**. This is what
-  keeps a build callback out of the binary — not its signature, and no longer
-  any ABI marker.
+  keeps a build callback out of the binary — not its signature, and not an
+  ABI marker.
 - Calling an `evaluate`-only intrinsic from the runtime graph is an error,
   reported with the path from the root that reached it:
 
@@ -5683,8 +5677,7 @@ Comptime globals are resolved lazily: the JIT executes only when the value is fi
 
 `#error("message");` emits `message` as a compile-time error and halts
 compilation. It is valid as a top-level item or a statement, and it is THE
-compile-time rejection spelling (the old `compile_error(...)` bare intrinsic
-was consolidated into it).
+compile-time rejection spelling.
 
 The directive fires only when it is reached in **live** code, at every
 level where code goes dead:
@@ -5889,7 +5882,7 @@ Collision rules mirror ordinary declarations:
   locally to disambiguate.
 - **One level only** — carry does not chain: a flat import of a flat import
   does not surface the inner file's aliases. (The bare `alias.fn()` call path
-  does not yet enforce this gate — issue 0114 tracks the tightening.)
+  does not enforce this gate.)
 
 `#import c { ... }` aliases (`tc :: #import c { ... }`) carry the same way.
 
@@ -5927,7 +5920,7 @@ Semantics:
 - **No suppression, no ambiguity.** A private declaration never shadows or
   ambiguates a public same-name declaration from another module — for every
   other file it simply does not exist.
-- **A public same-file alias may deliberately expose a private declaration**
+- **A public same-file alias may expose a private declaration**
   (`Public :: PrivateImpl;`) — resolution follows the alias in its author
   file, where the private name is legal.
 - **Privacy authority is the exact declaring source file**, not a directory
@@ -6253,8 +6246,7 @@ returning two values *and* an error, with no tuple-in-a-wrapper. A single-value
 failable is `-> (T, !)`; an error-only failable is `-> !`. (There is no bare
 `-> T !` spelling — the error channel always rides inside the `(…, !)` list.)
 
-This section is the canonical surface reference. The design rationale,
-trade-offs, and implementation breakdown live in `current/PLAN-ERR.md`.
+This section is the canonical surface reference.
 
 ### Failable signatures
 
@@ -6387,7 +6379,8 @@ disambiguated by the token after `catch`:
 | `catch (e) EXPR` | `e` | bare expression (no braces) |
 | `catch (e) == { case ... }` | `e` | match over `e` (sugar for `{ if e == { ... } }`) |
 
-A bare binding (`catch (e) { }`) is a parse error with a migration hint.
+An unparenthesized binding (`catch e { }`) is a parse error with a hint to
+parenthesize it.
 
 ```sx
 v := parse_digit(s) catch (e) {
@@ -6576,11 +6569,11 @@ trace** — the chain of `raise` / `try` sites the error passed through.
   identical across OS/target, works under the JIT and a signed iOS `.app`). A
   comptime frame is `(func_id, ir_offset)` resolved via the interpreter's
   in-memory IR/source tables.
-- **Mode.** On by default in debug; release no-ops the push points
-  (opt back in with `--release-traces`). **Comptime (`#run`) is always traced.**
+- **Mode.** On by default in debug; release no-ops the push points.
+  **Comptime (`#run`) is always traced.**
 - **Formatting** lives in `library/modules/trace.sx` (`trace.print_current()`),
   rendering `func at file:line:col` per frame plus the source line and a `^`
-  caret. DWARF line-info is still emitted (debug, strippable) so `lldb` / `gdb`
+  caret. DWARF line-info is emitted (debug, strippable) so `lldb` / `gdb`
   can step sx source — that is a debugger artifact, separate from trace
   resolution.
 
@@ -6704,6 +6697,6 @@ tuple_type_elem = IDENT ':' type | '..' type | type
   the CLOSURE's job — spell it `x := () => …` (`:=` + `=>`), which captures by
   pointer. (Enclosing local consts are rejected too rather than comptime-folded:
   a static nested fn's frame cannot carry them, and the closure spelling captures
-  them uniformly.) Resolved: issue 0250.
+  them uniformly.)
 - **Operator overloading**: Not shown — presumably no.
 - **Top-level expressions**: Are bare expressions allowed at the top level or only declarations?

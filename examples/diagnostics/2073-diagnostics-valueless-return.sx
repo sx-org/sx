@@ -5,7 +5,6 @@
 //
 // Two shapes legitimately return nothing and are untouched: a `-> void` body,
 // and a PURE failable (`-> !Named`), where `return;` IS the success exit.
-// Expected: exit 1.
 #import "modules/std.sx";
 
 Broken :: error { Bad }

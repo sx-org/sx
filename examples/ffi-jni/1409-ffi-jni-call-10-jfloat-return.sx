@@ -1,13 +1,9 @@
-// Regression: `#jni_call(f32)` (jfloat return).
-// Before the fix, the Call<T>Method switch in `src/ir/emit_llvm.zig`
-// only handled `.f64` (jdouble), so any JNI method returning `float`
-// fell through to the `else` arm and emitted `LLVMGetUndef` — a
-// silent-undef footgun that shipped on Android (chess
-// `MotionEvent.getX()` / `getY()` came through as `undef` arguments
-// to `sx_android_push_touch`, breaking every touch).
-//
-// This test exercises the `.f32` slot (CallFloatMethod, vtable 55) +
-// proves the build doesn't error out the JNI dispatch path for it.
+// `#jni_call(f32)` (jfloat return).
+// The Call<T>Method switch in `src/ir/emit_llvm.zig` covers `.f32`, so a JNI
+// method returning `float` dispatches through CallFloatMethod (vtable 55)
+// rather than the `else` arm's `LLVMGetUndef` — the shape an Android
+// `MotionEvent.getX()` / `getY()` result rides into
+// `sx_android_push_touch`.
 
 #import "modules/std.sx";
 

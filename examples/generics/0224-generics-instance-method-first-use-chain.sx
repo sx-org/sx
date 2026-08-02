@@ -1,10 +1,7 @@
 // The FIRST use of a generic-instance method types correctly inside a chain
-// (issue 0341): plan-side call-result inference resolves through the
-// instance's stamped author + bindings BEFORE the method has ever
-// monomorphized. Previously `xx b.get().data[0]` — with no earlier call to
-// `get` anywhere — inferred `.unresolved` and the whole chain lowered to a
-// SILENT zero. No other use of `get` may precede f1 in this file: the
-// first-use ordering is the regression.
+// — plan-side call-result inference resolves through the instance's stamped
+// author + bindings BEFORE the method has ever monomorphized. No other use of
+// `get` may precede f1 in this file, so f1's call is the first use.
 #import "modules/std.sx";
 
 Buf :: struct { data: []u8; }

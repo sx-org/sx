@@ -236,8 +236,8 @@ path_join :: (..parts: []string) -> string {
 }
 
 struct_to_string :: (s: $T) -> string {
-    // No type-name prefix (Step-2 print decision): a struct VALUE prints
-    // `{x: 1, y: 2}`; a TYPE value keeps printing its name.
+    // No type-name prefix: a struct VALUE prints `{x: 1, y: 2}`; a TYPE
+    // value prints its name.
     result := "{";
     i := 0;
     while i < struct_field_count(T) {
@@ -344,10 +344,10 @@ any_to_string :: (val: any) -> string {
         // boxed value (no per-type struct_to_string instantiation, no
         // copies). Output is identical to struct_to_string's.
         case struct: {
-            // No type-name prefix (Step-2 print decision): a struct VALUE
-            // prints `{x: 1, y: 2}`; a TYPE value keeps printing its name
-            // (the `case type:` arm below). Also kills the `List__i32{…}`
-            // monomorph-name and `__anon{…}` leakage in prints.
+            // No type-name prefix: a struct VALUE prints `{x: 1, y: 2}`; a
+            // TYPE value prints its name (the `case type:` arm below), so
+            // neither `List__i32{…}` monomorph names nor `__anon{…}` leak
+            // into prints.
             r := "{";
             fi := 0;
             n := struct_field_count(type);
@@ -409,10 +409,9 @@ any_to_string :: (val: any) -> string {
         // Arrays walk by element VIEW (`any_element` stride math over the
         // boxed storage) — one body for every array type, and the whole
         // array is never loaded as a value, so the O(N) SelectionDAG
-        // scalarization that crippled `[65536]u8` (issue 0125) cannot
-        // recur. An array's ABI size is exact (no pow2 rounding), so the
-        // element count IS size/elem_size. Output matches the old
-        // `array_to_string` (`[a, b, c]`).
+        // scalarization a `[65536]u8` would otherwise pay cannot
+        // happen. An array's ABI size is exact (no pow2 rounding), so the
+        // element count IS size/elem_size. The output form is `[a, b, c]`.
         case array: {
             et := struct_field_type(type, 0);
             esz := size_of(et);
@@ -429,7 +428,7 @@ any_to_string :: (val: any) -> string {
         // A slice value is a {ptr, len} header — read it through the view
         // as the string layout (same two words), then walk the elements as
         // views assembled over the buffer (the element type row of a
-        // runtime slice tag answers — issue 0300).
+        // runtime slice tag answers).
         case slice: {
             et := struct_field_type(type, 0);
             esz := size_of(et);
@@ -554,7 +553,7 @@ print :: ($fmt: string, ..$args) {
     #insert "out(result);";
 }
 
-// ── Postfix-assertion runtime (aggregate ladder Step 4) ─────────────────
+// ── Postfix-assertion runtime ───────────────────────────────────────────
 // `av.(T)` on a type-erased receiver is a CHECKED assertion. The compiler
 // rewrites the consumed forms (`try av.(T)`, `av.(T) or d`, `av.(T) catch`)
 // to `__sx_cast_assert` — graceful mismatch via the error channel — and the

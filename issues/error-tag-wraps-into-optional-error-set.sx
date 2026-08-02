@@ -1,5 +1,4 @@
-// Regression target for issue 0332: an error tag is an error-set value before
-// it is implicitly wrapped into an optional of that same set.
+// An error tag assigned to an optional of its own error set wraps into that optional.
 Failure :: error { Broken };
 
 main :: () -> i32 {

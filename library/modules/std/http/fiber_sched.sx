@@ -1,4 +1,4 @@
-// std.http — the sched.sx-backed FiberRunner provider (Q3.3).
+// std.http — the sched.sx-backed FiberRunner provider.
 //
 // Opt-in: importing this module compiles the M:1 fiber runtime (std/sched
 // — aarch64-pinned context-switch asm). A fiber-handler server does:

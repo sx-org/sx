@@ -1,19 +1,15 @@
-// E6a (attempt-2) regression — RECURSIVE top-level enum/union via per-decl nominal
+// RECURSIVE top-level enum/union via per-decl nominal
 // identity. Three single-author shapes that reference a not-yet-interned name in a
 // `*Name` field:
-//   * `Node`  — a SELF-referential UNION (linked cells: `next: *Node`).
-//   * `Tree`  — a SELF-referential ENUM/tagged-union (`branch: *Tree`).
-//   * `A`/`B` — a MUTUALLY-referential union pair (`A` holds `*B`, `B` holds `*A`).
+// * `Node`  — a SELF-referential UNION (linked cells: `next: *Node`).
+// * `Tree`  — a SELF-referential ENUM/tagged-union (`branch: *Tree`).
+// * `A`/`B` — a MUTUALLY-referential union pair (`A` holds `*B`, `B` holds `*A`).
 //
-// Pre-fix (eed2f99) the new per-decl register path built each enum/union body
-// through the STATELESS `type_bridge` BEFORE a matching nominal slot existed, so a
-// `*Name` field forward-created a STRUCT stub under `Name`; `internNamedTypeDecl`
-// then refreshed that struct stub as an enum/union and tripped the kind-stability
-// assert in `types.zig` `updatePreservingKey` — a hard panic (the corpus had no
-// recursive enum/union, so the gate missed it). The fix adopts the forward struct
-// stub IN PLACE (re-key to the real enum/union kind), mirroring how a self-ref
-// struct adopts its own forward stub — so `*Node`/`*Tree`/`*B`/`*A` resolve to the
-// genuine 8-byte-pointer nominal types and the recursive walks read through.
+// A `*Name` field forward-creates a STRUCT stub under `Name`. The per-decl
+// register path adopts that forward stub IN PLACE, re-keying it to the real
+// enum/union kind — mirroring how a self-ref struct adopts its own forward stub
+// — so `*Node`/`*Tree`/`*B`/`*A` resolve to the genuine 8-byte-pointer nominal
+// types and the recursive walks read through.
 #import "modules/std.sx";
 
 Node :: union { next: *Node; value: i32; }

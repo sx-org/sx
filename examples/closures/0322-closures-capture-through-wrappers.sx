@@ -2,10 +2,9 @@
 // put it behind: a postfix cast's operand (`V{ w = side }.(Shape)`), a
 // named argument's value (`f(b = side)`), and a trailing block's lambda
 // (`f(1.0) { … side … }`).
-// Regression (issue 0354): `collectCaptures` had no arm for `postfix_cast`,
-// `named_arg` or `trailing_block`, so names under them never entered the
-// env and the body reported them unresolved — while the same names in a
-// bare struct literal or a positional argument captured fine.
+// `collectCaptures` carries an arm for `postfix_cast`, `named_arg` and
+// `trailing_block`, so names under them enter the env exactly as they do
+// from a bare struct literal or a positional argument.
 #import "modules/std.sx";
 
 Shape :: protocol vtable { area :: (self: *Self) -> f32; }

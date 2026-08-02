@@ -5,9 +5,7 @@
 // element. When called with fewer than 3 args, the literal index
 // 2 is out of bounds for the pack's actual arity. The compiler
 // detects this in `diagPackIndexOOB` and emits a focused
-// diagnostic at the index span — pre-fix, the fall-through hit
-// the standard slice-indexing path and produced "unresolved
-// 'args'" which buried the real cause.
+// diagnostic at the index span.
 
 #import "modules/std.sx";
 

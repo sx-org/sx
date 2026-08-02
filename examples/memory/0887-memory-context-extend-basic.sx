@@ -1,11 +1,11 @@
 // `#context_extend` end-to-end (design/context-extension.md):
-//   - L1: a module declares a field; the compiler assembles the program's
-//     Context from every declaration in the compilation.
-//   - L5: the default is visible before any push (`trace_depth` reads 3,
-//     `marker` reads null — both straight from `__sx_default_context`).
-//   - L3: reader_mod reads the field WITHOUT importing its declaring module.
-//   - L2: `push .{ field = v }` spread+patches added fields exactly like
-//     builtin ones — unnamed fields inherit, the scope restores on exit.
+// - a module declares a field; the compiler assembles the program's
+//   Context from every declaration in the compilation.
+// - the default is visible before any push (`trace_depth` reads 3,
+//   `marker` reads null — both straight from `__sx_default_context`).
+// - reader_mod reads the field WITHOUT importing its declaring module.
+// - `push .{ field = v }` spread+patches added fields exactly like
+//   builtin ones — unnamed fields inherit, the scope restores on exit.
 #import "modules/std.sx";
 #import "0887-memory-context-extend-basic/decl_mod.sx";
 #import "0887-memory-context-extend-basic/reader_mod.sx";

@@ -1,17 +1,10 @@
 // Storing a struct field whose own type is a pointer to a two-pointer struct
-// (`*Pair` — the shape `coerceArg` would closure-auto-promote into `{ptr,null}`)
-// must store an 8-byte pointer, never a 16-byte struct that overruns the slot
-// and clobbers the neighbouring field. The shared field-lvalue resolver types
-// the GEP as `*field_ty`, so `emitStore` unwraps exactly one pointer level to
-// the field's own type (`*Pair`, an opaque pointer) instead of the pointee
-// aggregate (`Pair`).
-//
-// Regression (issue 0094, attempt-3 consolidation): the shared `fieldLvaluePtr`
-// resolver used to type struct/tuple GEPs with the bare field value type, so a
-// `*Pair` field stored via the multi-assign / address-of paths promoted the
-// pointer to a 16-byte struct and clobbered the next field (`sentinel` read 0).
-// The single-assign path already used the `*field_ty` convention; folding all
-// three lvalue sites onto the one resolver applies it uniformly.
+// (`*Pair` — the shape `coerceArg` closure-auto-promotes into `{ptr,null}`)
+// stores an 8-byte pointer. The shared field-lvalue resolver types the GEP as
+// `*field_ty`, so `emitStore` unwraps exactly one pointer level to the field's
+// own type (`*Pair`, an opaque pointer) instead of the pointee aggregate
+// (`Pair`). All three lvalue sites share that resolver, so the convention
+// applies uniformly.
 
 #import "modules/std.sx";
 

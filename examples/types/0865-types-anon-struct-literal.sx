@@ -1,5 +1,5 @@
 // Untyped `.{ ... }` SELF-TYPES as an anonymous STRUCTURAL struct
-// (aggregate-ladder Step 1/2): positional elements mint fields "0"/"1"/…
+// struct: positional elements mint fields "0"/"1"/…
 // (with `.N` access and comptime `[i]` indexing, tuple parity), named
 // elements mint named fields, and the bare-identifier shorthand `.{ x }`
 // is NAMED by rule — `.{ (x) }` is the positional escape. Identical

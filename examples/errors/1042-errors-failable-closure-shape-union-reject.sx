@@ -1,4 +1,4 @@
-// Program-wide closure-shape union — widening REJECTION (ERR E5.1 sub-feature 2).
+// Program-wide closure-shape union — widening REJECTION.
 // Two closure literals of shape `Closure(i32)->(i32,!)` raise `Negative` /
 // `Other`; the shared inferred-`!` node for that shape is { Negative, Other }.
 // A caller that `try`s a slot of this shape but declares only `!Small` (which

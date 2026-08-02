@@ -1,17 +1,17 @@
 error: cannot initialize 'x' of type 'i32' with a value of type 'string'
-  --> examples/diagnostics/1205-diagnostics-annotated-init-type-mismatch.sx:19:15
+  --> examples/diagnostics/1205-diagnostics-annotated-init-type-mismatch.sx:12:15
    |
-19 |     x : i32 = "hi";        // error: cannot initialize 'x' (string ↛ i32)
+12 |     x : i32 = "hi";        // error: cannot initialize 'x' (string ↛ i32)
    |               ^^^^
 
 error: cannot reassign 'y' of type 'i32' with a value of type 'string'
-  --> examples/diagnostics/1205-diagnostics-annotated-init-type-mismatch.sx:22:9
+  --> examples/diagnostics/1205-diagnostics-annotated-init-type-mismatch.sx:15:9
    |
-22 |     y = "nope";            // error: cannot reassign 'y' (string ↛ i32)
+15 |     y = "nope";            // error: cannot reassign 'y' (string ↛ i32)
    |         ^^^^^^
 
 error: cannot initialize 'C' of type 'i32' with a value of type 'string'
-  --> examples/diagnostics/1205-diagnostics-annotated-init-type-mismatch.sx:24:15
+  --> examples/diagnostics/1205-diagnostics-annotated-init-type-mismatch.sx:17:15
    |
-24 |     C : i32 : "also";      // error: cannot initialize 'C' (string ↛ i32)
+17 |     C : i32 : "also";      // error: cannot initialize 'C' (string ↛ i32)
    |               ^^^^^^

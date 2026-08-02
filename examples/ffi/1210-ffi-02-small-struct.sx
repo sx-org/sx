@@ -1,14 +1,12 @@
-// Phase 0 baseline (PLAN-FFI.md step 0.2): small structs (≤16 bytes)
-// passed by value into a C `extern` fn and returned by value. Four
-// shapes that exercise distinct aggregate ABI paths:
+// Small structs (≤16 bytes) passed by value into a C `extern` fn and
+// returned by value. Four shapes that exercise distinct aggregate ABI
+// paths:
 //   Vec2   — 8 B,  two f32        (register pair, float)
 //   Vec4f  — 16 B, four f32       (HFA — homogeneous float aggregate)
 //   Pair64 — 16 B, two i64        (9..16 B int — [2 x i64] coercion slot)
 //   Quad32 — 16 B, four i32       (9..16 B int — same slot as Pair64)
 //
-// Pair64 / Quad32 were originally excluded (LLVM verifier rejected the
-// struct<->[2 x i64] type mismatch — see git history for issue-0036);
-// folded back in once emit_llvm.zig's coerceArg learned to bridge
+// Pair64 / Quad32 go through emit_llvm.zig's coerceArg, which bridges
 // struct <-> array via the abi.struct2arr / abi.arr2struct branches.
 
 #import "modules/std.sx";

@@ -1,13 +1,13 @@
-// ffi-objc-arc-01 — M4.A smoke test for NSObject + autoreleasepool.
+// NSObject + autoreleasepool.
 //
 // Exercises:
-//   1. NSObject is declared in std/objc.sx and reachable from user code.
-//      `obj.retain()` / `obj.release()` dispatch via the M2.3 #extends-aware
-//      method chain. Pattern: `defer obj.release();` as the canonical
-//      sx idiom for owned Obj-C handles.
-//   2. `autoreleasepool(body)` stdlib helper wraps `body` in a
-//      push/defer-pop pair so Foundation factory returns drain at block
-//      end.
+// 1. NSObject is declared in std/objc.sx and reachable from user code.
+//    `obj.retain()` / `obj.release()` dispatch via the #extends-aware
+//    method chain. Pattern: `defer obj.release();` as the canonical
+//    sx idiom for owned Obj-C handles.
+// 2. `autoreleasepool(body)` stdlib helper wraps `body` in a
+//    push/defer-pop pair so Foundation factory returns drain at block
+//    end.
 //
 // macOS-only — libobjc + NSObject must be available at runtime.
 

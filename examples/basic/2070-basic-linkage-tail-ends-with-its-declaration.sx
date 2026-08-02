@@ -2,7 +2,6 @@
 // after `extern` / `export` is two optional bare names, so where the tail may
 // be written decides nothing on its own — what decides is whether the
 // declaration that owns it may END inside it.
-// Expected: exit 0.
 #import "modules/std.sx"
 
 // An `extern` import is whole the moment its keyword is read, so each empty

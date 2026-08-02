@@ -1,4 +1,4 @@
-// `xx <pack>` materializes a comptime pack into a runtime slice (issue 0053):
+// `xx <pack>` materializes a comptime pack into a runtime slice:
 // the explicit pack→slice bridge. With a `[]any` target each element is boxed
 // to `any`; with a `[]P` target each is `xx`-erased to the protocol `P`. This is
 // how you forward a pack to a runtime (`[]any` / `[]P`) helper.

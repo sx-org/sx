@@ -1,11 +1,8 @@
 // A comparison with mismatched scalar operands (int vs float, or two float
-// widths) must promote both operands to the common type before emitting the
-// compare — `lowerBinaryOp` now coerces each operand to the promoted float
-// type for the ordering/equality arms (as the arithmetic arms already do),
-// so the cast materializes and LLVM gets a well-typed fcmp instead of a
-// mixed-type compare that the verifier rejects / silently mis-evaluates.
-//
-// Regression (issue 0146).
+// widths) promotes both operands to the common type before emitting the
+// compare — `lowerBinaryOp` coerces each operand to the promoted float
+// type for the ordering/equality arms, as the arithmetic arms do, so the
+// cast materializes and LLVM gets a well-typed fcmp.
 #import "modules/std.sx";
 
 // i32 < f32: the `xx i` cast must materialize as an i32->f32 SIToFP.

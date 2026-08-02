@@ -38,13 +38,10 @@ main :: () -> void {
     c.add(Widget{ value = 42 });
     c.add(Widget{ value = 99 });
 
-    // BUG: items[0] should return 42, but returns 99 (reads items[1]'s stack slot)
-    // Both protocol values point to the same stack address (the `p` local in add())
+    // Each entry dispatches over its own heap copy: without one, both
+    // protocol values would share `add()`'s `p` stack slot.
     r0 := c.items.items[0].view.size();
     r1 := c.items.items[1].view.size();
     print("items[0] = {} (expected 42)\n", r0);
     print("items[1] = {} (expected 99)\n", r1);
-
-    // With more stack activity between add() and the reads, this crashes
-    // (stack memory overwritten by other function calls)
 }

@@ -1,5 +1,5 @@
 // `super.method(args)` dispatch inside a `#jni_main` Activity body
-// (chess-on-Pixel migration, R.6). The override of a lifecycle method
+// The override of a lifecycle method
 // like `onCreate` needs to invoke the parent's `onCreate` so the
 // Android runtime's setup completes (`SuperNotCalledException`
 // otherwise) — the sx-side body calls `super.onCreate(b)` and the

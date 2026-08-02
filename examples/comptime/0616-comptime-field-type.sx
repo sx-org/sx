@@ -1,6 +1,6 @@
 // Comptime reflection: `struct_field_type($T, i) -> Type` — the type-only field
-// projection the value-level reflection (`struct_field_value` / `type_of`) couldn't
-// express.
+// projection, which the value-level reflection (`struct_field_value` / `type_of`)
+// cannot express.
 // Reflect a struct's fields by name (`struct_field_name`) AND by type (`struct_field_type`),
 // and a tagged-union's variant payloads. It folds at lower time, so it composes
 // inside `type_eq` / `type_name` / any type-arg slot.

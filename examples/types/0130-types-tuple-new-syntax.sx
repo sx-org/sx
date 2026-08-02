@@ -1,4 +1,4 @@
-// New tuple syntax (additive over the legacy `(a, b)` forms):
+// Tuple syntax:
 //   - tuple TYPE `Tuple(A, B)` and named `Tuple(x: A, y: B)`
 //   - tuple VALUE `.(a, b)`, named `.(x = a, y = b)`, 1-tuple `.(n)`
 //   - element access by index `.0` and by name `.x`

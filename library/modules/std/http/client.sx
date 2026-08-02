@@ -1,17 +1,16 @@
 // std.http — a minimal blocking HTTP/1.1 client.
 //
-// Factored out of the loopback round-trip helpers the server tests hand-rolled
-// (connect → send a request → read the response). It SHARES the parsing types
-// with the server (types.sx): a response's `Content-Length` is found via the
-// very same `find_header`. The facade re-exports it as http.Client /
-// http.ClientResponse / http.dial.
+// One round trip is connect → send a request → read the response. It SHARES
+// the parsing types with the server (types.sx): a response's `Content-Length`
+// is found via the very same `find_header`. The facade re-exports it as
+// http.Client / http.ClientResponse / http.dial.
 //
 // Sockets are BLOCKING — open a connection and call `request`. NOTE: a blocking
 // client cannot interleave a server driven by `tick` on the SAME thread; run
 // such a server on another thread (thread.Thread.spawn(... srv.run ...)) and
 // drive the client from the main thread (see the corpus example).
 //
-// SCOPE (deliberately blocking):
+// The blocking surface:
 //   • `recv`/`recv_on` read Content-Length, close-delimited, or chunked
 //     responses. Chunk framing is removed, and gzip/deflate is decoded
 //     incrementally unless ClientOpts.accept_compression is false. Output is
@@ -25,7 +24,7 @@
 #import "modules/std/list.sx";         // List
 clib :: #import "modules/std/c.sx";    // block ops (`c` is a ClientConn local throughout)
 socket :: #import "modules/std/socket.sx";
-#import "modules/std/http/tls.sx";     // TlsConn, TlsDialer (Q3.6a client TLS seam)
+#import "modules/std/http/tls.sx";     // TlsConn, TlsDialer (client TLS seam)
 types :: #import "modules/std/http/types.sx";
 #import "modules/std/compress.sx";     // shared codec Error/Progress contract
 #import "modules/std/http/content_encoding.sx";
@@ -51,10 +50,10 @@ ClientErr :: error {
     Allocation, // content-decoder state could not be allocated
 }
 
-// ── Q3.6a: sessions ──────────────────────────────────────────────────
+// ── sessions ──────────────────────────────────────────────────
 
 // Options for `open`/`open_addr`. Zero values mean "unbounded/plaintext" —
-// the pre-Q3.6a behavior.
+// the behavior.
 ClientOpts :: struct {
     // Bound the CONNECT (nonblocking connect + poll + SO_ERROR, then the fd
     // returns to blocking). 0 = a plain blocking connect.
@@ -71,7 +70,7 @@ ClientOpts :: struct {
     // applies an explicit value to the FIRST hop only — a cross-host
     // redirect verifies against ITS OWN host.
     tls_host: string = "";
-    // Q3.6b: how many redirects fetch follows (301/302/303 switch to GET
+    // how many redirects fetch follows (301/302/303 switch to GET
     // and drop the body; 307/308 preserve method + body). 0 = return the
     // 3xx un-followed; exceeding the cap is error.Redirect.
     max_redirects: i64 = 5;
@@ -274,9 +273,9 @@ recv :: (fd: i32, buf: [*]u8, cap: i64, request_method: string = "GET") -> (Clie
 }
 
 // Send one HTTP/1.1 request on an open ClientConn (TLS-aware `send`).
-// Unlike the legacy `send`, the request is built into ONE allocation and
-// freed before returning — no arena required, nothing retained (a concat
-// chain would leak every intermediate into the caller's context).
+// The request is built into ONE allocation and freed before returning — no
+// arena required, nothing retained (a concat chain would leak every
+// intermediate into the caller's context).
 send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_headers: string, body: string) -> !ClientErr {
     advertise := c.accept_compression
         and !has_header(extra_headers, "accept-encoding")
@@ -335,7 +334,7 @@ put :: (p: [*]u8, w: i64, s: string) -> i64 {
     return w + s.len;
 }
 
-// ── Q3.6b: URL fetch + redirects ─────────────────────────────────────
+// ── URL fetch + redirects ─────────────────────────────────────
 
 // A parsed URL target. `host`/`path` are VIEWS into the parsed text.
 Url :: struct {
@@ -397,8 +396,8 @@ parse_url :: (url: string) -> (Url, bool) {
             ps += 1;
             d += 1;
         }
-        // review L2: bound the digit COUNT too — an attacker-controlled
-        // Location with 2^64-ish digits wrapped i64 back into range.
+        // Bound the digit COUNT too — an attacker-controlled Location with
+        // 2^64-ish digits wraps i64 back into range.
         if d == 0 or d > 5 or v < 1 or v > 65535 { return u, false; }
         u.port = v;
     }
@@ -406,7 +405,7 @@ parse_url :: (url: string) -> (Url, bool) {
         if rest[ps] != '/' { return u, false; }   // junk between port and path
         u.path = string{ ptr = *rest.ptr[ps], len = rest.len - ps };
     }
-    // review L4 (RFC 9112): the fragment is never part of the request
+    // RFC 9112: the fragment is never part of the request
     // target — strip it here so neither fetch loop sends one on the wire.
     fi : i64 = 0;
     while fi < u.path.len {
@@ -570,7 +569,7 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
             if !nok { context.allocator.dealloc_bytes(xx pathp); raise error.Url; }
             u = nu;   // host/path view pathp — copied into hostb / kept owned next iteration
         } else if locv.len > 0 and locv[0] == '/' {   // '/'-relative: keep authority
-            u.path = strip_fragment(locv);   // review L4 — parse_url strips the absolute arm
+            u.path = strip_fragment(locv);   // parse_url strips the absolute arm
         } else {
             context.allocator.dealloc_bytes(xx pathp);
             raise error.Url;   // relative-without-slash — unsupported
@@ -1019,7 +1018,7 @@ request :: (ip: u32, port: i64, method: string, path: string, host: string, extr
     return recv(fd, buf, cap, method);
 }
 
-// ── Q3.6b: keep-alive connection pool ────────────────────────────────
+// ── keep-alive connection pool ────────────────────────────────
 
 // One pooled keep-alive connection, keyed (https, host, port). `host` is a
 // pool-owned copy.
@@ -1109,7 +1108,7 @@ ClientPool :: struct {
     }
 
     // One pooled request: reuse the entry when live, else dial + store.
-    // RETRY POLICY (Q3.6b-review H1): a fresh dial retries a REUSED conn
+    // RETRY POLICY : a fresh dial retries a REUSED conn
     // only when the request provably never executed — a SEND fault, or the
     // peer closing before any response byte (error.Closed, the stale-keep-
     // alive signature). Every receipt failure after bytes arrived
@@ -1147,9 +1146,9 @@ ClientPool :: struct {
             }
             // The server may close after this response (its request_count
             // cap / an error close): drop the conn when it SAID so —
-            // "close" as a token of the comma-separated list, per RFC
-            // (review M2: a length-only match dropped on any 5-char value
-            // and MISSED "close, ..." lists).
+            // "close" as a token of the comma-separated list, per RFC. A
+            // length-only match would accept any 5-char value and miss
+            // "close, ..." lists.
             if connection_says_close(r.header("connection")) { self.drop(idx); }
             return r;
         }
@@ -1248,7 +1247,7 @@ Client :: struct {
     request :: (ip: u32, port: i64, method: string, path: string, host: string, extra_headers: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
         return request(ip, port, method, path, host, extra_headers, body, buf, cap);
     }
-    // ── Q3.6a sessions (see the free functions above) ────────────────
+    // ── sessions (see the free functions above) ────────────────
     open :: (host: string, port: i64, opts: ClientOpts) -> (ClientConn, !ClientErr) {
         return open(host, port, opts);
     }
@@ -1262,7 +1261,7 @@ Client :: struct {
         return recv_on(c, buf, cap);
     }
     close_conn :: (c: *ClientConn) { close_conn(c); }
-    // ── Q3.6b (see the free `fetch`) ─────────────────────────────────
+    // ── (see the free `fetch`) ─────────────────────────────────
     fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
         return fetch(method, url, body, opts, buf, cap);
     }

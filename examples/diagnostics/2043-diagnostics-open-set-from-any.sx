@@ -14,7 +14,6 @@
 //
 // The QUESTION forms are not here: `av.(?View)` answers `null` for every box, and
 // so does the chained `o?.(?View)` — see examples/types/0907.
-// Expected: exit 1.
 #import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 128 }) {

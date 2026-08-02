@@ -1,5 +1,5 @@
 // A receiver forms exactly where an argument in that position forms — including
-// when it cannot (fluent spec §5.2).
+// when it cannot.
 //
 // `emit` takes `$I/@Init(View)`, a FIXED target: what an initializer writes is
 // exactly its target. An expression that cannot become one is refused where it is
@@ -10,7 +10,6 @@
 // A type that carries no declaration of its own cannot be told to declare itself
 // into anything, so it is told what is true instead. And a target that is not a set
 // says the same thing in its own terms: what cannot become it cannot form one.
-// Expected: exit 1.
 #import "modules/std.sx";
 #import "modules/std/list.sx";
 

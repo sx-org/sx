@@ -262,7 +262,7 @@ pub const TargetConfig = struct {
 /// PATH-only zig is a dev convenience and never hijacks a native build, so the
 /// dev/CI corpus keeps using the system toolchain. `--self-contained` forces
 /// the backend with either bundled or PATH zig.
-/// See design/bundled-zig-link-backend-design.md §5.5.
+/// See design/bundled-zig-link-backend-design.md §3.5.
 fn selectZigLinker(allocator: std.mem.Allocator, tc: TargetConfig) !?[]const u8 {
     switch (tc.self_contained) {
         .off => return null,
@@ -363,8 +363,8 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
     const prefix = c.LLVMOrcLLJITGetGlobalPrefix(jit);
 
     // Program-owned dylibs first (generators run in attachment order).
-    // A failed generator is skipped: resolution then degrades to the
-    // process-wide search below, exactly the pre-priority behavior.
+    // A failed generator is skipped: resolution degrades to the
+    // process-wide search below.
     for (priority_dylibs) |path| {
         var pgen: c.LLVMOrcDefinitionGeneratorRef = null;
         err = c.LLVMOrcCreateDynamicLibrarySearchGeneratorForPath(&pgen, path.ptr, prefix, null, null);
@@ -407,12 +407,11 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
         return error.CompileError;
     }
 
-    // Defensive backstop (issue 0137): ORC has been observed reporting
-    // success from the `main` lookup while leaving `main_addr` at 0 — calling
-    // @ptrFromInt(0) then segfaults. The real fix is the pre-JIT entry-point
-    // check in main.zig (which also catches the observed NON-zero garbage
-    // address case); this guard is a last line of defense so a null entry can
-    // never be called regardless of how we got here.
+    // ORC can report success from the `main` lookup while leaving `main_addr`
+    // at 0 — calling @ptrFromInt(0) then segfaults. The pre-JIT entry-point
+    // check in main.zig rejects a program with no `main` (and catches the
+    // NON-zero garbage address too); this guard keeps a null entry from being
+    // called on any path that reaches here.
     if (main_addr == 0) {
         std.debug.print("error: no 'main' function found in JIT module\n", .{});
         return error.CompileError;
@@ -430,7 +429,7 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
 
 // Android APK bundling (createApk, compileJniMainSources,
 // buildAndroidManifest, buildJniMainManifest, ensureDebugKeystore,
-// libNameFromSoBasename + helpers) has moved to
+// libNameFromSoBasename + helpers) lives in
 // `library/modules/platform/bundle.sx`. `src/main.zig` invokes it
 // post-link via the BuildOptions callback registered from sx code.
 // `--apk <path>` on the CLI is a transitional alias that feeds
@@ -689,10 +688,10 @@ pub fn link(allocator: std.mem.Allocator, io: std.Io, output_obj: []const u8, ex
         //   - **#jni_main path (`has_jni_main = true`)** — the Java side
         //     drives lifecycle (the bundled classes.dex declares an
         //     Activity that overrides `onCreate` etc.). The .so just
-        //     provides JNI implementations bound at load time via the
-        //     `JNI_OnLoad` synthesized in slice R.3. No native_app_glue
-        //     is needed: there's no `ANativeActivity_onCreate` to host,
-        //     no `android_main` event loop to run.
+        //     provides the JNI implementations, bound by their mangled
+        //     `Java_*` export names. No native_app_glue is needed: there's
+        //     no `ANativeActivity_onCreate` to host, no `android_main`
+        //     event loop to run.
         //
         //   - **Legacy NativeActivity path (`has_jni_main = false`)** —
         //     native_app_glue.c is compiled and linked alongside the sx
@@ -871,7 +870,7 @@ pub fn link(allocator: std.mem.Allocator, io: std.Io, output_obj: []const u8, ex
 }
 
 // Apple .app bundling (createBundle, embedFramework, extractEntitlements,
-// buildInfoPlist, codesign) has moved to
+// buildInfoPlist, codesign) lives in
 // `library/modules/platform/bundle.sx`. `src/main.zig` invokes it
 // post-link via the BuildOptions callback registered from sx code.
 

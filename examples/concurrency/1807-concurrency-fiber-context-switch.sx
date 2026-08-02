@@ -1,4 +1,4 @@
-// Stream B1 (fibers) B1.3a — the stackful context switch, in pure sx over the
+// The stackful context switch, in pure sx over the
 // `abi(.naked)` primitive. `swap_context(from, to)` saves the callee-saved
 // registers + SP/LR into `*from` and loads them from `*to`, then `ret`s onto
 // `to`'s stack (SP-in ≠ SP-out by design — why it must be `.naked`, not `.c`).
@@ -14,15 +14,15 @@
 //   - a deep recursive chain (64 frames) suspended at the bottom and resumed —
 //     every frame's stack-local is verified on the unwind.
 //
-// What it does NOT yet do (B1.3a-2): EXPLICITLY scribble every callee-saved GP
-// (x19-x28) + FP (d8-d15) register with sentinels and check them in asm — the
-// full §10.7 gate. This harness exercises preservation indirectly (via
-// compiler-allocated live values), which catches a broken SP/LR or a dropped
-// callee-saved, but not a single specific register the allocator didn't use.
+// It does NOT scribble every callee-saved GP (x19-x28) + FP (d8-d15) register
+// with sentinels and check them in asm — 1808 is that gate. This harness
+// exercises preservation indirectly, through compiler-allocated live values,
+// which catches a broken SP/LR or a dropped callee-saved register but not a
+// specific register the allocator did not use.
 //
 // aarch64-pinned (the asm + the 13-slot save area are per-arch); runs
 // end-to-end here, ir-only on a mismatch. The x86_64 sibling + `mmap` guard-
-// page stacks are B1.3b.
+// page stacks are covered by 1809.
 #import "modules/std.sx";
 
 // Saved context: x19..x28 (10), x29/fp, x30/lr, sp — 13 u64 slots.

@@ -1,4 +1,4 @@
-// `emit.View` — the library's own open set (revision §13.2).
+// `emit.View` — the library's own open set.
 //
 // A different set from `fluent.View` and `compose.View`, declaring the same
 // methods and sharing nothing: a component of another library is not a member

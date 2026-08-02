@@ -1,4 +1,4 @@
-// The emit library's root and rendering entry points (revision §13.2).
+// The emit library's root and rendering entry points.
 #import "modules/std.sx";
 #import "modules/ui/emit/geometry.sx";
 #import "modules/ui/emit/render.sx";

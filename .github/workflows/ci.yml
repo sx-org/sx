@@ -1,17 +1,15 @@
-# Linux CI for the sx compiler (HTTPZ Phase C4).
+# Linux CI for the sx compiler.
 #
-# The dev host is macOS; this workflow is the FIRST place the compiler is built
-# and the full suite is run on Linux. The compiler is Zig + LLVM 22 (linked
-# dynamically); `build.zig` is already Linux-aware (libstdc++ link, multiarch
-# system-lib dir) and takes `-Dllvm-prefix` to point at the apt LLVM install.
+# The dev host is macOS; this workflow builds the compiler and runs the full
+# suite on Linux. The compiler is Zig + LLVM 22 (linked dynamically);
+# `build.zig` is Linux-aware (libstdc++ link, multiarch system-lib dir) and takes
+# `-Dllvm-prefix` to point at the apt LLVM install.
 #
-# STATUS: scaffolding. The corpus is gated for the obvious host-specific cases
-# (`ffi-objc` → macOS-only via the runner's `categoryHostOs`; Apple `.app`
-# bundles + Android `.apk` already self-skip off their host). The FIRST run on a
-# real runner is the triage step for the remainder: any example that fails only
-# because a Linux runtime/lib is absent gets gated with a `host_os` `.build`
-# directive (one-off) or added to `categoryHostOs` (whole category). See
-# current/CHECKPOINT-HTTPZ.md "C4".
+# The corpus is gated for host-specific cases: `ffi-objc` is macOS-only via the
+# runner's `categoryHostOs`, and Apple `.app` bundles and Android `.apk` self-skip
+# off their host. An example that fails only because a Linux runtime/lib is absent
+# is gated with a `host_os` `.build` directive, or added to `categoryHostOs` when
+# the whole category is host-bound.
 
 name: CI (Linux)
 
@@ -52,9 +50,8 @@ jobs:
         # Direct download of the tagged RELEASE tarball from ziglang.org. We do
         # NOT use setup-zig: its mirror set routed 0.16.0 to the dev-builds path
         # (/builds) and 404'd. 0.16.0 is a clean release (no -dev suffix), so it
-        # lives under /download/<ver>/. Zig changed the tarball name around 0.15
-        # to arch-first (`zig-x86_64-linux-<ver>`); try that then the legacy
-        # os-first name as a fallback.
+        # lives under /download/<ver>/. The tarball name is arch-first
+        # (`zig-x86_64-linux-<ver>`), with the os-first name as a fallback.
         run: |
           set -euo pipefail
           V=0.16.0

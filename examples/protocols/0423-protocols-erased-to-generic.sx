@@ -1,11 +1,9 @@
 // Erasing a builtin VALUE to a protocol, and passing an already-erased
 // protocol value to a generic `$T` parameter.
 //
-// Regression (issue 0279): a builtin scalar (`f32`) erased to a protocol
-// took a code path that passed the raw scalar as the erased value's ctx
-// pointer, producing a malformed `insertvalue {ptr,ptr} undef, float, 0`
-// and an LLVM verification failure. Erasing a value (not a `*T` pointer)
-// must materialize storage for the ctx pointer.
+// Erasing a value (not a `*T` pointer) materializes storage for the ctx
+// pointer, so a builtin scalar (`f32`) reaches the protocol through a real
+// address rather than riding in the ctx word.
 //
 // Semantics: passing an erased protocol value `a: Lerpable` to `check($T)`
 // binds `T = Lerpable` (the erased fat-pointer type) and forwards the value

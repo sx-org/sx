@@ -1,6 +1,6 @@
 // Glue rule (specs: Whitespace is Syntax): `[` indexes only when it is GLUED
 // to what it indexes. The `[` half of the rule the spaced call pins for `(`
-// (2057), and it reports the same way. Expected: exit 1.
+// (2057), and it reports the same way.
 #import "modules/std.sx";
 
 main :: () -> i32 {

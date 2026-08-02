@@ -98,8 +98,8 @@ main :: () {
     // comptime parameter makes the method inline.
     print("variadic={}\n", thing.count(.one, 1, true));
 
-    // This used to evaluate next() in the ordinary call loop and again in the
-    // generic-instance comptime helper.
+    // next() is evaluated ONCE — not again in the generic-instance comptime
+    // helper.
     box := Box(i64){ value = 20 };
     print("generic={} calls={}\n", box.add(next(), .one), calls);
 }

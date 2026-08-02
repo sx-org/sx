@@ -1,10 +1,10 @@
-// Comptime compiler API — read-only reflection readers (Phase 3).
+// Comptime compiler API — read-only reflection readers.
 //
 // `raw_find_type` / `raw_field_count` are bound to the `compiler` library via
-// `intrinsic` (mode `evaluate`), joining the `raw_intern` / `raw_text_of` seed. They are
-// the first REFLECTION readers: the compiler exposes its own type table to
-// comptime sx as plain handles (a `TypeId` is a u32, like a `StringId`), so the
-// calls are clean scalar host-calls — handle in, scalar out, no marshaling.
+// `intrinsic` (mode `evaluate`), alongside `raw_intern` / `raw_text_of`. The
+// compiler exposes its own type table to comptime sx as plain handles (a
+// `TypeId` is a u32, like a `StringId`), so the calls are clean scalar
+// host-calls — handle in, scalar out, no marshaling.
 //
 //   raw_find_type(name)        → the named type's handle (0 / `unresolved` if absent)
 //   raw_field_count(t)    → its member count (struct fields here)

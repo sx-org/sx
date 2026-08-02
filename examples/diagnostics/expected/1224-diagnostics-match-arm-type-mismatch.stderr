@@ -1,17 +1,17 @@
 error: match arms have incompatible types: 'i64' vs 'string'
-  --> examples/diagnostics/1224-diagnostics-match-arm-type-mismatch.sx:22:50
+  --> examples/diagnostics/1224-diagnostics-match-arm-type-mismatch.sx:18:50
    |
-22 |     r := if c == { case .red: { 1 } case .green: { "hi" } };
+18 |     r := if c == { case .red: { 1 } case .green: { "hi" } };
    |                                                  ^^^^^^^^
 
 error: match arms have incompatible types: 'f64' vs 'string'
-  --> examples/diagnostics/1224-diagnostics-match-arm-type-mismatch.sx:27:54
+  --> examples/diagnostics/1224-diagnostics-match-arm-type-mismatch.sx:23:54
    |
-27 |     s := if v == { case .num: (x) { x } case .other: { "nope" } };
+23 |     s := if v == { case .num: (x) { x } case .other: { "nope" } };
    |                                                      ^^^^^^^^^^
 
 error: match arms have incompatible types: 'i64' vs 'string'
-  --> examples/diagnostics/1224-diagnostics-match-arm-type-mismatch.sx:31:53
+  --> examples/diagnostics/1224-diagnostics-match-arm-type-mismatch.sx:27:53
    |
-31 |     w := if c == { case .red: { gi() } case .green: { gs() } };
+27 |     w := if c == { case .red: { gi() } case .green: { gs() } };
    |                                                     ^^^^^^^^

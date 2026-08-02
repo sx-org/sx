@@ -1,10 +1,9 @@
-// Stress: the same board screen through the FLUENT library (revision §14.2.1).
+// Stress: the same board screen through the FLUENT library.
 //
 // A separate entry point importing exactly one library. The same screen again,
 // built the fluent way: a container is an ordinary value whose child list is an
 // explicit field initializer over `collectViews()`, so interception happens only
 // inside that named block.
-// Expected: exit 0.
 #import "modules/std.sx";
 #import "modules/ui/fluent/geometry.sx";
 #import "modules/ui/fluent/render.sx";

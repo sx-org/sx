@@ -5,7 +5,6 @@
 // one thing the newline must NOT do: end a statement that is still running.
 // Neither spelling of the terminator touches a value — `;` separates statements
 // and decides nothing about what they produce (0041).
-// Expected: exit 0.
 #import "modules/std.sx"
 
 TAU :: 6

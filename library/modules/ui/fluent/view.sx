@@ -1,4 +1,4 @@
-// `fluent.View` — the library's own open set (revision §13.1).
+// `fluent.View` — the library's own open set.
 //
 // A type joins by declaring itself into THIS set. `compose.View` and `emit.View`
 // are different sets: a member of one is not a member of another, whatever the

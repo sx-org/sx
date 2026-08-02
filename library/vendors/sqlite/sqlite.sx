@@ -14,7 +14,7 @@
 // binary. `sqlite_version()` answers the vendored version — pin it in
 // the importing project's tests to make any fallback loud.
 //
-// COVERAGE — the full practical C API, ONE variant per function (the
+// The binding covers the full practical C API, ONE variant per function (the
 // modern/64-bit form where duplicates exist; `bind_text`/`bind_blob`
 // keep the 32-bit length forms, which skip text64's encoding arg —
 // per-value sizes beyond 2 GiB are out of scope). Deliberately NOT

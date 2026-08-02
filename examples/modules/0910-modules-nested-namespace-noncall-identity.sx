@@ -1,7 +1,7 @@
 // Issue 0325 positive + target identity. `direct` owns its inner alias while
 // `carried` receives the same alias spelling through exactly one flat hop.
-// Both engines author the same terminal names with deliberately different
-// layouts/values/variant ordinals, proving every surface keeps the exact inner
+// Both engines author the same terminal names with different
+// layouts/values/variant ordinals, so every surface keeps the exact inner
 // target rather than collapsing through a global name or monomorph cache.
 
 direct :: #import "0910-modules-nested-namespace-noncall-identity/direct.sx";

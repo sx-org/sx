@@ -198,7 +198,7 @@ const Expansion = struct {
     /// Register every driver the program's declaration lists hold, so the
     /// contribution ledger is complete before the first fold. A driver reached
     /// only through a branch-local `#import` registers when that branch is
-    /// selected — until then its contributions are covered by the driver whose
+    /// selected; otherwise its contributions are covered by the driver whose
     /// body holds the import.
     fn registerDrivers(ex: *Expansion, decls: []const *Node) void {
         var seen = std.AutoHashMap(*const Node, void).init(ex.self.alloc);
@@ -403,8 +403,8 @@ const Expansion = struct {
         }
     }
 
-    /// Every list, rewritten from its slots now that the drain has run. Only
-    /// a driver that parked can have left a slot empty past its pass.
+    /// Every list, rewritten from its slots after the drain. Only a driver
+    /// that parked can have left a slot empty past its pass.
     fn flushLists(ex: *Expansion) void {
         if (!ex.parked_any) return;
         var it = ex.lists.valueIterator();
@@ -496,8 +496,8 @@ const Expansion = struct {
     /// driver could still write a `#context_extend`, the fact is not
     /// publishable and the asking driver parks against it exactly as it parks
     /// against an open conformer set. Once nothing can contribute, the decided
-    /// space registers (incrementally — a declaration is scanned once), the L6
-    /// layout assembles, and the exact `__sx_default_context` is emitted. A
+    /// space registers (incrementally — a declaration is scanned once), the
+    /// Context layout assembles, and the exact `__sx_default_context` is emitted. A
     /// field type a taken group has not declared yet is the same wait: another
     /// driver's group can still supply it.
     fn contextReady(ex: *Expansion) bool {
@@ -960,7 +960,7 @@ const Group = struct {
                 const mint = g.claimRegistration(decl);
                 const is_true = folded orelse {
                     // Never silently discard the declarations of an unevaluable
-                    // module-scope conditional (issue 0241): a live function,
+                    // module-scope conditional: a live function,
                     // import, or asm block would vanish and surface as a
                     // distant unresolved-name error.
                     if (mint) {
@@ -1009,8 +1009,8 @@ const Group = struct {
     /// STATEMENT parser, so it arrives as an in-function `.asm_expr` — not the
     /// `.asm_global` the top-level parser produces. Once its branch is
     /// selected the node IS module-scope global asm: retag it so lowering's
-    /// `.asm_global` arm appends the template to `module.global_asm` (issue
-    /// 0194). `parseAsmGlobal`'s top-level restrictions apply: template only.
+    /// `.asm_global` arm appends the template to `module.global_asm`.
+    /// `parseAsmGlobal`'s top-level restrictions apply: template only.
     fn spliceGlobalAsm(g: *Group, stmt: *Node, src: ?[]const u8, mint: bool) void {
         if (stmt.data == .asm_global) {
             g.out.append(g.ex.self.alloc, stmt) catch {};

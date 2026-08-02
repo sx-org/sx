@@ -121,12 +121,9 @@ context:
   in the buffer; the comptime `.trace_resolve` resolver later recovers
   `file:line:col` from it.
 
-The op stays niladic by design: it carries no operand and no `GlobalId`,
-so no IR-level `Frame` global is ever visible to the interpreter. The
-rejected alternative — an op carrying a `GlobalId` to an IR-level `Frame`
-global — would make the global visible to the interpreter (forcing
-comptime onto the pointer-deref path) and fatten the lowerer; **do not do
-this.**
+The op must stay niladic: an operand or a `GlobalId` would make an
+IR-level `Frame` global visible to the interpreter, forcing comptime onto
+the pointer-deref path.
 
 `Frame` is defined **once** in sx (`trace.sx`/std), and its runtime layout —
 `{ string file, i32 line, i32 col, string func, string line_text }` — is
@@ -191,8 +188,7 @@ Traces follow the optimization level (mirrors `Lowering.tracesEnabled`):
 
 - **Debug (`-O0`/`-O1`, the `sx run` default):** push/clear emitted; the
   `Frame` table is emitted.
-- **Release (`-O2`/`-O3`):** push/clear are no-ops, no `Frame` table — a
-  future `--release-traces` flag flips them back on.
+- **Release (`-O2`/`-O3`):** push/clear are no-ops, no `Frame` table.
 - **Comptime (`#run`):** always on, regardless of build mode — a `#run`
   failure must produce a useful diagnostic even in a release build.
 
@@ -223,14 +219,14 @@ the same debug opt levels + a wired source map (`setDebugContext`):
 The `llvm-c/DebugInfo.h` DIBuilder API is bound in
 [`src/llvm_api.zig`](../src/llvm_api.zig).
 
-### What it enables (and what it doesn't, yet)
+### What it enables, and what it doesn't
 
-- ✅ **breakpoints, `step`, `stepi`, backtrace, source-line mapping** —
+- **breakpoints, `step`, `stepi`, backtrace, source-line mapping** —
   enabled by the line table + subprograms.
-- ⚠️ **variable inspection (`p x`)** — needs `DILocalVariable` + `DIType` +
-  location expressions per IR slot, which are **not emitted yet**. lldb
-  can step and show the right source line, but `p x` reports no variable.
-  This is an optional future slice; it's not required for stepping.
+- **variable inspection (`p x`)** is unavailable: it needs
+  `DILocalVariable` + `DIType` + location expressions per IR slot, which
+  are not emitted. lldb steps and shows the right source line, but `p x`
+  reports no variable.
 
 ### macOS / iOS note
 
@@ -245,8 +241,7 @@ parses at runtime.
 ## Wiring: exactly how it's connected
 
 This section is the file-and-function map — the concrete data flow for
-both the trace path and the DWARF path. Items marked ✅ exist today;
-⏳ are the planned slice-3 shape.
+both the trace path and the DWARF path.
 
 ### Where the pieces live
 
@@ -270,22 +265,21 @@ both the trace path and the DWARF path. Items marked ✅ exist today;
 Both paths resolve a byte offset to `file:line:col` the same way, so
 traces and DWARF can never disagree:
 
-- ✅ `import_sources : StringHashMap([:0]const u8)` (file path → source
-  text) is built in `core.zig` during `resolveImports` (main file +
-  every import), and shared with both the diagnostics renderer and the
-  emitter (via `setDebugContext`).
-- ✅ `Inst.span` (a `{start, end}` byte range) is threaded onto every
-  instruction by `Builder.current_span`, which `lower.zig` sets as it
-  walks each expr/stmt (E3.0 slice 1). `Function.source_file` records
-  which file a function's spans index.
-- ✅ `errors.SourceLoc.compute(source, span.start)` turns an offset into
-  `{line, col}`. Used by the diagnostics renderer, `@caller`,
-  the DWARF emitter, and the trace formatter — one function,
-  every consumer.
+- `import_sources : StringHashMap([:0]const u8)` (file path → source text)
+  is built in `core.zig` during `resolveImports` (main file + every import),
+  and shared with both the diagnostics renderer and the emitter (via
+  `setDebugContext`).
+- `Inst.span` (a `{start, end}` byte range) is threaded onto every
+  instruction by `Builder.current_span`, which `lower.zig` sets as it walks
+  each expr/stmt. `Function.source_file` records which file a function's
+  spans index.
+- `errors.SourceLoc.compute(source, span.start)` turns an offset into
+  `{line, col}`. Used by the diagnostics renderer, `@caller`, the DWARF
+  emitter, and the trace formatter — one function, every consumer.
 
 ### Trace path: compile → run → format
 
-**Producer (compile time) ✅ (3a)**
+**Producer (compile time)**
 
 1. `lower.zig` reaches a failure site — `lowerRaise`, `lowerTry`'s
    propagation branch, `lowerFailableOr`, or `lowerDestructureDecl` — and
@@ -307,12 +301,11 @@ traces and DWARF can never disagree:
    `.trace_resolve` resolver later turns each packed value back into
    `file:line:col` via the IR/source tables.
 
-**Buffer (run time) ✅** — `sx_trace.c` stores the `u64`s. Linked into the
+**Buffer (run time)** — `sx_trace.c` stores the `u64`s. Linked into the
 compiler so the JIT resolves `sx_trace_*` via `dlsym`; auto-injected as a
 `#source` for AOT when `needs_trace_runtime` is set.
 
-**Formatter (run time) ✅ (compiled 3a, comptime 3b)** — `trace.sx` `to_string()` loops
-`sx_trace_len()` / `sx_trace_frame_at(i)` and resolves each `u64` through
+**Formatter (run time)** — `trace.sx` `to_string()` loops `sx_trace_len()` / `sx_trace_frame_at(i)` and resolves each `u64` through
 a **read-side context-split primitive** (the mirror of the `.trace_frame` op):
 
 - compiled: cast the `u64` → `*Frame`, load the fields.
@@ -324,11 +317,11 @@ machine — a compiled program formats compiled frames, a `#run` formats
 comptime frames. It then prints `func at file:line:col` + a best-effort
 source snippet.
 
-**Consumers ✅** — a `catch` handler calling `trace.print_current()`, and
+**Consumers** — a `catch` handler calling `trace.print_current()`, and
 the failable-`main` wrapper, whose `ret` path in `emit_llvm`
 (`emitFailableMainRet`) calls `sx_trace_report_unhandled` in `sx_trace.c`.
 
-### DWARF path: compile → debugger ✅
+### DWARF path: compile → debugger
 
 1. `core.zig` `generateCode`: `LLVMEmitter.init(...)` →
    `emitter.setDebugContext(&self.import_sources, self.file_path)` →
@@ -364,11 +357,10 @@ snapshots don't drift when this machinery is present.
 
 ---
 
-## Why not return-address PCs + DWARF (decision, 2026-06-01)
+## Why a frame is not a return-address PC
 
-The original design captured return-address PCs and symbolized them via
-DWARF, Zig-style. We changed course. The full rationale lives in
-`implementation_plan.md` §Decisions Log; in brief:
+Capturing return-address PCs and symbolizing them via DWARF, Zig-style,
+does not work here:
 
 - **The dual-execution split is unavoidable regardless.** Compiled code
   and the interpreter run the same IR, so a frame must be context-split
@@ -387,8 +379,7 @@ DWARF, Zig-style. We changed course. The full rationale lives in
 - **Determinism.** Interned `Frame`s have no ASLR addresses, so trace
   output is snapshot-testable; raw PCs are not.
 
-DWARF is still emitted (it's how Zig's own `std.debug` reads program debug
-info), but **demoted to the debugger-only role above**. All OS-specific
+DWARF is emitted for the debugger-only role above. All OS-specific
 symbolization is delegated to the platform debugger — sx ships none.
 
 ---
@@ -398,8 +389,8 @@ symbolization is delegated to the platform debugger — sx ships none.
 | Artifact | Lookup | Size | Shipped in release? |
 |---|---|---|---|
 | **Tag-name table** | tag id → name string | tiny (per distinct tag) | **yes, always** — `{}` interpolation and the failable-`main` reporter's `error: unhandled error reached main: error.X` line need names even in release |
-| **`Frame` location table** | push site → `{file,line,col,func}` | small (interned strings; per push site) | **debug / `--release-traces` only** — rides the trace-mode gate |
-| **DWARF (`.debug_line` / `DISubprogram`)** | PC → file:line:col, for *debuggers* | larger (per source position) | **debug / `--release-traces` only**, strippable; consumed by `lldb`/`gdb`, never by the trace formatter |
+| **`Frame` location table** | push site → `{file,line,col,func}` | small (interned strings; per push site) | **debug only** — rides the trace-mode gate |
+| **DWARF (`.debug_line` / `DISubprogram`)** | PC → file:line:col, for *debuggers* | larger (per source position) | **debug only**, strippable; consumed by `lldb`/`gdb`, never by the trace formatter |
 
 The tag-name table is always linked (it's how a tag renders as `BadDigit`
 in any build). The `Frame` table powers traces. DWARF is independent
@@ -421,43 +412,35 @@ at opt none/less). On **macOS** the linked binary's debug map resolves to that
 **Linux** the DWARF is in the binary, so the `.o` isn't even needed. A portable
 `.dSYM` (via `dsymutil`) is only required for the on-device iOS rung (below).
 
-### The verification ladder
+### Stepping, host by host
 
-Source-level stepping is verified manually/interactively (it needs
-`dsymutil`/`lldb`, and on device a signing identity + a `get-task-allow`
-provisioning profile — not a `run_examples.sh` test). Climb cheapest-first;
-the device run is the final sign-off:
+Stepping needs `dsymutil`/`lldb` on the host, and on a device a signing
+identity plus a `get-task-allow` provisioning profile:
 
-1. **macOS native ✅ verified** — `sx build --emit-obj` → drive `lldb --batch`
-   (the debug map resolves to the kept `.o`; no `dsymutil` needed locally).
-   Checked in as `tests/debug_stepping_smoke.sh`: file:line breakpoint resolves
-   to `.sx:line` + a source-mapped `bt`. The automatable rung.
-2. **iOS simulator ✅ verified** — `sx build --target ios-sim --emit-obj`
-   produces an `arm64-ios-simulator` Mach-O that runs under `simctl spawn` and
-   steps in `lldb` (the backtrace shows a `dyld_sim` frame — proof it's the sim
-   runtime). The `tests/debug_stepping_smoke.sh` rung-2 exercises this *against
-   an already-booted sim* (it never boots one itself — use a single simulator);
-   it also collects a `.dSYM` via `dsymutil`, removes the `.o`, and confirms
-   lldb still resolves via the `.dSYM` — proving the device-applicable artifact
-   path. Skipped when no sim is booted.
-3. **iOS device (capstone) — manual, needs hardware + Apple signing.** Every
-   *technical* piece is already verified above (DWARF, the `.dSYM` workflow,
-   stepping under the sim runtime); the device rung adds only Apple-toolchain
-   steps that require a phone + a development identity, so it's a checklist, not
-   a compiler deliverable:
+1. **macOS native** — `sx build --emit-obj`, then drive `lldb --batch`; the
+   debug map resolves to the kept `.o`, so `dsymutil` is unnecessary locally.
+   `tests/debug_stepping_smoke.sh` runs this: a file:line breakpoint resolves
+   to `.sx:line` and `bt` is source-mapped.
+2. **iOS simulator** — `sx build --target ios-sim --emit-obj` produces an
+   `arm64-ios-simulator` Mach-O that runs under `simctl spawn` and steps in
+   `lldb`; the backtrace carries a `dyld_sim` frame, which is what identifies
+   the simulator runtime. `tests/debug_stepping_smoke.sh` rung 2 drives this
+   against an already-booted sim, never booting one itself, and skips when
+   none is booted. It also collects a `.dSYM` via `dsymutil`, removes the
+   `.o`, and confirms lldb still resolves through the `.dSYM` — the same
+   artifact path a device uses.
+3. **iOS device** — needs hardware and Apple signing, so it is a checklist
+   rather than a compiler deliverable; `--emit-obj` plus the standard Apple
+   tools cover it:
    1. `sx build --target ios --emit-obj …` (DWARF in the kept `.o`).
    2. `dsymutil <binary> -o <App>.app.dSYM` (the `.app` ships no `.o`).
-   3. bundle the `.app` (existing `--bundle` path) + debug-sign with a
+   3. bundle the `.app` (the `--bundle` path) + debug-sign with a
       provisioning profile carrying **`get-task-allow`**.
    4. `xcrun devicectl device install app …` then launch under `debugserver`.
    5. attach `lldb` (it finds the adjacent `.dSYM`) and single-step sx source.
 
-   No new compiler code is required — `--emit-obj` + standard Apple tools
-   suffice. (A `--debug` convenience flag that chains 1–4 could be added later,
-   but should be built with a device in hand to verify it.)
-
-Independently, **Tier-0 always works with no debugger**: a plain on-device
-run still prints the embedded-`Frame` trace to stderr/`os_log`.
+Independently of any of this, a plain on-device run with no debugger
+attached prints the embedded-`Frame` trace to stderr/`os_log`.
 
 ### Dependencies
 
@@ -467,27 +450,3 @@ ones any iOS app needs): `dsymutil`, `codesign` + provisioning,
 sx's dependency is zero** — the trace is `write(2, ...)` of pre-baked
 strings. We never call `atos`/`addr2line`, never read `/proc`, never parse
 a Mach-O debug map, never register JIT DWARF.
-
----
-
-## Implementation status
-
-| Piece | Status |
-|---|---|
-| Tag-name table + `{}` interpolation | ✅ done (`a3ff503`) |
-| Trace buffer (`sx_trace.c`) + push/clear wiring | ✅ done (`51f5277` / `ea40724`) |
-| `trace.sx` formatting (placeholder locations) | ✅ done (`bb20339`) |
-| IR instructions carry source spans | ✅ done — E3.0 slice 1 (`b44a5d0`) |
-| DWARF emission (compile unit / subprogram / line table) | ✅ done — E3.0 slice 2 (`c32d694`) |
-| Niladic trace-push op + interned `Frame` table (runtime) | ✅ done — E3.3 slice 3a (`1b6cbc1`) |
-| Comptime resolver (`func_id, span.start` → location) | ✅ done — slice 3b |
-| Source snippet + `^` caret | ✅ done — slice 3c (line embedded in `Frame`) |
-| `--emit-obj` artifact plumbing | ✅ done — slice 3d |
-| Stepping verification: macOS lldb | ✅ done — 3e rung 1 (`tests/debug_stepping_smoke.sh`) |
-| Stepping verification: iOS simulator + `.dSYM` path | ✅ done — 3e rung 2 (verified; smoke skips if no booted sim) |
-| Stepping verification: iOS device | 📋 manual checklist — needs hardware + signing (no compiler gap) |
-| DWARF variable info (`DILocalVariable`, for `p x`) | ⏳ optional follow-on |
-
-The active plan and step breakdown live in `current/PLAN-ERR.md`
-(§"Why not PCs + DWARF" + Step E3.0/E3.3) and `current/CHECKPOINT-ERR.md`;
-the design decisions are logged in `implementation_plan.md` §Decisions Log.

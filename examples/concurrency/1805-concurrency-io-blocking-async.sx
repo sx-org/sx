@@ -1,5 +1,4 @@
-// B1.2 / B2 — the async ergonomic layer over the `Io` capability, blocking
-// default. `context.io.async(worker)` submits a NULLARY `worker: Closure() -> $R`
+// The async ergonomic layer over the `Io` capability, blocking default. `context.io.async(worker)` submits a NULLARY `worker: Closure() -> $R`
 // and returns a `*Future($R)` handle; under the blocking `CBlockingIo` the worker
 // runs to completion inline, so the Future is born `.ready`. `f.await()` yields
 // the result (a value-failable `($R, !IoErr)`, handled with `or`).
@@ -13,7 +12,7 @@
 
 main :: () {
     // Inputs captured at the call site. The worker is FAILABLE
-    // (`Closure() -> ($R, !)`) — the unified Phase 3 shape; a body that never
+    // (`Closure() -> ($R, !)`) — the unified worker shape; a body that never
     // raises is a degenerate failable that always succeeds.
     s := context.io.async(() -> (i64, !) => 40 + 2);
     print("sum: {}\n", s.await() or { -1 });

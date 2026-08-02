@@ -1,10 +1,9 @@
 // Generic inference where `$R` comes from a worker closure's RETURN type
 // through a variadic `..$args` pack — both the DIRECT spelling
 // `mymk(bx, worker, 40, 2)` and the UFCS dot-call `bx.mymk(worker, 40, 2)`
-// resolve `$R = i64` identically and build `Wrap($R)` correctly.
-// Regression (issue 0151): the UFCS path used to splice the receiver as
-// arg 0 without running the direct path's pack/closure-return binding, so
-// `$R` stayed `.unresolved` and SIGTRAPped at LLVM emission.
+// resolve `$R = i64` identically and build `Wrap($R)` correctly. The UFCS path
+// runs the direct path's pack/closure-return binding rather than splicing the
+// receiver as arg 0.
 #import "modules/std.sx";
 
 Box  :: struct { n: i64; }

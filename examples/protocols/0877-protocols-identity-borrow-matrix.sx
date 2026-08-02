@@ -1,4 +1,4 @@
-// `#identity` ownership class (E2): protocol values of an identity
+// `#identity` ownership class: protocol values of an identity
 // protocol only ever BORROW a named object's storage — in EVERY erasure
 // spelling. The unmarked default class is value/own. This is the
 // POSITIVE matrix: lvalue borrows via `xx`, the target-explicit postfix

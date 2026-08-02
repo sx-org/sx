@@ -7,8 +7,6 @@
 // 2-flat-hop `c.sx` (two fields) declares `combine(self, v) => self.x * v + 16`.
 // Importing only b.sx, `x.combine(3)` on the visible `b.Box` instance must run
 // b's body (`7 + 3 = 10`), not c's (`7 * 3 + 16 = 37`).
-//
-// Regression (Phase E4 finding #1, param-typed instance-method site).
 
 #import "modules/std.sx";
 #import "0780-modules-bare-generic-instance-param-typed-author/b.sx";

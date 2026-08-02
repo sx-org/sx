@@ -1,4 +1,4 @@
-// `content.run(*sink)` and the interception rule (fluent spec §7.2, §9).
+// `content.run(*sink)` and the interception rule.
 //
 // `run` replays the block body once. A statement is intercepted when it is a
 // STANDALONE expression statement whose static type conforms to `P`. Everything

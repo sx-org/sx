@@ -1,8 +1,6 @@
 // Comptime bitwise + shift ops on the VM: AND/OR/XOR/NOT and shl/shr all fold
-// at compile time. Regression for the VM op port (P5.6) — these were unported in
-// `comptime_vm` and bailed (`shr` surfaced via the iOS-device bundler). `shr` is
-// an arithmetic right shift (sign-extending), mirroring the legacy interp's i64
-// model; the shift amount clamps to 63.
+// at compile time. `shr` is an arithmetic right shift (sign-extending) over an
+// i64 model; the shift amount clamps to 63.
 
 #import "modules/std.sx";
 

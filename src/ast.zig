@@ -141,15 +141,14 @@ pub const Root = struct {
 };
 
 /// ABI / calling-convention annotation written as the postfix `abi(.x)` form on a
-/// function declaration, function-type literal, or lambda. Subsumes the old
-/// `callconv(...)` spelling.
+/// function declaration, function-type literal, or lambda.
 /// - `.default` — no annotation: the ordinary sx-internal convention (implicit
 ///   context, sx ABI). There is no surface spelling for `.default`; it is the
 ///   value when `abi(...)` is absent.
-/// - `.c` — C ABI / cdecl, no implicit context (what `callconv(.c)` meant).
+/// - `.c` — C ABI / cdecl, no implicit context.
 /// - `.zig` — welded to the real internal Zig type/fn: layout follows the bound
 ///   Zig type, functions dispatch over the comptime host-call bridge. The
-///   `compiler` library (`design/comptime-compiler-api.md`) binds via `abi(.zig)`.
+///   `compiler` library binds via `abi(.zig)`.
 /// - `.compiler` — a COMPILER-DOMAIN function: it runs in the comptime evaluator
 ///   (VM / interp), NEVER in the shipped binary, so the backend does not lower it.
 ///   Covers the compiler-API surface (`intern`/`find_type`/`build_options`/… —
@@ -180,19 +179,15 @@ pub const FnDecl = struct {
     /// in the postfix slot after `extern`/`export`. `.default` = unannotated.
     /// `.zig` marks a function bound to the comptime `compiler` library — its
     /// signature is welded to the real internal Zig fn and it dispatches over the
-    /// host-call bridge at comptime (consumed by the binding registry + host-call
-    /// bridge in later phases).
+    /// host-call bridge at comptime.
     abi: ABI = .default,
     /// Postfix linkage modifier (`extern`/`export`) written before the `abi(...)`
     /// slot. `.none` for an ordinary sx-internal function.
     extern_export: ExternExportModifier = .none,
     /// Optional library reference + symbol-name override for an `extern`/`export`
-    /// function, the optional library + symbol-name override. Both
-    /// optional: `extern` alone resolves the sx name against the default-linked
-    /// libs; `extern LIB` names the source library; `extern "csym"` renames the
-    /// symbol. Required for `extern` to be a behavior-equivalent superset of
-    /// `extern` (Gate A→B) — the migration of 466 `extern` uses across 6 libs
-    /// must preserve each symbol's library. Parsed/consumed in Phase 1.2.
+    /// function. Both optional: `extern` alone resolves the sx name against the
+    /// default-linked libs; `extern LIB` names the source library;
+    /// `extern "csym"` renames the symbol.
     extern_lib: ?[]const u8 = null,
     extern_name: ?[]const u8 = null,
     /// Span of the function's name token, for the reserved-type-name decl
@@ -281,11 +276,10 @@ pub const CharLiteral = struct {
 };
 
 /// Inline assembly expression: `asm volatile? { "tmpl", <operands…>,
-/// clobbers(.…) }` (ASM stream, design §II.3). A flat `operands` list in source
+/// clobbers(.…) }` (design §II.3). A flat `operands` list in source
 /// order — that order keys the `%N`/`%[name]` indices and the LLVM constraint
 /// string. The result type is derived in Sema from the `out_value` operands
-/// (0→void, 1→T, N→tuple). Parsed in Phase A.1; lowering bails loudly until the
-/// IR op + emit land (Phases C–E).
+/// (0→void, 1→T, N→tuple).
 pub const AsmExpr = struct {
     /// Template: a string-literal / `#string` heredoc node (a comptime string).
     template: *Node,
@@ -306,18 +300,18 @@ pub const AsmOperand = struct {
     constraint: []const u8,
     role: Role,
     /// `out_value` → a Type node; `input` → an expression node. (`out_place`
-    /// payload is a write-through place expr — Phase 2, not parsed in A.1.)
+    /// payload is a write-through place expr.)
     payload: *Node,
 
     pub const Role = enum {
         out_value, // `-> Type`     value output; N of these → a tuple result
-        out_place, // `-> @place`   write-through to storage (Phase 2)
+        out_place, // `-> @place`   write-through to storage
         input, // `= expr`
     };
 };
 
-/// Top-level (module-scope) global assembly: `asm { "tmpl", };` (ASM stream
-/// design §II.2 Deviation 6). Template only — no operands, no `volatile`, no
+/// Top-level (module-scope) global assembly: `asm { "tmpl", };` (design
+/// §II.2 Deviation 6). Template only — no operands, no `volatile`, no
 /// `clobbers`, no `%` substitution. Lowers to `LLVMAppendModuleInlineAsm`;
 /// multiple blocks concatenate in source order. Symbols it defines are reached
 /// with a lib-less `extern` declaration.
@@ -571,7 +565,7 @@ pub const StructDecl = struct {
     /// for an ordinary struct. `.zig` marks a layout-welded binding to the named
     /// `compiler` library's real Zig type — its field offsets are taken from the
     /// bound Zig type (`@offsetOf`) and asserted equal at compiler-build time.
-    /// Parsed in Phase 1; consumed by the binding registry + layout engine later.
+    /// Consumed by the binding registry and the layout engine.
     abi: ABI = .default,
     /// The bound library handle for an `abi(.zig) extern <lib>` welded struct
     /// (e.g. `compiler`); null for an ordinary struct.
@@ -655,8 +649,7 @@ pub const TypeExpr = struct {
 };
 
 /// `$<pack_name>[<index>]` in type position. Resolves to the i-th
-/// element type of the active pack binding. Step 3 of the variadic
-/// heterogeneous type packs feature — used in trampoline bodies,
+/// element type of the active pack binding — used in trampoline bodies,
 /// generic conversions, struct fields parameterised over the pack.
 pub const PackIndexTypeExpr = struct {
     pack_name: []const u8,
@@ -664,10 +657,9 @@ pub const PackIndexTypeExpr = struct {
 };
 
 /// `$<pack_name>` (no indexing) in expression position. Evaluates
-/// to a comptime `[]Type` slice — the WHOLE pack as data. Step 4
-/// final slice: lets builder fns walk the pack types and emit
-/// per-position code (the shape step 5's generic Into(Block) needs
-/// for its trampoline body).
+/// to a comptime `[]Type` slice — the WHOLE pack as data. Lets builder
+/// fns walk the pack types and emit per-position code, as a generic
+/// `Into(Block)` trampoline body does.
 pub const ComptimePackRef = struct {
     pack_name: []const u8,
 };
@@ -686,7 +678,7 @@ pub const RaiseStmt = struct {
 };
 
 /// `try X` — a failable attempt. Unary prefix, binds tighter than any
-/// binary operator. Sema (E1.4) rejects a non-failable operand.
+/// binary operator. Sema rejects a non-failable operand.
 pub const TryExpr = struct {
     operand: *Node,
 };
@@ -742,11 +734,12 @@ pub const ErrorDirective = struct {
 /// program-global Context namespace, collected across all modules.
 pub const ContextExtendDecl = struct {
     name: []const u8,
-    /// Span of the field-name token (collision / L5 diagnostics anchor here).
+    /// Span of the field-name token (collision / missing-default diagnostics
+    /// anchor here).
     name_span: Span,
     type_expr: *Node,
     /// null = the `= default` clause is absent. The parser accepts it so the
-    /// collection pass can reject it with the L5 wording (defaults are
+    /// collection pass can reject it with the tailored wording (defaults are
     /// mandatory and comptime-evaluable) instead of a bare parse error.
     default_expr: ?*Node,
 };
@@ -823,7 +816,7 @@ pub const OptionalTypeExpr = struct {
 /// The error channel of a multi-return result list: bare `!` (inferred
 /// set) or `!Named` (a declared `error { ... }` set). Appears only as
 /// the trailing result element; the parser enforces the position and
-/// sema (E1) restricts it to return positions.
+/// sema restricts it to return positions.
 pub const ErrorTypeExpr = struct {
     /// `null` = inferred set (bare `!`); non-null = named set (`!Named`).
     name: ?[]const u8 = null,
@@ -842,7 +835,7 @@ pub const DerefExpr = struct {
     operand: *Node,
 };
 
-/// Postfix cast `expr.(T)` (aggregate ladder Step 4). Statically-typed
+/// Postfix cast `expr.(T)`. Statically-typed
 /// receivers convert via the explicit-target `xx` engine; type-erased
 /// receivers (`any` / protocol values) are checked assertions. The
 /// optional-chained form `expr?.(T)` maps over the optional receiver:
@@ -925,7 +918,7 @@ pub const NamedArg = struct {
 /// `f(args) { body }` trailing block (specs: Trailing Blocks). `lambda` is
 /// the zero-param closure literal the parser built from the block. Exists
 /// only as the LAST element of `Call.args`; the mapping pass binds it to the
-/// callee's last declared parameter (T1/N4 checks live there).
+/// callee's last declared parameter, which is where its checks live.
 pub const TrailingBlock = struct {
     lambda: *Node,
 };
@@ -1087,7 +1080,7 @@ pub const ProtocolDecl = struct {
     is_raw: bool = false,
     /// Defining module path (stamped by `resolveImports`), so a parameterized
     /// protocol instantiated cross-module resolves its method signature types in
-    /// the module that declares it (E4 — the protocol analog of
+    /// the module that declares it (— the protocol analog of
     /// `StructTemplate.source_file`). Null for a synthesized/sourceless decl.
     source_file: ?[]const u8 = null,
 };
@@ -1114,7 +1107,7 @@ pub const RuntimeMethodDecl = struct {
     return_type: ?*Node, // null = void
     is_static: bool = false, // true for `static name :: ...`
     jni_descriptor_override: ?[]const u8 = null, // `#jni_method_descriptor("(Sig)Ret")` — JNI runtime only
-    selector_override: ?[]const u8 = null, // `#selector("explicit:string")` — Obj-C runtime only (Phase 3.2)
+    selector_override: ?[]const u8 = null, // `#selector("explicit:string")` — Obj-C runtime only
     body: ?*Node = null, // sx-side implementation (defined-class only). null = `;`-terminated decl referencing inherited / external method.
 };
 
@@ -1122,19 +1115,19 @@ pub const RuntimeFieldDecl = struct {
     name: []const u8,
     field_type: *Node, // type_expr node
     /// True iff the declaration carries a `#property[(...)]` directive
-    /// (M2.2). For runtime classes, that means synthesize getter/setter
+    /// For runtime classes, that means synthesize getter/setter
     /// dispatch through `objc_msgSend`; for sx-defined classes it adds
     /// runtime-introspectable property metadata + ARC-aware setter
-    /// emission (Month 4 wires the latter).
+    /// emission.
     is_property: bool = false,
     /// Comma-separated modifier names from `#property(strong, weak, ...)`.
-    /// Stored verbatim; semantic interpretation lands in M4.2.
+    /// Stored verbatim; the semantic interpretation lives downstream.
     property_modifiers: []const []const u8 = &.{},
 };
 
 pub const RuntimeClassMember = union(enum) {
     method: RuntimeMethodDecl,
-    field: RuntimeFieldDecl, // JNI runtime only (sema-checked in later step)
+    field: RuntimeFieldDecl, // JNI runtime only
     extends: []const u8, // sx-side alias name (right of `#extends`)
     implements: []const u8, // sx-side alias name (right of `#implements`)
 };
@@ -1152,7 +1145,7 @@ pub const RuntimeClassDecl = struct {
     /// Defining module path (stamped by `resolveImports`), so the IMP trampolines
     /// emitted for an sx-defined class resolve their method-signature types in the
     /// module that declares the class — not the (cross-module) lowering site that
-    /// happens to trigger emission (E4). Null for a synthesized/sourceless decl.
+    /// happens to trigger emission. Null for a synthesized/sourceless decl.
     source_file: ?[]const u8 = null,
 };
 

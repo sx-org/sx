@@ -1,8 +1,8 @@
-// Regression (issue 0274) — a comptime-dead `inline if is_struct(T)` branch that
+// A comptime-dead `inline if is_struct(T)` branch that
 // reflects with `struct_field_type(T, i)` must be ELIDED from type resolution when T is
 // a non-indexable type (an enum), so `struct_field_type(enum)` never lowers `.unresolved`
 // to the backend. The `is_struct($T)` comptime predicate gates the branch, and a
-// direct `Enum.variant` value (`E.A`) is now a first-class generic-call argument
+// direct `Enum.variant` value (`E.A`) is a first-class generic-call argument
 // (its type infers to the enum). Compiles + runs for BOTH a struct and an enum
 // instantiation of the same generic.
 #import "modules/std.sx";

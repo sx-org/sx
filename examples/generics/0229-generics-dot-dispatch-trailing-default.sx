@@ -7,10 +7,10 @@
 // not an arg index and `appendDefaultArgs` (which assumes they match) cannot
 // serve it: each omitted slot is filled by parameter index instead. Without
 // that fill, `xs.free()` against
-// `free :: ufcs (x: $T, a: Allocator = context.allocator)` emitted a 2-arg
+// `free :: ufcs (x: $T, a: Allocator = context.allocator)` emits a 2-arg
 // call into the 3-param monomorph — an LLVM verifier abort ("Incorrect
 // number of arguments passed to called function"), no diagnostic. The
-// direct-call forms (`free(xs)`, `gfn(xs)`) were never affected: their
+// direct-call forms (`free(xs)`, `gfn(xs)`) are unaffected: their
 // defaults splice into the AST args before dispatch.
 
 #import "modules/std.sx";

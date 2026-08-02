@@ -4,17 +4,13 @@
 // discarded and the call yields the success tag; only an error tail reaches the
 // caller's `catch`.
 //
-// Both inline shapes are covered: a body with no explicit `return` (which used
-// to hand its raw tail value back as the call's error tag, so `catch` fired on
-// success) and a body that has one (whose slot was left undefined when control
-// fell off the end). Defers run before either exit.
+// Both inline shapes are covered: a body with no explicit `return` and a body
+// that has one. Defers run before either exit.
 //
 // A `-> noreturn` callee is the third shape reaching the same sink: nothing is
-// demanded of its tail, and its body closes the block it was inlined into. The
-// call site therefore has no live position left to hold a result — a
-// placeholder emitted there lands after the terminator and the module fails to
-// verify ("Terminator found in the middle of a basic block").
-// Expected: exit 0, from the inlined `proc.exit(0)` rather than a return.
+// demanded of its tail, and its body closes the block it was inlined into, so
+// the call site has no live position left to hold a result and none is emitted.
+// The exit comes from the inlined `proc.exit(0)`, not from a return.
 #import "modules/std.sx";
 proc :: #import "modules/std/process.sx";
 

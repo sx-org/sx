@@ -1,14 +1,12 @@
 // Closure-type alias in const-decl (`::`) RHS position.
-//   CB :: Closure(i32) -> i32;
+//     CB :: Closure(i32) -> i32;
 // The alias is usable everywhere a closure type is: fn param, struct field,
 // return type, and as the target of an `xx` protocol erasure. Parses the
-// `-> R` tail that a bare `Closure(i32)` call previously left dangling.
+// `-> R` tail that a bare `Closure(i32)` call would leave dangling.
 //
-// Regression (issue 0231): the const-RHS grammar parsed `Closure(i32)` as a
-// call expression and errored "expected ';'" at `->`. Fixed by routing a
-// `Closure(...)` head in expression position through the closure-type parse
-// (mirrors the existing `Tuple(...)` magic) + registering the resulting
-// `closure_type_expr` node as a type alias in scanDecls.
+// A `Closure(...)` head in expression position routes through the closure-type
+// parse (mirroring the `Tuple(...)` magic), and scanDecls registers
+// the resulting `closure_type_expr` node as a type alias.
 #import "modules/std.sx";
 
 CB   :: Closure(i32) -> i32;      // single-arg alias

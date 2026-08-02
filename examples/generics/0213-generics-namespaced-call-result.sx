@@ -1,6 +1,5 @@
 // A NAMESPACED call to a generic free function types its result from the
-// call's inferred bindings — not the unbound `T` stub (issue 0127:
-// `m.pick(3, 9)` boxed as `T{}` while the flat spelling printed `9`).
+// call's inferred bindings, exactly as the flat spelling does.
 #import "modules/std.sx";
 m :: #import "0213-generics-namespaced-call-result/m.sx";
 

@@ -6,7 +6,7 @@ const ast = @import("ast.zig");
 const Node = ast.Node;
 const Parser = @import("parser.zig").Parser;
 
-// Lock: the comptime type-metaprogramming surface in `library/modules/std/meta.sx`
+// The comptime type-metaprogramming surface in `library/modules/std/meta.sx`
 // must PARSE — the data types as struct/enum decls, and the four comptime builtins
 // (`declare` / `define` / `type_info` / `field_type`) as bodyless `intrinsic`
 // consts. Mirrors the exact spellings in meta.sx.
@@ -79,14 +79,13 @@ test "parser: comptime type-metaprogramming surface parses" {
     }
 }
 
-// Lock: the `compiler`-library binding surface PARSES — `name :: #library "x";`
-// (already supported) plus the postfix `intrinsic` marker, marking a
-// compiler-domain / compiler-API function — no `extern`, no fake `#library`. The
+// The `compiler`-library binding surface PARSES — `name :: #library "x";` plus
+// the postfix `intrinsic` marker, marking a compiler-domain / compiler-API
+// function — no `extern`, no fake `#library`. The
 // AST must carry `abi == .compiler`, `extern_export == .none`, `extern_lib ==
 // null`, and a synthesized empty-block (bodiless) body.
 
-// Lock: a bare `extern` (no abi annotation) leaves `abi == .default` — the
-// unannotated case is unchanged by the new `abi(...)` slot.
+// A bare `extern` (no abi annotation) leaves `abi == .default`.
 test "parser: bare extern leaves abi == .default" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -106,9 +105,8 @@ test "parser: bare extern leaves abi == .default" {
     try std.testing.expectEqual(ast.ABI.default, fd.abi);
 }
 
-// Lock: `abi(.c)` parses standalone (no extern/export) in the postfix slot — the
-// migrated spelling of the old `callconv(.c)` on an ordinary function pointer /
-// fn decl. And `abi(.naked)` parses (naked-asm ABI).
+// `abi(.c)` parses standalone (no extern/export) in the postfix slot of an
+// ordinary function pointer / fn decl. And `abi(.naked)` parses (naked-asm ABI).
 test "parser: abi(.c) and abi(.naked) parse standalone" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -130,14 +128,12 @@ test "parser: abi(.c) and abi(.naked) parse standalone" {
     try std.testing.expectEqual(ast.ABI.naked, decls[1].data.fn_decl.abi);
 }
 
-// Lock: the postfix `abi(...)` slot PARSES on a STRUCT decl — `Name :: struct
-// extern <lib> { … }`. The AST struct_decl carries the abi + the
-// library handle in `extern_lib`, with the field list intact. Parse-only — the
-// struct-weld semantics were stripped (compiler-API types are VM-native now); this
-// just locks that the annotation slot still parses without perturbing fields.
+// The postfix `abi(...)` slot PARSES on a STRUCT decl — `Name :: struct
+// extern <lib> { … }`. The AST struct_decl carries the abi + the library
+// handle in `extern_lib`, with the field list intact. Parse-only: the
+// annotation carries no struct semantics (compiler-API types are VM-native).
 
-// Lock: an ordinary struct (no binding) leaves `abi == .default` / `extern_lib ==
-// null` — the new annotation slot doesn't perturb the common case.
+// An ordinary struct (no binding) leaves `abi == .default` / `extern_lib == null`.
 test "parser: plain struct leaves abi == .default, extern_lib == null" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -157,7 +153,7 @@ test "parser: plain struct leaves abi == .default, extern_lib == null" {
     try std.testing.expect(sd.extern_lib == null);
 }
 
-// ── New tuple syntax (additive; the inline `(a, b)` forms stay valid) ──
+// ── Tuple syntax (the inline `(a, b)` type forms are valid alongside it) ──
 
 // `Tuple(A, B)` magic type id → positional tuple_type_expr, mirroring `(A, B)`.
 // Exercised in a genuine type position (a fn return type), since a `::` RHS is
@@ -188,7 +184,7 @@ test "parser: named Tuple(x: A, y: B) stores field names" {
 }
 
 // 1-tuple `Tuple(T)` and empty `Tuple()`. A `Tuple(T)` stays a 1-tuple — unlike
-// the inline `(T)` which is a grouping; my block never unwraps.
+// the inline `(T)`, which is a grouping.
 test "parser: Tuple(T) is a 1-tuple, Tuple() is empty" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -204,9 +200,8 @@ test "parser: Tuple(T) is a 1-tuple, Tuple() is empty" {
 }
 
 // `Tuple(..Ts)` reuses the spread/pack machinery (spread_expr field). Checked
-// in a PARAM type position (the inline `(..Ts)` form parses there too — a pack
-// tuple in bare RETURN position is a separate pre-existing parser limitation
-// that affects `(..Ts)` and `Tuple(..Ts)` identically).
+// in a PARAM type position (the inline `(..Ts)` form parses there too; neither
+// spelling parses in bare RETURN position).
 test "parser: Tuple(..Ts) pack field is a spread_expr" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -235,8 +230,8 @@ test "parser: bare Tuple (no paren) is an identifier, not a tuple type" {
     try std.testing.expect(root.data.root.decls[0].data == .fn_decl);
 }
 
-// `.( )` is GONE (aggregate ladder Step 1 cutover) — a plain parse error.
-test "parser: .(a, b) is rejected after the cutover" {
+// `.( )` is a plain parse error.
+test "parser: .(a, b) is rejected" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: () { x := .(1, 2); }");
@@ -283,17 +278,17 @@ test "parser: .{ x } shorthand records was_shorthand" {
     try std.testing.expect(fis[0].was_shorthand);
 }
 
-// The legacy bare trailing-`!` spelling `-> T !` was removed — the canonical
-// failable result list is `-> (T, !)`. The bare form is now a parse error.
-test "parser: legacy bare `-> T !` is rejected" {
+// The failable result list is `-> (T, !)`; a bare trailing `!` after the value
+// type is a parse error.
+test "parser: bare `-> T !` is rejected" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: () -> i64 ! { 0 }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-// Likewise the legacy `-> Tuple(A, B) !` spelling — write `-> (A, B, !)`.
-test "parser: legacy bare `-> Tuple(A, B) !` is rejected" {
+// Likewise `-> Tuple(A, B) !` — write `-> (A, B, !)`.
+test "parser: bare `-> Tuple(A, B) !` is rejected" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: () -> Tuple(i64, i32) !ParseErr { 0 }");
@@ -311,8 +306,8 @@ test "parser: -> ! stays a bare error_type_expr" {
     try std.testing.expect(rt.data == .error_type_expr);
 }
 
-// Bare-paren `-> (T, !)` is a SINGLE-value failable return (= `-> T !`): one
-// value slot + a trailing error channel. Parses to a `(T, !)` tuple_type_expr —
+// Bare-paren `-> (T, !)` is a SINGLE-value failable return: one value slot +
+// a trailing error channel. Parses to a `(T, !)` tuple_type_expr —
 // NOT a multi-return signature (only ≥2 value slots are `return_type_expr`).
 test "parser: -> (T, !) is a single-value failable, not multi-return" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -340,7 +335,7 @@ test "parser: bare-paren (A, B) parses to a return_type_expr" {
     try std.testing.expectEqual(@as(usize, 2), rt.data.return_type_expr.field_types.len);
 }
 
-// Bare-paren tuple VALUE `(a, b)` is gone — rejected (tuple values are annotated `.{...}`).
+// A bare-paren tuple VALUE `(a, b)` is rejected — tuple values are annotated `.{...}`.
 test "parser: bare-paren tuple value (a, b) is rejected" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -357,10 +352,9 @@ test "parser: bare-paren grouping (a + b) still parses" {
     try std.testing.expect(root.data.root.decls[0].data == .fn_decl);
 }
 
-// Regression (issue 0231): a closure-type alias `CB :: Closure(i32) -> i32;`
+// A closure-type alias `CB :: Closure(i32) -> i32;`
 // parses. The const-decl RHS routes a `Closure(...)` head through the
-// closure-type parse so the `-> R` tail is consumed (a bare `Closure(i32)`
-// call used to leave `->` dangling → "expected ';'"). Node shape: a
+// closure-type parse so the `-> R` tail is consumed. Node shape: a
 // `const_decl` whose value is a `closure_type_expr` carrying the return type.
 test "parser: closure-type alias in const-decl RHS parses to closure_type_expr" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -375,8 +369,8 @@ test "parser: closure-type alias in const-decl RHS parses to closure_type_expr" 
     try std.testing.expect(value.data.closure_type_expr.return_type != null);
 }
 
-// A NON-Closure call head followed by `->` still errors (no accidental
-// broadening of the magic to arbitrary call expressions).
+// A NON-Closure call head followed by `->` errors: the magic is `Closure`'s
+// alone, never an arbitrary call expression's.
 test "parser: non-Closure call followed by '->' still fails" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -384,10 +378,10 @@ test "parser: non-Closure call followed by '->' still fails" {
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-// Lock: `#context_extend name: Type = default;` parses at top level to a
+// `#context_extend name: Type = default;` parses at top level to a
 // `.context_extend_decl` node carrying {name, name_span, type_expr,
 // default_expr}; the `= default` clause may be ABSENT (default_expr == null —
-// the collection pass rejects it with the L5 wording, not the parser); and it
+// the collection pass rejects it, not the parser); and it
 // declares no module-scope name (`declName` is null — the field lives in the
 // program-global Context namespace).
 test "parser: #context_extend parses to context_extend_decl" {
@@ -418,8 +412,8 @@ test "parser: #context_extend parses to context_extend_decl" {
     try std.testing.expect(bare.default_expr == null);
 }
 
-// Lock: `#context_extend` is top-level-only (L7) — statement position is a
-// parse error, not a generic expression-parse fallthrough.
+// `#context_extend` is top-level-only — statement position is a parse error,
+// not a generic expression-parse fallthrough.
 test "parser: #context_extend rejected in statement position" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -591,8 +585,8 @@ test "parser: a type's arguments bind only when glued" {
 }
 
 // `BI :: Box;` alone is a valid alias to the un-applied generic, so nothing
-// downstream would have flagged the spelling — the glue check has to fire at
-// the `(` for the report to name the space.
+// downstream flags the spelling — the glue check has to fire at the `(` for
+// the report to name the space.
 test "parser: the spaced alias orphan reports the spacing" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -871,7 +865,7 @@ test "parser: a newline before `else` continues the chain" {
     try std.testing.expect(body.data.block.stmts[0].data.if_expr.else_branch != null);
 }
 
-// C1: statements break, expressions chain. A bare scope block in STATEMENT
+// Statements break, expressions chain. A bare scope block in STATEMENT
 // position ends at its `}`; an expression that ends in a block does not.
 test "parser: a bare scope block statement does not chain" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -969,7 +963,7 @@ test "parser: a newline ends the last declaration in a file" {
 // stop; an `export` definition and an `extern` struct still owe a body, so
 // nothing there can end and the tail reads straight through a line break.
 
-// L1/L2 — a function `extern` tail may end, so it binds only on its own line.
+// A function `extern` tail may end, so it binds only on its own line.
 test "parser: a terminable extern tail binds only on its own line" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1002,7 +996,7 @@ test "parser: a terminable extern tail binds only on its own line" {
     try std.testing.expectEqualStrings("puts", bound.extern_name.?);
 }
 
-// L6/L7 — the data-global `extern` tail is terminable for the same reason.
+// The data-global `extern` tail is terminable for the same reason.
 test "parser: a terminable extern data tail binds only on its own line" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1031,8 +1025,8 @@ test "parser: a terminable extern data tail binds only on its own line" {
     try std.testing.expectEqualStrings("__error", bound.extern_name.?);
 }
 
-// L3/L4 — an `export` still owes a body, so nothing in its tail can end and the
-// break is ordinary whitespace.
+// An `export` still owes a body, so nothing in its tail can end and the break
+// is ordinary whitespace.
 test "parser: an export tail reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1064,7 +1058,7 @@ test "parser: an export tail reads through a line break" {
     try std.testing.expectEqualStrings("renamed_c", same_fd.extern_name.?);
 }
 
-// L5 — a struct's `{ … }` is unconditional, so its tail reads through too.
+// A struct's `{ … }` is unconditional, so its tail reads through too.
 test "parser: a struct linkage tail reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1086,7 +1080,7 @@ test "parser: a struct linkage tail reads through a line break" {
     try std.testing.expectEqual(@as(usize, 1), same_sd.field_names.len);
 }
 
-// C-1 / V3a / K1 — the reorder. A complete `name : T` (or `name :: value`) asks
+// A complete `name : T` (or `name :: value`) asks
 // whether it ended BEFORE dispatching on the token below, so which reading wins
 // is the suppression property rather than arm order. All three tails name a
 // token that cannot open a statement, so all three read through the break.
@@ -1095,7 +1089,7 @@ test "parser: a complete binding asks whether it ended before its tail" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // C-1: `extern` below a complete `name : T`.
+    // `extern` below a complete `name : T`.
     var ext = Parser.init(alloc,
         \\errno_loc : *i32
         \\    extern libc "__error"
@@ -1106,7 +1100,7 @@ test "parser: a complete binding asks whether it ended before its tail" {
     try std.testing.expectEqualStrings("libc", ext_decls[0].data.var_decl.extern_lib.?);
     try std.testing.expectEqualStrings("__error", ext_decls[0].data.var_decl.extern_name.?);
 
-    // V3a: a split `:` still makes a typed constant.
+    // A split `:` still makes a typed constant.
     var col = Parser.init(alloc,
         \\LIMIT : i64
         \\    : 1
@@ -1116,7 +1110,7 @@ test "parser: a complete binding asks whether it ended before its tail" {
     try std.testing.expect(col_decls[0].data.const_decl.type_annotation != null);
     try std.testing.expect(col_decls[0].data.const_decl.value.data == .int_literal);
 
-    // D1: a split `=` still makes a typed variable.
+    // A split `=` still makes a typed variable.
     var eq = Parser.init(alloc,
         \\seed : i64
         \\    = 7
@@ -1125,7 +1119,7 @@ test "parser: a complete binding asks whether it ended before its tail" {
     try std.testing.expectEqual(@as(usize, 1), eq_decls.len);
     try std.testing.expect(eq_decls[0].data.var_decl.value.?.data == .int_literal);
 
-    // K1: a split `intrinsic` still annotates the constant.
+    // A split `intrinsic` still annotates the constant.
     var intr = Parser.init(alloc,
         \\mystery :: i64
         \\    intrinsic
@@ -1148,7 +1142,7 @@ test "parser: a complete binding asks whether it ended before its tail" {
     try std.testing.expect(plain_decls[1].data == .const_decl);
 }
 
-// E1/E2 — the suppression list is the enumeration of a property, not a
+// The suppression list is the enumeration of a property, not a
 // whitelist: a binary operator below a complete statement continues it whether
 // or not it is a member, because the Pratt loop consumes it before any
 // terminator query runs.
@@ -1157,12 +1151,12 @@ test "parser: a binary operator below a statement continues it" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // E1 — members.
+    // Members.
     inline for (.{ "+", "==", "!=", "<=", ">=", "<<", ">>", "|", "??" }) |op| {
         const body = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    " ++ op ++ " 2\n}");
         try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
     }
-    // E2 — nonmembers. Same verdict, reached by the same path.
+    // Nonmembers. Same verdict, reached by the same path.
     inline for (.{ "<", ">", "/", "%", "&", "^" }) |op| {
         const body = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    " ++ op ++ " 2\n}");
         try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
@@ -1174,7 +1168,7 @@ test "parser: a binary operator below a statement continues it" {
     }
 }
 
-// A1/D0 — the assignment operators are the same story: `=` is a member and the
+// The assignment operators are the same story: `=` is a member and the
 // compound spellings are not, and both continue because the assignment dispatch
 // consumes them directly.
 test "parser: an assignment operator below a target continues it" {
@@ -1204,14 +1198,12 @@ test "parser: an assignment operator below a target continues it" {
 // ---- The binding layer ----
 //
 // `(`, `[`, `{`, and `!` attach to what precedes them only on that expression's
-// own line. This is the rule the glue forms and the trailing block already
-// followed, applied to the two postfix forms that were still taking their token
-// across a break — and it is geometry, not completability: the same brace is
-// refused inside an argument list exactly as it is at statement level. The
-// dot-led postfixes are the other camp: `.`, `?.`, and `catch` chain across a
-// break, which P4 below pins.
+// own line — the same rule the glue forms and the trailing block follow. It is
+// geometry, not completability: the same brace is refused inside an argument
+// list exactly as it is at statement level. The dot-led postfixes are the other
+// camp: `.`, `?.`, and `catch` chain across a break.
 
-// P2 — `!` is postfix force-unwrap and prefix `not`, so which one a leading `!`
+// `!` is postfix force-unwrap and prefix `not`, so which one a leading `!`
 // spells is decided by the line it sits on.
 test "parser: a postfix `!` binds only on its own line" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -1238,7 +1230,7 @@ test "parser: a postfix `!` binds only on its own line" {
     try std.testing.expect(same.data.block.stmts[0].data == .force_unwrap);
 }
 
-// P3 — a named aggregate's `{` binds only on the same line as its head. Across
+// A named aggregate's `{` binds only on the same line as its head. Across
 // a break the head is an expression of its own and the brace is a scope block,
 // whatever the head was: a type name, a type application, or a value call.
 test "parser: a named aggregate `{` binds only on its head's line" {
@@ -1309,10 +1301,10 @@ test "parser: a named aggregate `{` binds only on its head's line" {
 //
 // An optional slot inside a construct that still owes a mandatory `{`, `(` or
 // name is not a place the construct can end, so a line break in front of it is
-// ordinary whitespace. Each of these has an identifier-shaped slot, which is
-// exactly the shape a future sweep could mistake for a statement head.
+// ordinary whitespace. Each of these has an identifier-shaped slot — the shape
+// most easily mistaken for a statement head.
 
-// M1 — enum `flags` and the backing type.
+// Enum `flags` and the backing type.
 test "parser: an enum header reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1335,7 +1327,7 @@ test "parser: an enum header reads through a line break" {
     try std.testing.expect(same_ed.backing_type != null);
 }
 
-// M2 — a `ufcs` alias target is mandatory, so the break cannot end the alias.
+// A `ufcs` alias target is mandatory, so the break cannot end the alias.
 test "parser: a ufcs alias target reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1353,7 +1345,7 @@ test "parser: a ufcs alias target reads through a line break" {
     try std.testing.expectEqualStrings("mat4_multiply", (try same.parse()).data.root.decls[0].data.ufcs_alias.target);
 }
 
-// M3 — a runtime class's linkage word sits in front of a mandatory body.
+// A runtime class's linkage word sits in front of a mandatory body.
 test "parser: a runtime-class linkage word reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1371,7 +1363,7 @@ test "parser: a runtime-class linkage word reads through a line break" {
     try std.testing.expect((try same.parse()).data.root.decls[0].data.runtime_class_decl.is_extern);
 }
 
-// M4 — a struct's type-parameter list sits in front of a mandatory `{`.
+// A struct's type-parameter list sits in front of a mandatory `{`.
 test "parser: a struct type-parameter list reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1390,7 +1382,7 @@ test "parser: a struct type-parameter list reads through a line break" {
     try std.testing.expectEqual(@as(usize, 1), (try same.parse()).data.root.decls[0].data.struct_decl.type_params.len);
 }
 
-// M5 — a protocol's kind word sits in front of a mandatory `{`.
+// A protocol's kind word sits in front of a mandatory `{`.
 test "parser: a protocol kind word reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1408,7 +1400,7 @@ test "parser: a protocol kind word reads through a line break" {
     try std.testing.expectEqual(ast.ProtocolKind.@"inline", (try same.parse()).data.root.decls[0].data.protocol_decl.kind);
 }
 
-// H1 — a function header's optional slots all sit in front of a mandatory body.
+// A function header's optional slots all sit in front of a mandatory body.
 test "parser: a function header reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1426,7 +1418,7 @@ test "parser: a function header reads through a line break" {
     try std.testing.expectEqual(@as(usize, 1), fd.body.data.block.stmts.len);
 }
 
-// D3 — `#context_extend`'s default is optional, and `=` cannot open a
+// `#context_extend`'s default is optional, and `=` cannot open a
 // statement, so a split default still binds.
 test "parser: a #context_extend default reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -1454,7 +1446,7 @@ test "parser: a #context_extend default reads through a line break" {
     try std.testing.expect(bare_decls[0].data.context_extend_decl.default_expr == null);
 }
 
-// I1 — a value inside a fixed delimiter is owned by that delimiter: the list
+// A value inside a fixed delimiter is owned by that delimiter: the list
 // runs to its closer, so a line break inside it never ends anything.
 test "parser: values inside fixed delimiters read through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -1501,7 +1493,7 @@ test "parser: values inside fixed delimiters read through a line break" {
     try std.testing.expect(agg.data.block.stmts[0].data.var_decl.value.?.data == .struct_literal);
 }
 
-// P4 — the suppressed postfixes still chain across a break, on the paths that
+// The suppressed postfixes still chain across a break, on the paths that
 // own them.
 test "parser: `?.` and `catch` continue across a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

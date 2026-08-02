@@ -1,4 +1,4 @@
-// Feature 1 — value-position pack projection: `xs.<method>` projects a
+// Value-position pack projection: `xs.<method>` projects a
 // (zero-arg) protocol method over every element into a TUPLE of the per-element
 // results. For a parameterised `Box(T)`, each element's method returns its own
 // `T`, so the projected tuple is heterogeneous.

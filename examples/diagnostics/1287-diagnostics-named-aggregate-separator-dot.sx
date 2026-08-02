@@ -1,6 +1,5 @@
-// Separator-dot named aggregates `Type.{…}` were removed. The compact form is
-// `Type{…}`; contextual construction remains `.{…}`.
-// Expected: exit 1.
+// A named aggregate literal places `{` directly after its type — `Type{…}`;
+// a separator dot (`Type.{…}`) is rejected. Contextual construction is `.{…}`.
 #import "modules/std.sx";
 
 Button :: struct {

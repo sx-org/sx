@@ -1,8 +1,8 @@
-// Stream B1 (fibers) B1.4b — a fiber's pending `sleep` timer is EVICTED when it
+// A fiber's pending `sleep` timer is EVICTED when it
 // is woken early by another path, so a stale timer can never outlive (and
 // dereference) a reaped fiber.
 //
-// Scenario: a "sleeper" fiber arms `sleep(100)` and parks; a "waker" fiber wakes
+// A "sleeper" fiber arms `sleep(100)` and parks; a "waker" fiber wakes
 // it EARLY (at virtual t=0) via `wake`. The sleeper resumes, finishes, and is
 // reaped (its stack `munmap`'d + `Fiber` freed). Its 100ms timer must already be
 // gone — otherwise, when the run loop later fired that stale timer, it would
@@ -10,7 +10,6 @@
 // to 100. Here `wake` evicts the timer, so the clock stays at 0 and nothing
 // dereferences freed memory.
 //
-// Regression: the timer-vs-early-wake use-after-free found reviewing B1.4b.
 // Contract: `log: 2 1` (waker records 2, then the early-woken sleeper records 1),
 // `clock: 0` (no stale timer fired), `n_suspended: 0` (balanced).
 //

@@ -1,5 +1,5 @@
 error: pack index 2 out of bounds: 'args' has 1 element
-  --> examples/packs/0510-packs-pack-index-oob.sx:14:32
+  --> examples/packs/0510-packs-pack-index-oob.sx:12:32
    |
-14 | foo :: (..$args) -> $R => args[2];
+12 | foo :: (..$args) -> $R => args[2];
    |                                ^

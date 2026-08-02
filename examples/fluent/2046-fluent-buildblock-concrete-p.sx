@@ -1,9 +1,9 @@
-// `P` may be ANY type (fluent spec §6.2, H8). A build block is not a UI feature:
+// `P` may be ANY type. A build block is not a UI feature:
 // with `P = i64` the block is a general list builder, and the sink's `expression`
 // takes `$I/@Init(i64)` — a fixed target, since there is no family of variants to
 // stay open over.
 //
-// With a concrete `P` the interception rule is IDENTITY (§6.3 rule 2): a statement
+// With a concrete `P` the interception rule is IDENTITY: a statement
 // publishes when its type IS `P`. A statement of any other type is an ordinary
 // statement — it runs, in source order, and the sink never sees it. That is the
 // same rule a protocol `P` uses for a value that already is a `P`; nothing widens

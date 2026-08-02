@@ -6,10 +6,10 @@
 // 2. Call UIApplicationMain(0, null, null, @"SxAppDelegate") to hand off to
 //    UIKit's run loop. This blocks until the app exits.
 //
-// After install + launch, the simulator shows the default black screen
-// (UIWindow not created — that's 5.8) and the AppDelegate callback fires
-// once at startup. The process stays alive because UIApplicationMain
-// drives the iOS run loop.
+// On install + launch the simulator shows the default black screen (no
+// UIWindow — 1610 adds one) and the AppDelegate callback fires once at
+// startup. The process stays alive because UIApplicationMain drives the iOS
+// run loop.
 
 #import "modules/std.sx";
 #import "modules/ffi/objc.sx";
@@ -27,11 +27,11 @@ did_finish_launching :: (self: *void, _cmd: *void, app: *void, opts: *void) -> u
 }
 
 main :: () -> i32 {
-    // SxAppDelegate : UIResponder. We deliberately don't try
+    // SxAppDelegate : UIResponder, with no
     // `class_addProtocol(UIApplicationDelegate)` — the linker dead-strips the
     // protocol metadata from UIKit when nothing references it at compile
     // time, and the C runtime can't look it up by name. UIApplicationMain
-    // duck-types on the method name, so this works without formal conformance.
+    // duck-types on the method name, so formal conformance is unnecessary.
     UIResponder := objc_getClass("UIResponder".ptr);
     SxAppDelegate := objc_allocateClassPair(UIResponder, "SxAppDelegate".ptr, 0);
 

@@ -1,4 +1,4 @@
-// Feature 1 — protocol-interface method calls on heterogeneous pack elements.
+// Protocol-interface method calls on heterogeneous pack elements.
 //
 // `..xs: Greeter` binds per call shape; each `xs[i]` is the concrete element,
 // and calling the protocol's own method `greet()` on it dispatches to that

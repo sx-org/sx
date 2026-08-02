@@ -1,6 +1,5 @@
 // `push Context{ fields } { body }` — named aggregate context without parens.
 // Idiomatic form remains `push .{ fields } { body }`.
-// Expected: exit 0.
 
 #import "modules/std.sx";
 

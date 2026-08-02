@@ -1,9 +1,7 @@
-// Auto-ref of a COMPOUND lvalue (field access / index / deref) passed to a
-// `*T` parameter must reference the REAL lvalue, not a copy. Regression: a
-// field-access argument (e.g. `make_move(self.board, m)`) silently passed the
-// address of a temporary copy, so mutations through the pointer were lost with
-// no diagnostic. A plain local (`bump(x)`) already auto-ref'd; now compound
-// lvalues do too. Expected: w.s.v == 42 (the real field was mutated).
+// Auto-ref of a COMPOUND lvalue (field access / index / deref) passed to a `*T`
+// parameter references the real lvalue, not a copy: `make_move(self.board, m)`
+// mutates the field itself. Plain locals (`bump(x)`) and compound lvalues
+// auto-ref alike.
 
 #import "modules/std.sx";
 

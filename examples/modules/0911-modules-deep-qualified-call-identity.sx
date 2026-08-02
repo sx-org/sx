@@ -1,6 +1,6 @@
 // Arbitrary-depth namespace calls retain the exact terminal FnDecl and author
 // through defaults, comptime argument typing, result typing and generic mono
-// identity. Both terminal modules deliberately reuse every public name.
+// identity. Both terminal modules reuse every public name.
 
 a :: #import "0911-modules-deep-qualified-call-identity/a.sx";
 b :: #import "0911-modules-deep-qualified-call-identity/b.sx";

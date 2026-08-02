@@ -3,10 +3,6 @@
 // marshal properly, and a failable field (`Closure(..) -> (T, !)`) is `try`/
 // `catch`-able. The call-type resolver mirrors the lowering dispatch: a
 // closure/fn-ptr field is called directly (and shadows a same-named method).
-//
-// Regression (issue 0201): the field-access call path typed such calls as
-// `unresolved` — value returns came out as garbage, failable returns rejected
-// `catch`/`try` ("operand has type 'unresolved'").
 #import "modules/std.sx";
 
 CB :: struct {

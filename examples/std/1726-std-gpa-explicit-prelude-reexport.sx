@@ -1,4 +1,4 @@
-// Positive companion to issue 0324: std intentionally authors a GPA alias, so
+// std intentionally authors a GPA alias, so
 // bare `GPA.init()` remains part of the supported prelude surface.
 
 #import "modules/std.sx";

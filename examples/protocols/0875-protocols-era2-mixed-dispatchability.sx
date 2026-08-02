@@ -23,8 +23,8 @@ InlShape :: protocol inline {
 }
 
 Sq :: struct { side: i64; }
-// Deliberately declared before the provider impl: empty-impl adoption must be
-// resolved by concrete identity at conformance/dispatch time, not scan order.
+// Declared before the provider impl: empty-impl adoption resolves by concrete
+// identity at conformance/dispatch time, not by scan order.
 impl InlShape for Sq {}
 impl Shape for Sq {
     // Conformance still demands the excluded method — this impl is required.

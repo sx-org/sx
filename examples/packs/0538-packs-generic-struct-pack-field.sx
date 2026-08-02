@@ -1,4 +1,4 @@
-// Phase 4.2 (core) — a generic struct with a pack type-param `..$Ts: []Type`
+// A generic struct with a pack type-param `..$Ts: []Type`
 // and a pack-shaped tuple field `(..$Ts)`. Each instantiation binds the
 // remaining type args as the pack, so the field is a tuple of those per-position
 // types. Storing the whole tuple field and reading its elements both work.

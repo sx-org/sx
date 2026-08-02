@@ -1,5 +1,4 @@
-//! pkg_migrate — syntax-aware migration tool for the sx PACKAGES stream
-//! (plan unit P0.4, current/PLAN-PACKAGES.md).
+//! pkg_migrate — syntax-aware migration tool for sx packages.
 //!
 //! Standalone on purpose: it must not require build.zig wiring, so it embeds
 //! a dedicated minimal scanner (scanner.zig) instead of importing the
@@ -12,7 +11,7 @@
 //! style preview; exit 1 if changes are pending) and only write under
 //! --apply. See README.md next to this file.
 //!
-//! Hard rule from the plan: never perform the import migration with blind
+//! Never perform the import migration with blind
 //! global substitutions — every rewrite below is occurrence-precise (exact
 //! token spans from the scanner) and fully reported.
 
@@ -240,7 +239,7 @@ fn printDiff(
 
     var line_delta: isize = 0;
     for (edits) |e| {
-        // Expand [e.start, e.end) to whole lines of the old text.
+        // Expand [e.start, e.end) to whole lines of the source text.
         const first_line = idx.pos(e.start).line;
         const last_line = if (e.end > e.start) idx.pos(e.end - 1).line else first_line;
         const lo_start = idx.line_starts[first_line - 1];
@@ -730,7 +729,7 @@ fn cmdQualify(
 }
 
 // ---------------------------------------------------------------------------
-// to-package-dir (report-only in P0.4)
+// to-package-dir (report-only)
 // ---------------------------------------------------------------------------
 
 fn cmdToPackageDir(
@@ -798,7 +797,7 @@ fn cmdToPackageDir(
 }
 
 // ---------------------------------------------------------------------------
-// inventory (the D9 collision inventory)
+// inventory (the collision inventory)
 // ---------------------------------------------------------------------------
 
 const d9_words = [_][]const u8{ "package", "import", "private", "intrinsic" };

@@ -1,8 +1,7 @@
-// Tests for protocols.zig — the protocol/impl LOOKUP owner (`ProtocolResolver`).
+// The protocol/impl LOOKUP owner (`ProtocolResolver`).
 // Reached via `ir.ProtocolResolver{ .l = &lowering }`, mirroring calls.test.zig /
-// generics.test.zig. Covers the pure conformance queries moved out of `Lowering`
-// in A4.2 sub-step 2 (lookup increment); registration + emission stay in
-// `Lowering`, so their plan tests land with later increments.
+// generics.test.zig. Covers the pure conformance queries; registration and
+// emission stay in `Lowering`.
 
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -157,7 +156,7 @@ test "protocols: registerImplBlock records <Target>.<method> in fn_ast_map" {
     try std.testing.expect(!l.program_index.fn_ast_map.contains("Circle.draw"));
     pr.registerImplBlock(&ib, false, decl);
     try std.testing.expect(l.program_index.fn_ast_map.contains("Circle.draw"));
-    // And it now conforms through the exact protocol/concrete impl registry.
+    // And it conforms through the exact protocol/concrete impl registry.
     try std.testing.expect(pr.packArgConformsTo("Drawable", circle));
 }
 

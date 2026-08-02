@@ -1,4 +1,4 @@
-// A build block is a value, and it is FRAME-BOUND (fluent spec §6.2, N49). Its
+// A build block is a value, and it is FRAME-BOUND. Its
 // environment holds the addresses of the locals the body reads, in the frame
 // that formed it, so it is valid exactly as long as the call that received it —
 // which is why handing it to a callee is legal (2042 pins that) and every way of
@@ -12,7 +12,6 @@
 //
 // A method it does not have is refused by name too, so the operation set stays
 // the three the contract declares.
-// Expected: exit 1.
 #import "modules/std.sx";
 #import "modules/fluent.sx";
 

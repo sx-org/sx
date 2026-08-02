@@ -147,7 +147,7 @@ test "number termination follows the real lexer's numeric grammar: 1package expo
     const src = "x := 1package;";
     const res = try scanAll(a, src);
     const ids = try identTexts(a, src, res);
-    // Real lexer: int `1`, then identifier `package` — the D9 inventory must
+    // Real lexer: int `1`, then identifier `package` — the inventory must
     // see that identifier.
     try testing.expectEqual(@as(usize, 2), ids.len);
     try testing.expectEqualStrings("x", ids[0]);
@@ -195,7 +195,7 @@ test "unknown directive #private yields identifier private, not a directive" {
     const res = try scanAll(a, src);
     const ids = try identTexts(a, src, res);
     // Real lexer: invalid `#`, then ordinary identifier `private` — it must
-    // be visible to the D9 inventory.
+    // be visible to the inventory.
     try testing.expectEqual(@as(usize, 2), ids.len);
     try testing.expectEqualStrings("private", ids[0]);
     try testing.expectEqualStrings("x", ids[1]);

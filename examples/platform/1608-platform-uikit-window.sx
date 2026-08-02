@@ -1,7 +1,7 @@
 // Show something on screen — a UIWindow with a colored UIViewController root.
 //
-// Builds on 5.7's AppDelegate and adds the iOS 13+ scene delegate named by the
-// generated Info.plist. Inside `scene:willConnectToSession:options:`, we:
+// Builds on 1607's AppDelegate and adds the iOS 13+ scene delegate named by the
+// generated Info.plist. Inside `scene:willConnectToSession:options:`:
 //   1. [[UIWindow alloc] initWithWindowScene:scene]
 //   2. [[UIViewController alloc] init]; set view.backgroundColor
 //   3. window.rootViewController = vc
@@ -20,8 +20,7 @@ UIApplicationMain :: (argc: i32, argv: *void, principal_class: *NSString, delega
 g_window : *void = ---;
 
 // SxSceneDelegate's `window` property. UIKit retains the delegate, and the
-// module global keeps the window alive for this deliberately tiny raw-runtime
-// example.
+// module global keeps the window alive.
 window_getter :: (self: *void, _cmd: *void) -> *void abi(.c) {
     return g_window;
 }

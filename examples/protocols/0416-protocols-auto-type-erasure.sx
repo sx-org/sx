@@ -28,9 +28,7 @@ impl Summable for Point {
     sum :: (self: *Point) -> i32 { self.x + self.y }
 }
 
-// Phase 2: `inline`-kind protocol for dynamic dispatch
-
-// Phase 2: `inline`-kind protocol for dynamic dispatch
+// `inline`-kind protocol for dynamic dispatch
 Adder :: protocol inline {
     add :: (self: *Self, n: i32);
     value :: (self: *Self) -> i32;
@@ -51,7 +49,7 @@ main :: () {
     print("=== Auto Type Erasure ===\n");
 
     // AE1: function argument — explicit owning copy of an lvalue (an
-    // implicit `use_counter(sc)` is the cutover's demand error)
+    // implicit `use_counter(sc)` is the demand error)
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
         sc := SimpleCounter{ val = 10 };

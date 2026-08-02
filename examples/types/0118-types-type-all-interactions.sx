@@ -1,9 +1,8 @@
 // Type as a first-class value — comprehensive interaction smoke.
 //
 // Every way a user can plausibly touch a `Type` value, in one
-// place. Pre-fix: some sections fail (`<?>`, false, garbage, or
-// compile errors). Post-fix: every section's output matches the
-// header line.
+// place. Every section's output matches its header line; a failing
+// section shows `<?>`, false, garbage, or a compile error.
 //
 // Sections labelled `--- N. <thing> ---` so the diff localises
 // which interaction regressed.
@@ -30,7 +29,7 @@ describe :: ($T: Type) -> string {
     return "other";
 }
 
-// Pack-fn collecting per-position types (step 4A.bare path).
+// Pack-fn collecting per-position types (bare path).
 type_list :: (..$args) -> string {
     list := $args;
     s := "[";

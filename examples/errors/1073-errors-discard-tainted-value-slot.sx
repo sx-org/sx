@@ -1,6 +1,6 @@
 // Discarding a bare value-slot binding does not observe its payload. This is
 // legal before the paired error is proven absent; an actual read remains
-// guarded by the usual E1.8 path proof.
+// guarded by the usual value-slot path proof.
 
 E :: error { Bad }
 

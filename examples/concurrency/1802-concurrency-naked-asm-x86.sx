@@ -1,4 +1,4 @@
-// Stream B1 (fibers) — x86_64 sibling of 1800: `abi(.naked)` emits a naked
+// x86_64 sibling of 1800: `abi(.naked)` emits a naked
 // function whose body is raw x86_64 asm (returns 42 in eax, then its own `ret`).
 //
 // Lowered via LLVM's `naked` attribute (no prologue/epilogue/frame). x86_64-
