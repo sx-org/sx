@@ -1,0 +1,99 @@
+// How a compose stack places its children.
+//
+// A column proposes its own width and leaves height free; a row does the
+// opposite. Each child is laid out at the size it asked for, offset by the
+// stack's alignment, and a spacer takes the slack the stack has left over —
+// which is what pushes a row's ends apart.
+//
+// Every pass asks the same question, so a child's frame in `render` is the frame
+// it was laid out in.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+ui :: #import "modules/ui/types.sx";
+
+// The frames a scene draws, read back off the tree.
+frames :: (tree: *RenderTree) {
+    for tree.nodes (n) {
+        if n.type != .text { continue; }
+        print("  '{}' at {},{} {}x{}\n", n.text,
+            n.frame.origin.x.(i64), n.frame.origin.y.(i64),
+            n.frame.size.width.(i64), n.frame.size.height.(i64));
+    }
+}
+
+draw :: (root: *View, bounds: Frame) {
+    tree := RenderTree{};
+    rc := RenderContext.init(*tree);
+    root.layout(bounds);
+    root.render(*rc, bounds);
+    frames(*tree);
+}
+
+main :: () -> i32 {
+    // A row hands each child its measured width and centres it on the cross
+    // axis by default.
+    row : View = hstack(4.0) {
+        Label{ text = "a" };
+        Label{ text = "bb", font_size = 8.0 };
+        Label{ text = "ccc" };
+    };
+    row_size := row.size_that_fits(ProposedSize.flexible());
+    print("row {}x{}\n", row_size.width.(i64), row_size.height.(i64));
+    draw(*row, Frame.make(0.0, 0.0, 200.0, 16.0));
+
+    // A spacer between two labels takes what the row has left, so the ends sit
+    // against the bounds.
+    ends : View = hstack(0.0) {
+        Label{ text = "left" };
+        Spacer{};
+        Label{ text = "right" };
+    };
+    print("ends\n");
+    draw(*ends, Frame.make(0.0, 0.0, 100.0, 16.0));
+
+    // A column aligns on the horizontal axis.
+    column : View = vstack(2.0, alignment = .trailing) {
+        Label{ text = "one" };
+        Label{ text = "twenty" };
+    };
+    print("column\n");
+    draw(*column, Frame.make(0.0, 0.0, 80.0, 40.0));
+
+    // A z-stack aligns each child in the bounds, at the child's own size.
+    layered : View = zstack(ui.ALIGN_BOTTOM_TRAILING) {
+        Label{ text = "under" };
+        Label{ text = "on top" };
+    };
+    print("layered\n");
+    draw(*layered, Frame.make(0.0, 0.0, 100.0, 40.0));
+
+    // The same stacks over children a caller already holds.
+    kids := collectViews() {
+        Label{ text = "x" };
+        Label{ text = "yy" };
+    };
+    folded := fold_hstack(kids.items, 6.0);
+    folded_size := folded.size_that_fits(ProposedSize.flexible());
+    print("folded {} wide {}\n", folded.children.len, folded_size.width.(i64));
+    root : View = folded;
+    draw(*root, Frame.make(0.0, 0.0, 60.0, 16.0));
+    0
+}
+
+// ** stdout **
+// row 48x16
+//   'a' at 0,0 8x16
+//   'bb' at 12,4 8x8
+//   'ccc' at 24,0 24x16
+// ends
+//   'left' at 0,0 32x16
+//   'right' at 60,0 40x16
+// column
+//   'one' at 56,0 24x16
+//   'twenty' at 32,18 48x16
+// layered
+//   'under' at 60,24 40x16
+//   'on top' at 52,24 48x16
+// folded 2 wide 30
+//   'x' at 0,0 8x16
+//   'yy' at 14,0 16x16

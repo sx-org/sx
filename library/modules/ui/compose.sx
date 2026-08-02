@@ -59,7 +59,9 @@ Label :: components.Label;
 Rect :: components.Rect;
 Button :: components.Button;
 VStack :: containers.VStack;
+HStack :: containers.HStack;
 ZStack :: containers.ZStack;
+Spacer :: containers.Spacer;
 
 // Collection boundary
 Sink :: sink.Sink;
@@ -68,6 +70,9 @@ Sink :: sink.Sink;
 // import of this facade is the whole API.
 collectViews :: sink.collectViews;
 vstack :: containers.vstack;
+hstack :: containers.hstack;
 zstack :: containers.zstack;
+fold_vstack :: containers.fold_vstack;
+fold_hstack :: containers.fold_hstack;
 render_root :: runtime.render_root;
 command_count :: runtime.command_count;
