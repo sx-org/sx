@@ -1,0 +1,6 @@
+count 5
+stable true
+distinct true
+shared site true true true
+continues true true
+independent true true

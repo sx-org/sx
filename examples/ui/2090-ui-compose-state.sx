@@ -1,0 +1,75 @@
+// A compose call site keeps its own state across the builds that reach it.
+//
+// `use_state` claims the entry its site owns: the first build to reach the site
+// fills it from the default, and every later one is handed back what the
+// previous build left. Two sites never share an entry, a site reached twice in
+// one build gets one entry per occurrence, and a site a committed build stops
+// reaching loses its entry.
+#import "modules/std.sx"
+#import "modules/ui/compose.sx"
+
+// One site — its entry survives every frame that runs this.
+tick :: () -> i64 {
+    n := use_state(i64, 0)
+    n.set(n.get() + 1)
+    n.get()
+}
+
+// A second site, with its own entry and its own default.
+offset :: () -> i64 {
+    n := use_state(i64, 100)
+    n.set(n.get() + 10)
+    n.get()
+}
+
+Cursor :: struct {
+    row: i64 = 0
+    col: i64 = 0
+}
+
+frame :: (ui: *Identity, store: *StateStore, with_offset: bool) -> (a: i64, b: i64, c: i64) {
+    ui.begin_build()
+    store.begin_build()
+
+    counted := tick()
+    shifted := if with_offset then offset() else 0
+
+    // A struct payload rides the same claim, and the loop's three occurrences
+    // of ONE site keep three entries.
+    total := 0
+    for 0..3 (i) {
+        cur := use_state(Cursor, .{})
+        v := cur.get()
+        v.row += 1
+        v.col += i
+        cur.set(v)
+        total += v.row * 10 + v.col
+    }
+
+    store.commit_build()
+    return a = counted, b = shifted, c = total
+}
+
+main :: () -> i32 {
+    ui := Identity.init(context.allocator)
+    store := StateStore.init(context.allocator)
+    push .{ compose_ui = *ui, compose_state = *store } {
+        one_a, one_b, one_c := frame(*ui, *store, true)
+        two_a, two_b, two_c := frame(*ui, *store, true)
+        three_a, three_b, three_c := frame(*ui, *store, true)
+        print("counter {} {} {}\n", one_a, two_a, three_a)
+        print("offset {} {} {}\n", one_b, two_b, three_b)
+        print("cursors {} {} {}\n", one_c, two_c, three_c)
+        print("entries {}\n", store.entries.len)
+
+        // The offset site goes unreached: its entry sweeps at commit, so the
+        // build after it starts that site over from the default.
+        four_a, four_b, four_c := frame(*ui, *store, false)
+        print("dropped {} {}\n", four_b, store.entries.len)
+        five_a, five_b, five_c := frame(*ui, *store, true)
+        print("restarted {} {}\n", five_b, five_a)
+    }
+    store.teardown()
+    ui.deinit()
+    0
+}

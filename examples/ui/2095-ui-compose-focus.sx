@@ -1,0 +1,137 @@
+// A compose element declares its focus region while it renders, and the router
+// hands the focused one the keys.
+//
+// Declaration order is the traversal order, a request names the element rather
+// than a position, and text rides its own channel to the same region. Tab walks
+// that order and reaches no region, backward under shift and entering at the
+// first when nothing is focused. What the committed frame stops declaring stops
+// being focused.
+#import "modules/std.sx"
+#import "modules/ui/compose.sx"
+#import "modules/ui/input.sx"
+ui :: #import "modules/ui/types.sx"
+
+key :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k })
+shifted :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k, header = .{ modifiers = .{ shift = true } } })
+released :: (k: LogicalKey) -> InputEvent => .key_up(.{ logical = k })
+typed :: (s: string) -> InputEvent => .text(.{ text = s })
+
+send :: (f: *FocusRouter, ev: InputEvent) {
+    e := ev
+    f.dispatch(*e)
+}
+
+Log :: struct {
+    a: i64 = 0
+    b: i64 = 0
+    c: i64 = 0
+    last: LogicalKey = .unknown
+    typed: i64 = 0
+}
+
+main :: () -> i32 {
+    identity := Identity.init(context.allocator)
+    focus := FocusRouter.init()
+    log := Log{}
+
+    push .{ compose_ui = *identity, compose_focus = *focus } {
+        identity.begin_build()
+        tally := *log
+
+        // Three focusable rows; the last one asks for the soft keyboard and
+        // takes text as well as keys.
+        root : View = vstack(0.0) {
+            focusable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, (e: *KeyEvent) {
+                tally.a += 1
+                tally.last = e.logical
+            })
+            focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, (e: *KeyEvent) {
+                tally.b += 1
+                tally.last = e.logical
+            })
+            focusable(Rect{ fill = ui.COLOR_RED, height = 20.0 },
+                (e: *KeyEvent) {
+                    tally.c += 1
+                    tally.last = e.logical
+                },
+                (s: string) {
+                    tally.typed += s.len
+                },
+                true)
+        }
+
+        snap := CommittedUiSnapshot.init(context.allocator)
+        project(*root, Size{ width = 60.0, height = 60.0 }, *snap)
+        focus.observe(*snap)
+
+        first := ElementId{ value = snap.focus_list.items[0].id }
+        second := ElementId{ value = snap.focus_list.items[1].id }
+        third := ElementId{ value = snap.focus_list.items[2].id }
+
+        print("regions {} focused {} keyboard {}\n",
+            snap.focus_list.len, is_focused(first), focus.wants_keyboard())
+
+        // With nothing focused a key reaches nobody.
+        send(*focus, key(.enter))
+        print("unfocused {} {} {}\n", log.a, log.b, log.c)
+
+        // The request names the element; the key then lands on it.
+        focus.request_focus(second)
+        send(*focus, key(.enter))
+        print("requested {} {} {} last {}\n", log.a, log.b, log.c, log.last)
+
+        // An up is not a focus event.
+        send(*focus, released(.enter))
+        print("release {}\n", log.b)
+
+        // Declaration order is the traversal order, and it wraps.
+        focus.focus_next()
+        send(*focus, key(.space))
+        print("next {} keyboard {} c {}\n", is_focused(third), focus.wants_keyboard(), log.c)
+        focus.focus_next()
+        print("wrapped {} keyboard {}\n", is_focused(first), focus.wants_keyboard())
+        focus.focus_prev()
+        print("back {}\n", is_focused(third))
+
+        // Text rides its own channel to the same region.
+        send(*focus, typed("abc"))
+        print("typed {} keys {} {} {}\n", log.typed, log.a, log.b, log.c)
+
+        // Tab is the router's own key: from nothing it enters at the first
+        // region, it walks declaration order and wraps, shift walks back, and
+        // none of it reaches a handler.
+        focus.clear_focus()
+        send(*focus, key(.tab))
+        print("tab entered {} keys {} {} {}\n", is_focused(first), log.a, log.b, log.c)
+        send(*focus, key(.tab))
+        print("tab stepped {}\n", is_focused(second))
+        send(*focus, key(.tab))
+        send(*focus, key(.tab))
+        print("tab wrapped {} keys {} {} {}\n", is_focused(first), log.a, log.b, log.c)
+        send(*focus, shifted(.tab))
+        print("shift tab {}\n", is_focused(third))
+
+        // A rebuild without the focused row: its element is gone, so the keys
+        // that follow reach nobody.
+        identity.begin_build()
+        rest : View = vstack(0.0) {
+            focusable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 })
+            focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 })
+        }
+        next := CommittedUiSnapshot.init(context.allocator)
+        project(*rest, Size{ width = 60.0, height = 60.0 }, *next)
+        focus.observe(*next)
+        send(*focus, key(.enter))
+        print("dropped {} c {} regions {}\n", is_focused(third), log.c, next.focus_list.len)
+
+        // Traversal enters the new frame from its end.
+        focus.focus_prev()
+        print("entered {}\n", is_focused(.{ value = next.focus_list.items[1].id }))
+
+        next.deinit()
+        snap.deinit()
+    }
+
+    identity.deinit()
+    0
+}
