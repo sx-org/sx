@@ -51,8 +51,8 @@ frame :: (ui: *Identity, store: *StateStore, with_offset: bool) -> (a: i64, b: i
 }
 
 main :: () -> i32 {
-    ui := Identity.init()
-    store := StateStore.init()
+    ui := Identity.init(context.allocator)
+    store := StateStore.init(context.allocator)
     push .{ compose_ui = *ui, compose_state = *store } {
         one_a, one_b, one_c := frame(*ui, *store, true)
         two_a, two_b, two_c := frame(*ui, *store, true)

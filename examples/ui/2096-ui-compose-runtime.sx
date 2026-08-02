@@ -23,7 +23,7 @@ up :: (x: f32, y: f32) -> InputEvent => .pointer_up(.{ pointer = .{ value = 1 },
 key :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k })
 
 main :: () -> i32 {
-    root := UiRoot.init(Size{ width = 100.0, height = 40.0 }, .{ value = 7 })
+    root := UiRoot.init(Size{ width = 100.0, height = 40.0 }, context.allocator, .{ value = 7 })
     app := *root
 
     loop := FrameLoop.init(*root, () -> View {
@@ -95,7 +95,7 @@ main :: () -> i32 {
     taps_seen := 0
     tracker := TrackingAllocator.init(context.allocator)
     push .{ allocator = tracker } {
-        quiet := UiRoot.init(Size{ width = 100.0, height = 40.0 })
+        quiet := UiRoot.init(Size{ width = 100.0, height = 40.0 }, tracker)
         seen := 0
         counter := *seen
         spin := FrameLoop.init(*quiet, () -> View {
@@ -139,7 +139,7 @@ main :: () -> i32 {
     owner := TrackingAllocator.init(context.allocator)
     elsewhere := TrackingAllocator.init(context.allocator)
     push .{ allocator = owner } {
-        far := UiRoot.init(Size{ width = 100.0, height = 40.0 })
+        far := UiRoot.init(Size{ width = 100.0, height = 40.0 }, owner)
         counted := *built
         build := () -> View {
             counted.* += 1
@@ -166,14 +166,14 @@ main :: () -> i32 {
     returned := 0
     solo := TrackingAllocator.init(context.allocator)
     push .{ allocator = solo } {
-        marks := Identity.init()
+        marks := Identity.init(solo)
         push .{ compose_ui = *marks } {
             marks.begin_build()
             tree : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, () {})
                 focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 })
             }
-            snap := CommittedUiSnapshot{}
+            snap := CommittedUiSnapshot.init(solo)
             project(*tree, Size{ width = 100.0, height = 40.0 }, *snap)
             warm := solo.alloc_count
             for 0..32 {

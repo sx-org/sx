@@ -72,7 +72,7 @@ Router :: struct {
     sequences: List(PointerSequence) = .{}
     gpa: Allocator
 
-    init :: (gpa: Allocator = context.allocator) -> Router => .{ gpa = gpa }
+    init :: (gpa: Allocator) -> Router => .{ gpa = gpa }
 
     // Point the router at the frame that just committed. A sequence whose
     // element stopped declaring a region is cancelled — there is nothing left

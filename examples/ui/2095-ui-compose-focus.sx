@@ -30,7 +30,7 @@ Log :: struct {
 }
 
 main :: () -> i32 {
-    identity := Identity.init()
+    identity := Identity.init(context.allocator)
     focus := FocusRouter.init()
     log := Log{}
 
@@ -60,7 +60,7 @@ main :: () -> i32 {
                 true)
         }
 
-        snap := CommittedUiSnapshot{}
+        snap := CommittedUiSnapshot.init(context.allocator)
         project(*root, Size{ width = 60.0, height = 60.0 }, *snap)
         focus.observe(*snap)
 
@@ -118,7 +118,7 @@ main :: () -> i32 {
             focusable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 })
             focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 })
         }
-        next := CommittedUiSnapshot{}
+        next := CommittedUiSnapshot.init(context.allocator)
         project(*rest, Size{ width = 60.0, height = 60.0 }, *next)
         focus.observe(*next)
         send(*focus, key(.enter))
@@ -132,5 +132,6 @@ main :: () -> i32 {
         snap.deinit()
     }
 
+    identity.deinit()
     0
 }

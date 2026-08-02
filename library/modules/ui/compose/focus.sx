@@ -50,6 +50,8 @@ focusable :: (v: $V/View, on_key: ?Closure(*KeyEvent) = null, on_text: ?Closure(
     Focusable(V){ child = v, id = element_id(site), on_key = on_key, on_text = on_text, wants_keyboard = wants_keyboard }
 }
 
+// One id and the frame it resolves against: this router owns no allocation, so
+// it takes no allocator and has nothing to hand back.
 FocusRouter :: struct {
     // The surface every resolution runs against; null until a frame commits.
     snap: *CommittedUiSnapshot = null

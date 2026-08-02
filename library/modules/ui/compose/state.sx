@@ -43,7 +43,7 @@ StateStore :: struct {
     gpa: Allocator
     in_build: bool = false
 
-    init :: (gpa: Allocator = context.allocator) -> StateStore => .{ gpa = gpa }
+    init :: (gpa: Allocator) -> StateStore => .{ gpa = gpa }
 
     begin_build :: (self: *StateStore) {
         for self.entries (e) {

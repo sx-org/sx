@@ -53,7 +53,7 @@ Identity :: struct {
     counts: List(SiteCount) = .{}
     gpa: Allocator
 
-    init :: (gpa: Allocator = context.allocator) -> Identity => .{ gpa = gpa }
+    init :: (gpa: Allocator) -> Identity => .{ gpa = gpa }
 
     // Every site starts the build at occurrence zero, which is what makes an
     // unchanged tree hand out unchanged ids.

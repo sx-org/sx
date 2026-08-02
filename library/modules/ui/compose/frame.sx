@@ -9,11 +9,16 @@
 // top one there. The focus list is declaration-ordered, which is the traversal
 // order.
 //
+// A snapshot names the allocator its three buffers come from. A project fills
+// them under that allocator and `deinit` hands them back to it, so a snapshot
+// released under some other ambient allocator still returns its memory where it
+// took it.
+//
 // A project refills the three lists in place and keeps their buffers, so a
-// snapshot projected over and over settles at one frame's memory and its
-// `deinit` hands that memory back. A caller whose fills come from an arena
-// calls `discard` first: those buffers are the arena's to reclaim, and reusing
-// them past its reset would hand out released storage.
+// snapshot projected over and over settles at one frame's memory. A caller
+// whose fills come from an arena calls `discard` first: those buffers are the
+// arena's to reclaim, and reusing them past its reset would hand out released
+// storage.
 #import "modules/std.sx"
 #import "modules/ui/types.sx"
 #import "modules/ui/render.sx"
@@ -25,6 +30,10 @@ CommittedUiSnapshot :: struct {
     scene: RenderTree = .{}
     hit_list: List(HitRegion) = .{}
     focus_list: List(FocusRegion) = .{}
+    // What made the buffers the three lists hold, and what they go back to.
+    buffers: Allocator
+
+    init :: (buffers: Allocator) -> CommittedUiSnapshot => .{ buffers = buffers }
 
     // Empties the lists for the next fill and keeps their capacity.
     reset :: (self: *CommittedUiSnapshot) {
@@ -34,30 +43,35 @@ CommittedUiSnapshot :: struct {
     }
 
     // Drops the buffers instead of reusing them, for a caller whose fills come
-    // from an arena: that arena is what releases them.
-    discard :: (self: *CommittedUiSnapshot) {
+    // from an arena: that arena is what releases them. It names what the next
+    // fill comes from, and the snapshot holding nothing here is what makes the
+    // change legal.
+    discard :: (self: *CommittedUiSnapshot, next: Allocator) {
         self.scene.nodes.detach()
         self.hit_list.detach()
         self.focus_list.detach()
+        self.buffers = next
     }
 
     deinit :: (self: *CommittedUiSnapshot) {
-        self.scene.nodes.deinit()
-        self.hit_list.deinit()
-        self.focus_list.deinit()
+        self.scene.nodes.deinit(self.buffers)
+        self.hit_list.deinit(self.buffers)
+        self.focus_list.deinit(self.buffers)
     }
 }
 
 // Lays the root out over the viewport and projects it into the snapshot: scene,
-// hit list and focus list all fill from the one render pass, and the revision
-// names the frame they belong to.
+// hit list and focus list all fill from the one render pass, under the
+// snapshot's own allocator, and the revision names the frame they belong to.
 project :: (root: *View, viewport: Size, snap: *CommittedUiSnapshot) {
     snap.reset()
     bounds := Frame.make(0.0, 0.0, viewport.width, viewport.height)
-    root.layout(bounds)
-    rc := RenderContext.init(*snap.scene)
-    rc.hits = *snap.hit_list
-    rc.focuses = *snap.focus_list
-    root.render(*rc, bounds)
+    push .{ allocator = snap.buffers } {
+        root.layout(bounds)
+        rc := RenderContext.init(*snap.scene)
+        rc.hits = *snap.hit_list
+        rc.focuses = *snap.focus_list
+        root.render(*rc, bounds)
+    }
     snap.revision += 1
 }

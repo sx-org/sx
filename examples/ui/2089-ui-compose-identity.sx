@@ -48,7 +48,7 @@ distinct :: (ids: *List(u64)) -> bool {
 }
 
 main :: () -> i32 {
-    ui := Identity.init()
+    ui := Identity.init(context.allocator)
     push .{ compose_ui = *ui } {
         first := List(u64){}
         second := List(u64){}
