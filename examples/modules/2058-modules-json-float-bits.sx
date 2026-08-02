@@ -1,50 +1,21 @@
-// JSON float round-trip at the BIT level: `write -> parse` is the
-// identity on every finite double.
-//
-// The value example (2057) pins the spellings a reader can check by eye.
-// This one sweeps the whole f64 encoding instead: it draws raw 64-bit
-// patterns, reinterprets each as a double, serializes it through
-// `write_to_buffer`, parses that text back, and compares the two BIT
-// PATTERNS. A writer that named a value it could not read back, or a
-// reader off by one ulp, fails here and nowhere else — the values it
-// catches are exactly the ones no hand-written literal reaches.
-//
-// The samples are bucketed by decimal exponent: round-trip fidelity is
-// exponent-dependent — the further a value sits from 10^0, the wider the
-// power of ten each direction has to carry — so a run that is clean
-// overall can still be blind to a band. Every band must report ZERO
-// failures.
-//
-// Subnormals get their own sweep: their exponent field is one of 2048, so
-// a uniform draw over the encoding barely reaches them, yet they are
-// where the writer's margins narrow and the reader's scaling runs out of
-// range.
-//
-// DETERMINISTIC: a fixed seed drives an xorshift over i64 — no clock, no
-// entropy source. The same seed walks the same doubles on every run, so a
-// failure reproduces exactly.
-
 #import "modules/std.sx";
 #import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
 #import "modules/std/json.sx";
 
-// Fixed nonzero xorshift state; any nonzero value works.
+// A fixed nonzero seed makes failures reproducible.
 SEED :: 0x2545F4914F6CDD1D;
 
-// Draws over the whole encoding, and over the subnormal encodings alone.
 SAMPLES    :: 60000;
+// Uniform raw-bit sampling rarely reaches exponent-field zero.
 SUBNORMALS :: 4000;
 
-// Band edges on |decimal exponent|. The last band is everything beyond.
+// Buckets cover increasing |decimal exponent| magnitudes.
 BANDS  :: 5;
 EDGES : [4]i64 : .[22, 60, 120, 200];
 
-// Raw IEEE-754 access: a double and its 64-bit storage share one slot.
 Bits :: union { f: f64; s: i64; }
 
-// Deterministic xorshift over i64. The shifts/xors wrap in i64, which is
-// what an xorshift wants; the sign bit is cleared so the pattern names a
-// POSITIVE double and the sign is exercised separately.
+// The sign bit is cleared here and alternated by the sampling loops.
 Rng :: struct {
     s: i64 = 0;
     next :: (self: *Rng) -> i64 {
@@ -61,18 +32,16 @@ report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
 }
 
-// One band's line, `band-<j>-<kind>`.
 report_band :: (kind: string, j: i64, ok: bool) {
-    print("band-{}-{}: {}\n", j, kind, if ok then "ok" else "FAIL");
+    print("magnitude-{}-{}: {}\n", j, kind, if ok then "ok" else "FAIL");
 }
 
-// A NaN or an infinity: the all-ones exponent field, which JSON cannot
-// spell.
+// An all-ones exponent field encodes a NaN or an infinity.
 is_non_finite :: (bits: i64) -> bool {
     ((bits >> 52) & 0x7FF) == 0x7FF
 }
 
-// The band key: log10 of the double `bits` encodes, rounded down.
+// The encoded binary exponent supplies a stable decimal-magnitude proxy.
 decimal_exponent :: (bits: i64) -> i64 {
     e2 := ((bits >> 52) & 0x7FF) - 1023;
     n := e2 * 30103;
@@ -81,7 +50,6 @@ decimal_exponent :: (bits: i64) -> i64 {
     q
 }
 
-// The band a sample falls in: bigger index, bigger exponent.
 band_of :: (bits: i64) -> i64 {
     d := decimal_exponent(bits);
     if d < 0 { d = 0 - d; }
@@ -93,7 +61,6 @@ band_of :: (bits: i64) -> i64 {
     BANDS - 1
 }
 
-// Serialize `f`, parse the text back, and compare bit patterns.
 survives :: (f: f64, alloc: Allocator) -> bool {
     buf : [64]u8 = ---;
     n, we := write_to_buffer(.float(f), string{ ptr = *buf[0], len = 64 });
@@ -115,7 +82,6 @@ main :: () -> ! {
     seen : [5]i64 = .[0, 0, 0, 0, 0];
     lost : [5]i64 = .[0, 0, 0, 0, 0];
 
-    // ── Uniform sweep over the encoding ──────────────────────────────
     rng := Rng{ s = SEED };
     u : Bits = ---;
     i := 0;
@@ -127,19 +93,17 @@ main :: () -> ! {
         if u.f == 0.0 { continue; }
         b := band_of(bits);
         seen[b] += 1;
-        // Alternating the sign walks both halves of the encoding.
         f := if (i & 1) == 1 then 0.0 - u.f else u.f;
         if !survives(f, arena) { lost[b] += 1; }
     }
 
     j := 0;
     while j < BANDS {
-        report_band("seen",  j, seen[j] > 0);
-        report_band("exact", j, lost[j] == 0);
+        report_band("sampled",     j, seen[j] > 0);
+        report_band("round-trips", j, lost[j] == 0);
         j += 1;
     }
 
-    // ── Subnormals ───────────────────────────────────────────────────
     sub_seen := 0;
     sub_lost := 0;
     k := 0;
@@ -151,15 +115,14 @@ main :: () -> ! {
         f := if (k & 1) == 1 then 0.0 - u.f else u.f;
         if !survives(f, arena) { sub_lost += 1; }
     }
-    report("subnormal-seen",  sub_seen > 0);
-    report("subnormal-exact", sub_lost == 0);
+    report("subnormal-sampled",     sub_seen > 0);
+    report("subnormal-round-trips", sub_lost == 0);
 
-    // ── The encoding's corners ───────────────────────────────────────
-    report("edge-max",         survives(f64.max, arena));
-    report("edge-min",         survives(f64.min, arena));
-    report("edge-min-normal",  survives(f64.min_positive, arena));
-    report("edge-true-min",    survives(f64.true_min, arena));
-    report("edge-epsilon",     survives(f64.epsilon, arena));
-    report("edge-one",         survives(1.0, arena));
+    report("max-round-trips",        survives(f64.max, arena));
+    report("min-round-trips",        survives(f64.min, arena));
+    report("min-normal-round-trips", survives(f64.min_positive, arena));
+    report("true-min-round-trips",   survives(f64.true_min, arena));
+    report("epsilon-round-trips",    survives(f64.epsilon, arena));
+    report("one-round-trips",        survives(1.0, arena));
     print("=== DONE ===\n");
 }

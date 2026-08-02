@@ -106,12 +106,10 @@ main :: () -> ! {
     report("ws-first", wa.items[0].int == 1);
     report("ws-last",  wa.items[2].int == 3);
 
-    // A number carrying a fraction is a float, and the writer names it
-    // back with the digits that read as the identical double.
     fbuf : [32]u8 = ---;
     fv := try parse("1.5", arena);
     fn := try write_to_buffer(fv, string{ ptr = *fbuf[0], len = 32 });
-    report("float-round-trip", string{ ptr = *fbuf[0], len = fn } == "1.5");
+    report("fraction-round-trips", string{ ptr = *fbuf[0], len = fn } == "1.5");
 
     // Empty container literals (the manifest/db.json use these).
     ea := try parse("[]", arena);

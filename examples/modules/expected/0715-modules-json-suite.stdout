@@ -18,9 +18,9 @@ dec-escapes: ok
 dec-surrogate: ok
 dec-esc-ctrl: ok
 rt-utf8: ok
-num-fraction: ok
-num-exponent: ok
-rt-float: ok
+fraction-is-float: ok
+exponent-is-float: ok
+fraction-round-trips: ok
 err-token-literal: ok
 err-token-key: ok
 err-token-comma: ok

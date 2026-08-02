@@ -143,17 +143,15 @@ Object :: struct {
     }
 }
 
-// ── Numbers ──────────────────────────────────────────────────────────
-//
 // Both directions come from std/internal/decimal.sx: `to_f64` reads a
 // decimal significand scaled by a power of ten as the NEAREST double,
 // and `shortest` names a double with the fewest digits that read back as
 // itself. The reader and the writer share that one pair, so every finite
 // double survives write -> parse bit for bit.
 
-// Where the reader stops accumulating an exponent. A token long enough to
-// pull a saturated exponent back into the finite range would not fit in
-// memory, and the accumulator stays inside i64.
+// Remaining exponent digits are ignored after `ev` exceeds this limit.
+// The largest accumulated value fits in i64, and no in-memory token has
+// enough digits to offset its magnitude.
 EXP_LIMIT :: 100000000000000000;   // 10^17
 
 // ── Sink ─────────────────────────────────────────────────────────────
@@ -679,9 +677,6 @@ Parser :: struct {
             while self.pos < self.src.len {
                 c := self.src[self.pos];
                 if c < '0' or c > '9' { break; }
-                // Saturates: past this the exponent already outweighs
-                // every digit the token could carry, so `to_f64` reads it
-                // as an infinity or a zero either way.
                 if ev <= EXP_LIMIT { ev = ev * 10 + ((c.(i64)) - '0'); }
                 self.pos += 1;
             }

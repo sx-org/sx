@@ -15,7 +15,7 @@ round-trip: ok
 ws-count: ok
 ws-first: ok
 ws-last: ok
-float-round-trip: ok
+fraction-round-trips: ok
 empty-array: ok
 empty-object: ok
 uni-len: ok

@@ -14,8 +14,7 @@
 //     spot-check the parsed tree's STRUCTURE incl. INSERTION ORDER.
 //   PART B — DECODE POSITIVES. `\/`, the full named-escape set, `\uXXXX`
 //     (BMP 1- and 2-byte) and a SURROGATE PAIR, the escaped control forms,
-//     raw multi-byte UTF-8 round-tripping through writer + reader, and a
-//     fraction / exponent reading as a float.
+//     and raw multi-byte UTF-8 round-tripping through writer + reader.
 //   PART C — MALFORMED MATRIX. One assertion per `JsonParseError` variant
 //     and its key edges, each asserted to RAISE (never crash, never accept).
 //
@@ -186,15 +185,13 @@ main :: () -> ! {
     uback := try parse(string{ ptr = *ubuf[0], len = un }, a);
     report("rt-utf8", uback.str == string{ ptr = *ubytes[0], len = 7 });
 
-    // A fraction or an exponent makes the number a float; the writer names
-    // it back with the digits that read as the identical double.
     fbuf : [64]u8 = ---;
     ffrac := try parse("1.5", a);
     fexp := try parse("2.5E-3", a);
-    report("num-fraction", ffrac.float == 1.5);
-    report("num-exponent", fexp.float == 0.0025);
+    report("fraction-is-float", ffrac.float == 1.5);
+    report("exponent-is-float", fexp.float == 0.0025);
     fn := try write_to_buffer(ffrac, string{ ptr = *fbuf[0], len = 64 });
-    report("rt-float", string{ ptr = *fbuf[0], len = fn } == "1.5");
+    report("fraction-round-trips", string{ ptr = *fbuf[0], len = fn } == "1.5");
 
     // ── PART C. malformed-input matrix — one assertion per variant + edge ─
     // UnexpectedToken: bad literal, non-string key, missing comma.

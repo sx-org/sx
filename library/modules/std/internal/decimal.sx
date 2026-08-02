@@ -22,8 +22,6 @@
 
 #import "modules/std/core.sx";
 
-// ── f64 bit access ────────────────────────────────────────────────────
-
 // The IEEE-754 storage of an f64, read as a signed 64-bit pattern (so
 // the sign BIT survives — `-0.0` reads as negative, which `< 0.0` does
 // not).
@@ -47,8 +45,6 @@ is_non_finite :: (bits: i64) -> bool {
     ((bits >> 52) & 0x7FF) == 0x7FF
 }
 
-// ── Nat: fixed-capacity natural number ────────────────────────────────
-//
 // Little-endian limbs of 28 bits held in i64 slots: a limb product plus
 // a carry stays under 2^57, so every intermediate is an ordinary signed
 // multiply with room to spare.
@@ -237,8 +233,6 @@ private divide :: (num: *Nat, den: *Nat, qbits: i64, work: *Nat) -> i64 {
     q
 }
 
-// ── Decimal -> binary ─────────────────────────────────────────────────
-
 // The most significant digits a `Significand` holds. Every rounding
 // boundary between two doubles — an odd multiple of a power of two, down
 // to 2^-1075 — spells itself in at most this many significant digits, so
@@ -326,8 +320,6 @@ to_f64 :: (sig: *Significand, exp10: i64) -> f64 {
     if q < (1 << 52) { return float_of_bits(q); }              // subnormal
     float_of_bits(((e + 1075) << 52) | (q - (1 << 52)))
 }
-
-// ── Binary -> decimal ─────────────────────────────────────────────────
 
 // `mant * 10^exp10` written with `digits` decimal digits.
 Decimal :: struct {

@@ -617,7 +617,6 @@ subprocess-isolated, on macOS and validated end-to-end on aarch64-Linux.
 
 - **Inline handler timeout** — cooperative only; no hard preemption (use pool
   mode).
-- **`std/json` floats** — integers/strings/bools/null only.
 - **multipart/form-data** — out of scope in `std/http_router` (urlencoded only).
 - **Long-running fuzz / load / stress harnesses** — a bounded fuzz *smoke* runs
   in the corpus; exhaustive fuzzing and load testing belong in CI (see
