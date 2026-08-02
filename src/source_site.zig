@@ -9,6 +9,8 @@
 //!     cannot be observed here because instantiation is not part of the walk.
 //!   - Optimization level and repeated runs likewise cannot be observed: the
 //!     inputs are the parsed declaration and nothing else.
+//!   - A module the import DAG shares is indexed once, against its own file,
+//!     so which import path reached it is not observable either.
 //!   - A runtime loop reuses one lexical site — the loop body is walked once.
 //!   - Numbering restarts at each named declaration, so editing one
 //!     declaration cannot renumber another.
@@ -209,6 +211,9 @@ const Builder = struct {
     alloc: std.mem.Allocator,
     opts: Options,
     index: *SiteIndex,
+    /// Module-scope declarations already indexed. Shared by every builder in
+    /// one `build`.
+    seen: *std.AutoHashMapUnmanaged(*const Node, void),
     file: []const u8 = "",
     declaration: []const u8 = "",
     prefix: u64 = 0,
@@ -225,6 +230,7 @@ const Builder = struct {
             .alloc = self.alloc,
             .opts = self.opts,
             .index = self.index,
+            .seen = self.seen,
             .file = self.file,
             .declaration = qualified,
             .prefix = declarationPrefix(self.file, qualified),
@@ -249,15 +255,36 @@ const Builder = struct {
 /// each named declaration numbers its own sites from zero.
 pub fn build(alloc: std.mem.Allocator, decls: []const *const Node, opts: Options) !SiteIndex {
     var index = SiteIndex{ .alloc = alloc };
-    var root = Builder{ .alloc = alloc, .opts = opts, .index = &index };
-    for (decls) |decl| {
-        const raw_file = decl.source_file orelse opts.main_file orelse "";
-        const module_path = normalizeModulePath(raw_file, opts.stdlib_roots, opts.main_dir);
-        root.file = module_path;
-        root.declaration = try modulePrefix(alloc, module_path);
-        try walkDecl(&root, decl);
-    }
+    var seen: std.AutoHashMapUnmanaged(*const Node, void) = .empty;
+    defer seen.deinit(alloc);
+    var root = Builder{ .alloc = alloc, .opts = opts, .index = &index, .seen = &seen };
+    for (decls) |decl| try walkModuleDecl(&root, decl);
     return index;
+}
+
+/// A declaration at MODULE scope: its file and root declaration path are read
+/// off the declaration itself, so the same declaration indexes identically
+/// whichever import path reaches it, and reaching it again is a no-op.
+///
+/// The no-op is what bounds the pass. A namespace carries its target's whole
+/// transitive decl list, so a module the import DAG shares sits at the end of
+/// one path per route through the graph — a count that grows with the graph,
+/// not with the source.
+fn walkModuleDecl(b: *Builder, node: *const Node) anyerror!void {
+    if ((try b.seen.getOrPut(b.alloc, node)).found_existing) return;
+    const raw_file = node.source_file orelse b.opts.main_file orelse "";
+    const module_path = normalizeModulePath(raw_file, b.opts.stdlib_roots, b.opts.main_dir);
+    const declaration = try modulePrefix(b.alloc, module_path);
+    var module = Builder{
+        .alloc = b.alloc,
+        .opts = b.opts,
+        .index = b.index,
+        .seen = b.seen,
+        .file = module_path,
+        .declaration = declaration,
+        .prefix = declarationPrefix(module_path, declaration),
+    };
+    try walkDecl(&module, node);
 }
 
 /// A module-scope (or member) declaration. A declaration that BINDS A NAME
@@ -346,11 +373,14 @@ fn walkDecl(b: *Builder, node: *const Node) anyerror!void {
             var inner = try b.enter(vd.name);
             if (vd.value) |v| try walk(&inner, v);
         },
+        // A namespace's members are module-scope declarations of the module it
+        // targets. `own_decls` is not always inside `decls`: a name a flat
+        // import already claimed keeps the author out of the global list.
         .namespace_decl => |nd| {
-            for (nd.decls) |d| try walkDecl(b, d);
-            for (nd.own_decls) |d| try walkDecl(b, d);
+            for (nd.decls) |d| try walkModuleDecl(b, d);
+            for (nd.own_decls) |d| try walkModuleDecl(b, d);
         },
-        .root => |r| for (r.decls) |d| try walkDecl(b, d),
+        .root => |r| for (r.decls) |d| try walkModuleDecl(b, d),
         // Anything else at module scope carries no name of its own; its sites
         // belong to the enclosing declaration.
         else => try walk(b, node),
@@ -490,7 +520,7 @@ fn walk(b: *Builder, node: *const Node) anyerror!void {
         },
         .trailing_block => |tb| try walk(b, tb.lambda),
 
-        .root => |r| for (r.decls) |d| try walkDecl(b, d),
+        .root => |r| for (r.decls) |d| try walkModuleDecl(b, d),
         .binary_op => |o| {
             try walk(b, o.lhs);
             try walk(b, o.rhs);
