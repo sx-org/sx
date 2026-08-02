@@ -6,7 +6,12 @@
 // build reads. Ids are stable across rebuilds, so the build asks the press and
 // focus state of the elements the last frame committed and gets the answer for
 // the ones it is minting now.
+//
+// A frame's tree, handler environments and committed lists all come from that
+// frame's arena, so the loop runs at a fixed ceiling however long it runs and
+// the root hands every byte back.
 #import "modules/std.sx"
+#import "modules/std/mem.sx"
 #import "modules/ui/compose.sx"
 ui :: #import "modules/ui/types.sx"
 
@@ -77,5 +82,51 @@ main :: () -> i32 {
     print("frames {} rev {}\n", loop.frames, root.snapshot.revision)
 
     root.deinit()
+    context.allocator.dealloc_bytes(loop.build.env)
+
+    // A second root under a tracker. The first frames settle the arenas and the
+    // root's own lists at one frame's high-water mark; from there any number of
+    // further frames — each rebuilding a tree, each taking a tap through a
+    // capturing handler — spends nothing, and the teardown leaves nothing.
+    steady := 0
+    ran := 0
+    taps_seen := 0
+    tracker := TrackingAllocator.init(context.allocator)
+    push .{ allocator = tracker } {
+        quiet := UiRoot.init(Size{ width = 100.0, height = 40.0 })
+        seen := 0
+        counter := *seen
+        spin := FrameLoop.init(*quiet, () -> View {
+            n := use_state(i64, 0)
+            n.set(n.get() + 1)
+            v : View = vstack(0.0) {
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, () {
+                    counter.* += 1
+                })
+                focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 })
+            }
+            v
+        })
+
+        for 0..4 {
+            quiet.queue.push(down(50.0, 10.0))
+            quiet.queue.push(up(50.0, 10.0))
+            spin.frame()
+        }
+        warm := tracker.alloc_count
+        for 0..64 {
+            quiet.queue.push(down(50.0, 10.0))
+            quiet.queue.push(up(50.0, 10.0))
+            spin.frame()
+        }
+        steady = tracker.alloc_count - warm
+        ran = spin.frames
+        taps_seen = seen
+
+        quiet.deinit()
+        context.allocator.dealloc_bytes(spin.build.env)
+    }
+    print("frames {} taps {} steady_allocs {} outstanding {}\n",
+        ran, taps_seen, steady, tracker.leak_count())
     0
 }

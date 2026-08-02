@@ -9,6 +9,13 @@
 // those handlers left, and the result becomes the frame the next one routes
 // against. That is what lets a tap taken in frame N be read by frame N+1's
 // build.
+//
+// A frame's memory comes from an arena pushed as the ambient allocator for the
+// whole frame, so the tree, the handler environments and the snapshot lists are
+// reclaimed together and no builder threads an allocator. There are two arenas
+// taken in turn, because the frame that committed is still being routed against
+// while the next one builds: what a frame allocates lives until the frame after
+// next takes its arena back. Frames therefore run at a fixed memory ceiling.
 #import "modules/std.sx"
 #import "modules/std/core.sx"
 #import "modules/std/mem.sx"
@@ -22,6 +29,10 @@
 #import "modules/ui/compose/input.sx"
 #import "modules/ui/compose/focus.sx"
 
+// What a frame arena starts with. A reset keeps the largest chunk, so the pair
+// settles at the high-water mark of one frame and allocates nothing after.
+FRAME_ARENA_BYTES :: 8192
+
 UiRoot :: struct {
     id: UiRootId = .{ value = 0 }
     viewport: Size = .{ width = 0.0, height = 0.0 }
@@ -31,6 +42,8 @@ UiRoot :: struct {
     focus: FocusRouter = .{}
     queue: InputQueue
     snapshot: CommittedUiSnapshot = .{}
+    arenas: [2]Arena
+    parity: i64 = 0
 
     init :: (viewport: Size, id: UiRootId = .{ value = 0 }, gpa: Allocator = context.allocator) -> UiRoot {
         UiRoot{
@@ -40,6 +53,7 @@ UiRoot :: struct {
             store = StateStore.init(gpa),
             taps = Router.init(gpa),
             queue = InputQueue.init(gpa),
+            arenas = .[Arena.init(gpa, FRAME_ARENA_BYTES), Arena.init(gpa, FRAME_ARENA_BYTES)],
         }
     }
 
@@ -60,12 +74,15 @@ UiRoot :: struct {
         self.focus.observe(*self.snapshot)
     }
 
+    // The snapshot's lists are the arenas' memory, so releasing the arenas is
+    // what releases them.
     deinit :: (self: *UiRoot) {
-        self.snapshot.deinit()
         self.queue.deinit()
         self.taps.deinit()
         self.store.teardown()
         self.identity.deinit()
+        self.arenas[0].deinit()
+        self.arenas[1].deinit()
     }
 }
 
@@ -80,7 +97,18 @@ FrameLoop :: struct {
 
     frame :: (self: *FrameLoop) {
         r := self.root
-        push .{ compose_ui = *r.identity, compose_state = *r.store, compose_input = *r.taps, compose_focus = *r.focus } {
+        // The frame takes the arena the committed snapshot does NOT hold, so
+        // the reset falls on memory two frames old — dead since the frame
+        // before this one committed over it.
+        r.parity = 1 - r.parity
+        r.arenas[r.parity].reset()
+        push .{
+            allocator = r.arenas[r.parity],
+            compose_ui = *r.identity,
+            compose_state = *r.store,
+            compose_input = *r.taps,
+            compose_focus = *r.focus,
+        } {
             r.pump()
             r.identity.begin_build()
             r.store.begin_build()

@@ -8,6 +8,10 @@
 // The hit list is paint-ordered, so the last region containing a point is the
 // top one there. The focus list is declaration-ordered, which is the traversal
 // order.
+//
+// All three lists are the FILLING frame's memory: a snapshot never carries a
+// buffer across a project, so whatever allocator was ambient for a frame owns
+// everything that frame committed.
 #import "modules/std.sx"
 #import "modules/ui/types.sx"
 #import "modules/ui/render.sx"
@@ -20,10 +24,12 @@ CommittedUiSnapshot :: struct {
     hit_list: List(HitRegion) = .{}
     focus_list: List(FocusRegion) = .{}
 
+    // The frame about to fill this snapshot is the one whose allocator owns it,
+    // so a reset lets the buffers go instead of holding on to their capacity.
     reset :: (self: *CommittedUiSnapshot) {
-        self.scene.clear()
-        self.hit_list.len = 0
-        self.focus_list.len = 0
+        self.scene.nodes = .{}
+        self.hit_list = .{}
+        self.focus_list = .{}
     }
 
     deinit :: (self: *CommittedUiSnapshot) {
