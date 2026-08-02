@@ -602,7 +602,21 @@ test "param types and defaults interleave in lexical order" {
     }
 }
 
-// ── Modules reached through a namespace ─────────────────────────────────────
+test "distinct top-level sites in one module take distinct ordinals" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const decls = try parse(a,
+        \\#run probe("first");
+        \\#run probe("second");
+    );
+    var idx = try site.build(a, decls, .{ .main_file = "app/main.sx" });
+    defer idx.deinit();
+    const s = try callSitesOf(a, &idx, "app.main");
+    try std.testing.expectEqual(@as(usize, 2), s.len);
+    try std.testing.expect(s[0].ordinal != s[1].ordinal);
+    try std.testing.expect(s[0].id != s[1].id);
+}
 
 /// A resolved `alias :: #import "…"` node over `members`, shaped as import
 /// resolution builds it: the alias carries the target module's whole decl list.

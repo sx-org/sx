@@ -214,10 +214,17 @@ const Builder = struct {
     /// Module-scope declarations already indexed. Shared by every builder in
     /// one `build`.
     seen: *std.AutoHashMapUnmanaged(*const Node, void),
+    /// The next module-scope ordinal of each module, keyed by module path and
+    /// shared by every builder in one `build`. A module's top-level scope is
+    /// entered once per top-level declaration, so the count that spans them
+    /// has to outlive the builders that consume it.
+    module_ordinals: *std.StringHashMapUnmanaged(u32),
     file: []const u8 = "",
     declaration: []const u8 = "",
     prefix: u64 = 0,
     next_ordinal: u32 = 0,
+    /// Sites number in `file`'s module scope rather than in `next_ordinal`.
+    module_scope: bool = false,
 
     /// Enter a named declaration: numbering restarts and the prefix is folded
     /// once for every site the declaration holds.
@@ -231,6 +238,7 @@ const Builder = struct {
             .opts = self.opts,
             .index = self.index,
             .seen = self.seen,
+            .module_ordinals = self.module_ordinals,
             .file = self.file,
             .declaration = qualified,
             .prefix = declarationPrefix(self.file, qualified),
@@ -238,9 +246,22 @@ const Builder = struct {
         };
     }
 
+    /// The module counter is looked up per site: walking one site's children
+    /// can reach a module the map does not hold yet, and that insertion
+    /// invalidates a value pointer held across it.
+    fn nextLexical(self: *Builder) !u32 {
+        if (!self.module_scope) {
+            defer self.next_ordinal += 1;
+            return self.next_ordinal;
+        }
+        const entry = try self.module_ordinals.getOrPut(self.alloc, self.file);
+        if (!entry.found_existing) entry.value_ptr.* = 0;
+        defer entry.value_ptr.* += 1;
+        return entry.value_ptr.*;
+    }
+
     fn record(self: *Builder, node: *const Node) !void {
-        const ordinal = foldOrdinal(.{ .lexical = self.next_ordinal });
-        self.next_ordinal += 1;
+        const ordinal = foldOrdinal(.{ .lexical = try self.nextLexical() });
         try self.index.sites.put(self.alloc, node, .{
             .file = self.file,
             .declaration = self.declaration,
@@ -257,7 +278,15 @@ pub fn build(alloc: std.mem.Allocator, decls: []const *const Node, opts: Options
     var index = SiteIndex{ .alloc = alloc };
     var seen: std.AutoHashMapUnmanaged(*const Node, void) = .empty;
     defer seen.deinit(alloc);
-    var root = Builder{ .alloc = alloc, .opts = opts, .index = &index, .seen = &seen };
+    var module_ordinals: std.StringHashMapUnmanaged(u32) = .empty;
+    defer module_ordinals.deinit(alloc);
+    var root = Builder{
+        .alloc = alloc,
+        .opts = opts,
+        .index = &index,
+        .seen = &seen,
+        .module_ordinals = &module_ordinals,
+    };
     for (decls) |decl| try walkModuleDecl(&root, decl);
     return index;
 }
@@ -280,9 +309,11 @@ fn walkModuleDecl(b: *Builder, node: *const Node) anyerror!void {
         .opts = b.opts,
         .index = b.index,
         .seen = b.seen,
+        .module_ordinals = b.module_ordinals,
         .file = module_path,
         .declaration = declaration,
         .prefix = declarationPrefix(module_path, declaration),
+        .module_scope = true,
     };
     try walkDecl(&module, node);
 }
