@@ -19,6 +19,7 @@ view :: #import "modules/ui/compose/view.sx";
 components :: #import "modules/ui/compose/components.sx";
 sink :: #import "modules/ui/compose/sink.sx";
 containers :: #import "modules/ui/compose/containers.sx";
+placement :: #import "modules/ui/compose/placement.sx";
 runtime :: #import "modules/ui/compose/runtime.sx";
 
 // Geometry
@@ -62,6 +63,11 @@ VStack :: containers.VStack;
 HStack :: containers.HStack;
 ZStack :: containers.ZStack;
 Spacer :: containers.Spacer;
+
+// Placement
+Mod :: placement.Mod;
+ModBox :: placement.ModBox;
+place :: placement.place;
 
 // Collection boundary
 Sink :: sink.Sink;

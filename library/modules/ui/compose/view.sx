@@ -10,7 +10,10 @@
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
 
-View :: @OpenSet(.{ max = 256, align = 8 }) {
+// The ceiling is the largest member payload admitted: a `ModBox` carries its
+// child inline, so nested placement is what spends it. The slot itself is sized
+// by the members a program declares.
+View :: @OpenSet(.{ max = 512, align = 8 }) {
     size_that_fits :: (self: *Self, proposal: ProposedSize) -> Size;
     layout :: (self: *Self, bounds: Frame);
     render :: (self: *Self, rc: *RenderContext, frame: Frame);
