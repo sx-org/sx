@@ -1,0 +1,16 @@
+// Whitespace is syntax (specs §1), the binding layer: a same-line `{` after a
+// parameterized head is a named aggregate only where the brace body carries an
+// aggregate marker at its OWN top level — a `,` between elements or a `name =`.
+// A `,` inside a nested group is that group's, so a lone positional element
+// spelled as a call reads as a trailing block. The separator comma states the
+// aggregate: `Box(i64){ pair(1, 2), }`.
+#import "modules/std.sx";
+
+Box :: struct ($T: Type) { v: i64 = 0; }
+
+pair :: (a: i64, b: i64) -> i64 => a + b;
+
+main :: () -> i32 {
+    print("{}\n", Box(i64){ pair(1, 2) }.v);
+    return 0;
+}

@@ -5293,53 +5293,49 @@ pub const Parser = struct {
         return tok.tag == .r_brace;
     }
 
-    /// Peek whether the brace group at `current` is aggregate-shaped (fields /
-    /// commas / empty) vs statement-shaped (`;`, `:=`, statement keywords).
-    fn braceLooksLikeAggregateBody(self: *Parser) bool {
-        if (self.current.tag != .l_brace) return false;
+    /// The markers a brace group carries at its OWN top level — what tells an
+    /// aggregate body (field inits, element commas) from a statement list.
+    /// `push` stays apart from the other statement heads because it can also
+    /// name a field (`Pair(i64){ push = 7 }`).
+    const BraceShape = struct {
+        saw_token: bool = false,
+        semi: bool = false,
+        stmt_kw: bool = false,
+        push_kw: bool = false,
+        comma: bool = false,
+        field_eq: bool = false,
+        colon_eq: bool = false,
+    };
+
+    /// Scan the brace group at `current` on a throwaway lexer. Nesting counts
+    /// parens and brackets alongside braces, so the `,` separating call
+    /// arguments, the `=` naming one, and anything else inside a nested group
+    /// belongs to that group rather than to the brace body.
+    fn scanBraceShape(self: *Parser) BraceShape {
+        var shape = BraceShape{};
         var lex = self.lexer;
         var depth: u32 = 1;
-        var saw_non_ws = false;
-        var top_level_semi = false;
-        var top_level_stmt_kw = false;
-        var top_level_comma = false;
-        var top_level_field_eq = false;
-        var top_level_colon_eq = false;
         var prev_was_name = false;
         while (true) {
             const tok = lex.next();
+            if (tok.tag == .eof) break;
+            if (tok.tag == .r_brace) {
+                depth -= 1;
+                if (depth == 0) break;
+            }
+            shape.saw_token = true;
+            const top = depth == 1;
+            var names = false;
             switch (tok.tag) {
-                .l_brace => {
-                    depth += 1;
-                    prev_was_name = false;
-                    saw_non_ws = true;
-                },
-                .r_brace => {
+                .l_brace, .l_paren, .l_bracket => depth += 1,
+                .r_paren, .r_bracket => if (depth > 1) {
                     depth -= 1;
-                    prev_was_name = false;
-                    if (depth == 0) break;
                 },
-                .eof => break,
-                .semicolon => {
-                    if (depth == 1) top_level_semi = true;
-                    prev_was_name = false;
-                    saw_non_ws = true;
-                },
-                .comma => {
-                    if (depth == 1) top_level_comma = true;
-                    prev_was_name = false;
-                    saw_non_ws = true;
-                },
-                .colon_equal => {
-                    if (depth == 1) top_level_colon_eq = true;
-                    prev_was_name = false;
-                    saw_non_ws = true;
-                },
-                .equal => {
-                    if (depth == 1 and prev_was_name) top_level_field_eq = true;
-                    prev_was_name = false;
-                    saw_non_ws = true;
-                },
+                .semicolon => shape.semi = shape.semi or top,
+                .comma => shape.comma = shape.comma or top,
+                // `bound := …` is a statement, never a field init.
+                .colon_equal => shape.colon_eq = shape.colon_eq or top,
+                .equal => shape.field_eq = shape.field_eq or (top and prev_was_name),
                 .kw_return,
                 .kw_break,
                 .kw_continue,
@@ -5349,29 +5345,27 @@ pub const Parser = struct {
                 .kw_if,
                 .kw_for,
                 .kw_while,
-                .kw_push,
-                => {
-                    if (depth == 1) top_level_stmt_kw = true;
-                    prev_was_name = false;
-                    saw_non_ws = true;
+                => shape.stmt_kw = shape.stmt_kw or top,
+                .kw_push => {
+                    shape.push_kw = shape.push_kw or top;
+                    names = top;
                 },
-                .identifier => {
-                    if (depth == 1) prev_was_name = true else prev_was_name = false;
-                    saw_non_ws = true;
-                },
-                else => {
-                    if (depth == 1 and getKeyword(self.source[tok.loc.start..tok.loc.end]) != null)
-                        prev_was_name = true
-                    else
-                        prev_was_name = false;
-                    saw_non_ws = true;
-                },
+                .identifier => names = top,
+                else => names = top and getKeyword(self.source[tok.loc.start..tok.loc.end]) != null,
             }
+            prev_was_name = names;
         }
-        if (!saw_non_ws) return true; // empty `{}` is aggregate-shaped
-        if (top_level_semi or top_level_stmt_kw or top_level_colon_eq) return false;
-        if (top_level_field_eq or top_level_comma) return true;
-        return false;
+        return shape;
+    }
+
+    /// Peek whether the brace group at `current` is aggregate-shaped (fields /
+    /// commas / empty) vs statement-shaped (`;`, `:=`, statement keywords).
+    fn braceLooksLikeAggregateBody(self: *Parser) bool {
+        if (self.current.tag != .l_brace) return false;
+        const shape = self.scanBraceShape();
+        if (!shape.saw_token) return true; // empty `{}` is aggregate-shaped
+        if (shape.semi or shape.stmt_kw or shape.push_kw or shape.colon_eq) return false;
+        return shape.field_eq or shape.comma;
     }
 
     /// With `current` on `{` after a call: true when the brace body looks
@@ -5384,87 +5378,16 @@ pub const Parser = struct {
     /// - otherwise → trailing (statement blocks that omit `;` after `if`/`for`)
     fn braceLooksLikeNamedAggregate(self: *Parser, call_args: []const *Node, brace_is_tight: bool) bool {
         if (self.current.tag != .l_brace) return false;
-        var lex = self.lexer;
-        var depth: u32 = 1;
-        var saw_non_ws = false;
-        var top_level_semi = false;
-        var top_level_stmt_kw = false;
-        var top_level_comma = false;
-        var top_level_field_eq = false;
-        var top_level_colon_eq = false;
-        var prev_was_name = false;
-        while (true) {
-            const tok = lex.next();
-            switch (tok.tag) {
-                .l_brace => {
-                    depth += 1;
-                    prev_was_name = false;
-                    saw_non_ws = true;
-                },
-                .r_brace => {
-                    depth -= 1;
-                    prev_was_name = false;
-                    if (depth == 0) break;
-                },
-                .eof => break,
-                .semicolon => {
-                    if (depth == 1) top_level_semi = true;
-                    prev_was_name = false;
-                    saw_non_ws = true;
-                },
-                .comma => {
-                    if (depth == 1) top_level_comma = true;
-                    prev_was_name = false;
-                    saw_non_ws = true;
-                },
-                .colon_equal => {
-                    // `bound := …` is a statement, never a field init.
-                    if (depth == 1) top_level_colon_eq = true;
-                    prev_was_name = false;
-                    saw_non_ws = true;
-                },
-                .equal => {
-                    if (depth == 1 and prev_was_name) top_level_field_eq = true;
-                    prev_was_name = false;
-                    saw_non_ws = true;
-                },
-                .kw_return,
-                .kw_break,
-                .kw_continue,
-                .kw_defer,
-                .kw_raise,
-                .kw_onfail,
-                .kw_if,
-                .kw_for,
-                .kw_while,
-                => {
-                    if (depth == 1) top_level_stmt_kw = true;
-                    prev_was_name = false;
-                    saw_non_ws = true;
-                },
-                .identifier => {
-                    if (depth == 1) prev_was_name = true else prev_was_name = false;
-                    saw_non_ws = true;
-                },
-                else => {
-                    if (depth == 1 and getKeyword(self.source[tok.loc.start..tok.loc.end]) != null)
-                        prev_was_name = true
-                    else
-                        prev_was_name = false;
-                    saw_non_ws = true;
-                },
-            }
-        }
-        if (!saw_non_ws) {
+        const shape = self.scanBraceShape();
+        if (!shape.saw_token) {
             // Empty / comment-only `{}`: type application vs empty trailing
             // block (see emptyBraceIsTypeApplication).
             return emptyBraceIsTypeApplication(call_args, brace_is_tight);
         }
         // Statement markers force trailing even when an assignment `x = e`
         // looks like a field init (`slot = Label{…};` inside a build block).
-        if (top_level_semi or top_level_stmt_kw or top_level_colon_eq) return false;
-        if (top_level_field_eq or top_level_comma) return true;
-        return false;
+        if (shape.semi or shape.stmt_kw or shape.colon_eq) return false;
+        return shape.field_eq or shape.comma;
     }
 
     /// Separator-dot `Type.{…}` is invalid. Point at the `.` and offer the
