@@ -1,0 +1,26 @@
+// The module that declares the structs, and the names their defaults reach.
+#import "modules/std.sx";
+
+Ink :: struct {
+    name: string = "";
+
+    dark :: () -> Ink => .{ name = "dark" };
+}
+
+INK_DEFAULT :: Ink{ name = "graphite" };
+HAIRLINE :: 0.5;
+
+Pen :: struct {
+    ink: Ink = INK_DEFAULT;
+    width: f32 = HAIRLINE;
+}
+
+Sheet :: struct {
+    ground: Ink = Ink.dark();
+    margin: f32 = HAIRLINE * 4.0;
+}
+
+Slot :: struct ($T: Type) {
+    value: T;
+    ink: Ink = INK_DEFAULT;
+}

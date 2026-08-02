@@ -1,0 +1,34 @@
+// A field default is the DECLARING module's expression (specs: Modules — the
+// namespace surface; Structs — field defaults).
+//
+// A literal that leaves a field out lowers the default that module wrote, so the
+// bare names in it are resolved over ITS import edges. A consumer reaching the
+// type through a namespace imports the module, not what the module's defaults
+// happen to name.
+#import "modules/std.sx";
+p :: #import "2083-modules-field-default-reaches-its-author/paint.sx";
+
+main :: () -> i32 {
+    // A module constant of the declaring module, and an expression over one.
+    pen := p.Pen{};
+    print("pen {} {}\n", pen.ink.name, pen.width);
+
+    // A default that calls a static method of a type the same module declares.
+    sheet := p.Sheet{};
+    print("sheet {} {}\n", sheet.ground.name, sheet.margin);
+
+    // A generic instance's default, monomorphized at this site.
+    slot := p.Slot(i64){};
+    print("slot {} {}\n", slot.value, slot.ink.name);
+
+    // A stated field wins; the rest still come from the author's expressions.
+    stated := p.Pen{ width = 3.0 };
+    print("stated {} {}\n", stated.ink.name, stated.width);
+    0
+}
+
+// ** stdout **
+// pen graphite 0.500000
+// sheet dark 2.000000
+// slot 0 graphite
+// stated graphite 3.000000
