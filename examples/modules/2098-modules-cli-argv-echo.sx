@@ -1,0 +1,25 @@
+// Real OS-argv echo through `modules/std/cli.sx`, one output for every
+// platform backend. AOT: the corpus execs the built binary directly, so argv
+// is the program's own — under `sx run` it would be the interpreter's.
+//
+// argv[0] is the executable path and differs per invocation, so only its
+// presence is echoed; every token after it is echoed verbatim.
+
+#import "modules/std.sx";
+#import "modules/std/cli.sx";
+
+main :: () {
+    buf : [64]string = ---;
+    args := os_args(buf[0..64]);
+
+    print("argc={}\n", os_argc());
+    print("filled={}\n", args.len);
+    if args.len >= 1 and args[0].len > 0 { print("argv0: present\n"); }
+    else { print("argv0: MISSING\n"); }
+
+    i := 1;
+    while i < args.len {
+        print("argv[{}]={}\n", i, args[i]);
+        i += 1;
+    }
+}
