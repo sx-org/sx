@@ -26,9 +26,8 @@
 //     through `_NSGetArgv()` (char***) and `_NSGetArgc()` (int*).
 //   - Linux: views into the `/proc/self/cmdline` blob, slurped once into a
 //     mapping this module never unmaps.
-//   - Anything else (Windows): the accessors bail loudly (message +
-//     `EX_UNAVAILABLE` exit via `process.exit`) rather than returning a
-//     silent empty.
+//   - Other targets: the accessors bail loudly (`EX_UNAVAILABLE` via
+//     `process.exit`) rather than returning a silent empty.
 // =====================================================================
 
 #import "modules/std/core.sx";   // out
@@ -40,8 +39,7 @@ c :: #import "modules/std/c.sx"; // the shared libc handle for the per-OS extern
 // so keep them here, bound through the shared libc handle.
 libc :: c.libc;
 
-// Per-OS argv storage. Unbraced case decls: a braced `{ }` arm would scope
-// them away from module level (see std/posix.sx).
+// Unbraced case arms keep their declarations at module scope.
 inline if OS == {
     case .macos:
         // macOS C-runtime argv/argc accessors (crt_externs.h):
@@ -61,7 +59,7 @@ inline if OS == {
         CMDLINE_PROT_RW  :i32: 3;      // PROT_READ | PROT_WRITE
         CMDLINE_MAP_AP   :i32: 0x22;   // MAP_PRIVATE (0x2) | MAP_ANON (0x20)
         CMDLINE_O_RDONLY :i32: 0;
-        CMDLINE_FIRST_CAP :: 4096;     // one page; the loader grows past it
+        CMDLINE_FIRST_CAP :: 4096;
 
         cmdline : string = "";         // the NUL-separated blob
         cmdline_argc : i64 = -1;       // -1 until `cmdline_load` has run
@@ -165,16 +163,15 @@ os_argc :: () -> i64 {
             return cmdline_argc;
         }
         else: {
-            out("std.cli: unsupported platform — macOS and Linux are implemented; Windows needs GetCommandLineW.\n");
+            out("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
             proc.exit(EX_UNAVAILABLE);
         }
     }
 }
 
 // Fill `buf` with VIEWS over the process argv and return the filled prefix
-// `buf[0 .. min(argc, buf.len)]`. Zero heap, zero per-arg copy: each
-// element's bytes live in process-lifetime storage (see the platform note
-// in the header).
+// `buf[0 .. min(argc, buf.len)]`. Each element points directly into the
+// backend's process-lifetime storage; no per-argument bytes are copied.
 //
 // The caller owns `buf` (typically a stack `[N]string`); the returned
 // slice points into it and is valid for as long as `buf` is in scope. If
@@ -219,7 +216,7 @@ os_args :: (buf: []string) -> []string {
             return result;
         }
         else: {
-            out("std.cli: unsupported platform — macOS and Linux are implemented; Windows needs GetCommandLineW.\n");
+            out("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
             proc.exit(EX_UNAVAILABLE);
         }
     }
