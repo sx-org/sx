@@ -1,4 +1,8 @@
 pen graphite 0.500000
 sheet dark 2.000000
 slot 0 graphite
+rule 7 2
 stated graphite 3.000000
+global pen graphite 0.500000
+global rule 7 2
+global slot 0 graphite

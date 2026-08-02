@@ -9,6 +9,8 @@ Ink :: struct {
 
 INK_DEFAULT :: Ink{ name = "graphite" };
 HAIRLINE :: 0.5;
+STEP :: 7;
+GRID :: 2.0;
 
 Pen :: struct {
     ink: Ink = INK_DEFAULT;
@@ -18,6 +20,13 @@ Pen :: struct {
 Sheet :: struct {
     ground: Ink = Ink.dark();
     margin: f32 = HAIRLINE * 4.0;
+}
+
+// An integer field taking an integral-float default narrows through the fold
+// that runs ahead of ordinary lowering.
+Rule :: struct {
+    count: i64 = STEP;
+    span: i64 = GRID;
 }
 
 Slot :: struct ($T: Type) {

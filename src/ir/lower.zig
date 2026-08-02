@@ -2057,6 +2057,35 @@ pub const Lowering = struct {
         return self.module.types.findByName(name_id) != null;
     }
 
+    /// The module a node's bare names resolve in, for the span of one
+    /// evaluation. A node carrying an explicit `source_file` is one evaluated
+    /// outside the module that wrote it — a substituted caller comptime
+    /// `$`-arg, or a struct field default reached through a namespace — and
+    /// its names belong to THAT module's import edges, not the evaluating
+    /// site's. Every evaluator that resolves names off `current_source_file`
+    /// brackets its walk with this: `lowerExpr`, and the const folders
+    /// (`constExprValue`, `foldComptimeFloatInit`) that run before or instead
+    /// of it. A node with no source leaves the ambient module in place, so
+    /// this is a no-op on the hot path.
+    pub const AuthorScope = struct {
+        lowering: *Lowering,
+        saved: ?[]const u8,
+        switched: bool,
+
+        pub fn enter(lowering: *Lowering, node: *const Node) AuthorScope {
+            const saved = lowering.current_source_file;
+            if (node.source_file) |sf| {
+                lowering.setCurrentSourceFile(sf);
+                return .{ .lowering = lowering, .saved = saved, .switched = true };
+            }
+            return .{ .lowering = lowering, .saved = saved, .switched = false };
+        }
+
+        pub fn leave(self: AuthorScope) void {
+            if (self.switched) self.lowering.setCurrentSourceFile(self.saved);
+        }
+    };
+
     /// Update `self.current_source_file` and mirror it onto `diags.current_source_file`,
     /// so any diagnostic emitted from inside a function lowered from another module is
     /// attributed to that module — not whichever file the diagnostics list was init'd with.

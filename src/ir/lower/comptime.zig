@@ -51,6 +51,8 @@ pub fn constArrayLiteral(self: *Lowering, elements: []const *const Node, array_t
 /// rather than collapsing to null. Returns null if the
 /// expression is not constant-foldable here.
 pub fn constExprValue(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?inst_mod.ConstantValue {
+    const author = Lowering.AuthorScope.enter(self, expr);
+    defer author.leave();
     return switch (expr.data) {
         // An int element in a FLOAT destination converts exactly (the
         // int+float promotion rule, element-wise — `[2]f64 : .[1, 2.5]`).
@@ -2292,6 +2294,8 @@ pub fn pinConstAuthorSource(self: *Lowering, source: ?[]const u8) ConstSourcePin
 /// `evalConstFloatExpr` (non-integral detection) + `floatToIntExact`.
 pub fn foldComptimeFloatInit(self: *Lowering, node: *const Node, dst: TypeId) ?Ref {
     if (!self.isIntEx(dst)) return null;
+    const author = Lowering.AuthorScope.enter(self, node);
+    defer author.leave();
     // PURE & side-effect-free, so it runs FIRST: a runtime / non-comptime /
     // non-numeric node — incl. a `$pack[i]` index expression — folds to null
     // and is left to the normal path untouched. (Calling `inferExprType` on

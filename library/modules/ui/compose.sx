@@ -32,7 +32,6 @@ Alignment :: types.Alignment;
 HAlignment :: types.HAlignment;
 VAlignment :: types.VAlignment;
 
-// Paint
 Color :: types.Color;
 Stroke :: types.Stroke;
 
@@ -64,7 +63,6 @@ HStack :: containers.HStack;
 ZStack :: containers.ZStack;
 Spacer :: containers.Spacer;
 
-// Placement
 Mod :: placement.Mod;
 ModBox :: placement.ModBox;
 place :: placement.place;

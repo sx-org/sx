@@ -15,6 +15,4 @@ render_root :: (root: *View, viewport: Size, tree: *RenderTree) {
     root.render(*rc, bounds);
 }
 
-// The node count is what a test asserts against without owning the tree's
-// representation.
 command_count :: (tree: *RenderTree) -> i64 => tree.nodes.len;
