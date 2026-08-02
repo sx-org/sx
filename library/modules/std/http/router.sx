@@ -167,7 +167,7 @@ RouteCtx :: struct {
     // ── JSON request body ────────────────────────────────────────────
     // Parse the request body as JSON (under the per-request arena) and
     // return the root Value + an ok flag. A malformed body → (.null,
-    // false). Strings/ints/bools/objects/arrays per std/json (no floats).
+    // false). Strings/numbers/bools/objects/arrays per std/json.
     json_body :: (self: *RouteCtx) -> (json.Value, bool) {
         v, e := json.parse(self.req.body, context.allocator);
         if e {
