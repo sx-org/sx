@@ -1,0 +1,70 @@
+// Whitespace is syntax (specs §1), the binding layer: a same-line `{` after a
+// head reads as a trailing block or as a named aggregate, and the brace body's
+// OWN top level decides which. Groups nest — parens and brackets alike — so the
+// `,` between call arguments, the `=` naming one, and everything else inside a
+// nested group belongs to that group. A statement whose terminator is the line
+// break therefore stays one statement of a trailing block, however many
+// arguments, subscripts or postfix links it spans.
+#import "modules/std.sx"
+
+pair :: ufcs (a: i64, b: i64) -> i64 => a + b
+
+show :: ufcs (xs: []i64) { for xs (x) { print("{}", x) } }
+
+Box :: struct ($T: Type) { v: T = 0; w: T = 0 }
+
+Holder :: struct { ctx: Context = .{} }
+
+run :: (label: string, body: Closure()) {
+    print("{}: ", label)
+    body()
+    print("\n")
+}
+
+main :: () -> i32 {
+    slots : [4]i64 = .[0, 0, 0, 0]
+
+    // Two arguments and no `;`: the `,` is the argument list's.
+    run("call") {
+        print("{}", pair(1, 2))
+    }
+    // A named argument's `=` names a parameter, not a field.
+    run("named") {
+        print("{}", pair(a = 3, b = 4))
+    }
+    // Every link of a postfix chain keeps its own arguments.
+    run("chain") {
+        print("{}", 1.pair(2).pair(3))
+    }
+    // A subscript is a group too, and so is the call inside it.
+    run("subscript") {
+        slots[pair(0, 1)] = 9
+        print("{}", slots[1])
+    }
+    // A bracketed literal's elements are the literal's.
+    run("brackets") {
+        [3]i64.[7, 8, 9].show()
+    }
+    // The rule holds at any depth: an inner block is a group of the outer one.
+    run("nested") {
+        run("inner") {
+            print("{}", pair(4, 5))
+        }
+    }
+
+    // A `push` head takes the same decision — the brace is the push body unless
+    // the body itself is field-shaped.
+    h := Holder{ ctx = context }
+    push h.ctx {
+        print("push: {}\n", pair(6, 7))
+    }
+
+    // The markers that DO count are the ones the brace body writes itself: a
+    // top-level `,` between elements or a top-level `name =`. A lone positional
+    // element takes the separator comma to say so.
+    a := Box(i64){ 1, 2 }
+    b := Box(i64){ v = pair(1, 2) }
+    c := Box(i64){ pair(3, 4), }
+    print("box: {} {} {}\n", a.v, b.v, c.v)
+    0
+}

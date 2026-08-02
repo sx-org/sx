@@ -5273,6 +5273,12 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
   are written with. Zero-arg `f() {}` is always trailing, tight or not (`T{}`
   is the empty non-parameterized aggregate). Bodies with statements/`;`/control
   keywords are always trailing whatever the spelling.
+- **Body shape**: a non-empty same-line body is a parameterized named aggregate
+  only where it writes an aggregate marker at its OWN top level — a `,` between
+  elements or a `name =` field init. Groups nest, so a `,`, `=` or `;` inside a
+  paren, bracket or brace group is that group's: `vstack(8) { tappable(hit,
+  on_tap) }` is a trailing block, and a lone positional element takes the
+  separator comma to say otherwise — `Box(i64){ pair(1, 2), }`.
 - **Header position**: inside an `if`/`while`/`for` header the form is
   disabled — `{` terminates the condition and opens the statement body;
   bind the closure explicitly there.
