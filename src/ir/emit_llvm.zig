@@ -3181,8 +3181,6 @@ pub const LLVMEmitter = struct {
         self.mapRef(phi);
     }
 
-    // ── Helpers ─────────────────────────────────────────────────────
-
     fn makeBlockKey(func_idx: u32, block_idx: u32) u64 {
         return (@as(u64, func_idx) << 32) | @as(u64, block_idx);
     }

@@ -13,8 +13,6 @@ const Module = mod_mod.Module;
 const Builder = mod_mod.Builder;
 const LLVMEmitter = emit_mod.LLVMEmitter;
 
-// ── Helper ──────────────────────────────────────────────────────────────
-
 fn str(module: *Module, s: []const u8) types.StringId {
     return module.types.internString(s);
 }

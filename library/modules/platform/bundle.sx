@@ -208,8 +208,6 @@ bundle_main :: (opts: BuildOptions) -> bool {
     true
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────
-
 // Copy a sx string (slice) into a freshly-allocated null-terminated
 // buffer for libc / `[:0]u8` callees. Allocated from
 // `context.allocator` like the rest of the bundling stage.
