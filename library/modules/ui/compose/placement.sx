@@ -1,9 +1,9 @@
-// Placement — what a caller puts AROUND a component.
+// What a caller puts AROUND a component.
 //
 // ONE canonical order: margin → size → bg/border/corner → padding → content.
 // The margin/padding split states both background-relative orders — a chip's
-// padding inside its background, a card's margin outside it — without a chain or
-// an ordering DSL, and however many fields are set they act at ONE wrapper.
+// padding inside its background, a card's margin outside it — and however many
+// fields are set they act at ONE wrapper.
 //
 // A component that owns a surface owns the padding inside it, so `Mod.padding`
 // is for a box composed at the call site.

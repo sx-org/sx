@@ -15,13 +15,14 @@
 #import "modules/ui/compose/view.sx";
 #import "modules/ui/compose/sink.sx";
 
-// A leaf with no surface: it holds a minimum and takes the slack its stack has
-// left to give.
+// A leaf with no surface: it holds a minimum along its stack's MAIN axis and
+// takes the slack that stack has left to give. The stack is what spends
+// `min_length`, so the spacer itself measures to nothing on either axis.
 Spacer :: @OpenVariant(View) {
     min_length: f32 = 0.0;
 
     size_that_fits :: (self: *Spacer, proposal: ProposedSize) -> Size {
-        Size{ width = self.min_length, height = self.min_length }
+        Size.zero()
     }
 
     layout :: (self: *Spacer, bounds: Frame) {}
@@ -39,14 +40,19 @@ StackMetrics :: struct {
 }
 
 // A column proposes its own width and leaves height free; a row does the
-// opposite. Both count the spacers on the way through.
+// opposite. A spacer's minimum lands on the main axis alone, so it never widens
+// a column or heightens a row, and each one counts toward the slack share.
 measure_column :: (children: *List(View), width: ?f32, spacing: f32) -> StackMetrics {
     m := StackMetrics{};
     for children (*c) {
+        if sp := c.*.(?Spacer) {
+            m.main += sp.min_length;
+            m.spacers += 1;
+            continue;
+        }
         s := c.size_that_fits(ProposedSize{ width = width, height = null });
         if s.width > m.cross { m.cross = s.width; }
         m.main += s.height;
-        if c.*.(?Spacer) != null { m.spacers += 1; }
     }
     if children.len > 1 { m.main += spacing * xx (children.len - 1); }
     m
@@ -55,10 +61,14 @@ measure_column :: (children: *List(View), width: ?f32, spacing: f32) -> StackMet
 measure_row :: (children: *List(View), height: ?f32, spacing: f32) -> StackMetrics {
     m := StackMetrics{};
     for children (*c) {
+        if sp := c.*.(?Spacer) {
+            m.main += sp.min_length;
+            m.spacers += 1;
+            continue;
+        }
         s := c.size_that_fits(ProposedSize{ width = null, height = height });
         if s.height > m.cross { m.cross = s.height; }
         m.main += s.width;
-        if c.*.(?Spacer) != null { m.spacers += 1; }
     }
     if children.len > 1 { m.main += spacing * xx (children.len - 1); }
     m
@@ -161,17 +171,22 @@ ZStack :: @OpenVariant(View) {
     }
 }
 
-// Where one child sits, asked the same way by every pass.
+// Where one child sits, asked the same way by every pass. A spacer's frame is
+// its main-axis length plus its share of the slack, and nothing across.
 column_frame :: (child: *View, bounds: Frame, alignment: HAlignment, y: f32, extra: f32) -> Frame {
+    if sp := child.*.(?Spacer) {
+        return Frame.make(bounds.origin.x, y, 0.0, sp.min_length + extra);
+    }
     s := child.size_that_fits(ProposedSize{ width = bounds.size.width, height = null });
-    h := s.height + (if child.*.(?Spacer) != null then extra else 0.0);
-    Frame.make(bounds.origin.x + align_h(alignment, s.width, bounds.size.width), y, s.width, h)
+    Frame.make(bounds.origin.x + align_h(alignment, s.width, bounds.size.width), y, s.width, s.height)
 }
 
 row_frame :: (child: *View, bounds: Frame, alignment: VAlignment, x: f32, extra: f32) -> Frame {
+    if sp := child.*.(?Spacer) {
+        return Frame.make(x, bounds.origin.y, sp.min_length + extra, 0.0);
+    }
     s := child.size_that_fits(ProposedSize{ width = null, height = bounds.size.height });
-    w := s.width + (if child.*.(?Spacer) != null then extra else 0.0);
-    Frame.make(x, bounds.origin.y + align_v(alignment, s.height, bounds.size.height), w, s.height)
+    Frame.make(x, bounds.origin.y + align_v(alignment, s.height, bounds.size.height), s.width, s.height)
 }
 
 stacked_frame :: (child: *View, bounds: Frame, alignment: Alignment) -> Frame {

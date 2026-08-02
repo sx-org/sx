@@ -51,6 +51,29 @@ main :: () -> i32 {
     print("ends\n");
     draw(*ends, Frame.make(0.0, 0.0, 100.0, 16.0));
 
+    // A spacer's minimum is a MAIN-axis length. It lengthens the stack it sits
+    // in and measures to nothing across, so a row keeps its tallest child's
+    // height and a column keeps its widest child's width.
+    min_row : View = hstack(0.0) {
+        Label{ text = "a", font_size = 8.0 };
+        Spacer{ min_length = 20.0 };
+        Label{ text = "b", font_size = 8.0 };
+    };
+    min_row_size := min_row.size_that_fits(ProposedSize.flexible());
+    print("min row {}x{}\n", min_row_size.width.(i64), min_row_size.height.(i64));
+    draw(*min_row, Frame.make(0.0, 0.0, 28.0, 8.0));
+
+    min_col : View = vstack(0.0) {
+        Label{ text = "a", font_size = 8.0 };
+        Spacer{ min_length = 20.0 };
+        Label{ text = "b", font_size = 8.0 };
+    };
+    min_col_size := min_col.size_that_fits(ProposedSize.flexible());
+    print("min col {}x{}\n", min_col_size.width.(i64), min_col_size.height.(i64));
+    // Slack lands ON TOP of the minimum: the spacer grows to 32 and the second
+    // label follows it down.
+    draw(*min_col, Frame.make(0.0, 0.0, 4.0, 48.0));
+
     // A column aligns on the horizontal axis.
     column : View = vstack(2.0, alignment = .trailing) {
         Label{ text = "one" };
@@ -88,6 +111,12 @@ main :: () -> i32 {
 // ends
 //   'left' at 0,0 32x16
 //   'right' at 60,0 40x16
+// min row 28x8
+//   'a' at 0,0 4x8
+//   'b' at 24,0 4x8
+// min col 4x36
+//   'a' at 0,0 4x8
+//   'b' at 0,40 4x8
 // column
 //   'one' at 56,0 24x16
 //   'twenty' at 32,18 48x16

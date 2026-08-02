@@ -49,7 +49,7 @@ FocusRegion :: render.FocusRegion;
 KeyEvent :: input.KeyEvent;
 LogicalKey :: input.LogicalKey;
 
-// Text metrics — `set_global_font` points them at the renderer's glyph cache.
+// `set_global_font` points `measure_text` at the renderer's glyph cache.
 measure_text :: font.measure_text;
 set_global_font :: font.set_global_font;
 

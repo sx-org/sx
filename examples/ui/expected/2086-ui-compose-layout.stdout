@@ -5,6 +5,12 @@ row 48x16
 ends
   'left' at 0,0 32x16
   'right' at 60,0 40x16
+min row 28x8
+  'a' at 0,0 4x8
+  'b' at 24,0 4x8
+min col 4x36
+  'a' at 0,0 4x8
+  'b' at 0,40 4x8
 column
   'one' at 56,0 24x16
   'twenty' at 32,18 48x16
