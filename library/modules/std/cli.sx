@@ -64,8 +64,9 @@ inline if OS == {
         cmdline : string = "";         // the NUL-separated blob
         cmdline_argc : i64 = -1;       // -1 until `cmdline_load` has run
 
-        // Read the whole file into `buf`, returning the byte count, or -1 on
-        // any failure. A count below `cap` means EOF was reached.
+        // Read the whole file into `buf`, returning the byte count, or -1 when
+        // it cannot be opened or read. A count below `cap` means EOF was
+        // reached.
         cmdline_read :: (buf: [*]u8, cap: i64) -> i64 {
             fd := c.open("/proc/self/cmdline", CMDLINE_O_RDONLY, 0);
             if fd < 0 { return -1; }
@@ -76,7 +77,7 @@ inline if OS == {
                 if made == 0 { break; }
                 at += made;
             }
-            if c.close(fd) != 0 { return -1; }
+            c.close(fd);
             return at;
         }
 
