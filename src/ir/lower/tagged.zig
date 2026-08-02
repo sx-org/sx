@@ -443,7 +443,8 @@ pub fn refuseEmptySet(self: *Lowering, proto: TypeId, span: ?ast.Span) bool {
 
 /// The other instantiations of `proto`'s family that DO have conformers,
 /// rendered for the empty-set diagnostic: an empty `Series(bool)` is almost
-/// always a wrong argument, and the tuples that do exist are the fix.
+/// always a wrong argument, and the instantiations that do exist are what the
+/// caller meant.
 fn siblingInstantiations(self: *Lowering, proto: TypeId) []const u8 {
     const inst = self.param_protocol_instances.get(proto).?;
     const own = self.protocolResolver().paramProtocolInstanceName(inst.base, inst.args);
@@ -1435,7 +1436,7 @@ fn publishTags(self: *Lowering) void {
 /// (desugared before lowering, where no IR blocks exist to split).
 /// The concrete type a `?*T` postfix target tests, when `child` is a plain
 /// pointer whose pointee names one. A protocol pointee is the type lie the
-/// hard ctx recovery refuses (issue 0306); `void` and `any` name no concrete
+/// hard ctx recovery refuses; `void` and `any` name no concrete
 /// type, so neither can be a membership question.
 pub fn softRecoveryPointee(self: *Lowering, child: TypeId) ?TypeId {
     if (child.isBuiltin()) return null;

@@ -1,10 +1,9 @@
-// Phase 1 step 1.2 (PLAN-FFI.md): parser coverage for `#jni_call`
+// Parser coverage for `#jni_call`
 // and `#jni_static_call`. Same `#<intrinsic>(ReturnT)(args...)`
-// shape as `#objc_call`; lands green on the existing parse rule
-// (Phase 1.1 added all three).
+// shape as `#objc_call`, parsed by the same rule.
 //
-// `inline if false` suppresses sema/codegen — the lowering arrives
-// in Phase 1.15+; this file pins the parse surface only.
+// `inline if false` suppresses sema/codegen; this file pins the parse
+// surface only.
 
 #import "modules/std.sx";
 

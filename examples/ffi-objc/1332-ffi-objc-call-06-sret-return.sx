@@ -1,16 +1,14 @@
-// Phase 1 step 1.8 (PLAN-FFI.md): >16 B non-HFA struct returns
+// >16 B non-HFA struct returns
 // through `#objc_call`. AAPCS64 routes these through the indirect-
 // return convention: caller allocates the result slot, passes its
 // pointer in x8 with the `sret(<T>)` attribute, callee writes
 // through it and returns void.
 //
 // Register a runtime-built Obj-C class with a method that returns
-// a fixed `Triple`. The IMP is a plain sx fn (abi .c) — its
-// sret-shaped lowering already works (Phase 0.3 fix for plain
-// `extern` returns). The `#objc_call` dispatch side now produces
-// the matching call shape: `call void @objc_msgSend(ptr sret %slot,
-// ...)` + load. The two halves must agree on the ABI for the
-// round-trip to return the right bytes.
+// a fixed `Triple`. The IMP is a plain sx fn (abi .c), sret-shaped like any
+// plain `extern` return; the `#objc_call` dispatch side produces the matching
+// call shape: `call void @objc_msgSend(ptr sret %slot, ...)` + load. The two
+// halves must agree on the ABI for the round-trip to return the right bytes.
 
 #import "modules/std.sx";
 #import "modules/build.sx";

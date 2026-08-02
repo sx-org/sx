@@ -329,12 +329,11 @@ error return trace (most recent call last):
         ^
 ```
 
-Traces are on by default in debug builds and compiled out in release
-(re-enable with `--release-traces`). They cost nothing on the success
-path. Each frame's location comes from `Frame` metadata
-(file/line/col/func) baked in at the trace point — the trace resolves
-itself with no debug info. Separately, sx emits standard DWARF, so
-`lldb` / `gdb` work on sx binaries too.
+Traces are on by default in debug builds and compiled out in release.
+They cost nothing on the success path. Each frame's location comes from
+`Frame` metadata (file/line/col/func) baked in at the trace point — the
+trace resolves itself with no debug info. Separately, sx emits standard
+DWARF, so `lldb` / `gdb` work on sx binaries too.
 
 Interpolating a tag with `{}` prints its **name**, not a number — in
 every build, including release:

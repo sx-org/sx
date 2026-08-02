@@ -23,8 +23,7 @@
 // `AndroidPlatform` (the EGL handles, the ANativeWindow, the render
 // thread, the touch ring, the frame closure, the user main fn, the
 // touch mutex). Module-level globals are out — they shadow consumer
-// globals on `#import` and produced an integer/float-shadowing render
-// regression on chess before we eliminated them.
+// globals on `#import`.
 //
 // Vulkan-compatible: same ANativeWindow drives `vkCreate*SurfaceKHR`
 // without changing the lifecycle.
@@ -94,9 +93,8 @@ ANativeWindow_setBuffersGeometry :: (w: *void, width: i32, height: i32, fmt: i32
 
 AAssetManager_fromJava :: (env: *void, mgr: *void) -> *void extern;
 
-// EGL. Constants from <EGL/egl.h>. We bring up an ES3 context with a
-// 24-bit RGB framebuffer + 24-bit depth (same shape chess used under
-// the legacy NDK path).
+// EGL. Constants from <EGL/egl.h>. The context is ES3 with a 24-bit RGB
+// framebuffer + 24-bit depth.
 EGL_DEFAULT_DISPLAY    :: 0;
 EGL_NO_DISPLAY         :*void: null;
 EGL_NO_CONTEXT         :*void: null;
@@ -157,10 +155,9 @@ AndroidPlatform :: struct {
     width:  i32 = 0;
     height: i32 = 0;
 
-    // Set by consumer code BEFORE `init` if a fixed design width is
-    // wanted (chess uses 414). When 0, the platform reports
-    // viewport = pixel (1:1 logical/physical) — same as the legacy
-    // hardcoded `dpi_scale = 1.0` behaviour.
+    // Set by consumer code BEFORE `init` if a fixed design width is wanted.
+    // When 0, the platform reports viewport = pixel (1:1 logical/physical),
+    // i.e. `dpi_scale = 1.0`.
     logical_w: f32 = 0.0;
 
     // Panel refresh rate in Hz, used to pace run_frame_loop. Consumers
@@ -422,11 +419,10 @@ impl Platform for AndroidPlatform {
         true
     }
 
-    // NOTE: method order must match the `Platform` protocol declaration
+    // Method order must match the `Platform` protocol declaration
     // in modules/platform/api.sx. The vtable is built in impl source
-    // order; mismatched order silently routes calls to the wrong method
-    // (chess on Android lost touch entirely because poll_events sat in
-    // begin_frame's slot, etc.).
+    // order, so a mismatched order silently routes calls to the wrong
+    // method.
 
     run_frame_loop :: (self: *AndroidPlatform, frame_fn: Closure()) {
         self.frame_closure = frame_fn;

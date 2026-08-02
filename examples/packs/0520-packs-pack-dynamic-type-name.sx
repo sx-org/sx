@@ -1,16 +1,12 @@
-// Variadic heterogeneous type packs — step 4A final-slice
-// follow-up. `type_name(<dynamic-arg>)` where the argument is
-// NOT a static type expression (e.g. `list[i]` indexing into
-// a `$args`-derived `[]Type` slice) silently folded to "i64"
-// because `resolveTypeArg`'s catch-all `else => .i64` lied —
-// the kind of silent unimplemented arm the project's REJECTED
-// PATTERNS forbid.
+// Variadic heterogeneous type packs. `type_name(<dynamic-arg>)` where the
+// argument is NOT a static type expression (e.g. `list[i]` indexing into a
+// `$args`-derived `[]Type` slice) must not fold to "i64" through
+// `resolveTypeArg`'s catch-all `else => .i64`.
 //
-// The fix: `tryLowerReflectionCall` now splits static vs
-// dynamic args via `isStaticTypeArg(node)`. Static → fold to
-// const_string at lower time (today's fast path). Dynamic →
-// emit `callBuiltin(.type_name, [arg_ref])` for the interp's
-// runtime arm to handle.
+// `tryLowerReflectionCall` splits static vs dynamic args via
+// `isStaticTypeArg(node)`. Static → fold to const_string at lower
+// time (the fast path). Dynamic → emit `callBuiltin(.type_name,
+// [arg_ref])` for the interp's runtime arm to handle.
 //
 // Type values are comptime-only — the dynamic path only works
 // inside a comptime context (`#run` / `#insert`). The test

@@ -1,6 +1,6 @@
-// Tests for resolver.zig — the shared author-collection layer.
+// The shared author-collection layer of resolver.zig.
 //
-// collectVisibleAuthors is exercised over REAL Phase A facts (parse →
+// collectVisibleAuthors is exercised over REAL import facts (parse →
 // resolveImports → buildImportFacts, the exact path core.zig drives) plus one
 // synthetic diamond fixture for pointer-identity dedup. The visibility-adapter
 // tests pin the nameVisibleOverEdges edge-walk that isNameVisible /
@@ -195,7 +195,7 @@ test "resolver: collectNamespaceAuthors — returns target members, walks no gra
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
     const main_path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{absdir});
-    // Imported modules are keyed by their CANONICAL path (issue 0148), so the
+    // Imported modules are keyed by their CANONICAL path, so the
     // expected key goes through the same chokepoint.
     const point_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/point.sx", .{absdir}));
 

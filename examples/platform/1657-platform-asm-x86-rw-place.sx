@@ -1,4 +1,4 @@
-// ASM stream — read-write (`+`) place output on x86_64 (cross-arch sibling of
+// Read-write (`+`) place output on x86_64 (cross-arch sibling of
 // the aarch64 1650). `incq %[v]` reads the operand register, increments it, and
 // the result is stored back through the place. Locks the x86 lowering of `+`:
 // an output `=r` plus a tied input (`=r,0`) seeded with the place's value.

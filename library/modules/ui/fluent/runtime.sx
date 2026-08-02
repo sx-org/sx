@@ -1,4 +1,4 @@
-// The fluent library's root and rendering entry points (revision §13.1).
+// The fluent library's root and rendering entry points.
 #import "modules/std.sx";
 #import "modules/ui/fluent/geometry.sx";
 #import "modules/ui/fluent/render.sx";

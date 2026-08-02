@@ -6,15 +6,13 @@ trace :: #import "modules/std/trace.sx";
 // =====================================================================
 // process.sx — subprocess + environment stdlib (POSIX backend).
 //
-// Scope (Phase 1A): one entry point `run(cmd)` that shells out to
+// The surface is one entry point `run(cmd)` that shells out to
 // /bin/sh, captures stdout, returns exit code + stdout. Plus
 // `env(name)` / `find_executable(name)`. The bundler uses these to
 // invoke `codesign`, `plutil`, `security`, `aapt2`, `javac`, `d8`,
 // `keytool`, `apksigner`.
 //
-// Roadmap: phase 1B replaces `popen` with `posix_spawn` + pipes so
-// we can capture stderr separately and pass argv without shell
-// quoting. Until then, callers responsible for quoting + use 2>&1
+// `run` goes through /bin/sh, so the caller owns quoting and uses `2>&1`
 // to fold stderr into the captured stream.
 // =====================================================================
 
@@ -35,8 +33,7 @@ system :: (cmd: [:0]u8) -> i32 extern libc;
 
 ProcessResult :: struct {
     /// Exit code as reported by `WEXITSTATUS(status)`. 0 = success.
-    /// Note: doesn't distinguish "killed by signal" from "exited
-    /// non-zero"; phase 1B will return a tagged union.
+    /// Does not distinguish "killed by signal" from "exited non-zero".
     exit_code: i32;
     stdout:    string;
 }
@@ -118,7 +115,7 @@ find_executable :: (name: [:0]u8) -> ?string {
     null
 }
 
-// ── Process termination (ERR step E4.1) ───────────────────────────────
+// ── Process termination ───────────────────────────────
 
 // Bound to POSIX `_exit(2)` (immediate termination — no atexit, no stdio
 // flush), NOT libc `exit(3)`. Two reasons: (1) it matches `process.exit`'s

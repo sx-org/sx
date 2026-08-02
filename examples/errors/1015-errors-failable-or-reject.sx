@@ -1,4 +1,4 @@
-// Failable `or` rejection (ERR step E2.4a): the value-terminator form
+// Failable `or` rejection: the value-terminator form
 // (`lhs or value`) requires a value-carrying failable LHS — a pure failable
 // (`-> !`) has no success value to fall back to, so `or value` is rejected
 // (use `catch` to absorb the error). The positive cases live in

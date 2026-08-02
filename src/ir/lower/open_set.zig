@@ -67,7 +67,7 @@ const payload_field = "payload";
 const tag_field = "tag";
 
 /// `align` when the declaration omits it: the alignment ordinary allocators
-/// guarantee, which is what a `List(P)` can honour today.
+/// guarantee, which is what a `List(P)` can honour.
 pub const default_align: u32 = 8;
 
 /// A member whose own size depends on another set's layout: it holds that set BY
@@ -696,7 +696,7 @@ fn reportNonConformance(
 
 /// Record every OTHER set this member holds by value. Those edges are what makes
 /// growth transitive: a member of `R` holding a `Q` grows when `Q` grows, so `R`
-/// has to be laid out again — and re-checked, since the member may no longer fit.
+/// has to be laid out again — and re-checked, since the member may not fit.
 fn recordDependencies(
     self: *Lowering,
     sd: *const ast.StructDecl,

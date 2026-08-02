@@ -1,5 +1,5 @@
-// Helper for 93-into-import-scope.sx: declares Wrap + an impl Into for it.
-// No paired tests/expected file — not executed standalone by the runner.
+// Declares Wrap + an impl Into for it, for 0703-modules-into-import-scope.sx.
+// No paired expected/ file — not executed standalone by the runner.
 
 #import "modules/std.sx";
 

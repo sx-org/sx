@@ -1,7 +1,6 @@
 // A protocol alias chain resolves at any acyclic depth; the impl head may
-// name the deepest alias. Regression (issue 0331): protocol/pending-type
-// alias resolution walked at most 16 hops, so the 18-hop chain below left
-// the impl unbound and `d.say()` unresolved.
+// name the deepest alias. The 18-hop chain below binds its impl and `d.say()`
+// resolves.
 #import "modules/std.sx";
 
 Speak :: protocol { say :: (self: *Self) -> i64; }

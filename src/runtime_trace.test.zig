@@ -1,9 +1,8 @@
-// Unit tests for the ERR E3.1 error return-trace ring buffer
+// The error return-trace ring buffer
 // (library/vendors/sx_trace_runtime/sx_trace.c). The .c is linked into the
 // module via build.zig, so these extern symbols resolve at test-link time.
-// This grounds the buffer logic (push / overflow-survives-newest / clear /
-// len / truncated / oldest-to-newest ordering) before E3.2 wires the
-// push/clear calls into codegen.
+// This grounds the buffer logic: push / overflow-survives-newest / clear /
+// len / truncated / oldest-to-newest ordering.
 
 const std = @import("std");
 

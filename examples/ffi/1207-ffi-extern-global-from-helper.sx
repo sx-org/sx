@@ -4,11 +4,6 @@
 // (BitCast doesn't accept ptr↔int on modern LLVM with opaque
 // pointers), and a `u64`-returning function correctly returns
 // the address.
-//
-// Was issue-0037 — the helper used to emit `ret i64 undef` because
-// `coerceToType` had no pointer↔integer case, so the explicit
-// `xx ptr` cast produced an unchanged pointer value handed to a
-// `ret i64` slot.
 
 #import "modules/std.sx";
 

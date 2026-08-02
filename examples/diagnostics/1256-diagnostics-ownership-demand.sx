@@ -1,5 +1,5 @@
-// The ownership cutover (E4) DEMAND diagnostics: a value/own protocol
-// value always OWNS its ctx, so the retired borrow spellings are compile
+// The ownership DEMAND diagnostics: a value/own protocol
+// value always OWNS its ctx, so borrow spellings into one are compile
 // errors with the copy/view fixits —
 //   - implicit lvalue erasure (decl, call arg, struct field);
 //   - `xx <lvalue>` (xx is the conversion operator, not an ownership

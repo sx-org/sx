@@ -1,4 +1,4 @@
-// std.http client (PLAN-HTTPZ): a minimal blocking HTTP/1.1 client driven
+// std.http client: a minimal blocking HTTP/1.1 client driven
 // against a live server. The server runs its event loop on a BACKGROUND
 // thread (a blocking client cannot interleave a same-thread tick loop); the
 // main thread dials in via http.request and asserts the round-trips. Covers

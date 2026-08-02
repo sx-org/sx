@@ -1,4 +1,4 @@
-// The stdlib `Sink($T)` at an OPEN SET (fluent spec §6.1, A1).
+// The stdlib `Sink($T)` at an OPEN SET.
 //
 // `T` is the interception type and what the list holds. A set carries its member
 // inside the slot, so an element IS the published value: the sink writes it into a
@@ -7,7 +7,7 @@
 // left behind.
 //
 // The same sink at a `tagged` protocol keeps allocating the payload it hands a
-// handle to (§8) — a handle borrows storage it does not own, and the sink's own
+// handle to — a handle borrows storage it does not own, and the sink's own
 // frame is gone by the time the list is read. One sink, two storage stories,
 // decided by whether `T` can carry the value itself.
 #import "modules/std.sx";

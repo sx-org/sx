@@ -1,10 +1,10 @@
 // `any` is a type-erased BORROW `{type tag, pointer to value}` (Odin
 // Raw_Any analog). Boxing a scalar points at its storage (lvalue) or at
 // a spilled frame temp (rvalue); unboxing is a typed LOAD back through
-// the view — f32 rides the load path (4-byte single re-loaded), not the
-// old bitcast-into-the-payload-word path. This pins the box/unbox
-// roundtrip across the scalar family, plus printing (the variadic pack
-// boxes each arg; the formatter's int arm dispatches per-tag widths).
+// the view — f32 rides the load path (4-byte single re-loaded). This pins
+// the box/unbox roundtrip across the scalar family, plus printing (the
+// variadic pack boxes each arg; the formatter's int arm dispatches per-tag
+// widths).
 
 #import "modules/std.sx";
 

@@ -5,23 +5,22 @@ const lower = @import("lower.zig");
 const Node = ast.Node;
 const Lowering = lower.Lowering;
 
-/// The converged error-analysis facts lowering consumes (PLAN-ARCH A5.1): each
-/// pure-failable function's inferred error-tag set, and each bare-`!` closure
-/// SHAPE's inferred set. Backing maps currently live on `Lowering` (the facade
-/// writes `self.l.*`); `facts()` returns a view over them.
+/// The converged error-analysis facts lowering consumes: each pure-failable
+/// function's inferred error-tag set, and each bare-`!` closure SHAPE's
+/// inferred set. The backing maps live on `Lowering` (the facade writes
+/// `self.l.*`); `facts()` returns a view over them.
 pub const ErrorFacts = struct {
     inferred_error_sets: std.StringHashMap([]const u32),
     shape_inferred_sets: std.StringHashMap([]const u32),
 };
 
-/// Whole-program error-set convergence (architecture phase A5.1), extracted
-/// from `Lowering`. Owns the fix-point traversals that converge inferred
-/// `!` error sets (`convergeInferredErrorSets`) and bare-`!` closure-shape sets
+/// Whole-program error-set convergence. Owns the fix-point traversals that
+/// converge inferred `!` error sets (`convergeInferredErrorSets`) and bare-`!` closure-shape sets
 /// (`convergeClosureShapeSets`), plus the AST collectors that feed them.
 ///
-/// A `*Lowering` facade (Principle 5, like `CallResolver`/`ProtocolResolver`):
+/// A `*Lowering` facade (like `CallResolver`/`ProtocolResolver`):
 /// it reads the declaration map (`fn_ast_map`) + tag registry and writes the
-/// `inferred_error_sets` / `shape_inferred_sets` maps that still live on
+/// `inferred_error_sets` / `shape_inferred_sets` maps that live on
 /// `Lowering` (consumers read them there). The per-closure-literal contribution
 /// (`recordClosureShape`) + its type/shape helpers stay in `Lowering`; this
 /// module calls back for that and reaches its own `collectErrorSites` via the
@@ -137,11 +136,12 @@ pub const ErrorAnalysis = struct {
     }
 
     /// Whole-program fix-point that converges each top-level bare-`!` function's
-    /// inferred error set (ERR E1.4b). Runs after `scanDecls` (ASTs + named
+    /// inferred error set. The seed loop admits exactly the
+    /// `astIsPureBareInferred` return types (`-> !`) — not `!Named`, not a
+    /// value-carrying `-> (T..., !)`. Runs after `scanDecls` (ASTs + named
     /// error sets registered) and before body lowering, so `lowerTry`'s
     /// named-caller widening sees the converged callee sets. Also emits the
-    /// empty-inferred warning. Scope: pure-failable functions (value-carrying
-    /// raise/try aren't lowered yet — E2).
+    /// empty-inferred warning.
     pub fn convergeInferredErrorSets(self: ErrorAnalysis) void {
         const Node_ = struct {
             tags: std.ArrayList(u32),
@@ -244,7 +244,7 @@ pub const ErrorAnalysis = struct {
     }
 
     /// Whole-program union of each bare-`!` closure/fn-type SHAPE's escape set
-    /// (ERR E5.1 sub-feature 2). Walks every function body for closure literals;
+    /// Walks every function body for closure literals;
     /// each bare-`!` failable literal contributes its raises (+ `try named_fn()`
     /// edges, resolved against the name-keyed converged sets) to the node shared
     /// by all occurrences of its value-signature shape. A `try slot(x)` against
@@ -254,7 +254,7 @@ pub const ErrorAnalysis = struct {
         // (body.source_file, stamped by resolveImports) — a closure literal's
         // param/return annotations must resolve where the fn is written, not
         // against whatever module the previous pipeline phase happened to
-        // leave as the ambient context (issue 0122).
+        // leave as the ambient context.
         const saved = self.l.current_source_file;
         defer self.l.setCurrentSourceFile(saved);
         var it = self.l.program_index.fn_ast_map.iterator();

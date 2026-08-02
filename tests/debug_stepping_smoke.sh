@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Debug-stepping smoke (ERR E3.0 slice 3e, rung 1: macOS native).
+# Debug-stepping smoke, macOS native.
 #
 # Verifies the DWARF emitted by `sx build --emit-obj` actually drives
 # source-level stepping in lldb — the deep-debug half of the trace story.

@@ -1,15 +1,11 @@
-// Phase 3 step 3.2 (PLAN-FFI.md): `#selector("explicit:string")`
+// `#selector("explicit:string")`
 // override on `#objc_class` members. Escape hatch for cases where the
 // sx-side method name doesn't conveniently produce the target selector
-// through the default mangling rule (Phase 3.0 — split on `_`, each
+// through the default mangling rule (split on `_`, each
 // piece becomes a keyword with a trailing `:`).
 //
 // Surface form mirrors `#jni_method_descriptor("(Sig)Ret")` — sits
 // after the optional `-> ReturnType` and before the body / terminator.
-//
-// Pre-3.2: the parser doesn't know the `#selector` token; snapshot
-// captures the parser error (exit=1). Next commit wires lexer + parser
-// + AST + lowering and the snapshot flips to working output.
 #import "modules/std.sx";
 #import "modules/build.sx";
 

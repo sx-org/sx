@@ -1,5 +1,5 @@
-// `value.site()` — where the initializer's expression was WRITTEN (fluent spec
-// §5.1, §4.2). The counterpart of `content.site()` (2039): a block reports the
+// `value.site()` — where the initializer's expression was WRITTEN. The
+// counterpart of `content.site()` (2039): a block reports the
 // block, an initializer reports the one expression it was formed from.
 //
 // Each formation site is its own initializer type, so the site is a compile-time

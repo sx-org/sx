@@ -1,5 +1,5 @@
 // Multi-return CLOSURE types and lambda literals work via the same tuple
-// machinery as function multi-returns (D3): a `Closure() -> (A, B)` value's call
+// machinery as function multi-returns: a `Closure() -> (A, B)` value's call
 // result destructures (`a, b := cb()`), single-binds with field access
 // (`c := cb(); c.0`), and a `() { return v1, v2; }` lambda literal satisfies a
 // multi-return closure parameter. No dedicated ClosureInfo marker is needed —

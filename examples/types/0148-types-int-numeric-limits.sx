@@ -44,8 +44,7 @@ main :: () -> i32 {
     print("isize.min == i64.min: {}\n", isize.min == i64.min);       // true (host = i64)
 
     // Result carries the QUERIED type: each binding is declared with the queried
-    // type and round-trips, so a mistyped fold (e.g. boxed as any / widened)
-    // would not type-check here.
+    // type and round-trips through it.
     m3 : i3 = i3.max;
     mu : u8 = u8.max;
     ms : i8 = i8.min;

@@ -1,4 +1,4 @@
-// Comptime compiler API — type-kind + enum-value reflection readers (Phase 3).
+// Comptime compiler API — type-kind + enum-value reflection readers.
 //
 // Completes the READ side the metatype needs to re-express `type_info(T)` as sx:
 //
@@ -8,9 +8,9 @@
 //   raw_variant_value(t, i)  → enum variant i's integer value (explicit or ordinal)
 //
 // Together with raw_find_type / raw_field_count / raw_field_name / raw_field_type
-// / raw_type_name (examples 0628–0629), a comptime sx function can now fully
-// reflect a struct/enum/tuple into data — no `intrinsic` needed. All folded at
-// `#run`, all serviced natively by the flat-memory VM.
+// / raw_type_name (examples 0628–0629), a comptime sx function fully reflects a
+// struct/enum/tuple into data — no `intrinsic` needed. All folded at `#run`, all
+// serviced natively by the flat-memory VM.
 
 #import "modules/std.sx";
 

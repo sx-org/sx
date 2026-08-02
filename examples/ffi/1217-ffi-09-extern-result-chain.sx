@@ -1,13 +1,13 @@
-// Phase 0 baseline (PLAN-FFI.md step 0.9): FFI result chains. The
+// FFI result chains. The
 // shapes that real sx code uses for opaque C handles (MTLBuffer*,
 // AAssetManager*, file pointers, ...) — passing a C-returned
 // pointer into another C call, stashing it in a struct field,
 // pushing into a `List(*void)`, and iterating that list to feed each
 // handle back through C.
 //
-// No new ABI shape — pointer-in, pointer-out. The lemma locked in:
-// handle-shaped flows survive sx's struct-field assignment, List
-// storage, and iteration-then-call cycles.
+// No distinct ABI shape — pointer-in, pointer-out: handle-shaped flows
+// survive sx's struct-field assignment, List storage, and
+// iteration-then-call cycles.
 
 #import "modules/std.sx";
 

@@ -1,5 +1,4 @@
-// Accessing an unknown field on a struct produces a clear
-// `error: field 'X' not found on type 'Y'` diagnostic and exit 1.
+// Accessing an unknown field on a struct reports `field 'X' not found on type 'Y'`.
 
 Vec :: struct { x: f32; y: f32; }
 

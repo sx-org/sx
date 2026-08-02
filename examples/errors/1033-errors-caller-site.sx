@@ -3,7 +3,7 @@
 // line:col, and the fully qualified declaration the call sits in, rather than
 // anything about the callee's signature. Explicitly forwarding an
 // `@SourceSite` through an inner call preserves the outermost site, so a
-// logging wrapper reports where IT was called. Expected exit: 0.
+// logging wrapper reports where IT was called.
 
 #import "modules/std.sx";
 #import "modules/std/core.sx";

@@ -1,4 +1,4 @@
-// issue 0105 case 3 — own-wins-over-flat. `main` flat-imports `dep.sx` (which
+// Own-wins-over-flat. `main` flat-imports `dep.sx` (which
 // authors `Widget { a }`) AND authors its OWN `Widget { m }`. A bare `Widget`
 // reference in `main` resolves to `main`'s OWN author, not the flat-imported one
 // (the querying source's author wins outright — no ambiguity), so `Widget{ m }`

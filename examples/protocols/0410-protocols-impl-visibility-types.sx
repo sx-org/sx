@@ -1,2 +1,2 @@
-// Shared type for 179-impl-visibility — Wrap struct.
+// Shared Wrap struct for 0410-protocols-impl-visibility.
 Wrap :: struct { v: i64 = 0; }

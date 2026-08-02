@@ -5,24 +5,13 @@
 //
 // Also pinned: each RHS value types against ITS target (the multi-assign
 // twin of single-assign's target-typing preamble) —
-//   - a `null` RHS lowers as the TARGET's optional type, global and local
-//     (previously it typed against the enclosing fn's return type and
-//     coerceToType wrapped a PRESENT Some(0) into the optional);
-//   - an enum-literal RHS resolves against the enum target's type.
-// The optional global is null-INITIALIZED and set at runtime because a
-// non-null optional-global initializer miscompiles today (issue 0234).
+// - a `null` RHS lowers as the TARGET's optional type, global and local;
+// - an enum-literal RHS resolves against the enum target's type.
 //
-// Regression (issue 0218): lowerMultiAssign's ident-target arm had no global
-// fallback — `g_total, a = 40, 50;` compiled but never wrote `g_total`.
-//
-// Regression (issue 0249): lowerMultiAssign's INDEX-target arm addressed a
-// GLOBAL array base via `lowerExpr` (a load of the whole array into a
-// register), so `g_arr[1], a = 77, 4;` GEP+stored into that throwaway copy and
-// the write was silently dropped — the read-back showed the original value.
-// Single-assign already took the in-place `global_addr` path. Also covers a
-// two-index global-array multi-assign and a swap (`g_swap[0], g_swap[1] =
-// g_swap[1], g_swap[0]`, RHS-before-stores) so the fix can't regress into
-// store-then-read ordering.
+// An INDEX target on a GLOBAL array base addresses it in place through
+// `global_addr`. Also covers a two-index global-array multi-assign and a swap
+// (`g_swap[0], g_swap[1] = g_swap[1], g_swap[0]`, RHS-before-stores), pinning
+// store ordering.
 
 #import "modules/std.sx";
 
@@ -55,7 +44,7 @@ main :: () -> i32 {
     g_col, a = .red, 4;
     print("col_red={} a={}\n", g_col == Color.red, a);
 
-    // GLOBAL array index target (issue 0249) — the store must land in the
+    // GLOBAL array index target — the store must land in the
     // global's storage in place, not a loaded copy. Mixed with a local target.
     g_arr[1], a = 77, 5;
     print("arr1={} a={}\n", g_arr[1], a);            // arr1=77

@@ -1,8 +1,7 @@
-// Tests for error_analysis.zig — the error-set convergence owner
+// The error-set convergence owner
 // (`ErrorAnalysis`). Reached via `ir.ErrorAnalysis{ .l = &lowering }`, mirroring
-// the other facade tests. Moved here from lower.test.zig when the convergence
-// traversals moved out of `Lowering` (A5.1 sub-step 2). The whole-program
-// fix-point + closure-shape union are what A5.1 must preserve.
+// the other facade tests. Covers the whole-program fix-point and the
+// closure-shape union.
 
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -97,9 +96,8 @@ test "error_analysis: convergeClosureShapeSets unions a bare-! closure literal's
 
 test "error_analysis: empty-inferred warnings are emitted in source order, not hashmap order" {
     // `work` is a StringHashMap, so iterating it to emit diagnostics yields hash
-    // order. Zig and Odin do not share a hash, so a faithful port would reorder
-    // this output — hence the sort. Names here are deliberately chosen so hash
-    // order != source order (see issues/0133).
+    // order — hence the sort. These names are chosen so hash order != source
+    // order.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();

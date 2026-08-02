@@ -1,17 +1,17 @@
 error: cannot assign to 'lib.LIB_C' — it is a constant, not a mutable global
-  --> examples/diagnostics/1226-diagnostics-qualified-global-store-nonlvalue.sx:19:9
+  --> examples/diagnostics/1226-diagnostics-qualified-global-store-nonlvalue.sx:14:9
    |
-19 |     lib.LIB_C = null;              // target-directed null must not lower
+14 |     lib.LIB_C = null;              // target-directed null must not lower
    |         ^^^^^
 
 error: cannot assign to 'lib.lib_fn' — it is a function, not a mutable global
-  --> examples/diagnostics/1226-diagnostics-qualified-global-store-nonlvalue.sx:20:9
+  --> examples/diagnostics/1226-diagnostics-qualified-global-store-nonlvalue.sx:15:9
    |
-20 |     lib.lib_fn = .selected;        // target-directed enum must not lower
+15 |     lib.lib_fn = .selected;        // target-directed enum must not lower
    |         ^^^^^^
 
 error: namespace 'amb' has no member 'shared'
-  --> examples/diagnostics/1226-diagnostics-qualified-global-store-nonlvalue.sx:21:5
+  --> examples/diagnostics/1226-diagnostics-qualified-global-store-nonlvalue.sx:16:5
    |
-21 |     amb.shared = .{ value = 9 };   // target-directed struct must not lower
+16 |     amb.shared = .{ value = 9 };   // target-directed struct must not lower
    |     ^^^^^^^^^^

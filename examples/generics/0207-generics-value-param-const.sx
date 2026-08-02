@@ -4,10 +4,8 @@
 // (a const expression) are both `Vec(3, f32)`. The struct-copy assignment is the
 // proof — it type-checks only because the two spellings name one instantiation.
 //
-// Regression (issue 0083): the value-param binder hand-rolled an `else => 0`
-// switch, so a named-const value arg either fabricated a 0 binding under a wrong
-// mangled name or was rejected outright as "unknown type 'N'". It now folds
-// through the shared const-int evaluator (`program_index.evalConstIntExpr`).
+// The value-param binder folds through the shared const-int evaluator
+// (`program_index.evalConstIntExpr`).
 #import "modules/std.sx";
 
 N :: 3;

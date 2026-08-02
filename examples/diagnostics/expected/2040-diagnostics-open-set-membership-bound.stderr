@@ -1,32 +1,32 @@
 error: 'Plain' does not satisfy the bound 'View' on '$V'
-  --> examples/diagnostics/2040-diagnostics-open-set-membership-bound.sx:40:16
+  --> examples/diagnostics/2040-diagnostics-open-set-membership-bound.sx:39:16
    |
-40 | show :: (v: $V/View) -> string => v.render();
+39 | show :: (v: $V/View) -> string => v.render();
    |                ^^^^
 
 help: a type joins 'View' by declaring itself into it: 'Plain :: @OpenVariant(View) { … }'
    |
-40 | show :: (v: $V/View) -> string => v.render();
+39 | show :: (v: $V/View) -> string => v.render();
    |                ^^^^
 
 error: 'Alien' does not satisfy the bound 'View' on '$V'
-  --> examples/diagnostics/2040-diagnostics-open-set-membership-bound.sx:40:16
+  --> examples/diagnostics/2040-diagnostics-open-set-membership-bound.sx:39:16
    |
-40 | show :: (v: $V/View) -> string => v.render();
+39 | show :: (v: $V/View) -> string => v.render();
    |                ^^^^
 
 help: 'Alien' is a member of 'Other', and a type belongs to one set
    |
-40 | show :: (v: $V/View) -> string => v.render();
+39 | show :: (v: $V/View) -> string => v.render();
    |                ^^^^
 
 error: the bound 'View' on '$V' takes no type arguments, but 1 is written
-  --> examples/diagnostics/2040-diagnostics-open-set-membership-bound.sx:43:17
+  --> examples/diagnostics/2040-diagnostics-open-set-membership-bound.sx:42:17
    |
-43 | sized :: (v: $V/View(i64)) -> string => v.render();
+42 | sized :: (v: $V/View(i64)) -> string => v.render();
    |                 ^^^^^^^^^
 
 help: an open set is not parameterized — write '$V/View'
    |
-43 | sized :: (v: $V/View(i64)) -> string => v.render();
+42 | sized :: (v: $V/View(i64)) -> string => v.render();
    |                 ^^^^^^^^^

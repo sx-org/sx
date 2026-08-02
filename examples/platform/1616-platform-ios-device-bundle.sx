@@ -1,5 +1,5 @@
 // iOS *device* end-to-end exercise for `platform.bundle`. Distinct from
-// 121-ios-sim-bundle.sx because the device path adds three steps that
+// 1615-platform-ios-sim-bundle.sx because the device path adds three steps that
 // don't run on the simulator: provisioning profile embed, entitlements
 // extraction (`security cms` + `plutil` pipeline resolving the
 // wildcard `<TEAM>.*` → `<TEAM>.<bundle_id>`), and codesign with
@@ -16,10 +16,9 @@
 //   xcrun devicectl device install app --device <name> /tmp/SxDeviceProbe.app
 //   xcrun devicectl device process launch --device <name> co.swipelab.sxprobe
 //
-// Bundle id, signing identity, and profile are supplied on the command line so
-// this checked-in example never goes stale when certificates rotate. The
-// profile must allow the bundle id and contain both the target device UDID and
-// the selected signing certificate.
+// Bundle id, signing identity, and profile are supplied on the command line, so
+// no certificate detail is checked in. The profile must allow the bundle id and
+// contain both the target device UDID and the selected signing certificate.
 
 #import "modules/std.sx";
 #import "modules/ffi/objc.sx";

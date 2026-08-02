@@ -1,6 +1,6 @@
 // Optional equality requires the PAYLOAD to have value-equality — `?[2]i64`
 // still rejects (a fixed array has none), and two distinct optional types
-// never compare. The 0344 extension defines `?T == ?T` / `?T == T`; it does
+// never compare. Optional equality defines `?T == ?T` / `?T == T`; it does
 // not widen what T itself may be.
 #import "modules/std.sx";
 

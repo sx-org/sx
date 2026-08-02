@@ -1353,7 +1353,7 @@ pub const Analyzer = struct {
             },
             .error_set_decl => |esd| {
                 // Register the set name; error-set semantics arrive in the ERR
-                // stream's E1 sema steps.
+                // stream's sema steps.
                 try self.addSymbol(esd.name, .type_alias, null, node.span);
             },
             // Leaf nodes — nothing to recurse into
@@ -1452,8 +1452,7 @@ pub const Analyzer = struct {
             },
             .asm_expr => |ae| {
                 // Walk the template and each operand payload (input exprs;
-                // out_value type exprs are leaves). Result-type derivation is
-                // Phase B; lowering bails until then.
+                // out_value type exprs are leaves).
                 try self.analyzeNode(ae.template);
                 for (ae.operands) |op| try self.analyzeNode(op.payload);
             },

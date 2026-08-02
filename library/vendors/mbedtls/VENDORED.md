@@ -56,10 +56,10 @@ family (+ DTLS anti-replay / hello-verify / client-port-reuse / connection-id),
 `MBEDTLS_SELF_TEST`, `MBEDTLS_TIMING_C`, `MBEDTLS_PSA_ITS_FILE_C`,
 `MBEDTLS_PSA_CRYPTO_STORAGE_C`, `MBEDTLS_DEBUG_C`.
 
-`MBEDTLS_SSL_CLI_C` is **enabled** (T3): the client `.c` sources are already in
+`MBEDTLS_SSL_CLI_C` is **enabled**: the client `.c` sources are already in
 the `#import c` `#source` list, so this only ACTIVATES them — a server-only
 deployment never references the client code and the linker strips it. Enabling
-lets the in-process loopback TLS test (T5) run a self-contained client (no
+lets the in-process loopback TLS test run a self-contained client (no
 external openssl, corpus/sandbox-friendly).
 
 ## Status
@@ -70,8 +70,8 @@ external openssl, corpus/sandbox-friendly).
   aarch64 ELF that prints `3.6.6` under Apple `container` (musl, exit 0); same
   for `--target x86_64-linux`. The embedded clang is pointed at the bundled-zig
   libc include dirs for the target (see `src/target.zig` `linuxLibcIncludeDirs`
-  + `src/c_import.zig`). The fix is general — sqlite/stb cross-compile the same
-  way.
+  + `src/c_import.zig`). That wiring is general — sqlite/stb cross-compile the
+  same way.
 
 ## Updating
 

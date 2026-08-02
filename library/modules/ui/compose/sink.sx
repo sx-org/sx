@@ -1,4 +1,4 @@
-// The compose library's collection boundary (revision §13.3).
+// The compose library's collection boundary.
 //
 // `View` is an open set, so it carries its member inside the slot: the sink
 // writes the published expression into a slot it owns and appends that. Nothing

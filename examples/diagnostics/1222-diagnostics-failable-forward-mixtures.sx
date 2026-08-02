@@ -1,14 +1,11 @@
-// Rejected failable-forward mixtures (`return callee(...)`), pinned per
-// specs.md "Forwarding a failable result":
-//   1. PURE callee → VALUE-CARRYING caller: 0 value slots where 1 required
-//      (the raw tag must not land in the value slot);
-//   2. VALUE-CARRYING callee → PURE caller: 1 value slot where 0 required
-//      (the old coerce path silently truncated the tuple — the VALUE bits
-//      became the error tag);
-//   3. pure bare-`!` callee → NAMED-set caller: the callee's inferred error
-//      set is not statically known at the forward site, so it cannot be
-//      proven ⊆ the named set — destructure and re-raise instead.
-// Regression (issue 0205 fold-in + issue 0227).
+// Rejected failable-forward mixtures (`return callee(...)`), per specs.md
+// "Forwarding a failable result":
+// 1. PURE callee → VALUE-CARRYING caller: 0 value slots where 1 is required, so
+// the raw tag would land in the value slot;
+// 2. VALUE-CARRYING callee → PURE caller: 1 value slot where 0 are required;
+// 3. pure bare-`!` callee → NAMED-set caller: the callee's inferred error set is
+// not statically known at the forward site, so it cannot be proven ⊆ the named
+// set — destructure and re-raise instead.
 
 #import "modules/std.sx";
 

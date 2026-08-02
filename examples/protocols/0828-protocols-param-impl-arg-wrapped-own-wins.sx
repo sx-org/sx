@@ -1,4 +1,4 @@
-// E6BR-4 (param-impl ARG, own-wins) — a parameterised-impl PROTOCOL TYPE-ARG under
+// Own-wins: a parameterised-impl PROTOCOL TYPE-ARG under
 // a wrapper (`impl Tagged(*Box) for Holder`) is resolved through the same
 // source-aware registration helper (`resolveRegistrationSigTypeInSource` with the
 // `.param_impl_arg` purpose), pinned to the impl's defining module (main). The arg

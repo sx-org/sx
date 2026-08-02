@@ -29,14 +29,15 @@ main :: () -> void {
     r2 := list_a.items[0].size();
     print("second: {} (expected 42)\n", r2);
 
-    // BUG: protocol value created in add(), first dispatch works, second crashes
+    // The protocol value is created inside add(); both dispatches read the
+    // heap copy, not add()'s returned frame.
     out("=== Created in add() ===\n");
     list_b : List(Sizable) = .{};
     add(*list_b, Leaf{ value = 99 });
     r3 := list_b.items[0].size();
-    print("first:  {} (expected 99)\n", r3);   // works (stack not yet clobbered)
+    print("first:  {} (expected 99)\n", r3);
     r4 := list_b.items[0].size();
-    print("second: {} (expected 99)\n", r4);   // CRASH: stack memory reused
+    print("second: {} (expected 99)\n", r4);
 
     out("=== OK ===\n");
 }

@@ -1,4 +1,4 @@
-// fix-0102c (issue 0102): two flat FILE imports each author a same-name free
+// Two flat FILE imports each author a same-name free
 // function `greet`. The first-wins import merge keeps exactly one `greet` in
 // the merged scope, but each module's OWN code must bind its OWN author when it
 // calls `greet` bare. `from_a` (in a.sx) returns 1; `from_b` (in b.sx) returns

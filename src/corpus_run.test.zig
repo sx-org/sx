@@ -10,7 +10,7 @@ const corpus_paths = @import("corpus_paths");
 // per-example directives (AOT, cross-target, bundle/apk smoke tests, ...).
 //
 // This is the sole regression runner — `zig build test` is the only way to run
-// the corpus (the legacy standalone `tests/run_examples.sh` was removed).
+// the corpus.
 //
 // Each example runs in its OWN subprocess (via std.process.run), so a crashing
 // example reports its exit code (or 128+signal, matching a shell's `$?`) instead
@@ -36,8 +36,8 @@ const corpus_paths = @import("corpus_paths");
 // IS the program's run phase. AOT examples get the split for free (separate
 // build/exec subprocesses). After each sweep a sorted per-example report is
 // written to `.sx-tmp/corpus-timing-<root>.txt`; examples whose RUN phase
-// exceeds the 1-second budget (AGENTS.md) are flagged there. The report is
-// diagnostic output only — it never affects pass/fail.
+// exceeds the 1-second budget are flagged there. The report is diagnostic
+// output only — it never affects pass/fail.
 //
 // Paths + the `sx` binary path are injected at configure time (build.zig
 // `corpus_paths`); the FILE LIST is enumerated at test time, so new examples are
@@ -58,7 +58,7 @@ const corpus_paths = @import("corpus_paths");
 const TIMEOUT_SECS = 30;
 const MAX_OUTPUT = 16 * 1024 * 1024;
 
-/// AGENTS.md budget: an example's RUN phase (post-compile) must fit in 1s.
+/// An example's RUN phase (post-compile) must fit in 1s.
 const RUN_BUDGET_NS: u64 = 1_000_000_000;
 
 /// The one directory a corpus run owns. Everything an example's build sidecar
@@ -149,11 +149,11 @@ fn currentEnviron() std.process.Environ {
 }
 
 /// Socket-heavy categories run with BOUNDED concurrency. The warm object
-/// cache removed the natural compile stagger, so their run phases otherwise
+/// cache leaves no natural compile stagger, so their run phases otherwise
 /// collide inside a few seconds — loopback/kqueue/accept/timeout contention
-/// produced sporadic single-example failures (1674 bind, 1705 timeout case)
-/// that never reproduce solo. Two lanes gives MORE stagger than the old
-/// compile-dominated suite had, without serializing the whole category.
+/// produces sporadic single-example failures (1674 bind, 1705 timeout case)
+/// that never reproduce solo. Two lanes stagger them without serializing
+/// the whole category.
 /// (Io.Semaphore futexes on shared addresses, so it synchronizes across the
 /// workers' separate Io.Threaded instances — same reasoning as
 /// g_build_mutex below.)
@@ -231,7 +231,7 @@ fn dropIrLine(line: []const u8) bool {
 
 /// Apply `s/%([a-z]+)[0-9]+/%\1N/g` to one line — collapse LLVM's auto-suffixed
 /// temporaries (`%tmp17` -> `%tmpN`) so renumbering doesn't desync snapshots.
-/// O0 IR carries DWARF; remove `!dbg` attachments here so the legacy code-shape
+/// O0 IR carries DWARF; remove `!dbg` attachments here so the code-shape
 /// snapshots do not depend on debug metadata numbering or source locations.
 fn appendIrSubst(arena: std.mem.Allocator, out: *std.ArrayList(u8), line: []const u8) !void {
     var i: usize = 0;
@@ -338,7 +338,7 @@ fn nameMatchesFilter(filter: []const u8, rel_path: []const u8) bool {
 }
 
 /// Per-example build/run directives, parsed from an optional `<name>.build`
-/// JSON sidecar (replaces the old standalone `.aot` marker). Output snapshots
+/// JSON sidecar. Output snapshots
 /// (.exit/.stdout/.stderr/.ir) stay separate — they are regenerated data, not
 /// config. An unknown key is `error.UnknownField` (std.json default
 /// `ignore_unknown_fields = false`), surfaced as a loud test failure — never a
@@ -360,7 +360,7 @@ const BuildConfig = struct {
     /// a real JDK being available; when either is missing the example SKIPS
     /// cleanly so a plain `zig build test` on a bare host stays green.
     apk: ?ApkCheck = null,
-    /// Host-OS gate (C4 / Linux CI). When set, the example runs ONLY on a host
+    /// Host-OS gate (Linux CI). When set, the example runs ONLY on a host
     /// whose OS matches; on any other host it SKIPS cleanly (not a failure).
     /// For a one-off example whose runtime is host-OS-specific and that has no
     /// `target` ir-only fallback — e.g. links a libc symbol present only on one
@@ -375,8 +375,7 @@ const BuildConfig = struct {
     /// compiled for the target and asserts exit code + stderr ONLY — no `.ir`
     /// snapshot exists or is compared. This is the cross-target mode for
     /// examples whose point is "this compiles (or diagnoses) for the target":
-    /// IR text tracks LLVM's printer, so snapshotting it tests LLVM, not sx
-    /// (AGENTS.md: never snapshot LLVM IR).
+    /// IR text tracks LLVM's printer, so snapshotting it tests LLVM, not sx.
     compile_only: bool = false,
 
     /// Symbols that must NOT appear in the built binary (requires `aot`).
@@ -472,7 +471,7 @@ fn tripleOsName(triple: []const u8) ?[]const u8 {
 
 /// True when `value` (a `.build` target shorthand or triple) names the host's
 /// arch AND OS — i.e. an example built for it can actually execute here. A
-/// mismatch routes the example to ir-only mode (Phase 0.1).
+/// mismatch routes the example to ir-only mode.
 fn hostMatchesTarget(value: []const u8) bool {
     const triple = expandTargetShorthand(value);
     const dash = std.mem.indexOfScalar(u8, triple, '-') orelse return false;
@@ -492,7 +491,7 @@ fn hostOsMatches(name: []const u8) bool {
 /// The host OS a whole CATEGORY folder is pinned to, or null if the category is
 /// portable. `ffi-objc` links Apple's Objective-C runtime + Foundation/AppKit,
 /// which exist only on macOS — so the entire folder skips off a macOS host
-/// (C4 / Linux CI), with no per-example `host_os` sidecar needed. Keep this list
+/// (Linux CI), with no per-example `host_os` sidecar needed. Keep this list
 /// minimal: prefer the per-example `host_os` directive for one-offs.
 fn categoryHostOs(rel_prefix: []const u8) ?[]const u8 {
     const base = std.fs.path.basename(rel_prefix);
@@ -774,7 +773,7 @@ fn runOne(
         out.skip_note = try std.fmt.allocPrint(results_gpa, "skip {s} (no Android SDK/JDK)", .{name});
         return;
     }
-    // Host-OS gate (C4): the per-example `host_os` directive, else the
+    // Host-OS gate: the per-example `host_os` directive, else the
     // example's category gate (`ffi-objc` → macOS). On a non-matching host
     // the example SKIPS cleanly so the corpus stays green off that host
     // (e.g. Objective-C examples on a Linux CI runner).
@@ -1150,7 +1149,7 @@ fn writeTimingReport(
     var buf: std.ArrayList(u8) = .empty;
     try buf.appendSlice(a, "# per-example corpus timing — sorted by run phase (desc)\n");
     try buf.appendSlice(a, "# run = jit stage (JIT) / exec wall (AOT); compile = total - run\n");
-    try buf.appendSlice(a, "# budget: run <= 1000.0 ms (AGENTS.md); offenders flagged OVER\n");
+    try buf.appendSlice(a, "# budget: run <= 1000.0 ms; offenders flagged OVER\n");
     try buf.appendSlice(a, "# measured UNDER pool load — AOT exec walls especially inflate\n");
     try buf.appendSlice(a, "# with scheduler contention; re-measure a flagged example idle\n");
     try buf.appendSlice(a, "# (`sx run <ex> --time`, jit stage) before trimming it\n");
@@ -1379,7 +1378,7 @@ test "sandbox: a declared output outside .sx-tmp is refused and never deleted" {
     const a = arena.allocator();
     const io = test_io();
 
-    // Issue 0391: a corpus run deleted the repo root's untracked `assets/`.
+    // A corpus run deleted the repo root's untracked `assets/`.
     // Stand in for the repo root so the scenario is reproduced without writing
     // into the real one, and give it the same untracked content to lose.
     const repo_root = std.fs.path.dirname(corpus_paths.examples_dir) orelse ".";
@@ -1435,7 +1434,7 @@ test "sandbox: a declared output outside .sx-tmp is refused and never deleted" {
     const after = try std.Io.Dir.readFileAlloc(.cwd(), io, canary_abs, a, .limited(MAX_OUTPUT));
     try std.testing.expectEqualSlices(u8, sentinel, after);
 
-    // A sandbox path is still accepted, and cleanup still removes it — plus the
+    // A sandbox path is accepted, and cleanup removes it — plus the
     // intermediates the APK bundler leaves beside it.
     const good = declaredOutputs(.{ .apk = .{ .out = ".sx-tmp/x.apk", .bundle_id = "co.example.x", .expect = &.{} } });
     try std.testing.expect(good.escaped == null);
@@ -1521,7 +1520,7 @@ fn timedStageRecorded(stderr_raw: []const u8, stage: []const u8) bool {
     return false;
 }
 
-test "object cache: second identical run hits, source edit invalidates (issue 0336)" {
+test "object cache: second identical run hits, source edit invalidates" {
     const io = test_io();
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();

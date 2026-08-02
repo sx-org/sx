@@ -100,9 +100,7 @@ pub fn getSelRegisterNameFid(self: *Lowering) FuncId {
 /// Lower `#objc_call(T)(recv, "sel:", args...)` to:
 ///   %sel = call ptr @sel_registerName(<"sel:">)
 ///   %ret = call <ABI(T)> @objc_msgSend(recv, %sel, args...)
-/// For Phase 1.3 only the (void return, no extra args) form is
-/// fully wired. Extra arities + non-void returns will land in
-/// subsequent phase-1 steps.
+/// Only the (void return, no extra args) form is wired.
 pub fn lowerFfiIntrinsicCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall) Ref {
     if (fic.kind == .jni_call or fic.kind == .jni_static_call) {
         return self.lowerJniCall(fic);
@@ -201,7 +199,7 @@ pub fn lowerJniCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall) Ref {
 
     // Capture the (name, sig) literal content when both args are
     // string literals — emit_llvm uses this as the intern key for
-    // the shared `jclass`/`jmethodID` slot pair (step 1.17).
+    // the shared `jclass`/`jmethodID` slot pair.
     const cache_key: ?inst_mod.CacheKey = if (name_node.data == .string_literal and sig_node.data == .string_literal)
         inst_mod.CacheKey{
             .name_str = name_node.data.string_literal.raw,
@@ -231,8 +229,8 @@ pub fn lowerJniCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall) Ref {
 /// Lower an `inst.method(args)` call where `inst`'s type is a runtime-class
 /// alias declared by `#jni_class("...") { ... }` (or its parallel forms).
 /// JNI runtimes lower directly to `jni_msg_send` with a descriptor derived
-/// from the method's sx signature; Obj-C / Swift runtimes are deferred to
-/// Phase 3/4 and currently surface a clear diagnostic.
+/// from the method's sx signature; Obj-C / Swift runtimes surface a clear
+/// diagnostic instead.
 pub fn lowerRuntimeMethodCall(
     self: *Lowering,
     fcd: *const ast.RuntimeClassDecl,
@@ -241,7 +239,7 @@ pub fn lowerRuntimeMethodCall(
     method_args: []const Ref,
     span: ast.Span,
 ) Ref {
-    // M2.3 — walk the `#extends` chain when the method isn't
+    // walk the `#extends` chain when the method isn't
     // declared directly on this fcd. The dispatch target stays
     // the original receiver — objc_msgSend's runtime walks the
     // class hierarchy by isa, so we just need to find ANY
@@ -258,15 +256,15 @@ pub fn lowerRuntimeMethodCall(
     };
     const method = found.method;
 
-    // Obj-C instance dispatch (Phase 3 step 3.0 + M1.2 A.7).
+    // Obj-C instance dispatch.
     // `inst.method(args)` on an `#objc_class` / `#objc_protocol`
     // receiver derives a selector from the sx method name (default
     // mangling: split on `_`, each piece becomes a keyword with a
     // trailing `:`; niladic stays verbatim) and lowers to
     // `objc_msg_send`. Both runtime and sx-defined classes flow
     // through the same path — sx-defined classes have their IMPs
-    // registered at module-init (M1.2 A.4b.iii) so `objc_msgSend`
-    // finds them. The Swift runtimes still bail — Phase 4.
+    // registered at module-init so `objc_msgSend`
+    // finds them. The Swift runtimes still bail.
     if (fcd.runtime == .objc_class or fcd.runtime == .objc_protocol) {
         return self.lowerObjcMethodCall(fcd, method, target, method_args, span);
     }
@@ -321,8 +319,7 @@ pub fn lowerRuntimeMethodCall(
     // Call<T>Method switch only covers void / bool / i32 / i64 / f32 / f64
     // / pointer-returning. Anything else (i8 / i16 / u8 / u16 / aggregates)
     // would silently lower to LLVMGetUndef and produce wrong arguments at
-    // the call site (chess Android touch shipped broken because i32→i32+
-    // f32 returns hit the undef path before .f32 was wired up).
+    // the call site.
     if (!jni_descriptor.isJniReturnTypeSupported(&self.module.types, ret_ty)) {
         if (self.diagnostics) |d| {
             d.addFmt(.err, span, "JNI method '{s}.{s}' returns '{s}', which isn't supported by the JNI call-method lowering yet — only void/bool/i32/i64/f32/f64 and pointers are wired up", .{ fcd.name, method.name, self.module.types.typeName(ret_ty) });
@@ -457,7 +454,7 @@ pub fn lowerObjcMethodCall(
 /// `#objc_protocol` alias. Loads the class object through the
 /// module-scoped cached slot (populated by `objc_getClass` at
 /// module-init) and dispatches `objc_msg_send` with the same
-/// selector mangling as instance methods (Phase 3.0).
+/// selector mangling as instance methods.
 pub fn lowerObjcStaticCall(
     self: *Lowering,
     fcd: *const ast.RuntimeClassDecl,
@@ -500,7 +497,7 @@ pub fn lowerObjcStaticCall(
     const class_slot_ptr = self.builder.emit(.{ .global_addr = class_slot_gid }, self.module.types.ptrTo(vptr_ty));
     const class_obj = self.builder.emit(.{ .load = .{ .operand = class_slot_ptr } }, vptr_ty);
 
-    // M4.0b: intercept `Cls.alloc()` for sx-defined classes — emit the
+    // Intercept `Cls.alloc()` for sx-defined classes — emit the
     // inline alloc-and-init sequence using the caller's `context.allocator`
     // instead of going through `objc_msgSend` (which would land in the
     // +alloc IMP and use `__sx_default_context.allocator`). This honors
@@ -575,7 +572,7 @@ pub fn lowerRuntimeStaticCall(
     method_args: []const Ref,
     span: ast.Span,
 ) Ref {
-    // Obj-C static dispatch (Phase 3 step 3.1). `Cls.static_method(args)`
+    // Obj-C static dispatch. `Cls.static_method(args)`
     // on an `#objc_class` alias loads the class object through a
     // module-scoped cached slot (populated once per module via
     // `objc_getClass`) and dispatches with the derived selector.
@@ -774,7 +771,7 @@ pub fn lowerSuperCall(
         .is_static = false,
         .is_nonvirtual = true,
         .parent_class_path = self.alloc.dupe(u8, parent_path) catch parent_path,
-        .cache_key = null, // per-call FindClass + GetMethodID; caching is a follow-up
+        .cache_key = null, // per-call FindClass + GetMethodID
     } }, ret_ty);
 }
 
@@ -791,25 +788,25 @@ pub fn lowerSuperCall(
 /// order AND have their bodied methods registered into `fn_ast_map`
 /// under qualified names `<ClassName>.<methodName>`. Lazy lowering
 /// then handles the body via the standard path; `*Self` is
-/// substituted to `*<ClassName>State` during body lowering (M1.2 A.2b).
+/// substituted to `*<ClassName>State` during body lowering
 pub fn registerRuntimeClassDecl(self: *Lowering, fcd: *const ast.RuntimeClassDecl) void {
     upsertRuntimeClass(self, fcd.name, fcd);
     if (!fcd.is_extern and fcd.runtime == .objc_class) {
         if (self.module.lookupObjcDefinedClass(fcd.name) == null) {
             self.module.appendObjcDefinedClass(fcd.name, fcd);
-            // M2.3 — resolve the `#extends` alias to the actual
+            // resolve the `#extends` alias to the actual
             // Obj-C runtime class name. `#extends NSObjectBase`
             // where NSObjectBase is aliased to "NSObject" must
             // pass "NSObject" to objc_allocateClassPair, otherwise
             // the runtime's class-hierarchy link is broken and
             // inherited-method dispatch fails.
             self.module.setObjcDefinedClassParent(fcd.name, self.resolveObjcParentName(fcd));
-            // M1.2 A.4b.i: per-class ivar handle global. The class-pair
+            // Per-class ivar handle global. The class-pair
             // init constructor (emit_llvm) populates it via
             // class_getInstanceVariable after the class is registered;
             // IMP trampolines read it to find the __sx_state ivar.
             self.declareObjcDefinedStateIvarGlobal(fcd.name);
-            // M1.2 A.6: per-class class-object global. -dealloc reads
+            // Per-class class-object global. -dealloc reads
             // it to build an `objc_super` struct for `[super dealloc]`
             // dispatch via `objc_msgSendSuper2`.
             self.declareObjcDefinedClassGlobal(fcd.name);
@@ -818,12 +815,12 @@ pub fn registerRuntimeClassDecl(self: *Lowering, fcd: *const ast.RuntimeClassDec
     }
 }
 
-/// Issue 0348: the runtime-class registry is name-keyed program-wide, so
-/// two modules declaring the same sx name used to race the slot silently
-/// (last-wins) — the loser's member calls resolved against the winner's
-/// surface. Extern declarations are C-header-like per-module VIEWS of one
-/// runtime class, so same-name externs binding the SAME runtime class now
-/// MERGE into a union surface (every consumer sees the union through the
+/// The runtime-class registry is name-keyed program-wide, so two
+/// modules declaring the same sx name would race the slot silently (last-wins),
+/// resolving the loser's member calls against the winner's surface. Extern
+/// declarations are C-header-like per-module VIEWS of one runtime class, so
+/// same-name externs binding the SAME runtime class MERGE into a union surface
+/// (every consumer sees the union through the
 /// map). Genuine conflicts diagnose: different runtime bindings, any
 /// sx-defined (export) duplicate, or same-name methods with different
 /// static-ness/arity/selector.
@@ -993,7 +990,7 @@ pub fn declareObjcDefinedClassGlobal(self: *Lowering, class_name: []const u8) vo
 /// function, AND collect per-method registration data (selector
 /// mangling + type encoding + IMP symbol name) into the class's
 /// cache entry so emit_llvm can wire up `class_addMethod` calls
-/// (M1.2 A.4b.iii). Bodyless declarations are skipped — they
+/// Bodyless declarations are skipped — they
 /// reference inherited / external methods, not sx-side bodies.
 pub fn registerObjcDefinedClassMethods(self: *Lowering, fcd: *const ast.RuntimeClassDecl) void {
     // Set current_runtime_class so `*Self` substitutions in
@@ -1090,7 +1087,7 @@ pub fn lookupObjcDefinedClassForMethod(self: *Lowering, name: []const u8) ?*cons
 }
 
 /// Lazily declare the `sx_jni_env_tl_get` / `sx_jni_env_tl_set`
-/// runtime externs (step 2.16c). The storage lives in
+/// runtime externs. The storage lives in
 /// `library/vendors/sx_jni_runtime/sx_jni_env_tl.c` as a
 /// `_Thread_local` slot — keeping it OUT of the user's IR module
 /// is what lets the LLVM ORC JIT load the module cleanly without
@@ -1167,7 +1164,7 @@ pub fn synthesizeJniMainStubs(self: *Lowering) void {
 }
 
 pub fn synthesizeJniMainStub(self: *Lowering, fcd: *const ast.RuntimeClassDecl, md: ast.RuntimeMethodDecl) void {
-    // Flow narrowing (issue 0179) is per-function: each native-method stub body
+    // Flow narrowing is per-function: each native-method stub body
     // gets its own `Ref` space (reset by `beginFunction` below) that OVERLAPS
     // both the enclosing pass and a sibling method's stub. Without isolation the
     // previous method's `narrowed_refs` indices falsely match this body's `Ref`s
@@ -1202,6 +1199,16 @@ pub fn synthesizeJniMainStub(self: *Lowering, fcd: *const ast.RuntimeClassDecl, 
     }
 
     const ret_ty = if (md.return_type) |rt| jniMapParamType(self, rt) else .void;
+    // Java has no error channel to receive: a native method declared failable
+    // has nowhere to put its tag, so the declaration itself is refused rather
+    // than lowered into a stub that encodes the set as an integer.
+    if (self.errorChannelOf(ret_ty)) |_| {
+        if (self.diagnostics) |d| {
+            const span = if (md.return_type) |rt| rt.span else md.body.?.span;
+            d.addFmt(.err, span, "native JNI method '{s}.{s}' is failable — a Java method has no error channel to carry its result; return the value and signal failure in-band instead", .{ fcd.name, md.name });
+        }
+        return;
+    }
     const params_slice = params.toOwnedSlice(self.alloc) catch return;
 
     _ = self.builder.beginFunction(name_id, params_slice, ret_ty);
@@ -1264,28 +1271,17 @@ pub fn synthesizeJniMainStub(self: *Lowering, fcd: *const ast.RuntimeClassDecl, 
         }
     }
 
-    const saved_target = self.target_type;
-    self.target_type = if (ret_ty != .void) ret_ty else null;
-    if (ret_ty != .void) {
-        const body_val = self.lowerBlockValue(md.body.?);
-        if (!self.currentBlockHasTerminator()) {
-            if (body_val) |val| {
-                const val_ty = self.builder.getRefType(val);
-                if (val_ty == .void) {
-                    self.ensureTerminator(ret_ty);
-                } else {
-                    const coerced = self.coerceToType(val, val_ty, ret_ty);
-                    self.builder.ret(coerced, ret_ty);
-                }
-            } else {
-                self.ensureTerminator(ret_ty);
-            }
-        }
-    } else {
-        self.lowerBlock(md.body.?);
-        self.ensureTerminator(ret_ty);
+    // A stub is its own function boundary: an enclosing named-return function's
+    // slots are not this body's to synthesize.
+    const saved_nrn_jni = self.named_return_names;
+    const saved_nrd_jni = self.named_return_defaults;
+    self.named_return_names = null;
+    self.named_return_defaults = null;
+    defer {
+        self.named_return_names = saved_nrn_jni;
+        self.named_return_defaults = saved_nrd_jni;
     }
-    self.target_type = saved_target;
+    self.lowerFunctionBody(md.body.?, ret_ty);
 
     self.builder.finalize();
 }

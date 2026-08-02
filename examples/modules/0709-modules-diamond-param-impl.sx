@@ -1,0 +1,23 @@
+// A parameterised-protocol (`Into`) impl living in a
+// module reached through more than one import path must register exactly once.
+//
+//   main ─┬─ mid_a ─┐
+//         └─ mid_b ─┴─ common  (holds `impl Into(Wrapped) for i64`)
+//
+// Impl blocks are anonymous (no `declName`), so a name-only diamond dedup in
+// imports.zig appends the cached node once per path and the second
+// registration trips: `duplicate impl 'Into' for source 'i64'`. The flat
+// decl list also dedups by node identity, so this builds and the impl runs
+// exactly once: 7 + 35 = 42.
+#import "modules/std.sx";
+// `Wrapped` lives in the shared `common.sx`; bare-import visibility is
+// non-transitive, so naming it here means importing it here (not via mid_a/b).
+#import "0709-modules-diamond-param-impl/common.sx";
+#import "0709-modules-diamond-param-impl/mid_a.sx";
+#import "0709-modules-diamond-param-impl/mid_b.sx";
+
+main :: () -> i32 {
+    w : Wrapped = xx 7;
+    print("{}\n", w.v);
+    0
+}

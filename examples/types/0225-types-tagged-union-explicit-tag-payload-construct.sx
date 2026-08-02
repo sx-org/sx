@@ -1,23 +1,14 @@
 // Constructing a PAYLOAD-CARRYING variant of a TAGGED UNION whose variants
-// carry EXPLICIT tag values must store the EXPLICIT tag value at runtime — the
+// carry EXPLICIT tag values stores the EXPLICIT tag value at runtime — the
 // same encoding `match` switches on and C-interop uses — NOT the sequential
-// ordinal.
+// ordinal. The ordinal indexes `fields[]` for the payload-type lookup only.
 //
-// Regression (issue 0281):
-//   Defect 1 — call-shaped construction `Ev.key(5)` stored the ORDINAL (1)
-//   while `match` switched on the explicit tag (0x300 = 768), so a payloadful
-//   match matched no case and fell through to `else`/unreachable (mis-dispatch
-//   / UB). Fixed so construction stores the explicit value: the ordinal now
-//   indexes `fields[]` for the payload-type lookup only.
+// Both struct-literal construction forms — qualified `Ev.key{ 42 }` and
+// inferred `.key{ 42 }` with a SCALAR payload — construct the variant with
+// payload 42.
 //
-//   Defect 2 — the struct-literal construction form `Ev.key{ 42 }` with a
-//   SCALAR payload panicked ("unresolved type reached LLVM emission"): the
-//   qualified `Ev.key` field_access wasn't routed to the tagged-enum path, and
-//   even the inferred `.key{ 42 }` form wrapped the scalar in an invalid
-//   `insertvalue i64`. Both now construct the variant with payload 42.
-//
-// All FOUR paths must agree on the explicit tag encoding: call-shaped
-// construction, struct-literal construction, `match`, and the formatter (0280).
+// All FOUR paths agree on the explicit tag encoding: call-shaped
+// construction, struct-literal construction, `match`, and the formatter.
 
 #import "modules/std.sx";
 
@@ -50,8 +41,8 @@ main :: () {
     // Payload-less variant still dispatches.
     print("{}\n", handle(Ev.quit));          // 1
 
-    // (d) The formatter prints the variant by name (issue 0280 reverse-map),
-    // consistent with the explicit encoding both construction forms now store.
+    // (d) The formatter prints the variant by name (a tag → ordinal
+    // reverse-map), consistent with the explicit encoding both forms store.
     print("{}\n", Ev.key(5));                // .key(5)
     print("{}\n", Ev.key{ 42 });            // .key(42)
     print("{}\n", Ev.quit);                  // .quit

@@ -1,4 +1,4 @@
-// GLES3 backend for the GPU protocol. Android today.
+// GLES3 backend for the GPU protocol, on Android.
 //
 // We use opengl.sx's runtime-loaded function-pointer variables for every
 // GL call, populated via `load_gl(@eglGetProcAddress)` in `init()`.
@@ -13,8 +13,7 @@
 //     `set_vertex_buffer` rebinds the VBO against this VAO each time.
 //   - `set_vertex_constants(slot=1, data, 64)` is treated as the 4x4
 //     projection matrix and uploaded via `glUniformMatrix4fv(uProj)`,
-//     matching the renderer.sx shader contract. Other slots are no-ops
-//     for now.
+//     matching the renderer.sx shader contract. Other slots are no-ops.
 //   - `set_texture(slot=0, tex)` binds texture unit 0 and sets
 //     `uniform sampler2D uTex` to 0. Other slots are no-ops.
 //   - The shader sources passed to `create_shader(vsrc, fsrc)` must be
@@ -34,11 +33,6 @@
 // Activity (e.g. an `onCreate` body that calls `eglCreateContext`).
 eglGetProcAddress :: (name: [*]u8) -> *void extern;
 
-
-// Functions absent from opengl.sx (it was authored against the SDL
-// desktop subset). We don't currently call these — destroy_* is best
-// effort here; future work can wire `glDeleteProgram` etc. through
-// load_gl if needed.
 
 // ── State + resource tables ────────────────────────────────────────────
 
@@ -227,10 +221,9 @@ impl GPU for Gles3Gpu {
         glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, h, ext_fmt, GL_UNSIGNED_BYTE, pixels);
     }
 
-    // glDeleteProgram / glDeleteBuffers aren't in opengl.sx's loader yet.
-    // For now destroy_* is a no-op on Android — resources free on EGL
-    // context teardown. Worth adding the loader entries when atlas grow
-    // starts to matter in practice.
+    // destroy_* is a no-op on Android: opengl.sx's loader carries no
+    // glDeleteProgram / glDeleteBuffers, and resources free on EGL context
+    // teardown.
     destroy_shader  :: (self: *Gles3Gpu, sh:  ShaderHandle) { }
     destroy_buffer  :: (self: *Gles3Gpu, buf: BufferHandle) { }
     destroy_texture :: (self: *Gles3Gpu, tex: TextureHandle) {

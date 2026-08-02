@@ -1,4 +1,4 @@
-// Stress: a board screen through ONE library (revision §14.1).
+// Stress: a board screen through ONE library.
 //
 // An entry point imports exactly one UI library and does not combine components
 // or protocols across them. This one is compose, because repeated child
@@ -9,7 +9,6 @@
 //   - containers nested three deep, each intercepting into its own list;
 //   - bulk per-cell state held BEHIND A POINTER, so an 81-entry id table does
 //     not enlarge every slot in the set.
-// Expected: exit 0.
 #import "modules/std.sx";
 // An application that declares its OWN component into the library's set reaches
 // the library's modules rather than its facade: a member joins the set where the

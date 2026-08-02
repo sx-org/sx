@@ -1,16 +1,16 @@
-// M1.2 A.2c / A.3 — instance-method body lowering on sx-defined
+// Instance-method body lowering on sx-defined
 // `#objc_class`.
 //
 // The Obj-C runtime invokes class methods via the IMP pointers
-// wired up in M1.2 A.4. No sx-side call path drives lazy lowering,
+// wired up at class-pair init. No sx-side call path drives lazy lowering,
 // so the eager pass `lowerObjcDefinedClassMethods` walks the
 // `objc_defined_class_cache` and force-lowers every bodied method
 // after Pass 1 finishes.
 //
-// `*Self` substitution (A.2b) routes the param's pointee type to
+// `*Self` substitution routes the param's pointee type to
 // the hidden state-struct `__<ClassName>State`. `self.counter`
-// then resolves as a plain struct field access — A.3's "free if
-// types align". The IR snapshot pins the round-trip:
+// then resolves as a plain struct field access — free when the
+// types align. The IR snapshot pins the round-trip:
 //
 //   define internal void @SxFoo.bump(ptr __sx_ctx, ptr self) {
 //       %gep = getelementptr inbounds { i32 }, ptr %self, 0, 0
@@ -21,9 +21,8 @@
 //   }
 //
 // IMP-trampoline emission (the C-ABI shim that the Obj-C runtime
-// calls and that reads the `__sx_state` ivar) lands separately
-// in M1.2 A.4 alongside class-pair init. Runtime dispatch
-// (M1.2 A.7) stays gated until then.
+// calls and that reads the `__sx_state` ivar) happens alongside
+// class-pair init, not here.
 
 #import "modules/std.sx";
 #import "modules/build.sx";

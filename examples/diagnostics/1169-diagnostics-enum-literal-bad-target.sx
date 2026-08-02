@@ -1,5 +1,5 @@
 // Enum literals against unusable destinations are DIAGNOSED, never a
-// silent variant 0 (issue 0098's sibling holes): an unknown variant of a
+// silent variant 0: an unknown variant of a
 // real enum, a non-enum destination type, and a destination-less literal
 // each get their own error.
 #import "modules/std.sx";

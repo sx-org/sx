@@ -1,5 +1,5 @@
-// A bound `$T: Type` forwards into another generic's type-arg slot (issue
-// 0339): `outer($T) { inner(T); }` monomorphizes `inner` with the enclosing
+// A bound `$T: Type` forwards into another generic's type-arg slot:
+// `outer($T) { inner(T); }` monomorphizes `inner` with the enclosing
 // binding — composing exactly like an already-working folded type expression
 // (`inner(struct_field_type(T, i))`). Covers direct forwarding, forwarding
 // into a RECURSIVE comptime walk, and a generic-struct construction from

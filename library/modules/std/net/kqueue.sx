@@ -1,6 +1,6 @@
-// std/net/kqueue — raw kqueue/kevent bindings (PLAN-HTTPZ S3).
-// darwin-only by definition; the linux twin is std/net/epoll (S4) and
-// the OS-neutral Loop facade over both is std.event (S5). Import this
+// std/net/kqueue — raw kqueue/kevent bindings.
+// darwin-only by definition; the linux twin is std/net/epoll and
+// the OS-neutral Loop facade over both is std.event. Import this
 // module explicitly — it deliberately does not ride the std.sx barrel.
 //
 // One kernel queue multiplexes readiness for any number of fds: a

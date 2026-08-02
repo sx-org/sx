@@ -45,7 +45,7 @@ pub const CharLiteralError = error{
 /// or one `\u{XXXX}`. Anything else (`''`, `'ab'`, a stray `\` at EOF, an
 /// unknown escape, an overlong `\u{}` value, or a surrogate) is an error.
 ///
-/// Note: a raw non-ASCII byte (e.g. the UTF-8 bytes of `'é'`) is accepted as
+/// A raw non-ASCII byte (e.g. the UTF-8 bytes of `'é'`) is accepted as
 /// "one raw byte" only when the body is a single byte; a multi-byte raw
 /// sequence is `TooManyCharacters`. `\u{...}` is the way to spell an
 /// arbitrary Unicode scalar regardless of its UTF-8 length.

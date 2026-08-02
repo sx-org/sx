@@ -21,12 +21,11 @@ const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 
 /// Lazily declare the `sx_trace_push(u64)` / `sx_trace_clear()` runtime
-/// externs (ERR E3.1). Storage is a `_Thread_local` ring buffer in
+/// externs. Storage is a `_Thread_local` ring buffer in
 /// `library/vendors/sx_trace_runtime/sx_trace.c` — kept OUT of the user's IR
 /// module (same JIT-TLS reason as the JNI env slot). Setting
 /// `needs_trace_runtime` signals Compilation to auto-link the .c for AOT.
-/// Wired into the `raise` / `try` push sites and the absorbing clear sites
-/// at ERR E3.2.
+/// Wired into the `raise` / `try` push sites and the absorbing clear sites.
 pub fn getTraceFids(self: *Lowering) struct { push: FuncId, clear: FuncId } {
     self.needs_trace_runtime = true;
     if (self.trace_push_fid == null) {
@@ -48,18 +47,17 @@ pub fn getTraceFids(self: *Lowering) struct { push: FuncId, clear: FuncId } {
 }
 
 /// Error return-traces are emitted in debug-ish builds and skipped in
-/// release (ERR E3.2 build-mode gating). `sx run` defaults to `-O0`
+/// release. `sx run` defaults to `-O0`
 /// (`.none`), the common dev path; `.default`/`.aggressive` are release.
-/// The spec's `--release-traces` opt-in + a `BuildOptions.error_traces`
-/// accessor are a later refinement; for now the opt level is the gate.
+/// The opt level is the gate.
 pub fn tracesEnabled(self: *Lowering) bool {
     const tc = self.target_config orelse return true; // no target → treat as debug
     return tc.opt_level == .none or tc.opt_level == .less;
 }
 
 /// Emit a trace-buffer push of `frame` (an opaque u64) at a failure site.
-/// No-op when traces are disabled (release). `frame` is a placeholder until
-/// DWARF (E3.0) supplies real return-address PCs and E3.3 resolves them.
+/// No-op when traces are disabled (release). `frame` is a placeholder; real
+/// return-address PCs require DWARF.
 pub fn emitTracePush(self: *Lowering, frame: Ref) void {
     if (!self.tracesEnabled()) return;
     const fids = self.getTraceFids();
@@ -76,7 +74,7 @@ pub fn emitTraceClear(self: *Lowering) void {
     _ = self.builder.emit(.{ .call = .{ .callee = fids.clear, .args = &.{} } }, .void);
 }
 
-/// The trace frame value for a failure site (ERR E3.0 slice 3a). Emits the
+/// The trace frame value for a failure site. Emits the
 /// niladic `.trace_frame` op (span-stamped via `Builder.current_span`); each
 /// backend resolves it to a real frame — `emit_llvm` to a `Frame*`, `interp`
 /// to a packed `(func_id, offset)`. The result feeds `sx_trace_push`.
@@ -155,7 +153,7 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
 /// inlined body's type wins while inlining a comptime call), or null when
 /// there is no enclosing function.
 pub fn effectiveReturnType(self: *Lowering) ?TypeId {
-    if (self.inline_return_target) |iri| return iri.ret_ty;
+    if (self.inline_return_target) |exit| return exit.ret_ty;
     if (self.builder.func) |fid| return self.module.functions.items[@intFromEnum(fid)].ret;
     return null;
 }
@@ -226,7 +224,7 @@ pub fn checkErrorSetValueCoercion(self: *Lowering, src: TypeId, dst: TypeId, spa
 }
 
 /// Diagnose every tag id in `src_tags` that is not a member of the named
-/// error set `dst`. Shared by the named-set subset check and E1.4b's
+/// error set `dst`. Shared by the named-set subset check and the inferred-set
 /// inferred-callee widening (where the callee's tags come from the SCC,
 /// not a `.error_set` TypeId).
 pub fn diagTagsNotInSet(self: *Lowering, src_tags: []const u32, dst: TypeId, span: ast.Span) void {
@@ -250,11 +248,9 @@ pub fn diagTagsNotInSet(self: *Lowering, src_tags: []const u32, dst: TypeId, spa
 }
 
 /// `raise EXPR;` — terminate the enclosing failable function via the error
-/// channel. E1.3 lowers the **pure-failable** shape (`-> !` / `-> !Named`,
-/// whose return type IS the error set): emit `ret(EXPR)`. The value-carrying
-/// shape (`-> (T..., !)`) needs the value slots set to `undef` alongside the
-/// error slot — that tuple ABI lands in E2.1/E2.2, so we bail loudly here
-/// rather than ship a half-built return that silently corrupts value slots.
+/// channel. A pure-failable return (`-> !` / `-> !Named`, whose return type
+/// IS the error set) emits `ret(EXPR)`; a value-carrying one
+/// (`-> (T..., !)`) returns the tuple `{undef value slots..., EXPR}`.
 pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) void {
     // (1) `raise` is legal only inside a failable function.
     const ret_ty = self.effectiveReturnType() orelse {
@@ -282,7 +278,7 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
         }
     }
 
-    // (3) Push a trace frame: `raise` always escapes the function (ERR E3.2).
+    // (3) Push a trace frame: `raise` always escapes the function.
     //     Before cleanup, so the frame records the raise site itself.
     self.emitTracePush(self.placeholderTraceFrame());
 
@@ -294,15 +290,10 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
         const tag_ty = self.builder.getRefType(tag_ref);
         const coerced = if (tag_ty != err_set) self.coerceExplicit(tag_ref, tag_ty, err_set) else tag_ref;
         self.emitErrorCleanup(self.func_defer_base, coerced);
-        if (self.inline_return_target) |iri| {
-            self.builder.store(iri.slot, coerced);
-            self.builder.br(iri.done_bb, &.{});
-        } else {
-            self.builder.ret(coerced, err_set);
-        }
+        self.emitBodyExit(coerced, err_set, .return_like);
     } else {
         // Value-carrying `-> (T..., !)`: the error path leaves the value
-        // slots undefined and carries the tag in the error slot (ERR E2.1).
+        // slots undefined and carries the tag in the error slot.
         const tag_ty = self.builder.getRefType(tag_ref);
         const coerced_tag = if (tag_ty != err_set) self.coerceExplicit(tag_ref, tag_ty, err_set) else tag_ref;
         self.emitErrorCleanup(self.func_defer_base, coerced_tag);
@@ -337,7 +328,7 @@ pub fn lowerFailableSuccessReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, spa
     // SETS differ (`(T, !Concrete)` forwarded through `(T, !)`, or concrete
     // → concrete). Without this arm the whole callee result falls into the
     // scalar/value paths below and gets packed as element 0 of the caller's
-    // own tuple — invalid IR (issue 0205).
+    // own tuple — invalid IR.
     // `val_ty == fields[0]` is NOT a forward: the lone value slot's type is
     // itself this failable type, so the user is returning the value.
     if (val_ty != fields[0] and !val_ty.isBuiltin()) {
@@ -384,9 +375,9 @@ pub fn lowerFailableSuccessReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, spa
     }
     const n_vals = fields.len - 1;
     if (n_vals == 1) {
-        // Issue 0191: an un-coercible success value used to be bit-welded
-        // into the declared value slot (a 16-byte string into an i64 slot
-        // even corrupted the error tag — a phantom `catch` on success).
+        // An un-coercible success value must not be bit-welded
+        // into the declared value slot — a 16-byte string into an i64 slot
+        // corrupts the error tag, giving a phantom `catch` on success.
         const cv = if (self.checkReturnable(ref, val_ty, fields[0], span))
             self.coerceToType(ref, val_ty, fields[0])
         else
@@ -409,7 +400,7 @@ pub fn lowerFailableSuccessReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, spa
     defer vals.deinit(self.alloc);
     for (0..n_vals) |i| {
         const fv = self.builder.emit(.{ .tuple_get = .{ .base = ref, .field_index = @intCast(i), .base_type = val_ty } }, vfields[i]);
-        // Issue 0191: per-slot coercibility — an un-coercible element is
+        // Per-slot coercibility — an un-coercible element is
         // diagnosed instead of bit-welded into the declared slot.
         const cf = if (self.checkReturnable(fv, vfields[i], fields[i], span))
             self.coerceToType(fv, vfields[i], fields[i])
@@ -445,7 +436,7 @@ fn lowerFailableForwardReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, val_ty:
     defer vals.deinit(self.alloc);
     for (0..n_vals) |i| {
         const fv = self.builder.emit(.{ .tuple_get = .{ .base = ref, .field_index = @intCast(i), .base_type = val_ty } }, vfields[i]);
-        // Issue 0191: a forwarded value slot with NO modeled coercion to the
+        // A forwarded value slot with NO modeled coercion to the
         // caller's slot type is diagnosed, not bit-welded.
         const cf = if (self.checkReturnable(fv, vfields[i], fields[i], span))
             self.coerceToType(fv, vfields[i], fields[i])
@@ -511,7 +502,7 @@ pub fn coercePureFailableReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, span:
             else => {},
         }
     }
-    // Issue 0191: a non-error-set value returned from a pure failable
+    // A non-error-set value returned from a pure failable
     // (`return "str";` in `-> !E`) has no modeled coercion to the error set —
     // diagnose instead of welding the value's bits into the tag.
     if (!self.checkReturnable(ref, val_ty, ret_ty, span)) {
@@ -595,15 +586,9 @@ pub fn extractErrorSlot(self: *Lowering, result: Ref, op_ty: TypeId, err_set: Ty
     return self.builder.emit(.{ .tuple_get = .{ .base = result, .field_index = @intCast(fields.len - 1), .base_type = op_ty } }, err_set);
 }
 
-/// Emit a return of an already-assembled tuple, honoring inline-comptime
-/// return targets (store + branch) vs a real function return.
+/// Emit a return of an already-assembled failable tuple.
 pub fn emitTupleRet(self: *Lowering, ret_ty: TypeId, tup: Ref) void {
-    if (self.inline_return_target) |iri| {
-        self.builder.store(iri.slot, tup);
-        self.builder.br(iri.done_bb, &.{});
-    } else {
-        self.builder.ret(tup, ret_ty);
-    }
+    self.emitBodyExit(tup, ret_ty, .return_like);
 }
 
 pub fn diagRaiseNotFailable(self: *Lowering, span: ast.Span) void {
@@ -619,20 +604,12 @@ pub fn diagRaiseNotFailable(self: *Lowering, span: ast.Span) void {
 /// True if `node`'s value is failable — a `try` (the result is its
 /// operand's success value, but the expression itself routes an error) or
 /// any expression whose type carries an error channel (a bare failable
-/// call). Used to detect failable `or` chains (deferred to E1.4b).
+/// call). Used to detect failable `or` chains.
 pub fn exprIsFailable(self: *Lowering, node: *const Node) bool {
     if (node.data == .try_expr) return true;
     return self.errorChannelOf(self.inferExprType(node)) != null;
 }
 
-/// `try X` — a fallible attempt (ERR step E1.4a: the STANDALONE form, whose
-/// failure target is function-propagation). Evaluates X; on failure, runs
-/// the function's defers and returns the error to the caller; on success,
-/// continues with X's value. E1.4a lowers the pure-failable shape (callee
-/// `-> !` / `-> !Named`, caller likewise pure-failable). Value-carrying
-/// callees, propagation from a value-carrying caller, and `try` inside an
-/// `or` chain need the error-channel tuple ABI / fallback routing — those
-/// land in E1.4b/E2, so we bail loudly here.
 /// Build the `@SourceSite` a `@caller` marker stands for.
 ///
 /// `file` / `declaration` / `ordinal` / `id` come from the source-site index,
@@ -743,6 +720,11 @@ pub fn currentFunctionName(self: *Lowering) []const u8 {
     return self.module.types.getString(self.module.functions.items[@intFromEnum(fid)].name);
 }
 
+/// `try X` — a fallible attempt whose failure target is function
+/// propagation. Evaluates X, then branches on its error tag: the failure
+/// path runs the function's cleanups and returns the caller's failure
+/// carrying that tag; the success path continues with X's value — the value
+/// part for a value-carrying callee, `void` for a pure-failable one.
 pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
     // A direct assertion operand (`try av.(T)`) desugars to the failable
     // runtime call and consumes through the ordinary machinery below.
@@ -758,7 +740,7 @@ pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
     };
 
     // (2) The operand must be failable. This is the sole failable-operand
-    //     check (the parser imposes none — see E0.2).
+    //     check (the parser imposes none).
     const op_ty = self.inferExprType(operand);
     const callee_set = self.errorChannelOf(op_ty) orelse {
         if (self.diagnostics) |diags| {
@@ -774,7 +756,7 @@ pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
 
     // (3) Widening: the callee's escape set must be ⊆ the caller's named
     //     set. For an inferred caller (`!`) the absorption happens in the
-    //     whole-program SCC (E1.4b) — no check here.
+    //     whole-program SCC — no check here.
     self.checkEscapeWidening(operand, callee_set, caller_set, span);
 
     // (4) Lower: evaluate the operand, then branch on its error tag (which
@@ -793,7 +775,7 @@ pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
     self.builder.condBr(is_err, prop_bb, &.{}, ok_bb, &.{});
 
     // Propagation: push a trace frame (this `try` failure escapes to the
-    // caller — ERR E3.2), run the function's cleanups (defers + onfails,
+    // caller), run the function's cleanups (defers + onfails,
     // since this is an error exit), then return the caller's failure
     // carrying this tag (pure caller → `ret(tag)`; value-carrying →
     // `ret {undef…, tag}`).
@@ -823,12 +805,7 @@ pub fn emitErrorReturn(self: *Lowering, caller_ret: TypeId, caller_set: TypeId, 
     // implicit value-coercion membership guard rather than being reported twice.
     const coerced = if (ety != caller_set) self.coerceExplicit(err, ety, caller_set) else err;
     if (caller_ret == caller_set) {
-        if (self.inline_return_target) |iri| {
-            self.builder.store(iri.slot, coerced);
-            self.builder.br(iri.done_bb, &.{});
-        } else {
-            self.builder.ret(coerced, caller_set);
-        }
+        self.emitBodyExit(coerced, caller_set, .return_like);
     } else {
         const fields = self.module.types.get(caller_ret).tuple.fields;
         var undefs = std.ArrayList(Ref).empty;
@@ -847,15 +824,13 @@ pub fn diagTryNotFailable(self: *Lowering, span: ast.Span) void {
     }
 }
 
-/// `expr catch [e] BODY` — inline failure handler (ERR step E1.5,
-/// pure-failable slice). Evaluates `expr`; on failure, binds the tag to
-/// `e` (if present) and runs BODY; on success, the value is `void` (a
-/// pure-failable LHS has no success value). BODY either diverges (via
-/// `noreturn` — E1.4c) or falls through. `catch` consumes the error
-/// locally, so — unlike `try` / `raise` — it needs no failable *enclosing*
-/// function. Value-carrying LHS (binding the success value / a
-/// value-producing body unifying with the success tuple) needs the
-/// error-channel tuple ABI and lands in E2 — bail loudly here.
+/// `expr catch [e] BODY` — inline failure handler. Evaluates `expr`; on
+/// failure binds the tag to `e` (if present) and runs BODY, which either
+/// diverges or falls through. A pure-failable LHS has no success value, so
+/// both paths merge at `void`; a value-carrying LHS yields its value part on
+/// success and BODY's value on failure, merged through a block parameter.
+/// `catch` consumes the error locally, so — unlike `try` / `raise` — it needs
+/// no failable *enclosing* function.
 pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) Ref {
     // A direct assertion operand (`av.(T) catch …`) desugars to the
     // failable runtime call; the ordinary paths below consume it.
@@ -867,7 +842,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
     } else ce_in;
     // A failable `or` chain operand (`(try a or try b) catch e …`) routes
     // its total failure to the catch handler — not the function — via the
-    // chain-fail target (ERR E2.4). A chain's value type is non-failable
+    // chain-fail target. A chain's value type is non-failable
     // `T`, so it wouldn't pass the `errorChannelOf` check below.
     if (ce.operand.data == .binary_op and ce.operand.data.binary_op.op == .or_op and
         self.orIsFailableChain(&ce.operand.data.binary_op))
@@ -896,8 +871,8 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
         // The handler can inspect the trace (`trace.print_current()`); the
         // absorption clear fires once it completes WITHOUT re-raising (a
         // fall-through). A diverging body (`raise` / `return`) keeps /
-        // discards the buffer on its own path (ERR E3.2; reconciles
-        // PLAN-ERR §clear-points "cleared before body" with §catch-over-or
+        // discards the buffer on its own path (reconciles
+        // §clear-points "cleared before body" with §catch-over-or
         // "frames still in the buffer when the body runs").
         if (!self.currentBlockHasTerminator()) {
             self.emitTraceClear();
@@ -932,7 +907,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
     return self.builder.blockParam(merge_bb, 0, succ_ty);
 }
 
-/// `(failable or-chain) catch [e] BODY` (ERR E2.4). The chain's operands
+/// `(failable or-chain) catch [e] BODY`. The chain's operands
 /// route per the chain rules; its TOTAL failure (the final operand failing)
 /// is redirected to the catch handler via `chain_fail_target` rather than
 /// propagating to the function. `e` binds the final error tag; the handler's
@@ -1044,15 +1019,9 @@ pub fn runCatchBody(self: *Lowering, ce: *const ast.CatchExpr, err_val: Ref, err
     return if (ce.body.data == .block) self.lowerBlockValue(ce.body) else self.lowerExpr(ce.body);
 }
 
-/// `lhs or rhs` with a failable LHS (ERR step E2.4a — the value-terminator
-/// form). On LHS success the result is its value part (the lone value, or a
-/// value-tuple); on failure the LHS error is discarded and the result is
-/// `rhs` (a plain value of the success type), so the whole expression is
-/// non-failable. The CHAIN form (`... or try ...` / a failable RHS) needs
-/// the fallback-target routing deferred from E1.4 — bail.
 /// Widening at an escape (function-propagation) site: the escaping set must
 /// be ⊆ the caller's named set. An inferred caller (`!`) absorbs everything
-/// via the whole-program SCC (E1.4b) — no check. A bare-`!` callee carries
+/// via the whole-program SCC — no check. A bare-`!` callee carries
 /// no tags on its placeholder TypeId, so check its SCC-converged set.
 /// Shared by `try` propagation and a failable `or` chain's final operand.
 pub fn checkEscapeWidening(self: *Lowering, callee_node: *const Node, callee_set: TypeId, caller_set: TypeId, span: ast.Span) void {
@@ -1075,7 +1044,7 @@ pub fn checkEscapeWidening(self: *Lowering, callee_node: *const Node, callee_set
             self.diagTagsNotInSet(tags, caller_set, span);
         }
         // Empty union (no closure of this shape ever raises) → silently
-        // allowed: the slot's `!` resolves to ∅ (ERR E5.1 sub-feature 6).
+        // allowed: the slot's `!` resolves to ∅.
     }
 }
 
@@ -1103,7 +1072,7 @@ pub fn operandIsFailableLike(self: *Lowering, node: *const Node) bool {
 
 /// True iff `node` is `expr.(T)` in the checked-assertion shape: an `any`
 /// receiver, or a protocol receiver whose target is a concrete downcast
-/// (RTTI Option B — the type_id word makes it the any assertion over the
+/// (the type_id word makes it the any assertion over the
 /// value's {ctx, type_id} prefix view).
 pub fn isErasedAssertNode(self: *Lowering, node: *const Node) bool {
     if (node.data != .postfix_cast) return false;
@@ -1251,7 +1220,7 @@ pub fn flattenOrChain(self: *Lowering, bop: *const ast.BinaryOp, list: *std.Arra
     list.append(self.alloc, self.desugarErasedAssert(bop.rhs) orelse bop.rhs) catch unreachable;
 }
 
-/// Lower a failable `or` (ERR E2.4): a value-terminator (`lhs or value`) or
+/// Lower a failable `or`: a value-terminator (`lhs or value`) or
 /// a chain (`try a or try b or …`, possibly with a trailing value
 /// terminator). Left-to-right, short-circuit: each failable operand's
 /// failure routes to the next operand; the final operand either absorbs
@@ -1383,10 +1352,10 @@ pub fn lowerFailableOr(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     return if (has_value) self.builder.blockParam(merge_bb, 0, succ_ty) else self.builder.constInt(0, .void);
 }
 
-// ── ERR E1.4b: whole-program inferred-error-set convergence ──────────
+// ── whole-program inferred-error-set convergence ──────────
 
 /// The bare callee name of a call expression (`g(...)` → "g"), or null if
-/// the node isn't a direct call to a named function. E1.4b resolves only
+/// the node isn't a direct call to a named function. Convergence resolves only
 /// the bare identifier (top-level functions); UFCS / mangled-local callees
 /// aren't tracked by the SCC.
 pub fn callTargetName(node: *const Node) ?[]const u8 {
@@ -1422,8 +1391,8 @@ pub fn namedSetTags(self: *Lowering, name: []const u8) ?[]const u32 {
 
 /// Whole-program inferred-error-set convergence. Thin delegation to the
 /// canonical owner (`ErrorAnalysis`, `error_analysis.zig`); kept on
-/// `Lowering` as a `pub` entry point because the lowering pipeline + the
-/// E1.4b unit test call it.
+/// `Lowering` as a `pub` entry point because the lowering pipeline and the
+/// convergence unit test call it.
 pub fn convergeInferredErrorSets(self: *Lowering) void {
     self.errorAnalysis().convergeInferredErrorSets();
 }

@@ -148,8 +148,8 @@ pub const Tag = enum {
     hash_extends, // `#extends Alias;` inside a runtime-class body
     hash_implements, // `#implements Alias;` inside a runtime-class body
     hash_jni_method_descriptor, // `#jni_method_descriptor("(Sig)Ret")` per-method JNI descriptor override
-    hash_selector, // `#selector("explicit:string")` per-method Obj-C selector override (Phase 3.2)
-    hash_property, // `#property[(modifier, ...)]` field directive — synthesizes getter/setter dispatch (M2.2)
+    hash_selector, // `#selector("explicit:string")` per-method Obj-C selector override
+    hash_property, // `#property[(modifier, ...)]` field directive — synthesizes getter/setter dispatch
     hash_get, // `name :: (self) -> R #get => expr;` — a no-paren property accessor method (read via field syntax)
     hash_set, // `name :: (self, value) #set { ... }` — the write counterpart of #get (`obj.name = rhs` dispatches here)
     hash_jni_env, // `#jni_env(env) { body }` block-form env-scoping intrinsic
@@ -293,7 +293,7 @@ pub const keywords = std.StaticStringMap(Tag).initComptime(.{
     .{ "extern", .kw_extern },
     .{ "export", .kw_export },
     // `asm` is a real keyword; `volatile` / `clobbers` stay OUT of this table
-    // (recognized contextually only inside an `asm { … }` body — see PLAN-ASM).
+    // (recognized contextually only inside an `asm { … }` body).
     .{ "asm", .kw_asm },
     // `intrinsic` marks a declaration whose implementation is a compiler
     // intrinsic (`size_of :: ($T: Type) -> i64 intrinsic;`). A reserved word:

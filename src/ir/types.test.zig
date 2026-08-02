@@ -1,4 +1,3 @@
-// Tests for types.zig
 const std = @import("std");
 const types = @import("types.zig");
 const ast = @import("../ast.zig");
@@ -121,7 +120,7 @@ test "typeName for builtins" {
     try std.testing.expectEqualStrings("any", table.typeName(.any));
 }
 
-// ── Pack type (Feature 1, Step 2.1) ──────────────────────────────────
+// ── Pack type ────────────────────────────────────────────────────────
 
 test "pack type: construct, element access, intern dedup (N=3)" {
     const alloc = std.testing.allocator;
@@ -196,7 +195,7 @@ test "pack type: formatTypeName" {
     try std.testing.expectEqualStrings("pack()", table.formatTypeName(arena.allocator(), empty));
 }
 
-// ── ERR E1.1 (Slice 1) — error sets + tag registry ──
+// ── error sets + tag registry ──
 
 test "TagRegistry interns tags, id 0 reserved, global identity" {
     const alloc = std.testing.allocator;
@@ -289,9 +288,9 @@ test "isUnsignedInt: user-defined arbitrary-width ints" {
     try std.testing.expect(!table.isUnsignedInt(ptr_ty));
 }
 
-// ── Phase D: nominal identity + key-safe mutation ───────────────────────
+// ── Nominal identity + key-safe mutation ────────────────────────────────
 
-test "phase D: forward-decl field fill preserves intern key" {
+test "forward-decl field fill preserves intern key" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -315,7 +314,7 @@ test "phase D: forward-decl field fill preserves intern key" {
     try std.testing.expectEqual(id, table.findByName(foo).?);
 }
 
-test "phase D: anon rename re-keys intern_map" {
+test "anon rename re-keys intern_map" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -340,7 +339,7 @@ test "phase D: anon rename re-keys intern_map" {
     try std.testing.expect(fresh != id);
 }
 
-test "phase D: generic struct instantiation interns by distinct names" {
+test "generic struct instantiation interns by distinct names" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -362,7 +361,7 @@ test "phase D: generic struct instantiation interns by distinct names" {
     try std.testing.expectEqual(vec3a, table.findByName(table.internString("Vec__3")).?);
 }
 
-test "phase D: type-returning function result interns stably" {
+test "type-returning function result interns stably" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -381,7 +380,7 @@ test "phase D: type-returning function result interns stably" {
     try std.testing.expectEqual(a, table.findByName(name).?);
 }
 
-test "phase D: parameterized protocol value struct interns stably" {
+test "parameterized protocol value struct interns stably" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -402,7 +401,7 @@ test "phase D: parameterized protocol value struct interns stably" {
     try std.testing.expect(other != a);
 }
 
-test "phase D: same display-name distinct nominal ids" {
+test "same display-name distinct nominal ids" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -440,7 +439,7 @@ test "phase D: same display-name distinct nominal ids" {
     try std.testing.expect(es1 != es2);
 }
 
-test "phase D: internNominal(.,0) is byte-identical to legacy intern (old==new)" {
+test "internNominal(.,0) interns identically to intern" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -457,13 +456,13 @@ test "phase D: internNominal(.,0) is byte-identical to legacy intern (old==new)"
         .{ .error_set = .{ .name = table.internString("Err"), .tags = &tags } },
     };
     for (cases) |info| {
-        const old = table.intern(info); // legacy structural path
-        const new = table.internNominal(info, 0); // new API, structural id
+        const old = table.intern(info); // structural path
+        const new = table.internNominal(info, 0); // nominal API, id 0 == structural
         try std.testing.expectEqual(old, new);
     }
 }
 
-test "phase D: findUniqueByName returns the sole match" {
+test "findUniqueByName returns the sole match" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -474,7 +473,7 @@ test "phase D: findUniqueByName returns the sole match" {
     try std.testing.expectEqual(id, table.findUniqueByName(foo).?);
 }
 
-test "phase D: type_decl_tids maps decl pointer to TypeId" {
+test "type_decl_tids maps decl pointer to TypeId" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();

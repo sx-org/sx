@@ -1,11 +1,9 @@
 // The app-boot idiom for MetalGPU: `alloc_bytes` + `memset(0)` (struct
 // field defaults are NOT applied on this path) + two-phase
 // `init(null, 0, 0)`, then shader compilation before any layer exists.
-// Pins that `init` establishes the layer-mode pixel format explicitly:
-// with `target_format` left at the memset value, 0 is
-// MTLPixelFormatInvalid and EVERY pipeline creation fails ("No valid
-// pixelFormats set" — crashed m3te/SxChess on the sim after the G6
-// offscreen work moved create_shader onto the field).
+// `init` establishes the layer-mode pixel format explicitly: the memset value 0
+// is MTLPixelFormatInvalid, which every pipeline creation rejects ("No valid
+// pixelFormats set").
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 #import "modules/gpu/types.sx";

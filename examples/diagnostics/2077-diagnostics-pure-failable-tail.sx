@@ -1,0 +1,74 @@
+// What a pure-failable tail is REFUSED for. The rule discards an undemanded
+// tail silently, so the only refusals left are the ones an explicit `return`
+// would also make — plus the boundary that cannot carry an error channel at
+// all.
+//
+//   1. Forwarding a bare-`!` callee as the tail of a `-> !Named` function is
+//      refused exactly as `return wide();` is: an inferred set is not
+//      statically known, so it cannot be proven a subset of the named one.
+//   2. A tail whose type never resolves is reported once and poisons the body
+//      — it is never reinterpreted as an error tag. So is a contextual `.X`
+//      naming a tag the declared set does not have: the tail reads the declared
+//      set, so a nonmember is caught there rather than discarded as a value.
+//   3. A closure body that produces no value gets the same missing-value
+//      diagnostic as a named function, instead of returning `undef`.
+//   4. A native `#jni_main` method cannot be failable: Java has no error
+//      channel to receive the tag.
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+Named :: error { Nope }
+
+wide :: () -> ! {
+    raise error.Elsewhere;
+}
+
+// 1. Refused: the same forward rule as an explicit `return wide();`.
+implicit_forward :: () -> !Named {
+    wide()
+}
+
+// The same-set forward is the control — it is accepted and returns the tag.
+same_set :: () -> !Named {
+    error.Nope
+}
+
+forward_same_set :: () -> !Named {
+    same_set()
+}
+
+// 2. Refused: nothing types this tail, so nothing can dispose of it.
+irreducible :: () -> !Named {
+    no_such_name
+}
+
+// The contextual spelling still resolves against the declared set — so a tag
+// that set does not have is refused, not silently discarded.
+nonmember :: () -> !Named {
+    .Missing
+}
+
+// 4. Refused at the declaration: an sx error channel has no Java counterpart.
+Bundle :: #jni_class("android/os/Bundle") extern {}
+
+SxApp :: #jni_main #jni_class("co/swipelab/sxpurefailable/SxApp") {
+    onCreate :: (self: *Self, b: *Bundle) -> !Named {
+        raise error.Nope;
+    }
+    // The control: a native return Java CAN express is untouched.
+    reading :: (self: *Self) -> i8 {
+        3
+    }
+}
+
+main :: () -> i32 {
+    forward_same_set() catch { print("caught\n"); }
+    implicit_forward() catch { print("caught\n"); }
+    irreducible() catch { print("caught\n"); }
+    nonmember() catch { print("caught\n"); }
+
+    // 3. Refused: a value-returning closure whose body produces no value.
+    empty := () -> i32 { x := 1; };
+    print("{}\n", empty());
+    0
+}

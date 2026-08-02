@@ -1,5 +1,5 @@
 // Comptime compiler API — the WRITE side: one kind-branching `raw_register_type`
-// minting an actual enum AND a graph of mutually-recursive types (Phase 3).
+// minting an actual enum AND a graph of mutually-recursive types.
 //
 // `raw_declare_type` / `raw_pointer_to` / `raw_register_type` are bound to the `compiler`
 // library. They MINT into the type table, so they run at LOWERING time (lazily,

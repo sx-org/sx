@@ -5,12 +5,8 @@
 // the SAME type — the array copy `b : Make(3, i64) = a` type-checks only because
 // the three spellings name one `[3]i64`.
 //
-// Regression (issue 0083 / F0.4 attempt 6): the unknown-type checker walked the
-// value-param position as a type name ("unknown type 'N'"), and the
-// parameterized-type-annotation path never routed to `instantiateTypeFunction`,
-// nor did that binder resolve a non-struct/union return shape (`return [K]T`).
-// The value arg now folds through the shared const-int evaluator and the type
-// function resolves its general return-type expression with bindings active.
+// The value arg folds through the shared const-int evaluator, and the type function
+// resolves its general return-type expression with bindings active.
 #import "modules/std.sx";
 
 N :: 3;

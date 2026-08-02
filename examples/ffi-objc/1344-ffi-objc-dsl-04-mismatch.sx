@@ -1,10 +1,10 @@
-// Phase 3 step 3.0: keyword count must equal call-site arity (excluding
+// Keyword count must equal call-site arity (excluding
 // self). `something_extra(x)` — name split gives ["something", "extra"]
 // = 2 keywords; arity = 1. Compiler must diagnose at the call site.
 //
-// Pre-3.0: bails at lower.zig with the generic Phase 3/4 diagnostic
-// (which subsumes this case). Once 3.0 lands, the diagnostic becomes a
-// specific "keyword count mismatch" message.
+// The diagnostic names the mismatch: the keyword count derived from the
+// method name against the arity the call site supplies.
+//
 #import "modules/std.sx";
 #import "modules/build.sx";
 

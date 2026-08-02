@@ -1,9 +1,9 @@
-// Named-argument mapping diagnostics (specs: Named Arguments): N1
-// positional-after-named; N2 at-most-once (positional overlap and duplicate
-// named); unknown name with a did-you-mean suggestion (and without, when no
-// param name is close); N5 positional-only zones (variadic tail); missing
-// required params reported BY NAME (no arity-count cascade); closure values
-// bind positionally only.
+// Named-argument mapping diagnostics (specs: Named Arguments): positional after
+// named; a parameter bound at most once, through positional overlap and through a
+// duplicate name; an unknown name with a did-you-mean suggestion, and without one
+// when no param name is close; positional-only zones (the variadic tail); missing
+// required params reported BY NAME with no arity-count cascade; and closure values,
+// which bind positionally only.
 #import "modules/std.sx";
 
 f :: (alpha: i64, beta: i64 = 1, gamma: string = "g") -> i64 { alpha + beta + gamma.len }

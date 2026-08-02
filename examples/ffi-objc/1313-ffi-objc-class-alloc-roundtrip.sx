@@ -1,4 +1,4 @@
-// M1.2 A.5 — synthesized `+alloc` IMP allocates an Obj-C
+// Synthesized `+alloc` IMP allocates an Obj-C
 // instance AND a hidden state-struct, bound via the `__sx_state`
 // ivar.
 //
@@ -10,9 +10,8 @@
 //   3. The state was c.memset'd to zero in the IMP — confirms via
 //      reading the raw bytes.
 //
-// Once A.6 lands (-dealloc) and A.7 opens the dispatch gate,
-// sx-side `SxFoo.alloc().init()` and method calls will exercise
-// the full lifecycle.
+// The full lifecycle — sx-side `SxFoo.alloc().init()` plus method
+// calls — needs `-dealloc` and an open dispatch gate.
 
 #import "modules/std.sx";
 #import "modules/build.sx";

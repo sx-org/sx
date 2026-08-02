@@ -1,5 +1,5 @@
 // A dot-call at a destination-first parameter is still a dot-call: it resolves the
-// way every other one does, and only then re-spells itself (fluent spec §5.2).
+// way every other one does, and only then re-spells itself.
 //
 // `@Init` decides HOW the receiver reaches the callee — unevaluated, formed — not
 // WHICH callee it reaches. So everything that answers before a free function still

@@ -45,7 +45,7 @@ test "ProgramIndex borrows module_scopes / import_graph without owning them" {
     try std.testing.expectEqual(@as(u32, 0), idx.module_scopes.?.count());
 }
 
-test "ProgramIndex declaration maps round-trip (A1.1b)" {
+test "ProgramIndex declaration maps round-trip" {
     var idx = ProgramIndex.init(std.testing.allocator);
     defer idx.deinit();
 
@@ -100,10 +100,9 @@ test "ProgramIndex declaration maps round-trip (A1.1b)" {
     try std.testing.expectEqualStrings("list_len", idx.ufcs_alias_map.get("len").?);
 }
 
-// E0 (R5 §#4): the source-keyed caches partition by declaring source, so the
-// SAME name authored in two different modules lands two DISTINCT entries under
-// two source keys — never last-wins. The legacy global maps stay single-keyed
-// by name (one entry per name), so the compat readers are untouched.
+// The source-keyed caches partition by declaring source, so the SAME name
+// authored in two different modules lands two DISTINCT entries under two source
+// keys — never last-wins. The global maps stay single-keyed by name.
 test "ProgramIndex source-keyed caches partition same-name authors by source" {
     var idx = ProgramIndex.init(std.testing.allocator);
     defer idx.deinit();
@@ -132,9 +131,9 @@ test "ProgramIndex source-keyed caches partition same-name authors by source" {
     try std.testing.expect(idx.globals_by_source.get("a.sx").?.get("g").?.id == inst.GlobalId.fromIndex(0));
     try std.testing.expect(idx.globals_by_source.get("b.sx").?.get("g").?.id == inst.GlobalId.fromIndex(1));
 
-    // Compat readers: the legacy global maps stay keyed by NAME alone, so a
-    // same-name author is last-wins there — exactly ONE entry for `Foo` / `K`,
-    // unchanged by the source-keyed writes above.
+    // The global maps stay keyed by NAME alone, so a same-name author is
+    // last-wins there — exactly ONE entry for `Foo` / `K`, independent of the
+    // source-keyed writes above.
     idx.type_alias_map.put("Foo", .i64) catch unreachable;
     idx.type_alias_map.put("Foo", .f64) catch unreachable;
     try std.testing.expectEqual(@as(u32, 1), idx.type_alias_map.count());
@@ -194,7 +193,7 @@ const DimCtx = struct {
         return std.mem.eql(u8, name, "F") or std.mem.eql(u8, name, "K");
     }
     // This test ctx models no namespace imports — qualified-member consts
-    // (`m.CAP`, issue 0192) are exercised end-to-end by the corpus, not here.
+    // (`m.CAP`) are exercised end-to-end by the corpus, not here.
     pub fn lookupQualifiedConst(_: DimCtx, _: []const u8, _: []const u8) ?i64 {
         return null;
     }
@@ -226,7 +225,7 @@ fn nIdent(name: []const u8) ast.Node {
 }
 /// A backtick RAW identifier (`` `f64 ``): same spelling as a builtin type, but
 /// bound as a value — so a field access on it is an ordinary field read, never a
-/// numeric-limit fold (F0.11-7).
+/// numeric-limit fold.
 fn nIdentRaw(name: []const u8) ast.Node {
     return .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .identifier = .{ .name = name, .is_raw = true } } };
 }
@@ -502,7 +501,7 @@ test "evalConstFloatExpr folds comptime float expressions, halts on runtime leav
 
     // A NON-INTEGRAL float-const leaf (`F : f64 : 2.5`) resolves through the
     // float-leaf lookup — the int folder cannot fold it (2.5 is not integral), so
-    // an expression like `F + 0.25` (= 2.75) is now recognised as a compile-time
+    // an expression like `F + 0.25` (= 2.75) is recognised as a compile-time
     // float and rejected by the narrowing rule instead of silently truncating;
     // `F + 1.5` (= 4.0) is integral and folds. This completes the evaluator for
     // float-const-leaf expressions.
@@ -558,7 +557,7 @@ test "evalConstFloatExpr folds comptime float expressions, halts on runtime leav
     try std.testing.expect(eval(&divz, ctx) == null);
 }
 
-test "a backtick raw-shadow receiver is a field read, not a numeric-limit fold (F0.11-7)" {
+test "a backtick raw-shadow receiver is a field read, not a numeric-limit fold" {
     const evalf = pi.evalConstFloatExpr;
     const evali = pi.evalConstIntExpr;
     const ctx = DimCtx{};

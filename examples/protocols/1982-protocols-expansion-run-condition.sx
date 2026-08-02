@@ -9,8 +9,9 @@
 //
 // Both arrive as scheduled facts. Nothing in this program can still write a
 // `#context_extend`, so Context-ready publishes at once: the decided space
-// registers, the L6 layout assembles, and the exact `__sx_default_context` is
-// emitted BEFORE the run starts. The allocation below therefore runs on the
+// registers, the Context layout assembles in declaring-path order, and the
+// exact `__sx_default_context` is emitted BEFORE the run starts. The
+// allocation below therefore runs on the
 // VM's own heap, through the real thunks of the real default context — no
 // provisional layout, no shadow context, and no second evaluator.
 #import "modules/std.sx";

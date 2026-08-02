@@ -1,5 +1,5 @@
 error: array dimension must be a compile-time integer constant
-  --> examples/modules/0742-modules-namespaced-only-bare-const-not-visible.sx:13:12
+  --> examples/modules/0742-modules-namespaced-only-bare-const-not-visible.sx:12:12
    |
-13 |     arr : [DEP_LEN]i32 = ---;
+12 |     arr : [DEP_LEN]i32 = ---;
    |            ^^^^^^^

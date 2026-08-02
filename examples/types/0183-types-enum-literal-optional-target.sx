@@ -1,8 +1,5 @@
 // Enum literals flowing into OPTIONAL destinations resolve against the
-// optional's CHILD type and wrap (issue 0098). Pre-fix, the literal fell
-// into resolveVariantValue's non-enum fallback: variant 0, mis-typed as
-// the optional itself — `return .android_apk;` was observed by callers as
-// `.ios` or even null, layout-dependent.
+// optional's CHILD type and wrap.
 #import "modules/std.sx";
 
 Platform :: enum u8 { ios; android_apk; macos; linux; windows; }

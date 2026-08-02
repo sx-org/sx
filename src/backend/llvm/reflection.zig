@@ -11,8 +11,8 @@ const Inst = ir_inst.Inst;
 const TypeId = ir_types.TypeId;
 const StringId = ir_types.StringId;
 
-/// Reflection metadata + trace-frame emission (architecture phase A7.2),
-/// extracted from `LLVMEmitter`. A backend `*LLVMEmitter` facade (field `e`):
+/// Reflection metadata + trace-frame emission. A backend `*LLVMEmitter`
+/// facade (field `e`):
 /// the type/field/tag reflection NAME-ARRAY builders (memoized into
 /// `type_name_array`/`field_name_arrays`/`tag_name_array` on `LLVMEmitter`) and
 /// the error-trace `Frame` builders. Reads cached LLVM handles / the IR type
@@ -90,7 +90,7 @@ pub const Reflection = struct {
         return global;
     }
 
-    /// 1a-S2: the per-builtin runtime scalar tables — lazy `[N x i64]` (or
+    /// The per-builtin runtime scalar tables — lazy `[N x i64]` (or
     /// `[N x i1]` for flags), tag-indexed, one row per TypeId in table order.
     /// Values come from the SAME type-table queries the comptime folds use,
     /// so the static and dynamic answers can never diverge.
@@ -177,7 +177,7 @@ pub const Reflection = struct {
         return global;
     }
 
-    /// 1a-S3b master-index tables: `[N x ptr]` keyed by TypeId, each slot the
+    /// Field-family master-index tables: `[N x ptr]` keyed by TypeId, each slot the
     /// per-type member array (names / member-type tags / field offsets /
     /// variant values), or null for memberless types. Values from the same
     /// TypeTable queries the comptime folds use. Per-type arrays are built
@@ -266,7 +266,7 @@ pub const Reflection = struct {
         return global;
     }
 
-    // ── 1a-S3b-3: runtime `type_info(tp)` const records ────────────────
+    // ── Runtime `type_info(tp)` const records ────────────────
     //
     // One constant per TypeId whose BYTES match the sx `TypeInfo` tagged
     // union (tag word at 0, payload at tag_size — buildTypeInfo's layout
@@ -572,10 +572,10 @@ pub const Reflection = struct {
         // truth `memberTableLen`/`memberName` (types.zig) — NOT a per-kind switch
         // here. This guarantees the array length always matches `emitFieldNameGet`'s
         // GEP sizing (which also derives from `memberTableLen`), so a kind covered
-        // by one but not the other can never reappear (that mismatch was issue 0195:
-        // tuples/arrays counted N members but built a zero-length name array → an
-        // out-of-bounds GEP → segfault). A member with no name (positional tuple
-        // element, array/vector/slice element, optional child) yields `.empty` →
+        // by one but not the other cannot exist: N counted members against a
+        // zero-length name array is an out-of-bounds GEP → segfault. A member
+        // with no name (positional tuple element, array/vector/slice element,
+        // optional child) yields `.empty` →
         // "", keeping one slot per member so `field_name(T, i)` is always
         // in-bounds.
         const n_members: i64 = self.e.ir_mod.types.memberTableLen(struct_type) orelse 0;

@@ -1,0 +1,51 @@
+// A value-less `return` in a function whose return type demands a value is a
+// front-end error. Both spellings are the same statement — `return;` and a bare
+// `return` a line break ended — so both are refused, and the message names the
+// type the slot wanted.
+//
+// Two shapes legitimately return nothing and are untouched: a `-> void` body,
+// and a PURE failable (`-> !Named`), where `return;` IS the success exit.
+#import "modules/std.sx";
+
+Broken :: error { Bad }
+
+// Refused: `-> i32` wants a value.
+early :: (x: i32) -> i32 {
+    if x > 0 {
+        return;
+    }
+    x
+}
+
+// Refused the same way without the terminator — the line break ends it.
+early_bare :: (x: i32) -> i32 {
+    if x > 0 {
+        return
+    }
+    x
+}
+
+// Refused: a value-carrying failable has a value slot to fill.
+early_failable :: (x: i32) -> (i32, !Broken) {
+    if x > 0 { return; }
+    raise .Bad;
+}
+
+// Legal: a pure failable's whole return IS the error channel, so a value-less
+// `return` is its success exit.
+succeed :: (x: i32) -> !Broken {
+    if x > 0 { return; }
+    raise .Bad;
+}
+
+// Legal: nothing is demanded of a void body.
+nothing :: () {
+    return;
+}
+
+main :: () -> i32 {
+    nothing();
+    succeed(1) catch { 0 };
+    v := early_failable(1) catch { 0 };
+    early(1) + early_bare(1) + v
+}

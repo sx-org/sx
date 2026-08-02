@@ -1,4 +1,4 @@
-// M2.1(a) — class-level constants on a sx-defined `#objc_class`.
+// class-level constants on a sx-defined `#objc_class`.
 //
 // `name :: Type = expr;` inside the class block is sugar for
 // `name :: () -> Type => expr;` — a niladic class method with an

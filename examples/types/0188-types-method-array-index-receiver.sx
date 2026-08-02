@@ -1,10 +1,7 @@
 // A `*self` method called directly on an array-index place (`arr[i].method()`)
-// must mutate the LIVE array slot, not a throwaway copy. `fixupMethodReceiver`
-// now takes the real address of `.index_expr`/`.deref_expr` receivers (via
-// `lowerExprAsPtr`), mirroring the explicit-argument path — instead of falling
-// through to an alloca+store-of-value that the callee then mutates in vain.
-//
-// Regression (issue 0145).
+// mutates the LIVE array slot, not a throwaway copy. `fixupMethodReceiver`
+// takes the real address of `.index_expr`/`.deref_expr` receivers (via
+// `lowerExprAsPtr`), mirroring the explicit-argument path.
 #import "modules/std.sx";
 
 S :: struct {

@@ -1,4 +1,4 @@
-// `emit.Modifier` and the library's UFCS modifiers (revision §13.2).
+// `emit.Modifier` and the library's UFCS modifiers.
 //
 // A modifier is an ordinary value carried by a component, and a modifier call is
 // an ordinary value operation — chaining one does not intercept anything.

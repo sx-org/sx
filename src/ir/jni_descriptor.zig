@@ -1,4 +1,4 @@
-// JNI descriptor derivation for #jni_class methods (Phase 2 step 2.8).
+// JNI descriptor derivation for #jni_class methods.
 //
 // Walks sx parameter / return type AST nodes through the standard JNI
 // signature alphabet (JLS §4.3.3 and JNI spec §3.3) to produce the
@@ -15,11 +15,11 @@
 //   f32           → F   (jfloat)
 //   f64           → D   (jdouble)
 //   []T           → [<elem>
-//   [*]T          → [<elem>   (sx many-pointer treated as array for now)
+//   [*]T          → [<elem>   (sx many-pointer treated as array)
 //   *Self         → L<enclosing-runtime-path>;
-//   *Foo          → L<Foo's runtime path>;   (cross-class — step 2.9)
+//   *Foo          → L<Foo's runtime path>;   (cross-class)
 //
-// `#jni_method_descriptor("...")` (step 2.6) overrides this whole walk
+// `#jni_method_descriptor("...")` overrides this whole walk
 // when set; sema/lowering use the override verbatim.
 
 const std = @import("std");
@@ -155,9 +155,7 @@ fn primitiveChar(name: []const u8) ?u8 {
 /// Whether emit_llvm's `jni_msg_send` lowering can dispatch a Call<T>Method
 /// for this return type. Anything outside this set falls into the `else`
 /// arm of the switches in `emit_llvm.zig` and would silently produce
-/// `LLVMGetUndef` — a footgun that previously shipped (chess Android touch
-/// went undef because `MotionEvent.getX() -> f32` wasn't in the switch).
-/// Pointer-typed returns route through `CallObjectMethod`.
+/// `LLVMGetUndef`. Pointer-typed returns route through `CallObjectMethod`.
 pub fn isJniReturnTypeSupported(table: *const types.TypeTable, ret_ty: TypeId) bool {
     return switch (ret_ty) {
         .void, .bool, .i32, .i64, .f32, .f64 => true,

@@ -1,15 +1,14 @@
-// POSITIVE coverage for validated callable-value calls (issue 0188):
+// POSITIVE coverage for validated callable-value calls:
 // correct-arity calls across the surface keep working, coerced args
-// (issue 0186) keep working, and a runtime TUPLE spread `f(..pair)`
+// keep working, and a runtime TUPLE spread `f(..pair)`
 // expands into positional args (specs "Tuple parallels") for every
 // callee shape — closure value, struct-field closure, fn-pointer
 // value, top-level fn, and slice-variadic fn. (Value-spread expansion
 // itself is locked in packs/0830; this file owns the VALIDATION side.)
 // Args AFTER a spread are target-typed against their true (expanded)
 // parameter position — a `null` into `?T`, a struct literal, and a
-// coercible i32 all land on the right param (issue 0239 part 2) — and
-// default-arg fill counts a spread by its tuple WIDTH, not as one arg
-// (issue 0188 review F2).
+// coercible i32 all land on the right param — and default-arg fill
+// counts a spread by its tuple WIDTH, not as one arg.
 #import "modules/std.sx";
 
 S :: struct { cb: Closure(i64, i64) -> i64; }
@@ -65,12 +64,12 @@ main :: () {
     arr := .[4, 5, 6];
     print("varslice: {}\n", sum(..arr));
 
-    // coerced arg (issue 0186): concrete int into a `?i64` closure param
+    // coerced arg: concrete int into a `?i64` closure param
     opt := (x: ?i64) -> i64 => x ?? -1;
     print("coerce some: {}\n", opt(7));
     print("coerce null: {}\n", opt(null));
 
-    // post-spread target-typing (issue 0239 part 2): args AFTER a spread
+    // post-spread target-typing: args AFTER a spread
     // land on their true parameter — `null` into the ?i64 (not a
     // present-zero at the wrong slot), through both callee shapes
     optc := (a: i64, b: i64, c: ?i64) -> i64 => c ?? -1;
@@ -81,7 +80,7 @@ main :: () {
     // …a struct literal and a coercible i32 after the spread
     print("post-spread struct: {}\n", mk(..pair, .{ x = 3, y = 4 }, 5));
 
-    // default-arg fill counts the spread's WIDTH (issue 0188 review F2):
+    // default-arg fill counts the spread's WIDTH:
     // a 2-tuple supplies both params (no default), a 1-tuple fills `b = 99`
     print("defaults full spread: {}\n", withdef(..pair));
     one_t := .{7,};

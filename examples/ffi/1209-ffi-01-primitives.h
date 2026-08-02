@@ -1,8 +1,5 @@
-// FFI baseline test helpers — one trivial roundtrip per primitive C
-// type so the sx-side test can verify both the parameter ABI and the
-// return-value ABI per type. Locking these in BEFORE the Phase 1
-// `#objc_call` / `#jni_call` work so any future lowering change that
-// silently regresses primitive marshalling shows up here.
+// One trivial roundtrip per primitive C type, so the sx-side test verifies
+// both the parameter ABI and the return-value ABI per type.
 
 int                ffi_id_int   (int                v);
 unsigned int       ffi_id_uint  (unsigned int       v);

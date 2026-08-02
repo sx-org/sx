@@ -1,13 +1,11 @@
-// `*P` — the borrowed protocol VIEW (erasure model, first slice). A
-// pointer-to-protocol parameter receives a view of existing storage:
+// `*P` — the borrowed protocol VIEW. A pointer-to-protocol parameter receives
+// a view of existing storage:
 //   - a concrete LVALUE arg builds the view in place (ctx = the lvalue's
 //     address — mutations through the view reach the original);
 //   - a pointer-to-concrete arg views its pointee;
 //   - `@p` on an owned protocol value lends a plain pointer to it;
 //   - protocol methods dispatch through `*P` (`vtable` AND `inline` layouts).
-// Regression (issues 0303/0304): the lvalue case used to emit an ill-typed
-// call (LLVM verifier abort, no diagnostic); the rvalue case is pinned as a
-// refusal in diagnostics/1251.
+// The rvalue case is pinned as a refusal in diagnostics/1251.
 #import "modules/std.sx";
 
 Sizable :: protocol vtable { size :: (self: *Self) -> i64; grow :: (self: *Self, by: i64); }

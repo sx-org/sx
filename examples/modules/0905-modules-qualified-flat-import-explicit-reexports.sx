@@ -1,4 +1,4 @@
-// Positive companion to issue 0326: explicit aliases are declarations authored
+// Explicit aliases are declarations authored
 // by the facade and therefore remain namespace members. Own constants/globals
 // and function aliases likewise remain accessible.
 

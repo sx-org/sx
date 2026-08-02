@@ -51,7 +51,7 @@ sm_first :: (a: i32, b: i32) -> (i32, !) {
     return v;
 }
 
-// --- Composition (ERR E5.1): failable closures, widening, generics ---
+// --- Composition: failable closures, widening, generics ---
 
 // Closure(...) param, try-propagated (the env is carried)
 sm_run :: (cb: Closure(i32) -> (i32, !SmokeErr), n: i32) -> (i32, !SmokeErr) {

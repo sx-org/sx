@@ -1,4 +1,4 @@
-// ASM stream — global (module-scope) `asm { … }` executed via the JIT (`sx run`),
+// Global (module-scope) `asm { … }` executed via the JIT (`sx run`),
 // NOT AOT. `sx run` compiles the whole module to an in-memory object (the
 // integrated assembler assembles the `module asm` block into it), then ORC
 // relocates and runs it — so a module-asm symbol IS resolvable at JIT main

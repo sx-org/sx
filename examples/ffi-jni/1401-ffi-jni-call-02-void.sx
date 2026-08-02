@@ -1,4 +1,4 @@
-// Phase 1 step 1.15 (PLAN-FFI.md): `#jni_call(void)` codegen.
+// `#jni_call(void)` codegen.
 //
 // `#jni_call(T)(env, target, "method_name", "(Sig)RetSig", args...)`
 // dispatches a JNI instance-method call. The lowering hand-emits the
@@ -9,8 +9,7 @@
 //   mid = ifs->GetMethodID(env, cls, name, sig)
 //   ifs->Call<Type>Method(env, target, mid, args...)
 //
-// Phase 1.17 introduces method-ID caching via static slots populated
-// at module-init; this step keeps the per-call-site lookup.
+// The lookup is per call site.
 //
 // Host can't dlopen libjvm via the JIT, so the JNI body is gated
 // behind `inline if OS == .android`. The macOS test path strips the

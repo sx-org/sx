@@ -1,93 +1,93 @@
 error: a 'View' value is never 'Plain': it is not a member of it
-  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:50:14
+  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:49:14
    |
-50 |     plain := v.(Plain);
+49 |     plain := v.(Plain);
    |              ^^^^^^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
    |
-50 |     plain := v.(Plain);
+49 |     plain := v.(Plain);
    |              ^^^^^^^^^
 
 error: a 'View' value is never 'Alien': it is not a member of it
-  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:51:14
+  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:50:14
    |
-51 |     alien := v.(Alien);
+50 |     alien := v.(Alien);
    |              ^^^^^^^^^
 
 help: 'Alien' is a member of 'Elsewhere', and a type belongs to one set
    |
-51 |     alien := v.(Alien);
+50 |     alien := v.(Alien);
    |              ^^^^^^^^^
 
 error: a 'View' value is never 'Plain': it is not a member of it
-  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:55:13
+  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:54:13
    |
-55 |     if p := v.(?Plain) { print("{}\n", p.text); }
+54 |     if p := v.(?Plain) { print("{}\n", p.text); }
    |             ^^^^^^^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
    |
-55 |     if p := v.(?Plain) { print("{}\n", p.text); }
+54 |     if p := v.(?Plain) { print("{}\n", p.text); }
    |             ^^^^^^^^^^
 
 error: a 'View' value is never 'Plain': it is not a member of it
-  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:58:17
+  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:57:17
    |
-58 |     stranger := v.(Stranger);
+57 |     stranger := v.(Stranger);
    |                 ^^^^^^^^^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
    |
-58 |     stranger := v.(Stranger);
+57 |     stranger := v.(Stranger);
    |                 ^^^^^^^^^^^^
 
 error: a 'View' value is never 'Plain': it is not a member of it
-  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:44:37
+  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:43:37
    |
-44 | peek :: ($T: Type, v: View) -> T => v.(T);
+43 | peek :: ($T: Type, v: View) -> T => v.(T);
    |                                     ^^^^^
 
 note: instantiated from here
-  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:62:15
+  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:61:15
    |
-62 |     peeked := peek(Plain, v);
+61 |     peeked := peek(Plain, v);
    |               ^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
    |
-44 | peek :: ($T: Type, v: View) -> T => v.(T);
+43 | peek :: ($T: Type, v: View) -> T => v.(T);
    |                                     ^^^^^
 
 error: 'View' holds one member at a time, so reading a 'Label' out of it can fail, and 'xx' does not say what happens then
-  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:66:21
+  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:65:21
    |
-66 |     forced: Label = xx v;
+65 |     forced: Label = xx v;
    |                     ^^^^
 
 help: ask with a temperament: '.(Label)' panics on another member, '.(?Label)' answers null
    |
-66 |     forced: Label = xx v;
+65 |     forced: Label = xx v;
    |                     ^^^^
 
 error: 'View' holds one member at a time, so reading a 'Label' out of it can fail, and 'xx' does not say what happens then
-  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:67:41
+  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:66:41
    |
-67 |     print("{} {}\n", forced.text, takes(xx v));
+66 |     print("{} {}\n", forced.text, takes(xx v));
    |                                         ^^^^
 
 help: ask with a temperament: '.(Label)' panics on another member, '.(?Label)' answers null
    |
-67 |     print("{} {}\n", forced.text, takes(xx v));
+66 |     print("{} {}\n", forced.text, takes(xx v));
    |                                         ^^^^
 
 error: a 'View' value is never 'Plain': it is not a member of it
-  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:68:22
+  --> examples/diagnostics/2044-diagnostics-open-set-downcast.sx:67:22
    |
-68 |     strange: Plain = xx v;
+67 |     strange: Plain = xx v;
    |                      ^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
    |
-68 |     strange: Plain = xx v;
+67 |     strange: Plain = xx v;
    |                      ^^^^

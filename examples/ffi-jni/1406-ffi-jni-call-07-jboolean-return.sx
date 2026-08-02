@@ -1,4 +1,4 @@
-// Phase 1 step 1.21 (PLAN-FFI.md): `#jni_call(bool)` (jboolean
+// `#jni_call(bool)` (jboolean
 // return). JNI's `jboolean` is a single-byte unsigned integer (0 or
 // 1) on every supported ABI; sx's `bool` lowers to LLVM `i1` but the
 // arg/return coercion path widens it to the byte slot the JNI

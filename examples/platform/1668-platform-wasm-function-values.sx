@@ -1,6 +1,6 @@
 // Bare function values occupy one target pointer word in every destination:
 // inferred and annotated locals, aggregate fields, assignments, and arguments.
-// Regression (issue 0318): wasm32 must not inherit the legacy 64-bit word size.
+// wasm32 must not inherit a 64-bit word size.
 #import "modules/std/core.sx";
 
 Callback :: (ctx: *void, data: string) -> bool;

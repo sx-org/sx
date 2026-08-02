@@ -33,7 +33,7 @@ main :: () {
     print("string: {}\n", t.(SliceRaw).len);
 
     // protocol (default layout) -> ProtocolRaw, both spellings. The value
-    // OWNS its ctx (E4): the recovered pointer is the heap copy — a
+    // OWNS its ctx: the recovered pointer is the heap copy — a
     // faithful Widget that is NOT w's address.
     w := Widget{ value = 7 };
     sz := w.(Sizable);

@@ -9,7 +9,6 @@
 //
 // A set is not parameterized either, so a head spelled with type arguments names
 // no set at all.
-// Expected: exit 1.
 #import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 64 }) {

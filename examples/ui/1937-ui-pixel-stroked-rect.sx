@@ -1,4 +1,4 @@
-// Host-GPU pixel golden for stroked rects (issue 0357): a fill and a
+// Host-GPU pixel golden for stroked rects: a fill and a
 // stroke are two independent colours, and the ring composites ON the
 // fill rather than replacing it.
 //
@@ -11,11 +11,11 @@
 // The scene is built straight on RenderContext so every frame is exact
 // and the sampled pixels do not move with host font metrics.
 //
-// Run — macOS renders through the windowless Metal backend:
+// macOS renders through the windowless Metal backend:
 //     sx run examples/ui/1937-ui-pixel-stroked-rect.sx
 // Other desktops go GL over a hidden SDL window:
 //     sx run --lflags -lSDL3 -L /opt/homebrew/lib examples/ui/1937-ui-pixel-stroked-rect.sx
-// Regenerate the reference consciously:
+// Regenerate the reference:
 //     SX_UPDATE_PIXELS=1 sx run examples/ui/1937-ui-pixel-stroked-rect.sx
 //
 // NOT part of the byte-exact corpus (no expected/ files), same contract

@@ -53,7 +53,7 @@ CGRect :: struct {
     height: f64;
 }
 
-// ── Foundation utility classes (Phase 3.2 C1) ─────────────────────────
+// ── Foundation utility classes ─────────────────────────
 // Declarative `#objc_class` bindings replace the previous
 // `objc_getClass(...) + #objc_call(T)(...)` pattern. Each method's sx-
 // side name maps to its Obj-C selector via the default mangling rule
@@ -90,7 +90,7 @@ NSSet :: #objc_class("NSSet") extern {
     anyObject :: (self: *Self) -> *void;
 }
 
-// ── Notifications + Bundle (Phase 3.2 C2) ──────────────────────────────
+// ── Notifications + Bundle ──────────────────────────────
 
 NSNotification :: #objc_class("NSNotification") extern {
     #extends NSObject;
@@ -109,7 +109,7 @@ NSNotificationCenter :: #objc_class("NSNotificationCenter") extern {
     addObserver_selector_name_object :: (self: *Self, observer: *void, sel: *void, name: *NSString, obj: *void);
 }
 
-// ── RunLoop + display timing (Phase 3.2 C3) ────────────────────────────
+// ── RunLoop + display timing ────────────────────────────
 
 NSRunLoop :: #objc_class("NSRunLoop") extern {
     #extends NSObject;
@@ -124,10 +124,10 @@ CADisplayLink :: #objc_class("CADisplayLink") extern {
     duration :: (self: *Self) -> f64;
 }
 
-// ── View tree + GL drawables (Phase 3.2 C5) ────────────────────────────
+// ── View tree + GL drawables ────────────────────────────
 // (Declared before UIView so `layer :: (...) -> *CALayer` can reference it.)
 
-// CALayer / CAEAGLLayer / CAMetalLayer moved to modules/ffi/quartzcore.sx
+// CALayer / CAEAGLLayer / CAMetalLayer live in modules/ffi/quartzcore.sx
 // (shared with gpu/metal.sx — one decl per runtime class).
 
 EAGLContext :: #objc_class("EAGLContext") extern {
@@ -139,7 +139,7 @@ EAGLContext :: #objc_class("EAGLContext") extern {
     presentRenderbuffer              :: (self: *Self, target: u32) -> i8;
 }
 
-// ── UIKit chrome (Phase 3.2 C4) ────────────────────────────────────────
+// ── UIKit chrome ────────────────────────────────────────
 
 UIScreen :: #objc_class("UIScreen") extern {
     #extends NSObject;

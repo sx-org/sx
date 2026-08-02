@@ -1,13 +1,13 @@
-// std.http — Q3.3 fiber handler model (Config.fibers, no thread pool).
+// std.http — fiber handler model (Config.fibers, no thread pool).
 //
 // Handlers run as M:1 FIBERS on the loop thread (sched.sx behind the
 // FiberRunner seam — the provider module fiber_sched.sx is opt-in, so
 // non-fiber programs never compile the aarch64 context-switch asm).
 // The win: a handler may block-style `req.read_body` — the FIBER suspends
 // and the loop's body pump wakes it when more decoded bytes arrive — so
-// streaming request bodies work WITHOUT a pool (Q3.1's restriction,
-// lifted; init now accepts stream_request_body with fibers). Cooperative:
-// everything still runs on the loop thread (the tid assertions prove it).
+// streaming request bodies work WITHOUT a pool (init accepts
+// stream_request_body with fibers). Cooperative: everything still runs on the
+// loop thread (the tid assertions prove it).
 //
 // Cases (fiber server: no pool, stream_request_body = true):
 //   1. GET /ping → 200 pong (fiber dispatch of a bodyless request).
@@ -186,7 +186,7 @@ main :: () -> i32 {
             request_count = 50,
             max_conn = 4,
             max_body = 4096,             // fiber streaming is exempt too
-            stream_request_body = true,  // no pool: REQUIRES fibers (Q3.3)
+            stream_request_body = true,  // no pool: REQUIRES fibers
             fibers = xx runner,
         };
         srv, se := http.Server.init(cfg, route, xx *obs);
@@ -204,18 +204,17 @@ main :: () -> i32 {
         }
 
         // ── case 1b: pipelined requests complete in ONE tick ──────────
-        // (Q3.3-review MED): the second request's fiber is dispatched by
-        // finalize_fibers' write→serve path AFTER the tick's first drive —
-        // the re-drive loop must run it in the SAME tick (pre-fix it slept
-        // out the next tick's whole wait). The pin is measured SERVER-SIDE
-        // (requests_served delta across the single tick), where it is
-        // deterministic. Two loopback-visibility races voided the original
-        // single-shot wire check (~25% flake, diagnosed 2026-07-03): the
-        // request bytes can surface to the server's reader in parts
-        // (bytes_in < the pipeline → void trial, fresh conn), and the
-        // SECOND response's bytes can reach the client's reader a beat
-        // after the server wrote them — so the wire check re-reads on a
-        // bounded budget instead of racing one read against the kernel.
+        // The second request's fiber is dispatched by finalize_fibers'
+        // write→serve path AFTER the tick's first drive — the re-drive loop
+        // must run it in the SAME tick, not sleep out the next tick's whole
+        // wait. The pin is measured SERVER-SIDE (requests_served delta across
+        // the single tick), where it is deterministic. Two loopback-visibility
+        // races rule out a single-shot wire check: the request bytes can
+        // surface to the server's reader in parts (bytes_in < the pipeline →
+        // void trial, fresh conn), and the SECOND response's bytes can reach
+        // the client's reader a beat after the server wrote them — so the wire
+        // check re-reads on a bounded budget instead of racing one read against
+        // the kernel.
         preq := "GET /ping HTTP/1.1\r\nHost: t\r\n\r\nGET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
         pongs : i64 = 0;
         ptrials : i64 = 0;

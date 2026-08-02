@@ -1,8 +1,6 @@
-// Passing a `*T` where a `T` value is expected is caught at the call site —
-// not only for `for xs (*m)` loop captures (see 215) but for any pointer,
-// here a `*Move` parameter forwarded into a by-value parameter. Without the
-// check this slipped through to the LLVM verifier as "Call parameter type
-// does not match function signature".
+// Passing a `*T` where a `T` value is expected is caught at the call site for any
+// pointer, not only a `for xs (*m)` loop capture (see 215) — here a `*Move`
+// parameter forwarded into a by-value parameter.
 
 #import "modules/std.sx";
 

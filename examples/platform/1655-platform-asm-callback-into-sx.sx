@@ -1,4 +1,4 @@
-// ASM stream — the round trip: sx → asm → sx. A global-asm routine (`_caller`)
+// The round trip: sx → asm → sx. A global-asm routine (`_caller`)
 // CALLS BACK into an sx function (`cb`) by its symbol, then returns. For the asm
 // `bl _cb` to resolve, the sx callback needs EXTERNAL LINKAGE and a stable C
 // symbol — that is exactly what `export` provides (it also implies the C ABI, so

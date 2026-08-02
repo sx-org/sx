@@ -1,4 +1,4 @@
-// The compose library's stacks and containers (revision §13.3).
+// The compose library's stacks and containers.
 //
 // A container TAKES the block itself: `vstack(2.0) { child; child; }`. The
 // standalone expressions in that block are its children — no terminal marker on

@@ -1,4 +1,4 @@
-// ASM stream Phase E — x86_64 multi-output asm: `divq` produces quotient in rax
+// x86_64 multi-output asm: `divq` produces quotient in rax
 // and remainder in rdx, returned as a `(quot, rem)` tuple. Two `={rax}`/`={rdx}`
 // value outputs ⇒ LLVM returns a `{ i64, i64 }` struct, which IS sx's tuple
 // representation (so `q, r := …` destructures it directly). x86-pinned via

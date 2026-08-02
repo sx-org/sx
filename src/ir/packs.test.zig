@@ -1,4 +1,4 @@
-// Tests for packs.zig (PackResolver) — pack-aware TYPE-position resolution.
+// Pack-aware TYPE-position resolution (`PackResolver`).
 const std = @import("std");
 const ast = @import("../ast.zig");
 const errors = @import("../errors.zig");

@@ -1,6 +1,5 @@
 // Library sketch: an EMITTER. Nothing is retained — each reached expression is
-// built into frame scratch, rendered, and dropped before `expression` returns
-// (fluent spec §6.4, §13.1).
+// built into frame scratch, rendered, and dropped before `expression` returns.
 //
 // This is a sketch, not a standard-library product: `emit` / `rule` / `pad` are
 // this file's own helpers, and `Ascii` is this file's own sink. The language

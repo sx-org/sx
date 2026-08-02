@@ -1,12 +1,11 @@
-// Inline `xx` cast as the first argument to a struct static method must
-// flow the leading param's type into the cast — otherwise an `xx ptr`
-// targeting a protocol param falls back to i64 and the call frame is
-// corrupted, SIGTRAPping when the body dispatches through the field.
+// Inline `xx` cast as the first argument to a struct static method takes its
+// target type from the leading param, so an `xx ptr` targeting a protocol
+// param erases to that protocol rather than falling back to i64.
 //
-// Three call shapes that must all succeed:
-//   1. Named-variable receiver: `a : Allocator = xx p; T.init(a, ...)`
-//   2. Free function with inline xx: `make_t(xx p, ...)`
-//   3. Static method with inline xx: `T.init(xx p, ...)`  ← used to crash
+// Three call shapes:
+// 1. Named-variable receiver: `a : Allocator = xx p; T.init(a, ...)`
+// 2. Free function with inline xx: `make_t(xx p, ...)`
+// 3. Static method with inline xx: `T.init(xx p, ...)`
 
 #import "modules/std.sx";
 #import "modules/std/mem.sx";

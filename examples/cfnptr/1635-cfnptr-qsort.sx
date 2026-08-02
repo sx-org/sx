@@ -1,4 +1,4 @@
-// PLAN-HTTPZ C2: an sx `abi(.c)` function passes by name as a
+// An sx `abi(.c)` function passes by name as a
 // typed C function pointer — libc qsort drives an sx comparator.
 #import "modules/std.sx";
 

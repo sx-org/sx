@@ -1,4 +1,4 @@
-// Phase 0 baseline (PLAN-FFI.md step 0.3): structs >16 bytes passed
+// Structs >16 bytes passed
 // by value into a C `extern` fn and returned by value. Exercises
 // the byval-pointer ABI path — the caller copies the struct onto its
 // stack and hands a pointer to the callee; on AAPCS64 the return

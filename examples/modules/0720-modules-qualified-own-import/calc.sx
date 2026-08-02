@@ -2,7 +2,7 @@
 // (`calc :: #import …`), yet its own body calls `triple` / `base` from
 // calc.sx's OWN flat `#import "util.sx"`. The qualified alias `calc.compute`
 // must lower in calc.sx's source context so those own-import callees stay
-// visible — issue 0100 F1.
+// visible.
 #import "util.sx";
 
 compute :: () -> i64 { return triple(base()); }

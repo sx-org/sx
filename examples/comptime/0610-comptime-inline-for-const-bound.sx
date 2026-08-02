@@ -1,13 +1,11 @@
 // `inline for 0..K` with a named-const or constant-foldable bound unrolls at
 // compile time, just like a literal bound.
 //
-// Regression (issue 0083): the inline-for bound folder (`evalComptimeInt`) only
-// handled literals, comptime cursors, and `<pack>.len`, so `inline for 0..M`
-// (M a module const) and `inline for 0..(M + 1)` (a const expression) both
-// failed with "range end is not a compile-time integer". `evalComptimeInt` now
-// delegates to the single shared const-int evaluator
-// (`program_index.evalConstIntExpr`), so the inline-for bound and an array
-// dimension fold the same shapes to the same value.
+// The inline-for bound folder `evalComptimeInt` delegates to the single shared
+// const-int evaluator (`program_index.evalConstIntExpr`), so the inline-for
+// bound and an array dimension fold the same shapes to the same value —
+// `inline for 0..M` (M a module const) and `inline for 0..(M + 1)` (a const
+// expression) included.
 #import "modules/std.sx";
 
 M :: 3;

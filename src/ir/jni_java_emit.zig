@@ -1,5 +1,4 @@
-// Java source emission for `#jni_main #jni_class("...") { ... }` decls
-// (FFI plan, #jni_main pipeline slice 1).
+// Java source emission for `#jni_main #jni_class("...") { ... }` decls.
 //
 // Given a `RuntimeClassDecl` whose `is_main` flag is set, emit a `.java`
 // source file that:
@@ -13,13 +12,13 @@
 //     that calls `super` then a private native delegate `sx_<method>`;
 //   - emits the matching `private native ... sx_<method>(...)` decls.
 //
-// The downstream pipeline (slice 2+) feeds this through `javac` + `d8`
-// and bundles the resulting `.dex` into the APK. Slice 3 wires the
-// manifest's `<activity android:name="...">` to point at this class.
-// Slice 4 emits a synthetic `JNI_OnLoad` that calls `RegisterNatives`
-// to bind the `sx_<method>` symbols.
+// The downstream pipeline feeds this through `javac` + `d8`, bundles the
+// resulting `.dex` into the APK, and points the synthesized manifest's
+// `<activity android:name="...">` at this class. Each `private native
+// sx_<method>` binds by name to the .so's mangled
+// `Java_<pkg>_<Class>_sx_1<method>` export (`jni_descriptor.zig`).
 //
-// Type matrix covered today:
+// Type matrix covered:
 //   - void return + primitive returns (i8/i16/i32/i64, u8/u16, bool,
 //     f32/f64)
 //   - `(self: *Self)` plus primitive params
@@ -168,7 +167,7 @@ pub fn emitJavaSource(
     for (fcd.members) |m| switch (m) {
         .method => |md| {
             if (md.body == null) continue;
-            if (md.is_static) continue; // TODO: static native handling
+            if (md.is_static) continue; // static natives are not emitted
             try emitOverride(allocator, &buf, md, opts);
         },
         else => {},
@@ -330,8 +329,8 @@ fn emitJavaType(
                     return;
                 }
             }
-            // Unknown alias — pass through dotted as best-effort. Sema
-            // should catch this earlier; tolerate for now.
+            // Unknown alias — passed through dotted as best-effort; sema
+            // catches this earlier.
             try appendDotted(allocator, buf, target_name);
         },
         else => return EmitError.UnsupportedType,

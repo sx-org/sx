@@ -1,4 +1,4 @@
-// `raise` rejections (ERR step E1.3):
+// `raise` rejections:
 //   - `raise` is only valid inside a failable function,
 //   - a literal `raise error.X` must name a tag in the function's set,
 //   - a variable `raise e` must carry a set that is a subset of the

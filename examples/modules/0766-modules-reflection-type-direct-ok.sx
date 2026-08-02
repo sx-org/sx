@@ -1,8 +1,8 @@
 // The pass side of 0765: a DIRECTLY imported module's types are bare-visible in
 // reflection / type-arg slots (`size_of(Nums)`, `size_of(*COnly)`) and in a
-// typed array-literal annotation (`Nums.[...]`) — single-hop visibility, so a
-// 1-flat-hop type resolves exactly as before the E4 gate. Confirms the gate
-// only rejects the 2-hop case (0765), never a directly-imported reference.
+// typed array-literal annotation (`Nums.[...]`) — single-hop visibility.
+// The visibility gate only rejects the 2-hop case (0765), never a
+// directly-imported reference.
 
 #import "modules/std.sx";
 #import "0766-modules-reflection-type-direct-ok/c.sx";

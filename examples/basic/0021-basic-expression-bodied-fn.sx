@@ -1,4 +1,4 @@
-// M1.0 — expression-bodied function declarations.
+// Expression-bodied function declarations.
 //
 // sx's `=>` body form (already used for lambdas) extends to
 // top-level and struct-member function declarations:

@@ -2,10 +2,9 @@
 #import "modules/gpu/types.sx";
 
 // GPU is the rendering-API abstraction. Concrete backends live as siblings
-// of this file: `metal.sx` (iOS, eventually macOS), `vulkan.sx` (Linux/
-// Android, plus macOS via MoltenVK), `webgpu.sx` (wasm). The SDL-backed
-// GL renderer used by the desktop+wasm path stays as-is until those
-// backends land.
+// of this file: `metal.sx` (iOS), `vulkan.sx` (Linux/Android, plus macOS
+// via MoltenVK), `webgpu.sx` (wasm). The desktop+wasm path uses the
+// SDL-backed GL renderer.
 
 // #identity: a GPU backend is a named long-lived singleton (a Metal
 // device+layer, a GLES context owner) reached through concrete handles

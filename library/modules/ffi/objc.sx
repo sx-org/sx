@@ -7,10 +7,9 @@
 //     msg_fn : (recv: *void, sel: *void, arg: [*]u8) -> *void = xx objc_msgSend;
 //     result := msg_fn(receiver, selector, c_str);
 
-// std is required for real: the `impl Into(*NSString) for string`
-// bridge below registers only if `Into` is nameable in THIS module's
-// scope (issue 0346 — an impl head that doesn't resolve is silently
-// dropped and every `xx` site degrades to a reinterpret).
+// std is required for real: the `impl Into(*NSString) for string` bridge
+// below needs `Into` nameable in THIS module's scope — an impl head whose
+// protocol does not resolve is a compile error.
 #import "modules/std.sx";
 
 // ─── Obj-C primitive type aliases ───────────────────────────────────────
@@ -22,10 +21,8 @@
 //   Class — a class object pointer
 //   SEL   — a registered selector
 //
-// `Class(T)` parameterization (phantom-typed, with `#extends`-aware
-// covariance) is a follow-up — needs compiler-level type-check support.
-// For now, `Class` alone is the only form; assignments are not checked
-// against the referent's class hierarchy.
+// `Class` alone is the only form; assignments are not checked against the
+// referent's class hierarchy.
 id    :: *void;
 Class :: *void;
 SEL   :: *void;
@@ -80,12 +77,12 @@ objc_registerClassPair :: (cls: *void)                                        ->
 // NSLog takes an NSString format; the variadic tail is not exposed here.
 NSLog :: (fmt: *NSString) extern;
 
-// ─── NSObject (Phase 4 / M4.A) ───────────────────────────────────────────
+// ─── NSObject ──────────────────────────────────────────────────────────
 // Root of every Obj-C class hierarchy. Apple's runtime supplies the IMPs;
 // sx declares the method surface so user code can write
 // `defer view.release();` and `view.retain()` directly instead of going
-// through `objc_msgSend` casts. M2.3's `#extends`-aware dispatch finds
-// these methods automatically once a class roots its `#extends` chain at
+// through `objc_msgSend` casts. `#extends`-aware dispatch finds these
+// methods automatically once a class roots its `#extends` chain at
 // NSObject (runtime classes in uikit.sx etc. add `#extends NSObject;` to
 // inherit the surface).
 //
@@ -131,7 +128,7 @@ impl Into(*NSString) for string {
     }
 }
 
-// ─── Autoreleasepool (M4.A) ──────────────────────────────────────────────
+// ─── Autoreleasepool ─────────────────────────────────────────────────────
 // Foundation factory methods (`NSString.stringWithUTF8String:`,
 // `[NSArray array]`, ...) return autoreleased objects — valid until the
 // current pool drains. Wrap such code in `autoreleasepool(() { ... })`

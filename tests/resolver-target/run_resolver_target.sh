@@ -1,20 +1,16 @@
 #!/bin/bash
-# Resolver-target xfail harness (Fork C S0.2).
+# Resolver-target xfail harness.
 #
 # NOT part of the baseline gate. The baseline gate is `zig build && zig build test
 # && bash tests/run_examples.sh` over the BASELINE-GREEN corpus only; this harness
 # is a separate, listed diagnostic so the resolver-target corpus is never silently
-# dropped between S0 and S3.9.
+# dropped.
 #
-# Contract (S0 -> S3.8): every case below currently FAILS to match its TARGET
-# golden on wt-stdlib-base (the old selector is known-wrong for it). This script
-# runs each case and asserts the MISMATCH. It exits 0 when ALL cases still xfail
-# (as expected today), and exits 1 if any case unexpectedly MATCHES its target —
-# which means that case is actually baseline-green and must be re-classified
-# (moved to examples/expected/ with an active marker), not silently left here.
-#
-# At S3.9 the Fork C resolver makes these pass; the flip is then performed by
-# moving each golden to examples/expected/ and this harness goes empty.
+# Every case below FAILS to match its TARGET golden, because the name-selector is
+# wrong for it. This script runs each case and asserts the MISMATCH: it exits 0
+# when ALL cases xfail, and exits 1 if a case MATCHES its target — which means the
+# case is baseline-green and must be re-classified (moved to examples/expected/
+# with an active marker), not silently left here.
 #
 # Usage: bash tests/resolver-target/run_resolver_target.sh
 

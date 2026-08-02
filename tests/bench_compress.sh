@@ -603,7 +603,7 @@ if [[ -n "$BENCH_BASELINE_REF" ]]; then
         env SX_STDLIB_PATH="$baseline_stdlib_tree/library" "$FROZEN_SX_BIN" build --opt 3 --cpu "$BENCH_CPU" -o "$BASELINE_ENCODE" "$baseline_tree/tests/bench_local.sx"
         env SX_STDLIB_PATH="$baseline_stdlib_tree/library" "$FROZEN_SX_BIN" build --opt 3 --cpu "$BENCH_CPU" -o "$BASELINE_DECODE" "$baseline_tree/tests/bench_decode_local.sx"
         baseline_label="$BENCH_BASELINE_REPO@$BENCH_BASELINE_REF"
-        baseline_description="the historical implementation was rebuilt with the current compiler and stdlib support from \`$BENCH_BASELINE_STDLIB_REF\`, then measured in paired, rotated trials"
+        baseline_description="the baseline implementation is built with the current compiler and stdlib support from \`$BENCH_BASELINE_STDLIB_REF\`, then measured in paired, rotated trials"
     else
         stage="building accepted SX baseline $BENCH_BASELINE_REF"
         git archive "$BENCH_BASELINE_REF" | tar -x -C "$baseline_tree"

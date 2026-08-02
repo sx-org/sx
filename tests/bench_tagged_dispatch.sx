@@ -18,7 +18,7 @@
 //           the outlined switch; both vtable models load the table and call
 //           indirect.
 //
-// Deliberately NOT a corpus example: it runs for seconds by design.
+// NOT a corpus example: it runs for seconds.
 
 #import "modules/std.sx";
 #import "modules/std/mem.sx";

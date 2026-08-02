@@ -1,4 +1,4 @@
-// issue 0329: a generic instantiation is keyed by the nominal IDENTITY of every
+// A generic instantiation is keyed by the nominal IDENTITY of every
 // type argument, not by its display name. Two modules author `Thing`; the
 // generic struct, the type function, and the type-pack struct must each build a
 // distinct layout per author instead of reusing the first one's.

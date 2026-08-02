@@ -1,5 +1,5 @@
 // The declaring file: private names are fully usable here, forward
-// references included, and a public alias may deliberately expose one.
+// references included, and a public alias may expose one.
 
 exposed :: () -> i64 { return secret() + SECRET_N; }
 

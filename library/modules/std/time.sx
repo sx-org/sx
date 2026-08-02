@@ -1,5 +1,5 @@
 // std.time — wall and monotonic clocks over clock_gettime(2)
-// (PLAN-HTTPZ S1).
+//
 //
 //   now_secs()  wall clock, unix epoch seconds (CLOCK_REALTIME).
 //   mono_ms()   monotonic milliseconds for deadlines/timeouts —

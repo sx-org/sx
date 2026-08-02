@@ -1,11 +1,8 @@
 // Dynamic indexing of an array struct field reads the element IN PLACE —
 // address arithmetic plus one element load, never a whole-array copy to a
 // temporary — and the object/index expressions evaluate exactly once.
-// Covers: a pointer receiver (`table.fast[index]`), a side-effecting index,
+// Covers a pointer receiver (`table.fast[index]`), a side-effecting index,
 // a nested field/index chain, and a module-global root.
-// Regression (issue 0317): the addressable-array read path accepted only
-// simple identifiers, so a field expression lowered as an array VALUE and
-// every read copied all 4 KiB of the field.
 
 Table :: struct {
     fast: [1024]i32;

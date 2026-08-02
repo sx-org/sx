@@ -417,7 +417,6 @@ pub const Ops = struct {
     pub fn emitStore(self: Ops, st: Store) void {
         const ptr = self.e.resolveRef(st.ptr);
         var val = self.e.resolveRef(st.val);
-        // Guard: don't store void types or store to non-pointer
         const ptr_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(ptr));
         const val_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(val));
         if (ptr_kind == c.LLVMPointerTypeKind and val_kind != c.LLVMVoidTypeKind) {
@@ -759,7 +758,7 @@ pub const Ops = struct {
             const slot = i + 2 + sret_off;
             // Large non-HFA structs (MTLRegion, MTLScissorRect, ...) pass by
             // reference: caller copy + ptr — same marshaling as the abi(.c)
-            // fn-pointer path (issue 0347). coerceArg can't spill these
+            // fn-pointer path. coerceArg can't spill these
             // (its struct→ptr arm is the 2-field fat-pointer decay only).
             if (self.e.needsByval(raw_ty, raw_llvm)) {
                 param_types[slot] = self.e.cached_ptr;
@@ -873,7 +872,7 @@ pub const Ops = struct {
 
         // Method-ID resolution. When `name` and `sig` are both
         // string literals the call site participates in
-        // `(name, sig)` slot interning (step 1.17): a shared
+        // `(name, sig)` slot interning: a shared
         // pair of static globals holds the `jclass` GlobalRef
         // and the `jmethodID`, populated lazily on the first
         // call to any matching site. Non-literal sites fall
@@ -1020,11 +1019,11 @@ pub const Ops = struct {
         self.e.mapRef(result);
     }
 
-    /// Inline assembly (ASM stream Phase D) — the port of Zig's `airAssembly`.
-    /// Handles 0 value outputs (void) and 1 (scalar); multi-output tuples are
-    /// Phase E (lowering bails before reaching here). Builds the LLVM constraint
-    /// string, rewrites the `%[name]` template, then `LLVMGetInlineAsm` +
-    /// `LLVMBuildCall2`.
+    /// Inline assembly — the port of Zig's `airAssembly`. Builds the LLVM
+    /// constraint string, rewrites the `%[name]` template, then
+    /// `LLVMGetInlineAsm` + `LLVMBuildCall2`. The combined LLVM return covers
+    /// the DIRECT outputs: void for none, the scalar for one, a struct for N
+    /// (sx's tuple representation).
     pub fn emitInlineAsm(self: Ops, instruction: *const Inst, a: InlineAsm) void {
         const e = self.e;
         const alloc = e.alloc;
@@ -1384,8 +1383,8 @@ pub const Ops = struct {
         // a COMPTIME (dead) body — the enclosing `#run`/`::` wrapper whose LLVM is
         // never executed. Such a function has no runtime symbol, so emit `undef`
         // instead of a real `call` (which would leave an undefined reference for the
-        // AOT linker). The comptime VALUE is produced by the interp/VM, not this dead
-        // body. Mirrors the old `compiler_call` → undef.
+        // AOT linker). The comptime VALUE is produced by the VM, not this dead
+        // body.
         if (callee_func.is_intrinsic) {
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
             return;
@@ -1414,7 +1413,7 @@ pub const Ops = struct {
             //     (`emitGlobals` → `error: comptime init of 'X' failed: <reason>`,
             //     `comptime_failed`): emit the located diagnostic and gate the
             //     build, NEVER fall through to a runtime call over `---` storage
-            //     (issue 0182 — that produced exit-0 garbage with no diagnostic).
+            //     (that produced exit-0 garbage with no diagnostic).
             const evaluation = comptime_vm.tryEval(self.e.alloc, self.e.ir_mod, call_op.callee, &self.e.build_config, self.e.import_sources, null);
             defer evaluation.destroy();
             if (evaluation.completed()) |result| {
@@ -1442,7 +1441,7 @@ pub const Ops = struct {
                 // to a host value (e.g. an unbridgeable `[2][]i64` — array of
                 // slices). Re-emitting a runtime `call` would re-run the SAME body
                 // over its (possibly `---`) storage and produce DIFFERENT garbage
-                // with no diagnostic — the exact silent miscompile of issue 0182.
+                // with no diagnostic — a silent miscompile.
                 // Mirror the GLOBAL `#run` path (`emitGlobals` → `error: comptime
                 // init of 'X' failed: <reason>`, `comptime_failed`): surface the
                 // bridge bail loudly and gate the build.
@@ -1558,7 +1557,7 @@ pub const Ops = struct {
 
         // Read the fn-pointer type's calling convention. A `.c` fn pointer's
         // call site must mirror declareFunction's C-ABI signature for an
-        // sx-defined abi(.c) callee (issue 0295): coerced params, coerced
+        // sx-defined abi(.c) callee: coerced params, coerced
         // small-struct return, sret for >16 B non-HFA returns.
         const fp_is_c_abi: bool = if (callee_ir_ty) |cty| blk: {
             if (!cty.isBuiltin()) {
@@ -1807,7 +1806,7 @@ pub const Ops = struct {
                 self.e.mapRef(result);
             },
             .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_variant_tag_width => {
-                // Runtime-Type scalar reflection (1a-S2): resolve the tag the
+                // Runtime-Type scalar reflection: resolve the tag the
                 // arg denotes (any → its type-tag), GEP the builtin's lazy
                 // table, load. Same shape as the type_name/is_unsigned arms.
                 const kind: @import("reflection.zig").Reflection.ScalarTableKind = switch (bi.builtin) {
@@ -1839,7 +1838,7 @@ pub const Ops = struct {
                 self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, elem_ty, gep, "rts.load"));
             },
             .rt_member_name, .rt_member_type, .rt_field_offset, .rt_variant_value => {
-                // Field-family runtime reads (1a-S3b): master [N x ptr] by
+                // Field-family runtime reads: master [N x ptr] by
                 // tag → per-type array → [idx]. OOB idx is documented UB
                 // (inbounds GEP), same as the static per-type name arrays.
                 const refl = self.e.reflection();
@@ -2418,10 +2417,9 @@ pub const Ops = struct {
             self.e.mapRef(result);
         } else if (base_kind == c.LLVMPointerTypeKind) {
             // Many-pointer `[*]T` (or a raw `*T`): the base value IS the data
-            // pointer — GEP by `lo` for the new start, `len = hi - lo`. (issue
-            // 0159: a many-pointer base previously fell to the `else` undef arm,
-            // producing a slice with a garbage length. The caller supplies the
-            // bound via `hi`; no length is read from the unbounded pointer.)
+            // pointer — GEP by `lo` for the new start, `len = hi - lo`. The
+            // caller supplies the bound via `hi`; no length is read from the
+            // unbounded pointer.
             var lo_indices = [_]c.LLVMValueRef{lo};
             const new_ptr = c.LLVMBuildGEP2(self.e.builder, elem_ty, base, &lo_indices, 1, "ss.ptr");
             var new_len = c.LLVMBuildSub(self.e.builder, hi, lo, "ss.len");
@@ -2585,8 +2583,8 @@ pub const Ops = struct {
     pub fn emitRet(self: Ops, un: UnaryOp) void {
         var val = self.e.resolveRef(un.operand);
         const func = &self.e.ir_mod.functions.items[self.e.current_func_idx];
-        // Failable main: wrap the return in the entry-point reporter
-        // (ERR E4.2) — exit 0 (or the value) on success, else print the
+        // Failable main: wrap the return in the entry-point reporter —
+        // exit 0 (or the value) on success, else print the
         // trace + tag to stderr and exit 1 — instead of returning the
         // tag/tuple as the raw exit code. Two shapes:
         //   `-> !`        → `val` is the bare u32 error tag.
@@ -2682,16 +2680,16 @@ pub const Ops = struct {
             } else {
                 // UNREACHABLE backend tripwire. A condBr condition must be i1,
                 // an integer, or a pointer. Anything else (a struct — e.g. an
-                // optional `{T,i1}` aggregate — or a float) is now rejected at
+                // optional `{T,i1}` aggregate — or a float) is rejected at
                 // lowering with a located type error: `checkConditionType` in
                 // src/ir/lower/expr.zig gates every condition site (`if` /
                 // `while` / `and` / `or`), and optionals are reduced to their
-                // has_value i1 before reaching here (issue 0164). Folding such a
-                // condition truthy was a silent miscompile (`if opt { }` always
-                // took the present branch); reaching this @panic now means a NEW
+                // has_value i1 before reaching here. Folding such a
+                // condition truthy is a silent miscompile (`if opt { }` always
+                // takes the present branch); reaching this @panic means a
                 // condition site bypassed `checkConditionType` — add the check
                 // there, don't fold truthy.
-                @panic("emitCondBr: non-boolean condition reached condBr — should have been rejected at lowering as a type error (issue 0164; see checkConditionType in src/ir/lower/expr.zig)");
+                @panic("emitCondBr: non-boolean condition reached condBr — should have been rejected at lowering as a type error (see checkConditionType in src/ir/lower/expr.zig)");
             }
         }
         _ = c.LLVMBuildCondBr(self.e.builder, cond, then_bb, else_bb);
@@ -2773,9 +2771,8 @@ pub const Ops = struct {
         const string_ty = self.e.getStringStructType();
         // Size the GEP's array type from the SAME single source of truth
         // (`memberTableLen`) that `getOrBuildFieldNameArray` uses to build the
-        // name array, so the two can never disagree (a mismatch was issue 0195:
-        // the array was built zero-length for tuples/arrays while this count said
-        // N → an out-of-bounds GEP → segfault).
+        // name array, so the two can never disagree: a zero-length name array
+        // against a count of N is an out-of-bounds GEP → segfault.
         const field_count: u32 = @intCast(self.e.ir_mod.types.memberTableLen(fr.struct_type) orelse 0);
         const array_ty = c.LLVMArrayType(string_ty, field_count);
         const zero = c.LLVMConstInt(self.e.cached_i64, 0, 0);

@@ -1,22 +1,21 @@
 // std.http — no busy-poll while a pooled handler runs (CONN_HANDLING).
 //
-// Regression: read interest stayed armed while a slot sat in CONN_HANDLING,
-// and both backends (kqueue/epoll) are level-triggered — so a client that
-// sent MORE bytes (pipelining) while the worker held the request made
-// Loop.wait() return the same readable event instantly, every tick, until
-// the handler finished: 100% CPU for the whole handler runtime, and the
-// event was ignored each time (tick skips CONN_HANDLING slots).
+// Read interest is dropped when a slot enters CONN_HANDLING and re-armed
+// when the completion is drained. Both backends (kqueue/epoll) are
+// level-triggered, so read interest left armed across a handler run makes
+// Loop.wait() return the same readable event every tick, for the whole
+// handler runtime, with the event ignored each time (tick skips
+// CONN_HANDLING slots).
 //
-// The fix drops read interest when a slot enters CONN_HANDLING and re-arms
-// it when the completion is drained. This test proves BOTH halves:
-//   1. NO SPIN: with a 300 ms pooled handler running and pipelined bytes
-//      sitting unread in the kernel buffer, the tick loop stays asleep —
-//      the number of tick(30) iterations until the response arrives is
-//      ~10, not thousands. Asserted < 100.
-//   2. RE-ARM: after the completion is drained the pipelined second request
-//      IS served (read interest was re-added; without it the bytes would
-//      sit in the kernel until the keepalive deadline killed the conn).
-//   3. GPA leak gate: net-zero after close.
+// This test proves BOTH halves:
+// 1. NO SPIN: with a 300 ms pooled handler running and pipelined bytes
+//    sitting unread in the kernel buffer, the tick loop stays asleep —
+//    the number of tick(30) iterations until the response arrives is
+//    ~10, not thousands. Asserted < 100.
+// 2. RE-ARM: after the completion is drained the pipelined second request
+//    IS served — read interest is re-added, so the bytes do not sit in
+//    the kernel until the keepalive deadline kills the conn.
+// 3. GPA leak gate: net-zero after close.
 #import "modules/std.sx";
 http :: #import "modules/std/http.sx";
 
@@ -90,8 +89,8 @@ main :: () -> i32 {
         while t < 5 { srv.tick(2) catch {}; t += 1; }   // accept + dispatch
 
         // Request 2 arrives WHILE the worker holds request 1. These bytes sit
-        // unread in the kernel buffer — pre-fix, level-triggered readiness
-        // reports them every wait() and the loop spins doing nothing.
+        // unread in the kernel buffer — under level-triggered readiness they
+        // are reported every wait() and the loop spins doing nothing.
         req2 := "GET /fast HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
         socket.write(ca, req2.ptr, xx req2.len);
         usleep(10000);   // let the bytes land

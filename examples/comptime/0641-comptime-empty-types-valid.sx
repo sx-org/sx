@@ -5,13 +5,13 @@
 //     types — legitimate to NAME and reference even though they have no
 //     constructible value (no variant to construct).
 //
-// This mirrors normal sx, where `struct {}` and `enum {}` already codegen fine;
-// the metatype `define`/`declare` path now agrees (the old blanket
-// "a type with no members is never valid" rejection is gone).
+// This mirrors normal sx, where `struct {}` and `enum {}` codegen fine; the
+// metatype `define`/`declare` path agrees — there is no blanket "a type with
+// no members is never valid" rejection.
 //
-// The ONLY thing still rejected on this path is a bare `declare("X")` that is
-// never completed by a matching `define` — an INCOMPLETE forward slot that would
-// panic codegen. That case is exercised by examples/1179.
+// The one rejection on this path is a bare `declare("X")` never completed by a
+// matching `define` — an INCOMPLETE forward slot that would panic codegen.
+// examples/diagnostics/1179 pins it.
 #import "modules/std.sx";
 #import "modules/std/meta.sx";
 

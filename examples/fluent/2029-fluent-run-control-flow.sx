@@ -1,5 +1,4 @@
-// Ordinary control flow inside a build block, and what a build site identifies
-// (fluent spec §7.4, §7.5, §8).
+// Ordinary control flow inside a build block, and what a build site identifies.
 //
 // `if` / `for` / `while` execute when `run` executes — the block is replayed,
 // not unrolled, and no runtime compiler service is involved. A loop therefore

@@ -38,7 +38,7 @@ and `` obj.`i2 `` both resolve. The exemption covers member *signatures* only: a
 slot), so a reserved-spelled impl method still needs the backtick
 (`` `i2 :: (self) ``), exactly like a free function. See `examples/0158`.
 
-**Statement keywords are member names too (issue 0345, decided 2026-07-22).**
+**Statement keywords are member names too.**
 Every keyword except `inline` — `if`, `push`, `while`, `for`, `case`, `return`,
 `f32`, `f64`, `try`, `defer`, … — may bare-name a struct **field**, a struct
 **method or constant**, a protocol **method**, and an enum/tagged-union
@@ -56,8 +56,8 @@ backtick-only (`` `inline ``); a bare `inline` in member position rejects with
 a targeted escape-hint. In a struct literal, a keyword field name takes only
 the `name = value` form — without the `=`, the token reads as a positional
 expression head, so `.{ if x > 1 then 10 else 20, 2 }` stays an if-expression
-element. Value-binding positions (locals, params, function names) are
-unchanged: keywords stay rejected there.
+element. Value-binding positions (locals, params, function names) reject
+keywords.
 
 **`Tuple(` and `Closure(` are reserved in expression head position.** The
 type constructors `Tuple(...)` and `Closure(...) -> R` parse as TYPE
@@ -71,7 +71,7 @@ to call such a value. Prefer different names.
 Every reserved spelling except `inline` bare-names member slots — the
 identifier-classified spellings (`i1`..`i64`, `u1`..`u64`, `bool`, `string`,
 `cstring`, `void`, `usize`, `isize`, `any`) and the keyword-classified `f32` /
-`f64` alike (issue 0345): `` struct { f32: i64; } `` and
+`f64` alike: `` struct { f32: i64; } `` and
 `` protocol { f32 :: (self: *Self) -> i64; } `` are legal as written; the
 backtick forms remain available but are never required for them.
 
@@ -306,6 +306,278 @@ ordinary comparisons. Native codegen and the comptime interpreter agree on this.
 | `()`   | grouping / params                    |
 | `{}`   | blocks / bodies                      |
 
+### Whitespace is Syntax
+
+Six glyphs — `(`, `[`, `-`, `*`, `{`, `!` — read differently depending on the
+whitespace around them, under three rules. Each rule exists because its glyphs
+carry two meanings and the gap is what tells them apart. A fourth rule is about
+the whitespace itself: a line break ends a statement.
+
+**Glue — `(` and `[` bind only when glued.** A `(` applies arguments, and a
+`[` indexes, only when *nothing at all* separates it from what precedes it:
+
+```sx
+foo(2)          // a call
+Box(i64)        // a type application
+xs[0]           // an index
+
+foo (2)         // error: a space before `(` — a call binds only when the `(`
+                //        is glued to its callee: write `foo(2)`
+v : Box (i64)   // error: a space between a type and its arguments — write `Box(i64)`
+xs [0]          // error: a space before `[` — an index binds only when the `[`
+                //        is glued to what it indexes: write `xs[0]`
+```
+
+The rule is one rule, applied everywhere the bracket continues something to its
+left: expression calls and indexing, every type position that applies arguments
+(annotation, return type, parameter type, struct field type, type alias,
+constant annotation, `.(T)` cast target, type argument to a builtin, match-arm
+type pattern, an `impl`'s protocol arguments), and the fixed forms whose
+argument list the grammar mandates —
+`Closure(i64) -> i64`, `@Init(P)` / `@BuildBlock(P)` (including in a bound,
+`$B/@BuildBlock(Drawable)`), `@OpenVariant(View)`, `@OpenSet(.{ … })`. A space
+before such a `(` is always fatal.
+
+A bracket that opens something *new* is unaffected — grouping (`(a + b)`),
+parameter and capture lists, array and slice types (`[3]i64`, `[]u8`), and the
+`(…)` of a declaration form all take whatever spacing reads best:
+
+```sx
+add    :: (a: i64, b: i64) -> i64 => a + b;   // fn declaration
+scaled :: ufcs (v: i64) -> i64 => v * 2;      // ufcs declaration
+Pair   :: struct ($T: Type) { a: $T; b: $T; } // struct type params
+Show   :: protocol (T) { render :: (self: *Self) -> T; }
+Padded :: @OpenVariant(View) ($T: Type) { … } // generic open-set member
+for xs (x) { … }                              // for capture
+v := risky() catch (e) -1;                    // catch binding
+onfail (e) { … }                              // onfail binding
+```
+
+**Spacing — `-` and `*` are infix only when spaced symmetrically.** Both glyphs
+also have a prefix reading (negation, address-of), so the gaps on the two sides
+decide. Matching gaps — both present or both absent — is infix; spaced on the
+left and glued on the right is the prefix reading; the mirror shape has no
+reading at all:
+
+```sx
+a - b       // infix subtraction
+a-b         // infix subtraction
+a -b        // `a`, then a prefix `-b`
+a- b        // error: neither reading
+```
+
+A prefix `-` / `*` binds only when glued to its operand, which is what makes
+`-b` and `*p` unambiguous. This is also how an expression continues across a
+line: a leading `- b` keeps the gaps matched and continues the expression,
+while `-b` starts a fresh operand.
+
+**Postfix — `(`, `[`, `{`, and `!` bind only on their expression's own line.**
+The third rule governs what attaches to an expression from behind, and it
+splits the postfix tokens in two. These four are same-line only: `(` and `[`
+already are, since the glue rule above admits no gap at all, and the `{` and
+the `!` answer the question the same way. The `{` after a call opens a trailing
+block only on the same line as the `)`, and a same-line empty `{}` reads as a
+parameterized aggregate when written tight against the `)`; both readings are
+specified with the form itself — see [Trailing Blocks](#trailing-blocks). A
+named aggregate's `{` and a postfix `!` join them because each has a second
+reading waiting on the other side of a break — a scope block, and the prefix
+`not`:
+
+```sx
+p := Pair{ a = 1, b = 2 }     // same line — the aggregate
+Pair
+{ setup() }                   // across the break — an expression and a block
+
+print("{}\n", maybe!)         // same line — force unwrap
+ready
+!ready                        // across the break — the prefix `not`
+```
+
+This is geometry, not completability: the brace is refused across a break
+inside an argument list exactly as it is at statement level.
+
+The dot-led postfixes are the other camp. `.`, `?.`, and `catch` have no second
+reading for a break to pick up, so each reads on down the page: `?.` and `catch`
+are in the continuation list below, and a leading `.` chains whenever what it
+follows is an expression rather than a statement — the line **Statements break,
+expressions chain** draws at the end of this section.
+
+**Line breaks — a newline ends a statement.** A `;` terminates a statement, and
+so does the line break where the `;` would have gone. The two spellings are the
+same statement:
+
+```sx
+a := 1
+b := compute(a)
+print("{}\n", b)
+```
+
+One rule, applied wherever a statement or a declaration ENDS: top-level and
+local bindings, expression statements, assignments, `return` / `raise` /
+`break` / `continue` / `defer` / `onfail`, `#import` / `#insert` / `#error` and
+the other directive forms, and a function's `extern` / `intrinsic` / `=> expr`
+body. The value-less spellings end the same way — a `return` with nothing to
+return, and a `name : Type` declaration with no initializer:
+
+```sx
+counter : i64
+bump :: (by: i64) -> void {
+    counter = counter + by
+    return
+}
+```
+
+This holds for a `return` in expression position too, so an early exit written
+`if quiet then return` takes the line below it as the next statement and not as
+the value it returns:
+
+```sx
+report :: (quiet: bool) -> void {
+    if quiet then return
+    print("loud\n")
+}
+```
+
+The end of the file ends the declaration it lands on, so a file's last
+declaration needs no terminator either. The rule does not reach inside a fixed
+form's own list — a runtime class's members and the entries of
+`#import c { … }` each keep the `;` their grammar asks for. A `match` arm is
+not one of those. `case` heads an arm, and an arm is a statement in the only
+position where `case` is legal, so the break before the next `case` ends the
+statement above it exactly as any other break does. That holds for every arm
+body: a statement list, `case .x: break`, and `case .x: (e) => expr` alike.
+
+```sx
+if c == {
+    case .a:
+        setup()
+        report()      // the next `case` starts an arm — the break ends this
+    case .b:
+        if ready {
+            report()
+        }             // a statement that is a block ended at its `}`
+    case .c: break
+    else:
+        done()        // the match's `}` ends it
+}
+```
+
+`else` reads two ways and a glued `:` is what tells them apart: `else:` heads
+the default arm and ends the statement above it, while every other `else` —
+before a block, an `if`, or an expression — chains the `if` above it and reads
+straight through the break.
+
+A statement whose last token is a `}` that closes a block form takes no
+terminator at all, written or implied: a statement that IS a block (`if`,
+`while`, `for`, `match`, a `push` body, a bare scope), a call ending in a
+trailing block, and a declaration whose INITIALIZER is one of those.
+
+```sx
+kind := if c { "hot" } else { "cold" }   // block-form initializer — no `;`
+row  := vstack(8.0) {
+    body()
+}                                        // trailing block — no `;`
+n    := compute(3)                       // any other initializer takes the
+                                         // terminator, here the line break
+```
+
+**`;` is a pure separator.** Ending a statement is all it does. It carries no
+other meaning anywhere in the language: it never discards a value, never decides
+what a block's value is, and never decides whether a build body's child
+publishes. Wherever a value can flow, it flows the same with the `;` written and
+with it left out — see [Block values](#block-values) and
+[`@BuildBlock(P)`](#buildblockp).
+
+A line break does not end a statement that is still running. When the token
+below cannot START a statement, it continues the one above:
+
+```sx
+mask := (hi << 16)
+    | lo
+ok := ready
+    and loaded
+    or forced
+```
+
+"Cannot start a statement" is the rule; the list below is its enumeration, and
+a token joins it as soon as some form can reach a terminator with that token in
+hand. Today that list is `and`, `or`, `then`, `else`, `catch`, `|`, `+`, `==`,
+`!=`, `<=`, `>=`, `<<`, `>>`, `|>`, `??`, `?.`, `,`, `=`, `::`, `->`, `=>`,
+`:`, `extern`, and `intrinsic`. `else` is on it only where it chains an `if`;
+`else:` heads a `match` default arm, which starts one. `-` and `*` are absent
+because the spacing rule above already decided them: a leading `- b` keeps its
+gaps matched and reads as subtraction, while `-b` opens a fresh operand and so
+begins a statement. `case` is absent because it heads a `match` arm, and an arm
+is a statement. A form that is simply still open — an unclosed `(`, an argument
+list, a `{` with no `}` yet — reads on for the same reason: nothing has ended.
+
+The last three are the tails a completed declaration may still take, so each
+form asks whether it has ended before reading one:
+
+```sx
+LIMIT : i64
+    : 9                       // a typed constant
+errno_loc : *i32
+    extern libc "__error"     // an extern data global
+mystery :: i64
+    intrinsic                 // a typed intrinsic
+```
+
+Whether a form may end at all is a grammar fact, not a whitespace one, and the
+`[LIB] ["csym"]` tail after `extern` / `export` turns on it. An `extern` import
+is whole the moment its keyword is read, so each empty slot is a place the
+declaration can stop and the tail binds only on its own line. An `export`
+definition and an `extern` struct still owe a body, so nothing there can end and
+the tail reads straight through a break:
+
+```sx
+__stdinp : *void extern
+LIMIT :: 9                    // the import ended; this name is its own
+
+sx_double :: (n: i32) -> i32 export
+    "double_c"
+    { n * 2 }                 // the definition owes a body — the tail reads on
+```
+
+The last expression before a `}` may leave its terminator out entirely, and a
+newline never supplies one there. Written or not, that expression is the block's
+value (see [Block values](#block-values)):
+
+```sx
+tight  :: () -> i64 { 41 }
+spread :: () -> i64 {
+    n := 41
+    n                         // no terminator — the block's value, as above
+}
+ended  :: () -> i64 { 41; }   // the `;` separates; the value is still 41
+```
+
+**Statements break, expressions chain.** Whether a `}` can be continued is
+decided by what it closes. A statement that IS a block — `if`, `while`, `for`,
+`match`, a `push` body, a bare scope `{ … }` — ends at its `}`, so the line
+below starts a new statement unless it opens with a token that cannot start
+one. An expression that merely ENDS in a block — a trailing-block call, an
+aggregate literal, a self-trailing `.{ }` — is still an expression, and its
+postfix chain reads on:
+
+```sx
+{
+    setup();
+}
+.unknown                      // the scope ended; this is the next statement
+
+if ready {
+    setup();
+}
+else { … }                    // `else` cannot start a statement — the `if` chains
+
+c := vstack(1.0) {
+    body();
+}
+    .doubled()                // the call is an expression — the chain goes on
+    .show();
+```
+
 ---
 
 ## 2. Type System
@@ -383,7 +655,7 @@ n      := u64.max;   // 18446744073709551615 (all-ones)
   `18446744073709551615` (and any unsigned value across all 64 bits), while a
   signed value — including `i64.min` — prints with all its digits. A bit
   reinterpret (`union { u: u64; s: i64 }`) is still a valid way to inspect the
-  raw bits, but is no longer needed merely to print the value.
+  raw bits, but is not needed merely to print the value.
 - **Non-numeric receivers.** `.min` / `.max` on a non-numeric type (`bool`,
   `string`, a pointer, a `struct`, `void`, an `enum`) is a compile error, never
   a silent value.
@@ -405,8 +677,8 @@ qn  := f64.nan;           // a quiet NaN
 - **Receiver.** `f32` or `f64`.
 - **Shared with integers.** `.min` / `.max` are valid on BOTH integer and float
   types. `.min` is the most-NEGATIVE finite value, i.e. `-max` — consistent with
-  the integer `.min`, and deliberately **NOT** C's `DBL_MIN`/`FLT_MIN` (which is
-  the smallest positive normal; that is `.min_positive` here).
+  the integer `.min`. It is **NOT** C's `DBL_MIN`/`FLT_MIN`, which is the
+  smallest positive normal; that is `.min_positive` here.
 - **Float-only accessors.**
   - `.epsilon` — the ULP of `1.0`: the gap between `1.0` and the next
     representable value (`f64 = 2^-52 ≈ 2.22e-16`, `f32 = 2^-23`). This is the
@@ -431,13 +703,13 @@ qn  := f64.nan;           // a quiet NaN
   - `.inf` — positive infinity (`inf > max`).
   - `.nan` — a quiet NaN. The exact mantissa bits are not pinned; the only
     guaranteed property is that it is unequal to everything, itself included
-    (`nan != nan` is `true` — native float `!=` lowers unordered, issue 0091).
+    (`nan != nan` is `true` — native float `!=` lowers unordered).
 - **Float-only on an integer is an error.** `.epsilon` / `.min_positive` /
   `.true_min` / `.inf` / `.nan` applied to an integer type (`i32.epsilon`,
   `u8.inf`, `i64.true_min`) is a clean compile error — integer types expose only
   `.min` / `.max`.
 - **Pinning the values.** The lexer has no exponent notation and the default
-  float formatter is crude (issue 0090), so float limits can be asserted neither
+  float formatter is crude, so float limits can be asserted neither
   by literal comparison nor by printing. Reinterpret the bits through an untagged
   union (`union { f: f64; bits: u64 }`) and compare against the exact IEEE-754
   pattern — `f64.max = 0x7FEFFFFFFFFFFFFF`, `min = 0xFFEFFFFFFFFFFFFF`,
@@ -448,7 +720,7 @@ qn  := f64.nan;           // a quiet NaN
 - **Type receiver vs. a shadowing value binding.** A numeric-limit access folds
   only when the receiver is a builtin numeric **type name** (`f64.epsilon`,
   `i32.max`, `u8.max`). A backtick raw identifier that binds a *value* whose
-  spelling shadows a type name (F0.6) is an ordinary value: `` `f64.epsilon ``
+  spelling shadows a type name is an ordinary value: `` `f64.epsilon ``
   reads that value's `epsilon` field — it does **not** fold to the limit. This
   holds for **every** value-binding kind — a `` `f64 := … `` local, a module-scope
   global, or a `` `f64 :: … `` module constant — so the fold can never silently
@@ -628,9 +900,9 @@ type 'T'`) — it is never silently dropped, so a typo or a field removed by an
 no field is instead read as a *positional* element, not an error.)
 
 Named aggregates place `{` directly after the type designator: `Point{ x = 1 }`,
-`List(i64){}`, `mod.Config{ port = 80 }`. The old separator-dot form `Type.{…}`
-is a hard error with a fix-it to the compact spelling. Contextual `.{…}` is
-unchanged.
+`List(i64){}`, `mod.Config{ port = 80 }`. The separator-dot form `Type.{…}`
+is a hard error with a fix-it to the compact spelling. Contextual `.{…}` keeps
+its leading-dot form.
 
 After a completed aggregate, a following block may appear in two forms:
 
@@ -674,7 +946,7 @@ alias).
 Anonymous type identity is by **shape**, never by name: two anonymous types
 with the same canonical field sequence (names + types, in order) are the SAME
 type — across literal and annotation sites — and differently-shaped ones are
-always distinct types (issue 0294):
+always distinct types:
 
 ```sx
 a : struct { x: i64; } = .{ x = 1 };
@@ -967,10 +1239,9 @@ Each unrolled iteration is an ordinary impl with a concrete `T`:
 membership, coherence (two iterations landing on one `(P, T)` pair
 are the ordinary duplicate error, naming the unrolled sites), and
 every downstream rule apply to the expanded program unchanged. The
-curated-list form is the supported spelling for "one body, a
-deliberate set of types" — the bound-blanket (`impl Show for
-$T/Ord`, §6.5) is refused precisely because a list keeps the set
-intentional.
+curated-list form is the supported spelling for "one body, a chosen
+set of types" — the bound-blanket (`impl Show for $T/Ord`, §6.5) is
+refused precisely because a list keeps the set explicit.
 
 **Expansion is monotone and deterministic.** Expansion only *adds*
 conformances — nothing retracts. Expansion-driving comptime may
@@ -1622,11 +1893,9 @@ once instantiated and not otherwise. An instantiation nobody
 value-uses emits nothing at all; a tagged protocol used only as a
 bound costs exactly what a constraint protocol costs.
 
-Membership is deliberately stable: it does not depend on which code
+Membership is stable: it does not depend on which code
 executes, so dead-code edits never change what typechecks. Every
-member receives a tag, switch arm, and table row. (A stricter
-emission-level shake is possible without touching these semantics —
-see the appendix note on liveness shaking.)
+member receives a tag, switch arm, and table row.
 
 ##### 6.7 Templated tagged protocols
 
@@ -1947,9 +2216,8 @@ under the same rules. What a probe answers is **per kind**:
 
 - `constraint` and the erased kinds: **site-local impl
   visibility** — the same static fact that decides whether the site
-  could erase. (For erased kinds this is deliberately a different
-  question from the dynamic re-erasure check, which consults
-  program-wide uniqueness, §7.4.) Under the discipline, a negative
+  could erase. (For erased kinds this is a different question from the
+  dynamic re-erasure check, which consults program-wide uniqueness, §7.4.) Under the discipline, a negative
   gates on declaration-space finality — impls are declarations.
 - `tagged`: whole-program membership of the instantiation's set,
   under the discipline's polarity rules.
@@ -2176,11 +2444,10 @@ Anonymous product types with optional field names. Tuples are first-class values
 
 The tuple TYPE is always written `Tuple(...)`; a tuple VALUE is built with the
 ONE aggregate literal `.{ ... }` against a tuple-typed target — an annotation,
-a typed prefix, a call slot, or a return slot (aggregate ladder Step 1: the old
-`.( )` spelling was removed). An UNTYPED `.{ ... }` is NOT a tuple — it
+a typed prefix, a call slot, or a return slot. An UNTYPED `.{ ... }` is NOT a tuple — it
 self-types as an anonymous structural STRUCT (see "Struct Literals"); tuples
 are explicit-target-only. Bare parentheses `(...)` are **grouping only,
-everywhere** — a comma inside bare parens is a hard error with a migration hint.
+everywhere** — a comma inside bare parens is a hard error naming the tuple spelling.
 
 #### Construction
 ```sx
@@ -2450,8 +2717,8 @@ by context:
 
 A `::` **const** array coerces to a *mutable* `[]T` as a view exactly like
 the explicit `constArr[0..]` subslice; a write through such a slice is not
-yet diagnosed (there is no `[]const T` slice type yet — const-slice
-propagation is future work). The direct `constArr[i] = …` write IS rejected.
+diagnosed (there is no `[]const T` slice type). The direct `constArr[i] = …`
+write IS rejected.
 
 Slice ranges take the same bound markers as for-header ranges — `=`
 inclusive / `<` exclusive on either side of `..`, defaulting to
@@ -2605,7 +2872,7 @@ than allowed.
 #### Value Equality
 
 `==` / `!=` are defined on optionals whenever the payload type has
-value-equality (issue 0344). Equality extracts nothing — null is a legitimate
+value-equality. Equality extracts nothing — null is a legitimate
 comparison value — so this is not an exception to the no-implicit-unwrap rule,
 and arithmetic / ordering on un-narrowed optionals stay rejected.
 
@@ -2767,7 +3034,7 @@ SxFoo     :: #objc_class("SxFoo")    export { counter: i32; bump :: (self: *Self
 | C type | sx type | Notes |
 |--------|---------|-------|
 | `const char*` (input) | `cstring` | the pointer, verbatim; literals coerce |
-| `const char*` (input, legacy) | `[:0]u8` | compiler extracts `.ptr` at call site |
+| `const char*` (input, sentinel slice) | `[:0]u8` | compiler extracts `.ptr` at call site |
 | `const char*` (return) | `cstring` | the pointer, verbatim; `from_cstring` to view |
 | nullable `const char*` (both directions) | `?cstring` | null pointer = `null` |
 | `char*` (output buffer) | `[*]u8` | raw buffer, no length |
@@ -2854,8 +3121,8 @@ ordinary OWN declaration of the aliasing file, so it is visible to that
 file's direct flat importers like any other declaration (this is how a
 facade re-exports another module's generic struct). Each hop of an alias
 chain resolves with the visibility of the file that declares THAT hop,
-not the use site's. Not yet supported: a qualified head whose namespace
-member is itself an alias (`ns.BoxAlias(..)`).
+not the use site's. A qualified head whose namespace member is itself an
+alias (`ns.BoxAlias(..)`) is unsupported.
 
 ### Function Aliases
 
@@ -3316,9 +3583,9 @@ On an **`any` receiver** the assertion has three temperaments:
 - **`.(T)` unconsumed = panic on mismatch**: `v := av.(i64);` yields the
   value on a tag match and otherwise prints `type assertion failed at
   file:line: expected T, got U` (runtime type names) and exits 1. This is
-  a deliberate carve-out from the unconsumed-failable rule, scoped to
-  assertion forms — the implicit handler is `catch { panic }`, never a
-  silent default.
+  a carve-out from the unconsumed-failable rule, scoped to assertion
+  forms — the implicit handler is `catch { panic }`, never a silent
+  default.
 - **`.(?T)` = soft**: mismatch is a *value* — `null` — never a failure or
   panic; the optional IS the check (comma-ok parity). The asserted type is
   the inner `T`, the result exactly `?T`, composing with the optional
@@ -3374,7 +3641,7 @@ The `::` operator creates an immutable binding. The value is evaluated at
 compile time when possible.
 
 `::` is the one and only constant spelling in sx. `const` is not a keyword
-and never will be — it is an ordinary identifier.
+and is not reserved — it is an ordinary identifier.
 
 Examples:
 ```sx
@@ -3550,9 +3817,9 @@ name :: (params) -> return_type {
 
 - Parameters: `name: type` separated by commas
 - Return type: `-> type` (omit for void). A multi-value return is a tuple: `-> Tuple(T1, T2)`.
-- Body: a block whose **value** is its last statement when that statement is a
-  trailing expression with **no** `;` (see [Block values](#block-values)). That
-  value is the implicit return; an explicit `return` works too.
+- Body: a block whose **value** is its last statement when that statement is an
+  expression (see [Block values](#block-values)). That value is the implicit
+  return; an explicit `return` works too.
 
 A trailing `!` in the return type marks the function **failable** — it adds a
 separate error channel alongside the normal returns. The `!` sits **outside**
@@ -3563,7 +3830,7 @@ See [§12 Error Handling](#12-error-handling).
 Examples:
 ```sx
 compute :: (x: i32) -> i32 {
-  x * x          // trailing expression, no `;` → the return value
+  x * x          // trailing expression → the return value
 }
 
 square :: (x: i32) -> i32 {
@@ -3577,42 +3844,100 @@ main :: () {
 
 #### Block values
 
-A block's **value** is its last statement, but only when that statement is a
-trailing expression with **no** trailing `;`. A trailing `;` discards the value,
-leaving the block void. This applies uniformly to every block used in value
-position: function bodies, `if` / `else` branches, value-bound blocks
-(`x := { … }`), and `catch` bodies.
+A block's **value** is its last statement, whenever that statement is an
+expression. A last statement that is a declaration — or an empty block — leaves
+the block with no value. The terminator plays no part: `;` separates statements
+and decides nothing, so a block ends in the same value with it and without it.
 
 ```sx
 a := { f(); g() };    // value is g()
-b := { f(); g(); };   // void — the `;` discards g()'s value
+b := { f(); g(); };   // value is g() — the `;` only separates
 ```
 
-A block in **value position** that produces no value is a compile error (rather
-than silently returning a zero default):
+**The value flows to whatever the position demands.** A block's value is
+demanded by a `-> T` function body (it becomes the return), by value position
+(`x := { … }`, an `if`/`else` used as a value, a `catch` body, an argument), and
+by a build body's statement position (it publishes — see
+[`@BuildBlock(P)`](#buildblockp)). Where nothing demands a value — a `-> void`
+body, a `defer` / `onfail` cleanup body, a loop body, a statement `if` — the
+expression still runs and its value is silently discarded.
 
 ```sx
 double :: (n: i32) -> i32 {
-  n * 2;   // error: value discarded by `;` — drop it, or use `return`
+  n * 2;   // the return value; the `;` changes nothing
+}
+
+log_size :: () {
+  measure();   // nothing demands the value — discarded
 }
 ```
 
-**Match arms are exempt.** In `case .x: expr;` the `;` is an arm terminator, not
-a value-discard, so the arm still yields `expr`. Only an explicit inner braced
-block inside an arm follows the rule:
+A **pure failable** (`-> !` / `-> !Named`) has no success value — its whole
+return is the error channel — so only a trailing ERROR value is demanded there.
+A tail of any other type is discarded like any other undemanded expression, and
+the function takes the ordinary success exit. Because nothing in such a body is
+in return position, the return-position restrictions do not reach its tail
+(erasing an rvalue into a tagged handle is refused at a `return`, and accepted
+here, where the handle dies with the frame).
+
+```sx
+check :: (n: i32) -> !ParseErr {
+  if n < 0 { raise error.BadDigit; }
+  measure();          // undemanded — discarded, then the success exit
+}
+
+fail :: () -> !ParseErr {
+  error.BadDigit;     // an ERROR tail IS the return
+}
+```
+
+This is a property of the SIGNATURE, so every body form reads it the same way —
+a closure body reads like a named one, and so do a generic instance, a nested
+local function and an inlined comptime callee:
+
+```sx
+report := () -> !ParseErr => measure();   // discarded, then the success exit
+raise_it := () -> !ParseErr => error.BadDigit;
+```
+
+It is also decided per live path: where the tail is an `if` or a `match`, each
+arm is its own tail. An arm that yields an error returns it; an arm that yields
+anything else is discarded and reaches the success exit, whichever order the
+arms are written in.
+
+```sx
+pick :: (b: bool) -> !ParseErr {
+  if b { fail() } else { measure() }   // error arm returns; value arm discards
+}
+```
+
+A block in **value position** that produces no value is a compile error (rather
+than silently returning a zero default). Both spellings of the ending are
+refused, because both are the same statement:
+
+```sx
+double :: (n: i32) -> i32 {
+  total := n * 2;   // error: the body produces no value — end it with a
+}                   //        trailing expression, or use `return`
+
+c := { f(); x := 1 };  // error: this block is used as a value but produces none
+```
+
+An EMPTY block is exempt — `{}` is how the void value itself is written, as in
+`.{ {}, 9 }` for a `Tuple(void, i32)`.
+
+An arm's last expression is the arm's value, with or without the `;` that
+separates it from the next `case`:
 
 ```sx
 classify :: (n: i32) -> i32 {
   if n == {
-    case 0: 100;            // arm value is 100 (the `;` is just the separator)
-    case 1: { x := 5; x*2 } // braced block, no trailing `;` → value 10
-    else:   7;
+    case 0: 100             // arm value is 100
+    case 1: { x := 5; x*2 } // braced block → value 10
+    else:   7
   }
 }
 ```
-
-A `defer` / `onfail` cleanup body and loop bodies are statement (void) contexts,
-so a trailing `;` there is fine and changes nothing.
 
 #### Default Parameter Values
 
@@ -3808,21 +4133,26 @@ ordinary code: a binding, an assignment, a call whose value is discarded, and a
 statement of any other type all run where they are written and are not published.
 A subexpression never publishes, whatever its type.
 
-**A child that would vanish is refused.** Inside a build body, a
-statement-position block — an `if`/`else` branch, a loop body, bare braces —
-whose trailing expression has no `;` and is non-void is an error:
+**A nested statement publishes too.** Publishing keys off statement POSITION and
+type acceptance, never off a terminator. A statement-position block — an
+`if`/`else` branch, a loop body, bare braces — is a statement, so its trailing
+child publishes exactly like a child written at the body's own top level, with
+or without a `;`:
 
-```text
-error: this value is neither published nor used
-help: publish it as a statement (end it with `;`) or discard it (`_ = …;`)
+```sx
+collect() {
+    if show { Label{ text = "in a branch" } }        // publishes
+    for rows (row) { Label{ text = row } }           // publishes, once per row
+    { Label{ text = "in bare braces" }; }            // publishes; the `;` only separates
+    Label{ text = "at the top level" }               // publishes
+}
 ```
 
-That value would be the inner block's value, which the enclosing statement
-discards — a child lost with no signal. A void trailing expression is exempt, a
-value-**position** block is unaffected (`x := if c { … } else { … };` stays
-legal), and the body's own top level needs no rule for the opposite reason: a
-trailing expression there is a child like any other and publishes, so nothing
-vanishes.
+Three shapes mark the rule's edges. A void trailing expression has no child to
+publish. A value-**position** block's tail is its value rather than a statement,
+so it goes to the binding (`x := if c { … } else { … };`) and it is `x`, in
+statement position, that publishes. And a value in statement position whose type
+`P` does not accept is discarded like any other unused value.
 
 **A build block is frame-bound.** What the value carries is the environment of
 the frame that formed it, captured **by reference**: forming allocates nothing,
@@ -4477,14 +4807,14 @@ Matches `subject` against each `case`. Patterns can be:
 - **Integer/bool literals**: `42`, `true` — matches a specific value.
 - **Type categories**: `struct`, `enum`, `union` — matches all types in that category (used with `type_of` values).
 
-`break` exits a case arm without producing a value. The optional `else:` arm matches when no `case` pattern matches.
+`break` exits a case arm without producing a value. The optional `else:` arm matches when no `case` pattern matches — its `:` is glued to the `else`, which is what separates it from an `else` that chains an `if`.
 ```sx
 if z == {
-  case .variant1: break;
+  case .variant1: break
   case .variant2:
-    print("z: {z}");
+    print("z: {z}")
   else:
-    print("unknown");
+    print("unknown")
 }
 ```
 
@@ -4515,7 +4845,7 @@ Available categories: `int`, `float`, `bool`, `string`, `void`, `struct`, `enum`
 > silently dead arm. Unknown names and value patterns are pointed
 > compile errors.
 
-Inside a category arm the subject stays an `any` and the matched `type` a runtime `Type` — arms handle the value through the runtime reflection surface (the table-backed builtins, `any` views like `struct_field_value` / `variant_payload` / `any_element`, `raw_make_any`) with ONE compiled body per arm; `xx val` in the `int`/`float` arms width-dispatches over the arm's tag set. An EXACT-tag walk asserts with `val.(T)`. (The old `cast(type, val)` per-type monomorphizing fan-out is removed with `cast`.)
+Inside a category arm the subject stays an `any` and the matched `type` a runtime `Type` — arms handle the value through the runtime reflection surface (the table-backed builtins, `any` views like `struct_field_value` / `variant_payload` / `any_element`, `raw_make_any`) with ONE compiled body per arm; `xx val` in the `int`/`float` arms width-dispatches over the arm's tag set. An EXACT-tag walk asserts with `val.(T)`.
 
 #### Type Switch (`any` subjects)
 
@@ -4595,7 +4925,7 @@ carries no runtime type tag, so a runtime `case protocol:` is a pointed
 compile error rather than a silently dead arm. Inline branches lower in
 statement position (like `inline if OS`), so value-producing arms use
 explicit `return`. A NON-inline type match keeps its runtime tag-switch
-semantics unchanged.
+semantics.
 
 ### While Loop
 ```sx
@@ -4676,8 +5006,7 @@ its own cursor; consequences:
 order — range positions bind the cursor value (i64), collection positions
 bind the element. An empty group is omitted entirely (no parens). Capture
 names shadow outer bindings, like any inner declaration. Use `_` to discard
-a position. The old single-iterable index form `for xs: (x, i)` is gone —
-write `for xs, 0.. (x, i)`.
+a position. An index alongside the elements is written `for xs, 0.. (x, i)`.
 
 **The capture/call rule.** In a for header, the parenthesized group
 immediately before `{` or `=>` is the capture; every earlier top-level paren
@@ -4689,7 +5018,7 @@ iterate a call result without one, parenthesize (`for (f(n)) { }`) or bind
 it to a local first. A leading paren group is a normal grouped expression
 (`for (a ++ b) (x)` iterates the grouped value).
 
-**By-value captures are immutable** (issue 0219). This rule is not
+**By-value captures are immutable.** This rule is not
 specific to for-loop element captures — it holds for *every* by-value
 capture binding: the for-loop element and the paired range index
 (`for xs, 0.. (x, i)` — both `x` and `i`), a match-arm payload capture
@@ -4712,7 +5041,7 @@ compile error with the constant-family message, mirroring module-level
 `::` consts. (Rationale: mutating a per-iteration
 copy that vanishes at the next iteration is almost always a bug — the
 author meant `(*x)`. This also matches the copy-semantics chosen for the
-issue-0214 `xx`-erasure materialization, where a by-value capture is
+`xx`-erasure materialization, where a by-value capture is
 likewise snapshotted into a fresh temp rather than written back.)
 
 **By-reference capture (`*elem`)** binds the element to a *pointer* into the collection (`*T`) instead of a value — no per-element copy. It GEPs straight into the array/slice backing, so:
@@ -4926,7 +5255,9 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
   closure argument is spelled explicitly (`f(x, (a) => { … })`).
 - **Same line**: the `{` must sit on the same line as the call's `)`. A `{`
   on the next line is an ordinary scope block statement, never a trailing
-  block.
+  block. (This and the empty-block spelling below are the `{` half of
+  [Whitespace is Syntax](#whitespace-is-syntax); the call's own `(` obeys the
+  glue rule there.)
 - **Empty block**: a same-line empty `{}` (comment-only bodies included) carries
   no body shape, so the **brace spelling** decides. Written **tight** against
   the `)` it is a parameterized named aggregate — `List(Move){}`,
@@ -5064,7 +5395,10 @@ The enum type is inferred from context (expected type from declaration or parame
 
 ## 5. Statements
 
-Statements are terminated by `;`.
+Statements are terminated by `;` — or by the line break that ends them, which
+is the same terminator written as whitespace (§1
+[Whitespace is Syntax](#whitespace-is-syntax)). The forms below are spelled
+with their `;` throughout; every one of them may drop it at a line break.
 
 - **Declaration**: `name :: value;` / `name := value;`
 - **Assignment**: `name = value;` / `name += value;` (and other compound assignments). Also supports field targets: `obj.field = value;`
@@ -5121,11 +5455,11 @@ sentinel, per the pointer contract.
 - **Access is global and unconditional**: after assembly, `context.field` works in ANY module of the program with no import requirement. Imports gate existence only (an uncompiled module contributes nothing); there is no per-source scoping of context fields.
 - **One flat namespace, loud collisions**: two declarations with the same field name (or colliding with a builtin field) are a hard compile error naming both declaration sites.
 - **Defaults are mandatory and comptime-evaluable**: a declaration without a default — or with one that doesn't fold to a compile-time constant — is a compile error; the default context must be constructible before `main` runs. Defaults fold into `__sx_default_context`. A protocol-typed context field is legal only at a borrow-kind protocol (`#identity` or tagged) — its default folds as the identity erasure of a named instance global; a value/own protocol-typed field is refused at its declaration (an owning constant cannot exist before `main`). `*T = null` is the idiom for handle fields (`?*T = null` where checked absence is wanted); the root `push` in `main` is the idiom for wiring real values.
-- **`push` semantics unchanged**: added fields patch exactly like builtin ones.
+- **`push` semantics**: added fields patch exactly like builtin ones.
 - **Comptime**: `#run` bodies execute under a VM-LOCAL copy of the assembled default context (see Protocols, compile-time execution): an added field's default is readable at comptime; protocol-typed fields reference VM-owned instances whose mutations are execution-local and discarded — comptime code cannot mutate globals (the VM reads globals into VM-local copies and never writes back).
 - **Cost guideline** (not enforced): reads are a constant-offset load and calls share the pusher's slot — the only growth cost is the spread-copy at `push` (and the per-fiber snapshot). Prefer one POINTER per concern (`*Ui`, `*Logger`) over fat inline values; a 2 KB inline field makes every push a 2 KB memcpy. Small inline value fields are fine.
 
-There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`#context_extend logger: *Logger = null;` replaces the old `data: *void` idiom).
+There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`#context_extend logger: *Logger = null;`).
 
 ---
 
@@ -5222,7 +5556,7 @@ lowered, yet `atomic_load` evaluates under `#run` and `sqrt` does not: the
 evaluator interprets the atomic ops, but has no arm for the math call `sqrt`
 lowers to. A `#run sqrt(x)` fails loudly rather than folding to a wrong value.
 
-Two categories are deliberately **not** intrinsics. `string` and `Vector` are
+Two categories are **not** intrinsics. `string` and `Vector` are
 language primitives, resolved by name by the type system like `int` / `bool` /
 `f64`. And a handful of keywords (`type_eq`, `has_impl`, `is_struct`,
 `is_comptime`) are recognized bare, declared nowhere. `has_impl(P, T)`
@@ -5257,8 +5591,8 @@ main :: () { rt := shared(10); } // and emitted into the binary
 Two consequences follow, and neither needs an annotation:
 
 - A function nothing runtime-reachable calls is **not emitted**. This is what
-  keeps a build callback out of the binary — not its signature, and no longer
-  any ABI marker.
+  keeps a build callback out of the binary — not its signature, and not an
+  ABI marker.
 - Calling an `evaluate`-only intrinsic from the runtime graph is an error,
   reported with the path from the root that reached it:
 
@@ -5343,8 +5677,7 @@ Comptime globals are resolved lazily: the JIT executes only when the value is fi
 
 `#error("message");` emits `message` as a compile-time error and halts
 compilation. It is valid as a top-level item or a statement, and it is THE
-compile-time rejection spelling (the old `compile_error(...)` bare intrinsic
-was consolidated into it).
+compile-time rejection spelling.
 
 The directive fires only when it is reached in **live** code, at every
 level where code goes dead:
@@ -5549,7 +5882,7 @@ Collision rules mirror ordinary declarations:
   locally to disambiguate.
 - **One level only** — carry does not chain: a flat import of a flat import
   does not surface the inner file's aliases. (The bare `alias.fn()` call path
-  does not yet enforce this gate — issue 0114 tracks the tightening.)
+  does not enforce this gate.)
 
 `#import c { ... }` aliases (`tc :: #import c { ... }`) carry the same way.
 
@@ -5587,7 +5920,7 @@ Semantics:
 - **No suppression, no ambiguity.** A private declaration never shadows or
   ambiguates a public same-name declaration from another module — for every
   other file it simply does not exist.
-- **A public same-file alias may deliberately expose a private declaration**
+- **A public same-file alias may expose a private declaration**
   (`Public :: PrivateImpl;`) — resolution follows the alias in its author
   file, where the private name is legal.
 - **Privacy authority is the exact declaring source file**, not a directory
@@ -5913,8 +6246,7 @@ returning two values *and* an error, with no tuple-in-a-wrapper. A single-value
 failable is `-> (T, !)`; an error-only failable is `-> !`. (There is no bare
 `-> T !` spelling — the error channel always rides inside the `(…, !)` list.)
 
-This section is the canonical surface reference. The design rationale,
-trade-offs, and implementation breakdown live in `current/PLAN-ERR.md`.
+This section is the canonical surface reference.
 
 ### Failable signatures
 
@@ -6047,7 +6379,8 @@ disambiguated by the token after `catch`:
 | `catch (e) EXPR` | `e` | bare expression (no braces) |
 | `catch (e) == { case ... }` | `e` | match over `e` (sugar for `{ if e == { ... } }`) |
 
-A bare binding (`catch (e) { }`) is a parse error with a migration hint.
+An unparenthesized binding (`catch e { }`) is a parse error with a hint to
+parenthesize it.
 
 ```sx
 v := parse_digit(s) catch (e) {
@@ -6236,11 +6569,11 @@ trace** — the chain of `raise` / `try` sites the error passed through.
   identical across OS/target, works under the JIT and a signed iOS `.app`). A
   comptime frame is `(func_id, ir_offset)` resolved via the interpreter's
   in-memory IR/source tables.
-- **Mode.** On by default in debug; release no-ops the push points
-  (opt back in with `--release-traces`). **Comptime (`#run`) is always traced.**
+- **Mode.** On by default in debug; release no-ops the push points.
+  **Comptime (`#run`) is always traced.**
 - **Formatting** lives in `library/modules/trace.sx` (`trace.print_current()`),
   rendering `func at file:line:col` per frame plus the source line and a `^`
-  caret. DWARF line-info is still emitted (debug, strippable) so `lldb` / `gdb`
+  caret. DWARF line-info is emitted (debug, strippable) so `lldb` / `gdb`
   can step sx source — that is a debugger artifact, separate from trace
   resolution.
 
@@ -6258,36 +6591,50 @@ implicit `context`.
 
 ```
 program         = top_level*
+end             = ';' | NEWLINE | EOF   // §1 Whitespace is Syntax: the line
+                  // break where the `;` would go, unless the token below cannot
+                  // start a statement (`and`, `|`, `,`, `=>`, … — see §1)
 top_level       = decl | import_decl | context_extend
-import_decl     = '#import' STRING ';'
-                | IDENT '::' '#import' STRING ';'
-context_extend  = '#context_extend' IDENT ':' type '=' expr ';'
+import_decl     = '#import' STRING end
+                | IDENT '::' '#import' STRING end
+context_extend  = '#context_extend' IDENT ':' type '=' expr end
 decl            = const_decl | var_decl | fn_decl | enum_decl | struct_decl | error_decl
-error_decl      = IDENT '::' 'error' '{' IDENT (',' IDENT)* ','? '}' ';'
-const_decl      = IDENT '::' expr ';'
-                | IDENT ':' type ':' expr ';'
-var_decl        = IDENT ':=' expr ';'
-                | IDENT ':' type '=' expr ';'
-                | IDENT ':' type ';'
+error_decl      = IDENT '::' 'error' '{' IDENT (',' IDENT)* ','? '}' end
+const_decl      = IDENT '::' expr end
+                | IDENT ':' type ':' expr end
+                | IDENT '::' type 'intrinsic' end
+var_decl        = IDENT ':=' expr end
+                | IDENT ':' type '=' expr end
+                | IDENT ':' type end
+                | IDENT ':' type 'extern' linkage_tail end
+linkage_tail    = IDENT? STRING?    // `[LIB] ["csym"]`. On a form that may end
+                  // — an `extern` import — each slot binds only on the
+                  // declaration's own line; where a body is still owed
+                  // (`export`, an `extern` struct) it reads through the break
 fn_decl         = IDENT '::' '(' params? ')' ('->' ret_type)? block
                 | IDENT '::' block
 ret_type        = type ('!' IDENT?)?    // trailing `!` = failable; channel outside any Tuple
-enum_decl       = IDENT '::' 'enum' '{' (IDENT ';')* '}'
+enum_decl       = IDENT '::' 'enum' '{' (IDENT ';'?)* '}'
 struct_decl     = IDENT '::' 'struct' '{' struct_member* '}'
-struct_member   = field_group | '#using' IDENT ';'
-field_group     = IDENT (',' IDENT)* ':' type ('=' expr)? ';'
+struct_member   = field_group | '#using' IDENT ';'?
+field_group     = IDENT (',' IDENT)* ':' type ('=' expr)? ';'?
+                  // a member list's `;` is an optional separator, not `end`:
+                  // the entry ends where the next one starts, line break or not
 params          = param (',' param)* ','?
 param           = IDENT ':' type ('=' expr)?
-block           = '{' stmt* '}'
-stmt            = decl | assignment ';' | multi_assign ';' | return_stmt | defer_stmt | insert_stmt
-                | push_stmt | break_stmt | continue_stmt | raise_stmt | onfail_stmt | expr ';'
-return_stmt     = 'return' expr? ';'
-break_stmt      = 'break' ';'
-continue_stmt   = 'continue' ';'
-raise_stmt      = 'raise' expr ';'
-onfail_stmt     = 'onfail' ('(' IDENT ')')? (block | expr ';')
-defer_stmt      = 'defer' expr ';'
-insert_stmt     = '#insert' expr ';'
+block           = '{' stmt* '}'     // the LAST expr may drop `end`; written or
+                  // not, that expr is the block's value — `;` only separates
+stmt            = decl | assignment end | multi_assign end | return_stmt | defer_stmt | insert_stmt
+                | push_stmt | break_stmt | continue_stmt | raise_stmt | onfail_stmt
+                | scope_stmt | expr end
+scope_stmt      = block             // a statement, so it never continues a postfix chain
+return_stmt     = 'return' expr? end
+break_stmt      = 'break' end
+continue_stmt   = 'continue' end
+raise_stmt      = 'raise' expr end
+onfail_stmt     = 'onfail' ('(' IDENT ')')? (block | expr end)
+defer_stmt      = 'defer' expr end
+insert_stmt     = '#insert' expr end
 push_stmt       = 'push' expr block
 assignment      = lvalue ('=' | '+=' | '-=' | '*=' | '/=') expr
 multi_assign    = lvalue (',' lvalue)+ '=' expr (',' expr)+
@@ -6300,9 +6647,11 @@ range_op        = '..' | '..=' | '..<' | '<..' | '<..=' | '<..<' | '=..' | '=..=
 for_capture     = '(' ['*'] IDENT (',' ['*'] IDENT)* ')'
 binary          = catch_expr (binop catch_expr)*    // binop includes `or` (fallback / chain)
 catch_expr      = unary ('catch' ('(' IDENT ')')? (block | '==' '{' case_arm* else_arm? '}' | unary))?
-unary           = ('-' | '!' | 'xx' | 'try') postfix
-                | postfix
-postfix         = primary ('(' args? ')' | '.' IDENT | '.{' field_init_list '}')*
+unary           = ('-' | '*' | '!' | '~' | 'xx' | 'try') unary | postfix
+                  // right-recursive, so prefixes stack (`xx try f()`, `!!ok`);
+                  // a prefix '-' / '*' must be GLUED to its operand (§1 Whitespace is Syntax)
+postfix         = primary ('(' args? ')' | '[' expr ']' | '.' IDENT | '.{' field_init_list '}')*
+                  // a postfix '(' / '[' must be GLUED to what precedes it (§1 Whitespace is Syntax)
 primary         = INT | HEX_INT | OCT_INT | BIN_INT | FLOAT | STRING | BOOL | IDENT | '---'
                 | '.' IDENT | '.' '{' field_init_list '}'
                 | '(' expr ')' | block | '#run' expr    // bare parens = grouping ONLY
@@ -6310,9 +6659,15 @@ field_init_list = field_init (',' field_init)* ','?
 field_init      = IDENT '=' expr | IDENT | '..' expr | expr
 if_expr         = 'if' expr 'then' expr ('else' expr)?
                 | 'if' expr block ('else' block)?
+                  // the 'else' of an if is any 'else' NOT glued to a ':' —
+                  // one token of lookahead separates it from an else_arm head
 match_expr      = 'if' expr '==' '{' case_arm* else_arm? '}'
-case_arm        = 'case' pattern ':' (stmt* | 'break' ';')
-else_arm        = 'else' ':' stmt*
+case_arm        = 'case' pattern ':' arm_capture? arm_body
+arm_capture     = '(' IDENT ')'         // payload binding — a LONE identifier
+arm_body        = 'break' end
+                | '=>' expr end         // the last arm's expr may drop `end`
+                | stmt*                 // every form ends as a statement does
+else_arm        = 'else' ':' stmt*      // the ':' is GLUED to the 'else'
 pattern         = '.' IDENT | INT | BOOL | IDENT
 lambda          = '(' params? ')' ('->' type)? '=>' expr
 args            = expr (',' expr)* ','?
@@ -6342,6 +6697,6 @@ tuple_type_elem = IDENT ':' type | '..' type | type
   the CLOSURE's job — spell it `x := () => …` (`:=` + `=>`), which captures by
   pointer. (Enclosing local consts are rejected too rather than comptime-folded:
   a static nested fn's frame cannot carry them, and the closure spelling captures
-  them uniformly.) Resolved: issue 0250.
+  them uniformly.)
 - **Operator overloading**: Not shown — presumably no.
 - **Top-level expressions**: Are bare expressions allowed at the top level or only declarations?

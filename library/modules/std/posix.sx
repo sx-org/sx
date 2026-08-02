@@ -5,8 +5,8 @@
 //
 // Raw libc symbols live in std/c.sx and are called directly (`c.read(...)`).
 // This layer is deliberately thin — errno accessor + errno constants — and
-// does NOT yet re-wrap syscalls into `!`-returning calls (that couples to the
-// ERR stream). Add portable, already-duplicated helpers here as they arise.
+// does not re-wrap syscalls into `!`-returning calls. Add portable,
+// already-duplicated helpers here as they arise.
 
 c :: #import "modules/std/c.sx";
 
@@ -18,8 +18,7 @@ set_errno :: (v: i32)  { c.errno_location().* = v; }
 
 // ── errno constants (per-OS) ────────────────────────────────────────────────
 // Canonical home for the errno values the stdlib checks. Values differ by OS
-// (the numbers are the kernel's, not portable). Previously hand-written inside
-// std/socket.sx's two `inline if OS` arms — centralized here.
+// (the numbers are the kernel's, not portable).
 // Unbraced case decls (a braced `{ }` arm would scope them away from module
 // level — matches the leak rule std/sched.sx relies on). NO silent fallback:
 // errno numbers are per-kernel, so an unsupported OS must add its own case —

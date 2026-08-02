@@ -1,7 +1,7 @@
 // Flat-imported helper. `Coordnate` is a typo — no such type is declared
 // anywhere. Because this module is imported (not the main file), the
 // `UnknownTypeChecker` trusts it and never walks it, so the type leaf is the
-// sole guard against the silently-fabricated empty-struct stub.
+// sole guard against a fabricated empty-struct stub.
 Thing :: struct {
     x: i32;
     y: Coordnate;

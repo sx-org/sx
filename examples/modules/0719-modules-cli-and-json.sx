@@ -3,19 +3,17 @@
 // reader) — imported into ONE program under DISTINCT namespaces, with
 // BOTH `parse`s actually called.
 //
-// Regression (issue 0100): same-name cross-module functions collided in
-// the bare-name function table during IR lowering. Lowering re-resolved a
-// call by SHORT name, so importing both modules and calling one bound the
-// wrong-arity same-named function and tripped `lazyLowerFunction`'s
-// param-count assert (panic). The fix resolves each `pkg.parse(...)` to a
-// UNIQUE module-qualified FuncId, so `cli.parse` and `json.parse` are
-// independent identities.
+// Each `pkg.parse(...)` resolves to a UNIQUE module-qualified FuncId, so
+// `cli.parse` and `json.parse` are independent identities: the call carries
+// that identity rather than re-resolving by short name through the bare-name
+// function table, where same-name cross-module functions of different arity
+// collide.
 
 #import "modules/std.sx";
 #import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
 // `cli` is imported BOTH flat (so its types — `FlagSpec` / `Command` / `Diag` —
 // are bare-visible) AND namespaced (so the same-name `cli.parse` stays a
-// distinct qualified identity from `json.parse`). Post-E1 a bare reference to a
+// distinct qualified identity from `json.parse`). A bare reference to a
 // namespaced-ONLY type is a "not visible" error, so the flat import is what makes
 // the bare type names below resolve; `json` stays namespaced-only (its `Value`
 // reaches `main` only as `json.parse`'s return type, resolved in `json.sx`'s own

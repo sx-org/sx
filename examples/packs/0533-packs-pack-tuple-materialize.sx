@@ -1,7 +1,7 @@
-// Feature 1 — materialize a tuple from a pack via `.(..xs.method)` (Decision 2:
-// a pack is stored by materializing a tuple). `.(..xs.get)` projects `get` over
-// the pack and collects the results into a real tuple value, which can then be
-// stored, indexed, and (for `Box(T)`) is heterogeneous per position.
+// Materialize a tuple from a pack via `.(..xs.method)` — a pack is stored by
+// materializing a tuple. `.(..xs.get)` projects `get` over the pack and
+// collects the results into a real tuple value, which can then be stored,
+// indexed, and (for `Box(T)`) is heterogeneous per position.
 
 #import "modules/std.sx";
 

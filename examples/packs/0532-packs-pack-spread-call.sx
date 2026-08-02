@@ -1,4 +1,4 @@
-// Feature 1 — pack spread into a call's positional arguments. `f(..xs.get)`
+// Pack spread into a call's positional arguments. `f(..xs.get)`
 // projects `get` over the pack and spreads the resulting tuple into f's params:
 //   add2(..xs.get)  ≈  add2(xs[0].get(), xs[1].get())
 // The canonical's `mapper(..sources.value)` is this shape.

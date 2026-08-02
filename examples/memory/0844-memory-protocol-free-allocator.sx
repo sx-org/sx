@@ -1,4 +1,4 @@
-// The owning-erasure free story (Step 4 S4.4): a protocol value made from
+// The owning-erasure free story: a protocol value made from
 // an RVALUE (`xx Widget{…}`) heap-copies its concrete data — `free(s)`
 // releases that backing through `context.allocator` (the allocator current
 // AT THE FREE — a context pushed since the erasure redirects it: the

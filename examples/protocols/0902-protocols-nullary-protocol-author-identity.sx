@@ -1,4 +1,4 @@
-// issue 0329: a nullary protocol's vtable type is keyed by the declaration's
+// A nullary protocol's vtable type is keyed by the declaration's
 // identity too. Two modules author `Q` with different method sets; each
 // module's erasure must build and dispatch through its own vtable rather than
 // the first-registered spelling's.

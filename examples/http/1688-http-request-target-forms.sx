@@ -1,16 +1,16 @@
 // std.http — request-target forms (RFC 9112 §3.2).
 //
-// Q1.2: the server must handle all four request-target forms:
-//   origin-form    "/path?query"       — the normal case (unchanged).
+// The server handles all four request-target forms:
+//   origin-form    "/path?query"       — the normal case.
 //   absolute-form  "http://auth/path"  — an origin server MUST accept it
-//                  (§3.2.2): the embedded authority is exposed on
-//                  req.authority and routing uses the embedded path
-//                  (scheme http/https only; anything else → 400).
+//                                        (§3.2.2): the embedded authority is exposed on
+//                                        req.authority and routing uses the embedded path
+//                                        (scheme http/https only; anything else → 400).
 //   asterisk-form  "*"                 — OPTIONS only (server-wide);
-//                  any other method with "*" is malformed → 400.
+//                                        any other method with "*" is malformed → 400.
 //   authority-form "host:port"         — CONNECT only, and CONNECT is
-//                  unimplemented → 501; a non-CONNECT request whose
-//                  target is neither origin- nor absolute-form → 400.
+//                                        unimplemented → 501; a non-CONNECT request whose
+//                                        target is neither origin- nor absolute-form → 400.
 //
 // The handler echoes "authority|path" so the test asserts BOTH what
 // routing sees and what authority was extracted. A pooled server repeats

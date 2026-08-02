@@ -2,13 +2,13 @@
 // declaration resolves to the imported type `m.Cfg` (not an empty `{}` stub),
 // so the value passes correctly to a function taking that type.
 //
-// Regression (issue 0204): the parser flattened the qualified prefix to a
-// "m.Cfg" struct_name STRING, which `findByName`/`resolveNominalLeaf` looked up
-// as a bare type name → failed → fabricated an empty-fields struct literally
-// named "m.Cfg" → invalid LLVM IR (`call use({} ...)`), in both JIT and AOT.
-// Fix: the parser carries the qualified prefix as a `type_expr` NODE, and the
-// type resolver handles a `field_access` in type position by resolving it the
-// way a `: m.Cfg` annotation does (namespace alias → leaf in its module).
+// The parser carries the qualified prefix as a `type_expr` NODE, and the type
+// resolver handles a `field_access` in type position by resolving it the way a
+// `: m.Cfg` annotation does (namespace alias → leaf in its module). Flattening
+// the prefix to an "m.Cfg" struct_name STRING instead makes
+// `findByName`/`resolveNominalLeaf` look it up as a bare type name, fabricate
+// an empty-fields struct literally named "m.Cfg", and emit invalid LLVM IR
+// (`call use({} ...)`) in both JIT and AOT.
 
 m :: #import "0799-modules-qualified-struct-literal/lib.sx";
 

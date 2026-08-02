@@ -1,4 +1,3 @@
-// Tests for module.zig
 const std = @import("std");
 const types = @import("types.zig");
 const inst_mod = @import("inst.zig");
@@ -155,7 +154,7 @@ test "Builder.getRefOp returns the defining op, null for params/out-of-range" {
 
     // A load's defining op carries the pointer it read through — the
     // protocol-erasure borrow derives its address from this instead of
-    // re-lowering (and re-evaluating) the operand AST (issue 0214).
+    // re-lowering (and re-evaluating) the operand AST.
     const slot = b.alloca(.i64);
     const loaded = b.load(slot, .i64);
     const op = b.getRefOp(loaded) orelse return error.TestUnexpectedResult;

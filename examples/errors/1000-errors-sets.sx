@@ -1,5 +1,5 @@
-// Error-set declarations + `error.X` tag values + enum-like `==` typing
-// (ERR step E1.1). A declared `error { ... }` set is a real type with a u32
+// Error-set declarations + `error.X` tag values + enum-like `==` typing.
+// A declared `error { ... }` set is a real type with a u32
 // runtime layout; `error.X` is its tag value — the named set when context
 // provides one (membership-checked), else the raw global u32 id. Tags compare
 // with an `error.X` literal or another error-set value. The rejections live in

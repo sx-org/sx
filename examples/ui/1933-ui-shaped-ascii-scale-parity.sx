@@ -2,7 +2,6 @@
 // ASCII fast path (stbtt) or the shaping path (kbts). The two disagreed
 // because they scaled font units differently, so adding a single non-ASCII
 // character silently resized the whole string.
-// Regression (issue 0356).
 //
 // Run:
 //     sx run examples/ui/1933-ui-shaped-ascii-scale-parity.sx

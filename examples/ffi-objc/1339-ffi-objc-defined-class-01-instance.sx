@@ -1,21 +1,21 @@
-// M1.2 A.7 — full instance state round-trip on a sx-defined
-// `#objc_class`. The plan's first integration smoke test
-// (A.2/A.3/A.4 integration through the now-open dispatch gate).
+// Full instance state round-trip on a sx-defined
+// `#objc_class`: method lowering, ivar registration, and class-pair init
+// integrated through the dispatch gate.
 //
 // What this exercises end-to-end:
-//   1. `SxFoo.alloc()` — sx-side call lowers to objc_msgSend(SxFoo, sel_alloc).
-//      The runtime invokes the synthesized +alloc IMP (M1.2 A.5)
-//      which allocates an instance + state struct and binds them
-//      via __sx_state.
-//   2. `f.bump()` — sx-side method call lowers to
-//      objc_msgSend(f, sel_bump). Runtime dispatches to the IMP
-//      trampoline (M1.2 A.4b.ii) which reads __sx_state to find
-//      the state pointer and forwards to the sx body
-//      `SxFoo.bump(__sx_default_context, state)`. Body mutates
-//      self.counter (M1.2 A.3).
-//   3. Repeat to confirm the state persists across calls.
-//   4. release — synthesized -dealloc (M1.2 A.6) frees the state
-//      and chains to [super dealloc].
+// 1. `SxFoo.alloc()` — sx-side call lowers to objc_msgSend(SxFoo, sel_alloc).
+//    The runtime invokes the synthesized +alloc IMP
+//    which allocates an instance + state struct and binds them
+//    via __sx_state.
+// 2. `f.bump()` — sx-side method call lowers to
+//    objc_msgSend(f, sel_bump). Runtime dispatches to the IMP
+//    trampoline, which reads __sx_state to find
+//    the state pointer and forwards to the sx body
+//    `SxFoo.bump(__sx_default_context, state)`. Body mutates
+//    self.counter.
+// 3. Repeat to confirm the state persists across calls.
+// 4. release — synthesized -dealloc frees the state
+//    and chains to [super dealloc].
 
 #import "modules/std.sx";
 #import "modules/build.sx";
@@ -26,7 +26,7 @@ SxFoo :: #objc_class("SxFoo") {
 
     // Declare the synthesized class methods so sx-side call sites
     // can resolve them. +alloc / -dealloc IMPs are emitted by the
-    // compiler at module-init (M1.2 A.5 / A.6); these declarations
+    // compiler at module-init; these declarations
     // just give the names a typed contract.
     alloc :: () -> *SxFoo;
 
@@ -47,7 +47,7 @@ main :: () -> i32 {
         f.bump();
         f.bump();
         f.bump();
-        print("counter: {}\n", f.get());  // expected: 3
+        print("counter: {}\n", f.get());
 
         // release
         sel_release : SEL = sel_registerName("release".ptr);

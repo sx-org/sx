@@ -1,0 +1,52 @@
+// Whitespace is syntax (specs §1), statement termination: statements break,
+// expressions chain. A statement that IS a block — `if`, `while`, `for`,
+// `match`, a bare scope `{ … }` — ends at its `}`, so a dot-led line after it
+// starts a new statement. An EXPRESSION that merely ends in a block — a
+// trailing-block call, an aggregate literal — is still an expression, and its
+// postfix chain reads on across the line.
+#import "modules/std.sx";
+
+Color :: enum { red; green; blue }
+
+Box :: struct {
+    n: i64;
+
+    show :: (self: Box) -> i64 { self.n }
+    doubled :: (self: Box) -> Box { Box{ n = self.n * 2 } }
+}
+
+vstack :: (spacing: f32, content: Closure()) -> Box {
+    content();
+    Box{ n = 7 }
+}
+
+// A bare scope block is a statement: it ends at its `}`, and `.green` below is
+// the block's tail value, not a field of the scope.
+scoped :: () -> Color {
+    {
+        print("scope\n");
+    }
+    .green
+}
+
+// A `match` statement ends at its `}` the same way.
+named :: (c: Color) -> string {
+    if c == {
+        case .red:   return "red";
+        case .green: return "green";
+        case .blue:  return "blue";
+    }
+    "?"
+}
+
+main :: () -> i32 {
+    // The trailing-block call is an expression, so the chain continues.
+    n := vstack(1.0) {
+        print("block\n");
+    }
+        .doubled()
+        .show();
+    print("n={}\n", n);
+    print("scoped={} named={}\n", named(scoped()), named(.blue));
+    return 0;
+}

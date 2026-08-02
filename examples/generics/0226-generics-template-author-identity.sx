@@ -1,4 +1,4 @@
-// issue 0329: the monomorph cache is keyed by the TEMPLATE's declaration
+// The monomorph cache is keyed by the TEMPLATE's declaration
 // identity. Two modules author `Box`, `Mk`, `pick` and `tally`; reaching each
 // author through its own namespace must build that author's layout and call
 // that author's body, whatever the import order.

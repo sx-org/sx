@@ -1,7 +1,6 @@
-// Tests for expr_typer.zig — focused on the structural (non-call) expression
-// shapes ExprTyper owns, reached via the public `Lowering.inferExprType`
-// delegation. These cases need no lexical scope / program-index state, so a
-// bare `Lowering.init` suffices.
+// The structural (non-call) expression shapes ExprTyper owns, reached via the
+// public `Lowering.inferExprType` delegation. These cases need no lexical scope
+// / program-index state, so a bare `Lowering.init` suffices.
 
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -52,9 +51,8 @@ test "expr_typer: binary comparison is bool, int arithmetic stays int" {
 
 // A non-comparison binary op infers the PROMOTED result
 // of (lhs, rhs), not the LHS alone — so a mixed int+float op types as the float
-// in EITHER operand order (was LHS-biased: `int + float` → i64 while
-// `float + int` → f64). This is what feeds the typed-const validation that
-// rejected `i64 : 0.5 + M` but not `i64 : M + 0.5`.
+// in EITHER operand order. This feeds the typed-const validation, which rejects
+// `i64 : 0.5 + M` and `i64 : M + 0.5` alike.
 test "expr_typer: mixed int+float arithmetic promotes to float, order-independent" {
     const alloc = std.testing.allocator;
     var module = ir_mod.Module.init(alloc);
@@ -64,11 +62,11 @@ test "expr_typer: mixed int+float arithmetic promotes to float, order-independen
     var int_n = node(.{ .int_literal = .{ .value = 2 } });
     var float_n = node(.{ .float_literal = .{ .value = 0.5 } });
 
-    // int LHS, float RHS → f64 (was i64 before the fix).
+    // int LHS, float RHS → f64.
     var add_if = node(.{ .binary_op = .{ .op = .add, .lhs = &int_n, .rhs = &float_n } });
     try std.testing.expectEqual(TypeId.f64, l.inferExprType(&add_if));
 
-    // float LHS, int RHS → f64 (already correct; confirms order-independence).
+    // float LHS, int RHS → f64; the join is order-independent.
     var add_fi = node(.{ .binary_op = .{ .op = .add, .lhs = &float_n, .rhs = &int_n } });
     try std.testing.expectEqual(TypeId.f64, l.inferExprType(&add_fi));
 
@@ -165,7 +163,7 @@ test "expr_typer: raw value binding shadows numeric-limit, bare type still folds
 // so a global `` `f32 := Box{…} `` and a module-const `` `i16 :: Box{…} `` each
 // read the value's field (NOT the numeric-limit fold), while a bare `f32.max` /
 // `i16.max` (a `.type_expr` receiver) still folds. Pins the guard across the two
-// non-lexical sources the attempt-3 scope-only fix missed.
+// non-lexical sources a scope-only guard would miss.
 test "expr_typer: global and module-const raw bindings shadow numeric-limit" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

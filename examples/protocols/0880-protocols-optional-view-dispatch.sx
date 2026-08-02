@@ -2,10 +2,9 @@
 // pointer-sentinel-shaped, so the optional value IS the `*P` word —
 // `opt_view.method()` unwraps and dispatches exactly like `?P` does for
 // owned optionals (calling on null is undefined, same as `?P`).
-// Both the direct field call and the unwrap-bind spelling work.
-// Regression (issue 0310): the optional-receiver dispatch arm only
-// looked for a protocol CHILD, so `h.gpu.n()` with `gpu: ?*P` was
-// "unresolved 'n'" while the same shape with `?P` compiled.
+// Both the direct field call and the unwrap-bind spelling work: the
+// optional-receiver dispatch arm reaches a protocol through a pointer child,
+// not only a protocol child.
 #import "modules/std.sx";
 
 P :: protocol vtable {

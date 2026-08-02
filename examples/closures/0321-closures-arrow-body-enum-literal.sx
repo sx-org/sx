@@ -1,4 +1,4 @@
-// Issue 0350: an expression-bodied lambda types its body against its
+// An expression-bodied lambda types its body against its
 // OWN declared return type, exactly as a named fn's body — enum
 // literals resolve against `-> E` in the bare arrow, in an if-else
 // arrow, and when the literal sits in a call argument (where the

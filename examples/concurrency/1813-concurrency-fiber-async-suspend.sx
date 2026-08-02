@@ -1,6 +1,6 @@
-// Stream B2 — the SUSPENDING `context.io.async` layer over the M:1 fiber
-// scheduler (PLAN-IO-UNIFY: the unified async stack — the bespoke `go`/`wait` was
-// retired in Phase 5). In contrast with 1805's `context.io.async` UNDER THE
+// The SUSPENDING `context.io.async` layer over the M:1 fiber
+// scheduler — the unified async stack.
+// In contrast with 1805's `context.io.async` UNDER THE
 // BLOCKING `Io` (which runs each worker INLINE to completion — no interleaving),
 // here the scheduler is installed as `context.io`, so `context.io.async(work)`
 // runs `work` as a REAL fiber and `await()` SUSPENDS the caller until it finishes
@@ -8,8 +8,8 @@
 // interleaving).
 //
 // `work` is a NULLARY worker: any inputs are captured in the lambda at the call
-// site (no `..args` pack crosses the fiber boundary — that would hit issue 0156
-// Part 2). Outputs flow OUT through pointers captured in the worker (the shared
+// site (no `..args` pack crosses the fiber boundary). Outputs flow OUT through
+// pointers captured in the worker (the shared
 // `Log` struct), since closure capture-by-value does not write back.
 //
 // What this proves:
@@ -17,7 +17,7 @@
 //     2 and completes; A resumes, records 3, completes → interleave order 1 2 3.
 //   - awaited VALUES: A returns 42, B returns 100 (recorded after both awaits).
 //     → sequence: 1 2 3 42 100.
-//   - cancel rides the `!` channel (model (a), like 1806): a canceled worker's
+//   - cancel rides the `!` channel (like 1806): a canceled worker's
 //     `await()` raises `.Canceled`, taken by the `or` default → -99.
 //
 // `wait` must run inside a fiber (it parks `self.current`), so the "main task"

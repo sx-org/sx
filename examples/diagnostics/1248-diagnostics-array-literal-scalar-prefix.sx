@@ -2,9 +2,6 @@
 // (`Vector(3, f32).[…]`, an array-type alias) — never the element type.
 // A prefix resolving to a non-array/vector/slice (scalar `i32.[…]`,
 // struct `Pt.[…]`) is refused with a pointer at the annotated form.
-// Before the refusal the prefix was silently IGNORED: elements fell
-// back to the literal default, so `i32.[1, 2, 3]` built a `[3]i64`.
-// Regression (issue 0293).
 #import "modules/std.sx";
 
 Pt :: struct { x: i64; }

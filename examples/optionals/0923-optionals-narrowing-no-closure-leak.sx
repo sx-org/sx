@@ -1,8 +1,8 @@
-// Flow narrowing (issue 0179) does NOT cross into a nested function body. A
+// Flow narrowing does NOT cross into a nested function body. A
 // closure capturing a local that is narrowed in the ENCLOSING scope still sees
 // it as `?T` inside the closure — using it unguarded is a compile error.
 //
-// This guards the soundness fix from the adversarial review of 0179/0185: the
+// This guards the soundness rule behind 0179/0185: the
 // narrowing gate is keyed by per-function SSA `Ref`, and a closure body's `Ref`
 // space overlaps the enclosing function's, so without isolation an outer
 // narrowed `Ref` would falsely permit unwrapping a not-proven-present optional

@@ -1,4 +1,4 @@
-// Protocol RTTI (Step-4 phase 2, Option B): every protocol value carries
+// Protocol RTTI: every protocol value carries
 // its concrete type_id at slot 1 — {ctx, __type_id, vtable} / `inline`
 // {ctx, __type_id, fn_ptrs…} — so the value's first two words are an
 // `any` {data, type_id}. What that unlocks, all pinned here:

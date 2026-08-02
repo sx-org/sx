@@ -1,13 +1,12 @@
-// Issue 0352: guard-narrowing (0179) covers MEMBER positions with the
+// Guard-narrowing (0179) covers MEMBER positions with the
 // same proof it always gave coercion sites. After `if p == null
 // { return; }`:
-//   - plain field reads through `?*T` and `?Struct`, including
-//     AGGREGATE fields and nested chains (the first fix attempt
-//     miscompiled these — address-as-value — so they are pinned);
-//   - field writes through a narrowed `?*T`;
-//   - method calls on a narrowed receiver;
-//   - inference agrees with lowering (a local declared from a
-//     narrowed read gets the field's type).
+// - plain field reads through `?*T` and `?Struct`, including
+//   AGGREGATE fields and nested chains;
+// - field writes through a narrowed `?*T`;
+// - method calls on a narrowed receiver;
+// - inference agrees with lowering (a local declared from a
+//   narrowed read gets the field's type).
 // `?.` keeps the optional; `q := p` keeps the static optional type
 // (only guarded locals narrow — spell `q := p!`).
 #import "modules/std.sx";
@@ -56,7 +55,7 @@ guard_or :: (a: ?*T, b: ?*V) -> i64 {
 
 // The lvalue/receiver route (lowerExprAsPtr): a #get accessor chain
 // (`List.len`) and an address-of chain both root through the narrowed
-// pointer — the resolver that surfaced last in the fix.
+// pointer.
 W :: struct { xs: List(i64) = .{}; }
 mkw :: (w: *W) -> ?*W { w }
 accessor_chain :: (w: *W) -> i64 {

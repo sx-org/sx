@@ -33,10 +33,9 @@
 //             malloc/free round trip through the same handle shape.
 //
 // The next three are the ADVERSARIAL matrix: 20 named conformers (B00..B19,
-// bump arenas with deliberately unequal bookkeeping so no two arms fold
-// together) are erased into a handle array, and the lane picks a handle per
-// allocation. This is the regime that decided the trade — an allocator
-// population a call site cannot predict:
+// bump arenas with unequal bookkeeping so no two arms fold together) are
+// erased into a handle array, and the lane picks a handle per allocation —
+// an allocator population a call site cannot predict:
 //   INTER20 — the handle index comes from a heap array filled at RUNTIME by
 //             an xorshift stream. The order is data-dependent: invisible to
 //             LLVM, unlearnable by the branch predictor. Measures
@@ -69,7 +68,7 @@
 // driver blow past the inliner's budget, and the lane that stops being
 // devirtualized is then an artifact of the harness, not of the language.
 //
-// Deliberately NOT a corpus example: it runs for seconds by design.
+// NOT a corpus example: it runs for seconds.
 
 #import "modules/std.sx";
 #import "modules/std/mem.sx";

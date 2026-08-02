@@ -1,12 +1,10 @@
 // `extern` C-variadic tail: a trailing `..args: []T` on an `extern` fn
-// maps to the C calling convention's `...`. Extras at the call site pass through the variadic
-// slot with standard default argument promotion (i8/i16/bool → i32,
-// f32 → f64), NOT packed into an sx slice.
+// maps to the C calling convention's `...`. Extras at the call site pass
+// through the variadic slot with standard default argument promotion
+// (i8/i16/bool → i32, f32 → f64), NOT packed into an sx slice.
 //
-// Regression (FFI-linkage Part B): the `is_variadic` drop in
-// `declareFunction` + the call-site early-out in `packVariadicCallArgs`
-// were gated on `extern` only, so a migrated variadic `extern` lost
-// its `...` tail and slice-packed the extras (garbage at the C ABI).
+// The `is_variadic` drop in `declareFunction` and the call-site early-out in
+// `packVariadicCallArgs` cover every `extern` shape.
 
 #import "modules/std.sx";
 

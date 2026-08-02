@@ -67,6 +67,6 @@ dispatch       :: router.dispatch;
 Client         :: client.Client;
 ClientResponse :: client.ClientResponse;
 ClientErr      :: client.ClientErr;
-ClientOpts     :: client.ClientOpts;   // Q3.6a: open/open_addr options
-ClientConn     :: client.ClientConn;   // Q3.6a: an open client session
-ClientPool     :: client.ClientPool;   // Q3.6b: single-threaded keep-alive pool
+ClientOpts     :: client.ClientOpts;   // open/open_addr options
+ClientConn     :: client.ClientConn;   // an open client session
+ClientPool     :: client.ClientPool;   // single-threaded keep-alive pool

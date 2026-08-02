@@ -3,7 +3,7 @@
 // tagged-union whose variant labels mirror the tuple's labels — the shape the
 // `race` result synthesis needs (`(a: *Task(A), b: *Task(B))` -> `{ a: A; b: B }`).
 //
-// Exercises three things that previously failed when the index was an `inline for`
+// Exercises three things with the index as an `inline for`
 // loop var: a type-call RESULT used as (1) a `Type`-typed struct field value
 // (`payload = struct_field_type(...)`), (2) a nested type-call arg
 // (`struct_field_type(pointee_type(struct_field_type(T, i)), 0)`), and a `struct_field_name(T, i)` folded to

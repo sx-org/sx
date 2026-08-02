@@ -1,4 +1,4 @@
-// `content.shape()` plus example-owned planning (fluent spec §7).
+// `content.shape()` plus example-owned planning.
 //
 // `@BuildShape` is compiler-produced FACT and lives in stdlib. Planning is
 // ordinary library POLICY over those facts, so `Plan` / `PlanPolicy` /

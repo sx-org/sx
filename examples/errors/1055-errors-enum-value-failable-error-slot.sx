@@ -1,9 +1,7 @@
-// Enum-valued value-carrying failable: the SUCCESS path must zero the trailing
-// error slot. Regression (issue 0097). A `-> (Enum, !E)` `return .variant`
-// resolves the enum literal against the function's VALUE type (the enum), not
-// the failable tuple — otherwise the literal mis-resolves (tag 0) and is stamped
-// with the tuple type, which the success-return lowering mistakes for a forwarded
-// full tuple and leaves the error slot UNDEFINED (read back as garbage nonzero).
+// Enum-valued value-carrying failable: the SUCCESS path zeroes the trailing
+// error slot. A `-> (Enum, !E)` `return .variant` resolves the enum literal
+// against the function's VALUE type (the enum), not the failable tuple, so the
+// success-return lowering never mistakes it for a forwarded full tuple.
 //
 // This pins the slot at RUNTIME on the success path (e.(i64), bare `if e`,
 // and `e == error.X`) — not only via the `if !e` proof that the compiler can

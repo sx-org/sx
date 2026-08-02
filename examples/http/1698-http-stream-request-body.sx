@@ -1,4 +1,4 @@
-// std.http — Q3.1 streaming request-body reader (pool mode).
+// std.http — streaming request-body reader (pool mode).
 //
 // Config.stream_request_body dispatches a body-carrying request at
 // HEADERS-COMPLETE: req.body is "" and the handler pulls the decoded body
@@ -292,7 +292,7 @@ main :: () -> i32 {
         socket.close(c4);
 
         // ── case 4b: bare CR inside a chunk extension → framing abort ──
-        // Parity with the accumulate decoder (Q3.1-review LOW): the size
+        // Parity with the accumulate decoder : the size
         // line ends at its FIRST CR, which must be CRLF. The valid first
         // chunk's 3 bytes are delivered before the abort; the reader then
         // gets -1, and the worker's response ships with Connection: close.

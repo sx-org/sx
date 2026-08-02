@@ -1,0 +1,11 @@
+// `..` expands a comptime pack, not a concrete tuple; a nested function cannot
+// read enclosing locals either.
+#import "modules/std.sx";
+main :: () {
+    w := (a: i64, b: i64) -> i64 => a + b;
+    t := .{40, 2};
+    out : i64 = 0; po := *out;
+    captured :: () { po.* = w(..t); };
+    captured();
+    print("out: {}\n", out);
+}

@@ -1,7 +1,7 @@
 // `foo` is pulled in QUALIFIED by the consumer (`m :: #import …`). Its body
 // terminates via a constant-folded `if true { return … }`, and the `return`
 // calls `helper` from m.sx's OWN flat import. Lowering `foo` as a qualified
-// alias must be transparent to the caller's lowering state — issue 0100 F2.
+// alias must be transparent to the caller's lowering state.
 #import "helper.sx";
 
 foo :: () -> i64 {

@@ -1,8 +1,7 @@
-# Inline Assembly for sx — Design Doc & Proposal
+# Inline assembly — design
 
-**Status:** proposal / not yet scheduled into a workstream
-**Author:** research pass over the Zig compiler (`~/projects/zig`, 0.16-dev) + the sx compiler
-**Scope:** how Zig implements inline assembly end-to-end, and a minimal-deviation proposal to bring the same model to sx.
+This doc covers how Zig implements inline assembly end-to-end, and the
+minimal-deviation model sx takes from it.
 
 > Guiding constraint for this doc: **mirror Zig's design; deviate only where sx's
 > grammar or stdlib makes a 1:1 copy impossible, and call every deviation out
@@ -11,30 +10,28 @@
 
 ---
 
-## 0. TL;DR + feasibility
+## 0. TL;DR
 
-* **Feasible today, no new infrastructure.** sx already links LLVM (`build.zig:10`
-  → `/opt/homebrew/opt/llvm@22`) and `@cImport`s `llvm-c/Core.h`
-  (`src/llvm_api.zig:1-17`). That header exposes everything inline asm needs,
-  reachable right now through `llvm_api.c.*`:
+* **The LLVM surface.** sx links LLVM (`build.zig`) and `@cImport`s
+  `llvm-c/Core.h` (`src/llvm_api.zig`), so everything inline asm needs is
+  reachable through `llvm_api.c.*`:
   * `LLVMGetInlineAsm(Ty, AsmString, AsmStringSize, Constraints, ConstraintsSize, HasSideEffects, IsAlignStack, Dialect, CanThrow)` — builds the asm callee (LLVM 19–22 share this 9-arg signature).
   * `LLVMInlineAsmDialectATT` / `LLVMInlineAsmDialectIntel`.
-  * `LLVMBuildCall2(...)` — already used pervasively in `src/ir/emit_llvm.zig` (e.g. the Obj-C msgSend path) — calls the asm value like a function.
+  * `LLVMBuildCall2(...)` — the call builder the rest of `src/ir/emit_llvm.zig` uses (e.g. the Obj-C msgSend path) — calls the asm value like a function.
   * `LLVMAppendModuleInlineAsm(M, Asm, Len)` — module-level (global) asm.
-* **The hard part is not codegen.** Codegen is ~80 lines of well-trodden LLVM-C.
-  The real work is (a) the parser grammar, (b) a faithful port of Zig's
+* **The substance sits above codegen:** the parser grammar, the port of Zig's
   *LLVM constraint-string assembly* and *`%[name]`→`$N` template rewrite*, and
-  (c) Sema validation rules. All three are fully specified below.
-* **Surface form (decided, §II.2):** `asm volatile { "tmpl", "=r" -> T, "r" = x, clobbers(.cc, .memory) }`
+  the shape validation. All three are specified below.
+* **Surface form (§II.2):** `asm volatile { "tmpl", "=r" -> T, "r" = x, clobbers(.cc, .memory) }`
   — a brace block; `->` marks outputs / `=` marks inputs (no positional `:`
   sections); enum-literal `clobbers(.…)`; and N `-> Type` outputs return a
   **tuple** (sx has tuples — Zig caps at one output).
-* **Inline asm is never comptime-evaluable.** The interpreter must bail loudly
-  (`bailDetail`), per CLAUDE.md's "no silent unimplemented arms" rule.
-* **One naming note:** sx already has a `sx asm <file>` *CLI subcommand*
-  (`src/main.zig:203,386`) that emits a `.s` file. That is a compiler output
-  mode, a different namespace from a language token. No conflict, but worth
-  knowing so nobody confuses the two.
+* **Inline asm is never comptime-evaluable.** The comptime VM bails loudly on the
+  op — no silent unimplemented arm.
+* **One naming note:** sx also has a `sx asm <file>` *CLI subcommand*
+  (`src/main.zig`) that emits a `.s` file. That is a compiler output mode, a
+  different namespace from a language token. No conflict, but worth knowing so
+  nobody confuses the two.
 
 ---
 
@@ -168,8 +165,7 @@ fn expectAsmExpr(p: *Parse) !Node.Index {
 * `parseAsmInputItem` (`Parse.zig:2866-2883`):
   `LBRACKET IDENT RBRACKET STRINGLITERAL LPAREN Expr RPAREN`.
 * **Clobbers parse as a generic expression** (`(try p.expectExpr())`), not a
-  string list — this is the 0.16-dev change. It is later coerced to a
-  `std.lang.assembly.Clobbers` struct at Sema time.
+  string list; Sema coerces it to a `std.lang.assembly.Clobbers` struct.
 
 ### AST → ZIR — `lib/std/zig/AstGen.zig`
 
@@ -296,7 +292,7 @@ backend.
 
 ---
 
-# PART II — Proposal for sx
+# PART II — the sx model
 
 ## II.1 Design principles
 
@@ -314,13 +310,13 @@ backend.
 
 ## II.2 sx surface syntax
 
-`asm` is an **expression** (it yields the output value/tuple), introduced by a new
+`asm` is an **expression** (it yields the output value/tuple), introduced by the
 `asm` keyword. The body is a **brace block** of comma-separated parts: a template
 string first, then operands, then an optional `clobbers(.…)` clause. Each operand
 is `[name]? "constraint" <role>`, where the role marker is:
 
 * **`-> Type`** — an **output** that produces a value (joins the result).
-* **`-> @place`** — an output that writes through to existing storage (Phase 2).
+* **`-> @place`** — an output that writes through to existing storage.
 * **`= expr`** — an **input** (the value fed in).
 
 `->` reuses sx's "produces" arrow (as in `(a: i32) -> i32`); `=` reuses sx's
@@ -346,8 +342,8 @@ sp :: () -> u64 {
 }
 ```
 
-Multi-instruction templates use sx's existing **`#string` heredoc**
-(`src/lexer.zig:402`) or a multi-line `"..."` literal — no new lexer feature:
+Multi-instruction templates use the **`#string` heredoc**
+(`src/lexer.zig:402`) or a multi-line `"..."` literal:
 
 ```sx
 serialize :: () {
@@ -407,10 +403,10 @@ q, r := divmod(17, 5);                // q = 3, r = 2
 * **[DEVIATION 3 — clobbers are an enum-literal list `clobbers(.cc, .memory)`.]**
   Zig 0.16 uses a struct literal `: .{ .rcx = true }` coerced to a per-arch
   `std.lang.assembly.Clobbers`; older Zig used a string list. sx uses a dot-literal
-  list, cleaner than both. **v1:** each `.name` is a dot-name lowered straight to
+  list, cleaner than both. Each `.name` is a dot-name lowered straight to
   `~{name}` (`.memory`/`.cc` are recognized specials; register names pass through
-  verbatim; LLVM validates). **Phase 4:** upgrade `.name` to members of a
-  compile-time-checked per-arch `Clobber` enum — *same syntax*, gains typo-checking.
+  verbatim); LLVM is the only validator, so a typo'd register surfaces as an LLVM
+  error rather than an sx diagnostic.
   Note the call-looking `clobbers(…)` is a declarative clause, **not** a call —
   nothing executes; it only feeds the register allocator.
 
@@ -418,8 +414,7 @@ q, r := divmod(17, 5);                // q = 3, r = 2
   (`specs.md:168`) has neither `asm` nor `volatile`. `asm` becomes a real keyword;
   `volatile` appears *only* right after `asm`, so it can be recognized contextually
   (a plain identifier everywhere else), avoiding reserving it globally. The surface
-  is byte-identical to Zig. (Alternative: reserve globally — simpler lexer, small
-  source-compat risk. Recommend contextual.)
+  is byte-identical to Zig.
 
 * **[DEVIATION 5 — multiple value-outputs return a tuple (sx ⊃ Zig).]** Zig allows
   at most one `-> T` output; the rest must be pointer/lvalue outputs. sx has
@@ -427,8 +422,8 @@ q, r := divmod(17, 5);                // q = 3, r = 2
   named), destructured with `a, b := …`. A deliberate *improvement* over Zig,
   enabled by a feature Zig lacks, and maps onto LLVM's existing multi-output
   struct return (§II.6). The other output flavor — `-> @place` write-through, plus
-  read-write (`"+r" -> @place`) and indirect-memory (`"=*m"`) outputs — is
-  **Phase 2** (needs indirect-constraint handling); the value-tuple form does not.
+  read-write (`"+r" -> @place`) and indirect-memory (`"=*m"`) outputs — carries its
+  result through storage instead of the result value.
 
 * **[DEVIATION 6 — global asm is a top-level `asm { … }` declaration.]** sx has no
   namespace-level `comptime {}` block (it has `#run`, `specs.md:2598`), so global
@@ -445,13 +440,13 @@ q, r := divmod(17, 5);                // q = 3, r = 2
 ATT,
   };
 
-  my_func :: (a: i32, b: i32) -> i32 extern;   // extern, no library — valid sx today
+  my_func :: (a: i32, b: i32) -> i32 extern;   // extern, no library
   ```
 
   Only the `comptime {}` wrapper is dropped; lowers to `LLVMAppendModuleInlineAsm`.
 
-  **Calling the asm symbol reuses the C-FFI *import* path** (no new mechanism for
-  v1). A lib-less `extern` fn declaration (its library is optional; used in 50+
+  **Calling the asm symbol reuses the C-FFI *import* path.**
+  A lib-less `extern` fn declaration (its library is optional; used in 50+
   stdlib sites, e.g. `chdir :: (path: [*]u8) -> i32 extern;`) emits exactly the
   artifact needed to *call into* the asm symbol — an external-linkage,
   **C-calling-convention**, raw-named, link-time-resolved declaration — the same
@@ -466,16 +461,15 @@ verbatim to LLVM, clobber meaning, "no-output ⇒ must be volatile," AT&T defaul
 
 ## II.3 sx AST
 
-sx's AST is a pointer-based tagged union (`Data = union(enum)` at
-`src/ast.zig:13`, nodes built via `Parser.createNode`), much simpler than Zig's
-SoA `extra_data` scheme — so we can store slices directly. Add one arm to the
-`Node.Data` union (`src/ast.zig:13`):
+sx's AST is a pointer-based tagged union (`Data = union(enum)` in `src/ast.zig`,
+nodes built via `Parser.createNode`), much simpler than Zig's SoA `extra_data`
+scheme, so it stores slices directly:
 
 ```zig
 // in Node.Data union(enum):
 asm_expr: AsmExpr,
 
-// new node struct, alongside the other expression node defs:
+// alongside the other expression node defs:
 pub const AsmExpr = struct {
     template: *Node,                  // string-literal / #string node (comptime string)
     is_volatile: bool = false,
@@ -491,7 +485,7 @@ pub const AsmOperand = struct {
 
     pub const Role = enum {
         out_value,   // `-> Type`     value output; N of these → a tuple result
-        out_place,   // `-> @place`   write-through to existing storage (Phase 2)
+        out_place,   // `-> @place`   write-through to existing storage
         input,       // `= expr`
     };
 };
@@ -503,53 +497,49 @@ result type is derived in Sema from the `out_value` operands (§II.5).
 
 ## II.4 sx parser
 
-`asm` is parsed in expression position. sx dispatches primary expressions in
-`Parser.parsePrimary` (`src/parser.zig`); add a `.kw_asm` case (mirroring how
-existing keyword/`#`-directive expressions like `#run` are handled):
+`asm` is parsed in expression position: `Parser.parsePrimary` dispatches `.kw_asm`
+to `parseAsmExpr`, which
 
-1. consume `asm`; contextually consume `volatile` if the next token is the word
-   `volatile` (Deviation 4).
-2. `expect(.l_brace)`; parse the first element as the **template** expression.
-3. then a comma-separated list until `}`. Each element is either:
+1. consumes `asm`, then `volatile` when the next token is that word (Deviation 4);
+2. expects `{` and takes the first element as the **template** expression;
+3. reads a comma-separated list until `}`, each element either
    * an **operand** — `[name]?` (a bracketed identifier), a string-literal
      constraint, then a role: `->` `Type` (out_value) · `->` `@`-place
-     (out_place, Phase 2) · `=` `expr` (input); or
-   * the **clobbers clause** — `clobbers` `(` `.`ident (`,` `.`ident)* `)`.
-4. allow a trailing comma; `expect(.r_brace)`;
-   `createNode(start, .{ .asm_expr = … })`.
+     (out_place) · `=` `expr` (input); or
+   * the **clobbers clause** — `clobbers` `(` `.`ident (`,` `.`ident)* `)`;
+4. accepts a trailing comma, expects `}`, and builds `.asm_expr`.
 
 The first element is unambiguously the template (a string not followed by a role
 marker). `->` vs `=` after the constraint disambiguates output vs input; inside a
 `->` target, a leading `@` marks a write-through place vs a type.
 
-Top-level/global asm (Deviation 6): recognize `asm {` at declaration scope and
-build a dedicated `asm_global` decl (template only — reject operands/`volatile`).
+Top-level/global asm (Deviation 6) is recognized as `asm {` at declaration scope
+and builds a dedicated `asm_global` decl; operands, inputs and clobbers there are
+a parse error, and `private` on it likewise.
 
-Lexer/token: add `kw_asm` to the `Token.Tag` enum + keyword `StaticStringMap` in
-`src/token.zig`; `volatile` and `clobbers` stay out of the global table
-(contextual). **No new operator tokens** — `->` (`arrow`), `=` (`equal`), `.`
-(`dot`) and `{}` already exist.
+Token side: `kw_asm` is in the `Token.Tag` enum and the keyword `StaticStringMap`
+(`src/token.zig`); `volatile` and `clobbers` stay out of that table and lex as
+plain identifiers. Inline asm adds **no operator tokens** — `->` (`arrow`), `=`
+(`equal`), `.` (`dot`) and `{}` already exist.
 
 ## II.5 sx Sema / typing
 
 * **Result type** from the `out_value` operands (`-> Type`), in declaration order:
   0 → `void` (and the asm **must** be `volatile`); 1 → that operand's type `T`;
   N → a tuple `(T1,…,Tn)`, **named** when the operands carry `[name]`s
-  (`(name1: T1, …)`), positional otherwise. Implement in the expression typer
-  (`src/ir/expr_typer.zig` / wherever `inferExprType` lives), returning the resolved
-  `TypeId` (a tuple `TypeId` for N>1). **Do not** fall back to a silent default — an
-  unresolvable output type is a real error (CLAUDE.md silent-default rule): emit a
-  diagnostic and return the project's `.unresolved` sentinel.
-* Port Zig's validation checklist (these are the user-facing error messages):
-  1. no output operand ⇒ the asm **must** be `volatile`;
-  2. each `out_value` result type must have a well-defined in-memory layout;
-  3. inputs must be runtime values; coerce comptime int→`i64`, float→`f64`;
-  4. template must be a comptime-known string;
-  5. (Phase 2) `out_place` cannot write a `const`; indirect-memory rules.
-* Every `%[name]` referenced in the template must name an operand (best surfaced as
-  a Sema diagnostic; also caught at codegen during the rewrite — §II.6).
+  (`(name1: T1, …)`), positional otherwise. `Lowering.asmResultType`
+  (`src/ir/lower/expr.zig`) is its single owner; the expression typer's
+  `.asm_expr` arm delegates to it, so `return asm`, `x := asm` and a
+  `q, r := asm` destructure all agree. An unresolvable output type yields the
+  `.unresolved` sentinel, never a silent default.
+* `lowerAsmExpr` runs the shape checks before emitting the op, each with its own
+  message: template not a compile-time-known string · an operand `[name]`
+  identical to the register its own constraint pins · a duplicate operand name ·
+  no value output without `volatile` · an unterminated `%[` · a `%[name]` naming
+  no operand · a `-> @place` target that is not an addressable place. Every one
+  returns a placeholder, so `hasErrors()` aborts the build.
 
-### Operand naming rule (auto-name from a `{reg}` pin) — DECIDED
+### Operand naming rule (auto-name from a `{reg}` pin)
 
 The `[name]` label on an operand is purely an sx-surface convenience: it provides
 the `%[name]` template alias and (for `out_value`) the result tuple's field name.
@@ -583,15 +573,14 @@ Corollaries:
   (null when no `[name]` was written); Sema computes the effective name. No
   parser change.
 
-Note: there is **no** "≤1 output" rule (that was Zig's limit; sx's tuples lift it).
+There is **no** "≤1 output" rule — Zig's limit, which sx's tuples lift.
 
 ## II.6 sx IR + LLVM codegen (the part that must match Zig bit-for-bit)
 
 ### IR op — `src/ir/inst.zig`
 
-Add to `Op = union(enum)` (`src/ir/inst.zig:80`), next to `objc_msg_send`
-(`:219`). Strings are interned (`StringId`, as `const_string` at `:85`); operands
-are SSA `Ref`s:
+An arm of `Op = union(enum)`, alongside `objc_msg_send`. Strings are interned
+(`StringId`); operands are SSA `Ref`s:
 
 ```zig
 inline_asm: InlineAsm,
@@ -614,16 +603,16 @@ pub const AsmOperand = struct {
 
 ### Lowering — `src/ir/lower/expr.zig`
 
-Add `.asm_expr => self.lowerAsmExpr(...)` to the `lowerExpr` dispatch. It interns
-the template + constraint strings + clobber names, lowers each input operand to a
-`Ref`, computes the result `TypeId` (§II.5), and emits the `inline_asm` op. (Same
-shape as the existing `objc_msg_send` lowering.)
+`lowerExpr` dispatches `.asm_expr` to `lowerAsmExpr`, which interns the template
++ constraint strings + clobber names, lowers each input operand to a `Ref`,
+computes the result `TypeId` (§II.5), and emits the `inline_asm` op — the same
+shape as the `objc_msg_send` lowering.
 
-### Emit — `src/ir/emit_llvm.zig`
+### Emit — `src/backend/llvm/ops.zig`
 
-Add `.inline_asm => self.emitInlineAsm(...)` to the `emitInst` dispatch. This is a
-**direct port of `FuncGen.airAssembly`**. Using the already-imported
-`llvm_api.c`:
+`emit_llvm.zig`'s instruction dispatch routes `.inline_asm` to
+`Ops.emitInlineAsm`, a **direct port of `FuncGen.airAssembly`**. Using the
+already-imported `llvm_api.c`:
 
 ```zig
 fn emitInlineAsm(self: *Emitter, inst: *const Inst, a: InlineAsm) void {
@@ -694,135 +683,104 @@ state modifier:']' -> emit accumulated modifier, emit '}', start
 ```
 
 An unknown `%[name]` is a hard error (mirror Zig's `todo`/diagnostic — **not** a
-silent pass-through; CLAUDE.md no-silent-arms rule).
+silent pass-through).
 
-### Interpreter — `src/ir/interp.zig`
+### Comptime VM — `src/ir/comptime_vm.zig`
 
-Inline asm cannot be comptime-evaluated. In the interpreter's op switch:
-
-```zig
-.inline_asm => return bailDetail("inline asm requires native execution; not available at comptime"),
-```
-
-(Same `bailDetail` pattern as the Obj-C/JNI ops — surfaces `op=inline_asm: ...`
-rather than a silent default.)
+Inline asm needs native execution, so it is not comptime-evaluable. The VM's op
+switch has no `.inline_asm` arm; the op falls to the catch-all that records
+`detail = "inline_asm"` and returns `error.Unsupported` — the same loud bail the
+memory/aggregate/call ops take, never a silent default.
 
 ### Global asm (Deviation 6)
 
-Lower the top-level `asm_global` decl to a one-shot emit:
-`c.LLVMAppendModuleInlineAsm(module, src.ptr, src.len)` (present in the linked
-LLVM — `@19/include/llvm-c/Core.h:971`). No operands, no rewrite, no volatile;
-multiple blocks concatenate in source order (as Zig does).
+The top-level `asm_global` decl lowers to a one-shot
+`c.LLVMAppendModuleInlineAsm(module, src.ptr, src.len)`. No operands, no
+rewrite, no volatile; multiple blocks concatenate in source order (as Zig does).
 
-**Calling into an asm-defined symbol needs no new machinery** — declare it with a
+**Calling into an asm-defined symbol takes no dedicated machinery** — declare it with a
 lib-less `extern` (Deviation 6, §II.2): `my_func :: (sig) -> R extern;` emits
 an external-linkage, raw-named, C-ABI extern that the linker resolves against the
 `.global` the asm block defines.
 
-**Guard (CLAUDE.md no-silent-arms):** a global-asm symbol exists only in the final
-linked binary, not in the `#run`/JIT host process. The interpreter resolves
-externs via `dlsym(RTLD_DEFAULT)` (`host_ffi.zig`), which won't find it — calling
-such a symbol at comptime must fail **loudly** (it should already, via the
-dlsym-miss diagnostic; pin it with a test). Edge case: a symbol referenced *only*
-by other asm/external code may need `llvm.used` / `.no_dead_strip` to survive
-dead-stripping; the common "sx references it" case is safe.
+A global-asm symbol exists only in the final linked binary, not in the `#run`/JIT
+host process. The comptime VM resolves externs via `dlsym(RTLD_DEFAULT)`
+(`host_ffi.zig`), which does not find it, so a comptime call reports the
+dlsym-miss diagnostic (pinned by `1654-platform-asm-global-comptime-call`). A
+symbol referenced *only* by other asm/external code may need `llvm.used` /
+`.no_dead_strip` to survive dead-stripping; the common "sx references it" case is
+safe.
 
-## II.7 Stage-to-file map (implementation checklist)
+## II.7 Stage-to-file map
 
-| Stage | Zig reference | sx file + insertion point | New code |
-|---|---|---|---|
-| Keyword | `tokenizer.zig` keywords | `src/token.zig` — `Token.Tag` + keyword `StaticStringMap` | `kw_asm` (+ contextual `volatile`) |
-| AST node | `Ast.zig:2797,3789` | `src/ast.zig:13,85,721` — `Node.Data` + new `AsmExpr`/`AsmOperand` | ~25 lines |
-| Parser | `Parse.zig:2771-2883` | `src/parser.zig` — `parsePrimary` `.kw_asm` case + global-asm at decl scope | ~120 lines |
-| Sema/typing | `Sema.zig:15044` | `src/ir/expr_typer.zig` (`inferExprType`) + validation | ~80 lines |
-| IR op | `Air.zig:1485`, `Zir.zig:2531` | `src/ir/inst.zig:80` — `inline_asm: InlineAsm` | ~25 lines |
-| Lowering | `AstGen.zig:8553` | `src/ir/lower/expr.zig` — `lowerExpr` `.asm_expr` case | ~60 lines |
-| LLVM emit | `FuncGen.zig:2473-2852` | `src/ir/emit_llvm.zig` — `emitInst` `.inline_asm` case | ~120 lines (constraint asm + template rewrite + `LLVMGetInlineAsm`/`BuildCall2`) |
-| Global asm | `Sema.addGlobalAssembly` + `module asm` | decl lowering → `c.LLVMAppendModuleInlineAsm` | ~15 lines |
-| Interp bail | n/a | `src/ir/interp.zig` op switch | 1 line |
+| Stage | Zig reference | sx site |
+|---|---|---|
+| Keyword | `tokenizer.zig` keywords | `src/token.zig` — `Token.Tag.kw_asm` + the keyword `StaticStringMap`; `volatile`/`clobbers` stay out of it |
+| AST node | `Ast.zig:2797,3789` | `src/ast.zig` — `Node.Data.asm_expr`/`.asm_global`, `AsmExpr`/`AsmOperand`/`AsmGlobal` |
+| Parser | `Parse.zig:2771-2883` | `src/parser.zig` — `parsePrimary` `.kw_asm` → `parseAsmExpr`, plus global asm at decl scope |
+| Typing | `Sema.zig:15044` | `src/ir/expr_typer.zig` `.asm_expr` → `Lowering.asmResultType` |
+| IR op | `Air.zig:1485`, `Zir.zig:2531` | `src/ir/inst.zig` — `inline_asm: InlineAsm` |
+| Lowering | `AstGen.zig:8553` | `src/ir/lower/expr.zig` — `lowerAsmExpr` (shape diagnostics + the op) |
+| LLVM emit | `FuncGen.zig:2473-2852` | `src/backend/llvm/ops.zig` — `Ops.emitInlineAsm`, dispatched from `src/ir/emit_llvm.zig` |
+| Global asm | `Sema.addGlobalAssembly` + `module asm` | `src/ir/emit_llvm.zig` — `c.LLVMAppendModuleInlineAsm` |
+| Comptime bail | n/a | `src/ir/comptime_vm.zig` — catch-all `error.Unsupported` with `detail = "inline_asm"` |
 
-No change to `src/codegen.zig` is needed (the IR/LLVM path owns this).
+`src/codegen.zig` has no part in this — the IR/LLVM path owns it.
 
-## II.8 Phasing
+## II.8 Surface coverage
 
-* **Phase 1 (MVP).** `asm { … }` block; `asm volatile`; string-literal/`#string`
-  template; `= expr` inputs; `-> Type` outputs **including N→tuple multi-return**;
-  `clobbers(.…)` dot-name list; `%[name]`/`%%` substitution; "no-output ⇒ volatile"
-  check; AT&T. Target: Linux/macOS `x86_64` + `aarch64` syscalls, intrinsics, and
-  multi-value ops (`divmod`, `cpuid`, `add_carry`).
-* **Phase 2.** `-> @place` write-through outputs, read-write (`"+r" -> @place`) and
-  indirect-memory (`"=*m"`) constraints, `%=` unique-id, output-to-const rejection.
-* **Phase 3.** Global/module asm decl (`LLVMAppendModuleInlineAsm`) + the
-  comptime-call guard, plus Intel-dialect opt-in. Small: the extern-call path
-  already exists (lib-less `extern`).
-* **Phase 4 (optional).** Upgrade `clobbers(.name)` from dot-name sugar to a
-  compile-time-checked per-architecture `Clobber` enum (typo-checking; same syntax).
-* **Phase 5 (optional).** Naked functions (`callconv`-equivalent) for full
-  freestanding entry points.
+The surface covers the `asm { … }` block, `asm volatile`, string-literal and
+`#string` templates, `= expr` inputs, `-> Type` value outputs including
+N→tuple multi-return, `-> @place` write-through outputs, read-write
+(`"+r" -> @place`) and indirect-memory (`"=*m"`) outputs, symbol operands
+(`"s"`), the `clobbers(.…)` dot-name list, `%[name]`/`%%`/`%=` substitution,
+the "no-output ⇒ volatile" check, the module-scope `asm { … }` decl, and
+`abi(.naked)` functions whose body is an asm block. AT&T is the only dialect
+emitted (`LLVMInlineAsmDialectATT`), and clobber names reach LLVM unchecked —
+there is no per-architecture `Clobber` enum, so a typo'd register surfaces as an
+LLVM error rather than an sx diagnostic.
 
 ## II.9 Testing
 
-asm output is target-specific, so tests must pin a target and assert on
-emitted IR/exit, not run host-natively unless the host matches. Use the existing
-corpus harness and the **`16xx` platform block** (the closest fit in the
-`XXXX-category` scheme; `specs.md`/CLAUDE.md test-layout). Mirror Zig's own
-matrix:
+asm output is target-specific, so the tests pin a target and assert on emitted
+IR/exit rather than running host-natively unless the host matches. They live in
+the corpus harness's **`16xx` platform block** (`examples/platform/`) and mirror
+Zig's own matrix:
 
-* `examples/16xx-platform-asm-syscall-write.sx` — x86_64-linux write(2), assert exit/stdout.
-* `examples/16xx-platform-asm-register-read.sx` — `mov %%rsp,%[out]`, no-input output.
-* `examples/16xx-platform-asm-no-output-volatile.sx` — bare `asm volatile { "nop" }`.
-* `examples/16xx-platform-asm-missing-volatile.sx` — **expected compile error**
-  (no output, no volatile) — pins the diagnostic.
-* `examples/16xx-platform-asm-template-subst.sx` — `%[a]`/`%%` rewriting, assert
-  on the `sx ir`/`.s` snapshot.
-* `examples/16xx-platform-asm-multi-return.sx` — `divmod` → `(quot, rem)` tuple, destructured.
-* `examples/16xx-platform-asm-global.sx` (Phase 3) — global asm + extern call.
+* `1641-platform-asm-missing-volatile`, `1643-platform-asm-echo-name` and
+  `1644-platform-asm-duplicate-name` pin the three shape diagnostics.
+* `1642-platform-asm-nop-volatile` — bare `asm volatile { "nop" }`.
+* `1645-platform-asm-aarch64-add` / `1651-platform-asm-x86-syscall-write` — a value
+  output and a raw syscall, per arch; `1646-platform-asm-value-binding` types a
+  bare `x := asm { … -> T }` through the `.asm_expr` arm.
+* `1640-platform-asm-parse` (x86 `divq`) and `1647-platform-asm-aarch64-multi` —
+  two value outputs → a tuple, destructured.
+* `1649/1650/1652` and their x86 siblings `1657/1658` — `-> @place`, read-write and
+  indirect-memory outputs.
+* `1656`/`1659-platform-asm-symbol-operand` — a symbol fed in as `"s"`.
+* `1648-platform-asm-global`, `1653-platform-asm-global-jit`,
+  `1667-platform-wrapped-global-asm` and `1655-platform-asm-callback-into-sx` —
+  global asm under AOT, JIT and a comptime-selected arm, and the asm→sx return
+  trip; `1654-platform-asm-global-comptime-call` pins the comptime dlsym-miss
+  diagnostic.
 
-Add an IR/`.s` snapshot (`expected/*.ir`) for the substitution test so the
-constraint-string + template-rewrite output is locked. Seed markers and
-regenerate with `zig build test -Dupdate-goldens`, then review the diff
-(CLAUDE.md snapshot-integrity rule).
+`expected/*.ir` snapshots lock the constraint-string and template-rewrite output;
+regenerate with `zig build test -Dupdate-goldens` and review the diff.
 
-## II.10 Open decisions for the user
+## II.11 Constraints
 
-Largely settled through design review; what remains:
-
-1. **Dialect:** AT&T only (Zig's default) for v1, or expose an Intel opt-in
-   (`LLVMInlineAsmDialectIntel`) from the start? **Recommend AT&T-only v1.**
-2. **`volatile` keyword (Deviation 4):** contextual *(recommended, no
-   source-compat risk)* vs globally reserved *(simpler lexer)*.
-3. **Brace separator:** comma *(recommended — trailing-comma-friendly,
-   literal-style)* vs `;` *(matches sx statement blocks)*.
-4. **Asm-symbol extern spelling (Deviation 6): RESOLVED** — use the lib-less `extern`
-   keyword to call *into* an asm symbol (import), and `export` for the reverse
-   direction (an sx function asm can call *back into*). The dedicated linkage
-   keywords landed (FFI-linkage stream), so no new surface is needed and both
-   directions are covered.
-
-*Decided:* brace block `{ … }` (Dev 1) · `->`/`=` markers, `:` sections dropped,
-`<-` rejected (Dev 2) · `clobbers(.…)` enum-literal list, dot-name sugar now →
-checked enum later (Dev 3) · multiple value-outputs return a tuple (Dev 5). For
-global asm (Dev 6) the call-*into*-asm direction reuses lib-less `extern` (Decision
-4, resolved).
-
-## II.11 Risks
-
-* **Constraint/template correctness is silent if wrong** — a bad constraint
-  string miscompiles with no diagnostic. Mitigation: port Zig's assembler/rewrite
-  verbatim (don't paraphrase) and lock IR snapshots in tests.
-* **Register-name validity is unchecked** in v1's `clobbers(.name)` dot-name form —
-  a typo'd register (`.raxx`) surfaces only as an LLVM error. This is exactly the
-  gap the Phase-4 checked `Clobber` enum closes; acceptable for v1 (LLVM validates
-  the emitted `~{…}`).
-* **`#string` heredoc + AT&T `%`/`$`** interplay: ensure the heredoc delivers the
-  template bytes literally (no sx-level escape processing of `%`/`$`) before the
-  rewrite stage.
-* **Target gating:** asm examples must declare their target or they break the
-  corpus on other hosts; the test plan pins targets.
+* **A wrong constraint or template miscompiles silently** — LLVM accepts a bad
+  constraint string without a diagnostic. Zig's assembler and rewriter are ported
+  verbatim rather than paraphrased, and the IR snapshots lock their output.
+* **`#string` heredoc + AT&T `%`/`$`**: the heredoc delivers the template bytes
+  literally, with no sx-level escape processing of `%`/`$`, so the rewrite stage
+  sees exactly what the source wrote.
+* **Target gating:** an asm example declares its target via `.build`, otherwise it
+  breaks the corpus on other hosts.
 
 ---
 
-## Appendix A — exact LLVM-C calls (already reachable via `llvm_api.c`)
+## Appendix A — the LLVM-C calls, reachable via `llvm_api.c`
 
 ```c
 // src/llvm_api.zig @cInclude("llvm-c/Core.h") exposes all of these:
@@ -830,7 +788,7 @@ LLVMValueRef LLVMGetInlineAsm(LLVMTypeRef Ty,
     const char *AsmString,   size_t AsmStringSize,
     const char *Constraints, size_t ConstraintsSize,
     LLVMBool HasSideEffects, LLVMBool IsAlignStack,
-    LLVMInlineAsmDialect Dialect, LLVMBool CanThrow);   // LLVM 19 & 21: identical
+    LLVMInlineAsmDialect Dialect, LLVMBool CanThrow);   // LLVM 19–22: identical
 LLVMValueRef LLVMBuildCall2(LLVMBuilderRef, LLVMTypeRef, LLVMValueRef Fn,
     LLVMValueRef *Args, unsigned NumArgs, const char *Name);
 void LLVMAppendModuleInlineAsm(LLVMModuleRef M, const char *Asm, size_t Len);  // global asm
@@ -847,18 +805,19 @@ void LLVMAppendModuleInlineAsm(LLVMModuleRef M, const char *Asm, size_t Len);  /
 (LLVM) · `doc/langref/inline_assembly.zig`, `doc/langref/test_global_assembly.zig`
 (syntax) · `doc/langref.html.in:4217-4300` (spec).
 
-**sx (target, `~/projects/sx`):** `src/token.zig` · `src/lexer.zig:402` (#string) ·
-`src/ast.zig:13` · `src/parser.zig` (`parsePrimary`), the optional `extern`
-library tail · `src/ir/expr_typer.zig` · `src/ir/inst.zig:80,219,260` ·
-`src/ir/lower/expr.zig` · `src/ir/module.zig:300` (`declareExtern`) ·
-`src/ir/emit_llvm.zig:167` (msgSend cache), `:1244` (extern⇒C-ABI), `:1279`
-(raw symbol name) · `src/ir/interp.zig` (`bailDetail`) · `src/llvm_api.zig:1-17` ·
-`build.zig:10` (LLVM@19).
+**sx (`~/projects/sx`):** `src/token.zig` · `src/lexer.zig` (`#string`) ·
+`src/ast.zig` (`AsmExpr`/`AsmGlobal`) · `src/parser.zig` (`parseAsmExpr`), the
+optional `extern` library tail · `src/ir/expr_typer.zig` · `src/ir/inst.zig`
+(`InlineAsm`) · `src/ir/lower/expr.zig` (`lowerAsmExpr`) · `src/ir/module.zig`
+(`declareExtern`) · `src/backend/llvm/ops.zig` (`emitInlineAsm`) ·
+`src/ir/emit_llvm.zig` (extern⇒C-ABI, raw symbol name, `module asm`) ·
+`src/ir/comptime_vm.zig` (the `error.Unsupported` bail) · `src/llvm_api.zig` ·
+`build.zig` (LLVM prefix).
 
-## Appendix C — Cookbook (final form: `asm { … }`, `->`/`=`, `clobbers(.…)`, pure AT&T)
+## Appendix C — Cookbook (`asm { … }`, `->`/`=`, `clobbers(.…)`, pure AT&T)
 
 ```sx
-// ── v1 ────────────────────────────────────────────────────────────────────
+// ── value outputs and inputs ──────────────────────────────────────────────────
 
 asm volatile { "nop" };                          // bare side-effecting
 
@@ -919,7 +878,7 @@ ATT,
     };
 }
 
-// ── multi-return (v1; sx has tuples, Zig caps at one output) ────────────────
+// ── multi-return (sx has tuples, Zig caps at one output) ────────────────
 
 // 64-bit divide → (quotient, remainder)
 divmod :: (n: u64, d: u64) -> (quot: u64, rem: u64) {
@@ -966,7 +925,7 @@ ATT,
     };
 }
 
-// ── Phase 2 (write-through / read-write / indirect) ─────────────────────────
+// ── write-through / read-write / indirect outputs ───────────────────────────
 
 // byte memcpy — labels, loop, read-write operands
 memcpy_bytes :: (dst: [*]u8, src: [*]u8, n: u64) {
@@ -1016,7 +975,7 @@ cpuid_into :: (out: *CpuId, leaf: u32) {
 }
 ```
 
-Global asm + extern (Phase 3):
+Global asm + extern:
 
 ```sx
 asm {

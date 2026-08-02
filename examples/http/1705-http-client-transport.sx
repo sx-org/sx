@@ -1,4 +1,4 @@
-// std.http — Q3.6a client transport parity: resolve/Addr dialing, connect +
+// std.http — client transport parity: resolve/Addr dialing, connect +
 // I/O timeouts, client-side TLS through the transport seam, and chunked
 // response decoding.
 //
@@ -155,7 +155,7 @@ run :: () -> i32 {
         http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(xx bc); srv.stop(); t.join(); return 17;
     }
     http.Client.close_conn(*conn_c);
-    // C2 (review M1): the same chunked response into a buffer that cannot
+    // The same chunked response into a buffer that cannot
     // hold it must be error.TooLarge — the grow-and-retry signal — never
     // "malformed framing".
     conn_c2, ec2 := http.Client.open("127.0.0.1", PORT_MAIN, opts_plain);
@@ -285,7 +285,7 @@ run :: () -> i32 {
     if mte { socket.close(mute_l); srv.stop(); t.join(); return 53; }
     opts_io : http.ClientOpts = .{ connect_timeout_ms = 2000, io_timeout_ms = 500 };
     conn_f, ef := http.Client.open("127.0.0.1", PORT_MUTE, opts_io);
-    // review L4: on an open failure the holder thread is still blocked in
+    // On an open failure the holder thread is still blocked in
     // accept(), which close(mute_l) does NOT reliably wake — skip the join
     // on this failure path (process exit reaps it) rather than deadlock.
     if ef { socket.close(mute_l); srv.stop(); t.join(); return 54; }

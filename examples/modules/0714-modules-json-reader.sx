@@ -1,5 +1,5 @@
 // JSON reader (parser) from `modules/std/json.sx` — the inverse of the
-// F2.1 writer.
+// writer.
 //
 // Parses a representative document (nested object + array + a
 // string-with-escapes + ints incl. negatives + bool + null) into the

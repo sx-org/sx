@@ -1,6 +1,6 @@
-// Phase 4.2 — parameterized protocol as a runtime VALUE type. `VL(i64)` is a
-// 16-byte protocol value {ctx, vtable} (a plain protocol was already, but a
-// parameterized one used to resolve to a 0-field stub). A conforming struct
+// A parameterized protocol as a runtime VALUE type. `VL(i64)` is a
+// 16-byte protocol value {ctx, vtable}, exactly like a plain protocol — never
+// a 0-field stub. A conforming struct
 // `xx`-erases into it, and method dispatch uses the bound type-arg
 // (`get -> T` becomes `get -> i64` for `VL(i64)`).
 

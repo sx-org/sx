@@ -1,4 +1,4 @@
-// Fluent build blocks — the library half of `@BuildBlock(P)` (fluent spec §6–§9).
+// Fluent build blocks — the library half of `@BuildBlock(P)`.
 //
 // The compiler owns the block: which trailing blocks are build blocks, which
 // statements are reached expressions, and the `@SourceSite` each one carries.
@@ -21,10 +21,10 @@
 // `value.site()`.
 #import "modules/std/list.sx";
 
-// What a sink promises (spec §6.1). A compiler-maintained contract, and an
-// ordinary constraint protocol: no vtable, no erasure — `expression`
-// monomorphizes for each concrete `V` the block reaches, which is what lets the
-// sink see `V`'s size, alignment, and methods.
+// What a sink promises. A compiler-maintained contract, and an ordinary
+// constraint protocol: no vtable, no erasure — `expression` monomorphizes for
+// each concrete `V` the block reaches, which is what lets the sink see `V`'s
+// size, alignment, and methods.
 //
 // There is no site parameter: the initializer is the single source of expression
 // provenance, so a sink that wants it asks `value.site()` and cannot be handed a
@@ -36,7 +36,7 @@
     expression :: (self: *Self, value: $I/@Init($V/P));
 }
 
-// Side-effect-free facts about a build block (spec §7). A compiler-maintained
+// Side-effect-free facts about a build block. A compiler-maintained
 // contract: the compiler synthesizes these values, so the field set is a
 // compiler + stdlib contract. Produced only when `content.shape()` is called —
 // capturing-only programs do not pay for it. Counts and sizes are
@@ -49,8 +49,8 @@
     max_alignment: i64 = 1;
 }
 
-// The collecting sink every package can build on (spec §6.2): it keeps what the
-// block published, in source order, in a list it owns.
+// The collecting sink every package can build on: it keeps what the block
+// published, in source order, in a list it owns.
 //
 // One blanket impl covers every instantiation. `expression` monomorphizes for
 // each concrete `V` the block reaches: it reserves storage for exactly that `V`
@@ -64,7 +64,7 @@
 // not own — a `tagged` protocol — the payload must outlive this call, so the sink
 // funds it from `context.allocator` and the elements live as long as that allocator
 // does: an arena or frame allocator resets them all at once, which is the
-// recommended lifetime for collected children (spec §8).
+// recommended lifetime for collected children.
 Sink :: struct ($T: Type) {
     children: List(T) = .{};
 }

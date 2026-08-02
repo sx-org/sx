@@ -3,7 +3,7 @@
 // holds the temp is about to die is refused (§6.2) — and a body that yields
 // its value through a trailing expression or an arrow returns from exactly
 // that position. All three spellings below are the same escape and carry the
-// same message; only the explicit one used to be caught.
+// same message — the implicit spellings are caught too.
 #import "modules/std.sx";
 
 View :: protocol tagged { area :: (self: *Self) -> i64; }
@@ -17,7 +17,7 @@ by_tail :: () -> View { Widget{ n = 2 }.(View) }
 by_arrow :: () -> View => Widget{ n = 3 }.(View);
 
 // A lambda is its own function: the same escape refuses for the same
-// reason (issue 0406 coverage of lowerLambda).
+// reason.
 by_lambda_arrow :: () {
     f : Closure() -> View = () => Widget{ n = 5 }.(View);
     _ = f;

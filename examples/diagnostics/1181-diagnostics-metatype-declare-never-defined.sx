@@ -1,8 +1,6 @@
-// A `declare("X")` that is never completed by `define(handle, info)` is rejected
-// loudly. `declare` mints an empty (undefined) nominal slot; without a matching
-// `define` it has zero variants, which is never a usable type — sizing /
-// constructing it would otherwise panic at codegen. The diagnostic names the
-// type and points at the bare `declare` so the missing `define` is obvious.
+// A `declare("X")` that no `define(handle, info)` completes is rejected. `declare`
+// mints an empty nominal slot with zero variants, which is never a usable type;
+// the diagnostic names the type and points at the bare `declare`.
 #import "modules/std.sx";
 #import "modules/std/meta.sx";
 

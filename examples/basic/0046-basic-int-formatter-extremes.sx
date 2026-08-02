@@ -1,12 +1,9 @@
 // Integer `{}` formatting across the full signed/unsigned range.
 //
-// Regression (issue 0090): the `{}` formatter was i64-based — it negated
-// the value to print the sign (so i64::MIN, whose magnitude is
-// unrepresentable as a positive i64, rendered as a bare "-"), and it had
-// no unsigned-aware path (so a u64 all-ones value printed as the i64
-// reinterpretation, "-1"). Both extremes now render correctly: signed
-// MIN prints all its digits, and unsigned integers print as unsigned
-// decimal across all 64 bits.
+// Signed MIN prints all its digits and unsigned integers print as unsigned
+// decimal across all 64 bits — the formatter has an unsigned-aware path and
+// never negates the value to print a sign, so i64::MIN (whose magnitude is
+// unrepresentable as a positive i64) and an all-ones u64 both render in full.
 
 #import "modules/std.sx";
 

@@ -2,10 +2,7 @@
 // full type resolver: a BUILTIN name (`case i64:`) is one tag and claims
 // it first-wins ahead of the category that contains it, and composite
 // type expressions (`case ?i64:`, `case []u8:`) work the same way.
-// `string` / `bool` / `void` stay single-type arms as before.
-// Regression (issue 0315): builtin names resolved through the user-type
-// name map, got zero tags, and the arm was silently dead — `conc(i64)`
-// answered "int" and, without the category arm, "other".
+// `string` / `bool` / `void` are single-type arms.
 #import "modules/std.sx";
 
 conc :: (t: Type) -> string {

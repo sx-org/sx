@@ -1,21 +1,21 @@
 error: 'merge' cannot be dispatched on a 'Fold' value: its signature names a type that no set value has
-  --> examples/diagnostics/2039-diagnostics-open-set-dispatch.sx:24:35
+  --> examples/diagnostics/2039-diagnostics-open-set-dispatch.sx:23:35
    |
-24 |     merge :: (self: *Self, other: Self) -> i64;
+23 |     merge :: (self: *Self, other: Self) -> i64;
    |                                   ^^^^
 
 help: 'Self' in a required method denotes the MEMBER, and a set value is not any one member — call it through a membership bound instead: 'f :: (v: $V/Fold) { v.merge(…); }'
    |
-24 |     merge :: (self: *Self, other: Self) -> i64;
+23 |     merge :: (self: *Self, other: Self) -> i64;
    |                                   ^^^^
 
 error: 'name' cannot be called on a 'Empty' value: nothing is a member of 'Empty', so no value of it exists
-  --> examples/diagnostics/2039-diagnostics-open-set-dispatch.sx:39:19
+  --> examples/diagnostics/2039-diagnostics-open-set-dispatch.sx:38:19
    |
-39 |     print("{}\n", e.name());
+38 |     print("{}\n", e.name());
    |                   ^^^^^^
 
 help: a type joins the set by declaring itself into it: 'YourType :: @OpenVariant(Empty) { … }'
    |
-39 |     print("{}\n", e.name());
+38 |     print("{}\n", e.name());
    |                   ^^^^^^

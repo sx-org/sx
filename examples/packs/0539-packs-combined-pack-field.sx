@@ -1,9 +1,9 @@
-// Phase 4.2 — the canonical `Combined` struct's storage layer: a generic
+// The canonical `Combined` struct's storage layer: a generic
 // struct whose field is a pack of PARAMETERIZED-protocol values,
 // `sources: Tuple(..VL(Ts))` → `Tuple(VL(T0), VL(T1), …)`. Each `VL(Ti)` is a real
-// 16-byte protocol value (issue: parameterized-protocol value types), and
-// `Tuple(..VL(Ts))` applies `VL` per pack element. Instantiate + whole-tuple store
-// of `xx`-erased values + per-element method dispatch all work.
+// 16-byte protocol value, and `Tuple(..VL(Ts))` applies `VL` per pack element.
+// Instantiate + whole-tuple store of `xx`-erased values + per-element method
+// dispatch all work.
 
 #import "modules/std.sx";
 

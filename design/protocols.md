@@ -765,11 +765,10 @@ it must still fetch through. **The cost is prediction failure, not
 switch width** — rotate20 (20 arms, predictable) is 1845, while inter2
 (2 arms, unpredictable) is 5719: a mispredicted switch pays for the
 whole arm it guessed wrong, where an indirect call pays one fetch. The
-25-member set lowers to a compressed jump table, not a compare tree
-(verified in the emitted asm), so width itself is nearly free. **And
-`#expand` costs text** — the 13-dispatch-site benchmark grew +45%
-`__text` over the outlined routine (14320 vs 9844 bytes); the
-7-dispatch-site version had grown 0.3%. One switch per call site is
+25-member set lowers to a compressed jump table, not a compare tree,
+so width itself is nearly free. **And `#expand` costs text** — the
+13-dispatch-site benchmark takes +45% `__text` over the outlined
+routine (14320 vs 9844 bytes); the 7-dispatch-site version, 0.3%. One switch per call site is
 the price.
 
 An allocator's conformer population is exactly what a library cannot
@@ -911,11 +910,9 @@ once instantiated and not otherwise. An instantiation nobody
 value-uses emits nothing at all; a tagged protocol used only as a
 bound costs exactly what a constraint protocol costs.
 
-Membership is deliberately stable: it does not depend on which code
+Membership is stable: it does not depend on which code
 executes, so dead-code edits never change what typechecks. Every
-member receives a tag, switch arm, and table row. (A stricter
-emission-level shake is possible without touching these semantics —
-see the appendix note on liveness shaking.)
+member receives a tag, switch arm, and table row.
 
 ### 6.7 Templated tagged protocols
 
@@ -1233,9 +1230,8 @@ under the same rules. What a probe answers is **per kind**:
 
 - `constraint` and the erased kinds: **site-local impl
   visibility** — the same static fact that decides whether the site
-  could erase. (For erased kinds this is deliberately a different
-  question from the dynamic re-erasure check, which consults
-  program-wide uniqueness, §7.4.) Under the discipline, a negative
+  could erase. (For erased kinds this is a different question from the
+  dynamic re-erasure check, which consults program-wide uniqueness, §7.4.) Under the discipline, a negative
   gates on declaration-space finality — impls are declarations.
 - `tagged`: whole-program membership of the instantiation's set,
   under the discipline's polarity rules.
@@ -1512,27 +1508,3 @@ conformer identity.
   new error is the wait cycle — precisely the program whose meaning
   is genuinely circular. Cost is localized to one subsystem (the
   VM's ability to park and resume an evaluation).
-- **Liveness shaking (a compatible refinement).** The operations
-  that produce a tagged value form a closed, statically enumerable
-  set: direct erasure sites, re-erasure (§7.4), `Self`-returning
-  dispatch (which only reproduces present types), and
-  comptime-carried values escaping into the image (§7.9), whose
-  members seed liveness without any runtime erasure site — nothing
-  conjures a value from a runtime type id. Emission may therefore drop
-  members no execution path can produce (seeding from erasure sites
-  in call-graph-reachable code, address-taken functions and closure
-  literals as roots; propagating across re-erasure edges): shaken
-  members keep their tag numbers (numbering stays
-  membership-driven) but emit no rows in link-stage tables and no
-  arms in link-stage outlined routines; an outlined dispatch whose
-  instantiation has no producible member lowers to unreachable. The
-  shake applies to **link-stage artifacts only** — call-site-inlined
-  switches and every other module-object artifact key on
-  membership, never liveness, so cached objects cannot depend on
-  the liveness result. The refinement is semantics-neutral by
-  construction — a producer-less member's downcast can only ever be
-  false at runtime — which is why membership (typechecking,
-  diagnostics) never reads it. **The design as specified does not
-  perform the shake**; this note is rationale for a possible future
-  design change, not an emission mode — there is exactly one
-  shipping behavior at any time.

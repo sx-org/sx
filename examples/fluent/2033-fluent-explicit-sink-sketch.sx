@@ -1,12 +1,11 @@
-// Library sketch: an EXPLICIT, caller-owned sink (fluent spec §9.5, §12.2,
-// §12.3).
+// Library sketch: an EXPLICIT, caller-owned sink.
 //
 // The block is nonescaping; what it produces need not be. Here the caller names
 // the arena and the sink, so the captured tree outlives the `capture(...)` call
 // and is walked and released on the caller's terms. Nothing was promoted to
 // compiler-chosen heap: every allocation went through storage the caller named.
 //
-// This is also the second half of §9.5 — there is no ambient sink. `run` takes
+// There is no ambient sink either. `run` takes
 // one explicitly, so "capture into this arena" and "count into this tally" are
 // two ordinary calls over one block, and a library never has to reach for a
 // global to learn where it is emitting.

@@ -1,5 +1,4 @@
-// Phase 3 (FFI-linkage) — postfix `extern` on a `#jni_class` aggregate, the
-// new spelling of the legacy prefix `#jni_class(…) extern` import. Parse-only
+// Postfix `extern` on a `#jni_class` aggregate imports the class. Parse-only
 // on macOS (no JVM at runtime), mirroring 1412's runtime-class reference.
 //   View :: #jni_class("…") extern { … }   ==   View :: #jni_class(…) extern("…") { … }
 

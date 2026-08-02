@@ -1,5 +1,5 @@
 // Atomic($T) load/store with explicit memory orderings, single-thread.
-// Stream A (atomics) A.0 + A.0.5 — the ordering is a comptime `$o: Ordering`
+// The ordering is a comptime `$o: Ordering`
 // param (explicit, Rust-style): a.load(.acquire) emits `load atomic … acquire`.
 // An invalid combination (a.load(.release)) is a compile error (see 1131).
 #import "modules/std.sx";

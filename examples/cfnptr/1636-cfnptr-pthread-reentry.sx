@@ -1,4 +1,4 @@
-// PLAN-HTTPZ C2: the C->sx re-entry contract. A real OS thread enters
+// The C->sx re-entry contract. A real OS thread enters
 // sx through a `abi(.c)` entry (which has NO implicit context),
 // fabricates its own Context via `push .{ allocator = gpa }`,
 // and calls default-conv sx code that allocates through it.

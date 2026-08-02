@@ -1,8 +1,6 @@
-// Phase 3 step 3.0: multi-keyword selector mangling. The sx method
+// Multi-keyword selector mangling. The sx method
 // name is split on `_`; each piece becomes a keyword with a trailing
 // `:`. `combine_and(a, b)` → `combine:and:` — two keywords, two args.
-//
-// Pre-3.0: bails at lower.zig with the Phase 3/4 diagnostic.
 #import "modules/std.sx";
 #import "modules/build.sx";
 #import "modules/ffi/objc.sx";

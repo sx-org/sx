@@ -1,0 +1,101 @@
+// Whitespace is syntax (specs §1), positive side. Two of the three rules decide
+// how four glyphs read, and this file pins the forms they must LEAVE ALONE:
+//
+// glue    — `(` applies and `[` indexes only when glued to what precedes
+//           them, so every application here is written tight;
+// spacing — `-` / `*` are infix only when their gaps match, and a prefix
+//           `-` / `*` must be glued to its operand.
+//
+// A `(` that OPENS something instead of continuing something is untouched by
+// the glue rule, and the eight declaration forms below all spell theirs with a
+// space to prove it: fn, ufcs fn, struct type params, protocol type params,
+// generic open-set member, for capture, catch binding, onfail binding.
+#import "modules/std.sx";
+
+// --- the eight whitespace-free declaration forms ---
+
+// 1. function declaration
+double :: (n: i64) -> i64 => n * 2;
+
+// 2. ufcs function declaration
+scaled :: ufcs (v: i64, by: i64) -> i64 => v * by;
+
+// 3. struct type params
+Box :: struct ($T: Type) { v: $T; }
+
+// 4. protocol type params
+Value :: protocol (T: Type) vtable { get :: (self: *Self) -> T; }
+
+// 5. generic open-set member
+View :: @OpenSet(.{ max = 64, align = 8 }) { tag :: (self: *Self) -> i64; }
+Leaf :: @OpenVariant(View) { n: i64 = 0; tag :: (self: *Leaf) -> i64 => self.n; }
+Padded :: @OpenVariant(View) ($T: Type) {
+    inner: $T;
+    tag :: (self: *Padded($T)) -> i64 => self.inner.tag() + 100;
+}
+
+// 8. onfail binding (its own frame — `onfail` needs a failable function)
+Fail :: error { Bad }
+parse_even :: (n: i64) -> (i64, !Fail) {
+    onfail (e) { print("cleanup {}\n", e); }
+    if n % 2 != 0 { raise error.Bad; }
+    return n / 2;
+}
+
+// --- glued applications, across type positions ---
+
+BoxI :: Box(i64);                       // type alias
+ZERO : Box(i64) : Box(i64){ v = 0 };    // constant annotation
+
+Holder :: struct { inner: Box(i64); }   // struct field type
+
+rewrap :: (b: Box(i64)) -> Box(i64) {   // param type + return type
+    return Box(i64){ v = b.v + 1 };
+}
+
+impl Value(i64) for Box(i64) { get :: (self: *Box(i64)) -> i64 => self.v; }
+boxed_value :: (b: Box(i64)) -> i64 => b.get();
+
+// a pack index is an index like any other — glued in an expression as in a type
+first_type :: (..$args) -> string => type_name($args[0]);
+
+main :: () -> i32 {
+    b : Box(i64) = Box(i64){ v = 7 };   // variable annotation
+    h := Holder{ inner = rewrap(b) };
+    print("box={} alias={} zero={}\n", h.inner.v, BoxI{ v = 5 }.v, ZERO.v);
+
+    // glued call and index
+    xs : [3]i64 = .[10, 20, 30];
+    print("call={} index={} ufcs={}\n", double(21), xs[1], (3).scaled(4));
+    print("packindex={}\n", first_type(1, true));
+
+    // 6. for capture
+    total := 0;
+    for xs (x) { total = total + x; }
+    print("total={}\n", total);
+
+    // 7. catch binding (and, inside `parse_even`, the onfail binding)
+    half := parse_even(9) catch (e) -1;
+    print("half={}\n", half);
+
+    // the open-set member and the parameterized protocol
+    pd := Padded(Leaf){ inner = Leaf{ n = 4 } };
+    print("tag={} boxed={}\n", pd.tag(), boxed_value(Box(i64){ v = 9 }));
+
+    // matching gaps read as infix, spaced or tight alike
+    a := 10;
+    c := 3;
+    print("infix={} tight={} mul={} tightmul={}\n", a - c, a-c, a * c, a*c);
+
+    // an infix operator continues the expression across a line: the gaps still
+    // match (a line break is a gap like any other)
+    spread := a
+        - c;
+    print("spread={}\n", spread);
+
+    // prefix `-` / `*` glued to their operands
+    n := 4;
+    p := *n;
+    print("neg={} deref={}\n", -n, p.*);
+    return 0;
+}
