@@ -1149,7 +1149,7 @@ fn writeTimingReport(
     var buf: std.ArrayList(u8) = .empty;
     try buf.appendSlice(a, "# per-example corpus timing — sorted by run phase (desc)\n");
     try buf.appendSlice(a, "# run = jit stage (JIT) / exec wall (AOT); compile = total - run\n");
-    try buf.appendSlice(a, "# budget: run <= 1000.0 ms (AGENTS.md); offenders flagged OVER\n");
+    try buf.appendSlice(a, "# budget: run <= 1000.0 ms; offenders flagged OVER\n");
     try buf.appendSlice(a, "# measured UNDER pool load — AOT exec walls especially inflate\n");
     try buf.appendSlice(a, "# with scheduler contention; re-measure a flagged example idle\n");
     try buf.appendSlice(a, "# (`sx run <ex> --time`, jit stage) before trimming it\n");

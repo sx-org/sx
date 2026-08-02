@@ -25,8 +25,8 @@ asserts, per iteration:
   final `alloc_count != 0` fails the test.
 
 It is **deterministic** (fixed `SEED`, no time/`Math.random`) so its
-golden output is stable, and **bounded** (`ITERATIONS = 1200`, ~3s wall)
-so it fits the corpus 10s/example timeout.
+golden output is stable, and **bounded** (`ITERATIONS = 400`) so it fits
+the corpus 1s run budget.
 
 Run it directly:
 
@@ -34,25 +34,13 @@ Run it directly:
 ./zig-out/bin/sx run examples/http/1677-http-fuzz-smoke.sx
 ```
 
-## Longer fuzz (CI job, NOT the corpus)
+## Longer fuzz, outside the corpus
 
 The corpus runner (10s/example, no network sandbox) cannot host a
-long-running fuzzer. To fuzz harder, OUTSIDE the corpus:
-
-1. **Bump iterations / sweep seeds.** Raise `ITERATIONS` in
-   `1677-http-fuzz-smoke.sx` (e.g. 200_000) and/or run it repeatedly with
-   different `SEED` values. Each `SEED` is a fresh deterministic stream;
-   a crash is reproducible by pinning the failing `SEED` + iteration
-   index (the example prints both on failure). This is a drop-in CI job —
-   build the example with a larger constant and run it under a watchdog.
-
-2. **A future libFuzzer / AFL target.** The strongest harness feeds raw
-   bytes straight into a parser entry point (`decode_chunked`,
-   `try_serve_one`) with NO socket, so the fuzzer drives the state machine
-   directly at millions of execs/sec. sx has **no libFuzzer integration**, so this lives as a separate CI job (a small C/Zig driver that
-   dlopen's an `extern "c"`-exported sx parser shim, or a native rewrite
-   of the decode loop), never in `examples/`. When built, wire it into CI
-   alongside the load/stress suite.
+long-running fuzzer. Raise `ITERATIONS` in `1677-http-fuzz-smoke.sx`
+and/or run it repeatedly with different `SEED` values. Each `SEED` is a
+fresh deterministic stream; a crash is reproducible by pinning the
+failing `SEED` + iteration index, which the example prints on failure.
 
 **If any fuzz run finds a crash / hang / leak, that is a REAL parser
 bug.** The failing `SEED` + iteration + the exact triggering bytes are
