@@ -26,7 +26,6 @@ apply :: (f: (i32, i32) -> i32, x: i32, y: i32) -> i32 {
     f(x, y)
 }
 
-// edge: Chained default→default calls
 Chained :: protocol {
     base :: (self: *Self, msg: string) -> i32;
     wrap :: (self: *Self, msg: string) -> i32 {
@@ -43,9 +42,9 @@ main :: () {
     {
         print("=== Tuple Operators ===\n");
 
-        // Tuple operands must be TUPLE-typed: an untyped `.{}` literal is
-        // an anonymous struct, and the exotic
-        // tuple operators (`+`/`*`/`<`/`in`) exist on tuples only.
+        // Tuple operands must be TUPLE-typed: an untyped `.{}` literal is an
+        // anonymous struct, and the exotic tuple operators (`+`/`*`/`<`/`in`)
+        // exist on tuples only.
         t12 : Tuple(i64, i64) = .{1, 2};
         t13 : Tuple(i64, i64) = .{1, 3};
         t34 : Tuple(i64, i64) = .{3, 4};
@@ -579,41 +578,34 @@ main :: () {
         // auto-promoted bare fn passed alongside closures
         print("closure-hof-bare: {}\n", apply_cl(dbl, 10));
 
-        // capture f32
         scale := 2.5;
         f_f32 := (x: f32) -> f32 => x * scale;
         print("closure-f32: {}\n", f_f32(4.0));
 
-        // capture bool
         verbose := true;
         f_bool := (msg: string) {
             if verbose { print("closure-bool: {}\n", msg); }
         };
         f_bool("hello");
 
-        // two params
         base : i32 = 100;
         f_2p := (x: i32, y: i32) -> i32 => x + y + base;
         print("closure-2p: {}\n", f_2p(3, 4));
 
-        // three params
         bias : i32 = 1;
         f_3p := (a: i32, b: i32, c2: i32) -> i32 => a + b + c2 + bias;
         print("closure-3p: {}\n", f_3p(10, 20, 30));
 
-        // mixed param types (string + i32)
         extra : i32 = 5;
         f_mix := (name: string, age: i32) {
             print("closure-mix: {} is {}\n", name, age + extra);
         };
         f_mix("Alice", 30);
 
-        // return bool
         threshold : i32 = 100;
         f_rbool := (x: i32) -> bool { return x > threshold; };
         print("closure-rbool: {} {}\n", f_rbool(50), f_rbool(200));
 
-        // reduce / fold
         reduce :: (arr: []i32, f3: Closure(i32, i32) -> i32, init: i32) -> i32 {
             acc := init;
             i : i64 = 0;
@@ -625,7 +617,6 @@ main :: () {
         r_total := reduce(r_nums, (acc: i32, x: i32) -> i32 => acc + x, r_bonus);
         print("closure-reduce: {}\n", r_total);
 
-        // factory function
         make_adder :: (n: i32) -> Closure(i32) -> i32 {
             return (x: i32) -> i32 => x + n;
         }
@@ -633,26 +624,22 @@ main :: () {
         add10 := make_adder(10);
         print("closure-factory: {} {}\n", add5(100), add10(100));
 
-        // capture struct
         origin := Point{ x = 10, y = 20 };
         f_st := () {
             print("closure-struct: {} {}\n", origin.x, origin.y);
         };
         f_st();
 
-        // closure captures another closure
         inner_n := 10;
         inner_cl := (x: i64) -> i64 => x + inner_n;
         outer_cl := (x: i64) -> i64 => inner_cl(x) * 2;
         print("closure-compose: {}\n", outer_cl(5));
 
-        // multiple closures from same scope capture independently
         shared : i32 = 10;
         cl_a := (x: i32) -> i32 => x + shared;
         cl_b := (x: i32) -> i32 => x * shared;
         print("closure-indep: {} {}\n", cl_a(5), cl_b(5));
 
-        // optional closures
         f_none : ?Closure(i64) -> i64 = null;
         if h := f_none {
             print("should not print: {}\n", h(1));
@@ -679,37 +666,31 @@ main :: () {
         if h := btn1.on_click { h(1); }
         if h := btn2.on_click { h(2); } else { print("opt-closure-btn: null\n"); }
 
-        // capture pointer (shared mutable state)
         count_a6 : i32 = 0;
         p_a6 := *count_a6;
         inc_fn := () { p_a6.* += 1; };
         inc_fn(); inc_fn(); inc_fn();
         print("closure-ptr: {}\n", count_a6);
 
-        // capture enum value (as i32 tag)
         c_a9 : i32 = 2;  // simulate enum tag
         f_a9 := () -> i32 => c_a9;
         print("closure-enum: {}\n", f_a9());
 
-        // return string
         tag_c4 := "INFO";
         f_c4 := (msg: string) -> string => format("[{}] {}", tag_c4, msg);
         print("closure-rstr: {}\n", f_c4("ok"));
 
-        // return struct
         off_c5 := Point{ x = 10, y = 20 };
         f_c5 := (p: Point) -> Point => Point{ x = p.x + off_c5.x, y = p.y + off_c5.y };
         res_c5 := f_c5(Point{ x = 1, y = 2 });
         print("closure-rstruct: {} {}\n", res_c5.x, res_c5.y);
 
-        // factory with multiple captures
         make_linear :: (m: i32, b: i32) -> Closure(i32) -> i32 {
             return (x: i32) -> i32 => m * x + b;
         }
         lin := make_linear(3, 7);
         print("closure-linear: {}\n", lin(10));
 
-        // factory returning clamper
         make_clamper :: (lo: i32, hi: i32) -> Closure(i32) -> i32 {
             return (x: i32) -> i32 {
                 if x < lo { return lo; }
@@ -723,7 +704,6 @@ main :: () {
         cv3 : i32 = 999;
         print("closure-clamp: {} {} {}\n", clamp_fn(cv1), clamp_fn(cv2), clamp_fn(cv3));
 
-        // compose
         compose :: (f_h2: Closure(i32) -> i32, g_h2: Closure(i32) -> i32) -> Closure(i32) -> i32 {
             return (x: i32) -> i32 => f_h2(g_h2(x));
         }
@@ -734,7 +714,6 @@ main :: () {
         composed := compose(mul2_h2, add1_h2);
         print("closure-compose2: {}\n", composed(5));
 
-        // chain of closures
         ch_k1 : i32 = 1;
         ch_k2 : i32 = 2;
         ch_k10 : i32 = 10;
@@ -743,7 +722,6 @@ main :: () {
         ch_c := (x: i32) -> i32 => ch_b(x) + ch_k10;
         print("closure-chain: {}\n", ch_c(5));
 
-        // map
         map_cl :: (arr: [*]i32, cnt: i64, f_map: Closure(i32) -> i32, result: [*]i32) {
             i := 0;
             while i < cnt { result[i] = f_map(arr[i]); i += 1; }
@@ -754,7 +732,6 @@ main :: () {
         map_cl(xx *map_src, 5, (x: i32) -> i32 => x * factor_d1, xx *map_dst);
         print("closure-map: {} {} {} {} {}\n", map_dst[0], map_dst[1], map_dst[2], map_dst[3], map_dst[4]);
 
-        // filter
         filter_cl :: (arr: [*]i32, cnt: i64, pred: Closure(i32) -> bool, result: [*]i32) -> i64 {
             j := 0;
             i := 0;
@@ -769,7 +746,6 @@ main :: () {
         kept := filter_cl(xx *map_src, 5, (x: i32) -> bool => x >= min_val, xx *filt_dst);
         print("closure-filter: {} [{} {} {}]\n", kept, filt_dst[0], filt_dst[1], filt_dst[2]);
 
-        // sort comparator (bubble sort)
         sort_cl :: (arr: [*]i32, cnt: i64, less: Closure(i32, i32) -> bool) {
             i := 0;
             while i < cnt {
@@ -793,7 +769,6 @@ main :: () {
         });
         print("closure-sort: {} {} {} {} {}\n", sort_arr[0], sort_arr[1], sort_arr[2], sort_arr[3], sort_arr[4]);
 
-        // for_each with index
         for_each_cl :: (arr: [*]i32, cnt: i64, f_fe: Closure(i32, i64) -> void) {
             i : i64 = 0;
             while i < cnt { f_fe(arr[i], i); i += 1; }
@@ -804,7 +779,6 @@ main :: () {
             print("closure-fe: {} {}={}\n", fe_label, idx, val);
         });
 
-        // find
         find_cl :: (arr: [*]i32, cnt: i64, pred_f: Closure(i32) -> bool) -> i64 {
             i : i64 = 0;
             while i < cnt {
@@ -817,7 +791,6 @@ main :: () {
         found_idx := find_cl(xx *fe_arr, 3, (x: i32) -> bool => x == target);
         print("closure-find: {}\n", found_idx);
 
-        // any
         any_cl :: (arr: [*]i32, cnt: i64, pred_a: Closure(i32) -> bool) -> bool {
             i : i64 = 0;
             while i < cnt {
@@ -830,13 +803,11 @@ main :: () {
         has_20 := any_cl(xx *fe_arr, 3, (x: i32) -> bool => x == 20);
         print("closure-any: {} {}\n", has_big, has_20);
 
-        // auto-promotion in struct field assignment
         Widget :: struct { transform: Closure(i32) -> i32; }
         negate_fn :: (x: i32) -> i32 { return 0 - x; }
         w_e4 := Widget{ transform = negate_fn };
         print("closure-struct-field: {}\n", w_e4.transform(5));
 
-        // single closure callback in struct
         Button :: struct {
             label: string;
             on_press: Closure(i32) -> void;
@@ -848,19 +819,16 @@ main :: () {
         btn3 := Button{ label = "OK", on_press = btn_cb };
         btn3.on_press(1);
 
-        // stateful counter via pointer capture
         state_j1 : i32 = 0;
         p_j1 := *state_j1;
         inc_j1 := () -> i32 { p_j1.* += 1; return p_j1.*; };
         print("closure-counter: {} {} {}\n", inc_j1(), inc_j1(), inc_j1());
 
-        // stateful accumulator
         state_j2 : i32 = 100;
         p_j2 := *state_j2;
         acc_j2 := (x: i32) -> i32 { p_j2.* += x; return p_j2.*; };
         print("closure-acc: {} {}\n", acc_j2(5), acc_j2(10));
 
-        // block-body with local variables and loops
         base_k2 : i32 = 100;
         sum_fn := (items: [*]i32, cnt: i64) -> i32 {
             total : i32 = 0;
@@ -874,7 +842,6 @@ main :: () {
         k2_arr : [5]i32 = .[1, 2, 3, 4, 5];
         print("closure-loop: {}\n", sum_fn(xx *k2_arr, 5));
 
-        // reassigning a closure variable
         n_m3 : i32 = 1;
         f_m3 := (x: i32) -> i32 => x + n_m3;
         print("closure-reassign: {}\n", f_m3(10));
@@ -882,36 +849,31 @@ main :: () {
         f_m3 = (x: i32) -> i32 => x * m_m3;
         print("closure-reassign: {}\n", f_m3(10));
 
-        // snapshot semantics with a struct capture
+        // the capture is a copy: reassigning pt_m6 leaves f_m6 on the old values
         pt_m6 := Point{ x = 5, y = 10 };
         f_m6 := () -> i32 => pt_m6.x + pt_m6.y;
         pt_m6 = Point{ x = 99, y = 99 };
         print("closure-snapstruct: {}\n", f_m6());
 
-        // closure capturing auto-promoted closure
         double_m2 :: (x: i32) -> i32 { return x * 2; }
         base_m2 : Closure(i32) -> i32 = double_m2;
         n_m2 : i32 = 1;
         f_m2 := (x: i32) -> i32 => base_m2(x) + n_m2;
         print("closure-cap-promoted: {}\n", f_m2(5));
 
-        // immediately invoked closure (via temp var)
         n_m5 : i32 = 5;
         iife := (x: i32) -> i32 => x + n_m5;
         result_m5 := iife(10);
         print("closure-iife: {}\n", result_m5);
 
-        // optional callback (none)
         Toggle :: struct { on_change: ?Closure(bool) -> void; }
         t_f2 := Toggle{ on_change = null };
         if h := t_f2.on_change { h(true); } else { print("closure-toggle: none\n"); }
 
-        // optional callback (some)
         t_f3_cb := (enabled: bool) { print("closure-toggle: {}\n", enabled); };
         t_f3 := Toggle{ on_change = t_f3_cb };
         if h := t_f3.on_change { h(true); }
 
-        // callback receiving caller context
         Panel :: struct {
             title: string;
             on_resize: Closure(string, i32, i32) -> void;
@@ -922,7 +884,6 @@ main :: () {
         p_f5 := Panel{ title = "main", on_resize = p_f5_cb };
         p_f5.on_resize(p_f5.title, 800, 600);
 
-        // protocol value passed through multiple function calls
         step3 :: (a: Allocator) -> *void { a.alloc_bytes(8) }
         step2 :: (a: Allocator) -> *void { step3(a) }
         step1 :: (a: Allocator) -> *void { step2(a) }
@@ -932,7 +893,6 @@ main :: () {
         print("closure-chain-call: {}\n", ptr_e6 != null);
         a_e6.dealloc_bytes(ptr_e6);
 
-        // creating closures in a loop (each captures different value)
         // TEMPORARILY DISABLED — closure-in-loop causes infinite loop (index_gep element size issue?)
         // cl_arr : [5]Closure(i32) -> i32 = ---;
         // i_loop := 0;
@@ -941,12 +901,10 @@ main :: () {
         //     cl_arr[i_loop] = (x: i32) -> i32 => x + val_loop;
         //     i_loop += 1;
         // }
-        // calling closures from array
         // tmp_cl := cl_arr[0]; print("closure-loop-0: {}\n", tmp_cl(1));
         // tmp_cl = cl_arr[1]; print("closure-loop-1: {}\n", tmp_cl(1));
         // tmp_cl = cl_arr[4]; print("closure-loop-4: {}\n", tmp_cl(1));
 
-        // closure in conditional expression (via temp var)
         use_fast := true;
         k_fast : i32 = 2;
         k_slow : i32 = 10;
@@ -955,7 +913,6 @@ main :: () {
         f_cond : Closure(i32) -> i32 = if use_fast then f_fast else f_slow;
         print("closure-cond: {}\n", f_cond(5));
 
-        // multiple callbacks on one struct
         Form :: struct {
             on_submit: ?Closure() -> void;
             on_cancel: ?Closure() -> void;
@@ -966,18 +923,15 @@ main :: () {
         if h := form_f4.on_submit { h(); }
         if h := form_f4.on_cancel { h(); } else { print("closure-form: no cancel\n"); }
 
-        // auto-promoted closure env is null (no free needed)
         double_l3 :: (x: i32) -> i32 { return x * 2; }
         f_l3 : Closure(i32) -> i32 = double_l3;
         print("closure-null-env: {}\n", f_l3.env == null);
 
-        // capture slice (fat pointer like string)
         sl_a7 : [3]i32 = .[10, 20, 30];
         ptr_a7 : [*]i32 = xx *sl_a7;
         f_a7 := (i: i64) -> i32 => ptr_a7[i];
         print("closure-slice: {} {} {}\n", f_a7(0), f_a7(1), f_a7(2));
 
-        // arena bulk free (closures allocated on arena, freed in bulk)
         gpa_l1 := GPA.init();
         arena_l1 := Arena.init(gpa_l1, 4096);
         push .{ allocator = arena_l1 } {
@@ -987,7 +941,6 @@ main :: () {
         }
         arena_l1.deinit();
 
-        // GPA manual free (verify env alloc/dealloc)
         gpa_l2 := GPA.init();
         a_l2 : Allocator = xx gpa_l2;
         n_l2 : i32 = 7;
@@ -999,7 +952,6 @@ main :: () {
         }
         print("closure-gpa: {} allocs={}\n", result_l2, gpa_l2.alloc_count);
 
-        // capture optional
         val_a10 : ?i32 = 42;
         f_a10 := () -> i32 {
             if v := val_a10 { return v; }
@@ -1007,7 +959,6 @@ main :: () {
         };
         print("closure-opt: {}\n", f_a10());
 
-        // return optional
         limit_c6 : i32 = 100;
         f_c6 := (x: i32) -> ?i32 {
             if x > limit_c6 { return null; }
@@ -1018,7 +969,6 @@ main :: () {
         if v := r1_c6 { print("closure-ropt: {}\n", v); }
         if v := r2_c6 { print("should-not-print\n"); } else { print("closure-ropt: none\n"); }
 
-        // array of closures with mixed origins
         double_m8 :: (x: i32) -> i32 { return x * 2; }
         n_m8 : i32 = 10;
         fns_m8 : [3]Closure(i32) -> i32 = ---;
@@ -1029,7 +979,6 @@ main :: () {
         tmp_m8 = fns_m8[1]; print("closure-mixed: {}\n", tmp_m8(5));
         tmp_m8 = fns_m8[2]; print("closure-mixed: {}\n", tmp_m8(5));
 
-        // independent closures from same factory (each has own env)
         mk_e1 :: (n: i32) -> Closure(i32) -> i32 {
             return (x: i32) -> i32 => x * n;
         }
@@ -1038,7 +987,6 @@ main :: () {
         f3_e1 := mk_e1(4);
         print("closure-factory-indep: {} {} {}\n", f1_e1(10), f2_e1(10), f3_e1(10));
 
-        // deep chain — closure capturing closure capturing closure
         v_e2 : i32 = 1;
         k2_e2 : i32 = 2;
         k100_e2 : i32 = 100;
@@ -1047,7 +995,6 @@ main :: () {
         f2_e2 := (x: i32) -> i32 => f1_e2(x) + k100_e2;
         print("closure-deep-chain: {}\n", f2_e2(10));
 
-        // many captures (stress env struct)
         c1_e3 : i32 = 1;
         c2_e3 : i32 = 2;
         c3_e3 : i32 = 3;
@@ -1059,12 +1006,10 @@ main :: () {
         big_env := () -> i32 => c1_e3 + c2_e3 + c3_e3 + c4_e3 + c5_e3 + c6_e3 + c7_e3 + c8_e3;
         print("closure-8cap: {}\n", big_env());
 
-        // closure with many parameters (4 params)
         multi_param := (a: i32, b: i32, c: i32, d: i32) -> i32 => a + b + c + d;
         a_e5 : i32 = 1; b_e5 : i32 = 2; c_e5 : i32 = 3; d_e5 : i32 = 4;
         print("closure-4param: {}\n", multi_param(a_e5, b_e5, c_e5, d_e5));
 
-        // two closures sharing the same captured pointer
         shared : i32 = 0;
         shared_p := *shared;
         inc_shared := () { shared_p.* += 1; };
@@ -1074,23 +1019,19 @@ main :: () {
         inc_shared();
         print("closure-shared-ptr: {}\n", shared);
 
-        // closure with f64 arithmetic
         pi_e8 : f64 = 3.14159;
         area_fn := (r: f64) -> f64 => pi_e8 * r * r;
         a_e8 := area_fn(10.0);
         print("closure-f64: {}\n", a_e8 > 314.0);
 
-        // zero-capture closure (env should be null, like auto-promoted)
         no_cap := (x: i32) -> i32 => x * x;
         print("closure-zerocap: {} {}\n", no_cap(7), no_cap.env == null);
 
-        // closure capturing and calling struct method
         pt_e10 := Point{ x = 3, y = 4 };
         p_e10 := *pt_e10;
         get_xy := () -> i32 => p_e10.x + p_e10.y;
         print("closure-struct-method: {}\n", get_xy());
 
-        // multiple closures from same factory with different captures
         fns_e11 : [3]Closure(i32) -> i32 = ---;
         i_e11 := 0;
         while i_e11 < 3 {
@@ -1102,7 +1043,6 @@ main :: () {
         t_e11 = fns_e11[1]; print("closure-multi-factory: {}\n", t_e11(10));
         t_e11 = fns_e11[2]; print("closure-multi-factory: {}\n", t_e11(10));
 
-        // closure capturing bool
         flag_e12 := true;
         check_fn := (x: i32) -> bool {
             if flag_e12 { return x > 0; }
@@ -1112,18 +1052,15 @@ main :: () {
         neg_e12 : i32 = xx -3;
         print("closure-bool-cap: {} {}\n", check_fn(pos_e12), check_fn(neg_e12));
 
-        // closure as argument to another closure
         apply_fn := (f_app: Closure(i32) -> i32, val: i32) -> i32 => f_app(val);
         k_e13 : i32 = 100;
         inner_fn := (x: i32) -> i32 => x + k_e13;
         print("closure-as-arg: {}\n", apply_fn(inner_fn, 42));
 
-        // closure capturing string and formatting
         prefix_e14 := "hello";
         greet_fn := (name: string) -> string => format("{} {}", prefix_e14, name);
         print("closure-strfmt: {}\n", greet_fn("world"));
 
-        // reassigning shared pointer target between closure calls
         val_e15 : i32 = 10;
         p_e15 := *val_e15;
         read_fn := () -> i32 => p_e15.*;
@@ -1131,13 +1068,11 @@ main :: () {
         val_e15 = 42;
         print("closure-ptr-after: {}\n", read_fn());
 
-        // closure returning negative value
         off_e16 : i32 = 100;
         neg_fn := (x: i32) -> i32 => x - off_e16;
         val_e16 : i32 = 30;
         print("closure-neg: {}\n", neg_fn(val_e16));
 
-        // closure with protocol value capture (`inline`-kind protocol)
         gpa_e17 := GPA.init();
         a_e17 : Allocator = xx gpa_e17;
         alloc_fn := (size: i64) -> *void => a_e17.alloc_bytes(size);
@@ -1145,7 +1080,6 @@ main :: () {
         print("closure-proto-cap: {}\n", ptr_e17 != null);
         a_e17.dealloc_bytes(ptr_e17);
 
-        // chained factory — compose two factories
         make_scaler :: (factor: i32) -> Closure(i32) -> i32 {
             return (x: i32) -> i32 => x * factor;
         }
@@ -1157,7 +1091,6 @@ main :: () {
         // manually compose: scale then offset
         print("closure-chain-factory: {}\n", o_fn(s_fn(10)));
 
-        // closure in while loop condition helper
         threshold : i32 = 50;
         above_fn := (x: i32) -> bool => x >= threshold;
         vals_e19 : [5]i32 = .[10, 30, 50, 70, 90];

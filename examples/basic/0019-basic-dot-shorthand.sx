@@ -1,9 +1,7 @@
 #import "modules/std.sx";
 
-// ============================================================
-// Dot-shorthand tests: .identifier(args) unification
-// Covers both tagged-enum payload construction and struct static methods
-// ============================================================
+// Dot-shorthand `.identifier(args)` resolves against the expected type, both
+// for tagged-enum payload construction and for struct static methods.
 
 // --- Type declarations ---
 
@@ -53,9 +51,6 @@ Result :: enum {
 }
 
 main :: () {
-    // ============================================================
-    // Tagged enum payload construction
-    // ============================================================
     print("--- tagged enum compat ---\n");
 
     // T1: .variant(payload) in typed variable declaration
@@ -157,9 +152,6 @@ main :: () {
         print("T10c: {}\n", select(2).rect.w);
     }
 
-    // ============================================================
-    // Struct static method shorthand
-    // ============================================================
     print("--- struct static shorthand ---\n");
 
     // S1: .method(args) as function argument (the motivating use case)
@@ -228,19 +220,14 @@ main :: () {
         print("S10: {} {}\n", v.x, v.y);
     }
 
-    // ============================================================
-    // Edge cases mixing both
-    // ============================================================
     print("--- edge cases ---\n");
 
-    // Both tagged enum and struct shorthand in same scope
     {
         sh : Shape = .circle(5.0);
         v : Vec2 = .create(1.0, 2.0);
         print("E1: {} {} {}\n", sh.circle, v.x, v.y);
     }
 
-    // Function taking both types — each resolves correctly
     {
         use_both :: (sh: Shape, v: Vec2) {
             ms : i32 = 0;
@@ -250,7 +237,6 @@ main :: () {
         use_both(.circle(9.0), .create(1.0, 2.0));
     }
 
-    // Bare .variant (no parens) as function arg
     {
         check_none :: (sh: Shape) -> i32 {
             if sh == { case .none: 1; else: 0; }
@@ -258,14 +244,12 @@ main :: () {
         print("E3: {}\n", check_none(.none));
     }
 
-    // Nested shorthand — .method takes a struct param created with shorthand
-    // (inner .create must resolve via the method's parameter type, not the outer type)
+    // the inner .create resolves via the method's parameter type, not the outer type
     {
         v : Vec2 = .add(Vec2.create(1.0, 2.0), Vec2.create(3.0, 4.0));
         print("E4: {} {}\n", v.x, v.y);
     }
 
-    // Tagged enum .variant(payload) in match-as-expression
     {
         sh : Shape = .circle(42.0);
         r : i32 = 0;
@@ -277,14 +261,13 @@ main :: () {
         print("E5: {}\n", r);
     }
 
-    // Color enum (plain, not tagged) accepts bare .variant
+    // a plain enum takes bare .variant too
     {
         c : Color = .green;
         ci : i32 = xx c;
         print("E6: {}\n", ci);
     }
 
-    // Struct shorthand in typed variable, then pass to function
     {
         ei : EdgeInsets = .symmetric(10.0, 20.0);
         show :: (e: EdgeInsets) { print("E7: {} {}\n", e.top, e.left); }

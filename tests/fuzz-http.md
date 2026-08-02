@@ -36,11 +36,12 @@ Run it directly:
 
 ## Longer fuzz, outside the corpus
 
-The corpus runner (10s/example, no network sandbox) cannot host a
-long-running fuzzer. Raise `ITERATIONS` in `1677-http-fuzz-smoke.sx`
-and/or run it repeatedly with different `SEED` values. Each `SEED` is a
-fresh deterministic stream; a crash is reproducible by pinning the
-failing `SEED` + iteration index, which the example prints on failure.
+The corpus runner caps an example's post-compile run phase at 1s and
+gives it no network sandbox, so it cannot host a long-running fuzzer.
+Raise `ITERATIONS` in `1677-http-fuzz-smoke.sx` and/or run it repeatedly
+with different `SEED` values. Each `SEED` is a fresh deterministic
+stream; a crash is reproducible by pinning the failing `SEED` +
+iteration index, which the example prints on failure.
 
 **If any fuzz run finds a crash / hang / leak, that is a REAL parser
 bug.** The failing `SEED` + iteration + the exact triggering bytes are

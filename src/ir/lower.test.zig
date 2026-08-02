@@ -349,7 +349,6 @@ test "lower: while loop generates header/body/exit blocks" {
     try std.testing.expect(std.mem.indexOf(u8, output, "cond_br") != null);
 }
 
-// Obj-C type-encoding helper.
 test "lower: objcTypeEncodingFromSignature emits primitive shapes" {
     const alloc = std.testing.allocator;
     var module = ir_mod.Module.init(alloc);

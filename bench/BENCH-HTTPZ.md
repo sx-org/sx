@@ -35,11 +35,12 @@ Reading the table:
 
 ## 2026-07-02 — streaming request-body reader, same host
 
-This change restructures try_serve_one (hoisted CL parse + smuggling checks, a
-per-request `streaming` bool, canon_path extraction) and adds no work to
-the accumulate path. Measured: inline plain 37,982 / inline keep-alive
-**218,213** / pool(4) 126,735 / zig baseline 37,668 rps — all within the
-ambient band of the perf-pass finals (keep-alive +2%).
+`try_serve_one` hoists Content-Length parsing and the smuggling checks,
+carries a per-request `streaming` bool, and extracts `canon_path`; none
+of that work lands on the accumulate path. Measured: inline plain 37,982 /
+inline keep-alive **218,213** / pool(4) 126,735 / zig baseline 37,668
+rps — all within the ambient band of the perf-pass finals (keep-alive
++2%).
 
 ## 2026-07-02 — producers off the loop thread, same host
 

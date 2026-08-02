@@ -6891,8 +6891,6 @@ test "round-trip print: catch match-body form" {
     try e02ExpectPrints(a, v, "foo() catch (e) == { case .Empty: 0; else: 1; }");
 }
 
-// ── coverage consolidation (gaps + integration) ──
-
 test "try in statement position (propagate, discard value)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
