@@ -36,8 +36,10 @@ Run it directly:
 
 ## Longer fuzz, outside the corpus
 
-The corpus runner caps an example's post-compile run phase at 1s and
-gives it no network sandbox, so it cannot host a long-running fuzzer.
+The corpus runner flags an example whose post-compile run phase exceeds
+the 1s budget as `OVER` in its timing report, caps compile + run at 30s
+wall-clock, and gives it no network sandbox, so it cannot host a
+long-running fuzzer.
 Raise `ITERATIONS` in `1677-http-fuzz-smoke.sx` and/or run it repeatedly
 with different `SEED` values. Each `SEED` is a fresh deterministic
 stream; a crash is reproducible by pinning the failing `SEED` +
