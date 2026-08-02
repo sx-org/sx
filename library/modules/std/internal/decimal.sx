@@ -1,0 +1,460 @@
+// =====================================================================
+// decimal.sx — exact decimal <-> binary conversion for f64.
+//
+// Two directions:
+//   `to_f64(sig, exp10)` — the double NEAREST to `sig * 10^exp10`, ties
+//     to even.
+//   `shortest(f)` — the FEWEST decimal digits whose value `to_f64` maps
+//     back to exactly `f`.
+//
+// Composed, they are the identity on every finite double, subnormals and
+// -0.0 included: the digits `shortest` picks name a decimal inside `f`'s
+// rounding interval, and rounding that decimal to the nearest double is
+// `f` again.
+//
+// Both run on `Nat`, a fixed-capacity natural number, and reduce to
+// products, shifts and comparisons on it. No step approximates: each
+// direction rounds exactly once, where it decides its result.
+//
+// NO HEAP: every `Nat` is a stack value; the conversions allocate
+// nothing.
+// =====================================================================
+
+#import "modules/std/core.sx";
+
+// ── f64 bit access ────────────────────────────────────────────────────
+
+// The IEEE-754 storage of an f64, read as a signed 64-bit pattern (so
+// the sign BIT survives — `-0.0` reads as negative, which `< 0.0` does
+// not).
+FloatBits :: union { f: f64; s: i64; }
+
+float_bits :: (f: f64) -> i64 {
+    u : FloatBits = ---;
+    u.f = f;
+    u.s
+}
+
+float_of_bits :: (bits: i64) -> f64 {
+    u : FloatBits = ---;
+    u.s = bits;
+    u.f
+}
+
+// A NaN or an infinity: IEEE-754 reserves the all-ones exponent field
+// for both.
+is_non_finite :: (bits: i64) -> bool {
+    ((bits >> 52) & 0x7FF) == 0x7FF
+}
+
+// ── Nat: fixed-capacity natural number ────────────────────────────────
+//
+// Little-endian limbs of 28 bits held in i64 slots: a limb product plus
+// a carry stays under 2^57, so every intermediate is an ordinary signed
+// multiply with room to spare.
+//
+// 96 limbs span 2688 bits. The widest value either conversion forms is
+// `to_f64`'s scaled divisor at the full digit cap, about 2592 bits.
+
+private LIMB_BITS :: 28;
+private LIMB_MASK :: 0xFFFFFFF;
+private LIMB_BASE :: 0x10000000;
+
+// The largest power of five that fits in one limb, and the smaller ones
+// for the remainder of a chain.
+private POW5_STEP  :: 12;
+private POW5 : [13]i64 : .[
+    1, 5, 25, 125, 625, 3125, 15625, 78125,
+    390625, 1953125, 9765625, 48828125, 244140625,
+];
+
+Nat :: struct {
+    limbs: [96]i64;
+    n: i64 = 0;          // significant limbs; 0 is the value zero
+
+    // `v` must be non-negative.
+    set :: (self: *Nat, v: i64) {
+        self.n = 0;
+        x := v;
+        while x != 0 {
+            self.limbs[self.n] = x & LIMB_MASK;
+            x = x >> LIMB_BITS;
+            self.n += 1;
+        }
+    }
+
+    copy_from :: (self: *Nat, o: *Nat) {
+        self.n = o.n;
+        i := 0;
+        while i < o.n { self.limbs[i] = o.limbs[i]; i += 1; }
+    }
+
+    is_zero :: (self: *Nat) -> bool { self.n == 0 }
+
+    // Position of the highest set bit, counted from one; 0 for zero.
+    bit_len :: (self: *Nat) -> i64 {
+        if self.n == 0 { return 0; }
+        top := self.limbs[self.n - 1];
+        b := 0;
+        while top != 0 { b += 1; top = top >> 1; }
+        (self.n - 1) * LIMB_BITS + b
+    }
+
+    // -1 / 0 / 1 as `self` is below / equal to / above `o`.
+    cmp :: (self: *Nat, o: *Nat) -> i64 {
+        if self.n != o.n { return if self.n < o.n then 0 - 1 else 1; }
+        i := self.n;
+        while i > 0 {
+            i -= 1;
+            if self.limbs[i] != o.limbs[i] {
+                return if self.limbs[i] < o.limbs[i] then 0 - 1 else 1;
+            }
+        }
+        0
+    }
+
+    add :: (self: *Nat, o: *Nat) {
+        len := if self.n > o.n then self.n else o.n;
+        carry := 0;
+        i := 0;
+        while i < len {
+            a := if i < self.n then self.limbs[i] else 0;
+            b := if i < o.n then o.limbs[i] else 0;
+            v := a + b + carry;
+            self.limbs[i] = v & LIMB_MASK;
+            carry = v >> LIMB_BITS;
+            i += 1;
+        }
+        self.n = len;
+        if carry != 0 { self.limbs[self.n] = carry; self.n += 1; }
+    }
+
+    // `o` must not exceed `self`.
+    sub :: (self: *Nat, o: *Nat) {
+        borrow := 0;
+        i := 0;
+        while i < self.n {
+            b := if i < o.n then o.limbs[i] else 0;
+            v := self.limbs[i] - b - borrow;
+            if v < 0 { v += LIMB_BASE; borrow = 1; } else { borrow = 0; }
+            self.limbs[i] = v;
+            i += 1;
+        }
+        while self.n > 0 and self.limbs[self.n - 1] == 0 { self.n -= 1; }
+    }
+
+    // `d` must fit in one limb.
+    add_small :: (self: *Nat, d: i64) {
+        carry := d;
+        i := 0;
+        while carry != 0 {
+            v := (if i < self.n then self.limbs[i] else 0) + carry;
+            self.limbs[i] = v & LIMB_MASK;
+            carry = v >> LIMB_BITS;
+            if i >= self.n { self.n = i + 1; }
+            i += 1;
+        }
+    }
+
+    // `m` must fit in one limb.
+    mul_small :: (self: *Nat, m: i64) {
+        carry := 0;
+        i := 0;
+        while i < self.n {
+            v := self.limbs[i] * m + carry;
+            self.limbs[i] = v & LIMB_MASK;
+            carry = v >> LIMB_BITS;
+            i += 1;
+        }
+        while carry != 0 {
+            self.limbs[self.n] = carry & LIMB_MASK;
+            carry = carry >> LIMB_BITS;
+            self.n += 1;
+        }
+    }
+
+    shl :: (self: *Nat, k: i64) {
+        if self.n == 0 or k == 0 { return; }
+        bits := k % LIMB_BITS;
+        if bits != 0 {
+            carry := 0;
+            i := 0;
+            while i < self.n {
+                v := (self.limbs[i] << bits) | carry;
+                self.limbs[i] = v & LIMB_MASK;
+                carry = v >> LIMB_BITS;
+                i += 1;
+            }
+            if carry != 0 { self.limbs[self.n] = carry; self.n += 1; }
+        }
+        words := k / LIMB_BITS;
+        if words != 0 {
+            i := self.n;
+            while i > 0 { i -= 1; self.limbs[i + words] = self.limbs[i]; }
+            i = 0;
+            while i < words { self.limbs[i] = 0; i += 1; }
+            self.n += words;
+        }
+    }
+
+    shr1 :: (self: *Nat) {
+        carry := 0;
+        i := self.n;
+        while i > 0 {
+            i -= 1;
+            v := self.limbs[i];
+            self.limbs[i] = (v >> 1) | (carry << (LIMB_BITS - 1));
+            carry = v & 1;
+        }
+        while self.n > 0 and self.limbs[self.n - 1] == 0 { self.n -= 1; }
+    }
+
+    mul_pow5 :: (self: *Nat, k: i64) {
+        r := k;
+        while r >= POW5_STEP { self.mul_small(POW5[POW5_STEP]); r -= POW5_STEP; }
+        if r > 0 { self.mul_small(POW5[r]); }
+    }
+
+    mul_pow10 :: (self: *Nat, k: i64) {
+        self.mul_pow5(k);
+        self.shl(k);
+    }
+}
+
+// `floor(num / den)` as an integer of at most `qbits` bits, which the
+// callers size so the quotient fits. `num` is left holding the
+// remainder and `work` is scratch.
+private divide :: (num: *Nat, den: *Nat, qbits: i64, work: *Nat) -> i64 {
+    work.copy_from(den);
+    work.shl(qbits - 1);
+    q := 0;
+    i := qbits;
+    while i > 0 {
+        i -= 1;
+        if num.cmp(work) >= 0 { num.sub(work); q = q | (1 << i); }
+        work.shr1();
+    }
+    q
+}
+
+// ── Decimal -> binary ─────────────────────────────────────────────────
+
+// The most significant digits a `Significand` holds. Every rounding
+// boundary between two doubles — an odd multiple of a power of two, down
+// to 2^-1075 — spells itself in at most this many significant digits, so
+// a digit dropped past the cap can only put the value strictly to one
+// side of a boundary, never onto one. `more` then names that side.
+DIGIT_CAP :: 769;
+
+// A decimal significand built one digit at a time.
+Significand :: struct {
+    mag: Nat;
+    digits: i64 = 0;      // significant digits held in `mag`
+    more: bool = false;   // a nonzero digit fell past the cap
+
+    // Append `d` as the next less significant digit. Returns whether it
+    // entered the significand; a digit past the cap does not, and the
+    // caller weighs it in the exponent instead.
+    push :: (self: *Significand, d: i64) -> bool {
+        if self.digits >= DIGIT_CAP {
+            if d != 0 { self.more = true; }
+            return false;
+        }
+        self.mag.mul_small(10);
+        self.mag.add_small(d);
+        if self.mag.n != 0 { self.digits += 1; }   // leading zeros are not significant
+        true
+    }
+}
+
+// The decimal magnitudes past which the significand cannot change the
+// outcome: 10^309 already exceeds every finite double, and 10^-325 falls
+// below half of the smallest subnormal.
+private DEXP_INF  :: 310;
+private DEXP_ZERO :: 0 - 325;
+
+// The double nearest to `sig * 10^exp10`, ties to even; an exact halfway
+// case that `sig.more` marks as truncated rounds up, the true value
+// being above it. Returns an infinity when the value is past the finite
+// range and 0.0 when it is below half the smallest subnormal.
+to_f64 :: (sig: *Significand, exp10: i64) -> f64 {
+    if sig.mag.is_zero() { return 0.0; }
+    dexp := sig.digits + exp10;          // the value is under 10^dexp
+    if dexp >= DEXP_INF { return f64.inf; }
+    if dexp <= DEXP_ZERO { return 0.0; }
+
+    // The value is `(num / den) * 2^scale` exactly: the fives of the
+    // power of ten divide or multiply the significand, the twos stay in
+    // the binary exponent.
+    num  : Nat = ---;
+    den  : Nat = ---;
+    work : Nat = ---;
+    num.copy_from(*sig.mag);
+    den.set(1);
+    scale := exp10;
+    if exp10 >= 0 { num.mul_pow5(exp10); }
+    else          { den.mul_pow5(0 - exp10); }
+
+    // A quotient of bit lengths brackets the value within one power of
+    // two, so `2^(lg-1) <= value < 2^(lg+1)`.
+    lg := num.bit_len() - den.bit_len() + scale;
+    e := lg - 53;
+    if e < 0 - 1074 { e = 0 - 1074; }   // the subnormal floor
+
+    // Divide out 2^e, leaving `q + num/den` with q under 2^54.
+    shift := scale - e;
+    if shift >= 0 { num.shl(shift); } else { den.shl(0 - shift); }
+    q := divide(*num, *den, 55, *work);
+
+    if q >= (1 << 53) {
+        // The bracket landed one binary place low; the bit dropped here
+        // is the halfway mark at the coarser place.
+        half := (q & 1) == 1;
+        q = q >> 1;
+        e += 1;
+        if half and (sig.more or !num.is_zero() or (q & 1) == 1) { q += 1; }
+    } else {
+        work.copy_from(*num);
+        work.shl(1);
+        c := work.cmp(*den);
+        if c > 0 { q += 1; }
+        else if c == 0 and (sig.more or (q & 1) == 1) { q += 1; }
+    }
+    if q >= (1 << 53) { q = q >> 1; e += 1; }   // the round-up carried
+
+    if e > 971 { return f64.inf; }
+    if q < (1 << 52) { return float_of_bits(q); }              // subnormal
+    float_of_bits(((e + 1075) << 52) | (q - (1 << 52)))
+}
+
+// ── Binary -> decimal ─────────────────────────────────────────────────
+
+// `mant * 10^exp10` written with `digits` decimal digits.
+Decimal :: struct {
+    mant: i64;
+    exp10: i64;
+    digits: i64;
+}
+
+// log10(2) as a fraction, for the first guess at where the leading
+// decimal digit sits.
+private LOG10_2_NUM :: 30103;
+private LOG10_2_DEN :: 100000;
+
+private floor_div :: (a: i64, b: i64) -> i64 {
+    q := a / b;
+    if a % b != 0 and (a < 0) != (b < 0) { q -= 1; }
+    q
+}
+
+// Whether `r + mp` reaches `s`, the test that says the digits emitted so
+// far already round up into the value's upper neighbour. `inclusive`
+// carries round-to-even's acceptance of an exact boundary.
+private reaches_upper :: (r: *Nat, mp: *Nat, s: *Nat, inclusive: bool, work: *Nat) -> bool {
+    work.copy_from(r);
+    work.add(mp);
+    c := work.cmp(s);
+    if inclusive then c >= 0 else c > 0
+}
+
+// The shortest decimal `to_f64` maps back to exactly `f`, which must be
+// finite and strictly positive.
+//
+// The digits come from the Steele-White generator run on exact integers:
+// the value and the two half-gaps to its neighbouring doubles are held
+// as `r/s`, `mm/s` and `mp/s`, and digits are peeled off the top until
+// what remains is closer to `f` than to either neighbour. The first such
+// prefix IS the shortest naming of `f`, and it lies inside `f`'s
+// rounding interval by construction.
+shortest :: (f: f64) -> Decimal {
+    bits := float_bits(f);
+    ebits := (bits >> 52) & 0x7FF;
+    frac := bits & 0xFFFFFFFFFFFFF;
+    m := frac;
+    e := 0 - 1074;
+    if ebits != 0 { m = frac + (1 << 52); e = ebits - 1075; }
+
+    // Round-to-even reaches the midpoint between two doubles when the
+    // significand it lands on is even, so an exact boundary counts.
+    inclusive := (m & 1) == 0;
+    // A power of two other than the smallest normal sits twice as close
+    // to its predecessor as to its successor.
+    narrow_below := m == (1 << 52) and ebits > 1;
+
+    r  : Nat = ---;
+    s  : Nat = ---;
+    mm : Nat = ---;
+    mp : Nat = ---;
+    work : Nat = ---;
+    r.set(m);
+    if e >= 0 {
+        if narrow_below {
+            r.shl(e + 2);  s.set(4);  mm.set(1); mm.shl(e); mp.set(1); mp.shl(e + 1);
+        } else {
+            r.shl(e + 1);  s.set(2);  mm.set(1); mm.shl(e); mp.set(1); mp.shl(e);
+        }
+    } else {
+        if narrow_below {
+            r.shl(2);  s.set(1); s.shl(2 - e);  mm.set(1); mp.set(2);
+        } else {
+            r.shl(1);  s.set(1); s.shl(1 - e);  mm.set(1); mp.set(1);
+        }
+    }
+
+    // `k` is the decimal weight one above the leading digit: the digits
+    // spell `0.d0d1... * 10^k`.
+    k := floor_div((e + int_bit_len(m) - 1) * LOG10_2_NUM, LOG10_2_DEN) + 1;
+    if k >= 0 { s.mul_pow10(k); }
+    else { r.mul_pow10(0 - k); mm.mul_pow10(0 - k); mp.mul_pow10(0 - k); }
+
+    // Settle `k` from the guess: raise it while the value still reaches
+    // 10^k, then lower it while a tenth of that would still hold it.
+    while reaches_upper(*r, *mp, *s, inclusive, *work) { s.mul_small(10); k += 1; }
+    while !reaches_upper_scaled(*r, *mp, *s, inclusive, *work) {
+        r.mul_small(10); mm.mul_small(10); mp.mul_small(10); k -= 1;
+    }
+
+    n := 0;
+    p := 0;
+    emitting := true;
+    while emitting {
+        r.mul_small(10); mm.mul_small(10); mp.mul_small(10);
+        d := 0;
+        while r.cmp(*s) >= 0 { r.sub(*s); d += 1; }
+        cl := r.cmp(*mm);
+        low := if inclusive then cl <= 0 else cl < 0;
+        high := reaches_upper(*r, *mp, *s, inclusive, *work);
+        if low or high {
+            up := high;
+            if low and high {
+                work.copy_from(*r);
+                work.shl(1);
+                up = work.cmp(*s) >= 0;
+            }
+            n = n * 10 + (if up then d + 1 else d);
+            emitting = false;
+        } else {
+            n = n * 10 + d;
+        }
+        p += 1;
+    }
+    Decimal{ mant = n, exp10 = k - p, digits = p }
+}
+
+// `reaches_upper` one decimal place coarser — the test that `k` can come
+// down by one.
+private reaches_upper_scaled :: (r: *Nat, mp: *Nat, s: *Nat, inclusive: bool, work: *Nat) -> bool {
+    work.copy_from(r);
+    work.add(mp);
+    work.mul_small(10);
+    c := work.cmp(s);
+    if inclusive then c >= 0 else c > 0
+}
+
+// Position of the highest set bit of a positive `v`, counted from one.
+private int_bit_len :: (v: i64) -> i64 {
+    b := 0;
+    x := v;
+    while x != 0 { b += 1; x = x >> 1; }
+    b
+}
