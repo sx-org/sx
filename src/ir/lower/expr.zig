@@ -2943,9 +2943,11 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     const saved_span = self.builder.current_span;
     defer self.builder.current_span = saved_span;
     if (node.span.start != 0 or node.span.end != 0) self.builder.current_span = .{ .start = node.span.start, .end = node.span.end };
-    // A node carrying an explicit `source_file` is one spliced into a body
-    // from another module — a substituted caller comptime-`$`-arg (stamped
-    // at the `cpn` build site in lowerComptimeCall / monomorphizePackFn).
+    // A node carrying an explicit `source_file` is one lowered outside the
+    // module that wrote it: a substituted caller comptime-`$`-arg (stamped at
+    // the `cpn` build site in lowerComptimeCall / monomorphizePackFn), or a
+    // struct field default (stamped in registerStructDecl /
+    // instantiateGenericStruct).
     // Resolve its bare names in THAT module's visibility context, overriding
     // the body's defining-module pin, then restore so sibling callee nodes
     // keep the enclosing context. Ordinary expression nodes never carry a
