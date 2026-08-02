@@ -1,8 +1,9 @@
 // The compose library's frame loop.
 //
 // A `UiRoot` owns everything that outlives a build — the identity tally, the
-// state store, both routers, the input queue and the committed snapshot — so a
-// tree is the only thing a frame throws away.
+// state store, both routers, the input queue and the committed snapshot. A
+// `FrameLoop` owns the builder closure it was handed, so its `deinit` frees
+// that closure's captured environment.
 //
 // One frame runs in one order: what the queue holds is consumed against the
 // frame that committed BEFORE it, the builder then rebuilds under the state
@@ -66,8 +67,11 @@ UiRoot :: struct {
     }
 
     // Where a built tree becomes the committed frame: it projects, names its
-    // root, and both routers start resolving against it.
+    // root, and both routers start resolving against it. The outgoing lists
+    // came from the arena the frame before this one built in, so they go
+    // instead of being refilled.
     commit :: (self: *UiRoot, tree: *View) {
+        self.snapshot.discard()
         project(tree, self.viewport, *self.snapshot)
         self.snapshot.root = self.id
         self.taps.observe(*self.snapshot)
@@ -91,9 +95,17 @@ UiRoot :: struct {
 FrameLoop :: struct {
     root: *UiRoot
     build: Closure() -> View
+    gpa: Allocator
     frames: i64 = 0
 
-    init :: (root: *UiRoot, build: Closure() -> View) -> FrameLoop => .{ root = root, build = build }
+    // A closure's environment comes from the allocator ambient where its
+    // literal is written, which is the one this default pairs the free with.
+    init :: (root: *UiRoot, build: Closure() -> View, gpa: Allocator = context.allocator) -> FrameLoop =>
+        .{ root = root, build = build, gpa = gpa }
+
+    deinit :: (self: *FrameLoop) {
+        free(self.build, self.gpa)
+    }
 
     frame :: (self: *FrameLoop) {
         r := self.root

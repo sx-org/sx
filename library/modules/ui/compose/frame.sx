@@ -9,9 +9,11 @@
 // top one there. The focus list is declaration-ordered, which is the traversal
 // order.
 //
-// All three lists are the FILLING frame's memory: a snapshot never carries a
-// buffer across a project, so whatever allocator was ambient for a frame owns
-// everything that frame committed.
+// A project refills the three lists in place and keeps their buffers, so a
+// snapshot projected over and over settles at one frame's memory and its
+// `deinit` hands that memory back. A caller whose fills come from an arena
+// calls `discard` first: those buffers are the arena's to reclaim, and reusing
+// them past its reset would hand out released storage.
 #import "modules/std.sx"
 #import "modules/ui/types.sx"
 #import "modules/ui/render.sx"
@@ -24,12 +26,19 @@ CommittedUiSnapshot :: struct {
     hit_list: List(HitRegion) = .{}
     focus_list: List(FocusRegion) = .{}
 
-    // The frame about to fill this snapshot is the one whose allocator owns it,
-    // so a reset lets the buffers go instead of holding on to their capacity.
+    // Empties the lists for the next fill and keeps their capacity.
     reset :: (self: *CommittedUiSnapshot) {
-        self.scene.nodes = .{}
-        self.hit_list = .{}
-        self.focus_list = .{}
+        self.scene.clear()
+        self.hit_list.len = 0
+        self.focus_list.len = 0
+    }
+
+    // Drops the buffers instead of reusing them, for a caller whose fills come
+    // from an arena: that arena is what releases them.
+    discard :: (self: *CommittedUiSnapshot) {
+        self.scene.nodes.detach()
+        self.hit_list.detach()
+        self.focus_list.detach()
     }
 
     deinit :: (self: *CommittedUiSnapshot) {

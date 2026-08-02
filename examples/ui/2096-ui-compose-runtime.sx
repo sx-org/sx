@@ -8,8 +8,10 @@
 // the ones it is minting now.
 //
 // A frame's tree, handler environments and committed lists all come from that
-// frame's arena, so the loop runs at a fixed ceiling however long it runs and
-// the root hands every byte back.
+// frame's arena, so the loop runs at a fixed ceiling however long it runs; what
+// outlives the frames is the root's and the loop's, and their teardowns hand
+// every byte of it back. A snapshot a caller projects into itself is that
+// caller's instead, reused across projects and released once.
 #import "modules/std.sx"
 #import "modules/std/mem.sx"
 #import "modules/ui/compose.sx"
@@ -82,7 +84,7 @@ main :: () -> i32 {
     print("frames {} rev {}\n", loop.frames, root.snapshot.revision)
 
     root.deinit()
-    context.allocator.dealloc_bytes(loop.build.env)
+    loop.deinit()
 
     // A second root under a tracker. The first frames settle the arenas and the
     // root's own lists at one frame's high-water mark; from there any number of
@@ -124,9 +126,39 @@ main :: () -> i32 {
         taps_seen = seen
 
         quiet.deinit()
-        context.allocator.dealloc_bytes(spin.build.env)
+        spin.deinit()
     }
     print("frames {} taps {} steady_allocs {} outstanding {}\n",
         ran, taps_seen, steady, tracker.leak_count())
+
+    // The same question asked of a snapshot outside any loop. A caller that
+    // projects one tree over and over reuses the three lists it filled the
+    // first time, so every project after that spends nothing, and the one
+    // deinit gives all three buffers back.
+    settled := 0
+    returned := 0
+    solo := TrackingAllocator.init(context.allocator)
+    push .{ allocator = solo } {
+        marks := Identity.init()
+        push .{ compose_ui = *marks } {
+            marks.begin_build()
+            tree : View = vstack(0.0) {
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, () {})
+                focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 })
+            }
+            snap := CommittedUiSnapshot{}
+            project(*tree, Size{ width = 100.0, height = 40.0 }, *snap)
+            warm := solo.alloc_count
+            for 0..32 {
+                project(*tree, Size{ width = 100.0, height = 40.0 }, *snap)
+            }
+            settled = solo.alloc_count - warm
+            freed := solo.dealloc_count
+            snap.deinit()
+            returned = solo.dealloc_count - freed
+        }
+        marks.deinit()
+    }
+    print("settled_allocs {} snapshot_freed {}\n", settled, returned)
     0
 }
