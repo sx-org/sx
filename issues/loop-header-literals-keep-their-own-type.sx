@@ -1,0 +1,37 @@
+// A loop header types itself: an untyped literal in a `while` condition or a
+// `for` range bound stays an i64, whatever float type the enclosing function
+// returns.
+#import "modules/std.sx";
+
+remainder :: (n: i64) -> f64 {
+    e := n;
+    while e > 22 { e -= 22; }
+    xx e
+}
+
+stepped :: (n: i64) -> f32 {
+    e := n;
+    while e > 'A' and e < 1000 { e -= 22; }
+    xx e
+}
+
+range_sum :: () -> f64 {
+    s := 0;
+    for 0..5 (i) { s += i; }
+    for 1..=3 (i) { s += i; }
+    for 0..2 { s += 100; }
+    xx s
+}
+
+wide_bound :: () -> f64 {
+    last := 0;
+    for 9007199254740993..9007199254740995 (i) { last = i; }
+    xx last
+}
+
+main :: () {
+    print("{}\n", remainder(50));
+    print("{}\n", stepped(200));
+    print("{}\n", range_sum());
+    print("{}\n", wide_bound());
+}

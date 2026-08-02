@@ -233,6 +233,60 @@ fn lowerSelectedBranch(self: *Lowering, node: *const Node, demand: lower_stmt.Ta
     return self.builder.constInt(0, .void);
 }
 
+/// A lowered `if`/`while` condition: the condition's own value (the payload
+/// source for an optional binding) and the i1 the branch tests.
+const LoweredCondition = struct {
+    value: Ref,
+    test_bit: Ref,
+    ty: TypeId,
+};
+
+/// THE entry for every `if`/`while` condition — the header of a branch or a
+/// loop, never a value position. The enclosing target type is cleared for the
+/// whole header, so a bare literal in it takes its own default type rather
+/// than the destination the construct sits in (`while e > 22` inside `-> f64`
+/// compares against an i64 `22`; `if x != 0 then 1.0 else 2.0` likewise).
+///
+/// An optional condition — bare `if opt` / `while opt` or with a binding —
+/// tests its has_value flag: the `{T,i1}` aggregate itself reaches condBr and
+/// folds truthy. `optional_has_value` covers every optional repr (struct
+/// `{T,i1}`, `?Closure` {fn,env}, pointer-sentinel `?*T`/`?cstring`). Any
+/// other type that cannot be tested as an i1 (struct, float, …) is a located
+/// type error, recovered as `false` so lowering reaches the diagnostic.
+fn lowerCondition(self: *Lowering, node: *const Node, has_binding: bool) LoweredCondition {
+    const saved_target = self.target_type;
+    self.target_type = null;
+    defer self.target_type = saved_target;
+
+    const value = self.lowerExpr(node);
+    const ty = self.inferExprType(node);
+    const is_optional = has_binding or (!ty.isBuiltin() and self.module.types.get(ty) == .optional);
+    const test_bit = if (is_optional)
+        self.builder.emit(.{ .optional_has_value = .{ .operand = value } }, .bool)
+    else if (self.checkConditionType(ty, node.span))
+        value
+    else
+        self.builder.constBool(false);
+    return .{ .value = value, .test_bit = test_bit, .ty = ty };
+}
+
+/// Bind the unwrapped payload of an optional condition (`if v := opt`,
+/// `while v := opt`) in the arm/body block the caller has switched to. The
+/// `alloca` hoists to the entry block, so the binding stays a single frame
+/// slot.
+fn bindConditionPayload(self: *Lowering, cond: LoweredCondition, name: []const u8) void {
+    const inner_ty = if (!cond.ty.isBuiltin()) blk: {
+        const info = self.module.types.get(cond.ty);
+        break :blk if (info == .optional) info.optional.child else cond.ty;
+    } else cond.ty;
+    const unwrapped = self.builder.emit(.{ .optional_unwrap = .{ .operand = cond.value } }, inner_ty);
+    const slot = self.builder.alloca(inner_ty);
+    self.builder.store(slot, unwrapped);
+    if (self.scope) |scope| {
+        scope.put(name, .{ .ref = slot, .ty = inner_ty, .is_alloca = true });
+    }
+}
+
 pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.TailDemand) Ref {
     // A PURE-failable body's tail `if` yields nothing: each live arm is its own
     // demanded tail, an error arm takes the function's exit where it stands,
@@ -301,37 +355,8 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
         }
     }
 
-    // Optional binding: `if val := expr { ... }`
-    // Clear target_type so the ternary's result type doesn't leak into the condition
-    // (e.g., `if x != 0 then 1.0 else 2.0` — the `0` must be i64, not f32)
-    const saved_cond_target = self.target_type;
-    self.target_type = null;
-    const opt_val = self.lowerExpr(ie.condition);
-    self.target_type = saved_cond_target;
-    // Whenever the condition is an optional we must test its has_value flag,
-    // not the optional aggregate itself. This holds with OR without a binding:
-    // a bare `if opt { }` must read has_value too (else the `{T,i1}` struct
-    // reaches condBr and gets folded truthy). `optional_has_value`
-    // handles every optional repr (struct `{T,i1}`, `?Closure` {fn,env},
-    // pointer-sentinel `?*T`/`?cstring`), so this is uniform across all of them.
-    const cond_ty = self.inferExprType(ie.condition);
-    const cond_is_optional = blk: {
-        if (ie.binding_name != null) break :blk true;
-        if (cond_ty.isBuiltin()) break :blk false;
-        break :blk self.module.types.get(cond_ty) == .optional;
-    };
-    // A bare `if <expr> { }` (no binding) must have a condition type that can
-    // be tested as an i1 (bool/integer/pointer/optional). Anything else — a
-    // struct, float, etc. — is rejected here with a located type error rather
-    // than folded truthy and `@panic`ed in the backend. With a
-    // binding (`if v := opt`) the condition is required to be an optional, so
-    // the optional reduction below applies and we skip the bare-cond check.
-    const cond = if (cond_is_optional)
-        self.builder.emit(.{ .optional_has_value = .{ .operand = opt_val } }, .bool)
-    else if (self.checkConditionType(cond_ty, ie.condition.span))
-        opt_val
-    else
-        self.builder.constBool(false);
+    const cond_lowered = lowerCondition(self, ie.condition, ie.binding_name != null);
+    const cond = cond_lowered.test_bit;
     const has_else = ie.else_branch != null;
     // If-else produces a value when inline OR when in value position
     // (force_block_value) — and never under `error_only`, where the ternary
@@ -438,20 +463,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
 
     // Then branch
     self.builder.switchToBlock(then_bb);
-    // If binding: unwrap the optional and bind to the name
-    if (ie.binding_name) |bind_name| {
-        const opt_ty = self.inferExprType(ie.condition);
-        const inner_ty = if (!opt_ty.isBuiltin()) blk: {
-            const info = self.module.types.get(opt_ty);
-            break :blk if (info == .optional) info.optional.child else opt_ty;
-        } else opt_ty;
-        const unwrapped = self.builder.emit(.{ .optional_unwrap = .{ .operand = opt_val } }, inner_ty);
-        const slot = self.builder.alloca(inner_ty);
-        self.builder.store(slot, unwrapped);
-        if (self.scope) |scope| {
-            scope.put(bind_name, .{ .ref = slot, .ty = inner_ty, .is_alloca = true });
-        }
-    }
+    if (ie.binding_name) |bind_name| bindConditionPayload(self, cond_lowered, bind_name);
     // Flow narrowing: which local names this condition proves
     // present in each arm. A binding `if v := opt` already unwraps `v`, so it
     // contributes nothing here.
@@ -659,49 +671,16 @@ pub fn lowerWhile(self: *Lowering, we: *const ast.WhileExpr) Ref {
 
     // Header: evaluate condition
     self.builder.switchToBlock(header_bb);
-    const cond_val = self.lowerExpr(we.condition);
-    // A bare optional loop condition (`while opt { }`) must test has_value,
-    // exactly like `if opt { }` — otherwise the `{T,i1}` aggregate reaches
-    // condBr and folds truthy. `optional_has_value` covers every
-    // optional repr (struct / `?Closure` / pointer-sentinel). A non-condition
-    // type (struct/float/...) is a located type error (same as `if`), not a
-    // backend `@panic`.
-    const cond = blk: {
-        const cond_ty = self.inferExprType(we.condition);
-        if (!cond_ty.isBuiltin() and self.module.types.get(cond_ty) == .optional) {
-            break :blk self.builder.emit(.{ .optional_has_value = .{ .operand = cond_val } }, .bool);
-        }
-        if (!self.checkConditionType(cond_ty, we.condition.span)) {
-            break :blk self.builder.constBool(false);
-        }
-        break :blk cond_val;
-    };
-    self.builder.condBr(cond, body_bb, &.{}, exit_bb, &.{});
+    const cond = lowerCondition(self, we.condition, we.binding_name != null);
+    self.builder.condBr(cond.test_bit, body_bb, &.{}, exit_bb, &.{});
 
     // Body
     self.builder.switchToBlock(body_bb);
 
-    // Optional binding: `while val := expr { ... }` — bind the unwrapped
-    // payload for the body. Mirrors the `if val := opt` path in
-    // `lowerIfExpr`. The header (which dominates the body) already re-evaluated
-    // the optional into `cond_val` this iteration, so unwrapping it here is
-    // valid SSA and re-runs the store each iteration with the fresh value; the
-    // `alloca` is hoisted to the entry block, so it stays a single frame slot.
-    // With a binding the condition is always an optional, so the
-    // `optional_has_value` test above already drove the loop exit.
-    if (we.binding_name) |bind_name| {
-        const opt_ty = self.inferExprType(we.condition);
-        const inner_ty = if (!opt_ty.isBuiltin()) blk: {
-            const info = self.module.types.get(opt_ty);
-            break :blk if (info == .optional) info.optional.child else opt_ty;
-        } else opt_ty;
-        const unwrapped = self.builder.emit(.{ .optional_unwrap = .{ .operand = cond_val } }, inner_ty);
-        const slot = self.builder.alloca(inner_ty);
-        self.builder.store(slot, unwrapped);
-        if (self.scope) |scope| {
-            scope.put(bind_name, .{ .ref = slot, .ty = inner_ty, .is_alloca = true });
-        }
-    }
+    // The header dominates the body and evaluates the optional afresh each
+    // iteration, so unwrapping its value here is valid SSA and rebinds the
+    // current payload every time round.
+    if (we.binding_name) |bind_name| bindConditionPayload(self, cond, bind_name);
 
     // Save and set loop targets
     const old_break = self.break_target;
@@ -812,6 +791,14 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
 
     for (fe.iterables, 0..) |it, i| {
         if (it.is_range) {
+            // A range walks an i64 cursor between i64 bounds, so its bounds
+            // type themselves: the enclosing target type must not reach a bare
+            // literal in them (`for 0..5` inside an `-> f64` function) — same
+            // rule as an `if`/`while` condition.
+            const saved_target = self.target_type;
+            self.target_type = null;
+            defer self.target_type = saved_target;
+
             var start_ref = self.lowerExpr(it.expr);
             if (it.start_exclusive) start_ref = self.builder.add(start_ref, self.builder.constInt(1, .i64), .i64);
             const slot = self.builder.alloca(.i64);
