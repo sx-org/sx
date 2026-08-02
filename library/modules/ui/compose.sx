@@ -21,6 +21,7 @@ state :: #import "modules/ui/compose/state.sx"
 frame :: #import "modules/ui/compose/frame.sx"
 router :: #import "modules/ui/compose/input.sx"
 focus :: #import "modules/ui/compose/focus.sx"
+loop :: #import "modules/ui/compose/loop.sx"
 components :: #import "modules/ui/compose/components.sx";
 sink :: #import "modules/ui/compose/sink.sx";
 containers :: #import "modules/ui/compose/containers.sx";
@@ -86,6 +87,15 @@ FocusRouter :: focus.FocusRouter
 Focusable :: focus.Focusable
 focusable :: focus.focusable
 is_focused :: focus.is_focused
+
+// The root a program runs, and the loop that runs its frames.
+UiRoot :: loop.UiRoot
+FrameLoop :: loop.FrameLoop
+
+// The queue a platform layer pushes into.
+InputQueue :: input.InputQueue
+InputEvent :: input.InputEvent
+UiRootId :: types.UiRootId
 
 // The set and what joins it
 View :: view.View;

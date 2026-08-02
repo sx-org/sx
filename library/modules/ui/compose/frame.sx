@@ -15,6 +15,7 @@
 
 CommittedUiSnapshot :: struct {
     revision: i64 = 0
+    root: UiRootId = .{ value = 0 }
     scene: RenderTree = .{}
     hit_list: List(HitRegion) = .{}
     focus_list: List(FocusRegion) = .{}

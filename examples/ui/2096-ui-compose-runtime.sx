@@ -1,0 +1,81 @@
+// A compose root runs frames: input in, a rebuild under what it changed, one
+// committed snapshot out.
+//
+// Input queued between two frames is consumed by the next one BEFORE its
+// builder runs, so what a handler writes into a `use_state` entry is what that
+// build reads. Ids are stable across rebuilds, so the build asks the press and
+// focus state of the elements the last frame committed and gets the answer for
+// the ones it is minting now.
+#import "modules/std.sx"
+#import "modules/ui/compose.sx"
+ui :: #import "modules/ui/types.sx"
+
+at :: (x: f32, y: f32) -> Point => .{ x = x, y = y }
+down :: (x: f32, y: f32) -> InputEvent => .pointer_down(.{ pointer = .{ value = 1 }, position = at(x, y) })
+up :: (x: f32, y: f32) -> InputEvent => .pointer_up(.{ pointer = .{ value = 1 }, position = at(x, y) })
+key :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k })
+
+main :: () -> i32 {
+    root := UiRoot.init(Size{ width = 100.0, height = 40.0 }, .{ value = 7 })
+    app := *root
+
+    loop := FrameLoop.init(*root, () -> View {
+        // Three entries this root keeps. The handlers below write into two of
+        // them long after the build that claimed them returned.
+        frame := use_state(i64, 0)
+        taps := use_state(i64, 0)
+        keys := use_state(i64, 0)
+        frame.set(frame.get() + 1)
+
+        pressed := false
+        focused := false
+        if app.snapshot.hit_list.len > 0 {
+            pressed = is_pressed(.{ value = app.snapshot.hit_list.items[0].id })
+        }
+        if app.snapshot.focus_list.len > 0 {
+            focused = is_focused(.{ value = app.snapshot.focus_list.items[0].id })
+        }
+        print("build {} taps {} keys {} pressed {} focused {}\n",
+            frame.get(), taps.get(), keys.get(), pressed, focused)
+
+        v : View = vstack(0.0) {
+            tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, () {
+                taps.set(taps.get() + 1)
+            })
+            focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, (e: *KeyEvent) {
+                keys.set(keys.get() + 1)
+            })
+        }
+        v
+    })
+
+    // Nothing is queued, so the first frame only builds and commits.
+    loop.frame()
+    print("committed root {} rev {} hits {} focus {} nodes {}\n",
+        root.snapshot.root.value, root.snapshot.revision,
+        root.snapshot.hit_list.len, root.snapshot.focus_list.len,
+        root.snapshot.scene.nodes.len)
+
+    // The down captures the region against the committed frame, and the build
+    // that follows it in the SAME frame reads the press.
+    root.queue.push(down(50.0, 10.0))
+    loop.frame()
+
+    // The up over that same region taps, so the next build reads the count its
+    // handler raised.
+    root.queue.push(up(50.0, 10.0))
+    loop.frame()
+
+    // Keys go where the focus points, on the same terms.
+    root.focus.focus_next()
+    root.queue.push(key(.enter))
+    root.queue.push(key(.space))
+    loop.frame()
+
+    // Quiet frames change nothing but the revision.
+    loop.run(2)
+    print("frames {} rev {}\n", loop.frames, root.snapshot.revision)
+
+    root.deinit()
+    0
+}

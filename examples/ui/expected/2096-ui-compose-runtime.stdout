@@ -1,0 +1,8 @@
+build 1 taps 0 keys 0 pressed false focused false
+committed root 7 rev 1 hits 1 focus 1 nodes 2
+build 2 taps 0 keys 0 pressed true focused false
+build 3 taps 1 keys 0 pressed false focused false
+build 4 taps 1 keys 2 pressed false focused true
+build 5 taps 1 keys 2 pressed false focused true
+build 6 taps 1 keys 2 pressed false focused true
+frames 6 rev 6

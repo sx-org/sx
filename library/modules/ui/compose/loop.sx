@@ -1,0 +1,99 @@
+// The compose library's frame loop.
+//
+// A `UiRoot` owns everything that outlives a build — the identity tally, the
+// state store, both routers, the input queue and the committed snapshot — so a
+// tree is the only thing a frame throws away.
+//
+// One frame runs in one order: what the queue holds is consumed against the
+// frame that committed BEFORE it, the builder then rebuilds under the state
+// those handlers left, and the result becomes the frame the next one routes
+// against. That is what lets a tap taken in frame N be read by frame N+1's
+// build.
+#import "modules/std.sx"
+#import "modules/std/core.sx"
+#import "modules/std/mem.sx"
+#import "modules/ui/types.sx"
+#import "modules/ui/render.sx"
+#import "modules/ui/input.sx"
+#import "modules/ui/compose/view.sx"
+#import "modules/ui/compose/identity.sx"
+#import "modules/ui/compose/state.sx"
+#import "modules/ui/compose/frame.sx"
+#import "modules/ui/compose/input.sx"
+#import "modules/ui/compose/focus.sx"
+
+UiRoot :: struct {
+    id: UiRootId = .{ value = 0 }
+    viewport: Size = .{ width = 0.0, height = 0.0 }
+    identity: Identity
+    store: StateStore
+    taps: Router
+    focus: FocusRouter = .{}
+    queue: InputQueue
+    snapshot: CommittedUiSnapshot = .{}
+
+    init :: (viewport: Size, id: UiRootId = .{ value = 0 }, gpa: Allocator = context.allocator) -> UiRoot {
+        UiRoot{
+            id = id,
+            viewport = viewport,
+            identity = Identity.init(gpa),
+            store = StateStore.init(gpa),
+            taps = Router.init(gpa),
+            queue = InputQueue.init(gpa),
+        }
+    }
+
+    // The queue is this root's own, so every event in it reaches both routers.
+    pump :: (self: *UiRoot) {
+        self.queue.drain((e: *InputEvent) {
+            self.taps.dispatch(e)
+            self.focus.dispatch(e)
+        })
+    }
+
+    // Where a built tree becomes the committed frame: it projects, names its
+    // root, and both routers start resolving against it.
+    commit :: (self: *UiRoot, tree: *View) {
+        project(tree, self.viewport, *self.snapshot)
+        self.snapshot.root = self.id
+        self.taps.observe(*self.snapshot)
+        self.focus.observe(*self.snapshot)
+    }
+
+    deinit :: (self: *UiRoot) {
+        self.snapshot.deinit()
+        self.queue.deinit()
+        self.taps.deinit()
+        self.store.teardown()
+        self.identity.deinit()
+    }
+}
+
+// The builder runs under the root's context, so `use_state`, `element_id` and
+// the press/focus queries all reach this root's carriers.
+FrameLoop :: struct {
+    root: *UiRoot
+    build: Closure() -> View
+    frames: i64 = 0
+
+    init :: (root: *UiRoot, build: Closure() -> View) -> FrameLoop => .{ root = root, build = build }
+
+    frame :: (self: *FrameLoop) {
+        r := self.root
+        push .{ compose_ui = *r.identity, compose_state = *r.store, compose_input = *r.taps, compose_focus = *r.focus } {
+            r.pump()
+            r.identity.begin_build()
+            r.store.begin_build()
+            tree := self.build()
+            r.store.commit_build()
+            r.commit(*tree)
+        }
+        self.frames += 1
+    }
+
+    run :: (self: *FrameLoop, n: i64) {
+        for 0..n {
+            self.frame()
+        }
+    }
+}
