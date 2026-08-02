@@ -5,6 +5,10 @@
 // keep. The router holds one id, resolves it against the LATEST committed
 // snapshot, and hands that region the keys.
 //
+// Tab is the router's own key: it steps that order — backward under shift —
+// and reaches no region. From nothing it enters at the first region, so a root
+// nobody has pointed at can be walked into from the keyboard alone.
+//
 // A request names an element rather than a position, so a build may focus the
 // element it is about to declare; the commit that follows is what validates it.
 // An element the committed build stopped declaring is no longer focused.
@@ -126,21 +130,29 @@ FocusRouter :: struct {
         self.focused = self.snap.focus_list.items[next].id
     }
 
-    // A key DOWN is what the focused region hears; an up is not a focus event.
-    // Text rides its own channel, never synthesized from keys.
+    // Tab steps the traversal and stops there — it is consumed whether or not
+    // anything is focused. Every other key DOWN is what the focused region
+    // hears; an up is not a focus event. Text rides its own channel, never
+    // synthesized from keys.
     dispatch :: (self: *FocusRouter, ev: *InputEvent) {
-        r := self.current()
-        if r == null then return
         if ev.* == {
             case .key_down: (k) {
-                if h := r.on_key {
-                    e := k
-                    h(*e)
+                if k.logical == .tab {
+                    self.step(if k.header.modifiers.shift then -1 else 1)
+                    return
+                }
+                if r := self.current() {
+                    if h := r.on_key {
+                        e := k
+                        h(*e)
+                    }
                 }
             }
             case .text: (t) {
-                if h := r.on_text {
-                    h(t.text)
+                if r := self.current() {
+                    if h := r.on_text {
+                        h(t.text)
+                    }
                 }
             }
             else: {}

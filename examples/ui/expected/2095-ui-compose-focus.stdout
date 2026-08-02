@@ -6,5 +6,9 @@ next true keyboard true c 1
 wrapped true keyboard false
 back true
 typed 3 keys 0 1 1
+tab entered true keys 0 1 1
+tab stepped true
+tab wrapped true keys 0 1 1
+shift tab true
 dropped false c 1 regions 2
 entered true

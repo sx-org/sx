@@ -2,14 +2,17 @@
 // hands the focused one the keys.
 //
 // Declaration order is the traversal order, a request names the element rather
-// than a position, and text rides its own channel to the same region. What the
-// committed frame stops declaring stops being focused.
+// than a position, and text rides its own channel to the same region. Tab walks
+// that order and reaches no region, backward under shift and entering at the
+// first when nothing is focused. What the committed frame stops declaring stops
+// being focused.
 #import "modules/std.sx"
 #import "modules/ui/compose.sx"
 #import "modules/ui/input.sx"
 ui :: #import "modules/ui/types.sx"
 
 key :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k })
+shifted :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k, header = .{ modifiers = .{ shift = true } } })
 released :: (k: LogicalKey) -> InputEvent => .key_up(.{ logical = k })
 typed :: (s: string) -> InputEvent => .text(.{ text = s })
 
@@ -93,6 +96,20 @@ main :: () -> i32 {
         // Text rides its own channel to the same region.
         send(*focus, typed("abc"))
         print("typed {} keys {} {} {}\n", log.typed, log.a, log.b, log.c)
+
+        // Tab is the router's own key: from nothing it enters at the first
+        // region, it walks declaration order and wraps, shift walks back, and
+        // none of it reaches a handler.
+        focus.clear_focus()
+        send(*focus, key(.tab))
+        print("tab entered {} keys {} {} {}\n", is_focused(first), log.a, log.b, log.c)
+        send(*focus, key(.tab))
+        print("tab stepped {}\n", is_focused(second))
+        send(*focus, key(.tab))
+        send(*focus, key(.tab))
+        print("tab wrapped {} keys {} {} {}\n", is_focused(first), log.a, log.b, log.c)
+        send(*focus, shifted(.tab))
+        print("shift tab {}\n", is_focused(third))
 
         // A rebuild without the focused row: its element is gone, so the keys
         // that follow reach nobody.
