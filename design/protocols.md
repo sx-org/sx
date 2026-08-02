@@ -912,9 +912,7 @@ bound costs exactly what a constraint protocol costs.
 
 Membership is stable: it does not depend on which code
 executes, so dead-code edits never change what typechecks. Every
-member receives a tag, switch arm, and table row. (A stricter
-emission-level shake is possible without touching these semantics —
-see the appendix note on liveness shaking.)
+member receives a tag, switch arm, and table row.
 
 ### 6.7 Templated tagged protocols
 
@@ -1510,27 +1508,3 @@ conformer identity.
   new error is the wait cycle — precisely the program whose meaning
   is genuinely circular. Cost is localized to one subsystem (the
   VM's ability to park and resume an evaluation).
-- **Liveness shaking (a compatible refinement).** The operations
-  that produce a tagged value form a closed, statically enumerable
-  set: direct erasure sites, re-erasure (§7.4), `Self`-returning
-  dispatch (which only reproduces present types), and
-  comptime-carried values escaping into the image (§7.9), whose
-  members seed liveness without any runtime erasure site — nothing
-  conjures a value from a runtime type id. Emission may therefore drop
-  members no execution path can produce (seeding from erasure sites
-  in call-graph-reachable code, address-taken functions and closure
-  literals as roots; propagating across re-erasure edges): shaken
-  members keep their tag numbers (numbering stays
-  membership-driven) but emit no rows in link-stage tables and no
-  arms in link-stage outlined routines; an outlined dispatch whose
-  instantiation has no producible member lowers to unreachable. The
-  shake applies to **link-stage artifacts only** — call-site-inlined
-  switches and every other module-object artifact key on
-  membership, never liveness, so cached objects cannot depend on
-  the liveness result. The refinement is semantics-neutral by
-  construction — a producer-less member's downcast can only ever be
-  false at runtime — which is why membership (typechecking,
-  diagnostics) never reads it. **The design as specified does not
-  perform the shake**; this note is rationale for a possible future
-  design change, not an emission mode — there is exactly one
-  shipping behavior at any time.

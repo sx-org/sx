@@ -262,7 +262,7 @@ pub const TargetConfig = struct {
 /// PATH-only zig is a dev convenience and never hijacks a native build, so the
 /// dev/CI corpus keeps using the system toolchain. `--self-contained` forces
 /// the backend with either bundled or PATH zig.
-/// See design/bundled-zig-link-backend-design.md §5.5.
+/// See design/bundled-zig-link-backend-design.md §3.5.
 fn selectZigLinker(allocator: std.mem.Allocator, tc: TargetConfig) !?[]const u8 {
     switch (tc.self_contained) {
         .off => return null,

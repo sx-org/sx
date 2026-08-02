@@ -1895,9 +1895,7 @@ bound costs exactly what a constraint protocol costs.
 
 Membership is stable: it does not depend on which code
 executes, so dead-code edits never change what typechecks. Every
-member receives a tag, switch arm, and table row. (A stricter
-emission-level shake is possible without touching these semantics —
-see the appendix note on liveness shaking.)
+member receives a tag, switch arm, and table row.
 
 ##### 6.7 Templated tagged protocols
 

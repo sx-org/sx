@@ -12,17 +12,16 @@ minimal-deviation model sx takes from it.
 
 ## 0. TL;DR
 
-* **The infrastructure is the LLVM link sx already has.** sx links LLVM
-  (`build.zig`) and `@cImport`s `llvm-c/Core.h` (`src/llvm_api.zig`). That header
-  exposes everything inline asm needs, reachable through `llvm_api.c.*`:
+* **The LLVM surface.** sx links LLVM (`build.zig`) and `@cImport`s
+  `llvm-c/Core.h` (`src/llvm_api.zig`), so everything inline asm needs is
+  reachable through `llvm_api.c.*`:
   * `LLVMGetInlineAsm(Ty, AsmString, AsmStringSize, Constraints, ConstraintsSize, HasSideEffects, IsAlignStack, Dialect, CanThrow)` — builds the asm callee (LLVM 19–22 share this 9-arg signature).
   * `LLVMInlineAsmDialectATT` / `LLVMInlineAsmDialectIntel`.
-  * `LLVMBuildCall2(...)` — already used pervasively in `src/ir/emit_llvm.zig` (e.g. the Obj-C msgSend path) — calls the asm value like a function.
+  * `LLVMBuildCall2(...)` — the call builder the rest of `src/ir/emit_llvm.zig` uses (e.g. the Obj-C msgSend path) — calls the asm value like a function.
   * `LLVMAppendModuleInlineAsm(M, Asm, Len)` — module-level (global) asm.
-* **The weight is not in codegen.** The LLVM-C call is short; the substance is
-  (a) the parser grammar, (b) the port of Zig's *LLVM constraint-string assembly*
-  and *`%[name]`→`$N` template rewrite*, and (c) the shape validation. All three
-  are specified below.
+* **The substance sits above codegen:** the parser grammar, the port of Zig's
+  *LLVM constraint-string assembly* and *`%[name]`→`$N` template rewrite*, and
+  the shape validation. All three are specified below.
 * **Surface form (§II.2):** `asm volatile { "tmpl", "=r" -> T, "r" = x, clobbers(.cc, .memory) }`
   — a brace block; `->` marks outputs / `=` marks inputs (no positional `:`
   sections); enum-literal `clobbers(.…)`; and N `-> Type` outputs return a
@@ -166,8 +165,7 @@ fn expectAsmExpr(p: *Parse) !Node.Index {
 * `parseAsmInputItem` (`Parse.zig:2866-2883`):
   `LBRACKET IDENT RBRACKET STRINGLITERAL LPAREN Expr RPAREN`.
 * **Clobbers parse as a generic expression** (`(try p.expectExpr())`), not a
-  string list — this is the 0.16-dev change. It is later coerced to a
-  `std.lang.assembly.Clobbers` struct at Sema time.
+  string list; Sema coerces it to a `std.lang.assembly.Clobbers` struct.
 
 ### AST → ZIR — `lib/std/zig/AstGen.zig`
 
@@ -312,7 +310,7 @@ backend.
 
 ## II.2 sx surface syntax
 
-`asm` is an **expression** (it yields the output value/tuple), introduced by a new
+`asm` is an **expression** (it yields the output value/tuple), introduced by the
 `asm` keyword. The body is a **brace block** of comma-separated parts: a template
 string first, then operands, then an optional `clobbers(.…)` clause. Each operand
 is `[name]? "constraint" <role>`, where the role marker is:
@@ -344,8 +342,8 @@ sp :: () -> u64 {
 }
 ```
 
-Multi-instruction templates use sx's existing **`#string` heredoc**
-(`src/lexer.zig:402`) or a multi-line `"..."` literal — no new lexer feature:
+Multi-instruction templates use the **`#string` heredoc**
+(`src/lexer.zig:402`) or a multi-line `"..."` literal:
 
 ```sx
 serialize :: () {
@@ -700,7 +698,7 @@ The top-level `asm_global` decl lowers to a one-shot
 `c.LLVMAppendModuleInlineAsm(module, src.ptr, src.len)`. No operands, no
 rewrite, no volatile; multiple blocks concatenate in source order (as Zig does).
 
-**Calling into an asm-defined symbol needs no new machinery** — declare it with a
+**Calling into an asm-defined symbol takes no dedicated machinery** — declare it with a
 lib-less `extern` (Deviation 6, §II.2): `my_func :: (sig) -> R extern;` emits
 an external-linkage, raw-named, C-ABI extern that the linker resolves against the
 `.global` the asm block defines.
