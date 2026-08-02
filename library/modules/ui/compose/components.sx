@@ -4,18 +4,33 @@
 // declares, at the types the set declares them. Text measures through the
 // foundation's `measure_text`, so a component sizes on the metrics the renderer
 // will draw with.
+//
+// A component that owns a surface owns the padding inside it; what a caller puts
+// around that surface is placement.
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
 #import "modules/ui/font.sx";
 #import "modules/ui/compose/view.sx";
-#import "modules/ui/compose/modifier.sx";
+
+// One box, one command: a stroke rides ON the fill, a radius rounds what is
+// drawn, and a plain fill is the unrounded rect.
+paint_box :: (rc: *RenderContext, frame: Frame, fill: Color, corner: f32, border: ?Stroke) {
+    if s := border {
+        rc.add_stroked_rect(frame, fill, s.color, s.width, corner);
+        return;
+    }
+    if corner > 0.0 {
+        rc.add_rounded_rect(frame, fill, corner);
+    } else {
+        rc.add_rect(frame, fill);
+    }
+}
 
 Label :: @OpenVariant(View) {
     text: string = "";
     font_size: f32 = 16.0;
     color: Color = COLOR_WHITE;
-    modifier: Modifier = .{};
 
     size_that_fits :: (self: *Label, proposal: ProposedSize) -> Size {
         measure_text(self.text, self.font_size)
@@ -28,25 +43,58 @@ Label :: @OpenVariant(View) {
     }
 }
 
+// A box with no content. The proposed axis wins where there is one, so a rect
+// fills what a container offers and falls back to its own extent otherwise.
+Rect :: @OpenVariant(View) {
+    fill: Color = COLOR_TRANSPARENT;
+    corner: f32 = 0.0;
+    border: ?Stroke = null;
+    width: f32 = 0.0;
+    height: f32 = 0.0;
+
+    size_that_fits :: (self: *Rect, proposal: ProposedSize) -> Size {
+        Size{
+            width = proposal.width ?? self.width,
+            height = proposal.height ?? self.height,
+        }
+    }
+
+    layout :: (self: *Rect, bounds: Frame) {}
+
+    render :: (self: *Rect, rc: *RenderContext, frame: Frame) {
+        paint_box(rc, frame, self.fill, self.corner, self.border);
+    }
+}
+
 Button :: @OpenVariant(View) {
     label: string = "";
     font_size: f32 = 16.0;
     text_color: Color = COLOR_WHITE;
     fill: Color = Color{ r = 51, g = 102, b = 230, a = 255 };
-    modifier: Modifier = .{};
+    corner: f32 = 6.0;
+    border: ?Stroke = null;
+    padding: EdgeInsets = EdgeInsets.symmetric(12.0, 6.0);
 
     size_that_fits :: (self: *Button, proposal: ProposedSize) -> Size {
         text := measure_text(self.label, self.font_size);
         Size{
-            width = text.width + self.modifier.padding.horizontal(),
-            height = 24.0 + self.modifier.padding.vertical(),
+            width = text.width + self.padding.horizontal(),
+            height = text.height + self.padding.vertical(),
         }
     }
 
     layout :: (self: *Button, bounds: Frame) {}
 
     render :: (self: *Button, rc: *RenderContext, frame: Frame) {
-        rc.add_rect(frame, self.fill);
-        rc.add_text(frame, self.label, self.font_size, self.text_color);
+        paint_box(rc, frame, self.fill, self.corner, self.border);
+        text := measure_text(self.label, self.font_size);
+        rc.add_text(
+            Frame.make(
+                frame.origin.x + align_h(.center, text.width, frame.size.width),
+                frame.origin.y + align_v(.center, text.height, frame.size.height),
+                text.width,
+                text.height,
+            ),
+            self.label, self.font_size, self.text_color);
     }
 }

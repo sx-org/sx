@@ -16,7 +16,6 @@ render :: #import "modules/ui/render.sx";
 font :: #import "modules/ui/font.sx";
 input :: #import "modules/ui/input.sx";
 view :: #import "modules/ui/compose/view.sx";
-modifier :: #import "modules/ui/compose/modifier.sx";
 components :: #import "modules/ui/compose/components.sx";
 sink :: #import "modules/ui/compose/sink.sx";
 containers :: #import "modules/ui/compose/containers.sx";
@@ -56,8 +55,8 @@ set_global_font :: font.set_global_font;
 
 // The set and what joins it
 View :: view.View;
-Modifier :: modifier.Modifier;
 Label :: components.Label;
+Rect :: components.Rect;
 Button :: components.Button;
 VStack :: containers.VStack;
 ZStack :: containers.ZStack;

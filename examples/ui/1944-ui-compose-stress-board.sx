@@ -84,5 +84,5 @@ main :: () -> i32 {
 // ** stdout **
 // top 4
 // cells 81
-// slot 56 state 648
+// slot 72 state 648
 // commands 89

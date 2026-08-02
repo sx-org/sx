@@ -9,13 +9,11 @@
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
 #import "modules/ui/compose/view.sx";
-#import "modules/ui/compose/modifier.sx";
 #import "modules/ui/compose/sink.sx";
 
 VStack :: @OpenVariant(View) {
     children: List(View) = .{};
     spacing: f32 = 0.0;
-    modifier: Modifier = .{};
 
     size_that_fits :: (self: *VStack, proposal: ProposedSize) -> Size {
         w := 0.0;
@@ -52,7 +50,6 @@ VStack :: @OpenVariant(View) {
 
 ZStack :: @OpenVariant(View) {
     children: List(View) = .{};
-    modifier: Modifier = .{};
 
     size_that_fits :: (self: *ZStack, proposal: ProposedSize) -> Size {
         w := 0.0;
