@@ -20,6 +20,7 @@ identity :: #import "modules/ui/compose/identity.sx"
 state :: #import "modules/ui/compose/state.sx"
 frame :: #import "modules/ui/compose/frame.sx"
 router :: #import "modules/ui/compose/input.sx"
+focus :: #import "modules/ui/compose/focus.sx"
 components :: #import "modules/ui/compose/components.sx";
 sink :: #import "modules/ui/compose/sink.sx";
 containers :: #import "modules/ui/compose/containers.sx";
@@ -79,6 +80,12 @@ HitTarget :: router.HitTarget
 Tappable :: router.Tappable
 tappable :: router.tappable
 is_pressed :: router.is_pressed
+
+// Keyboard focus: what declares itself focusable, and what routes keys to it.
+FocusRouter :: focus.FocusRouter
+Focusable :: focus.Focusable
+focusable :: focus.focusable
+is_focused :: focus.is_focused
 
 // The set and what joins it
 View :: view.View;

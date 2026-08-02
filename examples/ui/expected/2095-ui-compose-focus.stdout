@@ -1,0 +1,10 @@
+regions 3 focused false keyboard false
+unfocused 0 0 0
+requested 0 1 0 last .enter
+release 1
+next true keyboard true c 1
+wrapped true keyboard false
+back true
+typed 3 keys 0 1 1
+dropped false c 1 regions 2
+entered true
