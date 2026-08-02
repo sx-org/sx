@@ -602,6 +602,115 @@ test "param types and defaults interleave in lexical order" {
     }
 }
 
+test "distinct top-level sites in one module take distinct ordinals" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const decls = try parse(a,
+        \\#run probe("first");
+        \\#run probe("second");
+    );
+    var idx = try site.build(a, decls, .{ .main_file = "app/main.sx" });
+    defer idx.deinit();
+    const s = try callSitesOf(a, &idx, "app.main");
+    try std.testing.expectEqual(@as(usize, 2), s.len);
+    try std.testing.expect(s[0].ordinal != s[1].ordinal);
+    try std.testing.expect(s[0].id != s[1].id);
+}
+
+/// A resolved `alias :: #import "…"` node over `members`, shaped as import
+/// resolution builds it: the alias carries the target module's whole decl list.
+fn aliasOver(alloc: std.mem.Allocator, name: []const u8, members: []const *const Node, authored_in: ?[]const u8) !*const Node {
+    var list = std.ArrayList(*Node).empty;
+    for (members) |m| try list.append(alloc, @constCast(m));
+    const slice = try list.toOwnedSlice(alloc);
+    const node = try alloc.create(Node);
+    node.* = .{
+        .span = .{ .start = 0, .end = 0 },
+        .source_file = authored_in,
+        .data = .{ .namespace_decl = .{
+            .name = name,
+            .decls = slice,
+            .own_decls = slice,
+            .target_module_path = "",
+        } },
+    };
+    return node;
+}
+
+fn stamp(decls: []const *const Node, file: []const u8) void {
+    for (decls) |d| @constCast(d).source_file = file;
+}
+
+test "a namespaced module's sites name that module, not the importer" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const lib = try parse(a,
+        \\helper :: () { probe(); }
+    );
+    stamp(lib, "lib/shared.sx");
+    const alias = try aliasOver(a, "lib", lib, "app/main.sx");
+    var idx = try site.build(a, &.{alias}, .{ .main_file = "app/main.sx" });
+    defer idx.deinit();
+    const s = try callSitesOf(a, &idx, "lib.shared.helper");
+    try std.testing.expectEqual(@as(usize, 1), s.len);
+    try std.testing.expectEqualStrings("lib/shared.sx", s[0].file);
+    try std.testing.expectEqual(refId("lib/shared.sx", "lib.shared.helper", s[0].ordinal), s[0].id);
+    try std.testing.expect(!hasDeclaration(try declarations(a, &idx), "app.main.helper"));
+}
+
+test "two aliases of one module reach one site" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const lib = try parse(a,
+        \\helper :: () { probe(); }
+    );
+    stamp(lib, "lib/shared.sx");
+    const left = try aliasOver(a, "one", lib, "app/left.sx");
+    const right = try aliasOver(a, "two", lib, "app/right.sx");
+    var idx = try site.build(a, &.{ left, right }, .{ .main_file = "app/main.sx" });
+    defer idx.deinit();
+    const s = try callSitesOf(a, &idx, "lib.shared.helper");
+    try std.testing.expectEqual(@as(usize, 1), s.len);
+    try std.testing.expectEqualStrings("lib/shared.sx", s[0].file);
+    const decls = try declarations(a, &idx);
+    try std.testing.expect(!hasDeclaration(decls, "app.left.helper"));
+    try std.testing.expect(!hasDeclaration(decls, "app.right.helper"));
+}
+
+test "a module the import DAG shares costs one walk" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const lib = try parse(a,
+        \\helper :: () { probe(); }
+    );
+    stamp(lib, "lib/shared.sx");
+    // Each level aliases the one below it TWICE, so the leaf sits at the end of
+    // 4096 distinct import paths.
+    var level: []const *const Node = lib;
+    var depth: u32 = 0;
+    while (depth < 12) : (depth += 1) {
+        const file = try std.fmt.allocPrint(a, "lib/level{d}.sx", .{depth});
+        const pair = try a.alloc(*const Node, 2);
+        pair[0] = try aliasOver(a, "low", level, file);
+        pair[1] = try aliasOver(a, "high", level, file);
+        level = pair;
+    }
+    const top = try aliasOver(a, "top", level, "app/main.sx");
+    // The index is a function of the declarations, so it fits a budget that
+    // scales with them (25 aliases and one function) and not with the paths
+    // that reach them. One walk per path exhausts this many times over.
+    var budget = std.heap.FixedBufferAllocator.init(try a.alloc(u8, 16 * 1024));
+    var idx = try site.build(budget.allocator(), &.{top}, .{ .main_file = "app/main.sx" });
+    defer idx.deinit();
+    const s = try callSitesOf(a, &idx, "lib.shared.helper");
+    try std.testing.expectEqual(@as(usize, 1), s.len);
+    try std.testing.expectEqualStrings("lib/shared.sx", s[0].file);
+}
+
 // ── Independent reference implementation of the normative encoding ──────────
 
 const REF_BASIS: u64 = 0xcbf29ce484222325;

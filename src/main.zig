@@ -665,8 +665,12 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     // entirely by the sx `default_pipeline` (or a user `#run on_build(...)`
     // override), invoked after codegen below. `emit_object` (verify + object
     // emission) and `link` run as sx-called ACTIONS through the build hooks.
-    // (The build cache short-circuited codegen, which the always-run sx driver
-    // can't tolerate — removed; a future cache can live inside default_pipeline.)
+    // The `--cache` object cache does not reach this path: it short-circuits
+    // codegen, and the sx build program that runs after codegen may call
+    // `emit_object`, which needs the codegen'd module in memory —
+    // `default_pipeline` always does, an `on_build` override drives the build
+    // itself and need not. `.sx-cache` here holds only the C-import objects
+    // c_import.zig writes.
     _ = enable_cache;
     timer.mark();
     comp.generateCode() catch { comp.renderDiagnostics(); return error.CompileError; };

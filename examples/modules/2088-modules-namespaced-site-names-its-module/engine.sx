@@ -1,0 +1,10 @@
+#import "modules/std.sx"
+#import "modules/std/core.sx"
+
+Box :: struct { site: @SourceSite; }
+
+probe :: (box: Box = .{ site = @caller }) -> @SourceSite { box.site }
+
+// The `probe()` call is authored HERE, so its site names this module whatever
+// import path reaches `report`.
+report :: () -> @SourceSite { probe() }
