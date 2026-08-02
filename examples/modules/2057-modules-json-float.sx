@@ -73,6 +73,28 @@ round_trips :: (f: f64, alloc: Allocator) -> bool {
     (1.0 / v.float) == (1.0 / f)
 }
 
+// Leading zeros between the point and the first digit, ahead of an
+// exponent far past what the reader accumulates.
+FAR_ZEROS :: 12000;
+
+// `0.<FAR_ZEROS zeros>1e999999999` is past the finite range: the zeros
+// shift the scale down by 12001 and the exponent lifts it by 999999999,
+// so a reader that let the zeros cancel a saturated exponent would read
+// this as zero.
+far_overflow_raises :: (alloc: Allocator) -> bool {
+    tail := "1e999999999";
+    len := 2 + FAR_ZEROS + tail.len;
+    src : [*]u8 = xx alloc.alloc_bytes(len);
+    src[0] = '0';
+    src[1] = '.';
+    i := 0;
+    while i < FAR_ZEROS { src[2 + i] = '0'; i += 1; }
+    j := 0;
+    while j < tail.len { src[2 + FAR_ZEROS + j] = tail[j]; j += 1; }
+    _, e := parse(string{ ptr = src, len = len }, alloc);
+    e == error.BadNumber
+}
+
 // Ints and floats side by side, in the insertion order the writer emits.
 MIXED :: "{\"n\":-7,\"ratio\":1.5,\"xs\":[0.1,-0.5,3.0],\"scale\":1e-7,\"big\":1000000000.0}";
 
@@ -132,6 +154,7 @@ main :: () -> ! {
     // No JSON value starts with a point, so `.5` never reaches the number
     // grammar.
     report("err-bare-dot",  raises(".5",    error.UnexpectedToken, arena));
+    report("err-far-overflow", far_overflow_raises(arena));
     report("err-write-inf", write_raises(f64.inf, error.NonFinite));
     report("err-write-nan", write_raises(f64.nan, error.NonFinite));
 

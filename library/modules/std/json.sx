@@ -151,6 +151,11 @@ Object :: struct {
 // itself. The reader and the writer share that one pair, so every finite
 // double survives write -> parse bit for bit.
 
+// Where the reader stops accumulating an exponent. A token long enough to
+// pull a saturated exponent back into the finite range would not fit in
+// memory, and the accumulator stays inside i64.
+EXP_LIMIT :: 100000000000000000;   // 10^17
+
 // ── Sink ─────────────────────────────────────────────────────────────
 //
 // A single concrete output sink with two modes, chosen by `file`:
@@ -674,9 +679,10 @@ Parser :: struct {
             while self.pos < self.src.len {
                 c := self.src[self.pos];
                 if c < '0' or c > '9' { break; }
-                // Saturates: `to_f64` reads every exponent past ±1000
-                // the same way, as an infinity or a zero.
-                if ev <= 1000 { ev = ev * 10 + ((c.(i64)) - '0'); }
+                // Saturates: past this the exponent already outweighs
+                // every digit the token could carry, so `to_f64` reads it
+                // as an infinity or a zero either way.
+                if ev <= EXP_LIMIT { ev = ev * 10 + ((c.(i64)) - '0'); }
                 self.pos += 1;
             }
             if eneg { ev = 0 - ev; }

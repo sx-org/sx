@@ -30,6 +30,7 @@ err-no-frac: ok
 err-no-exp: ok
 err-lead-zero: ok
 err-bare-dot: ok
+err-far-overflow: ok
 err-write-inf: ok
 err-write-nan: ok
 doc-round-trip: ok
