@@ -1001,6 +1001,20 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
             }
         }
         if (has_any_default) {
+            // A default is an expression the DECLARING module wrote, and it is
+            // lowered wherever a literal leaves the field out. Stamp the
+            // author's source on it so lowerExpr's per-node source switch
+            // resolves its bare names over THAT module's import edges — a
+            // consumer that reaches the struct through a namespace never
+            // imported what the default names.
+            if (source_file orelse self.current_source_file) |author_source| {
+                for (layout_defaults.items) |maybe_default| {
+                    if (maybe_default) |default_node| {
+                        const mutable: *ast.Node = @constCast(default_node);
+                        if (mutable.source_file == null) mutable.source_file = author_source;
+                    }
+                }
+            }
             const owned_defaults = layout_defaults.toOwnedSlice(self.alloc) catch &.{};
             self.struct_defaults_by_tid.put(struct_ty, owned_defaults) catch {};
             self.struct_defaults_map.put(sd.name, owned_defaults) catch {};

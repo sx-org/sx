@@ -1,0 +1,22 @@
+row 48x16
+  'a' at 0,0 8x16
+  'bb' at 12,4 8x8
+  'ccc' at 24,0 24x16
+ends
+  'left' at 0,0 32x16
+  'right' at 60,0 40x16
+min row 28x8
+  'a' at 0,0 4x8
+  'b' at 24,0 4x8
+min col 4x36
+  'a' at 0,0 4x8
+  'b' at 0,40 4x8
+column
+  'one' at 56,0 24x16
+  'twenty' at 32,18 48x16
+layered
+  'under' at 60,24 40x16
+  'on top' at 52,24 48x16
+folded 2 wide 30
+  'x' at 0,0 8x16
+  'yy' at 14,0 16x16

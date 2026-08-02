@@ -1,0 +1,62 @@
+// The compose library draws on the ui foundation.
+//
+// `Frame`, `Color` and `RenderTree` reached through the compose facade ARE the
+// foundation's types — the facade re-exports them — so a scene built through
+// compose lands in the tree the platform renderer consumes, and a reader typed
+// on the foundation takes it with no conversion.
+//
+// What stays the library's own is the set and the collection style:
+// `compose.View` is a set that `ui/emit` and `ui/fluent` are no part of, and a
+// container still TAKES the block.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+
+ui :: #import "modules/ui/types.sx";
+foundation :: #import "modules/ui/render.sx";
+
+// A reader written in the foundation's terms, which never mentions compose.
+count_text :: (tree: *foundation.RenderTree) -> i64 {
+    n := 0;
+    for tree.nodes (node) {
+        if node.type == .text { n += 1; }
+    }
+    n
+}
+
+main :: () -> i32 {
+    screen := vstack(4.0) {
+        Label{ text = "score", font_size = 12.0, color = ui.COLOR_YELLOW };
+        Button{ label = "play" };
+    };
+
+    // The tree compose fills is the foundation's, declared in its terms here.
+    root : View = screen;
+    tree : foundation.RenderTree = .{};
+    render_root(*root, Size{ width = 120.0, height = 60.0 }, *tree);
+
+    for tree.nodes (n) {
+        print("{} {}x{}\n", n.type, n.frame.size.width, n.frame.size.height);
+    }
+    print("text nodes {}\n", count_text(*tree));
+
+    // A text node carries the size and the colour the component was given.
+    label := tree.nodes.items[0];
+    print("label {} {} {} {} {}\n",
+        label.font_size, label.text_color.r, label.text_color.g,
+        label.text_color.b, label.text_color.a);
+
+    // Geometry the foundation owns, applied to what compose measured.
+    bounds : ui.Frame = Frame.make(0.0, 0.0, 120.0, 60.0);
+    measured := root.size_that_fits(ProposedSize.fixed(120.0, 60.0));
+    print("measured {}x{} inside {}\n", measured.width, measured.height,
+        bounds.contains(ui.Point{ x = measured.width, y = measured.height }));
+    0
+}
+
+// ** stdout **
+// .text 30.000000x12.000000
+// .rounded_rect 56.000000x28.000000
+// .text 32.000000x16.000000
+// text nodes 2
+// label 12.000000 255 204 0 255
+// measured 56.000000x44.000000 inside true

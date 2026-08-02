@@ -2484,6 +2484,16 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
             }
         }
         if (has_any_default) {
+            // The template's module wrote these expressions, so they resolve
+            // over ITS import edges wherever the literal that needs them sits.
+            if (tmpl.source_file) |author_source| {
+                for (instance_defaults.items) |maybe_default| {
+                    if (maybe_default) |default_node| {
+                        const mutable: *ast.Node = @constCast(default_node);
+                        if (mutable.source_file == null) mutable.source_file = author_source;
+                    }
+                }
+            }
             self.struct_defaults_map.put(owned_mangled, instance_defaults.toOwnedSlice(self.alloc) catch &.{}) catch {};
         }
     }

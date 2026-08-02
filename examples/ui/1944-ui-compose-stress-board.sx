@@ -14,8 +14,8 @@
 // the library's modules rather than its facade: a member joins the set where the
 // set is DECLARED, and a facade re-export is a name for the type, not the
 // declaration a member can join.
-#import "modules/ui/compose/geometry.sx";
-#import "modules/ui/compose/render.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
 #import "modules/ui/compose/view.sx";
 #import "modules/ui/compose/components.sx";
 #import "modules/ui/compose/containers.sx";
@@ -38,7 +38,7 @@ BoardView :: @OpenVariant(View) {
     layout :: (self: *BoardView, bounds: Frame) {}
 
     render :: (self: *BoardView, rc: *RenderContext, frame: Frame) {
-        rc.add_rect(frame, Color{ r = 0.1, g = 0.1, b = 0.1, a = 1.0 });
+        rc.add_rect(frame, Color.rgb(26, 26, 26));
     }
 }
 
@@ -84,5 +84,5 @@ main :: () -> i32 {
 // ** stdout **
 // top 4
 // cells 81
-// slot 64 state 648
+// slot 72 state 648
 // commands 89

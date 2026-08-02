@@ -2943,17 +2943,10 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
     const saved_span = self.builder.current_span;
     defer self.builder.current_span = saved_span;
     if (node.span.start != 0 or node.span.end != 0) self.builder.current_span = .{ .start = node.span.start, .end = node.span.end };
-    // A node carrying an explicit `source_file` is one spliced into a body
-    // from another module — a substituted caller comptime-`$`-arg (stamped
-    // at the `cpn` build site in lowerComptimeCall / monomorphizePackFn).
-    // Resolve its bare names in THAT module's visibility context, overriding
-    // the body's defining-module pin, then restore so sibling callee nodes
-    // keep the enclosing context. Ordinary expression nodes never carry a
-    // `source_file`, so this is a no-op on the hot path.
-    const restore_source = node.source_file != null;
-    const saved_source = self.current_source_file;
-    if (node.source_file) |sf| self.setCurrentSourceFile(sf);
-    defer if (restore_source) self.setCurrentSourceFile(saved_source);
+    // Resolve this node's bare names in the module that wrote it, overriding
+    // the body's defining-module pin for the whole recursive lowering.
+    const author = Lowering.AuthorScope.enter(self, node);
+    defer author.leave();
     return switch (node.data) {
         // Bare `$<pack>` in expression position → an `[]Type` slice
         // value where each element is a `const_type(arg_types[i])`.
