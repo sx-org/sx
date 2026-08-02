@@ -18,6 +18,8 @@ input :: #import "modules/ui/input.sx";
 view :: #import "modules/ui/compose/view.sx";
 identity :: #import "modules/ui/compose/identity.sx"
 state :: #import "modules/ui/compose/state.sx"
+frame :: #import "modules/ui/compose/frame.sx"
+router :: #import "modules/ui/compose/input.sx"
 components :: #import "modules/ui/compose/components.sx";
 sink :: #import "modules/ui/compose/sink.sx";
 containers :: #import "modules/ui/compose/containers.sx";
@@ -68,6 +70,15 @@ State :: state.State
 StateEntry :: state.StateEntry
 StateStore :: state.StateStore
 use_state :: state.use_state
+
+// What a build commits, and what routes pointers against it.
+CommittedUiSnapshot :: frame.CommittedUiSnapshot
+project :: frame.project
+Router :: router.Router
+HitTarget :: router.HitTarget
+Tappable :: router.Tappable
+tappable :: router.tappable
+is_pressed :: router.is_pressed
 
 // The set and what joins it
 View :: view.View;

@@ -1,0 +1,47 @@
+// What one compose build commits.
+//
+// Rendering a tree produces three things at once: the scene the platform
+// renderer draws, the hit regions the tree declared, and the focus regions it
+// declared. A snapshot holds all three together, because input resolves against
+// the SAME frame that was drawn — never against a tree being rebuilt.
+//
+// The hit list is paint-ordered, so the last region containing a point is the
+// top one there. The focus list is declaration-ordered, which is the traversal
+// order.
+#import "modules/std.sx"
+#import "modules/ui/types.sx"
+#import "modules/ui/render.sx"
+#import "modules/ui/compose/view.sx"
+
+CommittedUiSnapshot :: struct {
+    revision: i64 = 0
+    scene: RenderTree = .{}
+    hit_list: List(HitRegion) = .{}
+    focus_list: List(FocusRegion) = .{}
+
+    reset :: (self: *CommittedUiSnapshot) {
+        self.scene.clear()
+        self.hit_list.len = 0
+        self.focus_list.len = 0
+    }
+
+    deinit :: (self: *CommittedUiSnapshot) {
+        self.scene.nodes.deinit()
+        self.hit_list.deinit()
+        self.focus_list.deinit()
+    }
+}
+
+// Lays the root out over the viewport and projects it into the snapshot: scene,
+// hit list and focus list all fill from the one render pass, and the revision
+// names the frame they belong to.
+project :: (root: *View, viewport: Size, snap: *CommittedUiSnapshot) {
+    snap.reset()
+    bounds := Frame.make(0.0, 0.0, viewport.width, viewport.height)
+    root.layout(bounds)
+    rc := RenderContext.init(*snap.scene)
+    rc.hits = *snap.hit_list
+    rc.focuses = *snap.focus_list
+    root.render(*rc, bounds)
+    snap.revision += 1
+}
