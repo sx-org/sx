@@ -1,7 +1,8 @@
 // The render surface owned by the emit library.
 //
 // A render pass collects commands into a tree; the library's own runtime walks
-// them. Nothing here is shared with `ui/compose` or `ui/fluent`.
+// them. Nothing here is shared with `ui/fluent`, and `ui/compose` renders into
+// the ui foundation's tree.
 #import "modules/std.sx";
 #import "modules/ui/emit/geometry.sx";
 

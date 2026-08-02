@@ -3,9 +3,12 @@
 // A type joins by declaring itself into THIS set. `compose.View` and `emit.View`
 // are different sets: a member of one is not a member of another, whatever the
 // two sets declare, and no conversion stands in for a declaration.
+//
+// The set speaks the ui foundation's geometry and render context, so a member
+// draws into the same tree the platform renderer consumes.
 #import "modules/std.sx";
-#import "modules/ui/compose/geometry.sx";
-#import "modules/ui/compose/render.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
 
 View :: @OpenSet(.{ max = 256, align = 8 }) {
     size_that_fits :: (self: *Self, proposal: ProposedSize) -> Size;

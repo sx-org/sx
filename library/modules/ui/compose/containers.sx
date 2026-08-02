@@ -6,8 +6,8 @@
 // it happen is the container's own parameter, `content: $B/@BuildBlock(View)`, so
 // interception is a property of the signature rather than of the call.
 #import "modules/std.sx";
-#import "modules/ui/compose/geometry.sx";
-#import "modules/ui/compose/render.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
 #import "modules/ui/compose/view.sx";
 #import "modules/ui/compose/modifier.sx";
 #import "modules/ui/compose/sink.sx";

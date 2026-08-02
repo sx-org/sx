@@ -1,7 +1,7 @@
 // Geometry owned by the fluent library.
 //
-// Each UI library carries its own geometry: no type here is shared with
-// `ui/compose` or `ui/emit`, and none of them may import this module. Two
+// No type here is shared: `ui/emit` carries its own geometry, `ui/compose`
+// measures on the ui foundation, and neither may import this module. Two
 // libraries whose `Size` looks identical still have two `Size` types.
 #import "modules/std.sx";
 

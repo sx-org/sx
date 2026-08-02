@@ -3,7 +3,7 @@
 // A modifier is an ordinary value carried by a component, and a modifier call is
 // an ordinary value operation — chaining one does not intercept anything.
 #import "modules/std.sx";
-#import "modules/ui/compose/geometry.sx";
+#import "modules/ui/types.sx";
 
 Modifier :: struct {
     opacity: f32 = 1.0;

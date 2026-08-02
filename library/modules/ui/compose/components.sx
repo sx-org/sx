@@ -1,47 +1,52 @@
 // The compose library's leaf components.
 //
 // Each declares itself into `compose.View` and answers the three methods the set
-// declares, at the types the set declares them.
+// declares, at the types the set declares them. Text measures through the
+// foundation's `measure_text`, so a component sizes on the metrics the renderer
+// will draw with.
 #import "modules/std.sx";
-#import "modules/ui/compose/geometry.sx";
-#import "modules/ui/compose/render.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/font.sx";
 #import "modules/ui/compose/view.sx";
 #import "modules/ui/compose/modifier.sx";
 
 Label :: @OpenVariant(View) {
     text: string = "";
+    font_size: f32 = 16.0;
+    color: Color = COLOR_WHITE;
     modifier: Modifier = .{};
-    measured: Size = .{};
 
     size_that_fits :: (self: *Label, proposal: ProposedSize) -> Size {
-        w := xx self.text.len * 8;
-        Size{ width = w, height = 16.0 }
+        measure_text(self.text, self.font_size)
     }
 
-    layout :: (self: *Label, bounds: Frame) {
-        self.measured = bounds.size;
-    }
+    layout :: (self: *Label, bounds: Frame) {}
 
     render :: (self: *Label, rc: *RenderContext, frame: Frame) {
-        rc.add_text(frame, self.text);
+        rc.add_text(frame, self.text, self.font_size, self.color);
     }
 }
 
 Button :: @OpenVariant(View) {
     label: string = "";
+    font_size: f32 = 16.0;
+    text_color: Color = COLOR_WHITE;
+    fill: Color = Color{ r = 51, g = 102, b = 230, a = 255 };
     modifier: Modifier = .{};
-    fill: Color = .{ r = 0.2, g = 0.4, b = 0.9, a = 1.0 };
 
     size_that_fits :: (self: *Button, proposal: ProposedSize) -> Size {
-        w := xx self.label.len * 8;
-        pad := self.modifier.padding.horizontal();
-        Size{ width = w + pad, height = 24.0 + self.modifier.padding.vertical() }
+        text := measure_text(self.label, self.font_size);
+        Size{
+            width = text.width + self.modifier.padding.horizontal(),
+            height = 24.0 + self.modifier.padding.vertical(),
+        }
     }
 
     layout :: (self: *Button, bounds: Frame) {}
 
     render :: (self: *Button, rc: *RenderContext, frame: Frame) {
         rc.add_rect(frame, self.fill);
-        rc.add_text(frame, self.label);
+        rc.add_text(frame, self.label, self.font_size, self.text_color);
     }
 }
