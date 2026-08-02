@@ -1,4 +1,4 @@
-// Tests for conversions.zig — the coercion-planning classifier
+// The coercion-planning classifier
 // (`CoercionResolver`). Reached via `ir.CoercionResolver{ .l = &lowering }`,
 // mirroring the other facade tests. These pin the `classify` / `classifyXX`
 // DECISIONS; `coerceToType` / `lowerXX` emit them (emission stays in Lowering).
@@ -50,12 +50,12 @@ test "conversions: classify covers the built-in coercion ladder" {
 
     // `?A → ?B` (differing payloads) is a presence-preserving payload coercion,
     // NOT the always-present unwrap-then-rewrap that the `.optional_wrap` arm
-    // produced (issue 0180). Same-payload optionals are `.no_op`.
+    // produced. Same-payload optionals are `.no_op`.
     const opt_i32 = tt.optionalOf(.i32);
     try std.testing.expectEqual(Plan.optional_to_optional, cr.classify(opt_i32, opt_i64));
     try std.testing.expectEqual(Plan.no_op, cr.classify(opt_i64, opt_i64));
 
-    // `?T → bool` is NOT an unwrap-then-narrow presence test (issue 0169):
+    // `?T → bool` is NOT an unwrap-then-narrow presence test:
     // it must reject, never silently produce `false`. But `?bool → bool`
     // is a genuine unwrap of a bool payload.
     try std.testing.expectEqual(Plan.optional_to_bool_reject, cr.classify(opt_i64, .bool));
@@ -130,7 +130,7 @@ test "conversions: classifyXX picks the xx-operator head decision" {
 
     // dst is `?P` (protocol child): node-aware erase-then-wrap, so an lvalue
     // source BORROWS its storage like the plain erasure — never the ladder's
-    // node-less value arm, which heap-boxes a leaked copy (issue 0213).
+    // node-less value arm, which heap-boxes a leaked copy.
     const opt_drawable = tt.optionalOf(drawable);
     try std.testing.expectEqual(XXPlan.erase_protocol_wrap, cr.classifyXX(a, opt_drawable));
     // Pointer sources take the same node-aware path (borrow, 0 allocations).
@@ -143,7 +143,7 @@ test "conversions: classifyXX picks the xx-operator head decision" {
     try std.testing.expectEqual(XXPlan.coerce, cr.classifyXX(tt.optionalOf(a), opt_drawable));
 }
 
-test "conversions: unmodeled width-mismatched coercion is flagged unsafe (issue 0191)" {
+test "conversions: unmodeled width-mismatched coercion is flagged unsafe" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -153,10 +153,9 @@ test "conversions: unmodeled width-mismatched coercion is flagged unsafe (issue 
     const cr = CoercionResolver{ .l = &l };
     const tt = &module.types;
 
-    // The issue-0191 weld precondition: a 16-byte `string` flowing into an
+    // The weld precondition: a 16-byte `string` flowing into an
     // 8-byte `i64` slot has NO modeled coercion — the ladder yields `.none`,
-    // so the passthrough used to bit-reinterpret it. The unsafe-store
-    // predicate must flag it (both directions).
+    // so the unsafe-store predicate must flag it (both directions).
     try std.testing.expectEqual(Plan.none, cr.classify(.string, .i64));
     try std.testing.expect(l.noneReinterpretIsUnsafe(.string, .i64));
     try std.testing.expect(l.noneReinterpretIsUnsafe(.i64, .string));

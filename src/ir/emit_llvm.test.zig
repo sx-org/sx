@@ -1,5 +1,3 @@
-// Tests for the IR-to-LLVM emitter (emit_llvm.zig).
-
 const std = @import("std");
 const types = @import("types.zig");
 const inst_mod = @import("inst.zig");
@@ -14,8 +12,6 @@ const Function = inst_mod.Function;
 const Module = mod_mod.Module;
 const Builder = mod_mod.Builder;
 const LLVMEmitter = emit_mod.LLVMEmitter;
-
-// ── Helper ──────────────────────────────────────────────────────────────
 
 fn str(module: *Module, s: []const u8) types.StringId {
     return module.types.internString(s);
@@ -102,15 +98,9 @@ test "emit: add(a, b) returns a + b" {
     const entry = b.appendBlock(str(&module, "entry"), &.{});
     b.switchToBlock(entry);
 
-    // Parameters are refs 0 and 1 — but in our IR they're passed as
-    // arguments to the interpreter. For the LLVM emitter, we need to
-    // load them from LLVM function params. For now, use constInt as
-    // placeholders since we haven't wired up param→ref mapping yet.
-    //
-    // Actually, looking at the IR design: the Builder's inst_counter starts
-    // at 0, and params are accessed differently. The lowering pass emits
-    // alloca+store for params. For this test, we use const_int to test
-    // the add instruction directly.
+    // Params reach the emitter as LLVM function params, materialized by the
+    // lowering pass as alloca+store. Both operands here are constants: this
+    // test covers the add instruction, not the param→ref mapping.
     const a = b.constInt(10, .i64);
     const a_b = b.constInt(32, .i64);
     const sum = b.add(a, a_b, .i64);
@@ -515,10 +505,9 @@ test "emit: type conversion toLLVMType" {
     _ = emitter.toLLVMType(.noreturn);
 }
 
-// ── A7.1 scaffolding: ABI param coercion ────────────────────────────
+// ── ABI param coercion ──────────────────────────────────────────────
 // Lock the C-ABI struct-coercion buckets (abiCoerceParamType / needsByval),
-// which feed callconv(.c) / #extern signatures, before they move to
-// src/backend/llvm/abi.zig in A7.1 sub-step 2.
+// which feed callconv(.c) / #extern signatures.
 
 const llvm = @import("../llvm_api.zig");
 const cc = llvm.c;
@@ -569,7 +558,7 @@ test "emit: abiCoerceParamType coerces C-ABI structs by size bucket" {
     try std.testing.expect(emitter.abiCoerceParamType(.i32, emitter.toLLVMType(.i32)) == emitter.toLLVMType(.i32));
 }
 
-// issue 0286: default ABI must pack ≤8-byte non-HFA structs (Color-shaped
+// Default ABI must pack ≤8-byte non-HFA structs (Color-shaped
 // `{i8×4}`) into i64 so AArch64 does not expand them into four i8 args that
 // mis-spill. string / HFA / mid / large stay raw.
 test "emit: abiCoerceDefaultParamType packs only small non-HFA structs" {
@@ -1275,7 +1264,7 @@ test "emit: box_any and unbox_any" {
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "extractvalue") != null);
 }
 
-test "emit: ERR E3.0 — DWARF debug info (compile unit + subprogram + per-inst location)" {
+test "emit: DWARF debug info (compile unit + subprogram + per-inst location)" {
     const alloc = std.testing.allocator;
     var module = Module.init(alloc);
     defer module.deinit();
@@ -1312,7 +1301,7 @@ test "emit: ERR E3.0 — DWARF debug info (compile unit + subprogram + per-inst 
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "\"Debug Info Version\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "\"Dwarf Version\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "DICompileUnit") != null);
-    // Regression: a bare filename (no directory component) must
+    // A bare filename (no directory component) must
     // still get a NON-EMPTY `directory:` — an empty `DW_AT_comp_dir` makes ld
     // silently drop the whole debug map, so the binary becomes undebuggable.
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "DIFile(filename: \"probe.sx\", directory: \".\")") != null);
@@ -1320,7 +1309,7 @@ test "emit: ERR E3.0 — DWARF debug info (compile unit + subprogram + per-inst 
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "DILocation(line: 3") != null);
 }
 
-test "emit: ERR E3.0 — no DWARF without a debug context (unit-test default)" {
+test "emit: no DWARF without a debug context (unit-test default)" {
     const alloc = std.testing.allocator;
     var module = Module.init(alloc);
     defer module.deinit();
@@ -1348,9 +1337,9 @@ test "emit: ERR E3.0 — no DWARF without a debug context (unit-test default)" {
 // `argIRTypeOrFail` backs the four FFI call-arg lowering sites (objc_msgSend,
 // JNI Call<Type>Method / non-virtual / constructor). A ref it cannot resolve is
 // a codegen invariant violation; it must surface the dedicated `.unresolved`
-// tripwire sentinel (which `toLLVMType` hard-panics on) rather than the old
-// silent `.void` default that would emit a void-typed extern-call argument.
-test "emit: argIRTypeOrFail surfaces .unresolved for an unresolvable FFI arg ref (issue 0074)" {
+// tripwire sentinel (which `toLLVMType` hard-panics on) rather than a silent
+// `.void` default, which would emit a void-typed extern-call argument.
+test "emit: argIRTypeOrFail surfaces .unresolved for an unresolvable FFI arg ref" {
     const alloc = std.testing.allocator;
     var module = Module.init(alloc);
     defer module.deinit();
@@ -1371,8 +1360,8 @@ test "emit: argIRTypeOrFail surfaces .unresolved for an unresolvable FFI arg ref
     defer emitter.deinit();
     emitter.current_func_idx = fid.index();
 
-    // Happy path: a real arg ref (param 0 / param 1) resolves byte-identically
-    // to its declared IR type — the FFI fast path is unchanged.
+    // Happy path: a real arg ref (param 0 / param 1) resolves to its declared
+    // IR type.
     try std.testing.expectEqual(TypeId.i64, emitter.argIRTypeOrFail(Ref.fromIndex(0)));
     try std.testing.expectEqual(TypeId.f64, emitter.argIRTypeOrFail(Ref.fromIndex(1)));
 
@@ -1380,13 +1369,13 @@ test "emit: argIRTypeOrFail surfaces .unresolved for an unresolvable FFI arg ref
     const bogus = Ref.fromIndex(100_000);
     try std.testing.expectEqual(@as(?TypeId, null), emitter.getRefIRType(bogus));
 
-    // Fail-before: the old `getRefIRType(arg) orelse .void` would silently
-    // yield `.void` here — a real, load-bearing type that downstream ABI
-    // coercion treats as a legitimate (void-typed) extern argument.
+    // A `getRefIRType(arg) orelse .void` default silently yields `.void` here —
+    // a real, load-bearing type that downstream ABI coercion treats as a
+    // legitimate (void-typed) extern argument.
     try std.testing.expectEqual(TypeId.void, emitter.getRefIRType(bogus) orelse TypeId.void);
 
-    // Pass-after: the helper returns the dedicated `.unresolved` sentinel,
-    // never `.void`, so the failure cannot masquerade as a real type.
+    // The helper returns the dedicated `.unresolved` sentinel, never `.void`,
+    // so the failure cannot masquerade as a real type.
     try std.testing.expectEqual(TypeId.unresolved, emitter.argIRTypeOrFail(bogus));
     try std.testing.expect(emitter.argIRTypeOrFail(bogus) != .void);
 }
@@ -1395,10 +1384,10 @@ test "emit: argIRTypeOrFail surfaces .unresolved for an unresolvable FFI arg ref
 // `reflectArgRepr` backs the `type_name` / `type_eq` reflection builtins, which read
 // their `Type` arg as a boxed `Any` aggregate (`.any` → extract value field) or a bare
 // i64 TypeId index. A ref it cannot resolve is a codegen invariant violation; it must
-// surface `.unresolved` (which the emit site hard-panics on) instead of the old silent
-// `getRefIRType(arg) orelse .i64` default that would mis-classify a boxed arg as bare
-// and read the wrong value with no diagnostic.
-test "emit: reflectArgRepr surfaces .unresolved for an unresolvable reflection arg ref (issue 0075)" {
+// surface `.unresolved` (which the emit site hard-panics on) instead of a silent
+// `.i64` default that would mis-classify a boxed arg as bare and read the wrong
+// value with no diagnostic.
+test "emit: reflectArgRepr surfaces .unresolved for an unresolvable reflection arg ref" {
     const alloc = std.testing.allocator;
     var module = Module.init(alloc);
     defer module.deinit();
@@ -1421,7 +1410,6 @@ test "emit: reflectArgRepr surfaces .unresolved for an unresolvable reflection a
 
     // Happy path: a boxed `.any` Type arg classifies as `.boxed` (extract value
     // field); a bare `.i64` TypeId arg classifies as `.bare` (use directly).
-    // These decisions are byte-identical to the pre-fix `== .any` gate.
     try std.testing.expectEqual(LLVMEmitter.ReflectArgRepr.boxed, emitter.reflectArgRepr(Ref.fromIndex(0)));
     try std.testing.expectEqual(LLVMEmitter.ReflectArgRepr.bare, emitter.reflectArgRepr(Ref.fromIndex(1)));
 
@@ -1429,13 +1417,13 @@ test "emit: reflectArgRepr surfaces .unresolved for an unresolvable reflection a
     const bogus = Ref.fromIndex(100_000);
     try std.testing.expectEqual(@as(?TypeId, null), emitter.getRefIRType(bogus));
 
-    // Fail-before: the old `getRefIRType(arg) orelse .i64` would silently yield
-    // `.i64` here — which `!= .any`, so the reflection arm would treat a failed
-    // lookup as a bare i64 and read the wrong value with no diagnostic.
+    // A `getRefIRType(arg) orelse .i64` default silently yields `.i64` here —
+    // which `!= .any`, so the reflection arm would treat a failed lookup as a
+    // bare i64 and read the wrong value with no diagnostic.
     try std.testing.expectEqual(TypeId.i64, emitter.getRefIRType(bogus) orelse TypeId.i64);
     try std.testing.expect((emitter.getRefIRType(bogus) orelse TypeId.i64) != .any);
 
-    // Pass-after: the classifier returns the dedicated `.unresolved` variant,
+    // The classifier returns the dedicated `.unresolved` variant,
     // never `.bare`, so the emit site trips its hard panic instead of silently
     // reading the wrong value.
     try std.testing.expectEqual(LLVMEmitter.ReflectArgRepr.unresolved, emitter.reflectArgRepr(bogus));

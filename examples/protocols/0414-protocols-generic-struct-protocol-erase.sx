@@ -1,11 +1,11 @@
-// Phase 6 / issue 0054 — generic-struct → parameterized-protocol erasure.
-//   - A generic-struct impl method `self: *Box` now resolves `self.field` to the
+// Generic-struct → parameterized-protocol erasure.
+//   - A generic-struct impl method `self: *Box` resolves `self.field` to the
 //     concrete INSTANCE (the template name binds to the instance type), so
-//     `self.x` works (was "field not found on type 'Box'").
+//     `self.x` works.
 //   - `xx c` erases a generic-struct instance (`Combined__i64_i64`) to a
 //     parameterized protocol (`VL(i64)`) via the generic
 //     `impl VL($R) for Combined($R, ..$Ts)`: the thunk monomorphizes the
-//     template method for the instance and dispatch works (was a trap).
+//     template method for the instance and dispatch works.
 
 #import "modules/std.sx";
 

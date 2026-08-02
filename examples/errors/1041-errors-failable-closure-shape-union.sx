@@ -1,4 +1,4 @@
-// Program-wide inferred-`!` union per closure shape (ERR E5.1 sub-feature 2).
+// Program-wide inferred-`!` union per closure shape.
 // All occurrences of `Closure(i32) -> (i32, !)` share ONE inferred error set;
 // every bare-`!` closure literal of that shape unions its raised tags in. A
 // `try slot(x)` against any matching-shape slot widens against that union — so

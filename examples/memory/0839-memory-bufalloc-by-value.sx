@@ -1,8 +1,6 @@
 // BufAlloc.init returns the state BY VALUE: the caller's local is the
-// allocator state and the FULL buffer is usable. Regression: init used
-// to carve its own struct off the buffer's head (returning *BufAlloc
-// into the buffer), so a 128-byte buffer could only serve 104 bytes —
-// the second 64-byte allocation below failed with null.
+// allocator state and the FULL buffer is usable — a 128-byte buffer serves
+// 128 bytes, including the second 64-byte allocation below.
 
 #import "modules/std.sx";
 #import "modules/std/mem.sx";

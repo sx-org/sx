@@ -1,10 +1,8 @@
-// Regression for issue 0057: a match (`if subject == { case ... }`) whose arms
-// ALL diverge (each `return`s) used to fail LLVM verification (a `void` phi +
-// "terminator in the middle of a basic block") — lowerMatch emitted a
-// value-merge phi and a fallback `const` into arm blocks that had already
-// terminated. Now a fully-diverging match produces no merge phi, and a mixed
-// match (some arms diverge, some yield values) materializes the merge only
-// from the value-producing arms.
+// A match (`if subject == { case ... }`) whose arms ALL diverge (each
+// `return`s) produces no merge phi at all, and a mixed match (some arms
+// diverge, some yield values) materializes the merge only from the
+// value-producing arms — so no phi operand or fallback `const` is ever
+// emitted into a block that has already terminated.
 
 #import "modules/std.sx";
 

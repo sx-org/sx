@@ -1,4 +1,4 @@
-// The emit library's leaf components (revision §13.2).
+// The emit library's leaf components.
 //
 // Each declares itself into `emit.View` and answers the three methods the set
 // declares, at the types the set declares them.

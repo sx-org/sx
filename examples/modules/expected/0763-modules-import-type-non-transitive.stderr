@@ -1,5 +1,5 @@
 error: type 'COnly' is not visible; #import the module that declares it
-  --> examples/modules/0763-modules-import-type-non-transitive.sx:17:9
+  --> examples/modules/0763-modules-import-type-non-transitive.sx:16:9
    |
-17 |     x : COnly = .{ v = 5 };
+16 |     x : COnly = .{ v = 5 };
    |         ^^^^^

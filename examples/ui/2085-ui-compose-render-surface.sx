@@ -1,0 +1,75 @@
+// What a compose component draws.
+//
+// Four commands cover a real screen: a filled rect, a rounded rect, a rounded
+// rect whose ring rides ON its fill, and text carrying its own size AND colour.
+// They are the foundation's node kinds, and a member reaches them through the
+// render context the set hands it.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+ui :: #import "modules/ui/types.sx";
+
+show :: (n: RenderNode) {
+    if n.type == .text {
+        print("{} {},{} {}x{} '{}' size {} colour {},{},{},{}\n",
+            n.type,
+            n.frame.origin.x.(i64), n.frame.origin.y.(i64),
+            n.frame.size.width.(i64), n.frame.size.height.(i64),
+            n.text, n.font_size.(i64),
+            n.text_color.r, n.text_color.g, n.text_color.b, n.text_color.a);
+        return;
+    }
+    print("{} {},{} {}x{} corner {} fill {},{},{},{} stroke {},{},{},{} width {}\n",
+        n.type,
+        n.frame.origin.x.(i64), n.frame.origin.y.(i64),
+        n.frame.size.width.(i64), n.frame.size.height.(i64),
+        n.corner_radius.(i64),
+        n.fill_color.r, n.fill_color.g, n.fill_color.b, n.fill_color.a,
+        n.stroke_color.r, n.stroke_color.g, n.stroke_color.b, n.stroke_color.a,
+        n.stroke_width.(i64));
+}
+
+main :: () -> i32 {
+    tree := RenderTree{};
+    rc := RenderContext.init(*tree);
+
+    // A rect with no radius and no stroke is the plain fill.
+    plain := Rect{ fill = ui.COLOR_DARK_GRAY };
+    plain.render(*rc, Frame.make(0.0, 0.0, 40.0, 20.0));
+
+    // A radius rounds the same fill.
+    rounded := Rect{ fill = ui.COLOR_BLUE, corner = 6.0 };
+    rounded.render(*rc, Frame.make(0.0, 24.0, 40.0, 20.0));
+
+    // A ring over a fill is ONE command carrying both colours — an unfilled
+    // chip states a transparent fill and still draws its ring.
+    chip := Rect{
+        fill = ui.COLOR_TRANSPARENT,
+        corner = 6.0,
+        border = Stroke{ color = ui.COLOR_YELLOW, width = 2.0 },
+    };
+    chip.render(*rc, Frame.make(0.0, 48.0, 40.0, 20.0));
+
+    // Text states its size and its colour; the node carries both.
+    heading := Label{ text = "score", font_size = 24.0, color = ui.COLOR_GREEN };
+    heading.render(*rc, Frame.make(0.0, 72.0, 80.0, 24.0));
+
+    // A button owns its surface and the padding inside it, and centres its
+    // label in the frame it is given.
+    key : View = Button{ label = "7", font_size = 20.0, corner = 4.0 };
+    key_size := key.size_that_fits(ProposedSize.flexible());
+    key.render(*rc, Frame.make(0.0, 104.0, key_size.width, key_size.height));
+
+    for tree.nodes (n) { show(n); }
+    print("nodes {} button {}x{}\n", command_count(*tree),
+        key_size.width.(i64), key_size.height.(i64));
+    0
+}
+
+// ** stdout **
+// .rect 0,0 40x20 corner 0 fill 44,44,46,255 stroke 0,0,0,0 width 0
+// .rounded_rect 0,24 40x20 corner 6 fill 0,122,255,255 stroke 0,0,0,0 width 0
+// .rounded_rect 0,48 40x20 corner 6 fill 0,0,0,0 stroke 255,204,0,255 width 2
+// .text 0,72 80x24 'score' size 24 colour 52,199,89,255
+// .rounded_rect 0,104 34x32 corner 4 fill 51,102,230,255 stroke 0,0,0,0 width 0
+// .text 12,110 10x20 '7' size 20 colour 255,255,255,255
+// nodes 6 button 34x32

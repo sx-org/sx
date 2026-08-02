@@ -1,7 +1,7 @@
-// `assert` (ERR steps E4.1 / E4.1b): a false condition prints `ASSERTION
+// `assert`: a false condition prints `ASSERTION
 // FAILED at <file>:<line>: <msg>` (the caller's location, via the
 // `@caller` default param) and exits 1; a true condition is a no-op.
-// Built on `process.exit`. Expected exit code: 1.
+// Built on `process.exit`.
 
 #import "modules/std.sx";
 proc :: #import "modules/std/process.sx";

@@ -7,13 +7,13 @@ const Node = ast.Node;
 const TypeId = types.TypeId;
 const Lowering = lower.Lowering;
 
-/// Coercion planning (architecture phase A4.3): classify HOW a value of one
+/// Coercion planning: classify HOW a value of one
 /// type converts to another, before `Lowering` emits the IR for it. The
 /// classifier is pure (reads the type table + protocol/impl registries); all
 /// actual IR emission — `unbox_any`/`optional_wrap`/`int_to_float`/protocol
 /// erasure/the `Into` call — stays in `Lowering`.
 ///
-/// A `*Lowering` facade (Principle 5, like `CallResolver`/`GenericResolver`/
+/// A `*Lowering` facade (like `CallResolver`/`GenericResolver`/
 /// `ProtocolResolver`). Two entry points:
 ///   - `classify(src, dst)` — the built-in coercion ladder consumed by
 ///     `coerceToType` (the shared, recursive value-conversion path).
@@ -63,10 +63,8 @@ pub const CoercionResolver = struct {
         // same literal-only blessing as `cstring` (its bytes are a terminated
         // constant; the emitted value is the DATA POINTER). A non-literal
         // string may be an unterminated view — same rejection as cstring.
-        // Previously this pair fell to `.none` and passed the 16-byte
-        // {ptr,len} header through by ABI accident (first field lands in the
-        // first register); the issue-0191 guard now rejects that weld, so the
-        // legitimate literal case needs this modeled arm.
+        // The pair needs this modeled arm: the `.none`-weld guard rejects a
+        // `.none` weld of the 16-byte {ptr,len} header into a pointer.
         if (src_ty == .string and !dst_ty.isBuiltin()) {
             const di = self.l.module.types.get(dst_ty);
             if (di == .many_pointer and (di.many_pointer.element == .u8 or di.many_pointer.element == .i8)) {
@@ -95,8 +93,7 @@ pub const CoercionResolver = struct {
         // Tuple → Tuple, same arity. A STRUCT source of the same arity
         // coerces element-wise too — an untyped `.{ }` literal self-types as
         // an anonymous struct, and its values flow into tuple slots (a catch
-        // fallback for a multi-value failable, a tuple-typed field) exactly
-        // as the old `.( )` tuple literal did.
+        // fallback for a multi-value failable, a tuple-typed field).
         if (!src_ty.isBuiltin() and !dst_ty.isBuiltin()) {
             const si = self.l.module.types.get(src_ty);
             const di = self.l.module.types.get(dst_ty);
@@ -112,8 +109,8 @@ pub const CoercionResolver = struct {
         // (e.g. a `.[...]` literal passed directly as a call arg) needs to be
         // materialized into addressable storage and wrapped in a {ptr,len}
         // header. Without this the array value is passed where a slice is
-        // expected — the callee reads the header off the wrong bytes (issue
-        // 0084). The local-bound path already does this conversion on its own.
+        // expected — the callee reads the header off the wrong bytes. The
+        // local-bound path already does this conversion on its own.
         if (!src_ty.isBuiltin() and !dst_ty.isBuiltin()) {
             const si = self.l.module.types.get(src_ty);
             const di = self.l.module.types.get(dst_ty);
@@ -123,8 +120,8 @@ pub const CoercionResolver = struct {
             // `[*]T → []T`: a many-pointer carries NO length, so it cannot form a
             // `{ptr,len}` slice header implicitly. Silently passing the bare 8-byte
             // pointer where a 16-byte fat pointer is expected corrupts the callee's
-            // view (garbage `.len`, mis-aligned reads) — at comptime it segfaults
-            // (issue 0141), at runtime it fails LLVM verification. Reject loudly so
+            // view (garbage `.len`, mis-aligned reads) — at comptime it segfaults,
+            // at runtime it fails LLVM verification. Reject loudly so
             // the user supplies the length via `ptr[0..len]`.
             if (si == .many_pointer and di == .slice) {
                 return .many_to_slice_reject;
@@ -138,7 +135,7 @@ pub const CoercionResolver = struct {
                 const child_ty = src_info.optional.child;
                 // `?T → bool` is NOT a presence test. The unwrap-then-narrow
                 // ladder below would extract the payload and narrow it to `i1`,
-                // which silently yields `false` for every optional (issue 0169).
+                // which silently yields `false` for every optional.
                 // There is no implicit optional→bool coercion in the language
                 // (only `T → ?T` wrapping and flow-sensitive narrowing); a bool
                 // position wants an explicit presence test. Reject loudly unless
@@ -154,7 +151,7 @@ pub const CoercionResolver = struct {
                 // dedicated arm this fell to `.optional_wrap` (dst is optional),
                 // which unwrapped the SOURCE optional unconditionally and re-
                 // wrapped it as always-present — turning a null `?i32` into a
-                // present `?i64` carrying the zero payload (issue 0180: generic
+                // present `?i64` carrying the zero payload (generic
                 // `??` returning the wrong fallback). Only meaningful when the
                 // children differ (same-type optionals are `.no_op` already).
                 if (!dst_ty.isBuiltin() and self.l.module.types.get(dst_ty) == .optional) {
@@ -275,7 +272,7 @@ pub const CoercionResolver = struct {
         // the plain `xx s : P` path), then wrap inline. Falling through to
         // `.coerce` would reach the node-less value-erasure arm, which
         // heap-boxes the receiver through context.allocator with no owner to
-        // ever free it (issue 0213). Excluded sources take the ladder as
+        // ever free it. Excluded sources take the ladder as
         // before: an optional (`?A → ?P` is presence-preserving), `void`
         // (the null literal), and a source already equal to the child
         // (plain wrap, no erasure needed).
@@ -289,7 +286,7 @@ pub const CoercionResolver = struct {
             self.l.module.types.get(dst_ty) == .pointer) return .protocol_to_pointer;
         if (self.l.getProtocolInfo(src_ty) != null and self.isProtocolRawDst(dst_ty)) return .protocol_to_raw;
         // Protocol → any (explicit): the CONCRETE view — {data = ctx,
-        // type_id} read straight off the value's prefix (RTTI Option B).
+        // type_id} read straight off the value's prefix.
         // The IMPLICIT boxing of a protocol value (`av : any = s`) is
         // untouched: it still boxes the protocol value itself.
         if (self.l.getProtocolInfo(src_ty) != null and dst_ty == .any) return .protocol_to_any;

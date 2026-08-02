@@ -1,4 +1,4 @@
-// ASM stream — symbol operand (`"s"`): feed a function/global SYMBOL into the
+// Symbol operand (`"s"`): feed a function/global SYMBOL into the
 // template so a DIRECT `bl %[fn]` (PC-relative — one fewer indirection than a
 // register-indirect `blr`: no pointer load, a relative reloc, a predictable
 // branch) goes straight to it. The backend emits the platform-mangled name

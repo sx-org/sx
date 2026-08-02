@@ -1,4 +1,4 @@
-// CLI argument PARSER from `modules/std/cli.sx` (F3.2) — subcommand
+// CLI argument PARSER from `modules/std/cli.sx` — subcommand
 // dispatch + `--flag` parsing over an EXPLICIT logical argv (`[]string`).
 //
 // Every argv vector below is an explicit `[]string` literal (the caller's
@@ -25,7 +25,7 @@ report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
 }
 
-// Half-open containment [lo, hi) — used to prove a view points into argv.
+// Half-open containment [lo, hi) — proves a view points into argv.
 in_range :: (x: i64, lo: i64, hi: i64) -> bool {
     return x >= lo and x < hi;
 }

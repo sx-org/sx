@@ -1,4 +1,4 @@
-// Helper B — second conflicting impl for the same (i64, Wrap) pair.
+// The second conflicting impl for the same (i64, Wrap) pair.
 #import "modules/std.sx";
 #import "./0411-protocols-impl-duplicate-types.sx";
 

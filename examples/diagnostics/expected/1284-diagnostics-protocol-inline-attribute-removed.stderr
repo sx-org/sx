@@ -1,5 +1,5 @@
 error: expected '{'
-  --> examples/diagnostics/1284-diagnostics-protocol-inline-attribute-removed.sx:6:20
+  --> examples/diagnostics/1284-diagnostics-protocol-inline-attribute-removed.sx:5:20
    |
- 6 | Hasher :: protocol #inline {
+ 5 | Hasher :: protocol #inline {
    |                    ^

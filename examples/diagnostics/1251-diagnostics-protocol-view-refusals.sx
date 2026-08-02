@@ -1,7 +1,5 @@
-// `*P` view refusals (erasure model, first slice; issues 0303/0304):
-//   - an RVALUE has no durable storage to borrow — both the decl form and
-//     the argument form are compile errors, never a silent pun of the
-//     struct's bytes into a pointer slot.
+// `*P` view refusals: an RVALUE has no durable storage to borrow, so both the decl
+// form and the argument form are compile errors.
 #import "modules/std.sx";
 
 Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
@@ -12,6 +10,6 @@ take_view :: (v: *Sizable) -> i64 { v.size() }
 make :: () -> Widget { Widget{ value = 2 } }
 
 main :: () {
-    pv : *Sizable = Widget{ value = 1 };   // rvalue literal → refusal (0304)
-    print("{}\n", take_view(make()));       // rvalue call result → refusal (0303's cell)
+    pv : *Sizable = Widget{ value = 1 };   // rvalue literal → refusal
+    print("{}\n", take_view(make()));       // rvalue call result → refusal
 }

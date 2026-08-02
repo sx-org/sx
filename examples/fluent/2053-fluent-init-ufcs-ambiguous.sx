@@ -1,12 +1,11 @@
 // A destination-first parameter does not settle WHICH declaration a dot-call
-// reaches (fluent spec §5.2).
+// reaches.
 //
 // Two flat-imported modules declare `publish`, and both would take this receiver.
 // Nothing about `@Init` breaks that tie: the call is refused and the program says
 // which one it meant. Flat imports merge names by design, so this is the ordinary
 // answer for a name two modules declare — and it is why a package's spelling is
 // its own.
-// Expected: exit 1.
 #import "modules/std.sx";
 #import "2053-fluent-init-ufcs-ambiguous/left.sx";
 #import "2053-fluent-init-ufcs-ambiguous/right.sx";

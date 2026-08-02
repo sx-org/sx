@@ -51,6 +51,8 @@ pub fn constArrayLiteral(self: *Lowering, elements: []const *const Node, array_t
 /// rather than collapsing to null. Returns null if the
 /// expression is not constant-foldable here.
 pub fn constExprValue(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?inst_mod.ConstantValue {
+    const author = Lowering.AuthorScope.enter(self, expr);
+    defer author.leave();
     return switch (expr.data) {
         // An int element in a FLOAT destination converts exactly (the
         // int+float promotion rule, element-wise — `[2]f64 : .[1, 2.5]`).
@@ -157,7 +159,7 @@ pub fn constStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Typ
     const struct_fields = ti.@"struct".fields;
     const struct_name = self.module.types.getString(ti.@"struct".name);
     // TypeId identity first; for an author-tracked type a tid-map miss means
-    // "no defaults" (issue 0320).
+    // "no defaults".
     const field_defaults: []const ?*const Node = self.struct_defaults_by_tid.get(ty) orelse blk: {
         if (self.plain_struct_authors.contains(ty)) break :blk &.{};
         break :blk self.struct_defaults_map.get(struct_name) orelse &.{};
@@ -315,7 +317,7 @@ pub fn evalStaticTypeMatch(self: *Lowering, me: *const ast.MatchExpr) ?StaticTyp
 /// runtime classification arm for arm so the static fold and the runtime
 /// tag switch can never disagree on what a category means — plus the
 /// `protocol` category, which exists ONLY here (a protocol value carries
-/// no runtime tag to switch on until the phase-2 RTTI story).
+/// no runtime tag to switch on).
 pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8) bool {
     const tt = &self.module.types;
     if (std.mem.eql(u8, name, "int")) {
@@ -338,7 +340,7 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
     if (std.mem.eql(u8, name, "type") or std.mem.eql(u8, name, "Type")) return tid == .type_value;
     if (tid.isBuiltin()) {
         // A concrete builtin ARM (`case i64:`, `case u8:`, `case f32:`):
-        // resolve the primitive spelling and compare (issue 0342 — this
+        // resolve the primitive spelling and compare (this
         // returned false unconditionally, making concrete builtin arms
         // unreachable in the static fold; `case string:` only worked by
         // doubling as a category name).
@@ -449,14 +451,14 @@ pub fn evalComptimeInt(self: *Lowering, node: *const Node) ?i64 {
 pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node, type_ann: ?*const Node) void {
     // When the user writes `NAME :: #run expr;` with no type annotation,
     // infer the global's type from the comptime expression's return
-    // shape. `resolveType(null)` returns `.i64` for legacy reasons —
-    // good for primitive helpers, silently wrong for anything else.
+    // shape. `resolveType(null)` returns `.i64` — good for primitive
+    // helpers, silently wrong for anything else.
     const expr_ty = self.inferExprType(expr);
     // A failable `#run` (bare, no `catch`/`or`): the comptime function
     // returns the full failable tuple so the #run site can inspect the
     // error slot, but the GLOBAL is typed as the success value. On a
     // comptime error the global never materializes — emit halts with a
-    // diagnostic + trace (E5.2). A handled `#run … catch/or …` already
+    // diagnostic + trace. A handled `#run … catch/or …` already
     // strips the error channel, so it lands here as non-failable.
     const is_failable = self.errorChannelOf(expr_ty) != null;
     const func_ret: TypeId = if (is_failable)
@@ -489,7 +491,7 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
 /// Creates a comptime function that the interpreter should execute.
 pub fn lowerComptimeSideEffect(self: *Lowering, expr: *const Node) void {
     // A failable side-effect `#run f();` returns the failable tuple so the
-    // emit-time runner can detect an escaping error and halt (E5.2);
+    // emit-time runner can detect an escaping error and halt;
     // non-failable side effects stay `void`.
     const expr_ty = self.inferExprType(expr);
     const ret: TypeId = if (self.errorChannelOf(expr_ty) != null) expr_ty else .void;
@@ -542,8 +544,8 @@ pub fn lowerInsertExprValue(self: *Lowering, expr: *const Node) Ref {
         const stmt = p.parseStmt() catch break;
         if (p.current.tag == .eof) {
             // Last statement — try to capture as expression value
-            // Note: tryLowerAsExpr internally calls lowerStmt for statement nodes,
-            // so we must NOT call lowerStmt again in the else branch.
+            // tryLowerAsExpr internally calls lowerStmt for statement nodes,
+            // so the else branch must not call lowerStmt again.
             if (self.tryLowerAsExpr(stmt)) |val| {
                 last_val = val;
             }
@@ -618,12 +620,11 @@ pub fn evalComptimeType(self: *Lowering, expr: *const Node) ?TypeId {
     // self-referential `*Name` payload resolves (the name is a known forward
     // type when the body lowers). Done up-front rather than at declare's
     // lowering because a `*Name` can lower before its `declare` within the same
-    // body. The interp's `declare` returns this same slot; `define` completes it.
+    // body. `declare` returns this same slot; `define` completes it.
     preregisterForwardTypes(self, expr);
     // The wrapper returns a `Type` value → `.type_value` (the dedicated 8-byte
-    // handle). The legacy path reads the result via `asTypeId` regardless, but the
-    // VM path converts `func.ret` — `.type_value` → `.type_tag` (an `.any` return
-    // would box the result and bail at the VM↔legacy boundary).
+    // handle). The VM converts `func.ret` — `.type_value` → `.type_tag`; an
+    // `.any` return would box the result and bail.
     const func_id = self.createComptimeFunction("__ctype", .expansion, expr, .type_value);
     return self.runComptimeTypeFunc(func_id, expr.span);
 }
@@ -655,7 +656,7 @@ fn preludeBeforeReturn(body: *const Node) []const *const Node {
 }
 
 /// Run a comptime type-construction function and post-process its result: render
-/// any interp bail as a build-gating diagnostic (issue 0140) and reject a bare
+/// any interp bail as a build-gating diagnostic and reject a bare
 /// `declare()` never completed by `define()` (a zero-field nominal slot that
 /// would otherwise panic at codegen). `span` locates both diagnostics.
 pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?TypeId {
@@ -665,7 +666,7 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
     // protocol thunks). No separate thunk-forcing here.
 
     // If lowering this type-fn's BODY already emitted an error (e.g. a rejected
-    // coercion like `[*]T → []T`, issue 0141), the function holds malformed IR —
+    // coercion like `[*]T → []T`), the function holds malformed IR —
     // a slice value that is really a bare 8-byte pointer, etc. Running the VM on it
     // would dereference garbage (a comptime Addr is a real host pointer, so a bad
     // data pointer FAULTS, defeating the VM's bail-not-crash guards which only catch
@@ -673,7 +674,7 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
     // already on the list; skip the eval and let `hasErrors()` abort the build.
     if (self.diagnostics) |d| if (d.hasErrors()) return null;
 
-    // The comptime VM is the SOLE evaluator (P5.7) — no legacy fallback. A
+    // The comptime VM is the SOLE evaluator. A
     // type-fn runs on the VM; a bail is ALWAYS a build-gating diagnostic, never a
     // fallback. The VM is hardened against malformed lowering-time IR (it BAILS,
     // never panics; see `comptime_vm.refTy`/`badRef`), and bails BEFORE any table
@@ -692,8 +693,8 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
 
     // VM bailed: render a build-gating diagnostic naming the reason — NOT poison
     // to `.unresolved` silently and let that crash at LLVM emission ("unresolved
-    // type reached LLVM emission") or hide behind a downstream cascade (issue
-    // 0140). The VM's bail reason carries the precise cause (e.g. "comptime
+    // type reached LLVM emission") or hide behind a downstream cascade.
+    // The VM's bail reason carries the precise cause (e.g. "comptime
     // define(): duplicate variant name 'x'"), so a comptime type-construction
     // failure (1179/1180) produces its proper user diagnostic.
     if (self.diagnostics) |d| {
@@ -702,8 +703,8 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
     return null;
 }
 
-/// Post-check a comptime type-construction result (shared by the VM and legacy
-/// paths). A bare `declare("X")` never completed by a `define(handle, …)` leaves
+/// Post-check a comptime type-construction result. A bare `declare("X")` never
+/// completed by a `define(handle, …)` leaves
 /// a forward `tagged_union` PLACEHOLDER (`defined == false`); sizing /
 /// constructing / emitting it panics at codegen (`verifySizes`: llvm_size !=
 /// ir_size). Reject it loudly here. An *explicitly* defined empty type (an empty
@@ -876,7 +877,7 @@ pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {
         return self.alloc.dupeZ(u8, str) catch null;
     }
 
-    // Case 2: evaluate on the comptime VM (the SOLE evaluator — P5.7), reusing
+    // Case 2: evaluate on the comptime VM (the SOLE evaluator), reusing
     // the parent module. The parent's `scanDecls` pass has already registered
     // every type / protocol / impl / thunk the comptime call may need
     // (Allocator, CAllocator, Context, the per-impl thunks); a fresh empty
@@ -1214,11 +1215,10 @@ fn lowerComptimeCallArgsMode(
     var call_arg_idx: usize = 0;
     var runtime_args = std.ArrayList(StagedRuntimeArg).empty;
     defer runtime_args.deinit(self.alloc);
-    // Pack-arg-node registration (step 2 of the variadic heterogeneous
-    // type packs feature): when the fn declares a pack param, record
-    // the slice of call-site arg nodes under the pack name so the
-    // body's `args[$i]` lowering can substitute the i-th arg with
-    // its concrete-typed value instead of the `[]Any` slice load.
+    // When the fn declares a pack param, the slice of call-site arg nodes is
+    // recorded under the pack name so the body's `args[$i]` lowering can
+    // substitute the i-th arg with its concrete-typed value instead of the
+    // `[]Any` slice load.
     var pack_arg_name: ?[]const u8 = null;
     var pack_arg_slice: []const *const Node = &.{};
 
@@ -1405,68 +1405,81 @@ fn lowerComptimeCallArgsMode(
     self.func_defer_base = self.defer_stack.items.len;
     defer self.func_defer_base = saved_func_defer_base;
 
-    // Lower the body — capture return value for functions with return type
+    // The body is lowered by the SAME owner a real function's body goes
+    // through, so the demand its declared return type carries, the tail's
+    // destination, return position, failable assembly, named-return synthesis
+    // and the missing-value rule are all decided in one place. Only the EXIT
+    // differs, and the target installed here is what every exit reads.
+    //
+    // Installed unconditionally: no syntactic property of the body can decide
+    // whether it needs one. An `#insert`'s text is parsed during lowering, so
+    // a `return` it generates is invisible to any pre-scan of the AST — and a
+    // body with no exit context of its own emits the CALLER's `ret`.
     const ret_ty = self.resolveReturnType(fd);
-    if (ret_ty != .void) {
-        // Detect whether the body might use `return X;` statements.
-        // If so, set up the inline-return slot AND a dedicated
-        // "return-done" basic block so each `return X;` stores to
-        // the slot and branches to ret_done. After the body lowers,
-        // we switch to ret_done and load. Pure tail-expression
-        // bodies (arrow form, or a block whose last stmt is an
-        // expression) skip the slot+block — keeps the common
-        // `format`/`#insert`-style path unchanged.
-        const has_return = fnBodyHasReturn(fd.body);
-        if (has_return) {
-            const ret_slot = self.builder.alloca(ret_ty);
-            const ret_done_bb = self.freshBlock("ct.ret_done");
-            const saved_iri = self.inline_return_target;
-            self.inline_return_target = .{ .slot = ret_slot, .ret_ty = ret_ty, .done_bb = ret_done_bb };
-            defer self.inline_return_target = saved_iri;
+    const inline_exit = classifyInlineExit(self, ret_ty);
+    const saved_exit = self.inline_return_target;
+    self.inline_return_target = inline_exit;
+    defer self.inline_return_target = saved_exit;
 
-            // Lower body. Tail-expression bodies (rare here since
-            // has_return == true) produce a tail value we still
-            // route through the slot so the load in ret_done picks
-            // it up. Block-statement bodies whose last stmt is
-            // `return X;` already br to ret_done from inside
-            // lowerReturn.
-            if (self.lowerBlockValue(fd.body)) |val| {
-                if (!self.currentBlockHasTerminator()) {
-                    const v_ty = self.builder.getRefType(val);
-                    // Issue 0191: same returnable check as the regular body
-                    // path — no bit-weld into the inline return slot.
-                    const coerced = if (v_ty != ret_ty and self.checkReturnable(val, v_ty, ret_ty, fd.body.span))
-                        self.coerceToType(val, v_ty, ret_ty)
-                    else
-                        val;
-                    self.builder.store(ret_slot, coerced);
-                    self.builder.br(ret_done_bb, &.{});
-                }
-            } else if (!self.currentBlockHasTerminator()) {
-                // Body fell through without producing a tail value
-                // AND without branching to ret_done — this only
-                // happens for bodies whose last stmt is a void
-                // statement (e.g. side-effecting). Slot is
-                // uninitialised on this path; safer to br anyway
-                // so the CFG is well-formed. The load in ret_done
-                // will read uninit, which is the same garbage
-                // behaviour the regular fn-body lowering would
-                // produce for a missing return.
-                self.builder.br(ret_done_bb, &.{});
-            }
+    // `block_terminated` says the enclosing FUNCTION's control flow ended. The
+    // enclosing function here is the callee, and control resumes in the caller
+    // at the join — a `return` inside the inlined body must not make the
+    // caller's own trailing statements look dead. Genuine divergence still
+    // stops the caller: its block carries the terminator.
+    const saved_block_terminated = self.block_terminated;
+    self.block_terminated = false;
+    defer self.block_terminated = saved_block_terminated;
 
-            self.builder.switchToBlock(ret_done_bb);
-            return self.builder.load(ret_slot, ret_ty);
-        } else {
-            if (self.lowerBlockValue(fd.body)) |val| {
-                return val;
-            }
-        }
-    } else {
-        self.lowerBlock(fd.body);
+    // The callee's named-return slots are ITS body's to synthesize, and an
+    // enclosing `-> (x: A, y: B)` caller's are not. They live in a scope of
+    // their own so binding them cannot overwrite a caller local of the same
+    // name; `lowerDemandedBody` opens the body's own block scope beneath it.
+    const saved_nrn = self.named_return_names;
+    const saved_nrd = self.named_return_defaults;
+    self.named_return_names = null;
+    self.named_return_defaults = null;
+    defer {
+        self.named_return_names = saved_nrn;
+        self.named_return_defaults = saved_nrd;
     }
+    var named_return_scope = Scope.init(self.alloc, self.scope);
+    defer named_return_scope.deinit();
+    const saved_body_scope = self.scope;
+    self.scope = &named_return_scope;
+    defer self.scope = saved_body_scope;
+    self.bindNamedReturnSlots(fd, ret_ty, &named_return_scope);
 
-    return self.builder.constInt(0, .void);
+    self.lowerFunctionBody(fd.body, ret_ty);
+
+    // The call's value is formed at the destination and nowhere else.
+    switch (inline_exit.dest) {
+        .value => |v| {
+            self.builder.switchToBlock(v.join);
+            return self.builder.load(v.slot, ret_ty);
+        },
+        .unit => |join| {
+            self.builder.switchToBlock(join);
+            return self.builder.constInt(0, .void);
+        },
+        .poison => |join| {
+            self.builder.switchToBlock(join);
+            return self.builder.constUndef(.unresolved);
+        },
+        // The body closed the position it was inlined into. There is no live
+        // place left to hold a result, and nothing that could read one.
+        .diverges => return .none,
+    }
+}
+
+/// Where an inlined callee's body exits to, read off its resolved return type.
+/// The slot and the join are materialized HERE — at the call position, before
+/// any of the body's control flow exists — so every exit finds them live.
+fn classifyInlineExit(self: *Lowering, ret_ty: TypeId) Lowering.InlineExit {
+    if (ret_ty == .noreturn) return .{ .ret_ty = ret_ty, .dest = .diverges };
+    if (ret_ty == .void) return .{ .ret_ty = ret_ty, .dest = .{ .unit = self.freshBlock("ct.ret_done") } };
+    if (ret_ty == .unresolved) return .{ .ret_ty = ret_ty, .dest = .{ .poison = self.freshBlock("ct.ret_done") } };
+    const slot = self.builder.alloca(ret_ty);
+    return .{ .ret_ty = ret_ty, .dest = .{ .value = .{ .slot = slot, .join = self.freshBlock("ct.ret_done") } } };
 }
 
 /// Bind VALUE-typed comptime params for an inlined comptime call. For each
@@ -1516,12 +1529,9 @@ pub fn bindComptimeValueParams(
             .@"enum" => self.bindEnumValueParam(param.name, constraint_ty, info.@"enum", arg_node, int_store),
             .tagged_union => self.bindTaggedUnionValueParam(param.name, constraint_ty, info.tagged_union, arg_node, int_store, ref_store),
             // Other constraint kinds (`type`-metatype params, generic type
-            // params, structs/arrays) are not bound here. struct/array
-            // aggregate value params are not yet wired (no literal-shape repro
-            // in the corpus drives them); when one lands, add a `.@"struct"` /
-            // `.array` arm that lowers the literal to an aggregate const and
-            // writes `ref_store`. Until then we leave the param to whatever
-            // downstream resolution already applies — never a silent default.
+            // params, structs/arrays) are not bound here. The param falls to
+            // whatever downstream resolution already applies — never a silent
+            // default.
             else => {},
         }
     }
@@ -1667,35 +1677,6 @@ pub fn enumHasVariant(self: *Lowering, variants: []const types.StringId, variant
     return false;
 }
 
-/// True if `node` (a fn body) contains any top-level `return` statement.
-/// Used by inline-comptime lowering to decide whether to allocate a
-/// result slot — pure tail-expression bodies skip the slot. Walks past
-/// `if`/`while`/`for`/`match` arms (early-return inside a conditional
-/// counts) but stops at nested fn/lambda bodies (those have their own
-/// return contexts).
-pub fn fnBodyHasReturn(node: *const Node) bool {
-    return switch (node.data) {
-        .return_stmt => true,
-        .block => |b| blk: {
-            for (b.stmts) |s| if (fnBodyHasReturn(s)) break :blk true;
-            break :blk false;
-        },
-        .if_expr => |ie| blk: {
-            if (fnBodyHasReturn(ie.then_branch)) break :blk true;
-            if (ie.else_branch) |eb| if (fnBodyHasReturn(eb)) break :blk true;
-            break :blk false;
-        },
-        .while_expr => |we| fnBodyHasReturn(we.body),
-        .for_expr => |fe| fnBodyHasReturn(fe.body),
-        .match_expr => |me| blk: {
-            for (me.arms) |arm| if (fnBodyHasReturn(arm.body)) break :blk true;
-            break :blk false;
-        },
-        .defer_stmt => |ds| fnBodyHasReturn(ds.expr),
-        else => false,
-    };
-}
-
 /// Which comptime phase a wrapper body belongs to (§7.9's phase law).
 pub const ComptimePhase = enum {
     /// Evaluated DURING lowering, so its result can still add declarations:
@@ -1732,29 +1713,25 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     const name = std.fmt.bufPrint(&buf, "{s}_{d}", .{ prefix, self.comptime_counter }) catch prefix;
     self.comptime_counter += 1;
 
-    // Flow narrowing (issue 0179) is per-function: this wrapper body has its
+    // Flow narrowing is per-function: this wrapper body has its
     // own `Ref` space (overlapping the caller's), so isolate it from the
     // caller's `narrowed`/`narrowed_refs` to avoid a false-positive unwrap gate.
     var nested_guard = Lowering.NestedBodyGuard.enter(self);
     defer nested_guard.restore();
 
     // Save current builder + lowering state. The wrapper fn we're
-    // about to build runs the comptime expression in isolation —
-    // it must NOT inherit the enclosing call's `inline_return_target`
-    // (which would re-route a `return` inside the wrapper into a
-    // slot belonging to a different basic block), pack bindings
-    // (which would substitute caller's `args` inside the wrapper),
-    // or comptime-param bindings (which would substitute caller's
-    // `$fmt` inside the wrapper's #insert children). Without these
-    // saves, nested comptime calls leak outer state into the
-    // interp-executed wrapper, producing garbage stores (issue-0046
-    // face 1 — storeAtRawPtr null).
+    // about to build runs the comptime expression in isolation — it must NOT
+    // inherit pack bindings (which would substitute caller's `args` inside
+    // the wrapper) or comptime-param bindings (which would substitute
+    // caller's `$fmt` inside the wrapper's #insert children). Without these
+    // saves, nested comptime calls leak outer state into the interp-executed
+    // wrapper, producing garbage stores (a null `storeAtRawPtr`). The guard
+    // above owns the inlined-body exit.
     const saved_func = self.builder.func;
     const saved_block = self.builder.current_block;
     const saved_counter = self.builder.inst_counter;
     const saved_scope = self.scope;
     const saved_ctx_ref = self.current_ctx_ref;
-    const saved_iri = self.inline_return_target;
     const saved_pan = self.pack_arg_nodes;
     const saved_ppc = self.pack_param_count;
     const saved_pat = self.pack_arg_types;
@@ -1762,7 +1739,6 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     const saved_block_terminated = self.block_terminated;
     const saved_target_type = self.target_type;
     const saved_func_defer_base = self.func_defer_base;
-    self.inline_return_target = null;
     self.pack_arg_nodes = null;
     self.pack_param_count = null;
     self.pack_arg_types = null;
@@ -1778,7 +1754,6 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     defer {
         self.comptime_phase = saved_phase;
         self.current_ctx_ref = saved_ctx_ref;
-        self.inline_return_target = saved_iri;
         self.pack_arg_nodes = saved_pan;
         self.pack_param_count = saved_ppc;
         self.pack_arg_types = saved_pat;
@@ -1879,17 +1854,16 @@ pub fn comptimeValueRefNamed(self: *Lowering, name: []const u8) ?Ref {
     return null;
 }
 
-/// Source-aware INTEGER fold of a module const `name` (E2/F2/R1). Select the
+/// Source-aware INTEGER fold of a module const `name`. Select the
 /// SOURCE-AWARE author (own-wins; ≥2 flat-visible → ambiguous → null, the loud
 /// diagnostic is the reference site's job), then fold ITS RHS with nested const
 /// leaves resolved through `SourceConstCtx` — each leaf re-selects its OWN
 /// source author, NOT the global last-wins `module_const_map`. So a shadowed
 /// `K :: M + 1` folds `M` to the SELECTED author's `M`, coherently whether `K`
 /// is read as a value (`return K`) or used as an array dimension / count
-/// (`[K]u8`). `frame` (keyed by name + author-source, F3) cycle-guards a const
-/// whose value references another const. Single-author → byte-identical to the
-/// legacy fold (the selected `ci` IS the global one and every nested leaf has
-/// exactly one author).
+/// (`[K]u8`). `frame` (keyed by name + author-source) cycle-guards a const
+/// whose value references another const. With a single author the selected `ci`
+/// IS the global one and every nested leaf has exactly one author.
 pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const ConstFoldFrame) ?i64 {
     return switch (self.selectModuleConst(name)) {
         .resolved => |sel| {
@@ -1905,8 +1879,8 @@ pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const Cons
 }
 
 /// Resolve a QUALIFIED module const `ns.field` (a namespaced-import member —
-/// `m :: #import "lib.sx"; … m.CAP`) to its authoring source + info (issue
-/// 0192). The alias `ns` is resolved in the CURRENT source context — the file
+/// `m :: #import "lib.sx"; … m.CAP`) to its authoring source + info.
+/// The alias `ns` is resolved in the CURRENT source context — the file
 /// that wrote `ns.field`, since an alias binds in its declaring file, not the
 /// use site — then `field` is read from that target module's per-source const
 /// cache (`module_consts_by_source`). Null when `ns` is not a visible namespace
@@ -1929,7 +1903,7 @@ pub fn selectQualifiedConst(self: *Lowering, ns: []const u8, field: []const u8) 
     return .{ .info = ci, .source = src };
 }
 
-/// Source-aware INTEGER fold of a qualified const `ns.field` (issue 0192): the
+/// Source-aware INTEGER fold of a qualified const `ns.field`: the
 /// qualified twin of `foldSourceConstInt`. Resolve the namespace member to its
 /// authoring source, then fold ITS RHS PINNED to that source so nested const
 /// leaves (`CAP :: BASE + 1`, `BASE` authored in the target module) re-select
@@ -1945,7 +1919,7 @@ pub fn foldQualifiedConstInt(self: *Lowering, ns: []const u8, field: []const u8,
     return program_index_mod.evalConstIntExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
 }
 
-/// FLOAT counterpart of `foldQualifiedConstInt` (issue 0192) — the qualified
+/// FLOAT counterpart of `foldQualifiedConstInt` — the qualified
 /// twin of `foldSourceConstFloat`, so a qualified non-integral float const
 /// (`m.PI`) folds the same way its bare-name sibling does.
 pub fn foldQualifiedConstFloat(self: *Lowering, ns: []const u8, field: []const u8, frame: ?*const ConstFoldFrame) ?f64 {
@@ -1958,7 +1932,7 @@ pub fn foldQualifiedConstFloat(self: *Lowering, ns: []const u8, field: []const u
     return program_index_mod.evalConstFloatExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
 }
 
-/// "Is the qualified const `ns.field` FLOAT-valued" (issue 0192) — the
+/// "Is the qualified const `ns.field` FLOAT-valued" — the
 /// qualified twin of `sourceConstIsFloatTyped`, consulted by the int folder's
 /// division guard so `m.K / 3` (with `m.K : f64`) is recognised as float
 /// division exactly as a bare `K / 3` is.
@@ -1997,7 +1971,7 @@ pub fn qualifiedConstNodeIsFloatTyped(self: *Lowering, node: *const Node, frame:
     return self.qualifiedConstIsFloatTyped(path[0..dot], path[dot + 1 ..], frame);
 }
 
-/// Float counterpart of `foldSourceConstInt` (E2/F2/R1).
+/// Float counterpart of `foldSourceConstInt`.
 pub fn foldSourceConstFloat(self: *Lowering, name: []const u8, frame: ?*const ConstFoldFrame) ?f64 {
     return switch (self.selectModuleConst(name)) {
         .resolved => |sel| {
@@ -2012,7 +1986,7 @@ pub fn foldSourceConstFloat(self: *Lowering, name: []const u8, frame: ?*const Co
     };
 }
 
-/// Source-aware "is `name` a FLOAT-valued module const" (E2/F2/R1): judge the
+/// Source-aware "is `name` a FLOAT-valued module const": judge the
 /// SELECTED author's value, with nested const leaves resolved source-aware.
 pub fn sourceConstIsFloatTyped(self: *Lowering, name: []const u8, frame: ?*const ConstFoldFrame) bool {
     return switch (self.selectModuleConst(name)) {
@@ -2029,7 +2003,7 @@ pub fn sourceConstIsFloatTyped(self: *Lowering, name: []const u8, frame: ?*const
 }
 
 /// A selected module const plus the SOURCE that authored it. `source` pins the
-/// context in which the const's RHS leaves must be folded (F1): a same-name
+/// context in which the const's RHS leaves must be folded: a same-name
 /// `K :: M + 1` selected from author `a.sx` folds its nested `M` against `a.sx`,
 /// not against whichever module read `K`. `source` is null only on the
 /// fully-unwired fallback (no source partition at all), where the RHS resolves
@@ -2050,8 +2024,8 @@ const ConstAuthor = union(enum) {
     none,
 };
 
-/// The source-aware module-const author of `name` from the querying module
-/// (E2/F2) — the value-const analogue of `selectNominalLeaf` (types) and
+/// The source-aware module-const author of `name` from the querying module —
+/// the value-const analogue of `selectNominalLeaf` (types) and
 /// `selectCallableAuthor` (functions). Selects over the ONE graph-walk
 /// collector and reads the value from the SELECTED author's per-source cache
 /// (`module_consts_by_source`), never the global last-wins `module_const_map`:
@@ -2064,8 +2038,8 @@ const ConstAuthor = union(enum) {
 ///
 /// A main-file body carries a null `current_source_file` (it IS the root), so
 /// the querying module is `main_file` there; a fully unwired index (no source
-/// at all) falls open to the global registration, byte-identical to the legacy
-/// reader for the registration / comptime-host path.
+/// at all) falls open to the global registration, covering the registration /
+/// comptime-host path.
 pub fn selectModuleConst(self: *Lowering, name: []const u8) ConstAuthor {
     const from = self.current_source_file orelse self.main_file orelse {
         if (self.program_index.module_const_map.get(name)) |ci| return .{ .resolved = .{ .info = ci, .source = null } };
@@ -2079,7 +2053,7 @@ pub fn selectModuleConst(self: *Lowering, name: []const u8) ConstAuthor {
         // The reader's own module authors `name` as a const that never
         // materialized a per-source value (unsupported shape). Owning the
         // name blocks borrowing a flat import's / the global registration's
-        // same-named const (issue 0115).
+        // same-named const.
         if (o.raw == .const_decl) return .own_opaque;
     }
     var the_one: ?SelectedConst = null;
@@ -2094,8 +2068,6 @@ pub fn selectModuleConst(self: *Lowering, name: []const u8) ConstAuthor {
     return .none;
 }
 
-/// `<array const>.len` as a compile-time integer — the SELECTED author's
-/// element count (E2/F2 source-aware, like every const fold).
 /// Select the const that carries `name`'s VALUE SHAPE, following an
 /// identifier-RHS alias chain to its terminal target. An alias's registered
 /// value node is the identifier it was declared with, so a shape test against
@@ -2186,8 +2158,8 @@ pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8
     return program_index_mod.evalConstIntExpr(e, SourceConstCtx{ .lowering = self, .frame = &f });
 }
 
-/// `source`'s per-source const cache entry for `name` (E0's
-/// `module_consts_by_source` write side), or null.
+/// `source`'s per-source const cache entry for `name` — the read side of
+/// `module_consts_by_source` — or null.
 pub fn sourceModuleConst(self: *Lowering, source: []const u8, name: []const u8) ?ModuleConstInfo {
     const inner = self.program_index.module_consts_by_source.get(source) orelse return null;
     return inner.get(name);
@@ -2293,7 +2265,7 @@ const ConstSourcePin = struct {
 
 /// Pin `current_source_file` to a SELECTED const's AUTHOR source while its RHS
 /// is folded / lowered, so nested same-name leaves resolve in the author's
-/// visibility context (F1): `K :: M + 1` selected from `a.sx` always folds `M`
+/// visibility context: `K :: M + 1` selected from `a.sx` always folds `M`
 /// against `a.sx`, regardless of which module read `K`. A null author (the
 /// fully-unwired fallback) leaves the context untouched. Single-author programs
 /// pin to the source they were already in → byte-identical.
@@ -2322,6 +2294,8 @@ pub fn pinConstAuthorSource(self: *Lowering, source: ?[]const u8) ConstSourcePin
 /// `evalConstFloatExpr` (non-integral detection) + `floatToIntExact`.
 pub fn foldComptimeFloatInit(self: *Lowering, node: *const Node, dst: TypeId) ?Ref {
     if (!self.isIntEx(dst)) return null;
+    const author = Lowering.AuthorScope.enter(self, node);
+    defer author.leave();
     // PURE & side-effect-free, so it runs FIRST: a runtime / non-comptime /
     // non-numeric node — incl. a `$pack[i]` index expression — folds to null
     // and is left to the normal path untouched. (Calling `inferExprType` on

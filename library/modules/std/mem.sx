@@ -309,7 +309,7 @@ impl Allocator for BufAlloc {
 // counters. `report()` prints a summary; `leak_count()` returns
 // (alloc_count - dealloc_count).
 //
-// Manual opt-in pattern (compiler auto-wrap lands in Phase 5):
+// Manual opt-in pattern:
 //
 //   tracker := TrackingAllocator.init(context.allocator);   // TrackingAllocator
 //   push .{ allocator = tracker } {
@@ -322,7 +322,7 @@ impl Allocator for BufAlloc {
 // Limitations under the current 2-method Allocator protocol:
 // dealloc(ptr) provides no size info, so bytes_outstanding /
 // peak_bytes cannot be tracked accurately. Only alloc count and
-// total bytes allocated are recorded. Phase 4's size-aware
+// total bytes allocated are recorded. A size-aware
 // dealloc(ptr, size, align) unlocks full byte tracking.
 
 TrackingAllocator :: struct {

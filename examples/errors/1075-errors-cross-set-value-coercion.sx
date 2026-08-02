@@ -3,10 +3,8 @@
 // governs a plain value crossing into a differently-typed error-set slot:
 // `A` coerces to `B` only when every tag of `A` is a member of `B`.
 //
-// Both sets are u32-backed, so a cross-set store is same-width and the
-// width-based reinterpret guard cannot see it — without the membership
-// check a foreign tag lands in the slot and no `error.X` literal of the
-// destination set can ever name it.
+// Both sets are u32-backed, so a cross-set store is same-width and invisible
+// to the width-based reinterpret guard; the membership check is what sees it.
 //
 // The rejections live in `examples/errors/1076-errors-cross-set-value-reject.sx`.
 

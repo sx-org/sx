@@ -1,5 +1,5 @@
 // Intrinsics are compiler features, not library exports: they resolve with NO
-// import at all. This file deliberately imports nothing.
+// import at all. This file imports nothing.
 //
 // The declarations in std/core.sx, math/scalar.sx and std/atomic.sx exist for
 // SOURCE IDENTITY — they give each intrinsic a signature to read and a

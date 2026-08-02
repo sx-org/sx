@@ -224,7 +224,7 @@ impl Lerpable for Size {
     }
 }
 
-// --- Identity hierarchy (§4) ---
+// --- Identity hierarchy ---
 // A runtime hosts scenes, a scene hosts UI roots. The ids are values, not
 // handles: what they name lives in whatever structure owns it, and code that
 // only routes or records identity never needs that structure.

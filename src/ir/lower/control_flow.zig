@@ -10,16 +10,17 @@ const Ref = inst_mod.Ref;
 const BlockId = inst_mod.BlockId;
 
 const lower = @import("../lower.zig");
+const lower_stmt = @import("stmt.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const ComptimeValue = Lowering.ComptimeValue;
 const isTypeCategoryMatch = Lowering.isTypeCategoryMatch;
 
-// ── Flow-sensitive narrowing (issue 0179) ───────────────────────
+// ── Flow-sensitive narrowing ───────────────────────────────────
 //
 // `?T` only converts to a concrete `T` when the value is PROVEN present —
-// otherwise the implicit unwrap silently yields the zero payload of a null
-// optional (the bug). These helpers recognize the `!= null` / `== null`
+// otherwise the implicit unwrap yields the zero payload of a null optional.
+// These helpers recognize the `!= null` / `== null`
 // guard shapes and record which local names a branch / guard proves present;
 // `lowerIdentifier` tags the loaded `Ref` of a narrowed name into
 // `narrowed_refs`, and `coerceMode`'s `.optional_unwrap` arm only unwraps a
@@ -118,9 +119,9 @@ fn unwrapArmBlock(node: *const Node) *const Node {
 /// statement is a `return`/`raise`/`break`/`continue`, or when the arm
 /// expression itself types `noreturn` (a diverging call like `process.exit()`).
 /// A diverging arm never reaches the merge, so it must NOT decide a value-`if`'s
-/// result type — the LIVE arm's type does (issue 0269): a diverging arm used to
-/// drag `result_type` down to void/noreturn, demoting a live value-`if` into a
-/// statement that returned 0 (Bug A) or `alloca void`'d (Bug B).
+/// result type — the LIVE arm's type does. Letting a diverging arm
+/// drag `result_type` down to void/noreturn demotes a live value-`if` into a
+/// statement that returns 0, or one that `alloca void`s.
 pub fn armStaticallyDiverges(self: *Lowering, node: *const Node) bool {
     const body = unwrapArmBlock(node);
     if (body.data == .block) {
@@ -135,12 +136,12 @@ pub fn armStaticallyDiverges(self: *Lowering, node: *const Node) bool {
     return self.inferExprType(body) == .noreturn;
 }
 
-/// An `if`/`match` arm body that yields NO value: a block with a `;`-discarded
+/// An `if`/`match` arm body that yields NO value: a block with no expression
 /// tail (`produces_value == false`), an empty block, or a tail that is a
 /// no-`else` `if` / statically types `void`. A DIVERGING arm (returns / breaks /
 /// raises) is NOT "valueless" — it legitimately never reaches the merge — so
 /// callers exclude it via `armStaticallyDiverges` first. Used to reject a
-/// value-position `match` with a mix of value and void arms (issue 0271).
+/// value-position `match` with a mix of value and void arms.
 pub fn armYieldsVoid(self: *Lowering, node: *const Node) bool {
     const body = unwrapArmBlock(node);
     const tail = if (body.data == .block) blk: {
@@ -149,8 +150,7 @@ pub fn armYieldsVoid(self: *Lowering, node: *const Node) bool {
         break :blk body.data.block.stmts[body.data.block.stmts.len - 1];
     } else body;
     // `null` contributes optionality (`?T`) — a real value in a value-`match`,
-    // never void. (A trailing `;` on a `match` arm does NOT discard, so the arm
-    // value is its tail EXPRESSION's type, not the block's `produces_value`.)
+    // never void.
     if (tail.data == .null_literal) return false;
     // A no-`else` `if` tail yields no value.
     if (tail.data == .if_expr and tail.data.if_expr.else_branch == null and !tail.data.if_expr.is_inline) return true;
@@ -160,7 +160,7 @@ pub fn armYieldsVoid(self: *Lowering, node: *const Node) bool {
 /// Does this value-`if`/ternary arm CONTRIBUTE a `null` — i.e. its yielded
 /// value is the bare `null` literal (`{ null }` / `then null`), so the whole
 /// `if` must produce an OPTIONAL (`?T`) with this arm lowered to `none` and the
-/// other lowered to `some T` (issue 0272). A `null` tail types `.void` and so
+/// other lowered to `some T`. A `null` tail types `.void` and so
 /// never wins `result_type` on its own — this structural check is what forces
 /// the optional. Recurses into a nested value-`if` tail so a chained
 /// `if a { 1 } else if b { 2 } else { null }` is detected at the outer level.
@@ -185,7 +185,7 @@ pub fn armContributesNull(self: *Lowering, node: *const Node) bool {
 }
 
 /// Does any NON-diverging arm of this `match` yield a bare `null` literal —
-/// the match analog of `armContributesNull` (issue 0272). When TRUE and no
+/// the match analog of `armContributesNull`. When TRUE and no
 /// concrete arm decided the payload, the value-`match` must still lift to the
 /// contextual optional `?T` (each `null` arm → `none`) rather than collapse to
 /// a void statement-match that fabricates a PRESENT `{0,true}` at the `?T`
@@ -214,13 +214,73 @@ pub fn setMergeParamType(self: *Lowering, block: BlockId, ty: TypeId) void {
     }
 }
 
-pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
-    // 0270: an `if` used in VALUE position (a value context — `:=`/`=` RHS,
+/// An `if`/`match` arm body under the enclosing demand. Only a PURE-failable
+/// body's demand travels into the arms — every other position lowers them as
+/// statements, exactly as before.
+fn lowerArmBody(self: *Lowering, node: *const Node, demand: lower_stmt.TailDemand) void {
+    _ = self.lowerDemandedBody(node, if (demand == .error_only) demand else .none);
+}
+
+/// One `inline if` / const-folded branch, selected at compile time: the whole
+/// construct collapses to it, so it inherits the demand the construct carried.
+fn lowerSelectedBranch(self: *Lowering, node: *const Node, demand: lower_stmt.TailDemand) Ref {
+    if (demand != .error_only) return self.lowerInlineBranch(node);
+    lowerArmBody(self, node, demand);
+    if (self.currentBlockHasTerminator()) {
+        self.block_terminated = true;
+        return .none;
+    }
+    return self.builder.constInt(0, .void);
+}
+
+const LoweredCondition = struct {
+    value: Ref,
+    test_bit: Ref,
+    ty: TypeId,
+};
+
+fn lowerCondition(self: *Lowering, node: *const Node, has_binding: bool) LoweredCondition {
+    // Branch headers have no enclosing value target.
+    const saved_target = self.target_type;
+    self.target_type = null;
+    defer self.target_type = saved_target;
+
+    const value = self.lowerExpr(node);
+    const ty = self.inferExprType(node);
+    const is_optional = has_binding or (!ty.isBuiltin() and self.module.types.get(ty) == .optional);
+    const test_bit = if (is_optional)
+        self.builder.emit(.{ .optional_has_value = .{ .operand = value } }, .bool)
+    else if (self.checkConditionType(ty, node.span))
+        value
+    else
+        self.builder.constBool(false);
+    return .{ .value = value, .test_bit = test_bit, .ty = ty };
+}
+
+fn bindConditionPayload(self: *Lowering, cond: LoweredCondition, name: []const u8) void {
+    const inner_ty = if (!cond.ty.isBuiltin()) blk: {
+        const info = self.module.types.get(cond.ty);
+        break :blk if (info == .optional) info.optional.child else cond.ty;
+    } else cond.ty;
+    const unwrapped = self.builder.emit(.{ .optional_unwrap = .{ .operand = cond.value } }, inner_ty);
+    const slot = self.builder.alloca(inner_ty);
+    self.builder.store(slot, unwrapped);
+    if (self.scope) |scope| {
+        scope.put(name, .{ .ref = slot, .ty = inner_ty, .is_alloca = true });
+    }
+}
+
+pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.TailDemand) Ref {
+    // A PURE-failable body's tail `if` yields nothing: each live arm is its own
+    // demanded tail, an error arm takes the function's exit where it stands,
+    // and the merge carries no value for an arm's type to decide.
+    const error_only = demand == .error_only;
+    // An `if` used in VALUE position (a value context — `:=`/`=` RHS,
     // call arg, `return`, operand, struct-literal field, array element, index)
-    // MUST have an `else` branch. Without one the expression has no value: the
-    // downstream lowering used to either silently pass `0` (const-folded
-    // condition path) or `alloca void` in the backend. Reject it here with a
-    // located diagnostic BEFORE lowering. Value position is signalled by
+    // MUST have an `else` branch. Without one the expression has no value, so
+    // reject it here with a located diagnostic BEFORE lowering — downstream
+    // would silently pass `0` (const-folded condition path) or `alloca void`
+    // in the backend. Value position is signalled by
     // `force_block_value`; a no-`else` `if` used purely as a STATEMENT (incl. an
     // inline `if c then continue;` guard) is lowered with `force_block_value`
     // clear, so this guard never fires for it. A no-`else` `if` that is the
@@ -239,9 +299,9 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
     if (ie.is_comptime) {
         if (self.evalComptimeCondition(ie.condition)) |is_true| {
             if (is_true) {
-                return self.lowerInlineBranch(ie.then_branch);
+                return lowerSelectedBranch(self, ie.then_branch, demand);
             } else if (ie.else_branch) |eb| {
-                return self.lowerInlineBranch(eb);
+                return lowerSelectedBranch(self, eb, demand);
             }
             return self.builder.constInt(0, .void);
         }
@@ -252,10 +312,10 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
     if (self.tryConstBoolCondition(ie.condition)) |is_true| {
         if (is_true) {
             // Condition always true: only lower then-branch
-            if ((ie.is_inline or self.force_block_value) and ie.else_branch != null) {
+            if (!error_only and (ie.is_inline or self.force_block_value) and ie.else_branch != null) {
                 return self.lowerExpr(ie.then_branch);
             }
-            self.lowerBlock(ie.then_branch);
+            lowerArmBody(self, ie.then_branch, demand);
             // If then-branch terminated (return/break), mark block as dead
             if (self.currentBlockHasTerminator()) {
                 self.block_terminated = true;
@@ -265,10 +325,10 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
         } else {
             // Condition always false: only lower else-branch (if any)
             if (ie.else_branch) |eb| {
-                if (ie.is_inline or self.force_block_value) {
+                if (!error_only and (ie.is_inline or self.force_block_value)) {
                     return self.lowerExpr(eb);
                 }
-                self.lowerBlock(eb);
+                lowerArmBody(self, eb, demand);
                 if (self.currentBlockHasTerminator()) {
                     self.block_terminated = true;
                     return .none;
@@ -278,40 +338,13 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
         }
     }
 
-    // Optional binding: `if val := expr { ... }`
-    // Clear target_type so the ternary's result type doesn't leak into the condition
-    // (e.g., `if x != 0 then 1.0 else 2.0` — the `0` must be i64, not f32)
-    const saved_cond_target = self.target_type;
-    self.target_type = null;
-    const opt_val = self.lowerExpr(ie.condition);
-    self.target_type = saved_cond_target;
-    // Whenever the condition is an optional we must test its has_value flag,
-    // not the optional aggregate itself. This holds with OR without a binding:
-    // a bare `if opt { }` must read has_value too (else the `{T,i1}` struct
-    // reaches condBr and gets folded truthy — issue 0164). `optional_has_value`
-    // handles every optional repr (struct `{T,i1}`, `?Closure` {fn,env},
-    // pointer-sentinel `?*T`/`?cstring`), so this is uniform across all of them.
-    const cond_ty = self.inferExprType(ie.condition);
-    const cond_is_optional = blk: {
-        if (ie.binding_name != null) break :blk true;
-        if (cond_ty.isBuiltin()) break :blk false;
-        break :blk self.module.types.get(cond_ty) == .optional;
-    };
-    // A bare `if <expr> { }` (no binding) must have a condition type that can
-    // be tested as an i1 (bool/integer/pointer/optional). Anything else — a
-    // struct, float, etc. — used to be folded truthy then `@panic` in the
-    // backend (issue 0164); reject it here with a located type error. With a
-    // binding (`if v := opt`) the condition is required to be an optional, so
-    // the optional reduction below applies and we skip the bare-cond check.
-    const cond = if (cond_is_optional)
-        self.builder.emit(.{ .optional_has_value = .{ .operand = opt_val } }, .bool)
-    else if (self.checkConditionType(cond_ty, ie.condition.span))
-        opt_val
-    else
-        self.builder.constBool(false);
+    const cond_lowered = lowerCondition(self, ie.condition, ie.binding_name != null);
+    const cond = cond_lowered.test_bit;
     const has_else = ie.else_branch != null;
-    // If-else produces a value when inline OR when in value position (force_block_value)
-    var is_value = (ie.is_inline or self.force_block_value) and has_else;
+    // If-else produces a value when inline OR when in value position
+    // (force_block_value) — and never under `error_only`, where the ternary
+    // form is value-mode by its own shape yet still yields nothing.
+    var is_value = (ie.is_inline or self.force_block_value) and has_else and !error_only;
 
     // Which arms statically DIVERGE (never reach the merge). A diverging arm
     // contributes no value, so it must not decide `result_type` — the LIVE arm's
@@ -321,10 +354,10 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
 
     // Infer the result type from a LIVE (non-diverging) arm — NEVER fall back to
     // a diverging arm (that pulls the type to void/noreturn and collapses the
-    // whole value-`if`; issue 0269). A live arm whose type isn't statically
+    // whole value-`if`). A live arm whose type isn't statically
     // inferable (e.g. a block whose tail reads a block-local — `if c { a := 1;
     // a + 6 }`) leaves `result_type == .unresolved` here; it is resolved from the
-    // arm's ACTUAL lowered value below (Bug B) and the merge phi patched to match.
+    // arm's ACTUAL lowered value below and the merge phi patched to match.
     var result_type: TypeId = if (is_value) blk: {
         var t: TypeId = .unresolved;
         if (!then_div) t = self.inferExprType(ie.then_branch);
@@ -345,7 +378,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
             if (self.target_type) |tt| t = tt;
         }
 
-        // Optional lift (issue 0272): a value `if` must produce an OPTIONAL
+        // Optional lift: a value `if` must produce an OPTIONAL
         // when the arms demand it — otherwise a `null` arm is coerced in a
         // concrete `T` context (a bogus present optional / 0) instead of a
         // proper `none`. Two triggers:
@@ -379,7 +412,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
             // BOTH arms are `null` and no optional context pins the payload —
             // the result type is genuinely undeterminable. Reject loudly
             // rather than demote to a void statement-`if` that silently drops
-            // the binding (mirrors the 0270 no-value diagnostic).
+            // the binding (mirrors the no-value diagnostic).
             if (self.diagnostics) |d| {
                 d.addFmt(.err, ie.condition.span, "cannot infer the type of this `if` — both arms are `null`; annotate the destination with an optional type (e.g. `: ?T`)", .{});
             }
@@ -389,9 +422,9 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
 
     // Demote to a statement-`if` only when the arms genuinely yield no value:
     // BOTH arms diverge (merge unreachable), or the live arm(s) are void blocks
-    // (`;`-terminated → `result_type == .void`). An `.unresolved` result is NOT
-    // valueless — it is a live arm we simply couldn't type statically (resolved
-    // after lowering); demoting it would `alloca void` a real value (Bug B).
+    // (`result_type == .void`). An `.unresolved` result is NOT valueless — it is
+    // a live arm we simply couldn't type statically (resolved after lowering);
+    // demoting it would `alloca void` a real value.
     if (is_value and ((then_div and else_div) or result_type == .void or result_type == .noreturn)) {
         is_value = false;
         result_type = .void;
@@ -413,21 +446,8 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
 
     // Then branch
     self.builder.switchToBlock(then_bb);
-    // If binding: unwrap the optional and bind to the name
-    if (ie.binding_name) |bind_name| {
-        const opt_ty = self.inferExprType(ie.condition);
-        const inner_ty = if (!opt_ty.isBuiltin()) blk: {
-            const info = self.module.types.get(opt_ty);
-            break :blk if (info == .optional) info.optional.child else opt_ty;
-        } else opt_ty;
-        const unwrapped = self.builder.emit(.{ .optional_unwrap = .{ .operand = opt_val } }, inner_ty);
-        const slot = self.builder.alloca(inner_ty);
-        self.builder.store(slot, unwrapped);
-        if (self.scope) |scope| {
-            scope.put(bind_name, .{ .ref = slot, .ty = inner_ty, .is_alloca = true });
-        }
-    }
-    // Flow narrowing (issue 0179): which local names this condition proves
+    if (ie.binding_name) |bind_name| bindConditionPayload(self, cond_lowered, bind_name);
+    // Flow narrowing: which local names this condition proves
     // present in each arm. A binding `if v := opt` already unwraps `v`, so it
     // contributes nothing here.
     var present_true = std.ArrayList([]const u8).empty;
@@ -461,7 +481,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
         if (!then_diverged) {
             const v_ty = self.builder.getRefType(v);
             // A live arm whose type we could NOT infer statically RESOLVES the
-            // merge type: adopt its actual value type and patch the phi (Bug B).
+            // merge type: adopt its actual value type and patch the phi.
             // Otherwise coerce the value into the already-known merge type.
             if (result_type == .unresolved and v_ty != .void and v_ty != .unresolved) {
                 result_type = v_ty;
@@ -473,7 +493,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
             self.builder.br(merge_bb, &.{v});
         }
     } else {
-        self.lowerBlock(ie.then_branch);
+        lowerArmBody(self, ie.then_branch, demand);
         then_diverged = self.currentBlockHasTerminator();
         if (!self.currentBlockHasTerminator()) {
             self.builder.br(merge_bb, &.{});
@@ -508,7 +528,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
                 self.builder.br(merge_bb, &.{v});
             }
         } else {
-            self.lowerBlock(ie.else_branch.?);
+            lowerArmBody(self, ie.else_branch.?, demand);
             else_diverged = self.currentBlockHasTerminator();
             if (!self.currentBlockHasTerminator()) {
                 self.builder.br(merge_bb, &.{});
@@ -588,7 +608,7 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
                     // is_struct($T) → is T a nominal `struct`? A comptime
                     // type-kind gate for field-wise reflection: folds here so
                     // `inline if is_struct(T)` elides the whole reflection branch
-                    // (incl. `field_type(T,i)`) when T is an enum/scalar (issue 0274).
+                    // (incl. `field_type(T,i)`) when T is an enum/scalar.
                     if (!self.isStaticTypeArg(c.args[0])) return null;
                     const ty = self.resolveTypeArg(c.args[0]);
                     if (ty.isBuiltin() or ty == .unresolved) return false;
@@ -634,49 +654,14 @@ pub fn lowerWhile(self: *Lowering, we: *const ast.WhileExpr) Ref {
 
     // Header: evaluate condition
     self.builder.switchToBlock(header_bb);
-    const cond_val = self.lowerExpr(we.condition);
-    // A bare optional loop condition (`while opt { }`) must test has_value,
-    // exactly like `if opt { }` — otherwise the `{T,i1}` aggregate reaches
-    // condBr and folds truthy (issue 0164). `optional_has_value` covers every
-    // optional repr (struct / `?Closure` / pointer-sentinel). A non-condition
-    // type (struct/float/...) is a located type error (same as `if`), not a
-    // backend `@panic`.
-    const cond = blk: {
-        const cond_ty = self.inferExprType(we.condition);
-        if (!cond_ty.isBuiltin() and self.module.types.get(cond_ty) == .optional) {
-            break :blk self.builder.emit(.{ .optional_has_value = .{ .operand = cond_val } }, .bool);
-        }
-        if (!self.checkConditionType(cond_ty, we.condition.span)) {
-            break :blk self.builder.constBool(false);
-        }
-        break :blk cond_val;
-    };
-    self.builder.condBr(cond, body_bb, &.{}, exit_bb, &.{});
+    const cond = lowerCondition(self, we.condition, we.binding_name != null);
+    self.builder.condBr(cond.test_bit, body_bb, &.{}, exit_bb, &.{});
 
     // Body
     self.builder.switchToBlock(body_bb);
 
-    // Optional binding: `while val := expr { ... }` — bind the unwrapped
-    // payload for the body (issue 0267). Mirrors the `if val := opt` path in
-    // `lowerIfExpr`. The header (which dominates the body) already re-evaluated
-    // the optional into `cond_val` this iteration, so unwrapping it here is
-    // valid SSA and re-runs the store each iteration with the fresh value; the
-    // `alloca` is hoisted to the entry block, so it stays a single frame slot.
-    // With a binding the condition is always an optional, so the
-    // `optional_has_value` test above already drove the loop exit.
-    if (we.binding_name) |bind_name| {
-        const opt_ty = self.inferExprType(we.condition);
-        const inner_ty = if (!opt_ty.isBuiltin()) blk: {
-            const info = self.module.types.get(opt_ty);
-            break :blk if (info == .optional) info.optional.child else opt_ty;
-        } else opt_ty;
-        const unwrapped = self.builder.emit(.{ .optional_unwrap = .{ .operand = cond_val } }, inner_ty);
-        const slot = self.builder.alloca(inner_ty);
-        self.builder.store(slot, unwrapped);
-        if (self.scope) |scope| {
-            scope.put(bind_name, .{ .ref = slot, .ty = inner_ty, .is_alloca = true });
-        }
-    }
+    // The header value dominates the loop body.
+    if (we.binding_name) |bind_name| bindConditionPayload(self, cond, bind_name);
 
     // Save and set loop targets
     const old_break = self.break_target;
@@ -703,10 +688,10 @@ pub fn lowerWhile(self: *Lowering, we: *const ast.WhileExpr) Ref {
 
 /// View a `List(T)`-like struct as its backing `items` pointer + element type
 /// + live length, so `for list (x)` iterates the elements. Two shapes:
-///   - CURRENT `List`: `{ items: []T, cap }` — `items` is a `[]T` slice whose
-///     own `.ptr`/`.len` ARE the backing pointer and live count.
-///   - LEGACY: `{ items: [*]T, len, … }` — a many-pointer `items` paired with a
-///     sibling `len` field (kept so a user struct of that shape still iterates).
+///   - `{ items: []T, cap }` — `items` is a `[]T` slice whose own `.ptr`/`.len`
+///     ARE the backing pointer and live count.
+///   - `{ items: [*]T, len, … }` — a many-pointer `items` paired with a sibling
+///     `len` field.
 /// Null for anything that isn't such a struct.
 pub fn listView(self: *Lowering, value: Ref, ty: TypeId) ?struct { data: Ref, data_ty: TypeId, len: Ref } {
     if (ty.isBuiltin()) return null;
@@ -714,7 +699,7 @@ pub fn listView(self: *Lowering, value: Ref, ty: TypeId) ?struct { data: Ref, da
     if (info != .@"struct") return null;
     const items_id = self.module.types.internString("items");
 
-    // Current shape: an `items: []T` slice — view via its `.ptr`/`.len`.
+    // Slice shape: an `items: []T` slice — view via its `.ptr`/`.len`.
     for (info.@"struct".fields, 0..) |f, i| {
         if (f.name == items_id and !f.ty.isBuiltin() and self.module.types.get(f.ty) == .slice) {
             const slice_val = self.builder.emit(.{ .struct_get = .{ .base = value, .field_index = @intCast(i) } }, f.ty);
@@ -728,7 +713,7 @@ pub fn listView(self: *Lowering, value: Ref, ty: TypeId) ?struct { data: Ref, da
         }
     }
 
-    // Legacy shape: `items: [*]T` + a sibling `len` field.
+    // Many-pointer shape: `items: [*]T` + a sibling `len` field.
     const len_id = self.module.types.internString("len");
     var items_idx: ?u32 = null;
     var items_ty: TypeId = .unresolved;
@@ -773,7 +758,7 @@ const IterPrep = struct {
 pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     if (fe.is_inline) return self.lowerInlineRangeFor(fe);
 
-    // A pack has no runtime value to iterate (Decision 1) — point the user
+    // A pack has no runtime value to iterate — point the user
     // at `inline for`.
     for (fe.iterables) |it| {
         if (!it.is_range and it.expr.data == .identifier and self.isPackName(it.expr.data.identifier.name)) {
@@ -787,6 +772,11 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
 
     for (fe.iterables, 0..) |it, i| {
         if (it.is_range) {
+            // Runtime range bounds use the i64 cursor type.
+            const saved_target = self.target_type;
+            self.target_type = .i64;
+            defer self.target_type = saved_target;
+
             var start_ref = self.lowerExpr(it.expr);
             if (it.start_exclusive) start_ref = self.builder.add(start_ref, self.builder.constInt(1, .i64), .i64);
             const slot = self.builder.alloca(.i64);
@@ -1108,18 +1098,20 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     return self.builder.constInt(0, .void);
 }
 
-pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
+pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.TailDemand) Ref {
+    // A PURE-failable body's tail `match` yields nothing — see `lowerIfExpr`.
+    const error_only = demand == .error_only;
     // inline if match: evaluate at compile time, only lower the matching arm
     if (me.is_comptime) {
         if (self.evalComptimeMatch(me)) |arm_body| {
-            return self.lowerInlineBranch(arm_body);
+            return lowerSelectedBranch(self, arm_body, demand);
         }
         // `inline if T == { case <category|Type>: … }` over a BOUND generic
         // type param: select the arm by T's kind at lower time, siblings
         // dropped whole (each kind arm only type-checks for its own kind).
         if (self.evalStaticTypeMatch(me)) |sel| {
             switch (sel) {
-                .body => |arm_body| return self.lowerInlineBranch(arm_body),
+                .body => |arm_body| return lowerSelectedBranch(self, arm_body, demand),
                 // No arm matched, no `else:` — the runtime form's
                 // skip-to-merge, statically: nothing to lower.
                 .none_matched => return self.builder.constInt(0, .void),
@@ -1155,16 +1147,14 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
             }
         }
     }
-    // TYPE SWITCH (Step-4 phase 2): an `any` subject dispatches on its
-    // runtime type TAG — `if av == { case i64: (v) {…} case Point: (p) {…}
-    // case struct: {…} else: {…} }`. Concrete arms (named, builtin, and
-    // composite types) may bind the typed value; category arms are tag
-    // SETS and bind nothing; arms overlap first-wins with a loud
-    // unreachable-arm diagnostic. Protocol values as SUBJECTS stay refused
-    // (no tag — the phase-2 RTTI story).
+    // TYPE SWITCH: an `any` subject dispatches on its runtime type TAG —
+    // `if av == { case i64: (v) {…} case Point: (p) {…} case struct: {…}
+    // else: {…} }`. Concrete arms (named, builtin, and composite types) may
+    // bind the typed value; category arms are tag SETS and bind nothing; arms
+    // overlap first-wins with a loud unreachable-arm diagnostic.
     // A PROTOCOL subject type-switches through its {ctx, type_id} prefix
-    // view (RTTI Option B) — the scrutinee/captures are exactly the any
-    // switch's, over the concrete value the protocol erases.
+    // view — the scrutinee/captures are exactly the any switch's, over the
+    // concrete value the protocol erases.
     // Non-null when the subject was a protocol value: the type switch then
     // opens the CONCRETE receiver, and a tagged subject additionally knows
     // its whole-program conformer set, so an arm outside it is dead.
@@ -1199,7 +1189,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
     };
     // An error-set subject (`catch e == { case .X: ... }` / `if e == { ... }`):
     // the value IS its u32 tag id, and `case .X` matches the global tag id
-    // of `X`. Used by ERR E1.5's catch match-body form.
+    // of `X`. Used by the catch match-body form.
     const is_error_set_match = blk: {
         if (!subject_ty.isBuiltin()) {
             break :blk self.module.types.get(subject_ty) == .error_set;
@@ -1207,7 +1197,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
         break :blk false;
     };
 
-    // Subject-type gate (issues 0222 / 0224): a case-style match dispatches on
+    // Subject-type gate: a case-style match dispatches on
     // a discriminant — an enum / tagged-union tag, an error tag, an optional's
     // has_value bit, an integer/bool value, or a type id. Any other subject has
     // no valid switch scrutinee, and letting it through hands the backend
@@ -1215,8 +1205,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
     // `switch double` against integer case constants). Reject up front with a
     // located diagnostic and bail — the arms are never lowered.
     //
-    // Type-category matches get NO exemption here (review fold): a genuine
-    // type match's subject is a Type VALUE — a `type_of(...)` result or a
+    // Type-category matches get NO exemption here: a genuine type match's
+    // subject is a Type VALUE — a `type_of(...)` result or a
     // `$T` binding — which types `.type_value` and passes the allowlist below
     // on its own. Exempting on `is_type_match` (a property of the PATTERNS,
     // not the subject) let a single `case U:` / `case string:` pattern token
@@ -1243,7 +1233,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
             // An untagged union (directly, or through a pointer — the deref
             // above never fires for untagged unions) gets its own wording:
             // the type EXISTS but carries no discriminant to match on. Same
-            // family as the arm-level payload-binding rejection (issue 0163),
+            // family as the arm-level payload-binding rejection,
             // which this subject-level gate subsumes for union subjects.
             const union_ty: ?TypeId = blk: {
                 if (subject_ty.isBuiltin()) break :blk null;
@@ -1278,7 +1268,10 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
     // Determine if the match produces a value (has non-void arms)
     // For type-category matches (inside any_to_string), only produce value when force_block_value
     // For regular enum/optional matches, always produce value if arms are non-void
-    var inferred_result = self.inferMatchResultType(me);
+    // Under `error_only` no merge is typed, so the ordinary arm-type
+    // unification never runs: an error arm and an ordinary arm are not
+    // candidates for one result type, they are separate exits.
+    var inferred_result: TypeId = if (error_only) .void else self.inferMatchResultType(me);
     // Arms not statically inferable (bare enum literals etc.): only a
     // value-position match (`force_block_value`) needs a concrete result —
     // use the contextually expected type. A statement match with non-value
@@ -1287,7 +1280,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
     if (inferred_result == .unresolved) {
         inferred_result = if (self.force_block_value) (self.target_type orelse .unresolved) else .void;
     }
-    // Optional lift (issue 0272, match analog): a value-position `match` whose
+    // Optional lift (match analog): a value-position `match` whose
     // only value-bearing arms are `null` — all arms `null`, or `null` + arms
     // that don't decide (diverging / unresolved) — must still produce an
     // OPTIONAL. `inferMatchResultType` only lifts to `?T` when a CONCRETE arm
@@ -1295,7 +1288,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
     // decided, it returns `.void`/`.noreturn`/`.unresolved`, so `has_value_merge`
     // is false, the match lowers as a void statement, and the `y : ?T = <void>`
     // assignment fabricates a PRESENT `{0,true}` instead of `none`. Mirror the
-    // both-null / null+diverging `if` fix: adopt the contextual optional target
+    // both-null / null+diverging `if` rule: adopt the contextual optional target
     // so each `null` arm lowers to `none`; with no target to pin the payload,
     // reject loudly rather than silently lower to void.
     if (self.force_block_value and !is_type_match and
@@ -1311,11 +1304,11 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
             }
         }
     }
-    // 0271: a value-position `match` (`force_block_value`) whose arms are MIXED —
+    // A value-position `match` (`force_block_value`) whose arms are MIXED —
     // some yield a real value, some yield void (a bare-statement tail or a
-    // no-`else` `if`) — cannot build a well-typed merge phi: the void arm used to
-    // reach the backend as `alloca void` / `i64 undef`. Reject the offending
-    // arm(s) with a located error, mirroring the 0270 value-`if`-without-`else`
+    // no-`else` `if`) — cannot build a well-typed merge phi: an unrejected void
+    // arm reaches the backend as `alloca void` / `i64 undef`. Reject the offending
+    // arm(s) with a located error, mirroring the value-`if`-without-`else`
     // diagnostic. All-void arms = a statement `match` (fine); all-value arms =
     // fine; only the MIX is an error. A diverging arm (`return`/`break`/…) is
     // exempt — it legitimately never reaches the merge. Type-category matches are
@@ -1338,7 +1331,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
             }
         }
     }
-    const is_value = if (is_type_match) self.force_block_value else (self.force_block_value or (inferred_result != .void and inferred_result != .unresolved));
+    const is_value = if (error_only) false else if (is_type_match) self.force_block_value else (self.force_block_value or (inferred_result != .void and inferred_result != .unresolved));
     const result_type: TypeId = if (is_value) inferred_result else .void;
     // A fully-diverging match (`result_type == .noreturn` — every arm
     // `return`s / `raise`s / etc.) produces no value, so it builds no
@@ -1462,15 +1455,15 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
             };
             // The `protocol` category exists only in the STATIC fold (an
             // `inline if` over a bound generic type param) — a protocol
-            // value carries no runtime tag to switch on until the phase-2
-            // RTTI story, so a runtime arm would be silently dead.
+            // value carries no runtime tag to switch on, so a runtime arm
+            // would be silently dead.
             if (std.mem.eql(u8, name, "protocol")) {
                 if (self.diagnostics) |d|
                     d.addFmt(.err, pat.span, "'case protocol:' needs a compile-time subject — use `inline if` over a generic type param (a protocol value carries no runtime type tag)", .{});
                 arm_tag_values.append(self.alloc, &.{}) catch unreachable;
                 continue;
             }
-            // E4 single-hop visibility + ambiguity gate: a SPECIFIC 2-flat-hop
+            // Single-hop visibility + ambiguity gate: a SPECIFIC 2-flat-hop
             // type name in a type-match arm (`case COnly:`) is not bare-visible
             // (consistent with annotations / 0763); ≥2 direct flat same-name
             // authors are ambiguous (loud diagnostic, 0755/0767). A category
@@ -1517,9 +1510,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
                 }
                 // A specific type — builtin (`case i64:`), user-named, or
                 // a composite type expression — through the full resolver,
-                // which diagnoses unknown names. (Issue 0315: builtins
-                // resolved through findByName's user-type map here, got
-                // zero tags, and the arm was silently dead.)
+                // which diagnoses unknown names. findByName's user-type map
+                // alone yields zero tags for a builtin, and so a dead arm.
                 const ty = self.resolveTypeArg(pat);
                 if (ty == .unresolved) break :blk_tv &.{}; // resolveTypeArg diagnosed
                 const tv = self.alloc.alloc(u64, 1) catch unreachable;
@@ -1733,10 +1725,10 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
                     // `(v)`. Reject everything else — payload-less enum,
                     // unknown tagged-union variant, integer/bool subjects —
                     // with a diagnostic instead of letting the binding's type
-                    // leak out as .unresolved and panic at LLVM emission
-                    // (issue 0163). Untagged-union subjects (with or without
+                    // leak out as .unresolved and panic at LLVM emission.
+                    // Untagged-union subjects (with or without
                     // a binding) never reach the arms: the subject-type gate
-                    // above rejects the whole match up front (issue 0222).
+                    // above rejects the whole match up front.
                     const bind_span = if (arm.pattern) |arm_pat| arm_pat.span else me.subject.span;
                     const is_tagged_union_subject = !subject_ty.isBuiltin() and self.module.types.get(subject_ty) == .tagged_union;
                     if (self.diagnostics) |diags| {
@@ -1793,7 +1785,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
                     self.builder.constInt(0, result_type);
                 const v_ty = self.builder.getRefType(v);
                 v = self.coerceToType(v, v_ty, result_type);
-                // Backstop for inference-blind arms (issue 0236): when the
+                // Backstop for inference-blind arms: when the
                 // coercion ladder had nothing (`.none` passthrough) and the
                 // arm value can't occupy the merge phi's slot, feeding it
                 // through builds a mixed-type phi — an LLVM verifier failure
@@ -1819,7 +1811,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
                 self.builder.br(merge_bb, &.{v});
             }
         } else {
-            self.lowerBlock(arm.body);
+            lowerArmBody(self, arm.body, demand);
             self.current_match_tags = saved_match_tags;
             self.scope = old_scope;
             arm_scope.deinit();
@@ -1932,29 +1924,10 @@ pub fn currentBlockHasTerminator(self: *Lowering) bool {
     return false;
 }
 
+/// The FALLTHROUGH half of the body exit: control reached the end of a body
+/// with no exit of its own, so this one closes the block. Every call site is a
+/// function-body end.
 pub fn ensureTerminator(self: *Lowering, ret_ty: TypeId) void {
     if (self.currentBlockHasTerminator()) return;
-    if (ret_ty == .noreturn) {
-        // A `-> noreturn` function never returns; if control reaches the
-        // end of the body it's genuinely unreachable (the body is expected
-        // to diverge — call another noreturn, loop forever, etc.).
-        self.builder.emitUnreachable();
-    } else if (ret_ty == .void) {
-        self.builder.retVoid();
-    } else if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) {
-        // A pure-failable function (`-> !` / `-> !Named`, whose return type IS
-        // the error set) that falls off the end with no explicit `return;` is
-        // a SUCCESS exit — the error slot must carry 0 ("no error"), exactly
-        // like the bare-`return;` path in lowerReturn. Without this the slot is
-        // left undefined and the caller (or main) reads a garbage tag and
-        // reports a phantom unhandled error (issue 0190).
-        self.builder.ret(self.builder.constInt(0, ret_ty), ret_ty);
-    } else {
-        // Use const_undef for complex types (string, struct, etc.)
-        const default_val = if (ret_ty == .string or !ret_ty.isBuiltin())
-            self.builder.constUndef(ret_ty)
-        else
-            self.builder.constInt(0, ret_ty);
-        self.builder.ret(default_val, ret_ty);
-    }
+    self.emitBodyExit(null, ret_ty, .fallthrough);
 }

@@ -1,0 +1,62 @@
+// A field default is the DECLARING module's expression (specs: Modules — the
+// namespace surface; Structs — field defaults).
+//
+// A literal that leaves a field out lowers the default that module wrote, so the
+// bare names in it are resolved over ITS import edges. A consumer reaching the
+// type through a namespace imports the module, not what the module's defaults
+// happen to name — and when the consumer declares the SAME names, the author's
+// still win.
+//
+// Every evaluator of a default agrees: ordinary lowering, the float→int fold
+// that runs ahead of it, and the compile-time serialization of a top-level
+// constant.
+#import "modules/std.sx";
+p :: #import "2083-modules-field-default-reaches-its-author/paint.sx";
+
+// The consumer's own names, shadowing the ones the author's defaults reach.
+HAIRLINE :: 9.0;
+STEP :: 99;
+GRID :: 9.0;
+
+// Serialized at compile time rather than lowered as statements.
+GLOBAL_PEN :: p.Pen{};
+GLOBAL_RULE :: p.Rule{};
+GLOBAL_SLOT :: p.Slot(i64){};
+
+main :: () -> i32 {
+    // A module constant of the declaring module, and an expression over one.
+    pen := p.Pen{};
+    print("pen {} {}\n", pen.ink.name, pen.width);
+
+    // A default that calls a static method of a type the same module declares.
+    sheet := p.Sheet{};
+    print("sheet {} {}\n", sheet.ground.name, sheet.margin);
+
+    // A generic instance's default, monomorphized at this site.
+    slot := p.Slot(i64){};
+    print("slot {} {}\n", slot.value, slot.ink.name);
+
+    // An integer field defaulted from an integral float folds ahead of lowering.
+    rule := p.Rule{};
+    print("rule {} {}\n", rule.count, rule.span);
+
+    // A stated field wins; the rest still come from the author's expressions.
+    stated := p.Pen{ width = 3.0 };
+    print("stated {} {}\n", stated.ink.name, stated.width);
+
+    // The same defaults, reached through top-level constants.
+    print("global pen {} {}\n", GLOBAL_PEN.ink.name, GLOBAL_PEN.width);
+    print("global rule {} {}\n", GLOBAL_RULE.count, GLOBAL_RULE.span);
+    print("global slot {} {}\n", GLOBAL_SLOT.value, GLOBAL_SLOT.ink.name);
+    0
+}
+
+// ** stdout **
+// pen graphite 0.500000
+// sheet dark 2.000000
+// slot 0 graphite
+// rule 7 2
+// stated graphite 3.000000
+// global pen graphite 0.500000
+// global rule 7 2
+// global slot 0 graphite

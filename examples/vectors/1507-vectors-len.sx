@@ -1,7 +1,7 @@
 // `.len` on a SIMD vector value is its LANE COUNT — a compile-time
-// constant, mirroring `.len` on arrays. Regression: the backend's
-// `.length` emission had no vector arm and fell through to a silent
-// LLVMGetUndef, so `v.len` compiled and returned garbage.
+// constant, mirroring `.len` on arrays. A backend `.length` emission with no
+// vector arm falls through to a silent LLVMGetUndef, so `v.len` compiles and
+// returns garbage.
 #import "modules/std.sx";
 
 main :: () {

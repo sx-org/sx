@@ -1,15 +1,15 @@
-// Stream B1 (fibers) B1.5a — the M:1 cooperative fiber scheduler core.
+// The M:1 cooperative fiber scheduler core.
 //
 // A `Scheduler` drives any number of `Fiber`s, each running a stackful
-// `body: Closure() -> void` on its own guarded `mmap` stack (the §8.1.1 guard
-// page turns a stack overflow into an immediate fault instead of silent
-// neighbor corruption). Fibers cooperate: a running fiber hands control back to
-// the scheduler loop via `yield_now` (re-enqueued, round-robin) or
+// `body: Closure() -> void` on its own guarded `mmap` stack, whose guard page
+// turns a stack overflow into an immediate fault instead of silent neighbor
+// corruption. Fibers cooperate: a running fiber hands control back to the
+// scheduler loop via `yield_now` (re-enqueued, round-robin) or
 // `suspend_self` (parked off-queue until an external `wake`). When a body
 // returns, the fiber reaches `.done`, its stack is `munmap`'d and its heap
 // `Fiber` freed.
 //
-// Built on the proven primitives from examples/concurrency/1807-1809:
+// The primitives it stands on, corpus-pinned by examples/concurrency/1807-1809:
 //   - `swap_context` (aarch64 `abi(.naked)`, 13-slot save area: x19..x28, fp,
 //     lr, sp) saves the callee-saved registers + SP into `*from` and loads them
 //     from `*to`, then `ret`s onto `to`'s stack.
@@ -29,7 +29,7 @@
 #import "modules/std/fmt.sx";
 #import "modules/std/list.sx";
 c :: #import "modules/std/c.sx";
-// Phase 3 (true cancellation): `suspend_raw` reads the spawned fiber's cancel
+// True cancellation: `suspend_raw` reads the spawned fiber's cancel
 // flag — a `*Atomic(bool)` back-ref to the `Future.canceled` — to decide whether
 // to raise `error.Canceled` on resume. atomic.sx has no naked asm, so it is safe
 // to pull in here (no fib_tramp re-emit).
@@ -65,7 +65,7 @@ inline if OS == {
 GUARD     :: 16384;      // one 16 KB page (aarch64-macOS)
 STACK     :: 131072;     // 128 KB usable per fiber
 
-// Max fd events drained per kqueue wait (B1.4c). Sized for the M:1 model's
+// Max fd events drained per kqueue wait. Sized for the M:1 model's
 // small fiber counts; a wait that fills it just drains the rest on the next
 // loop iteration (the woken fibers run, the queue re-drains, the still-pending
 // waiters block again).
@@ -108,7 +108,7 @@ Fiber :: struct {
     // Neither `spawn` nor the language rebases the inherited allocator — the
     // snapshot is verbatim, by design.
     dctx: Context;
-    // Phase 3 (true cancellation): back-ref to this fiber's task cancel flag
+    // True cancellation: back-ref to this fiber's task cancel flag
     // (the `Future.canceled` `Atomic(bool)`, erased to `*void`), set from
     // `SpawnOpts.cancel_flag` at `spawn_raw`. `suspend_raw` consults it and
     // raises `IoErr.Canceled` when set, so a cancelled worker abandons its body
@@ -126,7 +126,7 @@ Timer :: struct {
     fiber: *Fiber;
 }
 
-// B1.4c: a fiber parked on REAL fd readiness. Unlike a `Timer` (virtual
+// a fiber parked on REAL fd readiness. Unlike a `Timer` (virtual
 // time), an `IoWaiter` blocks the whole scheduler on `kevent` until the
 // kernel reports `fd` readable, then wakes `fiber`. Stored in
 // `Scheduler.io_waiters`; the registration is one-shot (EV_ONESHOT), so the
@@ -148,7 +148,7 @@ Scheduler :: struct {
     n_spawned: i64;
     n_suspended: i64;           // fibers parked off-queue (suspend_self minus wake)
 
-    // --- B1.4b: deterministic virtual-time timer scheduling ----------------
+    // --- deterministic virtual-time timer scheduling ----------------
     clock_ms: i64;              // the VIRTUAL clock (ms). Starts 0; advances ONLY
                                 // when the ready queue drains and the earliest
                                 // pending timer fires. No real wall clock is ever
@@ -157,7 +157,7 @@ Scheduler :: struct {
                                 // through `own_allocator` (long-lived-container
                                 // rule: a timer outlives the `sleep` call's scope).
 
-    // --- B1.4c: real fd-readiness blocking via kqueue ----------------------
+    // --- real fd-readiness blocking via kqueue ----------------------
     kq: i32;                    // the kqueue fd. LAZY: -1 until the first
                                 // `block_on_fd` opens it, so a pure-compute /
                                 // virtual-timer scheduler never opens a kqueue
@@ -197,7 +197,7 @@ Scheduler :: struct {
     // leaks until program exit. Bounded by the spawn count; under the default
     // GPA (which frees at exit) it is invisible, but a long-running scheduler
     // under an arena/tracking allocator accumulates one env per fiber. Freeing
-    // it needs a language affordance for closure-env ownership — deferred.
+    // it needs a language affordance for closure-env ownership.
     spawn :: (self: *Scheduler, body: Closure() -> void) -> *Fiber {
         raw := self.own_allocator.alloc_bytes(size_of(Fiber));
         if raw == null {
@@ -337,7 +337,7 @@ Scheduler :: struct {
         self.suspend_self();   // parks `cur` off-queue; the timer fire re-wakes it
     }
 
-    // --- B1.4c: block the running fiber until `fd` is readable --------------
+    // --- block the running fiber until `fd` is readable --------------
     //
     // Register `fd` for EVFILT_READ with the scheduler's kqueue (lazily
     // opening it on first use), record an `IoWaiter`, then park the fiber
@@ -348,7 +348,7 @@ Scheduler :: struct {
     //
     // `want_read` is the readiness direction; only read-readiness is wired for
     // now (a write-readiness EVFILT_WRITE path would mirror this exactly). A
-    // false `want_read` would be a write-wait — not yet implemented, so bail
+    // false `want_read` would be a write-wait — unimplemented, so bail
     // loudly rather than silently arming a read filter (silent-wrong-arm rule).
     //
     // MUST be called from inside a fiber (there must be a `current` to park); a
@@ -521,8 +521,8 @@ Scheduler :: struct {
         // fired and every io-waiter has been woken, `n_suspended` counts only
         // these true orphans.)
         //
-        // SCOPE — fd waiters are NOT covered by this check, BY DESIGN, not as an
-        // oversight. While `io_waiters.len > 0` the loop above blocks in
+        // fd waiters are NOT covered by this check. While `io_waiters.len > 0`
+        // the loop above blocks in
         // `kq_wait(-1)` and never reaches here. A fiber blocked on an fd that the
         // OS never reports ready blocks FOREVER — which is the correct semantics
         // of an event loop (a server idling on a socket is indistinguishable from
@@ -586,7 +586,7 @@ Scheduler :: struct {
     }
 }
 
-// --- B2/A1: the fiber scheduler AS an `Io` capability vtable -----------------
+// --- The fiber scheduler AS an `Io` capability vtable ------------------------
 //
 // `impl Io for Scheduler` folds the M:1 fiber scheduler behind `context.io` —
 // the same `Io` protocol (core.sx) the blocking `CBlockingIo` (io.sx) implements,
@@ -597,10 +597,10 @@ Scheduler :: struct {
 //     s := Scheduler.init();
 //     push .{ io = s } {
 //         … context.io.async(…) / await / race …
-//         s.run();    // the explicit driver loop (stays as today)
+//         s.run();    // the explicit driver loop
 //     }
 //
-// Phase 0 (fibers inherit the spawn-time context) is what makes this reach a
+// (fibers inherit the spawn-time context) is what makes this reach a
 // WORKER: a fiber spawned through `spawn_raw` runs under the pushed context, so
 // its own `context.io.suspend_raw`/`ready` resolve back to THIS scheduler, not
 // the blocking default. The methods are thin adapters over the existing fiber
@@ -610,7 +610,7 @@ impl Io for Scheduler {
     // function pointer (the worker thunk the `async` layer boxes), erased to
     // `*void`; `arg` is its single payload pointer. Returns the `*Fiber` as the
     // opaque handle (the `Future` stashes it in `task`). The fiber inherits this
-    // call's context (Phase 0), so the worker sees this scheduler as `context.io`.
+    // call's context, so the worker sees this scheduler as `context.io`.
     // CONTRACT: `arg` must outlive the fiber's FIRST RUN (i.e. survive until
     // `run`/`poll` schedules it), not merely until `spawn_raw` returns — the fiber
     // dereferences it later, on its own stack. A stack local that dies before the
@@ -628,18 +628,18 @@ impl Io for Scheduler {
             entry_fn : (*void) -> void = xx entry;
             entry_fn(arg);
         });
-        // Stash the cancel-flag back-ref (Phase 3): `suspend_raw` consults it on
+        // Stash the cancel-flag back-ref: `suspend_raw` consults it on
         // this fiber to raise `error.Canceled`. `null` for an uncancellable spawn.
         f.cancel_flag = opts.cancel_flag;
         return xx f;
     }
 
     // Park the running fiber until a matching `ready`. `-> !` is the cancellation
-    // channel the protocol mandates: a suspending impl raises `IoErr.Canceled`
-    // out here when the parked task was cancelled (wired in Phase 3). The M:1
-    // impl does not raise yet — it just parks the current fiber.
+    // channel the protocol mandates: `error.Canceled` is raised INSTEAD of
+    // parking when the task is already cancelled, and again on resumption when
+    // a `cancel` landed while parked.
     suspend_raw :: (self: *Scheduler, park: *ParkToken) -> ! {
-        // Phase 3 (true cancellation), PRE-PARK check: if this fiber's task was
+        // PRE-PARK check: if this fiber's task was
         // already cancelled before it reached this suspend, deliver immediately —
         // do NOT park (a park with no pending waker would deadlock; the cancel's
         // `ready` already fired as a no-op against a not-yet-suspended fiber).
@@ -736,7 +736,7 @@ impl Io for Scheduler {
 
     // Arm a virtual-time timer that re-readies the CURRENT fiber at `deadline_ms`
     // (the caller suspends separately via `suspend_raw`). Does not suspend. Returns
-    // null (a timer-cancel handle is Phase 3). The fired timer wakes the fiber
+    // null (there is no timer-cancel handle). The fired timer wakes the fiber
     // through the same `wake` path the run loop uses.
     arm_timer :: (self: *Scheduler, deadline_ms: i64, park: ParkToken) -> *void {
         // MUST be called from inside a fiber — the timer wakes `self.current`, so a
@@ -804,7 +804,7 @@ ASM
 // platform-correct name automatically, so `spawn`'s `xx fib_tramp` resolves on
 // every target. This register-indirect bootstrap replaced an OS-conditional
 // global `asm` block (a top-level `asm` wrapped in an `inline if` is dropped in
-// this module's context — see issues/0193) and sidesteps the hand-written
+// this module's context) and sidesteps the hand-written
 // symbol entirely, which is cleaner regardless.
 fib_tramp :: () abi(.naked) {
     asm volatile {
@@ -829,7 +829,7 @@ T
 // the scheduler's prior `swap_context`), so the body runs once; but inside it
 // the closure loads `[Fiber+8] == regs[1] == &fib_dispatch` as its "first
 // capture" and re-invokes `fib_dispatch` forever → stack overflow → bus error
-// (issue 0193 Bug A, observed only on the go/wait/sleep capstone 1817).
+// (reached through the go/wait/sleep capstone 1817).
 // `abi(.c)` rather than `export "fib_dispatch"`: both pin the C ABI, but this fn
 // is reached ONLY by address through the trampoline (`xx fib_dispatch` resolves
 // regardless of linkage), never by an external name — so it needs the convention,
@@ -847,7 +847,7 @@ T
 // `allocator`) borrow a receiver (often a stack local via `xx`); that receiver,
 // and any `data` pointee, must stay alive until the fiber is reaped. A fiber that
 // grows a long-lived container through the inherited `context.allocator` is
-// subject to the usual long-lived-container rule (CLAUDE.md).
+// subject to the usual long-lived-container rule.
 fib_dispatch :: (self: *Fiber) abi(.c) {
     // Run the body under the context captured at spawn (`Fiber.dctx`), so the
     // fiber inherits its spawner's `context` — notably `context.io` resolves to a
@@ -875,9 +875,9 @@ boot_stack :: (f: *Fiber, size: i64) -> u64 {
     f.stack_region = region;
     f.stack_len = total;
     // Guard-arm: turn the low page unwritable so overflow faults at the
-    // boundary. The guard is mandatory (§8.1.1); a stack handed out without it
-    // would silently corrupt a neighbor on overflow, so a failed mprotect is
-    // fatal, not ignorable.
+    // boundary. The guard is mandatory; a stack handed out without it would
+    // silently corrupt a neighbor on overflow, so a failed mprotect is fatal,
+    // not ignorable.
     if c.mprotect(region, GUARD, PROT_NONE) != 0 {
         print("sched: mprotect(PROT_NONE) failed to arm the stack guard page\n");
         c.abort();
@@ -979,7 +979,7 @@ cancel_timer_for :: (self: *Scheduler, f: *Fiber) {
     }
 }
 
-// --- B1.4c: fd-waiter set (linear scan, fd-keyed) --------------------------
+// --- fd-waiter set (linear scan, fd-keyed) --------------------------
 //
 // Like the timer set, a plain `List(IoWaiter)` scanned linearly — fiber counts
 // are tiny. Removal shifts the tail down one slot.
@@ -1033,8 +1033,8 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
             wf := self.io_waiters.items[i].fiber;
             remove_io_waiter(self, i);
             self.wake(wf);   // re-enqueues the parked fiber (also calls
-                             // cancel_io_waiter_for, now a harmless no-op —
-                             // the record is already removed)
+                             // cancel_io_waiter_for, a no-op here — the
+                             // record is already removed)
             return;
         }
         i = i + 1;
@@ -1044,7 +1044,7 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 // The public API lives as methods on `Scheduler` (above): `init`, `spawn`,
 // `yield_now`, `suspend_self`, `wake`, `run`, `now_ms`, `sleep`.
 
-// --- B2/A1: structured first-wins `race` over `context.io` Futures -----------
+// --- Structured first-wins `race` over `context.io` Futures ------------------
 //
 // `context.io.race((a: fa, b: fb, …))` starts from N already-spawned `*Future(..)`
 // handles (from `context.io.async`), returns when the FIRST is `.ready`, and
@@ -1053,7 +1053,7 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 // time. The result is a comptime-synthesized tagged-union (`RaceResult`) mirroring
 // the input tuple's labels: each variant's NAME is the tuple label, its payload is
 // that future's result type. The tuple must be NAMED (`(a: fa, b: fb)`); a
-// positional-tuple form (`._0`/`._1`) is future work — `struct_field_name` yields "" for
+// positional-tuple form (`._0`/`._1`) is rejected — `struct_field_name` yields "" for
 // an unnamed element, which `make_enum` rejects as a duplicate-name collision.
 //
 // It runs over the `Io` PROTOCOL (`current_park`/`suspend_raw`/`ready`), so it is
@@ -1096,13 +1096,13 @@ RaceResult :: ($T: Type) -> Type {
 // `CBlockingIo` the futures are already `.ready`, so the winner scan returns
 // without ever calling `current_park`/`suspend_raw`.
 //
-// TRUE-CANCEL SEMANTIC (Phase 3): each loser was parked mid-suspend when cancelled;
+// TRUE-CANCEL SEMANTIC: each loser was parked mid-suspend when cancelled;
 // `cancel(f)` flips its sticky flag and wakes its worker fiber, whose next
 // `suspend_raw` raises `Canceled` and unwinds the body — its post-suspend work
 // never runs. `race` does NOT join the losers (they unwind on their own next turn),
 // so it returns at winner-time. The winner's value is taken from `f.value`.
 race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
-    // Phase 1 — first winner. Scan for an already-`.ready` future (lowest index
+    // First winner. Scan for an already-`.ready` future (lowest index
     // wins on a same-tick tie → deterministic). If none, register THIS coordinator
     // (`current_park`) as the waiter on every still-`.pending` future's `park`
     // slot and park once via `suspend_raw`; any completion `ready`s us. On wake
@@ -1139,7 +1139,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
         }
     }
 
-    // Phase 2 — build the winner variant. `futures[i].value` carries the CONCRETE
+    // Build the winner variant. `futures[i].value` carries the CONCRETE
     // result type of variant `i` (comptime-cursor tuple indexing), so the matching
     // unrolled arm constructs `RaceResult(T)`'s i-th variant directly. `i` is the
     // comptime cursor; the runtime `if i == winner_idx` selects the one arm.
@@ -1150,7 +1150,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
         }
     }
 
-    // Phase 3 — cancel every still-IN-FLIGHT loser. With true cancellation a
+    // Cancel every still-IN-FLIGHT loser. With true cancellation a
     // parked loser's next `suspend_raw` raises `Canceled` and unwinds its body;
     // its `park` was cleared above, so its completion `ready`s nobody. No join —
     // `race` returns now. Only `.pending` losers are cancelled: a loser that

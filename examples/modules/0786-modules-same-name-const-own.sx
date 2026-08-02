@@ -1,4 +1,4 @@
-// issue 0105 / F2 — same-name VALUE const, own-wins. Two flat-imported modules
+// Same-name VALUE const, own-wins. Two flat-imported modules
 // each declare a top-level `K` with a different value and a function that reads
 // `K` bare. Each function's OWN reference must bind ITS OWN module's `K`
 // (own-wins), exactly as same-name structs (0754) and functions (0722) do —

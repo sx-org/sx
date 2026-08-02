@@ -11,7 +11,7 @@ c :: #import "modules/std/c.sx";
 List :: struct ($T: Type) {
     items: []T = .[];   // empty slice ({ptr, len=0}); `.[]` is the empty-slice
                         // literal — `.{}` would init the slice's underlying
-                        // {ptr,len} struct (and currently yields a garbage len).
+                        // {ptr,len} struct, yielding a garbage len.
     cap: i64 = 0;
 
     // No-paren read accessor: `xs.len` → the live element count.

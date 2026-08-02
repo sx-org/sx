@@ -1,4 +1,4 @@
-// issue 0105 / F2 — same-name VALUE const, two-flat-visible → AMBIGUOUS. `main`
+// Same-name VALUE const, two-flat-visible → AMBIGUOUS. `main`
 // flat-imports two modules that each author a same-name `K` and authors none
 // itself. A bare `K` reference can't be disambiguated, so the compiler emits a
 // LOUD diagnostic (consistent with the type ambiguity at 0755 and the function

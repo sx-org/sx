@@ -1,44 +1,115 @@
-// The compose UI library (revision §13.3) — public facade.
+// The compose UI library — public facade.
 //
 // One import gets a consumer the library; the modules behind this file are its
 // implementation. Each name below is re-exported explicitly, because an import
 // publishes nothing on its own.
 //
-// This library shares no UI-level code and no geometry, render, or component
-// types with `ui/emit` or `ui/fluent`. `compose.View` is its own open set: a
-// component of another library is not a member of it, and no conversion stands in
-// for a declaration.
+// The geometry, the paint types, the render tree and the text metrics are the ui
+// foundation's, so a compose scene renders into the tree the platform renderer
+// consumes. `compose.View` is the library's own open set: `ui/emit` and
+// `ui/fluent` declare their own, a component of another library is not a member
+// of this one, and no conversion stands in for a declaration.
 #import "modules/std.sx";
 
-geometry :: #import "modules/ui/compose/geometry.sx";
-render :: #import "modules/ui/compose/render.sx";
+types :: #import "modules/ui/types.sx";
+render :: #import "modules/ui/render.sx";
+font :: #import "modules/ui/font.sx";
+input :: #import "modules/ui/input.sx";
 view :: #import "modules/ui/compose/view.sx";
-modifier :: #import "modules/ui/compose/modifier.sx";
+identity :: #import "modules/ui/compose/identity.sx"
+state :: #import "modules/ui/compose/state.sx"
+frame :: #import "modules/ui/compose/frame.sx"
+router :: #import "modules/ui/compose/input.sx"
+focus :: #import "modules/ui/compose/focus.sx"
+loop :: #import "modules/ui/compose/loop.sx"
 components :: #import "modules/ui/compose/components.sx";
 sink :: #import "modules/ui/compose/sink.sx";
 containers :: #import "modules/ui/compose/containers.sx";
+placement :: #import "modules/ui/compose/placement.sx";
 runtime :: #import "modules/ui/compose/runtime.sx";
 
 // Geometry
-Point :: geometry.Point;
-Size :: geometry.Size;
-Frame :: geometry.Frame;
-ProposedSize :: geometry.ProposedSize;
-EdgeInsets :: geometry.EdgeInsets;
+Point :: types.Point;
+Size :: types.Size;
+Frame :: types.Frame;
+ProposedSize :: types.ProposedSize;
+EdgeInsets :: types.EdgeInsets;
+Alignment :: types.Alignment;
+HAlignment :: types.HAlignment;
+VAlignment :: types.VAlignment;
+
+Color :: types.Color;
+Stroke :: types.Stroke;
 
 // Render
-Color :: render.Color;
-RenderCommand :: render.RenderCommand;
+RenderNode :: render.RenderNode;
+RenderNodeType :: render.RenderNodeType;
 RenderTree :: render.RenderTree;
 RenderContext :: render.RenderContext;
 
+// The regions a member declares while it renders, and the event their handlers
+// take.
+HitRegion :: render.HitRegion;
+HitPolicy :: render.HitPolicy;
+FocusRegion :: render.FocusRegion;
+KeyEvent :: input.KeyEvent;
+LogicalKey :: input.LogicalKey;
+
+// `set_global_font` points `measure_text` at the renderer's glyph cache.
+measure_text :: font.measure_text;
+set_global_font :: font.set_global_font;
+
+// Element identity: the call site an element is built at, and the id that site
+// mints for it.
+SiteId :: identity.SiteId
+site_of :: identity.site_of
+ElementId :: identity.ElementId
+Identity :: identity.Identity
+element_id :: identity.element_id
+
+// State: what a call site keeps across the rebuilds that reach it.
+State :: state.State
+StateEntry :: state.StateEntry
+StateStore :: state.StateStore
+use_state :: state.use_state
+
+// What a build commits, and what routes pointers against it.
+CommittedUiSnapshot :: frame.CommittedUiSnapshot
+project :: frame.project
+Router :: router.Router
+HitTarget :: router.HitTarget
+Tappable :: router.Tappable
+tappable :: router.tappable
+is_pressed :: router.is_pressed
+
+// Keyboard focus: what declares itself focusable, and what routes keys to it.
+FocusRouter :: focus.FocusRouter
+Focusable :: focus.Focusable
+focusable :: focus.focusable
+is_focused :: focus.is_focused
+
+// The root a program runs, and the loop that runs its frames.
+UiRoot :: loop.UiRoot
+FrameLoop :: loop.FrameLoop
+
+// The queue a platform layer pushes into.
+InputQueue :: input.InputQueue
+InputEvent :: input.InputEvent
+UiRootId :: types.UiRootId
+
 // The set and what joins it
 View :: view.View;
-Modifier :: modifier.Modifier;
 Label :: components.Label;
+Rect :: components.Rect;
 Button :: components.Button;
 VStack :: containers.VStack;
+HStack :: containers.HStack;
 ZStack :: containers.ZStack;
+Spacer :: containers.Spacer;
+
+Mod :: placement.Mod;
+ModBox :: placement.ModBox;
+place :: placement.place;
 
 // Collection boundary
 Sink :: sink.Sink;
@@ -47,6 +118,9 @@ Sink :: sink.Sink;
 // import of this facade is the whole API.
 collectViews :: sink.collectViews;
 vstack :: containers.vstack;
+hstack :: containers.hstack;
 zstack :: containers.zstack;
+fold_vstack :: containers.fold_vstack;
+fold_hstack :: containers.fold_hstack;
 render_root :: runtime.render_root;
 command_count :: runtime.command_count;

@@ -1,11 +1,9 @@
-// Issue 0347: #objc_class method dispatch with struct-by-value
+// #objc_class method dispatch with struct-by-value
 // arguments. Large non-HFA aggregates (48-byte MTLRegion shape) pass
 // by reference (caller copy + ptr — the same marshaling as the
 // abi(.c) fn-pointer idiom); float-pair HFAs (CGSize shape) stay
-// register-class aggregates. Previously both aborted the LLVM
-// verifier ("Call parameter type does not match function signature").
-// The mixed case pins slot bookkeeping with scalars around the byval
-// arg.
+// register-class aggregates. The mixed case pins slot bookkeeping with
+// scalars around the byval arg.
 #import "modules/std.sx";
 #import "modules/ffi/objc.sx";
 

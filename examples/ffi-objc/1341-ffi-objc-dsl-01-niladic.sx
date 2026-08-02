@@ -1,4 +1,4 @@
-// Phase 3 step 3.0 (PLAN-FFI.md): `inst.method(args)` on an
+// `inst.method(args)` on an
 // `#objc_class`-typed receiver lowers to `objc_msg_send` with a derived
 // selector. This test covers the niladic shape: the sx-side method name
 // is used verbatim as the selector (`length` → `length`).
@@ -8,10 +8,6 @@
 // declare the sx-side `#objc_class` against the same name, then invoke
 // the DSL form. On macOS this exercises the real Obj-C runtime; on
 // other platforms the test skips.
-//
-// Pre-3.0: the dispatch bails at lower.zig with "method calls on
-// 'objc_class' runtime not yet supported (Phase 3/4)". Snapshot captures
-// that diagnostic.
 #import "modules/std.sx";
 #import "modules/build.sx";
 #import "modules/ffi/objc.sx";

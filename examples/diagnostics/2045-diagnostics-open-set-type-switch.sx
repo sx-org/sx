@@ -16,7 +16,6 @@
 //
 // And `free` is not part of a set's story at all: the active member lives inline
 // in the slot, so there is no allocation the value stands for.
-// Expected: exit 1.
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 

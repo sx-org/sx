@@ -1,5 +1,4 @@
-// What a sink may take for its initializer, and where each shape belongs
-// (fluent spec §6.1).
+// What a sink may take for its initializer, and where each shape belongs.
 //
 // `expression` takes the published child as an initializer, and the target it
 // names is what `write` fills. Two shapes are legal, and which one a sink may
@@ -15,7 +14,6 @@
 // A CONSTRAINT protocol has no runtime values, so there is no `*P` for a write to
 // fill: the fixed shape names a target that cannot exist, and the open shape is
 // the one such a sink takes.
-// Expected: exit 1.
 #import "modules/std.sx";
 #import "modules/fluent.sx";
 

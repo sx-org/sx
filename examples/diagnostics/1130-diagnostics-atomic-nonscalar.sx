@@ -1,5 +1,4 @@
-// An atomic op on a non-scalar type is rejected with a clean diagnostic
-// (not a raw LLVM verifier error). Stream A (atomics) guard.
+// An atomic op on a non-scalar type is rejected with an sx diagnostic.
 #import "modules/std.sx";
 #import "modules/std/atomic.sx";
 

@@ -1,5 +1,5 @@
 error: cannot dereference with `.*`: 'Point' is not a pointer
-  --> examples/diagnostics/1109-diagnostics-deref-non-pointer-reject.sx:12:10
+  --> examples/diagnostics/1109-diagnostics-deref-non-pointer-reject.sx:7:10
    |
-12 |     q := p.*;          // ERROR: `p` is a Point value, not a pointer
+ 7 |     q := p.*;          // ERROR: `p` is a Point value, not a pointer
    |          ^

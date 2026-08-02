@@ -1,12 +1,11 @@
 // A trailing block binds the callee's LAST declared parameter, and that
-// parameter must be able to receive one: a `Closure()` or a `$B/@BuildBlock(P)`
-// (fluent spec §6.2). Any other type is refused, naming the parameter.
+// parameter must be able to receive one: a `Closure()` or a
+// `$B/@BuildBlock(P)`. Any other type is refused, naming the parameter.
 //
-// A block parameter is satisfied in exactly ONE of two ways per call (N45): the
+// A block parameter is satisfied in exactly ONE of two ways per call: the
 // trailing block the compiler forms one from, or a block the caller already
 // received. An ordinary value is neither, and supplying both at once is
 // ambiguous — each is refused at the argument.
-// Expected: exit 1.
 #import "modules/std.sx";
 #import "modules/fluent.sx";
 

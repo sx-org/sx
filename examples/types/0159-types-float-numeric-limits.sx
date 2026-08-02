@@ -1,12 +1,12 @@
 // Float numeric-limit accessors: `f32`/`f64` expose `.min` / `.max` (sibling of
-// the integer `.min`/`.max`, NL.1) plus the float-only `.epsilon`,
+// the integer `.min`/`.max`) plus the float-only `.epsilon`,
 // `.min_positive`, `.true_min`, `.inf`, and `.nan`. Each folds, at compile time,
 // to a constant of the QUERIED float type via the same `lowerNumericLimit`
 // intercept as the integer case (`builder.constFloat` + the `std.math`
 // constants), driven by `TypeResolver.floatLimitFor`.
 //
 // The lexer has no exponent notation and the default float formatter is crude
-// (issue 0090), so these limits can be pinned NEITHER by literal comparison NOR
+// so these limits can be pinned NEITHER by literal comparison NOR
 // by printing. Every accessor is asserted instead by reinterpreting its bits
 // through an untagged union and comparing against the exact IEEE-754 hex
 // pattern — plus the defining-property checks that no other value could satisfy.
@@ -20,7 +20,7 @@
 //   .inf          = +infinity
 //   .nan          = a quiet NaN
 //
-// Regression (issue 0091): `f64.nan != f64.nan` is true — native float `!=`
+// `f64.nan != f64.nan` is true — native float `!=`
 // lowers UNORDERED, so a NaN compares unequal to everything including itself.
 #import "modules/std.sx";
 
@@ -82,8 +82,7 @@ main :: () -> i32 {
     print("nan!=nan         {}\n", f64.nan != f64.nan);               // true
 
     // Result carries the QUERIED type: each binding is declared with the float
-    // type and round-trips, so a mistyped fold (boxed as any / wrong width) would
-    // not type-check here.
+    // type and round-trips through it.
     e64 : f64 = f64.epsilon;
     e32 : f32 = f32.epsilon;
     q : Uf64 = ---;  q.f = e64;

@@ -1,8 +1,8 @@
-// Stream B2 — TRUE cancellation (PLAN-IO-UNIFY Phase 3). A `cancel` delivered to
+// TRUE cancellation. A `cancel` delivered to
 // a worker that is PARKED at a suspend point makes the worker ABANDON its body:
 // the worker's next `suspend_raw` raises `IoErr.Canceled`, which unwinds out
 // through `try context.io.sleep(..)` and the failable worker, so every line AFTER
-// the suspend never runs. This is "true cancellation, model (a)" — cancel rides
+// the suspend never runs. This is true cancellation — cancel rides
 // the `!` channel and stops in-flight work at the next suspend, not merely flags
 // a result.
 //

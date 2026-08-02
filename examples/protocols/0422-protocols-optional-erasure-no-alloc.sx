@@ -4,13 +4,8 @@
 // optional is an inline sentinel over the same fat value, no re-box);
 // each OWNING erasure (`s.(P)`, rvalue `xx`) allocates exactly once and
 // `free` returns it; the null form allocates nothing. Owned copies are
-// INDEPENDENT of their source (the old borrow contract moved to `*P`
-// views — pinned in 0829).
-// Regression (issue 0213 lineage): the optional wrap used to re-box the
-// receiver through context.allocator — one leaked block per wrap.
-//
-// Rewritten at the E4 ownership cutover: the pre-E4 version pinned
-// zero-alloc BORROW spellings, which are now the demand error (1256).
+// INDEPENDENT of their source; borrowing lives in `*P` views (pinned in 0829).
+// Zero-alloc BORROW spellings are the demand error (1256).
 
 #import "modules/std.sx";
 #import "modules/std/mem.sx";

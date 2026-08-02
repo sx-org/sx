@@ -1,5 +1,5 @@
 error: '!' needs a bool, integer, or error operand; got 'string'
-  --> examples/diagnostics/1171-diagnostics-logical-not-bad-operand.sx:8:8
+  --> examples/diagnostics/1171-diagnostics-logical-not-bad-operand.sx:7:8
    |
- 8 |     if !s { print("unreachable\n"); }
+ 7 |     if !s { print("unreachable\n"); }
    |        ^^

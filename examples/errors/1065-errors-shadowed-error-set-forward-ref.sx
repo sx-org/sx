@@ -2,13 +2,8 @@
 // (same-file) author — own wins (specs.md "Collision rules"), exactly as it
 // does when the decl sits above the fn. Here `E` is BOTH imported (a struct,
 // from the companion module) and declared locally below as an error set: the
-// signature, the body, and the call site must all agree on the LOCAL error
+// signature, the body, and the call site all agree on the LOCAL error
 // set, so `f(error.Fault)` takes the `e == error.Fault` arm (r=1).
-//
-// Regression (issue 0212): the signature used to bind the IMPORTED struct via
-// the findByName first-author fallback while the body bound the local error
-// set — the param value was ABI-mangled through the empty struct and the
-// comparison silently evaluated false (r=0, exit 0, no diagnostic).
 #import "modules/std.sx";
 #import "1065-errors-shadowed-error-set-forward-ref/a.sx";
 f :: (e: E) -> i32 {

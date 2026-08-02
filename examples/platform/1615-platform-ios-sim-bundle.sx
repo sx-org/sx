@@ -2,8 +2,8 @@
 #import "modules/build.sx";
 #import "modules/platform/bundle.sx";
 
-// Cross-compile regression for the iOS-simulator branch of
-// `platform.bundle`. On a host with the iPhoneSimulator SDK installed,
+// Cross-compile of the iOS-simulator branch of `platform.bundle`.
+// On a host with the iPhoneSimulator SDK installed,
 // `sx build --target ios-sim` writes a `.app` with the iOS-shaped
 // Info.plist (UIDeviceFamily, LSRequiresIPhoneOS,
 // UIApplicationSceneManifest, DTPlatformName=iPhoneSimulator). Ad-hoc

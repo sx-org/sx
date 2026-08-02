@@ -1,5 +1,5 @@
-// Multi-value value-carrying failables (ERR — the multi-value error-channel
-// ABI). A `-> (T1, T2, !E)` function returns EITHER a value-tuple OR an error:
+// Multi-value value-carrying failables. A `-> (T1, T2, !E)` function returns
+// EITHER a value-tuple OR an error:
 // `return (a, b)` yields the success tuple `{a, b, 0}` (the compiler appends the
 // no-error slot) and `raise error.X` yields `{undef, undef, tag}`. Every consumer
 // generalizes from the single-value shape: a destructure binds every slot

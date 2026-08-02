@@ -1,29 +1,29 @@
 error: 'i8' is a reserved type name and cannot be used as an identifier
-  --> examples/diagnostics/1141-diagnostics-reserved-name-type-decl.sx:14:1
+  --> examples/diagnostics/1141-diagnostics-reserved-name-type-decl.sx:9:1
    |
-14 | i8 :: struct { v: i64; }
+ 9 | i8 :: struct { v: i64; }
    | ^^
 
 error: 'i16' is a reserved type name and cannot be used as an identifier
-  --> examples/diagnostics/1141-diagnostics-reserved-name-type-decl.sx:15:1
+  --> examples/diagnostics/1141-diagnostics-reserved-name-type-decl.sx:10:1
    |
-15 | i16 :: enum { A; B; }
+10 | i16 :: enum { A; B; }
    | ^^^
 
 error: 'u16' is a reserved type name and cannot be used as an identifier
-  --> examples/diagnostics/1141-diagnostics-reserved-name-type-decl.sx:16:1
+  --> examples/diagnostics/1141-diagnostics-reserved-name-type-decl.sx:11:1
    |
-16 | u16 :: union { a: i32; b: f32; }
+11 | u16 :: union { a: i32; b: f32; }
    | ^^^
 
 error: 'u32' is a reserved type name and cannot be used as an identifier
-  --> examples/diagnostics/1141-diagnostics-reserved-name-type-decl.sx:17:1
+  --> examples/diagnostics/1141-diagnostics-reserved-name-type-decl.sx:12:1
    |
-17 | u32 :: error { Bad, Empty }
+12 | u32 :: error { Bad, Empty }
    | ^^^
 
 error: 'i2' is a reserved type name and cannot be used as an identifier
-  --> examples/diagnostics/1141-diagnostics-reserved-name-type-decl.sx:18:1
+  --> examples/diagnostics/1141-diagnostics-reserved-name-type-decl.sx:13:1
    |
-18 | i2 : i64 : 5;
+13 | i2 : i64 : 5;
    | ^^

@@ -1,5 +1,5 @@
 // A `.warn` diagnostic reaches the user on a SUCCESSFUL compile, not only
-// when a later error happens to flush the diagnostic list (issue 0283).
+// when a later error happens to flush the diagnostic list.
 // `alpha` is declared `!` but never raises, so the error-set convergence
 // pass warns about the redundant `!`; the program still compiles, runs,
 // and exits 0. The warning's excerpt points at `alpha`'s own module.

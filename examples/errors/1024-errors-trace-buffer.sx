@@ -1,10 +1,10 @@
-// Error return-trace buffer push/clear wiring (ERR step E3.2). A `raise` and a
+// Error return-trace buffer push/clear wiring. A `raise` and a
 // propagating `try` each push a frame; an absorbing site (`catch`, `or value`,
 // a destructure that binds the error) clears the buffer. In debug builds
 // (`sx run` defaults to -O0) these calls are emitted; in release they're
-// skipped entirely (zero overhead). Until E3.3 ships `trace.print_current`,
-// this example observes the buffer directly via the runtime's `sx_trace_len`
-// (linked in for the JIT) — a white-box probe, not the eventual public API.
+// skipped entirely (zero overhead). This example observes the buffer directly
+// via the runtime's `sx_trace_len` (linked in for the JIT) — a white-box
+// probe rather than the public formatting surface (1025).
 
 #import "modules/std.sx";
 

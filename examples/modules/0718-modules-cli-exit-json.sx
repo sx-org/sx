@@ -1,4 +1,4 @@
-// std.cli EXIT-CODE + `--json` contract (F3.3 — FOUNDATION MILESTONE CLOSE).
+// std.cli EXIT-CODE + `--json` contract.
 //
 // The minimal contract `dist` (and any sx CLI front-end) relies on:
 //
@@ -11,11 +11,10 @@
 //      In json mode stdout carries ONLY the machine result; human text goes
 //      to stderr (here via `log.err`, which writes `ERROR: …` to fd 2).
 //
-// The run DELIBERATELY ends on the usage path: after the assertions it
-// triggers an `UnknownCommand`, writes the human diagnostic to STDERR, and
-// terminates via `exit_usage()` — so the process exits 64 (EX_USAGE),
-// captured in expected/0718-…​.exit. (sx `print`/`out` are unbuffered, so the
-// stdout assertion lines still appear despite the `_exit`.)
+// The run ends on the usage path: after the assertions it triggers an
+// `UnknownCommand`, writes the human diagnostic to STDERR, and terminates via
+// `exit_usage()`, so the process exits 64 (EX_USAGE). sx `print`/`out` are
+// unbuffered, so the stdout assertion lines still appear despite the `_exit`.
 
 #import "modules/std.sx";
 #import "modules/std/cli.sx";

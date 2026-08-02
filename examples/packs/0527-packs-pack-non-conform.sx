@@ -1,4 +1,4 @@
-// Feature 1 — a pack argument that doesn't conform to the constraint protocol
+// A pack argument that doesn't conform to the constraint protocol
 // is a per-position error. `Naked` has no `impl Show`, so passing it to a
 // `..xs: Show` pack is rejected (pointing at the offending argument).
 

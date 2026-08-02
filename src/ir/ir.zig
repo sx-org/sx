@@ -95,6 +95,7 @@ pub const jni_java_emit_tests = @import("jni_java_emit.test.zig");
 pub const comptime_async_tests = @import("comptime_async.test.zig");
 pub const comptime_vm_tests = @import("comptime_vm.test.zig");
 pub const intrinsics_tests = @import("intrinsics.test.zig");
+pub const lower_body_tests = @import("lower_body.test.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

@@ -27,7 +27,7 @@
 // ownership signal (`cap > 0`) so it is idempotent. A long-lived map
 // embedded in a struct that outlives a `push Context{ ... }` must have
 // its owner capture the owning allocator and forward it to `put`/
-// `remove`/`deinit` (see CLAUDE.md long-lived-container rule).
+// `remove`/`deinit`, per the long-lived-container rule.
 // =====================================================================
 #import "modules/std/core.sx";
 #import "modules/std/hash.sx";
@@ -74,7 +74,7 @@ map_capacity_for :: (n: i64) -> i64 {
 //               indeterminate; `==` is field-wise and ignores padding, so the
 //               hash must too — otherwise two field-equal keys built with
 //               different stack garbage in the padding hash differently and a
-//               lookup on a present, logically-equal key misses (issue 0273).
+//               lookup on a present, logically-equal key misses.
 //   • scalar / enum / bool / pointer leaf → raw `size_of` bytes (these have a
 //               unique byte representation — no padding to skip).
 map_hash_key :: (key: $K) -> u64 {
@@ -106,7 +106,7 @@ map_hash_into :: (v: $T, h: u64) -> u64 {
 // unreachable once capacity is ensured (a table at ≤ 80% load always has a
 // free bucket, so the probe hits `META_FREE` before `limit` runs out). If it
 // ever fires, capacity accounting is broken; abort rather than silently
-// corrupt (CLAUDE.md: dedicated hard tripwire, never a plausible default).
+// corrupt: a dedicated hard tripwire, never a plausible default.
 
 // getOrPut result: stable pointers into the table's key/value slots plus the
 // found/inserted signal. Pointers are valid only until the next mutation that

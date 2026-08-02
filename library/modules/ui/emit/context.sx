@@ -1,4 +1,4 @@
-// Emit's ambient library context (revision §13.2).
+// Emit's ambient library context.
 //
 // The sink is ambient rather than passed: a container rebinds it for the extent
 // of its own children, and `.emit()` reads whichever one is in scope.

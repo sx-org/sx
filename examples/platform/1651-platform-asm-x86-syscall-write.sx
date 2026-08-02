@@ -1,4 +1,4 @@
-// ASM stream — x86_64 Linux `write(2)` via a raw `syscall`. The canonical inline-
+// x86_64 Linux `write(2)` via a raw `syscall`. The canonical inline-
 // asm use case: SYS_write (rax=1) with fd/buf/count pinned to rdi/rsi/rdx, the
 // `syscall` instruction clobbering rcx + r11 (+ memory), and the byte count
 // returned in rax. Demonstrates register-pinned inputs, a pinned value output,

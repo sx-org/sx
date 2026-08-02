@@ -9,16 +9,16 @@
 //   - integer EXPRESSION → float    (`WE : f32 : M + 2`)
 //   - MIXED int+float EXPRESSION → float (`MF : f64 : M + 0.5`, both operand orders)
 //   - INTEGRAL float literal → integer (`KF : i64 : 4.0` → 4) — folds under the
-//     unified narrowing rule (F0.11), usable as a count too
+//     unified narrowing rule, usable as a count too
 //   - INTEGRAL float EXPRESSION → integer (`KFE : i64 : M + 2.0` → 4)
 //
-// Companion to the negative example 1143: the issue-0088 fix rejects a typed
+// Companion to the negative example 1143: lowering rejects a typed
 // const whose initializer mismatches its annotation, and these correctly-typed
 // consts must keep working (no over-rejection) — including const-EXPRESSION
-// initializers, whose type-based validation (attempt 2) must accept a correctly
+// initializers, whose type-based validation must accept a correctly
 // typed expression even though it isn't a literal.
 //
-// `MF`/`MFR` pin the attempt-3 inferExprType promotion fix: a mixed int+float
+// `MF`/`MFR` pin the inferExprType promotion: a mixed int+float
 // arithmetic expression infers as the float result regardless of operand order,
 // so it matches an `f64` annotation (and folds to 2.5, not a truncated 2).
 #import "modules/std.sx";

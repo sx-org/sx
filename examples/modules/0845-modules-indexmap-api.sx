@@ -126,11 +126,7 @@ main :: () {
     report("big-overwrite", ov_ok);
     b.deinit(gpa);
 
-    // ═════════════════════════════════════════════════════════════════════
-    // Coverage backfill (G7,G8,G10,G12,G13,G14,G16).
-    // ═════════════════════════════════════════════════════════════════════
-
-    // ── G7: swap_remove / remove boundary cases ──────────────────────────
+    // ── swap_remove / remove boundary cases ──────────────────────────
     // (a) swap_remove the LAST entry — the `e == last` no-copy branch.
     s7 : IndexMap(i64, i64) = .{};
     i = 0; while i < 4 { s7.put(i, i * 10, gpa); i += 1; }        // [0,1,2,3]
@@ -164,7 +160,7 @@ main :: () {
     report("g7-readd", op7.len == 1 and op7.get(7)! == 77 and op7.key_at(0) == 7);
     op7.deinit(gpa);
 
-    // ── G8: IndexIter.reset re-iterates all entries, order intact ─────────
+    // ── IndexIter.reset re-iterates all entries, order intact ─────────
     r8 : IndexMap(i64, i64) = .{};
     i = 0; while i < 6 { r8.put(i, i * 10, gpa); i += 1; }
     it8 := r8.iterator();
@@ -176,7 +172,7 @@ main :: () {
     report("g8-reset", c8a == 6 and c8b == 6 and s8a == 150 and ord8);
     r8.deinit(gpa);
 
-    // ── G10: get_or_put_value sets on fresh, KEEPS on existing, order kept ─
+    // ── get_or_put_value sets on fresh, KEEPS on existing, order kept ─
     gv10 : IndexMap(i64, i64) = .{};
     gv10.put(1, 1, gpa);
     r10a := gv10.get_or_put_value(5, 10, gpa);       // fresh → 10, appended
@@ -187,7 +183,7 @@ main :: () {
     report("g10-order", gv10.key_at(0) == 1 and gv10.key_at(1) == 5 and gv10.key_at(2) == 2 and gv10.len == 3);
     gv10.deinit(gpa);
 
-    // ── G12: pop() keeps the index valid for SURVIVORS ───────────────────
+    // ── pop() keeps the index valid for SURVIVORS ───────────────────
     // Entries don't shift on pop, but the index must drop the popped entry
     // (a missing reindex would leave its slot stale → contains(popped) true).
     p12 : IndexMap(i64, i64) = .{};
@@ -202,7 +198,7 @@ main :: () {
     report("g12-pop-survivors-resolve", g12_ok and p12.len == 3);
     p12.deinit(gpa);
 
-    // ── G13: re-insert after remove takes a FRESH tail slot ──────────────
+    // ── re-insert after remove takes a FRESH tail slot ──────────────
     // Distinct from an in-place overwrite (which keeps position): remove(20)
     // then put(20,·) re-appends 20 at the tail.
     o13 : IndexMap(i64, i64) = .{};
@@ -214,14 +210,14 @@ main :: () {
            and o13.val_at(2) == 999 and o13.len == 3);
     o13.deinit(gpa);
 
-    // ── G14: iterate a never-allocated (cap 0) IndexMap — no crash ────
+    // ── iterate a never-allocated (cap 0) IndexMap — no crash ────
     z14 : IndexMap(i64, i64) = .{};
     z14c := 0;
     z14it := z14.iterator();
     while kv := z14it.next() { z14c += 1; }
     report("g14-empty-iter", z14c == 0 and z14.len == 0 and z14.capacity() == 0);
 
-    // ── G16: get_ptr returns null on a miss ──────────────────────────────
+    // ── get_ptr returns null on a miss ──────────────────────────────
     gp16 : IndexMap(i64, i64) = .{};
     gp16.put(1, 100, gpa);
     hit16  := if p := gp16.get_ptr(1)   { p.* == 100 } else { false };

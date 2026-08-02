@@ -1,4 +1,4 @@
-// std.http — Q3.5 listener address surface: IPv6, explicit bind addresses,
+// std.http — listener address surface: IPv6, explicit bind addresses,
 // Unix-domain sockets, and the getaddrinfo resolver primitive.
 //
 //   Config.bind_addr  — a NUMERIC address literal ("127.0.0.1", "::",
@@ -185,7 +185,7 @@ run :: () -> i32 {
     cfg_f3 : http.Config = .{ port = PORT_B, bind_addr = "not-an-ip" };
     _, ef3 := http.Server.init(cfg_f3, handler, 0);
     if ef3 != error.Bind { return 62; }
-    // Q3.5-review MED-1: an out-of-range port must be error.Bind — not a
+    // an out-of-range port must be error.Bind — not a
     // silent htons truncation onto a kernel-chosen ephemeral port.
     cfg_f4 : http.Config = .{ port = 65536, bind_addr = "127.0.0.1" };
     _, ef4 := http.Server.init(cfg_f4, handler, 0);

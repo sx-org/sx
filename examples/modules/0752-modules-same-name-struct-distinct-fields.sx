@@ -1,4 +1,4 @@
-// issue 0105 case 1 — same-name struct, DIFFERENT fields. Two flat-imported
+// Same-name struct, DIFFERENT fields. Two flat-imported
 // modules each declare a top-level `Box` with a different field set. Each
 // module's function builds and returns ITS OWN `Box`; `main` (which authors no
 // `Box`) prints both. Each value resolves against its declaring module's type,

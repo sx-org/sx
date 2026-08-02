@@ -3,8 +3,6 @@
 // type is a narrower integer (the implicit-return target must not type the
 // body's declarations), and a large literal initializer keeps its value.
 // Also covers destructure decls (`a, b := ...`), which share the same rule.
-// Regression (issue 0111): these locals adopted the enclosing fn's return
-// type (i32/i8), silently wrapping `big := 3000000000` to -1294967296.
 
 #import "modules/std.sx";
 

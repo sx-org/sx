@@ -105,7 +105,7 @@ public:
     }
 };
 
-/// Helper: build a CompilerInstance from user args + filename using the Driver.
+/// Build a CompilerInstance from user args + filename using the Driver.
 /// Returns nullptr on failure (sets out_error).
 static std::unique_ptr<clang::CompilerInstance>
 buildCompilerInstance(const char *filename,
@@ -167,9 +167,9 @@ buildCompilerInstance(const char *filename,
         return nullptr;
     }
 
-    // LLVM 21+: setInvocation() was removed — the invocation is constructor-
-    // injected instead. createDiagnostics(DiagnosticConsumer*) still exists as
-    // the convenience overload (it builds a default VFS internally).
+    // The invocation is constructor-injected.
+    // createDiagnostics(DiagnosticConsumer*) is the convenience overload; it
+    // builds a default VFS internally.
     auto CI = std::make_unique<clang::CompilerInstance>(std::move(invocation));
     CI->createDiagnostics(new clang::IgnoringDiagConsumer());
     return CI;

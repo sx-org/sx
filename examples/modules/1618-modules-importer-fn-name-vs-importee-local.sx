@@ -1,10 +1,9 @@
-// Cross-module name isolation. Regression (issue 0217): a module-scope fn in
-// the IMPORTER named like a LOCAL inside an imported module's function body
-// broke that module's own `h := ...; h(...)` sites with "'h' is not visible"
-// — call-position resolution consulted the program-wide fn table before the
-// lexical scope. A callable local binding (fn pointer / closure) now shadows
-// any same-named top-level fn in call position, matching value-position
-// resolution and spec §Variable Shadowing.
+// Cross-module name isolation. A callable local binding (fn pointer / closure)
+// shadows any same-named top-level fn in call position, matching value-position
+// resolution and spec §Variable Shadowing. Consulting the program-wide fn table
+// before the lexical scope breaks an imported module's own `h := ...; h(...)`
+// sites with "'h' is not visible" whenever the IMPORTER declares a module-scope
+// fn named like that local.
 #import "modules/std.sx";
 lib :: #import "1618-modules-importer-fn-name-vs-importee-local/lib.sx";
 
@@ -29,7 +28,7 @@ main :: () -> i32 {
     // Shadow gone — the module-scope `h` is back.
     print("h(2) = {}\n", h(2));
 
-    // Nested-fn shadowing (0217 review F1): shadowing is by DEPTH across
+    // Nested-fn shadowing is by DEPTH across
     // both local namespaces — an INNER nested fn beats an outer callable
     // var, and an INNER callable var beats an outer nested fn.
     {

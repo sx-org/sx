@@ -1,9 +1,8 @@
 # 0030 — `extern G : T;` cross-file sx global declarations (feature request)
 
-> **Status: OPEN feature request** (not a bug). Relocated from the old
-> `examples/issue-0030.sx` placeholder during the test-layout migration. Repro:
-> `issues/0030-extern-global-declarations.sx` (currently a parse error — the
-> syntax doesn't exist yet).
+> A feature request, not a defect. `issues/0030-extern-global-declarations.sx`
+> holds the source the form would have to parse; the compiler rejects it because
+> the form does not exist.
 
 ## Symptom / request
 
@@ -17,7 +16,7 @@ place, defined elsewhere, resolved at link time).
 g_metal_gpu : *MetalGPU = null;
 
 // game/chess/pieces.sx
-extern g_metal_gpu : *MetalGPU;          // ← parse error today
+extern g_metal_gpu : *MetalGPU;          // ← the compiler rejects this form
 
 load :: (self: *ChessPieces, path: [:0]u8) {
     inline if OS == .ios {
@@ -26,11 +25,11 @@ load :: (self: *ChessPieces, path: [:0]u8) {
 }
 ```
 
-Today `pieces.load` takes `has_gpu: bool, gpu: GPU` params and `main.sx` threads
-them through; cross-file `extern` globals would drop that ceremony. Distinct from
-the existing `name : T extern;` form (an *external C* data symbol from
-libsystem etc. — see `examples/1205-ffi-extern-global.sx`); this request is for
-sx-defined globals shared across sx modules.
+`pieces.load` takes `has_gpu: bool, gpu: GPU` params and `main.sx` threads them
+through; cross-file `extern` globals would drop that ceremony. Distinct from the
+`name : T extern;` form (an *external C* data symbol from libsystem etc. — see
+`examples/ffi/1205-ffi-extern-global.sx`); this request is for sx-defined globals
+shared across sx modules.
 
 ## Reproduction
 

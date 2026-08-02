@@ -1,4 +1,4 @@
-// The C2 raw layer over the `any` view: raw_any_data(av) reads the data
+// The raw layer over the `any` view: raw_any_data(av) reads the data
 // pointer; raw_make_any(tp, data) assembles a view (UNCHECKED — the
 // caller asserts `data` points at a live, aligned value of `tp`).
 // Contract edges pinned here: byte copies through the data pointer are

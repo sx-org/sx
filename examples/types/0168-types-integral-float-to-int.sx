@@ -1,4 +1,4 @@
-// Unified float→int narrowing rule (F0.11), POSITIVE side: an INTEGRAL float
+// Unified float→int narrowing rule, POSITIVE side: an INTEGRAL float
 // flowing into an integer-typed binding FOLDS to its integer — the same
 // `floatToIntExact` rule an array dimension / `$K: Count` already uses — across
 // all FIVE sites: a typed LOCAL, a struct FIELD default, a typed module CONST, a
@@ -10,15 +10,11 @@
 // FLOAT numeric-limit leaf in an integral expression (`f64.max - f64.max` = 0),
 // and an integral float `%` (`6.0 % 4.0` = 2). The compile-time float evaluator
 // is at parity with the integer one, so integer numeric-limit accessors (`i8.max`,
-// `[u8.max]` count) keep folding through the shared int folder, unregressed.
+// `[u8.max]` count) keep folding through the shared int folder.
 // The escape hatch (`xx` / `cast`) still TRUNCATES any float, integral or not —
 // including a non-integral const expression (`xx (M + 0.5)` / `xx (F + 0.25)`).
 //
-// Companion to the negative example 1146 (non-integral floats error).
-// Regression (issue 0095): a typed local/param/field silently truncated a float
-// initializer (`y : i64 = 1.5` → 1) with no diagnostic; a non-integral const
-// EXPRESSION (`M + 0.5`) and a non-integral float-const-LEAF expression
-// (`F + 0.25`) truncated even when written through an int binding; the rule now
+// Companion to the negative example 1146 (non-integral floats error). The rule
 // folds an integral float (literal, int-const expr, or float-const leaf) and
 // rejects a non-integral one.
 #import "modules/std.sx";
@@ -42,7 +38,7 @@ KD : i64 : 12.0 / 4.0;   // integral float-DIVISION module const → folds to 3
 
 ArrFE :: [F + 1.5]i64;   // array-dim type ALIAS over a float-const-leaf expr → [4]i64
                          // (the stateless registration path must agree with the
-                         //  direct form `a : [F + 1.5]i64` below — issue 0083).
+                         //  direct form `a : [F + 1.5]i64` below).
 
 main :: () {
     // Typed local: integral float folds (literal + int-const expr + float-const leaf).
@@ -96,9 +92,9 @@ main :: () {
     fm : i64 = 6.0 % 4.0;
     print("limit={} fmod={}\n", lim, fm);
 
-    // Integer numeric-limit accessors (NL.1) are unregressed by the float-leaf
-    // parity work: they still fold at a binding (`i8.max` = 127) and as an array
-    // dimension count (`[u8.max]` = len 255), through the SAME int folder.
+    // Integer numeric-limit accessors fold at a binding (`i8.max` = 127) and
+    // as an array dimension count (`[u8.max]` = len 255), through the SAME int
+    // folder as the float leaves above.
     il : i64 = i8.max;
     iarr : [u8.max]i64 = ---;
     print("intlimit={} intcount={}\n", il, iarr.len);

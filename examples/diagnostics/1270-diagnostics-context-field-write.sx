@@ -1,5 +1,5 @@
 // The context is immutable within its scope — only `push` installs new field
-// values (issue 0337 companion). A store whose target chain roots at `context`
+// values. A store whose target chain roots at `context`
 // WITHOUT crossing a pointer hop would write the ambient Context storage
 // itself and leak past `push` scoping: direct field writes, inline nested
 // members, compound assigns, inline array indexing, and multi-assign targets

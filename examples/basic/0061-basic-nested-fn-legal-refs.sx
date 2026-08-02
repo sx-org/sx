@@ -1,8 +1,8 @@
 // A nested `::` static function may reference things that DON'T live in an
 // enclosing function's frame: SIBLING nested fns, itself (recursion), the
 // nested fn's OWN locals, module-level consts, and enclosing local TYPES. Only
-// enclosing local *value* bindings are rejected (see the 1228 diagnostic).
-// Guards the legal side of issue 0250.
+// enclosing local *value* bindings are rejected (see the 1228 diagnostic);
+// this file guards the legal side.
 #import "modules/std.sx";
 
 K :: 5;   // module-level const — legal to read from a nested fn

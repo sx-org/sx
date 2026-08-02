@@ -1,4 +1,4 @@
-// Backfill for Phase 1D cluster 1.28 (PLAN-FFI.md): `#objc_call(bool)`
+// `#objc_call(bool)`
 // against `BOOL`-returning selectors. Obj-C `BOOL` is single-byte on
 // every Apple ABI we ship to (signed char on i386, native `bool` on
 // arm64), so the slot shape is identical to `#objc_call(u8)` — this

@@ -1,0 +1,4 @@
+// A signature may name an error set declared after it.
+f :: (e: E) -> i32 { return 0; }
+E :: error { Fault }
+main :: () -> i32 { return 0; }

@@ -13,7 +13,7 @@
 // keyboard.
 //
 // Build + run:
-//   sx build --target ios-sim examples/66-uikit-platform.sx \
+//   sx build --target ios-sim examples/platform/1610-platform-uikit-platform.sx \
 //     -o /tmp/SxUIKitBoot --bundle /tmp/SxUIKitBoot.app \
 //     --bundle-id co.swipelab.sxuikit -F ~/Library/Frameworks
 //   xcrun simctl install booted /tmp/SxUIKitBoot.app

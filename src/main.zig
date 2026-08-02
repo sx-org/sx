@@ -193,7 +193,7 @@ pub fn main(init: std.process.Init) !void {
         return;
     };
     // Canonicalize the entry path the same way `#import`-resolved paths are
-    // keyed (issue 0148): an absolute entry that lives under the CWD becomes
+    // keyed: an absolute entry that lives under the CWD becomes
     // the cwd-relative spelling, so the entry file's OWN diagnostics display
     // identically to a relative invocation. Identity-guarded — a respelling
     // that stops naming the same file (or a nonexistent entry) keeps the
@@ -228,7 +228,7 @@ pub fn main(init: std.process.Init) !void {
         if (!explicit_opt) target_config.opt_level = .none;
         var timer = Timing.init(io, show_timing);
 
-        // Phase A: read + parse + resolveImports (for cache key)
+        // Read + parse + resolveImports (for cache key)
         timer.mark();
         const source = readSource(allocator, io, path) catch std.process.exit(1);
         timer.record("read");
@@ -249,11 +249,11 @@ pub fn main(init: std.process.Init) !void {
         const root = comp.resolved_root orelse comp.root orelse return;
 
         // Pre-JIT entry-point check. The ORC `main` lookup in
-        // runJITFromObject does NOT reliably report "no main" — it has been
-        // observed reporting success while leaving the address at garbage
-        // (0x0 or a small non-zero value), which then gets called and
-        // segfaults (issue 0137). Reject programs with no `main` here, before
-        // any codegen/JIT, with a clean diagnostic + non-zero exit.
+        // runJITFromObject does NOT reliably report "no main" — it can report
+        // success while leaving the address at garbage (0x0 or a small
+        // non-zero value), which then gets called and segfaults. Reject
+        // programs with no `main` here, before any codegen/JIT, with a clean
+        // diagnostic + non-zero exit.
         if (!hasMainEntry(root)) {
             std.debug.print("error: no 'main' function found — 'sx run' requires a top-level 'main' entry point\n", .{});
             std.process.exit(1);
@@ -261,7 +261,7 @@ pub fn main(init: std.process.Init) !void {
 
         // A failed compiler self-hash disables the cache for this process
         // (slower, never stale) — the key must always carry the compiler's
-        // identity (issue 0336).
+        // identity.
         const self_hash: ?u64 = if (enable_cache and !hasTopLevelRun(root)) compilerSelfHash(allocator, io) else null;
         const use_cache = self_hash != null;
         const key = computeCacheKey(source, &comp.import_sources, target_config, self_hash orelse 0);
@@ -339,7 +339,7 @@ pub fn main(init: std.process.Init) !void {
         // pure-runtime tests keep their current snapshots.
         if (hasTopLevelRun(root)) {
             // Stay on the same stream as the #run output (stdout, via
-            // core.flushInterpOutput). Same reason as issue-0047: the
+            // core.flushInterpOutput): the
             // user doesn't distinguish build-time `print` from
             // runtime `print` at the call site, and the delimiter is
             // meaningless if it lands on a different stream than the
@@ -576,7 +576,7 @@ fn compile(allocator: std.mem.Allocator, io: std.Io, input_path: []const u8, out
     timer.printAll();
 }
 
-/// Driver-side adapter behind the `link` build-pipeline primitive (Phase 5). The
+/// Driver-side adapter behind the `link` build-pipeline primitive. The
 /// comptime VM can't link itself (it must not depend on `target`), so it
 /// dispatches `link(...)` through a `BuildHooks` whose `ctx` is one of these. The
 /// VM passes the full object list; `target.link` takes (first object, rest), but
@@ -590,7 +590,7 @@ const BuildHooksCtx = struct {
     has_jni_main: bool,
 
     /// `emit_object()` — emit the already verified/optimized module to its object file,
-    /// return the path. The compiler no longer auto-emits; the sx driver calls this.
+    /// return the path. The sx driver calls this; the compiler does not emit on its own.
     fn emitObject(ctx_opaque: *anyopaque) anyerror![]const u8 {
         const self: *BuildHooksCtx = @ptrCast(@alignCast(ctx_opaque));
         const e = if (self.comp.ir_emitter) |*p| p else return error.NoEmitter;
@@ -607,8 +607,7 @@ const BuildHooksCtx = struct {
         flags: []const []const u8,
         target: []const u8,
     ) anyerror!void {
-        _ = target; // the triple is already encoded in base_config (CLI-derived);
-        // explicit-triple reconciliation is a P5.4 concern when sx owns the config.
+        _ = target; // the triple is already encoded in base_config (CLI-derived).
         const self: *BuildHooksCtx = @ptrCast(@alignCast(ctx_opaque));
         if (objects.len == 0) return error.NoObjects;
         var cfg = self.base_config;
@@ -620,7 +619,7 @@ const BuildHooksCtx = struct {
 };
 
 fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []const u8, output_path: []const u8, target_config: sx.target.TargetConfig, timer: *Timing, enable_cache: bool, stdlib_paths: []const []const u8) !void {
-    // Phase A: read + parse + resolveImports (fast: ~0.5ms)
+    // Read + parse + resolveImports (fast: ~0.5ms)
     timer.mark();
     const source = try readSource(allocator, io, input_path);
     timer.record("read");
@@ -666,8 +665,12 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     // entirely by the sx `default_pipeline` (or a user `#run on_build(...)`
     // override), invoked after codegen below. `emit_object` (verify + object
     // emission) and `link` run as sx-called ACTIONS through the build hooks.
-    // (The build cache short-circuited codegen, which the always-run sx driver
-    // can't tolerate — removed; a future cache can live inside default_pipeline.)
+    // The `--cache` object cache does not reach this path: it short-circuits
+    // codegen, and the sx build program that runs after codegen may call
+    // `emit_object`, which needs the codegen'd module in memory —
+    // `default_pipeline` always does, an `on_build` override drives the build
+    // itself and need not. `.sx-cache` here holds only the C-import objects
+    // c_import.zig writes.
     _ = enable_cache;
     timer.mark();
     comp.generateCode() catch { comp.renderDiagnostics(); return error.CompileError; };
@@ -769,7 +772,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         }
         e.build_config.target_frameworks = fws;
         e.build_config.target_framework_paths = merged_config.framework_paths;
-        // Phase 5: the sx-driven build pipeline reads these via the
+        // The sx-driven build pipeline reads these via the
         // `c_object_paths()` / `link_libraries()` / `build_*()` primitives. Slices
         // reference compileWithTimer locals that outlive the callback.
         e.build_config.c_object_paths = c_obj_paths;
@@ -897,7 +900,7 @@ fn runAOT(allocator: std.mem.Allocator, io: std.Io, input_path: []const u8, targ
 /// Content hash of the RUNNING compiler executable, computed once per
 /// process (~11MB wyhash, a few ms). Mixed into the object-cache key so a
 /// rebuilt compiler can never satisfy a key an older build produced
-/// (issue 0336 — the cache silently replayed stale codegen). Null when the
+/// (the cache silently replayed stale codegen). Null when the
 /// executable cannot be located or read: the caller must treat that as
 /// cache-off — slower but never stale.
 var g_compiler_hash: ?u64 = null;
@@ -949,7 +952,7 @@ fn saveObjectToCache(obj_buf: sx.llvm_api.c.LLVMMemoryBufferRef, io: std.Io, cac
     // Stage through a PID-UNIQUE temp inside the cache dir, then rename —
     // atomic on POSIX (same directory), so concurrent `--cache` processes
     // (the parallel corpus runner) never observe or clobber a half-written
-    // object. The old fixed `.sx-cache-tmp` staging path raced (issue 0336).
+    // object.
     var tmp_buf: [64]u8 = undefined;
     const tmp = std.fmt.bufPrint(&tmp_buf, ".sx-cache/.tmp-{d}", .{std.c.getpid()}) catch return;
     std.Io.Dir.createDirPath(.cwd(), io, ".sx-cache") catch return;
@@ -969,7 +972,7 @@ fn hasTopLevelRun(root: *const sx.ast.Node) bool {
 /// binary) entry symbol is a flat function named `main`; this scans the
 /// resolved AST for a `fn_decl` named "main", recursing into namespace
 /// decls so a `main` brought in behind an aliased import is still found.
-/// Used as a pre-JIT guard (issue 0137): the ORC `main` lookup does not
+/// Used as a pre-JIT guard: the ORC `main` lookup does not
 /// reliably surface "no main", so we reject the no-main program here with
 /// a clean diagnostic instead of calling a garbage function pointer.
 fn hasMainEntry(root: *const sx.ast.Node) bool {
@@ -1006,8 +1009,7 @@ fn extractLibraries(allocator: std.mem.Allocator, root: *const sx.ast.Node) ![]c
                     .library_decl => |ld| {
                         // The `compiler` library is the comptime-only internal
                         // surface (welded types / host-call functions), not a
-                        // linkable dylib — never dlopen it. See
-                        // design/comptime-compiler-api.md.
+                        // linkable dylib — never dlopen it.
                         if (std.mem.eql(u8, ld.lib_name, sx.ir.compiler_lib.lib_name)) continue;
                         if (s.contains(ld.lib_name)) continue;
                         try s.put(ld.lib_name, {});

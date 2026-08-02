@@ -2,8 +2,7 @@
 // into the receiver}` — not a boxed copy. For an addressable receiver
 // the view borrows the struct's own storage, so mutations of the struct
 // between taking the view and reading it stay VISIBLE through the view.
-// This is 1b's one deliberate semantic change (the old lowering boxed a
-// copy of the field at call time).
+// Boxing a copy of the field at call time would break that aliasing.
 
 #import "modules/std.sx";
 

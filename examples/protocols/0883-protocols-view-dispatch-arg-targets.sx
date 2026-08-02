@@ -2,9 +2,8 @@
 // DECLARED param types, for every receiver shape — owned `P`, view
 // `*P`, and the optionals `?P` / `?*P`. The sharp case is an enum
 // LITERAL argument (`.bgra8`): it can only type itself from the param
-// target; through a view it previously fell back to the ambient
-// destination and refused.
-// Regression (issue 0313, found building m3te after the 0310-0312 wave).
+// target; through a view it must not fall back to the ambient
+// destination and refuse.
 #import "modules/std.sx";
 
 Fmt :: enum { rgba8; bgra8; }

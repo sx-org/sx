@@ -1,4 +1,4 @@
-// std.http — Config.reuse_port: SO_REUSEPORT multi-listener support (Q2.5).
+// std.http — Config.reuse_port: SO_REUSEPORT multi-listener support.
 //
 // The multi-loop scaling pattern: one Server (its own event loop, slots,
 // stats) per thread, ALL bound to the same port with reuse_port=true —

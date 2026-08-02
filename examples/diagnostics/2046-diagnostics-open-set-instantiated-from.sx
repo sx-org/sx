@@ -7,7 +7,6 @@
 // it names the call that spelled the instantiation, in the file that spelled it,
 // and for a chain of forwarding generics it names the outermost one — the call a
 // reader of this file can actually act on.
-// Expected: exit 1.
 #import "modules/std.sx";
 #import "2046-diagnostics-open-set-instantiated-from/views.sx";
 

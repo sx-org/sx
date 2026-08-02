@@ -8,14 +8,9 @@
 // (`F :: 4.0` ≡ 4), and an ALIASED integer constraint (`Count :: u32`,
 // `Small :: i8`) on a value-param.
 //
-// Regression (issue 0083): two cells of this surface diverged from the rest.
-// (1) A named const whose RHS is an expression (`N :: M + 1`) did not fold as a
-// count ("not a compile-time integer constant") — `moduleConstInt` read only a
-// literal RHS; it now folds the RHS through the shared `evalConstIntExpr`. (2) An
-// aliased integer constraint (`$K: Count`) bypassed the value-param range gate,
-// which only matched builtin constraint names; the constraint now resolves to
-// its underlying builtin before range-checking, so `$K: Count` behaves exactly
-// like `$K: u32`.
+// A named const whose RHS is an expression folds through the shared
+// `evalConstIntExpr`. An aliased integer constraint resolves to its underlying
+// builtin before range-checking, so `$K: Count` behaves exactly like `$K: u32`.
 #import "modules/std.sx";
 
 M     :: 2;          // untyped int const

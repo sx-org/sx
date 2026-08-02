@@ -1,17 +1,11 @@
-// Phase 0 baseline (PLAN-FFI.md step 0.4): focused FP-aggregate (HFA)
+// Focused FP-aggregate (HFA)
 // FFI test. All-float / all-double aggregates of ≤4 fields stay as
 // struct values in LLVM and pass through the float register file
 // (AAPCS64 v0..v3, SysV AMD64 xmm0..xmm7). Distinct from the int
 // register-coercion paths (i64 / [2 x i64]).
 //
-//   FQuad — 16 B, four f32     (same slot as ffi-02's Vec4f)
-//   DQuad — 32 B, four f64     (UIEdgeInsets-shape HFA — the
-//                               f32-vs-f64 landmine from this session)
-//
-// Already nominally covered by ffi-02's Vec4f, but pinning it as a
-// focused single-file test means a future ABI rule change that
-// breaks the FP path fails *this* test directly without a noisy
-// drag-in from the multi-shape baseline.
+// FQuad — 16 B, four f32     (same slot as ffi-02's Vec4f)
+// DQuad — 32 B, four f64     (UIEdgeInsets-shape HFA)
 
 #import "modules/std.sx";
 

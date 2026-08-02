@@ -1,0 +1,5 @@
+error: a space before `(` — a call binds only when the `(` is glued to its callee: write `Box(i64)`
+  --> examples/diagnostics/2060-diagnostics-glue-spaced-alias-orphan.sx:11:10
+   |
+11 | BI :: Box (i64);
+   |          ^^

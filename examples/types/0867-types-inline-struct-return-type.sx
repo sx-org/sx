@@ -2,11 +2,10 @@
 // `struct { … }`, `union { … }`, `enum { … }` — bare or parenthesized;
 // the decl's brace group belongs to the TYPE and the body `{` follows.
 // A bodyless `F :: () -> struct { … };` stays a function-TYPE alias,
-// and (shape-keyed anon identity, issue 0294) a function whose return
+// and (shape-keyed anon identity) a function whose return
 // shape matches is assignable to it.
-// Regression (issue 0291): isFunctionDef's after-arrow scan bailed at
-// `struct`, misread the decl as a type alias, and the real body `{`
-// errored as "expected ';'".
+// isFunctionDef's after-arrow scan walks past the inline decl's brace group
+// to find the real body `{`.
 #import "modules/std.sx";
 
 make :: () -> struct { x: i64; y: i64; } { .{ x = 3, y = 4 } }

@@ -1,4 +1,4 @@
-// std.http — Q3.4 DATA-phase TLS cross-direction wants. The transport seam
+// std.http — DATA-phase TLS cross-direction wants. The transport seam
 // (TlsConn) may return WantWrite from a READ (the session must flush a
 // pending record before it can deliver plaintext) or WantRead from a WRITE
 // (the session needs a peer message before its ciphertext can proceed) —
@@ -17,22 +17,21 @@
 //     internal buffer and returns (0, WantWrite); the buffered bytes are
 //     only handed out on a retry. The kernel buffer is now empty, so no
 //     readable event will ever fire — only an armed write watch delivers
-//     the retry. Red today: the request stalls silently to eviction.
+//     the retry.
 //   W (accept #2): the first response write returns (0, WantRead) until one
 //     new inbound byte arrives (consumed internally, like a handshake
-//     record). The retry must come from readability; wr_extra_retries
-//     counts write attempts made while waiting with nothing inbound —
-//     red today: the armed write watch spins retries every tick (fix: 0).
-//     Keep-alive on the same conn afterwards proves the watch state healed.
+//     record). The retry comes from readability; wr_extra_retries counts
+//     write attempts made while waiting with nothing inbound, and must be 0.
+//     Keep-alive on the same conn afterwards proves the watch state heals.
 //   B (accept #3, pool + stream_request_body): the SECOND data-bearing read
 //     (the body tail) injects the mode-R drain — the CONN_BODY pump must
-//     also retry on writability. Red today: the body stalls to eviction.
-//   H (accept #4, review F1): the want surfaces AFTER the request is fully
+//     also retry on writability.
+//   H (accept #4): the want surfaces AFTER the request is fully
 //     read — the read that would return WouldBlock returns WantWrite
 //     instead, so the request DISPATCHES (slow pooled handler) with the
 //     want unresolved. The server must drop the cross-armed watch at
 //     dispatch (reading parks; a level-triggered writable would spin the
-//     loop for the whole handler run and the request was never served).
+//     loop for the whole handler run and starve the request).
 //   + net-zero GPA gate across the whole run.
 #import "modules/std.sx";
 #import "modules/std/http/tls.sx";   // TlsConn, TlsAcceptor, TlsStep (flat)
@@ -54,8 +53,8 @@ MODE_PASS :: 0;   // pure passthrough (health-check conns)
 MODE_R    :: 1;   // read-cross: drain + WantWrite on the 1st data-bearing read
 MODE_W    :: 2;   // write-cross: WantRead on the 1st response write
 MODE_B    :: 3;   // body-cross: drain + WantWrite on the 2nd data-bearing read
-MODE_H    :: 4;   // dispatch-cross (review F1): WantWrite at the WouldBlock
-                  // position right after the request was fully surfaced
+MODE_H    :: 4;   // dispatch-cross: WantWrite at the WouldBlock position
+                  // right after the request is fully surfaced
 
 PEND_CAP :: 4096;
 
@@ -180,9 +179,9 @@ impl TlsConn for FakeConn {
 FakeAcceptor :: struct {
     a: Allocator;
     n_accepts: i64 = 0;
-    rd_injections: i64 = 0;   // sanity: the R/B injections actually fired
-    h_injections: i64 = 0;    // sanity: the H (dispatch-cross) want fired
-    wr_declared: i64 = 0;     // sanity: the W want actually surfaced
+    rd_injections: i64 = 0;   // the R/B injections that fired
+    h_injections: i64 = 0;    // the H (dispatch-cross) wants that fired
+    wr_declared: i64 = 0;     // the W wants that surfaced
     wr_extra_retries: i64 = 0;// write retries while waiting with nothing inbound
 }
 
@@ -220,9 +219,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/a"  { resp.body = "ok-a"; return; }
     if req.path == "/b"  { resp.body = "ok-b"; return; }
     if req.path == "/h"  {
-        // Review F1's damage needed a SLOW pooled handler: the cross-armed
-        // watch spun the loop for the handler's whole runtime and the
-        // completion never landed. Keep the window wide.
+        // A SLOW pooled handler keeps the cross-armed-watch window wide.
         usleep(80000);
         resp.body = "ok-h";
         return;
@@ -351,10 +348,10 @@ run :: (acc: *FakeAcceptor) -> i32 {
     if !read_response(*srv, c3, *rbuf[0], 4096, "got-12") { srv.close(); return 15; }
     socket.close(c3);
 
-    // ── H (review F1): the want is UNRESOLVED at dispatch. The server
-    // must drop the cross-armed watch when reading parks for the handler
-    // (red: the writable spun the loop for the handler's whole runtime and
-    // the request was never served at all). ──
+    // ── H: the want is UNRESOLVED at dispatch. The server must drop the
+    // cross-armed watch when reading parks for the handler — otherwise the
+    // writable spins the loop for the handler's whole runtime and the
+    // request never gets served. ──
     c4 := dial();
     if c4 < 0 { return 6; }
     req_h := "GET /h HTTP/1.1\r\nHost: t\r\n\r\n";
@@ -362,8 +359,8 @@ run :: (acc: *FakeAcceptor) -> i32 {
     if !read_response(*srv, c4, *rbuf[0], 4096, "ok-h") { srv.close(); return 17; }
     socket.close(c4);
 
-    // sanity: both read-cross injections fired (R and B) + the dispatch-
-    // cross want (H) actually surfaced before its request was served.
+    // Both read-cross injections fired (R and B) and the dispatch-cross
+    // want (H) surfaced before its request was served.
     if acc.rd_injections != 2 { srv.close(); return 16; }
     if acc.h_injections != 1 { srv.close(); return 18; }
 

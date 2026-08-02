@@ -1,10 +1,8 @@
-// Phase 2 step 2.11 (PLAN-FFI.md): xfail then green for DSL call-site
-// lowering — `inst.method(args)` on a `#jni_class`-typed value lowers
-// to `#jni_call(T)(inst, "method", "(sig)Ret", args...)` with the
-// descriptor auto-derived from the sx signature.
-//
-// `#jni_env(env)` brings env into lexical scope; the omitted-env
-// `#jni_call` form (2.16b) picks it up directly.
+// DSL call-site lowering: `inst.method(args)` on a `#jni_class`-typed value
+// lowers to `#jni_call(T)(inst, "method", "(sig)Ret", args...)` with the
+// descriptor auto-derived from the sx signature. `#jni_env(env)` brings env
+// into lexical scope and the omitted-env `#jni_call` form picks it up
+// directly.
 
 #import "modules/std.sx";
 
@@ -16,7 +14,7 @@ g_should_call : bool = false;
 
 unused_jni :: (env: *void, act: *Activity) {
     #jni_env(env) {
-        // Today: this fails — sema doesn't know `Activity` as a type, or
+        // This fails — sema doesn't know `Activity` as a type, or
         // the method dispatch doesn't recognize runtime-class members.
         win := act.getWindow();
     }

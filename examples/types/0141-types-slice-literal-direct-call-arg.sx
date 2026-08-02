@@ -2,9 +2,6 @@
 // identically to binding it to a typed local first: the literal is
 // materialized into addressable storage and a {ptr,len} slice header is built
 // over it, so the callee reads the element CONTENTS correctly.
-// Regression (issue 0084): a direct literal arg passed the raw array value
-// where a slice was expected, so the callee read its header off the wrong
-// bytes and returned garbage (0).
 #import "modules/std.sx";
 
 count_nope :: (xs: []string) -> i64 {

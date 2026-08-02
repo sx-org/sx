@@ -11,8 +11,7 @@
 // Each test computes its expected sum at COMPTIME (the value is baked
 // into a `#run` constant — the interp's `storeAtRawPtr` runs). The
 // runtime program prints the same checksum computed by codegen
-// (LLVM-emitted typed stores). The two MUST match — that's the
-// regression assertion.
+// (LLVM-emitted typed stores). The two MUST match.
 //
 // To pin the test: every helper returns its checksum; main prints
 // "ok" iff every comptime-baked checksum equals the runtime-recomputed

@@ -1,13 +1,13 @@
-// PLAN-HTTPZ C3a — std/socket LINUX ABI lock (cross-target). ir-only on a
+// Std/socket LINUX ABI lock (cross-target). ir-only on a
 // non-linux dev host (the `target` sidecar mismatches host arch+os → the runner
 // asserts .exit + .ir + .stderr from `sx ir --target`); runs end-to-end (exit 0)
-// on a linux runner. Pins the linux-specific facts that were silently WRONG
-// while socket.sx was darwin-only:
+// on a linux runner. Pins the linux-specific ABI facts, none of which the
+// darwin layout shares:
 //   - sockaddr_in: no sin_len; sin_family is the 2-byte sa_family_t at offset 0.
 //   - glibc socket-option codes: SOL_SOCKET=1, SO_REUSEADDR=2 (vs BSD 0xffff/4).
 //   - O_NONBLOCK=2048 (vs BSD 4) — set_nonblocking would flip the wrong bit.
 //   - linux errno values (EAGAIN=11, EINPROGRESS=115, ECONNABORTED=103,
-//     ECONNRESET=104) — WouldBlock/reset detection silently broke on the BSD set.
+//     ECONNRESET=104) — WouldBlock/reset detection reads these, not the BSD set.
 // The errno slot binds __errno_location (vs darwin __error) — the .ir snapshot
 // captures the symbol. Imports ONLY socket.sx (libc-only) so the IR stays small
 // (mirror of event/1633).
@@ -30,9 +30,7 @@ main :: () -> i32 {
     if a.sin_port   != 0x901F { return 10; }      // htons(8080)
     if !socket.is_wouldblock(11) { return 11; }
 
-    // ── Q3.5 additions (review MED-2: pin the linux side of the new
-    // address surface — the base commit's declare-only IR drift pinned
-    // none of it) ──
+    // ── the linux side of the address surface ──
     if socket.AF_INET6     != 10  { return 12; }
     if socket.IPV6_V6ONLY  != 26  { return 13; }
     if socket.IPPROTO_IPV6 != 41  { return 14; }

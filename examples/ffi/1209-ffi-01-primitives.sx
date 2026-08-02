@@ -1,11 +1,10 @@
-// Phase 0 baseline (PLAN-FFI.md step 0.1): every primitive type passed
+// Every primitive type passed
 // in/out of a C `extern` fn via `#import c { #include / #source }`.
-// Locks today's parameter + return ABI so Phase 1's lowering changes
-// (`#objc_call` / `#jni_call`) can't silently regress us.
+// Pins the parameter and return ABI of each one.
 //
-// Note: c_import maps `signed char` to sx `u8` (see c_import.zig:541)
-// — narrow signed-char roundtrips are still surfaced here so any future
-// mapping change shows up as a snapshot diff.
+// c_import maps `signed char` to sx `u8` (see c_import.zig:541), so the
+// narrow signed-char roundtrips here cross the boundary as an unsigned
+// sx type.
 
 #import "modules/std.sx";
 

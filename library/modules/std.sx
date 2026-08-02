@@ -49,7 +49,7 @@ format :: fmt.format;
 // Postfix-assertion runtime (`av.(T)` / `av.(?T)` on a type-erased
 // receiver): the three compiler-rewrite targets. Their
 // `CastError { mismatch }` set has no alias here — error sets cannot be
-// aliased (issue 0299); the `mismatch` TAG is global by name, so a
+// aliased; the `mismatch` TAG is global by name, so a
 // caller's own set (or an inferred `!`) absorbs it.
 __sx_cast_assert         :: fmt.__sx_cast_assert;
 __sx_cast_or_panic       :: fmt.__sx_cast_or_panic;
@@ -109,8 +109,6 @@ IoErr       :: io_mod.IoErr;
 async       :: io_mod.async;
 await       :: io_mod.await;
 cancel      :: io_mod.cancel;
-// `timeout` / `Future(void)` are DEFERRED (B1.4) pending issue 0150
-// (a `void` struct field SIGTRAPs the compiler). Re-export once it lands.
 
 // --- The stdlib namespace tail: flat-importing std.sx carries these ---
 

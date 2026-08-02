@@ -1,5 +1,5 @@
 // A `ufcs` first parameter bounded by `@Init(T)` takes its RECEIVER the way it
-// takes an argument (fluent spec §5.2; the emit product story, §13.2).
+// takes an argument.
 //
 // `@Init` is destination-first: the argument is not evaluated at the call, it is
 // formed into a recipe the receiver writes when it chooses. A dot-call reaches

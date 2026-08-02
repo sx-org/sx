@@ -1,16 +1,9 @@
 // A named-const array dimension lays out identically whether the const is
 // TYPED (`N : i64 : 16`) or untyped (`N :: 16`), used DIRECTLY (`a : [N]T`) or
 // through a type alias (`Arr :: [N]T`), and regardless of whether the const is
-// declared before or after the alias that consumes it.
-//
-// Regression (issue 0083): the stateless registration-time resolver
-// (type_bridge) only saw module consts that were already in `module_const_map`
-// when a type alias resolved its dimension. Typed consts register in a later
-// pass, and a forward-declared untyped const had not registered yet — so the
-// alias dimension fabricated length 0 (a 0-byte alloca), and element access
-// returned garbage (scalars) or bus-errored (slice/struct elements). Module
-// consts are now pre-registered before any alias resolves, and both the
-// stateful and stateless paths share one dimension resolver.
+// declared before or after the alias that consumes it. Module consts are
+// pre-registered before any alias resolves, and both the stateful and
+// stateless paths share one dimension resolver.
 #import "modules/std.sx";
 
 NT : i64 : 8; // typed const used as a dimension

@@ -111,7 +111,7 @@ pub fn valueSpreadRefs(self: *Lowering, operand: *const Node, span: ast.Span) ?[
         .array => |a| {
             // GEP + load each element from the array's storage; a
             // non-addressable array value is spilled to a temp slot first
-            // (never `index_get` on the loaded VALUE — the 0124 lesson).
+            // (never `index_get` on the loaded VALUE).
             const storage = self.getExprAlloca(operand) orelse blk: {
                 const v = self.lowerExpr(operand);
                 const slot = self.builder.alloca(ty);
@@ -213,7 +213,7 @@ pub fn comptimeIndexOf(self: *Lowering, index: *const Node) ?i64 {
 const PackValueKind = enum { storage, call_arg, return_value, runtime_iter, generic };
 
 /// `xs` is a pack name used where a runtime value is required. A pack is
-/// comptime-only (Decision 1), so this is an error — with a context-tailored
+/// comptime-only, so this is an error — with a context-tailored
 /// suggestion for how to express the intent instead.
 pub fn diagPackAsValue(self: *Lowering, name: []const u8, span: ast.Span, kind: PackValueKind) Ref {
     if (self.diagnostics) |d| {
@@ -238,7 +238,7 @@ pub fn isPackName(self: *Lowering, name: []const u8) bool {
 /// `xx <pack>` with a slice target: materialize the comptime pack into a
 /// runtime `[]elem` by lowering each element node and boxing (`[]Any`) or
 /// `xx`-erasing (`[]P`) it into a stack `[N]elem`, then return the slice.
-/// This is the explicit pack→slice bridge (issue 0053).
+/// This is the explicit pack→slice bridge.
 pub fn lowerPackToSlice(self: *Lowering, pack_name: []const u8, slice_ty: TypeId) Ref {
     const arg_nodes = (self.pack_arg_nodes orelse return self.builder.constInt(0, .unresolved)).get(pack_name) orelse
         return self.builder.constInt(0, .unresolved);
@@ -382,8 +382,8 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
         return;
     }
     // Find variadic param index. The two surface forms differ in
-    // what `p.type_expr` resolves to: legacy `name: ..T` declares T
-    // (element type), new `..name: []T` declares []T (already a
+    // what `p.type_expr` resolves to: `name: ..T` declares T
+    // (element type), `..name: []T` declares []T (already a
     // slice). Unwrap the latter so the per-element packing below
     // sees T in both cases.
     var variadic_idx: ?usize = null;
@@ -411,7 +411,7 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
     // Only a SLICE/ARRAY operand passes through whole: a tuple operand was
     // already expanded element-wise at the call's arg loop (value spread) and
     // repacks via the generic path below — passing a tuple through as-is was
-    // a call-signature mismatch that failed LLVM verification (issue 0156p2).
+    // a call-signature mismatch that fails LLVM verification.
     if (variadic_count == 1 and fixed_count < c.args.len) {
         const arg_node = c.args[fixed_count];
         if (arg_node.data == .spread_expr) {
@@ -421,8 +421,8 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
             if (arr_info != null and (arr_info.? == .array or arr_info.? == .slice)) {
                 const arr_val = self.lowerExpr(spread.operand);
                 // Convert array to slice. For an ADDRESSABLE array build a
-                // zero-copy VIEW over its storage (issue 0264 — consistent
-                // with the direct-arg array→slice coercion and 0225's aliasing
+                // zero-copy VIEW over its storage (consistent
+                // with the direct-arg array→slice coercion and the aliasing
                 // subslice), so `sum(..arr)` sees the same backing as `arr`. A
                 // NON-addressable rvalue array (`sum(..makeArr())`) keeps the
                 // copying `array_to_slice` op: this is a call ARGUMENT, so the
@@ -595,11 +595,10 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
 /// Slice IR type is `[]Any` (since `Type → .any`); the interp
 /// stores whichever Value the elements actually carry.
 pub fn buildPackSliceValue(self: *Lowering, arg_types: []const TypeId) Ref {
-    // A bare `$<pack>` is a `[]Type` value. Since the dedicated `Type` builtin
-    // (`.type_value`, 8 bytes) replaced the old `Type → .any` (16-byte) mapping,
-    // the slice element is `type_value` — building it as `[]Any` here stored 8-byte
-    // `const_type` words into 16-byte slots, so a `[]Type` reader (8-byte stride)
-    // read `[t0, pad, t1, …]` instead of `[t0, t1, …]` (issue 0143).
+    // A bare `$<pack>` is a `[]Type` value whose element is the dedicated
+    // `Type` builtin (`.type_value`, 8 bytes). Building it as `[]Any` would
+    // store 8-byte `const_type` words into 16-byte slots, so a `[]Type` reader
+    // (8-byte stride) reads `[t0, pad, t1, …]` instead of `[t0, t1, …]`.
     const ty_slice_ty = self.module.types.sliceOf(.type_value);
     const ty_ptr_ty = self.module.types.ptrTo(.type_value);
 
@@ -978,8 +977,7 @@ pub fn lowerPackFnCallNamed(
     // A spread that could not be expanded at AST level has already lost the
     // static element shape required by a pack call (notably `..make_tuple()`).
     // Diagnose that one operand and stop before monomorphizing a one-element
-    // pack whose body then emits a misleading secondary index-OOB error
-    // (issue 0252.2).
+    // pack whose body then emits a misleading secondary index-OOB error.
     for (call_node.args) |arg| {
         if (arg.data != .spread_expr) continue;
         if (spreadElemNodes(self, arg.data.spread_expr.operand, arg.span) != null) continue;
@@ -1030,7 +1028,7 @@ pub fn lowerPackFnCallNamed(
     // boundary. It is NEVER coerced to a leftover outer `target_type`, so
     // clear it: otherwise an `xx <expr>` pack arg (whose result type IS
     // `target_type`) would cast to the stale target — e.g. `format("…", xx i)`
-    // inside a `-> string` fn mis-typed the arg as `string`, monomorphizing
+    // inside a `-> string` fn types the arg as `string`, monomorphizing
     // `__pack_string` and ABI-coercing the 4-byte int as a 16-byte fat
     // pointer → memory corruption.
     const saved_pack_tt = self.target_type;
@@ -1038,7 +1036,7 @@ pub fn lowerPackFnCallNamed(
     // A pack arg is a VALUE position: a block-form `if C { A } else { B }`
     // / `match` passed directly (e.g. `print("{}", if b { x } else { y })`)
     // must yield its branch value, not lower as a statement-if that returns a
-    // bare void 0 (or overruns for a wider branch type → segfault, issue 0268).
+    // bare void 0 (or overruns for a wider branch type → segfault).
     const saved_pack_fbv = self.force_block_value;
     self.force_block_value = true;
     var pack_refs = std.ArrayList(Ref).empty;
@@ -1049,8 +1047,8 @@ pub fn lowerPackFnCallNamed(
         if (pack_is_comptime) {
             const it = self.inferExprType(a);
             // The lowered ref is the fallback type source, but a bare fn value
-            // rides in the legacy integer word — take its signature so the
-            // element stays callable in the mono (issue 0368).
+            // rides in the integer word — take its signature so the
+            // element stays callable in the mono.
             pack_arg_types.append(self.alloc, if (it == .unresolved) self.valueTypeOfRef(r, self.builder.getRefType(r)) else it) catch return self.builder.constInt(0, .void);
         } else {
             pack_arg_types.append(self.alloc, self.builder.getRefType(r)) catch return self.builder.constInt(0, .void);
@@ -1083,13 +1081,13 @@ pub fn lowerPackFnCallNamed(
                 // Contextually type the arg from the param (so a lambda arg
                 // `(x) => …` takes its param types from a `Closure(...)` param).
                 // The param type is resolved under the pack fn's OWN source
-                // (E4): a fixed-prefix type bare-visible only in the defining
+                // a fixed-prefix type bare-visible only in the defining
                 // module must resolve there, not the caller's. The arg itself
                 // is lowered AFTER, in the caller's context.
                 const saved_tt = self.target_type;
                 const pty = self.resolveDeclParamType(fd, param_idx);
                 if (pty != .unresolved) self.target_type = pty;
-                // Prefix arg is a value position (issue 0268 — see the pack-arg
+                // Prefix arg is a value position (see the pack-arg
                 // loop above): force block-form if/match to yield its value.
                 const saved_prefix_fbv = self.force_block_value;
                 self.force_block_value = true;
@@ -1210,7 +1208,7 @@ pub fn monomorphizePackFn(
     const owned_name = self.alloc.dupe(u8, mangled_name) catch return;
     self.lowered_functions.put(owned_name, {}) catch {};
 
-    // Flow narrowing (issue 0179) is per-function: this monomorphized pack body
+    // Flow narrowing is per-function: this monomorphized pack body
     // has its own `Ref` space (overlapping the caller's), so isolate it from the
     // caller's `narrowed`/`narrowed_refs` to avoid a false-positive unwrap gate.
     var nested_guard = Lowering.NestedBodyGuard.enter(self);
@@ -1233,9 +1231,8 @@ pub fn monomorphizePackFn(
     }
     if (pack_param_idx == std.math.maxInt(usize)) return;
 
-    // Save state — mirrors monomorphizeFunction but also captures
-    // pack/inline-return state since the mono body must NOT route
-    // returns through any caller's inline slot.
+    // Save state — mirrors monomorphizeFunction. The mono body's exit is
+    // isolated by the guard above, which owns the inline-return target.
     const saved_func = self.builder.func;
     const saved_block = self.builder.current_block;
     const saved_counter = self.builder.inst_counter;
@@ -1247,12 +1244,10 @@ pub fn monomorphizePackFn(
     const saved_ppc = self.pack_param_count;
     const saved_pat = self.pack_arg_types;
     const saved_pcon = self.pack_constraint;
-    const saved_iri = self.inline_return_target;
     const saved_ctx_ref = self.current_ctx_ref;
     const saved_type_bindings = self.type_bindings;
     self.func_defer_base = self.defer_stack.items.len;
     self.block_terminated = false;
-    self.inline_return_target = null;
     // Generic type-params inferred at the call site (e.g. `$R` from the
     // mapper's closure return). Installed for the whole mono so
     // return-type resolution and body lowering substitute them.
@@ -1267,7 +1262,6 @@ pub fn monomorphizePackFn(
         self.pack_param_count = saved_ppc;
         self.pack_arg_types = saved_pat;
         self.pack_constraint = saved_pcon;
-        self.inline_return_target = saved_iri;
         self.current_ctx_ref = saved_ctx_ref;
         self.builder.func = saved_func;
         self.builder.current_block = saved_block;
@@ -1319,7 +1313,7 @@ pub fn monomorphizePackFn(
     self.pack_constraint = if (pack_proto != null) pre_pcon else null;
 
     // Resolve the declared return + fixed-prefix param types in the pack fn's
-    // OWN module (E4), so a 2-flat-hop library type named in the signature is
+    // OWN module, so a 2-flat-hop library type named in the signature is
     // bare-visible — mirrors the body pin further down and the
     // `monomorphizeFunction` pin. The comptime call-site args below are
     // lowered AFTER this restore, in the caller's context.
@@ -1411,7 +1405,7 @@ pub fn monomorphizePackFn(
             ct_arg_idx += 1;
             continue;
         }
-        // Pin to the pack fn's OWN module (E4): a fixed-prefix param whose
+        // Pin to the pack fn's OWN module: a fixed-prefix param whose
         // type is bare-visible only in the defining module must resolve
         // there, not in the caller's restored context. Mirrors the
         // signature build above and `resolveParamTypeInSource` at the
@@ -1462,24 +1456,9 @@ pub fn monomorphizePackFn(
     defer self.setCurrentSourceFile(saved_source);
     if (fd.body.source_file) |src| self.setCurrentSourceFile(src);
 
-    if (self.builder.currentFunc().is_naked) {
-        // `abi(.naked)`: asm-only body that rets itself — no sx value return.
-        // Lower statements + cap with `unreachable` (mirrors the decl path).
-        // emit_llvm bails on `is_naked` until B1.0b implements `naked` emission.
-        self.lowerBlock(fd.body);
-        if (!self.currentBlockHasTerminator()) self.builder.emitUnreachable();
-    } else if (ret_ty != .void) {
-        // Delegate the trailing-value return to the shared `lowerValueBody`
-        // (mirrors the decl + generic paths) so this pack-fn instance can't
-        // drift — it routes the value-failable success through
-        // `lowerFailableSuccessReturn` (appending the success error slot)
-        // instead of a bare coerce+ret that leaves the error-tag slot
-        // uninitialized (issue 0190).
-        self.lowerValueBody(fd.body, ret_ty);
-    } else {
-        self.lowerBlock(fd.body);
-        self.ensureTerminator(ret_ty);
-    }
+    // Delegate to the shared body owner (mirrors the decl + generic paths) so
+    // this pack-fn instance can't drift from them.
+    self.lowerFunctionBody(fd.body, ret_ty);
     self.builder.finalize();
 }
 
@@ -1504,10 +1483,10 @@ pub fn isPackParam(p: ast.Param) bool {
     return p.is_variadic and (p.is_comptime or p.is_pack);
 }
 
-/// Resolve `..pack.<name>` against `protocol_name` by position (Decision 4).
+/// Resolve `..pack.<name>` against `protocol_name` by position.
 /// No cross-namespace fallback: a value-position name that exists only as a
 /// type-arg (or vice versa) is `.not_found`, letting the caller emit a
-/// position-specific diagnostic (G3, Step 2.7).
+/// position-specific diagnostic.
 pub fn resolvePackProjection(
     self: *Lowering,
     protocol_name: []const u8,

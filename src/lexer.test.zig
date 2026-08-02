@@ -2,7 +2,7 @@ const std = @import("std");
 const Lexer = @import("lexer.zig").Lexer;
 const Tag = @import("token.zig").Tag;
 
-// ASM stream Phase A.0: `asm` lexes as the dedicated `kw_asm` keyword, while
+// `asm` lexes as the dedicated `kw_asm` keyword, while
 // `volatile` / `clobbers` deliberately stay plain identifiers (recognized
 // contextually inside an `asm { … }` body, never reserved globally).
 test "lex asm keyword; volatile/clobbers stay identifiers" {

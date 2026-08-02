@@ -2,19 +2,15 @@
 // blue each frame, then draw a colored triangle via the GPU protocol —
 // exercises create_shader (MSL compile + pipeline state), create_buffer
 // + update_buffer, set_shader, set_vertex_buffer, and draw_triangles.
-// Step 3b will port the UI renderer to use this same surface.
 //
 // Build for iOS sim:
 //   /Users/agra/projects/sx/zig-out/bin/sx build --target ios-sim \
-//     examples/63-metal-clear.sx \
+//     examples/platform/1606-platform-metal-clear.sx \
 //     -o /tmp/MetalClear --bundle /tmp/MetalClear.app \
 //     --bundle-id co.swipelab.metalclear -F ~/Library/Frameworks
 //   codesign --force --sign - --timestamp=none /tmp/MetalClear.app
 //   xcrun simctl install booted /tmp/MetalClear.app
 //   xcrun simctl launch --terminate-running-process booted co.swipelab.metalclear
-//
-// This file is iOS-only and not part of the JIT regression suite (no
-// tests/expected/63-metal-clear.txt). The test runner skips it on macOS.
 
 #import "modules/std.sx";
 #import "modules/ffi/objc.sx";

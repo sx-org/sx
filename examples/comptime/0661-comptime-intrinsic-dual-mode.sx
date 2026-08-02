@@ -3,8 +3,8 @@
 // it is not. `type_name` / `is_unsigned` / `type_info` are the only three
 // (see `ir/intrinsics.zig`).
 //
-// The point of this example is that BOTH stages agree: the same intrinsic
-// evaluated behind `#run` and at runtime yields the same answer.
+// Both stages agree: the same intrinsic evaluated behind `#run` and at runtime
+// yields the same answer.
 #import "modules/std.sx";
 
 P :: struct { a: i64; b: f32; }

@@ -1,11 +1,11 @@
-// Stream B2 — `context.io.race` tolerates a FAILING racer (PLAN-IO-UNIFY Phase 4).
+// `context.io.race` tolerates a FAILING racer.
 // A `race` is first-SUCCESS-wins: a racer that ends `.failed` is simply not a
 // winner candidate; as long as ANOTHER racer succeeds, `race` returns that winner.
 // Here `a` raises at t=5 and `b` succeeds (42) at t=10, so `b` wins. The failed
 // racer keeps its real outcome label (`.failed`) — `race` only cancels still-
 // in-flight (`.pending`) losers, so it never stomps `a`'s `.failed` to `.canceled`.
 //
-// (Regression: an all-FAILING racer set instead bails loudly — "race — all
+// (An all-FAILING racer set instead bails loudly — "race — all
 // futures settled without a winner" — rather than dead-locking the scheduler.)
 //
 // aarch64-pinned (the scheduler's per-arch asm): runs end-to-end on a matching

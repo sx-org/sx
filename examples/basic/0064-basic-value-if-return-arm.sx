@@ -3,29 +3,19 @@
 // terminates its block cleanly; only the LIVE arm feeds the merge phi, and the
 // live arm's type — never the diverging arm's — decides the `if`'s result type.
 //
-// Regression (issue 0269):
-//   Bug A — SILENT WRONG VALUE: `return if c { 7 } else { return -1; }` returned
-//   0 for c==true (want 7). A `return`-position value-`if` was lowered with
-//   `force_block_value` clear (a trailing arm's `produces_value` leaks up through
-//   the parser), so `is_value` was false and the whole `if` collapsed to a void
-//   statement that returned 0. Fix: `lowerReturn` forces value-mode for a
-//   non-void value return.
-//   Bug B — CRASH: `x := if c { a := 1; a + 6 } else { return -1; }` hit
-//   `alloca void` — the live arm's type wasn't statically inferable (block-local
-//   tail), so `result_type` fell back to the diverging void arm and demoted the
-//   `if` to a void statement. Fix: infer `result_type` from the live arm only,
-//   never a diverging one; resolve an un-inferable live arm from its lowered value.
-//   The original "terminator in the middle of a basic block" IR shape (a block
-//   arm ending in `return` getting both the terminator AND a `br` to merge) is
-//   also covered.
+// `lowerReturn` forces value-mode for a non-void value return, and
+// `result_type` comes from the live arm only — an un-inferable live arm
+// resolves from its lowered value, never from the diverging arm's void.
+// The "terminator in the middle of a basic block" shape (a block arm ending
+// in `return` getting both the terminator AND a `br` to merge) is covered too.
 #import "modules/std.sx";
 
-// Bug A — return position, ELSE arm diverges (was silently 0).
+// Return position, ELSE arm diverges.
 r_else :: (c: bool) -> i64 { return if c { 7 } else { return -1; }; }
 // Symmetric — return position, THEN arm diverges.
 r_then :: (c: bool) -> i64 { return if c { return -1; } else { 7 }; }
 
-// Bug B — `:=` position, MULTI-statement live arm, else arm diverges.
+// `:=` position, MULTI-statement live arm, else arm diverges.
 d_else :: (c: bool) -> i64 {
     x := if c { a := 1; a + 6 } else { return -1; };
     return x;

@@ -1,4 +1,4 @@
-// M1.2 A.6 — synthesized `-dealloc` IMP frees the sx state
+// Synthesized `-dealloc` IMP frees the sx state
 // struct and chains to `[super dealloc]` via
 // `objc_msgSendSuper2`.
 //
@@ -10,7 +10,7 @@
 //      properly implements -dealloc.
 //
 // Full instance-state round-trips (sx-side `f := SxFoo.alloc();
-// f.bump();`) await A.7's dispatch-gate opening.
+// f.bump();`) need an open dispatch gate.
 
 #import "modules/std.sx";
 #import "modules/build.sx";

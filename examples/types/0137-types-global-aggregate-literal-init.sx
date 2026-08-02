@@ -1,13 +1,10 @@
 // A module-global aggregate (array of struct literals, a struct literal, and
 // nested array/struct shapes) materializes its DECLARED field values into the
 // global's static initializer, so reading the fields without any prior store
-// returns the literal values — not zero.
-// Regression (issue 0080): a global `[N]Struct` initialized with struct literals
-// was emitted as `zeroinitializer`, silently dropping every field, because the
-// constant-aggregate serializer had no struct-literal arm and collapsed the
-// whole initializer to null. The fix threads the element/field type so struct
-// and nested-array leaves serialize correctly; a genuinely non-constant
-// initializer is now rejected loudly instead of silently zeroed.
+// returns the literal values. The constant-aggregate serializer threads the
+// element/field type so struct and nested-array leaves serialize correctly; a
+// genuinely non-constant initializer is rejected loudly rather than silently
+// zeroed.
 
 #import "modules/std.sx";
 

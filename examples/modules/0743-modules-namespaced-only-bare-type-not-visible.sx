@@ -1,13 +1,13 @@
 // Bare TYPE visibility under a NAMESPACED-only import — the struct sibling of
 // 0736 (bare call) and 0742 (bare const), and the core of the source-aware
-// nominal leaf (Phase E1). `dep.sx` is imported only as `dep :: #import`, so its
+// nominal leaf. `dep.sx` is imported only as `dep :: #import`, so its
 // top-level `Secret` struct is reachable ONLY as `dep.Secret`. A BARE `Secret`
 // in a type position must NOT resolve: bare-TYPE visibility joins over the FLAT
 // import edges (`flat_import_graph`, transitively), and a namespaced alias is not
-// a flat edge. Before the fix the bare type leaked through the global
-// `findByName` first-match (the leaf returned it ahead of the visibility check),
-// so `s.x` compiled and ran. The qualified form `dep.Secret` stays the supported
-// spelling (its member resolution lands fully in Phase F).
+// a flat edge. A bare type leaking through the global
+// `findByName` first-match (the leaf answering ahead of the visibility check)
+// lets `s.x` compile and run. The qualified form `dep.Secret` is the supported
+// spelling.
 dep :: #import "0743-modules-namespaced-only-bare-type-not-visible/dep.sx";
 
 main :: () -> i32 {

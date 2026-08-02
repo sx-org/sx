@@ -1,8 +1,6 @@
 // A protocol method declared with a real pointer return (`-> *u8`,
 // NOT `-> Self`) returns the raw pointer to the caller without the
-// dispatch path auto-dereferencing it. Without this, a method whose
-// pointee is a single byte gets `sizeof(target)` bytes loaded past
-// it and segfaults.
+// dispatch path auto-dereferencing it.
 
 #import "modules/std.sx";
 
@@ -22,7 +20,7 @@ impl Proto for Impl {
 
 main :: () -> i32 {
   imp : Impl = .{};
-  p := imp.(Proto);   // owning snapshot of the lvalue (the cutover's spelling)
+  p := imp.(Proto);   // owning snapshot of the lvalue
   raw : *u8 = p.get();
   addr_word : u64 = xx raw;
   print("got pointer: {}\n", addr_word != 0);

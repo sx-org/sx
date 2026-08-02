@@ -1,65 +1,65 @@
 error: 'Padded' joins 'Missing', which is not an open set
-  --> examples/diagnostics/2046-diagnostics-open-set-head.sx:44:24
+  --> examples/diagnostics/2046-diagnostics-open-set-head.sx:43:24
    |
-44 | Padded :: @OpenVariant(Missing) ($T: Type) {
+43 | Padded :: @OpenVariant(Missing) ($T: Type) {
    |                        ^^^^^^^
 
 help: a member joins a set declared 'Missing :: @OpenSet(.{ max = … }) { … }'
    |
-44 | Padded :: @OpenVariant(Missing) ($T: Type) {
+43 | Padded :: @OpenVariant(Missing) ($T: Type) {
    |                        ^^^^^^^
 
 error: 'Nowhere' is not an open set
-  --> examples/diagnostics/2046-diagnostics-open-set-head.sx:21:23
+  --> examples/diagnostics/2046-diagnostics-open-set-head.sx:20:23
    |
-21 | Stray :: @OpenVariant(Nowhere) {
+20 | Stray :: @OpenVariant(Nowhere) {
    |                       ^^^^^^^
 
 help: a member joins a set declared 'Nowhere :: @OpenSet(.{ max = … }) { … }'
    |
-21 | Stray :: @OpenVariant(Nowhere) {
+20 | Stray :: @OpenVariant(Nowhere) {
    |                       ^^^^^^^
 
 error: 'Plain' is not an open set
-  --> examples/diagnostics/2046-diagnostics-open-set-head.sx:29:23
+  --> examples/diagnostics/2046-diagnostics-open-set-head.sx:28:23
    |
-29 | Wrong :: @OpenVariant(Plain) {
+28 | Wrong :: @OpenVariant(Plain) {
    |                       ^^^^^
 
 help: a member joins a set declared 'Plain :: @OpenSet(.{ max = … }) { … }'
    |
-29 | Wrong :: @OpenVariant(Plain) {
+28 | Wrong :: @OpenVariant(Plain) {
    |                       ^^^^^
 
 error: 'lib.View' is not an open set
-  --> examples/diagnostics/2046-diagnostics-open-set-head.sx:37:24
+  --> examples/diagnostics/2046-diagnostics-open-set-head.sx:36:24
    |
-37 | Absent :: @OpenVariant(lib.View) {
+36 | Absent :: @OpenVariant(lib.View) {
    |                        ^^^^^^^^
 
 help: 'lib' publishes no open set 'View' — a member joins a set the module that declares it publishes
    |
-37 | Absent :: @OpenVariant(lib.View) {
+36 | Absent :: @OpenVariant(lib.View) {
    |                        ^^^^^^^^
 
 error: 'Stray' cannot be converted to 'View': it is not a member of it
-  --> examples/diagnostics/2046-diagnostics-open-set-head.sx:50:5
+  --> examples/diagnostics/2046-diagnostics-open-set-head.sx:49:5
    |
-50 |     v: View = Stray{ text = "no" };
+49 |     v: View = Stray{ text = "no" };
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: a type joins by declaring itself into the set: 'Stray :: @OpenVariant(View) { … }'
    |
-50 |     v: View = Stray{ text = "no" };
+49 |     v: View = Stray{ text = "no" };
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: 'render' cannot be called on a 'View' value: nothing is a member of 'View', so no value of it exists
-  --> examples/diagnostics/2046-diagnostics-open-set-head.sx:51:19
+  --> examples/diagnostics/2046-diagnostics-open-set-head.sx:50:19
    |
-51 |     print("{}\n", v.render());
+50 |     print("{}\n", v.render());
    |                   ^^^^^^^^
 
 help: a type joins the set by declaring itself into it: 'YourType :: @OpenVariant(View) { … }'
    |
-51 |     print("{}\n", v.render());
+50 |     print("{}\n", v.render());
    |                   ^^^^^^^^

@@ -1,19 +1,17 @@
 // std.http — 408 on request-delivery timeout; 505 on unsupported versions.
 //
-// Two protocol-semantics fixes (Q0.7):
+// • A connection evicted at the DELIVERY deadline while a partial request
+//   sits buffered receives `408 Request Timeout` + `Connection: close`
+//   rather than a silent close, so a slow-but-conforming client learns
+//   why. It is delivered through the lingering-close path (clean FIN). A
+//   keepalive-IDLE eviction (no request in flight) stays wire-silent, and
+//   a connection that never sent a byte closes silently too — nothing is
+//   owed.
 //
-//   • A connection evicted at the DELIVERY deadline while a partial request
-//     sits buffered used to be closed silently — a conforming client that
-//     was slow (not dead) got a dropped connection with no explanation. It
-//     now receives `408 Request Timeout` + `Connection: close`, delivered
-//     through the lingering-close path (clean FIN). A keepalive-IDLE
-//     eviction (no request in flight) stays wire-silent, and a connection
-//     that never sent a byte closes silently too — nothing is owed.
-//
-//   • A well-formed-but-unsupported HTTP-version token (`HTTP/2.0`,
-//     `HTTP/1.7`) used to get `400 Bad Request` — semantically wrong; that
-//     is exactly what `505 HTTP Version Not Supported` exists for. Garbage
-//     version tokens (`FOO/1.1`) remain 400.
+// • A well-formed-but-unsupported HTTP-version token (`HTTP/2.0`,
+//   `HTTP/1.7`) gets `505 HTTP Version Not Supported`, not `400 Bad
+//   Request`, which is semantically wrong for it. Garbage
+//   version tokens (`FOO/1.1`) remain 400.
 //
 // Asserts: (a) partial request + deadline → 408 + close + clean FIN;
 // (b) idle keepalive eviction after a served request → EOF with ZERO bytes

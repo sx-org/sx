@@ -1,0 +1,6 @@
+facade :: #import "nested-namespace-alias-stays-hidden-across-flat-imports/facade.sx";
+
+main :: () -> i32 {
+    if facade.engine_alias.secret() == 9 { return 0; }
+    1
+}

@@ -3,9 +3,6 @@
 // definition uses (≤8-byte non-HFA structs → i64), so every field
 // survives the register handoff. Wide (>8 B) and HFA structs stay
 // unpacked on both sides.
-// Regression (issue 0292): the closure/fn-pointer call site built its
-// signature from the raw LLVM type, so the second field of a packed
-// struct arg arrived zeroed.
 #import "modules/std.sx";
 
 Point :: struct { x: i32; y: i32; }
@@ -19,7 +16,7 @@ add_wide :: (w: Wide) -> i64 { return w.x + w.y; }
 add_hfa :: (h: Hfa) -> f32 { return h.x + h.y; }
 
 main :: () {
-    // Closure with a captured struct + packed struct param (the 0292 repro).
+    // Closure with a captured struct + packed struct param.
     off_c5 := Point{ x = 10, y = 20 };
     f_c5 := (p: Point) -> Point => Point{ x = p.x + off_c5.x, y = p.y + off_c5.y };
     res_c5 := f_c5(Point{ x = 1, y = 2 });

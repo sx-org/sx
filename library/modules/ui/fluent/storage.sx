@@ -1,5 +1,4 @@
-// `Sink` and `collectViews` — the fluent library's own collection boundary
-// (revision §13.1).
+// `Sink` and `collectViews` — the fluent library's own collection boundary.
 //
 // `View` is an open set, so it carries its member inside the slot: the sink
 // writes the published expression into a slot it owns and appends that. Nothing

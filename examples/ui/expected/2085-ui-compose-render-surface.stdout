@@ -1,0 +1,7 @@
+.rect 0,0 40x20 corner 0 fill 44,44,46,255 stroke 0,0,0,0 width 0
+.rounded_rect 0,24 40x20 corner 6 fill 0,122,255,255 stroke 0,0,0,0 width 0
+.rounded_rect 0,48 40x20 corner 6 fill 0,0,0,0 stroke 255,204,0,255 width 2
+.text 0,72 80x24 'score' size 24 colour 52,199,89,255
+.rounded_rect 0,104 34x32 corner 4 fill 51,102,230,255 stroke 0,0,0,0 width 0
+.text 12,110 10x20 '7' size 20 colour 255,255,255,255
+nodes 6 button 34x32

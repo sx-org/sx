@@ -1,5 +1,5 @@
 // Atomic($T).swap — atomic exchange (LLVM atomicrmw xchg): store the new value,
-// return the OLD one. Stream A (atomics) A.3. Single-thread.
+// return the OLD one. Single-thread.
 // Covers swap at BOTH comptime (#run) and runtime — they must agree.
 #import "modules/std.sx";
 #import "modules/std/atomic.sx";

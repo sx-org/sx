@@ -1,5 +1,5 @@
-// std.http — path percent-decode + dot-segment normalization (Q1.8;
-// RFC 3986 §2.1, §5.2.4).
+// std.http — path percent-decode + dot-segment normalization
+// (RFC 3986 §2.1, §5.2.4).
 //
 // The server decodes the ROUTABLE PATH (never the query — the router's
 // permissive query/form decode is unchanged) and removes dot segments
@@ -174,8 +174,8 @@ main :: () -> i32 {
         if spe { print("pool init failed\n"); return 1; }
         r := roundtrip(*srvp, PORT_B, "GET /x/%41/../y?k=%20 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         check(r, "HTTP/1.1 200 OK", "pooled status", *failed);
-        // end-anchored: a rebuild that kept the OLD (pre-shrink) length
-        // would leave a stale tail after the echo and fail this
+        // end-anchored: the rebuilt path carries the SHRUNKEN length, so
+        // the echo has no stale tail after it
         if !ends_with(r, "\r\n\r\np:/x/y?k=%20") {
             print("pooled shrunken path: body mismatch\n");
             failed = 1;

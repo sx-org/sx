@@ -1,4 +1,4 @@
-// `@BuildBlock(P)` — the trailing block's second meaning (fluent spec §7.1).
+// `@BuildBlock(P)` — the trailing block's second meaning.
 //
 // One source form, two interpretations, chosen by the DECLARED type of the
 // callee's last parameter:

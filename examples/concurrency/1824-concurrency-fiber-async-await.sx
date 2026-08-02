@@ -1,4 +1,4 @@
-// Stream B2 — `async`/`await` (the io.sx ergonomic layer) running COLORBLIND over
+// `async`/`await` (the io.sx ergonomic layer) running COLORBLIND over
 // the fiber `Io` scheduler. The SAME `context.io.async(worker)` that runs inline
 // under the blocking `CBlockingIo` (1805) here spawns the worker as a real fiber
 // and returns a PENDING `*Future`; `await` suspends the calling fiber until the

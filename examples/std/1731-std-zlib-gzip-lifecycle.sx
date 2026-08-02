@@ -1,5 +1,5 @@
-// Public zlib/gzip lifecycle + checksum coverage the earlier examples left
-// pending: zlib.Encoder/Decoder init/reset/write/finish round-trips, level
+// Public zlib/gzip lifecycle + checksum coverage: zlib.Encoder/Decoder
+// init/reset/write/finish round-trips, level
 // and bound behavior, u32 checksum vectors (empty, known, incremental,
 // boundary seed), and public checksum-failure on corrupted input — all under
 // a net-zero GPA gate.
@@ -88,7 +88,7 @@ test_public_checksum_failure :: (alloc: Allocator) -> bool {
     packed := zlib.encode(PLAIN, .{ level = 6 }, alloc) catch { return false; };
     // Corrupt one payload byte past the 2-byte zlib header: the public
     // decode must fail loudly (checksum or stream error), never return
-    // silently wrong bytes.
+    // wrong bytes.
     mutable := packed;
     mutable[8] = mutable[8] ^ 0xff;
     corrupted := false;

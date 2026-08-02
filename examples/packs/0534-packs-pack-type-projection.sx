@@ -1,4 +1,4 @@
-// Feature 1 — TYPE-position pack projection `xs.T`. The per-element protocol
+// TYPE-position pack projection `xs.T`. The per-element protocol
 // type-arg `T` projects into a Pack of types, usable in type/signature
 // positions: a tuple type `Tuple(..xs.T)` and a closure signature
 // `Closure(..xs.T) -> R`. (`T` of each element comes from its

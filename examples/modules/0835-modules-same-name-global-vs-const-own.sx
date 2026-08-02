@@ -1,10 +1,8 @@
 // A module's own scalar const `K` and another module's same-named ARRAY
 // GLOBAL (`K : [4]i64 = .[...]`) coexist: each module's bare `K` binds its
 // OWN author. The global registry is last-wins across modules, so without
-// source-aware selection a.sx's `K` read the array global's address.
-//
-// Regression (issue 0115): a.sx printed the array's address; h.sx's reads
-// stayed correct only by registration order.
+// source-aware selection a.sx's `K` reads the array global's address and prints
+// it, while h.sx's reads stay correct only by registration order.
 
 #import "modules/std.sx";
 #import "0835-modules-same-name-global-vs-const-own/a.sx";

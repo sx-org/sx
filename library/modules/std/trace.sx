@@ -3,28 +3,26 @@
 c :: #import "modules/std/c.sx"; // libc write
 
 // =====================================================================
-// trace.sx — error return-trace formatting (ERR step E3.3).
+// trace.sx — error return-trace formatting.
 //
-// Reads the thread-local return-trace buffer (ERR E3.1, populated by the
-// push/clear wiring in E3.2) and renders it. A `raise` / propagating `try`
+// Reads the thread-local return-trace buffer (populated by the
+// push/clear wiring) and renders it. A `raise` / propagating `try`
 // pushes a frame; an absorbing site (`catch` / `or value` / destructure)
 // clears the buffer. So at format time the buffer holds exactly the frames
 // of failures that escaped to where you're formatting — typically inside a
 // `catch` handler (the clear fires when the handler completes, so the body
-// still sees the chain) or the (future) failable-`main` wrapper.
+// still sees the chain) or the failable-`main` wrapper.
 //
-// Frame resolution (ERR E3.0 slice 3a): in compiled code a frame is a pointer
+// Frame resolution: in compiled code a frame is a pointer
 // to an interned `TraceFrame` the compiler stamped in at the push site, so the
-// location resolves in-process with no DWARF and no symbolizer. (The comptime
-// path — a packed `(func_id, ir_offset)` resolved via the interpreter's IR
-// tables — lands with slice 3b.)
+// location resolves in-process with no DWARF and no symbolizer.
 // =====================================================================
 
 
 // The compiled return-trace frame. Named `TraceFrame` (not `Frame`) so it never
 // collides with a UI / geometry `Frame` a consumer flat-imports — same-name
-// types are now distinct nominal identities (issue 0105), so a bare `Frame` must
-// resolve unambiguously to the consumer's own. Layout MUST match
+// types are distinct nominal identities, so a bare `Frame`
+// resolves unambiguously to the consumer's own. Layout MUST match
 // `getFrameStructType` in src/ir/emit_llvm.zig and `SxFrame` in
 // library/vendors/sx_trace_runtime/sx_trace.c.
 TraceFrame :: struct {
@@ -87,11 +85,11 @@ print_current :: () {
     }
 }
 
-// Dump the comptime (`#run`) interpreter call-frame chain (ERR E4.1). At
+// Dump the comptime (`#run`) interpreter call-frame chain. At
 // comptime the interpreter walks its active sx frames and appends them to the
 // build output; in compiled code this folds to nothing (there is no
 // interpreter stack — the only caller is a dead `is_comptime()` branch).
-// Frame source locations await IR-offset resolution, so only names print today.
+// Frame source locations await IR-offset resolution, so only names print.
 print_interpreter_frames :: () {
     __interp_print_frames();
 }

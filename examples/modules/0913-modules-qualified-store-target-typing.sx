@@ -1,6 +1,6 @@
 // Qualified global destinations are selected before RHS lowering. Direct and
-// deeply nested authors deliberately reuse all type/global names with distinct
-// nominal layouts and enum ordinals.
+// deeply nested authors reuse all type/global names with distinct nominal
+// layouts and enum ordinals.
 
 direct :: #import "0913-modules-qualified-store-target-typing/engine_a.sx";
 deep :: #import "0913-modules-qualified-store-target-typing/deep.sx";

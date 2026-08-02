@@ -1,4 +1,4 @@
-// std.http — Q3.6b client conveniences: URL fetch, redirect following, and
+// std.http — client conveniences: URL fetch, redirect following, and
 // keep-alive connection pooling.
 //
 //   Client.fetch(method, url, body, opts, buf, cap)
@@ -180,7 +180,7 @@ run :: () -> i32 {
     }
     st1 := srv_a.stats();
     // the direct fetches above used their own conns; the POOLED five must
-    // have added exactly ONE accept (review L5: now actually asserted)
+    // have added exactly ONE accept
     if st1.accepted_total != accepts_before + 1 { pool.close(); return teardown(21, *srv_a, *ta, *srv_b, *tb); }
     base := st1.accepted_total;
     rp2, ep2 := pool.fetch("GET", "http://127.0.0.1:19027/hello", "", *buf[0], 8192);
@@ -223,7 +223,7 @@ run :: () -> i32 {
         tcc.deinit(); srv_t.stop(); tt.join(); srv_t.close();
         return teardown(34, *srv_a, *ta, *srv_b, *tb);
     }
-    // pooled https (review I3): two pooled fetches must ride ONE TLS conn.
+    // pooled https: two pooled fetches must ride ONE TLS conn.
     tls_accepts0 := srv_t.stats().accepted_total;
     tpool := http.ClientPool.init(opts_tls);
     rq1, eq1 := tpool.fetch("GET", "https://127.0.0.1:19029/hello", "", *buf[0], 8192);

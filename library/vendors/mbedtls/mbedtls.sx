@@ -187,7 +187,7 @@ mbedtls_ssl_conf_rng :: (
 ) extern mbedtls;
 
 mbedtls_ssl_conf_own_cert :: (conf: *SslConfig, own_cert: *X509Crt, pk_key: *PkContext) -> i32 extern mbedtls;
-// NOTE: mbedtls_ssl_conf_min/max_tls_version are `static inline` in ssl.h (they
+// mbedtls_ssl_conf_min/max_tls_version are `static inline` in ssl.h (they
 // assign an opaque config field), so they expose NO linkable symbol and cannot
 // be bound here as extern. Pinning a min version needs a small C wrapper.
 
@@ -196,7 +196,7 @@ mbedtls_ssl_conf_own_cert :: (conf: *SslConfig, own_cert: *X509Crt, pk_key: *PkC
 // null (bound as *void — we never build CRLs).
 mbedtls_ssl_conf_ca_chain :: (conf: *SslConfig, ca_chain: *X509Crt, ca_crl: *void) extern mbedtls;
 
-// ── ALPN (Q3.4) ─────────────────────────────────────────────────────
+// ── ALPN ────────────────────────────────────────────────────────────
 // protos: NULL-terminated array of NUL-terminated protocol names, in
 // preference order. mbedTLS stores the POINTER — the array and every string
 // must outlive the config.
@@ -204,7 +204,7 @@ mbedtls_ssl_conf_alpn_protocols :: (conf: *SslConfig, protos: [*][*]u8) -> i32 e
 // The negotiated protocol after the handshake (null = none negotiated).
 mbedtls_ssl_get_alpn_protocol :: (ssl: *SslContext) -> [*]u8 extern mbedtls;
 
-// ── SNI (Q3.4) ──────────────────────────────────────────────────────
+// ── SNI ─────────────────────────────────────────────────────────────
 // f_sni fires during the server handshake with the client's server_name
 // (NOT NUL-terminated — name_len bytes). Return 0 to continue (after an
 // optional mbedtls_ssl_set_hs_own_cert to switch certs); nonzero aborts
@@ -260,8 +260,8 @@ mbedtls_ctr_drbg_random :: (p_rng: *void, output: [*]u8, len: usize) -> i32 abi(
 
 // ── TLS verification mode (client/peer-auth) ────────────────────────
 // authmode controls whether the peer certificate is verified. The server
-// provider leaves it at the preset default; a client (T5 loopback test)
-// sets VERIFY_NONE to accept the self-signed fixture cert.
+// provider leaves it at the preset default; the loopback client sets
+// VERIFY_NONE to accept the self-signed fixture cert.
 mbedtls_ssl_conf_authmode :: (conf: *SslConfig, authmode: i32) extern mbedtls;
 
 // ── Version ─────────────────────────────────────────────────────────

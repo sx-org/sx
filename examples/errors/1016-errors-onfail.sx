@@ -1,9 +1,9 @@
-// `onfail` — cleanup that runs only when an error LEAVES the enclosing block
-// (ERR step E1.7). Unlike `defer` (which runs on every exit), `onfail` fires
+// `onfail` — cleanup that runs only when an error LEAVES the enclosing block.
+// Unlike `defer` (which runs on every exit), `onfail` fires
 // on an error exit — a `raise` or a propagating `try` — and is skipped on
 // success. On an error exit `defer` and `onfail` run interleaved in reverse
 // declaration order. `onfail (e) { … }` binds the in-flight error tag.
-// (Per-attempt-`try` gating and `or`-chain absorption refine this in E2.4b.)
+// (Per-attempt-`try` gating and `or`-chain absorption are covered in 1028.)
 
 #import "modules/std.sx";
 

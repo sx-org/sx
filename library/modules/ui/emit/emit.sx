@@ -1,4 +1,4 @@
-// The terminal publish (revision §13.2).
+// The terminal publish.
 //
 // `Label{ … }.emit()` is the ONLY way a child reaches a container: there is no
 // interception, so an expression written without `.emit()` is an ordinary

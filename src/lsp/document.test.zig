@@ -31,7 +31,7 @@ fn fieldTypeOf(doc: *doc_mod.Document, type_name: []const u8, field: []const u8)
     return null;
 }
 
-test "analyzeDocument: identifier array dimension folds to the const value (issue 0099)" {
+test "analyzeDocument: identifier array dimension folds to the const value" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -42,9 +42,9 @@ test "analyzeDocument: identifier array dimension folds to the const value (issu
         \\Thing :: struct { buf: [MAX]u8; }
     ;
     const doc = try store.openOrUpdate("main.sx", src, 1);
-    // Pre-fix this aborts inside `resolveTypeNode`: the array `.length` node is
-    // an `identifier` (named const), but the code read `.int_literal`
-    // unconditionally. Reaching the assertions at all proves the crash is gone.
+    // The array `.length` node here is an `identifier` (named const), not an
+    // `.int_literal`; `resolveTypeNode` must handle it rather than abort.
+    // Reaching the assertions at all proves it does.
     try store.analyzeDocument(doc);
 
     const buf_ty = fieldTypeOf(doc, "Thing", "buf") orelse return error.SkipZigTest;
@@ -142,7 +142,7 @@ test "DocumentStore: absolute didOpen of a relatively-keyed file reuses the Docu
     const alloc = arena.allocator();
     const io = test_io();
 
-    const rel = "lsp-dup-key-regression.tmp.sx";
+    const rel = "lsp-dup-key.tmp.sx";
     const disk_src = "answer :: () -> i64 { return 42; }\n";
     try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = rel, .data = disk_src });
     defer std.Io.Dir.deleteFile(.cwd(), io, rel) catch {};
@@ -177,7 +177,7 @@ test "DocumentStore: relative import lookup after absolute didOpen sees editor c
     const alloc = arena.allocator();
     const io = test_io();
 
-    const rel = "lsp-dup-key-regression2.tmp.sx";
+    const rel = "lsp-dup-key-reverse.tmp.sx";
     try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = rel, .data = "on_disk :: 1;\n" });
     defer std.Io.Dir.deleteFile(.cwd(), io, rel) catch {};
 
@@ -228,7 +228,7 @@ test "analyzeDocument: #context_extend records a Context member def" {
 
 // A `context.field` read records a member USE owned by "Context" — WITHOUT
 // the declaring module (or even core.sx) being imported: the implicit
-// `context` types as the Context struct by name (the L3 pin's LSP twin).
+// `context` types as the Context struct by name.
 test "analyzeDocument: context.field read records a Context member use" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -264,8 +264,8 @@ test "analyzeDocument: push-literal field name records a Context member use" {
 }
 
 // A TYPED struct literal's field name records a member USE owned by the
-// literal's struct — the general struct-literal navigation win (stress
-// review finding 8), not a Context special case.
+// literal's struct — general struct-literal navigation, not a Context
+// special case.
 test "analyzeDocument: typed struct-literal field name records a member use" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

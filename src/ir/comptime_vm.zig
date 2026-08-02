@@ -73,7 +73,7 @@ const Span = inst_mod.Span;
 /// reads as null.
 /// Because addresses are absolute host pointers, a comptime pointer and an
 /// FFI-returned host pointer are the SAME kind of value: the FFI bridge hands them
-/// to / from real libc with no translation (Phase 4D).
+/// to / from real libc with no translation.
 pub const Addr = u64;
 pub const null_addr: Addr = 0;
 
@@ -87,7 +87,7 @@ pub const Reg = u64;
 /// short-lived). There is NO fixed buffer and NO size cap: the arena grows through
 /// its backing allocator on demand. `Addr` is the allocation's REAL host pointer,
 /// so a comptime pointer and an FFI-returned host pointer are interchangeable —
-/// the FFI bridge passes them to / from libc untouched (Phase 4D).
+/// the FFI bridge passes them to / from libc untouched.
 pub const Machine = struct {
     arena: std.heap.ArenaAllocator,
 
@@ -201,7 +201,7 @@ pub var last_bail_reason: ?[]const u8 = null;
 /// cannot be materialized into a host `Value`), as opposed to an EXECUTION bail
 /// (`runEntry` couldn't evaluate the body — an unported op, a VM
 /// `DivisionByZero`, etc.). The distinction matters for a body-local `#run`
-/// fold (issue 0182): a BRIDGE bail means a runtime re-execution would run the
+/// fold: a BRIDGE bail means a runtime re-execution would run the
 /// SAME body over (possibly `---`) storage and produce DIFFERENT, garbage data —
 /// a silent miscompile that must fail the build. An EXECUTION bail means the VM
 /// simply can't run it; the established runtime-call fallback computes the
@@ -211,10 +211,10 @@ pub var last_bail_was_bridge: bool = false;
 
 // ── Fact-await seam ─────────────────────────────────────────────────────────
 //
-// A comptime evaluation can reach a question whose answer is not yet FINAL —
-// today only "which conformer arm implements this symbolic dispatch", since a
-// conformance admitted later still grows the routine's member set. Instead of
-// failing on the spot, the evaluation awaits that fact: it parks, the driver
+// A comptime evaluation can reach a question whose answer is not yet FINAL. The
+// one such question is "which conformer arm implements this symbolic dispatch",
+// since a conformance admitted later still grows the routine's member set.
+// Instead of failing on the spot, the evaluation awaits that fact: it parks, the driver
 // asks the evaluation's own scheduler, and the same continuation resumes with
 // the answer. A scheduler that cannot answer YET leaves the evaluation parked
 // and its owner — the expansion worklist — resumes it once the fact fires.
@@ -347,8 +347,7 @@ pub const Evaluation = struct {
             e.vm.regToValue(e.gpa, &e.module.types, reg, func.ret) catch |err| blk: {
                 // The body RAN; only the result bridge failed → mark this a BRIDGE
                 // bail so a body-local `#run` fold can tell a genuine "result can't
-                // be materialized" miscompile from a "VM can't run it" fallback
-                // (issue 0182).
+                // be materialized" miscompile from a "VM can't run it" fallback.
                 last_bail_was_bridge = true;
                 last_bail_reason = e.vm.detail orelse @errorName(err);
                 break :blk null;
@@ -445,8 +444,9 @@ pub fn runBuildCallback(gpa: std.mem.Allocator, module: *const Module, func_id: 
 // Walks the SSA IR over comptime frames: each SSA result is a `Reg` word
 // (immediate scalar bits, or an `Addr`). Integer math is 64-bit wrapping/signed
 // (`+%`, `@divTrunc`, signed compares — a scalar `.int` is i64 regardless of the
-// declared width), float math is f64. Memory/aggregate/call ops are not ported
-// yet — they bail loudly (`error.Unsupported` + `detail`), never silently.
+// declared width), float math is f64. Alloca/load/store, aggregate init and
+// projection, and calls execute over comptime memory; an op with no arm bails
+// loudly (`error.Unsupported` + `detail`), never silently.
 
 pub const Error = error{ DivisionByZero, TypeError, Unsupported, OutOfBounds };
 
@@ -488,7 +488,7 @@ fn signExtendWord(raw: Reg, sz: usize) Reg {
     return @bitCast((@as(i64, @bitCast(raw)) << shift) >> shift);
 }
 
-// ── BuildOptions target predicates (Phase 5.5) ───────────────────────────────
+// ── BuildOptions target predicates ───────────────────────────────
 // Computed from the `--target` triple, mirroring `compiler_hooks`'s hooks
 // (which mirror `TargetConfig.is{MacOS,IOS,IOSDevice,IOSSimulator}()`).
 
@@ -749,9 +749,10 @@ pub const Vm = struct {
         return r;
     }
 
-    /// Convert a static `ConstantValue` (a global's `init_val`) to a Reg. Scalars
-    /// only for now (float regs hold f64 bits — storage narrows f32); aggregate /
-    /// string / vtable / func_ref bail loudly (add when a real global_get needs it).
+    /// Convert a static `ConstantValue` (a global's `init_val`) to a Reg. An
+    /// aggregate-kinded type is laid out in comptime memory and the Reg is its
+    /// address; a scalar converts to the value word (float regs hold f64 bits —
+    /// storage narrows f32). Any other constant kind bails loudly.
     fn constToReg(self: *Vm, cv: inst_mod.ConstantValue, ty: TypeId) Error!Reg {
         const table = try self.requireTable();
         if (kindOf(table, ty) == .aggregate) {
@@ -1593,7 +1594,7 @@ pub const Vm = struct {
                 return error.Unsupported;
             },
 
-            // Not yet ported (memory, aggregates, calls, …): bail loudly with the
+            // Unsupported ops (memory, aggregates, calls, …): bail loudly with the
             // op name — never a silent default.
             else => {
                 self.detail = @tagName(ins.op);
@@ -2033,7 +2034,7 @@ pub const Vm = struct {
     }
 
     /// Service a welded `compiler`-library function natively on comptime memory — the
-    /// comptime compiler-API (Phase 3 of `PLAN-COMPILER-VM.md`). Returns the result
+    /// comptime compiler-API. Returns the result
     /// word, or `null` for an unknown name (caller bails). Reads/writes comptime
     /// memory directly instead of marshaling `Value`s. The seed pair is the
     /// string-pool round-trip:
@@ -2073,7 +2074,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             const id: types.StringId = @enumFromInt(@as(u32, @intCast(raw)));
             return try self.makeStringValue(table, table.getString(id));
         }
-        // ── read-only reflection readers (Phase 3) ──────────────────────────
+        // ── read-only reflection readers ──────────────────────────
         // Type handle = a u32 `TypeId` (a word), exactly like `StringId` — so
         // these mirror intern/text_of's shape: word in, word out, no marshaling.
         if (intr == .raw_find_type) {
@@ -2156,8 +2157,8 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         if (intr == .build_options) {
             return @as(Reg, null_addr);
         }
-        // `on_build(cb)` — register the build callback (the Phase 5 form, `cb:
-        // (opt: BuildOptions) -> bool`). Like `set_post_link_callback` but a free
+        // `on_build(cb)` — register the build callback (`cb: (opt:
+        // BuildOptions) -> bool`). Like `set_post_link_callback` but a free
         // fn (cb is arg 0, no self) and the callback receives the `BuildOptions`
         // handle when invoked (the `post_link_takes_options` flag drives that).
         if (intr == .on_build) {
@@ -2170,7 +2171,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             bc.post_link_takes_options = true;
             return @as(Reg, null_addr);
         }
-        // ── build-pipeline metadata queries (Phase 5.2) ─────────────────────
+        // ── build-pipeline metadata queries ─────────────────────
         // Read-only: the compiler answers them from the `BuildConfig` `main.zig`
         // forwards before the post-link callback runs. Each builds a fresh
         // `List(string)` in comptime memory (the result type drives its layout) — no
@@ -2189,8 +2190,8 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         }
         // `emit_object() -> string` — ACTION: verify + emit the codegen'd module
         // to its object file and return the path. Dispatches through the
-        // host-installed hook (the VM can't emit itself); the driver no longer
-        // auto-emits (everything is sx-driven via `default_pipeline`).
+        // host-installed hook (the VM can't emit itself); emission is sx-driven
+        // via `default_pipeline`.
         if (intr == .emit_object) {
             if (args.len != 0) return self.failMsg("comptime emit_object: expected no args");
             const bc = self.build_config orelse
@@ -2225,9 +2226,9 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         }
         // `link(objects, output, libraries, frameworks, flags, target)` — the one
         // genuine ACTION: dispatch to the host-installed linker (the VM can't link
-        // itself). Void return (the build callback isn't fallible — Phase 5
-        // decision); a link failure bails loudly → hard build error. `ref_types`
-        // gives each List(string) arg its concrete type for the comptime reader.
+        // itself). Void return, because the build callback is not fallible; a
+        // link failure bails loudly → hard build error. `ref_types` gives each
+        // List(string) arg its concrete type for the comptime reader.
         if (intr == .link) {
             if (args.len != 6) return self.failMsg("comptime link: expected (objects, output, libraries, frameworks, flags, target)");
             const bc = self.build_config orelse
@@ -2244,10 +2245,9 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 return self.failMsg("comptime link: linking failed");
             return @as(Reg, null_addr); // void
         }
-        // ── BuildOptions accessors (Phase 5.5) ──────────────────────────────
-        // Migrated off `struct #compiler` hooks onto VM-native arms. `self` (the
-        // opaque BuildOptions handle) is args[0] and ignored; the real state lives
-        // on the threaded `BuildConfig`. SETTERS dupe the string arg into the
+        // ── BuildOptions accessors ──────────────────────────────────────────
+        // `self` (the opaque BuildOptions handle) is args[0] and ignored; the
+        // real state lives on the threaded `BuildConfig`. SETTERS dupe the string arg into the
         // PERSISTENT `self.gpa` (the Compilation allocator — NOT the per-eval VM
         // arena, whose bytes die at `Vm.deinit`) so it survives to post-link.
         if (try self.callBuildOptionFn(name, args, frame)) |r| return r;
@@ -2269,7 +2269,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         return self.gpa.dupe(u8, view) catch return self.failMsg("comptime BuildOptions setter: out of memory");
     }
 
-    /// VM-native `BuildOptions` accessors (Phase 5.5). Returns null when `name` is
+    /// VM-native `BuildOptions` accessors. Returns null when `name` is
     /// not a BuildOptions accessor (the caller then yields null → "unknown").
     fn callBuildOptionFn(self: *Vm, name: []const u8, args: []const Ref, frame: *Frame) Error!?Reg {
         const table = try self.requireTable();
@@ -2514,10 +2514,10 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// builtin the VM doesn't model yet (caller bails).
     fn callBuiltinVm(self: *Vm, bi: inst_mod.BuiltinCall, ins_ty: TypeId, frame: *Frame, ref_types: []const TypeId) Error!?Reg {
         switch (bi.builtin) {
-            // `declare(name)` and `define(handle, info)` are no longer builtins —
-            // they're plain sx in `modules/std/meta.sx` over the compiler-API
-            // primitives `declare_type` / `register_type` (`callCompilerFn`). The
-            // `.declare` / `.define` BuiltinIds and `defineFromInfo` were removed.
+            // `declare(name)` and `define(handle, info)` are plain sx in
+            // `modules/std/meta.sx` over the compiler-API primitives
+            // `declare_type` / `register_type` (`callCompilerFn`).
+            //
             // type_name(x) → the type's name as a string. The arg is a Type value
             // (`.type_value` word = a TypeId) or an Any box (`{tag@0, value@8}` whose
             // tag IS the boxed value's type, unless tag == type_value: then the boxed
@@ -2537,7 +2537,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
                 return @as(Reg, @intFromBool(table.isUnsignedInt(tid)));
             },
-            // Runtime-Type scalar reflection (1a-S2): the tag resolves the same
+            // Runtime-Type scalar reflection: the tag resolves the same
             // way type_name's does; answers come straight from the type table.
             .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_variant_tag_width => {
                 const table = try self.requireTable();
@@ -3088,9 +3088,11 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         return .{ .aggregate = out };
     }
 
-    /// How a value of type `ty` is held: a register word (scalar/pointer, ≤8
-    /// bytes) or by-address in comptime memory (struct). Anything else is not ported
-    /// yet (slice/string/any/optional/enum/union/array/tuple/vector — sub-step 4+).
+    /// How a value of type `ty` is held: a register word (scalar, pointer,
+    /// func-ref, enum tag, error tag, pointer-child optional) or by-address in
+    /// comptime memory (struct, array, tuple, slice, string, `any`, tagged
+    /// union, non-pointer optional). Everything else — `void`, `noreturn`,
+    /// `unresolved`, vectors — is `.unsupported`.
     const Kind = enum { word, aggregate, unsupported };
 
     fn kindOf(table: *const types.TypeTable, ty: TypeId) Kind {

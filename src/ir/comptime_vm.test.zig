@@ -1,5 +1,3 @@
-// Tests for the byte-addressable comptime machine (Phase 1 of PLAN-COMPILER-VM.md).
-
 const std = @import("std");
 const vm = @import("comptime_vm.zig");
 const inst_mod = @import("inst.zig");
@@ -167,13 +165,13 @@ test "comptime_vm exec: loop with block params sums i..1" {
     try std.testing.expectEqual(@as(i64, 0), toI64(try v.run(&fb.func, &.{fromI64(0)})));
 }
 
-test "comptime_vm exec: nested value-merge threads inner if value (issue 0259)" {
+test "comptime_vm exec: nested value-merge threads inner if value" {
     // f(a, b) = if a { 100 } else { if b { 42 } else { 0 } }
-    // The correct IR (what lowering now emits for both #run forms) chains two
+    // The correct IR (what lowering emits for both #run forms) chains two
     // value-merge blocks: the OUTER merge's else-edge value IS the INNER merge's
     // block_param result. The VM must thread that inner phi word into the outer
-    // phi — the shape the issue-0259 lowering fix relies on being interpreted
-    // faithfully. a=false, b=true must yield 42 (not the outer else-const 0).
+    // phi — the shape lowering relies on being interpreted faithfully.
+    // a=false, b=true must yield 42 (not the outer else-const 0).
     const params = [_]Function.Param{ param(.bool), param(.bool) };
     var fb = Fb.init(std.testing.allocator, &params, .i64);
     defer fb.deinit();
@@ -654,9 +652,8 @@ test "comptime_vm exec: non-pointer optional wrap/unwrap/has_value/coalesce" {
 }
 
 test "comptime_vm exec: a negative i32 stored and reloaded stays negative (sign-extend)" {
-    // Regression (failable cluster): a scalar `.int` is i64. Storing an
-    // i32 -1 writes 0xFFFFFFFF; the load must SIGN-extend (not zero-extend, which
-    // would read +4294967295 and make `< 0` false — the bug that hid `raise`).
+    // A scalar `.int` is i64. Storing an i32 -1 writes 0xFFFFFFFF; the load
+    // must SIGN-extend — zero-extending reads +4294967295 and makes `< 0` false.
     const alloc = std.testing.allocator;
     var table = types.TypeTable.init(alloc);
     defer table.deinit();
@@ -681,9 +678,9 @@ test "comptime_vm exec: a negative i32 stored and reloaded stays negative (sign-
 }
 
 test "comptime_vm exec: storing a null non-pointer optional into a slot reads back as none" {
-    // Regression for the implicit-ctx coverage pass: `y: ?i64 = null` lowers to a
-    // store of the `null_addr` optional sentinel into an aggregate slot. writeField
-    // must ZERO the slot (→ flag byte 0 → none), not memcpy from address 0 (OOB).
+    // `y: ?i64 = null` lowers to a store of the `null_addr` optional sentinel
+    // into an aggregate slot. writeField must ZERO the slot (→ flag byte 0 →
+    // none), not memcpy from address 0 (OOB).
     const alloc = std.testing.allocator;
     var table = types.TypeTable.init(alloc);
     defer table.deinit();
@@ -876,14 +873,14 @@ test "comptime_vm exec: deref a pointer; addr_of passes through a struct address
 
 test "comptime_vm exec: f32 store/load round-trips through 4-byte memory" {
     // Float registers hold f64 bits; f32 memory is the 4-byte IEEE-754 single.
-    // Regression: storing an f32 must @floatCast (NOT truncate the f64 bits — that
+    // Storing an f32 must @floatCast (NOT truncate the f64 bits — that
     // wrote zeros for 1.0, since 1.0f64 = 0x3FF0000000000000, low 4 bytes = 0).
     const alloc = std.testing.allocator;
     var table = types.TypeTable.init(alloc);
     defer table.deinit();
     const f32ptr = table.intern(.{ .pointer = .{ .pointee = .f32 } });
 
-    // p := alloca f32; *p = 1.0; return int(load p)   → 1 (was 0 under the bug)
+    // p := alloca f32; *p = 1.0; return int(load p)   → 1
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});

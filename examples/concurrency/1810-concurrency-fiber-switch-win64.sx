@@ -1,5 +1,5 @@
 // Win64 fiber context-switch STRESS GATE (x86_64-windows-gnu).
-// Mirrors the aarch64 §10.7 gate (examples/1808) for the Win64 ABI:
+// Mirrors the aarch64 register-survival gate (examples/1808) for the Win64 ABI:
 //   - callee-saved: rbx,rbp,rdi,rsi,r12-r15 (8 GP) + rsp + xmm6-xmm15 (10 XMM,
 //     128-bit — Win64 HAS callee-saved XMM, unlike SysV/aarch64).
 //   - args rcx,rdx,r8,r9; result rax; 32-byte shadow + 16-align at each call;
@@ -12,11 +12,9 @@
 // was negative-controlled on aarch64 (examples/1808). Prints three fields:
 // "<gp_mismatch> <xmm_mismatch> <P|F>"  — expected "0 0 P".
 //
-// VALIDATED: built with `--target x86_64-windows-gnu --self-contained` and run
-// on a Windows 7 x64 VM (UTM) -> printed "0 0 P" (every GP + XMM callee-saved
-// survived). Pinned x86_64-windows-gnu: ir-only on a non-Windows host (the .ir
-// locks the Win64-ABI lowering); runs end-to-end on a Windows x86_64 runner.
-// Adversarially reviewed (no critical/minor bugs) before the VM run.
+// Pinned x86_64-windows-gnu: ir-only on a non-Windows host, where the `.ir`
+// locks the Win64-ABI lowering; on a Windows x86_64 runner it runs end-to-end
+// and prints "0 0 P" — every GP and XMM callee-saved register survived.
 
 kernel32 :: #library "kernel32";
 GetStdHandle :: (n: u32) -> *void extern;

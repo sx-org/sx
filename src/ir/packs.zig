@@ -7,18 +7,16 @@ const Node = ast.Node;
 const TypeId = types.TypeId;
 const Lowering = lower.Lowering;
 
-/// Canonical owner of pack-aware TYPE-position resolution (architecture phase
-/// A2.3). Resolves the shapes whose meaning depends on active pack state —
+/// Canonical owner of pack-aware TYPE-position resolution. Resolves the shapes whose meaning depends on active pack state —
 /// pack-variadic `Closure(..p)` / `(Params...) -> R` / `(..xs)` tuples and the
 /// pack projections (`..xs.T`) that back them — in one place instead of inline
 /// in `Lowering`.
 ///
-/// A `*Lowering` facade (Principle 5): pack projection reads the live pack
+/// A `*Lowering` facade: pack projection reads the live pack
 /// state (`pack_arg_types` / `pack_constraint` / `pack_bindings` /
 /// `type_bindings` / `param_impl_map`) and recurses through the full stateful
 /// type resolver, so it borrows `Lowering` rather than re-threading every
-/// field. The dependency shrinks as later phases lift pack state into an
-/// explicit context object.
+/// field.
 pub const PackResolver = struct {
     l: *Lowering,
 

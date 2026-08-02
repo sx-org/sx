@@ -100,8 +100,8 @@ pub fn callVoidRet(symbol: *anyopaque, args: []const usize) !void {
 
 pub fn callIntRetVar(symbol: *anyopaque, fixed: usize, args: []const usize) !i64 {
     if (args.len < fixed) return error.TooFewArgs;
-    // Special-case the shapes we actually use today; extend as
-    // needed. fixed_count > total is impossible.
+    // Only the shapes the compiler forms are enumerated.
+    // fixed_count > total is impossible.
     return switch (fixed) {
         2 => switch (args.len) {
             2 => @as(*const fn (usize, usize, ...) callconv(.c) i64, @ptrCast(@alignCast(symbol)))(args[0], args[1]),

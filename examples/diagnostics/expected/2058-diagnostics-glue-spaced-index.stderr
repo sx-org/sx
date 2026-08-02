@@ -1,0 +1,5 @@
+error: a space before `[` — an index binds only when the `[` is glued to what it indexes: write `xs[0]`
+  --> examples/diagnostics/2058-diagnostics-glue-spaced-index.sx:8:21
+   |
+ 8 |     print("{}\n", xs [0]);
+   |                     ^^

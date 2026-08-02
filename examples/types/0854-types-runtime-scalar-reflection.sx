@@ -1,10 +1,8 @@
-// 1a-S2 — the scalar reflection family accepts RUNTIME `Type` values:
-// size_of / align_of / struct_field_count / variant_count / is_flags
-// read tag-indexed tables; type_eq compares tags. Includes the parity
-// pins: for each shape the RUNTIME answer must equal the COMPTIME fold
-// (padded, nested, union — the layouts most likely to diverge).
-// Replaces 1245-diagnostics-runtime-type-reflection-deferred, which
-// pinned the pre-S2 rejections.
+// The scalar reflection family accepts RUNTIME `Type` values: size_of /
+// align_of / struct_field_count / variant_count / is_flags read tag-indexed
+// tables; type_eq compares tags. Includes the parity pins: for each shape the
+// RUNTIME answer equals the COMPTIME fold (padded, nested, union — the layouts
+// most likely to diverge).
 #import "modules/std.sx";
 
 Padded  :: struct { a: u8; b: i64; c: u16; }        // tail+interior padding

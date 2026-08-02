@@ -1,5 +1,5 @@
-// The ownership cutover (E4) POSITIVE matrix — "P owns, *P views":
-//   - rvalue implicit erasure OWNS (the invariant, unchanged);
+// The ownership POSITIVE matrix — "P owns, *P views":
+//   - rvalue implicit erasure OWNS;
 //   - postfix on an LVALUE owns an independent copy;
 //   - postfix on a *Concrete SNAPSHOTS the pointee;
 //   - postfix on a *P view PROMOTES (well-typed view → owned; the fresh
@@ -7,8 +7,8 @@
 //   - `.(P, alloc)` routes the copy through a NAMED allocator (lvalue-
 //     only arg), pairing with `free(p, alloc)`;
 //   - `free` is legal on every owned P.
-// The demand diagnostics for the retired implicit/xx lvalue spellings
-// are pinned in diagnostics/1256.
+// The demand diagnostics for the implicit/xx lvalue spellings are pinned
+// in diagnostics/1256.
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 

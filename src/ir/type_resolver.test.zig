@@ -78,7 +78,7 @@ test "TypeResolver.resolveCompound builds structural compound types" {
     var arr = Node{ .span = .{ .start = 0, .end = 0 }, .data = .{ .array_type_expr = .{ .length = &len, .element_type = &s32n } } };
     try std.testing.expectEqual(@as(?TypeId, table.arrayOf(.i32, 3)), TypeResolver.resolveCompound(&table, &arr, inner));
 
-    // Function type `(i64) -> bool` — resolveCompound owns it (A2.3b).
+    // Function type `(i64) -> bool` — resolveCompound owns it.
     const fparams = [_]*Node{&s64n};
     var fnode = Node{ .span = .{ .start = 0, .end = 0 }, .data = .{ .function_type_expr = .{ .param_types = &fparams, .return_type = &booln } } };
     try std.testing.expectEqual(@as(?TypeId, table.functionTypeCC(&[_]TypeId{.i64}, .bool, .default)), TypeResolver.resolveCompound(&table, &fnode, inner));

@@ -1,4 +1,4 @@
-// macOS `.app` bundle smoke test — the corpus's first real bundler coverage.
+// macOS `.app` bundle smoke test.
 //
 // `default_pipeline` auto-bundles when `bundle_path` is set (build.sx imports the
 // sx bundler, so no explicit `on_build` is needed). `sx build` runs the bundler

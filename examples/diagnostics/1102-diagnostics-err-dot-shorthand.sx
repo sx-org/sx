@@ -1,5 +1,5 @@
-// Dot-shorthand `.Variant(args)` without a tagged-union target type produces
-// `error: cannot infer enum type for '.X'` instead of crashing.
+// Dot-shorthand `.Variant(args)` with no tagged-union target type reports
+// `cannot infer enum type for '.X'`.
 
 main :: () -> i32 {
     x := .Foo(1, 2);

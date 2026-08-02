@@ -25,7 +25,7 @@ pub const write_method = "write";
 pub const site_method = "site";
 
 /// One formation site: the source identity a per-site implementor bakes into
-/// `site()`. `indexed` is null when the P3c walk never reached the expression
+/// `site()`. `indexed` is null when the walk never reached the expression
 /// (a synthesized node), which is the `?@SourceSite` null the contract allows.
 pub const Site = struct {
     indexed: ?source_site.Site,

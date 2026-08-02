@@ -1,6 +1,6 @@
 // A closure literal whose body `raise`s but is annotated non-failable (or has
 // no `!` in its return) gets a LAMBDA-SPECIFIC diagnostic telling the user to
-// declare the failable return explicitly (ERR E5.1 sub-feature 1). This is the
+// declare the failable return explicitly. This is the
 // closure analog of the top-level "raise is only valid inside a failable
 // function" error — failability is never inferred for a lambda, it must be
 // declared, so a raising lambda with no `!` is a hard error pointing at the fix.

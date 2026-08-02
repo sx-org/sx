@@ -1,9 +1,7 @@
-// Generic function with a value-carrying `!` return composes (ERR E5.1
-// sub-feature 8). A `$T: Type` generic whose return is `(T, !E)` monomorphizes
+// Generic function with a value-carrying `!` return composes.
+// A `$T: Type` generic whose return is `(T, !E)` monomorphizes
 // per call: `return try f()` propagates the closure's error, and each
 // monomorphization's success value flows through as the concrete `T`.
-// (Regression: confirms issue 0062 was an invalid-syntax repro — the bug only
-// appeared with the non-generic `T: Type` form; the `$T` form works.)
 
 #import "modules/std.sx";
 
@@ -16,7 +14,7 @@ main :: () -> i32 {
     print("catch={}\n", wrap(i32, () -> (i32, !E) { return 7; }) catch (e) -1);   // 7
 
     // success, consumed by destructure (binds value + error slot); the value
-    // slot is read only under an `if !err` guard (ERR E1.8 path-sensitivity)
+    // slot is read only under an `if !err` guard (path-sensitivity)
     r, err := wrap(i32, () -> (i32, !E) { return 9; });
     if !err { print("destr={} ok=true\n", r); }                                           // destr=9 ok=true
 

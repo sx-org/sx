@@ -9,19 +9,16 @@ const TypeId = types.TypeId;
 const Lowering = lower.Lowering;
 const TypeResolver = @import("type_resolver.zig").TypeResolver;
 
-/// AST-level expression typing (architecture phase A3.1), extracted from
-/// `Lowering.inferExprType`. Owns the structural / non-call expression shapes —
+/// AST-level expression typing. Owns the structural / non-call expression shapes —
 /// literals, unary / binary ops, `try` / `catch`, `if`, block, field access,
 /// identifier / type-name, struct / tuple literals, index / slice / deref,
 /// null-coalesce, and the statement shapes that produce no value. Call result
 /// typing is owned by `CallResolver` (`calls.zig`); a call node reaching here is
 /// routed to it via `Lowering.inferExprType`.
 ///
-/// A `*Lowering` facade (Principle 5), like `PackResolver`: expression typing
+/// A `*Lowering` facade like `PackResolver`: expression typing
 /// reads live lexical-scope / pack / target-type state and dozens of resolver
-/// helpers, so it borrows `Lowering` rather than re-threading every field. The
-/// dependency shrinks as later phases lift that state into an explicit context
-/// (the plan's `TypeResolver` / `ProgramIndex` / `ResolveEnv` target).
+/// helpers, so it borrows `Lowering` rather than re-threading every field.
 pub const ExprTyper = struct {
     l: *Lowering,
 
@@ -64,8 +61,7 @@ pub const ExprTyper = struct {
                 // Arithmetic / bitwise / shift ops: infer the PROMOTED result
                 // of (lhs, rhs), not the LHS alone — `Lowering.arithResultType`
                 // is the same rule `lowerBinaryOp` applies, so `M + 0.5` types
-                // as `f64` regardless of operand order (was LHS-biased: `M + 0.5`
-                // → i64 while `0.5 + M` → f64).
+                // as `f64` regardless of operand order.
                 else => Lowering.arithResultType(self.l.inferExprType(bop.lhs), self.l.inferExprType(bop.rhs)),
             },
             .unary_op => |uop| switch (uop.op) {
@@ -114,7 +110,7 @@ pub const ExprTyper = struct {
                 // If-else types as its branches' unified type. A `noreturn`
                 // branch (one that diverges — `return` / `raise` / `break` /
                 // `continue`) unifies away, so the expression takes the other
-                // branch's type; both diverging → `noreturn` (ERR E1.4c).
+                // branch's type; both diverging → `noreturn`.
                 if (ie.else_branch) |eb| {
                     const then_ty = self.l.inferExprType(ie.then_branch);
                     if (then_ty == .noreturn) return self.l.inferExprType(eb);
@@ -129,11 +125,11 @@ pub const ExprTyper = struct {
             // produce no value at their site. A block whose last statement is
             // one of these propagates `noreturn` (block arm below), which lets
             // a `catch` body that ends in `return` / `raise` unify with the
-            // success type (ERR E1.4c / E1.5).
+            // success type.
             .return_stmt, .raise_stmt, .break_expr, .continue_expr => .noreturn,
             .block => |blk| {
-                // A block's type is its last expression's type only when it
-                // produces a value (no trailing `;`); otherwise it is void.
+                // A block's type is its last statement's type when that
+                // statement is an expression; otherwise it is void.
                 if (blk.produces_value and blk.stmts.len > 0) {
                     return self.l.inferExprType(blk.stmts[blk.stmts.len - 1]);
                 }
@@ -149,13 +145,13 @@ pub const ExprTyper = struct {
                     }
                 }
                 // Struct constant access: `Struct.CONST` — mirrors the
-                // lowerFieldAccess intercept (line 3851). Without this,
-                // `Phys.GRAVITY` (f64) inferred as i64 and pack-fn
-                // callers boxed the float into the int slot.
+                // `lowerFieldAccess` intercept. Without it, `Phys.GRAVITY`
+                // (f64) infers as i64 and pack-fn callers box the float into
+                // the int slot.
                 if (fa.object.data == .identifier) {
                     const obj_name = fa.object.data.identifier.name;
                     // Nominal-authority selection first, mirroring the
-                    // lowerFieldAccess intercept (issue 0320) — the global
+                    // lowerFieldAccess intercept — the global
                     // "Struct.CONST" spelling is last-wins across same-name
                     // authors and stays only as the untracked-head fallback.
                     var author_tracked = false;
@@ -209,17 +205,17 @@ pub const ExprTyper = struct {
                         }
                     }
                 }
-                // M1.3 — `obj.class` on an Obj-C-class pointer returns Class (*void).
+                // `obj.class` on an Obj-C-class pointer returns Class (*void).
                 if (std.mem.eql(u8, fa.field, "class")) {
                     if (self.l.objc().isObjcClassPointer(self.l.inferExprType(fa.object))) {
                         return self.l.module.types.ptrTo(.void);
                     }
                 }
-                // M2.2 — `obj.field` for an Obj-C `#property` field returns the field's type.
+                // `obj.field` for an Obj-C `#property` field returns the field's type.
                 if (self.l.lookupObjcPropertyOnPointer(fa.object, fa.field)) |prop| {
                     return self.l.resolveType(prop.field_type);
                 }
-                // M1.2 A.3 — sx-defined class state field returns the field's type.
+                // sx-defined class state field returns the field's type.
                 if (self.l.lookupObjcDefinedStateFieldOnPointer(fa.object, fa.field)) |info| {
                     return info.field_ty;
                 }
@@ -227,7 +223,7 @@ pub const ExprTyper = struct {
                 var obj_ty = self.l.inferExprType(fa.object);
                 // A guard-narrowed optional local resolves through its
                 // child for PLAIN access — mirrors the lowerFieldAccess
-                // narrowing unwrap (issue 0352; two-resolver lockstep).
+                // narrowing unwrap (two-resolver lockstep).
                 // `?.` keeps the optional (the chain arm below).
                 if (!fa.is_optional and !obj_ty.isBuiltin() and fa.object.data == .identifier) {
                     const nrw_info = self.l.module.types.get(obj_ty);
@@ -254,7 +250,7 @@ pub const ExprTyper = struct {
                 }
                 // `.len`/`.ptr` pseudo-fields belong to the special containers
                 // only — a struct/union/tuple member named `len`/`ptr` resolves
-                // below to its DECLARED type (issue 0340; `#get` accessors also
+                // below to its DECLARED type (`#get` accessors also
                 // resolve below, via getAccessorFor).
                 const is_special_container = obj_ty == .string or (!obj_ty.isBuiltin() and switch (self.l.module.types.get(obj_ty)) {
                     .slice, .array, .vector => true,
@@ -321,7 +317,7 @@ pub const ExprTyper = struct {
                     // inner type via a synthetic `*T` receiver, so a value
                     // optional (`?T`) — whose receiver would otherwise be the
                     // optional itself — and a pointer optional (`?*T`) both type
-                    // exactly as `lowerOptionalChain` emits (issue 0160).
+                    // exactly as `lowerOptionalChain` emits.
                     if (is_opt_chain) {
                         var deref_inner = obj_ty;
                         if (!deref_inner.isBuiltin() and self.l.module.types.get(deref_inner) == .pointer)
@@ -346,7 +342,7 @@ pub const ExprTyper = struct {
                 // an enum / tagged-union (not shadowed by a value binding / global
                 // value) and `field` is a PAYLOADLESS variant. Without this, a
                 // direct `go(E.x)` generic-arg inference (and a `hash_val(E.A)`
-                // key) yielded `.unresolved` for the value's type (issue 0274).
+                // key) yielded `.unresolved` for the value's type.
                 if (fa.object.data == .identifier) {
                     const oname = fa.object.data.identifier.name;
                     const shadowed = if (self.l.scope) |s| s.lookup(oname) != null else false;
@@ -426,7 +422,7 @@ pub const ExprTyper = struct {
                     if (self.l.module.types.findByName(self.l.module.types.internString("Context"))) |ty| return ty;
                 }
                 // Check global variables (e.g., `context : Context`) —
-                // source-aware (issue 0115): infer the AUTHOR's global type,
+                // source-aware: infer the AUTHOR's global type,
                 // never an unrelated module's same-named one. `.not_a_global`
                 // falls through to the const / fn arms below.
                 if (self.l.program_index.global_names.get(id.name)) |gi| {
@@ -438,7 +434,7 @@ pub const ExprTyper = struct {
                     }
                 }
                 // Check module-level value constants (e.g., WIDTH :f32: 800).
-                // F4: a same-name VALUE const must infer the SOURCE-AWARE author's
+                // A same-name VALUE const must infer the SOURCE-AWARE author's
                 // TYPE (own-wins / one-flat-visible), not the global last-wins
                 // `module_const_map` — otherwise a return-type / coercion inferred
                 // on one module's `K` borrows another module's `K` TYPE. The global
@@ -496,15 +492,15 @@ pub const ExprTyper = struct {
                 }
                 // A qualified (`m.Cfg{…}`) or generic (`Pair(i32){…}`) prefix
                 // carries its type as a NODE — resolve it the same way lowering
-                // does, so a `:=`-inferred decl gets the real struct type (issue
-                // 0204), not the empty `{}` it would fall to below.
+                // does, so a `:=`-inferred decl gets the real struct type,
+                // not the empty `{}` it would fall to below.
                 if (sl.type_expr) |te| {
                     // `Ev.key{ ... }` — qualified tagged-union variant
                     // construction: the literal's TYPE is the tagged union
                     // `Ev`, not a resolvable `Ev.key` type. Recognize it here
                     // (side-effect-free `findByName`) so inference doesn't fall
                     // to the type_bridge "field_access in type position"
-                    // warning (issue 0281); lowering routes the same shape.
+                    // warning; lowering routes the same shape.
                     if (te.data == .field_access) {
                         const fa = te.data.field_access;
                         if (self.l.qualifiedTypeName(fa.object)) |path| {
@@ -537,8 +533,8 @@ pub const ExprTyper = struct {
                 // classification lowering gates on, plus the union/optional
                 // intercepts). A scalar ambient target (an enclosing fn's int
                 // return type leaking into a call arg) must not type the
-                // literal — that mistyped `$T` bindings before the literal
-                // ever lowered.
+                // literal — it would mistype `$T` bindings before the literal
+                // ever lowers.
                 if (self.l.target_type) |tt| {
                     const usable = if (tt.isBuiltin())
                         tt == .string
@@ -657,13 +653,13 @@ pub const ExprTyper = struct {
                 // Optional-chain index `opt?.xs[i]`: the object types as an
                 // optional container (`?[N]T` / `?[]T` / `?[*]T`), so the whole
                 // index expression is `?ElemType` (flattened if the element is
-                // itself optional) — mirrors lowerOptionalChainIndex (issue 0181).
+                // itself optional) — mirrors lowerOptionalChainIndex.
                 if (!obj_ty.isBuiltin() and self.l.module.types.get(obj_ty) == .optional) {
                     const child = self.l.module.types.get(obj_ty).optional.child;
                     // `?*[N]T` is indexable: element is the pointee array's
                     // element. `getElementType` has no pointer arm, so consult
                     // `ptrToArrayElem` first (mirrors lowerIndexExpr's guard) —
-                    // otherwise `?*[N]T` typed as `.unresolved` (issue 0181).
+                    // otherwise `?*[N]T` typed as `.unresolved`.
                     const elem = self.l.ptrToArrayElem(child) orelse self.l.ptrToSliceElem(child) orelse self.l.getElementType(child);
                     if (elem != .unresolved) return self.l.optionalOfFlattened(elem);
                 }
@@ -712,7 +708,7 @@ pub const ExprTyper = struct {
             // its annotations. The generic-call binder types args from the raw
             // AST (notably the UFCS path, before args are lowered), so without
             // this a `Closure(..) -> $R` worker couldn't bind `$R` from the
-            // lambda's declared return type (issue 0151). An unannotated param /
+            // lambda's declared return type. An unannotated param /
             // body-inferred return stays `.unresolved` here — that arg simply
             // doesn't contribute a binding, exactly as before.
             .lambda => |lam| blk: {

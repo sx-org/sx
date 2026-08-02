@@ -1,4 +1,4 @@
-// A build block is a value a call can hand on (fluent spec §6.2 rule 2, N45).
+// A build block is a value a call can hand on.
 //
 // The parameter is satisfied in exactly one of two ways: the call writes a
 // trailing block, which the compiler forms an implementor from (rule 1), or an
@@ -7,7 +7,7 @@
 // it to the helper that owns the sink.
 //
 // What the value carries is the capture environment of the frame that formed the
-// block, BY REFERENCE (N49): forming allocates nothing, a replay one or two
+// block, BY REFERENCE: forming allocates nothing, a replay one or two
 // calls down reads the forming frame's locals live, and a second `run` observes
 // a mutation the first one made. The body is replayed, not unrolled — its `if`
 // and `for` are ordinary runtime control flow wherever it runs.

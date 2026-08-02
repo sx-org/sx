@@ -1,7 +1,7 @@
 // std.http — Date header on every response + optional Server: knob
 // (RFC 9110 §6.6.1, §10.2.4).
 //
-// Q1.5: every response carries a `Date:` header in IMF-fixdate form
+// every response carries a `Date:` header in IMF-fixdate form
 // ("Sun, 06 Nov 1994 08:49:37 GMT" — fixed 29 bytes, GMT), including
 // error responses; the value is cached on the Server and refreshed at
 // most once per second (the loop thread serializes; pool workers stamp

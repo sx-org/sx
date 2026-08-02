@@ -53,13 +53,12 @@ const ObjcPropertyKind = enum {
     }
 };
 
-/// Pure Obj-C decision helpers (architecture phase A6.1), extracted from
-/// `Lowering`. A `*Lowering` facade (Principle 5, like `ErrorAnalysis`/
+/// Pure Obj-C decision helpers. A `*Lowering` facade (like `ErrorAnalysis`/
 /// `CoercionResolver`): selector derivation, type-encoding-string derivation,
 /// ARC property-kind classification, Obj-C class-pointer recognition, and
 /// hidden-state-struct planning. No IR is emitted here — the emission-heavy IMP
-/// builders / `lowerObjc*Call` dispatch stay in `Lowering` (PLAN-ARCH A6.1
-/// step 6). Reads `self.l.{alloc, module, program_index, diagnostics}` and the
+/// builders / `lowerObjc*Call` dispatch stay in `Lowering`.
+/// Reads `self.l.{alloc, module, program_index, diagnostics}` and the
 /// `self.l.resolveType` resolver.
 pub const ObjcLowering = struct {
     l: *Lowering,
@@ -91,7 +90,7 @@ pub const ObjcLowering = struct {
     }
 
     /// Derive an Obj-C type-encoding string for a synthesized IMP
-    /// signature (M1.2 A.1). Apple's runtime accepts these strings on
+    /// signature. Apple's runtime accepts these strings on
     /// `class_addMethod(cls, sel, imp, types)`; the encoding tells the
     /// runtime the IMP's argument layout for KVC, NSCoder, and reflective
     /// dispatch.
@@ -111,7 +110,7 @@ pub const ObjcLowering = struct {
     /// structs encode as `{Name=field0field1...}`; nested structs
     /// recurse with cycle-break via `ObjcEncodingStack`. Tagged-union /
     /// array / vector / function shapes BAIL loudly via diagnostics
-    /// rather than silently mis-encoding (per CLAUDE.md rejected-
+    /// rather than silently mis-encoding
     /// patterns rule).
     ///
     /// Returns an allocator-owned slice; caller frees via `self.l.alloc`.
@@ -245,20 +244,19 @@ pub const ObjcLowering = struct {
     /// Build (and cache) the hidden sx-state struct type for an sx-defined
     /// `#objc_class`. The state struct is what the runtime's `__sx_state`
     /// ivar points at — separate from the Obj-C object itself, which stays
-    /// opaque. Layout (M1.2 A.2):
+    /// opaque. Layout:
     ///
     ///   __<ClassName>State {
+    ///       __sx_allocator,   // present only when `objcStateAllocatorType()` resolves
     ///       user_field_0,
     ///       user_field_1,
     ///       ...
     ///   }
     ///
-    /// M1.2 A.5 will prepend `__sx_allocator: Allocator` so `-dealloc`
-    /// can free through the per-instance allocator and method bodies can
-    /// access `self.allocator`. For A.2 the struct holds only the
-    /// user-declared fields — sufficient for the body lowering +
-    /// `self.field` access work in A.2/A.3. Field-by-name resolution
-    /// stays correct across the future repositioning.
+    /// `__sx_allocator: Allocator` leads, so `-dealloc` can free through the
+    /// per-instance allocator and method bodies can reach `self.allocator`.
+    /// The user-declared fields follow at the shifted indices; every consumer
+    /// resolves them by NAME, so the shift is invisible to callers.
     ///
     /// Runtime-class members other than `.field` are ignored here —
     /// methods / `#extends` / `#implements` don't contribute to the
@@ -274,11 +272,9 @@ pub const ObjcLowering = struct {
         // freed at module deinit rather than leaking through `self.l.alloc`.
         const field_alloc = self.l.module.slice_arena.allocator();
         var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
-        // M4.0: prepend __sx_allocator at field index 0 — captured at +alloc
+        // Prepend __sx_allocator at field index 0 — captured at +alloc
         // time, read at -dealloc time to free the state struct through the
-        // same allocator. Lookup by name (the existing by-name resolution in
-        // emitObjcDefinedClassPropertyImps + lookupObjcDefinedStateFieldOnPointer)
-        // naturally finds user fields at their post-shift indices.
+        // same allocator.
         if (self.objcStateAllocatorType()) |allocator_ty| {
             fields.append(field_alloc, .{
                 .name = self.l.module.types.internString("__sx_allocator"),
@@ -321,7 +317,7 @@ pub const ObjcLowering = struct {
     }
 
     /// Resolve a `#property(...)` field's ARC kind. Loud at compile time
-    /// for known footguns (per the silent-error budget in the plan):
+    /// for known footguns:
     ///   - unknown modifier name (typo) → diagnostic
     ///   - `weak` on a non-object field type → diagnostic
     ///   - `strong` (explicit or defaulted) on `*void` (ambiguous: Obj-C

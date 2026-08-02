@@ -1,11 +1,11 @@
-// Rejection counterpart to 1046 (ERR step E1.8). Reading a failable's value slot
+// Rejection counterpart to 1046. Reading a failable's value slot
 // where its error is NOT proven absent is a compile error. Two unproven shapes:
 //
 //   (A) reading the value inside the `if err { … }` error path itself
 //   (B) reading the value after a bare tag-compare (`if err == error.X`), which
 //       narrows the tag but proves nothing about absence
 //
-// Each read is rejected with the E1.8 diagnostic; the program never runs (exit 1).
+// Each read is rejected with the liveness diagnostic; the program never runs (exit 1).
 
 #import "modules/std.sx";
 

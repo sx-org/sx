@@ -1,30 +1,28 @@
-// Regression: bare `$args` slice survives crossing a function-call
+// Bare `$args` slice survives crossing a function-call
 // boundary — both `.len` AND per-element values come through.
 //
-// Before the fix landed in `lazyLowerFunction`, the callee's
-// `args.len` got constant-folded to the outer pack-fn mono's
-// arity. `walk(args: []any) { return args.len; }` lazily lowered
-// inside `probe(..$args)`'s first mono inherited
-// `pack_param_count["args"] = N` from the pack — the
-// `<pack_name>.len` intercept in `lowerFieldAccess` then baked
-// `ret i64 N` into walk's IR. Every subsequent shape's call to
-// walk returned the same constant, regardless of the actual slice
-// it received.
+// `lazyLowerFunction` must not let the callee's `args.len` be
+// constant-folded to the outer pack-fn mono's arity:
+// `walk(args: []any) { return args.len; }` lazily lowered
+// inside `probe(..$args)`'s first mono must not inherit
+// `pack_param_count["args"] = N` from the pack, or the
+// `<pack_name>.len` intercept in `lowerFieldAccess` bakes
+// `ret i64 N` into walk's IR and every later shape reads that
+// same constant.
 //
 // `describe(args)` walks element-by-element so a silent
 // truncation surfaces as a missing tail (or a different type at
 // some position) — not just the wrong length.
 //
-// Walking under `#run` is intentional: the bare-`$args` slice
+// Walking under `#run` is required: the bare-`$args` slice
 // carries `const_type` elements that only the interp materialises;
-// LLVM emission leaves the per-element slots as undef (4A.bare
-// semantics — bare-pack is comptime-only).
+// LLVM emission leaves the per-element slots as undef, bare-pack
+// being comptime-only.
 //
 // The element type is `[]Type` (a bare `$args` is the list of the
 // pack args' TYPES, each an 8-byte `.type_value`). Declaring it
-// `[]any` (16-byte boxes) read every element past the first at the
-// wrong stride — the legacy interp's loose Value model tolerated it,
-// the byte-accurate comptime VM does not.
+// `[]any` (16-byte boxes) reads every element past the first at the
+// wrong stride, which the byte-accurate comptime VM rejects.
 
 #import "modules/std.sx";
 

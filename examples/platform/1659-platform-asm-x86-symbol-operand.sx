@@ -1,4 +1,4 @@
-// ASM stream — symbol operand (`"s"`) on x86_64 (cross-arch sibling of the
+// Symbol operand (`"s"`) on x86_64 (cross-arch sibling of the
 // aarch64 1656). A DIRECT `call` to an `export`ed sx function by symbol, written
 // with the SAME portable `%[fn]` as the aarch64 example — the compiler injects
 // the `:c` operand modifier for symbol operands, so the symbol prints bare on

@@ -15,26 +15,12 @@ const Module = mod_mod.Module;
 const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
 
-/// Emit a C-ABI exported function for every bodied method on a
-/// `#jni_main #jni_class("...")` declaration. The symbol name follows
-/// JNI's name-mangling convention so Android's JNI runtime can resolve
-/// `private native sx_<method>(...)` (declared in the bundled
-/// classes.dex by `jni_java_emit`) without an explicit `RegisterNatives`
-/// call — i.e. `Java_<pkg-mangled>_<Class>_sx_1<method-mangled>`.
-///
-/// Param ABI: prepended `(env: *void, self: *void)` (JNIEnv* + jobject
-/// receiver), followed by the user-declared params with pointer types
-/// type-erased to `*void` (JNI carries jobjects, not sx-typed handles —
-/// future work can keep richer typing inside the body when needed).
 /// Eagerly lower bodied instance methods on every sx-defined
-/// `#objc_class`. The Obj-C runtime invokes these via the IMP
-/// pointers wired up in M1.2 A.4 — no sx-side call path triggers
-/// lazy lowering, so we walk the cache and force-lower here.
-/// `lowerFunction` sets `current_runtime_class` automatically based
-/// on the qualified name, so `*Self` substitutions in the body
-/// resolve correctly (M1.2 A.2b). After the bodies are lowered,
-/// `emitObjcDefinedClassImps` wraps each with a C-ABI trampoline
-/// (M1.2 A.4b.ii).
+/// `#objc_class`. The Obj-C runtime invokes these through the IMP
+/// pointers `emitObjcDefinedClassImps` installs — no sx-side call path
+/// triggers lazy lowering, so this walks the cache and force-lowers.
+/// `lowerFunction` sets `current_runtime_class` from the qualified name,
+/// so `*Self` substitutions in the body resolve correctly.
 pub fn lowerObjcDefinedClassMethods(self: *Lowering) void {
     for (self.module.objc_defined_class_cache.items) |entry| {
         const fcd = entry.decl;
@@ -56,7 +42,7 @@ pub fn lowerObjcDefinedClassMethods(self: *Lowering) void {
 /// If `obj_expr` is typed as a pointer to a runtime Obj-C class
 /// and that class (or any of its `#extends` ancestors) declares a
 /// `#property` field with the given name, return the
-/// `RuntimeFieldDecl`. M2.2 + M2.3.
+/// `RuntimeFieldDecl`.
 pub fn lookupObjcPropertyOnPointer(self: *Lowering, obj_expr: *const ast.Node, field_name: []const u8) ?ast.RuntimeFieldDecl {
     const obj_ty = self.inferExprType(obj_expr);
     if (obj_ty.isBuiltin()) return null;
@@ -70,7 +56,7 @@ pub fn lookupObjcPropertyOnPointer(self: *Lowering, obj_expr: *const ast.Node, f
     return self.findRuntimePropertyInChain(fcd, field_name);
 }
 
-/// Walk the `#extends` chain looking for a method by name. M2.3.
+/// Walk the `#extends` chain looking for a method by name.
 /// Returns the owning fcd + the method decl, or null if no ancestor
 /// declares it. Depth-capped at 16 to break accidental cycles
 /// (real Obj-C class chains rarely exceed 6 levels).
@@ -96,7 +82,7 @@ pub fn findRuntimeMethodInChain(self: *Lowering, fcd: *const ast.RuntimeClassDec
 }
 
 /// Walk the `#extends` chain looking for a `#property` field by
-/// name. M2.3 companion to findRuntimeMethodInChain.
+/// name. Companion to findRuntimeMethodInChain.
 pub fn findRuntimePropertyInChain(self: *Lowering, fcd: *const ast.RuntimeClassDecl, field_name: []const u8) ?ast.RuntimeFieldDecl {
     var current: *const ast.RuntimeClassDecl = fcd;
     var depth: u32 = 0;
@@ -127,7 +113,7 @@ const ObjcDefinedStateField = struct {
 /// State-field-access info: if obj_expr is *<sx-defined-class>
 /// and `field_name` is in the state struct (not a property),
 /// returns the field's TypeId, the state struct's TypeId, and
-/// the field's index. M1.2 A.3 supports.
+/// the field's index.
 pub fn lookupObjcDefinedStateFieldOnPointer(self: *Lowering, obj_expr: *const ast.Node, field_name: []const u8) ?ObjcDefinedStateField {
     const obj_ty = self.inferExprType(obj_expr);
     if (obj_ty.isBuiltin()) return null;
@@ -140,7 +126,7 @@ pub fn lookupObjcDefinedStateFieldOnPointer(self: *Lowering, obj_expr: *const as
     // Only sx-defined Obj-C classes have a state struct. Extern (referenced)
     // runtime classes' fields are purely declaration metadata (no state).
     if (fcd.is_extern or fcd.runtime != .objc_class) return null;
-    // Skip property fields — those dispatch via the M2.2 getter/setter
+    // Skip property fields — those dispatch via the getter/setter
     // path. Plain instance fields take the ivar+gep path.
     for (fcd.members) |m| switch (m) {
         .field => |f| {
@@ -170,7 +156,7 @@ pub fn lookupObjcDefinedStateFieldOnPointer(self: *Lowering, obj_expr: *const as
 
 /// Lower a read of `self.field` (or `obj.field`) on a sx-defined
 /// Obj-C class: `state = object_getIvar(self, load(ivar_global))`
-/// then `struct_gep(state, idx)` + load. M1.2 A.3 — the runtime
+/// then `struct_gep(state, idx)` + load. The runtime
 /// hop through the hidden ivar.
 pub fn lowerObjcDefinedStateFieldRead(
     self: *Lowering,
@@ -188,8 +174,8 @@ pub fn lowerObjcDefinedStateFieldRead(
     return self.builder.load(field_addr, info.field_ty);
 }
 
-/// `state = object_getIvar(obj, load(__<Cls>_state_ivar))`. Shared
-/// helper for state-field read + write (M1.2 A.3).
+/// `state = object_getIvar(obj, load(__<Cls>_state_ivar))`, shared by
+/// state-field read and write.
 pub fn lowerObjcDefinedStateForObj(self: *Lowering, obj_ref: Ref, fcd: *const ast.RuntimeClassDecl) ?Ref {
     const ptr_void = self.module.types.ptrTo(.void);
     const ivar_global_name = std.fmt.allocPrint(self.alloc, "__{s}_state_ivar", .{fcd.name}) catch return null;
@@ -205,7 +191,7 @@ pub fn lowerObjcDefinedStateForObj(self: *Lowering, obj_ref: Ref, fcd: *const as
 }
 
 /// Lower `obj.field` for an Obj-C `#property` field as
-/// `objc_msg_send(obj, sel_<fieldName>)`. M2.2 — getter side.
+/// `objc_msg_send(obj, sel_<fieldName>)`. Getter side.
 /// The setter side lives in the assignment-statement lowering.
 pub fn lowerObjcPropertyGetter(self: *Lowering, obj_expr: *const ast.Node, field: ast.RuntimeFieldDecl, _: []const u8, _: ast.Span) Ref {
     const obj_ref = self.lowerExpr(obj_expr);
@@ -213,7 +199,7 @@ pub fn lowerObjcPropertyGetter(self: *Lowering, obj_expr: *const ast.Node, field
     const vptr_ty = self.module.types.ptrTo(.void);
     // The selector for a property getter is the field name verbatim
     // (Obj-C convention; the override hook is for niche cases like
-    // `isHidden` and lands with M2.2's modifier handling).
+    // `isHidden`, handled with the other property modifiers).
     const sel_slot_gid = self.internObjcSelector(field.name);
     const slot_ptr = self.builder.emit(.{ .global_addr = sel_slot_gid }, self.module.types.ptrTo(vptr_ty));
     const sel = self.builder.emit(.{ .load = .{ .operand = slot_ptr } }, vptr_ty);
@@ -225,7 +211,7 @@ pub fn lowerObjcPropertyGetter(self: *Lowering, obj_expr: *const ast.Node, field
 }
 
 /// Lower `obj.field = val` for an Obj-C `#property` field as
-/// `objc_msg_send(obj, sel_set<Field>:, val)`. M2.2 — setter side.
+/// `objc_msg_send(obj, sel_set<Field>:, val)`. Setter side.
 /// Selector: prepend "set", capitalize the first letter of the
 /// field name, append ":".  `backgroundColor` → `setBackgroundColor:`.
 pub fn lowerObjcPropertySetter(self: *Lowering, obj_expr: *const ast.Node, field: ast.RuntimeFieldDecl, val: Ref) void {
@@ -299,13 +285,13 @@ pub fn ensureCRuntimeDecl(self: *Lowering, name: []const u8, param_tys: []const 
 pub fn emitObjcDefinedClassImps(self: *Lowering) void {
     for (self.module.objc_defined_class_cache.items) |entry| {
         const fcd = entry.decl;
-        // Pin to the class's defining module (E4) so the IMP trampolines'
+        // Pin to the class's defining module so the IMP trampolines'
         // method-signature types (`-> BOOL`, param types) resolve where they
         // are visible, not at whatever lowering site triggered emission.
         const saved_src = self.current_source_file;
         defer self.setCurrentSourceFile(saved_src);
         if (fcd.source_file) |src| self.setCurrentSourceFile(src);
-        // Synthesize +alloc (M1.2 A.5) and -dealloc (M1.2 A.6). emit_llvm
+        // Synthesize +alloc and -dealloc. emit_llvm
         // registers +alloc on the metaclass and -dealloc on the class
         // itself after objc_registerClassPair.
         self.emitObjcDefinedClassAllocImp(fcd);
@@ -317,7 +303,7 @@ pub fn emitObjcDefinedClassImps(self: *Lowering) void {
                     self.emitObjcDefinedClassImp(fcd, method);
                 },
                 .field => |field| {
-                    // M2.2 second pass — sx-defined property fields
+                    // Second pass — sx-defined property fields
                     // synthesize getter (+ setter unless `readonly`)
                     // IMPs that GEP into the state struct.
                     if (field.is_property) {
@@ -344,7 +330,7 @@ pub fn ensureArcRuntimeDecls(self: *Lowering) void {
     _ = self.ensureCRuntimeDecl("objc_destroyWeak", &.{ptr_void}, .void);
 }
 
-/// M2.2 second pass — emit synthesized getter/setter IMPs for a
+/// Second pass — emit synthesized getter/setter IMPs for a
 /// property field on a sx-defined `#objc_class`. The state struct
 /// already holds the field (via objcDefinedStateStructType); the
 /// IMPs just dispatch a load/store through the `__sx_state` ivar.
@@ -377,10 +363,9 @@ pub fn emitObjcDefinedClassPropertyImps(self: *Lowering, fcd: *const ast.Runtime
     const fidx = field_idx orelse return;
     const field_ty = self.resolveType(field.field_type);
 
-    // M4.B: validate modifiers + resolve ARC kind. Side-effect: emits
-    // diagnostics for typos, weak-on-non-object, ambiguous *void, etc.
-    // For now the setter/getter still emit bare load/store; subsequent
-    // M4.B commits wire the actual ARC ops keyed on this kind.
+    // Validate modifiers + resolve ARC kind. Side-effect: emits diagnostics
+    // for typos, weak-on-non-object, ambiguous *void, etc. The setter/getter
+    // emit bare load/store; the kind is not wired to ARC ops.
     _ = self.objc().objcPropertyKind(field);
 
     // (1) Getter: __<Cls>_<field>_imp
@@ -448,10 +433,9 @@ pub fn emitObjcDefinedPropertyGetter(self: *Lowering, fcd: *const ast.RuntimeCla
 
     const field_addr = self.builder.emit(.{ .struct_gep = .{ .base = state_ptr, .field_index = fidx, .base_type = state_ty } }, ptr_void);
 
-    // M4.B getter — weak fields go through objc_loadWeakRetained +
-    // objc_autorelease for race-safe reads. The bare-load path
-    // (strong/copy/assign) is the common case and reads the slot
-    // directly.
+    // Weak fields go through objc_loadWeakRetained + objc_autorelease for
+    // race-safe reads. The bare-load path (strong/copy/assign) is the common
+    // case and reads the slot directly.
     const kind = self.objc().objcPropertyKind(field);
     if (kind == .weak) {
         self.ensureArcRuntimeDecls();
@@ -537,7 +521,7 @@ pub fn emitObjcDefinedPropertySetter(self: *Lowering, fcd: *const ast.RuntimeCla
 
     const field_addr = self.builder.emit(.{ .struct_gep = .{ .base = state_ptr, .field_index = fidx, .base_type = state_ty } }, ptr_void);
 
-    // M4.B setter — emit ARC ops based on the property's modifier kind.
+    // The ARC ops emitted follow the property's modifier kind.
     const kind = self.objc().objcPropertyKind(field);
     switch (kind) {
         .assign => {
@@ -695,7 +679,7 @@ pub fn emitObjcDefinedClassImp(self: *Lowering, fcd: *const ast.RuntimeClassDecl
     params.append(self.alloc, .{ .name = self.module.types.internString("_cmd"), .ty = ptr_void }) catch return;
 
     // Set current_runtime_class so *Self in user-param resolution
-    // resolves to *<Cls>State (M1.2 A.2b). Save+restore.
+    // resolves to *<Cls>State; saved and restored around the body.
     const saved_fc = self.current_runtime_class;
     self.current_runtime_class = fcd;
     defer self.current_runtime_class = saved_fc;
@@ -733,7 +717,7 @@ pub fn emitObjcDefinedClassImp(self: *Lowering, fcd: *const ast.RuntimeClassDecl
     // Obj-C semantics where `self` IS the object. `self.field`
     // access on a sx-defined class is rewritten by lowerFieldAccess
     // to go through `object_getIvar(self, __sx_state_ivar)` and
-    // a struct_gep on the state struct — see M1.2 A.3.
+    // a struct_gep on the state struct.
     const obj_ref = Ref.fromIndex(0);
 
     // Call sx body `@<Cls>.<method>(default_ctx, self, ...user_args)`.
@@ -786,7 +770,7 @@ pub fn emitObjcDefinedClassImp(self: *Lowering, fcd: *const ast.RuntimeClassDecl
 ///
 /// C-ABI: `(cls: id, _cmd: SEL) -> id`. No implicit ctx.
 ///
-/// Body (M4.0):
+/// Body:
 ///   %instance = class_createInstance(cls, 0)
 ///   %ctx_addr = &__sx_default_context
 ///   %state    = ctx_addr.allocator.alloc(STATE_SIZE)
@@ -957,7 +941,7 @@ pub fn emitObjcDefinedAllocAndInit(
 }
 
 /// Emit a C-ABI IMP trampoline for a CLASS method (no `*Self`
-/// first param) on a sx-defined `#objc_class`. M2.1(b).
+/// first param) on a sx-defined `#objc_class`.
 /// Registered on the metaclass by emit_llvm.
 ///
 /// C-ABI: `(cls: Class, _cmd: SEL, ...user_args) -> ret`
@@ -1052,18 +1036,17 @@ pub fn emitObjcDefinedClassStaticImp(self: *Lowering, fcd: *const ast.RuntimeCla
 ///
 /// C-ABI: `(self: id, _cmd: SEL) -> void`. No implicit sx ctx.
 ///
-/// Body (M4.0c):
+/// Body:
 ///   %state     = object_getIvar(self, load @__<Cls>_state_ivar)
-///   %allocator = load struct_gep(state, 0)          ← __sx_allocator (M4.0a)
+///   %allocator = load struct_gep(state, 0)          ← __sx_allocator
 ///   allocator.dealloc(state)                         ← via inline-protocol fn-ptr
 ///   object_setIvar(self, ivar, null)
 ///   [super dealloc]   // objc_msgSendSuper2(&super, sel_dealloc)
 ///   ret void
 ///
-/// The state struct's first field is the allocator captured at
-/// +alloc time (M4.0a + M4.0b). Reading it back lets -dealloc free
-/// through the same allocator the instance was constructed with —
-/// the per-instance allocator design from M1.2 A.5, now realised.
+/// The state struct's first field is the allocator captured at +alloc time.
+/// Reading it back lets -dealloc free through the same allocator the
+/// instance was constructed with.
 pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeClassDecl) void {
     const saved_func = self.builder.func;
     const saved_block = self.builder.current_block;
@@ -1108,8 +1091,8 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
     get_args[1] = ivar_handle;
     const state = self.builder.emit(.{ .call = .{ .callee = get_ivar_fid, .args = get_args } }, ptr_void);
 
-    // (2) M4.B dealloc — release strong/copy property ivars and
-    // destroyWeak weak property ivars BEFORE freeing the state struct
+    // (2) Release strong/copy property ivars and destroyWeak weak property
+    // ivars BEFORE freeing the state struct
     // (which would invalidate the pointers we need to read). Property
     // metadata is re-derived from `fcd.members`; the state struct is
     // already interned via objcDefinedStateStructType.
@@ -1121,7 +1104,7 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
             .field => |f| {
                 if (!f.is_property) continue;
                 // Find the field index in the state struct (by name —
-                // M4.0a's prepended __sx_allocator shifted user fields).
+                // the prepended __sx_allocator shifts user fields).
                 const field_name_id = self.module.types.internString(f.name);
                 var pfidx: ?u32 = null;
                 for (state_fields, 0..) |sf, i| {
@@ -1170,12 +1153,11 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
         };
     }
 
-    // (3) Free state through the captured allocator (M4.0a + M4.0b):
+    // (3) Free state through the captured allocator:
     //       allocator = load struct_gep(state, 0)   ← __sx_allocator field
     //       allocator.dealloc(state)                 ← inline-protocol fn-ptr at field 2
-    // Compare to the old `free(state)` — that ignored the per-instance
-    // allocator and went straight to libc. Now `push Context{ allocator = arena }`
-    // round-trips correctly: arena.alloc on construction, arena.dealloc here.
+    // `push Context{ allocator = arena }` round-trips: arena.alloc on
+    // construction, arena.dealloc here.
     if (self.module.types.findByName(self.module.types.internString("Context")) == null) {
         if (self.diagnostics) |d| {
             d.addFmt(.err, ast.Span{ .start = 0, .end = 0 }, "emitObjcDefinedClassDeallocImp: Context type not found for class '{s}' (compiler bug)", .{fcd.name});

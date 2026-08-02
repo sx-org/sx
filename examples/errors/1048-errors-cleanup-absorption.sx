@@ -1,4 +1,4 @@
-// Failable calls in cleanup bodies must be absorbed locally (ERR step E1.7). A
+// Failable calls in cleanup bodies must be absorbed locally. A
 // `defer` / `onfail` body runs while the block is already exiting, so a failable
 // it calls has nowhere to propagate — it must be handled in place with `catch`
 // or an `or <value>` terminator. This file shows the accepted forms; the bare

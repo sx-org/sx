@@ -1,4 +1,4 @@
-// std.http H3 (PLAN-HTTPZ): graceful shutdown.
+// std.http: graceful shutdown.
 //
 // Server.stop() requests a clean quiesce — stop accepting, close idle
 // keep-alives, drain in-flight requests within shutdown_timeout_ms — and

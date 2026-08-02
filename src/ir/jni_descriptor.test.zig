@@ -1,6 +1,5 @@
-// Tests for jni_descriptor.zig — Phase 2 step 2.8.
-// Table-driven golden test for the primitive / array / *Self JNI
-// signature alphabet. Cross-class references land in 2.9.
+// Table-driven goldens over the primitive / array / *Self JNI signature
+// alphabet.
 
 const std = @import("std");
 const ast = @import("../ast.zig");
@@ -353,7 +352,7 @@ test "deriveMethod with slice param" {
     try std.testing.expectEqualStrings("([B)I", out);
 }
 
-// ── A6.2: native-name mangling + return-type dispatchability ─────────
+// ── native-name mangling + return-type dispatchability ───────────────
 
 const types = @import("types.zig");
 

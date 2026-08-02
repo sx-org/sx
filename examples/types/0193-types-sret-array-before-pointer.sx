@@ -1,14 +1,8 @@
-// Assigning `null` / `---` to a struct field must store a FIELD-typed value,
-// not pick up an enclosing `target_type` (e.g. the function's return type while
-// lowering its body) — which would build a whole-struct-typed null and emit an
-// oversized store that overruns the field's slot.
-//
-// Regression (issue 0154): `s.p = null` inside a struct-returning fn used to
-// store a 32-byte struct `zeroinitializer` through the pointer field's GEP,
-// clobbering the saved x29/x30 so the fn `ret`'d to 0x0. The array-before-
-// pointer order puts the pointer at a non-zero offset, pushing the over-store
-// off the end of the alloca. Fixed by adding null/undef literals to
-// `needs_target` in lowerAssignment.
+// Assigning `null` / `---` to a struct field stores a FIELD-typed value, not one
+// typed by an enclosing `target_type` (e.g. the function's return type while
+// lowering its body): `needs_target` in lowerAssignment covers null and undef
+// literals. The array-before-pointer field order puts the pointer at a non-zero
+// offset.
 #import "modules/std.sx";
 S :: struct {
     arr: [2]u64;   // fixed-array field FIRST

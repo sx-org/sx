@@ -8,7 +8,7 @@ add :: (a: i32, b: i32) -> i32 { a + b }
 
 mul :: (a: i32, b: i32) -> i32 { a * b }
 
-// P4 edge: Chained default→default calls
+// edge: Chained default→default calls
 Chained :: protocol {
     base :: (self: *Self, msg: string) -> i32;
     wrap :: (self: *Self, msg: string) -> i32 {

@@ -1,5 +1,5 @@
 // HTTP exposes only the typed ContentCoding result, never helper aliases.
-// Flat imports in client/server remain implementation details (issue 0327).
+// Flat imports in client/server remain implementation details.
 #import "modules/std.sx";
 http :: #import "modules/std/http.sx";
 

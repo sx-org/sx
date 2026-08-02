@@ -3,8 +3,7 @@
 // through that pointer must not get the C-ABI byval coercion — the sx-CC
 // callee expects the struct as an SSA value, not as a `ptr byval(<T>)`.
 //
-// Pair with examples/86-abi-c-fnptr-large-aggregate.sx, which covers
-// the opposite arm (fn-pointer typed `abi(.c)` does get byval).
+// 1203 covers the opposite arm (a fn-pointer typed `abi(.c)` does get byval).
 
 #import "modules/std.sx";
 

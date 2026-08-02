@@ -1,4 +1,4 @@
-// M2.3 — `#extends a runtime class` method-resolution chaining.
+// `#extends a runtime class` method-resolution chaining.
 //
 // When `obj.method()` is called on a runtime-class pointer and
 // `method` isn't declared directly on the receiver's class, the
@@ -18,8 +18,8 @@ NSObjectBase :: #objc_class("NSObject") extern {
     hash  :: (self: *NSObjectBase) -> u64;
 }
 
-// Sx-defined class that extends a runtime one. M1.2 registers
-// the class at module init; `hash` is reached via the M2.3 chain
+// An sx-defined class that extends a runtime one. Lowering registers
+// the class at module init; `hash` is reached via the chain
 // walk through NSObjectBase, then dispatched by objc_msgSend.
 SxThing :: #objc_class("SxThing") {
     #extends NSObjectBase;

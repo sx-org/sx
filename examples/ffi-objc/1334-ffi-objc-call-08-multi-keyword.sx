@@ -1,11 +1,11 @@
-// Phase 1 step 1.10 (PLAN-FFI.md): multi-keyword Obj-C selectors
+// Multi-keyword Obj-C selectors
 // through `#objc_call`. Selector mangling matches clang's: every
 // `:` in the source-level selector becomes a `_` in the symbol
 // name of the cached SEL slot (so `initWithFrame:options:` →
 // `OBJC_SELECTOR_REFERENCES_initWithFrame_options_`).
 //
 // The selector is opaque text to the lowering — no codegen change
-// needed beyond Phase 1.6's variadic argument list. This test
+// needed beyond the variadic argument list. This test
 // pins that the round-trip works end-to-end via class_addMethod
 // + a real IMP that consumes both keyword args.
 

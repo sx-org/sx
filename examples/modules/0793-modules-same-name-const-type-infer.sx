@@ -1,4 +1,4 @@
-// issue 0105 / F4 — same-name VALUE const TYPE inference is source-aware. Two
+// Same-name VALUE const TYPE inference is source-aware. Two
 // flat-imported modules each declare a top-level `K` with a DIFFERENT declared
 // TYPE (A: `i32`, B: `f64`) and an inferred-return function that reads `K` bare.
 // The inferred return type must come from each module's OWN `K` (own-wins), not

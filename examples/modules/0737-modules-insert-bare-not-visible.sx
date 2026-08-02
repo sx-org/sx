@@ -1,5 +1,5 @@
 // A bare name inside a USER `#insert <expr>` is visibility-checked in the
-// USER's module, not skipped (regression, issue 0106). `a.sx` is imported only
+// USER's module, not skipped. `a.sx` is imported only
 // as `m :: #import` — its top-level `secret` is reachable ONLY as `m.secret`.
 // A BARE `secret()` driving a `#insert` must error just like any other bare
 // reference into a namespaced-only import: `#insert` expansion does NOT exempt

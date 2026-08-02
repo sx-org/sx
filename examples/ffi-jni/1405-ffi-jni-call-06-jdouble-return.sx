@@ -1,4 +1,4 @@
-// Phase 1 step 1.20 (PLAN-FFI.md): `#jni_call(f64)` (jdouble return).
+// `#jni_call(f64)` (jdouble return).
 // First non-integer return type for JNI — exercises the LLVM
 // `double` ret path through CallDoubleMethod (vtable slot 58).
 

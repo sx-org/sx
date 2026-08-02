@@ -1,11 +1,9 @@
 // Value-position `if`/`match` with a bare `null` arm produces a proper optional.
 // The `null` arm lowers to `none` and the concrete arm to `some T`, so the
 // result type unifies to `?T` — driven either by an optional target (`: ?T`)
-// or, with no annotation, synthesized from the concrete arm's type.
-// Regression (issue 0272 + match-path extension): the `null` arm used to be
-// coerced in a concrete `T` context (a bogus present optional), so the result
-// read as PRESENT. The match path additionally fabricated a present `{0,true}`
-// when EVERY value arm was `null` (all-null, or null + diverging arms).
+// or, with no annotation, synthesized from the concrete arm's type. `if` and
+// `match` alike, including a match whose value arms are ALL `null` (all-null,
+// or null + diverging arms).
 
 #import "modules/std.sx";
 
@@ -51,7 +49,7 @@ main :: () {
     h : ?string = if f { "hi" } else { null };
     print("h null={}\n", if x := h { false } else { true });   // true
 
-    // ── match path (issue 0272 extension) ──────────────────────────────
+    // ── match path ──────────────────────────────
     ea := E.A;
 
     // all-null match arms under a `?i64` target → `none`, not a present `{0,true}`

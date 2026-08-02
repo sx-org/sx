@@ -16,7 +16,7 @@ main :: () -> i32 {
     for 1..=5, 0.. (a, b) { print("{}:{} ", a, b); }
     print("\n");
 
-    // Index idiom replacing the old (x, i) form.
+    // Index idiom.
     xs : [3]i64 = .[10, 20, 30];
     for xs, 0.. (x, i) { print("[{}]={} ", i, x); }
     print("\n");

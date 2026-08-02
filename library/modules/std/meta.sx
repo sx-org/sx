@@ -53,7 +53,7 @@ TupleInfo :: struct {
     elements: []Type;
 }
 
-// Per-kind payload shapes for the reflect side (1a-S3). `elem`/`pointee`/
+// Per-kind payload shapes for the reflect side. `elem`/`pointee`/
 // `inner` carry the component type; sizes are NOT stored here — `size_of(tp)`
 // answers that for any tag.
 IntInfo      :: struct { bits: i64; signed: bool; }
@@ -70,7 +70,7 @@ UnionInfo    :: struct { arms: []StructField; }
 // type table's kinds (a kind the compiler adds fails the record builder until
 // classified; no catch-all). Only `.enum` / `.struct` / `.tuple` can be
 // MINTED via `define`; every other variant is reflect-only. The first
-// three variants keep their historical order (write-side ordinals).
+// three variants are ordinal-pinned (the write side keys on them).
 // Keyword-colliding variant names declare bare, like every other member
 // position.
 TypeInfo :: enum {
@@ -107,7 +107,7 @@ TypeInfo :: enum {
 // These `intrinsic` functions are the compiler's type-construction
 // primitives — serviced by `comptime_vm.callCompilerFn`. They run at LOWERING
 // time (when a `-> Type` builder's result is first referenced), where the
-// compiler still resolves references to the new types. The DSL's `declare` /
+// compiler can still resolve references to the minted types. The DSL's `declare` /
 // `define` below are ordinary sx written over them. (Declared here, not imported
 // from `modules/compiler.sx`, so `meta.sx` stays self-contained and doesn't
 // intern `compiler.sx`'s `List(string)` types into every importer's table.)
@@ -211,8 +211,7 @@ define :: (handle: Type, info: TypeInfo) -> Type {
 // The channel result types, expressed as type-fns over declare/define. They
 // demonstrate that a programmatically-built enum carries a full enum through
 // codegen: `RecvResult(i64)` constructs and matches like any hand-written enum,
-// and is one nominal type across sites (the type-fn identity path). The channel
-// library (N3) consumes these once it lands.
+// and is one nominal type across sites (the type-fn identity path).
 
 // The GENERAL enum constructor: mint a nominal enum NAMED `name` from a variant
 // list passed as a VALUE (a `[]EnumVariant`), rather than a hardcoded literal.

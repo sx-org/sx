@@ -453,8 +453,6 @@ fn printInst(instruction: *const Inst, ref_idx: u32, tt: *const TypeTable, write
     try writer.writeByte('\n');
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────────
-
 fn writeType(id: TypeId, tt: *const TypeTable, writer: Writer) !void {
     // Fast path for builtins
     if (id.isBuiltin()) {

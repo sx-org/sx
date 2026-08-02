@@ -15,7 +15,7 @@
 - Exact-byte gate: **PASS** (110-case level/strategy matrix plus all six timed artifacts)
 - Timing unit: nanoseconds per operation; each process trial is the median of 15 timed operations after 3 warmups, and each reported value is the median of 61 process trials
 - SX encoding and decoding use separate executables so one loop cannot perturb the other loop's code layout
-- Accepted SX baseline: `../sx-zip@c2668879c333603dbd911a06a6776e5b7cdb8064`; the historical implementation was rebuilt with the current compiler and stdlib support from `2bb1816e`, then measured in paired, rotated trials
+- Accepted SX baseline: `../sx-zip@c2668879c333603dbd911a06a6776e5b7cdb8064`; the baseline implementation is built with the current compiler and stdlib support from `2bb1816e`, then measured in paired, rotated trials
 
 <details><summary>Uncommitted compiler/build source paths</summary>
 

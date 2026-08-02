@@ -1,4 +1,4 @@
-// Every way a sink can answer a block — and one that cannot (fluent spec §6.1).
+// Every way a sink can answer a block — and one that cannot.
 //
 // `run` needs a `*S` that implements `@BuildSink(P)`, and a type may implement it
 // three ways. All three go through one gate, so what `run` accepts and what a

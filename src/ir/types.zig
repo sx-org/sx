@@ -117,7 +117,7 @@ pub const TypeInfo = union(enum) {
         is_protocol: bool = false,
         // Stable nominal identity, assigned once per decl pointer. Folds into
         // the intern key so two same-display-name authors get distinct TypeIds.
-        // `0` == structural: the type is keyed by display name alone (legacy).
+        // `0` == structural: the type is keyed by display name alone.
         nominal_id: u32 = 0,
 
         pub const Field = struct {
@@ -132,13 +132,13 @@ pub const TypeInfo = union(enum) {
         is_flags: bool = false,
         explicit_values: ?[]const i64 = null, // for flags (power-of-2) or custom values
         backing_type: ?TypeId = null, // e.g. u32 for `enum u32 { ... }`
-        nominal_id: u32 = 0, // stable nominal identity; 0 == structural (legacy)
+        nominal_id: u32 = 0, // stable nominal identity; 0 == structural
     };
 
     pub const UnionInfo = struct {
         name: StringId,
         fields: []const StructInfo.Field,
-        nominal_id: u32 = 0, // stable nominal identity; 0 == structural (legacy)
+        nominal_id: u32 = 0, // stable nominal identity; 0 == structural
     };
 
     pub const TaggedUnionInfo = struct {
@@ -147,7 +147,7 @@ pub const TypeInfo = union(enum) {
         tag_type: TypeId, // tag integer type (e.g. .u32, .i64)
         backing_type: ?TypeId = null, // enum struct backing (e.g. { tag: u32; _: u32; payload: [30]u32; })
         explicit_tag_values: ?[]const i64 = null, // explicit variant values (e.g., quit :: 0x100)
-        nominal_id: u32 = 0, // stable nominal identity; 0 == structural (legacy)
+        nominal_id: u32 = 0, // stable nominal identity; 0 == structural
         // True for every real construction (normal unions, error sets, and a
         // `register_type`/`define` completion). False ONLY for a `declare(...)`
         // forward PLACEHOLDER that has not yet been completed — a 0-field
@@ -257,7 +257,7 @@ pub const TypeInfo = union(enum) {
     pub const ErrorSetInfo = struct {
         name: StringId,
         tags: []const u32, // sorted global tag ids
-        nominal_id: u32 = 0, // stable nominal identity; 0 == structural (legacy)
+        nominal_id: u32 = 0, // stable nominal identity; 0 == structural
     };
 };
 
@@ -388,7 +388,7 @@ pub const TypeTable = struct {
     /// `*const ast.StructDecl`) — the SAME pointer the import raw-facts hold and
     /// `registerStructDecl` receives, so registration and resolution agree on
     /// identity without threading the wrapping `ast.Node`. Populated by the
-    /// resolver (E2) as it assigns nominal ids.
+    /// resolver as it assigns nominal ids.
     type_decl_tids: std.AutoHashMap(*const anyopaque, TypeId),
     /// Anonymous-struct-literal identity: canonical (field-name, field-type)
     /// shape → TypeId. The nominal intern map keys structs by DISPLAY NAME,
@@ -501,7 +501,7 @@ pub const TypeTable = struct {
     /// display name. The nominal intern map keys these kinds by name, and
     /// every anonymous decl displays as `__anon`, so routing them through
     /// `intern` would collapse differently-shaped anonymous types onto
-    /// whichever shape interned first (the issue-0294 class — untyped `.{ }`
+    /// whichever shape interned first (untyped `.{ }`
     /// literals, inline `struct { … }` / `union { … }` / `enum { … }`
     /// annotations). The entry is appended to `infos` directly and NOT added
     /// to the name-keyed map; `anon_struct_map` alone owns identity, so
@@ -628,8 +628,8 @@ pub const TypeTable = struct {
     /// member count (a scalar, pointer, the `unresolved` sentinel, …) — so a
     /// caller bails loudly rather than reading a silent 0. The comptime
     /// compiler-API reflection reader `type_field_count` rides on this (both the
-    /// legacy `compiler_lib` handler and the comptime VM call it, so the two
-    /// paths can never drift). Out-of-range ids return null, not a panic.
+    /// `compiler_lib` handler and the comptime VM call it, so the two paths can
+    /// never drift). Out-of-range ids return null, not a panic.
     pub fn memberCount(self: *const TypeTable, id: TypeId) ?i64 {
         if (id.index() >= self.infos.items.len) return null;
         return switch (self.get(id)) {
@@ -647,7 +647,7 @@ pub const TypeTable = struct {
     /// Nominal name of a named type (struct / union / tagged-union / enum /
     /// error-set / protocol), or null for an unnamed type (scalar, pointer,
     /// slice, …) or an out-of-range id. Backs the `type_nominal_name` comptime
-    /// compiler-API reader (legacy handler + VM both call it — no drift).
+    /// compiler-API reader (the `compiler_lib` handler + VM both call it — no drift).
     /// (Distinct from `typeName` below, which renders a display string for any
     /// type; this returns the interned nominal-name handle for NAMED types only.)
     pub fn nominalName(self: *const TypeTable, id: TypeId) ?StringId {
@@ -708,7 +708,7 @@ pub const TypeTable = struct {
     /// Null → the type gets a null master-table slot. Every runtime member
     /// table (names / types / offsets) and the GEP sizing on its readers
     /// derive from THIS, so a kind that answers `memberType` can never meet
-    /// a null or short row (issue 0300: runtime slice tags dereferenced a
+    /// a null or short row (runtime slice tags dereferenced a
     /// null row).
     pub fn memberTableLen(self: *const TypeTable, id: TypeId) ?i64 {
         if (self.memberCount(id)) |n| return n;
@@ -1108,8 +1108,8 @@ pub const TypeTable = struct {
     }
 
     /// Compute the ABI size in bytes for a type, matching LLVM's struct layout rules.
-    /// This is the authoritative size computation used for closure env sizing and
-    /// verified against LLVMABISizeOfType.
+    /// This is the authoritative size computation used for closure env sizing;
+    /// `LLVMEmitter.verifySizes` cross-checks it against LLVMABISizeOfType.
     fn intAbiBytes(w: u16) usize {
         // LLVM ABI size for iN: round w up to the next power of 2, then /8.
         // Sub-byte widths (i1, i2, ..., i7) are 1 byte.
@@ -1527,7 +1527,7 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
             if (c.build_protocol) |bp| h.update(std.mem.asBytes(&bp));
         },
         // Nominal arms key by display name; `nominal_id` joins the key only when
-        // nonzero, so structural (legacy) interning hashes byte-identically.
+        // nonzero, so structural interning hashes on the name alone.
         .@"struct" => |s| {
             h.update(std.mem.asBytes(&s.name));
             if (s.nominal_id != 0) h.update(std.mem.asBytes(&s.nominal_id));
@@ -1604,7 +1604,7 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
             return c.ret == d.ret;
         },
         // Nominal arms compare display name + nominal id. With both ids 0 this is
-        // name-only equality (legacy); a nonzero id distinguishes same-name authors.
+        // name-only equality; a nonzero id distinguishes same-name authors.
         .@"struct" => |s| s.name == b.@"struct".name and s.nominal_id == b.@"struct".nominal_id,
         .@"enum" => |e| e.name == b.@"enum".name and e.nominal_id == b.@"enum".nominal_id,
         .@"union" => |u| u.name == b.@"union".name and u.nominal_id == b.@"union".nominal_id,

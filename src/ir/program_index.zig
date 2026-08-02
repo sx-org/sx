@@ -297,7 +297,7 @@ const ModuleConstCtx = struct {
     // The GLOBAL-map fold carries no namespace-import facts (no `namespace_edges`
     // / per-source const cache), so a qualified-member const `m.CAP` can only be
     // resolved by the SOURCE-AWARE path (`SourceConstCtx` / `Lowering`). Null
-    // here (issue 0192). A qualified const used inside another module const's RHS
+    // here. A qualified const used inside another module const's RHS
     // folds through `SourceConstCtx`, not this ctx, so this is not a live gap.
     pub fn lookupQualifiedConst(_: ModuleConstCtx, _: []const u8, _: []const u8) ?i64 {
         return null;
@@ -361,9 +361,8 @@ fn moduleConstFloatValuedFramed(consts: *const std.StringHashMap(ModuleConstInfo
 /// int via `floatToIntExact`). `moduleConstIntFramed` consults this so a count
 /// is gated on `ModuleConstInfo.ty`, not just the shape of the initializer node:
 /// a `string`/`bool`/pointer/struct-typed const can never be folded into a count
-/// off an integer-looking initializer (the second symptom, where
-/// `N : string : 4` folded `[N]i64` to 4 by reading the `int_literal` node and
-/// ignoring the `string` annotation).
+/// off an integer-looking initializer — reading the `int_literal` node of
+/// `N : string : 4` would fold `[N]i64` to 4 and ignore the `string` annotation.
 pub fn isCountableConstType(table: *const types.TypeTable, ty: TypeId) bool {
     return switch (ty) {
         .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .usize, .isize, .f32, .f64 => true,
@@ -467,7 +466,7 @@ pub fn isFloatValuedExpr(node: *const Node, ctx: anytype) bool {
             };
             if (obj_name) |on| {
                 if (type_resolver.TypeResolver.floatLimitFor(on, fa.field) != null) break :blk true;
-                // A QUALIFIED-import-member float const (`m.PI`, issue 0192): so
+                // A QUALIFIED-import-member float const (`m.PI`): so
                 // the int folder's division guard classifies `m.K / 3` as float
                 // division exactly as it does a bare `K / 3`.
                 if (ctx.qualifiedNameIsFloatTyped(on, fa.field)) break :blk true;
@@ -516,8 +515,8 @@ fn qualifiedDottedIsFloat(name: []const u8, ctx: anytype) bool {
 /// ONE exception keeps a float operation out of integer arithmetic: a `/` whose
 /// lhs/rhs is float-valued (`5.0 / 2.0`, `K / 3` with `K : f64 : 4.0`) is FLOAT
 /// division, NOT integer truncation, so this folder refuses it (`isFloatValuedExpr`)
-/// and lets `evalConstFloatExpr` + the unified narrowing rule see the true value
-///. `+ - *` need no such guard — they agree between int and
+/// and lets `evalConstFloatExpr` + the unified narrowing rule see the true
+/// value. `+ - *` need no such guard — they agree between int and
 /// float arithmetic for the integral operands this folder ever sees.
 ///
 /// Leaves resolve through the ctx, so each call site shares the SAME folding
@@ -546,8 +545,8 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
             // A backtick RAW receiver (`` `i64.max ``, `` `f64.epsilon ``) is an
             // ordinary field READ on a value whose spelling shadows a builtin
             // type name, NOT a numeric-limit / pack-arity accessor — so it is
-            // never a compile-time leaf here; its field is a runtime value
-            //. Only a BARE type/name receiver folds a
+            // never a compile-time leaf here; its field is a runtime value.
+            // Only a BARE type/name receiver folds a
             // `<pack>.len` / `<IntType>.min`/`.max`. Mirrors the same `is_raw`
             // guard `isFloatValuedExpr` already applies, so the const cluster
             // (this folder, `evalConstFloatExpr`, `isFloatValuedExpr`) agrees.
@@ -572,7 +571,7 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
                 // A struct const's integer field (`LIT.r`) folds to the
                 // SELECTED author's field value.
                 if (ctx.lookupConstStructField(on, fa.field)) |v| break :blk v;
-                // A QUALIFIED-import-member const (`m.CAP`, issue 0192): `on`
+                // A QUALIFIED-import-member const (`m.CAP`): `on`
                 // names a namespace alias and `fa.field` a const in its target
                 // module. Tried last so a same-named struct-const / numeric-limit
                 // receiver keeps its existing meaning.
@@ -694,7 +693,7 @@ pub fn evalConstFloatExpr(node: *const Node, ctx: anytype) ?f64 {
             };
             if (obj_name) |on| {
                 if (type_resolver.TypeResolver.floatLimitFor(on, fa.field)) |v| break :blk v;
-                // A QUALIFIED-import-member float const (`m.PI`, issue 0192) —
+                // A QUALIFIED-import-member float const (`m.PI`) —
                 // the float twin of the int folder's qualified-const arm.
                 if (ctx.lookupQualifiedConstFloat(on, fa.field)) |v| break :blk v;
             }
@@ -849,33 +848,30 @@ pub const GlobalInfo = struct { id: inst.GlobalId, ty: TypeId };
 /// diagnostic, and LSP per-field provenance — so each entry keeps its spans
 /// and declaring file alongside the field data.
 pub const ContextFieldDecl = struct {
-    /// Context field name (the program-global Context namespace, L4).
+    /// Context field name (the program-global Context namespace).
     name: []const u8,
     /// Span of the field-name token in the declaring file.
     name_span: ast.Span,
     /// Declared field type (unresolved AST — resolution happens at assembly).
     type_expr: *const ast.Node,
-    /// Declared default value; null = missing (rejected, L5).
+    /// Declared default value; null = missing, which the collection pass rejects.
     default_expr: ?*const ast.Node,
     /// Span of the whole `#context_extend … ;` declaration.
     span: ast.Span,
     /// Declaring source file — `Node.source_file` as stamped by import
     /// resolution. This is the same normalized spelling the program index
     /// uses for module identity everywhere (the by-source caches), so it
-    /// doubles as the module path and as the L6 primary sort key.
+    /// doubles as the module path and as the primary sort key.
     module_path: []const u8,
-    /// False when the entry failed collection validation (L4 collision / L5
+    /// False when the entry failed collection validation (field-name collision /
     /// missing default — the error is already emitted). Assembly and default
-    /// emission skip invalid entries; the O3 field enumeration keeps them.
+    /// emission skip invalid entries; the field enumeration keeps them.
     valid: bool = true,
 };
 
 /// Single lowering access point for declaration-name / import / visibility
-/// facts. The architecture stream (`current/PLAN-ARCH.md`, phase A1) extracts
-/// these out of the `Lowering` state bag incrementally. `Lowering` embeds one
-/// `ProgramIndex` by value and reaches every moved fact through
-/// `self.program_index.<field>`; later phases hand collaborator modules a
-/// `*ProgramIndex` instead of `*Lowering`.
+/// facts. `Lowering` embeds one `ProgramIndex` by value and reaches every
+/// fact through `self.program_index.<field>`.
 ///
 /// OWNS the declaration maps below. BORROWS `module_scopes` / `import_graph` /
 /// `flat_import_graph` / `module_decls` / `namespace_edges` / `decl_table`
@@ -915,7 +911,7 @@ pub const ProgramIndex = struct {
     namespace_edges: ?*imports.NamespaceEdges = null,
     /// Stable `DeclId` for every declaration, built by `imports.buildDeclTable`
     /// in parallel with the import facts. Borrowed view; nothing in lowering
-    /// consumes it for selection yet (additive — S4 makes it the fact-store key).
+    /// consumes it for selection.
     decl_table: ?*imports.DeclTable = null,
     /// Every resolved module keyed by canonical path. A `#import` written
     /// inside a module-scope expansion body resolves re-entrantly but stays
@@ -943,8 +939,7 @@ pub const ProgramIndex = struct {
     struct_template_map: std.StringHashMap(StructTemplate),
     /// `DeclId` → generic struct template — the DeclId-keyed analogue of
     /// `struct_template_map`, built in parallel during `registerStructDecl`.
-    /// Nothing reads it for selection yet; `struct_template_map` stays the live
-    /// consumer until the S4 cutover.
+    /// Nothing reads it for selection; `struct_template_map` is the live consumer.
     struct_template_by_decl: std.AutoHashMap(imports.DeclId, StructTemplate),
     /// Protocol name → protocol info.
     protocol_decl_map: std.StringHashMap(ProtocolDeclInfo),
@@ -959,12 +954,11 @@ pub const ProgramIndex = struct {
     /// behavior). Present = the alias rewrites calls only in that file.
     private_ufcs_alias_source: std.StringHashMap([]const u8),
 
-    // ── Source-keyed semantic caches (R5 §#4) ──
+    // ── Source-keyed semantic caches ──
     // The source-partitioned analogues of `type_alias_map` / `module_const_map`
     // / `global_names`, keyed `source path → name → X`. Written by the same scan
     // (`scanDecls` in lower.zig), keyed by the registering decl's source. The
-    // global maps above stay the ONLY readers for now; the read-side cutover to
-    // `selectedAuthor.source` lands in a later phase. These maps OWN their inner
+    // global maps above are the ONLY readers. These maps OWN their inner
     // per-source maps and free them in `deinit`.
     /// Type alias name → target TypeId, partitioned by declaring source.
     type_aliases_by_source: std.StringHashMap(std.StringHashMap(TypeId)),
@@ -974,12 +968,12 @@ pub const ProgramIndex = struct {
     globals_by_source: std.StringHashMap(std.StringHashMap(GlobalInfo)),
 
     // ── Context extension (design/context-extension.md) ──
-    /// Every `#context_extend` declaration in the compilation, sorted per L6
-    /// by (declaring module path, field name). Collected UNCONDITIONALLY —
+    /// Every `#context_extend` declaration in the compilation, sorted by
+    /// (declaring module path, field name). Collected UNCONDITIONALLY —
     /// also in no-context builds, where the declarations are inert but the
     /// list still powers the registered-field diagnostic. Set once by
-    /// `collectContextExtensions`; entries that failed validation (L4
-    /// collision / L5 missing default) are kept with `valid = false` so
+    /// `collectContextExtensions`; entries that failed validation (collision /
+    /// missing default) are kept with `valid = false` so
     /// downstream diagnostics can still enumerate them.
     context_extensions: []ContextFieldDecl = &.{},
 

@@ -1,9 +1,8 @@
-// A `$T`-generic RETURN type with no parameter mentioning `$T` is rejected
-// at the declaration: the fn isn't a template (type params derive from
-// params), and no call site could ever bind the return. All three declare
-// surfaces diagnose: a top-level fn, a struct-body method, and a
-// (non-parameterised) impl method. Each used to PANIC the compiler at LLVM
-// emission via the `.unresolved` tripwire — even when never called.
+// A `$T`-generic RETURN type with no parameter mentioning `$T` is rejected at the
+// declaration: type params derive from params, so the fn is not a template and no
+// call site could bind the return. All three declaration surfaces diagnose — a
+// top-level fn, a struct-body method, and a non-parameterised impl method — even
+// when the fn is never called.
 
 #import "modules/std.sx";
 

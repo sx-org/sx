@@ -5,7 +5,7 @@
 // type to f64 with ints converting exactly; bool/string homogeneous).
 // Element shapes cover nested aggregates. Reads are normal array values:
 // indexing, .len, by-value copies (independent of the const), passing to
-// fixed-array params, and @-address (reads through *[4]i64 — issue 0117).
+// fixed-array params, and @-address (reads through *[4]i64).
 
 #import "modules/std.sx";
 

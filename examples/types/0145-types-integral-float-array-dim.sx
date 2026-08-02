@@ -2,13 +2,10 @@
 // positive INTEGRAL number — an integral float (`4.0`) folds to its integer just
 // like `4`. A float-typed const (`N : f64 : 4.0`), an untyped-float const
 // (`M :: 4.0`), and a direct float literal (`[4.0]i64`) all lay out the same
-// `[4]i64` as the integer spelling, so element store/read is in bounds.
-//
-// Regression (issue 0083 / F0.4 attempt 8, Agra ruling): an integral float used
-// as a dimension was wrongly rejected "must be a compile-time integer constant".
-// The shared const-int evaluator now folds an integral float literal (and a
-// float-typed module const) via `program_index.floatToIntExact`; a non-integral
-// float (`4.5`) is still rejected (see 1132).
+// `[4]i64` as the integer spelling, so element store/read is in bounds. The
+// shared const-int evaluator folds an integral float literal (and a float-typed
+// module const) through `program_index.floatToIntExact`; a non-integral float
+// (`4.5`) is rejected (see 1132).
 #import "modules/std.sx";
 
 N : f64 : 4.0;   // float-typed const

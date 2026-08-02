@@ -1,9 +1,9 @@
-// Feature 1 / Step 1.2 — pack-expansion forms PARSE in all four positions.
+// Pack-expansion forms PARSE in all four positions.
 //
 // Parse-only probe. Spread reuses the existing `spread_expr` node (its operand
 // carries projection `xs.field` / type-application `F(Ts)`); closure-sig packs
-// use `ClosureTypeExpr.pack_name` + the new `pack_projection`. Sema/lowering
-// arrive in Phase 2 — do NOT expect this to compile/run yet. The authoritative
+// use `ClosureTypeExpr.pack_name` + `pack_projection`. Sema/lowering are
+// not wired — do NOT expect this to compile/run. The authoritative
 // checks are the parser unit tests in src/parser.zig ("parse pack expansion: …").
 
 // 1. Tuple value position — `.(..pack)` / `.(..pack.field)`:

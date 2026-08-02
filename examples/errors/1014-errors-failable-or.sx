@@ -1,8 +1,8 @@
-// Failable `or` value-terminator (ERR step E2.4a). `lhs or value` where `lhs`
+// Failable `or` value-terminator. `lhs or value` where `lhs`
 // is a value-carrying failable (`-> (T, !E)`): on success the result is the
 // LHS value; on failure the LHS error is discarded and the result is the
 // terminator value. The whole expression is non-failable (type T). The chain
-// form (`try a or try b`) needs fallback-target routing and lands in E2.4b.
+// form (`try a or try b`) needs fallback-target routing; 1028 covers it.
 // Rejections: `examples/232-failable-or-reject.sx`.
 
 #import "modules/std.sx";

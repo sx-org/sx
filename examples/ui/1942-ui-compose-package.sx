@@ -1,15 +1,14 @@
-// The compose UI library as a package (revision §13.3).
+// The compose UI library as a package.
 //
 // A container TAKES the block: the standalone expressions inside are its
 // children, with no terminal marker on the child, no ambient sink, and no
 // collection call at the call site. Interception is a property of the
 // container's own `$B/@BuildBlock(View)` parameter.
 //
-// That is the whole difference from the other two libraries, which is why they
-// are separate packages rather than modes of one: fluent asks for its children
-// through an explicit `collectViews()` field initializer, and emit requires a
-// terminal `.emit()` on each child.
-// Expected: exit 0.
+// That collection style is what makes these three packages rather than three
+// modes of one: fluent asks for its children through an explicit
+// `collectViews()` field initializer, and emit requires a terminal `.emit()` on
+// each child.
 #import "modules/std.sx";
 #import "modules/ui/compose.sx";
 

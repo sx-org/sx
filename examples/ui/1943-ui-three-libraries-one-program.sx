@@ -1,13 +1,14 @@
-// The three UI libraries in one program (revision §13, §14).
+// The three UI libraries in one program.
 //
 // They are separate libraries, not modes of one. Each is imported under its own
 // name, and each `View` is its own open set: three sets declaring the same three
-// methods, sharing no geometry, no render surface and no components.
+// methods and sharing no components.
 //
 // A component joins a set by DECLARING itself into it, and each of these
 // declared itself into exactly one — so `compose.Label` is a member of
-// `compose.View` and of nothing else.
-// Expected: exit 0.
+// `compose.View` and of nothing else. Shared geometry would not change that:
+// compose measures and renders through the ui foundation, emit and fluent each
+// carry their own, and the three sets are distinct either way.
 #import "modules/std.sx";
 
 c :: #import "modules/ui/compose.sx";
@@ -26,8 +27,8 @@ main :: () -> i32 {
     // Three sets, each laid out on its own members.
     print("sets {} {} {}\n", size_of(c.View), size_of(e.View), size_of(f.View));
 
-    // Each library measures through its own geometry and renders through its own
-    // runtime into its own tree type.
+    // Each library renders through its own runtime, into the tree type that
+    // library speaks.
     ct := c.RenderTree{};
     et := e.RenderTree{};
     ft := f.RenderTree{};
@@ -41,5 +42,5 @@ main :: () -> i32 {
 
 // ** stdout **
 // Label Label Label
-// sets 64 64 64
+// sets 72 64 64
 // commands 1 1 1

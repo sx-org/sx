@@ -2286,7 +2286,7 @@ pub const Server = struct {
 
     // ---- Context extension support (design/context-extension.md, LSP unit) ----
     //
-    // Context fields are PROGRAM-GLOBAL (L3: no import gating), so every
+    // Context fields are PROGRAM-GLOBAL — no import gating — so every
     // lookup here spans the whole document store — the server's workspace is
     // the editor-side approximation of "the compilation". The heavy lifting
     // rides sema's (owner, name) member-ref index: `#context_extend` records
@@ -2298,7 +2298,7 @@ pub const Server = struct {
 
     /// Find the `#context_extend <name>` declaration across all loaded
     /// documents. Deterministic on multi-hit (a compile error anyway): the
-    /// lexicographically-smallest declaring path wins — the L6 order.
+    /// lexicographically-smallest declaring path wins.
     fn findContextExtendDecl(store: *DocumentStore, name: []const u8) ?ContextExtendHit {
         var best: ?ContextExtendHit = null;
         var it = store.by_path.iterator();
@@ -2318,7 +2318,7 @@ pub const Server = struct {
         return best;
     }
 
-    /// Every `#context_extend` declaration in the store, in L6 order
+    /// Every `#context_extend` declaration in the store, in sort order
     /// (declaring path, field name) — the completion / enumeration source.
     fn collectContextExtendDecls(store: *DocumentStore, allocator: std.mem.Allocator) []ContextExtendHit {
         var hits = std.ArrayList(ContextExtendHit).empty;
@@ -3448,8 +3448,6 @@ test "findCaptureVariant: no capture" {
     try std.testing.expect(result == null);
 }
 
-// ---- Helper function tests ----
-
 test "extractQualifiedName: namespace.member at member offset" {
     const source = "pkg.mul(3, 4)";
     // offset inside "mul" (index 4)
@@ -3962,7 +3960,8 @@ test "lsp/project: whole-program check attributes a reachable error to its modul
 
 // Definition targets for Context fields resolve program-wide: the
 // `#context_extend` declaration is found across documents, and the reading
-// document needs NO import of the declaring module (the L3 pin's LSP twin).
+// document needs NO import of the declaring module — the LSP twin of the
+// program-global rule.
 test "lsp/context: cross-file field def resolves without an import" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -4115,12 +4114,11 @@ test "lsp/context: bare context hover enumerates the assembled struct" {
     try std.testing.expect(std.mem.indexOf(u8, hover, "main.sx") != null);
 }
 
-// Regression (QA 2026-07-19): go-to-definition into an imported stdlib file
-// produced `file://modules/ffi/objc_block.sx` — import resolution keys
-// documents CWD-RELATIVE (the compiler's diagnostic-spelling contract), and
-// the editor reads a relative `file://` URI as authority + absolute path,
-// landing on a nonexistent `/modules/…`. Every outgoing URI now routes
-// through `fileUri`, which absolutizes relative paths against the server CWD.
+// Import resolution keys documents CWD-RELATIVE (the compiler's
+// diagnostic-spelling contract), and the editor reads a relative `file://` URI
+// as authority + absolute path — a bare `file://modules/ffi/objc_block.sx`
+// lands on a nonexistent `/modules/…`. Every outgoing URI routes through
+// `fileUri`, which absolutizes relative paths against the server CWD.
 test "lsp/uri: relative document paths absolutize against the server cwd" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -4136,8 +4134,8 @@ test "lsp/uri: relative document paths absolutize against the server cwd" {
     try std.testing.expectEqualStrings("file:///tmp/x.sx", abs);
 }
 
-// The payload-level pin of the same regression: a references payload over
-// relative-keyed documents carries only absolute file:// URIs.
+// A references payload over relative-keyed documents carries only absolute
+// file:// URIs.
 test "lsp/uri: references payload URIs are absolute for relative-keyed docs" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

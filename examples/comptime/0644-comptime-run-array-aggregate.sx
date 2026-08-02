@@ -3,11 +3,12 @@
 // reg→value bridge reads the array's elements out of comptime memory and
 // produces a `Value` array the LLVM serializer emits as a constant.
 //
-// Regression (issue 0167 C): the array-in-aggregate shape used to bail with
+// An unbridged shape bails with
 //   `reg→value: aggregate shape not bridged yet`.
-// Covers: struct-with-array-field, array-of-structs, nested array `[2][2]`,
-// a direct `[N]T` return, and the `?Arr` optional payload (composes with the
-// optional bridge arm) unwrapped via `!`.
+//
+// The shapes here: struct-with-array-field, array-of-structs, nested array
+// `[2][2]`, a direct `[N]T` return, and the `?Arr` optional payload (composes
+// with the optional bridge arm) unwrapped via `!`.
 
 #import "modules/std.sx";
 

@@ -2,9 +2,9 @@
 // not just the nominal leaf annotation (0755). `main` flat-imports two modules
 // that each author a same-name `Thing` / `Box` / `Nums` and authors none itself,
 // so EACH of the following bare forms is a genuine collision the source cannot
-// disambiguate — and each must emit the LOUD "type ... is ambiguous" diagnostic
-// (consistent with the leaf, 0755) and poison the result, NEVER silently pick a
-// global `findByName` / `struct_template_map` author:
+// disambiguate — and each emits the LOUD "type ... is ambiguous" diagnostic
+// (consistent with the leaf, 0755) and poisons the result, NEVER silently picking
+// a global `findByName` / `struct_template_map` author:
 //
 //   - reflection / type-arg slot    `size_of(Thing)`
 //   - typed array/vector-literal     `Nums.[1, 2]`
@@ -12,10 +12,8 @@
 //   - type-as-value                  `t : Type = Thing`
 //   - type-category match arm        `case Thing:`
 //
-// Regression (Phase E4 attempt-5): before the bare-type gate carried the full
-// source-aware author outcome, these non-leaf sites used a boolean leak-check
-// that dropped the AMBIGUOUS outcome — two direct flat same-name authors fell
-// through to a global pick (exit 0 / cascade) instead of the loud diagnostic.
+// Each non-leaf site reads the full source-aware author outcome, AMBIGUOUS
+// included, rather than a boolean leak-check.
 
 #import "modules/std.sx";
 #import "0767-modules-ambiguous-bare-type-forms/a.sx";

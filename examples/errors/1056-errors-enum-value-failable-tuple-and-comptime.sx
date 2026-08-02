@@ -1,20 +1,17 @@
-// Enum-valued value-carrying failables, two paths the bare-success fix (issue
-// 0097) did NOT originally cover. Regression (issue 0097, attempt-2 review F1+F2).
+// Enum-valued value-carrying failables, two paths the bare-success rule
+// does not itself cover.
 //
-//   F1 — EXPLICIT full failable tuple return `return (.v, error.X)`. The bug was
-//   the inverse of 0097: narrowing the return target to the value type for ALL
-//   value-failables broke the explicit-tuple form (the trailing error element no
-//   longer resolved against the error set → `.unresolved` field → LLVM-emit
-//   panic). The target must stay the FULL failable tuple for an explicit tuple
-//   literal of full arity, and narrow to the value type only for a BARE value.
-//   This pins both branches in one fn: bare-value success + explicit-tuple error.
+// An EXPLICIT full failable tuple return `return (.v, error.X)` keeps the
+// return target at the FULL failable tuple; the target narrows to the value
+// type only for a BARE value, otherwise the trailing error element does not
+// resolve against the error set. Both branches live in one fn: bare-value
+// success + explicit-tuple error.
 //
-//   F2 — COMPTIME-PARAM ($n) value-failable. The body is INLINED at the call
-//   site (lowerComptimeCall), so the success return takes the inline-return path,
-//   which the original fix skipped — it stored `{value, undef}` (error slot
-//   undefined) on success. Read the error slot at RUNTIME on the success path
-//   (cast, bare `if`, `== error.X`) so an undef slot is caught, not masked by the
-//   `if !e` proof.
+// A COMPTIME-PARAM ($n) value-failable body is INLINED at the call site
+// (lowerComptimeCall), so the success return takes the inline-return path,
+// which zeroes the error slot there as well. The error slot is read at
+// RUNTIME on the success path (cast, bare `if`, `== error.X`) so an undef
+// slot is caught, not masked by the `if !e` proof.
 
 #import "modules/std.sx";
 

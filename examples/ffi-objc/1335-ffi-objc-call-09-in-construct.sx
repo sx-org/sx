@@ -1,14 +1,14 @@
-// Phase 1 steps 1.11–1.13 (PLAN-FFI.md): `#objc_call` call sites
+// `#objc_call` call sites
 // embedded inside the sx surface constructs. None touch a new ABI
 // path — the lowering routes the call identically regardless of
 // the enclosing scope, and this test pins that lemma.
 //
-//   1. Struct method body                  Probe.fetch
-//   2. Protocol impl method body           impl Hashable for Probe
-//   3. Closure value body                  closure that calls hash
+// 1. Struct method body                  Probe.fetch
+// 2. Protocol impl method body           impl Hashable for Probe
+// 3. Closure value body                  closure that calls hash
 //
-// 1.14 (separate test): `inline if OS == { case }` gating across
-// targets — verified by `tests/cross_compile.sh`.
+// `inline if OS == { case }` gating across targets is covered by
+// `tests/cross_compile.sh`.
 
 #import "modules/std.sx";
 #import "modules/build.sx";

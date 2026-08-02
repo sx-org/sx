@@ -1,0 +1,14 @@
+// Spacing rule (specs: Whitespace is Syntax): `-` has a prefix reading too, so
+// it is infix only when the gaps on both sides match. `a - b` and `a-b` are
+// subtraction; `a -b` is `a` followed by a prefix `-b`, which leaves the
+// statement with two expressions and no operator between them. The report says
+// which reading the spacing picked.
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    a := 10;
+    b := 3;
+    x := a -b;
+    print("{}\n", x);
+    return 0;
+}

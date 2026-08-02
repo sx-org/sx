@@ -1,5 +1,5 @@
-// Stream B1 (fibers) B1.5a — fiber park/resume via `suspend_self` + `wake`,
-// the off-queue half of the M:1 scheduler that FiberIo [B1.4] builds on.
+// Fiber park/resume via `suspend_self` + `wake`,
+// the off-queue half of the M:1 scheduler that FiberIo builds on.
 //
 // A running fiber that has nothing to do parks itself with `suspend_self`: it
 // leaves the round-robin queue entirely (unlike `yield_now`, which re-enqueues)

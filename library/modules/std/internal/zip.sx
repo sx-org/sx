@@ -1666,7 +1666,7 @@ ZipSink :: struct {
     write_at: (*void, i64, string) -> bool = null;
     read_at: (*void, i64, string) -> i64 = null;
     // Stateful stdio writers flush after the EOCD. A failed flush is reported
-    // as FILE_CLOSE_FAILED by upstream, despite the historical error name.
+    // as FILE_CLOSE_FAILED by upstream, whatever the failure actually was.
     flush: (*void) -> bool = null;
     // Optional physical rollback: shrink accepted output to exactly `len`
     // writer-logical bytes. Backends that can un-emit (memory, files)

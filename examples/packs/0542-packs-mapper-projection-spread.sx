@@ -1,4 +1,4 @@
-// Phase 6 — `mapper(..sources.value)`: project a method over a pack and spread
+// `mapper(..sources.value)`: project a method over a pack and spread
 // the results into a closure call. The mapper lambda's params are contextually
 // typed from the `Closure(...)` parameter even though `apply` is a pack-fn.
 

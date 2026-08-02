@@ -1,4 +1,4 @@
-// issue 0105 / F1 regression — a SELF-REFERENCE inside a same-name struct shadow.
+// A SELF-REFERENCE inside a same-name struct shadow.
 // Two flat-imported modules each declare a top-level `Box`; module B's `Box` has
 // a field `next: *Box` referencing its own name. The shadow must resolve that
 // self-ref to ITS OWN nominal identity, not the first same-name author (A's

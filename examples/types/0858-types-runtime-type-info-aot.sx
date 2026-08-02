@@ -1,8 +1,8 @@
-// 1a-S3b-3 — runtime `type_info(tp)`: the const __sx_type_infos records
-// (one per TypeId, bytes matching the sx TypeInfo layout; master
-// [N x ptr] by tag) loaded and MATCHED at runtime — kind-first dispatch
-// with typed per-arm payloads (struct fields carry name+offset; enums
-// their variants). This is the reflection walker's core dispatch.
+// Runtime `type_info(tp)` in a real linked binary: the const __sx_type_infos
+// records (one per TypeId, bytes matching the sx TypeInfo layout; master
+// [N x ptr] by tag) loaded and MATCHED at runtime — kind-first dispatch with
+// typed per-arm payloads (struct fields carry name+offset; enums their
+// variants).
 #import "modules/std.sx";
 meta :: #import "modules/std/meta.sx";
 Padded :: struct { a: u8; b: i64; c: u16; }

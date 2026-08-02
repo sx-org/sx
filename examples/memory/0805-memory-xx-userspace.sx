@@ -1,4 +1,4 @@
-// Phase 3 (xx-via-Into): a user-defined `impl Into(Target) for Source`
+// A user-defined `impl Into(Target) for Source`
 // reaches the xx operator through compile-time dispatch. The compiler
 // monomorphises `convert` for the (Source, Target) pair and emits a
 // direct call — no vtable, identical to a hand-written call.

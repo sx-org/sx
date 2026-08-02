@@ -1,0 +1,179 @@
+// The pure-failable demand is a property of the SIGNATURE, so every body form
+// reads it the same way: a nested local function, a generic instance, a pack-fn
+// monomorph, a closure's arrow body and a closure's block body all discard an
+// undemanded tail and return only an error one.
+//
+// This is the body-form row of the tail matrix. Each row carries an error tail
+// (its `catch` is hot), an ordinary 4-byte tail, an 8-byte / aggregate tail, a
+// value-less compound block, a void call, a prefix-bound tail and mixed
+// control flow (both arm orders) — every one of those prints exactly once and
+// leaves its `catch` cold. Defers unwind before the exit on both paths.
+#import "modules/std.sx";
+
+Failed :: error { Nope }
+
+tick :: (label: string) -> i32 {
+    print("tick {}\n", label);
+    42
+}
+
+tick64 :: (label: string) -> i64 {
+    print("tick64 {}\n", label);
+    7
+}
+
+name :: (label: string) -> string {
+    print("name {}\n", label);
+    "n"
+}
+
+nothing :: (label: string) {
+    print("void {}\n", label);
+}
+
+fails :: () -> !Failed {
+    error.Nope
+}
+
+// ── Generic instance ───────────────────────────────────────────────────
+
+gen_value :: (v: $T) -> !Failed {
+    print("gen {}\n", v);
+    v
+}
+
+gen_error :: (v: $T) -> !Failed {
+    print("gen-error {}\n", v);
+    fails()
+}
+
+gen_mixed :: (v: $T, b: bool) -> !Failed {
+    if b { fails() } else { v }
+}
+
+// ── Pack-fn monomorph ──────────────────────────────────────────────────
+
+pack_value :: (label: string, ..$args) -> !Failed {
+    print("pack {}\n", label);
+    tick("pack-tail")
+}
+
+pack_error :: (label: string, ..$args) -> !Failed {
+    print("pack-error {}\n", label);
+    error.Nope
+}
+
+// ── Nested local functions ─────────────────────────────────────────────
+
+run_locals :: () -> i32 {
+    local_value :: () -> !Failed {
+        tick("local")
+    }
+    local_wide :: () -> !Failed {
+        tick64("local")
+    }
+    local_string :: () -> !Failed {
+        name("local")
+    }
+    local_compound :: () -> !Failed {
+        { x := tick("local-compound"); }
+    }
+    local_void :: () -> !Failed {
+        nothing("local")
+    }
+    local_prefix :: () -> !Failed {
+        e := fails();
+        e
+    }
+    local_error :: () -> !Failed {
+        error.Nope
+    }
+    local_mixed :: (b: bool) -> !Failed {
+        defer print("local defer\n");
+        if b { fails() } else { tick("local-mixed") }
+    }
+
+    local_value() catch { print("NOT REACHED local-value\n"); }
+    local_wide() catch { print("NOT REACHED local-wide\n"); }
+    local_string() catch { print("NOT REACHED local-string\n"); }
+    local_compound() catch { print("NOT REACHED local-compound\n"); }
+    local_void() catch { print("NOT REACHED local-void\n"); }
+    local_mixed(false) catch { print("NOT REACHED local-mixed\n"); }
+    local_error() catch { print("caught local-error\n"); }
+    local_prefix() catch { print("caught local-prefix\n"); }
+    local_mixed(true) catch { print("caught local-mixed\n"); }
+    0
+}
+
+// A closure declared inside a NAMED-return function must not see the enclosing
+// function's named-return slots: its own body is its own boundary.
+named_return_host :: () -> (x: i32, y: i32) {
+    inner := () -> !Failed => tick("inside-named-return");
+    inner() catch { print("NOT REACHED inner\n"); }
+    x = 3;
+    y = 4;
+}
+
+main :: () -> i32 {
+    // Generic instances.
+    gen_value(11) catch { print("NOT REACHED gen-i32\n"); }
+    gen_value("s") catch { print("NOT REACHED gen-string\n"); }
+    gen_mixed(12, false) catch { print("NOT REACHED gen-mixed\n"); }
+    gen_error(13) catch { print("caught gen-error\n"); }
+    gen_mixed(14, true) catch { print("caught gen-mixed\n"); }
+
+    // Pack-fn monomorphs.
+    pack_value("a", 1, "two") catch { print("NOT REACHED pack\n"); }
+    pack_error("b", 3) catch { print("caught pack-error\n"); }
+
+    // Nested local functions.
+    r := run_locals();
+
+    // Closure ARROW bodies — the tail is the whole body.
+    arrow_value := () -> !Failed => tick("arrow");
+    arrow_wide := () -> !Failed => tick64("arrow");
+    arrow_string := () -> !Failed => name("arrow");
+    arrow_void := () -> !Failed => nothing("arrow");
+    arrow_error := () -> !Failed => error.Nope;
+    arrow_forward := () -> !Failed => fails();
+    arrow_value() catch { print("NOT REACHED arrow-value\n"); }
+    arrow_wide() catch { print("NOT REACHED arrow-wide\n"); }
+    arrow_string() catch { print("NOT REACHED arrow-string\n"); }
+    arrow_void() catch { print("NOT REACHED arrow-void\n"); }
+    arrow_error() catch { print("caught arrow-error\n"); }
+    arrow_forward() catch { print("caught arrow-forward\n"); }
+
+    // Closure BLOCK bodies.
+    block_value := () -> !Failed { tick("block") };
+    block_wide := () -> !Failed { tick64("block") };
+    block_compound := () -> !Failed { { x := tick("block-compound"); } };
+    block_prefix := () -> !Failed {
+        v := tick("block-prefix");
+        v
+    };
+    block_defer := () -> !Failed {
+        defer print("block defer\n");
+        tick("block-defer")
+    };
+    block_error := () -> !Failed {
+        defer print("block defer error\n");
+        fails()
+    };
+    block_value() catch { print("NOT REACHED block-value\n"); }
+    block_wide() catch { print("NOT REACHED block-wide\n"); }
+    block_compound() catch { print("NOT REACHED block-compound\n"); }
+    block_prefix() catch { print("NOT REACHED block-prefix\n"); }
+    block_defer() catch { print("NOT REACHED block-defer\n"); }
+    block_error() catch { print("caught block-error\n"); }
+
+    // Mixed control flow inside a closure, both arm orders.
+    clo_mixed := (b: bool) -> !Failed {
+        if b { fails() } else { tick("clo-mixed") }
+    };
+    clo_mixed(false) catch { print("NOT REACHED clo-mixed\n"); }
+    clo_mixed(true) catch { print("caught clo-mixed\n"); }
+
+    x, y := named_return_host();
+    print("named={} {}\n", x, y);
+    r
+}

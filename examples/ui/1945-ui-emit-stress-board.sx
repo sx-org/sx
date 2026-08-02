@@ -1,10 +1,9 @@
-// Stress: the same board screen through the EMIT library (revision §14.2.2).
+// Stress: the same board screen through the EMIT library.
 //
 // A separate entry point importing exactly one library. The shape is the same
 // screen as 1944, so the two can be compared side by side, but every child here
 // reaches its container through the terminal `.emit()` — there is no
 // interception, and a child written without it does not appear.
-// Expected: exit 0.
 #import "modules/std.sx";
 #import "modules/ui/emit/geometry.sx";
 #import "modules/ui/emit/render.sx";

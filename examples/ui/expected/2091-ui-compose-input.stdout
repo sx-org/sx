@@ -1,0 +1,7 @@
+regions 2 nodes 2
+top 1 pressed true after false
+wander false true taps 2
+released away 2 0
+transparent 0
+opaque 1
+vanished 2 false

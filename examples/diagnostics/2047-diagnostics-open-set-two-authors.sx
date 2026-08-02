@@ -10,7 +10,6 @@
 // A bare head is a bare name: it reaches what the file that wrote it can see. A
 // module that imported neither of two same-named sets is told so, rather than
 // handed one of them.
-// Expected: exit 1.
 #import "modules/std.sx";
 #import "2047-diagnostics-open-set-two-authors/cell.sx";
 #import "2047-diagnostics-open-set-two-authors/stray/joiner.sx";

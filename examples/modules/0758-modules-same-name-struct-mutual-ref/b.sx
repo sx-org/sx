@@ -7,7 +7,7 @@ Node :: struct { m: i64; owner: *Box; }
 b_test :: () -> i64 {
     nd := Node{ m = 99, owner = null };
     bx := Box{ y = 7, peer = *nd };
-    // Reads B's Node.m (99); pre-fix the forward ref bound to A's Node (which has
-    // field `n`, not `m`) → "field 'm' not found on type 'Node'".
+    // Reads B's Node.m (99); binding the forward ref to A's Node (which has
+    // field `n`, not `m`) gives "field 'm' not found on type 'Node'".
     return bx.peer.*.m;
 }

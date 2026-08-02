@@ -1,13 +1,8 @@
-// Default-ABI small byte-struct params (issue 0286).
+// Default-ABI small byte-struct params.
 //
-// A free function that takes (pointer, string, Color, Color) under the default
-// sx calling convention used to receive a corrupted second Color on AArch64:
-// only `r` survived; g/b/a became 0 (fully transparent UI text). Root cause:
-// `{i8×4}` was left as a raw LLVM struct and expanded into four i8 args; when
-// the second Color spilled, the caller stored word-per-byte and the callee
-// reloaded packed bytes.
-//
-// Fix: default ABI packs ≤8-byte non-HFA structs into i64 (same bucket as C ABI).
+// The default ABI packs ≤8-byte non-HFA structs into i64 (same bucket as the
+// C ABI), so a function taking (pointer, string, Color, Color) receives both
+// `Color` values whole — including the one that spills on AArch64.
 
 #import "modules/std.sx";
 
@@ -23,7 +18,7 @@ Frame :: struct {
     }
 }
 
-// Shape that triggered the UI bug: ctx pointer + string + two Colors.
+// ctx pointer + string + two Colors.
 probe_string_two_colors :: (ctx: *i32, label: string, bg: Color, fg: Color) {
     print("A fg=({},{},{},{}) bg=({},{},{},{}) label={}\n",
         fg.r, fg.g, fg.b, fg.a, bg.r, bg.g, bg.b, bg.a, label);

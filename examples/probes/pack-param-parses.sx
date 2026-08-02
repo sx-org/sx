@@ -1,10 +1,10 @@
-// Feature 1 / Step 1.1 — pack-constrained variadic parameter PARSES.
+// Pack-constrained variadic parameter PARSES.
 //
 // Parse-only probe. The protocol-constrained variadic `..sources: Protocol`
-// (no `[]`, no `$`) now parses to an `ast.Param` with `is_pack = true`,
+// (no `[]`, no `$`) parses to an `ast.Param` with `is_pack = true`,
 // distinct from a slice variadic (`..parts: []T`, `is_pack = false`) and the
 // comptime type-pack (`..$args`, `is_comptime = true`). Sema/lowering for the
-// pack form arrive in Phase 2 — do NOT expect this to compile/run yet.
+// pack form are not wired — do NOT expect this to compile/run.
 //
 // The authoritative checks are the parser unit tests in src/parser.zig
 // ("parse pack-constrained variadic parameter", and the two contrast tests).

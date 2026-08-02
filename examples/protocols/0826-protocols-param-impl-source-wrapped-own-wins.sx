@@ -1,4 +1,4 @@
-// E6BR-4 (param-impl SOURCE, own-wins) — a parameterised-impl SOURCE type under a
+// Own-wins: a parameterised-impl SOURCE type under a
 // wrapper (`impl Into(Marker) for *Box`) registers SOURCE-AWARE, pinned to the
 // impl's defining module (main), and the `xx` lookup at the use site mangles to the
 // SAME author, so the conversion is found and runs. `main` authors its OWN

@@ -1,204 +1,204 @@
 error: cannot initialize 'plain' of type 'View' with a value of type 'Plain'
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:92:19
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:91:19
    |
-92 |     plain: View = Plain{ text = "not a member" };
+91 |     plain: View = Plain{ text = "not a member" };
    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
    |
-92 |     plain: View = Plain{ text = "not a member" };
+91 |     plain: View = Plain{ text = "not a member" };
    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: cannot initialize 'alien' of type 'View' with a value of type 'Alien'
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:93:19
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:92:19
    |
-93 |     alien: View = Alien{ text = "another set" };
+92 |     alien: View = Alien{ text = "another set" };
    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: 'Alien' is a member of 'Elsewhere', and a type belongs to one set
    |
-93 |     alien: View = Alien{ text = "another set" };
+92 |     alien: View = Alien{ text = "another set" };
    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: cannot initialize 'nested' of type 'View' with a value of type 'Boxed(Pair(i64, string))'
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:99:20
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:98:20
    |
-99 |     nested: View = Boxed(Pair(i64, string)){ };
+98 |     nested: View = Boxed(Pair(i64, string)){ };
    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: 'Boxed(Pair(i64, string))' is a member of 'Elsewhere', and a type belongs to one set
    |
-99 |     nested: View = Boxed(Pair(i64, string)){ };
+98 |     nested: View = Boxed(Pair(i64, string)){ };
    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: cannot initialize 'v' of type 'View' with a value of type 'Plain'
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:67:15
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:66:15
    |
-67 |     v: View = x;
+66 |     v: View = x;
    |               ^
 
 note: instantiated from here
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:103:15
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:102:15
     |
-103 |     formed := form(Plain{ text = "through a generic" });
+102 |     formed := form(Plain{ text = "through a generic" });
     |               ^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
    |
-67 |     v: View = x;
+66 |     v: View = x;
    |               ^
 
 error: 'Plain' cannot be converted to 'View': it is not a member of it
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:107:13
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:106:13
     |
-107 |     held := Holder{ v = Plain{ text = "a field" } };
+106 |     held := Holder{ v = Plain{ text = "a field" } };
     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
     |
-107 |     held := Holder{ v = Plain{ text = "a field" } };
+106 |     held := Holder{ v = Plain{ text = "a field" } };
     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: 'Plain' cannot be converted to 'View': it is not a member of it
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:108:22
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:107:22
     |
-108 |     print("{} {}\n", takes(Plain{ text = "an argument" }), held.v.render());
+107 |     print("{} {}\n", takes(Plain{ text = "an argument" }), held.v.render());
     |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
     |
-108 |     print("{} {}\n", takes(Plain{ text = "an argument" }), held.v.render());
+107 |     print("{} {}\n", takes(Plain{ text = "an argument" }), held.v.render());
     |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: 'Plain' cannot be converted to 'View': it is not a member of it
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:78:30
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:77:30
    |
-78 | gives :: () -> View { return Plain{ text = "a return" }; }
+77 | gives :: () -> View { return Plain{ text = "a return" }; }
    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
    |
-78 | gives :: () -> View { return Plain{ text = "a return" }; }
+77 | gives :: () -> View { return Plain{ text = "a return" }; }
    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: 'Plain' cannot be converted to 'View': it is not a member of it
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:81:34
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:80:34
    |
-81 | hand :: (x: $S) -> View { return x; }
+80 | hand :: (x: $S) -> View { return x; }
    |                                  ^
 
 note: instantiated from here
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:109:40
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:108:40
     |
-109 |     print("{} {}\n", gives().render(), hand(Plain{ text = "a generic return" }).render());
+108 |     print("{} {}\n", gives().render(), hand(Plain{ text = "a generic return" }).render());
     |                                        ^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
    |
-81 | hand :: (x: $S) -> View { return x; }
+80 | hand :: (x: $S) -> View { return x; }
    |                                  ^
 
 error: a contextual literal cannot form a 'View' value: it names no member
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:112:19
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:111:19
     |
-112 |     empty: View = .{};
+111 |     empty: View = .{};
     |                   ^^^
 
 help: a set value is formed FROM a member — name it ('YourMember{ … }'), and the expected 'View' lifts it into the slot
     |
-112 |     empty: View = .{};
+111 |     empty: View = .{};
     |                   ^^^
 
 error: a contextual literal cannot form a 'View' value: it names no member
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:113:21
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:112:21
     |
-113 |     fielded: View = .{ text = "which member?" };
+112 |     fielded: View = .{ text = "which member?" };
     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: a set value is formed FROM a member — name it ('YourMember{ … }'), and the expected 'View' lifts it into the slot
     |
-113 |     fielded: View = .{ text = "which member?" };
+112 |     fielded: View = .{ text = "which member?" };
     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: 'Plain' cannot be converted to 'View': it is not a member of it
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:117:18
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:116:18
     |
-117 |     converted := Plain{ text = "no" }.(View);
+116 |     converted := Plain{ text = "no" }.(View);
     |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
     |
-117 |     converted := Plain{ text = "no" }.(View);
+116 |     converted := Plain{ text = "no" }.(View);
     |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: 'Plain' cannot be converted to 'View': it is not a member of it
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:121:24
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:120:24
     |
-121 |     cast_plain: View = xx Plain{ text = "still not a member" };
+120 |     cast_plain: View = xx Plain{ text = "still not a member" };
     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
     |
-121 |     cast_plain: View = xx Plain{ text = "still not a member" };
+120 |     cast_plain: View = xx Plain{ text = "still not a member" };
     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: 'Alien' cannot be converted to 'View': it is not a member of it
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:122:24
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:121:24
     |
-122 |     cast_alien: View = xx Alien{ text = "still another set" };
+121 |     cast_alien: View = xx Alien{ text = "still another set" };
     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: 'Alien' is a member of 'Elsewhere', and a type belongs to one set
     |
-122 |     cast_alien: View = xx Alien{ text = "still another set" };
+121 |     cast_alien: View = xx Alien{ text = "still another set" };
     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: 'Plain' cannot be converted to 'View': it is not a member of it
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:63:35
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:62:35
    |
-63 | lift :: ($T: Type, x: $S) -> T => xx x;
+62 | lift :: ($T: Type, x: $S) -> T => xx x;
    |                                   ^^^^
 
 note: instantiated from here
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:126:15
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:125:15
     |
-126 |     lifted := lift(View, Plain{ text = "through a generic" });
+125 |     lifted := lift(View, Plain{ text = "through a generic" });
     |               ^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
    |
-63 | lift :: ($T: Type, x: $S) -> T => xx x;
+62 | lift :: ($T: Type, x: $S) -> T => xx x;
    |                                   ^^^^
 
 error: 'any' cannot be converted to 'View': an 'any' never holds a set value — boxing a set boxes the member it carries
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:132:21
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:131:21
     |
-132 |     unboxed: View = xx boxed;
+131 |     unboxed: View = xx boxed;
     |                     ^^^^^^^^
 
 help: name the member as the target instead, or open the box with a type switch — its arms bind the member
     |
-132 |     unboxed: View = xx boxed;
+131 |     unboxed: View = xx boxed;
     |                     ^^^^^^^^
 
 error: '.(View, alloc)' is not a conversion that allocates: 'View' holds its member inline
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:136:18
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:135:18
     |
-136 |     allocated := Label{ text = "x" }.(View, context.allocator);
+135 |     allocated := Label{ text = "x" }.(View, context.allocator);
     |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: forming a set value is ordinary value formation — write '.(View)', or let the expected type form it
     |
-136 |     allocated := Label{ text = "x" }.(View, context.allocator);
+135 |     allocated := Label{ text = "x" }.(View, context.allocator);
     |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: 'write' needs a '*Label' destination, but this is '*View'
-  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:86:17
+  --> examples/diagnostics/2042-diagnostics-open-set-formation.sx:85:17
    |
-86 |     value.write(*slot);
+85 |     value.write(*slot);
    |                 ^^^^^
 
 help: 'Label' is a member of 'View', and an initializer writes exactly its own type — take the set's initializer ('$I/@Init(View)') to write a set slot
    |
-86 |     value.write(*slot);
+85 |     value.write(*slot);
    |                 ^^^^^

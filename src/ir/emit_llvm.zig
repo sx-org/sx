@@ -36,7 +36,7 @@ const comptime_vm = @import("comptime_vm.zig");
 // The vendored error-trace ring buffer (library/vendors/sx_trace_runtime/sx_trace.c)
 // is linked into the compiler. Comptime `#run` evaluation pushes frames to it via
 // extern `sx_trace_push` calls; after a `#run` we read it here to render the
-// return trace for an escaping comptime error (E5.2).
+// return trace for an escaping comptime error.
 extern fn sx_trace_len() u32;
 extern fn sx_trace_frame_at(i: u32) u64;
 extern fn sx_trace_clear() void;
@@ -93,7 +93,7 @@ pub const Jni = struct {
 };
 
 // ── LLVMEmitter ─────────────────────────────────────────────────────────
-// Emits LLVM IR from an IR Module. This is the Phase 3 replacement for
+// Emits LLVM IR from an IR Module. Replaces
 // the AST-based codegen.
 
 pub const LLVMEmitter = struct {
@@ -106,7 +106,7 @@ pub const LLVMEmitter = struct {
     // IR Module being emitted
     ir_mod: *const Module,
 
-    // Set when a comptime `#run` raised an unhandled error (E5.2), or when a
+    // Set when a comptime `#run` raised an unhandled error, or when a
     // global initializer could not be serialized to a valid static constant.
     // The driver (core.generateCode) aborts with a non-zero exit after emit()
     // when set, so an invalid/placeholder initializer never reaches the object
@@ -123,7 +123,7 @@ pub const LLVMEmitter = struct {
     print_emission_diagnostics: bool = true,
     /// Runtime-reachable set + the parent edges that found each function.
     /// Computed once at the top of `emit`; used to report the CALL PATH when a
-    /// compile-time-only function turns out to be reachable from the binary.
+    /// compile-time-only function is reachable from the binary.
     reach: ?@import("reachability.zig").Reachability = null,
 
     // Allocator for temporary bookkeeping
@@ -188,7 +188,7 @@ pub const LLVMEmitter = struct {
     // (opaque pointers — the function value is just a `ptr`).
     objc_msg_send_value: ?c.LLVMValueRef,
     // `(name, sig)` → `{cls_slot, mid_slot}` cache for `#jni_call`
-    // interning (step 1.17). Two call sites with the same literal
+    // interning. Two call sites with the same literal
     // name + signature share one pair of static slots, populated
     // lazily on the first call.
     jni_slots: std.StringHashMap(JniSlotPair),
@@ -209,7 +209,7 @@ pub const LLVMEmitter = struct {
     // `type_is_unsigned(t)` call site (the `{}` formatter's int branch).
     type_is_unsigned_array: ?c.LLVMValueRef = null,
     type_is_unsigned_array_len: u32 = 0,
-    // 1a-S2 runtime-reflection scalar tables (lazy, tag-indexed [N x i64] /
+    // Runtime-reflection scalar tables (lazy, tag-indexed [N x i64] /
     // [N x i1]); built on the first dynamic call site of their builtin.
     type_size_array: ?c.LLVMValueRef = null,
     type_size_array_len: u32 = 0,
@@ -225,7 +225,7 @@ pub const LLVMEmitter = struct {
     vector_lanes_array_len: u32 = 0,
     variant_tag_width_array: ?c.LLVMValueRef = null,
     variant_tag_width_array_len: u32 = 0,
-    // 1a-S3b field-family master-index tables: [N x ptr] → per-type arrays.
+    // Field-family master-index tables: [N x ptr] → per-type arrays.
     member_name_ptrs: ?c.LLVMValueRef = null,
     member_name_ptrs_len: u32 = 0,
     member_type_ptrs: ?c.LLVMValueRef = null,
@@ -234,7 +234,7 @@ pub const LLVMEmitter = struct {
     field_offset_ptrs_len: u32 = 0,
     member_value_ptrs: ?c.LLVMValueRef = null,
     member_value_ptrs_len: u32 = 0,
-    // 1a-S3b-3: runtime type_info records — [N x ptr] master to per-type
+    // Runtime type_info records — [N x ptr] master to per-type
     // TypeInfo constants (each its own global; bytes match the sx layout).
     type_info_records: ?c.LLVMValueRef = null,
     type_info_records_len: u32 = 0,
@@ -245,14 +245,14 @@ pub const LLVMEmitter = struct {
     // Build configuration accumulated from #run blocks
     build_config: compiler_hooks.BuildConfig,
 
-    // ── DWARF debug info (ERR E3.0) ──────────────────────────────────
+    // ── DWARF debug info ──────────────────────────────────
     // Emitted only when the build keeps error traces (opt_level
     // none/less, matching lower.zig's `tracesEnabled`) AND a source map
     // is wired in via `setDebugContext`. One `DICompileUnit` (on the
     // main file) + a `DIFile` per source file + a `DISubprogram` per
     // emitted function + a `DILocation` per instruction (resolved from
     // `Inst.span`). Lets a captured return-address PC resolve to
-    // file:line:col for E3.3's runtime trace formatting, and makes sx
+    // file:line:col for runtime trace formatting, and makes sx
     // binaries debuggable in lldb/gdb as a bonus.
     di_builder: c.LLVMDIBuilderRef = null,
     di_cu: c.LLVMMetadataRef = null,
@@ -270,7 +270,7 @@ pub const LLVMEmitter = struct {
     // fallback for functions with no recorded source file.
     main_file: []const u8 = "",
 
-    // ── Error-trace `Frame` (ERR E3.0 slice 3a) ──────────────────────
+    // ── Error-trace `Frame` ──────────────────────
     // The compiled return-trace frame type: `{ string file, i32 line,
     // i32 col, string func }`. Hand-built here (not looked up from a sx
     // `TypeId`) so traces work even when the program doesn't import the
@@ -428,7 +428,7 @@ pub const LLVMEmitter = struct {
         // Must precede any DISubprogram (created per function below).
         self.debugInfo().initDebugInfo();
 
-        // Top-level global asm (ASM stream Phase F): append each block verbatim
+        // Top-level global asm: append each block verbatim
         // to the module. Multiple blocks concatenate in source order; LLVM emits
         // them as module-level `module asm`. Symbols they define are reached via
         // lib-less `extern` declarations.
@@ -484,19 +484,19 @@ pub const LLVMEmitter = struct {
             if (self.emission_failed) return;
         }
 
-        // Pass 2.5: Emit Obj-C selector init constructor (Phase 1.5).
+        // Pass 2.5: Emit Obj-C selector init constructor.
         self.ffiCtors().emitObjcSelectorInit();
 
         // Pass 2.5b: Emit Obj-C class-pair registration constructor for
-        // sx-defined classes (M1.2 A.4+). Runs BEFORE the runtime
+        // sx-defined classes. Runs BEFORE the runtime
         // class-cache populator (2.5c) so a sx-defined class is already
         // registered with the Obj-C runtime by the time
-        // `objc_getClass(\"SxFoo\")` runs to populate the Phase 3.1
+        // `objc_getClass(\"SxFoo\")` runs to populate the
         // class-object cache — otherwise the cache slot would store
         // null and `SxFoo.method()` dispatches against null.
         self.ffiCtors().emitObjcDefinedClassInit();
 
-        // Pass 2.5c: Emit Obj-C class-object init constructor (Phase 3.1).
+        // Pass 2.5c: Emit Obj-C class-object init constructor.
         // Same shape as the selector init — populates the per-module
         // cached `Class*` slots via `objc_getClass` at module-init time.
         self.ffiCtors().emitObjcClassInit();
@@ -515,7 +515,7 @@ pub const LLVMEmitter = struct {
         self.debugInfo().finalizeDebugInfo();
     }
 
-    // ── DWARF debug info (ERR E3.0) ──────────────────────────────────
+    // ── DWARF debug info ──────────────────────────────────
 
     /// Wire the source map + main file so spans can resolve to
     /// file:line:col. Called by the driver after `init`; absent in unit
@@ -865,7 +865,7 @@ pub const LLVMEmitter = struct {
     /// comptime-error diagnostic + return trace, flag compilation failed, and
     /// return null. On success, return the value part (error channel stripped):
     /// `void_val` for a pure failable, the lone value for `(T, !)`, the
-    /// value-tuple for multi-value. (E5.2)
+    /// value-tuple for multi-value.
     fn checkComptimeFailable(self: *LLVMEmitter, result: Value, fail_ty: TypeId, label: []const u8) ?Value {
         const channel = self.comptimeErrChannel(fail_ty) orelse return result;
         var tag: u32 = 0;
@@ -947,9 +947,8 @@ pub const LLVMEmitter = struct {
 
             const func_id = ir_inst.FuncId.fromIndex(@intCast(i));
             sx_trace_clear();
-            // The comptime VM is the SOLE evaluator (P5.7) — no legacy fallback.
-            // A VM-run `#run` side-effect writes its `print` output directly to
-            // fd 1 via host-FFI (no buffered interp output to flush). A bail is a
+            // The comptime VM is the SOLE evaluator. A `#run` side-effect writes
+            // its `print` output directly to fd 1 via host-FFI. A bail is a
             // build-gating error naming the reason.
             const evaluation = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources, null);
             defer evaluation.destroy();
@@ -988,7 +987,7 @@ pub const LLVMEmitter = struct {
             }
         }
         // A relocatable global initializer is a real use of its target even
-        // when no function references that target directly (issue 0248).
+        // when no function references that target directly.
         for (self.ir_mod.globals.items) |global| {
             if (global.init_val) |iv| markConstGlobalRefs(iv, &used);
         }
@@ -1017,9 +1016,9 @@ pub const LLVMEmitter = struct {
 
             // Evaluate comptime initializer if present
             if (global.comptime_func) |func_id| {
-                // The comptime VM is the SOLE evaluator (P5.7) — no legacy
-                // fallback. A bail is ALWAYS a build-gating error naming the
-                // reason; its result Value is materialized by `valueToLLVMConst`.
+                // The comptime VM is the SOLE evaluator. A bail is ALWAYS a
+                // build-gating error naming the reason; its result Value is
+                // materialized by `valueToLLVMConst`.
                 sx_trace_clear();
                 const evaluation = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources, null);
                 defer evaluation.destroy();
@@ -1037,7 +1036,7 @@ pub const LLVMEmitter = struct {
                 // A bare failable `NAME :: #run f();`: the comptime function
                 // returns the failable tuple; split it. Escaping error →
                 // diagnostic + halt (leave the global undef); success → the
-                // value part materializes into the global's success type (E5.2).
+                // value part materializes into the global's success type.
                 const cf_ret = self.ir_mod.getFunction(func_id).ret;
                 var init_value = result;
                 if (self.comptimeErrChannel(cf_ret) != null) {
@@ -1276,8 +1275,8 @@ pub const LLVMEmitter = struct {
         };
     }
 
-    /// Helper for `valueToLLVMConst` — serialize an aggregate value
-    /// against an IR TypeId. Splits on the type:
+    /// Serializes an aggregate value against an IR TypeId for
+    /// `valueToLLVMConst`. Splits on the type:
     ///
     ///   - `string` / `slice` — fat pointer `{ data, len }`. The data
     ///     field can be a heap_ptr (interp-managed memory), byte_ptr
@@ -1444,7 +1443,7 @@ pub const LLVMEmitter = struct {
         // C ABI (extern / abi(.c)): full size-bucket coercion (string→ptr, ≤8→i64, …).
         // Default sx ABI: still pack ≤8-byte non-HFA structs into i64 so AArch64
         // does not expand `{i8×4}` (e.g. Color) into four i8 args that mis-spill
-        // when a second such param overflows the integer registers (issue 0286).
+        // when a second such param overflows the integer registers.
         // When uses_sret, prepend the sret pointer at index 0.
         const sret_offset: usize = if (uses_sret) 1 else 0;
         const param_count: c_uint = @intCast(func.params.len + sret_offset);
@@ -1497,7 +1496,7 @@ pub const LLVMEmitter = struct {
                 // NO prologue/epilogue/frame. Do NOT request `frame-pointer`
                 // (incompatible with a frameless function). `noinline` keeps the
                 // asm body out of a framed caller; `nounwind` — naked asm never
-                // unwinds. See Function.is_naked / current/PLAN-FIBERS.md.
+                // unwinds. See Function.is_naked.
                 const naked_id = c.LLVMGetEnumAttributeKindForName("naked", 5);
                 c.LLVMAddAttributeAtIndex(llvm_func, func_idx_attr, c.LLVMCreateEnumAttribute(self.context, naked_id, 0));
                 const noinline_id = c.LLVMGetEnumAttributeKindForName("noinline", 8);
@@ -2025,7 +2024,7 @@ pub const LLVMEmitter = struct {
 
     /// Only real aggregate representations are valid source element types for
     /// struct_gep/union_gep. A scalar type must never double as a failed-lookup
-    /// sentinel (issue 0319).
+    /// sentinel.
     pub fn isGepAggregateLLVMType(llvm_ty: c.LLVMTypeRef) bool {
         if (llvm_ty == null) return false;
         return switch (c.LLVMGetTypeKind(llvm_ty)) {
@@ -2969,7 +2968,7 @@ pub const LLVMEmitter = struct {
     /// Expand a JNI constructor dispatch (`Foo.new(args)` in sx). Chain:
     /// `FindClass(env, parent_class_path)` → `GetMethodID(env, clazz,
     /// "<init>", sig)` → `NewObject(env, clazz, mid, args...)`. Returns
-    /// the new jobject. Per-call lookups — no caching yet.
+    /// the new jobject. The lookups run per call; nothing is cached.
     pub fn emitJniConstructor(self: *LLVMEmitter, msg: ir_inst.JniMsgSend, ret_ty_id: TypeId) void {
         const env = self.resolveRef(msg.env);
         const sig_ptr = self.extractSlicePtr(self.resolveRef(msg.sig));
@@ -3016,7 +3015,7 @@ pub const LLVMEmitter = struct {
         self.mapRef(result);
     }
 
-    /// Failable main entry-point wrapper (ERR E4.2). At the LLVM level main
+    /// Failable main entry-point wrapper. At the LLVM level main
     /// returns i32. `tag_val` is the u32 error tag (0 = "no error"); `value` is
     /// the integer value slot for a value-carrying `-> (int, !)` main, or null
     /// for a pure `-> !` main. Emit the branch: tag == 0 → `ret i32 <value-or-0>`
@@ -3181,8 +3180,6 @@ pub const LLVMEmitter = struct {
 
         self.mapRef(phi);
     }
-
-    // ── Helpers ─────────────────────────────────────────────────────
 
     fn makeBlockKey(func_idx: u32, block_idx: u32) u64 {
         return (@as(u64, func_idx) << 32) | @as(u64, block_idx);

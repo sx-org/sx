@@ -21,7 +21,7 @@ Request :: struct {
     method: string = "";
     path: string = "";
     version: string = "";
-    // Q1.2 (RFC 9112 §3.2.2): the authority embedded in an absolute-form
+    // (RFC 9112 §3.2.2): the authority embedded in an absolute-form
     // request-target ("GET http://host:port/path HTTP/1.1"). Empty for the
     // usual origin-form target — the Host header (find_header "host") is
     // the authority source then. The server itself never routes on host
@@ -35,13 +35,13 @@ Request :: struct {
     headers_raw: string = "";   // the raw header block (no request line)
     body: string = "";
     keep_alive: bool = true;
-    // H5: the per-request handler budget in ms (Config.handler_timeout_ms;
+    // The per-request handler budget in ms (Config.handler_timeout_ms;
     // 0 = disabled). In POOL mode this is also enforced from the loop thread
     // (a hard 504 + close on overrun). In INLINE mode it is ADVISORY ONLY —
     // the loop can't preempt the handler — so a cooperative handler should
     // poll its own elapsed time against this budget and return early.
     deadline_ms: i64 = 0;
-    // Q3.1 streaming body (Config.stream_request_body, pool mode): non-null
+    // streaming body (Config.stream_request_body, pool mode): non-null
     // when the request was dispatched at HEADERS-COMPLETE — `body` is ""
     // then and the body arrives incrementally through read_body(). null =
     // the fully-accumulated model (`body` complete before dispatch).
@@ -79,7 +79,7 @@ Request :: struct {
 //     `Content-Length` response, building it in a single allocation
 //     (serialize_bytes) and draining via write_more. The fast path —
 //     unchanged. Use for known-size bodies.
-//   • STREAMED/chunked (S1): for a body whose size isn't known up front
+//   • STREAMED/chunked: for a body whose size isn't known up front
 //     or is too large to buffer whole. The handler calls
 //     `resp.stream(producer, ctx)` (see below) and returns; the server
 //     emits `Transfer-Encoding: chunked` and PULLS the body from the
@@ -99,7 +99,7 @@ Request :: struct {
 // (existing add_write arming) and resumes the producer at the same
 // offset on writability.
 //
-// LIFETIME (per mode — Q3.2):
+// LIFETIME (per mode):
 //   • POOL MODE: the producer is pumped BY THE WORKER that ran the handler,
 //     inside the job's push scope — the request views (req.*) and the
 //     per-request arena are BOTH still alive for every pull, so `ctx` may
@@ -113,7 +113,7 @@ Request :: struct {
 // In both modes the producer must not touch the connection — only fill `dst`.
 StreamProducer :: (ctx: usize, offset: i64, dst: [*]u8, dst_cap: i64) -> i64;
 
-// Q3.1: the streaming body-read fn the server wires into a request it
+// the streaming body-read fn the server wires into a request it
 // dispatched at HEADERS-COMPLETE (Config.stream_request_body, pool mode).
 // Reads up to `cap` DECODED body bytes into `dst`, BLOCKING the calling
 // worker until at least one byte is buffered, the body ends, or the
@@ -130,7 +130,7 @@ Response :: struct {
     // handler response containing either field into a 500 before serialization.
     extra_headers: string = "";
     body: string = "";
-    // S1 streamed/chunked output. When `streamed` is true the server
+    // Streamed/chunked output. When `streamed` is true the server
     // ignores `body` and pulls from `producer` (see StreamProducer).
     streamed: bool = false;
     producer: StreamProducer = null;
@@ -175,7 +175,7 @@ find_header :: (req: *Request, name: string) -> string {
             j += 1;
         }
         if j == name.len and i + j < h.len and h[i + j] == ':' {
-            // Q1.7 (RFC 9112 §5.1): the value is `OWS field-value OWS` —
+            // (RFC 9112 §5.1): the value is `OWS field-value OWS` —
             // OWS is SP or HTAB on either side and is never part of the
             // value. Trim both edges; interior whitespace is preserved.
             v := i + j + 1;
@@ -214,12 +214,12 @@ count_header :: (req: *Request, name: string) -> i64 {
     return n;
 }
 
-// ── S2: inbound chunked Transfer-Encoding decode ─────────────────────
+// ── inbound chunked Transfer-Encoding decode ─────────────────────
 //
 // Outcome of one decode attempt over the chunked body bytes sitting in the
 // read buffer after the header terminator. Validation is re-run each
-// read_more cycle but RESUMES from the caller-kept ChunkScan checkpoint
-// (Q0.5) — each raw byte is scanned once no matter how many partial reads
+// read_more cycle but RESUMES from the caller-kept ChunkScan checkpoint,
+// so each raw byte is scanned once no matter how many partial reads
 // deliver the body; a chunk split across reads simply resumes (NEED_MORE
 // until the terminating zero-chunk + final CRLF have all arrived). Memory
 // stays bounded: read_buf_cap caps the raw bytes (read_more emits 413 past
@@ -237,12 +237,12 @@ ChunkResult :: struct {
     status: ChunkStatus = ChunkStatus.NEED_MORE;
     decoded_len: i64 = 0;   // bytes of decoded body (valid only when OK)
     raw_len: i64 = 0;       // raw chunked bytes consumed (valid only when OK)
-    // Q0.5 resumable validation: on NEED_MORE these carry the checkpoint —
+    // resumable validation: on NEED_MORE these carry the checkpoint —
     // the raw offset of the first incomplete chunk element and the decoded
     // total before it. Feed them back as the next call's ChunkScan so the
     // validator re-scans ONLY the incomplete element, never all prior
-    // framing (a slow-dripped body used to revalidate from byte 0 every
-    // read cycle — O(n²), a slowloris CPU amplifier).
+    // framing — revalidating a slow-dripped body from byte 0 every read
+    // cycle is O(n²), a slowloris CPU amplifier.
     resume_rp: i64 = 0;
     resume_decoded: i64 = 0;
 }
@@ -294,7 +294,7 @@ decode_chunked :: (src: [*]u8, avail: i64, max_body: i64, resume: ChunkScan) -> 
 // stripped framing. The two passes traverse identical framing, so the second
 // only runs after the first returns OK.
 //
-// Q0.5: validation is RESUMABLE — it starts at `resume` (a chunk boundary
+// validation is RESUMABLE — it starts at `resume` (a chunk boundary
 // from a previous NEED_MORE) and, on NEED_MORE, reports the boundary of the
 // first incomplete element in resume_rp/resume_decoded. The commit pass is
 // always called with a zero resume (it re-parses everything to compact) and
@@ -389,7 +389,7 @@ decode_chunked_pass :: (src: [*]u8, avail: i64, max_body: i64, commit: bool, res
     return ChunkResult{ status = ChunkStatus.BAD };
 }
 
-// ── Q1.5: IMF-fixdate formatting (RFC 9110 §5.6.7) ───────────────────
+// ── IMF-fixdate formatting (RFC 9110 §5.6.7) ───────────────────
 // "Sun, 06 Nov 1994 08:49:37 GMT" — always exactly IMF_DATE_LEN bytes,
 // always GMT. Used for the response Date header: the server caches one
 // per wall-clock second on the loop thread; pool workers stamp their own.
@@ -448,7 +448,7 @@ format_imf_date :: (secs: i64, dst: [*]u8) {
     dst[28] = 'T';
 }
 
-// ── Q1.8: server-layer path canonicalization (RFC 3986 §2.1, §5.2.4) ──
+// ── server-layer path canonicalization (RFC 3986 §2.1, §5.2.4) ──
 //
 // Percent-decode + dot-segment-normalize a request PATH (no query part)
 // IN PLACE. `buf[0..len)` must start with '/'. Returns the canonical
@@ -540,7 +540,7 @@ has_ctrl :: (s: string) -> bool {
     return false;
 }
 
-// Q1.6 (RFC 9110 §5.6.1, §7.6.1): true when the comma-separated list
+// (RFC 9110 §5.6.1, §7.6.1): true when the comma-separated list
 // `list` contains `token_lower` as a WHOLE token, case-insensitively,
 // with any OWS (space/tab) around the token ignored — `close, TE` and
 // ` Close , TE` both contain "close"; "closefoo" does not. `token_lower`
@@ -572,7 +572,7 @@ ascii_ieq :: (a: string, b_lower: string) -> bool {
     return true;
 }
 
-// ── Q2.3: alloc-free serialization primitives ────────────────────────
+// ── alloc-free serialization primitives ────────────────────────
 
 // Decimal digits of a non-negative n written into dst; returns the count.
 // The serializer's alloc-free twin of int_to_string (which concats through

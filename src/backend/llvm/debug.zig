@@ -9,8 +9,7 @@ const LLVMEmitter = emit.LLVMEmitter;
 const Function = ir_inst.Function;
 const Span = ir_inst.Span;
 
-/// DWARF debug-info emission (architecture phase A7.2), extracted from
-/// `LLVMEmitter`. A backend `*LLVMEmitter` facade (field `e`): it owns the
+/// DWARF debug-info emission. A backend `*LLVMEmitter` facade (field `e`): it owns the
 /// `DIBuilder` lifecycle, the compile unit, per-function `DISubprogram` scopes,
 /// and per-instruction `DILocation`s. The mutable DI state (`di_builder`/
 /// `di_cu`/`di_files`/`di_scope`/`current_func_file`) + the shared source map

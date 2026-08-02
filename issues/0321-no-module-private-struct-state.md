@@ -1,6 +1,6 @@
 # 0321 — no module-private or opaque struct state
 
-> **OPEN (2026-07-21).** SX has no field-visibility or opaque-state feature.
+> SX has no field-visibility or opaque-state feature.
 > A public wrapper can hide the module that declares its implementation type,
 > but callers may still read and mutate the field and may contextually
 > construct the wrapper with an unnameable implementation value. Fixing this
@@ -69,17 +69,14 @@ main :: () -> i32 {
 }
 ```
 
-Run:
-
 ```sh
 ./zig-out/bin/sx run issues/0321-no-module-private-struct-state.sx
 ```
 
-Current result: exit 0.
-
-Expected: the language must provide an explicit way for the facade to make the
-field and contextual construction inaccessible outside its authoring module,
-while retaining a concrete by-value layout internally.
+Both operations compile and the program exits 0. The language must provide an
+explicit way for the facade to make the field and contextual construction
+inaccessible outside its authoring module, while retaining a concrete by-value
+layout internally.
 
 ## Design decision required
 

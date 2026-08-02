@@ -1,5 +1,5 @@
 error: unknown type 'Coordnate'
-  --> examples/diagnostics/1114-diagnostics-unknown-type-nested-closure-rejected.sx:8:14
+  --> examples/diagnostics/1114-diagnostics-unknown-type-nested-closure-rejected.sx:5:14
    |
- 8 |         bad: Coordnate = ---;
+ 5 |         bad: Coordnate = ---;
    |              ^^^^^^^^^

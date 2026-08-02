@@ -1,4 +1,4 @@
-// Comptime compiler API — field-level reflection readers (Phase 3).
+// Comptime compiler API — field-level reflection readers.
 //
 // Builds on the `raw_find_type` / `raw_field_count` readers (example 0628) with the
 // per-member readers, all on the same plain-`u32`-handle shape (scalar in,

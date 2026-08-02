@@ -11,17 +11,16 @@
 // `cancel` / `CBlockingIo` re-exports), never by importing this file
 // directly.
 //
-// BLOCKING SEMANTICS (B1.2): the M:1 default has no scheduler and no
-// suspension. `async(worker, ..args)` runs the worker to COMPLETION
-// inline, so the returned `Future` is born `.ready` and `await` yields
-// immediately. `spawn_raw`/`suspend_raw`/`ready`/`poll`/`arm_timer` are
-// trivial no-ops/0 — they exist for the fiber scheduler [B1.3+].
+// BLOCKING SEMANTICS: the M:1 default has no scheduler and no
+// suspension. `async(worker)` runs the worker to COMPLETION inline, so the
+// returned `Future` is born `.ready` and `await` yields immediately.
+// `spawn_raw`/`suspend_raw`/`ready`/`poll`/`arm_timer` are
+// trivial no-ops/0 — they exist for the fiber scheduler.
 // `now_ms` returns a real monotonic clock. Fully deterministic/testable.
 //
-// Worker form (B1.2): a `Closure(..$args) -> $R` whose params are
-// annotated at the call site (a lambda `(a: i64) -> i64 => ...`).
-// Named-fn workers need a `::` callable-parameter language feature that
-// does not exist yet and are DEFERRED.
+// Worker form: a nullary failable `Closure() -> ($R, !)`, written as a lambda
+// at the call site (`() -> (i64, !) => compute(a, b)`). A named fn does not
+// coerce to a closure, so it is not a worker.
 #import "modules/std/core.sx";
 #import "modules/std/atomic.sx";
 c    :: #import "modules/std/c.sx";
@@ -55,7 +54,7 @@ c_blocking_io : CBlockingIo = .{};
 impl Io for CBlockingIo {
     // No fiber bootstrap in the blocking model: the generic `async`
     // free-fn calls the worker directly and fills the Future. `spawn_raw`
-    // is here for the protocol shape the scheduler [B1.3] will use; the
+    // is here for the protocol shape the scheduler will use; the
     // blocking impl never routes through it, so it is a no-op handle.
     spawn_raw :: (self: *CBlockingIo, entry: *void, arg: *void, opts: SpawnOpts) -> *void {
         // The blocking model has no scheduler: run the worker thunk INLINE to
@@ -90,9 +89,7 @@ impl Io for CBlockingIo {
 // --- Future($R): the handle to an async task's eventual result ---
 //
 // Fixed-shape product (NOT the metatype sum machinery). `Value :: $R`
-// exposes the projection `Future(X) → X`. B1.2 supports NON-void `$R`
-// only — `Future(void)` (a `void` struct field) SIGTRAPs the compiler
-// (issue 0150, deferred to B1.4 along with `timeout`).
+// exposes the projection `Future(X) → X`.
 FutureState :: enum { pending; ready; failed; canceled; }
 
 Future :: struct ($R: Type) {
@@ -162,10 +159,8 @@ sx_run_boxed_closure :: (arg: *void) {
     context.allocator.dealloc_bytes(xx b);
 }
 
-// `async(io, worker)` — submit a NULLARY `worker: Closure() -> $R` and get a
-// `*Future($R)` handle. The worker must be nullary because under the fiber impl
-// the body crosses a fiber boundary, and a captured variadic pack segfaults there
-// (issue 0156 Part 2) — so any inputs are captured at the CALL SITE in the lambda
+// `async(io, worker)` — submit a NULLARY `worker: Closure() -> ($R, !)` and get
+// a `*Future($R)` handle. Inputs are captured at the CALL SITE in the lambda
 // (`context.io.async(() -> (i64, !) => compute(a, b))`).
 //
 // The Future (and the completion-closure `ThunkBox`) are HEAP-allocated (not
@@ -177,17 +172,16 @@ sx_run_boxed_closure :: (arg: *void) {
 // `fut_release` (see the `Future` fields). The remaining leak is a future that is
 // never awaited (fire-and-forget, or a `race` loser) — `consumed` stays false so
 // its `Future` struct is kept; reclaiming that needs a structured-concurrency
-// scope (deferred).
+// scope.
 //
 // ALLOCATOR-LIFETIME CONTRACT: all are allocated from the `context.allocator`
 // in force at the `async` CALL, and that allocator MUST outlive the future —
 // i.e. survive until the worker has run and the result is consumed. This is the
-// long-lived-container rule (CLAUDE.md): calling `async` inside a transient
-// `push Context{ allocator = arena }` that is torn down before `run()`/`await`
+// long-lived-container rule: calling `async` inside a transient `push
+// Context{ allocator = arena }` that is torn down before `run()`/`await`
 // drives the worker frees the Future while it is still live (use-after-free).
 // The common case (the program-stable default GPA, or a scheduler set up under a
-// long-lived allocator) is safe. A deeper fix — `async` capturing the scheduler's
-// own long-lived allocator — needs a protocol affordance to reach it; deferred.
+// long-lived allocator) is safe.
 // Release one owner's hold on a Future and free it once BOTH the worker and the
 // awaiter are done (the two-flag handshake). Idempotent in effect: the caller sets
 // its own flag first, so only the LAST releaser sees both set and frees — exactly
@@ -213,7 +207,7 @@ async :: ufcs (io: Io, worker: Closure() -> ($R, !)) -> *Future($R) {
     // awaiter. Heap-boxed so it survives until the worker actually runs (deferred
     // under the fiber impl). It captures `f` + `worker`; nothing variadic crosses.
     //
-    // Phase 3 (true cancellation): the worker is FAILABLE (`Closure() -> ($R, !)`).
+    // True cancellation: the worker is FAILABLE (`Closure() -> ($R, !)`).
     // A suspend that delivers cancellation (`suspend_raw` raising `Canceled` on a
     // cancelled worker), or any genuine `raise`, unwinds the worker's body right
     // here — so its post-suspend side effects never run. On success publish the
@@ -246,7 +240,7 @@ async :: ufcs (io: Io, worker: Closure() -> ($R, !)) -> *Future($R) {
         fut_release(f);             // last touch of `f`
     };
     // Pass the cancel-flag back-ref so the worker fiber's `suspend_raw` can consult
-    // it (Phase 3). `xx @f.canceled` erases the `*Atomic(bool)` to `*void`.
+    // it. `xx @f.canceled` erases the `*Atomic(bool)` to `*void`.
     f.task = io.spawn_raw(xx sx_run_boxed_closure, xx b, .{ cancel_flag = xx *f.canceled });
     return f;
 }
@@ -277,7 +271,7 @@ await :: ufcs (f: *Future($R)) -> ($R, !IoErr) {
             out("io: await — future already has an awaiter (one awaiter per future in the M:1 model)\n");
             c.abort();
         }
-        context.io.suspend_raw(*f.park) catch {};   // Phase 3 propagates Canceled
+        context.io.suspend_raw(*f.park) catch {};   // cancellation surfaces via `f.canceled` below
     }
     // Settle the outcome and COPY the value out BEFORE releasing — `fut_release`
     // may free `f`, after which only the locals below are safe to touch.
@@ -297,7 +291,7 @@ await :: ufcs (f: *Future($R)) -> ($R, !IoErr) {
 // `await` raises `.Canceled`), then WAKES the worker fiber so it delivers the
 // cancellation at its current/next suspend.
 //
-// Phase 3 (TRUE cancellation): `ready(.{ handle = f.task })` re-readies the worker
+// TRUE cancellation: `ready(.{ handle = f.task })` re-readies the worker
 // fiber parked under the fiber impl. On resume its `suspend_raw` sees the flag and
 // raises `Canceled`, so the worker ABANDONS its body — post-suspend side effects
 // never run. The sticky `canceled` atomic is the source of truth (`await` keeps
@@ -324,7 +318,7 @@ cancel :: ufcs (f: *Future($R)) {
 // `sleep(io, ms)` — a FAILABLE suspend for `ms` virtual milliseconds. Arms a
 // timer at `now_ms() + ms` and parks via `suspend_raw`; the fired timer
 // re-readies the fiber, and on resume `suspend_raw` raises `Canceled` if the task
-// was cancelled while sleeping (Phase 3). So `try io.sleep(..)` inside an `async`
+// was cancelled while sleeping. So `try io.sleep(..)` inside an `async`
 // worker is a cancellation point: a `cancel` lands the worker's body unwinding
 // here instead of running past the sleep. No-op under `CBlockingIo` (its
 // `arm_timer`/`suspend_raw` are stubs — the blocking model has no scheduler to
