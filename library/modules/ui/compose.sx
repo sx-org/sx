@@ -16,6 +16,7 @@ render :: #import "modules/ui/render.sx";
 font :: #import "modules/ui/font.sx";
 input :: #import "modules/ui/input.sx";
 view :: #import "modules/ui/compose/view.sx";
+identity :: #import "modules/ui/compose/identity.sx"
 components :: #import "modules/ui/compose/components.sx";
 sink :: #import "modules/ui/compose/sink.sx";
 containers :: #import "modules/ui/compose/containers.sx";
@@ -52,6 +53,14 @@ LogicalKey :: input.LogicalKey;
 // `set_global_font` points `measure_text` at the renderer's glyph cache.
 measure_text :: font.measure_text;
 set_global_font :: font.set_global_font;
+
+// Element identity: the call site an element is built at, and the id that site
+// mints for it.
+SiteId :: identity.SiteId
+site_of :: identity.site_of
+ElementId :: identity.ElementId
+Identity :: identity.Identity
+element_id :: identity.element_id
 
 // The set and what joins it
 View :: view.View;
