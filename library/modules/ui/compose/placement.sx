@@ -13,7 +13,6 @@
 #import "modules/ui/compose/view.sx";
 #import "modules/ui/compose/components.sx";
 
-// The frame the background paints and the frame the content gets.
 ModFrames :: struct {
     box: Frame;
     content: Frame;
