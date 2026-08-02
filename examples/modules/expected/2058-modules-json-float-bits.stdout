@@ -1,0 +1,19 @@
+band-0-seen: ok
+band-0-exact: ok
+band-1-seen: ok
+band-1-exact: ok
+band-2-seen: ok
+band-2-exact: ok
+band-3-seen: ok
+band-3-exact: ok
+band-4-seen: ok
+band-4-exact: ok
+subnormal-seen: ok
+subnormal-exact: ok
+edge-max: ok
+edge-min: ok
+edge-min-normal: ok
+edge-true-min: ok
+edge-epsilon: ok
+edge-one: ok
+=== DONE ===

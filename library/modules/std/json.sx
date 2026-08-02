@@ -416,8 +416,9 @@ write_to_file :: (v: Value, file: *File, staging: []u8) -> !JsonError {
 // double, ties to even.
 //
 // REJECTED, not silently accepted: a leading-zero integer (`01`), a
-// missing digit around the point (`1.`, `.5`), and a missing exponent
-// digit (`1e`) → `BadNumber`. An UNESCAPED raw control byte
+// missing digit after the point (`1.`), and a missing exponent digit
+// (`1e`) → `BadNumber` (`.5` starts no JSON value at all →
+// `UnexpectedToken`). An UNESCAPED raw control byte
 // (U+0000..U+001F) inside a string → `BadControlChar` (RFC 8259 §7
 // requires those bytes to be escaped); the escaped forms (`\t`, `\n`,
 // `\u0009`, …) stay valid and decode normally. Bytes >= 0x20, including

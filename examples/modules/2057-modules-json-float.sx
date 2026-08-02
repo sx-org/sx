@@ -1,0 +1,148 @@
+// JSON floats from `modules/std/json.sx` — the value side of the number
+// contract.
+//
+// A number carrying a fraction or an exponent is a `float` (f64); a bare
+// integer stays an `int`. This example pins what that means for ordinary
+// values:
+//
+//   1. WRITER TEXT — the exact bytes each double is spelled with: the
+//      SHORTEST digits that read back as itself, in the plain, leading-
+//      zero, integral `.0` and exponential forms.
+//   2. READER VALUES — the double each spelling reads as, including the
+//      rounding of a decimal that no double holds exactly.
+//   3. ROUND-TRIP — writer -> reader -> writer over the extremes of the
+//      f64 range (largest finite, smallest normal, smallest subnormal)
+//      and over -0.0, whose sign survives.
+//   4. FAILURE SURFACING — a literal past the finite range and a
+//      malformed number raise `BadNumber`; a NaN or an infinity has no
+//      JSON spelling and raises `NonFinite` on the writer.
+//   5. MIXED DOCUMENT — ints and floats in one tree serialize together
+//      and re-serialize identically.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+#import "modules/std/json.sx";
+
+// -0.0: the product carries the sign the difference would cancel.
+neg_zero :: () -> f64 { 0.0 * (0.0 - 1.0) }
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+// True when the writer spells `f` as exactly `want`.
+emits :: (f: f64, want: string) -> bool {
+    buf : [64]u8 = ---;
+    n, e := write_to_buffer(.float(f), string{ ptr = *buf[0], len = 64 });
+    if e { return false; }
+    string{ ptr = *buf[0], len = n } == want
+}
+
+// True when `src` reads as the double `want`. `-0.0` and `0.0` compare
+// equal, so the sign is checked through the reciprocal's sign.
+reads :: (src: string, want: f64, alloc: Allocator) -> bool {
+    v, e := parse(src, alloc);
+    if e { return false; }
+    if v.float != want { return false; }
+    (1.0 / v.float) == (1.0 / want)
+}
+
+// True when `parse(src)` raised `want`.
+raises :: (src: string, want: JsonParseError, alloc: Allocator) -> bool {
+    _, e := parse(src, alloc);
+    e == want
+}
+
+// True when writing `f` raised `want` — a NaN or an infinity, which JSON
+// cannot spell.
+write_raises :: (f: f64, want: JsonError) -> bool {
+    buf : [64]u8 = ---;
+    _, e := write_to_buffer(.float(f), string{ ptr = *buf[0], len = 64 });
+    e == want
+}
+
+// True when writing `f`, reading that text back, and writing again lands
+// on the identical double.
+round_trips :: (f: f64, alloc: Allocator) -> bool {
+    buf : [64]u8 = ---;
+    n, we := write_to_buffer(.float(f), string{ ptr = *buf[0], len = 64 });
+    if we { return false; }
+    v, pe := parse(string{ ptr = *buf[0], len = n }, alloc);
+    if pe { return false; }
+    if v.float != f { return false; }
+    (1.0 / v.float) == (1.0 / f)
+}
+
+// Ints and floats side by side, in the insertion order the writer emits.
+MIXED :: "{\"n\":-7,\"ratio\":1.5,\"xs\":[0.1,-0.5,3.0],\"scale\":1e-7,\"big\":1000000000.0}";
+
+main :: () -> ! {
+    gpa := GPA.init();
+    arena := Arena.init(gpa, 8192);
+    defer arena.deinit();
+
+    // ── 1. Writer text: the shortest digits that name the double ─────
+    report("emit-half",     emits(1.5, "1.5"));
+    report("emit-negative", emits(0.0 - 0.5, "-0.5"));
+    // 0.1 is not a double; the shortest naming of the double it rounds to
+    // is still "0.1", not that double's 55-digit exact expansion.
+    report("emit-tenth",    emits(0.1, "0.1"));
+    report("emit-integral", emits(3.0, "3.0"));
+    report("emit-pad",      emits(12300.0, "12300.0"));
+    report("emit-billion",  emits(1000000000.0, "1000000000.0"));
+    report("emit-mixed",    emits(123.456, "123.456"));
+    report("emit-leading",  emits(0.000123, "0.000123"));
+    report("emit-exp",      emits(0.0000001, "1e-7"));
+    report("emit-pi",       emits(3.141592653589793, "3.141592653589793"));
+    report("emit-zero",     emits(0.0, "0.0"));
+    report("emit-negzero",  emits(neg_zero(), "-0.0"));
+
+    // ── 2. Reader values ─────────────────────────────────────────────
+    report("read-fraction", reads("1.5", 1.5, arena));
+    report("read-exponent", reads("1e9", 1000000000.0, arena));
+    report("read-caps-exp", reads("2.5E-3", 0.0025, arena));
+    report("read-plus-exp", reads("1.5e+2", 150.0, arena));
+    report("read-negzero",  reads("-0.0", neg_zero(), arena));
+    // Below half the smallest subnormal the value rounds to zero, and it
+    // keeps the sign it was written with.
+    report("read-underflow", reads("1e-400", 0.0, arena));
+    // 53 bits hold no odd number above 2^53, so 9007199254740993 reads as
+    // its even neighbour.
+    report("read-rounded",   reads("9007199254740993.0", 9007199254740992.0, arena));
+    // The double 0.1 rounds to, spelled out in full, reads back as 0.1.
+    report("read-exact-expansion",
+        reads("0.1000000000000000055511151231257827021181583404541015625", 0.1, arena));
+    // Half an ulp above 1.0 is a tie; round-to-even takes 1.0.
+    report("read-tie-even",
+        reads("1.00000000000000011102230246251565404236316680908203125", 1.0, arena));
+
+    // ── 3. Round-trip over the range extremes ────────────────────────
+    report("rt-max",        round_trips(f64.max, arena));
+    report("rt-min",        round_trips(f64.min, arena));
+    report("rt-min-normal", round_trips(f64.min_positive, arena));
+    report("rt-subnormal",  round_trips(f64.true_min, arena));
+    report("rt-epsilon",    round_trips(f64.epsilon, arena));
+    report("rt-negzero",    round_trips(neg_zero(), arena));
+
+    // ── 4. Failure surfacing ─────────────────────────────────────────
+    report("err-overflow",  raises("1e400", error.BadNumber, arena));
+    report("err-no-frac",   raises("1.",    error.BadNumber, arena));
+    report("err-no-exp",    raises("1e",    error.BadNumber, arena));
+    report("err-lead-zero", raises("01.5",  error.BadNumber, arena));
+    // No JSON value starts with a point, so `.5` never reaches the number
+    // grammar.
+    report("err-bare-dot",  raises(".5",    error.UnexpectedToken, arena));
+    report("err-write-inf", write_raises(f64.inf, error.NonFinite));
+    report("err-write-nan", write_raises(f64.nan, error.NonFinite));
+
+    // ── 5. Mixed document ────────────────────────────────────────────
+    tree := try parse(MIXED, arena);
+    buf : [256]u8 = ---;
+    n := try write_to_buffer(tree, string{ ptr = *buf[0], len = 256 });
+    report("doc-round-trip", string{ ptr = *buf[0], len = n } == MIXED);
+    o := tree.object;
+    report("doc-int",   o.items[0].val.int == 0 - 7);
+    report("doc-float", o.items[1].val.float == 1.5);
+    report("doc-array", o.items[2].val.array.items[0].float == 0.1);
+    print("=== DONE ===\n");
+}
