@@ -54,7 +54,7 @@ main :: () -> i32 {
             })
         }
         v
-    })
+    }, context.allocator)
 
     // Nothing is queued, so the first frame only builds and commits.
     loop.frame()
@@ -108,7 +108,7 @@ main :: () -> i32 {
                 focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 })
             }
             v
-        })
+        }, context.allocator)
 
         for 0..4 {
             quiet.queue.push(down(50.0, 10.0))
@@ -130,6 +130,33 @@ main :: () -> i32 {
     }
     print("frames {} taps {} steady_allocs {} outstanding {}\n",
         ran, taps_seen, steady, tracker.leak_count())
+
+    // A builder written under one allocator, handed to a loop made under
+    // another. The loop is told which allocator the closure's environment came
+    // from, so the teardown lands there: the owner ends level and the allocator
+    // ambient at `init` never sees the free.
+    built := 0
+    owner := TrackingAllocator.init(context.allocator)
+    elsewhere := TrackingAllocator.init(context.allocator)
+    push .{ allocator = owner } {
+        far := UiRoot.init(Size{ width = 100.0, height = 40.0 })
+        counted := *built
+        build := () -> View {
+            counted.* += 1
+            v : View = vstack(0.0) {
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, () {})
+            }
+            v
+        }
+        push .{ allocator = elsewhere } {
+            far_loop := FrameLoop.init(*far, build, owner)
+            far_loop.run(2)
+            far_loop.deinit()
+        }
+        far.deinit()
+    }
+    print("far_built {} owner_outstanding {} elsewhere_outstanding {}\n",
+        built, owner.leak_count(), elsewhere.leak_count())
 
     // The same question asked of a snapshot outside any loop. A caller that
     // projects one tree over and over reuses the three lists it filled the

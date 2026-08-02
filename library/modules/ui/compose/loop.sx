@@ -95,16 +95,17 @@ UiRoot :: struct {
 FrameLoop :: struct {
     root: *UiRoot
     build: Closure() -> View
-    gpa: Allocator
+    build_allocator: Allocator
     frames: i64 = 0
 
-    // A closure's environment comes from the allocator ambient where its
-    // literal is written, which is the one this default pairs the free with.
-    init :: (root: *UiRoot, build: Closure() -> View, gpa: Allocator = context.allocator) -> FrameLoop =>
-        .{ root = root, build = build, gpa = gpa }
+    // `build_allocator` is the allocator that made `build`'s environment — the
+    // one ambient where the literal is written, which need not be the one
+    // ambient here. The free is paired with it.
+    init :: (root: *UiRoot, build: Closure() -> View, build_allocator: Allocator) -> FrameLoop =>
+        .{ root = root, build = build, build_allocator = build_allocator }
 
     deinit :: (self: *FrameLoop) {
-        free(self.build, self.gpa)
+        free(self.build, self.build_allocator)
     }
 
     frame :: (self: *FrameLoop) {

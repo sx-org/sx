@@ -7,4 +7,5 @@ build 5 taps 1 keys 2 pressed false focused true
 build 6 taps 1 keys 2 pressed false focused true
 frames 6 rev 6
 frames 68 taps 67 steady_allocs 0 outstanding 0
+far_built 2 owner_outstanding 0 elsewhere_outstanding 0
 settled_allocs 0 snapshot_freed 3
