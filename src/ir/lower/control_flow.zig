@@ -233,27 +233,14 @@ fn lowerSelectedBranch(self: *Lowering, node: *const Node, demand: lower_stmt.Ta
     return self.builder.constInt(0, .void);
 }
 
-/// A lowered `if`/`while` condition: the condition's own value (the payload
-/// source for an optional binding) and the i1 the branch tests.
 const LoweredCondition = struct {
     value: Ref,
     test_bit: Ref,
     ty: TypeId,
 };
 
-/// THE entry for every `if`/`while` condition — the header of a branch or a
-/// loop, never a value position. The enclosing target type is cleared for the
-/// whole header, so a bare literal in it takes its own default type rather
-/// than the destination the construct sits in (`while e > 22` inside `-> f64`
-/// compares against an i64 `22`; `if x != 0 then 1.0 else 2.0` likewise).
-///
-/// An optional condition — bare `if opt` / `while opt` or with a binding —
-/// tests its has_value flag: the `{T,i1}` aggregate itself reaches condBr and
-/// folds truthy. `optional_has_value` covers every optional repr (struct
-/// `{T,i1}`, `?Closure` {fn,env}, pointer-sentinel `?*T`/`?cstring`). Any
-/// other type that cannot be tested as an i1 (struct, float, …) is a located
-/// type error, recovered as `false` so lowering reaches the diagnostic.
 fn lowerCondition(self: *Lowering, node: *const Node, has_binding: bool) LoweredCondition {
+    // Branch headers have no enclosing value target.
     const saved_target = self.target_type;
     self.target_type = null;
     defer self.target_type = saved_target;
@@ -270,10 +257,6 @@ fn lowerCondition(self: *Lowering, node: *const Node, has_binding: bool) Lowered
     return .{ .value = value, .test_bit = test_bit, .ty = ty };
 }
 
-/// Bind the unwrapped payload of an optional condition (`if v := opt`,
-/// `while v := opt`) in the arm/body block the caller has switched to. The
-/// `alloca` hoists to the entry block, so the binding stays a single frame
-/// slot.
 fn bindConditionPayload(self: *Lowering, cond: LoweredCondition, name: []const u8) void {
     const inner_ty = if (!cond.ty.isBuiltin()) blk: {
         const info = self.module.types.get(cond.ty);
@@ -677,9 +660,7 @@ pub fn lowerWhile(self: *Lowering, we: *const ast.WhileExpr) Ref {
     // Body
     self.builder.switchToBlock(body_bb);
 
-    // The header dominates the body and evaluates the optional afresh each
-    // iteration, so unwrapping its value here is valid SSA and rebinds the
-    // current payload every time round.
+    // The header value dominates the loop body.
     if (we.binding_name) |bind_name| bindConditionPayload(self, cond, bind_name);
 
     // Save and set loop targets
@@ -791,12 +772,9 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
 
     for (fe.iterables, 0..) |it, i| {
         if (it.is_range) {
-            // A range walks an i64 cursor between i64 bounds, so its bounds
-            // type themselves: the enclosing target type must not reach a bare
-            // literal in them (`for 0..5` inside an `-> f64` function) — same
-            // rule as an `if`/`while` condition.
+            // Runtime range bounds use the i64 cursor type.
             const saved_target = self.target_type;
-            self.target_type = null;
+            self.target_type = .i64;
             defer self.target_type = saved_target;
 
             var start_ref = self.lowerExpr(it.expr);
