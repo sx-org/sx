@@ -38,10 +38,11 @@ pub const CImportInfo = struct {
 /// unit's declared `#include` headers BY CONTENT, the source's
 /// TRANSITIVE quoted includes BY CONTENT (`dep_bytes` — editing any
 /// header the compile actually reads invalidates), defines / flags /
-/// include dirs in declaration order, the toolchain version, and the
-/// cross-target (triple + sysroot). Section tags keep equal strings
-/// in different roles distinct (a define never aliases a flag, an
-/// absent triple never aliases an empty one).
+/// include dirs in declaration order, the libc header dirs the unit
+/// compiles against, the toolchain version, and the cross-target
+/// (triple + sysroot). Section tags keep equal strings in different
+/// roles distinct (a define never aliases a flag, an absent triple
+/// never aliases an empty one).
 pub fn cSourceCacheKey(
     source_bytes: []const u8,
     header_bytes: []const []const u8,
@@ -49,6 +50,7 @@ pub fn cSourceCacheKey(
     defines: []const []const u8,
     flags: []const []const u8,
     include_dirs: []const []const u8,
+    libc_dirs: []const []const u8,
     llvm_version: []const u8,
     triple: ?[]const u8,
     sysroot: ?[]const u8,
@@ -66,6 +68,8 @@ pub fn cSourceCacheKey(
     for (flags) |f| key = Wyhash.hash(key, f);
     key = Wyhash.hash(key, "\x01incdirs");
     for (include_dirs) |inc| key = Wyhash.hash(key, inc);
+    key = Wyhash.hash(key, "\x01libcdirs");
+    for (libc_dirs) |dir| key = Wyhash.hash(key, dir);
     key = Wyhash.hash(key, "\x01llvm");
     key = Wyhash.hash(key, llvm_version);
     if (triple) |t| {
@@ -433,14 +437,24 @@ pub fn compileCToObjects(
     const llvm_version = try std.fmt.allocPrint(allocator, "{d}.{d}.{d}", .{ ver_maj, ver_min, ver_pat });
     const triple_slice: ?[]const u8 = if (target_config.triple) |t| std.mem.span(t) else null;
     const opt_flag = target_config.opt_level.toClangFlag();
+    const libc = try @import("target.zig").linuxLibcIncludeDirs(allocator, io, target_config);
+    // The libc the unit compiles against is not implied by the other key
+    // material: the same source, flags and (absent) `--target` compile against
+    // the host libc or against zig's musl depending on how the link resolves.
+    const libc_dirs: []const []const u8 = if (libc) |lh| lh.dirs else &.{};
 
     for (infos) |info| {
         if (info.sources.len == 0) continue;
 
         // Build clang args: -I dirs, -D defines, raw flags
         var args_list = std.ArrayList([*c]const u8).empty;
-        // Cross-compile target: forward -target / -isysroot when set.
-        if (target_config.triple) |t| {
+        // Cross-compile target: forward -target / -isysroot when set. A Linux
+        // link through the zig backend names the target instead — it owns the
+        // libc below, and `target_config.triple` is null for a native build.
+        if (libc) |lh| {
+            try args_list.append(allocator, "-target");
+            try args_list.append(allocator, (try allocator.dupeZ(u8, lh.triple)).ptr);
+        } else if (target_config.triple) |t| {
             try args_list.append(allocator, "-target");
             try args_list.append(allocator, t);
         }
@@ -460,14 +474,18 @@ pub fn compileCToObjects(
                 try args_list.append(allocator, sysroot.ptr);
             }
         }
-        // Linux cross-target: the embedded clang has no libc headers for a
-        // foreign Linux target. Point it at the bundled-zig libc include set
+        // Linux target linked by the zig backend: the embedded clang has no
+        // libc headers for it. Point it at the bundled-zig libc include set
         // (musl/glibc, mirroring `zig cc`) so `<string.h>`/`<stdio.h>` resolve.
         // `-isystem` (not `-I`) so user `-I` anchors still win and these are
-        // searched as system headers (warnings suppressed). See
+        // searched as system headers (warnings suppressed). `-nostdlibinc`
+        // drops the standard system dirs (keeping clang's own builtin headers)
+        // so a native-Linux host's `/usr/include` cannot supply a second libc
+        // behind these — the link resolves exactly one. See
         // target.linuxLibcIncludeDirs.
-        if (try @import("target.zig").linuxLibcIncludeDirs(allocator, io, target_config)) |libc_dirs| {
-            for (libc_dirs) |dir| {
+        if (libc) |lh| {
+            try args_list.append(allocator, "-nostdlibinc");
+            for (lh.dirs) |dir| {
                 try args_list.append(allocator, "-isystem");
                 try args_list.append(allocator, (try allocator.dupeZ(u8, dir)).ptr);
             }
@@ -522,6 +540,7 @@ pub fn compileCToObjects(
                         info.defines,
                         cache_flags.items,
                         inc_dirs.items,
+                        libc_dirs,
                         llvm_version,
                         triple_slice,
                         target_config.sysroot,
@@ -740,6 +759,7 @@ pub fn compileCWithEmcc(
                         info.defines,
                         cache_flags.items,
                         inc_dirs.items,
+                        &.{}, // emcc brings emscripten's own libc headers
                         emcc_version.?,
                         triple,
                         null,
