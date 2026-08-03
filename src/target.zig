@@ -241,9 +241,15 @@ pub const TargetConfig = struct {
     /// host OS (musl on Linux for static portability, mingw on Windows).
     /// Caller owns the returned slice.
     pub fn zigTargetTriple(self: TargetConfig, allocator: std.mem.Allocator) ![]const u8 {
+        return self.zigTargetTripleFor(allocator, builtin.os.tag);
+    }
+
+    /// `zigTargetTriple` against an explicit host OS: only the null-triple
+    /// (host-default) case consults it. Caller owns the returned slice.
+    pub fn zigTargetTripleFor(self: TargetConfig, allocator: std.mem.Allocator, host_os: std.Target.Os.Tag) ![]const u8 {
         if (self.triple) |t| return allocator.dupe(u8, std.mem.span(t));
         const arch: []const u8 = if (self.isAarch64()) "aarch64" else "x86_64";
-        const os_abi: []const u8 = switch (builtin.os.tag) {
+        const os_abi: []const u8 = switch (host_os) {
             .linux => "linux-musl",
             .macos => "macos-none",
             .windows => "windows-gnu",
@@ -529,31 +535,88 @@ fn zigLibDir(allocator: std.mem.Allocator, io: std.Io, zig_path: []const u8) ![]
     return allocator.dupe(u8, rest[0..end]);
 }
 
-/// Libc include directories for a Linux cross-target, mirroring the set
-/// `zig cc` itself searches (arch-abi, generic-libc, arch-any, any-linux-any).
-/// sx's embedded clang carries no target libc headers, so a `#import c` unit
-/// (sqlite, mbedTLS, …) can't find `string.h` / `stdio.h` for a foreign Linux
-/// target without these. The dirs come from the bundled/discovered zig's
-/// `lib/zig/libc/include`. Returns null (no-op) for anything but a Linux
-/// CROSS build that will link via the zig backend — native builds (no
-/// `--target`), non-Linux targets, and system-cc links keep the embedded
-/// clang's own header search untouched (this mirrors selectZigLinker so the
-/// C objects are always compiled against the same libc the linker uses).
-/// Errors loudly when zig or the expected header dirs can't be located.
-///
-/// ABI selection mirrors zig: a triple containing "gnu" picks glibc headers,
-/// everything else (musl or an unspecified abi, e.g. bare `aarch64-linux`)
-/// picks musl — matching zig's default-to-musl for cross Linux. Caller owns
-/// the returned slice and each element.
-pub fn linuxLibcIncludeDirs(allocator: std.mem.Allocator, io: std.Io, tc: TargetConfig) !?[]const []const u8 {
-    // Only a Linux CROSS build (an explicit `--target`) needs these. A native
-    // build leaves `triple` null; the embedded clang's own default header
-    // search — including a native-Linux host's `/usr/include` — must NOT be
-    // perturbed (no zig dependency forced, no musl-vs-glibc header mixing).
-    if (tc.triple == null) return null;
-    if (!tc.isLinux()) return null; // isLinux() already excludes Android
+/// The `libc/include` layout for a Linux link triple.
+pub const LibcHeaderLayout = struct {
+    full_arch: []const u8,
+    family_arch: []const u8,
+    /// `<arch>-linux-<abi_suffix>`.
+    abi_suffix: []const u8,
+    /// The arch-independent libc dir holding string.h/stdio.h/….
+    generic: []const u8,
+};
 
-    // The C objects must be compiled against the SAME libc the link step uses.
+/// The libc header set a link triple needs, or null when the triple names no
+/// plain Linux libc — macOS/Windows/wasm, and Android (whose bionic headers
+/// come from the NDK sysroot instead).
+///
+/// ABI selection mirrors zig: a triple containing "gnu" picks glibc,
+/// everything else (musl or an unspecified abi, e.g. bare `aarch64-linux`)
+/// picks musl — matching zig's default-to-musl for Linux.
+pub fn libcHeaderLayout(link_triple: []const u8) !?LibcHeaderLayout {
+    if (std.mem.indexOf(u8, link_triple, "linux") == null) return null;
+    if (std.mem.indexOf(u8, link_triple, "android") != null) return null;
+
+    const is_aarch64 = std.mem.startsWith(u8, link_triple, "aarch64") or
+        std.mem.startsWith(u8, link_triple, "arm64");
+    const is_x86_64 = std.mem.startsWith(u8, link_triple, "x86_64") or
+        std.mem.startsWith(u8, link_triple, "x86-64");
+    if (!is_aarch64 and !is_x86_64) {
+        std.debug.print("error: unsupported Linux arch in link target '{s}' (only aarch64 and x86_64 are wired for #import c)\n", .{link_triple});
+        return error.LinkError;
+    }
+
+    const is_gnu = std.mem.indexOf(u8, link_triple, "gnu") != null;
+    return .{
+        .full_arch = if (is_aarch64) "aarch64" else "x86_64",
+        .family_arch = if (is_aarch64) "aarch64" else "x86",
+        .abi_suffix = if (is_gnu) "gnu" else "musl",
+        .generic = if (is_gnu) "generic-glibc" else "generic-musl",
+    };
+}
+
+pub const LibcHeaderTarget = struct {
+    /// The effective link triple. The C compile targets it too.
+    triple: []const u8,
+    layout: LibcHeaderLayout,
+};
+
+/// The Linux libc header set a build's `#import c` units compile against, or
+/// null when the target carries none (macOS/Windows/wasm/Android).
+///
+/// Reads the effective link triple, never `tc.triple` — that is null for a
+/// native build, which the zig backend still links as a synthesized triple.
+/// Headers must match the libc the link resolves: glibc's LFS redirects
+/// reference `open64`/`stat64`/…, which musl does not define. Caller owns
+/// `triple`.
+pub fn libcHeaderTarget(tc: TargetConfig, allocator: std.mem.Allocator, host_os: std.Target.Os.Tag) !?LibcHeaderTarget {
+    const link_triple = try tc.zigTargetTripleFor(allocator, host_os);
+    errdefer allocator.free(link_triple);
+    const layout = (try libcHeaderLayout(link_triple)) orelse {
+        allocator.free(link_triple);
+        return null;
+    };
+    return .{ .triple = link_triple, .layout = layout };
+}
+
+pub const LinuxLibcHeaders = struct {
+    /// The link target these headers belong to; the C compile targets it too.
+    triple: []const u8,
+    dirs: []const []const u8,
+};
+
+/// The libc headers a `#import c` unit compiles against, plus the target they
+/// belong to. sx's embedded clang carries no target libc headers, so a
+/// `#import c` unit (sqlite, mbedTLS, …) needs these to find `string.h` /
+/// `stdio.h` at all; the dirs mirror the set `zig cc` searches (arch-abi,
+/// generic-libc, arch-any, any-linux-any) and come from the
+/// bundled/discovered zig's `lib/zig/libc/include`.
+///
+/// Returns null when the link does not go through the zig backend, or when it
+/// does but targets no Linux libc — a system-cc link keeps the embedded
+/// clang's own header search (headers and linker then agree on the host libc).
+/// Errors loudly when zig or the expected header dirs can't be located.
+/// Caller owns the returned slice and each element.
+pub fn linuxLibcIncludeDirs(allocator: std.mem.Allocator, io: std.Io, tc: TargetConfig) !?LinuxLibcHeaders {
     // The bundled-zig (musl/glibc) headers are correct only when the link goes
     // through the zig backend, so mirror selectZigLinker's decision exactly —
     // otherwise headers and linker could disagree (compile musl, link glibc).
@@ -564,45 +627,26 @@ pub fn linuxLibcIncludeDirs(allocator: std.mem.Allocator, io: std.Io, tc: Target
         .auto => (tc.linker == null) and (if (found) |f| f.bundled else false),
     };
     if (!use_zig) return null;
+
+    const header_target = (try libcHeaderTarget(tc, allocator, builtin.os.tag)) orelse return null;
+    const plan = header_target.layout;
+
     const zig_path = (found orelse {
         std.debug.print("error: --self-contained Linux build needs a `zig` for its libc headers (set $SX_ZIG or put zig on PATH)\n", .{});
         return error.LinkError;
     }).path;
     const lib_dir = try zigLibDir(allocator, io, zig_path);
 
-    // zig's libc-include dirs use two arch spellings: a "full" arch
-    // (`aarch64`, `x86_64`) and an arch "family" (`aarch64`, `x86`). The
-    // mapping per (arch × abi × dir) is irregular (e.g. x86_64 musl →
-    // `x86_64-linux-musl`, but x86_64 gnu → `x86-linux-gnu`, and the `-any`
-    // dir is always the family form `x86-linux-any`). One rule reproduces
-    // every observed case: prefer `<full>-linux-<suffix>`, fall back to
-    // `<family>-linux-<suffix>` (see resolveArchDir).
-    const full_arch: []const u8 = if (tc.isAarch64())
-        "aarch64"
-    else if (tc.isX86_64())
-        "x86_64"
-    else {
-        const ts = if (tc.triple) |t| std.mem.span(t) else "(host)";
-        std.debug.print("error: unsupported Linux cross arch in target '{s}' (only aarch64 and x86_64 are wired for #import c)\n", .{ts});
-        return error.LinkError;
-    };
-    const family_arch: []const u8 = if (tc.isAarch64()) "aarch64" else "x86";
-
-    const triple_span = if (tc.triple) |t| std.mem.span(t) else "";
-    const is_gnu = std.mem.indexOf(u8, triple_span, "gnu") != null;
-    const abi_suffix: []const u8 = if (is_gnu) "gnu" else "musl";
-    const libc_generic: []const u8 = if (is_gnu) "generic-glibc" else "generic-musl";
-
     var dirs = std.ArrayList([]const u8).empty;
     // 1. arch+abi dir (e.g. aarch64-linux-musl)
-    try dirs.append(allocator, try resolveArchDir(allocator, io, lib_dir, full_arch, family_arch, abi_suffix, zig_path));
+    try dirs.append(allocator, try resolveArchDir(allocator, io, lib_dir, plan.full_arch, plan.family_arch, plan.abi_suffix, zig_path));
     // 2. generic libc dir — holds string.h/stdio.h/… (must exist)
-    try dirs.append(allocator, try requireDir(allocator, io, lib_dir, libc_generic, zig_path));
+    try dirs.append(allocator, try requireDir(allocator, io, lib_dir, plan.generic, zig_path));
     // 3. arch+any dir (e.g. x86-linux-any)
-    try dirs.append(allocator, try resolveArchDir(allocator, io, lib_dir, full_arch, family_arch, "any", zig_path));
+    try dirs.append(allocator, try resolveArchDir(allocator, io, lib_dir, plan.full_arch, plan.family_arch, "any", zig_path));
     // 4. any-linux-any — cross-arch Linux fallbacks (must exist)
     try dirs.append(allocator, try requireDir(allocator, io, lib_dir, "any-linux-any", zig_path));
-    return try dirs.toOwnedSlice(allocator);
+    return .{ .triple = header_target.triple, .dirs = try dirs.toOwnedSlice(allocator) };
 }
 
 /// `<lib_dir>/libc/include/<sub>`, asserting it exists. Caller owns the slice.

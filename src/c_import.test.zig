@@ -1,5 +1,6 @@
 const std = @import("std");
 const c_import = @import("c_import.zig");
+const target = @import("target.zig");
 
 const SRC = "int f(void) { return 1; }";
 const HDR = "int f(void);";
@@ -9,7 +10,22 @@ const VER = "19.1.7";
 const none: []const []const u8 = &.{};
 
 fn baseKey() u64 {
-    return c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{"A=1"}, &.{"-O2"}, &.{"inc"}, VER, "arm64-apple-darwin", "/sdk");
+    return c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{"A=1"}, &.{"-O2"}, &.{"inc"}, none, VER, "arm64-apple-darwin", "/sdk");
+}
+
+test "C compile purpose separates host JIT from a native Linux link target" {
+    const a = std.testing.allocator;
+    const native: target.TargetConfig = .{};
+    const link_libc = (try target.libcHeaderTarget(native, a, .linux)).?;
+    defer a.free(link_libc.triple);
+
+    const host_jit = c_import.selectCCompile(.host_jit, null, link_libc.triple);
+    try std.testing.expect(!host_jit.use_link_libc);
+    try std.testing.expect(host_jit.clang_triple == null);
+
+    const linked_build = c_import.selectCCompile(.linked_build, null, link_libc.triple);
+    try std.testing.expect(linked_build.use_link_libc);
+    try std.testing.expectEqualStrings(link_libc.triple, linked_build.clang_triple.?);
 }
 
 test "cSourceCacheKey: stable when nothing changes" {
@@ -17,52 +33,70 @@ test "cSourceCacheKey: stable when nothing changes" {
 }
 
 test "cSourceCacheKey: source bytes vary the key" {
-    const other = c_import.cSourceCacheKey("int f(void) { return 2; }", &.{HDR}, &.{DEP}, &.{"A=1"}, &.{"-O2"}, &.{"inc"}, VER, "arm64-apple-darwin", "/sdk");
+    const other = c_import.cSourceCacheKey("int f(void) { return 2; }", &.{HDR}, &.{DEP}, &.{"A=1"}, &.{"-O2"}, &.{"inc"}, none, VER, "arm64-apple-darwin", "/sdk");
     try std.testing.expect(baseKey() != other);
 }
 
 test "cSourceCacheKey: declared header content varies the key" {
-    const other = c_import.cSourceCacheKey(SRC, &.{"int f(void); int g(void);"}, &.{DEP}, &.{"A=1"}, &.{"-O2"}, &.{"inc"}, VER, "arm64-apple-darwin", "/sdk");
+    const other = c_import.cSourceCacheKey(SRC, &.{"int f(void); int g(void);"}, &.{DEP}, &.{"A=1"}, &.{"-O2"}, &.{"inc"}, none, VER, "arm64-apple-darwin", "/sdk");
     try std.testing.expect(baseKey() != other);
 }
 
 test "cSourceCacheKey: transitive dep content varies the key" {
-    const other = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{"#define INNER 2"}, &.{"A=1"}, &.{"-O2"}, &.{"inc"}, VER, "arm64-apple-darwin", "/sdk");
+    const other = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{"#define INNER 2"}, &.{"A=1"}, &.{"-O2"}, &.{"inc"}, none, VER, "arm64-apple-darwin", "/sdk");
     try std.testing.expect(baseKey() != other);
 
     // a header is not a dep (same string, different role)
-    const as_header = c_import.cSourceCacheKey(SRC, &.{"X"}, none, none, none, none, VER, null, null);
-    const as_dep = c_import.cSourceCacheKey(SRC, none, &.{"X"}, none, none, none, VER, null, null);
+    const as_header = c_import.cSourceCacheKey(SRC, &.{"X"}, none, none, none, none, none, VER, null, null);
+    const as_dep = c_import.cSourceCacheKey(SRC, none, &.{"X"}, none, none, none, none, VER, null, null);
     try std.testing.expect(as_header != as_dep);
 }
 
 test "cSourceCacheKey: defines vary the key (value and order)" {
-    const v2 = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{"A=2"}, &.{"-O2"}, &.{"inc"}, VER, "arm64-apple-darwin", "/sdk");
+    const v2 = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{"A=2"}, &.{"-O2"}, &.{"inc"}, none, VER, "arm64-apple-darwin", "/sdk");
     try std.testing.expect(baseKey() != v2);
 
-    const ab = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{ "A=1", "B=1" }, &.{"-O2"}, &.{"inc"}, VER, "arm64-apple-darwin", "/sdk");
-    const ba = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{ "B=1", "A=1" }, &.{"-O2"}, &.{"inc"}, VER, "arm64-apple-darwin", "/sdk");
+    const ab = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{ "A=1", "B=1" }, &.{"-O2"}, &.{"inc"}, none, VER, "arm64-apple-darwin", "/sdk");
+    const ba = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{ "B=1", "A=1" }, &.{"-O2"}, &.{"inc"}, none, VER, "arm64-apple-darwin", "/sdk");
     try std.testing.expect(ab != ba);
 }
 
 test "cSourceCacheKey: flags vary the key" {
-    const other = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{"A=1"}, &.{"-O3"}, &.{"inc"}, VER, "arm64-apple-darwin", "/sdk");
+    const other = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{"A=1"}, &.{"-O3"}, &.{"inc"}, none, VER, "arm64-apple-darwin", "/sdk");
     try std.testing.expect(baseKey() != other);
 }
 
 test "cSourceCacheKey: a define is not a flag (same string, different role)" {
-    const as_define = c_import.cSourceCacheKey(SRC, none, none, &.{"X"}, none, none, VER, null, null);
-    const as_flag = c_import.cSourceCacheKey(SRC, none, none, none, &.{"X"}, none, VER, null, null);
+    const as_define = c_import.cSourceCacheKey(SRC, none, none, &.{"X"}, none, none, none, VER, null, null);
+    const as_flag = c_import.cSourceCacheKey(SRC, none, none, none, &.{"X"}, none, none, VER, null, null);
     try std.testing.expect(as_define != as_flag);
 }
 
 test "cSourceCacheKey: include dirs vary the key" {
-    const other = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{"A=1"}, &.{"-O2"}, &.{"other"}, VER, "arm64-apple-darwin", "/sdk");
+    const other = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{"A=1"}, &.{"-O2"}, &.{"other"}, none, VER, "arm64-apple-darwin", "/sdk");
     try std.testing.expect(baseKey() != other);
 }
 
+test "cSourceCacheKey: libc dirs vary the key" {
+    // Same source, same flags, same (absent) --target: only the libc differs.
+    // A native Linux build varies it by how the link resolves, so an object
+    // compiled against glibc must never be served to a musl link.
+    const musl = c_import.cSourceCacheKey(SRC, none, none, none, none, none, &.{"/zig/libc/include/x86_64-linux-musl"}, VER, null, null);
+    const glibc = c_import.cSourceCacheKey(SRC, none, none, none, none, none, &.{"/zig/libc/include/x86-linux-gnu"}, VER, null, null);
+    const host = c_import.cSourceCacheKey(SRC, none, none, none, none, none, none, VER, null, null);
+    try std.testing.expect(musl != glibc);
+    try std.testing.expect(musl != host);
+    try std.testing.expect(glibc != host);
+}
+
+test "cSourceCacheKey: a libc dir is not an include dir (same string, different role)" {
+    const as_inc = c_import.cSourceCacheKey(SRC, none, none, none, none, &.{"X"}, none, VER, null, null);
+    const as_libc = c_import.cSourceCacheKey(SRC, none, none, none, none, none, &.{"X"}, VER, null, null);
+    try std.testing.expect(as_inc != as_libc);
+}
+
 test "cSourceCacheKey: llvm version varies the key" {
-    const other = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{"A=1"}, &.{"-O2"}, &.{"inc"}, "20.0.0", "arm64-apple-darwin", "/sdk");
+    const other = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{"A=1"}, &.{"-O2"}, &.{"inc"}, none, "20.0.0", "arm64-apple-darwin", "/sdk");
     try std.testing.expect(baseKey() != other);
 }
 
@@ -77,14 +111,14 @@ test "objectMagicOk: accepts Mach-O and ELF, rejects garbage and truncation" {
 }
 
 test "cSourceCacheKey: triple and sysroot vary the key; absent is not empty" {
-    const other_triple = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{"A=1"}, &.{"-O2"}, &.{"inc"}, VER, "x86_64-apple-darwin", "/sdk");
+    const other_triple = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{"A=1"}, &.{"-O2"}, &.{"inc"}, none, VER, "x86_64-apple-darwin", "/sdk");
     try std.testing.expect(baseKey() != other_triple);
 
-    const other_sysroot = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{"A=1"}, &.{"-O2"}, &.{"inc"}, VER, "arm64-apple-darwin", "/ndk");
+    const other_sysroot = c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{"A=1"}, &.{"-O2"}, &.{"inc"}, none, VER, "arm64-apple-darwin", "/ndk");
     try std.testing.expect(baseKey() != other_sysroot);
 
-    const absent = c_import.cSourceCacheKey(SRC, none, none, none, none, none, VER, null, null);
-    const empty = c_import.cSourceCacheKey(SRC, none, none, none, none, none, VER, "", "");
+    const absent = c_import.cSourceCacheKey(SRC, none, none, none, none, none, none, VER, null, null);
+    const empty = c_import.cSourceCacheKey(SRC, none, none, none, none, none, none, VER, "", "");
     try std.testing.expect(absent != empty);
 }
 
