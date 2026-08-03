@@ -15,6 +15,7 @@ round-trip: ok
 ws-count: ok
 ws-first: ok
 ws-last: ok
+fraction-round-trips: ok
 empty-array: ok
 empty-object: ok
 uni-len: ok
@@ -29,7 +30,6 @@ err-truncated: ok
 err-bad-escape: ok
 err-trailing-junk: ok
 err-bad-token: ok
-err-fraction: ok
 err-leading-zero: ok
 err-overflow: ok
 err-unterminated: ok

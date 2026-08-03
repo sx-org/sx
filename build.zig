@@ -104,6 +104,13 @@ pub fn build(b: *std.Build) void {
     // gets zig's default libc++ — matching Homebrew. Same mechanism, both hosts.
     {
         const cc = b.addSystemCommand(&.{ b.graph.zig_exe, "c++" });
+        // Keep this standalone compile on mod's target query; otherwise it can
+        // detect the host independently and produce an incompatible object.
+        cc.addArgs(&.{
+            "-target",
+            target.query.zigTriple(b.allocator) catch @panic("OOM"),
+            b.fmt("-mcpu={s}", .{target.query.serializeCpuAlloc(b.allocator) catch @panic("OOM")}),
+        });
         cc.addArgs(cpp_flags.items);
         cc.addPrefixedDirectoryArg("-I", b.path(".")); // for clang_shim.h
         cc.addArg("-c");
@@ -354,8 +361,29 @@ pub fn build(b: *std.Build) void {
     });
     const run_async_substrate_tests = b.addRunArtifact(async_substrate_tests);
 
+    // The path layer reaches for the OS stat structs, which zig defines per
+    // target — `std.c.Stat` and `std.posix.Stat` are `void` on linux, so a
+    // host-target build alone cannot tell whether that code still compiles
+    // there. Semantically analyze it against linux on every host. The root
+    // (src/imports.linux_check.zig) references only the path decls, so this
+    // needs libc and nothing else: no LLVM headers, no link step.
+    const imports_linux_check = b.addObject(.{
+        .name = "imports-linux-check",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/imports.linux_check.zig"),
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .x86_64,
+                .os_tag = .linux,
+                .abi = .gnu,
+            }),
+            .optimize = .Debug,
+            .link_libc = true,
+        }),
+    });
+
     const test_step = b.step("test", "Run unit tests + the example/issue regression suite");
     test_step.dependOn(&run_async_substrate_tests.step);
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
+    test_step.dependOn(&imports_linux_check.step);
 }

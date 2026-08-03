@@ -185,6 +185,14 @@ main :: () -> ! {
     uback := try parse(string{ ptr = *ubuf[0], len = un }, a);
     report("rt-utf8", uback.str == string{ ptr = *ubytes[0], len = 7 });
 
+    fbuf : [64]u8 = ---;
+    ffrac := try parse("1.5", a);
+    fexp := try parse("2.5E-3", a);
+    report("fraction-is-float", ffrac.float == 1.5);
+    report("exponent-is-float", fexp.float == 0.0025);
+    fn := try write_to_buffer(ffrac, string{ ptr = *fbuf[0], len = 64 });
+    report("fraction-round-trips", string{ ptr = *fbuf[0], len = fn } == "1.5");
+
     // ── PART C. malformed-input matrix — one assertion per variant + edge ─
     // UnexpectedToken: bad literal, non-string key, missing comma.
     report("err-token-literal", raises("xyz",     error.UnexpectedToken, a));
@@ -202,13 +210,15 @@ main :: () -> ! {
     report("err-esc-bad-hex",   raises("\"\\uZZZZ\"",      error.BadEscape, a));
     report("err-esc-surrogate", raises("\"\\uD83D\\u0041\"", error.BadEscape, a));
 
-    // BadNumber: leading zero, lone minus, fraction, exponent, and an
-    // integer just past i64 MAX (overflow).
+    // BadNumber: leading zero, lone minus, a fraction or exponent with no
+    // digit, an integer just past i64 MAX (overflow), and a float past the
+    // finite range.
     report("err-num-leadzero", raises("01",  error.BadNumber, a));
     report("err-num-lonedash", raises("-",   error.BadNumber, a));
-    report("err-num-fraction", raises("1.5", error.BadNumber, a));
-    report("err-num-exponent", raises("1e9", error.BadNumber, a));
+    report("err-num-nofrac",   raises("1.",  error.BadNumber, a));
+    report("err-num-noexp",    raises("1e",  error.BadNumber, a));
     report("err-num-overflow", raises("9223372036854775808", error.BadNumber, a));
+    report("err-num-inf",      raises("1e400", error.BadNumber, a));
 
     // TrailingGarbage: junk after a complete value.
     report("err-trail-array",  raises("[1,2] x", error.TrailingGarbage, a));

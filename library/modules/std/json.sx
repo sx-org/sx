@@ -4,10 +4,12 @@
 // This module delivers the JSON VALUE MODEL, the WRITER, and the READER
 // (parser). The model is built once and shared by both directions.
 //
-// NUMBERS ARE INTEGERS ONLY (i64) — there is no
-// fraction or exponent. A JSON value is one of: null, bool, integer,
-// string, array, object. The reader REJECTS a fraction or exponent
-// (`error.BadNumber`) rather than silently truncating it.
+// A JSON value is one of: null, bool, integer, float, string, array,
+// object. NUMBERS SPLIT BY SYNTAX: a bare integer is an `int` (i64,
+// exact across the whole range); a number carrying a fraction or an
+// exponent is a `float` (f64). The reader REJECTS an integer outside i64
+// and a float that overflows to infinity (`error.BadNumber`) rather than
+// silently substituting a value.
 //
 // STABLE KEY ORDER: an object is NOT a hash map. It is an ORDERED list
 // of (key, value) pairs that preserves INSERTION ORDER. Keys are never
@@ -16,7 +18,7 @@
 // guarantee the manifest / db.json rely on.
 //
 // HEAP DISCIPLINE (binding, see heap-discipline.md):
-//   - Scalars (null / bool / int) carry no heap.
+//   - Scalars (null / bool / int / float) carry no heap.
 //   - String values are VIEWS (`string`) into caller-owned memory; the
 //     node never copies the input bytes.
 //   - Composite nodes (array / object) hold unbounded children, so they
@@ -31,8 +33,10 @@
 //     straight to an `fs.File` through a small caller-provided staging
 //     buffer — so the db.json path holds no whole-document string in
 //     memory (peak memory is O(staging), not O(document)). Integer
-//     digits are formatted in a stack `[20]u8`. Sink/IO/overflow
-//     failures surface on the error channel (`!JsonError`).
+//     digits are formatted in a stack `[20]u8`, float digits in a stack
+//     `[24]u8`, and the decimal conversions run on stack integers.
+//     Sink/IO/overflow failures surface on the error channel
+//     (`!JsonError`).
 //
 // Building a value (`#import "modules/std/json.sx";` brings these in):
 //
@@ -64,16 +68,20 @@ c :: #import "modules/std/c.sx";
 // visibility is non-transitive, so the module that names the type imports it.
 #import "modules/std/mem.sx";
 #import "modules/std/fs.sx";
+// `to_f64` / `shortest` / `float_bits` / `is_non_finite` — the exact
+// decimal <-> binary pair the reader and the writer share.
+#import "modules/std/internal/decimal.sx";
 
-// The writer's failure contract: a too-small caller buffer (Overflow) or
-// a short/failed file write (Io). Surfaced on the error channel — never a
+// The writer's failure contract: a too-small caller buffer (Overflow), a
+// short/failed file write (Io), or a `float` that JSON cannot spell — a
+// NaN or an infinity (NonFinite). Surfaced on the error channel — never a
 // silent truncation or default.
-JsonError :: error { Overflow, Io }
+JsonError :: error { Overflow, Io, NonFinite }
 
 // ── Value model ──────────────────────────────────────────────────────
 //
-// `Value` is a tagged union over the six JSON kinds. `null`/`bool`/
-// `int` are scalars; `str` is a VIEW into caller memory; `array` is a
+// `Value` is a tagged union over the JSON kinds. `null`/`bool`/`int`/
+// `float` are scalars; `str` is a VIEW into caller memory; `array` is a
 // `List(Value)` and `object` owns growable child storage (see Object).
 // Grow the array through the explicit-allocator form — `arr.append(v,
 // alloc)` — to keep the module's heap discipline (never the implicit
@@ -88,6 +96,7 @@ Value :: enum {
     null;
     bool: bool;
     int:  i64;
+    float: f64;
     str:   string;     // view into caller-owned bytes; not copied
     array: List(Value);
     object: Object;
@@ -133,6 +142,17 @@ Object :: struct {
         self.cap = 0;
     }
 }
+
+// Both directions come from std/internal/decimal.sx: `to_f64` reads a
+// decimal significand scaled by a power of ten as the NEAREST double,
+// and `shortest` names a double with the fewest digits that read back as
+// itself. The reader and the writer share that one pair, so every finite
+// double survives write -> parse bit for bit.
+
+// Remaining exponent digits are ignored after `ev` exceeds this limit.
+// The largest accumulated value fits in i64, and no in-memory token has
+// enough digits to offset its magnitude.
+EXP_LIMIT :: 100000000000000000;   // 10^17
 
 // ── Sink ─────────────────────────────────────────────────────────────
 //
@@ -247,12 +267,81 @@ write_int :: (n: i64, sink: *Sink) -> !JsonError {
     return;
 }
 
+// The longest run of digits the writer pads out rather than switching to
+// the exponential form.
+INTEGRAL_DIGITS :: 18;
+
+// A significand whose emitted text ends in a literal `.0` — `12300.0`.
+integral_form :: (k: i64, p: i64) -> bool {
+    k >= 0 and p + k + 1 <= INTEGRAL_DIGITS
+}
+
+// Emit the `p`-digit significand `n` scaled by 10^k: `123.45` when the
+// point falls inside the digits, `0.00123` when the value is below one,
+// `12300.0` when it is integral, `1.23e-45` otherwise. Every form spells
+// the same decimal `n * 10^k`, which is what the reader recovers.
+emit_decimal :: (n: i64, k: i64, p: i64, sink: *Sink) -> !JsonError {
+    digits : [24]u8 = ---;
+    v := n;
+    i := p;
+    while i > 0 {
+        i -= 1;
+        digits[i] = xx ((v % 10) + '0');
+        v = v / 10;
+    }
+    if integral_form(k, p) {
+        try sink.put(string{ ptr = *digits[0], len = p });
+        z := 0;
+        while z < k { try sink.put_byte('0'); z += 1; }
+        try sink.put(".0");
+        return;
+    }
+    point := k + p - 1;        // 10^point is the leading digit's weight
+    if point >= 0 and point <= p - 2 {
+        try sink.put(string{ ptr = *digits[0], len = point + 1 });
+        try sink.put_byte('.');
+        try sink.put(string{ ptr = *digits[point + 1], len = p - point - 1 });
+        return;
+    }
+    if point < 0 and point >= 0 - 6 {
+        try sink.put("0.");
+        z := 0 - point - 1;
+        while z > 0 { try sink.put_byte('0'); z -= 1; }
+        try sink.put(string{ ptr = *digits[0], len = p });
+        return;
+    }
+    try sink.put_byte(digits[0]);
+    if p > 1 {
+        try sink.put_byte('.');
+        try sink.put(string{ ptr = *digits[1], len = p - 1 });
+    }
+    try sink.put_byte('e');
+    if point < 0 { try sink.put_byte('-'); try write_int(0 - point, sink); }
+    else         { try write_int(point, sink); }
+    return;
+}
+
+// Emit a float as the SHORTEST decimal that reads back as the identical
+// double. The text is a preimage of `f`, never an approximation of it. A
+// NaN or an infinity has no JSON spelling and raises.
+write_float :: (f: f64, sink: *Sink) -> !JsonError {
+    bits := float_bits(f);
+    if is_non_finite(bits) { raise error.NonFinite; }
+    if bits < 0 { try sink.put_byte('-'); }   // the sign BIT, so -0.0 keeps its sign
+    v := if bits < 0 then 0.0 - f else f;
+    if v == 0.0 { try sink.put("0.0"); return; }
+    d := shortest(v);
+    try emit_decimal(d.mant, d.exp10, d.digits, sink);
+    return;
+}
+
 // Serialize one value into `sink`. Recurses for arrays / objects.
 write_value :: (v: Value, sink: *Sink) -> !JsonError {
     if v == {
         case .null:  try sink.put("null");
         case .bool:  try sink.put(if v.bool then "true" else "false");
         case .int:   try write_int(v.int, sink);
+        case .float: try write_float(v.float, sink);
         case .str:    try write_string(v.str, sink);
         case .array:  try write_array(v.array, sink);
         case .object: try write_object(v.object, sink);
@@ -313,22 +402,30 @@ write_to_file :: (v: Value, file: *File, staging: []u8) -> !JsonError {
 // ── Reader (parser) ───────────────────────────────────────────────────
 //
 // `parse(src, alloc)` turns a JSON document in `src` into the value model
-// above. It is the inverse of the writer for the v0 scope: objects (in
-// INSERTION ORDER), arrays, strings (with full unescaping incl. \uXXXX
-// and surrogate pairs), i64 integers, bool, null.
+// above. It is the inverse of the writer: objects (in INSERTION ORDER),
+// arrays, strings (with full unescaping incl. \uXXXX and surrogate
+// pairs), i64 integers, f64 floats, bool, null.
 //
 // FAILURE SURFACING (hard contract): every malformed input raises on the
 // error channel (`!JsonParseError`) — never a bogus or default value.
 // Trailing non-whitespace after a complete value is `TrailingGarbage`.
 // `pos` (the parser cursor) marks where the failure was detected.
 //
-// NOT SUPPORTED (rejected, not silently accepted): a fraction or exponent
-// in a number (`1.5`, `1e9`) → `BadNumber`; a number outside i64 →
-// `BadNumber`; a leading-zero integer (`01`) → `BadNumber`. An UNESCAPED
-// raw control byte (U+0000..U+001F) inside a string → `BadControlChar`
-// (RFC 8259 §7 requires those bytes to be escaped); the escaped forms
-// (`\t`, `\n`, `\u0009`, …) stay valid and decode normally. Bytes >= 0x20,
-// including 0x7F (DEL) and UTF-8 continuation bytes (>= 0x80), pass through.
+// NUMBERS follow the RFC 8259 grammar. A bare integer becomes an `int`
+// and an integer outside i64 is `BadNumber` — never a truncation. A
+// fraction or an exponent (`1.5`, `1e9`, `2.5E-3`) becomes a `float`;
+// one that overflows to infinity is `BadNumber`, one that underflows
+// reads as zero. Whatever its length, a float reads as the NEAREST
+// double, ties to even.
+//
+// REJECTED, not silently accepted: a leading-zero integer (`01`), a
+// missing digit after the point (`1.`), and a missing exponent digit
+// (`1e`) → `BadNumber` (`.5` starts no JSON value at all →
+// `UnexpectedToken`). An UNESCAPED raw control byte
+// (U+0000..U+001F) inside a string → `BadControlChar` (RFC 8259 §7
+// requires those bytes to be escaped); the escaped forms (`\t`, `\n`,
+// `\u0009`, …) stay valid and decode normally. Bytes >= 0x20, including
+// 0x7F (DEL) and UTF-8 continuation bytes (>= 0x80), pass through.
 //
 // HEAP DISCIPLINE (binding, see heap-discipline.md). Exactly two kinds of
 // allocation happen, both through the EXPLICIT `alloc` parameter, never
@@ -516,14 +613,16 @@ Parser :: struct {
         return string{ ptr = out, len = dlen };
     }
 
-    // Parse an i64 integer (optional '-', then digits). Rejects leading
-    // zeros, a fraction/exponent tail, and any value outside i64 — all
-    // `BadNumber`. Accumulates in NEGATIVE space so i64 MIN parses exactly.
-    parse_number :: (self: *Parser) -> (i64, !JsonParseError) {
+    // Parse an RFC 8259 number: `-`? int frac? exp?. A bare integer is an
+    // `int`; a fraction or an exponent makes it a `float`. The integer
+    // digits feed BOTH accumulators — which one survives is settled by
+    // the tail — so the token is read in a single pass.
+    parse_number :: (self: *Parser) -> (Value, !JsonParseError) {
         // i64 bounds, built positionally because |MIN| is not a
         // representable positive i64 literal. `min_div10` is `MIN / 10`
-        // truncated toward zero (remainder -8) — the digit loop's overflow
-        // threshold. Accumulation runs in NEGATIVE space so MIN is exact.
+        // truncated toward zero (remainder -8) — the int accumulator's
+        // overflow threshold, which runs in NEGATIVE space so MIN is
+        // exact.
         i64_min := 0 - 9223372036854775807 - 1;
         min_div10 := 0 - 922337203685477580;
         neg := false;
@@ -532,28 +631,70 @@ Parser :: struct {
         dstart := self.pos;
         c0 := self.src[self.pos];
         if c0 < '0' or c0 > '9' { raise error.BadNumber; }
-        val : i64 = 0;
+        val : i64 = 0;            // the int form, in negative space
+        overflowed := false;      // fatal for the int form, irrelevant to the float form
+        sig : Significand = .{};  // the float form's significand
+        exp10 : i64 = 0;          // ... scaled by this power of ten
         digits := 0;
         while self.pos < self.src.len {
             c := self.src[self.pos];
             if c < '0' or c > '9' { break; }
             d := (c.(i64)) - '0';
-            if val < min_div10 { raise error.BadNumber; }
-            if val == min_div10 and d > 8 { raise error.BadNumber; }
-            val = val * 10 - d;
+            if overflowed or val < min_div10 or (val == min_div10 and d > 8) { overflowed = true; }
+            else { val = val * 10 - d; }
+            if !sig.push(d) { exp10 += 1; }   // past the cap: the digit only weighs the scale
             digits += 1;
             self.pos += 1;
         }
         if self.src[dstart] == '0' and digits > 1 { raise error.BadNumber; }   // no leading zeros
-        if self.pos < self.src.len {
-            nc := self.src[self.pos];
-            if nc == '.' or nc == 'e' or nc == 'E' { raise error.BadNumber; }   // ints only
+        is_float := false;
+        if self.pos < self.src.len and self.src[self.pos] == '.' {
+            is_float = true;
+            self.pos += 1;
+            fdigits := 0;
+            while self.pos < self.src.len {
+                c := self.src[self.pos];
+                if c < '0' or c > '9' { break; }
+                if sig.push((c.(i64)) - '0') { exp10 -= 1; }
+                fdigits += 1;
+                self.pos += 1;
+            }
+            if fdigits == 0 { raise error.BadNumber; }   // '.' with no digit after it
         }
+        if self.pos < self.src.len and (self.src[self.pos] == 'e' or self.src[self.pos] == 'E') {
+            is_float = true;
+            self.pos += 1;
+            eneg := false;
+            if self.pos < self.src.len {
+                s := self.src[self.pos];
+                if s == '+' { self.pos += 1; }
+                else if s == '-' { eneg = true; self.pos += 1; }
+            }
+            if self.pos >= self.src.len { raise error.BadNumber; }
+            e0 := self.src[self.pos];
+            if e0 < '0' or e0 > '9' { raise error.BadNumber; }   // exponent with no digit
+            ev : i64 = 0;
+            while self.pos < self.src.len {
+                c := self.src[self.pos];
+                if c < '0' or c > '9' { break; }
+                if ev <= EXP_LIMIT { ev = ev * 10 + ((c.(i64)) - '0'); }
+                self.pos += 1;
+            }
+            if eneg { ev = 0 - ev; }
+            exp10 += ev;
+        }
+        if is_float {
+            fv := to_f64(*sig, exp10);
+            if is_non_finite(float_bits(fv)) { raise error.BadNumber; }
+            if neg { fv = fv * (0.0 - 1.0); }   // scaled, not subtracted, so -0.0 keeps its sign
+            return Value.float(fv);
+        }
+        if overflowed { raise error.BadNumber; }
         if !neg {
             if val == i64_min { raise error.BadNumber; }   // |MIN| not representable as +i64
             val = 0 - val;
         }
-        return val;
+        return Value.int(val);
     }
 
     // Parse an array starting at '['. Builds a `List(Value)` through `alloc`.
@@ -622,7 +763,7 @@ Parser :: struct {
         if c == 't' { try self.expect_lit("true");  return Value.bool(true); }
         if c == 'f' { try self.expect_lit("false"); return Value.bool(false); }
         if c == 'n' { try self.expect_lit("null");  nv : Value = .null; return nv; }
-        if c == '-' or (c >= '0' and c <= '9') { n := try self.parse_number(); return Value.int(n); }   // '-' / digit
+        if c == '-' or (c >= '0' and c <= '9') { return try self.parse_number(); }   // '-' / digit
         raise error.UnexpectedToken;
     }
 }

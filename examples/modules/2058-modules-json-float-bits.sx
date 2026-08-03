@@ -1,0 +1,128 @@
+#import "modules/std.sx";
+#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+#import "modules/std/json.sx";
+
+// A fixed nonzero seed makes failures reproducible.
+SEED :: 0x2545F4914F6CDD1D;
+
+SAMPLES    :: 60000;
+// Uniform raw-bit sampling rarely reaches exponent-field zero.
+SUBNORMALS :: 4000;
+
+// Buckets cover increasing |decimal exponent| magnitudes.
+BANDS  :: 5;
+EDGES : [4]i64 : .[22, 60, 120, 200];
+
+Bits :: union { f: f64; s: i64; }
+
+// The sign bit is cleared here and alternated by the sampling loops.
+Rng :: struct {
+    s: i64 = 0;
+    next :: (self: *Rng) -> i64 {
+        x := self.s;
+        x = x ^ (x << 13);
+        x = x ^ (x >> 7);
+        x = x ^ (x << 17);
+        self.s = x;
+        x & 0x7FFFFFFFFFFFFFFF
+    }
+}
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+report_band :: (kind: string, j: i64, ok: bool) {
+    print("magnitude-{}-{}: {}\n", j, kind, if ok then "ok" else "FAIL");
+}
+
+// An all-ones exponent field encodes a NaN or an infinity.
+is_non_finite :: (bits: i64) -> bool {
+    ((bits >> 52) & 0x7FF) == 0x7FF
+}
+
+// The encoded binary exponent supplies a stable decimal-magnitude proxy.
+decimal_exponent :: (bits: i64) -> i64 {
+    e2 := ((bits >> 52) & 0x7FF) - 1023;
+    n := e2 * 30103;
+    q := n / 100000;
+    if n % 100000 != 0 and n < 0 { q -= 1; }
+    q
+}
+
+band_of :: (bits: i64) -> i64 {
+    d := decimal_exponent(bits);
+    if d < 0 { d = 0 - d; }
+    i := 0;
+    while i < BANDS - 1 {
+        if d <= EDGES[i] { return i; }
+        i += 1;
+    }
+    BANDS - 1
+}
+
+survives :: (f: f64, alloc: Allocator) -> bool {
+    buf : [64]u8 = ---;
+    n, we := write_to_buffer(.float(f), string{ ptr = *buf[0], len = 64 });
+    if we { return false; }
+    v, pe := parse(string{ ptr = *buf[0], len = n }, alloc);
+    if pe { return false; }
+    back : Bits = ---;
+    orig : Bits = ---;
+    back.f = v.float;
+    orig.f = f;
+    back.s == orig.s
+}
+
+main :: () -> ! {
+    gpa := GPA.init();
+    arena := Arena.init(gpa, 65536);
+    defer arena.deinit();
+
+    seen : [5]i64 = .[0, 0, 0, 0, 0];
+    lost : [5]i64 = .[0, 0, 0, 0, 0];
+
+    rng := Rng{ s = SEED };
+    u : Bits = ---;
+    i := 0;
+    while i < SAMPLES {
+        i += 1;
+        bits := rng.next();
+        if is_non_finite(bits) { continue; }
+        u.s = bits;
+        if u.f == 0.0 { continue; }
+        b := band_of(bits);
+        seen[b] += 1;
+        f := if (i & 1) == 1 then 0.0 - u.f else u.f;
+        if !survives(f, arena) { lost[b] += 1; }
+    }
+
+    j := 0;
+    while j < BANDS {
+        report_band("sampled",     j, seen[j] > 0);
+        report_band("round-trips", j, lost[j] == 0);
+        j += 1;
+    }
+
+    sub_seen := 0;
+    sub_lost := 0;
+    k := 0;
+    while k < SUBNORMALS {
+        k += 1;
+        u.s = rng.next() & 0xFFFFFFFFFFFFF;   // exponent field zero
+        if u.f == 0.0 { continue; }
+        sub_seen += 1;
+        f := if (k & 1) == 1 then 0.0 - u.f else u.f;
+        if !survives(f, arena) { sub_lost += 1; }
+    }
+    report("subnormal-sampled",     sub_seen > 0);
+    report("subnormal-round-trips", sub_lost == 0);
+
+    report("max-round-trips",        survives(f64.max, arena));
+    report("min-round-trips",        survives(f64.min, arena));
+    report("min-normal-round-trips", survives(f64.min_positive, arena));
+    report("true-min-round-trips",   survives(f64.true_min, arena));
+    report("epsilon-round-trips",    survives(f64.epsilon, arena));
+    report("one-round-trips",        survives(1.0, arena));
+    print("=== DONE ===\n");
+}

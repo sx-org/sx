@@ -1,16 +1,15 @@
 // =====================================================================
-// cli.sx — process command-line argument accessor (macOS), pure sx.
+// cli.sx — process command-line argument accessor (macOS, Linux), pure sx.
 //
 // `os_args(buf)` returns the real OS-level process argv as a `[]string`,
-// each element a zero-copy VIEW over the C runtime's argv memory. The
-// caller provides the `buf: []string` backing (typically a stack array);
-// every element points straight into the process's own argv block, which
-// lives for the whole process lifetime, so the views never dangle.
+// each element a VIEW over storage that lives for the whole process, so
+// the views never dangle. The caller provides the `buf: []string`
+// backing (typically a stack array).
 //
-// Zero heap, zero per-arg allocation: nothing here touches
-// `context.allocator`. The returned slice header is a by-value stack
-// return whose `.ptr` is the caller's `buf` and whose elements are views
-// into C argv — ladder rungs "by-value", "view", and "caller buffer".
+// No per-arg allocation, and nothing here touches `context.allocator`.
+// The returned slice header is a by-value stack return whose `.ptr` is
+// the caller's `buf` — ladder rungs "by-value", "view", and "caller
+// buffer".
 //
 // `sx run <prog.sx> ...` reality — READ THIS BEFORE CONSUMING:
 //   Under `sx run`, the process argv is the sx INTERPRETER's argv, e.g.
@@ -22,29 +21,104 @@
 //   args (dropping the `sx run prog.sx` prefix, or via an sx-run
 //   convention) is a CONSUMER concern, NOT here.
 //
-// Platform: macOS only, via the C runtime's `_NSGetArgv()`
-// (char***) and `_NSGetArgc()` (int*). On any other OS the accessors bail
-// loudly (message + `EX_UNAVAILABLE` exit via `process.exit`) rather than
-// returning a silent empty.
+// Platform:
+//   - macOS: zero-copy views into the C runtime's own argv block, reached
+//     through `_NSGetArgv()` (char***) and `_NSGetArgc()` (int*).
+//   - Linux: views into the `/proc/self/cmdline` blob, slurped once into a
+//     mapping this module never unmaps.
+//   - Other targets: the accessors bail loudly (`EX_UNAVAILABLE` via
+//     `process.exit`) rather than returning a silent empty.
 // =====================================================================
 
 #import "modules/std/core.sx";   // out
 #import "modules/build.sx";
 proc :: #import "modules/std/process.sx";
-c :: #import "modules/std/c.sx"; // the shared libc handle for the macOS crt externs below
+c :: #import "modules/std/c.sx"; // the shared libc handle for the per-OS externs below
 
-// _NSGetArgv/_NSGetArgc are macOS-specific — not in the shared c.sx surface —
+// The argv externs below are OS-specific — not in the shared c.sx surface —
 // so keep them here, bound through the shared libc handle.
 libc :: c.libc;
 
-// macOS C-runtime argv/argc accessors (crt_externs.h):
-//   extern char ***_NSGetArgv(void);   extern int *_NSGetArgc(void);
-// Each returns a pointer to the runtime's slot; dereference once for the
-// `char**` / `int` the process was launched with. Declared as `*i64` /
-// `*i32` since on 64-bit a `char***` is just a pointer to a pointer-sized
-// slot.
-ns_get_argv :: () -> *i64 extern libc "_NSGetArgv";
-ns_get_argc :: () -> *i32 extern libc "_NSGetArgc";
+// Unbraced case arms keep their declarations at module scope.
+inline if OS == {
+    case .macos:
+        // macOS C-runtime argv/argc accessors (crt_externs.h):
+        //   extern char ***_NSGetArgv(void);   extern int *_NSGetArgc(void);
+        // Each returns a pointer to the runtime's slot; dereference once for
+        // the `char**` / `int` the process was launched with. Declared as
+        // `*i64` / `*i32` since on 64-bit a `char***` is just a pointer to a
+        // pointer-sized slot.
+        ns_get_argv :: () -> *i64 extern libc "_NSGetArgv";
+        ns_get_argc :: () -> *i32 extern libc "_NSGetArgc";
+
+    case .linux:
+        // glibc exposes no argv accessor, so the source is the kernel's own
+        // record: the NUL-separated blob at /proc/self/cmdline. It is slurped
+        // once into an anonymous mapping that is never unmapped, so the views
+        // over it stay valid for the whole process.
+        CMDLINE_PROT_RW  :i32: 3;      // PROT_READ | PROT_WRITE
+        CMDLINE_MAP_AP   :i32: 0x22;   // MAP_PRIVATE (0x2) | MAP_ANON (0x20)
+        CMDLINE_O_RDONLY :i32: 0;
+        CMDLINE_FIRST_CAP :: 4096;
+
+        cmdline : string = "";         // the NUL-separated blob
+        cmdline_argc : i64 = -1;       // -1 until `cmdline_load` has run
+
+        // Read the whole file into `buf`, returning the byte count, or -1 when
+        // it cannot be opened or read. A count below `cap` means EOF was
+        // reached.
+        cmdline_read :: (buf: [*]u8, cap: i64) -> i64 {
+            fd := c.open("/proc/self/cmdline", CMDLINE_O_RDONLY, 0);
+            if fd < 0 { return -1; }
+            at := 0;
+            while at < cap {
+                made := c.read(fd, *buf[at], xx (cap - at)).(i64);
+                if made < 0 { c.close(fd); return -1; }
+                if made == 0 { break; }
+                at += made;
+            }
+            c.close(fd);
+            return at;
+        }
+
+        // Slurp the blob and count its NUL-terminated tokens. procfs reports
+        // no size up front, so the mapping doubles until one read reaches EOF
+        // inside it — a full buffer is indistinguishable from a longer blob,
+        // and a truncated last token would be a silently dropped argument.
+        cmdline_load :: () {
+            if cmdline_argc >= 0 { return; }
+            cap := CMDLINE_FIRST_CAP;
+            while true {
+                region := c.mmap(null, cap, CMDLINE_PROT_RW, CMDLINE_MAP_AP, -1, 0);
+                // mmap signals failure with MAP_FAILED = (void*)-1, not null.
+                if (xx region) == (xx (0 - 1)) {
+                    out("std.cli: mmap failed while reading /proc/self/cmdline.\n");
+                    proc.exit(EX_UNAVAILABLE);
+                }
+                n := cmdline_read(xx region, cap);
+                if n < 0 {
+                    out("std.cli: cannot read /proc/self/cmdline.\n");
+                    proc.exit(EX_UNAVAILABLE);
+                }
+                if n < cap {
+                    cmdline.ptr = xx region;
+                    cmdline.len = n;
+                    break;
+                }
+                c.munmap(region, cap);
+                cap = cap * 2;
+            }
+            k := 0;
+            i := 0;
+            while i < cmdline.len {
+                if cmdline.ptr[i] == 0 { k += 1; }
+                i += 1;
+            }
+            cmdline_argc = k;
+        }
+
+    else: {}
+}
 
 // =====================================================================
 // EXIT-CODE & `--json` CONTRACT — the minimal surface `dist` (and
@@ -85,16 +159,20 @@ exit_usage :: () -> noreturn { proc.exit(EX_USAGE); }
 os_argc :: () -> i64 {
     inline if OS == {
         case .macos: { return (ns_get_argc().*).(i64); }
+        case .linux: {
+            cmdline_load();
+            return cmdline_argc;
+        }
         else: {
-            out("std.cli: unsupported platform — only macOS is implemented (needs _NSGetArgv/_NSGetArgc).\n");
+            out("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
             proc.exit(EX_UNAVAILABLE);
         }
     }
 }
 
 // Fill `buf` with VIEWS over the process argv and return the filled prefix
-// `buf[0 .. min(argc, buf.len)]`. Zero heap, zero copy: each element's
-// bytes live in the C runtime's argv block, valid for the whole process.
+// `buf[0 .. min(argc, buf.len)]`. Each element points directly into the
+// backend's process-lifetime storage; no per-argument bytes are copied.
 //
 // The caller owns `buf` (typically a stack `[N]string`); the returned
 // slice points into it and is valid for as long as `buf` is in scope. If
@@ -120,8 +198,26 @@ os_args :: (buf: []string) -> []string {
             result.len = n;
             return result;
         }
+        case .linux: {
+            cmdline_load();
+            n := if cmdline_argc > buf.len then buf.len else cmdline_argc;
+            i := 0;
+            at := 0;
+            while i < n {
+                len := 0;
+                while cmdline.ptr[at + len] != 0 { len += 1; }
+                tok : [*]u8 = *cmdline.ptr[at];
+                buf[i] = string{ ptr = tok, len = len };
+                at += len + 1;
+                i += 1;
+            }
+            result : []string = ---;
+            result.ptr = buf.ptr;
+            result.len = n;
+            return result;
+        }
         else: {
-            out("std.cli: unsupported platform — only macOS is implemented (needs _NSGetArgv/_NSGetArgc).\n");
+            out("std.cli: unsupported platform — only macOS and Linux are implemented.\n");
             proc.exit(EX_UNAVAILABLE);
         }
     }

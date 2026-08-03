@@ -368,7 +368,7 @@ fn compileCForJIT(allocator: std.mem.Allocator, io: std.Io, comp: *sx.core.Compi
     const c_infos = try comp.collectCImportSources();
     if (c_infos.len == 0) return .{ .allocator = allocator };
 
-    const obj_bufs = try sx.c_import.compileCToObjects(allocator, io, c_infos, comp.target_config);
+    const obj_bufs = try sx.c_import.compileCToObjects(allocator, io, c_infos, comp.target_config, .host_jit);
     return try sx.c_import.loadCObjectsForJIT(allocator, io, obj_bufs);
 }
 
@@ -382,7 +382,7 @@ fn compileCForBuild(allocator: std.mem.Allocator, io: std.Io, comp: *sx.core.Com
         return try sx.c_import.compileCWithEmcc(allocator, io, c_infos, comp.target_config, tmp_dir);
     }
 
-    const obj_bufs = try sx.c_import.compileCToObjects(allocator, io, c_infos, comp.target_config);
+    const obj_bufs = try sx.c_import.compileCToObjects(allocator, io, c_infos, comp.target_config, .linked_build);
     return try sx.c_import.writeCObjectFiles(allocator, io, obj_bufs, tmp_dir);
 }
 
