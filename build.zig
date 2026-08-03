@@ -361,8 +361,29 @@ pub fn build(b: *std.Build) void {
     });
     const run_async_substrate_tests = b.addRunArtifact(async_substrate_tests);
 
+    // The path layer reaches for the OS stat structs, which zig defines per
+    // target — `std.c.Stat` and `std.posix.Stat` are `void` on linux, so a
+    // host-target build alone cannot tell whether that code still compiles
+    // there. Semantically analyze it against linux on every host. The root
+    // (src/imports.linux_check.zig) references only the path decls, so this
+    // needs libc and nothing else: no LLVM headers, no link step.
+    const imports_linux_check = b.addObject(.{
+        .name = "imports-linux-check",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/imports.linux_check.zig"),
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .x86_64,
+                .os_tag = .linux,
+                .abi = .gnu,
+            }),
+            .optimize = .Debug,
+            .link_libc = true,
+        }),
+    });
+
     const test_step = b.step("test", "Run unit tests + the example/issue regression suite");
     test_step.dependOn(&run_async_substrate_tests.step);
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
+    test_step.dependOn(&imports_linux_check.step);
 }

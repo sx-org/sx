@@ -143,17 +143,41 @@ pub fn canonicalizeEntryPath(allocator: std.mem.Allocator, path: []const u8) []c
     return path;
 }
 
-/// Do two path spellings name the SAME file on disk? Symlink-following libc
-/// stat identity (st_dev + st_ino). Any stat failure → false — the caller
-/// keeps the spelling that was actually probed.
+/// A file's `(device, inode)` pair in the integer types its platform reports,
+/// compared field-wise. Zig defines `std.c.Stat` and `std.posix.Stat` as
+/// `void` on linux, so linux carries statx's split major/minor device id.
+const FileIdentity = switch (builtin.os.tag) {
+    .linux => struct { dev_major: u32, dev_minor: u32, ino: u64 },
+    else => struct { dev: std.c.dev_t, ino: std.c.ino_t },
+};
+
+/// Symlink-following identity of `path`, or null when it cannot be stat'd.
+fn fileIdentity(path: [:0]const u8) ?FileIdentity {
+    switch (builtin.os.tag) {
+        .linux => {
+            const linux = std.os.linux;
+            var st: linux.Statx = undefined;
+            const rc = linux.statx(linux.AT.FDCWD, path.ptr, 0, .{ .INO = true }, &st);
+            if (linux.errno(rc) != .SUCCESS or !st.mask.INO) return null;
+            return .{ .dev_major = st.dev_major, .dev_minor = st.dev_minor, .ino = st.ino };
+        },
+        else => {
+            var st: std.c.Stat = undefined;
+            if (c_stat(path.ptr, &st) != 0) return null;
+            return .{ .dev = st.dev, .ino = st.ino };
+        },
+    }
+}
+
+/// Do two path spellings name the SAME file on disk? Symlink-following stat
+/// identity (st_dev + st_ino). Any stat failure → false — the caller keeps
+/// the spelling that was actually probed.
 pub fn sameFileIdentity(allocator: std.mem.Allocator, a: []const u8, b: []const u8) bool {
     const az = allocator.dupeZ(u8, a) catch return false;
     const bz = allocator.dupeZ(u8, b) catch return false;
-    var sa: std.c.Stat = undefined;
-    var sb: std.c.Stat = undefined;
-    if (c_stat(az.ptr, &sa) != 0) return false;
-    if (c_stat(bz.ptr, &sb) != 0) return false;
-    return sa.dev == sb.dev and sa.ino == sb.ino;
+    const ia = fileIdentity(az) orelse return false;
+    const ib = fileIdentity(bz) orelse return false;
+    return std.meta.eql(ia, ib);
 }
 
 fn resolveImportPathUncanon(allocator: std.mem.Allocator, io: std.Io, base_dir: []const u8, raw_path: []const u8, root_path: ?[]const u8, stdlib_paths: []const []const u8) ![]const u8 {
