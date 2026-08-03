@@ -551,6 +551,38 @@ test "canonicalizePath: abs + cwd-relative + redundant ./ and .. spellings unify
     try std.testing.expectEqualStrings(canon, try imports.canonicalizePath(alloc, rel_dotted));
 }
 
+test "sameFileIdentity: distinct spellings of one file match; distinct and unstattable files do not" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = testIo();
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "mod.sx", .data = "x :: 1;\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "other.sx", .data = "y :: 2;\n" });
+
+    var dirbuf: [4096]u8 = undefined;
+    const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
+
+    const mod = try std.fmt.allocPrint(alloc, "{s}/mod.sx", .{absdir});
+    const other = try std.fmt.allocPrint(alloc, "{s}/other.sx", .{absdir});
+
+    const dotted = try std.fmt.allocPrint(alloc, "{s}/./mod.sx", .{absdir});
+    try std.testing.expect(imports.sameFileIdentity(alloc, mod, dotted));
+
+    // Symlink-following: the link and its target are one file.
+    try tmp.dir.symLink(io, "mod.sx", "link.sx", .{});
+    const link = try std.fmt.allocPrint(alloc, "{s}/link.sx", .{absdir});
+    try std.testing.expect(imports.sameFileIdentity(alloc, mod, link));
+
+    try std.testing.expect(!imports.sameFileIdentity(alloc, mod, other));
+
+    const missing = try std.fmt.allocPrint(alloc, "{s}/absent.sx", .{absdir});
+    try std.testing.expect(!imports.sameFileIdentity(alloc, mod, missing));
+    try std.testing.expect(!imports.sameFileIdentity(alloc, missing, missing));
+}
+
 // ── DeclTable unit tests ──
 
 // Every source / imported / namespaced declaration gets a stable DeclId; the
