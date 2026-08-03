@@ -535,15 +535,7 @@ fn zigLibDir(allocator: std.mem.Allocator, io: std.Io, zig_path: []const u8) ![]
     return allocator.dupe(u8, rest[0..end]);
 }
 
-/// The `libc/include` subdirectory choices a Linux link triple implies.
-///
-/// zig's libc-include dirs use two arch spellings: a "full" arch (`aarch64`,
-/// `x86_64`) and an arch "family" (`aarch64`, `x86`). The mapping per
-/// (arch × abi × dir) is irregular (e.g. x86_64 musl → `x86_64-linux-musl`,
-/// but x86_64 gnu → `x86-linux-gnu`, and the `-any` dir is always the family
-/// form `x86-linux-any`). One rule reproduces every observed case: prefer
-/// `<full>-linux-<suffix>`, fall back to `<family>-linux-<suffix>` (see
-/// resolveArchDir).
+/// The `libc/include` layout for a Linux link triple.
 pub const LibcHeaderLayout = struct {
     full_arch: []const u8,
     family_arch: []const u8,

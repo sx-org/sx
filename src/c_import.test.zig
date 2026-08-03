@@ -1,5 +1,6 @@
 const std = @import("std");
 const c_import = @import("c_import.zig");
+const target = @import("target.zig");
 
 const SRC = "int f(void) { return 1; }";
 const HDR = "int f(void);";
@@ -10,6 +11,21 @@ const none: []const []const u8 = &.{};
 
 fn baseKey() u64 {
     return c_import.cSourceCacheKey(SRC, &.{HDR}, &.{DEP}, &.{"A=1"}, &.{"-O2"}, &.{"inc"}, none, VER, "arm64-apple-darwin", "/sdk");
+}
+
+test "C compile purpose separates host JIT from a native Linux link target" {
+    const a = std.testing.allocator;
+    const native: target.TargetConfig = .{};
+    const link_libc = (try target.libcHeaderTarget(native, a, .linux)).?;
+    defer a.free(link_libc.triple);
+
+    const host_jit = c_import.selectCCompile(.host_jit, null, link_libc.triple);
+    try std.testing.expect(!host_jit.use_link_libc);
+    try std.testing.expect(host_jit.clang_triple == null);
+
+    const linked_build = c_import.selectCCompile(.linked_build, null, link_libc.triple);
+    try std.testing.expect(linked_build.use_link_libc);
+    try std.testing.expectEqualStrings(link_libc.triple, linked_build.clang_triple.?);
 }
 
 test "cSourceCacheKey: stable when nothing changes" {
