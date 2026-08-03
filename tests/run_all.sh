@@ -46,6 +46,7 @@ echo "  -> ok"
 # corpus + the LSP sweep all live in it. no_build_noise.sh runs it and also
 # asserts it stays silent on success.
 run_check "tests + corpus (quiet on success)" ./tests/no_build_noise.sh
+run_check "shim compile carries the target"   ./tests/shim_target_flags.sh
 run_check "resolver-target xfail set"         ./tests/resolver-target/run_resolver_target.sh
 run_check "wasm32 function values"            ./tests/wasm_function_values.sh
 
