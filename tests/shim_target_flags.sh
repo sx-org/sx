@@ -6,8 +6,6 @@
 # native-detects, and the object stops matching the module it links into. On a
 # Rosetta-emulated linux/amd64 host that detection yields a CPU clang rejects
 # outright.
-#
-# Usage: ./tests/shim_target_flags.sh
 
 set -uo pipefail
 

@@ -104,9 +104,8 @@ pub fn build(b: *std.Build) void {
     // gets zig's default libc++ — matching Homebrew. Same mechanism, both hosts.
     {
         const cc = b.addSystemCommand(&.{ b.graph.zig_exe, "c++" });
-        // A standalone compile carries no target of its own: without these it
-        // native-detects, and the object stops matching the module it links
-        // into. Both are the exact strings `mod` passes to its own compiles.
+        // Keep this standalone compile on mod's target query; otherwise it can
+        // detect the host independently and produce an incompatible object.
         cc.addArgs(&.{
             "-target",
             target.query.zigTriple(b.allocator) catch @panic("OOM"),
