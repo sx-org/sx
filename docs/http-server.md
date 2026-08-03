@@ -586,7 +586,7 @@ subprocess-isolated, on macOS and validated end-to-end on aarch64-Linux.
 - Graceful shutdown (`stop`), the `Stats` counters + `on_event` hook, and the
   per-request handler timeout (hard in pool mode).
 - `std/http_router`: method+path routing, path params, query/urlencoded-form
-  parsing, JSON request/response helpers (over `std/json`, integers only).
+  parsing, JSON request/response helpers (over `std/json`).
 - Underlying `std/socket`, `std/event`, `std/thread`, `std/mem` — the stable
   subset this server stands on; per-OS-correct on macOS + Linux.
 
@@ -617,7 +617,6 @@ subprocess-isolated, on macOS and validated end-to-end on aarch64-Linux.
 
 - **Inline handler timeout** — cooperative only; no hard preemption (use pool
   mode).
-- **`std/json` floats** — integers/strings/bools/null only.
 - **multipart/form-data** — out of scope in `std/http_router` (urlencoded only).
 - **Long-running fuzz / load / stress harnesses** — a bounded fuzz *smoke* runs
   in the corpus; exhaustive fuzzing and load testing belong in CI (see

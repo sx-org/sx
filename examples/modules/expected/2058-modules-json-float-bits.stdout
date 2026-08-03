@@ -1,0 +1,19 @@
+magnitude-0-sampled: ok
+magnitude-0-round-trips: ok
+magnitude-1-sampled: ok
+magnitude-1-round-trips: ok
+magnitude-2-sampled: ok
+magnitude-2-round-trips: ok
+magnitude-3-sampled: ok
+magnitude-3-round-trips: ok
+magnitude-4-sampled: ok
+magnitude-4-round-trips: ok
+subnormal-sampled: ok
+subnormal-round-trips: ok
+max-round-trips: ok
+min-round-trips: ok
+min-normal-round-trips: ok
+true-min-round-trips: ok
+epsilon-round-trips: ok
+one-round-trips: ok
+=== DONE ===
