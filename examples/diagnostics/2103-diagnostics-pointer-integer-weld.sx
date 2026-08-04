@@ -1,8 +1,6 @@
-// A pointer never implicitly reinterprets as an integer, nor an integer as a
-// pointer, whatever the destination: a UFCS method call whose receiver lands on
-// an integer parameter, the same call written plain, an argument, a
-// declaration, an assignment, and a return. Only `xx` / `.(T)` spells the
-// reinterpretation.
+// Pointer/integer reinterpretation requires an explicit cast whose target is
+// the destination type. The rule applies to calls, declarations, assignments,
+// and returns, including optional pointer values.
 
 #import "modules/std.sx";
 
@@ -18,17 +16,28 @@ main :: () -> i32 {
     o := Obj{};
     p := *o;
 
-    p.flush();          // UFCS receiver welded into an i64 parameter
-    flush(p);           // the same call written plain
-    n := take(p);       // argument
+    p.flush();
+    flush(p);
+    n := take(p);
 
-    m : i64 = p;        // declaration
-    m = p;              // assignment
-    r := give(p);       // return, refused inside `give`
+    m : i64 = p;
+    m = p;
+    r := give(p);
 
-    q : *Obj = m;       // integer into a pointer slot
-    c : cstring = 5;    // integer into a cstring
+    q : *Obj = m;
+    c : cstring = 5;
 
-    print("{} {} {} {}\n", n, r, q == null, c == null);
+    wrong_target : i64 = p.(*void);
+    number : i64 = 5;
+    wrong_pointer : *Obj = number.(u64);
+
+    maybe_p : ?*Obj = p;
+    maybe_number : i64 = maybe_p;
+    maybe_arg := take(maybe_p);
+
+    explicit_xx : i64 = xx p;
+    explicit_postfix : i64 = p.(i64);
+
+    print("{} {} {} {} {} {} {} {} {} {}\n", n, r, q == null, c == null, wrong_target, wrong_pointer == null, maybe_number, maybe_arg, explicit_xx, explicit_postfix);
     0
 }

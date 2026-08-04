@@ -1283,8 +1283,6 @@ pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
     return false;
 }
 
-/// The refusal for an implicit pointer↔integer weld, naming the reason from
-/// whichever side holds the address.
 fn diagnosePointerIntegerWeld(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) void {
     const d = self.diagnostics orelse return;
     if (self.externalErrorsExist()) return;
@@ -1422,16 +1420,16 @@ pub fn externalErrorsExist(self: *Lowering) bool {
 }
 
 /// The core unsafe-store predicate shared by `checkAssignable` and the
-/// named-return-default guard: a store of `src_ty` into a `dst_ty` slot has NO
-/// modeled coercion (`coerceMode` would pass it through UNCHANGED) AND the two
-/// differ in byte width — so the raw store overruns / under-fills the slot,
-/// corrupting memory. A same-width `.none` is a legitimate
-/// bit-compatible reinterpretation (`*T → [*]T`, `i64 → isize`, `*void ← *T`),
-/// which stays allowed. Callers should have already cleared the cheap
-/// cascade/escape-hatch cases (unresolved operands, explicit `xx`/`cast`).
+/// named-return-default guard. An unmodeled coercion is unsafe when the types
+/// have incompatible value shapes or different store widths. Same-width scalar
+/// and pointer families are bit-compatible (`i64 → isize`, `*T → [*]T`,
+/// `*void ← *T`). Callers clear unresolved operands and explicit casts first.
 pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
     if (src_ty == dst_ty) return false;
     if (self.coercionResolver().classify(src_ty, dst_ty) != .none) return false;
+    const src_optional = !src_ty.isBuiltin() and self.module.types.get(src_ty) == .optional;
+    const dst_optional = !dst_ty.isBuiltin() and self.module.types.get(dst_ty) == .optional;
+    if (src_optional != dst_optional) return true;
     // Two DIFFERENT function types are never a bit-compatible reinterpretation,
     // width match or not: both sides are one code pointer, but the callee reads
     // its arguments and return slot per the signature it was compiled for.
@@ -1464,9 +1462,7 @@ fn isFunctionType(self: *Lowering, ty: TypeId) bool {
 }
 
 /// A type whose values are a raw ADDRESS at the IR level, for the pointer-pun
-/// test above. `?*T` and protocol/`any` values carry a pointer but are not one
-/// (an optional is presence-tested, an erased value is a header), so they are
-/// out.
+/// test above. Optional and erased values use separate representation checks.
 pub fn isPointerValueKind(self: *Lowering, ty: TypeId) bool {
     if (ty == .cstring) return true;
     if (ty.isBuiltin()) return false;
@@ -1482,9 +1478,9 @@ pub fn isPointerValueKind(self: *Lowering, ty: TypeId) bool {
 /// closures ({fn,env}) are aggregate-IR even though string/any are
 /// builtins. Aggregate↔aggregate same-width reinterprets are the
 /// legitimate raw-view family (string→SliceRaw, closure→ClosureRaw);
-/// only an aggregate↔scalar pair is unrepresentable. Vectors and
-/// optionals are deliberately in NEITHER set (their repr varies /
-/// predates this guard) — they never pun-flag.
+/// only an aggregate↔scalar pair is unrepresentable. Optionals are handled
+/// separately above. Vectors are deliberately in NEITHER set because their
+/// representation varies — they never pun-flag.
 fn isAggregateValueKind(self: *Lowering, ty: TypeId) bool {
     if (ty == .string or ty == .any) return true;
     if (ty.isBuiltin()) return false;
@@ -1882,7 +1878,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // doesn't accept ptr↔int. The op is still emitted after the refusal so
         // lowering finishes; `hasErrors()` aborts the build.
         .ptr_int_bitcast => {
-            if (mode == .implicit and !self.xx_passthrough_refs.contains(val)) diagnosePointerIntegerWeld(self, src_ty, dst_ty);
+            if (mode == .implicit) diagnosePointerIntegerWeld(self, src_ty, dst_ty);
             return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
         },
         .narrow => return self.builder.emit(.{ .narrow = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
