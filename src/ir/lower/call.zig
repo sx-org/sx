@@ -69,7 +69,12 @@ fn selectedDispatchName(self: *Lowering, sf: *const SelectedFunc) []const u8 {
 /// receiver's own type answers first, an alias names its target, and a generic
 /// family is selected by the receiver — so a call only re-spells itself where that
 /// arm would have taken it anyway.
-fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: []const *Node) ?[]const u8 {
+const DestinationFirstUfcs = struct {
+    fd: *const ast.FnDecl,
+    name: []const u8,
+};
+
+fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: []const *Node) ?DestinationFirstUfcs {
     const alias_target = self.ufcsAliasTarget(fa.field);
     const eff_field = alias_target orelse fa.field;
     const fd0 = self.program_index.fn_ast_map.get(eff_field) orelse return null;
@@ -106,7 +111,7 @@ fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: 
     }
     if (fd.params.len == 0) return null;
     if (init_plan.boundTargetNode(fd.params[0].type_expr) == null) return null;
-    return eff_field;
+    return .{ .fd = fd, .name = eff_field };
 }
 
 
@@ -780,6 +785,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const syn_call = ast.Call{ .callee = c.callee, .args = expanded };
                     return self.lowerCall(&syn_call);
                 }
+                // Monomorphization binds args by parameter position and drops
+                // the rest, so the count has to answer for itself here — the
+                // arity check the main dispatch runs is downstream of this arm.
+                if (self.checkCallArity(fd, c.callee.data.identifier.name, c.args.len, false, c.callee.span)) return Ref.none;
                 // Types are explicit when call args match param count (e.g., are_equal(Point, p1, p2))
                 // Types are inferred when call args < param count (e.g., are_equal(p1, p2))
                 const types_explicit = c.args.len == fd.params.len;
@@ -963,11 +972,13 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             .type_prefix, .func, .callable_value, .non_callable, .missing, .not_visible, .ambiguous => false,
         };
         if (value_receiver_call and !author_declines) {
-            if (destinationFirstUfcs(self, &fa, c.args)) |target_name| {
-                const syn_args = self.alloc.alloc(*Node, c.args.len + 1) catch unreachable;
+            if (destinationFirstUfcs(self, &fa, c.args)) |target| {
+                const args = self.expandSpreadArgNodes(c.args) orelse c.args;
+                if (self.checkCallArity(target.fd, fa.field, args.len + 1, true, c.callee.span)) return Ref.none;
+                const syn_args = self.alloc.alloc(*Node, args.len + 1) catch unreachable;
                 syn_args[0] = @constCast(fa.object);
-                @memcpy(syn_args[1..], c.args);
-                const callee = self.synthNode(.{ .identifier = .{ .name = target_name } }, c.callee.span, c.callee.source_file);
+                @memcpy(syn_args[1..], args);
+                const callee = self.synthNode(.{ .identifier = .{ .name = target.name } }, c.callee.span, c.callee.source_file);
                 const syn_call = ast.Call{ .callee = callee, .args = syn_args };
                 return self.lowerCall(&syn_call);
             }
@@ -4222,24 +4233,32 @@ pub fn lowerDefaultArg(self: *Lowering, fd: *const ast.FnDecl, idx: usize, call_
 /// declared parameter list. `supplied` counts the args as they bind to
 /// params — receiver included for dot-dispatch, defaults not
 /// appended. Returns true when a diagnostic was emitted (the call must
-/// not lower). Pack / comptime / generic / `#compiler` / `intrinsic`
-/// callees bind args through their own dispatch and are exempt.
+/// not lower). Pack / comptime / `#compiler` / `intrinsic` callees bind
+/// args through their own dispatch and are exempt.
 pub fn checkCallArity(self: *Lowering, fd: *const ast.FnDecl, callee_name: []const u8, supplied: usize, has_receiver: bool, span: ast.Span) bool {
-    if (fd.type_params.len > 0 or hasComptimeParams(fd) or isPackFn(fd)) return false;
+    if (hasComptimeParams(fd) or isPackFn(fd)) return false;
     switch (fd.body.data) {
         .intrinsic_expr => return false,
         else => {},
     }
+    // Args bind to the params that declare no type parameter of their own:
+    // a type-decl slot is filled by inference, and `lowerGenericCall` reads
+    // it from the arg list only in the all-slots-spelled form accepted below.
     var min: usize = 0;
-    var max: ?usize = fd.params.len;
-    for (fd.params, 0..) |p, i| {
+    var count: usize = 0;
+    var variadic = false;
+    for (fd.params) |p| {
+        if (isTypeParamDecl(&p, fd.type_params)) continue;
         if (p.is_variadic) {
-            max = null;
+            variadic = true;
             break;
         }
-        if (p.default_expr == null) min = i + 1;
+        count += 1;
+        if (p.default_expr == null) min = count;
     }
+    const max: ?usize = if (variadic) null else count;
     if (supplied >= min and (max == null or supplied <= max.?)) return false;
+    if (fd.type_params.len > 0 and supplied == fd.params.len) return false;
     if (self.diagnostics) |d| {
         // Dot-dispatch report counts the user-visible args: the receiver
         // slot is implicit at the call site, so it is elided from both

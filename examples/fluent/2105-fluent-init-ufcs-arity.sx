@@ -1,0 +1,55 @@
+// An `@Init`-bound parameter is a parameter: a call that fills the list exactly
+// runs, spelled either way.
+//
+// The bound decides how the first argument is TAKEN — formed rather than
+// evaluated — and a dot-call on such a function is re-read as the ordinary call, so
+// the receiver occupies that first slot. What follows it are ordinary parameters,
+// defaulted ones included, and they bind there as they bind anywhere.
+#import "modules/std.sx";
+
+Total :: struct { sum: i64 = 0; n: i64 = 0; }
+#context_extend acc: *Total = null;
+
+add :: ufcs (value: $I/@Init(i64)) {
+    slot: i64 = ---;
+    value.write(*slot);
+    context.acc.sum += slot;
+    context.acc.n += 1;
+}
+
+// The bound sits beside ordinary parameters, one of them defaulted.
+scale :: ufcs (value: $I/@Init(i64), by: i64, plus: i64 = 1) {
+    slot: i64 = ---;
+    value.write(*slot);
+    context.acc.sum += slot * by + plus;
+    context.acc.n += 1;
+}
+
+// The same shape without the bound: the receiver is evaluated, and the count is
+// the same count.
+bump :: ufcs (value: i64, by: i64) {
+    context.acc.sum += value * by;
+    context.acc.n += 1;
+}
+
+main :: () -> i32 {
+    total := Total{};
+    push .{ acc = *total } {
+        (40 + 2).add();
+        add(8);
+
+        (2).scale(3);
+        scale(2, 3);
+        (2).scale(3, 4);
+        scale(2, 3, 4);
+
+        (5).bump(2);
+        bump(5, 2);
+    }
+    print("sum={} n={}\n", total.sum, total.n);
+    0
+}
+
+// ** stdout **
+// sum=104 n=8
+//
