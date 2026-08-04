@@ -245,6 +245,11 @@ fn printInst(instruction: *const Inst, ref_idx: u32, tt: *const TypeTable, write
             try writer.print("store %{d}, %{d}\n", .{ s.ptr.index(), s.val.index() });
             return;
         },
+        .volatile_load => |u| try writer.print("volatile_load %{d} : ", .{u.operand.index()}),
+        .volatile_store => |s| {
+            try writer.print("volatile_store %{d}, %{d}\n", .{ s.ptr.index(), s.val.index() });
+            return;
+        },
         .atomic_load => |a| try writer.print("atomic_load %{d} {s} : ", .{ a.ptr.index(), @tagName(a.ordering) }),
         .atomic_store => |a| {
             try writer.print("atomic_store %{d}, %{d} {s}\n", .{ a.ptr.index(), a.val.index(), @tagName(a.ordering) });
@@ -549,7 +554,7 @@ fn writeConstant(val: ConstantValue, writer: Writer) !void {
 
 fn isVoidOp(op: Op) bool {
     return switch (op) {
-        .store, .global_set, .br, .cond_br, .switch_br, .ret, .ret_void, .@"unreachable" => true,
+        .store, .volatile_store, .global_set, .br, .cond_br, .switch_br, .ret, .ret_void, .@"unreachable" => true,
         else => false,
     };
 }

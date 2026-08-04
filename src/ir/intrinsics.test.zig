@@ -107,14 +107,29 @@ fn collectDecls(
         // `build_options :: () -> BuildOptions intrinsic;`). Taking the first
         // `::` would name the wrong declaration.
         const colons = std.mem.lastIndexOf(u8, stmt, "::") orelse continue;
-        // The declared name is the last identifier before that `::`.
+        // The declared name is the last identifier before that `::`, with its
+        // `@` sigil when it has one — the sigil is part of the registered name.
         const head = std.mem.trimEnd(u8, stmt[0..colons], " \t\r\n");
         var start: usize = head.len;
         while (start > 0 and isIdentChar(head[start - 1])) start -= 1;
+        if (start > 0 and head[start - 1] == '@') start -= 1;
         const name = head[start..];
         if (name.len == 0) continue;
         try out.append(alloc, try alloc.dupe(u8, name));
     }
+}
+
+test "collectDecls keeps an `@` sigil, which is part of the registered name" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var out = std.ArrayList([]const u8).empty;
+    try collectDecls(arena.allocator(),
+        \\size_of :: ($T: Type) -> i64 intrinsic;
+        \\@volatile_load :: ($T: Type, address: *T) -> T intrinsic;
+    , &out);
+    try std.testing.expectEqual(@as(usize, 2), out.items.len);
+    try std.testing.expectEqualStrings("size_of", out.items[0]);
+    try std.testing.expectEqualStrings("@volatile_load", out.items[1]);
 }
 
 var g_threaded: ?std.Io.Threaded = null;

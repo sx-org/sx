@@ -90,6 +90,23 @@ any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
 raw_any_data :: (av: any) -> *void intrinsic;
 raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 
+// ── Volatile memory access ──────────────────────────────────────────────────
+// The access is emitted exactly as written: the optimizer may not elide it,
+// duplicate it, fuse it with a neighbour, or move it across another volatile
+// access. It is for storage whose reads and writes are themselves observable —
+// a memory-mapped device register, a buffer a signal handler touches, memory
+// another process maps.
+//
+// Volatile is NOT atomic: the access carries no memory ordering, orders nothing
+// between threads, and is not guaranteed indivisible. Sharing data between
+// threads is `Atomic($T)`'s job (modules/std/atomic.sx).
+//
+// `T` is any type with storage — integer, float, bool, pointer, enum, vector,
+// or an aggregate. The access is one typed load/store of `T`, so an aggregate
+// `T` moves as a whole rather than field by field.
+@volatile_load  :: ($T: Type, address: *T) -> T intrinsic;
+@volatile_store :: ($T: Type, address: *T, value: T) intrinsic;
+
 // ── The comptime compiler-API readers ────────────────────────────────────────
 // Serviced by the comptime evaluator (mode `evaluate`) — they read and mint into
 // the compiler's own string pool and type table, so they exist only at `#run` /

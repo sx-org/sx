@@ -157,6 +157,9 @@ pub const Id = enum(u16) {
     atomic_fence,
     atomic_cmpxchg,
     atomic_cmpxchg_weak,
+    // ── std/core.sx — volatile memory access ────────────────────────────────
+    @"@volatile_load",
+    @"@volatile_store",
 };
 
 pub const Entry = struct {
@@ -316,6 +319,14 @@ pub const entries = [_]Entry{
     .{ .id = .atomic_fence, .module = atomic, .name = "atomic_fence", .mode = .lower, .arity = 1 },
     .{ .id = .atomic_cmpxchg, .module = atomic, .name = "atomic_cmpxchg", .mode = .lower, .arity = 6 },
     .{ .id = .atomic_cmpxchg_weak, .module = atomic, .name = "atomic_cmpxchg_weak", .mode = .lower, .arity = 6 },
+
+    // ── volatile: lowered to the volatile load/store IR ops. The access is
+    // non-atomic and carries no ordering, so — like the atomics — the VM
+    // interprets it directly and `#run` sees an ordinary access. The `@` is
+    // part of the name: these are compiler-maintained contracts (contracts.zig)
+    // as well as intrinsics.
+    .{ .id = .@"@volatile_load", .module = core, .name = "@volatile_load", .mode = .lower, .arity = 2 },
+    .{ .id = .@"@volatile_store", .module = core, .name = "@volatile_store", .mode = .lower, .arity = 3 },
 };
 
 /// Look up an intrinsic by its declared name. `source_file` is the declaration's

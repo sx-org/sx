@@ -923,6 +923,28 @@ fence(.seq_cst);   // standalone memory fence
 combinations are compile errors. The same operations run at compile time (`#run`)
 under single-threaded semantics.
 
+### Volatile access (`@volatile_load` / `@volatile_store`)
+
+Compiler intrinsics declared by `modules/std/core.sx`, so they resolve with no
+import. Each is one typed access emitted exactly as written — the optimizer may
+not elide it, duplicate it, fuse it with a neighbour, or move it across another
+volatile access:
+
+```sx
+first  := @volatile_load(i32, address);
+second := @volatile_load(i32, address);   // a second real read, not a reuse of `first`
+@volatile_store(i32, address, second + 1);
+```
+
+For storage whose reads and writes are themselves observable: a memory-mapped
+device register, a buffer a signal handler touches, memory another process maps.
+`T` is any type with storage — integer, float, bool, pointer, enum, vector, or
+an aggregate, which moves as a whole rather than field by field.
+
+**Volatile is not atomic.** The access carries no memory ordering, orders
+nothing between threads, and is not guaranteed indivisible. Sharing data between
+threads is `Atomic($T)`'s job.
+
 ### Async / Concurrency (`context.io`, `modules/std/sched.sx`)
 
 A pure-sx cooperative fiber runtime — **colorblind async**, with no function

@@ -2752,6 +2752,89 @@ test "type alias: tuple-type alias registers the structural tuple TypeId" {
     try std.testing.expect(pt_info.tuple.names == null);
 }
 
+test "lower: `@volatile_load` / `@volatile_store` reach the volatile ops" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\main :: () {
+        \\    slot: i64 = 1;
+        \\    v := @volatile_load(i64, *slot);
+        \\    @volatile_store(i64, *slot, v + 1);
+        \\}
+        \\
+    ;
+    const source = try alloc.dupeZ(u8, src);
+    var p = parser.Parser.init(alloc, source);
+    const root = p.parse() catch return error.ParseFailed;
+
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var diagnostics = errors.DiagnosticList.init(alloc, source, "test.sx");
+    var lowering = Lowering.init(&module);
+    lowering.diagnostics = &diagnostics;
+    lowering.lowerRoot(root);
+    try std.testing.expect(!diagnostics.hasErrors());
+
+    const main_fn = &module.functions.items[@intFromEnum(lowering.resolveFuncByName("main").?)];
+    var loads: usize = 0;
+    var stores: usize = 0;
+    for (main_fn.blocks.items) |blk| {
+        for (blk.insts.items) |ins| {
+            switch (ins.op) {
+                .volatile_load => |u| {
+                    _ = u;
+                    loads += 1;
+                    try std.testing.expectEqual(TypeId.i64, ins.ty);
+                },
+                .volatile_store => |s| {
+                    stores += 1;
+                    try std.testing.expectEqual(TypeId.i64, s.val_ty);
+                },
+                else => {},
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), loads);
+    try std.testing.expectEqual(@as(usize, 1), stores);
+}
+
+test "lower: the unprefixed spelling is an ordinary call, not a volatile access" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // `volatile_load` without the `@` names nothing the compiler owns, so a
+    // user function may carry it and must lower as itself.
+    const src =
+        \\volatile_load :: (n: i64) -> i64 { return n; }
+        \\main :: () {
+        \\    v := volatile_load(7);
+        \\}
+        \\
+    ;
+    const source = try alloc.dupeZ(u8, src);
+    var p = parser.Parser.init(alloc, source);
+    const root = p.parse() catch return error.ParseFailed;
+
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var diagnostics = errors.DiagnosticList.init(alloc, source, "test.sx");
+    var lowering = Lowering.init(&module);
+    lowering.diagnostics = &diagnostics;
+    lowering.lowerRoot(root);
+    try std.testing.expect(!diagnostics.hasErrors());
+
+    const main_fn = &module.functions.items[@intFromEnum(lowering.resolveFuncByName("main").?)];
+    for (main_fn.blocks.items) |blk| {
+        for (blk.insts.items) |ins| {
+            try std.testing.expect(ins.op != .volatile_load);
+            try std.testing.expect(ins.op != .volatile_store);
+        }
+    }
+}
+
 test "type alias: pack-spread tuple alias poisons to .unresolved with a diagnostic" {
     // `Bad :: Tuple(..Ts)` has no pack binding at a top-level alias; the
     // stateless resolver preserves the pack SHAPE as a tuple carrying an

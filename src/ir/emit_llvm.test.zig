@@ -12,6 +12,7 @@ const Function = inst_mod.Function;
 const Module = mod_mod.Module;
 const Builder = mod_mod.Builder;
 const LLVMEmitter = emit_mod.LLVMEmitter;
+const OptLevel = @import("../target.zig").TargetConfig.OptLevel;
 
 fn str(module: *Module, s: []const u8) types.StringId {
     return module.types.internString(s);
@@ -235,6 +236,83 @@ test "emit: alloca, store, load" {
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "store") != null);
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "load") != null);
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "ret i64") != null);
+}
+
+fn countOccurrences(haystack: []const u8, needle: []const u8) usize {
+    var n: usize = 0;
+    var i: usize = 0;
+    while (std.mem.indexOfPos(u8, haystack, i, needle)) |at| : (i = at + needle.len) n += 1;
+    return n;
+}
+
+/// Build `f()` with three loads of one slot plus a store back, either volatile
+/// or plain, and return the module's LLVM text at `opt`.
+fn volatileProbeIr(alloc: std.mem.Allocator, name: [:0]const u8, volatile_access: bool, opt: OptLevel) ![]const u8 {
+    var module = Module.init(alloc);
+    defer module.deinit();
+
+    var b = Builder.init(&module);
+    // External linkage: an internal function with no callers is dead, and O3
+    // deletes it whole — volatile body and all — before the probe can read it.
+    const fid = b.beginFunction(str(&module, "f"), &.{}, .i64);
+    module.getFunctionMut(fid).linkage = .external;
+    const entry = b.appendBlock(str(&module, "entry"), &.{});
+    b.switchToBlock(entry);
+
+    const slot = b.alloca(.i64);
+    b.store(slot, b.constInt(1, .i64));
+    var last: Ref = undefined;
+    for (0..3) |_| {
+        last = if (volatile_access)
+            b.emit(.{ .volatile_load = .{ .operand = slot } }, .i64)
+        else
+            b.load(slot, .i64);
+    }
+    if (volatile_access) {
+        b.emitVoid(.{ .volatile_store = .{ .ptr = slot, .val = last, .val_ty = .i64 } }, .void);
+    } else {
+        b.store(slot, last);
+    }
+    b.ret(last, .i64);
+    b.finalize();
+
+    var emitter = LLVMEmitter.init(alloc, &module, name, .{ .opt_level = opt });
+    defer emitter.deinit();
+    emitter.emit();
+    try std.testing.expect(emitter.verify());
+    try emitter.optimize();
+    try emitter.verifyWithMessage();
+    return alloc.dupe(u8, emitter.dumpToString());
+}
+
+test "emit: `@volatile_load` / `@volatile_store` carry the volatile bit and no ordering" {
+    const alloc = std.testing.allocator;
+    const ir_str = try volatileProbeIr(alloc, "test_volatile", true, .none);
+    defer alloc.free(ir_str);
+
+    try std.testing.expect(std.mem.indexOf(u8, ir_str, "load volatile i64") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ir_str, "store volatile i64") != null);
+    // Volatile is not atomic: no `load atomic` / `store atomic` form, and no
+    // ordering keyword anywhere in the emitted text.
+    try std.testing.expect(std.mem.indexOf(u8, ir_str, "atomic") == null);
+    try std.testing.expect(std.mem.indexOf(u8, ir_str, "monotonic") == null);
+    try std.testing.expect(std.mem.indexOf(u8, ir_str, "seq_cst") == null);
+}
+
+test "emit: O3 keeps every volatile access, and elides the plain ones" {
+    const alloc = std.testing.allocator;
+
+    const vol = try volatileProbeIr(alloc, "test_volatile_o3", true, .aggressive);
+    defer alloc.free(vol);
+    try std.testing.expectEqual(@as(usize, 3), countOccurrences(vol, "load volatile"));
+    try std.testing.expectEqual(@as(usize, 1), countOccurrences(vol, "store volatile"));
+
+    // The same shape without the volatile bit is what the optimizer is free to
+    // collapse — the contrast is the whole point of the flag.
+    const plain = try volatileProbeIr(alloc, "test_plain_o3", false, .aggressive);
+    defer alloc.free(plain);
+    try std.testing.expectEqual(@as(usize, 0), countOccurrences(plain, "load "));
+    try std.testing.expectEqual(@as(usize, 0), countOccurrences(plain, "store "));
 }
 
 test "emit: atomic load/store (seq_cst, aligned)" {

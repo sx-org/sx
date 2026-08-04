@@ -110,6 +110,10 @@ the import can stand in for the canonical declaration:
 @SourceSite :: struct { … }   // ERROR: 'modules/std/core.sx' declares it
 ```
 
+A contract need not be a type: `@volatile_load` and `@volatile_store` (§Intrinsics,
+Memory) are `intrinsic` function declarations under the same (module, name)
+identity rule.
+
 Separately, a few `@` names are **compiler-formed** — `@Init(T)` and
 `@BuildBlock(P)`. Those are formed for a parameter, never declared and never
 constructed, so they have no stdlib declaration and no literal form.
@@ -5674,6 +5678,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `memset(dst: *void, val: i64, size: i64) -> void` — fill `size` bytes at `dst` with `val`
 - `size_of($T: Type) -> i64` — size of type `T` in bytes
 - `align_of($T: Type) -> i64` — alignment of type `T` in bytes
+- `@volatile_load($T: Type, address: *T) -> T` / `@volatile_store($T: Type, address: *T, value: T)` — one typed access emitted exactly as written: the optimizer may not elide it, duplicate it, fuse it with a neighbour, or move it across another volatile access. For storage whose reads and writes are themselves observable — a memory-mapped device register, a buffer a signal handler touches, memory another process maps. **Volatile is not atomic**: the access carries no memory ordering, orders nothing between threads, and is not guaranteed indivisible; sharing data between threads is `Atomic($T)`'s job (`modules/std/atomic.sx`). `T` is any type with storage — integer, float, bool, pointer, enum, vector, or an aggregate, which moves as a whole rather than field by field. A valueless `T` is a compile error. Both carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`, and the unprefixed spellings are ordinary identifiers a program may bind.
 
 ### Type Introspection
 - `type_of(val: $T) -> Type` — returns the runtime type tag of a value

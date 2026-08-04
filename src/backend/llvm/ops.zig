@@ -442,6 +442,46 @@ pub const Ops = struct {
         self.e.advanceRefCounter();
     }
 
+    // ── Volatile ──────────────────────────────────────────
+    // A volatile access is the ordinary load/store with LLVM's volatile bit
+    // set: the optimizer may not elide, duplicate, or fuse it. No ordering is
+    // attached — a volatile access is NOT atomic and orders nothing between
+    // threads, so the emitters below never touch LLVMSetOrdering.
+
+    pub fn emitVolatileLoad(self: Ops, instruction: *const Inst, un: UnaryOp) void {
+        const ptr = self.e.resolveRef(un.operand);
+        const ptr_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(ptr));
+        if (ptr_kind == c.LLVMPointerTypeKind and instruction.ty != .void) {
+            const llvm_ty = self.e.toLLVMType(instruction.ty);
+            const result = c.LLVMBuildLoad2(self.e.builder, llvm_ty, ptr, "volatile_load");
+            c.LLVMSetVolatile(result, 1);
+            self.e.mapRef(result);
+        } else {
+            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(if (instruction.ty == .void) .i64 else instruction.ty)));
+        }
+    }
+
+    pub fn emitVolatileStore(self: Ops, st: Store) void {
+        const ptr = self.e.resolveRef(st.ptr);
+        var val = self.e.resolveRef(st.val);
+        const ptr_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(ptr));
+        const val_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(val));
+        if (ptr_kind == c.LLVMPointerTypeKind and val_kind != c.LLVMVoidTypeKind) {
+            // Coerce the value to the pointer's IR target type, mirroring emitStore.
+            if (self.e.getRefIRType(st.ptr)) |ptr_ir_ty| {
+                const pointee_info = self.e.ir_mod.types.get(ptr_ir_ty);
+                const target_ty: ?c.LLVMTypeRef = switch (pointee_info) {
+                    .pointer => |p| self.e.toLLVMType(p.pointee),
+                    else => null,
+                };
+                if (target_ty) |tt| val = self.e.coerceArg(val, tt);
+            }
+            const store = c.LLVMBuildStore(self.e.builder, val, ptr);
+            c.LLVMSetVolatile(store, 1);
+        }
+        self.e.advanceRefCounter();
+    }
+
     // ── Atomics ───────────────────────────────────────────
     // Atomic load/store = ordinary LLVMBuildLoad2/Store made atomic via
     // LLVMSetOrdering, with a MANDATORY explicit alignment (the LLVM verifier

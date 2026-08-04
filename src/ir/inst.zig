@@ -196,6 +196,10 @@ pub const Op = union(enum) {
     load: UnaryOp, // load from pointer
     store: Store, // store value to pointer
 
+    // ── Volatile ────────────────────────────────────────────────────
+    volatile_load: UnaryOp, // load the optimizer may not elide, duplicate, or fuse
+    volatile_store: Store, // store the optimizer may not elide, duplicate, or fuse
+
     // ── Atomics ─────────────────────────────────────────────────────
     atomic_load: AtomicLoad, // atomic load from pointer with memory ordering
     atomic_store: AtomicStore, // atomic store to pointer with memory ordering
