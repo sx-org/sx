@@ -4735,13 +4735,12 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     };
 }
 
-/// Lower `+` / `-` when either operand is a pointer. `ptr ± int` (either order
-/// for `+`) becomes an element-scaled GEP typed as the pointer; `p - q` over
-/// one element type becomes the signed element distance. Every other pairing —
-/// two pointers under `+`, a mismatched-element difference, an integer minus a
-/// pointer, a non-integer offset — is rejected here with a located diagnostic,
-/// so no pointer ever reaches the integer add/sub arms. Null when neither
-/// operand is a pointer.
+/// Lower `+` / `-` when either operand is a pointer. `ptr ± int` over a sized
+/// pointee (either order for `+`) becomes an element-scaled GEP typed as the
+/// pointer; `p - q` over one nonzero-sized element type becomes the signed
+/// element distance. Every other pairing is rejected here with a located
+/// diagnostic, so no pointer ever reaches the integer add/sub arms. Null when
+/// neither operand is a pointer.
 pub fn lowerPointerArith(
     self: *Lowering,
     op: ast.BinaryOp.Op,
@@ -4788,6 +4787,14 @@ pub fn lowerPointerArith(
         return self.emitPlaceholder("pointer-offset-operand");
     }
 
+    const elem = if (ptr_on_left) l_elem.? else r_elem.?;
+    if (elem == .void or elem == .noreturn) {
+        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot offset '{s}': pointer arithmetic requires a sized pointee, but '{s}' is unsized", .{
+            self.formatTypeName(ptr_ty), self.formatTypeName(elem),
+        });
+        return self.emitPlaceholder("pointer-offset-unsized");
+    }
+
     // A GEP index is sign-extended to the pointer width, so a narrow or
     // unsigned offset is widened at its OWN signedness first.
     var index = if (ptr_on_left) rhs else lhs;
@@ -4797,9 +4804,15 @@ pub fn lowerPointerArith(
     return self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = index } }, ptr_ty);
 }
 
-/// `p - q` over one element type: the byte distance divided by the element
-/// size, as a signed element count.
+/// `p - q` over one nonzero-sized element type: the byte distance divided by
+/// the element size, as a signed element count.
 fn lowerPointerDistance(self: *Lowering, lhs: Ref, rhs: Ref, elem: TypeId, span: ast.Span) Ref {
+    if (elem == .void or elem == .noreturn) {
+        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot take the difference of pointers to '{s}': an unsized element has no element count", .{
+            self.formatTypeName(elem),
+        });
+        return self.emitPlaceholder("pointer-difference-unsized");
+    }
     const stride = self.module.types.typeSizeBytes(elem);
     if (stride == 0) {
         if (self.diagnostics) |d| d.addFmt(.err, span, "cannot take the difference of pointers to '{s}': a zero-sized element has no element count", .{

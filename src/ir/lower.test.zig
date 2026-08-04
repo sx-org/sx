@@ -1623,7 +1623,7 @@ test "lower: shared resolver types a pointer-typed field GEP as *field_ty, not f
     try std.testing.expect(found);
 }
 
-test "lower: pointer +/- lowers to an element-scaled gep, ptr-ptr to an isize distance" {
+test "pointer +/- lowers to an element-scaled gep, ptr-ptr to an isize distance" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();

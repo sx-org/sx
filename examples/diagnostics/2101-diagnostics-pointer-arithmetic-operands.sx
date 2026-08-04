@@ -5,6 +5,7 @@
 // - a difference across distinct element types has no element count
 // - only a pointer may stand on the left of a pointer subtraction
 // - the offset must be an integer
+// - offsets require a sized pointee; differences require a nonzero-sized pointee
 
 #import "modules/std.sx";
 
@@ -13,10 +14,16 @@ main :: () -> i32 {
     reals : [4]f64 = .[1.0, 2.0, 3.0, 4.0];
     p : [*]i32 = *ints[0];
     fp : [*]f64 = *reals[0];
+    vp : *void = null;
+    np : *noreturn = null;
 
     a := p + p;      // two pointers summed
     b := p - fp;     // difference across i32 and f64 elements
     c := 3 - p;      // integer minus pointer
     d := p + 1.5;    // float offset
+    e := vp + 1;     // unsized pointee offset
+    vp += 1;         // compound unsized pointee offset
+    f := vp - vp;    // unsized pointee difference
+    g := np - 1;     // noreturn is also unsized
     0
 }
