@@ -1,0 +1,5 @@
+error: a variadic parameter carries its type: '..name: []T' binds a slice, '..name: P' a protocol pack, '..$name' a comptime pack
+  --> examples/diagnostics/2106-diagnostics-variadic-parameter-needs-its-type.sx:6:17
+   |
+ 6 | f :: (n: i32, ..args) -> i32 {
+   |                 ^^^^

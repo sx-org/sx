@@ -2336,6 +2336,15 @@ pub const Parser = struct {
             self.advance();
             // Optional type annotation: if no ':', infer type from context
             if (self.current.tag != .colon) {
+                // A variadic binding has no context to infer from: the slice
+                // and protocol forms are their annotation, and `..$name` is a
+                // comptime pack whose types come from the call.
+                if (is_variadic and !is_ct_param) {
+                    return self.failAt(
+                        param_name_span,
+                        "a variadic parameter carries its type: '..name: []T' binds a slice, '..name: P' a protocol pack, '..$name' a comptime pack",
+                    );
+                }
                 const inferred_node = try self.createNode(param_name_span.start, .{ .inferred_type = {} });
                 try params.append(self.allocator, .{ .name = param_name, .name_span = param_name_span, .type_expr = inferred_node, .is_variadic = is_variadic, .is_comptime = is_ct_param, .is_raw = param_is_raw });
                 continue;
