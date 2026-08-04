@@ -196,6 +196,9 @@ pub const Op = union(enum) {
     load: UnaryOp, // load from pointer
     store: Store, // store value to pointer
 
+    volatile_load: UnaryOp, // load the optimizer may not elide, duplicate, or fuse
+    volatile_store: Store, // store the optimizer may not elide, duplicate, or fuse
+
     // ── Atomics ─────────────────────────────────────────────────────
     atomic_load: AtomicLoad, // atomic load from pointer with memory ordering
     atomic_store: AtomicStore, // atomic store to pointer with memory ordering
@@ -370,8 +373,9 @@ pub const Store = struct {
     /// Declared type of the value being stored. Threaded through so the
     /// interp's raw-pointer store knows the destination byte width — a
     /// `.int` Value alone is ambiguous (i8/i16/i32/i64/u*/usize/pointer
-    /// all flatten to `.int`). The LLVM emitter ignores this (LLVM knows
-    /// the width from the SSA value's type already).
+    /// all flatten to `.int`). For `volatile_store` it is the intrinsic's
+    /// `T` and fixes the access width in the LLVM emitter too; a plain
+    /// `store` leaves the emitter to take the width from the SSA value.
     val_ty: TypeId = .void,
 };
 

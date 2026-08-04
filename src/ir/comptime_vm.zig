@@ -1001,6 +1001,18 @@ pub const Vm = struct {
                 try self.writeField(table, frame.get(s.ptr.index()), vty, frame.get(s.val.index()));
                 return .{ .value = 0 }; // store has a void result but still occupies a Ref slot
             },
+            // Volatile constrains the OPTIMIZER, and the interp runs the ops it
+            // is given — so a volatile access is an ordinary load/store here.
+            .volatile_load => |u| {
+                const table = try self.requireTable();
+                return .{ .value = try self.readField(table, frame.get(u.operand.index()), ins.ty) };
+            },
+            .volatile_store => |s| {
+                const table = try self.requireTable();
+                const vty = if (s.val_ty != .void) s.val_ty else (try self.refTy(ref_types, s.val));
+                try self.writeField(table, frame.get(s.ptr.index()), vty, frame.get(s.val.index()));
+                return .{ .value = 0 };
+            },
             // Comptime is single-threaded, so seq_cst is trivially satisfied —
             // atomic load/store are ordinary load/store here (the ordering is
             // a no-op at comptime). Mirrors the design (§3): the interp needs no

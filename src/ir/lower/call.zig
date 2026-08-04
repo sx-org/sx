@@ -675,6 +675,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // Atomic intrinsics (atomic_load/atomic_store): a type arg + value args,
         // so lower them here (before generic arg lowering) like reflection calls.
         if (self.tryLowerAtomicIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
+        if (self.tryLowerVolatileIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
     }
     // Qualified intrinsic spelling is legal too. Only dispatch a compiler
     // recognizer after the full namespace path selected the exact declaration
@@ -684,6 +685,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         if (sf.decl.body.data == .intrinsic_expr) {
             if (self.tryLowerReflectionCall(sf.decl.name, c)) |ref| return ref;
             if (self.tryLowerAtomicIntrinsic(sf.decl.name, c)) |ref| return ref;
+            if (self.tryLowerVolatileIntrinsic(sf.decl.name, c)) |ref| return ref;
         }
     }
 
@@ -2737,6 +2739,8 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .atomic_fence,
         .atomic_cmpxchg,
         .atomic_cmpxchg_weak,
+        .@"@volatile_load",
+        .@"@volatile_store",
         // evaluate-only: the VM services these; they never lower at all.
         .raw_declare_type,
         .raw_register_type,
@@ -2958,6 +2962,8 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .sin,
         .cos,
         .floor,
+        .@"@volatile_load",
+        .@"@volatile_store",
         .raw_declare_type,
         .raw_register_type,
         .c_object_paths,
@@ -3183,6 +3189,169 @@ pub fn tryLowerAtomicIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
     return Ref.none; // store has a void result
 }
 
+/// Is `name` one of the volatile-access intrinsics? Asks the registry, then
+/// narrows by id — exhaustively, so a new intrinsic must classify itself here
+/// instead of defaulting to "not a volatile access".
+fn isVolatileIntrinsic(name: []const u8) bool {
+    const id = intrinsics.findByName(name) orelse return false;
+    return switch (id) {
+        .@"@volatile_load",
+        .@"@volatile_store",
+        => true,
+
+        .size_of,
+        .align_of,
+        .type_of,
+        .type_name,
+        .is_unsigned,
+        .struct_field_count,
+        .variant_count,
+        .struct_field_name,
+        .variant_name,
+        .struct_field_type,
+        .variant_type,
+        .struct_field_offset,
+        .struct_field_value,
+        .variant_payload,
+        .variant_value,
+        .variant_index,
+        .pointee_type,
+        .is_flags,
+        .is_identity,
+        .protocol_kind,
+        .error_name,
+        .vector_lanes,
+        .__sx_variant_tag_width,
+        .any_element,
+        .raw_any_data,
+        .raw_make_any,
+        .type_info,
+        .sqrt,
+        .sin,
+        .cos,
+        .floor,
+        .atomic_load,
+        .atomic_store,
+        .atomic_fetch_add,
+        .atomic_fetch_sub,
+        .atomic_fetch_and,
+        .atomic_fetch_or,
+        .atomic_fetch_xor,
+        .atomic_fetch_min,
+        .atomic_fetch_max,
+        .atomic_swap,
+        .atomic_fence,
+        .atomic_cmpxchg,
+        .atomic_cmpxchg_weak,
+        .raw_declare_type,
+        .raw_register_type,
+        .c_object_paths,
+        .link_libraries,
+        .emit_object,
+        .link,
+        .build_output,
+        .build_target,
+        .build_frameworks,
+        .build_flags,
+        .build_options,
+        .add_link_flag,
+        .add_framework,
+        .set_output_path,
+        .set_wasm_shell,
+        .add_asset_dir,
+        .asset_dir_count,
+        .asset_dir_src_at,
+        .asset_dir_dest_at,
+        .set_post_link_module,
+        .binary_path,
+        .set_bundle_path,
+        .set_bundle_id,
+        .set_codesign_identity,
+        .set_provisioning_profile,
+        .bundle_path,
+        .bundle_id,
+        .codesign_identity,
+        .provisioning_profile,
+        .target_triple,
+        .is_macos,
+        .is_ios,
+        .is_ios_device,
+        .is_ios_simulator,
+        .is_android,
+        .framework_count,
+        .framework_at,
+        .framework_path_count,
+        .framework_path_at,
+        .set_manifest_path,
+        .set_keystore_path,
+        .manifest_path,
+        .keystore_path,
+        .jni_main_count,
+        .jni_main_runtime_path_at,
+        .jni_main_java_source_at,
+        .on_build,
+        .raw_intern,
+        .raw_text_of,
+        .raw_find_type,
+        .raw_type_kind,
+        .raw_type_name,
+        .raw_field_count,
+        .raw_field_name,
+        .raw_field_type,
+        .raw_variant_value,
+        .raw_pointer_to,
+        => false,
+    };
+}
+
+/// Recognize the volatile intrinsics and lower them to the volatile IR ops:
+///   @volatile_load($T, address: *T) -> T
+///   @volatile_store($T, address: *T, value: T)
+/// `T` may be any type with storage — the access is an ordinary typed
+/// load/store that the optimizer must keep, so integers, floats, pointers and
+/// aggregates all qualify. A valueless `T` (`void`, a constraint protocol, a
+/// comptime `Type`) has nothing to access and is a loud diagnostic.
+///
+/// Gated on the registry: a name reaches the checks below only if
+/// `modules/std/core.sx` declares it as an intrinsic. The `@` sigil is part of
+/// the name, and `contracts` refuses the declaration in any other module.
+pub fn tryLowerVolatileIntrinsic(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
+    if (!isVolatileIntrinsic(name)) return null;
+
+    const is_load = std.mem.eql(u8, name, "@volatile_load");
+    const expected: usize = if (is_load) 2 else 3;
+    if (c.args.len != expected) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "{s} expects {d} arguments", .{ name, expected });
+        return Ref.none;
+    }
+
+    const elem_ty = self.resolveTypeArg(c.args[0]);
+    const has_storage = switch (self.module.types.get(elem_ty)) {
+        .void, .noreturn, .pack, .protocol, .type_value, .unresolved => false,
+        else => true,
+    };
+    if (!has_storage or self.typeSizeBytes(elem_ty) == 0) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "volatile access requires a type with storage — '{s}' is not eligible", .{self.formatTypeName(elem_ty)});
+        return Ref.none;
+    }
+
+    const ptr = self.lowerExpr(c.args[1]);
+    if (is_load) return self.builder.emit(.{ .volatile_load = .{ .operand = ptr } }, elem_ty);
+
+    // `value: T` takes the coercion any typed parameter takes — `target_type`
+    // steers literal lowering, `coerceToType` converts what a differently-typed
+    // expression produced. The conversion belongs here: signedness lives in the
+    // sx type, and the store the backend builds is one untyped value wide.
+    const saved_target = self.target_type;
+    self.target_type = elem_ty;
+    defer self.target_type = saved_target;
+    const raw_val = self.lowerExpr(c.args[2]);
+    const val = self.coerceToType(raw_val, self.builder.getRefType(raw_val), elem_ty);
+
+    self.builder.emitVoid(.{ .volatile_store = .{ .ptr = ptr, .val = val, .val_ty = elem_ty } }, .void);
+    return Ref.none; // store has a void result
+}
+
 /// Strength rank of an atomic ordering, for the compare-exchange rule that the
 /// failure ordering may not be stronger than the success ordering.
 /// relaxed=0 < acquire=release=1 < acq_rel=2 < seq_cst=3.
@@ -3254,7 +3423,8 @@ fn isReflectionCall(name: []const u8) bool {
         .type_info,
         => true,
 
-        // Lowered elsewhere: math -> `call_builtin`, atomics -> atomic ops.
+        // Lowered elsewhere: math -> `call_builtin`, atomics -> atomic ops,
+        // volatile -> volatile load/store ops.
         .sqrt,
         .sin,
         .cos,
@@ -3272,6 +3442,8 @@ fn isReflectionCall(name: []const u8) bool {
         .atomic_fence,
         .atomic_cmpxchg,
         .atomic_cmpxchg_weak,
+        .@"@volatile_load",
+        .@"@volatile_store",
         .raw_declare_type,
         .raw_register_type,
         .c_object_paths,

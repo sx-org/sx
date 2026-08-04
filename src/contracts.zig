@@ -13,7 +13,8 @@
 //!
 //!   - `.declared` — stdlib owns the canonical declaration, and the compiler
 //!     recognizes it by (module, name) identity plus, for a struct, its field
-//!     shape. `@SourceSite`, `@BuildSink`, `@BuildShape`.
+//!     shape. `@SourceSite`, `@BuildSink`, `@BuildShape`, `@volatile_load`,
+//!     `@volatile_store`.
 //!   - `.compiler_formed` — the compiler FORMS the type for a parameter; there
 //!     is no declaration anywhere, so declaring the name is an error wherever
 //!     it appears. `@Init`, `@BuildBlock`. Both are constraints, so both are
@@ -82,6 +83,10 @@ pub const entries = [_]Contract{
             .{ .name = "max_alignment", .type_name = "i64" },
         },
     },
+    // Functions, so no field shape; their signature and lowering are the
+    // intrinsic registry's (src/ir/intrinsics.zig).
+    .{ .name = "@volatile_load", .module = "modules/std/core.sx" },
+    .{ .name = "@volatile_store", .module = "modules/std/core.sx" },
     // Formed, never declared.
     .{
         .name = "@Init",

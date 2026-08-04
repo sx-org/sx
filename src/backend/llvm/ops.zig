@@ -442,6 +442,41 @@ pub const Ops = struct {
         self.e.advanceRefCounter();
     }
 
+    // A volatile access is the ordinary load/store with LLVM's volatile bit
+    // set: the optimizer may not elide, duplicate, or fuse it. No ordering is
+    // attached — a volatile access is NOT atomic and orders nothing between
+    // threads, so the two emitters below never touch LLVMSetOrdering.
+
+    pub fn emitVolatileLoad(self: Ops, instruction: *const Inst, un: UnaryOp) void {
+        const ptr = self.e.resolveRef(un.operand);
+        const ptr_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(ptr));
+        if (ptr_kind == c.LLVMPointerTypeKind and instruction.ty != .void) {
+            const llvm_ty = self.e.toLLVMType(instruction.ty);
+            const result = c.LLVMBuildLoad2(self.e.builder, llvm_ty, ptr, "volatile_load");
+            c.LLVMSetVolatile(result, 1);
+            self.e.mapRef(result);
+        } else {
+            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(if (instruction.ty == .void) .i64 else instruction.ty)));
+        }
+    }
+
+    pub fn emitVolatileStore(self: Ops, st: Store) void {
+        const ptr = self.e.resolveRef(st.ptr);
+        var val = self.e.resolveRef(st.val);
+        const ptr_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(ptr));
+        const val_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(val));
+        if (ptr_kind == c.LLVMPointerTypeKind and val_kind != c.LLVMVoidTypeKind) {
+            // The access is one store of the intrinsic's `T`, so `val_ty` fixes
+            // the width. The address expression may carry a different pointee
+            // type — that is the caller's view of the memory, not the access
+            // size, and narrowing to it would disagree with the matching load.
+            val = self.e.coerceArg(val, self.e.toLLVMType(st.val_ty));
+            const store = c.LLVMBuildStore(self.e.builder, val, ptr);
+            c.LLVMSetVolatile(store, 1);
+        }
+        self.e.advanceRefCounter();
+    }
+
     // ── Atomics ───────────────────────────────────────────
     // Atomic load/store = ordinary LLVMBuildLoad2/Store made atomic via
     // LLVMSetOrdering, with a MANDATORY explicit alignment (the LLVM verifier
