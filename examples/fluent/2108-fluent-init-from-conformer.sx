@@ -1,0 +1,101 @@
+// What forms an `@Init(T)` is a value that IS a `T`.
+//
+// A concrete conformer forms one wherever it is written — as an argument, as a
+// dot receiver — and the write fills the destination with exactly what the
+// expression produced. Every modeled conversion the language already has reaches
+// the target the same way it does at any other store: a member into its set, a
+// value under an optional, anything into `any` — which boxes a handle's concrete
+// receiver and a set slot's active member. A protocol handle reaches a concrete
+// parameter by naming the conformer: the downcast yields the concrete value, and
+// that forms; its own protocol type it forms as it stands.
+//
+// The source expression is an ordinary expression: calls inside it are typed and
+// converted by ordinary rules before the write decides anything.
+#import "modules/std.sx";
+
+Named :: protocol tagged { name :: (self: *Self) -> string; }
+
+Round :: struct { s: string = "round"; }
+impl Named for Round { name :: (self: *Round) -> string => self.s; }
+
+View :: @OpenSet(.{ max = 128 }) { render :: (self: *Self) -> string; }
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+form_Round :: ufcs (value: $I/@Init(Round)) {
+    slot: Round = ---;
+    value.write(*slot);
+    print("Round {}\n", slot.s);
+}
+
+form_opt_Round :: ufcs (value: $I/@Init(?Round)) {
+    slot: ?Round = ---;
+    value.write(*slot);
+    print("?Round {}\n", slot!.s);
+}
+
+form_View :: ufcs (value: $I/@Init(View)) {
+    slot: View = ---;
+    value.write(*slot);
+    print("View {}\n", slot.render());
+}
+
+form_opt_View :: ufcs (value: $I/@Init(?View)) {
+    slot: ?View = ---;
+    value.write(*slot);
+    print("?View {}\n", slot!.render());
+}
+
+form_Named :: ufcs (value: $I/@Init(Named)) {
+    slot: Named = ---;
+    value.write(*slot);
+    print("Named {}\n", slot.name());
+}
+
+form_any :: ufcs (value: $I/@Init(any)) {
+    slot: any = ---;
+    value.write(*slot);
+    if slot == {
+        case Round: (r) { print("any Round {}\n", r.s); }
+        case Label: (l) { print("any Label {}\n", l.text); }
+        else: { print("any other\n"); }
+    }
+}
+
+echo_Round :: (r: Round) -> Round => r;
+echo_Label :: (l: Label) -> Label => l;
+
+main :: () -> i32 {
+    h : Named = Round{ s = "downcast" };
+
+    form_Round(Round{ s = "argument" });
+    Round{ s = "receiver" }.form_Round();
+    form_Round(h.(Round));
+    h.(Round).form_Round();
+
+    form_opt_Round(Round{ s = "wrapped" });
+    Round{ s = "wrapped receiver" }.form_opt_Round();
+
+    form_View(Label{ text = "member" });
+    Label{ text = "member receiver" }.form_View();
+
+    form_opt_View(Label{ text = "member wrapped" });
+    Label{ text = "member wrapped receiver" }.form_opt_View();
+
+    form_Named(h);
+    h.form_Named();
+
+    form_any(Round{ s = "boxed" });
+    Round{ s = "boxed receiver" }.form_any();
+    form_any(h);
+    form_any(Label{ text = "boxed member" });
+
+    form_Round(echo_Round(Round{ s = "nested" }));
+    echo_Round(Round{ s = "nested receiver" }).form_Round();
+    form_View(echo_Label(Label{ text = "nested member" }));
+    echo_Label(Label{ text = "nested member receiver" }).form_View();
+    0
+}

@@ -464,10 +464,12 @@ pub const Lowering = struct {
     open_set_tags: std.AutoHashMap(mod_mod.Module.OpenSetMember, i64),
     /// Each set's `tag → member Type` table global, written at the freeze.
     open_set_tables: std.AutoHashMap(TypeId, inst_mod.GlobalId),
-    /// The target an `@Init` write thunk is being formed for, while its body is
-    /// lowered: the store it performs is formation, and what cannot become that
-    /// target is refused in those terms rather than as a store the program wrote.
-    forming_init_target: ?TypeId = null,
+    /// The `@Init` target each synthesized formation write fills, keyed by the
+    /// write's own statement node. The write is `dest.* = <source>` in a thunk
+    /// body, and it is the only store the language decides as FORMATION: what
+    /// cannot become that target is refused in those terms rather than as a store
+    /// the program wrote. No node the program authored is ever a key.
+    init_formation_writes: std.AutoHashMapUnmanaged(*const Node, TypeId) = .empty,
     /// Bumped by every member admission. The convergence fixpoint compares it
     /// across a round: a set that grew is a round that changed something.
     open_set_epoch: u32 = 0,
@@ -3454,6 +3456,7 @@ pub const Lowering = struct {
     pub const coerceToType = lower_coerce.coerceToType;
     pub const coerceExplicit = lower_coerce.coerceExplicit;
     pub const checkAssignable = lower_coerce.checkAssignable;
+    pub const checkFormationWritable = lower_coerce.checkFormationWritable;
     pub const checkReturnable = lower_coerce.checkReturnable;
     pub const noneReinterpretIsUnsafe = lower_coerce.noneReinterpretIsUnsafe;
     pub const externalErrorsExist = lower_coerce.externalErrorsExist;
@@ -3690,6 +3693,7 @@ pub const Lowering = struct {
     pub const initTargetOf = lower_init_plan.initTargetOf;
     pub const initBinderType = lower_init_plan.binderType;
     pub const formInitPlan = lower_init_plan.formInitPlan;
+    pub const formationWriteValue = lower_init_plan.formationWriteValue;
     pub const lowerInitWrite = lower_init_plan.lowerInitWrite;
     pub const lowerInitSite = lower_init_plan.lowerInitSite;
 
@@ -3718,6 +3722,7 @@ pub const Lowering = struct {
     pub const openSetMembershipHelp = lower_open_set.membershipHelp;
     pub const refuseUntemperedDowncast = lower_open_set.refuseUntemperedDowncast;
     pub const lowerOpenSetDowncast = lower_open_set.lowerDowncast;
+    pub const narrowOpenSetMember = lower_open_set.narrowMember;
     pub const coerceMemberToSet = lower_open_set.coerceMemberToSet;
     pub const openSetSlotAddress = lower_open_set.slotAddress;
     pub const openSetMemberTypeId = lower_open_set.memberTypeId;

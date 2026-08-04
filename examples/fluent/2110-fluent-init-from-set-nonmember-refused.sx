@@ -1,0 +1,72 @@
+// A set value narrows only to a type that declares membership in that set, and a
+// target outside the set is refused as a non-member — under an optional too, in
+// both the argument and dot-receiver spellings.
+//
+// The narrowing belongs to the formation write alone. The same conversion written
+// anywhere else — at top level, or inside a formation's own source expression —
+// is the ordinary refusal, and so is the element of a tuple the write decomposes.
+#import "modules/std.sx";
+
+Named :: protocol tagged { name :: (self: *Self) -> string; }
+
+View :: @OpenSet(.{ max = 128 }) { render :: (self: *Self) -> string; }
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Plain :: struct { text: string = ""; }
+
+form_Plain :: ufcs (value: $I/@Init(Plain)) {
+    slot: Plain = ---;
+    value.write(*slot);
+}
+
+form_opt_Plain :: ufcs (value: $I/@Init(?Plain)) {
+    slot: ?Plain = ---;
+    value.write(*slot);
+}
+
+form_Named :: ufcs (value: $I/@Init(Named)) {
+    slot: Named = ---;
+    value.write(*slot);
+}
+
+form_Label :: ufcs (value: $I/@Init(Label)) {
+    slot: Label = ---;
+    value.write(*slot);
+}
+
+form_Tuple :: ufcs (value: $I/@Init(Tuple(Label, i64))) {
+    slot: Tuple(Label, i64) = ---;
+    value.write(*slot);
+}
+
+need_Label :: ufcs (l: Label) { print("need Label {}\n", l.text); }
+need_opt_Label :: ufcs (l: ?Label) { print("need ?Label {}\n", l!.text); }
+
+echo_Label :: (l: Label) -> Label => l;
+
+main :: () -> i32 {
+    v : View = Label{ text = "member" };
+
+    form_Plain(v);
+    v.form_Plain();
+    form_opt_Plain(v);
+    v.form_opt_Plain();
+    form_Named(v);
+    v.form_Named();
+
+    need_Label(v);
+    v.need_Label();
+    form_Label(echo_Label(v));
+    echo_Label(v).form_Label();
+
+    t : Tuple(View, i64) = .{v, 3};
+    form_Tuple(t);
+
+    label : Label = v;
+    need_opt_Label(v);
+    0
+}

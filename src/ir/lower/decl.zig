@@ -3704,13 +3704,6 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
     self.protocol_default_dispatch = self.protocolDefaultDispatchDomain(fd);
     defer self.protocol_default_dispatch = saved_protocol_default_dispatch;
 
-    // An `@Init` write is the store in the THUNK's own body. A function lowered
-    // while that body is being lowered is some other function, and a store of its
-    // own is an ordinary one.
-    const saved_forming = self.forming_init_target;
-    self.forming_init_target = null;
-    defer self.forming_init_target = saved_forming;
-
     // objc-defined-class method context for `*Self` substitution ;
     // the resolveReturnType / resolveParamType calls below consult it.
     const saved_fc = self.current_runtime_class;

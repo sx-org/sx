@@ -639,7 +639,7 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
         .fn_decl => |*fd| self.lowerLocalFnDecl(fd),
         .return_stmt => |rs| self.lowerReturn(&rs, node.span),
         .raise_stmt => |rs| self.lowerRaise(&rs, node.span),
-        .assignment => |asgn| self.lowerAssignment(&asgn),
+        .assignment => |asgn| self.lowerAssignment(&asgn, self.init_formation_writes.get(node)),
         .defer_stmt => |ds| self.lowerDefer(&ds),
         .onfail_stmt => |ofs| self.lowerOnFail(&ofs, node.span),
         .push_stmt => |ps| self.lowerPush(&ps),
@@ -2219,7 +2219,11 @@ fn rhsNeedsTargetType(value: *const ast.Node) bool {
     };
 }
 
-pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
+/// `formation_target` is the `@Init(T)` this statement's write fills, set only for
+/// the one synthesized `dest.* = <source>` a formation mints. The RHS is lowered
+/// before it is consulted, so nothing evaluated inside the source expression sees
+/// it.
+pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_target: ?TypeId) void {
     // Reassignment kills flow narrowing (specs.md §Flow-Sensitive
     // Narrowing): a fresh value may be null, so the name is not proven
     // present. Drop it from the narrowed set before lowering the store.
@@ -2655,6 +2659,11 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
                     break :blk ptr_ty;
                 };
                 const val_ty = self.builder.getRefType(val);
+                if (formation_target) |target| {
+                    const formed = self.formationWriteValue(val, val_ty, target, asgn.value) orelse return;
+                    self.builder.store(ptr, formed);
+                    return;
+                }
                 // Guard a width-mismatched `.none` store through the pointer
                 // (`p.* = "hi"` for a `*i32`) — overruns the pointee.
                 if (!self.checkAssignable(val_ty, pointee_ty, asgn.value.span, "assign", "target", asgn.value)) return;
