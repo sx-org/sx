@@ -466,15 +466,11 @@ pub const Ops = struct {
         const ptr_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(ptr));
         const val_kind = c.LLVMGetTypeKind(c.LLVMTypeOf(val));
         if (ptr_kind == c.LLVMPointerTypeKind and val_kind != c.LLVMVoidTypeKind) {
-            // Coerce the value to the pointer's IR target type, mirroring emitStore.
-            if (self.e.getRefIRType(st.ptr)) |ptr_ir_ty| {
-                const pointee_info = self.e.ir_mod.types.get(ptr_ir_ty);
-                const target_ty: ?c.LLVMTypeRef = switch (pointee_info) {
-                    .pointer => |p| self.e.toLLVMType(p.pointee),
-                    else => null,
-                };
-                if (target_ty) |tt| val = self.e.coerceArg(val, tt);
-            }
+            // The access is one store of the intrinsic's `T`, so `val_ty` fixes
+            // the width. The address expression may carry a different pointee
+            // type — that is the caller's view of the memory, not the access
+            // size, and narrowing to it would disagree with the matching load.
+            val = self.e.coerceArg(val, self.e.toLLVMType(st.val_ty));
             const store = c.LLVMBuildStore(self.e.builder, val, ptr);
             c.LLVMSetVolatile(store, 1);
         }

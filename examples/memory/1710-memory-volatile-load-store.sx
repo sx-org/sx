@@ -38,6 +38,18 @@ main :: () {
         out("widened: WRONG\n");
     }
 
+    // `T` alone fixes the access width. The address is a narrower view of the
+    // same slot, and the store through it still writes all eight bytes.
+    viewed: i64 = 0;
+    view: *i32 = *viewed;
+    @volatile_store(i64, view, -1);
+
+    if @volatile_load(i64, view) == -1 {
+        out("viewed: -1\n");
+    } else {
+        out("viewed: WRONG\n");
+    }
+
     // Aggregates travel as one typed access, not field by field.
     point := Point{ x = 3, y = 4 };
     snapshot := @volatile_load(Point, *point);

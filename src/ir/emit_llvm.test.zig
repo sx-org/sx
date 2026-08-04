@@ -315,6 +315,36 @@ test "O3 keeps every volatile access and elides the plain ones" {
     try std.testing.expectEqual(@as(usize, 0), countOccurrences(plain, "store "));
 }
 
+test "volatile store uses its declared value type" {
+    const alloc = std.testing.allocator;
+    var module = Module.init(alloc);
+    defer module.deinit();
+
+    var b = Builder.init(&module);
+    _ = b.beginFunction(str(&module, "f"), &.{}, .void);
+    const entry = b.appendBlock(str(&module, "entry"), &.{});
+    b.switchToBlock(entry);
+
+    // An i64 slot reached through a `*i32` view: the store width must follow
+    // `val_ty`, not the pointee the address expression happens to carry.
+    const slot = b.alloca(.i64);
+    const view_slot = b.alloca(module.types.ptrTo(.i32));
+    b.store(view_slot, slot);
+    const view = b.load(view_slot, module.types.ptrTo(.i32));
+    b.emitVoid(.{ .volatile_store = .{ .ptr = view, .val = b.constInt(-1, .i64), .val_ty = .i64 } }, .void);
+    b.retVoid();
+    b.finalize();
+
+    var emitter = LLVMEmitter.init(alloc, &module, "test_volatile_width", .{ .opt_level = .none });
+    defer emitter.deinit();
+    emitter.emit();
+    try std.testing.expect(emitter.verify());
+    const ir_str = emitter.dumpToString();
+
+    try std.testing.expect(std.mem.indexOf(u8, ir_str, "store volatile i64 -1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, ir_str, "store volatile i32") == null);
+}
+
 test "emit: atomic load/store (seq_cst, aligned)" {
     const alloc = std.testing.allocator;
     var module = Module.init(alloc);
