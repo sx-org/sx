@@ -211,8 +211,8 @@ fn formationLeaf(self: *Lowering, src: TypeId, dst: TypeId) ?FormationLeaf {
 /// carries its member inline, so a declared member is a tag check over storage the
 /// value already holds — and the target's own shape says what another tag does: a
 /// member panics, an optional of one answers null. A protocol source is a handle
-/// to its conformer with no `target` at hand to write, so it is refused. Anything
-/// else is the ordinary store, worded as formation.
+/// to its conformer with no concrete conformer value at hand to write, so it is
+/// refused. Anything else is the ordinary store, worded as formation.
 pub fn formationWriteValue(self: *Lowering, val: Ref, val_ty: TypeId, target: TypeId, node: *const Node) ?Ref {
     const leaf = formationLeaf(self, val_ty, target) orelse return formationStore(self, val, val_ty, target, node);
     const span = node.span;
@@ -259,8 +259,8 @@ fn refuseFormationMembership(self: *Lowering, src_ty: TypeId, target: TypeId, me
 }
 
 /// A protocol value is a handle to its conformer, not the conformer's value, so
-/// there is no `target` at hand for the write to fill. The explicit downcast reads
-/// the conformer out, spelled at the leaf the target's optionals wrap.
+/// no concrete conformer value is available for the write. The explicit downcast
+/// reads the conformer out, spelled at the leaf the target's optionals wrap.
 fn refuseFormationFromProtocol(self: *Lowering, src_ty: TypeId, target: TypeId, leaf: TypeId, span: ast.Span) ?Ref {
     if (self.externalErrorsExist()) return null;
     if (self.diagnostics) |d| {

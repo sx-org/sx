@@ -1,9 +1,9 @@
-// A protocol value is a handle to its conformer, not the concrete value an
-// `@Init(T)` writes, so it forms nothing but its own protocol type. Every
-// protocol kind is refused at every formation target — a member, its set, and
-// either under an optional — in both the argument and dot-receiver spellings.
-// A concrete target names the downcast that reads the conformer out; a set
-// target answers in the terms it decides by, membership.
+// Ordinary modeled conversions compose from a protocol-typed source. At an
+// unmodeled concrete leaf, the source is a handle to its conformer, not the
+// conformer's value, so every protocol kind is refused in both the argument and
+// dot-receiver spellings. A concrete leaf names the downcast that reads the
+// conformer out; a set destination answers in the terms it decides by,
+// membership.
 #import "modules/std.sx";
 
 Named :: protocol tagged { name :: (self: *Self) -> string; }

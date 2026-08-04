@@ -4083,11 +4083,12 @@ The target's own shape says what another tag answers — a member panics, an
 optional of a member answers null — the same distinction `v.(Label)` and
 `v.(?Label)` spell explicitly.
 
-A protocol value forms nothing but its own protocol type. It is a handle to its
-conformer, not the conformer's value, so forming an `@Init(T)` for a concrete `T`
-is refused where the expression is written, in both argument and dot-receiver
-spellings. The explicit downcast reads the conformer out (`h.(Round)`,
-`h.(?Round)`), and what it yields forms like any other value.
+After ordinary modeled conversions, a protocol-typed source that reaches an
+unmodeled concrete leaf is refused. It is a handle to its conformer, not the
+conformer's value, so no concrete conformer value is available for the formation
+write. The refusal is located where the expression is written, in both argument
+and dot-receiver spellings. The explicit downcast reads the conformer out
+(`h.(Round)`, `h.(?Round)`), and what it yields forms like any other value.
 
 A set target answers in the terms it decides by whatever the source is: a type
 that never declared itself into the set is refused as a non-member.
