@@ -1,0 +1,32 @@
+// A destination-first parameter list is counted like any other.
+//
+// `@Init` decides how the first argument is TAKEN, not how many arguments there
+// are. A dot-call on such a function is re-read as the ordinary call, so both
+// spellings are counted against the same list — and the receiver, being that first
+// argument, is counted with the rest.
+#import "modules/std.sx";
+
+emit :: ufcs (value: $I/@Init(i64)) {
+    slot: i64 = ---;
+    value.write(*slot);
+    print("emit {}\n", slot);
+}
+
+// A bound parameter beside an ordinary one: the count still answers for both.
+pair :: ufcs (value: $I/@Init(i64), tag: i64) {
+    slot: i64 = ---;
+    value.write(*slot);
+    print("pair {} {}\n", slot, tag);
+}
+
+main :: () -> i32 {
+    (5).emit(1, 2, 3);
+    emit(5, 1, 2, 3);
+
+    (5).pair(7, 9);
+    pair(5, 7, 9);
+
+    (5).pair();
+    pair(5);
+    0
+}

@@ -780,6 +780,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const syn_call = ast.Call{ .callee = c.callee, .args = expanded };
                     return self.lowerCall(&syn_call);
                 }
+                // Monomorphization binds args by parameter position and drops
+                // the rest, so the count has to answer for itself here — the
+                // arity check the main dispatch runs is downstream of this arm.
+                if (self.checkCallArity(fd, c.callee.data.identifier.name, c.args.len, false, c.callee.span)) return Ref.none;
                 // Types are explicit when call args match param count (e.g., are_equal(Point, p1, p2))
                 // Types are inferred when call args < param count (e.g., are_equal(p1, p2))
                 const types_explicit = c.args.len == fd.params.len;
@@ -4222,24 +4226,32 @@ pub fn lowerDefaultArg(self: *Lowering, fd: *const ast.FnDecl, idx: usize, call_
 /// declared parameter list. `supplied` counts the args as they bind to
 /// params — receiver included for dot-dispatch, defaults not
 /// appended. Returns true when a diagnostic was emitted (the call must
-/// not lower). Pack / comptime / generic / `#compiler` / `intrinsic`
-/// callees bind args through their own dispatch and are exempt.
+/// not lower). Pack / comptime / `#compiler` / `intrinsic` callees bind
+/// args through their own dispatch and are exempt.
 pub fn checkCallArity(self: *Lowering, fd: *const ast.FnDecl, callee_name: []const u8, supplied: usize, has_receiver: bool, span: ast.Span) bool {
-    if (fd.type_params.len > 0 or hasComptimeParams(fd) or isPackFn(fd)) return false;
+    if (hasComptimeParams(fd) or isPackFn(fd)) return false;
     switch (fd.body.data) {
         .intrinsic_expr => return false,
         else => {},
     }
+    // Args bind to the params that declare no type parameter of their own:
+    // a type-decl slot is filled by inference, and `lowerGenericCall` reads
+    // it from the arg list only in the all-slots-spelled form accepted below.
     var min: usize = 0;
-    var max: ?usize = fd.params.len;
-    for (fd.params, 0..) |p, i| {
+    var count: usize = 0;
+    var variadic = false;
+    for (fd.params) |p| {
+        if (isTypeParamDecl(&p, fd.type_params)) continue;
         if (p.is_variadic) {
-            max = null;
+            variadic = true;
             break;
         }
-        if (p.default_expr == null) min = i + 1;
+        count += 1;
+        if (p.default_expr == null) min = count;
     }
+    const max: ?usize = if (variadic) null else count;
     if (supplied >= min and (max == null or supplied <= max.?)) return false;
+    if (fd.type_params.len > 0 and supplied == fd.params.len) return false;
     if (self.diagnostics) |d| {
         // Dot-dispatch report counts the user-visible args: the receiver
         // slot is implicit at the call site, so it is elided from both
