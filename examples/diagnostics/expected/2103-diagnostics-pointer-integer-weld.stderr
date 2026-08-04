@@ -1,0 +1,47 @@
+error: cannot coerce a value of type '*Obj' to 'i64': an address is not a number; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:21:5
+   |
+21 |     p.flush();          // UFCS receiver welded into an i64 parameter
+   |     ^^^^^^^^^
+
+error: cannot coerce a value of type '*Obj' to 'i64': an address is not a number; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:22:5
+   |
+22 |     flush(p);           // the same call written plain
+   |     ^^^^^^^^
+
+error: cannot coerce a value of type '*Obj' to 'i64': an address is not a number; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:23:10
+   |
+23 |     n := take(p);       // argument
+   |          ^^^^^^^
+
+error: cannot coerce a value of type '*Obj' to 'i64': an address is not a number; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:25:5
+   |
+25 |     m : i64 = p;        // declaration
+   |     ^^^^^^^^^^^^
+
+error: cannot coerce a value of type '*Obj' to 'i64': an address is not a number; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:26:5
+   |
+26 |     m = p;              // assignment
+   |     ^^^^^^
+
+error: cannot coerce a value of type '*Obj' to 'i64': an address is not a number; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:15:28
+   |
+15 | give :: (p: *Obj) -> i64 { return p; }
+   |                            ^^^^^^^^^
+
+error: cannot coerce a value of type 'i64' to '*Obj': a number is not an address; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:29:5
+   |
+29 |     q : *Obj = m;       // integer into a pointer slot
+   |     ^^^^^^^^^^^^^
+
+error: cannot coerce a value of type 'i64' to 'cstring': a number is not an address; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:30:5
+   |
+30 |     c : cstring = 5;    // integer into a cstring
+   |     ^^^^^^^^^^^^^^^^

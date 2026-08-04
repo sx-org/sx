@@ -1,0 +1,29 @@
+error: cannot initialize 'f' of type 'f64' with a value of type '*Obj'
+  --> examples/diagnostics/2104-diagnostics-pointer-scalar-weld.sx:16:15
+   |
+16 |     f : f64 = p;        // address into a float
+   |               ^
+
+error: cannot initialize 'b' of type 'bool' with a value of type '*Obj'
+  --> examples/diagnostics/2104-diagnostics-pointer-scalar-weld.sx:17:16
+   |
+17 |     b : bool = p;       // address into a bool
+   |                ^
+
+error: cannot initialize 'z' of type 'Zone' with a value of type '*Obj'
+  --> examples/diagnostics/2104-diagnostics-pointer-scalar-weld.sx:18:16
+   |
+18 |     z : Zone = p;       // address into an enum
+   |                ^
+
+error: cannot initialize 'q' of type '*Obj' with a value of type 'f64'
+  --> examples/diagnostics/2104-diagnostics-pointer-scalar-weld.sx:20:16
+   |
+20 |     q : *Obj = 1.5;     // float into a pointer
+   |                ^^^
+
+error: cannot initialize 'r' of type '*Obj' with a value of type 'Zone'
+  --> examples/diagnostics/2104-diagnostics-pointer-scalar-weld.sx:21:16
+   |
+21 |     r : *Obj = Zone.a;  // enum into a pointer
+   |                ^^^^^^

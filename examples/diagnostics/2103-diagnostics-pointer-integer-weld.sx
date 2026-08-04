@@ -1,0 +1,34 @@
+// A pointer never implicitly reinterprets as an integer, nor an integer as a
+// pointer, whatever the destination: a UFCS method call whose receiver lands on
+// an integer parameter, the same call written plain, an argument, a
+// declaration, an assignment, and a return. Only `xx` / `.(T)` spells the
+// reinterpretation.
+
+#import "modules/std.sx";
+
+Obj :: struct { v: i64 = 1; flush: i64 = 2; }
+
+flush :: ufcs (v: i64) { print("PLAIN flush {}\n", v); }
+
+take :: (v: i64) -> i64 { v }
+
+give :: (p: *Obj) -> i64 { return p; }
+
+main :: () -> i32 {
+    o := Obj{};
+    p := *o;
+
+    p.flush();          // UFCS receiver welded into an i64 parameter
+    flush(p);           // the same call written plain
+    n := take(p);       // argument
+
+    m : i64 = p;        // declaration
+    m = p;              // assignment
+    r := give(p);       // return, refused inside `give`
+
+    q : *Obj = m;       // integer into a pointer slot
+    c : cstring = 5;    // integer into a cstring
+
+    print("{} {} {} {}\n", n, r, q == null, c == null);
+    0
+}

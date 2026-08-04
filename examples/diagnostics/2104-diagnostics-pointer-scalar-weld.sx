@@ -1,0 +1,25 @@
+// The refusal covers every pointer/scalar class pair, not just the integer one:
+// a same-width float, a payload-less enum, and a narrower bool are each a
+// different thing from an address, so none of them takes the same-width
+// reinterpretation escape.
+
+#import "modules/std.sx";
+
+Obj :: struct { v: i64 = 1; }
+
+Zone :: enum { a; b; }
+
+main :: () -> i32 {
+    o := Obj{};
+    p := *o;
+
+    f : f64 = p;        // address into a float
+    b : bool = p;       // address into a bool
+    z : Zone = p;       // address into an enum
+
+    q : *Obj = 1.5;     // float into a pointer
+    r : *Obj = Zone.a;  // enum into a pointer
+
+    print("{} {} {} {} {}\n", f, b, z, q == null, r == null);
+    0
+}

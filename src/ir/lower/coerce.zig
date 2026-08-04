@@ -1283,6 +1283,18 @@ pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
     return false;
 }
 
+/// The refusal for an implicit pointer↔integer weld, naming the reason from
+/// whichever side holds the address.
+fn diagnosePointerIntegerWeld(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) void {
+    const d = self.diagnostics orelse return;
+    if (self.externalErrorsExist()) return;
+    const cs = self.builder.current_span;
+    const span = ast.Span{ .start = cs.start, .end = cs.end };
+    const why = if (isPointerValueKind(self, src_ty)) "an address is not a number" else "a number is not an address";
+    d.addFmt(.err, span, "cannot coerce a value of type '{s}' to '{s}': {s}; use an explicit cast (`xx`/`.(T)`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), why });
+    self.assignability_error_count += 1;
+}
+
 /// Is this store the WRITE of an initializer being formed for `dst_ty`? Then it is
 /// formation, and a refusal names the expression rather than a destination the
 /// program never wrote.
@@ -1436,12 +1448,32 @@ pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) 
     // exemption below is for the scalar family only (`*T → [*]T`,
     // `i64 → isize`, fn-ref → fn slot).
     if (isAggregateValueKind(self, src_ty) != isAggregateValueKind(self, dst_ty)) return true;
+    // An unmodeled pair where exactly ONE side holds an ADDRESS is never a
+    // bit-compatible reinterpretation either, width match or not: a pointer and
+    // a same-width scalar occupy the same bytes but mean different things, so
+    // the store types an address as a number the program then does arithmetic
+    // on (or a number as an address it then dereferences). Pointer↔pointer
+    // stays in the same-width family below (`*T → [*]T`, `*void ← *T`).
+    if (isPointerValueKind(self, src_ty) != isPointerValueKind(self, dst_ty)) return true;
     return !sameStoreWidth(self, src_ty, dst_ty);
 }
 
 fn isFunctionType(self: *Lowering, ty: TypeId) bool {
     if (ty.isBuiltin()) return false;
     return self.module.types.get(ty) == .function;
+}
+
+/// A type whose values are a raw ADDRESS at the IR level, for the pointer-pun
+/// test above. `?*T` and protocol/`any` values carry a pointer but are not one
+/// (an optional is presence-tested, an erased value is a header), so they are
+/// out.
+pub fn isPointerValueKind(self: *Lowering, ty: TypeId) bool {
+    if (ty == .cstring) return true;
+    if (ty.isBuiltin()) return false;
+    return switch (self.module.types.get(ty)) {
+        .pointer, .many_pointer => true,
+        else => false,
+    };
 }
 
 /// A type whose values are AGGREGATE-shaped at the IR level, for the pun
@@ -1841,11 +1873,18 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             const as_backing = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = backing } }, backing);
             return self.coerceMode(as_backing, backing, dst_ty, mode);
         },
-        // Ptr ↔ Int — explicit `xx ptr` to/from an integer-typed slot.
-        // Emits a `bitcast` IR op; emit_llvm.zig's bitcast arm dispatches
-        // to LLVMBuildPtrToInt / LLVMBuildIntToPtr at the LLVM level
-        // since LLVMBuildBitCast itself doesn't accept ptr↔int.
-        .ptr_int_bitcast => return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
+        // Ptr ↔ Int — the `xx`/`.(T)` escape hatch to/from an integer-typed
+        // slot, and ONLY that: the spec lists no implicit pointer↔integer
+        // conversion, so an implicit weld is refused rather than typing an
+        // address as a number the program then does arithmetic on. Emits a
+        // `bitcast` IR op; emit_llvm.zig's bitcast arm dispatches to
+        // LLVMBuildPtrToInt / LLVMBuildIntToPtr since LLVMBuildBitCast itself
+        // doesn't accept ptr↔int. The op is still emitted after the refusal so
+        // lowering finishes; `hasErrors()` aborts the build.
+        .ptr_int_bitcast => {
+            if (mode == .implicit and !self.xx_passthrough_refs.contains(val)) diagnosePointerIntegerWeld(self, src_ty, dst_ty);
+            return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
+        },
         .narrow => return self.builder.emit(.{ .narrow = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .widen => return self.builder.emit(.{ .widen = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .array_to_slice => {
