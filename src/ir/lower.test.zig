@@ -1623,6 +1623,82 @@ test "lower: shared resolver types a pointer-typed field GEP as *field_ty, not f
     try std.testing.expect(found);
 }
 
+test "lower: pointer +/- lowers to an element-scaled gep, ptr-ptr to an isize distance" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var diags = errors.DiagnosticList.init(alloc, "", "test.sx");
+    defer diags.deinit();
+
+    const span = ast.Span{ .start = 0, .end = 0 };
+    const mp_i32 = module.types.manyPtrTo(.i32);
+
+    // step :: (p: [*]i32, q: [*]i32) { a := p + 2; b := 2 + p; c := p - 1; d := q - p; }
+    var elem0 = Node{ .span = span, .data = .{ .type_expr = .{ .name = "i32", .is_generic = false } } };
+    var p_ty = Node{ .span = span, .data = .{ .many_pointer_type_expr = .{ .element_type = &elem0 } } };
+    var elem1 = Node{ .span = span, .data = .{ .type_expr = .{ .name = "i32", .is_generic = false } } };
+    var q_ty = Node{ .span = span, .data = .{ .many_pointer_type_expr = .{ .element_type = &elem1 } } };
+
+    var p0 = Node{ .span = span, .data = .{ .identifier = .{ .name = "p" } } };
+    var p1 = Node{ .span = span, .data = .{ .identifier = .{ .name = "p" } } };
+    var p2 = Node{ .span = span, .data = .{ .identifier = .{ .name = "p" } } };
+    var p3 = Node{ .span = span, .data = .{ .identifier = .{ .name = "p" } } };
+    var q0 = Node{ .span = span, .data = .{ .identifier = .{ .name = "q" } } };
+    var two_a = Node{ .span = span, .data = .{ .int_literal = .{ .value = 2 } } };
+    var two_b = Node{ .span = span, .data = .{ .int_literal = .{ .value = 2 } } };
+    var one = Node{ .span = span, .data = .{ .int_literal = .{ .value = 1 } } };
+
+    var add_ptr_int = Node{ .span = span, .data = .{ .binary_op = .{ .op = .add, .lhs = &p0, .rhs = &two_a } } };
+    var add_int_ptr = Node{ .span = span, .data = .{ .binary_op = .{ .op = .add, .lhs = &two_b, .rhs = &p1 } } };
+    var sub_ptr_int = Node{ .span = span, .data = .{ .binary_op = .{ .op = .sub, .lhs = &p2, .rhs = &one } } };
+    var sub_ptr_ptr = Node{ .span = span, .data = .{ .binary_op = .{ .op = .sub, .lhs = &q0, .rhs = &p3 } } };
+
+    var a_decl = Node{ .span = span, .data = .{ .var_decl = .{ .name = "a", .name_span = span, .type_annotation = null, .value = &add_ptr_int } } };
+    var b_decl = Node{ .span = span, .data = .{ .var_decl = .{ .name = "b", .name_span = span, .type_annotation = null, .value = &add_int_ptr } } };
+    var c_decl = Node{ .span = span, .data = .{ .var_decl = .{ .name = "c", .name_span = span, .type_annotation = null, .value = &sub_ptr_int } } };
+    var d_decl = Node{ .span = span, .data = .{ .var_decl = .{ .name = "d", .name_span = span, .type_annotation = null, .value = &sub_ptr_ptr } } };
+
+    const stmts = [_]*Node{ &a_decl, &b_decl, &c_decl, &d_decl };
+    var body = Node{ .span = span, .data = .{ .block = .{ .stmts = &stmts } } };
+    const params = [_]ast.Param{
+        .{ .name = "p", .name_span = span, .type_expr = &p_ty },
+        .{ .name = "q", .name_span = span, .type_expr = &q_ty },
+    };
+    const fd = ast.FnDecl{ .name = "step", .params = &params, .return_type = null, .body = &body };
+
+    var lowering = Lowering.init(&module);
+    lowering.diagnostics = &diags;
+    lowering.lowerFunction(&fd, "step", false);
+    try std.testing.expect(!diags.hasErrors());
+
+    // Three offsets become `index_gep`s typed at the pointer, and the
+    // difference divides down to `isize`. An `add`/`sub` carrying a pointer
+    // type is the shape the LLVM verifier rejects.
+    const func = module.getFunction(FuncId.fromIndex(0));
+    var geps: usize = 0;
+    var distances: usize = 0;
+    for (func.blocks.items) |blk| {
+        for (blk.insts.items) |ins| {
+            switch (ins.op) {
+                .index_gep => {
+                    try std.testing.expectEqual(mp_i32, ins.ty);
+                    geps += 1;
+                },
+                .div => {
+                    try std.testing.expectEqual(TypeId.isize, ins.ty);
+                    distances += 1;
+                },
+                .add, .sub => try std.testing.expect(lowering.pointerElement(ins.ty) == null),
+                else => {},
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 3), geps);
+    try std.testing.expectEqual(@as(usize, 1), distances);
+}
+
 test "lower: reflectionArgIsType accepts spelled types, rejects plain values" {
     const alloc = std.testing.allocator;
     var module = ir_mod.Module.init(alloc);

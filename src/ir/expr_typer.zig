@@ -61,8 +61,15 @@ pub const ExprTyper = struct {
                 // Arithmetic / bitwise / shift ops: infer the PROMOTED result
                 // of (lhs, rhs), not the LHS alone — `Lowering.arithResultType`
                 // is the same rule `lowerBinaryOp` applies, so `M + 0.5` types
-                // as `f64` regardless of operand order.
-                else => Lowering.arithResultType(self.l.inferExprType(bop.lhs), self.l.inferExprType(bop.rhs)),
+                // as `f64` regardless of operand order. A pointer operand under
+                // `+` / `-` types by the pointer-arithmetic rule instead: an
+                // offset keeps the pointer type, a difference is `isize`.
+                else => blk: {
+                    const lhs_ty = self.l.inferExprType(bop.lhs);
+                    const rhs_ty = self.l.inferExprType(bop.rhs);
+                    if (self.l.pointerArithResultType(bop.op, lhs_ty, rhs_ty)) |ptr_ty| break :blk ptr_ty;
+                    break :blk Lowering.arithResultType(lhs_ty, rhs_ty);
+                },
             },
             .unary_op => |uop| switch (uop.op) {
                 .not => .bool,

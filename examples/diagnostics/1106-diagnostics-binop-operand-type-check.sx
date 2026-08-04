@@ -1,6 +1,6 @@
 // Scalar binary operators check operand-type compatibility; the result type is
 // otherwise taken from the left operand. Rejected at compile time:
-// - arithmetic `+ - * / %`  (numeric / vector / pointer operands)
+// - arithmetic `+ - * / %`  (numeric / vector operands; `+ -` also pointers)
 // - ordering   `< <= > >=`  (numeric / enum / pointer operands)
 // - bitwise    `& | ^`      (integer / enum operands)
 // - shift      `<< >>`      (integer / enum operands)

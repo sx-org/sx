@@ -1,0 +1,29 @@
+error: cannot apply '*=' to '[*]i32': a pointer target takes only '+=' / '-=' by an integer
+  --> examples/diagnostics/2102-diagnostics-pointer-compound-assign.sx:13:5
+   |
+13 |     p *= 2;    // scaled address
+   |     ^^^^^^^
+
+error: cannot apply '/=' to '[*]i32': a pointer target takes only '+=' / '-=' by an integer
+  --> examples/diagnostics/2102-diagnostics-pointer-compound-assign.sx:14:5
+   |
+14 |     p /= 2;    // divided address
+   |     ^^^^^^^
+
+error: cannot apply '&=' to '[*]i32': a pointer target takes only '+=' / '-=' by an integer
+  --> examples/diagnostics/2102-diagnostics-pointer-compound-assign.sx:15:5
+   |
+15 |     p &= 7;    // masked address
+   |     ^^^^^^^
+
+error: cannot apply '<<=' to '[*]i32': a pointer target takes only '+=' / '-=' by an integer
+  --> examples/diagnostics/2102-diagnostics-pointer-compound-assign.sx:16:5
+   |
+16 |     p <<= 1;   // shifted address
+   |     ^^^^^^^^
+
+error: cannot apply '-=' to '[*]i32': a pointer target takes only '+=' / '-=' by an integer
+  --> examples/diagnostics/2102-diagnostics-pointer-compound-assign.sx:17:5
+   |
+17 |     p -= q;    // pointer difference folded back into a pointer
+   |     ^^^^^^^

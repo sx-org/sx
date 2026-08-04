@@ -1,0 +1,23 @@
+error: cannot add '[*]i32' and '[*]i32': pointer arithmetic offsets a pointer by an integer, and two addresses have no sum
+  --> examples/diagnostics/2101-diagnostics-pointer-arithmetic-operands.sx:17:10
+   |
+17 |     a := p + p;      // two pointers summed
+   |          ^^^^^
+
+error: cannot subtract '[*]f64' from '[*]i32': a pointer difference is a count of elements, so both pointers must address the same element type
+  --> examples/diagnostics/2101-diagnostics-pointer-arithmetic-operands.sx:18:10
+   |
+18 |     b := p - fp;     // difference across i32 and f64 elements
+   |          ^^^^^^
+
+error: cannot subtract '[*]i32' from 'i64': a pointer may only be subtracted from another pointer or offset by an integer
+  --> examples/diagnostics/2101-diagnostics-pointer-arithmetic-operands.sx:19:10
+   |
+19 |     c := 3 - p;      // integer minus pointer
+   |          ^^^^^
+
+error: cannot offset '[*]i32' by 'f64': a pointer offset must be an integer
+  --> examples/diagnostics/2101-diagnostics-pointer-arithmetic-operands.sx:20:10
+   |
+20 |     d := p + 1.5;    // float offset
+   |          ^^^^^^^

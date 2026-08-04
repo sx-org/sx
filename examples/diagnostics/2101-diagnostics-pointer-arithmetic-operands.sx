@@ -1,0 +1,22 @@
+// Pointer arithmetic accepts only `ptr ± int` (either order for `+`) and a
+// same-element `ptr - ptr` difference. Every other pairing is rejected at
+// compile time, with the pointee types named:
+// - two addresses have no sum
+// - a difference across distinct element types has no element count
+// - only a pointer may stand on the left of a pointer subtraction
+// - the offset must be an integer
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    ints : [4]i32 = .[1, 2, 3, 4];
+    reals : [4]f64 = .[1.0, 2.0, 3.0, 4.0];
+    p : [*]i32 = *ints[0];
+    fp : [*]f64 = *reals[0];
+
+    a := p + p;      // two pointers summed
+    b := p - fp;     // difference across i32 and f64 elements
+    c := 3 - p;      // integer minus pointer
+    d := p + 1.5;    // float offset
+    0
+}

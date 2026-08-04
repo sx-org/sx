@@ -1,0 +1,35 @@
+// Pointer arithmetic is ELEMENT-scaled, not byte-scaled: `p + n` / `p - n`
+// step a pointer by whole pointees and keep the pointer type, the offset may
+// sit on either side of `+`, `+=` / `-=` fold the same way, and `p - q` over
+// one element type yields the signed count of elements between them.
+#import "modules/std.sx";
+
+main :: () {
+    values : [4]i32 = .[10, 20, 30, 40];
+    p : [*]i32 = *values[0];
+
+    q := p + 2;
+    q -= 1;
+    d := q - p;
+    print("q0={} d={}\n", q[0], d);                  // 20 1
+
+    // The integer offset may lead.
+    r := 1 + p;
+    r += 2;
+    print("r0={} back={}\n", r[0], p - r);           // 40 -3
+
+    // A `-` steps backwards by the same stride.
+    s := r - 3;
+    print("s0={} s2={}\n", s[0], s[2]);              // 10 30
+
+    // The stride follows the pointee: f64 moves 8 bytes per element.
+    reals : [3]f64 = .[1.5, 2.5, 3.5];
+    fp : [*]f64 = *reals[0];
+    last := fp + 2;
+    print("last={} span={}\n", last[0], last - fp);  // 3.500000 2
+
+    // A single-object `*T` offsets by its pointee just as `[*]T` does.
+    sp : *i32 = *values[0];
+    third := sp + 2;
+    print("third={} at={}\n", third.*, third - sp);  // 30 2
+}

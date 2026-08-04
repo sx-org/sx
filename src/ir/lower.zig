@@ -2308,6 +2308,35 @@ pub const Lowering = struct {
         return lhs_ty;
     }
 
+    /// The element type a pointer addresses — the pointee of `*T`, the element
+    /// of `[*]T`. Null for every non-pointer type.
+    pub fn pointerElement(self: *Lowering, ty: TypeId) ?TypeId {
+        if (ty.isBuiltin()) return null;
+        return switch (self.module.types.get(ty)) {
+            .pointer => |p| p.pointee,
+            .many_pointer => |p| p.element,
+            else => null,
+        };
+    }
+
+    /// Result type of a `+` / `-` that is POINTER arithmetic: an offset
+    /// (`ptr ± int`, either operand order for `+`) yields the pointer type, a
+    /// same-element difference yields `isize`. Null for every other pairing,
+    /// including the invalid ones — `lowerPointerArith` rejects those with a
+    /// diagnostic. Shared by `lowerBinaryOp` and AST-level inference so a
+    /// static type matches the value produced.
+    pub fn pointerArithResultType(self: *Lowering, op: ast.BinaryOp.Op, lhs_ty: TypeId, rhs_ty: TypeId) ?TypeId {
+        if (op != .add and op != .sub) return null;
+        const l_elem = self.pointerElement(lhs_ty);
+        const r_elem = self.pointerElement(rhs_ty);
+        if (l_elem != null and r_elem != null) {
+            return if (op == .sub and l_elem.? == r_elem.?) .isize else null;
+        }
+        if (l_elem != null) return if (self.isIntEx(rhs_ty)) lhs_ty else null;
+        if (r_elem != null and op == .add) return if (self.isIntEx(lhs_ty)) rhs_ty else null;
+        return null;
+    }
+
     fn isInt(ty: TypeId) bool {
         return switch (ty) {
             .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .usize, .isize => true,
@@ -2899,16 +2928,18 @@ pub const Lowering = struct {
     }
 
     /// Operands valid for a scalar numeric op (`+ - * / %`): ints (incl.
-    /// custom widths), floats, SIMD vectors, and pointers (pointer
-    /// arithmetic). `.unresolved` returns true so a type we couldn't infer
-    /// is never diagnosed — the check only fires on a concretely
-    /// incompatible operand (e.g. `string`, a struct, an enum).
+    /// custom widths), floats, and SIMD vectors. `.unresolved` returns true so
+    /// a type we couldn't infer is never diagnosed — the check only fires on a
+    /// concretely incompatible operand (e.g. `string`, a struct, an enum).
+    /// A pointer is not an arithmetic operand: `lowerBinaryOp` routes `+` / `-`
+    /// to `lowerPointerArith` before this check, so a pointer reaching it is
+    /// under `* / %` and is rejected.
     pub fn isArithOperand(self: *Lowering, ty: TypeId) bool {
         if (ty == .unresolved) return true;
         if (isInt(ty) or isFloat(ty)) return true;
         if (ty.isBuiltin()) return false;
         return switch (self.module.types.get(ty)) {
-            .signed, .unsigned, .vector, .pointer, .many_pointer => true,
+            .signed, .unsigned, .vector => true,
             else => false,
         };
     }
@@ -3634,6 +3665,7 @@ pub const Lowering = struct {
     pub const asmResultType = lower_expr.asmResultType;
     pub const refCapturePointee = lower_expr.refCapturePointee;
     pub const lowerBinaryOp = lower_expr.lowerBinaryOp;
+    pub const lowerPointerArith = lower_expr.lowerPointerArith;
     pub const lowerBoolCondition = lower_expr.lowerBoolCondition;
     pub const checkConditionType = lower_expr.checkConditionType;
     pub const lowerTupleOp = lower_expr.lowerTupleOp;
