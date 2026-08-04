@@ -223,6 +223,16 @@ pub const FnDecl = struct {
     is_c_variadic: bool = false,
 };
 
+/// The number of fixed parameters a signature declares — the argument index at
+/// which its variadic tail begins. The two tail forms hold their tail
+/// differently: a bare `..` binds no `Param`, while `..name: []U` keeps its
+/// final one. The count may be zero, so no caller has a last fixed parameter to
+/// anchor on.
+pub fn fixedParamCount(params: []const Param) usize {
+    if (params.len > 0 and params[params.len - 1].is_variadic) return params.len - 1;
+    return params.len;
+}
+
 pub const Param = struct {
     name: []const u8,
     name_span: Span,

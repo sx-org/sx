@@ -3340,7 +3340,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     // `packVariadicCallArgs`).
     if (is_extern_decl and fd.params.len > 0 and fd.params[fd.params.len - 1].is_variadic) {
         is_variadic = true;
-        effective_params = fd.params[0 .. fd.params.len - 1];
+        effective_params = fd.params[0..ast.fixedParamCount(fd.params)];
     }
 
     const wants_ctx = self.funcWantsImplicitCtx(fd);
