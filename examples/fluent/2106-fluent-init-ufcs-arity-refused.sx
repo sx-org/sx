@@ -1,9 +1,9 @@
 // A destination-first parameter list is counted like any other.
 //
 // `@Init` decides how the first argument is TAKEN, not how many arguments there
-// are. A dot-call on such a function is re-read as the ordinary call, so both
-// spellings are counted against the same list — and the receiver, being that first
-// argument, is counted with the rest.
+// are. Dot-call diagnostics elide the implicit receiver, while ordinary-call
+// diagnostics count it. Both spellings bind against the same declared parameter
+// list.
 #import "modules/std.sx";
 
 emit :: ufcs (value: $I/@Init(i64)) {

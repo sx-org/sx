@@ -1,4 +1,4 @@
-error: 'emit' expects 1 argument, but 4 were given
+error: 'emit' expects 0 arguments, but 3 were given
   --> examples/fluent/2106-fluent-init-ufcs-arity-refused.sx:23:6
    |
 23 |     (5).emit(1, 2, 3);
@@ -10,7 +10,7 @@ error: 'emit' expects 1 argument, but 4 were given
 24 |     emit(5, 1, 2, 3);
    |     ^^^^
 
-error: 'pair' expects 2 arguments, but 3 were given
+error: 'pair' expects 1 argument, but 2 were given
   --> examples/fluent/2106-fluent-init-ufcs-arity-refused.sx:26:6
    |
 26 |     (5).pair(7, 9);
@@ -22,7 +22,7 @@ error: 'pair' expects 2 arguments, but 3 were given
 27 |     pair(5, 7, 9);
    |     ^^^^
 
-error: 'pair' expects 2 arguments, but 1 was given
+error: 'pair' expects 1 argument, but 0 were given
   --> examples/fluent/2106-fluent-init-ufcs-arity-refused.sx:29:6
    |
 29 |     (5).pair();

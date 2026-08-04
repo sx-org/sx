@@ -69,7 +69,12 @@ fn selectedDispatchName(self: *Lowering, sf: *const SelectedFunc) []const u8 {
 /// receiver's own type answers first, an alias names its target, and a generic
 /// family is selected by the receiver — so a call only re-spells itself where that
 /// arm would have taken it anyway.
-fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: []const *Node) ?[]const u8 {
+const DestinationFirstUfcs = struct {
+    fd: *const ast.FnDecl,
+    name: []const u8,
+};
+
+fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: []const *Node) ?DestinationFirstUfcs {
     const alias_target = self.ufcsAliasTarget(fa.field);
     const eff_field = alias_target orelse fa.field;
     const fd0 = self.program_index.fn_ast_map.get(eff_field) orelse return null;
@@ -106,7 +111,7 @@ fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: 
     }
     if (fd.params.len == 0) return null;
     if (init_plan.boundTargetNode(fd.params[0].type_expr) == null) return null;
-    return eff_field;
+    return .{ .fd = fd, .name = eff_field };
 }
 
 
@@ -967,11 +972,13 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             .type_prefix, .func, .callable_value, .non_callable, .missing, .not_visible, .ambiguous => false,
         };
         if (value_receiver_call and !author_declines) {
-            if (destinationFirstUfcs(self, &fa, c.args)) |target_name| {
-                const syn_args = self.alloc.alloc(*Node, c.args.len + 1) catch unreachable;
+            if (destinationFirstUfcs(self, &fa, c.args)) |target| {
+                const args = self.expandSpreadArgNodes(c.args) orelse c.args;
+                if (self.checkCallArity(target.fd, fa.field, args.len + 1, true, c.callee.span)) return Ref.none;
+                const syn_args = self.alloc.alloc(*Node, args.len + 1) catch unreachable;
                 syn_args[0] = @constCast(fa.object);
-                @memcpy(syn_args[1..], c.args);
-                const callee = self.synthNode(.{ .identifier = .{ .name = target_name } }, c.callee.span, c.callee.source_file);
+                @memcpy(syn_args[1..], args);
+                const callee = self.synthNode(.{ .identifier = .{ .name = target.name } }, c.callee.span, c.callee.source_file);
                 const syn_call = ast.Call{ .callee = callee, .args = syn_args };
                 return self.lowerCall(&syn_call);
             }
