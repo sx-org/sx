@@ -379,6 +379,20 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
     if ((fd.extern_export == .extern_) and
         fd.params.len > 0 and fd.params[fd.params.len - 1].is_variadic)
     {
+        // `..name: []U` asserts that every tail argument is a `U`, so each one
+        // coerces to it before the default argument promotions apply. A value
+        // that cannot reach a tail at all is left for the admissibility check,
+        // which names it once.
+        const fixed = fd.params.len - 1;
+        const declared = self.resolveTypeWithBindings(fd.params[fd.params.len - 1].type_expr);
+        if (!declared.isBuiltin() and self.module.types.get(declared) == .slice) {
+            const elem = self.module.types.get(declared).slice.element;
+            for (args.items[@min(fixed, args.items.len)..]) |*arg| {
+                const src_ty = self.builder.getRefType(arg.*);
+                if (src_ty == elem or !self.tailReachable(src_ty)) continue;
+                arg.* = self.coerceToType(arg.*, src_ty, elem);
+            }
+        }
         return;
     }
     // Find variadic param index. The two surface forms differ in

@@ -13,6 +13,11 @@
 
 printf :: (fmt: cstring, ..) -> i32 extern;
 
+// `..name: []U` is the homogeneous constraint: every tail argument coerces to
+// `U`. A value that reaches no tail at all is named by the same refusal.
+libc :: #library "c";
+sum_ints :: (n: i32, ..args: []i32) -> i64 extern libc;
+
 Pair :: struct {
     a: i64;
     b: i64;
@@ -28,5 +33,6 @@ main :: () -> i32 {
     printf("%d\n", pair);        // an aggregate
     printf("%d\n", nums);        // an array
     printf("%d\n", nums[0..1]);  // a slice is two words too
+    sum_ints(1, pair);           // the same refusal on a named typed tail
     return 0;
 }

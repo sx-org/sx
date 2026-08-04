@@ -1977,6 +1977,13 @@ fn tailAdmissible(self: *Lowering, ty: TypeId) bool {
     };
 }
 
+/// Whether a value of `ty` reaches a C-variadic tail at all — as it stands, or
+/// through the default argument promotions.
+pub fn tailReachable(self: *Lowering, ty: TypeId) bool {
+    if (promotedTailType(self, ty)) |promoted| return tailAdmissible(self, promoted);
+    return tailAdmissible(self, ty);
+}
+
 /// Promote and check every argument at or past the fixed count. One
 /// implementation serves each C-variadic call site, so a tail argument is
 /// promoted and admitted identically wherever it is written.

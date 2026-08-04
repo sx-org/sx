@@ -1,29 +1,35 @@
 error: argument 2: 'i48' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:26:5
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:31:5
    |
-26 |     printf("%d\n", wide);        // a width no C variadic slot holds
+31 |     printf("%d\n", wide);        // a width no C variadic slot holds
    |     ^^^^^^^^^^^^^^^^^^^^
 
 error: argument 2: 'string' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:27:5
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:32:5
    |
-27 |     printf("%s\n", "sx string"); // two words: pointer and length
+32 |     printf("%s\n", "sx string"); // two words: pointer and length
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: argument 2: 'Pair' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:28:5
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:33:5
    |
-28 |     printf("%d\n", pair);        // an aggregate
+33 |     printf("%d\n", pair);        // an aggregate
    |     ^^^^^^^^^^^^^^^^^^^^
 
 error: argument 2: '[2]i32' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:29:5
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:34:5
    |
-29 |     printf("%d\n", nums);        // an array
+34 |     printf("%d\n", nums);        // an array
    |     ^^^^^^^^^^^^^^^^^^^^
 
 error: argument 2: '[]i32' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:30:5
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:35:5
    |
-30 |     printf("%d\n", nums[0..1]);  // a slice is two words too
+35 |     printf("%d\n", nums[0..1]);  // a slice is two words too
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: argument 2: 'Pair' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:36:5
+   |
+36 |     sum_ints(1, pair);           // the same refusal on a named typed tail
+   |     ^^^^^^^^^^^^^^^^^

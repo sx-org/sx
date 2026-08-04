@@ -3463,6 +3463,7 @@ pub const Lowering = struct {
     pub const coerceMode = lower_coerce.coerceMode;
     pub const diagNonIntegralNarrow = lower_coerce.diagNonIntegralNarrow;
     pub const promoteCVariadicArgs = lower_coerce.promoteCVariadicArgs;
+    pub const tailReachable = lower_coerce.tailReachable;
     pub const coerceCallArgs = lower_coerce.coerceCallArgs;
 
     // --- lower/ffi.zig (lower_ffi) ---
