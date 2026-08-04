@@ -398,6 +398,15 @@ pub const Parser = struct {
             return try self.createNode(start_pos, .{ .ufcs_alias = .{ .name = name, .target = target, .is_raw = name_is_raw } });
         }
 
+        // A compiler-owned function: `@NAME :: (params) [-> R];`. The sigil is
+        // the whole marker, so the signature stands alone with no body — the
+        // form a plain name spells with the `intrinsic` keyword. It routes
+        // ahead of the function-definition heuristic, which reads a bodyless
+        // `(types) -> R` as a function-type alias.
+        if (name.len > 0 and name[0] == '@' and self.current.tag == .l_paren) {
+            return self.parseAtFnDecl(name, name_span, start_pos, name_is_raw);
+        }
+
         // Function declaration: (params) -> type { body } or () { body }
         if (self.current.tag == .l_paren) {
             // Look ahead: is this a function or an expression starting with `(`?
@@ -2495,6 +2504,35 @@ pub const Parser = struct {
                 tp.protocol_constraints = bounds.toOwnedSlice(self.allocator) catch tp.protocol_constraints;
         }
         return try type_params.toOwnedSlice(self.allocator);
+    }
+
+    /// `@NAME :: (params) [-> R];` — a function whose implementation is the
+    /// compiler's. It carries no body, ABI, linkage, `ufcs`, or accessor
+    /// modifier, and its body node is the one the `intrinsic` keyword builds
+    /// for a plain name, so every downstream consumer reads one shape.
+    fn parseAtFnDecl(self: *Parser, name: []const u8, name_span: ast.Span, start_pos: u32, name_is_raw: bool) anyerror!*Node {
+        const params = try self.parseParams();
+
+        var return_type: ?*Node = null;
+        if (self.current.tag == .arrow) {
+            self.advance();
+            return_type = try self.parseFnReturnType();
+        }
+
+        const body_start = self.current.loc.start;
+        try self.expectStatementEnd();
+        const body = try self.createNode(body_start, .{ .intrinsic_expr = {} });
+        const type_params = try self.collectTypeParams(params);
+
+        return try self.createNode(start_pos, .{ .fn_decl = .{
+            .name = name,
+            .params = params,
+            .return_type = return_type,
+            .body = body,
+            .type_params = type_params,
+            .name_span = name_span,
+            .is_raw = name_is_raw,
+        } });
     }
 
     fn parseFnDecl(self: *Parser, name: []const u8, name_span: ast.Span, name_is_raw: bool, start_pos: u32) anyerror!*Node {

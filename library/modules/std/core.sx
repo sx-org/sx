@@ -104,8 +104,8 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 // or an aggregate. The access is one typed load/store of `T`, so an aggregate
 // `T` moves as a whole rather than field by field. `value` converts to `T` the
 // way any typed parameter does.
-@volatile_load  :: ($T: Type, address: *T) -> T intrinsic;
-@volatile_store :: ($T: Type, address: *T, value: T) intrinsic;
+@volatile_load  :: ($T: Type, address: *T) -> T;
+@volatile_store :: ($T: Type, address: *T, value: T);
 
 // ── The comptime compiler-API readers ────────────────────────────────────────
 // Serviced by the comptime evaluator (mode `evaluate`) — they read and mint into

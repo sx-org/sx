@@ -1641,3 +1641,61 @@ test "parser: a glued `:` separates a default arm from a chaining `else`" {
     );
     try std.testing.expect(chain.data.block.stmts[0].data.if_expr.else_branch != null);
 }
+
+// ── `@` function declarations ────────────────────────────────────────────────
+
+test "parser: an `@` function declaration is its signature, with an intrinsic body" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(),
+        \\@va_arg :: ($T: Type, list: *@VaList) -> T;
+        \\@va_end :: (list: *@VaList);
+    );
+    const root = try parser.parse();
+    const decls = root.data.root.decls;
+    try std.testing.expectEqual(@as(usize, 2), decls.len);
+
+    const arg = decls[0].data.fn_decl;
+    try std.testing.expectEqualStrings("@va_arg", arg.name);
+    try std.testing.expect(arg.body.data == .intrinsic_expr);
+    try std.testing.expectEqual(@as(usize, 2), arg.params.len);
+    try std.testing.expect(arg.return_type != null);
+
+    // An omitted return annotation is sx's canonical void.
+    const end = decls[1].data.fn_decl;
+    try std.testing.expectEqualStrings("@va_end", end.name);
+    try std.testing.expect(end.body.data == .intrinsic_expr);
+    try std.testing.expect(end.return_type == null);
+}
+
+test "parser: an `@` function declaration takes no `intrinsic` marker" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), "@va_end :: (list: *@VaList) intrinsic;");
+    try std.testing.expectError(error.ParseError, parser.parse());
+}
+
+// The sigil marks the declaration, so no ABI, linkage, or body may follow it.
+test "parser: an `@` function declaration takes no body, ABI, or linkage" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    for ([_][:0]const u8{
+        "@f :: (n: i32) -> i32 { return n; }",
+        "@f :: (n: i32) -> i32 => n;",
+        "@f :: (n: i32) -> i32 abi(.c);",
+        "@f :: (n: i32) -> i32 extern;",
+        "@f :: (n: i32) -> i32 export;",
+    }) |src| {
+        var p = Parser.init(alloc, src);
+        try std.testing.expectError(error.ParseError, p.parse());
+    }
+}
+
+test "parser: a plain bodyless signature is a function-type alias" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), "Fn :: (list: *i32) -> i32;");
+    const root = try parser.parse();
+    try std.testing.expect(root.data.root.decls[0].data != .fn_decl);
+}

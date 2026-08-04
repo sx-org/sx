@@ -110,9 +110,10 @@ the import can stand in for the canonical declaration:
 @SourceSite :: struct { … }   // ERROR: 'modules/std/core.sx' declares it
 ```
 
-A contract need not be a type: `@volatile_load` and `@volatile_store` (§Intrinsics,
-Memory) are `intrinsic` function declarations under the same (module, name)
-identity rule.
+A contract need not be a type: an `@` name also declares a function the compiler
+implements, written as its signature with no body. `@volatile_load` and
+`@volatile_store` (§Intrinsics, Memory) are such declarations, under the same
+(module, name) identity rule.
 
 Separately, a few `@` names are **compiler-formed** — `@Init(T)` and
 `@BuildBlock(P)`. Those are formed for a parameter, never declared and never
@@ -5571,12 +5572,26 @@ iteration. `return` runs all pending defers of the function. A `break` or
 
 ## 7. Intrinsics
 
-An **intrinsic** is a declaration whose implementation lives in the compiler. It
-is written with the reserved word `intrinsic` in body position, where a `{ ... }`
-body would otherwise go:
+An **intrinsic** is a declaration whose implementation lives in the compiler.
+
+A FUNCTION intrinsic has two spellings. A plain name is written with the
+reserved word `intrinsic` in body position, where a `{ ... }` body would
+otherwise go; an `@` name is written as its signature alone, because the sigil
+is already the marker:
 
 ```sx
 size_of :: ($T: Type) -> i64 intrinsic;
+@volatile_load :: ($T: Type, address: *T) -> T;
+```
+
+The `@` form takes no body — no brace block, no `=> expr`, no `intrinsic`
+keyword — and no `abi`, linkage, `ufcs`, or accessor modifier. A DATA intrinsic
+is written with the reserved word for every name, since it has no signature the
+sigil could stand over:
+
+```sx
+n :: intrinsic;
+n :: i64 intrinsic;
 ```
 
 `intrinsic` is a keyword, not a directive: `#intrinsic` is not a spelling of it
@@ -6669,11 +6684,14 @@ top_level       = decl | import_decl | context_extend
 import_decl     = '#import' STRING end
                 | IDENT '::' '#import' STRING end
 context_extend  = '#context_extend' IDENT ':' type '=' expr end
-decl            = const_decl | var_decl | fn_decl | enum_decl | struct_decl | error_decl
+decl            = const_decl | var_decl | fn_decl | at_fn_decl | enum_decl | struct_decl | error_decl
 error_decl      = IDENT '::' 'error' '{' IDENT (',' IDENT)* ','? '}' end
 const_decl      = IDENT '::' expr end
                 | IDENT ':' type ':' expr end
                 | IDENT '::' type 'intrinsic' end
+at_fn_decl      = AT_IDENT '::' '(' params? ')' ('->' ret_type)? end
+                  // a compiler-implemented function; the sigil is the marker,
+                  // so no keyword, body, ABI, or linkage follows
 var_decl        = IDENT ':=' expr end
                 | IDENT ':' type '=' expr end
                 | IDENT ':' type end
