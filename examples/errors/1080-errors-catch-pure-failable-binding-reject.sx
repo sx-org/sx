@@ -1,0 +1,24 @@
+#import "modules/std.sx";
+
+E :: error { Bad, Empty }
+
+must :: (n: i32) -> !E {
+    if n < 0 { raise error.Bad; }
+    return;
+}
+
+main :: () -> i32 {
+    a := must(-1) catch (e) { };
+    b := must(-1) catch { };
+    c := must(-1) catch (e) e;
+    d := must(-1) catch (e) == {
+        case .Bad:   0;
+        else:        1
+    };
+    f : i32 = must(-1) catch (e) 0;
+    g : void = must(-1) catch (e) e;
+    h :: must(-1) catch (e) { };
+    i : i32 : must(-1) catch (e) 0;
+    j : void : must(-1) catch (e) e;
+    return 0;
+}

@@ -6434,6 +6434,20 @@ success tuple type, or be `noreturn` (the `noreturn` arm subsumes `return` /
 multi-value failable the body must produce a tuple of matching arity and
 element types. A non-diverging body that produces no value is a compile error.
 
+**Pure-failable result.** A pure failable (`-> !E`) has no value channel, so
+its `catch` yields nothing: it stands as a statement, and binding it is a
+compile error in every body shape — there is nothing to bind. The result cannot
+initialize `:=`, a typed mutable declaration (`name: T =`), or a body-local
+constant declaration (`name ::` or `name: T :`).
+
+```sx
+must_init() catch (e) { log.warn("{}", e); };  // OK — statement
+x := must_init() catch (e) { 0 };              // ERROR: nothing to bind
+```
+
+Give the callee a value channel (`-> (T, !E)`) where the handled expression
+must produce a result.
+
 ### `or` (fallback / chain)
 
 Expression form (the same operator as optional-unwrap). LHS must be failable;

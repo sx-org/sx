@@ -1,0 +1,35 @@
+#import "modules/std.sx";
+
+E :: error { Bad, Empty }
+
+must :: (n: i32) -> !E {
+    if n < 0 { raise error.Bad; }
+    return;
+}
+
+parse :: (n: i32) -> (i32, !E) {
+    if n < 0  { raise error.Bad; }
+    if n == 0 { raise error.Empty; }
+    return n * 2;
+}
+
+main :: () -> i32 {
+    r : i32 = 0;
+
+    must(-1) catch (e) { if e == error.Bad { r = r + 1; } };
+    must(3)  catch     { r = r + 100; };
+
+    parse(-1) catch (e) { r = r + 2; 0 };
+    parse(4)  catch (e) { r = r + 100; 0 };
+
+    v := parse(4) catch (e) 0;
+    r = r + v;
+    w := parse(0) catch (e) == {
+        case .Empty: 4;
+        else:        100
+    };
+    r = r + w;
+
+    print("catch forms: {}\n", r);
+    return r;
+}
