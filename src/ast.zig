@@ -215,6 +215,12 @@ pub const FnDecl = struct {
     /// no real field matches. Takes the `self` receiver plus exactly one value
     /// parameter and returns void.
     is_set: bool = false,
+    /// The parameter list ends in a bare `..` — a C-variadic tail, which binds
+    /// no name and no type and is therefore a signature flag rather than a
+    /// `Param`. Legal only on an effective-C signature: a definition carrying
+    /// `abi(.c)` or `export`, or an `extern` declaration. `params` holds only
+    /// the fixed parameters, so the fixed count is `params.len`.
+    is_c_variadic: bool = false,
 };
 
 pub const Param = struct {

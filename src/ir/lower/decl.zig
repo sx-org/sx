@@ -3331,7 +3331,9 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     // the VM handler the registry names.
     const is_extern_decl = fd.extern_export == .extern_ or
         isEvaluateIntrinsic(self, fd, name);
-    var is_variadic = false;
+    // A bare `..` tail binds no parameter, so `fd.params` already holds exactly
+    // the fixed parameters and nothing is stripped.
+    var is_variadic = fd.is_c_variadic;
     var effective_params = fd.params;
     // A lib-less C-import with a C-variadic `...` tail: drop the trailing slice
     // param and set is_variadic (mirrored at the call site by

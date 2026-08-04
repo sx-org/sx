@@ -1,0 +1,48 @@
+// A C-variadic signature ends its parameter list in a bare `..`. The tail binds
+// no name and no type, so it is a property of the signature rather than a
+// parameter, and the fixed count is the number of entries before it — zero
+// when the list is just `(..)`.
+//
+// The tail is legal on an effective-C signature only: a definition carrying
+// `abi(.c)` or `export`, or an `extern` declaration. Each emits the C shape
+// with no implicit sx context, so the LLVM type is exactly what a C compiler
+// builds for the same prototype.
+//
+// Every argument at or past the fixed count crosses the tail under the default
+// argument promotions: `f32` widens to `f64`, and an integer narrower than 32
+// bits widens to `i32`.
+//
+// An integer literal keeps ordinary sx typing, so it crosses the tail as `i64`.
+// A C `%d` slot reads an `int`, so the width is stated where C expects one, and
+// a C `%s` slot reads one pointer, so text crosses as `cstring`.
+
+#import "modules/std.sx";
+
+printf :: (fmt: cstring, ..) -> i32 extern;
+
+// One fixed parameter, then the tail.
+tally :: (n: i32, ..) -> i64 abi(.c) {
+    return xx n;
+}
+
+// Zero fixed parameters: every argument is a tail argument, and a call with
+// none at all passes an empty tail.
+constant :: (..) -> i64 abi(.c) {
+    return 7;
+}
+
+main :: () -> i32 {
+    single: f32 = 1.5;
+    narrow: u8 = 7;
+    signed_narrow: i16 = -3;
+    whole: i32 = 42;
+    text: cstring = "text";
+
+    printf("heterogeneous: %d %s %f\n", whole, text, 3.25);
+    printf("promoted: %f %d %d\n", single, narrow, signed_narrow);
+
+    print("tally={}\n", tally(3, 1, 2, 3));
+    print("constant_empty={}\n", constant());
+    print("constant_tail={}\n", constant(1, 2));
+    return 0;
+}

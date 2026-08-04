@@ -1699,3 +1699,89 @@ test "parser: a plain bodyless signature is a function-type alias" {
     const root = try parser.parse();
     try std.testing.expect(root.data.root.decls[0].data != .fn_decl);
 }
+
+// ── The bare `..` C-variadic tail ────────────────────────────────────────────
+
+test "parser: a bare `..` tail sets the signature flag and binds no parameter" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(),
+        \\one :: (n: i32, ..) -> i64 abi(.c) { 0 }
+        \\zero :: (..) -> i64 abi(.c) { 0 }
+        \\imported :: (fmt: cstring, ..) -> i32 extern;
+    );
+    const root = try parser.parse();
+    const decls = root.data.root.decls;
+
+    const one = decls[0].data.fn_decl;
+    try std.testing.expect(one.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 1), one.params.len);
+
+    // Zero fixed parameters is an ordinary count, not a separate case.
+    const zero = decls[1].data.fn_decl;
+    try std.testing.expect(zero.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 0), zero.params.len);
+
+    const imported = decls[2].data.fn_decl;
+    try std.testing.expect(imported.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 1), imported.params.len);
+}
+
+test "parser: a tail takes sx's ordinary trailing comma" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(),
+        \\one :: (n: i32, ..,) -> i64 abi(.c) { 0 }
+        \\zero :: (..,) -> i64 abi(.c) { 0 }
+    );
+    const root = try parser.parse();
+    try std.testing.expect(root.data.root.decls[0].data.fn_decl.is_c_variadic);
+    try std.testing.expect(root.data.root.decls[1].data.fn_decl.is_c_variadic);
+}
+
+test "parser: a tail is legal only on an effective-C signature" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    for ([_][:0]const u8{
+        "f :: (n: i32, ..) -> i32 { 0 }", // default convention
+        "f :: (n: i32, ..) -> i32 abi(.naked) { 0 }",
+        "f :: (n: i32, .., x: i32) -> i32 abi(.c) { 0 }", // not the last entry
+        "f :: (n: i32, ..args: []i32, ..) -> i32 abi(.c) { 0 }", // two tails
+        "@f :: (n: i32, ..) -> i32;",
+    }) |src| {
+        var p = Parser.init(alloc, src);
+        try std.testing.expectError(error.ParseError, p.parse());
+    }
+}
+
+// A spread always carries an operand and the tail never does, so one token of
+// lookahead keeps `..$args` / `..xs: []T` / `..xs: P` on their existing path.
+test "parser: the named variadic forms are untouched by the tail arm" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(),
+        \\pack :: (..$args) -> i64 { 0 }
+        \\slice :: (n: i32, ..xs: []i32) -> i64 { 0 }
+    );
+    const root = try parser.parse();
+    const pack = root.data.root.decls[0].data.fn_decl;
+    try std.testing.expect(!pack.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 1), pack.params.len);
+    try std.testing.expect(pack.params[0].is_variadic);
+
+    const slice = root.data.root.decls[1].data.fn_decl;
+    try std.testing.expect(!slice.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 2), slice.params.len);
+    try std.testing.expect(slice.params[1].is_variadic);
+}
+
+// sx has no three-dot token, so a three-dot list is `..` then `.` — neither
+// `)` nor `,`, which keeps it on the named path and its existing refusal.
+test "parser: a three-dot parameter list is not a tail" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), "f :: (n: i32, ...) -> i32 abi(.c) { 0 }");
+    try std.testing.expectError(error.ParseError, parser.parse());
+    try std.testing.expectEqualStrings("expected parameter name", parser.err_msg.?);
+}

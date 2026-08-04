@@ -4418,7 +4418,9 @@ pub fn checkCallArity(self: *Lowering, fd: *const ast.FnDecl, callee_name: []con
     // it from the arg list only in the all-slots-spelled form accepted below.
     var min: usize = 0;
     var count: usize = 0;
-    var variadic = false;
+    // A bare `..` binds no `Param`, so the tail shows in the signature flag
+    // rather than in the loop below.
+    var variadic = fd.is_c_variadic;
     for (fd.params) |p| {
         if (isTypeParamDecl(&p, fd.type_params)) continue;
         if (p.is_variadic) {
