@@ -1,0 +1,28 @@
+// A set value narrows only to a type that declares membership in that set.
+// Argument and dot-receiver formation both report the membership requirement.
+// Ordinary implicit set-to-member conversion is unavailable.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Plain :: struct { text: string = ""; }
+
+take_plain :: ufcs (value: $I/@Init(Plain)) {
+    slot: Plain = ---;
+    value.write(*slot);
+}
+
+main :: () -> i32 {
+    v : View = Label{ text = "member" };
+    take_plain(v);
+    v.take_plain();
+    label : Label = v;
+    0
+}

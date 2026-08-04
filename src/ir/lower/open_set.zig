@@ -1283,6 +1283,26 @@ pub fn lowerDowncast(
     soft: bool,
     span: ast.Span,
 ) Ref {
+    return lowerNarrowing(self, set_ty, member, value, value_node, type_node, soft, span);
+}
+
+/// Formation from a set slot to one of its declared members is the hard checked
+/// narrowing: the active tag yields a payload copy, and another tag takes the
+/// assertion panic path.
+pub fn narrowMember(self: *Lowering, value: Ref, set_ty: TypeId, member: TypeId, span: ast.Span) Ref {
+    return lowerNarrowing(self, set_ty, member, value, null, null, false, span);
+}
+
+fn lowerNarrowing(
+    self: *Lowering,
+    set_ty: TypeId,
+    member: TypeId,
+    value: Ref,
+    value_node: ?*const Node,
+    type_node: ?*const Node,
+    soft: bool,
+    span: ast.Span,
+) Ref {
     const table = &self.module.types;
     const result_ty = if (soft) table.optionalOf(member) else member;
     const slot = slotAddress(self, set_ty, value, value_node);
@@ -1304,22 +1324,51 @@ pub fn lowerDowncast(
     if (soft) {
         self.builder.br(merge_bb, &.{self.builder.constNull(result_ty)});
     } else {
-        const view = anyViewOfSlot(self, set_ty, slot);
-        var buf: [40]u8 = undefined;
-        const nm = std.fmt.bufPrint(&buf, "$setcast_{d}", .{self.block_counter}) catch "$setcast";
-        self.block_counter += 1;
-        const owned = self.alloc.dupe(u8, nm) catch @panic("out of memory");
-        self.scope.?.put(owned, .{ .ref = view, .ty = .any, .is_alloca = false });
-        const src = value_node.source_file;
-        const recv_id = self.synthNode(.{ .identifier = .{ .name = owned } }, span, src);
-        const callee = self.synthNode(.{ .identifier = .{ .name = "__sx_cast_or_panic" } }, span, src);
-        const args = self.alloc.dupe(*Node, &.{ recv_id, @constCast(type_node) }) catch @panic("out of memory");
-        const call = ast.Call{ .callee = callee, .args = args };
-        self.builder.br(merge_bb, &.{self.lowerCall(&call)});
+        self.builder.br(merge_bb, &.{lowerNarrowingPanic(self, set_ty, member, slot, type_node, span, if (value_node) |n| n.source_file else self.current_source_file)});
     }
 
     self.builder.switchToBlock(merge_bb);
     return self.builder.blockParam(merge_bb, 0, result_ty);
+}
+
+fn lowerNarrowingPanic(
+    self: *Lowering,
+    set_ty: TypeId,
+    member: TypeId,
+    slot: Ref,
+    type_node: ?*const Node,
+    span: ast.Span,
+    source_file: ?[]const u8,
+) Ref {
+    const view = anyViewOfSlot(self, set_ty, slot);
+    var buf: [48]u8 = undefined;
+    const nm = std.fmt.bufPrint(&buf, "$setcast_{d}", .{self.block_counter}) catch "$setcast";
+    self.block_counter += 1;
+    const owned = self.alloc.dupe(u8, nm) catch @panic("out of memory");
+    self.scope.?.put(owned, .{ .ref = view, .ty = .any, .is_alloca = false });
+    const recv_id = self.synthNode(.{ .identifier = .{ .name = owned } }, span, source_file);
+    const callee = self.synthNode(.{ .identifier = .{ .name = "__sx_cast_or_panic" } }, span, source_file);
+
+    if (type_node) |target| {
+        const args = self.alloc.dupe(*Node, &.{ recv_id, @constCast(target) }) catch @panic("out of memory");
+        return self.lowerCall(&.{ .callee = callee, .args = args });
+    }
+
+    const type_name = std.fmt.allocPrint(self.alloc, "$setcast_type_{d}", .{self.block_counter}) catch @panic("out of memory");
+    self.block_counter += 1;
+    const target = self.synthNode(.{ .identifier = .{ .name = type_name } }, span, source_file);
+    var bindings = std.StringHashMap(TypeId).init(self.alloc);
+    defer bindings.deinit();
+    if (self.type_bindings) |existing| {
+        var it = existing.iterator();
+        while (it.next()) |entry| bindings.put(entry.key_ptr.*, entry.value_ptr.*) catch @panic("out of memory");
+    }
+    bindings.put(type_name, member) catch @panic("out of memory");
+    const saved = self.type_bindings;
+    self.type_bindings = bindings;
+    defer self.type_bindings = saved;
+    const args = self.alloc.dupe(*Node, &.{ recv_id, target }) catch @panic("out of memory");
+    return self.lowerCall(&.{ .callee = callee, .args = args });
 }
 
 /// Refuse asking a set value for a type that never declared itself into the set —

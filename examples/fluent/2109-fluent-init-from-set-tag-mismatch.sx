@@ -1,0 +1,28 @@
+// Forming an `@Init(Member)` from a set value checks the active tag when the
+// initializer writes. A different member takes the hard assertion path.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Button :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Button) -> string => self.text;
+}
+
+take_label :: (value: $I/@Init(Label)) {
+    slot: Label = ---;
+    value.write(*slot);
+}
+
+main :: () -> i32 {
+    v : View = Button{ text = "other" };
+    take_label(v);
+    0
+}

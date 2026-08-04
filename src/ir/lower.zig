@@ -3718,6 +3718,7 @@ pub const Lowering = struct {
     pub const openSetMembershipHelp = lower_open_set.membershipHelp;
     pub const refuseUntemperedDowncast = lower_open_set.refuseUntemperedDowncast;
     pub const lowerOpenSetDowncast = lower_open_set.lowerDowncast;
+    pub const narrowOpenSetMember = lower_open_set.narrowMember;
     pub const coerceMemberToSet = lower_open_set.coerceMemberToSet;
     pub const openSetSlotAddress = lower_open_set.slotAddress;
     pub const openSetMemberTypeId = lower_open_set.memberTypeId;

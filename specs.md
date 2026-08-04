@@ -4070,12 +4070,17 @@ such parameter, which hands over the single write rather than wrapping it. A
 binder bounded by `@Init` can hold nothing else — a binding that is not a formed
 initializer fails the bound.
 
-A **carrier** value forms nothing but itself. A protocol value is a handle to its
-conformer and an open-set value carries one of its members, so which concrete
-value is at hand is a runtime fact: an `@Init(T)` whose `T` is what the carrier
-carries — rather than the carrier's own type — is refused where the expression is
-written, in both spellings. The downcast reads the carried value out
-(`h.(Round)`, `h.(?Round)`), and what it yields forms like any other value.
+A protocol value forms nothing but its own protocol type. It is a handle to its
+conformer, not the conformer's value, so forming an `@Init(T)` for a concrete `T`
+is refused where the expression is written, in both argument and dot-receiver
+spellings. The explicit downcast reads the conformer out (`h.(Round)`,
+`h.(?Round)`), and what it yields forms like any other value.
+
+An open-set value carries its member inline. It forms an `@Init(Member)` when
+`Member` declares membership in that set: `write` compares the slot tag, copies
+the payload on a match, and takes the hard downcast's panic path on another
+member. Membership is checked first, so a target outside the set is refused as a
+non-member rather than treated as a narrowing.
 
 The operations:
 

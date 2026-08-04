@@ -1271,6 +1271,18 @@ pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
         }
         return false;
     }
+    if (formingFor(self, dst_ty)) {
+        if (self.openSetOf(src_ty)) |set| {
+            if (self.openSetDeclaresMembership(dst_ty, set.decl)) return true;
+            if (self.diagnostics) |d| {
+                const id = d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': it is not a member of the set", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty) });
+                self.openSetMembershipHelp(d, id, dst_ty, src_ty, span);
+                self.noteOpenSetInstantiation(d, id);
+                self.assignability_error_count += 1;
+            }
+            return false;
+        }
+    }
     if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
     if (self.diagnostics) |d| {
         if (formingFor(self, dst_ty)) {
@@ -1505,6 +1517,14 @@ fn sameStoreWidth(self: *Lowering, a: TypeId, b: TypeId) bool {
 }
 
 pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode) Ref {
+    if (mode == .implicit and formingFor(self, dst_ty)) {
+        if (self.openSetOf(src_ty)) |set| {
+            if (self.openSetDeclaresMembership(dst_ty, set.decl)) {
+                const cs = self.builder.current_span;
+                return self.narrowOpenSetMember(val, src_ty, dst_ty, .{ .start = cs.start, .end = cs.end });
+            }
+        }
+    }
     // Pointer-to-concrete (or concrete-storage value) → `*P`: materialize
     // the borrowed VIEW here, at the node-less layer, so EVERY store site
     // agrees with the node-aware decl/arg arms (an assignment

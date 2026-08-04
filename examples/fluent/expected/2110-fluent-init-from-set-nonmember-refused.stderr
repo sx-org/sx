@@ -1,0 +1,27 @@
+error: 'View' cannot form an initializer for 'Plain': it is not a member of the set
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:24:16
+   |
+24 |     take_plain(v);
+   |                ^
+
+help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
+   |
+24 |     take_plain(v);
+   |                ^
+
+error: 'View' cannot form an initializer for 'Plain': it is not a member of the set
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:25:5
+   |
+25 |     v.take_plain();
+   |     ^
+
+help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
+   |
+25 |     v.take_plain();
+   |     ^
+
+error: cannot initialize 'label' of type 'Label' with a value of type 'View'
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:26:21
+   |
+26 |     label : Label = v;
+   |                     ^

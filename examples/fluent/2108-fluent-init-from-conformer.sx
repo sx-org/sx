@@ -5,8 +5,9 @@
 // expression produced. A protocol handle reaches the same parameter by naming the
 // conformer: the downcast yields the concrete value, and that forms.
 //
-// A target the value already has is a plain slot copy, whatever that target is: an
-// open set takes its own value as one, and a protocol takes a handle as one.
+// A set value narrows to a declared member through its runtime tag. A target the
+// value already has is a plain slot copy: a set takes its own value as one, and a
+// protocol takes a handle as one.
 #import "modules/std.sx";
 
 Named :: protocol tagged { name :: (self: *Self) -> string; }
@@ -34,6 +35,12 @@ store :: ufcs (value: $I/@Init(View)) {
     print("stored {}\n", slot.render());
 }
 
+take_label :: ufcs (value: $I/@Init(Label)) {
+    slot: Label = ---;
+    value.write(*slot);
+    print("label {}\n", slot.text);
+}
+
 hold :: ufcs (value: $I/@Init(Named)) {
     slot: Named = ---;
     value.write(*slot);
@@ -52,6 +59,8 @@ main :: () -> i32 {
     v : View = Label{ text = "slot" };
     store(v);
     v.store();
+    take_label(v);
+    v.take_label();
 
     hold(h);
     h.hold();
@@ -66,6 +75,8 @@ main :: () -> i32 {
 // stored member
 // stored slot
 // stored slot
+// label slot
+// label slot
 // held downcast
 // held downcast
 //
