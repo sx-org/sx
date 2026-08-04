@@ -1,10 +1,3 @@
-// `catch` across both failable shapes and both positions. A PURE failable
-// (`-> !E`) carries only the error channel: its `catch` handles the error and
-// yields nothing, so it stands as a statement and cannot initialize a binding
-// (rejected in 1080). A VALUE-CARRYING failable (`-> (T, !E)`) yields its
-// value slot on success and the handler body's value on failure, so it works
-// in both positions — as a statement the result is simply discarded.
-
 #import "modules/std.sx";
 
 E :: error { Bad, Empty }
@@ -23,23 +16,20 @@ parse :: (n: i32) -> (i32, !E) {
 main :: () -> i32 {
     r : i32 = 0;
 
-    // pure + statement position — the handler runs for effect.
     must(-1) catch (e) { if e == error.Bad { r = r + 1; } };
-    must(3)  catch     { r = r + 100; };                    // success → skipped
+    must(3)  catch     { r = r + 100; };
 
-    // value-carrying + statement position — the merged value is discarded.
     parse(-1) catch (e) { r = r + 2; 0 };
-    parse(4)  catch (e) { r = r + 100; 0 };                 // success → skipped
+    parse(4)  catch (e) { r = r + 100; 0 };
 
-    // value-carrying + expression position — binds the merge.
-    v := parse(4) catch (e) 0;                              // success → 8
+    v := parse(4) catch (e) 0;
     r = r + v;
     w := parse(0) catch (e) == {
         case .Empty: 4;
         else:        100
-    };                                                      // Empty → 4
+    };
     r = r + w;
 
-    print("catch forms: {}\n", r);                          // 1+2+8+4 = 15
+    print("catch forms: {}\n", r);
     return r;
 }

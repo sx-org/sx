@@ -725,7 +725,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         // Explicit type annotation — resolve type first, then lower value
         _ = self.rejectMultiReturnValueType(ta, "variable");
         const ty = self.resolveType(ta);
-        if (rejectVoidAnnotation(self, ta, vd.name, ty)) return;
+        if (rejectVoidAnnotation(self, ta, vd.name, ty, "a variable holds a value")) return;
         const slot = self.builder.alloca(ty);
         // The annotation already names the valueless type; lowering the
         // initializer would only restate the refusal at the erasure.
@@ -1004,12 +1004,6 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
     }
 }
 
-/// A declaration binds a value, and `void` is the absence of one. `catch` on
-/// a PURE failable (`-> !E`) is the shape that reaches here: the operand
-/// carries only the error channel, so the handled expression has nothing to
-/// hand the binding. An initializer whose own lowering reported (the error
-/// count grew past `errs_before`) is void as fallout of that error: it keeps
-/// its own diagnostic, and the build stops on it.
 fn rejectVoidInitializer(
     self: *Lowering,
     val: *const ast.Node,
@@ -1032,19 +1026,21 @@ fn rejectVoidInitializer(
     return true;
 }
 
-/// `void` names no value, so a variable — which is storage for one — cannot
-/// be declared with it.
-fn rejectVoidAnnotation(self: *Lowering, ta: *const ast.Node, name: []const u8, ty: TypeId) bool {
+fn rejectVoidAnnotation(
+    self: *Lowering,
+    ta: *const ast.Node,
+    name: []const u8,
+    ty: TypeId,
+    declaration_reason: []const u8,
+) bool {
     if (ty != .void) return false;
     if (self.diagnostics) |d| {
-        d.addFmt(.err, ta.span, "'{s}' cannot be declared 'void' — a variable holds a value", .{name});
+        d.addFmt(.err, ta.span, "'{s}' cannot be declared 'void' — {s}", .{ name, declaration_reason });
     }
     bindVoidPlaceholder(self, name);
     return true;
 }
 
-/// Bind a refused declaration's name so later uses resolve to it instead of
-/// reporting again.
 fn bindVoidPlaceholder(self: *Lowering, name: []const u8) void {
     const scope = self.scope orelse return;
     scope.put(name, .{ .ref = self.emitPlaceholder(name), .ty = .unresolved, .is_alloca = false });
@@ -1129,12 +1125,19 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
     if (cd.value.data == .comptime_expr) self.comptime_const_name = cd.name;
     defer self.comptime_const_name = saved_ct_name;
 
+    const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
     const ref = self.lowerExpr(cd.value);
+    const ref_ty = self.builder.getRefType(ref);
     // If there's an explicit type annotation, use it. Otherwise, infer from the expression.
     const ty = if (cd.type_annotation) |ta|
         self.resolveType(ta)
     else
-        self.builder.getRefType(ref);
+        ref_ty;
+
+    if (cd.type_annotation) |ta| {
+        if (rejectVoidAnnotation(self, ta, cd.name, ty, "a constant binds a value")) return;
+    }
+    if (rejectVoidInitializer(self, cd.value, cd.name, ref_ty, errs_before)) return;
 
     // An annotated constant whose initializer cannot coerce to the declared type
     // would be bound under a type its bytes don't match — diagnose
