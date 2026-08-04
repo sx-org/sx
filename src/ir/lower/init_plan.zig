@@ -126,6 +126,44 @@ fn siteFor(self: *Lowering, arg: *const Node) u32 {
     return id;
 }
 
+/// A CARRIER value — a protocol handle, an open-set slot — is not the type it
+/// carries: which conformer or member it holds is a runtime fact, so the bytes at
+/// hand are the carrier's own. Forming an `@Init(target)` from one has nothing to
+/// write but a reinterpretation of those bytes, and it is refused where the
+/// expression is written, naming the downcast that reads the carried value out.
+/// True when refused.
+///
+/// A modeled conversion already says what the bytes become (`any` takes the
+/// concrete view, an optional target answers in its own terms), and a set
+/// destination is decided by membership before anything else — both keep their
+/// own answers.
+fn refuseCarrierSource(self: *Lowering, arg: *const Node, arg_ty: TypeId, target: TypeId) bool {
+    if (arg_ty == target or arg_ty == .unresolved or target == .unresolved) return false;
+    if (self.isOpenSet(target)) return false;
+    if (self.coercionResolver().classify(arg_ty, target) != .none) return false;
+    const is_protocol = self.protocolKindOf(arg_ty) != null;
+    const set = if (is_protocol) null else self.openSetOf(arg_ty);
+    if (!is_protocol and set == null) return false;
+    const d = self.diagnostics orelse return true;
+    const src_name = self.formatSourceTypeName(arg_ty);
+    const dst_name = self.formatSourceTypeName(target);
+    if (set) |s| {
+        if (self.openSetDeclaresMembership(target, s.decl)) {
+            const id = d.addFmtId(.err, arg.span, "'{s}' cannot form an initializer for '{s}': a set value carries one of its members, and which one is a runtime fact", .{ src_name, dst_name });
+            d.addHelpFmt(id, arg.span, null, "read the member out with a downcast first: '.({s})' panics on another member, '.(?{s})' answers null", .{ dst_name, dst_name });
+            self.noteOpenSetInstantiation(d, id);
+        } else {
+            const id = d.addFmtId(.err, arg.span, "'{s}' cannot form an initializer for '{s}': a set value carries one of its members, and '{s}' is not one", .{ src_name, dst_name, dst_name });
+            self.openSetMembershipHelp(d, id, target, arg_ty, arg.span);
+            self.noteOpenSetInstantiation(d, id);
+        }
+    } else {
+        const id = d.addFmtId(.err, arg.span, "'{s}' cannot form an initializer for '{s}': a protocol value is a handle to its conformer, not the conformer", .{ src_name, dst_name });
+        d.addHelpFmt(id, arg.span, null, "read the conformer out with a downcast first: '.({s})' panics on another type, '.(?{s})' answers null", .{ dst_name, dst_name });
+    }
+    return true;
+}
+
 /// Form the `@Init(target)` implementor for `arg` (spec §5.2). The argument is
 /// NOT evaluated here: it becomes the body of a thunk
 /// `(dest: *target) { dest.* = <arg>; }`, so it runs when — and each time — the
@@ -147,6 +185,8 @@ pub fn formInitPlan(self: *Lowering, arg: *const Node, target: TypeId) Ref {
     if (conforms(self, target, arg_ty)) return self.lowerExpr(arg);
 
     const impl_ty = self.module.types.initImplementorType(target, siteFor(self, arg));
+    if (refuseCarrierSource(self, arg, arg_ty, target))
+        return self.builder.emit(.{ .placeholder = self.module.types.internString("init-formation") }, impl_ty);
 
     const span = arg.span;
     const src = self.current_source_file;

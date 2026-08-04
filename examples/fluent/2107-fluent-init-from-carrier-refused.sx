@@ -1,0 +1,93 @@
+// A carrier value is not the type it carries, and formation says so.
+//
+// A protocol value is a HANDLE to its conformer: which concrete type it holds is
+// a runtime fact, so the bytes at hand are the handle's own. An `@Init(T)` writes
+// exactly a `T`, so forming one from a handle has nothing to write but a
+// reinterpretation of those bytes — refused where the expression is written, in
+// both spellings (an argument and a dot receiver) and at every kind that has
+// values (`tagged`, `vtable`, `inline`).
+//
+// An open-set slot answers the same way: it carries one of its members, and which
+// one is a runtime fact. A target that IS a member is read out by a downcast; a
+// target that is no member is told what membership is instead.
+//
+// The path in every case is the explicit downcast — `.(T)` panics on another
+// type, `.(?T)` answers null — and what it yields forms like any other value.
+#import "modules/std.sx";
+
+Named :: protocol tagged { name :: (self: *Self) -> string; }
+Boxed :: protocol vtable { name :: (self: *Self) -> string; }
+Wired :: protocol inline { name :: (self: *Self) -> string; }
+
+Round :: struct { s: string = "round"; }
+impl Named for Round { name :: (self: *Round) -> string => self.s; }
+impl Boxed for Round { name :: (self: *Round) -> string => self.s; }
+impl Wired for Round { name :: (self: *Round) -> string => self.s; }
+
+// A conformer laid out at the handle's own width: a handle is still not it.
+Wide :: struct { n: i64 = 0; s: string = ""; }
+impl Boxed for Wide { name :: (self: *Wide) -> string => self.s; }
+
+keep :: ufcs (value: $I/@Init(Round)) {
+    slot: Round = ---;
+    value.write(*slot);
+    print("kept {}\n", slot.s);
+}
+
+keep_wide :: ufcs (value: $I/@Init(Wide)) {
+    slot: Wide = ---;
+    value.write(*slot);
+    print("wide {}\n", slot.s);
+}
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+// A member of nothing, so a set value is told what would make it one.
+Plain :: struct { text: string = ""; }
+
+take_label :: ufcs (value: $I/@Init(Label)) {
+    slot: Label = ---;
+    value.write(*slot);
+    print("label {}\n", slot.text);
+}
+
+take_plain :: ufcs (value: $I/@Init(Plain)) {
+    slot: Plain = ---;
+    value.write(*slot);
+    print("plain {}\n", slot.text);
+}
+
+main :: () -> i32 {
+    // A tagged handle: two words that reference the conformer.
+    n : Named = Round{ s = "tagged" };
+    keep(n);
+    n.keep();
+
+    // The erased kinds, which carry their dispatch in the value itself.
+    b : Boxed = Round{ s = "vtable" };
+    keep(b);
+    b.keep();
+
+    w : Wired = Round{ s = "inline" };
+    keep(w);
+    w.keep();
+
+    x : Boxed = Wide{ n = 1, s = "same width" };
+    keep_wide(x);
+    x.keep_wide();
+
+    // A set slot at a member target, and at a target that is no member at all.
+    v : View = Label{ text = "member" };
+    take_label(v);
+    v.take_label();
+    take_plain(v);
+    v.take_plain();
+    0
+}

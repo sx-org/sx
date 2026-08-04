@@ -4070,6 +4070,13 @@ such parameter, which hands over the single write rather than wrapping it. A
 binder bounded by `@Init` can hold nothing else — a binding that is not a formed
 initializer fails the bound.
 
+A **carrier** value forms nothing but itself. A protocol value is a handle to its
+conformer and an open-set value carries one of its members, so which concrete
+value is at hand is a runtime fact: an `@Init(T)` whose `T` is what the carrier
+carries — rather than the carrier's own type — is refused where the expression is
+written, in both spellings. The downcast reads the carried value out
+(`h.(Round)`, `h.(?Round)`), and what it yields forms like any other value.
+
 The operations:
 
 | Operation | Meaning |

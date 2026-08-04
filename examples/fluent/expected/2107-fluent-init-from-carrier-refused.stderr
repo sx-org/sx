@@ -1,0 +1,131 @@
+error: 'Named' cannot form an initializer for 'Round': a protocol value is a handle to its conformer, not the conformer
+  --> examples/fluent/2107-fluent-init-from-carrier-refused.sx:70:10
+   |
+70 |     keep(n);
+   |          ^
+
+help: read the conformer out with a downcast first: '.(Round)' panics on another type, '.(?Round)' answers null
+   |
+70 |     keep(n);
+   |          ^
+
+error: 'Named' cannot form an initializer for 'Round': a protocol value is a handle to its conformer, not the conformer
+  --> examples/fluent/2107-fluent-init-from-carrier-refused.sx:71:5
+   |
+71 |     n.keep();
+   |     ^
+
+help: read the conformer out with a downcast first: '.(Round)' panics on another type, '.(?Round)' answers null
+   |
+71 |     n.keep();
+   |     ^
+
+error: 'Boxed' cannot form an initializer for 'Round': a protocol value is a handle to its conformer, not the conformer
+  --> examples/fluent/2107-fluent-init-from-carrier-refused.sx:75:10
+   |
+75 |     keep(b);
+   |          ^
+
+help: read the conformer out with a downcast first: '.(Round)' panics on another type, '.(?Round)' answers null
+   |
+75 |     keep(b);
+   |          ^
+
+error: 'Boxed' cannot form an initializer for 'Round': a protocol value is a handle to its conformer, not the conformer
+  --> examples/fluent/2107-fluent-init-from-carrier-refused.sx:76:5
+   |
+76 |     b.keep();
+   |     ^
+
+help: read the conformer out with a downcast first: '.(Round)' panics on another type, '.(?Round)' answers null
+   |
+76 |     b.keep();
+   |     ^
+
+error: 'Wired' cannot form an initializer for 'Round': a protocol value is a handle to its conformer, not the conformer
+  --> examples/fluent/2107-fluent-init-from-carrier-refused.sx:79:10
+   |
+79 |     keep(w);
+   |          ^
+
+help: read the conformer out with a downcast first: '.(Round)' panics on another type, '.(?Round)' answers null
+   |
+79 |     keep(w);
+   |          ^
+
+error: 'Wired' cannot form an initializer for 'Round': a protocol value is a handle to its conformer, not the conformer
+  --> examples/fluent/2107-fluent-init-from-carrier-refused.sx:80:5
+   |
+80 |     w.keep();
+   |     ^
+
+help: read the conformer out with a downcast first: '.(Round)' panics on another type, '.(?Round)' answers null
+   |
+80 |     w.keep();
+   |     ^
+
+error: 'Boxed' cannot form an initializer for 'Wide': a protocol value is a handle to its conformer, not the conformer
+  --> examples/fluent/2107-fluent-init-from-carrier-refused.sx:83:15
+   |
+83 |     keep_wide(x);
+   |               ^
+
+help: read the conformer out with a downcast first: '.(Wide)' panics on another type, '.(?Wide)' answers null
+   |
+83 |     keep_wide(x);
+   |               ^
+
+error: 'Boxed' cannot form an initializer for 'Wide': a protocol value is a handle to its conformer, not the conformer
+  --> examples/fluent/2107-fluent-init-from-carrier-refused.sx:84:5
+   |
+84 |     x.keep_wide();
+   |     ^
+
+help: read the conformer out with a downcast first: '.(Wide)' panics on another type, '.(?Wide)' answers null
+   |
+84 |     x.keep_wide();
+   |     ^
+
+error: 'View' cannot form an initializer for 'Label': a set value carries one of its members, and which one is a runtime fact
+  --> examples/fluent/2107-fluent-init-from-carrier-refused.sx:88:16
+   |
+88 |     take_label(v);
+   |                ^
+
+help: read the member out with a downcast first: '.(Label)' panics on another member, '.(?Label)' answers null
+   |
+88 |     take_label(v);
+   |                ^
+
+error: 'View' cannot form an initializer for 'Label': a set value carries one of its members, and which one is a runtime fact
+  --> examples/fluent/2107-fluent-init-from-carrier-refused.sx:89:5
+   |
+89 |     v.take_label();
+   |     ^
+
+help: read the member out with a downcast first: '.(Label)' panics on another member, '.(?Label)' answers null
+   |
+89 |     v.take_label();
+   |     ^
+
+error: 'View' cannot form an initializer for 'Plain': a set value carries one of its members, and 'Plain' is not one
+  --> examples/fluent/2107-fluent-init-from-carrier-refused.sx:90:16
+   |
+90 |     take_plain(v);
+   |                ^
+
+help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
+   |
+90 |     take_plain(v);
+   |                ^
+
+error: 'View' cannot form an initializer for 'Plain': a set value carries one of its members, and 'Plain' is not one
+  --> examples/fluent/2107-fluent-init-from-carrier-refused.sx:91:5
+   |
+91 |     v.take_plain();
+   |     ^
+
+help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
+   |
+91 |     v.take_plain();
+   |     ^

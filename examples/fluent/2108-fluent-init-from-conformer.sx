@@ -1,0 +1,71 @@
+// What forms an `@Init(T)` is a value that IS a `T`.
+//
+// A concrete conformer forms one wherever it is written — as an argument, as a
+// dot receiver — and the write fills the destination with exactly what the
+// expression produced. A protocol handle reaches the same parameter by naming the
+// conformer: the downcast yields the concrete value, and that forms.
+//
+// A target the value already has is a plain slot copy, whatever that target is: an
+// open set takes its own value as one, and a protocol takes a handle as one.
+#import "modules/std.sx";
+
+Named :: protocol tagged { name :: (self: *Self) -> string; }
+Round :: struct { s: string = "round"; }
+impl Named for Round { name :: (self: *Round) -> string => self.s; }
+
+keep :: ufcs (value: $I/@Init(Round)) {
+    slot: Round = ---;
+    value.write(*slot);
+    print("kept {}\n", slot.s);
+}
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+store :: ufcs (value: $I/@Init(View)) {
+    slot: View = ---;
+    value.write(*slot);
+    print("stored {}\n", slot.render());
+}
+
+hold :: ufcs (value: $I/@Init(Named)) {
+    slot: Named = ---;
+    value.write(*slot);
+    print("held {}\n", slot.name());
+}
+
+main :: () -> i32 {
+    keep(Round{ s = "argument" });
+    Round{ s = "receiver" }.keep();
+
+    h : Named = Round{ s = "downcast" };
+    keep(h.(Round));
+    h.(Round).keep();
+
+    store(Label{ text = "member" });
+    v : View = Label{ text = "slot" };
+    store(v);
+    v.store();
+
+    hold(h);
+    h.hold();
+    0
+}
+
+// ** stdout **
+// kept argument
+// kept receiver
+// kept downcast
+// kept downcast
+// stored member
+// stored slot
+// stored slot
+// held downcast
+// held downcast
+//
