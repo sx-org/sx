@@ -3337,7 +3337,17 @@ pub fn tryLowerVolatileIntrinsic(self: *Lowering, name: []const u8, c: *const as
 
     const ptr = self.lowerExpr(c.args[1]);
     if (is_load) return self.builder.emit(.{ .volatile_load = .{ .operand = ptr } }, elem_ty);
-    const val = self.lowerExpr(c.args[2]);
+
+    // `value: T` takes the coercion any typed parameter takes — `target_type`
+    // steers literal lowering, `coerceToType` converts what a differently-typed
+    // expression produced. The conversion belongs here: signedness lives in the
+    // sx type, and the store the backend builds is one untyped value wide.
+    const saved_target = self.target_type;
+    self.target_type = elem_ty;
+    defer self.target_type = saved_target;
+    const raw_val = self.lowerExpr(c.args[2]);
+    const val = self.coerceToType(raw_val, self.builder.getRefType(raw_val), elem_ty);
+
     self.builder.emitVoid(.{ .volatile_store = .{ .ptr = ptr, .val = val, .val_ty = elem_ty } }, .void);
     return Ref.none; // store has a void result
 }

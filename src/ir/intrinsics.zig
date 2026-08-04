@@ -157,7 +157,7 @@ pub const Id = enum(u16) {
     atomic_fence,
     atomic_cmpxchg,
     atomic_cmpxchg_weak,
-    // ── std/core.sx — volatile memory access ────────────────────────────────
+    // std/core.sx declares these two; the `@` is part of the name.
     @"@volatile_load",
     @"@volatile_store",
 };
@@ -320,11 +320,11 @@ pub const entries = [_]Entry{
     .{ .id = .atomic_cmpxchg, .module = atomic, .name = "atomic_cmpxchg", .mode = .lower, .arity = 6 },
     .{ .id = .atomic_cmpxchg_weak, .module = atomic, .name = "atomic_cmpxchg_weak", .mode = .lower, .arity = 6 },
 
-    // ── volatile: lowered to the volatile load/store IR ops. The access is
-    // non-atomic and carries no ordering, so — like the atomics — the VM
-    // interprets it directly and `#run` sees an ordinary access. The `@` is
-    // part of the name: these are compiler-maintained contracts (contracts.zig)
-    // as well as intrinsics.
+    // Lowered to the volatile load/store IR ops. The access is non-atomic and
+    // carries no ordering, so — like the atomics — the VM interprets it
+    // directly and `#run` sees an ordinary access. The `@` is part of the name:
+    // these are compiler-maintained contracts (contracts.zig) as well as
+    // intrinsics.
     .{ .id = .@"@volatile_load", .module = core, .name = "@volatile_load", .mode = .lower, .arity = 2 },
     .{ .id = .@"@volatile_store", .module = core, .name = "@volatile_store", .mode = .lower, .arity = 3 },
 };

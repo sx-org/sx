@@ -83,8 +83,8 @@ pub const entries = [_]Contract{
             .{ .name = "max_alignment", .type_name = "i64" },
         },
     },
-    // The volatile accessors. Functions, so no field shape; their signature and
-    // lowering are the intrinsic registry's (src/ir/intrinsics.zig).
+    // Functions, so no field shape; their signature and lowering are the
+    // intrinsic registry's (src/ir/intrinsics.zig).
     .{ .name = "@volatile_load", .module = "modules/std/core.sx" },
     .{ .name = "@volatile_store", .module = "modules/std/core.sx" },
     // Formed, never declared.

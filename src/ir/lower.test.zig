@@ -2752,7 +2752,7 @@ test "type alias: tuple-type alias registers the structural tuple TypeId" {
     try std.testing.expect(pt_info.tuple.names == null);
 }
 
-test "lower: `@volatile_load` / `@volatile_store` reach the volatile ops" {
+test "`@volatile_load` / `@volatile_store` reach the volatile ops" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2800,7 +2800,65 @@ test "lower: `@volatile_load` / `@volatile_store` reach the volatile ops" {
     try std.testing.expectEqual(@as(usize, 1), stores);
 }
 
-test "lower: the unprefixed spelling is an ordinary call, not a volatile access" {
+test "a narrower signed value reaches `@volatile_store` sign-extended" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\main :: () {
+        \\    slot: i64 = 0;
+        \\    narrow: i32 = -1;
+        \\    @volatile_store(i64, *slot, narrow);
+        \\}
+        \\
+    ;
+    const source = try alloc.dupeZ(u8, src);
+    var p = parser.Parser.init(alloc, source);
+    const root = p.parse() catch return error.ParseFailed;
+
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var diagnostics = errors.DiagnosticList.init(alloc, source, "test.sx");
+    var lowering = Lowering.init(&module);
+    lowering.diagnostics = &diagnostics;
+    lowering.lowerRoot(root);
+    try std.testing.expect(!diagnostics.hasErrors());
+
+    const main_fn = &module.functions.items[@intFromEnum(lowering.resolveFuncByName("main").?)];
+    var stored: ?Ref = null;
+    for (main_fn.blocks.items) |blk| {
+        for (blk.insts.items) |ins| {
+            if (ins.op == .volatile_store) {
+                try std.testing.expectEqual(TypeId.i64, ins.op.volatile_store.val_ty);
+                stored = ins.op.volatile_store.val;
+            }
+        }
+    }
+    const val = stored orelse return error.NoVolatileStore;
+
+    // The i32→i64 conversion is an IR `widen`, which carries the source type
+    // and so extends by sign. Only a conversion in IR knows that; the backend's
+    // store path sees one untyped value.
+    const def = defOf(main_fn, val) orelse return error.StoredValueHasNoDefinition;
+    try std.testing.expect(def.op == .widen);
+    try std.testing.expectEqual(TypeId.i32, def.op.widen.from);
+    try std.testing.expectEqual(TypeId.i64, def.op.widen.to);
+}
+
+/// The instruction that defined `ref`, found by the block ref ranges. Null for a
+/// function parameter or a ref outside `f`.
+fn defOf(f: *const ir_mod.Function, ref: Ref) ?ir_mod.Inst {
+    const idx = ref.index();
+    if (idx < f.params.len) return null;
+    for (f.blocks.items) |blk| {
+        const count: u32 = @intCast(blk.insts.items.len);
+        if (idx >= blk.first_ref and idx < blk.first_ref + count) return blk.insts.items[idx - blk.first_ref];
+    }
+    return null;
+}
+
+test "the unprefixed spelling is an ordinary call, not a volatile access" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();

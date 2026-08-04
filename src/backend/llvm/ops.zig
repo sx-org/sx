@@ -442,11 +442,10 @@ pub const Ops = struct {
         self.e.advanceRefCounter();
     }
 
-    // ── Volatile ──────────────────────────────────────────
     // A volatile access is the ordinary load/store with LLVM's volatile bit
     // set: the optimizer may not elide, duplicate, or fuse it. No ordering is
     // attached — a volatile access is NOT atomic and orders nothing between
-    // threads, so the emitters below never touch LLVMSetOrdering.
+    // threads, so the two emitters below never touch LLVMSetOrdering.
 
     pub fn emitVolatileLoad(self: Ops, instruction: *const Inst, un: UnaryOp) void {
         const ptr = self.e.resolveRef(un.operand);

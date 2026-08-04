@@ -1,8 +1,8 @@
-// Volatile load/store: the access is emitted exactly as written. Three reads
-// and a write share one address with nothing between them, so a plain
-// load/store pair would collapse to a single register value — each volatile
-// access survives instead, and none of them carries an atomic ordering
-// (volatile is not atomic; see modules/std/core.sx).
+// The access is emitted exactly as written. Three reads and a write share one
+// address with nothing between them, so a plain load/store pair would collapse
+// to a single register value — each volatile access survives instead, and none
+// of them carries an atomic ordering (volatile is not atomic; see
+// modules/std/core.sx).
 // The intrinsics resolve with no import, like `size_of`; `out` is what needs one.
 #import "modules/std/core.sx";
 
@@ -24,6 +24,18 @@ main :: () {
         out("scalar: 41 41 42\n");
     } else {
         out("scalar: WRONG\n");
+    }
+
+    // `value: T` converts like any typed parameter, so a signed i32 widens by
+    // sign rather than by its 32-bit pattern.
+    wide: i64 = 0;
+    narrow: i32 = -1;
+    @volatile_store(i64, *wide, narrow);
+
+    if @volatile_load(i64, *wide) == -1 {
+        out("widened: -1\n");
+    } else {
+        out("widened: WRONG\n");
     }
 
     // Aggregates travel as one typed access, not field by field.

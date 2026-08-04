@@ -2,8 +2,10 @@
 @__sx_default_context = internal constant {} zeroinitializer
 @str = private unnamed_addr constant [18 x i8] c"scalar: 41 41 42\0A\00", align 1
 @str.1 = private unnamed_addr constant [15 x i8] c"scalar: WRONG\0A\00", align 1
-@str.2 = private unnamed_addr constant [16 x i8] c"aggregate: 4 3\0A\00", align 1
-@str.3 = private unnamed_addr constant [18 x i8] c"aggregate: WRONG\0A\00", align 1
+@str.2 = private unnamed_addr constant [13 x i8] c"widened: -1\0A\00", align 1
+@str.3 = private unnamed_addr constant [16 x i8] c"widened: WRONG\0A\00", align 1
+@str.4 = private unnamed_addr constant [16 x i8] c"aggregate: 4 3\0A\00", align 1
+@str.5 = private unnamed_addr constant [18 x i8] c"aggregate: WRONG\0A\00", align 1
 
 ; Function Attrs: nounwind
 define internal void @out(ptr %0, { ptr, i64 } %1) #0 {
@@ -24,6 +26,8 @@ declare i64 @write(i32, ptr, i64)
 define i32 @main() #0 {
 entry:
   %alloca = alloca i32, align 4
+  %allocaN = alloca i64, align 8
+  %allocaN = alloca i32, align 4
   %allocaN = alloca { i32, i32 }, align 8
   %allocaN = alloca { i32, i32 }, align 8
   store i32 41, ptr %alloca, align 4
@@ -79,9 +83,27 @@ if.else.5:                                        ; preds = %and.merge.3
   br label %if.merge.6
 
 if.merge.6:                                       ; preds = %if.else.5, %if.then.4
+  store i64 0, ptr %allocaN, align 8
+  store i32 -1, ptr %allocaN, align 4
+  %loadN = load i32, ptr %allocaN, align 4
+  %sext = sext i32 %loadN to i64
+  store volatile i64 %sext, ptr %allocaN, align 8
+  %volatile_load22 = load volatile i64, ptr %allocaN, align 8
+  %icmpN = icmp eq i64 %volatile_load22, -1
+  br i1 %icmpN, label %if.then.7, label %if.else.8
+
+if.then.7:                                        ; preds = %if.merge.6
+  call void @out(ptr @__sx_default_context, { ptr, i64 } { ptr @str.2, i64 12 })
+  br label %if.merge.9
+
+if.else.8:                                        ; preds = %if.merge.6
+  call void @out(ptr @__sx_default_context, { ptr, i64 } { ptr @str.3, i64 15 })
+  br label %if.merge.9
+
+if.merge.9:                                       ; preds = %if.else.8, %if.then.7
   store { i32, i32 } { i32 3, i32 4 }, ptr %allocaN, align 4
-  %volatile_load20 = load volatile { i32, i32 }, ptr %allocaN, align 4
-  store { i32, i32 } %volatile_load20, ptr %allocaN, align 4
+  %volatile_load25 = load volatile { i32, i32 }, ptr %allocaN, align 4
+  store { i32, i32 } %volatile_load25, ptr %allocaN, align 4
   %loadN = load { i32, i32 }, ptr %allocaN, align 4
   %sg = extractvalue { i32, i32 } %loadN, 1
   %loadN = load { i32, i32 }, ptr %allocaN, align 4
@@ -91,29 +113,29 @@ if.merge.6:                                       ; preds = %if.else.5, %if.then
   store volatile { i32, i32 } %siN, ptr %allocaN, align 4
   %loadN = load { i32, i32 }, ptr %allocaN, align 4
   %sgN = extractvalue { i32, i32 } %loadN, 0
-  %cmp.ext28 = sext i32 %sgN to i64
-  %icmpN = icmp eq i64 %cmp.ext28, 4
-  br i1 %icmpN, label %and.rhs.7, label %and.merge.8
+  %cmp.ext33 = sext i32 %sgN to i64
+  %icmpN = icmp eq i64 %cmp.ext33, 4
+  br i1 %icmpN, label %and.rhs.10, label %and.merge.11
 
-and.rhs.7:                                        ; preds = %if.merge.6
+and.rhs.10:                                       ; preds = %if.merge.9
   %loadN = load { i32, i32 }, ptr %allocaN, align 4
   %sgN = extractvalue { i32, i32 } %loadN, 1
-  %cmp.ext32 = sext i32 %sgN to i64
-  %icmpN = icmp eq i64 %cmp.ext32, 3
-  br label %and.merge.8
+  %cmp.ext37 = sext i32 %sgN to i64
+  %icmpN = icmp eq i64 %cmp.ext37, 3
+  br label %and.merge.11
 
-and.merge.8:                                      ; preds = %and.rhs.7, %if.merge.6
-  %bpN = phi i1 [ false, %if.merge.6 ], [ %icmpN, %and.rhs.7 ]
-  br i1 %bpN, label %if.then.9, label %if.else.10
+and.merge.11:                                     ; preds = %and.rhs.10, %if.merge.9
+  %bpN = phi i1 [ false, %if.merge.9 ], [ %icmpN, %and.rhs.10 ]
+  br i1 %bpN, label %if.then.12, label %if.else.13
 
-if.then.9:                                        ; preds = %and.merge.8
-  call void @out(ptr @__sx_default_context, { ptr, i64 } { ptr @str.2, i64 15 })
-  br label %if.merge.11
+if.then.12:                                       ; preds = %and.merge.11
+  call void @out(ptr @__sx_default_context, { ptr, i64 } { ptr @str.4, i64 15 })
+  br label %if.merge.14
 
-if.else.10:                                       ; preds = %and.merge.8
-  call void @out(ptr @__sx_default_context, { ptr, i64 } { ptr @str.3, i64 17 })
-  br label %if.merge.11
+if.else.13:                                       ; preds = %and.merge.11
+  call void @out(ptr @__sx_default_context, { ptr, i64 } { ptr @str.5, i64 17 })
+  br label %if.merge.14
 
-if.merge.11:                                      ; preds = %if.else.10, %if.then.9
+if.merge.14:                                      ; preds = %if.else.13, %if.then.12
   ret i32 0
 }
