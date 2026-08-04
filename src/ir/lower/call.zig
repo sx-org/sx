@@ -676,6 +676,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // so lower them here (before generic arg lowering) like reflection calls.
         if (self.tryLowerAtomicIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
         if (self.tryLowerVolatileIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
+        if (self.tryLowerCursorIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
     }
     // Qualified intrinsic spelling is legal too. Only dispatch a compiler
     // recognizer after the full namespace path selected the exact declaration
@@ -686,6 +687,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             if (self.tryLowerReflectionCall(sf.decl.name, c)) |ref| return ref;
             if (self.tryLowerAtomicIntrinsic(sf.decl.name, c)) |ref| return ref;
             if (self.tryLowerVolatileIntrinsic(sf.decl.name, c)) |ref| return ref;
+            if (self.tryLowerCursorIntrinsic(sf.decl.name, c)) |ref| return ref;
         }
     }
 
@@ -2741,6 +2743,10 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .atomic_cmpxchg_weak,
         .@"@volatile_load",
         .@"@volatile_store",
+        .@"@va_start",
+        .@"@va_arg",
+        .@"@va_copy",
+        .@"@va_end",
         // evaluate-only: the VM services these; they never lower at all.
         .raw_declare_type,
         .raw_register_type,
@@ -2964,6 +2970,10 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .floor,
         .@"@volatile_load",
         .@"@volatile_store",
+        .@"@va_start",
+        .@"@va_arg",
+        .@"@va_copy",
+        .@"@va_end",
         .raw_declare_type,
         .raw_register_type,
         .c_object_paths,
@@ -3199,6 +3209,10 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@volatile_store",
         => true,
 
+        .@"@va_start",
+        .@"@va_arg",
+        .@"@va_copy",
+        .@"@va_end",
         .size_of,
         .align_of,
         .type_of,
@@ -3444,6 +3458,10 @@ fn isReflectionCall(name: []const u8) bool {
         .atomic_cmpxchg_weak,
         .@"@volatile_load",
         .@"@volatile_store",
+        .@"@va_start",
+        .@"@va_arg",
+        .@"@va_copy",
+        .@"@va_end",
         .raw_declare_type,
         .raw_register_type,
         .c_object_paths,
@@ -3518,6 +3536,24 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     // index / sized via its `typeof`. One shared
     // classification covers all 7; it runs before dispatch.
     if (self.reflectionTypeArgGuard(name, c)) |sentinel| return sentinel;
+
+    // The C-variadic cursor's storage is the target's, substituted where its
+    // declaration's fields would land, so no reflection builtin publishes a
+    // shape for it.
+    for (c.args) |a| {
+        const named: []const u8 = switch (a.data) {
+            .type_expr => |te| te.name,
+            .identifier => |id| id.name,
+            else => continue,
+        };
+        if (self.scope) |s| if (s.lookup(named) != null) continue;
+        const from = self.current_source_file orelse self.main_file orelse continue;
+        const named_ty = switch (self.selectNominalLeaf(named, from, false)) {
+            .resolved => |t| t,
+            else => continue,
+        };
+        if (self.refuseCursorInspection(named_ty, a.span)) return self.reflectionErrorSentinel(name);
+    }
 
     // `declare(name)` and `define(handle, info)` are ordinary sx functions
     // (`modules/std/meta.sx`) written over the `intrinsic` primitives

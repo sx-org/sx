@@ -199,6 +199,14 @@ pub const Op = union(enum) {
     volatile_load: UnaryOp, // load the optimizer may not elide, duplicate, or fuse
     volatile_store: Store, // store the optimizer may not elide, duplicate, or fuse
 
+    // ── C-variadic cursor ───────────────────────────────────────────
+    // Each operand is the address of a `@VaList`. `va_arg`'s result type is
+    // the instruction's type; the other three are void.
+    va_start: UnaryOp, // open a cursor over the caller's tail arguments
+    va_arg: UnaryOp, // read the next tail argument, advancing the cursor
+    va_copy: VaCopy, // duplicate a cursor's position into a second cursor
+    va_end: UnaryOp, // release a cursor
+
     // ── Atomics ─────────────────────────────────────────────────────
     atomic_load: AtomicLoad, // atomic load from pointer with memory ordering
     atomic_store: AtomicStore, // atomic store to pointer with memory ordering
@@ -377,6 +385,11 @@ pub const Store = struct {
     /// `T` and fixes the access width in the LLVM emitter too; a plain
     /// `store` leaves the emitter to take the width from the SSA value.
     val_ty: TypeId = .void,
+};
+
+pub const VaCopy = struct {
+    dst: Ref,
+    src: Ref,
 };
 
 /// Memory ordering for atomic ops. The sx-surface `Ordering` enum

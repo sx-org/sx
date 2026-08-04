@@ -20,6 +20,7 @@ const AtomicStore = ir_inst.AtomicStore;
 const AtomicRmw = ir_inst.AtomicRmw;
 const AtomicCmpxchg = ir_inst.AtomicCmpxchg;
 const AtomicFence = ir_inst.AtomicFence;
+const VaCopy = ir_inst.VaCopy;
 const Conversion = ir_inst.Conversion;
 const GlobalId = ir_inst.GlobalId;
 const GlobalSet = ir_inst.GlobalSet;
@@ -475,6 +476,60 @@ pub const Ops = struct {
             c.LLVMSetVolatile(store, 1);
         }
         self.e.advanceRefCounter();
+    }
+
+    // ── C-variadic cursor ─────────────────────────────────
+    // The three lifetime ops are calls to LLVM's overloaded va intrinsics,
+    // which must be named with their pointer-address-space suffix
+    // (`llvm.va_start.p0`); the unsuffixed spelling fails verification. The
+    // read is `LLVMBuildVAArg`, which lowers per the target ABI.
+
+    fn vaIntrinsic(self: Ops, name: [*:0]const u8, arity: c_uint) c.LLVMValueRef {
+        if (c.LLVMGetNamedFunction(self.e.llvm_module, name)) |f| return f;
+        var params = [_]c.LLVMTypeRef{ self.e.cached_ptr, self.e.cached_ptr };
+        const fn_ty = c.LLVMFunctionType(self.e.cached_void, &params, arity, 0);
+        return c.LLVMAddFunction(self.e.llvm_module, name, fn_ty);
+    }
+
+    fn emitVaLifetime(self: Ops, name: [*:0]const u8, operand: Ref) void {
+        const cursor = self.e.resolveRef(operand);
+        if (c.LLVMGetTypeKind(c.LLVMTypeOf(cursor)) == c.LLVMPointerTypeKind) {
+            const f = self.vaIntrinsic(name, 1);
+            var args = [_]c.LLVMValueRef{cursor};
+            _ = c.LLVMBuildCall2(self.e.builder, c.LLVMGlobalGetValueType(f), f, &args, 1, "");
+        }
+        self.e.advanceRefCounter();
+    }
+
+    pub fn emitVaStart(self: Ops, un: UnaryOp) void {
+        self.emitVaLifetime("llvm.va_start.p0", un.operand);
+    }
+
+    pub fn emitVaEnd(self: Ops, un: UnaryOp) void {
+        self.emitVaLifetime("llvm.va_end.p0", un.operand);
+    }
+
+    pub fn emitVaCopy(self: Ops, v: VaCopy) void {
+        const dst = self.e.resolveRef(v.dst);
+        const src = self.e.resolveRef(v.src);
+        if (c.LLVMGetTypeKind(c.LLVMTypeOf(dst)) == c.LLVMPointerTypeKind and
+            c.LLVMGetTypeKind(c.LLVMTypeOf(src)) == c.LLVMPointerTypeKind)
+        {
+            const f = self.vaIntrinsic("llvm.va_copy.p0", 2);
+            var args = [_]c.LLVMValueRef{ dst, src };
+            _ = c.LLVMBuildCall2(self.e.builder, c.LLVMGlobalGetValueType(f), f, &args, 2, "");
+        }
+        self.e.advanceRefCounter();
+    }
+
+    pub fn emitVaArg(self: Ops, instruction: *const Inst, un: UnaryOp) void {
+        const cursor = self.e.resolveRef(un.operand);
+        const llvm_ty = self.e.toLLVMType(instruction.ty);
+        if (c.LLVMGetTypeKind(c.LLVMTypeOf(cursor)) != c.LLVMPointerTypeKind) {
+            self.e.mapRef(c.LLVMGetUndef(llvm_ty));
+            return;
+        }
+        self.e.mapRef(c.LLVMBuildVAArg(self.e.builder, cursor, llvm_ty, "va_arg"));
     }
 
     // ── Atomics ───────────────────────────────────────────

@@ -115,6 +115,11 @@ implements, written as its signature with no body. `@volatile_load` and
 `@volatile_store` (§Intrinsics, Memory) are such declarations, under the same
 (module, name) identity rule.
 
+A contract name resolves program-wide. The registry admits exactly one canonical
+declaration of it, so there is no second author for the import-visibility rule to
+choose between: `@SourceSite` and `@VaList` are spelled bare wherever they are
+written.
+
 Separately, a few `@` names are **compiler-formed** — `@Init(T)` and
 `@BuildBlock(P)`. Those are formed for a parameter, never declared and never
 constructed, so they have no stdlib declaration and no literal form.
@@ -3288,6 +3293,82 @@ path_join :: (..parts: []string) -> string { ... }
 - The heterogeneous comptime-pack form `..$args: []Type` binds per-position
   comptime types — see "Variadic Heterogeneous Type Packs" below.
 
+### The C-Variadic Tail
+
+A parameter list may end in a bare `..`, the C `...`:
+
+```sx
+printf :: (fmt: cstring, ..) -> i32 extern;
+tally  :: (n: i32, ..) -> i64 abi(.c) { ... }
+```
+
+The tail binds no name and no type, so it is a property of the signature rather
+than a parameter, and the **fixed count** is the number of entries before it —
+zero when the list is just `(..)`. It is legal on an **effective-C signature**
+only: a definition carrying `abi(.c)` or `export`, or an `extern` declaration.
+Each emits the C shape with no implicit sx context, so the LLVM type is exactly
+what a C compiler builds for the same prototype. `abi(.naked)` and a `Closure`
+literal carry no such shape and refuse the tail.
+
+Every argument at or past the fixed count crosses under the **C default argument
+promotions**: `f32` widens to `f64`, and an integer narrower than 32 bits widens
+to `i32` — every width, not just the builtin ones. Past the promotions, a tail
+argument must be something a C ABI can pass through `va_arg`: a 32- or 64-bit
+integer, `f64`, the pointer family or its nullable forms, or a function value
+carrying the C convention. Anything else — an aggregate, a `string` or slice
+(two words), a width C has no variadic slot for — is refused at the call, naming
+the argument.
+
+#### Reading a tail: the `@VaList` cursor
+
+A definition reads its own tail through a cursor. `@VaList` and the four
+operations that walk it are compiler-maintained contracts declared by
+`modules/std/core.sx` (§Lexical Structure, The `@` namespace):
+
+```sx
+@VaList :: struct { }
+
+@va_start :: (list: *@VaList);
+@va_arg   :: ($T: Type, list: *@VaList) -> T;
+@va_copy  :: (dst: *@VaList, src: *@VaList);
+@va_end   :: (list: *@VaList);
+```
+
+```sx
+sum :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    total: i64 = 0;
+    for 0..n (i) { total += xx @va_arg(i32, *ap); }
+    return total;
+}
+```
+
+`@va_start` opens a cursor over the arguments past the fixed count; it is legal
+only inside a definition whose parameter list ends in `..`. `@va_arg` reads the
+next argument and advances, `@va_copy` forks a second cursor at the first's
+position, and `@va_end` closes one. Every cursor a `@va_start` or a `@va_copy`
+opens is closed exactly once.
+
+`@va_arg` asks for the type the promotions LEAVE in the slot, so `f32` and any
+integer narrower than 32 bits are refused where they are written:
+`@va_arg(f64, …)` reads what an `f32` argument became, `@va_arg(i32, …)` what a
+`u8` became. The tail admissibility rule above applies unchanged.
+
+`@VaList` is **opaque**. Its storage is the target's `va_list` and it has no
+value form, so it cannot be constructed, inspected, measured (`size_of` /
+`align_of` / the reflection builtins), copied by assignment, or written as a
+field, parameter, or return type. A local declaration is the only thing that
+gives a cursor storage, and `*name` is the only way to reach one.
+
+The cursor is **owned by the function that declares it**: `@va_start`,
+`@va_end`, and `@va_copy`'s destination each take the address of a local. A
+`*@VaList` handed to another function is a **borrow** — it reads with `@va_arg`
+and leaves the closing to the owner. A cursor cannot escape the frame whose tail
+it reads: neither `@VaList` nor `*@VaList` may be returned, stored in a field,
+or passed through a C-variadic tail.
+
 ### Variadic Heterogeneous Type Packs
 
 A **pack** is a comptime sequence of per-position-typed arguments. Unlike a
@@ -5695,6 +5776,8 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `align_of($T: Type) -> i64` — alignment of type `T` in bytes
 - `@volatile_load($T: Type, address: *T) -> T` / `@volatile_store($T: Type, address: *T, value: T)` — one typed access emitted exactly as written: the optimizer may not elide it, duplicate it, fuse it with a neighbour, or move it across another volatile access. For storage whose reads and writes are themselves observable — a memory-mapped device register, a buffer a signal handler touches, memory another process maps. **Volatile is not atomic**: the access carries no memory ordering, orders nothing between threads, and is not guaranteed indivisible; sharing data between threads is `Atomic($T)`'s job (`modules/std/atomic.sx`). `T` is any type with storage — integer, float, bool, pointer, enum, vector, or an aggregate, which moves as a whole rather than field by field. A valueless `T` is a compile error. Both carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`, and the unprefixed spellings are ordinary identifiers a program may bind.
 
+- `@va_start(list: *@VaList)` / `@va_arg($T: Type, list: *@VaList) -> T` / `@va_copy(dst: *@VaList, src: *@VaList)` / `@va_end(list: *@VaList)` — the C-variadic cursor: `@va_start` opens one over the tail arguments of the definition being lowered, `@va_arg` reads the next and advances, `@va_copy` forks a second cursor at the first's position, and `@va_end` closes one. `@VaList` is opaque, owned by the function that declares it, and cannot escape the frame whose tail it reads; `T` is the type the C default argument promotions leave in the slot. Full rules under §Variadic Functions, The C-Variadic Tail. All five carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`.
+
 ### Type Introspection
 - `type_of(val: $T) -> Type` — returns the runtime type tag of a value
 - `type_name($T: Type) -> string` — returns the name of type `T` as a string (e.g., `"Point"`)
@@ -6709,7 +6792,12 @@ struct_member   = field_group | '#using' IDENT ';'?
 field_group     = IDENT (',' IDENT)* ':' type ('=' expr)? ';'?
                   // a member list's `;` is an optional separator, not `end`:
                   // the entry ends where the next one starts, line break or not
-params          = param (',' param)* ','?
+params          = param (',' param)* (',' c_tail)? ','?
+                | c_tail ','?
+c_tail          = '..'              // the C-variadic tail; binds no name and no
+                                    // type, is the last entry, and needs an
+                                    // effective-C signature (`abi(.c)`,
+                                    // `export`, or `extern`)
 param           = IDENT ':' type ('=' expr)?
 block           = '{' stmt* '}'     // the LAST expr may drop `end`; written or
                   // not, that expr is the block's value — `;` only separates

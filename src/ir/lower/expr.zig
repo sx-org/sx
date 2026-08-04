@@ -246,6 +246,10 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         return self.builder.constUndef(.unresolved);
     }
 
+    // The C-variadic cursor is opaque: no literal builds one, and its storage
+    // comes from a local declaration alone.
+    if (self.refuseCursorValue(ty, span, "construct")) return self.builder.constUndef(ty);
+
     // A `.{ ... }` literal can only build an AGGREGATE. After the
     // tagged-union / union / optional intercepts above, the named and
     // positional paths below handle exactly: struct, tuple, array, vector,
@@ -841,6 +845,16 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                     patched.object = elem;
                     return self.lowerFieldAccess(&patched, span);
                 }
+            }
+        }
+    }
+
+    // A cursor and a borrow of one carry no declared members. Refuse before the
+    // object lowers, so the receiver is not ALSO reported as a value read.
+    if (fa.object.data == .identifier) {
+        if (self.scope) |scope| {
+            if (scope.lookup(fa.object.data.identifier.name)) |binding| {
+                if (self.refuseCursorMember(binding.ty, span)) return self.builder.constUndef(.unresolved);
             }
         }
     }
@@ -3082,6 +3096,11 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     // `?T → concrete` unwrap in `coerceMode` is permitted (an
                     // un-narrowed unwrap is rejected, not silently zeroed).
                     const is_narrowed = self.narrowed.count() > 0 and self.narrowed.contains(id.name);
+                    // Reading a cursor's storage as a value would copy a
+                    // position the ABI owns; `*name` is the only way to reach
+                    // it, and it never lowers the name as a value.
+                    if (self.refuseCursorValue(binding.ty, node.span, "read"))
+                        break :blk self.builder.constUndef(binding.ty);
                     if (binding.is_alloca) {
                         const loaded = self.builder.load(binding.ref, binding.ty);
                         if (is_narrowed) self.narrowed_refs.put(loaded, {}) catch {};

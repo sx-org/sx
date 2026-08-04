@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ast = @import("../../ast.zig");
+const contracts = @import("../../contracts.zig");
 const Node = ast.Node;
 const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
@@ -1676,6 +1677,12 @@ const HeadTypeGate = union(enum) {
 };
 pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadTypeGate {
     if (self.emitting_default_context) return .proceed;
+    // A compiler-maintained `@` contract type has exactly one canonical
+    // declaration, so it resolves program-wide and no author set gates it.
+    if (contracts.isAtName(name) and contracts.find(name) != null) {
+        const sid = self.module.types.internString(name);
+        if (self.module.types.findByName(sid)) |tid| return .{ .resolved = tid };
+    }
     if (self.program_index.module_decls == null or self.program_index.flat_import_graph == null) return .proceed;
     const from = self.current_source_file orelse return .proceed;
 

@@ -250,6 +250,19 @@ fn printInst(instruction: *const Inst, ref_idx: u32, tt: *const TypeTable, write
             try writer.print("volatile_store %{d}, %{d}\n", .{ s.ptr.index(), s.val.index() });
             return;
         },
+        .va_start => |u| {
+            try writer.print("va_start %{d}\n", .{u.operand.index()});
+            return;
+        },
+        .va_arg => |u| try writer.print("va_arg %{d} : ", .{u.operand.index()}),
+        .va_copy => |v| {
+            try writer.print("va_copy %{d}, %{d}\n", .{ v.dst.index(), v.src.index() });
+            return;
+        },
+        .va_end => |u| {
+            try writer.print("va_end %{d}\n", .{u.operand.index()});
+            return;
+        },
         .atomic_load => |a| try writer.print("atomic_load %{d} {s} : ", .{ a.ptr.index(), @tagName(a.ordering) }),
         .atomic_store => |a| {
             try writer.print("atomic_store %{d}, %{d} {s}\n", .{ a.ptr.index(), a.val.index(), @tagName(a.ordering) });
@@ -554,7 +567,7 @@ fn writeConstant(val: ConstantValue, writer: Writer) !void {
 
 fn isVoidOp(op: Op) bool {
     return switch (op) {
-        .store, .volatile_store, .global_set, .br, .cond_br, .switch_br, .ret, .ret_void, .@"unreachable" => true,
+        .store, .volatile_store, .va_start, .va_copy, .va_end, .global_set, .br, .cond_br, .switch_br, .ret, .ret_void, .@"unreachable" => true,
         else => false,
     };
 }

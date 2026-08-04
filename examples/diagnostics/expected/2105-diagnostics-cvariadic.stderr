@@ -1,35 +1,137 @@
-error: argument 2: 'i48' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:31:5
+error: cannot declare a field of type '@VaList' — a C-variadic cursor has no value form; declare it as a local and pass '*name'
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:32:13
    |
-31 |     printf("%d\n", wide);        // a width no C variadic slot holds
+32 |     cursor: @VaList;
+   |             ^^^^^^^
+
+error: cannot declare a field of type '*@VaList' — a C-variadic cursor cannot outlive the call frame whose tail it reads
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:33:13
+   |
+33 |     borrow: *@VaList;
+   |             ^^^^^^^^
+
+error: cannot declare a parameter of type '@VaList' — a C-variadic cursor has no value form; declare it as a local and pass '*name'
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:36:18
+   |
+36 | by_value :: (ap: @VaList) -> i64 { return 0; }
+   |                  ^^^^^^^
+
+error: cannot declare a return of type '@VaList' — a C-variadic cursor has no value form; declare it as a local and pass '*name'
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:38:37
+   |
+38 | hands_one_back :: (ap: *@VaList) -> @VaList { return *ap; }
+   |                                     ^^^^^^^
+
+error: cannot declare a return of type '*@VaList' — a C-variadic cursor cannot outlive the call frame whose tail it reads
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:46:28
+   |
+46 | escapes :: (n: i32, ..) -> *@VaList abi(.c) {
+   |                            ^^^^^^^^
+
+error: argument 2: 'i48' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:75:5
+   |
+75 |     printf("%d\n", wide);        // a width no C variadic slot holds
    |     ^^^^^^^^^^^^^^^^^^^^
 
 error: argument 2: 'string' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:32:5
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:76:5
    |
-32 |     printf("%s\n", "sx string"); // two words: pointer and length
+76 |     printf("%s\n", "sx string"); // two words: pointer and length
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: argument 2: 'Pair' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:33:5
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:77:5
    |
-33 |     printf("%d\n", pair);        // an aggregate
+77 |     printf("%d\n", pair);        // an aggregate
    |     ^^^^^^^^^^^^^^^^^^^^
 
 error: argument 2: '[2]i32' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:34:5
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:78:5
    |
-34 |     printf("%d\n", nums);        // an array
+78 |     printf("%d\n", nums);        // an array
    |     ^^^^^^^^^^^^^^^^^^^^
 
 error: argument 2: '[]i32' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:35:5
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:79:5
    |
-35 |     printf("%d\n", nums[0..1]);  // a slice is two words too
+79 |     printf("%d\n", nums[0..1]);  // a slice is two words too
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: argument 2: 'Pair' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
-  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:36:5
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:80:5
    |
-36 |     sum_ints(1, pair);           // the same refusal on a named typed tail
+80 |     sum_ints(1, pair);           // the same refusal on a named typed tail
    |     ^^^^^^^^^^^^^^^^^
+
+error: '@VaList' is opaque — its storage is the target's and has no published layout
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:82:34
+   |
+82 |     printf("%d %d %d\n", size_of(@VaList), align_of(@VaList), struct_field_count(@VaList));
+   |                                  ^^^^^^^
+
+error: '@VaList' is opaque — its storage is the target's and has no published layout
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:82:53
+   |
+82 |     printf("%d %d %d\n", size_of(@VaList), align_of(@VaList), struct_field_count(@VaList));
+   |                                                     ^^^^^^^
+
+error: '@VaList' is opaque — its storage is the target's and has no published layout
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:82:82
+   |
+82 |     printf("%d %d %d\n", size_of(@VaList), align_of(@VaList), struct_field_count(@VaList));
+   |                                                                                  ^^^^^^^
+
+error: cannot construct '@VaList' — a C-variadic cursor has no value form; declare it as a local and pass '*name'
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:83:13
+   |
+83 |     made := @VaList{};
+   |             ^^^^^^^^^
+
+error: 'u8' is promoted before it crosses a C-variadic tail — read 'i32'
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:60:23
+   |
+60 |     narrow := @va_arg(u8, *ap);   // promoted to `i32` before it crossed
+   |                       ^^
+
+error: 'f32' is promoted before it crosses a C-variadic tail — read 'f64'
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:61:23
+   |
+61 |     single := @va_arg(f32, *ap);  // promoted to `f64` before it crossed
+   |                       ^^^
+
+error: 'Pair' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:62:26
+   |
+62 |     aggregate := @va_arg(Pair, *ap);
+   |                          ^^^^
+
+error: cannot cross a C-variadic tail as '*@VaList' — a C-variadic cursor cannot outlive the call frame whose tail it reads
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:63:5
+   |
+63 |     printf("%d\n", *ap);          // the cursor cannot leave this frame
+   |     ^^^^^^^^^^^^^^^^^^^
+
+error: cannot read '@VaList' — a C-variadic cursor has no value form; declare it as a local and pass '*name'
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:64:15
+   |
+64 |     copied := ap;                 // no value form to copy
+   |               ^^
+
+error: '@VaList' is opaque — its storage is the target's and has no published layout
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:65:13
+   |
+65 |     word := ap.w0;                // no published fields
+   |             ^^^^^
+
+error: '@va_start' needs a C-variadic tail to open — end this definition's parameter list in '..' (`(fixed, ..) -> R abi(.c)`)
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:42:5
+   |
+42 |     @va_start(*ap);
+   |     ^^^^^^^^^
+
+error: '@va_end' acts on a cursor this function owns — pass '*name' for a local '@VaList'
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:53:13
+   |
+53 |     @va_end(ap);
+   |             ^^

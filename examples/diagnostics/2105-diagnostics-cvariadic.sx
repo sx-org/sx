@@ -8,6 +8,11 @@
 // Widths below 32 bits are NOT refused here — they promote to `i32` on the way
 // across, as `f32` promotes to `f64`. What is refused is a width C has no
 // variadic slot for, and every aggregate.
+//
+// Reading a tail is the same rule from the other side. `@va_start` needs a tail
+// to open, `@va_arg` asks for the type the promotions LEAVE in the slot, and the
+// `@VaList` cursor itself is opaque: it has no value form, no published layout,
+// and no way out of the frame whose tail it reads.
 
 #import "modules/std.sx";
 
@@ -23,6 +28,45 @@ Pair :: struct {
     b: i64;
 }
 
+Keeps :: struct {
+    cursor: @VaList;
+    borrow: *@VaList;
+}
+
+by_value :: (ap: @VaList) -> i64 { return 0; }
+
+hands_one_back :: (ap: *@VaList) -> @VaList { return *ap; }
+
+no_tail :: () -> i64 {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    return 0;
+}
+
+escapes :: (n: i32, ..) -> *@VaList abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    return *ap;
+}
+
+ends_a_borrow :: (ap: *@VaList) -> i64 {
+    @va_end(ap);
+    return 0;
+}
+
+reads :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    narrow := @va_arg(u8, *ap);   // promoted to `i32` before it crossed
+    single := @va_arg(f32, *ap);  // promoted to `f64` before it crossed
+    aggregate := @va_arg(Pair, *ap);
+    printf("%d\n", *ap);          // the cursor cannot leave this frame
+    copied := ap;                 // no value form to copy
+    word := ap.w0;                // no published fields
+    @va_end(*ap);
+    return xx narrow;
+}
+
 main :: () -> i32 {
     wide: i48 = 5;
     pair: Pair = .{1, 2};
@@ -34,5 +78,9 @@ main :: () -> i32 {
     printf("%d\n", nums);        // an array
     printf("%d\n", nums[0..1]);  // a slice is two words too
     sum_ints(1, pair);           // the same refusal on a named typed tail
+
+    printf("%d %d %d\n", size_of(@VaList), align_of(@VaList), struct_field_count(@VaList));
+    made := @VaList{};
+    printf("%d\n", reads(1, 2) + no_tail() + ends_a_borrow(*made));
     return 0;
 }

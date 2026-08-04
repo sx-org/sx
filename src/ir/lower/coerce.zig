@@ -1943,7 +1943,7 @@ fn integerWidth(self: *Lowering, ty: TypeId) ?u8 {
 /// when it crosses unchanged. Every integer narrower than 32 bits widens to
 /// `i32` and `f32` widens to `f64`; wider C ABI integers, `f64`, the pointer
 /// family, and `abi(.c)` function values are already tail-width.
-fn promotedTailType(self: *Lowering, ty: TypeId) ?TypeId {
+pub fn promotedTailType(self: *Lowering, ty: TypeId) ?TypeId {
     if (ty == .f32) return .f64;
     if (integerWidth(self, ty)) |bits| {
         if (bits < 32) return .i32;
@@ -1955,7 +1955,7 @@ fn promotedTailType(self: *Lowering, ty: TypeId) ?TypeId {
 /// neither a count nor types, so only what a C ABI can pass through `va_arg`
 /// belongs there: the 32- and 64-bit integers, `f64`, the pointer family and
 /// its nullable forms, and function values that carry the C convention.
-fn tailAdmissible(self: *Lowering, ty: TypeId) bool {
+pub fn tailAdmissible(self: *Lowering, ty: TypeId) bool {
     return switch (ty) {
         .f64, .cstring => true,
         .i32, .u32, .i64, .u64, .isize, .usize => true,
@@ -1995,10 +1995,15 @@ pub fn promoteCVariadicArgs(self: *Lowering, args: []Ref, fixed_count: usize) vo
             arg.* = self.coerceToType(arg.*, src_ty, promoted);
         }
         const crossed = self.builder.getRefType(arg.*);
+        const cs = self.builder.current_span;
+        const span = ast.Span{ .start = cs.start, .end = cs.end };
+        // A cursor borrow is admissible as a pointer, but the callee has no
+        // typed slot to read it back from — and the tail it names belongs to a
+        // frame the callee cannot bound.
+        if (self.refuseCursorEscape(crossed, span, "cross a C-variadic tail as")) continue;
         if (tailAdmissible(self, crossed)) continue;
         if (self.diagnostics) |d| {
-            const cs = self.builder.current_span;
-            d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "argument {d}: '{s}' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value", .{ i + 1, self.formatTypeName(src_ty) });
+            d.addFmt(.err, span, "argument {d}: '{s}' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value", .{ i + 1, self.formatTypeName(src_ty) });
         }
     }
 }

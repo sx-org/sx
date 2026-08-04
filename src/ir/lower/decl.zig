@@ -20,6 +20,7 @@ const ProtocolResolver = @import("../protocols.zig").ProtocolResolver;
 const ErrorFlow = @import("../error_flow.zig").ErrorFlow;
 const semantic_diagnostics = @import("../semantic_diagnostics.zig");
 const source_site = @import("../../source_site.zig");
+const contracts = @import("../../contracts.zig");
 
 const TypeId = types.TypeId;
 const StringId = types.StringId;
@@ -2731,6 +2732,12 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
     if (name.len > 0 and (name[0] == '[' or name[0] == '*' or name[0] == '?')) {
         return .{ .resolved = self.typeResolver().resolveName(name, raw) };
     }
+    // A compiler-maintained `@` contract type resolves program-wide: the
+    // registry admits exactly one canonical declaration of the name, so no
+    // second author exists for a visibility rule to choose between.
+    if (contracts.isAtName(name) and contracts.find(name) != null) {
+        if (table.findByName(table.internString(name))) |existing| return .{ .resolved = existing };
+    }
     // Bare nominal name. A bare TYPE name is visible iff a flat-import-
     // reachable module authors it AS A TYPE — and a TYPE author is EITHER a
     // named type (struct/enum/union/error-set/protocol/runtime class) OR a
@@ -3299,7 +3306,10 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     if (fd.type_params.len > 0) return;
 
     const ret_ty = self.resolveReturnType(fd);
-    if (fd.return_type) |rtn| _ = self.refuseValuelessProtocol(ret_ty, rtn.span, "declare a return of type");
+    if (fd.return_type) |rtn| {
+        _ = self.refuseValuelessProtocol(ret_ty, rtn.span, "declare a return of type");
+        _ = self.refuseCursorEscape(ret_ty, rtn.span, "declare a return of type");
+    }
 
     // A `$T`-generic return with NO parameter mentioning `$T`: the fn isn't
     // a template (the guard above runs on param-derived `type_params`) yet
@@ -3364,6 +3374,9 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
         // its concrete type and calls monomorphize, so every kind takes part.
         if (!p.is_pack and !p.is_comptime)
             _ = self.refuseValuelessProtocol(pty, p.type_expr.span, "declare a parameter of type");
+        // A borrowed `*@VaList` parameter is the forwarding shape, so only the
+        // cursor BY VALUE is refused here.
+        _ = self.refuseCursorValue(pty, p.type_expr.span, "declare a parameter of type");
         params.append(self.alloc, .{
             .name = self.module.types.internString(p.name),
             .ty = pty,
@@ -3717,6 +3730,10 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
     var reentry = FnBodyReentry.enter(self);
     defer reentry.restore();
 
+    const saved_fn_decl = self.current_fn_decl;
+    defer self.current_fn_decl = saved_fn_decl;
+    self.current_fn_decl = fd;
+
     // Re-use the existing function slot — switch builder to it. Pin the
     // function's OWN source BEFORE resolving the return type, so a same-name
     // shadowed type in the signature resolves against THIS
@@ -3828,6 +3845,10 @@ pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, i
     if (self.lookupObjcDefinedClassForMethod(name)) |fcd| {
         self.current_runtime_class = fcd;
     }
+
+    const saved_fn_decl = self.current_fn_decl;
+    defer self.current_fn_decl = saved_fn_decl;
+    self.current_fn_decl = fd;
 
     const name_id = self.module.types.internString(name);
     const ret_ty = self.resolveReturnType(fd);
