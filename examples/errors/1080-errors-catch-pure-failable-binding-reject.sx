@@ -1,0 +1,26 @@
+// A pure failable (`-> !E`) has no value channel, so its `catch` produces
+// nothing and cannot initialize a binding — in any of the four body shapes,
+// with or without a type annotation. Handle it as a statement, or give the
+// callee a value channel (`-> (T, !E)`); both are exercised in 1079.
+
+#import "modules/std.sx";
+
+E :: error { Bad, Empty }
+
+must :: (n: i32) -> !E {
+    if n < 0 { raise error.Bad; }
+    return;
+}
+
+main :: () -> i32 {
+    a := must(-1) catch (e) { };                    // block body
+    b := must(-1) catch { };                        // no binding
+    c := must(-1) catch (e) e;                      // bare expression
+    d := must(-1) catch (e) == {
+        case .Bad:   0;
+        else:        1
+    };                                              // match body
+    f : i32 = must(-1) catch (e) 0;                 // annotated destination
+    g : void = must(-1) catch (e) e;                // `void` names no value
+    return 0;
+}

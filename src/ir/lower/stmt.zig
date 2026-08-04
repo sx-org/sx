@@ -725,6 +725,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         // Explicit type annotation — resolve type first, then lower value
         _ = self.rejectMultiReturnValueType(ta, "variable");
         const ty = self.resolveType(ta);
+        if (rejectVoidAnnotation(self, ta, vd.name, ty)) return;
         const slot = self.builder.alloca(ty);
         // The annotation already names the valueless type; lowering the
         // initializer would only restate the refusal at the erasure.
@@ -777,10 +778,12 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
             const saved_fbv = self.force_block_value;
             self.target_type = ty;
             self.force_block_value = true;
+            const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
             var ref = self.lowerExpr(val);
             self.target_type = saved_target;
             self.force_block_value = saved_fbv;
             if (self.rejectBlockBinding(val, vd.name, self.builder.getRefType(ref))) return;
+            if (rejectVoidInitializer(self, val, vd.name, self.builder.getRefType(ref), errs_before)) return;
             // If target is optional and value isn't null, wrap with optional_wrap
             // — UNLESS the value is already that optional (e.g. a `?T`-returning
             // call, or a struct literal that lowered straight to `?T`); wrapping
@@ -970,6 +973,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         // (the enclosing fn's implicit-return target) so literal initializers
         // take their spec defaults (i64/f64) instead of adopting it.
         self.target_type = null;
+        const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
         const ref = self.lowerExpr(val);
         self.force_block_value = saved_fbv;
         self.target_type = saved_target;
@@ -984,6 +988,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         // Asked on the LOWERED type, so every shape a block can arrive through
         // is covered — a bare name, an `if` that yields one, anything.
         if (self.rejectBlockBinding(val, vd.name, ty)) return;
+        if (rejectVoidInitializer(self, val, vd.name, ty, errs_before)) return;
         const slot = self.builder.alloca(ty);
         self.builder.store(slot, ref);
         if (self.scope) |scope| {
@@ -997,6 +1002,52 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
             scope.put(vd.name, .{ .ref = slot, .ty = ty, .is_alloca = true });
         }
     }
+}
+
+/// A declaration binds a value, and `void` is the absence of one. `catch` on
+/// a PURE failable (`-> !E`) is the shape that reaches here: the operand
+/// carries only the error channel, so the handled expression has nothing to
+/// hand the binding. An initializer whose own lowering reported (the error
+/// count grew past `errs_before`) is void as fallout of that error: it keeps
+/// its own diagnostic, and the build stops on it.
+fn rejectVoidInitializer(
+    self: *Lowering,
+    val: *const ast.Node,
+    name: []const u8,
+    ty: TypeId,
+    errs_before: usize,
+) bool {
+    if (ty != .void) return false;
+    if (self.diagnostics) |d| {
+        if (d.errorCount() != errs_before) return false;
+        if (val.data == .catch_expr) {
+            const id = d.addFmtId(.err, val.span, "'{s}' has nothing to bind — `catch` on a pure failable ('!E') produces no value", .{name});
+            d.addHelpFmt(id, val.span, null, "handle it as a statement (`f() catch (e) {{ ... }};`), or give the callee a value channel (`-> (T, !E)`)", .{});
+        } else {
+            const id = d.addFmtId(.err, val.span, "'{s}' cannot bind 'void' — this expression produces no value", .{name});
+            d.addHelpFmt(id, val.span, null, "call it as a statement instead of binding its result", .{});
+        }
+    }
+    bindVoidPlaceholder(self, name);
+    return true;
+}
+
+/// `void` names no value, so a variable — which is storage for one — cannot
+/// be declared with it.
+fn rejectVoidAnnotation(self: *Lowering, ta: *const ast.Node, name: []const u8, ty: TypeId) bool {
+    if (ty != .void) return false;
+    if (self.diagnostics) |d| {
+        d.addFmt(.err, ta.span, "'{s}' cannot be declared 'void' — a variable holds a value", .{name});
+    }
+    bindVoidPlaceholder(self, name);
+    return true;
+}
+
+/// Bind a refused declaration's name so later uses resolve to it instead of
+/// reporting again.
+fn bindVoidPlaceholder(self: *Lowering, name: []const u8) void {
+    const scope = self.scope orelse return;
+    scope.put(name, .{ .ref = self.emitPlaceholder(name), .ty = .unresolved, .is_alloca = false });
 }
 
 fn inferBareFnBindingType(self: *Lowering, value: *const ast.Node) ?TypeId {
