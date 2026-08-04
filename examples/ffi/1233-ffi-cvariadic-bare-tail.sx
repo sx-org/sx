@@ -10,7 +10,7 @@
 //
 // Every argument at or past the fixed count crosses the tail under the default
 // argument promotions: `f32` widens to `f64`, and an integer narrower than 32
-// bits widens to `i32`.
+// bits widens to `i32` — every width, not just the builtin ones.
 //
 // An integer literal keeps ordinary sx typing, so it crosses the tail as `i64`.
 // A C `%d` slot reads an `int`, so the width is stated where C expects one, and
@@ -40,6 +40,10 @@ main :: () -> i32 {
 
     printf("heterogeneous: %d %s %f\n", whole, text, 3.25);
     printf("promoted: %f %d %d\n", single, narrow, signed_narrow);
+
+    odd_signed: i24 = -1000;
+    odd_unsigned: u7 = 100;
+    printf("odd widths: %d %d\n", odd_signed, odd_unsigned);
 
     print("tally={}\n", tally(3, 1, 2, 3));
     print("constant_empty={}\n", constant());

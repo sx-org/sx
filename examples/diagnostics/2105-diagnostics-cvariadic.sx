@@ -1,0 +1,32 @@
+// A C-variadic tail carries neither a count nor types, so only what a C ABI can
+// pass through `va_arg` may cross it: the 32- and 64-bit integers, `f64`, the
+// pointer family and its nullable forms, and function values carrying the C
+// convention. Everything else is refused at the call, naming the argument.
+//
+// The refusals accumulate: each inadmissible argument is reported on its own.
+//
+// Widths below 32 bits are NOT refused here — they promote to `i32` on the way
+// across, as `f32` promotes to `f64`. What is refused is a width C has no
+// variadic slot for, and every aggregate.
+
+#import "modules/std.sx";
+
+printf :: (fmt: cstring, ..) -> i32 extern;
+
+Pair :: struct {
+    a: i64;
+    b: i64;
+}
+
+main :: () -> i32 {
+    wide: i48 = 5;
+    pair: Pair = .{1, 2};
+    nums: [2]i32 = .[1, 2];
+
+    printf("%d\n", wide);        // a width no C variadic slot holds
+    printf("%s\n", "sx string"); // two words: pointer and length
+    printf("%d\n", pair);        // an aggregate
+    printf("%d\n", nums);        // an array
+    printf("%d\n", nums[0..1]);  // a slice is two words too
+    return 0;
+}

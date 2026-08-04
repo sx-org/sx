@@ -1923,19 +1923,76 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
     }
 }
 
-/// Apply C default argument promotion to variadic-tail args. These rules
-/// (bool/i8/i16/u8/u16 → i32, f32 → f64) match the C calling convention's
-/// implicit promotions when an argument is passed through `...`.
+/// The bit width of an integer type, or null when `ty` is not an integer.
+/// `isize`/`usize` are the target's address width, 64 on every ABI sx supports.
+fn integerWidth(self: *Lowering, ty: TypeId) ?u8 {
+    return switch (ty) {
+        .bool => 1,
+        .i8, .u8 => 8,
+        .i16, .u16 => 16,
+        .i32, .u32 => 32,
+        .i64, .u64, .isize, .usize => 64,
+        else => if (ty.isBuiltin()) null else switch (self.module.types.get(ty)) {
+            .signed, .unsigned => |bits| bits,
+            else => null,
+        },
+    };
+}
+
+/// The type an argument takes under the C default argument promotions, or null
+/// when it crosses unchanged. Every integer narrower than 32 bits widens to
+/// `i32` and `f32` widens to `f64`; wider C ABI integers, `f64`, the pointer
+/// family, and `abi(.c)` function values are already tail-width.
+fn promotedTailType(self: *Lowering, ty: TypeId) ?TypeId {
+    if (ty == .f32) return .f64;
+    if (integerWidth(self, ty)) |bits| {
+        if (bits < 32) return .i32;
+    }
+    return null;
+}
+
+/// Whether a POST-PROMOTION type may cross a C-variadic tail. The tail carries
+/// neither a count nor types, so only what a C ABI can pass through `va_arg`
+/// belongs there: the 32- and 64-bit integers, `f64`, the pointer family and
+/// its nullable forms, and function values that carry the C convention.
+fn tailAdmissible(self: *Lowering, ty: TypeId) bool {
+    return switch (ty) {
+        .f64, .cstring => true,
+        .i32, .u32, .i64, .u64, .isize, .usize => true,
+        else => if (ty.isBuiltin()) false else switch (self.module.types.get(ty)) {
+            .signed, .unsigned => |bits| bits == 32 or bits == 64,
+            .pointer, .many_pointer => true,
+            // A nullable pointer is one word with null as its absent value; any
+            // other optional carries a separate presence flag.
+            .optional => |o| switch (o.child) {
+                .cstring => true,
+                else => !o.child.isBuiltin() and switch (self.module.types.get(o.child)) {
+                    .pointer, .many_pointer => true,
+                    else => false,
+                },
+            },
+            .function => |f| f.call_conv == .c,
+            else => false,
+        },
+    };
+}
+
+/// Promote and check every argument at or past the fixed count. One
+/// implementation serves each C-variadic call site, so a tail argument is
+/// promoted and admitted identically wherever it is written.
 pub fn promoteCVariadicArgs(self: *Lowering, args: []Ref, fixed_count: usize) void {
     if (args.len <= fixed_count) return;
-    for (args[fixed_count..]) |*arg| {
+    for (args[fixed_count..], fixed_count..) |*arg, i| {
         const src_ty = self.builder.getRefType(arg.*);
-        const promoted: TypeId = switch (src_ty) {
-            .bool, .i8, .i16, .u8, .u16 => .i32,
-            .f32 => .f64,
-            else => continue,
-        };
-        arg.* = self.coerceToType(arg.*, src_ty, promoted);
+        if (promotedTailType(self, src_ty)) |promoted| {
+            arg.* = self.coerceToType(arg.*, src_ty, promoted);
+        }
+        const crossed = self.builder.getRefType(arg.*);
+        if (tailAdmissible(self, crossed)) continue;
+        if (self.diagnostics) |d| {
+            const cs = self.builder.current_span;
+            d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "argument {d}: '{s}' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value", .{ i + 1, self.formatTypeName(src_ty) });
+        }
     }
 }
 

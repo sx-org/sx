@@ -1,0 +1,29 @@
+error: argument 2: 'i48' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:26:5
+   |
+26 |     printf("%d\n", wide);        // a width no C variadic slot holds
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+error: argument 2: 'string' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:27:5
+   |
+27 |     printf("%s\n", "sx string"); // two words: pointer and length
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: argument 2: 'Pair' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:28:5
+   |
+28 |     printf("%d\n", pair);        // an aggregate
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+error: argument 2: '[2]i32' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:29:5
+   |
+29 |     printf("%d\n", nums);        // an array
+   |     ^^^^^^^^^^^^^^^^^^^^
+
+error: argument 2: '[]i32' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:30:5
+   |
+30 |     printf("%d\n", nums[0..1]);  // a slice is two words too
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
