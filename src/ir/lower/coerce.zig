@@ -1216,7 +1216,25 @@ fn refuseSetWeld(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span
     return refused;
 }
 
+/// Which store the guard is speaking about, and so how a refusal reads.
+const AssignDiag = union(enum) {
+    /// A store the program wrote, named by the destination it spells.
+    ordinary: struct { verb: []const u8, name: []const u8 },
+    /// The write an `@Init` formation performs: the refusal names the expression,
+    /// since the destination is a slot the program never spelled.
+    formation,
+};
+
 /// Guard a store into an explicitly-annotated slot against a silent bit-mangle.
+pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, verb: []const u8, name: []const u8, init_node: ?*const Node) bool {
+    return checkAssignableWith(self, src_ty, dst_ty, span, init_node, .{ .ordinary = .{ .verb = verb, .name = name } });
+}
+
+/// `checkAssignable` for the write an `@Init(dst_ty)` formation performs.
+pub fn checkFormationWritable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, init_node: ?*const Node) bool {
+    return checkAssignableWith(self, src_ty, dst_ty, span, init_node, .formation);
+}
+
 /// When the initializer/RHS type `src_ty` has NO modeled coercion to the
 /// destination slot type `dst_ty`, the classifier yields `.none` and
 /// `coerceMode`'s `.no_op, .none => return val` arm passes the value through
@@ -1232,8 +1250,8 @@ fn refuseSetWeld(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span
 /// caller stores a safe default instead of the overrunning value. Returns true
 /// when the store is sound (a no-op, a modeled conversion, a same-width
 /// reinterpretation, or a deliberate `xx`/`.(T)`). `init_node` is the
-/// initializer expression (null when none); `verb`/`name` shape the message.
-pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, verb: []const u8, name: []const u8, init_node: ?*const Node) bool {
+/// initializer expression (null when none); `diag` shapes the message.
+fn checkAssignableWith(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span, init_node: ?*const Node, diag: AssignDiag) bool {
     if (src_ty == dst_ty) return true;
     // Suppress a cascade onto an error that is NOT this guard's own: a
     // pre-lowering "unknown type" (the annotation resolved to a poison stub) or
@@ -1261,34 +1279,21 @@ pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
         if (self.diagnostics) |d| {
             // The value is named the way the program spells it, and the fact reads
             // as it does at every other set refusal (spec: Open Sets).
-            const id = if (formingFor(self, dst_ty))
-                d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': it is not a member of the set", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty) })
-            else
-                d.addFmtId(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatSourceTypeName(dst_ty), self.formatSourceTypeName(src_ty) });
+            const id = switch (diag) {
+                .formation => d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': it is not a member of the set", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty) }),
+                .ordinary => |o| d.addFmtId(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ o.verb, o.name, self.formatSourceTypeName(dst_ty), self.formatSourceTypeName(src_ty) }),
+            };
             self.openSetMembershipHelp(d, id, src_ty, dst_ty, span);
             self.noteOpenSetInstantiation(d, id);
             self.assignability_error_count += 1;
         }
         return false;
     }
-    if (formingFor(self, dst_ty)) {
-        if (self.openSetOf(src_ty)) |set| {
-            if (self.openSetDeclaresMembership(dst_ty, set.decl)) return true;
-            if (self.diagnostics) |d| {
-                const id = d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': it is not a member of the set", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty) });
-                self.openSetMembershipHelp(d, id, dst_ty, src_ty, span);
-                self.noteOpenSetInstantiation(d, id);
-                self.assignability_error_count += 1;
-            }
-            return false;
-        }
-    }
     if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
     if (self.diagnostics) |d| {
-        if (formingFor(self, dst_ty)) {
-            d.addFmt(.err, span, "'{s}' cannot form an initializer for '{s}': no conversion applies", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty) });
-        } else {
-            d.addFmt(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatSourceTypeName(dst_ty), self.formatSourceTypeName(src_ty) });
+        switch (diag) {
+            .formation => d.addFmt(.err, span, "'{s}' cannot form an initializer for '{s}': no conversion applies", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty) }),
+            .ordinary => |o| d.addFmt(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ o.verb, o.name, self.formatSourceTypeName(dst_ty), self.formatSourceTypeName(src_ty) }),
         }
         self.assignability_error_count += 1;
     }
@@ -1303,14 +1308,6 @@ fn diagnosePointerIntegerWeld(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) v
     const why = if (isPointerValueKind(self, src_ty)) "an address is not a number" else "a number is not an address";
     d.addFmt(.err, span, "cannot coerce a value of type '{s}' to '{s}': {s}; use an explicit cast (`xx`/`.(T)`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), why });
     self.assignability_error_count += 1;
-}
-
-/// Is this store the WRITE of an initializer being formed for `dst_ty`? Then it is
-/// formation, and a refusal names the expression rather than a destination the
-/// program never wrote.
-fn formingFor(self: *Lowering, dst_ty: TypeId) bool {
-    const t = self.forming_init_target orelse return false;
-    return t == dst_ty;
 }
 
 /// The shared "this implicit passthrough is exempt" gate for the unmodeled-
@@ -1517,14 +1514,6 @@ fn sameStoreWidth(self: *Lowering, a: TypeId, b: TypeId) bool {
 }
 
 pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mode: CoerceMode) Ref {
-    if (mode == .implicit and formingFor(self, dst_ty)) {
-        if (self.openSetOf(src_ty)) |set| {
-            if (self.openSetDeclaresMembership(dst_ty, set.decl)) {
-                const cs = self.builder.current_span;
-                return self.narrowOpenSetMember(val, src_ty, dst_ty, .{ .start = cs.start, .end = cs.end });
-            }
-        }
-    }
     // Pointer-to-concrete (or concrete-storage value) → `*P`: materialize
     // the borrowed VIEW here, at the node-less layer, so EVERY store site
     // agrees with the node-aware decl/arg arms (an assignment

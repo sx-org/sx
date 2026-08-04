@@ -4070,17 +4070,32 @@ such parameter, which hands over the single write rather than wrapping it. A
 binder bounded by `@Init` can hold nothing else — a binding that is not a formed
 initializer fails the bound.
 
+The source expression is an ordinary expression. Every conversion the language
+models composes on the way to the target exactly as it does at any other store —
+a member into its set, a value under an optional, anything into `any` — and
+formation decides only where the composition runs out, at a target no modeled
+conversion reaches.
+
+There, the source decides. An open-set value carries its member inline, so a
+target that declares membership in that set is a tag check over storage the value
+already holds: `write` compares the slot tag and copies the payload on a match.
+The target's own shape says what another tag answers — a member panics, an
+optional of a member answers null — the same distinction `v.(Label)` and
+`v.(?Label)` spell explicitly.
+
 A protocol value forms nothing but its own protocol type. It is a handle to its
 conformer, not the conformer's value, so forming an `@Init(T)` for a concrete `T`
 is refused where the expression is written, in both argument and dot-receiver
 spellings. The explicit downcast reads the conformer out (`h.(Round)`,
 `h.(?Round)`), and what it yields forms like any other value.
 
-An open-set value carries its member inline. It forms an `@Init(Member)` when
-`Member` declares membership in that set: `write` compares the slot tag, copies
-the payload on a match, and takes the hard downcast's panic path on another
-member. Membership is checked first, so a target outside the set is refused as a
-non-member rather than treated as a narrowing.
+A set target answers in the terms it decides by whatever the source is: a type
+that never declared itself into the set is refused as a non-member.
+
+Neither rule reaches inside the source. A conversion performed while evaluating
+it — an argument of a call it makes — and a conversion of a part the write
+structurally decomposes — an element of a tuple target — are ordinary
+conversions, refused and performed as they are anywhere else.
 
 The operations:
 

@@ -1,0 +1,30 @@
+// The dot-receiver spelling forms the same initializer as the argument spelling,
+// so it checks the same tag: a different member takes the hard assertion path when
+// the initializer writes. A process stops at the first panic, so this witness is
+// separately executable from the argument-spelling one.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Button :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Button) -> string => self.text;
+}
+
+take_label :: ufcs (value: $I/@Init(Label)) {
+    slot: Label = ---;
+    value.write(*slot);
+}
+
+main :: () -> i32 {
+    v : View = Button{ text = "other" };
+    v.take_label();
+    0
+}

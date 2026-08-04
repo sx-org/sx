@@ -1,0 +1,92 @@
+// An open-set value carries its member inline, so forming from one is a tag check
+// over storage the value already holds. The formation target's own shape says what
+// another tag answers: a member panics, an optional of one answers null.
+//
+// Every other target the language already models is reached exactly as it is at
+// any other store — the set itself, the set under an optional, `any` — and the
+// same conversions written at top level or inside a formation's source expression
+// produce the same values.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128 }) { render :: (self: *Self) -> string; }
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Button :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Button) -> string => self.text;
+}
+
+form_Label :: ufcs (value: $I/@Init(Label)) {
+    slot: Label = ---;
+    value.write(*slot);
+    print("Label {}\n", slot.text);
+}
+
+form_opt_Label :: ufcs (value: $I/@Init(?Label)) {
+    slot: ?Label = ---;
+    value.write(*slot);
+    if slot != null { print("?Label {}\n", slot!.text); } else { print("?Label null\n"); }
+}
+
+form_View :: ufcs (value: $I/@Init(View)) {
+    slot: View = ---;
+    value.write(*slot);
+    print("View {}\n", slot.render());
+}
+
+form_opt_View :: ufcs (value: $I/@Init(?View)) {
+    slot: ?View = ---;
+    value.write(*slot);
+    print("?View {}\n", slot!.render());
+}
+
+form_any :: ufcs (value: $I/@Init(any)) {
+    slot: any = ---;
+    value.write(*slot);
+    if slot == {
+        case Label: (l) { print("any Label {}\n", l.text); }
+        case Button: (b) { print("any Button {}\n", b.text); }
+        else: { print("any other\n"); }
+    }
+}
+
+need_View :: ufcs (v: View) { print("need View {}\n", v.render()); }
+need_opt_View :: ufcs (v: ?View) { print("need ?View {}\n", v!.render()); }
+need_any :: ufcs (a: any) { print("need any {}\n", type_name(type_of(a))); }
+
+echo_View :: (v: View) -> View => v;
+
+main :: () -> i32 {
+    v : View = Label{ text = "carried" };
+    other : View = Button{ text = "another tag" };
+
+    form_Label(v);
+    v.form_Label();
+
+    form_opt_Label(v);
+    v.form_opt_Label();
+    form_opt_Label(other);
+    other.form_opt_Label();
+
+    form_View(v);
+    v.form_View();
+    form_opt_View(v);
+    v.form_opt_View();
+    form_any(v);
+    v.form_any();
+    form_any(other);
+
+    need_View(v);
+    v.need_View();
+    need_opt_View(v);
+    need_any(v);
+
+    form_View(echo_View(v));
+    echo_View(v).form_View();
+    form_Label(echo_View(v).(Label));
+    0
+}

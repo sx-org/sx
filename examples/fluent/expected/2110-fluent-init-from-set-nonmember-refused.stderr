@@ -1,27 +1,113 @@
 error: 'View' cannot form an initializer for 'Plain': it is not a member of the set
-  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:24:16
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:54:16
    |
-24 |     take_plain(v);
+54 |     form_Plain(v);
    |                ^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
    |
-24 |     take_plain(v);
+54 |     form_Plain(v);
    |                ^
 
 error: 'View' cannot form an initializer for 'Plain': it is not a member of the set
-  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:25:5
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:55:5
    |
-25 |     v.take_plain();
+55 |     v.form_Plain();
    |     ^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
    |
-25 |     v.take_plain();
+55 |     v.form_Plain();
    |     ^
 
-error: cannot initialize 'label' of type 'Label' with a value of type 'View'
-  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:26:21
+error: 'View' cannot form an initializer for '?Plain': it is not a member of the set
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:56:20
    |
-26 |     label : Label = v;
+56 |     form_opt_Plain(v);
+   |                    ^
+
+help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
+   |
+56 |     form_opt_Plain(v);
+   |                    ^
+
+error: 'View' cannot form an initializer for '?Plain': it is not a member of the set
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:57:5
+   |
+57 |     v.form_opt_Plain();
+   |     ^
+
+help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
+   |
+57 |     v.form_opt_Plain();
+   |     ^
+
+error: 'View' cannot form an initializer for 'Named': it is not a member of the set
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:58:16
+   |
+58 |     form_Named(v);
+   |                ^
+
+help: a type joins by declaring itself into the set: 'Named :: @OpenVariant(View) { … }'
+   |
+58 |     form_Named(v);
+   |                ^
+
+error: 'View' cannot form an initializer for 'Named': it is not a member of the set
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:59:5
+   |
+59 |     v.form_Named();
+   |     ^
+
+help: a type joins by declaring itself into the set: 'Named :: @OpenVariant(View) { … }'
+   |
+59 |     v.form_Named();
+   |     ^
+
+error: cannot coerce a value of type 'View' to 'Label': no implicit conversion applies
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:61:5
+   |
+61 |     need_Label(v);
+   |     ^^^^^^^^^^^^^
+
+error: cannot coerce a value of type 'View' to 'Label': no implicit conversion applies
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:62:5
+   |
+62 |     v.need_Label();
+   |     ^^^^^^^^^^^^^^
+
+error: cannot coerce a value of type 'View' to 'Label': no implicit conversion applies
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:63:16
+   |
+63 |     form_Label(echo_Label(v));
+   |                ^^^^^^^^^^^^^
+
+error: cannot coerce a value of type 'View' to 'Label': no implicit conversion applies
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:64:5
+   |
+64 |     echo_Label(v).form_Label();
+   |     ^^^^^^^^^^^^^
+
+error: cannot coerce a value of type 'View' to 'Label': no implicit conversion applies
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:67:16
+   |
+67 |     form_Tuple(t);
+   |                ^
+
+error: cannot initialize 'label' of type 'Label' with a value of type 'View'
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:69:21
+   |
+69 |     label : Label = v;
    |                     ^
+
+error: cannot coerce a value of type 'View' to 'Label': no implicit conversion applies
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:70:5
+   |
+70 |     need_opt_Label(v);
+   |     ^^^^^^^^^^^^^^^^^
+
+error: cannot wrap a value of type 'View' into optional '?Label': its payload type is 'Label'
+  --> examples/fluent/2110-fluent-init-from-set-nonmember-refused.sx:70:5
+   |
+70 |     need_opt_Label(v);
+   |     ^^^^^^^^^^^^^^^^^

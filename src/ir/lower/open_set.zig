@@ -1286,11 +1286,11 @@ pub fn lowerDowncast(
     return lowerNarrowing(self, set_ty, member, value, value_node, type_node, soft, span);
 }
 
-/// Formation from a set slot to one of its declared members is the hard checked
-/// narrowing: the active tag yields a payload copy, and another tag takes the
-/// assertion panic path.
-pub fn narrowMember(self: *Lowering, value: Ref, set_ty: TypeId, member: TypeId, span: ast.Span) Ref {
-    return lowerNarrowing(self, set_ty, member, value, null, null, false, span);
+/// Formation from a set slot to one of its declared members: the active tag yields
+/// a payload copy, and another tag takes the assertion panic path — or, `soft`,
+/// answers null.
+pub fn narrowMember(self: *Lowering, set_ty: TypeId, member: TypeId, value: Ref, soft: bool, span: ast.Span) Ref {
+    return lowerNarrowing(self, set_ty, member, value, null, null, soft, span);
 }
 
 fn lowerNarrowing(

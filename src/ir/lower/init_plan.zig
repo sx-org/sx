@@ -126,27 +126,6 @@ fn siteFor(self: *Lowering, arg: *const Node) u32 {
     return id;
 }
 
-/// A protocol value is a handle to its conformer, not the conformer's value.
-/// Forming an `@Init(target)` from one has no concrete `target` to write, so the
-/// expression is refused with the downcast that reads the conformer out. True
-/// when refused.
-///
-/// A modeled conversion already says what the bytes become (`any` takes the
-/// concrete view, an optional target answers in its own terms), and keeps that
-/// answer.
-fn refuseProtocolSource(self: *Lowering, arg: *const Node, arg_ty: TypeId, target: TypeId) bool {
-    if (arg_ty == target or arg_ty == .unresolved or target == .unresolved) return false;
-    if (self.isOpenSet(target)) return false;
-    if (self.coercionResolver().classify(arg_ty, target) != .none) return false;
-    if (self.protocolKindOf(arg_ty) == null) return false;
-    const d = self.diagnostics orelse return true;
-    const src_name = self.formatSourceTypeName(arg_ty);
-    const dst_name = self.formatSourceTypeName(target);
-    const id = d.addFmtId(.err, arg.span, "'{s}' cannot form an initializer for '{s}': a protocol value is a handle to its conformer, not the conformer", .{ src_name, dst_name });
-    d.addHelpFmt(id, arg.span, null, "read the conformer out with a downcast first: '.({s})' panics on another type, '.(?{s})' answers null", .{ dst_name, dst_name });
-    return true;
-}
-
 /// Form the `@Init(target)` implementor for `arg` (spec §5.2). The argument is
 /// NOT evaluated here: it becomes the body of a thunk
 /// `(dest: *target) { dest.* = <arg>; }`, so it runs when — and each time — the
@@ -168,8 +147,6 @@ pub fn formInitPlan(self: *Lowering, arg: *const Node, target: TypeId) Ref {
     if (conforms(self, target, arg_ty)) return self.lowerExpr(arg);
 
     const impl_ty = self.module.types.initImplementorType(target, siteFor(self, arg));
-    if (refuseProtocolSource(self, arg, arg_ty, target))
-        return self.builder.emit(.{ .placeholder = self.module.types.internString("init-formation") }, impl_ty);
 
     const span = arg.span;
     const src = self.current_source_file;
@@ -180,6 +157,7 @@ pub fn formInitPlan(self: *Lowering, arg: *const Node, target: TypeId) Ref {
         .op = .assign,
         .value = @constCast(arg),
     } }, span, src);
+    self.init_formation_writes.put(self.alloc, write_stmt, target) catch unreachable;
     const stmts = self.alloc.dupe(*Node, &.{write_stmt}) catch unreachable;
     const body = self.synthNode(.{ .block = .{ .stmts = stmts } }, span, src);
 
@@ -196,12 +174,102 @@ pub fn formInitPlan(self: *Lowering, arg: *const Node, target: TypeId) Ref {
     const saved_target = self.target_type;
     self.target_type = impl_ty;
     defer self.target_type = saved_target;
-    // The write the thunk performs is FORMATION, not a store the program wrote:
-    // what cannot become the target is refused in those terms (spec §5.2).
-    const saved_forming = self.forming_init_target;
-    self.forming_init_target = target;
-    defer self.forming_init_target = saved_forming;
     return lower_closure.lowerLambdaTyped(self, &lam, .stack, impl_ty);
+}
+
+/// Where a modeled conversion ladder ENDS: the destination no built-in conversion
+/// answers for, and how many optional wrappers stand between it and the target.
+const FormationLeaf = struct { dst: TypeId, wrappers: u32 };
+
+/// Walk the ladder from `src` to `dst`. Null when it is complete — every step is
+/// modeled, and formation has nothing of its own to decide.
+///
+/// `.optional_wrap` is the one plan whose emitter hands the SAME value to its
+/// child, so it is the only descent. Every other recursive plan decomposes the
+/// source — a tuple's elements, an optional's payload — and those parts are
+/// ordinary values converted by ordinary rules.
+fn formationLeaf(self: *Lowering, src: TypeId, dst: TypeId) ?FormationLeaf {
+    var cur = dst;
+    var wrappers: u32 = 0;
+    while (true) {
+        switch (self.coercionResolver().classify(src, cur)) {
+            .none => return .{ .dst = cur, .wrappers = wrappers },
+            .optional_wrap => {
+                cur = self.module.types.get(cur).optional.child;
+                wrappers += 1;
+            },
+            else => return null,
+        }
+    }
+}
+
+/// The value the formation write stores, or null when the source cannot form the
+/// target and the refusal is reported.
+///
+/// The decision is taken once, at the ladder's leaf, and it is total. A set
+/// destination answers in membership's terms whatever the source is. A set source
+/// carries its member inline, so a declared member is a tag check over storage the
+/// value already holds — and the target's own shape says what another tag does: a
+/// member panics, an optional of one answers null. A protocol source is a handle
+/// to its conformer with no `target` at hand to write, so it is refused. Anything
+/// else is the ordinary store, worded as formation.
+pub fn formationWriteValue(self: *Lowering, val: Ref, val_ty: TypeId, target: TypeId, node: *const Node) ?Ref {
+    const leaf = formationLeaf(self, val_ty, target) orelse return formationStore(self, val, val_ty, target, node);
+    const span = node.span;
+
+    if (self.isOpenSet(leaf.dst)) return refuseFormationMembership(self, val_ty, target, val_ty, leaf.dst, span);
+
+    if (self.openSetOf(val_ty)) |set| {
+        if (!self.openSetDeclaresMembership(leaf.dst, set.decl))
+            return refuseFormationMembership(self, val_ty, target, leaf.dst, val_ty, span);
+        const soft = leaf.wrappers > 0;
+        const narrowed = self.narrowOpenSetMember(val_ty, leaf.dst, val, soft, span);
+        const narrowed_ty = if (soft) self.module.types.optionalOf(leaf.dst) else leaf.dst;
+        if (narrowed_ty == target) return narrowed;
+        return self.coerceToType(narrowed, narrowed_ty, target);
+    }
+
+    if (self.protocolKindOf(val_ty) != null) return refuseFormationFromProtocol(self, val_ty, target, leaf.dst, span);
+
+    return formationStore(self, val, val_ty, target, node);
+}
+
+/// The ordinary store the write performs when formation has nothing of its own to
+/// say — the same guard and the same conversion every other store takes, with a
+/// refusal that names the expression instead of a destination the program never
+/// wrote.
+fn formationStore(self: *Lowering, val: Ref, val_ty: TypeId, target: TypeId, node: *const Node) ?Ref {
+    if (!self.checkFormationWritable(val_ty, target, node.span, node)) return null;
+    if (val_ty == target or val_ty == .void or target == .void) return val;
+    return self.coerceToType(val, val_ty, target);
+}
+
+/// A set and one of its members is the only pair a set slot converts across, in
+/// either direction. `member_candidate` is the one of the two being asked to be a
+/// member of `set_ty`.
+fn refuseFormationMembership(self: *Lowering, src_ty: TypeId, target: TypeId, member_candidate: TypeId, set_ty: TypeId, span: ast.Span) ?Ref {
+    if (self.externalErrorsExist()) return null;
+    if (self.diagnostics) |d| {
+        const id = d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': it is not a member of the set", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(target) });
+        self.openSetMembershipHelp(d, id, member_candidate, set_ty, span);
+        self.noteOpenSetInstantiation(d, id);
+        self.assignability_error_count += 1;
+    }
+    return null;
+}
+
+/// A protocol value is a handle to its conformer, not the conformer's value, so
+/// there is no `target` at hand for the write to fill. The explicit downcast reads
+/// the conformer out, spelled at the leaf the target's optionals wrap.
+fn refuseFormationFromProtocol(self: *Lowering, src_ty: TypeId, target: TypeId, leaf: TypeId, span: ast.Span) ?Ref {
+    if (self.externalErrorsExist()) return null;
+    if (self.diagnostics) |d| {
+        const leaf_name = self.formatSourceTypeName(leaf);
+        const id = d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': a protocol value is a handle to its conformer, not the conformer", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(target) });
+        d.addHelpFmt(id, span, null, "read the conformer out with a downcast first: '.({s})' panics on another type, '.(?{s})' answers null", .{ leaf_name, leaf_name });
+        self.assignability_error_count += 1;
+    }
+    return null;
 }
 
 /// `value.write(dest)` — run the thunk against the receiver's storage, so the
