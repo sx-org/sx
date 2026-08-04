@@ -4634,6 +4634,25 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         }
     }
 
+    // The RHS type the operand rules see: an un-inferable RHS takes its
+    // lowered type, a narrowed optional its payload.
+    const eff_rhs_ty = blk: {
+        if (rhs_ty == .unresolved) break :blk self.builder.getRefType(rhs);
+        if (!rhs_ty.isBuiltin()) {
+            const ri = self.module.types.get(rhs_ty);
+            if (ri == .optional) break :blk ri.optional.child;
+        }
+        break :blk rhs_ty;
+    };
+
+    // `+` / `-` with a pointer operand is POINTER arithmetic — an
+    // element-scaled GEP or an element distance, never an integer add/sub on
+    // the address. Invalid pairings are rejected inside.
+    if (bop.op == .add or bop.op == .sub) {
+        const span = ast.Span{ .start = bop.lhs.span.start, .end = bop.rhs.span.end };
+        if (self.lowerPointerArith(bop.op, lhs, ty, rhs, eff_rhs_ty, span)) |result| return result;
+    }
+
     // Reject scalar ops on incompatible operand types (e.g.
     // `i64 + string`, `i64 < string`, `i64 & string`). The result type
     // `ty` is derived from the LHS, so without this the op lowers as
@@ -4648,14 +4667,6 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             else => .none,
         };
         if (group != .none) {
-            const eff_rhs_ty = blk: {
-                if (rhs_ty == .unresolved) break :blk self.builder.getRefType(rhs);
-                if (!rhs_ty.isBuiltin()) {
-                    const ri = self.module.types.get(rhs_ty);
-                    if (ri == .optional) break :blk ri.optional.child;
-                }
-                break :blk rhs_ty;
-            };
             const ok = switch (group) {
                 .arith => self.isArithOperand(ty) and self.isArithOperand(eff_rhs_ty),
                 .ordering => self.isOrderingOperand(ty) and self.isOrderingOperand(eff_rhs_ty),
@@ -4722,6 +4733,97 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         .shr => self.builder.emit(.{ .shr = .{ .lhs = lhs, .rhs = rhs } }, ty),
         .in_op => self.emitError("in_op", bop.lhs.span),
     };
+}
+
+/// Lower `+` / `-` when either operand is a pointer. `ptr ± int` over a sized
+/// pointee (either order for `+`) becomes an element-scaled GEP typed as the
+/// pointer; `p - q` over one nonzero-sized element type becomes the signed
+/// element distance. Every other pairing is rejected here with a located
+/// diagnostic, so no pointer ever reaches the integer add/sub arms. Null when
+/// neither operand is a pointer.
+pub fn lowerPointerArith(
+    self: *Lowering,
+    op: ast.BinaryOp.Op,
+    lhs: Ref,
+    lhs_ty: TypeId,
+    rhs: Ref,
+    rhs_ty: TypeId,
+    span: ast.Span,
+) ?Ref {
+    const l_elem = self.pointerElement(lhs_ty);
+    const r_elem = self.pointerElement(rhs_ty);
+    if (l_elem == null and r_elem == null) return null;
+
+    if (l_elem != null and r_elem != null) {
+        if (op == .add) {
+            if (self.diagnostics) |d| d.addFmt(.err, span, "cannot add '{s}' and '{s}': pointer arithmetic offsets a pointer by an integer, and two addresses have no sum", .{
+                self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty),
+            });
+            return self.emitPlaceholder("pointer-sum");
+        }
+        if (l_elem.? != r_elem.?) {
+            if (self.diagnostics) |d| d.addFmt(.err, span, "cannot subtract '{s}' from '{s}': a pointer difference is a count of elements, so both pointers must address the same element type", .{
+                self.formatTypeName(rhs_ty), self.formatTypeName(lhs_ty),
+            });
+            return self.emitPlaceholder("pointer-difference-element-mismatch");
+        }
+        return lowerPointerDistance(self, lhs, rhs, l_elem.?, span);
+    }
+
+    const ptr_on_left = l_elem != null;
+    if (!ptr_on_left and op == .sub) {
+        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot subtract '{s}' from '{s}': a pointer may only be subtracted from another pointer or offset by an integer", .{
+            self.formatTypeName(rhs_ty), self.formatTypeName(lhs_ty),
+        });
+        return self.emitPlaceholder("pointer-subtrahend");
+    }
+
+    const ptr_ty = if (ptr_on_left) lhs_ty else rhs_ty;
+    const off_ty = if (ptr_on_left) rhs_ty else lhs_ty;
+    if (!self.isIntEx(off_ty)) {
+        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot offset '{s}' by '{s}': a pointer offset must be an integer", .{
+            self.formatTypeName(ptr_ty), self.formatTypeName(off_ty),
+        });
+        return self.emitPlaceholder("pointer-offset-operand");
+    }
+
+    const elem = if (ptr_on_left) l_elem.? else r_elem.?;
+    if (elem == .void or elem == .noreturn) {
+        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot offset '{s}': pointer arithmetic requires a sized pointee, but '{s}' is unsized", .{
+            self.formatTypeName(ptr_ty), self.formatTypeName(elem),
+        });
+        return self.emitPlaceholder("pointer-offset-unsized");
+    }
+
+    // A GEP index is sign-extended to the pointer width, so a narrow or
+    // unsigned offset is widened at its OWN signedness first.
+    var index = if (ptr_on_left) rhs else lhs;
+    if (off_ty != .i64) index = self.coerceToType(index, off_ty, .i64);
+    if (op == .sub) index = self.builder.emit(.{ .neg = .{ .operand = index } }, .i64);
+    const base = if (ptr_on_left) lhs else rhs;
+    return self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = index } }, ptr_ty);
+}
+
+/// `p - q` over one nonzero-sized element type: the byte distance divided by
+/// the element size, as a signed element count.
+fn lowerPointerDistance(self: *Lowering, lhs: Ref, rhs: Ref, elem: TypeId, span: ast.Span) Ref {
+    if (elem == .void or elem == .noreturn) {
+        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot take the difference of pointers to '{s}': an unsized element has no element count", .{
+            self.formatTypeName(elem),
+        });
+        return self.emitPlaceholder("pointer-difference-unsized");
+    }
+    const stride = self.module.types.typeSizeBytes(elem);
+    if (stride == 0) {
+        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot take the difference of pointers to '{s}': a zero-sized element has no element count", .{
+            self.formatTypeName(elem),
+        });
+        return self.emitPlaceholder("pointer-difference-zero-sized");
+    }
+    const l_addr = self.builder.emit(.{ .bitcast = .{ .operand = lhs, .from = self.builder.getRefType(lhs), .to = .isize } }, .isize);
+    const r_addr = self.builder.emit(.{ .bitcast = .{ .operand = rhs, .from = self.builder.getRefType(rhs), .to = .isize } }, .isize);
+    const bytes = self.builder.sub(l_addr, r_addr, .isize);
+    return self.builder.div(bytes, self.builder.constInt(@intCast(stride), .isize), .isize);
 }
 
 /// Handle tuple binary ops: concat (+), repeat (*), comparison (==, !=, <, <=, >, >=)

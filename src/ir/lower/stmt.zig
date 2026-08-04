@@ -3084,6 +3084,7 @@ pub fn storeOrCompound(self: *Lowering, gep: Ref, val: Ref, op: ast.Assignment.O
 }
 
 pub fn emitCompoundOp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.Assignment.Op, ty: TypeId) Ref {
+    if (op != .assign and self.pointerElement(ty) != null) return emitPointerCompoundOp(self, lhs, rhs, op, ty);
     return switch (op) {
         .add_assign => self.builder.add(lhs, rhs, ty),
         .sub_assign => self.builder.sub(lhs, rhs, ty),
@@ -3097,6 +3098,23 @@ pub fn emitCompoundOp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.Assignment.Op
         .shr_assign => self.builder.emit(.{ .shr = .{ .lhs = lhs, .rhs = rhs } }, ty),
         else => self.emitError("compound_assign", null),
     };
+}
+
+/// A compound `OP=` whose target is a pointer. Only `+=` / `-=` by an integer
+/// have a pointer form — they fold through the same pointer-arithmetic
+/// lowering as `p + n` / `p - n`; every other operator, and a pointer RHS
+/// (whose difference is a count, not an address), is rejected here.
+fn emitPointerCompoundOp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.Assignment.Op, ty: TypeId) Ref {
+    const span = ast.Span{ .start = self.builder.current_span.start, .end = self.builder.current_span.end };
+    const rhs_ty = self.builder.getRefType(rhs);
+    if ((op == .add_assign or op == .sub_assign) and self.pointerElement(rhs_ty) == null) {
+        return self.lowerPointerArith(compoundAssignToBinaryOp(op), lhs, ty, rhs, rhs_ty, span) orelse
+            self.emitError("compound_assign", span);
+    }
+    if (self.diagnostics) |d| d.addFmt(.err, span, "cannot apply '{s}=' to '{s}': a pointer target takes only '+=' / '-=' by an integer", .{
+        Lowering.binOpSymbol(compoundAssignToBinaryOp(op)), self.formatTypeName(ty),
+    });
+    return self.emitPlaceholder("pointer-compound-assign");
 }
 
 // ── Defer / cleanup ─────────────────────────────────────────────

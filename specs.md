@@ -2791,6 +2791,24 @@ mp : [*]i32 = *arr[0];   // *i32 → [*]i32 implicit
 val := mp[2];             // 30
 ```
 
+**Pointer arithmetic**: `p + n` and `p - n` offset a pointer by whole
+elements — the stride is the pointee's size, not one byte — and keep the
+pointer type. The offset may lead (`n + p`), and `+=` / `-=` fold the same
+way. Offsets require a sized pointee. `p - q`, over two pointers to the SAME
+nonzero-sized element type, yields the signed count of elements between them
+(`isize`). Every other pairing is a compile-time error: two addresses have no
+sum, an unsized or zero-sized element has no element count, a difference
+across distinct element types has no element count, only a pointer may stand
+left of a pointer subtraction, and the offset must be an integer.
+`* / % & | ^ << >>` have no pointer form at all.
+```sx
+values : [4]i32 = .[10, 20, 30, 40];
+p : [*]i32 = *values[0];
+q := p + 2;               // &values[2]
+q -= 1;                   // &values[1]
+d := q - p;               // 1 — elements, not bytes
+```
+
 **Implicit conversions**:
 - `*T` → `[*]T` (pointer to element → many-pointer)
 - `*[N]T` → `[*]T` (pointer to array → many-pointer)

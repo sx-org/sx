@@ -1,0 +1,47 @@
+error: cannot add '[*]i32' and '[*]i32': pointer arithmetic offsets a pointer by an integer, and two addresses have no sum
+  --> examples/diagnostics/2101-diagnostics-pointer-arithmetic-operands.sx:20:10
+   |
+20 |     a := p + p;      // two pointers summed
+   |          ^^^^^
+
+error: cannot subtract '[*]f64' from '[*]i32': a pointer difference is a count of elements, so both pointers must address the same element type
+  --> examples/diagnostics/2101-diagnostics-pointer-arithmetic-operands.sx:21:10
+   |
+21 |     b := p - fp;     // difference across i32 and f64 elements
+   |          ^^^^^^
+
+error: cannot subtract '[*]i32' from 'i64': a pointer may only be subtracted from another pointer or offset by an integer
+  --> examples/diagnostics/2101-diagnostics-pointer-arithmetic-operands.sx:22:10
+   |
+22 |     c := 3 - p;      // integer minus pointer
+   |          ^^^^^
+
+error: cannot offset '[*]i32' by 'f64': a pointer offset must be an integer
+  --> examples/diagnostics/2101-diagnostics-pointer-arithmetic-operands.sx:23:10
+   |
+23 |     d := p + 1.5;    // float offset
+   |          ^^^^^^^
+
+error: cannot offset '*void': pointer arithmetic requires a sized pointee, but 'void' is unsized
+  --> examples/diagnostics/2101-diagnostics-pointer-arithmetic-operands.sx:24:10
+   |
+24 |     e := vp + 1;     // unsized pointee offset
+   |          ^^^^^^
+
+error: cannot offset '*void': pointer arithmetic requires a sized pointee, but 'void' is unsized
+  --> examples/diagnostics/2101-diagnostics-pointer-arithmetic-operands.sx:25:5
+   |
+25 |     vp += 1;         // compound unsized pointee offset
+   |     ^^^^^^^^
+
+error: cannot take the difference of pointers to 'void': an unsized element has no element count
+  --> examples/diagnostics/2101-diagnostics-pointer-arithmetic-operands.sx:26:10
+   |
+26 |     f := vp - vp;    // unsized pointee difference
+   |          ^^^^^^^
+
+error: cannot offset '*noreturn': pointer arithmetic requires a sized pointee, but 'noreturn' is unsized
+  --> examples/diagnostics/2101-diagnostics-pointer-arithmetic-operands.sx:27:10
+   |
+27 |     g := np - 1;     // noreturn is also unsized
+   |          ^^^^^^
