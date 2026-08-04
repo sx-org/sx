@@ -1,0 +1,43 @@
+// Pointer/integer reinterpretation requires an explicit cast whose target is
+// the destination type. The rule applies to calls, declarations, assignments,
+// and returns, including optional pointer values.
+
+#import "modules/std.sx";
+
+Obj :: struct { v: i64 = 1; flush: i64 = 2; }
+
+flush :: ufcs (v: i64) { print("PLAIN flush {}\n", v); }
+
+take :: (v: i64) -> i64 { v }
+
+give :: (p: *Obj) -> i64 { return p; }
+
+main :: () -> i32 {
+    o := Obj{};
+    p := *o;
+
+    p.flush();
+    flush(p);
+    n := take(p);
+
+    m : i64 = p;
+    m = p;
+    r := give(p);
+
+    q : *Obj = m;
+    c : cstring = 5;
+
+    wrong_target : i64 = p.(*void);
+    number : i64 = 5;
+    wrong_pointer : *Obj = number.(u64);
+
+    maybe_p : ?*Obj = p;
+    maybe_number : i64 = maybe_p;
+    maybe_arg := take(maybe_p);
+
+    explicit_xx : i64 = xx p;
+    explicit_postfix : i64 = p.(i64);
+
+    print("{} {} {} {} {} {} {} {} {} {}\n", n, r, q == null, c == null, wrong_target, wrong_pointer == null, maybe_number, maybe_arg, explicit_xx, explicit_postfix);
+    0
+}

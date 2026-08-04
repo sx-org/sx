@@ -1283,6 +1283,16 @@ pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
     return false;
 }
 
+fn diagnosePointerIntegerWeld(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) void {
+    const d = self.diagnostics orelse return;
+    if (self.externalErrorsExist()) return;
+    const cs = self.builder.current_span;
+    const span = ast.Span{ .start = cs.start, .end = cs.end };
+    const why = if (isPointerValueKind(self, src_ty)) "an address is not a number" else "a number is not an address";
+    d.addFmt(.err, span, "cannot coerce a value of type '{s}' to '{s}': {s}; use an explicit cast (`xx`/`.(T)`)", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), why });
+    self.assignability_error_count += 1;
+}
+
 /// Is this store the WRITE of an initializer being formed for `dst_ty`? Then it is
 /// formation, and a refusal names the expression rather than a destination the
 /// program never wrote.
@@ -1410,16 +1420,16 @@ pub fn externalErrorsExist(self: *Lowering) bool {
 }
 
 /// The core unsafe-store predicate shared by `checkAssignable` and the
-/// named-return-default guard: a store of `src_ty` into a `dst_ty` slot has NO
-/// modeled coercion (`coerceMode` would pass it through UNCHANGED) AND the two
-/// differ in byte width — so the raw store overruns / under-fills the slot,
-/// corrupting memory. A same-width `.none` is a legitimate
-/// bit-compatible reinterpretation (`*T → [*]T`, `i64 → isize`, `*void ← *T`),
-/// which stays allowed. Callers should have already cleared the cheap
-/// cascade/escape-hatch cases (unresolved operands, explicit `xx`/`cast`).
+/// named-return-default guard. An unmodeled coercion is unsafe when the types
+/// have incompatible value shapes or different store widths. Same-width scalar
+/// and pointer families are bit-compatible (`i64 → isize`, `*T → [*]T`,
+/// `*void ← *T`). Callers clear unresolved operands and explicit casts first.
 pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
     if (src_ty == dst_ty) return false;
     if (self.coercionResolver().classify(src_ty, dst_ty) != .none) return false;
+    const src_optional = !src_ty.isBuiltin() and self.module.types.get(src_ty) == .optional;
+    const dst_optional = !dst_ty.isBuiltin() and self.module.types.get(dst_ty) == .optional;
+    if (src_optional != dst_optional) return true;
     // Two DIFFERENT function types are never a bit-compatible reinterpretation,
     // width match or not: both sides are one code pointer, but the callee reads
     // its arguments and return slot per the signature it was compiled for.
@@ -1436,6 +1446,13 @@ pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) 
     // exemption below is for the scalar family only (`*T → [*]T`,
     // `i64 → isize`, fn-ref → fn slot).
     if (isAggregateValueKind(self, src_ty) != isAggregateValueKind(self, dst_ty)) return true;
+    // An unmodeled pair where exactly ONE side holds an ADDRESS is never a
+    // bit-compatible reinterpretation either, width match or not: a pointer and
+    // a same-width scalar occupy the same bytes but mean different things, so
+    // the store types an address as a number the program then does arithmetic
+    // on (or a number as an address it then dereferences). Pointer↔pointer
+    // stays in the same-width family below (`*T → [*]T`, `*void ← *T`).
+    if (isPointerValueKind(self, src_ty) != isPointerValueKind(self, dst_ty)) return true;
     return !sameStoreWidth(self, src_ty, dst_ty);
 }
 
@@ -1444,15 +1461,26 @@ fn isFunctionType(self: *Lowering, ty: TypeId) bool {
     return self.module.types.get(ty) == .function;
 }
 
+/// A type whose values are a raw ADDRESS at the IR level, for the pointer-pun
+/// test above. Optional and erased values use separate representation checks.
+pub fn isPointerValueKind(self: *Lowering, ty: TypeId) bool {
+    if (ty == .cstring) return true;
+    if (ty.isBuiltin()) return false;
+    return switch (self.module.types.get(ty)) {
+        .pointer, .many_pointer => true,
+        else => false,
+    };
+}
+
 /// A type whose values are AGGREGATE-shaped at the IR level, for the pun
 /// test above — the classification is by representation, not by kind
 /// nominality: `string` ({ptr,len}), `any` ({data,type_id}), slices, and
 /// closures ({fn,env}) are aggregate-IR even though string/any are
 /// builtins. Aggregate↔aggregate same-width reinterprets are the
 /// legitimate raw-view family (string→SliceRaw, closure→ClosureRaw);
-/// only an aggregate↔scalar pair is unrepresentable. Vectors and
-/// optionals are deliberately in NEITHER set (their repr varies /
-/// predates this guard) — they never pun-flag.
+/// only an aggregate↔scalar pair is unrepresentable. Optionals are handled
+/// separately above. Vectors are deliberately in NEITHER set because their
+/// representation varies — they never pun-flag.
 fn isAggregateValueKind(self: *Lowering, ty: TypeId) bool {
     if (ty == .string or ty == .any) return true;
     if (ty.isBuiltin()) return false;
@@ -1841,11 +1869,18 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             const as_backing = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = backing } }, backing);
             return self.coerceMode(as_backing, backing, dst_ty, mode);
         },
-        // Ptr ↔ Int — explicit `xx ptr` to/from an integer-typed slot.
-        // Emits a `bitcast` IR op; emit_llvm.zig's bitcast arm dispatches
-        // to LLVMBuildPtrToInt / LLVMBuildIntToPtr at the LLVM level
-        // since LLVMBuildBitCast itself doesn't accept ptr↔int.
-        .ptr_int_bitcast => return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
+        // Ptr ↔ Int — the `xx`/`.(T)` escape hatch to/from an integer-typed
+        // slot, and ONLY that: the spec lists no implicit pointer↔integer
+        // conversion, so an implicit weld is refused rather than typing an
+        // address as a number the program then does arithmetic on. Emits a
+        // `bitcast` IR op; emit_llvm.zig's bitcast arm dispatches to
+        // LLVMBuildPtrToInt / LLVMBuildIntToPtr since LLVMBuildBitCast itself
+        // doesn't accept ptr↔int. The op is still emitted after the refusal so
+        // lowering finishes; `hasErrors()` aborts the build.
+        .ptr_int_bitcast => {
+            if (mode == .implicit) diagnosePointerIntegerWeld(self, src_ty, dst_ty);
+            return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
+        },
         .narrow => return self.builder.emit(.{ .narrow = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .widen => return self.builder.emit(.{ .widen = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .array_to_slice => {

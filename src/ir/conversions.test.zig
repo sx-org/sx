@@ -176,4 +176,8 @@ test "conversions: unmodeled width-mismatched coercion is flagged unsafe" {
     // Modeled coercions are never "unsafe none": the ladder handles them.
     try std.testing.expect(!l.noneReinterpretIsUnsafe(.i32, .i64));
     try std.testing.expect(!l.noneReinterpretIsUnsafe(.i64, tt.optionalOf(.i64)));
+
+    const opt_ptr = tt.optionalOf(tt.ptrTo(.i64));
+    try std.testing.expectEqual(Plan.none, cr.classify(opt_ptr, .i64));
+    try std.testing.expect(l.noneReinterpretIsUnsafe(opt_ptr, .i64));
 }
