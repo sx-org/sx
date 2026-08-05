@@ -389,7 +389,10 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
         if (!declared.isBuiltin() and self.module.types.get(declared) == .slice) {
             const elem = self.module.types.get(declared).slice.element;
             for (args.items[@min(fixed, args.items.len)..]) |*arg| {
-                const checked = self.coerceChecked(arg.*, self.builder.getRefType(arg.*), elem);
+                // A bare-function value converts by its SIGNATURE, not the
+                // integer word that carries it.
+                const src_ty = self.valueTypeOfRef(arg.*, self.builder.getRefType(arg.*));
+                const checked = self.coerceChecked(arg.*, src_ty, elem);
                 arg.* = if (checked.refused) self.builder.constUndef(elem) else checked.ref;
             }
         }

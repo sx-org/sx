@@ -471,6 +471,63 @@ test "a generic monomorph keeps the declaration's convention and tail" {
     try std.testing.expectEqual(@as(usize, 1), seen);
 }
 
+test "a function value meets the tail rules by its signature" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\sum_ints :: (n: i32, ..args: []i32) -> i64 extern;
+        \\take :: (n: i32, ..) -> i64 extern;
+        \\sx_cb :: (x: i64) -> i64 { return x; }
+        \\c_cb  :: (x: i64) -> i64 abi(.c) { return x; }
+        \\is_var :: ($F: Type, f: F) -> i64 { return 0; }
+        \\fixed :: (n: i32) -> i64 abi(.c) { return 0; }
+        \\tail  :: (n: i32, ..) -> i64 abi(.c) { return 0; }
+        \\main :: () -> i64 {
+        \\    f := sum_ints;
+        \\    ok := f(3, 10, 20, 12);
+        \\    bad := take(1, sx_cb);
+        \\    good := take(1, c_cb);
+        \\    return ok + bad + good + is_var((i32) -> i64 abi(.c), fixed) + is_var((i32, ..) -> i64 abi(.c), tail);
+        \\}
+    , &lowered);
+    defer lowered.module.deinit();
+
+    // The alias of the named extern tail keeps its open arity; the fixed and
+    // variadic function types monomorphize apart; the sx-convention callback
+    // is the one refusal — its hidden context has no C slot.
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "cannot cross a C-variadic tail"));
+    try std.testing.expectEqual(@as(usize, 1), lowered.diagnostics.errorCount());
+}
+
+test "a bare C-variadic function reflects with its convention and tail" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\cb :: (x: i32, ..) -> i64 abi(.c) { return 0; }
+        \\taker :: (v: any) -> i64 { return 0; }
+        \\main :: () -> i64 { return taker(cb); }
+    , &lowered);
+    defer lowered.module.deinit();
+    try std.testing.expect(!lowered.diagnostics.hasErrors());
+
+    // The `any` boxing renders the declared signature — convention and tail
+    // included, the same spelling the canonical formatter produces.
+    const main_fn = &lowered.module.functions.items[@intFromEnum(lowered.lowering.resolveFuncByName("main").?)];
+    var found = false;
+    for (main_fn.blocks.items) |blk| {
+        for (blk.insts.items) |ins| {
+            const sid = switch (ins.op) {
+                .const_string => |s| s,
+                else => continue,
+            };
+            if (std.mem.eql(u8, lowered.module.types.getString(sid), "(i32, ..) -> i64 abi(.c)")) found = true;
+        }
+    }
+    try std.testing.expect(found);
+}
+
 test "a C tail reads isize and usize at the target's address width" {
     var module = ir_mod.Module.init(std.testing.allocator);
     defer module.deinit();

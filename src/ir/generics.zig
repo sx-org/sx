@@ -95,7 +95,19 @@ pub const GenericResolver = struct {
                 std.fmt.allocPrint(self.l.alloc, "block_{s}", .{self.mangleTypeName(bp)}) catch @panic("out of memory while mangling type")
             else
                 self.mangleParamList("cl", c.params, c.ret),
-            .function => |f| self.mangleParamList("fn", f.params, f.ret),
+            // The convention, the C tail, and a pack shape join a function
+            // type's identity, so they join its monomorph key.
+            .function => |f| blk: {
+                var buf = std.ArrayList(u8).empty;
+                buf.appendSlice(self.l.alloc, self.mangleParamList("fn", f.params, f.ret)) catch @panic("out of memory while mangling type");
+                if (f.call_conv == .c) buf.appendSlice(self.l.alloc, "_cc") catch @panic("out of memory while mangling type");
+                if (f.is_c_variadic) buf.appendSlice(self.l.alloc, "_var") catch @panic("out of memory while mangling type");
+                if (f.pack_start) |ps| {
+                    const tag = std.fmt.allocPrint(self.l.alloc, "_ps{d}", .{ps}) catch @panic("out of memory while mangling type");
+                    buf.appendSlice(self.l.alloc, tag) catch @panic("out of memory while mangling type");
+                }
+                break :blk buf.items;
+            },
             .tuple => |t| blk: {
                 var buf = std.ArrayList(u8).empty;
                 buf.appendSlice(self.l.alloc, "tu") catch @panic("out of memory while mangling type");

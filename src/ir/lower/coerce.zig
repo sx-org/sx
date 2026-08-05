@@ -1367,6 +1367,26 @@ pub fn functionSignatureType(self: *Lowering, fid: inst_mod.FuncId) ?TypeId {
     return self.module.types.functionTypeVariadic(param_ids.items, f.ret, f.call_conv, f.is_c_variadic);
 }
 
+/// The SOURCE-LEVEL signature type an `ast.FnDecl` states — the shaping
+/// `declareFunction` performs: an extern named `..name: []T` tail strips to the
+/// fixed prefix and marks the C tail, and the convention follows the
+/// effective-C signature. Every consumer of a bare function's declared type —
+/// an inferred binding, the Type reflection value, the `any` rendering — reads
+/// this one shape.
+pub fn declSignatureType(self: *Lowering, fd: *const ast.FnDecl) TypeId {
+    var is_c_variadic = fd.is_c_variadic;
+    var effective = fd.params;
+    if (fd.extern_export == .extern_ and fd.params.len > 0 and fd.params[fd.params.len - 1].is_variadic) {
+        is_c_variadic = true;
+        effective = fd.params[0..ast.fixedParamCount(fd.params)];
+    }
+    var param_ids = std.ArrayList(TypeId).empty;
+    defer param_ids.deinit(self.alloc);
+    for (effective) |*param| param_ids.append(self.alloc, self.resolveParamType(param)) catch {};
+    const cc: types.TypeInfo.CallConv = if (ast.isEffectiveCSignature(fd)) .c else .default;
+    return self.module.types.functionTypeVariadic(param_ids.items, self.resolveReturnType(fd), cc, is_c_variadic);
+}
+
 /// A bare-function VALUE is carried in an integer-word IR type
 /// (`func_ref` typed `i64`/`isize`), which is not the value's
 /// TYPE: it must never leak into a user-facing message ("cannot
@@ -2004,11 +2024,14 @@ pub fn tailAdmissible(self: *Lowering, ty: TypeId) bool {
 pub fn promoteCVariadicArgs(self: *Lowering, args: []Ref, fixed_count: usize) void {
     if (args.len <= fixed_count) return;
     for (args[fixed_count..], fixed_count..) |*arg, i| {
-        const src_ty = self.builder.getRefType(arg.*);
+        // A bare-function value rides in an integer word; the rules judge its
+        // SIGNATURE — an sx-convention function expects a context no C caller
+        // passes, so only the C convention may cross.
+        const src_ty = valueTypeOfRef(self, arg.*, self.builder.getRefType(arg.*));
         if (promotedTailType(self, src_ty)) |promoted| {
             arg.* = self.coerceToType(arg.*, src_ty, promoted);
         }
-        const crossed = self.builder.getRefType(arg.*);
+        const crossed = valueTypeOfRef(self, arg.*, self.builder.getRefType(arg.*));
         const cs = self.builder.current_span;
         const span = ast.Span{ .start = cs.start, .end = cs.end };
         // A cursor borrow is admissible as a pointer, but the callee has no

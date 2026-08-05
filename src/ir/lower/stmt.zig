@@ -1058,13 +1058,7 @@ fn inferBareFnBindingType(self: *Lowering, value: *const ast.Node) ?TypeId {
     } else name;
     const fd = self.program_index.fn_ast_map.get(effective_name) orelse return null;
 
-    var params = std.ArrayList(TypeId).empty;
-    defer params.deinit(self.alloc);
-    for (fd.params) |*param| {
-        params.append(self.alloc, self.resolveParamType(param)) catch unreachable;
-    }
-    const cc: types.TypeInfo.CallConv = if (ast.isEffectiveCSignature(fd)) .c else .default;
-    return self.module.types.functionTypeVariadic(params.items, self.resolveReturnType(fd), cc, fd.is_c_variadic);
+    return self.declSignatureType(fd);
 }
 
 /// Handle a bare fn_decl node as a local function declaration.

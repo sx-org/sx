@@ -741,10 +741,9 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
             buf.append(self.alloc, ')') catch break :blk "tuple";
             break :blk buf.toOwnedSlice(self.alloc) catch "tuple";
         },
-        // A function TYPE renders as its signature (same spelling as
-        // `formatFnTypeString` / the TypeTable formatter: `-> void` omitted) —
-        // a diagnostic naming a bare-fn value must show the signature, never
-        // the `function` tag.
+        // A function TYPE renders as its signature (same spelling as the
+        // TypeTable formatter: `-> void` omitted) — a diagnostic naming a
+        // bare-fn value must show the signature, never the `function` tag.
         .function => |f| blk: {
             var buf = std.ArrayList(u8).empty;
             buf.append(self.alloc, '(') catch break :blk "function";
@@ -818,24 +817,6 @@ pub fn formatSourceTypeName(self: *Lowering, ty: TypeId) []const u8 {
     if (n == 0) return self.formatTypeName(ty);
     out.append(self.alloc, ')') catch return self.formatTypeName(ty);
     return out.items;
-}
-
-/// Format a function type string like "() -> i32" or "(i32, i32) -> i32".
-pub fn formatFnTypeString(self: *Lowering, fd: *const ast.FnDecl) []const u8 {
-    var buf = std.ArrayList(u8).empty;
-    buf.append(self.alloc, '(') catch return "function";
-    for (fd.params, 0..) |p, i| {
-        if (i > 0) buf.appendSlice(self.alloc, ", ") catch return "function";
-        const pty = self.resolveParamType(&p);
-        buf.appendSlice(self.alloc, self.formatTypeName(pty)) catch return "function";
-    }
-    buf.append(self.alloc, ')') catch return "function";
-    const ret_ty = self.resolveReturnType(fd);
-    if (ret_ty != .void) {
-        buf.appendSlice(self.alloc, " -> ") catch return "function";
-        buf.appendSlice(self.alloc, self.formatTypeName(ret_ty)) catch return "function";
-    }
-    return buf.toOwnedSlice(self.alloc) catch "function";
 }
 
 /// Format a type name for function name mangling (identifier-safe).

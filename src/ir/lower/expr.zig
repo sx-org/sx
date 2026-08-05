@@ -3218,15 +3218,13 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                         }
                     };
                     if (fd_any) |fd| {
+                        // Both reflection shapes read the one declared
+                        // signature, convention and tail included.
+                        const fn_tid = self.declSignatureType(fd);
                         if (self.target_type == .type_value) {
-                            var param_ids = std.ArrayList(TypeId).empty;
-                            defer param_ids.deinit(self.alloc);
-                            for (fd.params) |p| param_ids.append(self.alloc, self.resolveParamType(&p)) catch {};
-                            const fn_tid = self.module.types.functionType(param_ids.items, self.resolveReturnType(fd));
                             break :blk self.builder.constType(fn_tid);
                         }
-                        const fn_type_str = self.formatFnTypeString(fd);
-                        const sid = self.module.types.internString(fn_type_str);
+                        const sid = self.module.types.internString(self.module.types.formatTypeName(self.alloc, fn_tid));
                         const str = self.builder.constString(sid);
                         break :blk self.boxAnyOf(str, .string, null);
                     }
