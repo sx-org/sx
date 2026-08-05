@@ -196,6 +196,20 @@ pub const TargetConfig = struct {
         return self.tripleContains("emscripten");
     }
 
+    /// How many pointer-sized words the target's C `va_list` occupies.
+    ///
+    /// x86-64 SysV holds a three-word register-save record; AArch64 AAPCS holds
+    /// a four-word one. Windows and Apple's AArch64 pass the tail on the stack,
+    /// so a list there is one pointer, as it is on wasm. A count above one is
+    /// the COMPOSITE shape: the C parameter points at the record. A count of
+    /// one is the POINTER-LIKE shape: the C parameter IS the word.
+    pub fn vaListWords(self: TargetConfig) u8 {
+        if (self.isWindows()) return 1;
+        if (self.isX86_64()) return 3;
+        if (self.isAarch64() and !self.isMacOS() and !self.isIOS()) return 4;
+        return 1;
+    }
+
     fn tripleHasPrefix(self: TargetConfig, prefix1: []const u8, prefix2: []const u8) bool {
         if (self.triple) |t| {
             const span = std.mem.span(t);

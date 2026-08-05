@@ -398,6 +398,15 @@ pub const Parser = struct {
             return try self.createNode(start_pos, .{ .ufcs_alias = .{ .name = name, .target = target, .is_raw = name_is_raw } });
         }
 
+        // A compiler-owned function: `@NAME :: (params) [-> R];`. The sigil is
+        // the whole marker, so the signature stands alone with no body — the
+        // form a plain name spells with the `intrinsic` keyword. It routes
+        // ahead of the function-definition heuristic, which reads a bodyless
+        // `(types) -> R` as a function-type alias.
+        if (name.len > 0 and name[0] == '@' and self.current.tag == .l_paren) {
+            return self.parseAtFnDecl(name, name_span, start_pos, name_is_raw);
+        }
+
         // Function declaration: (params) -> type { body } or () { body }
         if (self.current.tag == .l_paren) {
             // Look ahead: is this a function or an expression starting with `(`?
@@ -686,6 +695,10 @@ pub const Parser = struct {
         // Tuple type: (T1, T2) or (T1) — no '->' after ')'
         // Named params (documentation only): (name: Type, ...) -> ReturnType
         if (self.current.tag == .l_paren) {
+            // A bare `..` tail belongs to a function TYPE. Without a `->` these
+            // parens are a grouping, the void type, or a result list, where a
+            // `..` is the pack spread — so the tail is recognized only here.
+            const is_fn_type = self.tagAfterParenGroup() == .arrow;
             self.advance(); // skip '('
             var param_types = std.ArrayList(*Node).empty;
             var param_names = std.ArrayList(?[]const u8).empty;
@@ -702,6 +715,9 @@ pub const Parser = struct {
             // 1-tuple while `(T)` (no comma) is a GROUPING — see the grouping
             // return below.
             var had_trailing_comma = false;
+            var is_c_variadic = false;
+            // Span of the bare `..`, for the refusals that name it.
+            var tail_span: ast.Span = .{ .start = 0, .end = 0 };
             while (self.current.tag != .r_paren and self.current.tag != .eof) {
                 if (param_types.items.len > 0) {
                     try self.expect(.comma);
@@ -712,6 +728,23 @@ pub const Parser = struct {
                 }
                 if (saw_error_type) {
                     return self.fail("error type '!' must be the last element of a result list");
+                }
+                // The bare `..` C-variadic tail — one token of lookahead
+                // separates it from every pack spread, which always carries an
+                // operand. It is the last entry, so an ordinary trailing comma
+                // may follow it and nothing else may.
+                if (self.current.tag == .dot_dot and is_fn_type and
+                    (self.peekTag(1) == .r_paren or self.peekTag(1) == .comma))
+                {
+                    const dots = self.current.loc;
+                    is_c_variadic = true;
+                    tail_span = .{ .start = dots.start, .end = dots.end };
+                    self.advance();
+                    if (self.current.tag == .comma) self.advance();
+                    if (self.current.tag != .r_paren) {
+                        return self.failAt(tail_span, "a C-variadic '..' tail must be the last parameter entry");
+                    }
+                    break;
                 }
                 // Pack expansion in a tuple/function type: `(..F(Ts))` /
                 // `(..F(Ts.Arg))` / `(..Ts)`. Reuses `spread_expr`; its operand
@@ -760,11 +793,22 @@ pub const Parser = struct {
                 self.advance(); // skip '->'
                 const return_type = try self.parseFnReturnType();
                 const abi = try self.parseOptionalAbi();
+                // A type has no linkage slot, so `abi(.c)` is the only spelling
+                // that gives the tail its C signature.
+                if (is_c_variadic) {
+                    if (abi == .naked) {
+                        return self.failAt(tail_span, "a C-variadic '..' tail cannot use explicit ABI '.naked'; use 'abi(.c)'");
+                    }
+                    if (abi != .c) {
+                        return self.failAt(tail_span, "a C-variadic '..' tail requires 'abi(.c)'");
+                    }
+                }
                 return try self.createNode(start, .{ .function_type_expr = .{
                     .param_types = try param_types.toOwnedSlice(self.allocator),
                     .param_names = if (has_names) try param_names.toOwnedSlice(self.allocator) else null,
                     .return_type = return_type,
                     .abi = abi,
+                    .is_c_variadic = is_c_variadic,
                 } });
             }
             // Empty parens `()` with no `->` is the void/unit type:
@@ -2294,12 +2338,24 @@ pub const Parser = struct {
         return error.ParseError;
     }
 
+    /// A parsed parameter list: its fixed parameters, and whether it ends in a
+    /// bare `..` C-variadic tail (which binds no name and no type, so it is a
+    /// flag rather than a `Param`).
+    const ParamList = struct {
+        params: []const ast.Param,
+        is_c_variadic: bool = false,
+        /// Span of the bare `..`, for the refusals that name it.
+        tail_span: ast.Span = .{ .start = 0, .end = 0 },
+    };
+
     /// Parse a parenthesized parameter list: `(name: type, $T: Type, args: ..Any)`
     /// Handles `$` generic params, `..` variadic marker, and comptime detection.
     /// Expects opening `(` already NOT consumed — this function consumes `(` through `)`.
-    fn parseParams(self: *Parser) anyerror![]const ast.Param {
+    fn parseParams(self: *Parser) anyerror!ParamList {
         try self.expect(.l_paren);
         var params = std.ArrayList(ast.Param).empty;
+        var is_c_variadic = false;
+        var tail_span: ast.Span = .{ .start = 0, .end = 0 };
         while (self.current.tag != .r_paren and self.current.tag != .eof) {
             if (params.items.len > 0) {
                 try self.expect(.comma);
@@ -2310,8 +2366,22 @@ pub const Parser = struct {
             // `..xs: P` (protocol-constrained pack).
             var is_variadic = false;
             if (self.current.tag == .dot_dot) {
+                const dots = self.current.loc;
                 is_variadic = true;
                 self.advance();
+                // A bare `..` — one token of lookahead separates the C-variadic
+                // tail from every named form: the tail carries no operand. It
+                // is the last entry, so an ordinary trailing comma may follow
+                // it and nothing else may.
+                if (self.current.tag == .r_paren or self.current.tag == .comma) {
+                    is_c_variadic = true;
+                    tail_span = .{ .start = dots.start, .end = dots.end };
+                    if (self.current.tag == .comma) self.advance();
+                    if (self.current.tag != .r_paren) {
+                        return self.failAt(tail_span, "a C-variadic '..' tail must be the last parameter entry");
+                    }
+                    break;
+                }
             }
             var is_ct_param = false;
             if (self.current.tag == .dollar) {
@@ -2327,6 +2397,15 @@ pub const Parser = struct {
             self.advance();
             // Optional type annotation: if no ':', infer type from context
             if (self.current.tag != .colon) {
+                // A variadic binding has no context to infer from: the slice
+                // and protocol forms are their annotation, and `..$name` is a
+                // comptime pack whose types come from the call.
+                if (is_variadic and !is_ct_param) {
+                    return self.failAt(
+                        param_name_span,
+                        "a variadic parameter carries its type: '..name: []T' binds a slice, '..name: P' a protocol pack, '..$name' a comptime pack",
+                    );
+                }
                 const inferred_node = try self.createNode(param_name_span.start, .{ .inferred_type = {} });
                 try params.append(self.allocator, .{ .name = param_name, .name_span = param_name_span, .type_expr = inferred_node, .is_variadic = is_variadic, .is_comptime = is_ct_param, .is_raw = param_is_raw });
                 continue;
@@ -2369,8 +2448,17 @@ pub const Parser = struct {
                 return self.fail("variadic parameter must be the last parameter");
             }
         }
+        // One tail per signature: a named `..name: []T` and a bare `..` state
+        // two different contracts over the same argument positions.
+        if (is_c_variadic and params.items.len > 0 and params.items[params.items.len - 1].is_variadic) {
+            return self.failAt(tail_span, "a signature has one variadic tail: '..name: []T' or bare '..'");
+        }
         try self.expect(.r_paren);
-        return try params.toOwnedSlice(self.allocator);
+        return .{
+            .params = try params.toOwnedSlice(self.allocator),
+            .is_c_variadic = is_c_variadic,
+            .tail_span = tail_span,
+        };
     }
 
     /// The type arguments of the `@Init` bound on `node`, empty when it carries
@@ -2497,8 +2585,42 @@ pub const Parser = struct {
         return try type_params.toOwnedSlice(self.allocator);
     }
 
+    /// `@NAME :: (params) [-> R];` — a function whose implementation is the
+    /// compiler's. It carries no body, ABI, linkage, `ufcs`, or accessor
+    /// modifier, and its body node is the one the `intrinsic` keyword builds
+    /// for a plain name, so every downstream consumer reads one shape.
+    fn parseAtFnDecl(self: *Parser, name: []const u8, name_span: ast.Span, start_pos: u32, name_is_raw: bool) anyerror!*Node {
+        const list = try self.parseParams();
+        if (list.is_c_variadic) {
+            return self.failAt(list.tail_span, "a C-variadic '..' tail requires 'abi(.c)', 'extern', or 'export'");
+        }
+        const params = list.params;
+
+        var return_type: ?*Node = null;
+        if (self.current.tag == .arrow) {
+            self.advance();
+            return_type = try self.parseFnReturnType();
+        }
+
+        const body_start = self.current.loc.start;
+        try self.expectStatementEnd();
+        const body = try self.createNode(body_start, .{ .intrinsic_expr = {} });
+        const type_params = try self.collectTypeParams(params);
+
+        return try self.createNode(start_pos, .{ .fn_decl = .{
+            .name = name,
+            .params = params,
+            .return_type = return_type,
+            .body = body,
+            .type_params = type_params,
+            .name_span = name_span,
+            .is_raw = name_is_raw,
+        } });
+    }
+
     fn parseFnDecl(self: *Parser, name: []const u8, name_span: ast.Span, name_is_raw: bool, start_pos: u32) anyerror!*Node {
-        const params = try self.parseParams();
+        const param_list = try self.parseParams();
+        const params = param_list.params;
 
         // Optional return type
         var return_type: ?*Node = null;
@@ -2543,6 +2665,18 @@ pub const Parser = struct {
         // would otherwise emit.
         if (extern_export != .none and (self.current.tag == .kw_extern or self.current.tag == .kw_export)) {
             return self.fail("conflicting linkage: 'extern' and 'export' cannot be combined — a declaration is either an import ('extern') or a definition ('export')");
+        }
+
+        // A bare `..` tail is legal only on an EFFECTIVE-C SIGNATURE: a
+        // definition carrying `abi(.c)` or `export`, or an `extern` declaration.
+        // Every one of those emits the C shape with no implicit sx context.
+        if (param_list.is_c_variadic) {
+            if (abi == .naked) {
+                return self.failAt(param_list.tail_span, "a C-variadic '..' tail cannot use explicit ABI '.naked'; use 'abi(.c)' or omit it on an 'extern' or 'export'");
+            }
+            if (abi != .c and extern_export == .none) {
+                return self.failAt(param_list.tail_span, "a C-variadic '..' tail requires 'abi(.c)', 'extern', or 'export'");
+            }
         }
 
         // Optional `[LIB] ["csym"]` tail after extern/export — a library-alias
@@ -2617,6 +2751,7 @@ pub const Parser = struct {
             .is_raw = name_is_raw,
             .is_get = is_get,
             .is_set = is_set,
+            .is_c_variadic = param_list.is_c_variadic,
         } });
     }
 
@@ -4812,7 +4947,13 @@ pub const Parser = struct {
 
     fn parseLambda(self: *Parser) anyerror!*Node {
         const start = self.current.loc.start;
-        const params = try self.parseParams();
+        const param_list = try self.parseParams();
+        // A closure carries an sx environment, so it has no C signature to hang
+        // a tail on; the C-variadic function pointer is a function TYPE.
+        if (param_list.is_c_variadic) {
+            return self.failAt(param_list.tail_span, "C-variadic function pointers use '(fixed, ..) -> R abi(.c)'; Closure values carry an sx environment");
+        }
+        const params = param_list.params;
 
         // Optional return type: (params) -> Type => expr  OR  (params) -> Type { stmts }
         var return_type: ?*Node = null;
@@ -4928,11 +5069,15 @@ pub const Parser = struct {
             if (self.current.tag == .kw_intrinsic) return true;
             if (self.current.tag == .hash_get) return true; // `-> R #get => …` is a fn def
             if (self.current.tag == .hash_set) return true; // `-> R #set { … }` is a fn def
-            if (self.current.tag == .kw_abi) return true;
             // Postfix linkage modifier after the return type: `-> R extern;` /
             // `-> R export { … }` (and `-> R abi(.c) extern`). Marks a fn def.
             if (self.current.tag == .kw_extern or self.current.tag == .kw_export) return true;
             if (self.current.tag == .identifier or self.current.tag.isTypeKeyword() or
+                // `abi(...)` states a convention, not a body: `-> R abi(.c) { … }`
+                // is a definition and `-> R abi(.c);` a function-type alias, so
+                // the scan reads through the annotation to whatever follows.
+                // (Its `(`/`.`/name/`)` tokens are already skipped below.)
+                self.current.tag == .kw_abi or
                 // A compiler-formed `@Init(T)` is a type spelling like any
                 // other here: skipping it keeps the scan on course to the body
                 // brace, so the decl is classified as a fn DEF and the

@@ -378,14 +378,13 @@ fn indirectCallThroughLocal(self: *Lowering, name: []const u8, binding: lower.Bi
     // Arity: the fn TYPE's params are user-visible (no __sx_ctx slot —
     // `fnPtrTypeWantsCtx` prepends it from the calling convention) and a
     // pack-variadic signature (`pack_start != null`) binds per call shape,
-    // so it is exempt. A C-conv pointer may carry a genuine `...` variadic
-    // tail the fn TYPE cannot express, so extras are allowed there; too
-    // FEW args is wrong under every convention.
+    // so it is exempt. A C-variadic tail takes whatever follows the fixed
+    // prefix; every other signature is exact.
     if (!binding.ty.isBuiltin()) {
         const bti = self.module.types.get(binding.ty);
         if (bti == .function and bti.function.pack_start == null) {
             const want = bti.function.params.len;
-            const exact = bti.function.call_conv != .c;
+            const exact = !bti.function.is_c_variadic;
             if (args.len < want or (exact and args.len > want)) {
                 if (self.diagnostics) |d| {
                     const s: []const u8 = if (want == 1) "" else "s";
@@ -411,7 +410,7 @@ fn indirectCallThroughLocal(self: *Lowering, name: []const u8, binding: lower.Bi
     // `?T` fn-ptr param reaches `call_indirect` unconverted.
     if (!binding.ty.isBuiltin()) {
         const bti = self.module.types.get(binding.ty);
-        if (bti == .function) coerceClosureCallArgs(self, args, bti.function.params);
+        if (bti == .function) coerceFnPointerCallArgs(self, args, bti.function);
     }
     var final_args = std.ArrayList(Ref).empty;
     defer final_args.deinit(self.alloc);
@@ -438,7 +437,7 @@ fn callThroughSelectedGlobal(
     const info = self.module.types.get(ty);
     const callee_ref = self.builder.emit(.{ .global_get = selected.global.id }, ty);
     if (info == .closure) {
-        if (checkCallableValueArgs(self, "closure", selected.member, args, info.closure.params.len, info.closure.pack_start, c, span)) return Ref.none;
+        if (checkCallableValueArgs(self, "closure", selected.member, args, .{ .fixed = info.closure.params.len, .pack_start = info.closure.pack_start }, c, span)) return Ref.none;
         coerceClosureCallArgs(self, args, info.closure.params);
         const owned = if (self.implicit_ctx_enabled) blk: {
             const with_ctx = self.alloc.alloc(Ref, args.len + 1) catch @panic("out of memory while preparing qualified closure call");
@@ -449,8 +448,8 @@ fn callThroughSelectedGlobal(
         return self.builder.emit(.{ .call_closure = .{ .callee = callee_ref, .args = owned } }, info.closure.ret);
     }
     if (info == .function) {
-        if (checkCallableValueArgs(self, "function pointer", selected.member, args, info.function.params.len, info.function.pack_start, c, span)) return Ref.none;
-        coerceClosureCallArgs(self, args, info.function.params);
+        if (checkCallableValueArgs(self, "function pointer", selected.member, args, fnPointerShape(info.function), c, span)) return Ref.none;
+        coerceFnPointerCallArgs(self, args, info.function);
         var final_args = std.ArrayList(Ref).empty;
         defer final_args.deinit(self.alloc);
         if (self.fnPtrTypeWantsCtx(ty))
@@ -676,6 +675,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // so lower them here (before generic arg lowering) like reflection calls.
         if (self.tryLowerAtomicIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
         if (self.tryLowerVolatileIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
+        if (self.tryLowerCursorIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
     }
     // Qualified intrinsic spelling is legal too. Only dispatch a compiler
     // recognizer after the full namespace path selected the exact declaration
@@ -686,6 +686,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             if (self.tryLowerReflectionCall(sf.decl.name, c)) |ref| return ref;
             if (self.tryLowerAtomicIntrinsic(sf.decl.name, c)) |ref| return ref;
             if (self.tryLowerVolatileIntrinsic(sf.decl.name, c)) |ref| return ref;
+            if (self.tryLowerCursorIntrinsic(sf.decl.name, c)) |ref| return ref;
         }
     }
 
@@ -791,9 +792,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // the rest, so the count has to answer for itself here — the
                 // arity check the main dispatch runs is downstream of this arm.
                 if (self.checkCallArity(fd, c.callee.data.identifier.name, c.args.len, false, c.callee.span)) return Ref.none;
-                // Types are explicit when call args match param count (e.g., are_equal(Point, p1, p2))
-                // Types are inferred when call args < param count (e.g., are_equal(p1, p2))
-                const types_explicit = c.args.len == fd.params.len;
+                const types_explicit = self.genericResolver().typesPassedExplicitly(fd, c.args);
                 // Resolve the DECLARED param types up front — in the callee's
                 // source, with $T bindings inferred from the arg nodes — and
                 // align them to the ARG positions (inference calls omit the
@@ -840,6 +839,13 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             // (same arm as the direct path).
                             if (tgt) |ptv| {
                                 if (protocolArgErasure(self, arg, ptv)) |ib| break :blk ib;
+                            }
+                            // A `@VaList` param is the C boundary: the argument
+                            // names a live list and its PLACE crosses (same arm
+                            // as the direct path) — a cursor has no value form
+                            // for `lowerExpr` to read.
+                            if (tgt) |ptv| {
+                                if (self.boundaryCursorArg(arg, ptv)) |place| break :blk place;
                             }
                             break :blk self.lowerExpr(arg);
                         };
@@ -1095,6 +1101,14 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 self.target_type = saved_target;
                 continue;
             }
+            // A `@VaList` parameter is the C boundary: the argument names a
+            // live list and its PLACE crosses. Precedes every value-shaped arm
+            // below — a cursor has no value form for them to read.
+            if (self.boundaryCursorArg(arg, param_types[ai])) |r| {
+                args.append(self.alloc, r) catch unreachable;
+                self.target_type = saved_target;
+                continue;
+            }
         }
         // Implicit float→int narrowing of a compile-time float argument
         // (incl. an expanded `param: T = expr` default) follows the unified
@@ -1326,7 +1340,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             if (ty_info == .closure) {
                                 // Exact-arity + spread-placeholder validation
                                 // against the closure TYPE.
-                                if (checkCallableValueArgs(self, "closure", id.name, args.items, ty_info.closure.params.len, ty_info.closure.pack_start, c, c.callee.span)) return Ref.none;
+                                if (checkCallableValueArgs(self, "closure", id.name, args.items, .{ .fixed = ty_info.closure.params.len, .pack_start = ty_info.closure.pack_start }, c, c.callee.span)) return Ref.none;
                                 const callee_ref = if (binding.is_alloca) self.builder.load(binding.ref, binding.ty) else binding.ref;
                                 // Coerce user args to the closure's param types —
                                 // a `?T` param must wrap the arg.
@@ -1409,7 +1423,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 self.packVariadicCallArgs(sf.decl, c, &args);
                 const final_args = self.prependCtxIfNeeded(func, args.items);
                 self.coerceCallArgs(final_args, params);
-                if (func.is_variadic) self.promoteCVariadicArgs(final_args, params.len);
+                if (func.is_c_variadic) self.promoteCVariadicArgs(final_args, params.len);
                 return self.builder.call(fid, final_args, ret_ty);
             }
             // A value-authored name has no callable declaration here, so the
@@ -1443,7 +1457,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const final_args = self.prependCtxIfNeeded(func, args.items);
                     // Coerce arguments to match parameter types
                     self.coerceCallArgs(final_args, params);
-                    if (func.is_variadic) self.promoteCVariadicArgs(final_args, params.len);
+                    if (func.is_c_variadic) self.promoteCVariadicArgs(final_args, params.len);
                     return self.builder.call(fid, final_args, ret_ty);
                 }
             }
@@ -1472,9 +1486,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 if (!gi.ty.isBuiltin()) {
                     const gti = self.module.types.get(gi.ty);
                     if (gti == .function) {
-                        // Exact-arity + spread-placeholder validation against
+                        // Arity + spread-placeholder validation against
                         // the fn-pointer TYPE.
-                        if (checkCallableValueArgs(self, "function pointer", id.name, args.items, gti.function.params.len, gti.function.pack_start, c, c.callee.span)) return Ref.none;
+                        if (checkCallableValueArgs(self, "function pointer", id.name, args.items, fnPointerShape(gti.function), c, c.callee.span)) return Ref.none;
                         const callee_ref = self.builder.emit(.{ .global_get = gi.id }, gi.ty);
                         // Coerce args to match fn-ptr param types (including
                         // implicit address-of). A tuple/pack spread expands one
@@ -1510,6 +1524,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 arg.* = self.coerceToType(arg.*, src_ty, dst_ty);
                             }
                         }
+                        if (gti.function.is_c_variadic) self.promoteCVariadicArgs(args.items, gti.function.params.len);
                         var final_args = std.ArrayList(Ref).empty;
                         defer final_args.deinit(self.alloc);
                         if (self.fnPtrTypeWantsCtx(gi.ty)) {
@@ -1676,7 +1691,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     self.packVariadicCallArgs(fd, c, &args);
                     const final_args = self.prependCtxIfNeeded(func, args.items);
                     self.coerceCallArgs(final_args, func.params);
-                    if (func.is_variadic) self.promoteCVariadicArgs(final_args, func.params.len);
+                    if (func.is_c_variadic) self.promoteCVariadicArgs(final_args, func.params.len);
                     return self.builder.call(fid, final_args, func.ret);
                 }
 
@@ -1701,7 +1716,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             const ret_ty = func.ret;
                             const params = func.params;
                             const has_ctx = func.has_implicit_ctx;
-                            const is_variadic = func.is_variadic;
+                            const is_c_variadic = func.is_c_variadic;
                             self.packVariadicCallArgs(fd, c, &args);
                             const final_args = blk: {
                                 if (!has_ctx) break :blk args.items;
@@ -1711,7 +1726,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 break :blk new_args;
                             };
                             self.coerceCallArgs(final_args, params);
-                            if (is_variadic) self.promoteCVariadicArgs(final_args, params.len);
+                            if (is_c_variadic) self.promoteCVariadicArgs(final_args, params.len);
                             return self.builder.call(fid, final_args, ret_ty);
                         }
                         if (self.hasPlainStructAuthor(owner_ty))
@@ -1791,7 +1806,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             self.packVariadicCallArgs(fd, c, &args);
                             const final_args = self.prependCtxIfNeeded(func, args.items);
                             self.coerceCallArgs(final_args, func.params);
-                            if (func.is_variadic) self.promoteCVariadicArgs(final_args, func.params.len);
+                            if (func.is_c_variadic) self.promoteCVariadicArgs(final_args, func.params.len);
                             return self.builder.call(fid, final_args, func.ret);
                         },
                         .ambiguous => {
@@ -1831,7 +1846,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     }
                     const final_args = self.prependCtxIfNeeded(func, args.items);
                     self.coerceCallArgs(final_args, params);
-                    if (func.is_variadic) self.promoteCVariadicArgs(final_args, params.len);
+                    if (func.is_c_variadic) self.promoteCVariadicArgs(final_args, params.len);
                     return self.builder.call(fid, final_args, ret_ty);
                 }
                 // Check if this is Type.variant(payload) — qualified enum construction
@@ -1911,7 +1926,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         if (fti == .closure) {
                             // Exact-arity + spread-placeholder validation
                             // against the field's closure TYPE.
-                            if (checkCallableValueArgs(self, "closure", fa.field, args.items, fti.closure.params.len, fti.closure.pack_start, c, c.callee.span)) return Ref.none;
+                            if (checkCallableValueArgs(self, "closure", fa.field, args.items, .{ .fixed = fti.closure.params.len, .pack_start = fti.closure.pack_start }, c, c.callee.span)) return Ref.none;
                             // structGet requires an aggregate value; if obj is *T, load through it first.
                             var agg = obj;
                             const oi = self.module.types.get(obj_ty);
@@ -1935,17 +1950,16 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         // mirroring the bare-identifier / global fn-pointer paths
                         // (ctx prepend gated on the fn-ptr's own ABI).
                         if (fti == .function) {
-                            // Exact-arity + spread-placeholder validation
+                            // Arity + spread-placeholder validation
                             // against the field's fn-pointer TYPE.
-                            if (checkCallableValueArgs(self, "function pointer", fa.field, args.items, fti.function.params.len, fti.function.pack_start, c, c.callee.span)) return Ref.none;
+                            if (checkCallableValueArgs(self, "function pointer", fa.field, args.items, fnPointerShape(fti.function), c, c.callee.span)) return Ref.none;
                             var agg = obj;
                             const oi = self.module.types.get(obj_ty);
                             if (oi == .pointer) {
                                 agg = self.builder.load(obj, oi.pointer.pointee);
                             }
                             const fp_val = self.builder.structGet(agg, @intCast(fi), f.ty);
-                            // Coerce user args to the fn-ptr's param types.
-                            coerceClosureCallArgs(self, args.items, fti.function.params);
+                            coerceFnPointerCallArgs(self, args.items, fti.function);
                             var final_args = std.ArrayList(Ref).empty;
                             defer final_args.deinit(self.alloc);
                             if (self.fnPtrTypeWantsCtx(f.ty)) {
@@ -2512,7 +2526,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 if (cti == .closure) {
                     // Exact-arity + spread-placeholder validation against
                     // the callee expression's closure TYPE.
-                    if (checkCallableValueArgs(self, "closure", null, args.items, cti.closure.params.len, cti.closure.pack_start, c, c.callee.span)) return Ref.none;
+                    if (checkCallableValueArgs(self, "closure", null, args.items, .{ .fixed = cti.closure.params.len, .pack_start = cti.closure.pack_start }, c, c.callee.span)) return Ref.none;
                     const callee_ref = self.lowerExpr(c.callee);
                     // Coerce user args to the closure's param types.
                     coerceClosureCallArgs(self, args.items, cti.closure.params);
@@ -2534,10 +2548,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 break :blk if (cti == .function) cti.function else null;
             } else null;
             if (fn_info) |fi| {
-                // Exact-arity + spread-placeholder validation against the
+                // Arity + spread-placeholder validation against the
                 // callee expression's fn-pointer TYPE.
-                if (checkCallableValueArgs(self, "function pointer", null, args.items, fi.params.len, fi.pack_start, c, c.callee.span)) return Ref.none;
-                coerceClosureCallArgs(self, args.items, fi.params);
+                if (checkCallableValueArgs(self, "function pointer", null, args.items, fnPointerShape(fi), c, c.callee.span)) return Ref.none;
+                coerceFnPointerCallArgs(self, args.items, fi);
             }
             const ret_ty: TypeId = if (fn_info) |fi| fi.ret else .i64;
             const callee_ref = self.lowerExpr(c.callee);
@@ -2741,6 +2755,10 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .atomic_cmpxchg_weak,
         .@"@volatile_load",
         .@"@volatile_store",
+        .@"@va_start",
+        .@"@va_arg",
+        .@"@va_copy",
+        .@"@va_end",
         // evaluate-only: the VM services these; they never lower at all.
         .raw_declare_type,
         .raw_register_type,
@@ -2832,7 +2850,7 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
         }
     }
 
-    const types_passed_explicitly = call_node.args.len == fd.params.len;
+    const types_passed_explicitly = self.genericResolver().typesPassedExplicitly(fd, call_node.args);
     const mangled_name = self.genericResolver().mangleGenericName(base_name, fd, &bindings);
 
     if (!self.lowered_functions.contains(mangled_name)) {
@@ -2866,8 +2884,21 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
             }
             arg_idx += 1;
         }
+        // A C-variadic monomorph takes whatever follows its fixed parameters:
+        // the tail arguments ride behind the value params and cross under the
+        // shared promotion/admissibility rule.
+        const fixed_count = value_args.items.len;
+        if (func.is_c_variadic) {
+            while (arg_idx < lowered_args.len) : (arg_idx += 1) {
+                value_args.append(self.alloc, lowered_args[arg_idx]) catch unreachable;
+            }
+        }
         const final_args = self.prependCtxIfNeeded(func, value_args.items);
         self.coerceCallArgs(final_args, params);
+        if (func.is_c_variadic) {
+            const ctx_off: usize = final_args.len - value_args.items.len;
+            self.promoteCVariadicArgs(final_args, ctx_off + fixed_count);
+        }
         return self.builder.call(fid, final_args, ret_ty);
     }
 
@@ -2964,6 +2995,10 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .floor,
         .@"@volatile_load",
         .@"@volatile_store",
+        .@"@va_start",
+        .@"@va_arg",
+        .@"@va_copy",
+        .@"@va_end",
         .raw_declare_type,
         .raw_register_type,
         .c_object_paths,
@@ -3199,6 +3234,10 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@volatile_store",
         => true,
 
+        .@"@va_start",
+        .@"@va_arg",
+        .@"@va_copy",
+        .@"@va_end",
         .size_of,
         .align_of,
         .type_of,
@@ -3444,6 +3483,10 @@ fn isReflectionCall(name: []const u8) bool {
         .atomic_cmpxchg_weak,
         .@"@volatile_load",
         .@"@volatile_store",
+        .@"@va_start",
+        .@"@va_arg",
+        .@"@va_copy",
+        .@"@va_end",
         .raw_declare_type,
         .raw_register_type,
         .c_object_paths,
@@ -3505,6 +3548,25 @@ fn isReflectionCall(name: []const u8) bool {
     };
 }
 
+/// The type a reflection argument names, for the C-variadic cursor rule alone,
+/// or null when the argument names none. A bare name goes through the nominal
+/// leaf, so an alias of the cursor answers with it; a composite expression is
+/// resolved only where it spells the cursor, leaving every other argument to the
+/// single resolution its own builtin performs.
+fn reflectionArgTypeForCursorCheck(self: *Lowering, a: *const Node) ?TypeId {
+    const named: []const u8 = switch (a.data) {
+        .type_expr => |te| te.name,
+        .identifier => |id| id.name,
+        else => return if (self.isStaticTypeArg(a) and self.mentionsCursorType(a)) self.resolveTypeArg(a) else null,
+    };
+    if (self.scope) |s| if (s.lookup(named) != null) return null;
+    const from = self.current_source_file orelse self.main_file orelse return null;
+    return switch (self.selectNominalLeaf(named, from, false)) {
+        .resolved => |t| t,
+        else => null,
+    };
+}
+
 /// Try to lower a call as a reflection intrinsic (expanded inline during
 /// lowering). Returns null if the call is not one.
 ///
@@ -3518,6 +3580,14 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     // index / sized via its `typeof`. One shared
     // classification covers all 7; it runs before dispatch.
     if (self.reflectionTypeArgGuard(name, c)) |sentinel| return sentinel;
+
+    // The C-variadic cursor's storage is the target's, substituted where its
+    // declaration's fields would land, so no reflection builtin publishes a
+    // shape for it — nor for a type whose own layout is built out of one.
+    for (c.args) |a| {
+        const arg_ty = reflectionArgTypeForCursorCheck(self, a) orelse continue;
+        if (self.refuseCursorInspection(arg_ty, a.span)) return self.reflectionErrorSentinel(name);
+    }
 
     // `declare(name)` and `define(handle, info)` are ordinary sx functions
     // (`modules/std/meta.sx`) written over the `intrinsic` primitives
@@ -4418,7 +4488,9 @@ pub fn checkCallArity(self: *Lowering, fd: *const ast.FnDecl, callee_name: []con
     // it from the arg list only in the all-slots-spelled form accepted below.
     var min: usize = 0;
     var count: usize = 0;
-    var variadic = false;
+    // A bare `..` binds no `Param`, so the tail shows in the signature flag
+    // rather than in the loop below.
+    var variadic = fd.is_c_variadic;
     for (fd.params) |p| {
         if (isTypeParamDecl(&p, fd.type_params)) continue;
         if (p.is_variadic) {
@@ -4452,10 +4524,31 @@ pub fn checkCallArity(self: *Lowering, fd: *const ast.FnDecl, callee_name: []con
     return true;
 }
 
+/// The arity contract a callable VALUE states: how many fixed parameters it
+/// binds, whether a per-call-site type pack binds the rest, and whether a
+/// C-variadic tail carries them.
+const CallableShape = struct {
+    fixed: usize,
+    pack_start: ?u32 = null,
+    is_c_variadic: bool = false,
+};
+
+fn fnPointerShape(info: types.TypeInfo.FunctionInfo) CallableShape {
+    return .{ .fixed = info.params.len, .pack_start = info.pack_start, .is_c_variadic = info.is_c_variadic };
+}
+
+/// Coerce a fn-pointer call's arguments: the fixed prefix to the signature's
+/// parameter types, then — past a C-variadic tail — through the default argument
+/// promotions and the admissibility rule every C-variadic call site shares.
+fn coerceFnPointerCallArgs(self: *Lowering, args: []Ref, info: types.TypeInfo.FunctionInfo) void {
+    coerceClosureCallArgs(self, args, info.params);
+    if (info.is_c_variadic) self.promoteCVariadicArgs(args, info.params.len);
+}
+
 /// Argument validation for a call through a callable VALUE — a closure
 /// value or a fn-pointer value — which has no `ast.FnDecl` for the
-/// decl-based `checkCallArity` to consume. `params` is the
-/// callable TYPE's user-visible param list (closure/function type params
+/// decl-based `checkCallArity` to consume. `shape.fixed` counts the
+/// callable TYPE's user-visible params (closure/function type params
 /// never include the implicit `__sx_ctx` slot — that is prepended
 /// separately per `fnPtrTypeWantsCtx` / `implicit_ctx_enabled`); `args`
 /// the lowered user args with tuple/pack spreads already expanded
@@ -4464,36 +4557,38 @@ pub fn checkCallArity(self: *Lowering, fd: *const ast.FnDecl, callee_name: []con
 ///      spread has no statically-known length to expand and a callable
 ///      value has no variadic slot to pack into; emitting it would reach
 ///      the call op as undef (silent garbage);
-///   2. an arg-count mismatch — closure/fn-pointer types carry no
-///      defaults and no variadic param, so the arity is exact.
+///   2. an arg-count mismatch — a closure and a fixed fn-pointer type carry
+///      no defaults, so their arity is exact; a C-variadic tail bounds only
+///      the fixed count from below and takes whatever follows.
 /// A pack-variadic callable shape (`Closure(..$args)`, `pack_start !=
 /// null`) is skipped entirely, mirroring `checkCallArity`'s `isPackFn`
-/// bail — its arity is bound per call site, not by `params.len`.
+/// bail — its arity is bound per call site, not by the fixed count.
 /// Returns true when a diagnostic was emitted; caller returns Ref.none.
 fn checkCallableValueArgs(
     self: *Lowering,
     kind: []const u8,
     name: ?[]const u8,
     args: []const Ref,
-    params_len: usize,
-    pack_start: ?u32,
+    shape: CallableShape,
     c: *const ast.Call,
     span: ast.Span,
 ) bool {
-    if (pack_start != null) return false;
+    if (shape.pack_start != null) return false;
     {
         var buf: [128]u8 = undefined;
         const what: []const u8 = std.fmt.bufPrint(&buf, "a {s}", .{kind}) catch kind;
         if (rejectLeftoverSpreadPlaceholder(self, what, args, c, span)) return true;
     }
-    if (args.len != params_len) {
+    const wrong = if (shape.is_c_variadic) args.len < shape.fixed else args.len != shape.fixed;
+    if (wrong) {
         if (self.diagnostics) |d| {
-            const s: []const u8 = if (params_len == 1) "" else "s";
+            const s: []const u8 = if (shape.fixed == 1) "" else "s";
             const verb: []const u8 = if (args.len == 1) "was" else "were";
+            const at_least: []const u8 = if (shape.is_c_variadic) "at least " else "";
             if (name) |n| {
-                d.addFmt(.err, span, "'{s}' expects {d} argument{s}, but {d} {s} given", .{ n, params_len, s, args.len, verb });
+                d.addFmt(.err, span, "'{s}' expects {s}{d} argument{s}, but {d} {s} given", .{ n, at_least, shape.fixed, s, args.len, verb });
             } else {
-                d.addFmt(.err, span, "this {s} expects {d} argument{s}, but {d} {s} given", .{ kind, params_len, s, args.len, verb });
+                d.addFmt(.err, span, "this {s} expects {s}{d} argument{s}, but {d} {s} given", .{ kind, at_least, shape.fixed, s, args.len, verb });
             }
         }
         return true;

@@ -379,6 +379,23 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
     if ((fd.extern_export == .extern_) and
         fd.params.len > 0 and fd.params[fd.params.len - 1].is_variadic)
     {
+        // `..name: []U` asserts that every tail argument is a `U`, so each one
+        // takes the ordinary implicit typed-parameter conversion to `U` before
+        // the default argument promotions apply. A refused argument is replaced
+        // by the declared element, so what the promotions then judge is the tail
+        // the signature states rather than the slot a diagnostic just named.
+        const fixed = ast.fixedParamCount(fd.params);
+        const declared = self.resolveTypeWithBindings(fd.params[fd.params.len - 1].type_expr);
+        if (!declared.isBuiltin() and self.module.types.get(declared) == .slice) {
+            const elem = self.module.types.get(declared).slice.element;
+            for (args.items[@min(fixed, args.items.len)..]) |*arg| {
+                // A bare-function value converts by its SIGNATURE, not the
+                // integer word that carries it.
+                const src_ty = self.valueTypeOfRef(arg.*, self.builder.getRefType(arg.*));
+                const checked = self.coerceChecked(arg.*, src_ty, elem);
+                arg.* = if (checked.refused) self.builder.constUndef(elem) else checked.ref;
+            }
+        }
         return;
     }
     // Find variadic param index. The two surface forms differ in

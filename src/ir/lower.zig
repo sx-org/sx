@@ -49,6 +49,7 @@ const lower_coerce = @import("lower/coerce.zig");
 const lower_ffi = @import("lower/ffi.zig");
 const lower_objc_class = @import("lower/objc_class.zig");
 const lower_call = @import("lower/call.zig");
+const lower_cvariadic = @import("lower/cvariadic.zig");
 const lower_pack = @import("lower/pack.zig");
 const lower_generic = @import("lower/generic.zig");
 const lower_expr = @import("lower/expr.zig");
@@ -253,6 +254,10 @@ pub const Binding = struct {
     /// typing, and the interface-only constraint check.
     pack_elem: ?*ast.Node = null,
     origin: Origin = .other,
+    /// The binding names a C `va_list` this frame BORROWS — an incoming
+    /// boundary parameter. Its caller opened it and ends it, so `@va_start` /
+    /// `@va_end` here would act on another frame's list.
+    borrowed_cursor: bool = false,
 };
 
 // `init` / `deinit` / `put` are pub so collaborator unit tests (e.g.
@@ -640,6 +645,7 @@ pub const Lowering = struct {
     chain_fail_target: ?ChainFailTarget = null, // when set, a failable `or` chain routes its TOTAL failure here (an absorbing consumer like `catch`) instead of propagating to the function
     current_runtime_class: ?*const ast.RuntimeClassDecl = null, // set while lowering a `#jni_main` (or any sx-defined `#jni_class`) bodied method — `super.method(args)` dispatch resolves the parent class against this fcd's `#extends`
     current_runtime_method: ?ast.RuntimeMethodDecl = null, // the specific method whose body is being lowered; `super.<same_name>(...)` reuses its signature
+    current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@va_start` reads its `..` tail from it
     type_bindings: ?std.StringHashMap(TypeId) = null, // generic type param bindings ($T → concrete TypeId)
     current_match_tags: ?[]const u64 = null, // type tags for current match arm (for runtime dispatch)
     /// Flow-sensitive narrowing. The set of local variable names
@@ -1154,6 +1160,7 @@ pub const Lowering = struct {
         loop_defer_base: usize,
         build_scopes: std.ArrayList(lower_build_block.Scope),
         inline_return_target: ?InlineExit,
+        current_fn_decl: ?*const ast.FnDecl,
 
         pub fn enter(l: *Lowering) NestedBodyGuard {
             const g = NestedBodyGuard{
@@ -1166,6 +1173,7 @@ pub const Lowering = struct {
                 .loop_defer_base = l.loop_defer_base,
                 .build_scopes = l.build_scopes,
                 .inline_return_target = l.inline_return_target,
+                .current_fn_decl = l.current_fn_decl,
             };
             l.narrowed = std.StringHashMap(void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
@@ -1175,6 +1183,7 @@ pub const Lowering = struct {
             l.loop_defer_base = 0;
             l.build_scopes = .empty;
             l.inline_return_target = null;
+            l.current_fn_decl = null;
             return g;
         }
 
@@ -1191,6 +1200,7 @@ pub const Lowering = struct {
             g.l.build_scopes.deinit(g.l.alloc);
             g.l.build_scopes = g.build_scopes;
             g.l.inline_return_target = g.inline_return_target;
+            g.l.current_fn_decl = g.current_fn_decl;
         }
     };
 
@@ -3452,9 +3462,11 @@ pub const Lowering = struct {
     pub const lowerCoercedDefault = lower_coerce.lowerCoercedDefault;
     pub const lowerDefaultWithBindings = lower_coerce.lowerDefaultWithBindings;
     pub const valueTypeOfRef = lower_coerce.valueTypeOfRef;
+    pub const declSignatureType = lower_coerce.declSignatureType;
     pub const bareFnNameSignature = lower_coerce.bareFnNameSignature;
     pub const coerceToType = lower_coerce.coerceToType;
     pub const coerceExplicit = lower_coerce.coerceExplicit;
+    pub const coerceChecked = lower_coerce.coerceChecked;
     pub const checkAssignable = lower_coerce.checkAssignable;
     pub const checkFormationWritable = lower_coerce.checkFormationWritable;
     pub const checkReturnable = lower_coerce.checkReturnable;
@@ -3463,6 +3475,9 @@ pub const Lowering = struct {
     pub const coerceMode = lower_coerce.coerceMode;
     pub const diagNonIntegralNarrow = lower_coerce.diagNonIntegralNarrow;
     pub const promoteCVariadicArgs = lower_coerce.promoteCVariadicArgs;
+    pub const promotedTailType = lower_coerce.promotedTailType;
+    pub const tailAdmissible = lower_coerce.tailAdmissible;
+    pub const tailIntegerWidth = lower_coerce.tailIntegerWidth;
     pub const coerceCallArgs = lower_coerce.coerceCallArgs;
 
     // --- lower/ffi.zig (lower_ffi) ---
@@ -3541,6 +3556,23 @@ pub const Lowering = struct {
     pub const userParamTypes = lower_call.userParamTypes;
     pub const resolveCallParamTypes = lower_call.resolveCallParamTypes;
 
+    // --- lower/cvariadic.zig (lower_cvariadic) ---
+    pub const tryLowerCursorIntrinsic = lower_cvariadic.tryLowerIntrinsic;
+    pub const refuseCursorValue = lower_cvariadic.refuseValue;
+    pub const refuseCursorEscape = lower_cvariadic.refuseEscape;
+    pub const refuseCursorInspection = lower_cvariadic.refuseInspection;
+    pub const refuseCursorCapture = lower_cvariadic.refuseCapture;
+    pub const refuseCursorMember = lower_cvariadic.refuseMember;
+    pub const mentionsCursorType = lower_cvariadic.mentionsCursorType;
+    pub const refuseCursorParam = lower_cvariadic.refuseParam;
+    pub const refuseCursorSignature = lower_cvariadic.refuseSignature;
+    pub const bindBoundaryCursorParam = lower_cvariadic.bindBoundaryParam;
+    pub const boundaryCursorArg = lower_cvariadic.boundaryArg;
+    pub const cursorStorageFields = lower_cvariadic.storageFields;
+    pub const cursorTemplatePreflight = lower_cvariadic.templatePreflight;
+    pub const cursorProtocolTemplatePreflight = lower_cvariadic.protocolTemplatePreflight;
+    pub const refuseCursorMethodParam = lower_cvariadic.refuseMethodParam;
+
     // --- lower/pack.zig (lower_pack) ---
     pub const lowerPackElems = lower_pack.lowerPackElems;
     pub const lowerPackValueProjection = lower_pack.lowerPackValueProjection;
@@ -3590,7 +3622,6 @@ pub const Lowering = struct {
     pub const qualifiedNominalTypeArg = lower_generic.qualifiedNominalTypeArg;
     pub const formatTypeName = lower_generic.formatTypeName;
     pub const formatSourceTypeName = lower_generic.formatSourceTypeName;
-    pub const formatFnTypeString = lower_generic.formatFnTypeString;
     pub const matchTypeParam = lower_generic.matchTypeParam;
     pub const matchTypeParamStatic = lower_generic.matchTypeParamStatic;
     pub const extractTypeParam = lower_generic.extractTypeParam;

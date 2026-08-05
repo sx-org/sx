@@ -1,0 +1,232 @@
+// C's own tail readers — `vsnprintf`, `sqlite3_vmprintf` — take the list as a
+// parameter rather than opening one over a tail of their own. That parameter is
+// written BY VALUE as `ap: @VaList`, and only in an effective-C signature: an
+// `abi(.c)` or `export` definition, an `extern` declaration, or an `abi(.c)`
+// function type. It needs no `..` tail of its own.
+//
+// The parameter is PLACE-ONLY. A call names a live list — `f(fmt, ap)` from a
+// `@VaList` local or parameter, `f(fmt, ap.*)` from a `*@VaList` borrow — and
+// the place crosses under the target's C ABI. On a target whose `va_list` is a
+// record the callee reads the caller's storage through one pointer; where it is
+// a single word the word itself crosses. Either way the emitted prototype is the
+// one a C compiler builds for the same declaration.
+//
+// Forwarding INSIDE sx keeps the borrow spelling, `ap: *@VaList`. Neither
+// spelling stands in for the other.
+//
+// An incoming list is borrowed and already open: the callee reads it with
+// `@va_arg` and forks it with `@va_copy`, but `@va_start` and `@va_end` belong
+// to the owner. A traversal may move the caller-visible position, as C
+// specifies, so a second traversal reads a copy taken before the first.
+//
+// Every function below has a `<stdarg.h>` twin in the companion C file, called
+// with the same arguments — the two answers are the differential. The C side
+// also opens lists over its OWN tails and hands them to the sx exports, so the
+// boundary is crossed in both directions.
+
+#import "modules/std.sx";
+
+#import c {
+    #source "1236-ffi-cvariadic-valist-boundary.c";
+};
+
+c_sum_ints    :: (n: i32, ap: @VaList) -> i64 extern;
+c_sum_doubles :: (n: i32, ap: @VaList) -> f64 extern;
+c_total_text  :: (n: i32, ap: @VaList) -> i64 extern;
+c_twice       :: (n: i32, ap: @VaList) -> i64 extern;
+c_twice_tail  :: (n: i32, ..) -> i64 extern;
+
+// The C owners, which open a list over their own tail and call back into the sx
+// exports below.
+c_calls_sx_ints    :: (n: i32, ..) -> i64 extern;
+c_calls_sx_doubles :: (n: i32, ..) -> f64 extern;
+c_calls_sx_text    :: (n: i32, ..) -> i64 extern;
+c_calls_sx_twice   :: (n: i32, ..) -> i64 extern;
+
+vmprintf     :: (fmt: cstring, ap: @VaList) -> ?cstring extern;
+xvsnprintf   :: (size: i32, out: [*]u8, fmt: cstring, ap: @VaList) -> [*]u8 extern;
+str_vappendf :: (s: *sqlite3_str, fmt: cstring, ap: @VaList) -> void extern;
+
+sqlite3_str :: struct {
+    text: [64]u8;
+    used: i32;
+}
+
+VMPrintf    :: (cstring, @VaList) -> ?cstring abi(.c);
+XVsnprintf  :: (i32, [*]u8, cstring, @VaList) -> [*]u8 abi(.c);
+StrVAppendF :: (*sqlite3_str, cstring, @VaList) -> void abi(.c);
+
+Api :: struct {
+    mprintf: VMPrintf;
+    snprint: XVsnprintf;
+    appendf: StrVAppendF;
+}
+
+sx_sum_ints :: (n: i32, ap: @VaList) -> i64 export {
+    total: i64 = 0;
+    for 0..n (i) {
+        total += xx @va_arg(i32, *ap);
+    }
+    return total;
+}
+
+sx_sum_doubles :: (n: i32, ap: @VaList) -> f64 export {
+    total: f64 = 0;
+    for 0..n (i) {
+        total += @va_arg(f64, *ap);
+    }
+    return total;
+}
+
+count_one :: (ap: *@VaList) -> i64 {
+    return xx cstring_len(@va_arg(cstring, ap));
+}
+
+sx_total_text :: (n: i32, ap: @VaList) -> i64 export {
+    total: i64 = 0;
+    for 0..n (i) {
+        total += count_one(*ap);
+    }
+    return total;
+}
+
+sx_twice :: (n: i32, ap: @VaList) -> i64 export {
+    dup: @VaList = ---;
+    @va_copy(*dup, *ap);
+    defer @va_end(*dup);
+    first := c_sum_ints(n, ap);
+    second := c_sum_ints(n, dup);
+    return first * 100 + second;
+}
+
+own_ints :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    return c_sum_ints(n, ap);
+}
+
+own_doubles :: (n: i32, ..) -> f64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    return c_sum_doubles(n, ap);
+}
+
+borrow_text :: (n: i32, ap: *@VaList) -> i64 {
+    return c_total_text(n, ap.*);
+}
+
+own_text :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    return borrow_text(n, *ap);
+}
+
+own_twice :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    dup: @VaList = ---;
+    @va_copy(*dup, *ap);
+    defer @va_end(*dup);
+    first := c_sum_ints(n, ap);
+    second := c_sum_ints(n, dup);
+    return first * 100 + second;
+}
+
+own_forward_twice :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    return sx_twice(n, ap);
+}
+
+format_direct :: (fmt: cstring, ..) -> ?cstring abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    return vmprintf(fmt, ap);
+}
+
+into_direct :: (out: [*]u8, fmt: cstring, ..) -> [*]u8 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    return xvsnprintf(64, out, fmt, ap);
+}
+
+append_direct :: (s: *sqlite3_str, fmt: cstring, ..) -> void abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    str_vappendf(s, fmt, ap);
+}
+
+format_field :: (api: *Api, fmt: cstring, ..) -> ?cstring abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    return api.mprintf(fmt, ap);
+}
+
+into_field :: (api: *Api, out: [*]u8, fmt: cstring, ..) -> [*]u8 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    return api.snprint(64, out, fmt, ap);
+}
+
+append_field :: (api: *Api, s: *sqlite3_str, fmt: cstring, ..) -> void abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    api.appendf(s, fmt, ap);
+}
+
+main :: () -> i32 {
+    a: i32 = 4;
+    b: i32 = 5;
+    c: i32 = 6;
+
+    print("ints own={} c={}\n", own_ints(3, a, b, c), c_calls_sx_ints(3, a, b, c));
+
+    x: f64 = 1.25;
+    single: f32 = 1.5;
+    print("doubles own={} c={}\n", own_doubles(3, x, 2.5, single), c_calls_sx_doubles(3, x, 2.5, single));
+
+    // The narrow widths the caller promotes are read at the width C promoted
+    // them to, on both sides of the boundary.
+    narrow: u8 = 7;
+    signed_narrow: i16 = -3;
+    print("promoted own={} c={}\n", own_ints(2, narrow, signed_narrow), c_calls_sx_ints(2, narrow, signed_narrow));
+
+    one: cstring = "abc";
+    two: cstring = "defgh";
+    print("text own={} c={}\n", own_text(2, one, two), c_calls_sx_text(2, one, two));
+
+    print("twice own={} c={}\n", own_twice(3, a, b, c), c_twice_tail(3, a, b, c));
+    print("twice_borrowed sx={} c={}\n", own_forward_twice(3, a, b, c), c_calls_sx_twice(3, a, b, c));
+
+    print("mprintf={}\n", from_cstring(format_direct("%d-%s", 42, one)!));
+    buf: [64]u8 = ---;
+    print("snprint={}\n", from_cstring(xx into_direct(buf, "%d/%d", a, b)));
+    s: sqlite3_str = .{};
+    append_direct(*s, "%s", two);
+    append_direct(*s, "%d", c);
+    print("appendf={}\n", from_cstring(xx *s.text[0]));
+
+    api := Api{ mprintf = vmprintf, snprint = xvsnprintf, appendf = str_vappendf };
+    print("field_mprintf={}\n", from_cstring(format_field(*api, "%s+%d", two, a)!));
+    print("field_snprint={}\n", from_cstring(xx into_field(*api, buf, "%d*%d", b, c)));
+    t: sqlite3_str = .{};
+    append_field(*api, *t, "%d", a);
+    append_field(*api, *t, "%s", one);
+    print("field_appendf={}\n", from_cstring(xx *t.text[0]));
+
+    print("vmprintf_type={}\n", type_name(VMPrintf));
+    print("snprintf_type={}\n", type_name(XVsnprintf));
+    print("appendf_type={}\n", type_name(StrVAppendF));
+    return 0;
+}

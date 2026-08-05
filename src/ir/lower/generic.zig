@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ast = @import("../../ast.zig");
+const contracts = @import("../../contracts.zig");
 const Node = ast.Node;
 const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
@@ -126,6 +127,14 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     self.builder.currentFunc().is_naked = (fd.abi == .naked);
     self.builder.currentFunc().is_get = fd.is_get;
     self.builder.currentFunc().is_set = fd.is_set;
+    // A monomorph keeps the declaration's C shape: the convention, the bare
+    // `..` tail, and the declaration itself, which `@va_start` reads its tail
+    // requirement from.
+    self.builder.currentFunc().call_conv = if (ast.isEffectiveCSignature(fd)) .c else .default;
+    self.builder.currentFunc().is_c_variadic = fd.is_c_variadic;
+    const saved_fn_decl_mono = self.current_fn_decl;
+    defer self.current_fn_decl = saved_fn_decl_mono;
+    self.current_fn_decl = fd;
 
     // Create entry block
     const entry_name = self.module.types.internString("entry");
@@ -146,8 +155,13 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
         for (fd.params, 0..) |p, param_decl_idx| {
             if (isTypeParamDecl(&p, fd.type_params)) continue;
             const pty = self.resolveDeclParamType(fd, param_decl_idx);
-            const slot = self.builder.alloca(pty);
             const param_ref = Ref.fromIndex(param_idx);
+            if (self.module.types.isCVariadicCursor(pty)) {
+                scope.put(p.name, .{ .ref = self.bindBoundaryCursorParam(param_ref, pty), .ty = pty, .is_alloca = true, .borrowed_cursor = true });
+                param_idx += 1;
+                continue;
+            }
+            const slot = self.builder.alloca(pty);
             self.builder.store(slot, param_ref);
             scope.put(p.name, .{ .ref = slot, .ty = pty, .is_alloca = true });
             param_idx += 1;
@@ -727,10 +741,9 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
             buf.append(self.alloc, ')') catch break :blk "tuple";
             break :blk buf.toOwnedSlice(self.alloc) catch "tuple";
         },
-        // A function TYPE renders as its signature (same spelling as
-        // `formatFnTypeString` / the TypeTable formatter: `-> void` omitted) —
-        // a diagnostic naming a bare-fn value must show the signature, never
-        // the `function` tag.
+        // A function TYPE renders as its signature (same spelling as the
+        // TypeTable formatter: `-> void` omitted) — a diagnostic naming a
+        // bare-fn value must show the signature, never the `function` tag.
         .function => |f| blk: {
             var buf = std.ArrayList(u8).empty;
             buf.append(self.alloc, '(') catch break :blk "function";
@@ -738,11 +751,16 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
                 if (i > 0) buf.appendSlice(self.alloc, ", ") catch break :blk "function";
                 buf.appendSlice(self.alloc, self.formatTypeName(p)) catch break :blk "function";
             }
+            if (f.is_c_variadic) {
+                if (f.params.len > 0) buf.appendSlice(self.alloc, ", ") catch break :blk "function";
+                buf.appendSlice(self.alloc, "..") catch break :blk "function";
+            }
             buf.append(self.alloc, ')') catch break :blk "function";
             if (f.ret != .void) {
                 buf.appendSlice(self.alloc, " -> ") catch break :blk "function";
                 buf.appendSlice(self.alloc, self.formatTypeName(f.ret)) catch break :blk "function";
             }
+            if (f.call_conv == .c) buf.appendSlice(self.alloc, " abi(.c)") catch break :blk "function";
             break :blk buf.toOwnedSlice(self.alloc) catch "function";
         },
         // A compiler-formed `@` type renders through the type table's canonical
@@ -799,24 +817,6 @@ pub fn formatSourceTypeName(self: *Lowering, ty: TypeId) []const u8 {
     if (n == 0) return self.formatTypeName(ty);
     out.append(self.alloc, ')') catch return self.formatTypeName(ty);
     return out.items;
-}
-
-/// Format a function type string like "() -> i32" or "(i32, i32) -> i32".
-pub fn formatFnTypeString(self: *Lowering, fd: *const ast.FnDecl) []const u8 {
-    var buf = std.ArrayList(u8).empty;
-    buf.append(self.alloc, '(') catch return "function";
-    for (fd.params, 0..) |p, i| {
-        if (i > 0) buf.appendSlice(self.alloc, ", ") catch return "function";
-        const pty = self.resolveParamType(&p);
-        buf.appendSlice(self.alloc, self.formatTypeName(pty)) catch return "function";
-    }
-    buf.append(self.alloc, ')') catch return "function";
-    const ret_ty = self.resolveReturnType(fd);
-    if (ret_ty != .void) {
-        buf.appendSlice(self.alloc, " -> ") catch return "function";
-        buf.appendSlice(self.alloc, self.formatTypeName(ret_ty)) catch return "function";
-    }
-    return buf.toOwnedSlice(self.alloc) catch "function";
 }
 
 /// Format a type name for function name mangling (identifier-safe).
@@ -1676,6 +1676,12 @@ const HeadTypeGate = union(enum) {
 };
 pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadTypeGate {
     if (self.emitting_default_context) return .proceed;
+    // A compiler-maintained `@` contract type has exactly one canonical
+    // declaration, so it resolves program-wide and no author set gates it.
+    if (contracts.isAtName(name) and contracts.find(name) != null) {
+        const sid = self.module.types.internString(name);
+        if (self.module.types.findByName(sid)) |tid| return .{ .resolved = tid };
+    }
     if (self.program_index.module_decls == null or self.program_index.flat_import_graph == null) return .proceed;
     const from = self.current_source_file orelse return .proceed;
 

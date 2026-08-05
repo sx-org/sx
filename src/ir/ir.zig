@@ -78,6 +78,7 @@ pub const module_tests = @import("module.test.zig");
 pub const print_tests = @import("print.test.zig");
 pub const lower_tests = @import("lower.test.zig");
 pub const lower_nominal_tests = @import("lower/nominal.test.zig");
+pub const lower_cvariadic_tests = @import("lower/cvariadic.test.zig");
 pub const program_index_tests = @import("program_index.test.zig");
 pub const resolver_tests = @import("resolver.test.zig");
 pub const type_resolver_tests = @import("type_resolver.test.zig");

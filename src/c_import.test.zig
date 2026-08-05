@@ -1,4 +1,5 @@
 const std = @import("std");
+const ast = @import("ast.zig");
 const c_import = @import("c_import.zig");
 const target = @import("target.zig");
 
@@ -120,6 +121,119 @@ test "cSourceCacheKey: triple and sysroot vary the key; absent is not empty" {
     const absent = c_import.cSourceCacheKey(SRC, none, none, none, none, none, none, VER, null, null);
     const empty = c_import.cSourceCacheKey(SRC, none, none, none, none, none, none, VER, "", "");
     try std.testing.expect(absent != empty);
+}
+
+var g_test_threaded: ?std.Io.Threaded = null;
+fn testIo() std.Io {
+    if (g_test_threaded == null) {
+        g_test_threaded = std.Io.Threaded.init(std.heap.page_allocator, .{});
+    }
+    return g_test_threaded.?.io();
+}
+
+/// Parse `header` as the one `#include` of a `#import c` unit and return the
+/// synthesized extern decls.
+fn importHeader(
+    alloc: std.mem.Allocator,
+    header: []const u8,
+    flags: []const []const u8,
+) !c_import.CImportResult {
+    const io = testIo();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{ .sub_path = "h.h", .data = header });
+    var buf: [4096]u8 = undefined;
+    const len = try tmp.dir.realPath(io, &buf);
+    const path = try std.fmt.allocPrint(alloc, "{s}/h.h", .{buf[0..len]});
+    return c_import.processCImport(alloc, &.{path}, &.{}, flags);
+}
+
+fn findFn(result: c_import.CImportResult, name: []const u8) !ast.FnDecl {
+    for (result.fn_decls) |d| {
+        if (d.data == .fn_decl and std.mem.eql(u8, d.data.fn_decl.name, name)) return d.data.fn_decl;
+    }
+    return error.NoSuchDecl;
+}
+
+fn isCursorParam(p: ast.Param) bool {
+    return p.type_expr.data == .type_expr and
+        std.mem.eql(u8, p.type_expr.data.type_expr.name, "@VaList");
+}
+
+test "processCImport: a variadic prototype imports with the bare `..` tail" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const result = try importHeader(alloc,
+        \\int tally(int n, ...);
+        \\int fixed(int n);
+    , &.{});
+
+    const tally = try findFn(result, "tally");
+    try std.testing.expect(tally.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 1), tally.params.len);
+
+    const fixed = try findFn(result, "fixed");
+    try std.testing.expect(!fixed.is_c_variadic);
+}
+
+// C23 permits a variadic prototype with no named parameter, so the fixed count
+// may be zero.
+test "processCImport: a zero-fixed C23 variadic prototype imports with the tail" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const result = try importHeader(alloc, "long long all(...);", &.{"-std=c23"});
+
+    const all = try findFn(result, "all");
+    try std.testing.expect(all.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 0), all.params.len);
+}
+
+test "processCImport: a `va_list` parameter imports as the `@VaList` boundary" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const result = try importHeader(alloc,
+        \\#include <stdarg.h>
+        \\int direct(const char *fmt, va_list ap);
+        \\typedef va_list aliased_t;
+        \\int aliased(aliased_t ap);
+        \\int builtin(__builtin_va_list ap);
+    , &.{});
+
+    const direct = try findFn(result, "direct");
+    try std.testing.expectEqual(@as(usize, 2), direct.params.len);
+    try std.testing.expect(!isCursorParam(direct.params[0]));
+    try std.testing.expect(isCursorParam(direct.params[1]));
+
+    // A typedef of `va_list` is still the same list.
+    try std.testing.expect(isCursorParam((try findFn(result, "aliased")).params[0]));
+    try std.testing.expect(isCursorParam((try findFn(result, "builtin")).params[0]));
+}
+
+// The cursor is recognized by typedef identity. Nothing that merely
+// canonicalizes to what `va_list` canonicalizes to on some target — `char *`
+// here, an array of records elsewhere — may reach the boundary.
+test "processCImport: a `va_list` lookalike stays an ordinary parameter" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const result = try importHeader(alloc,
+        \\typedef char *lookalike_t;
+        \\struct __va_list_tag { int gp_offset; };
+        \\int by_typedef(lookalike_t ap);
+        \\int by_pointer(char *ap);
+        \\int by_array(struct __va_list_tag ap[1]);
+    , &.{});
+
+    try std.testing.expect(!isCursorParam((try findFn(result, "by_typedef")).params[0]));
+    try std.testing.expect(!isCursorParam((try findFn(result, "by_pointer")).params[0]));
+    try std.testing.expect(!isCursorParam((try findFn(result, "by_array")).params[0]));
 }
 
 test "scanQuotedIncludes: quoted forms collected in order, angle and noise skipped" {

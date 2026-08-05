@@ -510,6 +510,7 @@ pub const ProtocolResolver = struct {
         // (Source, Target) pair at xx resolution time. Stash the AST so
         // `param_impl_map` lookup can resolve method signatures lazily.
         if (pd.type_params.len > 0) {
+            self.l.cursorProtocolTemplatePreflight(pd);
             self.l.program_index.protocol_ast_map.put(self.protocolIdentityName(pd), pd) catch {};
             return;
         }
@@ -599,6 +600,14 @@ pub const ProtocolResolver = struct {
                 }
                 break :blk self.l.resolveTypeInSource(pd.source_file, rt);
             } else .void;
+            // A method is an sx call, so its signature meets the C-variadic
+            // cursor rules as non-C — before it registers as dispatch metadata.
+            for (method.params, ptypes.items) |p, pty| {
+                if (!self.l.refuseCursorMethodParam(pty, p.span)) _ = self.l.refuseCursorSignature(pty, p.span);
+            }
+            if (method.return_type) |rt| {
+                if (!self.l.refuseCursorEscape(ret, rt.span, "declare a return of type")) _ = self.l.refuseCursorSignature(ret, rt.span);
+            }
             const self_occ = program_index_mod.protocolMethodSelfOccurrence(method);
             const shape = program_index_mod.protocolMethodSelfShape(self.l.alloc, method);
             var info: ProtocolMethodInfo = .{

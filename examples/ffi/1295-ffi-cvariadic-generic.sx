@@ -1,0 +1,40 @@
+// A generic definition takes the C-variadic surface like a concrete one: an
+// effective-C monomorph keeps the declaration's convention and bare `..` tail,
+// reads it through the cursor, and takes an incoming list by value. An inferred
+// binding of an extern C-variadic function carries the C convention, so an
+// indirect call crosses with no implicit context.
+
+#import "modules/std.sx";
+
+printf :: (fmt: cstring, ..) -> i32 extern;
+
+read_tail :: ($T: Type, first: $T, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    total: i64 = xx first;
+    total += xx @va_arg(i32, *ap);
+    return total;
+}
+
+read_list :: ($T: Type, n: i32, ap: @VaList) -> i64 abi(.c) {
+    total: i64 = 0;
+    for 0..n (i) { total += xx @va_arg($T, *ap); }
+    return total;
+}
+
+sum :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    return read_list(i32, n, ap);
+}
+
+main :: () -> i64 {
+    print := printf;
+    print("%d\n", 73);
+
+    if read_tail(i32, 40, 2) != 42 { return 1; }
+    if sum(3, 10, 20, 12) != 42 { return 2; }
+    return 0;
+}

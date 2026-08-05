@@ -454,6 +454,8 @@ pub const Analyzer = struct {
                 return .{ .function_type = .{
                     .param_types = param_types.toOwnedSlice(self.allocator) catch return .void_type,
                     .return_type = ret_ptr,
+                    .abi = fte.abi,
+                    .is_c_variadic = fte.is_c_variadic,
                 } };
             }
             // Sema does not resolve generics; codegen handles instantiation
@@ -2152,6 +2154,46 @@ test "sema: enum and struct declarations" {
     try std.testing.expectEqualStrings("Vec2", result.symbols[1].name);
     try std.testing.expectEqual(SymbolKind.struct_type, result.symbols[1].kind);
     try std.testing.expectEqualStrings("main", result.symbols[2].name);
+}
+
+// Hover and completion read `Type.displayName`, so the tail and the convention
+// have to reach it: without them a fixed C signature and a C-variadic one, and
+// an empty parameter list and a zero-fixed tail, would render the same.
+test "sema: a function type carries its C-variadic tail and convention" {
+    const parser_mod = @import("parser.zig");
+
+    const source =
+        \\take :: (cb: (n: i32, ..) -> i64 abi(.c), fx: (n: i32) -> i64 abi(.c),
+        \\         zero: (..) -> i64 abi(.c), empty: () -> i64 abi(.c),
+        \\         sx: (n: i32) -> i64) { 0; }
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var parser = parser_mod.Parser.init(alloc, source);
+    const root = try parser.parse();
+
+    var analyzer = Analyzer.init(alloc);
+    const result = try analyzer.analyze(root);
+
+    const cb = result.symbols[1].ty.?.function_type;
+    try std.testing.expect(cb.is_c_variadic);
+    try std.testing.expectEqual(ast.ABI.c, cb.abi);
+    try std.testing.expect(!result.symbols[2].ty.?.function_type.is_c_variadic);
+    try std.testing.expect(result.symbols[3].ty.?.function_type.is_c_variadic);
+    try std.testing.expect(!result.symbols[4].ty.?.function_type.is_c_variadic);
+    try std.testing.expectEqual(ast.ABI.default, result.symbols[5].ty.?.function_type.abi);
+
+    for ([_][]const u8{
+        "(i32, ..) -> i64 abi(.c)",
+        "(i32) -> i64 abi(.c)",
+        "(..) -> i64 abi(.c)",
+        "() -> i64 abi(.c)",
+        "(i32) -> i64",
+    }, 1..) |want, i| {
+        try std.testing.expectEqualStrings(want, try result.symbols[i].ty.?.displayName(alloc));
+    }
 }
 
 test "sema: var_decl infers struct type from parameterized struct literal" {

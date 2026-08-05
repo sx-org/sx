@@ -718,6 +718,26 @@ test "emit: needsByval only for > 16-byte non-HFA structs" {
     try std.testing.expect(!emitter.needsByval(.i32, emitter.toLLVMType(.i32))); // non-struct
 }
 
+// A C `va_list` parameter is one pointer-shaped word on every supported target,
+// whatever the cursor's own storage measures.
+test "emit: a C-variadic cursor parameter is a plain pointer at every width" {
+    const alloc = std.testing.allocator;
+    var module = Module.init(alloc);
+    defer module.deinit();
+
+    const one_word = internStruct(&module, "@VaList", &.{.usize});
+    const sysv = internStruct(&module, "@VaList", &.{ .usize, .usize, .usize });
+    const aapcs = internStruct(&module, "@VaList", &.{ .usize, .usize, .usize, .usize });
+
+    var emitter = LLVMEmitter.init(alloc, &module, "test_valist_abi", .{});
+    defer emitter.deinit();
+
+    for ([_]TypeId{ one_word, sysv, aapcs }) |cursor| {
+        try std.testing.expect(emitter.abiCoerceParamType(cursor, emitter.toLLVMType(cursor)) == emitter.cached_ptr);
+        try std.testing.expect(!emitter.needsByval(cursor, emitter.toLLVMType(cursor)));
+    }
+}
+
 // ── Struct/Enum/Union tests ─────────────────────────────────────────
 
 test "emit: struct_init and struct_get" {

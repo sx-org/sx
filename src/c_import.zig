@@ -4,6 +4,7 @@ const llvm = @import("llvm_api.zig");
 const Node = ast.Node;
 const c = llvm.c;
 const builtin = @import("builtin");
+const cvariadic_cursor = @import("ir/types.zig").cvariadic_cursor;
 
 pub const CSourceLocation = struct {
     file: []const u8,
@@ -264,8 +265,10 @@ pub fn processCImport(
                     try allocator.dupe(u8, pname_raw)
                 else
                     try std.fmt.allocPrint(allocator, "p{d}", .{j});
-                const ptype_str = std.mem.span(pi.type_spelling);
-                const ptype_node = try mapCTypeToSxNode(allocator, ptype_str);
+                const ptype_node = if (pi.is_va_list != 0)
+                    try makeTypeExprNode(allocator, cvariadic_cursor)
+                else
+                    try mapCTypeToSxNode(allocator, std.mem.span(pi.type_spelling));
 
                 try params.append(allocator, .{
                     .name = pname,
@@ -303,6 +306,7 @@ pub fn processCImport(
                     .return_type = ret_node,
                     .body = extern_body,
                     .extern_export = .extern_,
+                    .is_c_variadic = fi.is_variadic != 0,
                     // A C function whose own NAME collides with a reserved type
                     // spelling (`int i2(int);`) is RAW — exempt from the
                     // reserved-type-name decl check so generated bindings import

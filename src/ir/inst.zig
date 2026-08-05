@@ -199,6 +199,20 @@ pub const Op = union(enum) {
     volatile_load: UnaryOp, // load the optimizer may not elide, duplicate, or fuse
     volatile_store: Store, // store the optimizer may not elide, duplicate, or fuse
 
+    // Each cursor operand is the address of a `@VaList`. `va_arg`'s result type
+    // is the instruction's type; the other three are void.
+    va_start: UnaryOp, // open a cursor over the caller's tail arguments
+    va_arg: UnaryOp, // read the next tail argument, advancing the cursor
+    va_copy: VaCopy, // duplicate a cursor's position into a second cursor
+    va_end: UnaryOp, // release a cursor
+
+    // The two C-boundary adapters, inverses of each other. A C `va_list`
+    // parameter is one pointer-shaped word on every supported target, which is
+    // the cursor's address where the target's list is composite and the list
+    // itself where it is one word.
+    va_place: UnaryOp, // operand: an incoming C `va_list` parameter → its cursor address
+    va_pass: UnaryOp, // operand: a cursor address → the C `va_list` parameter word
+
     // ── Atomics ─────────────────────────────────────────────────────
     atomic_load: AtomicLoad, // atomic load from pointer with memory ordering
     atomic_store: AtomicStore, // atomic store to pointer with memory ordering
@@ -377,6 +391,11 @@ pub const Store = struct {
     /// `T` and fixes the access width in the LLVM emitter too; a plain
     /// `store` leaves the emitter to take the width from the SSA value.
     val_ty: TypeId = .void,
+};
+
+pub const VaCopy = struct {
+    dst: Ref,
+    src: Ref,
 };
 
 /// Memory ordering for atomic ops. The sx-surface `Ordering` enum
@@ -733,13 +752,15 @@ pub const Function = struct {
     linkage: Linkage = .internal,
     call_conv: CallingConvention = .default,
     source_file: ?[]const u8 = null,
-    /// Variadic tail at the IR signature level. Only `extern` decls reach
-    /// IR with this set — sx-side `..T` params are slice-packed before
-    /// lowering, so anything that survives is the C calling convention's
-    /// `...`. emit_llvm passes `is_var_arg=1` to `LLVMFunctionType`; call
-    /// sites apply the standard default argument promotions (i8/i16/bool →
-    /// i32, f32 → f64) to extras past the fixed param count.
-    is_variadic: bool = false,
+    /// The C calling convention's `...` tail at the IR signature level: a bare
+    /// `..` on an effective-C signature, or an `extern` decl's `..name: []T`.
+    /// An sx-side `..T` param is slice-packed before lowering and reaches IR as
+    /// an ordinary parameter, so it never sets this. emit_llvm passes
+    /// `is_var_arg=1` to `LLVMFunctionType`; call sites apply the C default
+    /// argument promotions to extras past the fixed param count (every integer
+    /// narrower than 32 bits → `i32`, `f32` → `f64`, `isize`/`usize` at the
+    /// target's address width).
+    is_c_variadic: bool = false,
     /// True if `params[0]` is the synthetic `__sx_ctx: *Context`
     /// parameter that every default-conv sx function receives. Callers
     /// read this flag to decide whether to prepend their current

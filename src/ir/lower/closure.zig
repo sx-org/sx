@@ -639,6 +639,7 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
                         // but still captured: the diagnostic halts before
                         // codegen, and binding it keeps the body from cascading.
                         self.rejectBlockCapture(binding.ty, id.name, node.span);
+                        _ = self.refuseCursorCapture(binding.ty, node.span);
                         captures.append(self.alloc, .{
                             .name = id.name,
                             .ty = binding.ty,

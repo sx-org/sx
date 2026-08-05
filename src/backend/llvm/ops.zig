@@ -20,6 +20,7 @@ const AtomicStore = ir_inst.AtomicStore;
 const AtomicRmw = ir_inst.AtomicRmw;
 const AtomicCmpxchg = ir_inst.AtomicCmpxchg;
 const AtomicFence = ir_inst.AtomicFence;
+const VaCopy = ir_inst.VaCopy;
 const Conversion = ir_inst.Conversion;
 const GlobalId = ir_inst.GlobalId;
 const GlobalSet = ir_inst.GlobalSet;
@@ -475,6 +476,86 @@ pub const Ops = struct {
             c.LLVMSetVolatile(store, 1);
         }
         self.e.advanceRefCounter();
+    }
+
+    // The three cursor lifetime ops are calls to LLVM's overloaded va intrinsics,
+    // which must be named with their pointer-address-space suffix
+    // (`llvm.va_start.p0`); the unsuffixed spelling fails verification. The
+    // read is `LLVMBuildVAArg`, which lowers per the target ABI.
+
+    fn vaIntrinsic(self: Ops, name: [*:0]const u8, arity: c_uint) c.LLVMValueRef {
+        if (c.LLVMGetNamedFunction(self.e.llvm_module, name)) |f| return f;
+        var params = [_]c.LLVMTypeRef{ self.e.cached_ptr, self.e.cached_ptr };
+        const fn_ty = c.LLVMFunctionType(self.e.cached_void, &params, arity, 0);
+        return c.LLVMAddFunction(self.e.llvm_module, name, fn_ty);
+    }
+
+    fn emitVaLifetime(self: Ops, name: [*:0]const u8, operand: Ref) void {
+        const cursor = self.e.resolveRef(operand);
+        if (c.LLVMGetTypeKind(c.LLVMTypeOf(cursor)) == c.LLVMPointerTypeKind) {
+            const f = self.vaIntrinsic(name, 1);
+            var args = [_]c.LLVMValueRef{cursor};
+            _ = c.LLVMBuildCall2(self.e.builder, c.LLVMGlobalGetValueType(f), f, &args, 1, "");
+        }
+        self.e.advanceRefCounter();
+    }
+
+    pub fn emitVaStart(self: Ops, un: UnaryOp) void {
+        self.emitVaLifetime("llvm.va_start.p0", un.operand);
+    }
+
+    pub fn emitVaEnd(self: Ops, un: UnaryOp) void {
+        self.emitVaLifetime("llvm.va_end.p0", un.operand);
+    }
+
+    pub fn emitVaCopy(self: Ops, v: VaCopy) void {
+        const dst = self.e.resolveRef(v.dst);
+        const src = self.e.resolveRef(v.src);
+        if (c.LLVMGetTypeKind(c.LLVMTypeOf(dst)) == c.LLVMPointerTypeKind and
+            c.LLVMGetTypeKind(c.LLVMTypeOf(src)) == c.LLVMPointerTypeKind)
+        {
+            const f = self.vaIntrinsic("llvm.va_copy.p0", 2);
+            var args = [_]c.LLVMValueRef{ dst, src };
+            _ = c.LLVMBuildCall2(self.e.builder, c.LLVMGlobalGetValueType(f), f, &args, 2, "");
+        }
+        self.e.advanceRefCounter();
+    }
+
+    pub fn emitVaArg(self: Ops, instruction: *const Inst, un: UnaryOp) void {
+        const cursor = self.e.resolveRef(un.operand);
+        const llvm_ty = self.e.toLLVMType(instruction.ty);
+        if (c.LLVMGetTypeKind(c.LLVMTypeOf(cursor)) != c.LLVMPointerTypeKind) {
+            self.e.mapRef(c.LLVMGetUndef(llvm_ty));
+            return;
+        }
+        self.e.mapRef(c.LLVMBuildVAArg(self.e.builder, cursor, llvm_ty, "va_arg"));
+    }
+
+    // The C boundary. A `va_list` parameter is one pointer-shaped word on every
+    // supported target; what that word HOLDS is the target's shape. Where the
+    // list is composite the word addresses it, so the cursor and the parameter
+    // are the same pointer. Where the list is one word the parameter IS the
+    // list, and the cursor is a slot holding it — the va intrinsics take a
+    // pointer TO the list, never the list.
+
+    pub fn emitVaPlace(self: Ops, un: UnaryOp) void {
+        const incoming = self.e.resolveRef(un.operand);
+        if (self.e.target_config.vaListWords() > 1) {
+            self.e.mapRef(incoming);
+            return;
+        }
+        const slot = self.e.buildEntryAlloca(self.e.cached_ptr, "va.place");
+        _ = c.LLVMBuildStore(self.e.builder, incoming, slot);
+        self.e.mapRef(slot);
+    }
+
+    pub fn emitVaPass(self: Ops, un: UnaryOp) void {
+        const place = self.e.resolveRef(un.operand);
+        if (self.e.target_config.vaListWords() > 1) {
+            self.e.mapRef(place);
+            return;
+        }
+        self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, self.e.cached_ptr, place, "va.pass"));
     }
 
     // ── Atomics ───────────────────────────────────────────
@@ -1602,6 +1683,17 @@ pub const Ops = struct {
             break :blk false;
         } else false;
 
+        // A C-variadic fn-pointer type's call site is built variadic over its
+        // FIXED prefix, so the tail arguments land in the ABI's variadic slots
+        // rather than in named ones.
+        const fp_is_c_variadic: bool = if (callee_ir_ty) |cty| blk: {
+            if (!cty.isBuiltin()) {
+                const ci = self.e.ir_mod.types.get(cty);
+                if (ci == .function and ci.function.is_c_variadic) break :blk true;
+            }
+            break :blk false;
+        } else false;
+
         // Default-conv fn-pointers under implicit-ctx carry a hidden
         // `*void` (the implicit __sx_ctx) at LLVM slot 0. The IR fn
         // type does not include it, so shift fn_params lookups by 1.
@@ -1702,7 +1794,13 @@ pub const Ops = struct {
                 param_tys[i + sret_off] = c.LLVMTypeOf(args[i + sret_off]);
             }
         }
-        const fn_ty = c.LLVMFunctionType(ret_ty, param_tys.ptr, arg_count, 0);
+        // A variadic type names only its fixed prefix; the call still passes
+        // every argument.
+        const named_count: c_uint = if (fp_is_c_variadic)
+            @intCast(fn_params.?.len + sret_off)
+        else
+            arg_count;
+        const fn_ty = c.LLVMFunctionType(ret_ty, param_tys.ptr, named_count, if (fp_is_c_variadic) 1 else 0);
         const icall_void_like = instruction.ty == .void or instruction.ty == .noreturn;
         var result = c.LLVMBuildCall2(self.e.builder, fn_ty, callee, args.ptr, arg_count, if (icall_void_like or uses_sret) "" else "icall");
 

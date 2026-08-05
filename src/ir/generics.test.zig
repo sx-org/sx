@@ -165,3 +165,33 @@ test "generics: buildTypeBindings infers a type param from value args, widest wi
         try std.testing.expectEqual(TypeId.f64, bindings.get("T").?);
     }
 }
+
+test "generics: a function type's mono key is injective over its identity fields" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var l = Lowering.init(&module);
+    const gr = GenericResolver{ .l = &l };
+    const tt = &module.types;
+
+    // Nominal names crafted to shadow a metadata fragment: the key holds its
+    // fields in fixed positions BEFORE the parameter/return fragments, so no
+    // return-type spelling can absorb them.
+    const r = tt.intern(.{ .@"struct" = .{ .name = tt.internString("R"), .fields = &.{} } });
+    const r_cc = tt.intern(.{ .@"struct" = .{ .name = tt.internString("R_cc"), .fields = &.{} } });
+    const r_ps0 = tt.intern(.{ .@"struct" = .{ .name = tt.internString("R_ps0"), .fields = &.{} } });
+
+    const d_fixed_rcc = tt.functionTypeCC(&.{}, r_cc, .default);
+    const c_fixed_r = tt.functionTypeCC(&.{}, r, .c);
+    try std.testing.expect(!std.mem.eql(u8, gr.mangleTypeName(d_fixed_rcc), gr.mangleTypeName(c_fixed_r)));
+
+    const c_var_i = tt.functionTypeVariadic(&.{.i32}, .i64, .c, true);
+    const c_fixed_i = tt.functionTypeVariadic(&.{.i32}, .i64, .c, false);
+    try std.testing.expect(!std.mem.eql(u8, gr.mangleTypeName(c_var_i), gr.mangleTypeName(c_fixed_i)));
+
+    const d_fixed_rps0 = tt.functionTypeCC(&.{}, r_ps0, .default);
+    const d_pack_r = tt.functionTypePack(&.{}, r, .default, 0);
+    try std.testing.expect(!std.mem.eql(u8, gr.mangleTypeName(d_fixed_rps0), gr.mangleTypeName(d_pack_r)));
+}

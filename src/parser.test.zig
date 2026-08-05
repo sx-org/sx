@@ -1641,3 +1641,225 @@ test "parser: a glued `:` separates a default arm from a chaining `else`" {
     );
     try std.testing.expect(chain.data.block.stmts[0].data.if_expr.else_branch != null);
 }
+
+test "parser: an `@` function declaration is its signature, with an intrinsic body" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(),
+        \\@va_arg :: ($T: Type, list: *@VaList) -> T;
+        \\@va_end :: (list: *@VaList);
+    );
+    const root = try parser.parse();
+    const decls = root.data.root.decls;
+    try std.testing.expectEqual(@as(usize, 2), decls.len);
+
+    const arg = decls[0].data.fn_decl;
+    try std.testing.expectEqualStrings("@va_arg", arg.name);
+    try std.testing.expect(arg.body.data == .intrinsic_expr);
+    try std.testing.expectEqual(@as(usize, 2), arg.params.len);
+    try std.testing.expect(arg.return_type != null);
+
+    // An omitted return annotation is sx's canonical void.
+    const end = decls[1].data.fn_decl;
+    try std.testing.expectEqualStrings("@va_end", end.name);
+    try std.testing.expect(end.body.data == .intrinsic_expr);
+    try std.testing.expect(end.return_type == null);
+}
+
+test "parser: an `@` function declaration takes no `intrinsic` marker" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), "@va_end :: (list: *@VaList) intrinsic;");
+    try std.testing.expectError(error.ParseError, parser.parse());
+}
+
+test "parser: an `@` function declaration takes no body, ABI, or linkage" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    for ([_][:0]const u8{
+        "@f :: (n: i32) -> i32 { return n; }",
+        "@f :: (n: i32) -> i32 => n;",
+        "@f :: (n: i32) -> i32 abi(.c);",
+        "@f :: (n: i32) -> i32 extern;",
+        "@f :: (n: i32) -> i32 export;",
+    }) |src| {
+        var p = Parser.init(alloc, src);
+        try std.testing.expectError(error.ParseError, p.parse());
+    }
+}
+
+test "parser: a plain bodyless signature is a function-type alias" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), "Fn :: (list: *i32) -> i32;");
+    const root = try parser.parse();
+    try std.testing.expect(root.data.root.decls[0].data != .fn_decl);
+}
+
+test "parser: a bare `..` tail sets the signature flag and binds no parameter" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(),
+        \\one :: (n: i32, ..) -> i64 abi(.c) { 0 }
+        \\zero :: (..) -> i64 abi(.c) { 0 }
+        \\imported :: (fmt: cstring, ..) -> i32 extern;
+    );
+    const root = try parser.parse();
+    const decls = root.data.root.decls;
+
+    const one = decls[0].data.fn_decl;
+    try std.testing.expect(one.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 1), one.params.len);
+
+    // Zero fixed parameters is an ordinary count, not a separate case.
+    const zero = decls[1].data.fn_decl;
+    try std.testing.expect(zero.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 0), zero.params.len);
+
+    const imported = decls[2].data.fn_decl;
+    try std.testing.expect(imported.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 1), imported.params.len);
+}
+
+test "parser: a tail takes sx's ordinary trailing comma" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(),
+        \\one :: (n: i32, ..,) -> i64 abi(.c) { 0 }
+        \\zero :: (..,) -> i64 abi(.c) { 0 }
+    );
+    const root = try parser.parse();
+    try std.testing.expect(root.data.root.decls[0].data.fn_decl.is_c_variadic);
+    try std.testing.expect(root.data.root.decls[1].data.fn_decl.is_c_variadic);
+}
+
+test "parser: a tail is legal only on an effective-C signature" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    for ([_][:0]const u8{
+        "f :: (n: i32, ..) -> i32 { 0 }", // default convention
+        "f :: (n: i32, ..) -> i32 abi(.naked) { 0 }",
+        "f :: (n: i32, .., x: i32) -> i32 abi(.c) { 0 }", // not the last entry
+        "f :: (n: i32, ..args: []i32, ..) -> i32 abi(.c) { 0 }", // two tails
+        "@f :: (n: i32, ..) -> i32;",
+    }) |src| {
+        var p = Parser.init(alloc, src);
+        try std.testing.expectError(error.ParseError, p.parse());
+    }
+}
+
+// A spread always carries an operand and the tail never does: one token of
+// lookahead separates them.
+test "parser: a named variadic form does not set the C-tail flag" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(),
+        \\pack :: (..$args) -> i64 { 0 }
+        \\slice :: (n: i32, ..xs: []i32) -> i64 { 0 }
+    );
+    const root = try parser.parse();
+    const pack = root.data.root.decls[0].data.fn_decl;
+    try std.testing.expect(!pack.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 1), pack.params.len);
+    try std.testing.expect(pack.params[0].is_variadic);
+
+    const slice = root.data.root.decls[1].data.fn_decl;
+    try std.testing.expect(!slice.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 2), slice.params.len);
+    try std.testing.expect(slice.params[1].is_variadic);
+}
+
+// sx has no three-dot token: a three-dot list is `..` then `.` — neither `)`
+// nor `,`, so it reads as a named form missing its name.
+test "parser: a three-dot parameter list is not a tail" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), "f :: (n: i32, ...) -> i32 abi(.c) { 0 }");
+    try std.testing.expectError(error.ParseError, parser.parse());
+    try std.testing.expectEqualStrings("expected parameter name", parser.err_msg.?);
+}
+
+test "parser: a function type carries the bare `..` tail" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(),
+        \\Callback :: (fixed: i32, ..) -> i64 abi(.c);
+        \\Zero :: (..) -> i64 abi(.c);
+        \\Comma :: (fixed: i32, ..,) -> i64 abi(.c);
+        \\Fixed :: (fixed: i32) -> i64 abi(.c);
+    );
+    const root = try parser.parse();
+    const decls = root.data.root.decls;
+
+    const callback = decls[0].data.const_decl.value.data.function_type_expr;
+    try std.testing.expect(callback.is_c_variadic);
+    try std.testing.expectEqual(ast.ABI.c, callback.abi);
+    try std.testing.expectEqual(@as(usize, 1), callback.param_types.len);
+
+    // Zero fixed parameters is an ordinary count, not a separate case.
+    const zero = decls[1].data.const_decl.value.data.function_type_expr;
+    try std.testing.expect(zero.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 0), zero.param_types.len);
+
+    try std.testing.expect(decls[2].data.const_decl.value.data.function_type_expr.is_c_variadic);
+    try std.testing.expect(!decls[3].data.const_decl.value.data.function_type_expr.is_c_variadic);
+}
+
+test "parser: a function type's tail requires abi(.c)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    for ([_][:0]const u8{
+        "F :: (n: i32, ..) -> i64;",
+        "F :: (n: i32, ..) -> i64 abi(.naked);",
+        "F :: (n: i32, .., x: i32) -> i64 abi(.c);", // not the last entry
+        "F :: (.., ..) -> i64 abi(.c);", // two tails
+    }) |src| {
+        var p = Parser.init(alloc, src);
+        try std.testing.expectError(error.ParseError, p.parse());
+    }
+}
+
+// Without a `->` the parens are a grouping, the void type, or a result list —
+// a `..` there is the pack spread and keeps its own path.
+test "parser: the tail arm leaves grouping, void and pack spreads alone" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(),
+        \\Grouped :: (n: (i64)) -> i64;
+        \\Voided :: (n: ()) -> i64;
+        \\Spread :: (..Ts) -> i64;
+    );
+    const root = try parser.parse();
+    const decls = root.data.root.decls;
+
+    const grouped = decls[0].data.const_decl.value.data.function_type_expr;
+    try std.testing.expect(!grouped.is_c_variadic);
+    try std.testing.expectEqualStrings("i64", grouped.param_types[0].data.type_expr.name);
+
+    const voided = decls[1].data.const_decl.value.data.function_type_expr;
+    try std.testing.expect(!voided.is_c_variadic);
+    try std.testing.expectEqualStrings("void", voided.param_types[0].data.type_expr.name);
+
+    const spread = decls[2].data.const_decl.value.data.function_type_expr;
+    try std.testing.expect(!spread.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 1), spread.param_types.len);
+    try std.testing.expect(spread.param_types[0].data == .spread_expr);
+}
+
+test "parser: abi(...) alone is a convention, not a body" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(),
+        \\Alias :: (n: i32) -> i64 abi(.c);
+        \\defined :: (n: i32) -> i64 abi(.c) { 0 }
+        \\imported :: (n: i32) -> i64 abi(.c) extern;
+    );
+    const root = try parser.parse();
+    const decls = root.data.root.decls;
+    try std.testing.expect(decls[0].data.const_decl.value.data == .function_type_expr);
+    try std.testing.expect(decls[1].data == .fn_decl);
+    try std.testing.expect(decls[2].data == .fn_decl);
+}

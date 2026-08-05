@@ -1892,7 +1892,7 @@ pub const Vm = struct {
         }
         const argv = packed_args[0..args.len];
         const fixed = callee.params.len;
-        const variadic = callee.is_variadic and args.len > fixed;
+        const variadic = callee.is_c_variadic and args.len > fixed;
         const ret = callee.ret;
 
         if (isFloat(ret))

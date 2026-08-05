@@ -1,0 +1,79 @@
+// The C-variadic tail and the `@VaList` boundary, compiled for Apple AArch64:
+// a one-word `va_list` the C parameter carries directly.
+//
+// A `.build` sidecar names one target, so the matrix is one file per target,
+// 1289 through 1294. The file whose target matches the host runs; the rest
+// compile. The import is core-only — `modules/std.sx` carries no clock or errno
+// values for every target here, and none of the shapes below need it.
+
+#import "modules/std/core.sx";
+
+sum_ints :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    total: i64 = 0;
+    for 0..n (i) {
+        total += xx @va_arg(i32, *ap);
+    }
+    return total;
+}
+
+// The C boundary parameter. Whatever the target's `va_list` is, one place
+// crosses and the callee reads it exactly as it reads a local's storage.
+read_ints :: (n: i32, ap: @VaList) -> i64 abi(.c) {
+    total: i64 = 0;
+    for 0..n (i) {
+        total += xx @va_arg(i32, *ap);
+    }
+    return total;
+}
+
+forward :: (n: i32, ap: *@VaList) -> i64 {
+    return read_ints(n, ap.*);
+}
+
+own_forward :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    return forward(n, *ap);
+}
+
+twice :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    dup: @VaList = ---;
+    @va_copy(*dup, *ap);
+    defer @va_end(*dup);
+
+    first: i64 = 0;
+    for 0..n (i) {
+        first += xx @va_arg(i32, *ap);
+    }
+    second: i64 = 0;
+    for 0..n (i) {
+        second += xx @va_arg(i32, *dup);
+    }
+    return first * 100 + second;
+}
+
+Summer :: (i32, ..) -> i64 abi(.c);
+
+main :: () -> i32 {
+    a: i32 = 4;
+    b: i32 = 5;
+    c: i32 = 6;
+    if sum_ints(3, a, b, c) != 15 { return 1; }
+    if own_forward(3, a, b, c) != 15 { return 2; }
+    if twice(3, a, b, c) != 1515 { return 3; }
+
+    through: Summer = sum_ints;
+    if through(3, a, b, c) != 15 { return 4; }
+
+    narrow: u8 = 7;
+    signed_narrow: i16 = -3;
+    if sum_ints(2, narrow, signed_narrow) != 4 { return 5; }
+    return 0;
+}

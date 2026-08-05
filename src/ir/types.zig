@@ -2,6 +2,9 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ast = @import("../ast.zig");
 
+/// The contract name of the C-variadic cursor type, `@` included.
+pub const cvariadic_cursor = "@VaList";
+
 // ── TypeId ──────────────────────────────────────────────────────────────
 // Opaque handle into the TypeTable. First 16 slots are reserved for builtins.
 
@@ -189,6 +192,11 @@ pub const TypeInfo = union(enum) {
         /// per-call-site type list binds the remainder. `pack_start == 0`
         /// with `params.len == 0` denotes `fn(..$args)`.
         pack_start: ?u32 = null,
+        /// The signature ends in a bare `..` C-variadic tail: `params` is the
+        /// fixed prefix and the C ABI carries the rest. Part of the type's
+        /// identity — a fixed signature and the otherwise identical variadic one
+        /// are different ABIs, and neither stands in for the other.
+        is_c_variadic: bool = false,
     };
 
     pub const CallConv = enum { default, c };
@@ -623,6 +631,109 @@ pub const TypeTable = struct {
         return null;
     }
 
+    /// True when `ty` IS the C-variadic cursor. Its storage is the target's
+    /// `va_list`, substituted when the declaration registers, so identity is
+    /// the whole test — the layout says nothing about the type.
+    pub fn isCVariadicCursor(self: *const TypeTable, ty: TypeId) bool {
+        if (ty.isBuiltin()) return false;
+        const info = self.get(ty);
+        if (info != .@"struct") return false;
+        return std.mem.eql(u8, self.getString(info.@"struct".name), cvariadic_cursor);
+    }
+
+    /// True when `ty` is `*@VaList` — the borrow an sx helper reads through.
+    pub fn isCVariadicCursorPointer(self: *const TypeTable, ty: TypeId) bool {
+        if (ty.isBuiltin()) return false;
+        return switch (self.get(ty)) {
+            .pointer => |p| self.isCVariadicCursor(p.pointee),
+            else => false,
+        };
+    }
+
+    /// How a type reaches C-variadic cursor storage.
+    pub const CursorReach = enum {
+        none,
+        /// The type's own bytes ARE cursor storage, or contain some.
+        owned,
+        /// The type addresses cursor storage another frame holds.
+        borrowed,
+    };
+
+    /// How `ty` reaches a `@VaList`. The cursor's rules govern every type that
+    /// carries one, not the two bare spellings alone: `[1]@VaList` is cursor
+    /// storage the same way `@VaList` is, and a struct of `*@VaList` dangles the
+    /// same way the borrow does.
+    pub fn cvariadicCursorReach(self: *const TypeTable, ty: TypeId) CursorReach {
+        return self.cursorReachOf(ty, false, null);
+    }
+
+    /// A type the walk is inside, paired with whether an indirection was crossed
+    /// to reach it. The chain of them is the cycle test: a pair that repeats
+    /// reaches exactly what its earlier visit reaches.
+    const CursorEdge = struct {
+        ty: TypeId,
+        crossed: bool,
+        from: ?*const CursorEdge,
+
+        fn walked(path: ?*const CursorEdge, ty: TypeId, crossed: bool) bool {
+            var it = path;
+            while (it) |e| : (it = e.from) {
+                if (e.ty == ty and e.crossed == crossed) return true;
+            }
+            return false;
+        }
+    };
+
+    /// The reach of `ty` read `crossed` indirections deep. Every by-value edge
+    /// carries that state along and every pointer, many-pointer, and slice edge
+    /// sets it, so a cursor found before the first indirection is storage the
+    /// value holds and one found after it is storage the value addresses. A
+    /// function type is a code address: its parameters are the callee's storage,
+    /// not the value's.
+    fn cursorReachOf(self: *const TypeTable, ty: TypeId, crossed: bool, path: ?*const CursorEdge) CursorReach {
+        if (ty.isBuiltin()) return .none;
+        if (CursorEdge.walked(path, ty, crossed)) return .none;
+        if (self.isCVariadicCursor(ty)) return if (crossed) .borrowed else .owned;
+        const here = CursorEdge{ .ty = ty, .crossed = crossed, .from = path };
+        return switch (self.get(ty)) {
+            .@"struct" => |s| self.fieldsCursorReach(s.fields, crossed, &here),
+            .@"union" => |u| self.fieldsCursorReach(u.fields, crossed, &here),
+            .tagged_union => |u| self.fieldsCursorReach(u.fields, crossed, &here),
+            .tuple => |t| blk: {
+                var found: CursorReach = .none;
+                for (t.fields) |f| {
+                    found = strongerReach(found, self.cursorReachOf(f, crossed, &here));
+                    if (found == .owned) break;
+                }
+                break :blk found;
+            },
+            .array => |a| self.cursorReachOf(a.element, crossed, &here),
+            .vector => |v| self.cursorReachOf(v.element, crossed, &here),
+            .optional => |o| self.cursorReachOf(o.child, crossed, &here),
+            .pointer => |p| self.cursorReachOf(p.pointee, true, &here),
+            .many_pointer => |p| self.cursorReachOf(p.element, true, &here),
+            .slice => |s| self.cursorReachOf(s.element, true, &here),
+            else => .none,
+        };
+    }
+
+    fn fieldsCursorReach(self: *const TypeTable, fields: []const TypeInfo.StructInfo.Field, crossed: bool, path: ?*const CursorEdge) CursorReach {
+        var found: CursorReach = .none;
+        for (fields) |f| {
+            found = strongerReach(found, self.cursorReachOf(f.ty, crossed, path));
+            if (found == .owned) break;
+        }
+        return found;
+    }
+
+    /// Holding cursor storage is the stronger fact: a value that holds one list
+    /// and addresses another is refused wherever either alone is.
+    fn strongerReach(a: CursorReach, b: CursorReach) CursorReach {
+        if (a == .owned or b == .owned) return .owned;
+        if (a == .borrowed or b == .borrowed) return .borrowed;
+        return .none;
+    }
+
     /// Member count of an aggregate type: struct/union/tagged-union fields, enum
     /// variants, or array/vector length. Returns null for a type that has no
     /// member count (a scalar, pointer, the `unresolved` sentinel, …) — so a
@@ -890,8 +1001,19 @@ pub const TypeTable = struct {
     }
 
     pub fn functionTypeCC(self: *TypeTable, params: []const TypeId, ret: TypeId, cc: TypeInfo.CallConv) TypeId {
+        return self.functionTypeVariadic(params, ret, cc, false);
+    }
+
+    /// `params` is the FIXED prefix when `is_c_variadic` is set — the bare `..`
+    /// tail binds no slot of its own.
+    pub fn functionTypeVariadic(self: *TypeTable, params: []const TypeId, ret: TypeId, cc: TypeInfo.CallConv, is_c_variadic: bool) TypeId {
         const owned_params = self.slice_arena.allocator().dupe(TypeId, params) catch unreachable;
-        return self.intern(.{ .function = .{ .params = owned_params, .ret = ret, .call_conv = cc } });
+        return self.intern(.{ .function = .{
+            .params = owned_params,
+            .ret = ret,
+            .call_conv = cc,
+            .is_c_variadic = is_c_variadic,
+        } });
     }
 
     pub fn functionTypePack(self: *TypeTable, params: []const TypeId, ret: TypeId, cc: TypeInfo.CallConv, pack_start: u32) TypeId {
@@ -1406,11 +1528,16 @@ pub const TypeTable = struct {
                     if (i > 0) buf.appendSlice(alloc, ", ") catch break :blk "(?)";
                     buf.appendSlice(alloc, self.formatTypeName(alloc, p)) catch break :blk "(?)";
                 }
+                if (f.is_c_variadic) {
+                    if (f.params.len > 0) buf.appendSlice(alloc, ", ") catch break :blk "(?)";
+                    buf.appendSlice(alloc, "..") catch break :blk "(?)";
+                }
                 buf.append(alloc, ')') catch break :blk "(?)";
                 if (f.ret != .void) {
                     buf.appendSlice(alloc, " -> ") catch break :blk "(?)";
                     buf.appendSlice(alloc, self.formatTypeName(alloc, f.ret)) catch break :blk "(?)";
                 }
+                if (f.call_conv == .c) buf.appendSlice(alloc, " abi(.c)") catch break :blk "(?)";
                 break :blk buf.toOwnedSlice(alloc) catch "(?)";
             },
             .closure => |co| blk: {
@@ -1513,6 +1640,8 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
             const pack_present: u8 = if (f.pack_start != null) 1 else 0;
             h.update(&.{pack_present});
             if (f.pack_start) |ps| h.update(std.mem.asBytes(&ps));
+            const tail_byte: u8 = if (f.is_c_variadic) 1 else 0;
+            h.update(&.{tail_byte});
         },
         .closure => |c| {
             for (c.params) |p| h.update(std.mem.asBytes(&p));
@@ -1582,6 +1711,7 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
                 if (fp != gp) return false;
             }
             if (f.call_conv != g.call_conv) return false;
+            if (f.is_c_variadic != g.is_c_variadic) return false;
             if ((f.pack_start == null) != (g.pack_start == null)) return false;
             if (f.pack_start) |fp| if (fp != g.pack_start.?) return false;
             return f.ret == g.ret;

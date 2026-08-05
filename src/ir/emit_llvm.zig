@@ -1458,7 +1458,7 @@ pub const LLVMEmitter = struct {
                 self.abiCoerceDefaultParamType(param.ty, llvm_ty);
         }
 
-        const is_var_arg: c_int = if (func.is_variadic) 1 else 0;
+        const is_var_arg: c_int = if (func.is_c_variadic) 1 else 0;
         const fn_type = c.LLVMFunctionType(ret_ty, param_types.ptr, param_count, is_var_arg);
         const name_z = self.alloc.dupeZ(u8, name) catch unreachable;
         defer self.alloc.free(name_z);
@@ -1846,6 +1846,12 @@ pub const LLVMEmitter = struct {
             .store => |st| self.ops().emitStore(st),
             .volatile_load => |un| self.ops().emitVolatileLoad(instruction, un),
             .volatile_store => |st| self.ops().emitVolatileStore(st),
+            .va_start => |un| self.ops().emitVaStart(un),
+            .va_arg => |un| self.ops().emitVaArg(instruction, un),
+            .va_copy => |v| self.ops().emitVaCopy(v),
+            .va_end => |un| self.ops().emitVaEnd(un),
+            .va_place => |un| self.ops().emitVaPlace(un),
+            .va_pass => |un| self.ops().emitVaPass(un),
             .atomic_load => |a| self.ops().emitAtomicLoad(instruction, a),
             .atomic_store => |a| self.ops().emitAtomicStore(a),
             .atomic_rmw => |a| self.ops().emitAtomicRmw(instruction, a),

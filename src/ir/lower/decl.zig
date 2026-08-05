@@ -20,6 +20,7 @@ const ProtocolResolver = @import("../protocols.zig").ProtocolResolver;
 const ErrorFlow = @import("../error_flow.zig").ErrorFlow;
 const semantic_diagnostics = @import("../semantic_diagnostics.zig");
 const source_site = @import("../../source_site.zig");
+const contracts = @import("../../contracts.zig");
 
 const TypeId = types.TypeId;
 const StringId = types.StringId;
@@ -1596,6 +1597,9 @@ pub fn registerTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
             d.addFmt(.err, null, "top-level var '{s}' has no type annotation and no initializer to infer from", .{vd.name});
         break :blk .void;
     };
+    const ty_span: ?ast.Span = if (vd.type_annotation) |ta| ta.span else null;
+    _ = self.refuseCursorEscape(var_ty, ty_span, "declare a global of type");
+    _ = self.refuseCursorSignature(var_ty, ty_span);
     // Extern globals reference a symbol defined in libSystem etc.
     // (`_NSConcreteStackBlock : *void extern;` or `… : *void extern;`). The C
     // symbol name is the optional override (`extern_name`) or the sx name itself.
@@ -2731,6 +2735,12 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
     if (name.len > 0 and (name[0] == '[' or name[0] == '*' or name[0] == '?')) {
         return .{ .resolved = self.typeResolver().resolveName(name, raw) };
     }
+    // A compiler-maintained `@` contract type resolves program-wide: the
+    // registry admits exactly one canonical declaration of the name, so no
+    // second author exists for a visibility rule to choose between.
+    if (contracts.isAtName(name) and contracts.find(name) != null) {
+        if (table.findByName(table.internString(name))) |existing| return .{ .resolved = existing };
+    }
     // Bare nominal name. A bare TYPE name is visible iff a flat-import-
     // reachable module authors it AS A TYPE — and a TYPE author is EITHER a
     // named type (struct/enum/union/error-set/protocol/runtime class) OR a
@@ -3261,12 +3271,14 @@ fn returnGenericLeaf(node: *const Node) ?[]const u8 {
 /// signature shares the first registration; a CONFLICTING one is diagnosed —
 /// silently letting the first registration win mis-types every call through
 /// the later declaration (a `-> string` view of a symbol registered `-> *u8`
-/// reads the wrong shape). True = handled (shared or diagnosed),
-/// caller must not declare again.
-pub fn dedupeExternSymbol(self: *Lowering, fd: *const ast.FnDecl, sym_name: StringId, params: []const Function.Param, ret_ty: TypeId) bool {
+/// reads the wrong shape). The C-variadic tail is part of that equality: a
+/// fixed prototype and a variadic one are different ABIs, and sharing the fixed
+/// registration would emit calls whose argument count its signature refuses.
+/// True = handled (shared or diagnosed), caller must not declare again.
+pub fn dedupeExternSymbol(self: *Lowering, fd: *const ast.FnDecl, sym_name: StringId, params: []const Function.Param, ret_ty: TypeId, is_c_variadic: bool) bool {
     for (self.module.functions.items, 0..) |*func, i| {
         if (func.name != sym_name or !func.is_extern) continue;
-        var same = func.ret == ret_ty and func.params.len == params.len;
+        var same = func.ret == ret_ty and func.params.len == params.len and func.is_c_variadic == is_c_variadic;
         if (same) {
             for (func.params, params) |a, b| {
                 if (a.ty != b.ty) {
@@ -3295,11 +3307,20 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     // span rather than a call-site failure in some later pass.
     if (fd.body.data == .intrinsic_expr) validateIntrinsicDecl(self, fd, name);
 
-    // Skip generic templates — they're monomorphized on demand, not declared as extern
-    if (fd.type_params.len > 0) return;
+    // Skip generic templates — they're monomorphized on demand, not declared as
+    // extern. An explicitly-spelled cursor is validated first: an
+    // uninstantiated template would otherwise never meet the boundary rules.
+    if (fd.type_params.len > 0) {
+        self.cursorTemplatePreflight(fd);
+        return;
+    }
 
     const ret_ty = self.resolveReturnType(fd);
-    if (fd.return_type) |rtn| _ = self.refuseValuelessProtocol(ret_ty, rtn.span, "declare a return of type");
+    if (fd.return_type) |rtn| {
+        _ = self.refuseValuelessProtocol(ret_ty, rtn.span, "declare a return of type");
+        _ = self.refuseCursorEscape(ret_ty, rtn.span, "declare a return of type");
+        _ = self.refuseCursorSignature(ret_ty, rtn.span);
+    }
 
     // A `$T`-generic return with NO parameter mentioning `$T`: the fn isn't
     // a template (the guard above runs on param-derived `type_params`) yet
@@ -3320,7 +3341,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
 
     // Extern declarations with a trailing variadic param map to the C
     // calling convention's `...` tail. Drop the variadic param from the
-    // IR signature (it has no C-level slot) and set is_variadic.
+    // IR signature (it has no C-level slot) and set is_c_variadic.
     // Bare `extern` import: an external C symbol declared via the `extern`
     // linkage keyword (empty-block placeholder body). C-ABI promotion +
     // declareExtern routing below; the optional `extern LIB "csym"` lib/rename
@@ -3331,14 +3352,16 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     // the VM handler the registry names.
     const is_extern_decl = fd.extern_export == .extern_ or
         isEvaluateIntrinsic(self, fd, name);
-    var is_variadic = false;
+    // A bare `..` tail binds no parameter, so `fd.params` already holds exactly
+    // the fixed parameters and nothing is stripped.
+    var is_c_variadic = fd.is_c_variadic;
     var effective_params = fd.params;
     // A lib-less C-import with a C-variadic `...` tail: drop the trailing slice
-    // param and set is_variadic (mirrored at the call site by
+    // param and set is_c_variadic (mirrored at the call site by
     // `packVariadicCallArgs`).
     if (is_extern_decl and fd.params.len > 0 and fd.params[fd.params.len - 1].is_variadic) {
-        is_variadic = true;
-        effective_params = fd.params[0 .. fd.params.len - 1];
+        is_c_variadic = true;
+        effective_params = fd.params[0..ast.fixedParamCount(fd.params)];
     }
 
     const wants_ctx = self.funcWantsImplicitCtx(fd);
@@ -3362,6 +3385,8 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
         // its concrete type and calls monomorphize, so every kind takes part.
         if (!p.is_pack and !p.is_comptime)
             _ = self.refuseValuelessProtocol(pty, p.type_expr.span, "declare a parameter of type");
+        _ = self.refuseCursorParam(pty, p.type_expr.span, ast.isEffectiveCSignature(fd));
+        _ = self.refuseCursorSignature(pty, p.type_expr.span);
         params.append(self.alloc, .{
             .name = self.module.types.internString(p.name),
             .ty = pty,
@@ -3386,7 +3411,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
         null;
     if (rename_c_name) |c_name| {
         const c_name_id = self.module.types.internString(c_name);
-        if (self.dedupeExternSymbol(fd, c_name_id, params.items, ret_ty)) {
+        if (self.dedupeExternSymbol(fd, c_name_id, params.items, ret_ty, is_c_variadic)) {
             self.extern_name_map.put(name, c_name) catch {};
             return;
         }
@@ -3394,7 +3419,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
         const func = self.module.getFunctionMut(fid);
         func.call_conv = cc;
         func.source_file = self.current_source_file;
-        func.is_variadic = is_variadic;
+        func.is_c_variadic = is_c_variadic;
         func.has_implicit_ctx = wants_ctx;
         func.is_naked = (fd.abi == .naked);
         func.is_get = fd.is_get;
@@ -3405,12 +3430,12 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     }
 
     const name_id = self.module.types.internString(name);
-    if (is_extern_decl and self.dedupeExternSymbol(fd, name_id, params.items, ret_ty)) return;
+    if (is_extern_decl and self.dedupeExternSymbol(fd, name_id, params.items, ret_ty, is_c_variadic)) return;
     const fid = self.builder.declareExtern(name_id, params.items, ret_ty);
     const func = self.module.getFunctionMut(fid);
     func.call_conv = cc;
     func.source_file = self.current_source_file;
-    func.is_variadic = is_variadic;
+    func.is_c_variadic = is_c_variadic;
     func.has_implicit_ctx = wants_ctx;
     func.is_naked = (fd.abi == .naked);
     func.is_get = fd.is_get;
@@ -3715,6 +3740,10 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
     var reentry = FnBodyReentry.enter(self);
     defer reentry.restore();
 
+    const saved_fn_decl = self.current_fn_decl;
+    defer self.current_fn_decl = saved_fn_decl;
+    self.current_fn_decl = fd;
+
     // Re-use the existing function slot — switch builder to it. Pin the
     // function's OWN source BEFORE resolving the return type, so a same-name
     // shadowed type in the signature resolves against THIS
@@ -3784,8 +3813,12 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
             self.protocol_impl_receiver_types.get(fd) orelse self.resolveParamType(&p)
         else
             self.resolveParamType(&p);
-        const slot = self.builder.alloca(pty);
         const param_ref = Ref.fromIndex(@intCast(i + user_param_base));
+        if (self.module.types.isCVariadicCursor(pty)) {
+            scope.put(p.name, .{ .ref = self.bindBoundaryCursorParam(param_ref, pty), .ty = pty, .is_alloca = true, .borrowed_cursor = true });
+            continue;
+        }
+        const slot = self.builder.alloca(pty);
         self.builder.store(slot, param_ref);
         scope.put(p.name, .{ .ref = slot, .ty = pty, .is_alloca = true });
     };
@@ -3826,6 +3859,10 @@ pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, i
     if (self.lookupObjcDefinedClassForMethod(name)) |fcd| {
         self.current_runtime_class = fcd;
     }
+
+    const saved_fn_decl = self.current_fn_decl;
+    defer self.current_fn_decl = saved_fn_decl;
+    self.current_fn_decl = fd;
 
     const name_id = self.module.types.internString(name);
     const ret_ty = self.resolveReturnType(fd);
@@ -3936,8 +3973,12 @@ pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, i
         const pty = self.resolveParamType(&p);
         // Allocate stack slot for param, store initial value.
         // Refs 0..N-1 are reserved for function parameters by beginFunction.
-        const slot = self.builder.alloca(pty);
         const param_ref = Ref.fromIndex(@intCast(i + user_param_base_lf));
+        if (self.module.types.isCVariadicCursor(pty)) {
+            scope.put(p.name, .{ .ref = self.bindBoundaryCursorParam(param_ref, pty), .ty = pty, .is_alloca = true, .borrowed_cursor = true });
+            continue;
+        }
+        const slot = self.builder.alloca(pty);
         self.builder.store(slot, param_ref);
         scope.put(p.name, .{ .ref = slot, .ty = pty, .is_alloca = true });
     };
