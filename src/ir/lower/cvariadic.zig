@@ -149,6 +149,12 @@ pub fn mentionsCursorType(self: *Lowering, node: *const ast.Node) bool {
         .tuple_type_expr => |t| for (t.field_types) |f| {
             if (mentionsCursorType(self, f)) break true;
         } else false,
+        .function_type_expr => |f| for (f.param_types) |p| {
+            if (mentionsCursorType(self, p)) break true;
+        } else f.return_type != null and mentionsCursorType(self, f.return_type.?),
+        .closure_type_expr => |co| for (co.param_types) |p| {
+            if (mentionsCursorType(self, p)) break true;
+        } else co.return_type != null and mentionsCursorType(self, co.return_type.?),
         else => false,
     };
 }

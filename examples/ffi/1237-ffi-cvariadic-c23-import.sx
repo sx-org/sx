@@ -3,7 +3,7 @@
 // `int printf(const char *, ...)` is callable as one — no hand-written extern
 // beside the import, no fixed-arity stub.
 //
-// C23 drops the requirement that a named parameter precede the tail, so
+// C23 permits a variadic prototype with no named parameter, so
 // `long long sum_all(...)` fixes nothing at all and imports as `(..)`. The count
 // then rides in the tail with the values, and `-std=c23` is what admits the
 // prototype — the flag reaches the header parse and the source compile alike.

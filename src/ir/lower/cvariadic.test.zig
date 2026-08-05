@@ -276,15 +276,20 @@ test "a generic template meets the boundary rules without an instantiation" {
     try lower(arena.allocator(),
         \\bad_generic :: ($T: Type, ap: @VaList) -> i64 { return 0; }
         \\bad_return  :: ($T: Type) -> *@VaList { return ---; }
+        \\bad_nested  :: ($T: Type, cb: Closure(@VaList) -> i64) -> i64 { return 0; }
+        \\bad_nested_ret :: ($T: Type) -> (i32, @VaList) -> i64 { return ---; }
         \\legal_c     :: ($T: Type, ap: @VaList) -> i64 abi(.c) { return 0; }
         \\legal_borrow :: ($T: Type, ap: *@VaList) -> i64 { return 0; }
+        \\legal_nested_c :: ($T: Type, cb: (i32, @VaList) -> i64 abi(.c)) -> i64 { return 0; }
+        \\legal_nested_borrow :: ($T: Type, cb: Closure(*@VaList) -> i64) -> i64 { return 0; }
         \\main :: () -> i64 { return 0; }
     , &lowered);
     defer lowered.module.deinit();
 
-    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "is the C boundary parameter"));
+    try std.testing.expectEqual(@as(usize, 2), countMessages(&lowered, "is the C boundary parameter"));
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "has no C signature for '@VaList'"));
     try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "cannot outlive the call frame"));
-    try std.testing.expectEqual(@as(usize, 2), lowered.diagnostics.errorCount());
+    try std.testing.expectEqual(@as(usize, 4), lowered.diagnostics.errorCount());
 }
 
 test "a protocol method meets the boundary rules on every kind" {
@@ -297,6 +302,8 @@ test "a protocol method meets the boundary rules on every kind" {
         \\}
         \\Templated :: protocol (T: Type) vtable {
         \\    read :: (self: *Self, ap: @VaList) -> T;
+        \\    take :: (self: *Self, cb: (@VaList) -> i64) -> i64;
+        \\    hand :: (self: *Self) -> Closure(i32) -> *@VaList;
         \\}
         \\LegalBorrow :: protocol vtable {
         \\    read :: (self: *Self, ap: *@VaList) -> i64;
@@ -308,7 +315,9 @@ test "a protocol method meets the boundary rules on every kind" {
     defer lowered.module.deinit();
 
     try std.testing.expectEqual(@as(usize, 2), countMessages(&lowered, "a protocol method is an sx call and has no C signature"));
-    try std.testing.expectEqual(@as(usize, 2), lowered.diagnostics.errorCount());
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "is the C boundary parameter"));
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "cannot outlive the call frame"));
+    try std.testing.expectEqual(@as(usize, 4), lowered.diagnostics.errorCount());
 }
 
 test "a named tail refuses what its element type refuses" {

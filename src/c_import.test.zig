@@ -178,7 +178,8 @@ test "processCImport: a variadic prototype imports with the bare `..` tail" {
     try std.testing.expect(!fixed.is_c_variadic);
 }
 
-// C23 drops the named-argument requirement, so the fixed count may be zero.
+// C23 permits a variadic prototype with no named parameter, so the fixed count
+// may be zero.
 test "processCImport: a zero-fixed C23 variadic prototype imports with the tail" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
