@@ -756,9 +756,10 @@ pub const Function = struct {
     /// `..` on an effective-C signature, or an `extern` decl's `..name: []T`.
     /// An sx-side `..T` param is slice-packed before lowering and reaches IR as
     /// an ordinary parameter, so it never sets this. emit_llvm passes
-    /// `is_var_arg=1` to `LLVMFunctionType`; call sites apply the standard
-    /// default argument promotions (i8/i16/bool → i32, f32 → f64) to extras
-    /// past the fixed param count.
+    /// `is_var_arg=1` to `LLVMFunctionType`; call sites apply the C default
+    /// argument promotions to extras past the fixed param count (every integer
+    /// narrower than 32 bits → `i32`, `f32` → `f64`, `isize`/`usize` at the
+    /// target's address width).
     is_c_variadic: bool = false,
     /// True if `params[0]` is the synthetic `__sx_ctx: *Context`
     /// parameter that every default-conv sx function receives. Callers
