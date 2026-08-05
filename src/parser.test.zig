@@ -1642,8 +1642,6 @@ test "parser: a glued `:` separates a default arm from a chaining `else`" {
     try std.testing.expect(chain.data.block.stmts[0].data.if_expr.else_branch != null);
 }
 
-// ── `@` function declarations ────────────────────────────────────────────────
-
 test "parser: an `@` function declaration is its signature, with an intrinsic body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1675,7 +1673,6 @@ test "parser: an `@` function declaration takes no `intrinsic` marker" {
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-// The sigil marks the declaration, so no ABI, linkage, or body may follow it.
 test "parser: an `@` function declaration takes no body, ABI, or linkage" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1699,8 +1696,6 @@ test "parser: a plain bodyless signature is a function-type alias" {
     const root = try parser.parse();
     try std.testing.expect(root.data.root.decls[0].data != .fn_decl);
 }
-
-// ── The bare `..` C-variadic tail ────────────────────────────────────────────
 
 test "parser: a bare `..` tail sets the signature flag and binds no parameter" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -1785,8 +1780,6 @@ test "parser: a three-dot parameter list is not a tail" {
     try std.testing.expectError(error.ParseError, parser.parse());
     try std.testing.expectEqualStrings("expected parameter name", parser.err_msg.?);
 }
-
-// ── The bare `..` tail in a function TYPE ────────────────────────────────────
 
 test "parser: a function type carries the bare `..` tail" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

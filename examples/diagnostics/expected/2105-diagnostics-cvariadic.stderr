@@ -133,13 +133,13 @@ error: cannot construct '@VaList' — a C-variadic cursor has no value form; dec
 error: 'u8' is promoted before it crosses a C-variadic tail — read 'i32'
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:84:23
    |
-84 |     narrow := @va_arg(u8, *ap);   // promoted to `i32` before it crossed
+84 |     narrow := @va_arg(u8, *ap);   // a `u8` argument sits in the slot as `i32`
    |                       ^^
 
 error: 'f32' is promoted before it crosses a C-variadic tail — read 'f64'
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:85:23
    |
-85 |     single := @va_arg(f32, *ap);  // promoted to `f64` before it crossed
+85 |     single := @va_arg(f32, *ap);  // an `f32` argument sits in it as `f64`
    |                       ^^^
 
 error: 'Pair' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value

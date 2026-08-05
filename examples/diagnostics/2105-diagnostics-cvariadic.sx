@@ -81,8 +81,8 @@ ends_a_borrow :: (ap: *@VaList) -> i64 {
 reads :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @va_start(*ap);
-    narrow := @va_arg(u8, *ap);   // promoted to `i32` before it crossed
-    single := @va_arg(f32, *ap);  // promoted to `f64` before it crossed
+    narrow := @va_arg(u8, *ap);   // a `u8` argument sits in the slot as `i32`
+    single := @va_arg(f32, *ap);  // an `f32` argument sits in it as `f64`
     aggregate := @va_arg(Pair, *ap);
     printf("%d\n", *ap);          // the cursor cannot leave this frame
     copied := ap;                 // no value form to copy

@@ -3306,10 +3306,10 @@ tally  :: (n: i32, ..) -> i64 abi(.c) { ... }
 The tail binds no name and no type, so it is a property of the signature rather
 than a parameter, and the **fixed count** is the number of entries before it —
 zero when the list is just `(..)`. It is legal on an **effective-C signature**
-only: a definition carrying `abi(.c)` or `export`, or an `extern` declaration.
-Each emits the C shape with no implicit sx context, so the LLVM type is exactly
-what a C compiler builds for the same prototype. `abi(.naked)` and a `Closure`
-literal carry no such shape and refuse the tail.
+only: a definition carrying `abi(.c)` or `export`, an `extern` declaration, or an
+`abi(.c)` function type. Each states the C shape with no implicit sx context, so
+the LLVM type is exactly what a C compiler builds for the same prototype.
+`abi(.naked)` and a `Closure` literal carry no such shape and refuse the tail.
 
 A C prototype imported by `#import c { #include … }` keeps its tail: a
 declaration ending in `...` synthesizes an `extern` ending in `..`, over the
@@ -3380,8 +3380,8 @@ opens is closed exactly once.
 
 `@va_arg` asks for the type the promotions LEAVE in the slot, so `f32` and any
 integer narrower than 32 bits are refused where they are written:
-`@va_arg(f64, …)` reads what an `f32` argument became, `@va_arg(i32, …)` what a
-`u8` became. The tail admissibility rule above applies unchanged.
+`@va_arg(f64, …)` is how an `f32` argument reads back, and `@va_arg(i32, …)` how
+a `u8` does. The tail admissibility rule above applies unchanged.
 
 `@VaList` is **opaque**. Its storage is the target's `va_list` and it has no
 value form, so it cannot be constructed, inspected, measured (`size_of` /
@@ -3399,10 +3399,9 @@ a global, captured by a closure, or passed through a C-variadic tail.
 #### Crossing the C boundary: a `va_list` parameter
 
 C's own tail readers take the list as a parameter — `vprintf`, `vsnprintf`,
-`sqlite3_vmprintf`. That parameter is written **by value** as `ap: @VaList`,
-and only in an **effective-C signature**: an `abi(.c)` or `export` definition,
-an `extern` declaration, or an `abi(.c)` function type. The rule is independent
-of a bare `..` tail — a signature that takes a list needs none of its own:
+`sqlite3_vmprintf`. That parameter is written **by value** as `ap: @VaList`, and
+only in an effective-C signature. The rule is independent of a bare `..` tail —
+a signature that takes a list needs none of its own:
 
 ```sx
 vmprintf :: (fmt: cstring, ap: @VaList) -> ?cstring extern;
@@ -3441,10 +3440,10 @@ forward :: (fmt: cstring, ap: *@VaList) -> i32 {
 ```
 
 An incoming list is **borrowed and already open**. The callee never calls
-`@va_start` or `@va_end` on it — its caller did and will — but reads it with
-`@va_arg` and forks it with `@va_copy`. A traversal may move the caller-visible
-position, as C specifies, so a caller that needs a second traversal copies
-first.
+`@va_start` or `@va_end` on it — both belong to the frame that owns the list —
+but reads it with `@va_arg` and forks it with `@va_copy`. A traversal may move
+the caller-visible position, as C specifies, so a caller that needs a second
+traversal copies first.
 
 ### Variadic Heterogeneous Type Packs
 
@@ -3461,6 +3460,7 @@ The full family of variadic/pack forms and how they differ:
 | `..xs: []P` *(P a protocol)* | mixed, **erased** to `P` `{ctx,vtable}` | **runtime** (slice) | runtime or comptime | `P` (call protocol methods) | runtime |
 | `..xs: P` *(pack)* | per-position **concrete**, each conforms to `P` | **comptime** (no runtime value) | comptime only (literal / `inline for` cursor) | the concrete element, **viewed through `P`** | comptime int |
 | `..$args` / `..$xs: []Type` | per-position comptime **types** | **comptime** | comptime only | element value/type (reflection) | comptime int |
+| `..` *(the C tail)* | none — the C ABI's variadic slots | **runtime** (the callee's frame) | no index | `@va_arg(T, *ap)` reads the next | no length |
 
 Key axis — **concrete vs erased, comptime vs runtime**:
 - `..xs: P` (pack) keeps each element's *concrete* type but is **comptime-only**:
