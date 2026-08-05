@@ -1179,6 +1179,27 @@ pub fn coerceExplicit(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId)
     return self.coerceMode(val, src_ty, dst_ty, .explicit);
 }
 
+/// What an implicit coercion produced, and whether the rules applied.
+pub const CheckedCoercion = struct {
+    /// The value the destination slot receives. Meaningful only when the
+    /// coercion landed — a refusal leaves whatever the ladder passed through.
+    ref: Ref,
+    /// A diagnostic already named this source and destination.
+    refused: bool,
+};
+
+/// `coerceToType`, plus whether the conversion landed. A refusal is exactly what
+/// a typed parameter refuses, including the pairs that turn on the VALUE — a
+/// non-literal `string` reaching a `cstring`, an un-narrowed optional — so a
+/// caller that must react to one reads a single answer rather than re-deriving
+/// the ladder's arms.
+pub fn coerceChecked(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) CheckedCoercion {
+    const before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
+    const converted = self.coerceToType(val, src_ty, dst_ty);
+    const after: usize = if (self.diagnostics) |d| d.errorCount() else 0;
+    return .{ .ref = converted, .refused = after != before };
+}
+
 /// Is `node` an explicit cast — `xx expr` or a postfix `expr.(T)`? Such a
 /// value is the user's deliberate opt-in to a reinterpretation that has no
 /// standard coercion (e.g. pointer↔int, function↔fn-pointer): the `.none`

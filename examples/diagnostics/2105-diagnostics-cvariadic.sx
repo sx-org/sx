@@ -25,10 +25,13 @@
 printf :: (fmt: cstring, ..) -> i32 extern;
 c_reader :: (n: i32, ap: @VaList) -> i64 extern;
 
-// `..name: []U` is the homogeneous constraint: every tail argument coerces to
-// `U`. A value that reaches no tail at all is named by the same refusal.
+// `..name: []U` is the homogeneous constraint: every tail argument takes the
+// ordinary implicit conversion to `U`, and a pair no conversion models is
+// refused exactly as it is at a fixed parameter of that type.
 libc :: #library "c";
 sum_ints :: (n: i32, ..args: []i32) -> i64 extern libc;
+flags :: (n: i32, ..args: []bool) -> i64 extern libc;
+texts :: (n: i32, ..args: []string) -> i64 extern libc;
 
 Pair :: struct {
     a: i64;
@@ -138,6 +141,11 @@ main :: () -> i32 {
     wide: i48 = 5;
     pair: Pair = .{1, 2};
     nums: [2]i32 = .[1, 2];
+    absent: ?*i32 = null;
+    held: cstring = "de";
+
+    flags(1, absent);            // the element type's own refusal, on the tail
+    texts(1, held);
 
     printf("%d\n", wide);        // a width no C variadic slot holds
     printf("%s\n", "sx string"); // two words: pointer and length

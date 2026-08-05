@@ -381,25 +381,16 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
     {
         // `..name: []U` asserts that every tail argument is a `U`, so each one
         // takes the ordinary implicit typed-parameter conversion to `U` before
-        // the default argument promotions apply. Where no conversion models the
-        // pair the argument is left as written, for the admissibility check to
-        // name once.
+        // the default argument promotions apply. A refused argument is replaced
+        // by the declared element, so what the promotions then judge is the tail
+        // the signature states rather than the slot a diagnostic just named.
         const fixed = ast.fixedParamCount(fd.params);
         const declared = self.resolveTypeWithBindings(fd.params[fd.params.len - 1].type_expr);
         if (!declared.isBuiltin() and self.module.types.get(declared) == .slice) {
             const elem = self.module.types.get(declared).slice.element;
             for (args.items[@min(fixed, args.items.len)..]) |*arg| {
-                const src_ty = self.builder.getRefType(arg.*);
-                switch (self.coercionResolver().classify(src_ty, elem)) {
-                    .no_op,
-                    .none,
-                    .cstring_to_string_reject,
-                    .many_to_slice_reject,
-                    .optional_to_bool_reject,
-                    .closure_to_fn_reject,
-                    => continue,
-                    else => arg.* = self.coerceToType(arg.*, src_ty, elem),
-                }
+                const checked = self.coerceChecked(arg.*, self.builder.getRefType(arg.*), elem);
+                arg.* = if (checked.refused) self.builder.constUndef(elem) else checked.ref;
             }
         }
         return;

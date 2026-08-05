@@ -84,8 +84,8 @@ pub const entries = [_]Contract{
         },
     },
     // The C-variadic cursor. Its declared shape is empty and stays empty: the
-    // storage a target needs is substituted at registration and never spellable,
-    // so a field row here would describe something source can see.
+    // storage a target needs is substituted at registration, so a field row here
+    // would pin words no source can spell.
     .{ .name = "@VaList", .module = "modules/std/core.sx" },
     // Functions, so no field shape; their signature and lowering are the
     // intrinsic registry's (src/ir/intrinsics.zig).

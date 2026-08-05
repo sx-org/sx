@@ -161,6 +161,35 @@ test "a type reaches the C-variadic cursor by value or through an indirection" {
     try std.testing.expectEqual(TypeTable.CursorReach.none, table.cvariadicCursorReach(table.arrayOf(.i32, 4)));
 }
 
+test "an indirection reaches a cursor through whatever stands between them" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const cursor = structOf(&table, a, types.cvariadic_cursor, &.{.{ .name = table.internString("w0"), .ty = .usize }});
+    const borrow = table.ptrTo(cursor);
+
+    try std.testing.expectEqual(TypeTable.CursorReach.borrowed, table.cvariadicCursorReach(table.ptrTo(table.arrayOf(borrow, 1))));
+    try std.testing.expectEqual(TypeTable.CursorReach.borrowed, table.cvariadicCursorReach(table.ptrTo(table.arrayOf(cursor, 1))));
+    try std.testing.expectEqual(TypeTable.CursorReach.borrowed, table.cvariadicCursorReach(table.sliceOf(table.optionalOf(borrow))));
+
+    const lends = structOf(&table, a, "Lends", &.{.{ .name = table.internString("lent"), .ty = borrow }});
+    try std.testing.expectEqual(TypeTable.CursorReach.borrowed, table.cvariadicCursorReach(table.ptrTo(lends)));
+    try std.testing.expectEqual(TypeTable.CursorReach.borrowed, table.cvariadicCursorReach(table.manyPtrTo(table.arrayOf(lends, 2))));
+
+    // Storage the value HOLDS outranks storage it merely addresses.
+    const holds = structOf(&table, a, "Holds", &.{.{ .name = table.internString("own"), .ty = cursor }});
+    const mixed = structOf(&table, a, "Mixed", &.{
+        .{ .name = table.internString("lent"), .ty = table.ptrTo(lends) },
+        .{ .name = table.internString("own"), .ty = table.arrayOf(holds, 1) },
+    });
+    try std.testing.expectEqual(TypeTable.CursorReach.owned, table.cvariadicCursorReach(mixed));
+    try std.testing.expectEqual(TypeTable.CursorReach.borrowed, table.cvariadicCursorReach(table.ptrTo(mixed)));
+}
+
 test "a self-referential aggregate answers the cursor question" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
@@ -181,6 +210,20 @@ test "a self-referential aggregate answers the cursor question" {
 
     try std.testing.expectEqual(TypeTable.CursorReach.none, table.cvariadicCursorReach(node));
     try std.testing.expectEqual(TypeTable.CursorReach.none, table.cvariadicCursorReach(table.ptrTo(node)));
+
+    const cursor = structOf(&table, a, types.cvariadic_cursor, &.{.{ .name = table.internString("w0"), .ty = .usize }});
+    const ring = structOf(&table, a, "Ring", &.{
+        .{ .name = table.internString("next"), .ty = .void },
+        .{ .name = table.internString("lent"), .ty = table.ptrTo(cursor) },
+    });
+    const ring_fields = a.dupe(TypeInfo.StructInfo.Field, &.{
+        .{ .name = table.internString("next"), .ty = table.ptrTo(ring) },
+        .{ .name = table.internString("lent"), .ty = table.ptrTo(cursor) },
+    }) catch unreachable;
+    table.updatePreservingKey(ring, .{ .@"struct" = .{ .name = table.internString("Ring"), .fields = ring_fields } });
+
+    try std.testing.expectEqual(TypeTable.CursorReach.borrowed, table.cvariadicCursorReach(ring));
+    try std.testing.expectEqual(TypeTable.CursorReach.borrowed, table.cvariadicCursorReach(table.ptrTo(ring)));
 }
 
 test "string pool interning" {

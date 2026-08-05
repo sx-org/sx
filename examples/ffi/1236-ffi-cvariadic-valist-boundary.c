@@ -85,9 +85,6 @@ long long c_calls_sx_text(int n, ...) {
     return r;
 }
 
-// The three pinned public API shapes, each taking a `va_list` after its fixed
-// parameters.
-
 static char vmprintf_buf[128];
 
 const char *vmprintf(const char *fmt, va_list ap) {

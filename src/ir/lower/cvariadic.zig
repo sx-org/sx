@@ -150,11 +150,6 @@ pub fn mentionsCursorType(self: *Lowering, node: *const ast.Node) bool {
     };
 }
 
-// ── The C boundary and the sx-internal borrow ────────────────────────────────
-// Two spellings, neither standing in for the other. `ap: @VaList` is the C
-// parameter and belongs only to an effective-C signature; `ap: *@VaList` is the
-// borrow sx helpers forward synchronously and belongs only outside one.
-
 /// Refuse a parameter that spells a cursor for the wrong side of the boundary.
 /// `is_c` is the enclosing signature's effective-C verdict. The two bare
 /// spellings are the whole permitted surface — a wrapper carrying a cursor has
@@ -178,19 +173,72 @@ pub fn refuseParam(self: *Lowering, ty: TypeId, span: ?ast.Span, is_c: bool) boo
     return true;
 }
 
-/// Refuse a FUNCTION TYPE whose signature spells a cursor for the wrong side of
-/// the boundary. A type carries no linkage slot, so `abi(.c)` is the only
-/// spelling that makes its signature the C one, and no side returns a list.
-/// Returns true when refused.
+/// Refuse a signature that spells a cursor for the wrong side of the boundary,
+/// wherever `ty` carries one. A type carries no linkage slot, so `abi(.c)` is
+/// the only spelling that makes a signature the C one, and no side returns a
+/// list. Returns true when refused.
 pub fn refuseSignature(self: *Lowering, ty: TypeId, span: ?ast.Span) bool {
-    if (ty.isBuiltin()) return false;
-    const info = self.module.types.get(ty);
-    if (info != .function) return false;
-    const is_c = info.function.call_conv == .c;
-    for (info.function.params) |p| {
-        if (refuseParam(self, p, span, is_c)) return true;
+    return refuseSignatureWithin(self, ty, span, null);
+}
+
+/// A type the search is inside. The chain of them is the cycle test: a type that
+/// repeats carries exactly the signatures its earlier visit carried.
+const SignatureEdge = struct {
+    ty: TypeId,
+    from: ?*const SignatureEdge,
+
+    fn walked(path: ?*const SignatureEdge, ty: TypeId) bool {
+        var it = path;
+        while (it) |e| : (it = e.from) {
+            if (e.ty == ty) return true;
+        }
+        return false;
     }
-    return refuseEscape(self, info.function.ret, span, "return");
+};
+
+/// Every signature `ty` carries, checked at each leaf. A wrapper states the same
+/// contract its element does, so an array, a slice, an optional, a tuple, an
+/// aggregate, and an indirection each hand the search on to what they hold.
+fn refuseSignatureWithin(self: *Lowering, ty: TypeId, span: ?ast.Span, path: ?*const SignatureEdge) bool {
+    if (ty.isBuiltin()) return false;
+    if (SignatureEdge.walked(path, ty)) return false;
+    const here = SignatureEdge{ .ty = ty, .from = path };
+    return switch (self.module.types.get(ty)) {
+        .function => |f| refuseFunctionSignature(self, f, span, &here),
+        .@"struct" => |s| anyFieldRefusesSignature(self, s.fields, span, &here),
+        .@"union" => |u| anyFieldRefusesSignature(self, u.fields, span, &here),
+        .tagged_union => |u| anyFieldRefusesSignature(self, u.fields, span, &here),
+        .tuple => |t| for (t.fields) |f| {
+            if (refuseSignatureWithin(self, f, span, &here)) break true;
+        } else false,
+        .array => |a| refuseSignatureWithin(self, a.element, span, &here),
+        .vector => |v| refuseSignatureWithin(self, v.element, span, &here),
+        .optional => |o| refuseSignatureWithin(self, o.child, span, &here),
+        .pointer => |p| refuseSignatureWithin(self, p.pointee, span, &here),
+        .many_pointer => |p| refuseSignatureWithin(self, p.element, span, &here),
+        .slice => |s| refuseSignatureWithin(self, s.element, span, &here),
+        else => false,
+    };
+}
+
+/// One signature leaf: each parameter against the side of the boundary its own
+/// convention puts it on, the return against the escape rule, and both against
+/// the signatures they carry in turn.
+fn refuseFunctionSignature(self: *Lowering, f: types.TypeInfo.FunctionInfo, span: ?ast.Span, path: ?*const SignatureEdge) bool {
+    const is_c = f.call_conv == .c;
+    for (f.params) |p| {
+        if (refuseParam(self, p, span, is_c)) return true;
+        if (refuseSignatureWithin(self, p, span, path)) return true;
+    }
+    if (refuseEscape(self, f.ret, span, "return")) return true;
+    return refuseSignatureWithin(self, f.ret, span, path);
+}
+
+fn anyFieldRefusesSignature(self: *Lowering, fields: []const types.TypeInfo.StructInfo.Field, span: ?ast.Span, path: ?*const SignatureEdge) bool {
+    for (fields) |f| {
+        if (refuseSignatureWithin(self, f.ty, span, path)) return true;
+    }
+    return false;
 }
 
 /// The cursor place of an incoming C `va_list` parameter, bound so the body

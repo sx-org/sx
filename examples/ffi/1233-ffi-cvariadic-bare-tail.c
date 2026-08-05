@@ -1,6 +1,3 @@
-// The C side of the cursor differential: each function reads its tail with
-// `<stdarg.h>`, and its sx twin reads the same arguments with `@va_*`.
-
 #include <stdarg.h>
 #include <string.h>
 

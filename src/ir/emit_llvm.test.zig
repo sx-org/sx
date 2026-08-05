@@ -718,10 +718,8 @@ test "emit: needsByval only for > 16-byte non-HFA structs" {
     try std.testing.expect(!emitter.needsByval(.i32, emitter.toLLVMType(.i32))); // non-struct
 }
 
-// A C `va_list` parameter is one pointer-shaped word on every supported target.
-// Classifying the cursor by its storage size instead would give the composite
-// shapes `ptr` + `byval` (a stack argument), where clang passes a register
-// pointer, and the one-word shape `i64`.
+// A C `va_list` parameter is one pointer-shaped word on every supported target,
+// whatever the cursor's own storage measures.
 test "emit: a C-variadic cursor parameter is a plain pointer at every width" {
     const alloc = std.testing.allocator;
     var module = Module.init(alloc);

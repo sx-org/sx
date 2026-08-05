@@ -227,6 +227,68 @@ test "a wrapper carrying a cursor is refused wherever the cursor is" {
     try std.testing.expectEqual(@as(usize, 2), countMessages(&lowered, "a list crosses only as"));
 }
 
+test "a signature is checked through every wrapper that carries it" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\NotC   :: (i32, @VaList) -> i64;
+        \\CRead  :: (i32, @VaList) -> i64 abi(.c);
+        \\Nested :: (i32, NotC) -> i64 abi(.c);
+        \\BadRet :: (i32) -> [1]*@VaList abi(.c);
+        \\Legal  :: struct { read: CRead; }
+        \\wrapped: [1]NotC;
+        \\behind: *NotC;
+        \\nested: Nested;
+        \\hands_back: BadRet;
+        \\legal_rows: [2]CRead;
+        \\legal_held: Legal;
+        \\main :: () -> i64 { return 0; }
+    , &lowered);
+    defer lowered.module.deinit();
+
+    try std.testing.expectEqual(@as(usize, 3), countMessages(&lowered, "is the C boundary parameter"));
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "it addresses a '@VaList'"));
+    try std.testing.expectEqual(@as(usize, 4), lowered.diagnostics.errorCount());
+}
+
+test "a named tail refuses what its element type refuses" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\flags :: (n: i32, ..args: []bool) -> i64 extern;
+        \\main :: () -> i64 {
+        \\    p: ?*i32 = null;
+        \\    return flags(1, p);
+        \\}
+    , &lowered);
+    defer lowered.module.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "where 'bool' is expected"));
+    try std.testing.expectEqual(@as(usize, 0), countMessages(&lowered, "cannot cross a C-variadic tail"));
+    try std.testing.expectEqual(@as(usize, 1), lowered.diagnostics.errorCount());
+}
+
+test "a named tail refuses a conversion that turns on the value" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\joins :: (n: i32, ..args: []cstring) -> i64 extern;
+        \\texts :: (n: i32, ..args: []string) -> i64 extern;
+        \\relay :: (s: string) -> i64 { return joins(1, s); }
+        \\main :: () -> i64 {
+        \\    held: cstring = "de";
+        \\    return relay("ab") + texts(1, held);
+        \\}
+    , &lowered);
+    defer lowered.module.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "only a string LITERAL coerces"));
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "does not coerce to 'string' implicitly"));
+}
+
 test "an unwrapped C boundary and an internal borrow stay legal" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

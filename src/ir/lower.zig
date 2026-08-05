@@ -3465,6 +3465,7 @@ pub const Lowering = struct {
     pub const bareFnNameSignature = lower_coerce.bareFnNameSignature;
     pub const coerceToType = lower_coerce.coerceToType;
     pub const coerceExplicit = lower_coerce.coerceExplicit;
+    pub const coerceChecked = lower_coerce.coerceChecked;
     pub const checkAssignable = lower_coerce.checkAssignable;
     pub const checkFormationWritable = lower_coerce.checkFormationWritable;
     pub const checkReturnable = lower_coerce.checkReturnable;

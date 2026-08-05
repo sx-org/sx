@@ -664,79 +664,74 @@ pub const TypeTable = struct {
     /// storage the same way `@VaList` is, and a struct of `*@VaList` dangles the
     /// same way the borrow does.
     pub fn cvariadicCursorReach(self: *const TypeTable, ty: TypeId) CursorReach {
-        if (self.ownsCVariadicCursor(ty)) return .owned;
-        if (self.borrowsCVariadicCursor(ty)) return .borrowed;
+        return self.cursorReachOf(ty, false, null);
+    }
+
+    /// A type the walk is inside, paired with whether an indirection was crossed
+    /// to reach it. The chain of them is the cycle test: a pair that repeats
+    /// reaches exactly what its earlier visit reaches.
+    const CursorEdge = struct {
+        ty: TypeId,
+        crossed: bool,
+        from: ?*const CursorEdge,
+
+        fn walked(path: ?*const CursorEdge, ty: TypeId, crossed: bool) bool {
+            var it = path;
+            while (it) |e| : (it = e.from) {
+                if (e.ty == ty and e.crossed == crossed) return true;
+            }
+            return false;
+        }
+    };
+
+    /// The reach of `ty` read `crossed` indirections deep. Every by-value edge
+    /// carries that state along and every pointer, many-pointer, and slice edge
+    /// sets it, so a cursor found before the first indirection is storage the
+    /// value holds and one found after it is storage the value addresses. A
+    /// function type is a code address: its parameters are the callee's storage,
+    /// not the value's.
+    fn cursorReachOf(self: *const TypeTable, ty: TypeId, crossed: bool, path: ?*const CursorEdge) CursorReach {
+        if (ty.isBuiltin()) return .none;
+        if (CursorEdge.walked(path, ty, crossed)) return .none;
+        if (self.isCVariadicCursor(ty)) return if (crossed) .borrowed else .owned;
+        const here = CursorEdge{ .ty = ty, .crossed = crossed, .from = path };
+        return switch (self.get(ty)) {
+            .@"struct" => |s| self.fieldsCursorReach(s.fields, crossed, &here),
+            .@"union" => |u| self.fieldsCursorReach(u.fields, crossed, &here),
+            .tagged_union => |u| self.fieldsCursorReach(u.fields, crossed, &here),
+            .tuple => |t| blk: {
+                var found: CursorReach = .none;
+                for (t.fields) |f| {
+                    found = strongerReach(found, self.cursorReachOf(f, crossed, &here));
+                    if (found == .owned) break;
+                }
+                break :blk found;
+            },
+            .array => |a| self.cursorReachOf(a.element, crossed, &here),
+            .vector => |v| self.cursorReachOf(v.element, crossed, &here),
+            .optional => |o| self.cursorReachOf(o.child, crossed, &here),
+            .pointer => |p| self.cursorReachOf(p.pointee, true, &here),
+            .many_pointer => |p| self.cursorReachOf(p.element, true, &here),
+            .slice => |s| self.cursorReachOf(s.element, true, &here),
+            else => .none,
+        };
+    }
+
+    fn fieldsCursorReach(self: *const TypeTable, fields: []const TypeInfo.StructInfo.Field, crossed: bool, path: ?*const CursorEdge) CursorReach {
+        var found: CursorReach = .none;
+        for (fields) |f| {
+            found = strongerReach(found, self.cursorReachOf(f.ty, crossed, path));
+            if (found == .owned) break;
+        }
+        return found;
+    }
+
+    /// Holding cursor storage is the stronger fact: a value that holds one list
+    /// and addresses another is refused wherever either alone is.
+    fn strongerReach(a: CursorReach, b: CursorReach) CursorReach {
+        if (a == .owned or b == .owned) return .owned;
+        if (a == .borrowed or b == .borrowed) return .borrowed;
         return .none;
-    }
-
-    /// True when a value of `ty` holds cursor storage IN ITS OWN BYTES. The walk
-    /// crosses only by-value containers, which cannot contain themselves, so it
-    /// terminates; a function type is a code address and carries no storage of
-    /// its parameters.
-    pub fn ownsCVariadicCursor(self: *const TypeTable, ty: TypeId) bool {
-        if (ty.isBuiltin()) return false;
-        if (self.isCVariadicCursor(ty)) return true;
-        return switch (self.get(ty)) {
-            .@"struct" => |s| self.anyFieldOwnsCursor(s.fields),
-            .@"union" => |u| self.anyFieldOwnsCursor(u.fields),
-            .tagged_union => |u| self.anyFieldOwnsCursor(u.fields),
-            .tuple => |t| for (t.fields) |f| {
-                if (self.ownsCVariadicCursor(f)) break true;
-            } else false,
-            .array => |a| self.ownsCVariadicCursor(a.element),
-            .vector => |v| self.ownsCVariadicCursor(v.element),
-            .optional => |o| self.ownsCVariadicCursor(o.child),
-            else => false,
-        };
-    }
-
-    fn anyFieldOwnsCursor(self: *const TypeTable, fields: anytype) bool {
-        for (fields) |f| {
-            if (self.ownsCVariadicCursor(f.ty)) return true;
-        }
-        return false;
-    }
-
-    /// True when a value of `ty` ADDRESSES cursor storage: a pointer or slice at
-    /// it, or a by-value container of such. Each indirection resolves through
-    /// `ownsCVariadicCursor`, which never crosses one, so a self-referential
-    /// aggregate cannot cycle here.
-    pub fn borrowsCVariadicCursor(self: *const TypeTable, ty: TypeId) bool {
-        if (ty.isBuiltin()) return false;
-        return switch (self.get(ty)) {
-            .pointer => |p| self.pointeeReachesCursor(p.pointee),
-            .many_pointer => |p| self.pointeeReachesCursor(p.element),
-            .slice => |s| self.pointeeReachesCursor(s.element),
-            .@"struct" => |s| self.anyFieldBorrowsCursor(s.fields),
-            .@"union" => |u| self.anyFieldBorrowsCursor(u.fields),
-            .tagged_union => |u| self.anyFieldBorrowsCursor(u.fields),
-            .tuple => |t| for (t.fields) |f| {
-                if (self.borrowsCVariadicCursor(f)) break true;
-            } else false,
-            .array => |a| self.borrowsCVariadicCursor(a.element),
-            .vector => |v| self.borrowsCVariadicCursor(v.element),
-            .optional => |o| self.borrowsCVariadicCursor(o.child),
-            else => false,
-        };
-    }
-
-    /// What an indirection reaches: the storage it points at, or a further
-    /// indirection to it. Only pointer-like pointees recurse, and a pointer
-    /// chain is finite.
-    fn pointeeReachesCursor(self: *const TypeTable, pointee: TypeId) bool {
-        if (self.ownsCVariadicCursor(pointee)) return true;
-        if (pointee.isBuiltin()) return false;
-        return switch (self.get(pointee)) {
-            .pointer, .many_pointer, .slice => self.borrowsCVariadicCursor(pointee),
-            else => false,
-        };
-    }
-
-    fn anyFieldBorrowsCursor(self: *const TypeTable, fields: anytype) bool {
-        for (fields) |f| {
-            if (self.borrowsCVariadicCursor(f.ty)) return true;
-        }
-        return false;
     }
 
     /// Member count of an aggregate type: struct/union/tagged-union fields, enum
