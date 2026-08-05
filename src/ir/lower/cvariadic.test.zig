@@ -500,6 +500,24 @@ test "a function value meets the tail rules by its signature" {
     try std.testing.expectEqual(@as(usize, 1), lowered.diagnostics.errorCount());
 }
 
+test "function types monomorphize apart whatever their return names spell" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\R :: struct { x: i64; }
+        \\R_cc :: struct { x: i64; }
+        \\mk_d :: () -> R_cc { return ---; }
+        \\mk_c :: () -> R abi(.c) { return ---; }
+        \\accept :: ($F: Type, f: F) -> i64 { return 0; }
+        \\main :: () -> i64 {
+        \\    return accept(() -> R_cc, mk_d) + accept(() -> R abi(.c), mk_c);
+        \\}
+    , &lowered);
+    defer lowered.module.deinit();
+    try std.testing.expect(!lowered.diagnostics.hasErrors());
+}
+
 test "a bare C-variadic function reflects with its convention and tail" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

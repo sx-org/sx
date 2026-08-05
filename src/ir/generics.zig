@@ -96,17 +96,23 @@ pub const GenericResolver = struct {
             else
                 self.mangleParamList("cl", c.params, c.ret),
             // The convention, the C tail, and a pack shape join a function
-            // type's identity, so they join its monomorph key.
+            // type's identity, so they join its monomorph key — as a mandatory
+            // fixed-position field block BEFORE the parameter and return
+            // fragments: fn + convention (c|d) + tail (v|f) + pack (p<N>|n).
+            // Every function type writes every field, so no type-name fragment
+            // can absorb a neighbour's metadata.
             .function => |f| blk: {
-                var buf = std.ArrayList(u8).empty;
-                buf.appendSlice(self.l.alloc, self.mangleParamList("fn", f.params, f.ret)) catch @panic("out of memory while mangling type");
-                if (f.call_conv == .c) buf.appendSlice(self.l.alloc, "_cc") catch @panic("out of memory while mangling type");
-                if (f.is_c_variadic) buf.appendSlice(self.l.alloc, "_var") catch @panic("out of memory while mangling type");
+                var head = std.ArrayList(u8).empty;
+                head.appendSlice(self.l.alloc, "fn") catch @panic("out of memory while mangling type");
+                head.append(self.l.alloc, if (f.call_conv == .c) 'c' else 'd') catch @panic("out of memory while mangling type");
+                head.append(self.l.alloc, if (f.is_c_variadic) 'v' else 'f') catch @panic("out of memory while mangling type");
                 if (f.pack_start) |ps| {
-                    const tag = std.fmt.allocPrint(self.l.alloc, "_ps{d}", .{ps}) catch @panic("out of memory while mangling type");
-                    buf.appendSlice(self.l.alloc, tag) catch @panic("out of memory while mangling type");
+                    const tag = std.fmt.allocPrint(self.l.alloc, "p{d}", .{ps}) catch @panic("out of memory while mangling type");
+                    head.appendSlice(self.l.alloc, tag) catch @panic("out of memory while mangling type");
+                } else {
+                    head.append(self.l.alloc, 'n') catch @panic("out of memory while mangling type");
                 }
-                break :blk buf.items;
+                break :blk self.mangleParamList(head.items, f.params, f.ret);
             },
             .tuple => |t| blk: {
                 var buf = std.ArrayList(u8).empty;
