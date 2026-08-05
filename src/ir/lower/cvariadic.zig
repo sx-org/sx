@@ -34,12 +34,15 @@ pub fn storageFields(self: *Lowering) []const types.TypeInfo.StructInfo.Field {
     return fields;
 }
 
+/// One storage word's field name. Every name is distinct, so the list covers
+/// every index `TargetConfig.vaListWords` returns — at most four.
 fn wordName(i: usize) []const u8 {
     return switch (i) {
         0 => "w0",
         1 => "w1",
         2 => "w2",
-        else => "w3",
+        3 => "w3",
+        else => unreachable,
     };
 }
 

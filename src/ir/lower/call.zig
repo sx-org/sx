@@ -1418,7 +1418,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 self.packVariadicCallArgs(sf.decl, c, &args);
                 const final_args = self.prependCtxIfNeeded(func, args.items);
                 self.coerceCallArgs(final_args, params);
-                if (func.is_variadic) self.promoteCVariadicArgs(final_args, params.len);
+                if (func.is_c_variadic) self.promoteCVariadicArgs(final_args, params.len);
                 return self.builder.call(fid, final_args, ret_ty);
             }
             // A value-authored name has no callable declaration here, so the
@@ -1452,7 +1452,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const final_args = self.prependCtxIfNeeded(func, args.items);
                     // Coerce arguments to match parameter types
                     self.coerceCallArgs(final_args, params);
-                    if (func.is_variadic) self.promoteCVariadicArgs(final_args, params.len);
+                    if (func.is_c_variadic) self.promoteCVariadicArgs(final_args, params.len);
                     return self.builder.call(fid, final_args, ret_ty);
                 }
             }
@@ -1686,7 +1686,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     self.packVariadicCallArgs(fd, c, &args);
                     const final_args = self.prependCtxIfNeeded(func, args.items);
                     self.coerceCallArgs(final_args, func.params);
-                    if (func.is_variadic) self.promoteCVariadicArgs(final_args, func.params.len);
+                    if (func.is_c_variadic) self.promoteCVariadicArgs(final_args, func.params.len);
                     return self.builder.call(fid, final_args, func.ret);
                 }
 
@@ -1711,7 +1711,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             const ret_ty = func.ret;
                             const params = func.params;
                             const has_ctx = func.has_implicit_ctx;
-                            const is_variadic = func.is_variadic;
+                            const is_c_variadic = func.is_c_variadic;
                             self.packVariadicCallArgs(fd, c, &args);
                             const final_args = blk: {
                                 if (!has_ctx) break :blk args.items;
@@ -1721,7 +1721,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 break :blk new_args;
                             };
                             self.coerceCallArgs(final_args, params);
-                            if (is_variadic) self.promoteCVariadicArgs(final_args, params.len);
+                            if (is_c_variadic) self.promoteCVariadicArgs(final_args, params.len);
                             return self.builder.call(fid, final_args, ret_ty);
                         }
                         if (self.hasPlainStructAuthor(owner_ty))
@@ -1801,7 +1801,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             self.packVariadicCallArgs(fd, c, &args);
                             const final_args = self.prependCtxIfNeeded(func, args.items);
                             self.coerceCallArgs(final_args, func.params);
-                            if (func.is_variadic) self.promoteCVariadicArgs(final_args, func.params.len);
+                            if (func.is_c_variadic) self.promoteCVariadicArgs(final_args, func.params.len);
                             return self.builder.call(fid, final_args, func.ret);
                         },
                         .ambiguous => {
@@ -1841,7 +1841,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     }
                     const final_args = self.prependCtxIfNeeded(func, args.items);
                     self.coerceCallArgs(final_args, params);
-                    if (func.is_variadic) self.promoteCVariadicArgs(final_args, params.len);
+                    if (func.is_c_variadic) self.promoteCVariadicArgs(final_args, params.len);
                     return self.builder.call(fid, final_args, ret_ty);
                 }
                 // Check if this is Type.variant(payload) — qualified enum construction

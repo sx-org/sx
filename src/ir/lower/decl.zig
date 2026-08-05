@@ -3275,10 +3275,10 @@ fn returnGenericLeaf(node: *const Node) ?[]const u8 {
 /// fixed prototype and a variadic one are different ABIs, and sharing the fixed
 /// registration would emit calls whose argument count its signature refuses.
 /// True = handled (shared or diagnosed), caller must not declare again.
-pub fn dedupeExternSymbol(self: *Lowering, fd: *const ast.FnDecl, sym_name: StringId, params: []const Function.Param, ret_ty: TypeId, is_variadic: bool) bool {
+pub fn dedupeExternSymbol(self: *Lowering, fd: *const ast.FnDecl, sym_name: StringId, params: []const Function.Param, ret_ty: TypeId, is_c_variadic: bool) bool {
     for (self.module.functions.items, 0..) |*func, i| {
         if (func.name != sym_name or !func.is_extern) continue;
-        var same = func.ret == ret_ty and func.params.len == params.len and func.is_variadic == is_variadic;
+        var same = func.ret == ret_ty and func.params.len == params.len and func.is_c_variadic == is_c_variadic;
         if (same) {
             for (func.params, params) |a, b| {
                 if (a.ty != b.ty) {
@@ -3336,7 +3336,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
 
     // Extern declarations with a trailing variadic param map to the C
     // calling convention's `...` tail. Drop the variadic param from the
-    // IR signature (it has no C-level slot) and set is_variadic.
+    // IR signature (it has no C-level slot) and set is_c_variadic.
     // Bare `extern` import: an external C symbol declared via the `extern`
     // linkage keyword (empty-block placeholder body). C-ABI promotion +
     // declareExtern routing below; the optional `extern LIB "csym"` lib/rename
@@ -3349,13 +3349,13 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
         isEvaluateIntrinsic(self, fd, name);
     // A bare `..` tail binds no parameter, so `fd.params` already holds exactly
     // the fixed parameters and nothing is stripped.
-    var is_variadic = fd.is_c_variadic;
+    var is_c_variadic = fd.is_c_variadic;
     var effective_params = fd.params;
     // A lib-less C-import with a C-variadic `...` tail: drop the trailing slice
-    // param and set is_variadic (mirrored at the call site by
+    // param and set is_c_variadic (mirrored at the call site by
     // `packVariadicCallArgs`).
     if (is_extern_decl and fd.params.len > 0 and fd.params[fd.params.len - 1].is_variadic) {
-        is_variadic = true;
+        is_c_variadic = true;
         effective_params = fd.params[0..ast.fixedParamCount(fd.params)];
     }
 
@@ -3406,7 +3406,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
         null;
     if (rename_c_name) |c_name| {
         const c_name_id = self.module.types.internString(c_name);
-        if (self.dedupeExternSymbol(fd, c_name_id, params.items, ret_ty, is_variadic)) {
+        if (self.dedupeExternSymbol(fd, c_name_id, params.items, ret_ty, is_c_variadic)) {
             self.extern_name_map.put(name, c_name) catch {};
             return;
         }
@@ -3414,7 +3414,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
         const func = self.module.getFunctionMut(fid);
         func.call_conv = cc;
         func.source_file = self.current_source_file;
-        func.is_variadic = is_variadic;
+        func.is_c_variadic = is_c_variadic;
         func.has_implicit_ctx = wants_ctx;
         func.is_naked = (fd.abi == .naked);
         func.is_get = fd.is_get;
@@ -3425,12 +3425,12 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     }
 
     const name_id = self.module.types.internString(name);
-    if (is_extern_decl and self.dedupeExternSymbol(fd, name_id, params.items, ret_ty, is_variadic)) return;
+    if (is_extern_decl and self.dedupeExternSymbol(fd, name_id, params.items, ret_ty, is_c_variadic)) return;
     const fid = self.builder.declareExtern(name_id, params.items, ret_ty);
     const func = self.module.getFunctionMut(fid);
     func.call_conv = cc;
     func.source_file = self.current_source_file;
-    func.is_variadic = is_variadic;
+    func.is_c_variadic = is_c_variadic;
     func.has_implicit_ctx = wants_ctx;
     func.is_naked = (fd.abi == .naked);
     func.is_get = fd.is_get;

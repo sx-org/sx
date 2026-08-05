@@ -1458,7 +1458,7 @@ pub const LLVMEmitter = struct {
                 self.abiCoerceDefaultParamType(param.ty, llvm_ty);
         }
 
-        const is_var_arg: c_int = if (func.is_variadic) 1 else 0;
+        const is_var_arg: c_int = if (func.is_c_variadic) 1 else 0;
         const fn_type = c.LLVMFunctionType(ret_ty, param_types.ptr, param_count, is_var_arg);
         const name_z = self.alloc.dupeZ(u8, name) catch unreachable;
         defer self.alloc.free(name_z);

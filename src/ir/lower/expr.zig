@@ -3312,10 +3312,10 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                                 // reads them through a cursor, so a fixed
                                 // signature and a variadic one cannot stand in
                                 // for each other.
-                                if (target_fn.is_variadic != tt_info.function.is_c_variadic) {
+                                if (target_fn.is_c_variadic != tt_info.function.is_c_variadic) {
                                     if (self.diagnostics) |d| {
                                         const want_tail = if (tt_info.function.is_c_variadic) "a C-variadic '..' tail" else "a fixed parameter list";
-                                        const have_tail = if (target_fn.is_variadic) "a C-variadic '..' tail" else "a fixed parameter list";
+                                        const have_tail = if (target_fn.is_c_variadic) "a C-variadic '..' tail" else "a fixed parameter list";
                                         d.addFmt(.err, node.span, "variadic-tail mismatch: '{s}' is declared with {s} but the target type expects {s}", .{ eff_fn_name, have_tail, want_tail });
                                     }
                                     break :blk self.emitPlaceholder(eff_fn_name);

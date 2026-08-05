@@ -752,13 +752,14 @@ pub const Function = struct {
     linkage: Linkage = .internal,
     call_conv: CallingConvention = .default,
     source_file: ?[]const u8 = null,
-    /// Variadic tail at the IR signature level. Only `extern` decls reach
-    /// IR with this set — sx-side `..T` params are slice-packed before
-    /// lowering, so anything that survives is the C calling convention's
-    /// `...`. emit_llvm passes `is_var_arg=1` to `LLVMFunctionType`; call
-    /// sites apply the standard default argument promotions (i8/i16/bool →
-    /// i32, f32 → f64) to extras past the fixed param count.
-    is_variadic: bool = false,
+    /// The C calling convention's `...` tail at the IR signature level: a bare
+    /// `..` on an effective-C signature, or an `extern` decl's `..name: []T`.
+    /// An sx-side `..T` param is slice-packed before lowering and reaches IR as
+    /// an ordinary parameter, so it never sets this. emit_llvm passes
+    /// `is_var_arg=1` to `LLVMFunctionType`; call sites apply the standard
+    /// default argument promotions (i8/i16/bool → i32, f32 → f64) to extras
+    /// past the fixed param count.
+    is_c_variadic: bool = false,
     /// True if `params[0]` is the synthetic `__sx_ctx: *Context`
     /// parameter that every default-conv sx function receives. Callers
     /// read this flag to decide whether to prepend their current

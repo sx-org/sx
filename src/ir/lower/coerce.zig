@@ -1364,7 +1364,7 @@ pub fn functionSignatureType(self: *Lowering, fid: inst_mod.FuncId) ?TypeId {
     defer param_ids.deinit(self.alloc);
     const skip: usize = if (f.has_implicit_ctx) 1 else 0;
     for (f.params[skip..]) |p| param_ids.append(self.alloc, p.ty) catch return null;
-    return self.module.types.functionTypeVariadic(param_ids.items, f.ret, f.call_conv, f.is_variadic);
+    return self.module.types.functionTypeVariadic(param_ids.items, f.ret, f.call_conv, f.is_c_variadic);
 }
 
 /// A bare-function VALUE is carried in an integer-word IR type
