@@ -3568,6 +3568,9 @@ pub const Lowering = struct {
     pub const bindBoundaryCursorParam = lower_cvariadic.bindBoundaryParam;
     pub const boundaryCursorArg = lower_cvariadic.boundaryArg;
     pub const cursorStorageFields = lower_cvariadic.storageFields;
+    pub const cursorTemplatePreflight = lower_cvariadic.templatePreflight;
+    pub const cursorProtocolTemplatePreflight = lower_cvariadic.protocolTemplatePreflight;
+    pub const refuseCursorMethodParam = lower_cvariadic.refuseMethodParam;
 
     // --- lower/pack.zig (lower_pack) ---
     pub const lowerPackElems = lower_pack.lowerPackElems;

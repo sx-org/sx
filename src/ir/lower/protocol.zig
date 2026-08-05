@@ -293,6 +293,15 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
             }
             break :blk self.resolveTypeWithBindings(rt);
         } else .void;
+        // A method is an sx call, so the instantiated signature meets the
+        // C-variadic cursor rules as non-C — the bindings can introduce cursor
+        // leaves the template's declaration preflight cannot see.
+        for (method.params, ptypes.items) |p, pty| {
+            if (!self.refuseCursorMethodParam(pty, p.span)) _ = self.refuseCursorSignature(pty, p.span);
+        }
+        if (method.return_type) |rt| {
+            if (!self.refuseCursorEscape(ret, rt.span, "declare a return of type")) _ = self.refuseCursorSignature(ret, rt.span);
+        }
         const self_occ = program_index_mod.protocolMethodSelfOccurrence(method);
         const shape = program_index_mod.protocolMethodSelfShape(self.alloc, method);
         var info: ProtocolMethodInfo = .{

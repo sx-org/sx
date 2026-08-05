@@ -3307,8 +3307,13 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     // span rather than a call-site failure in some later pass.
     if (fd.body.data == .intrinsic_expr) validateIntrinsicDecl(self, fd, name);
 
-    // Skip generic templates — they're monomorphized on demand, not declared as extern
-    if (fd.type_params.len > 0) return;
+    // Skip generic templates — they're monomorphized on demand, not declared as
+    // extern. An explicitly-spelled cursor is validated first: an
+    // uninstantiated template would otherwise never meet the boundary rules.
+    if (fd.type_params.len > 0) {
+        self.cursorTemplatePreflight(fd);
+        return;
+    }
 
     const ret_ty = self.resolveReturnType(fd);
     if (fd.return_type) |rtn| {

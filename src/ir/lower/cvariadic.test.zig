@@ -252,6 +252,65 @@ test "a signature is checked through every wrapper that carries it" {
     try std.testing.expectEqual(@as(usize, 4), lowered.diagnostics.errorCount());
 }
 
+test "a closure signature has no C side for a cursor" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\bad_take: Closure(@VaList) -> i64;
+        \\bad_hand: Closure(i32) -> *@VaList;
+        \\legal_borrow: Closure(*@VaList) -> i64;
+        \\main :: () -> i64 { return 0; }
+    , &lowered);
+    defer lowered.module.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "has no C signature for '@VaList'"));
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "cannot outlive the call frame"));
+    try std.testing.expectEqual(@as(usize, 2), lowered.diagnostics.errorCount());
+}
+
+test "a generic template meets the boundary rules without an instantiation" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\bad_generic :: ($T: Type, ap: @VaList) -> i64 { return 0; }
+        \\bad_return  :: ($T: Type) -> *@VaList { return ---; }
+        \\legal_c     :: ($T: Type, ap: @VaList) -> i64 abi(.c) { return 0; }
+        \\legal_borrow :: ($T: Type, ap: *@VaList) -> i64 { return 0; }
+        \\main :: () -> i64 { return 0; }
+    , &lowered);
+    defer lowered.module.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "is the C boundary parameter"));
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "cannot outlive the call frame"));
+    try std.testing.expectEqual(@as(usize, 2), lowered.diagnostics.errorCount());
+}
+
+test "a protocol method meets the boundary rules on every kind" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\Reader :: protocol vtable {
+        \\    read :: (self: *Self, ap: @VaList) -> i64;
+        \\}
+        \\Templated :: protocol (T: Type) vtable {
+        \\    read :: (self: *Self, ap: @VaList) -> T;
+        \\}
+        \\LegalBorrow :: protocol vtable {
+        \\    read :: (self: *Self, ap: *@VaList) -> i64;
+        \\}
+        \\holds: Reader;
+        \\legal: LegalBorrow;
+        \\main :: () -> i64 { return 0; }
+    , &lowered);
+    defer lowered.module.deinit();
+
+    try std.testing.expectEqual(@as(usize, 2), countMessages(&lowered, "a protocol method is an sx call and has no C signature"));
+    try std.testing.expectEqual(@as(usize, 2), lowered.diagnostics.errorCount());
+}
+
 test "a named tail refuses what its element type refuses" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

@@ -207,7 +207,8 @@ fn refuseSignatureWithin(self: *Lowering, ty: TypeId, span: ?ast.Span, path: ?*c
     if (SignatureEdge.walked(path, ty)) return false;
     const here = SignatureEdge{ .ty = ty, .from = path };
     return switch (self.module.types.get(ty)) {
-        .function => |f| refuseFunctionSignature(self, f, span, &here),
+        .function => |f| refuseCallableSignature(self, f.params, f.ret, f.call_conv == .c, span, &here),
+        .closure => |co| refuseClosureSignature(self, co, span, &here),
         .@"struct" => |s| anyFieldRefusesSignature(self, s.fields, span, &here),
         .@"union" => |u| anyFieldRefusesSignature(self, u.fields, span, &here),
         .tagged_union => |u| anyFieldRefusesSignature(self, u.fields, span, &here),
@@ -224,17 +225,34 @@ fn refuseSignatureWithin(self: *Lowering, ty: TypeId, span: ?ast.Span, path: ?*c
     };
 }
 
-/// One signature leaf: each parameter against the side of the boundary its own
+/// One callable leaf: each parameter against the side of the boundary its own
 /// convention puts it on, the return against the escape rule, and both against
-/// the signatures they carry in turn.
-fn refuseFunctionSignature(self: *Lowering, f: types.TypeInfo.FunctionInfo, span: ?ast.Span, path: ?*const SignatureEdge) bool {
-    const is_c = f.call_conv == .c;
-    for (f.params) |p| {
+/// the signatures they carry in turn. Every resolved callable — a function
+/// type, a closure type, a protocol method — funnels through here.
+fn refuseCallableSignature(self: *Lowering, params: []const TypeId, ret: TypeId, is_c: bool, span: ?ast.Span, path: ?*const SignatureEdge) bool {
+    for (params) |p| {
         if (refuseParam(self, p, span, is_c)) return true;
         if (refuseSignatureWithin(self, p, span, path)) return true;
     }
-    if (refuseEscape(self, f.ret, span, "return")) return true;
-    return refuseSignatureWithin(self, f.ret, span, path);
+    if (refuseEscape(self, ret, span, "return")) return true;
+    return refuseSignatureWithin(self, ret, span, path);
+}
+
+/// A `Closure` carries an sx environment, so it has no C side: a by-value list
+/// gets the closure-shaped refusal rather than the "declare it C" advice, and
+/// everything else takes the non-C rules.
+fn refuseClosureSignature(self: *Lowering, co: types.TypeInfo.ClosureInfo, span: ?ast.Span, path: ?*const SignatureEdge) bool {
+    for (co.params) |p| {
+        if (isCursorType(self, p)) {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, span, "a 'Closure' carries an sx environment and has no C signature for '{s}' — take the sx-internal borrow '*{s}'", .{ cursor_name, cursor_name });
+            return true;
+        }
+        if (refuseParam(self, p, span, false)) return true;
+        if (refuseSignatureWithin(self, p, span, path)) return true;
+    }
+    if (refuseEscape(self, co.ret, span, "return")) return true;
+    return refuseSignatureWithin(self, co.ret, span, path);
 }
 
 fn anyFieldRefusesSignature(self: *Lowering, fields: []const types.TypeInfo.StructInfo.Field, span: ?ast.Span, path: ?*const SignatureEdge) bool {
@@ -242,6 +260,68 @@ fn anyFieldRefusesSignature(self: *Lowering, fields: []const types.TypeInfo.Stru
         if (refuseSignatureWithin(self, f.ty, span, path)) return true;
     }
     return false;
+}
+
+/// A protocol method's parameter. A method is an sx call on every protocol
+/// kind: a by-value list has no C signature to join, and the rest takes the
+/// non-C rules.
+pub fn refuseMethodParam(self: *Lowering, ty: TypeId, span: ?ast.Span) bool {
+    if (isCursorType(self, ty)) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "a protocol method is an sx call and has no C signature for '{s}' — take the sx-internal borrow '*{s}'", .{ cursor_name, cursor_name });
+        return true;
+    }
+    return refuseParam(self, ty, span, false);
+}
+
+/// A generic template's explicitly-spelled cursor leaves, validated at the
+/// declaration even when nothing instantiates it. Only a type expression that
+/// spells the cursor resolves here — with diagnostics off, so an unbound `$T`
+/// elsewhere in the signature stays out of the check and instantiation
+/// validates the rest.
+pub fn templatePreflight(self: *Lowering, fd: *const ast.FnDecl) void {
+    const is_c = ast.isEffectiveCSignature(fd);
+    for (fd.params) |p| {
+        if (!mentionsCursorType(self, p.type_expr)) continue;
+        const pty = resolveQuiet(self, p.type_expr) orelse continue;
+        if (refuseParam(self, pty, p.type_expr.span, is_c)) continue;
+        _ = refuseSignature(self, pty, p.type_expr.span);
+    }
+    if (fd.return_type) |rt| {
+        if (!mentionsCursorType(self, rt)) return;
+        const rty = resolveQuiet(self, rt) orelse return;
+        if (refuseEscape(self, rty, rt.span, "declare a return of type")) return;
+        _ = refuseSignature(self, rty, rt.span);
+    }
+}
+
+/// A parameterized protocol's methods resolve only per instantiation, so an
+/// explicitly-spelled cursor is validated at the declaration — otherwise an
+/// uninstantiated template ships a signature no one ever checks.
+pub fn protocolTemplatePreflight(self: *Lowering, pd: *const ast.ProtocolDecl) void {
+    for (pd.methods) |m| {
+        for (m.params) |p| {
+            if (!mentionsCursorType(self, p)) continue;
+            const pty = resolveQuiet(self, p) orelse continue;
+            if (refuseMethodParam(self, pty, p.span)) continue;
+            _ = refuseSignature(self, pty, p.span);
+        }
+        if (m.return_type) |rt| {
+            if (!mentionsCursorType(self, rt)) continue;
+            const rty = resolveQuiet(self, rt) orelse continue;
+            if (refuseEscape(self, rty, rt.span, "declare a return of type")) continue;
+            _ = refuseSignature(self, rty, rt.span);
+        }
+    }
+}
+
+/// `node`'s type with diagnostics off, or null when it does not resolve.
+fn resolveQuiet(self: *Lowering, node: *const ast.Node) ?TypeId {
+    const saved = self.diagnostics;
+    self.diagnostics = null;
+    defer self.diagnostics = saved;
+    const ty = self.resolveTypeWithBindings(node);
+    return if (ty == .unresolved) null else ty;
 }
 
 /// The cursor place of an incoming C `va_list` parameter, bound so the body

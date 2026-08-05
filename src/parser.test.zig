@@ -1750,9 +1750,9 @@ test "parser: a tail is legal only on an effective-C signature" {
     }
 }
 
-// A spread always carries an operand and the tail never does, so one token of
-// lookahead keeps `..$args` / `..xs: []T` / `..xs: P` on their existing path.
-test "parser: the named variadic forms are untouched by the tail arm" {
+// A spread always carries an operand and the tail never does: one token of
+// lookahead separates them.
+test "parser: a named variadic form does not set the C-tail flag" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(),
@@ -1771,8 +1771,8 @@ test "parser: the named variadic forms are untouched by the tail arm" {
     try std.testing.expect(slice.params[1].is_variadic);
 }
 
-// sx has no three-dot token, so a three-dot list is `..` then `.` — neither
-// `)` nor `,`, which keeps it on the named path and its existing refusal.
+// sx has no three-dot token: a three-dot list is `..` then `.` — neither `)`
+// nor `,`, so it reads as a named form missing its name.
 test "parser: a three-dot parameter list is not a tail" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
