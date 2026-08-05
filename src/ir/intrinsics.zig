@@ -157,6 +157,13 @@ pub const Id = enum(u16) {
     atomic_fence,
     atomic_cmpxchg,
     atomic_cmpxchg_weak,
+    // std/core.sx declares these two; the `@` is part of the name.
+    @"@volatile_load",
+    @"@volatile_store",
+    @"@va_start",
+    @"@va_arg",
+    @"@va_copy",
+    @"@va_end",
 };
 
 pub const Entry = struct {
@@ -316,6 +323,22 @@ pub const entries = [_]Entry{
     .{ .id = .atomic_fence, .module = atomic, .name = "atomic_fence", .mode = .lower, .arity = 1 },
     .{ .id = .atomic_cmpxchg, .module = atomic, .name = "atomic_cmpxchg", .mode = .lower, .arity = 6 },
     .{ .id = .atomic_cmpxchg_weak, .module = atomic, .name = "atomic_cmpxchg_weak", .mode = .lower, .arity = 6 },
+
+    // Lowered to the volatile load/store IR ops. The access is non-atomic and
+    // carries no ordering, so — like the atomics — the VM interprets it
+    // directly and `#run` sees an ordinary access. The `@` is part of the name:
+    // these are compiler-maintained contracts (contracts.zig) as well as
+    // intrinsics.
+    .{ .id = .@"@volatile_load", .module = core, .name = "@volatile_load", .mode = .lower, .arity = 2 },
+    .{ .id = .@"@volatile_store", .module = core, .name = "@volatile_store", .mode = .lower, .arity = 3 },
+
+    // Lowered to the four cursor IR ops. A cursor walks arguments a real call
+    // frame delivered, so there is no VM arm: `#run` over one bails loudly
+    // rather than inventing a frame to read.
+    .{ .id = .@"@va_start", .module = core, .name = "@va_start", .mode = .lower, .arity = 1, .ret = .void },
+    .{ .id = .@"@va_arg", .module = core, .name = "@va_arg", .mode = .lower, .arity = 2 },
+    .{ .id = .@"@va_copy", .module = core, .name = "@va_copy", .mode = .lower, .arity = 2, .ret = .void },
+    .{ .id = .@"@va_end", .module = core, .name = "@va_end", .mode = .lower, .arity = 1, .ret = .void },
 };
 
 /// Look up an intrinsic by its declared name. `source_file` is the declaration's

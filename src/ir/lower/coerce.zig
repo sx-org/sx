@@ -1179,6 +1179,27 @@ pub fn coerceExplicit(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId)
     return self.coerceMode(val, src_ty, dst_ty, .explicit);
 }
 
+/// What an implicit coercion produced, and whether the rules applied.
+pub const CheckedCoercion = struct {
+    /// The value the destination slot receives. Meaningful only when the
+    /// coercion landed — a refusal leaves whatever the ladder passed through.
+    ref: Ref,
+    /// A diagnostic already named this source and destination.
+    refused: bool,
+};
+
+/// `coerceToType`, plus whether the conversion landed. A refusal is exactly what
+/// a typed parameter refuses, including the pairs that turn on the VALUE — a
+/// non-literal `string` reaching a `cstring`, an un-narrowed optional — so a
+/// caller that must react to one reads a single answer rather than re-deriving
+/// the ladder's arms.
+pub fn coerceChecked(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) CheckedCoercion {
+    const before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
+    const converted = self.coerceToType(val, src_ty, dst_ty);
+    const after: usize = if (self.diagnostics) |d| d.errorCount() else 0;
+    return .{ .ref = converted, .refused = after != before };
+}
+
 /// Is `node` an explicit cast — `xx expr` or a postfix `expr.(T)`? Such a
 /// value is the user's deliberate opt-in to a reinterpretation that has no
 /// standard coercion (e.g. pointer↔int, function↔fn-pointer): the `.none`
@@ -1332,18 +1353,38 @@ fn implicitNoneMismatchExempt(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty:
 }
 
 /// The SOURCE-LEVEL signature type of the lowered function `fid`: the implicit
-/// `__sx_ctx` parameter dropped and the declared calling convention kept, so it
-/// interns to the same `TypeId` as the equivalent written annotation
-/// (`(i64) -> i64`, `(i64) -> i64 abi(.c)`). A parameter with a default is an
-/// ordinary parameter here — a default is a call-site convenience, not part of
-/// the value's signature.
+/// `__sx_ctx` parameter dropped and the declared calling convention and C tail
+/// kept, so it interns to the same `TypeId` as the equivalent written annotation
+/// (`(i64) -> i64`, `(i64) -> i64 abi(.c)`, `(i64, ..) -> i64 abi(.c)`). A
+/// parameter with a default is an ordinary parameter here — a default is a
+/// call-site convenience, not part of the value's signature.
 pub fn functionSignatureType(self: *Lowering, fid: inst_mod.FuncId) ?TypeId {
     const f = &self.module.functions.items[fid.index()];
     var param_ids = std.ArrayList(TypeId).empty;
     defer param_ids.deinit(self.alloc);
     const skip: usize = if (f.has_implicit_ctx) 1 else 0;
     for (f.params[skip..]) |p| param_ids.append(self.alloc, p.ty) catch return null;
-    return self.module.types.functionTypeCC(param_ids.items, f.ret, f.call_conv);
+    return self.module.types.functionTypeVariadic(param_ids.items, f.ret, f.call_conv, f.is_c_variadic);
+}
+
+/// The SOURCE-LEVEL signature type an `ast.FnDecl` states — the shaping
+/// `declareFunction` performs: an extern named `..name: []T` tail strips to the
+/// fixed prefix and marks the C tail, and the convention follows the
+/// effective-C signature. Every consumer of a bare function's declared type —
+/// an inferred binding, the Type reflection value, the `any` rendering — reads
+/// this one shape.
+pub fn declSignatureType(self: *Lowering, fd: *const ast.FnDecl) TypeId {
+    var is_c_variadic = fd.is_c_variadic;
+    var effective = fd.params;
+    if (fd.extern_export == .extern_ and fd.params.len > 0 and fd.params[fd.params.len - 1].is_variadic) {
+        is_c_variadic = true;
+        effective = fd.params[0..ast.fixedParamCount(fd.params)];
+    }
+    var param_ids = std.ArrayList(TypeId).empty;
+    defer param_ids.deinit(self.alloc);
+    for (effective) |*param| param_ids.append(self.alloc, self.resolveParamType(param)) catch {};
+    const cc: types.TypeInfo.CallConv = if (ast.isEffectiveCSignature(fd)) .c else .default;
+    return self.module.types.functionTypeVariadic(param_ids.items, self.resolveReturnType(fd), cc, is_c_variadic);
 }
 
 /// A bare-function VALUE is carried in an integer-word IR type
@@ -1923,19 +1964,84 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
     }
 }
 
-/// Apply C default argument promotion to variadic-tail args. These rules
-/// (bool/i8/i16/u8/u16 → i32, f32 → f64) match the C calling convention's
-/// implicit promotions when an argument is passed through `...`.
+/// The bit width of an integer type, or null when `ty` is not an integer.
+/// `isize`/`usize` carry the target's address width, which the C tail rules
+/// must read from the target rather than assume.
+pub fn tailIntegerWidth(self: *Lowering, ty: TypeId) ?u32 {
+    return switch (ty) {
+        .bool => 1,
+        .i8, .u8 => 8,
+        .i16, .u16 => 16,
+        .i32, .u32 => 32,
+        .i64, .u64 => 64,
+        .isize, .usize => self.typeBitsEx(ty),
+        else => if (ty.isBuiltin()) null else switch (self.module.types.get(ty)) {
+            .signed, .unsigned => |bits| bits,
+            else => null,
+        },
+    };
+}
+
+/// The type an argument takes under the C default argument promotions, or null
+/// when it crosses unchanged. Every integer narrower than 32 bits widens to
+/// `i32` and `f32` widens to `f64`; wider C ABI integers, `f64`, the pointer
+/// family, and `abi(.c)` function values are already tail-width.
+pub fn promotedTailType(self: *Lowering, ty: TypeId) ?TypeId {
+    if (ty == .f32) return .f64;
+    if (tailIntegerWidth(self, ty)) |bits| {
+        if (bits < 32) return .i32;
+    }
+    return null;
+}
+
+/// Whether a POST-PROMOTION type may cross a C-variadic tail. The tail carries
+/// neither a count nor types, so only what a C ABI can pass through `va_arg`
+/// belongs there: the 32- and 64-bit integers, `f64`, the pointer family and
+/// its nullable forms, and function values that carry the C convention.
+pub fn tailAdmissible(self: *Lowering, ty: TypeId) bool {
+    if (ty == .f64 or ty == .cstring) return true;
+    if (tailIntegerWidth(self, ty)) |bits| return bits == 32 or bits == 64;
+    if (ty.isBuiltin()) return false;
+    return switch (self.module.types.get(ty)) {
+        .pointer, .many_pointer => true,
+        // A nullable pointer is one word with null as its absent value; any
+        // other optional carries a separate presence flag.
+        .optional => |o| switch (o.child) {
+            .cstring => true,
+            else => !o.child.isBuiltin() and switch (self.module.types.get(o.child)) {
+                .pointer, .many_pointer => true,
+                else => false,
+            },
+        },
+        .function => |f| f.call_conv == .c,
+        else => false,
+    };
+}
+
+/// Promote and check every argument at or past the fixed count. One
+/// implementation serves each C-variadic call site, so a tail argument is
+/// promoted and admitted identically wherever it is written.
 pub fn promoteCVariadicArgs(self: *Lowering, args: []Ref, fixed_count: usize) void {
     if (args.len <= fixed_count) return;
-    for (args[fixed_count..]) |*arg| {
-        const src_ty = self.builder.getRefType(arg.*);
-        const promoted: TypeId = switch (src_ty) {
-            .bool, .i8, .i16, .u8, .u16 => .i32,
-            .f32 => .f64,
-            else => continue,
-        };
-        arg.* = self.coerceToType(arg.*, src_ty, promoted);
+    for (args[fixed_count..], fixed_count..) |*arg, i| {
+        // A bare-function value rides in an integer word; the rules judge its
+        // SIGNATURE — an sx-convention function expects a context no C caller
+        // passes, so only the C convention may cross.
+        const src_ty = valueTypeOfRef(self, arg.*, self.builder.getRefType(arg.*));
+        if (promotedTailType(self, src_ty)) |promoted| {
+            arg.* = self.coerceToType(arg.*, src_ty, promoted);
+        }
+        const crossed = valueTypeOfRef(self, arg.*, self.builder.getRefType(arg.*));
+        const cs = self.builder.current_span;
+        const span = ast.Span{ .start = cs.start, .end = cs.end };
+        // A cursor borrow is admissible as a pointer, but the callee has no
+        // typed slot to read it back from — and the tail it names belongs to a
+        // frame the callee cannot bound.
+        if (self.refuseCursorEscape(crossed, span, "cross a C-variadic tail as")) continue;
+        if (tailAdmissible(self, crossed)) continue;
+        if (self.diagnostics) |d| {
+            d.addFmt(.err, span, "argument {d}: '{s}' cannot cross a C-variadic tail; use a C ABI integer, 'f64', a pointer, or an 'abi(.c)' function value", .{ i + 1, self.formatTypeName(src_ty) });
+        }
     }
 }
 

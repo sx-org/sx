@@ -233,7 +233,7 @@ pub const TypeResolver = struct {
                     // site, not here) — its CC is still sx-default.
                     .naked => .default,
                 };
-                break :blk table.functionTypeCC(param_ids.items, ret_ty, cc);
+                break :blk table.functionTypeVariadic(param_ids.items, ret_ty, cc, ft.is_c_variadic);
             },
             .closure_type_expr => |ct| blk: {
                 // Pack-shaped `Closure(..p)` needs caller pack state to expand —

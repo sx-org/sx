@@ -68,6 +68,13 @@ pub const Type = union(enum) {
     pub const FunctionTypeInfo = struct {
         param_types: []const Type,
         return_type: *const Type,
+        /// The convention exactly as written — `.default` when the annotation
+        /// carries no `abi(...)`. Two signatures that differ only here are
+        /// different types, so hover and completion must keep them apart.
+        abi: ast.ABI,
+        /// The parameter list ends in a bare `..` C-variadic tail, whose fixed
+        /// count is `param_types.len`.
+        is_c_variadic: bool,
     };
 
     pub const ClosureTypeInfo = struct {
@@ -313,10 +320,19 @@ pub const Type = union(enum) {
                     if (i > 0) try buf.appendSlice(allocator, ", ");
                     try buf.appendSlice(allocator, try pt.displayName(allocator));
                 }
+                if (info.is_c_variadic) {
+                    if (info.param_types.len > 0) try buf.appendSlice(allocator, ", ");
+                    try buf.appendSlice(allocator, "..");
+                }
                 try buf.append(allocator, ')');
                 if (!std.meta.eql(info.return_type.*, Type.void_type)) {
                     try buf.appendSlice(allocator, " -> ");
                     try buf.appendSlice(allocator, try info.return_type.displayName(allocator));
+                }
+                switch (info.abi) {
+                    .default => {},
+                    .c => try buf.appendSlice(allocator, " abi(.c)"),
+                    .naked => try buf.appendSlice(allocator, " abi(.naked)"),
                 }
                 return try buf.toOwnedSlice(allocator);
             },

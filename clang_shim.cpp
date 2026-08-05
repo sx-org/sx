@@ -31,16 +31,35 @@
 /* Header parsing via clang C++ AST                                    */
 /* ------------------------------------------------------------------ */
 
+/// True when `T` names the target's builtin `va_list` typedef, directly or
+/// through the `<stdarg.h>` alias chain. Identity is the TYPEDEF, walked before
+/// canonicalization: a genuine `va_list` canonicalizes to `char *` on one target
+/// and to an array of records on another, and unrelated types canonicalize to
+/// the same shapes.
+static bool namesBuiltinVaList(clang::ASTContext &ctx, clang::QualType T) {
+    const clang::TypedefDecl *builtin = ctx.getBuiltinVaListDecl();
+    if (!builtin) return false;
+    const clang::Decl *want = builtin->getCanonicalDecl();
+    while (const auto *TT = T->getAs<clang::TypedefType>()) {
+        const clang::TypedefNameDecl *D = TT->getDecl();
+        if (D->getCanonicalDecl() == want) return true;
+        T = D->getUnderlyingType();
+    }
+    return false;
+}
+
 /// AST consumer that collects top-level function declarations.
 class FunctionCollector : public clang::ASTConsumer {
 public:
     std::vector<SxCFunctionInfo> &functions;
+    clang::ASTContext *Ctx = nullptr;
     clang::SourceManager *SM = nullptr;
     clang::FileID mainFileID;
 
     FunctionCollector(std::vector<SxCFunctionInfo> &funcs) : functions(funcs) {}
 
     void Initialize(clang::ASTContext &ctx) override {
+        Ctx = &ctx;
         SM = &ctx.getSourceManager();
         mainFileID = SM->getMainFileID();
     }
@@ -74,6 +93,10 @@ public:
                 std::string ptype = P->getType().getCanonicalType().getAsString();
                 params[i].name = strdup(pname.c_str());
                 params[i].type_spelling = strdup(ptype.c_str());
+                // A SysV `va_list` is an array type, so the parameter decays;
+                // getOriginalType is the written form, where the typedef lives.
+                params[i].is_va_list =
+                    namesBuiltinVaList(*Ctx, P->getOriginalType()) ? 1 : 0;
             }
 
             // Source location
@@ -86,6 +109,7 @@ public:
             fi.num_params = static_cast<int>(num_params);
             fi.source_file = PLoc.isValid() ? strdup(PLoc.getFilename()) : nullptr;
             fi.source_line = PLoc.isValid() ? PLoc.getLine() : 0;
+            fi.is_variadic = FD->isVariadic() ? 1 : 0;
             functions.push_back(fi);
         }
         return true;

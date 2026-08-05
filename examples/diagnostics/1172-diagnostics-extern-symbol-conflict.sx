@@ -1,14 +1,28 @@
 // One C symbol bound twice with DIFFERENT sx signatures is diagnosed. Equal
 // signatures share one registration silently (std's read/write are bound by
 // several modules).
+//
+// The C-variadic tail is part of a signature: a fixed prototype and a variadic
+// one over the same fixed parameters are different ABIs, so binding both to one
+// symbol disagrees. Two variadic views that match share a registration the way
+// two fixed ones do.
 #import "modules/std.sx";
 
 libc :: #library "c";
 // std/process.sx already binds getenv as `-> *u8`; this view disagrees.
 getenv_opt :: (name: [:0]u8) -> ?[:0]u8 extern libc "getenv";
 
+fixed_view    :: (fmt: cstring) -> i32 extern libc "printf";
+variadic_view :: (fmt: cstring, ..) -> i32 extern libc "printf";
+
+tail_view   :: (fmt: cstring, ..) -> i32 extern libc "fprintf";
+same_tail   :: (fmt: cstring, ..) -> i32 extern libc "fprintf";
+
 main :: () -> i32 {
     p := getenv_opt("PATH");
     if p == null { return 1; }
+    n := fixed_view("x\n") + variadic_view("%d\n", 1);
+    n += tail_view("%d\n", 2) + same_tail("%d %d\n", 3, 4);
+    if n < 0 { return 2; }
     return 0;
 }

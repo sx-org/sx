@@ -246,6 +246,10 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         return self.builder.constUndef(.unresolved);
     }
 
+    // The C-variadic cursor is opaque: no literal builds one, and its storage
+    // comes from a local declaration alone.
+    if (self.refuseCursorValue(ty, span, "construct")) return self.builder.constUndef(ty);
+
     // A `.{ ... }` literal can only build an AGGREGATE. After the
     // tagged-union / union / optional intercepts above, the named and
     // positional paths below handle exactly: struct, tuple, array, vector,
@@ -841,6 +845,16 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                     patched.object = elem;
                     return self.lowerFieldAccess(&patched, span);
                 }
+            }
+        }
+    }
+
+    // A cursor and a borrow of one carry no declared members. Refuse before the
+    // object lowers, so the receiver is not ALSO reported as a value read.
+    if (fa.object.data == .identifier) {
+        if (self.scope) |scope| {
+            if (scope.lookup(fa.object.data.identifier.name)) |binding| {
+                if (self.refuseCursorMember(binding.ty, span)) return self.builder.constUndef(.unresolved);
             }
         }
     }
@@ -3082,6 +3096,11 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     // `?T → concrete` unwrap in `coerceMode` is permitted (an
                     // un-narrowed unwrap is rejected, not silently zeroed).
                     const is_narrowed = self.narrowed.count() > 0 and self.narrowed.contains(id.name);
+                    // Reading a cursor's storage as a value would copy a
+                    // position the ABI owns; `*name` is the only way to reach
+                    // it, and it never lowers the name as a value.
+                    if (self.refuseCursorValue(binding.ty, node.span, "read"))
+                        break :blk self.builder.constUndef(binding.ty);
                     if (binding.is_alloca) {
                         const loaded = self.builder.load(binding.ref, binding.ty);
                         if (is_narrowed) self.narrowed_refs.put(loaded, {}) catch {};
@@ -3199,15 +3218,13 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                         }
                     };
                     if (fd_any) |fd| {
+                        // Both reflection shapes read the one declared
+                        // signature, convention and tail included.
+                        const fn_tid = self.declSignatureType(fd);
                         if (self.target_type == .type_value) {
-                            var param_ids = std.ArrayList(TypeId).empty;
-                            defer param_ids.deinit(self.alloc);
-                            for (fd.params) |p| param_ids.append(self.alloc, self.resolveParamType(&p)) catch {};
-                            const fn_tid = self.module.types.functionType(param_ids.items, self.resolveReturnType(fd));
                             break :blk self.builder.constType(fn_tid);
                         }
-                        const fn_type_str = self.formatFnTypeString(fd);
-                        const sid = self.module.types.internString(fn_type_str);
+                        const sid = self.module.types.internString(self.module.types.formatTypeName(self.alloc, fn_tid));
                         const str = self.builder.constString(sid);
                         break :blk self.boxAnyOf(str, .string, null);
                     }
@@ -3278,12 +3295,26 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                             // runtime when the C caller doesn't supply
                             // the implicit __sx_ctx arg.
                             if (tt_info == .function) {
-                                const func_cc = self.module.functions.items[@intFromEnum(fid)].call_conv;
+                                const target_fn = self.module.functions.items[@intFromEnum(fid)];
+                                const func_cc = target_fn.call_conv;
                                 if (func_cc != tt_info.function.call_conv) {
                                     if (self.diagnostics) |d| {
                                         const want_cc = if (tt_info.function.call_conv == .c) "abi(.c)" else "default sx convention";
                                         const have_cc = if (func_cc == .c) "abi(.c)" else "default sx convention";
                                         d.addFmt(.err, node.span, "call-convention mismatch: '{s}' is declared with {s} but the target type expects {s}", .{ eff_fn_name, have_cc, want_cc });
+                                    }
+                                    break :blk self.emitPlaceholder(eff_fn_name);
+                                }
+                                // A C-variadic tail is part of the ABI: the
+                                // caller promotes tail arguments and the callee
+                                // reads them through a cursor, so a fixed
+                                // signature and a variadic one cannot stand in
+                                // for each other.
+                                if (target_fn.is_c_variadic != tt_info.function.is_c_variadic) {
+                                    if (self.diagnostics) |d| {
+                                        const want_tail = if (tt_info.function.is_c_variadic) "a C-variadic '..' tail" else "a fixed parameter list";
+                                        const have_tail = if (target_fn.is_c_variadic) "a C-variadic '..' tail" else "a fixed parameter list";
+                                        d.addFmt(.err, node.span, "variadic-tail mismatch: '{s}' is declared with {s} but the target type expects {s}", .{ eff_fn_name, have_tail, want_tail });
                                     }
                                     break :blk self.emitPlaceholder(eff_fn_name);
                                 }

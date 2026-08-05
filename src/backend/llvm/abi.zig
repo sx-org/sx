@@ -42,6 +42,11 @@ pub const AbiLowering = struct {
     /// the caller's `{ptr, i64}` value against the trampoline's
     /// collapsed `ptr` param.
     pub fn abiCoerceParamTypeEx(self: AbiLowering, ir_ty: TypeId, llvm_ty: c.LLVMTypeRef, is_extern_c_api: bool) c.LLVMTypeRef {
+        // A C `va_list` parameter is one pointer-shaped word on every supported
+        // target — the size buckets below would classify the cursor's storage
+        // instead, and land on `byval` where clang passes a plain pointer.
+        if (self.e.ir_mod.types.isCVariadicCursor(ir_ty)) return self.e.cached_ptr;
+
         if (is_extern_c_api) {
             if (ir_ty == .string) return self.e.cached_ptr;
             if (!ir_ty.isBuiltin()) {
@@ -123,6 +128,7 @@ pub const AbiLowering = struct {
 
     pub fn needsByval(self: AbiLowering, ir_ty: TypeId, raw_llvm_ty: c.LLVMTypeRef) bool {
         if (self.e.target_config.isWasm32()) return false;
+        if (self.e.ir_mod.types.isCVariadicCursor(ir_ty)) return false;
         if (ir_ty == .string) return false;
         if (!ir_ty.isBuiltin()) {
             const info = self.e.ir_mod.types.get(ir_ty);

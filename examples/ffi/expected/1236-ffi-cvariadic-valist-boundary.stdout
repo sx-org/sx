@@ -1,0 +1,15 @@
+ints own=15 c=15
+doubles own=5.250000 c=5.250000
+promoted own=4 c=4
+text own=8 c=8
+twice own=1515 c=1515
+twice_borrowed sx=1515 c=1515
+mprintf=42-abc
+snprint=4/5
+appendf=defgh6
+field_mprintf=defgh+4
+field_snprint=5*6
+field_appendf=4abc
+vmprintf_type=(cstring, @VaList) -> ?cstring abi(.c)
+snprintf_type=(i32, [*]u8, cstring, @VaList) -> [*]u8 abi(.c)
+appendf_type=(*sqlite3_str, cstring, @VaList) abi(.c)

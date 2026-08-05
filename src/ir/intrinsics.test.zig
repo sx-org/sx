@@ -95,26 +95,65 @@ fn collectDecls(
         try stripped.append(alloc, '\n');
     }
 
-    // Each `;` ends a statement. A declaration whose body is the bare
-    // `intrinsic` keyword ends with `... intrinsic`.
+    // Each `;` ends a statement. A plain name's intrinsic declaration ends with
+    // the `intrinsic` keyword; an `@` function declaration is marked by its
+    // sigil and ends with its signature.
     var stmts = std.mem.splitScalar(u8, stripped.items, ';');
     while (stmts.next()) |raw| {
         const stmt = std.mem.trim(u8, raw, " \t\r\n");
-        if (!std.mem.endsWith(u8, stmt, "intrinsic")) continue;
+        const marked = std.mem.endsWith(u8, stmt, "intrinsic");
         // The LAST `::`, not the first: splitting on `;` means this chunk may
         // carry whole preceding declarations that never ended in one (e.g.
         // build.sx's `BuildOptions :: struct { }` sits directly above
         // `build_options :: () -> BuildOptions intrinsic;`). Taking the first
         // `::` would name the wrong declaration.
         const colons = std.mem.lastIndexOf(u8, stmt, "::") orelse continue;
-        // The declared name is the last identifier before that `::`.
+        // The declared name is the last identifier before that `::`, with its
+        // `@` sigil when it has one — the sigil is part of the registered name.
         const head = std.mem.trimEnd(u8, stmt[0..colons], " \t\r\n");
         var start: usize = head.len;
         while (start > 0 and isIdentChar(head[start - 1])) start -= 1;
+        if (start > 0 and head[start - 1] == '@') start -= 1;
         const name = head[start..];
         if (name.len == 0) continue;
+        // A `(` past the `::` is what makes an `@` declaration a FUNCTION. An
+        // `@` type contract opens with the `struct` or `protocol` keyword, so
+        // it does not match and is not the intrinsic registry's to hold.
+        const at_fn = name[0] == '@' and
+            std.mem.startsWith(u8, std.mem.trimStart(u8, stmt[colons + 2 ..], " \t\r\n"), "(");
+        if (!marked and !at_fn) continue;
         try out.append(alloc, try alloc.dupe(u8, name));
     }
+}
+
+test "collectDecls keeps an `@` sigil, which is part of the registered name" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var out = std.ArrayList([]const u8).empty;
+    try collectDecls(arena.allocator(),
+        \\size_of :: ($T: Type) -> i64 intrinsic;
+        \\@volatile_load :: ($T: Type, address: *T) -> T;
+    , &out);
+    try std.testing.expectEqual(@as(usize, 2), out.items.len);
+    try std.testing.expectEqualStrings("size_of", out.items[0]);
+    try std.testing.expectEqualStrings("@volatile_load", out.items[1]);
+}
+
+test "collectDecls takes an `@` function by its signature and leaves `@` type contracts" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var out = std.ArrayList([]const u8).empty;
+    try collectDecls(arena.allocator(),
+        \\@VaList :: struct {
+        \\}
+        \\@va_start :: (list: *@VaList);
+        \\@BuildSink :: protocol(P: Type) constraint {
+        \\}
+        \\@va_arg :: ($T: Type, list: *@VaList) -> T;
+    , &out);
+    try std.testing.expectEqual(@as(usize, 2), out.items.len);
+    try std.testing.expectEqualStrings("@va_start", out.items[0]);
+    try std.testing.expectEqualStrings("@va_arg", out.items[1]);
 }
 
 var g_threaded: ?std.Io.Threaded = null;

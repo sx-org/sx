@@ -18,3 +18,15 @@ double sx_ext_avg_doubles(int n, ...) {
     if (n == 0) return 0.0;
     return total / n;
 }
+
+long long sx_ext_total_text(int n, ...) {
+    va_list ap;
+    va_start(ap, n);
+    long long total = 0;
+    for (int i = 0; i < n; i++) {
+        const char *s = va_arg(ap, const char *);
+        while (*s++) total++;
+    }
+    va_end(ap);
+    return total;
+}

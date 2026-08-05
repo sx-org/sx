@@ -726,6 +726,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         _ = self.rejectMultiReturnValueType(ta, "variable");
         const ty = self.resolveType(ta);
         if (rejectVoidAnnotation(self, ta, vd.name, ty, "a variable holds a value")) return;
+        _ = self.refuseCursorSignature(ty, ta.span);
         const slot = self.builder.alloca(ty);
         // The annotation already names the valueless type; lowering the
         // initializer would only restate the refusal at the erasure.
@@ -1057,13 +1058,7 @@ fn inferBareFnBindingType(self: *Lowering, value: *const ast.Node) ?TypeId {
     } else name;
     const fd = self.program_index.fn_ast_map.get(effective_name) orelse return null;
 
-    var params = std.ArrayList(TypeId).empty;
-    defer params.deinit(self.alloc);
-    for (fd.params) |*param| {
-        params.append(self.alloc, self.resolveParamType(param)) catch unreachable;
-    }
-    const cc: types.TypeInfo.CallConv = if (fd.abi == .c or fd.extern_export == .export_) .c else .default;
-    return self.module.types.functionTypeCC(params.items, self.resolveReturnType(fd), cc);
+    return self.declSignatureType(fd);
 }
 
 /// Handle a bare fn_decl node as a local function declaration.

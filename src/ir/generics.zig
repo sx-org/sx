@@ -95,7 +95,25 @@ pub const GenericResolver = struct {
                 std.fmt.allocPrint(self.l.alloc, "block_{s}", .{self.mangleTypeName(bp)}) catch @panic("out of memory while mangling type")
             else
                 self.mangleParamList("cl", c.params, c.ret),
-            .function => |f| self.mangleParamList("fn", f.params, f.ret),
+            // The convention, the C tail, and a pack shape join a function
+            // type's identity, so they join its monomorph key — as a mandatory
+            // fixed-position field block BEFORE the parameter and return
+            // fragments: fn + convention (c|d) + tail (v|f) + pack (p<N>|n).
+            // Every function type writes every field, so no type-name fragment
+            // can absorb a neighbour's metadata.
+            .function => |f| blk: {
+                var head = std.ArrayList(u8).empty;
+                head.appendSlice(self.l.alloc, "fn") catch @panic("out of memory while mangling type");
+                head.append(self.l.alloc, if (f.call_conv == .c) 'c' else 'd') catch @panic("out of memory while mangling type");
+                head.append(self.l.alloc, if (f.is_c_variadic) 'v' else 'f') catch @panic("out of memory while mangling type");
+                if (f.pack_start) |ps| {
+                    const tag = std.fmt.allocPrint(self.l.alloc, "p{d}", .{ps}) catch @panic("out of memory while mangling type");
+                    head.appendSlice(self.l.alloc, tag) catch @panic("out of memory while mangling type");
+                } else {
+                    head.append(self.l.alloc, 'n') catch @panic("out of memory while mangling type");
+                }
+                break :blk self.mangleParamList(head.items, f.params, f.ret);
+            },
             .tuple => |t| blk: {
                 var buf = std.ArrayList(u8).empty;
                 buf.appendSlice(self.l.alloc, "tu") catch @panic("out of memory while mangling type");
@@ -212,13 +230,31 @@ pub const GenericResolver = struct {
     /// Strategy 1: explicit type args (the param named `$T` IS a type
     /// expression). Strategy 2: infer from value params that use `T`
     /// (`a: $T`, `items: []$T`), picking the widest match.
+    /// Whether a generic call spells its type arguments. Exact arity answers on
+    /// its own; a bare `..` tail keeps the arity open, so the answer comes from
+    /// what stands in the type-parameter positions. `args_ast` is parallel to
+    /// `fd.params` (dot-call callers prepend the receiver's node).
+    pub fn typesPassedExplicitly(self: GenericResolver, fd: *const ast.FnDecl, args_ast: []const *const Node) bool {
+        if (!fd.is_c_variadic) return args_ast.len == fd.params.len;
+        if (args_ast.len < fd.params.len) return false;
+        for (fd.params, 0..) |*param, pi| {
+            if (!Lowering.isTypeParamDecl(param, fd.type_params)) continue;
+            const node = args_ast[pi];
+            if (!(type_bridge.isTypeShapedAstNode(node, &self.l.module.types) or
+                self.l.isTypeReturningCallNode(node) or
+                self.l.isGenericTypeConstructorCallNode(node) or
+                self.argIsBoundTypeParam(node))) return false;
+        }
+        return true;
+    }
+
     pub fn buildTypeBindings(
         self: GenericResolver,
         fd: *const ast.FnDecl,
         args_ast: []const *const Node,
     ) std.StringHashMap(TypeId) {
         var bindings = std.StringHashMap(TypeId).init(self.l.alloc);
-        const types_passed_explicitly = args_ast.len == fd.params.len;
+        const types_passed_explicitly = self.typesPassedExplicitly(fd, args_ast);
         for (fd.type_params) |tp| {
             var found = false;
             // Strategy 1: explicit — the param whose name matches `tp.name` IS

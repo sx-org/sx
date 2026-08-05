@@ -923,6 +923,89 @@ fence(.seq_cst);   // standalone memory fence
 combinations are compile errors. The same operations run at compile time (`#run`)
 under single-threaded semantics.
 
+### Volatile access (`@volatile_load` / `@volatile_store`)
+
+Compiler intrinsics declared by `modules/std/core.sx`, so they resolve with no
+import. Each is one typed access emitted exactly as written — the optimizer may
+not elide it, duplicate it, fuse it with a neighbour, or move it across another
+volatile access:
+
+```sx
+first  := @volatile_load(i32, address);
+second := @volatile_load(i32, address);   // a second real read, not a reuse of `first`
+@volatile_store(i32, address, second + 1);
+```
+
+For storage whose reads and writes are themselves observable: a memory-mapped
+device register, a buffer a signal handler touches, memory another process maps.
+`T` is any type with storage — integer, float, bool, pointer, enum, vector, or
+an aggregate, which moves as a whole rather than field by field.
+
+**Volatile is not atomic.** The access carries no memory ordering, orders
+nothing between threads, and is not guaranteed indivisible. Sharing data between
+threads is `Atomic($T)`'s job.
+
+### C-variadic tails (`..`, `@VaList`)
+
+A parameter list ending in a bare `..` is the C `...` tail. It binds no name and
+no type, the fixed count is the number of entries before it, and it is legal on
+an **effective-C signature** only — a definition carrying `abi(.c)` or `export`,
+an `extern` declaration, or an `abi(.c)` function type:
+
+```sx
+printf   :: (fmt: cstring, ..) -> i32 extern;
+tally    :: (n: i32, ..) -> i64 abi(.c) { ... }
+Callback :: (fixed: i32, ..) -> i64 abi(.c);      // a function type takes it too
+```
+
+Every argument at or past the fixed count crosses under the C **default argument
+promotions**: `f32` widens to `f64`, and an integer narrower than 32 bits widens
+to `i32`. A definition reads its own tail through a `@VaList` cursor — it and the
+four operations that walk it are compiler intrinsics declared by
+`modules/std/core.sx`, so they resolve with no import:
+
+```sx
+sum :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);          // open a cursor over the arguments past `n`
+    defer @va_end(*ap);      // every cursor opened is closed exactly once
+    total: i64 = 0;
+    for 0..n (i) { total += xx @va_arg(i32, *ap); }
+    return total;
+}
+```
+
+`@va_arg` asks for what the promotions LEAVE in the slot, so an `f32` argument
+reads back as `@va_arg(f64, …)` and a `u8` as `@va_arg(i32, …)`; the narrow types
+are refused where they are written. `@va_copy(*dup, *ap)` forks a second cursor
+at the first's position. `@VaList` is opaque — its storage is the target's
+`va_list`, so it cannot be constructed, inspected, measured, or copied by
+assignment, and it cannot escape the frame whose tail it reads.
+
+C's own tail readers take the list as a parameter — `vsnprintf`,
+`sqlite3_vmprintf`. That parameter is written **by value** as `ap: @VaList`, and
+only in an effective-C signature. It is place-only: a call names a live list,
+`f(fmt, ap)` from a `@VaList` local or parameter and `f(fmt, ap.*)` from a
+borrow:
+
+```sx
+vmprintf :: (fmt: cstring, ap: @VaList) -> ?cstring extern;
+
+relay :: (fmt: cstring, ..) -> ?cstring abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    return vmprintf(fmt, ap);
+}
+
+// Forwarding a list inside sx is the borrow `*@VaList`.
+forward :: (fmt: cstring, ap: *@VaList) -> ?cstring { vmprintf(fmt, ap.*) }
+```
+
+An incoming list is borrowed and already open: the callee reads it with `@va_arg`
+and forks it with `@va_copy`, while `@va_start` and `@va_end` belong to the frame
+that owns it.
+
 ### Async / Concurrency (`context.io`, `modules/std/sched.sx`)
 
 A pure-sx cooperative fiber runtime — **colorblind async**, with no function

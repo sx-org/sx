@@ -110,6 +110,16 @@ the import can stand in for the canonical declaration:
 @SourceSite :: struct { … }   // ERROR: 'modules/std/core.sx' declares it
 ```
 
+A contract need not be a type: an `@` name also declares a function the compiler
+implements, written as its signature with no body. `@volatile_load` and
+`@volatile_store` (§Intrinsics, Memory) are such declarations, under the same
+(module, name) identity rule.
+
+A contract name resolves program-wide. The registry admits exactly one canonical
+declaration of it, so there is no second author for the import-visibility rule to
+choose between: `@SourceSite` and `@VaList` are spelled bare wherever they are
+written.
+
 Separately, a few `@` names are **compiler-formed** — `@Init(T)` and
 `@BuildBlock(P)`. Those are formed for a parameter, never declared and never
 constructed, so they have no stdlib declaration and no literal form.
@@ -3061,6 +3071,7 @@ SxFoo     :: #objc_class("SxFoo")    export { counter: i32; bump :: (self: *Self
 | `unsigned*` (single out) | `*u32` | |
 | `float*` (buffer) | `[*]f32` | |
 | `void*` (generic) | `*void` | only for truly opaque/generic data |
+| `va_list` | `@VaList` | the C-variadic boundary, place-only |
 
 ### Vector Types (SIMD)
 LLVM SIMD vectors, parameterized by length and element type.
@@ -3283,6 +3294,178 @@ path_join :: (..parts: []string) -> string { ... }
 - The heterogeneous comptime-pack form `..$args: []Type` binds per-position
   comptime types — see "Variadic Heterogeneous Type Packs" below.
 
+### The C-Variadic Tail
+
+A parameter list may end in a bare `..`, the C `...`:
+
+```sx
+printf :: (fmt: cstring, ..) -> i32 extern;
+tally  :: (n: i32, ..) -> i64 abi(.c) { ... }
+```
+
+The tail binds no name and no type, so it is a property of the signature rather
+than a parameter, and the **fixed count** is the number of entries before it —
+zero when the list is just `(..)`. It is legal on an **effective-C signature**
+only: a definition carrying `abi(.c)` or `export`, an `extern` declaration, or an
+`abi(.c)` function type. Each states the C shape with no implicit sx context, so
+the LLVM type is exactly what a C compiler builds for the same prototype.
+`abi(.naked)` and a `Closure` literal carry no such shape and refuse the tail.
+
+A C prototype imported by `#import c { #include … }` keeps its tail: a
+declaration ending in `...` synthesizes an `extern` ending in `..`, over the
+fixed parameters C wrote — none of them where C23 states no named parameter
+before the tail.
+
+Every argument at or past the fixed count crosses under the **C default argument
+promotions**: `f32` widens to `f64`, and an integer narrower than 32 bits widens
+to `i32` — every width, not just the builtin ones. `isize` and `usize` are the
+target's address width and take the promotions at it. Past the promotions, a
+tail argument must be something a C ABI can pass through `va_arg`: a 32- or
+64-bit integer, `f64`, the pointer family or its nullable forms, or a function
+value carrying the C convention. Anything else — an aggregate, a `string` or
+slice (two words), a width C has no variadic slot for — is refused at the call,
+naming the argument.
+
+An `extern` declaration may instead end in `..name: []T`, the **homogeneous
+constraint** over the tail: the author asserts every tail argument is a `T`.
+Each argument at or past the fixed count takes the ordinary implicit conversion
+to `T` — the one any typed parameter of `T` performs, so a string literal reaches
+a `[]cstring` tail as its data pointer — and then the promotions above. The
+emitted operand carries `T`'s width rather than the argument's written one, and
+each crosses its own C variadic slot; nothing is packed into an sx slice.
+
+The tail is part of a symbol's signature. Two declarations of one C symbol share
+a registration only when their signatures match, the tail included: a fixed
+prototype and a variadic one over the same fixed parameters state different ABIs
+and are refused where the second is written.
+
+#### A C-variadic function type
+
+A function TYPE takes the same tail, and `abi(.c)` is the only spelling that
+gives it its C signature — a type carries no linkage slot:
+
+```sx
+Callback :: (fixed: i32, ..) -> i64 abi(.c);
+Zero     :: (..) -> i64 abi(.c);
+```
+
+A signature with a body is a definition and a bodyless one is a function-type
+alias. `abi(...)` states a convention rather than a body, so it appears on
+both.
+
+The tail joins the type's identity. `(fixed: i32) -> i64 abi(.c)` and
+`(fixed: i32, ..) -> i64 abi(.c)` are different types, and so are
+`() -> i64 abi(.c)` and `(..) -> i64 abi(.c)`; a function binds only to the one
+that states its own tail. A call through such a value states the fixed arguments
+and then as many tail arguments as it likes, each crossing under the promotions
+and the admissibility rule above. Every other function type is exact-arity.
+
+#### Reading a tail: the `@VaList` cursor
+
+A definition reads its own tail through a cursor. `@VaList` and the four
+operations that walk it are compiler-maintained contracts declared by
+`modules/std/core.sx` (§Lexical Structure, The `@` namespace):
+
+```sx
+@VaList :: struct { }
+
+@va_start :: (list: *@VaList);
+@va_arg   :: ($T: Type, list: *@VaList) -> T;
+@va_copy  :: (dst: *@VaList, src: *@VaList);
+@va_end   :: (list: *@VaList);
+```
+
+```sx
+sum :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    total: i64 = 0;
+    for 0..n (i) { total += xx @va_arg(i32, *ap); }
+    return total;
+}
+```
+
+`@va_start` opens a cursor over the arguments past the fixed count; it is legal
+only inside a definition whose parameter list ends in `..`. `@va_arg` reads the
+next argument and advances, `@va_copy` forks a second cursor at the first's
+position, and `@va_end` closes one. Every cursor a `@va_start` or a `@va_copy`
+opens is closed exactly once.
+
+`@va_arg` asks for the type the promotions LEAVE in the slot, so `f32` and any
+integer narrower than 32 bits are refused where they are written:
+`@va_arg(f64, …)` is how an `f32` argument reads back, and `@va_arg(i32, …)` how
+a `u8` does. The tail admissibility rule above applies unchanged.
+
+`@VaList` is **opaque**. Its storage is the target's `va_list` and it has no
+value form, so it cannot be constructed, inspected, measured (`size_of` /
+`align_of` / the reflection builtins), or copied by assignment. A local
+declaration and an incoming C parameter are the only things that give a cursor
+storage, and `*name` is the only way to reach one.
+
+The cursor is **owned by the function that declares it**: `@va_start`,
+`@va_end`, and `@va_copy`'s destination each take the address of a local. A
+`*@VaList` handed to another function is a **borrow** — it reads with `@va_arg`
+and leaves the closing to the owner. A cursor cannot escape the frame whose tail
+it reads: neither `@VaList` nor `*@VaList` may be returned, stored in a field or
+a global, captured by a closure, or passed through a C-variadic tail.
+
+Both rules follow the cursor into whatever carries it. A type whose own bytes
+hold a list — `[1]@VaList`, `?@VaList`, a struct or tuple with such a field — is
+the list's storage and is refused everywhere the bare spelling is; one that
+addresses another frame's — `[]*@VaList`, a struct of borrows — is refused
+everywhere the borrow is. A function type is a code address, so a parameter of
+its own signature is the callee's storage and carries nothing.
+
+#### Crossing the C boundary: a `va_list` parameter
+
+C's own tail readers take the list as a parameter — `vprintf`, `vsnprintf`,
+`sqlite3_vmprintf`. That parameter is written **by value** as `ap: @VaList`, and
+only in an effective-C signature. The rule is independent of a bare `..` tail —
+a signature that takes a list needs none of its own:
+
+```sx
+vmprintf :: (fmt: cstring, ap: @VaList) -> ?cstring extern;
+
+sx_vsum :: (n: i32, ap: @VaList) -> i64 export {
+    total: i64 = 0;
+    for 0..n (i) { total += xx @va_arg(i32, *ap); }
+    return total;
+}
+```
+
+An imported `va_list` parameter arrives as this one. The typedef names it, not
+what it canonicalizes to — that is a pointer on one target and an array of
+records on another, and neither shape is the boundary on its own.
+
+Forwarding a list **inside sx** is `ap: *@VaList`, the same borrow a helper
+reads through. Neither spelling stands in for the other: an ordinary non-C
+`@VaList` parameter and a C-boundary `*@VaList` parameter are both refused.
+
+The boundary parameter is **place-only**. A call names a live list — `f(fmt, ap)`
+from an `ap: @VaList` local or parameter, `f(fmt, ap.*)` from an internal
+`ap: *@VaList` — and the place crosses under the target's C ABI with no sx
+value copy:
+
+```sx
+relay :: (fmt: cstring, ..) -> i32 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    return c_vformat(fmt, ap);
+}
+
+forward :: (fmt: cstring, ap: *@VaList) -> i32 {
+    return c_vformat(fmt, ap.*);
+}
+```
+
+An incoming list is **borrowed and already open**. The callee never calls
+`@va_start` or `@va_end` on it — both belong to the frame that owns the list —
+but reads it with `@va_arg` and forks it with `@va_copy`. A traversal may move
+the caller-visible position, as C specifies, so a caller that needs a second
+traversal copies first.
+
 ### Variadic Heterogeneous Type Packs
 
 A **pack** is a comptime sequence of per-position-typed arguments. Unlike a
@@ -3298,6 +3481,7 @@ The full family of variadic/pack forms and how they differ:
 | `..xs: []P` *(P a protocol)* | mixed, **erased** to `P` `{ctx,vtable}` | **runtime** (slice) | runtime or comptime | `P` (call protocol methods) | runtime |
 | `..xs: P` *(pack)* | per-position **concrete**, each conforms to `P` | **comptime** (no runtime value) | comptime only (literal / `inline for` cursor) | the concrete element, **viewed through `P`** | comptime int |
 | `..$args` / `..$xs: []Type` | per-position comptime **types** | **comptime** | comptime only | element value/type (reflection) | comptime int |
+| `..` *(the C tail)* | none — the C ABI's variadic slots | **runtime** (the callee's frame) | no index | `@va_arg(T, *ap)` reads the next | no length |
 
 Key axis — **concrete vs erased, comptime vs runtime**:
 - `..xs: P` (pack) keeps each element's *concrete* type but is **comptime-only**:
@@ -5567,12 +5751,26 @@ iteration. `return` runs all pending defers of the function. A `break` or
 
 ## 7. Intrinsics
 
-An **intrinsic** is a declaration whose implementation lives in the compiler. It
-is written with the reserved word `intrinsic` in body position, where a `{ ... }`
-body would otherwise go:
+An **intrinsic** is a declaration whose implementation lives in the compiler.
+
+A FUNCTION intrinsic has two spellings. A plain name is written with the
+reserved word `intrinsic` in body position, where a `{ ... }` body would
+otherwise go; an `@` name is written as its signature alone, because the sigil
+is already the marker:
 
 ```sx
 size_of :: ($T: Type) -> i64 intrinsic;
+@volatile_load :: ($T: Type, address: *T) -> T;
+```
+
+The `@` form takes no body — no brace block, no `=> expr`, no `intrinsic`
+keyword — and no `abi`, linkage, `ufcs`, or accessor modifier. A DATA intrinsic
+is written with the reserved word for every name, since it has no signature the
+sigil could stand over:
+
+```sx
+n :: intrinsic;
+n :: i64 intrinsic;
 ```
 
 `intrinsic` is a keyword, not a directive: `#intrinsic` is not a spelling of it
@@ -5674,6 +5872,9 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `memset(dst: *void, val: i64, size: i64) -> void` — fill `size` bytes at `dst` with `val`
 - `size_of($T: Type) -> i64` — size of type `T` in bytes
 - `align_of($T: Type) -> i64` — alignment of type `T` in bytes
+- `@volatile_load($T: Type, address: *T) -> T` / `@volatile_store($T: Type, address: *T, value: T)` — one typed access emitted exactly as written: the optimizer may not elide it, duplicate it, fuse it with a neighbour, or move it across another volatile access. For storage whose reads and writes are themselves observable — a memory-mapped device register, a buffer a signal handler touches, memory another process maps. **Volatile is not atomic**: the access carries no memory ordering, orders nothing between threads, and is not guaranteed indivisible; sharing data between threads is `Atomic($T)`'s job (`modules/std/atomic.sx`). `T` is any type with storage — integer, float, bool, pointer, enum, vector, or an aggregate, which moves as a whole rather than field by field. A valueless `T` is a compile error. Both carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`, and the unprefixed spellings are ordinary identifiers a program may bind.
+
+- `@va_start(list: *@VaList)` / `@va_arg($T: Type, list: *@VaList) -> T` / `@va_copy(dst: *@VaList, src: *@VaList)` / `@va_end(list: *@VaList)` — the C-variadic cursor: `@va_start` opens one over the tail arguments of the definition being lowered, `@va_arg` reads the next and advances, `@va_copy` forks a second cursor at the first's position, and `@va_end` closes one. `@VaList` is opaque, owned by the function that declares it, and cannot escape the frame whose tail it reads; `T` is the type the C default argument promotions leave in the slot. A C `va_list` parameter is written by value as `ap: @VaList` in an effective-C signature and passed as the place it names; sx-internal forwarding is `ap: *@VaList`. Full rules under §Variadic Functions, The C-Variadic Tail. All five carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`.
 
 ### Type Introspection
 - `type_of(val: $T) -> Type` — returns the runtime type tag of a value
@@ -6664,11 +6865,14 @@ top_level       = decl | import_decl | context_extend
 import_decl     = '#import' STRING end
                 | IDENT '::' '#import' STRING end
 context_extend  = '#context_extend' IDENT ':' type '=' expr end
-decl            = const_decl | var_decl | fn_decl | enum_decl | struct_decl | error_decl
+decl            = const_decl | var_decl | fn_decl | at_fn_decl | enum_decl | struct_decl | error_decl
 error_decl      = IDENT '::' 'error' '{' IDENT (',' IDENT)* ','? '}' end
 const_decl      = IDENT '::' expr end
                 | IDENT ':' type ':' expr end
                 | IDENT '::' type 'intrinsic' end
+at_fn_decl      = AT_IDENT '::' '(' params? ')' ('->' ret_type)? end
+                  // a compiler-implemented function; the sigil is the marker,
+                  // so no keyword, body, ABI, or linkage follows
 var_decl        = IDENT ':=' expr end
                 | IDENT ':' type '=' expr end
                 | IDENT ':' type end
@@ -6686,7 +6890,12 @@ struct_member   = field_group | '#using' IDENT ';'?
 field_group     = IDENT (',' IDENT)* ':' type ('=' expr)? ';'?
                   // a member list's `;` is an optional separator, not `end`:
                   // the entry ends where the next one starts, line break or not
-params          = param (',' param)* ','?
+params          = param (',' param)* (',' c_tail)? ','?
+                | c_tail ','?
+c_tail          = '..'              // the C-variadic tail; binds no name and no
+                                    // type, is the last entry, and needs an
+                                    // effective-C signature (`abi(.c)`,
+                                    // `export`, or `extern`)
 param           = IDENT ':' type ('=' expr)?
 block           = '{' stmt* '}'     // the LAST expr may drop `end`; written or
                   // not, that expr is the block's value — `;` only separates
@@ -6741,8 +6950,10 @@ type            = '$' IDENT | 'i32' | 'f32' | 'f64' | 'bool' | 'string'
                 | 'any' | 'Type' | '..' type | '[' expr ']' type | IDENT
                 | 'Tuple' '(' tuple_type_list? ')'           // tuple type: Tuple(A, B) / Tuple(x: A) / Tuple() / Tuple(..F(Ts))
                 | '(' type ')'                               // grouping (bare parens never form a tuple)
-                | '(' (type (',' type)*)? ')' '->' type ('!' IDENT?)?  // function type (params optional; optional error channel)
+                | '(' fn_type_list? ')' '->' type ('!' IDENT?)?  // function type (params optional; optional error channel)
                 | '!' IDENT?                                  // pure failable (`!` / `!Named`)
+fn_type_list    = type (',' type)* (',' c_tail)? ','?
+                | c_tail ','?       // a C-variadic function type needs `abi(.c)`
 tuple_type_list = tuple_type_elem (',' tuple_type_elem)* ','?
 tuple_type_elem = IDENT ':' type | '..' type | type
 ```

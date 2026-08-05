@@ -1,5 +1,11 @@
 error: extern symbol 'getenv' is already bound with a different signature; two views of one C symbol must declare identical types
-  --> examples/diagnostics/1172-diagnostics-extern-symbol-conflict.sx:8:61
+  --> examples/diagnostics/1172-diagnostics-extern-symbol-conflict.sx:13:61
    |
- 8 | getenv_opt :: (name: [:0]u8) -> ?[:0]u8 extern libc "getenv";
+13 | getenv_opt :: (name: [:0]u8) -> ?[:0]u8 extern libc "getenv";
    |                                                             ^
+
+error: extern symbol 'printf' is already bound with a different signature; two views of one C symbol must declare identical types
+  --> examples/diagnostics/1172-diagnostics-extern-symbol-conflict.sx:16:64
+   |
+16 | variadic_view :: (fmt: cstring, ..) -> i32 extern libc "printf";
+   |                                                                ^

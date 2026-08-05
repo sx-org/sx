@@ -1,0 +1,83 @@
+// A C prototype keeps its variadicness through `#import c`. The declaration the
+// block synthesizes from a header ends in the bare `..` tail, so an imported
+// `int printf(const char *, ...)` is callable as one — no hand-written extern
+// beside the import, no fixed-arity stub.
+//
+// C23 permits a variadic prototype with no named parameter, so
+// `long long sum_all(...)` fixes nothing at all and imports as `(..)`. The count
+// then rides in the tail with the values, and `-std=c23` is what admits the
+// prototype — the flag reaches the header parse and the source compile alike.
+//
+// A `va_list` parameter imports as the `@VaList` boundary. The typedef is what
+// names it: the type it canonicalizes to is `char *` on one target and an array
+// of records on another, and neither spelling belongs to the boundary on its own.
+//
+// The tail joins the imported signature's identity, so each shape binds only to
+// the function type that states its own — the fixed-arity type of the same
+// parameters is a different type and holds nothing here.
+//
+// Every imported function has a C caller in the companion file that passes the
+// same arguments; the two answers are the differential.
+
+#import "modules/std.sx";
+
+#import c {
+    #include "1237-ffi-cvariadic-c23-import.h";
+    #source  "1237-ffi-cvariadic-c23-import.c";
+    #flags   "-std=c23";
+};
+
+SumAll   :: (..) -> i64 abi(.c);
+ScaleAll :: (..) -> f64 abi(.c);
+Tally    :: (i32, ..) -> i64 abi(.c);
+Fixed    :: (i32) -> i64 abi(.c);
+Relay    :: (i32, @VaList) -> i64 abi(.c);
+
+own :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    return relay(n, ap);
+}
+
+own_through :: (read: Relay, n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    return read(n, ap);
+}
+
+main :: () -> i32 {
+    // A tail argument crosses at the width it is written, so the values C reads
+    // as `int` are declared as `i32` rather than left to the literal's `i64`.
+    n: i32 = 3;
+    a: i32 = 4;
+    b: i32 = 5;
+    c: i32 = 6;
+    p: i32 = 7;
+    q: i32 = 8;
+    r: i32 = 9;
+
+    // Zero fixed parameters: every argument, the count included, crosses the tail.
+    print("zero_fixed sx={} c={}\n", sum_all(n, a, b, c), c_sum_all());
+
+    x: f64 = 1.25;
+    narrow: f32 = 0.5;
+    print("zero_fixed_doubles sx={} c={}\n", scale_all(n, x, 2.5, narrow), c_scale_all());
+
+    print("fixed sx={} c={}\n", tally(3, p, q, r), c_tally());
+    print("borrowed sx={}\n", own(3, p, q, r));
+
+    zero: SumAll = sum_all;
+    doubles: ScaleAll = scale_all;
+    counted: Tally = tally;
+    reader: Relay = relay;
+    print("through_type zero={} doubles={} counted={}\n", zero(n, a, b, c), doubles(n, x, 2.5, narrow), counted(3, p, q, r));
+    print("through_reader sx={}\n", own_through(reader, 3, p, q, r));
+
+    print("sum_all_type={}\n", type_name(SumAll));
+    print("tally_type={}\n", type_name(Tally));
+    print("relay_type={}\n", type_name(Relay));
+    print("tally_is_fixed={}\n", Tally == Fixed);
+    return 0;
+}

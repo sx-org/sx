@@ -6,6 +6,7 @@ const mod_mod = @import("../module.zig");
 const type_bridge = @import("../type_bridge.zig");
 const program_index_mod = @import("../program_index.zig");
 const resolver_mod = @import("../resolver.zig");
+const cvariadic = @import("cvariadic.zig");
 const StructTemplate = program_index_mod.StructTemplate;
 const TemplateParam = program_index_mod.TemplateParam;
 
@@ -943,6 +944,8 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
             _ = self.rejectMultiReturnValueType(sd.field_types[field_idx], "field");
             const field_ty = self.resolveType(sd.field_types[field_idx]);
             _ = self.refuseValuelessProtocol(field_ty, sd.field_types[field_idx].span, "declare a field of type");
+            _ = self.refuseCursorEscape(field_ty, sd.field_types[field_idx].span, "declare a field of type");
+            _ = self.refuseCursorSignature(field_ty, sd.field_types[field_idx].span);
             fields.append(self.alloc, .{
                 .name = table.internString(sd.field_names[field_idx]),
                 .ty = field_ty,
@@ -976,12 +979,19 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
         }
     }
 
+    // The C-variadic cursor carries the target's `va_list` storage. Substituting
+    // it HERE, where the declaration's own fields would land, is what gives the
+    // type its size and alignment while leaving the sx surface empty: nothing
+    // downstream — layout, ABI classification, the local's alloca — needs a
+    // second notion of what a cursor is.
+    const layout_fields = if (cvariadic.isCursorDecl(sd)) self.cursorStorageFields() else fields.items;
+
     // Register under the per-decl nominal identity computed above. A non-first
     // shadow author's slot was already reserved before fields resolved, so this
     // fills it (key-stable updatePreservingKey); a first / single author adopts
     // any forward-reference stub. Same-name structs in DIFFERENT sources get
     // distinct TypeIds instead of last-wins clobbering the first.
-    const info: types.TypeInfo = .{ .@"struct" = .{ .name = name_id, .fields = fields.items } };
+    const info: types.TypeInfo = .{ .@"struct" = .{ .name = name_id, .fields = layout_fields } };
     const struct_ty = self.internNamedTypeDecl(decl_key, name_id, info, nominal_id);
     // Couple the nominal layout identity to its authoring declaration. Method
     // calls must select through this TypeId-keyed provenance, never through the

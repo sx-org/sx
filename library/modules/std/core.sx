@@ -90,6 +90,65 @@ any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
 raw_any_data :: (av: any) -> *void intrinsic;
 raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 
+// A volatile access is emitted exactly as written: the optimizer may not elide
+// it, duplicate it, fuse it with a neighbour, or move it across another
+// volatile access. It is for storage whose reads and writes are themselves
+// observable — a memory-mapped device register, a buffer a signal handler
+// touches, memory another process maps.
+//
+// Volatile is NOT atomic: the access carries no memory ordering, orders nothing
+// between threads, and is not guaranteed indivisible. Sharing data between
+// threads is `Atomic($T)`'s job (modules/std/atomic.sx).
+//
+// `T` is any type with storage — integer, float, bool, pointer, enum, vector,
+// or an aggregate. The access is one typed load/store of `T`, so an aggregate
+// `T` moves as a whole rather than field by field. `value` converts to `T` the
+// way any typed parameter does.
+@volatile_load  :: ($T: Type, address: *T) -> T;
+@volatile_store :: ($T: Type, address: *T, value: T);
+
+// The reader a definition whose parameter list ends in a bare `..` walks its
+// tail arguments with. `@VaList` is opaque: it has no fields, no size, and no
+// value form — a local declaration gives it storage, and the four operations
+// below are the only things that read or move it.
+//
+//     tally :: (n: i32, ..) -> i64 abi(.c) {
+//         ap: @VaList = ---;
+//         @va_start(*ap);
+//         total: i64 = 0;
+//         for 0..n (i) { total += xx @va_arg(i32, *ap); }
+//         @va_end(*ap);
+//         return total;
+//     }
+//
+// The cursor is owned by the function that declares it: `@va_start`, `@va_copy`
+// into it, and `@va_end` all take the address of a local. A `*@VaList` passed on
+// to a helper is a borrow — it reads with `@va_arg` and leaves the ending to the
+// owner. Every cursor a `@va_start` or a `@va_copy` opens is ended once.
+//
+// `@va_arg` reads the type C's default argument promotions leave in the slot, so
+// it asks for `i32` where the caller wrote a `u8` and `f64` where it wrote an
+// `f32`.
+//
+// C's own tail readers take the list as a parameter. That parameter is written
+// by value as `ap: @VaList`, and only in an effective-C signature — an `abi(.c)`
+// or `export` definition, an `extern` declaration, or an `abi(.c)` function
+// type:
+//
+//     vmprintf :: (fmt: cstring, ap: @VaList) -> ?cstring extern;
+//
+// It is place-only: a call names a live list, `f(fmt, ap)` from a `@VaList`
+// local or parameter and `f(fmt, ap.*)` from a `*@VaList` borrow. An incoming
+// list is borrowed already open, so the callee reads and copies it but leaves
+// `@va_start` and `@va_end` to its caller.
+@VaList :: struct {
+}
+
+@va_start :: (list: *@VaList);
+@va_arg   :: ($T: Type, list: *@VaList) -> T;
+@va_copy  :: (dst: *@VaList, src: *@VaList);
+@va_end   :: (list: *@VaList);
+
 // ── The comptime compiler-API readers ────────────────────────────────────────
 // Serviced by the comptime evaluator (mode `evaluate`) — they read and mint into
 // the compiler's own string pool and type table, so they exist only at `#run` /
