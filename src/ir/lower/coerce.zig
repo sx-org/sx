@@ -1332,18 +1332,18 @@ fn implicitNoneMismatchExempt(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty:
 }
 
 /// The SOURCE-LEVEL signature type of the lowered function `fid`: the implicit
-/// `__sx_ctx` parameter dropped and the declared calling convention kept, so it
-/// interns to the same `TypeId` as the equivalent written annotation
-/// (`(i64) -> i64`, `(i64) -> i64 abi(.c)`). A parameter with a default is an
-/// ordinary parameter here — a default is a call-site convenience, not part of
-/// the value's signature.
+/// `__sx_ctx` parameter dropped and the declared calling convention and C tail
+/// kept, so it interns to the same `TypeId` as the equivalent written annotation
+/// (`(i64) -> i64`, `(i64) -> i64 abi(.c)`, `(i64, ..) -> i64 abi(.c)`). A
+/// parameter with a default is an ordinary parameter here — a default is a
+/// call-site convenience, not part of the value's signature.
 pub fn functionSignatureType(self: *Lowering, fid: inst_mod.FuncId) ?TypeId {
     const f = &self.module.functions.items[fid.index()];
     var param_ids = std.ArrayList(TypeId).empty;
     defer param_ids.deinit(self.alloc);
     const skip: usize = if (f.has_implicit_ctx) 1 else 0;
     for (f.params[skip..]) |p| param_ids.append(self.alloc, p.ty) catch return null;
-    return self.module.types.functionTypeCC(param_ids.items, f.ret, f.call_conv);
+    return self.module.types.functionTypeVariadic(param_ids.items, f.ret, f.call_conv, f.is_variadic);
 }
 
 /// A bare-function VALUE is carried in an integer-word IR type

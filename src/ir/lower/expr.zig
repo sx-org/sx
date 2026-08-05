@@ -3297,12 +3297,26 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                             // runtime when the C caller doesn't supply
                             // the implicit __sx_ctx arg.
                             if (tt_info == .function) {
-                                const func_cc = self.module.functions.items[@intFromEnum(fid)].call_conv;
+                                const target_fn = self.module.functions.items[@intFromEnum(fid)];
+                                const func_cc = target_fn.call_conv;
                                 if (func_cc != tt_info.function.call_conv) {
                                     if (self.diagnostics) |d| {
                                         const want_cc = if (tt_info.function.call_conv == .c) "abi(.c)" else "default sx convention";
                                         const have_cc = if (func_cc == .c) "abi(.c)" else "default sx convention";
                                         d.addFmt(.err, node.span, "call-convention mismatch: '{s}' is declared with {s} but the target type expects {s}", .{ eff_fn_name, have_cc, want_cc });
+                                    }
+                                    break :blk self.emitPlaceholder(eff_fn_name);
+                                }
+                                // A C-variadic tail is part of the ABI: the
+                                // caller promotes tail arguments and the callee
+                                // reads them through a cursor, so a fixed
+                                // signature and a variadic one cannot stand in
+                                // for each other.
+                                if (target_fn.is_variadic != tt_info.function.is_c_variadic) {
+                                    if (self.diagnostics) |d| {
+                                        const want_tail = if (tt_info.function.is_c_variadic) "a C-variadic '..' tail" else "a fixed parameter list";
+                                        const have_tail = if (target_fn.is_variadic) "a C-variadic '..' tail" else "a fixed parameter list";
+                                        d.addFmt(.err, node.span, "variadic-tail mismatch: '{s}' is declared with {s} but the target type expects {s}", .{ eff_fn_name, have_tail, want_tail });
                                     }
                                     break :blk self.emitPlaceholder(eff_fn_name);
                                 }

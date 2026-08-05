@@ -695,6 +695,10 @@ pub const Parser = struct {
         // Tuple type: (T1, T2) or (T1) — no '->' after ')'
         // Named params (documentation only): (name: Type, ...) -> ReturnType
         if (self.current.tag == .l_paren) {
+            // A bare `..` tail belongs to a function TYPE. Without a `->` these
+            // parens are a grouping, the void type, or a result list, where a
+            // `..` is the pack spread — so the tail is recognized only here.
+            const is_fn_type = self.tagAfterParenGroup() == .arrow;
             self.advance(); // skip '('
             var param_types = std.ArrayList(*Node).empty;
             var param_names = std.ArrayList(?[]const u8).empty;
@@ -711,6 +715,9 @@ pub const Parser = struct {
             // 1-tuple while `(T)` (no comma) is a GROUPING — see the grouping
             // return below.
             var had_trailing_comma = false;
+            var is_c_variadic = false;
+            // Span of the bare `..`, for the refusals that name it.
+            var tail_span: ast.Span = .{ .start = 0, .end = 0 };
             while (self.current.tag != .r_paren and self.current.tag != .eof) {
                 if (param_types.items.len > 0) {
                     try self.expect(.comma);
@@ -721,6 +728,23 @@ pub const Parser = struct {
                 }
                 if (saw_error_type) {
                     return self.fail("error type '!' must be the last element of a result list");
+                }
+                // The bare `..` C-variadic tail — one token of lookahead
+                // separates it from every pack spread, which always carries an
+                // operand. It is the last entry, so an ordinary trailing comma
+                // may follow it and nothing else may.
+                if (self.current.tag == .dot_dot and is_fn_type and
+                    (self.peekTag(1) == .r_paren or self.peekTag(1) == .comma))
+                {
+                    const dots = self.current.loc;
+                    is_c_variadic = true;
+                    tail_span = .{ .start = dots.start, .end = dots.end };
+                    self.advance(); // skip '..'
+                    if (self.current.tag == .comma) self.advance();
+                    if (self.current.tag != .r_paren) {
+                        return self.failAt(tail_span, "a C-variadic '..' tail must be the last parameter entry");
+                    }
+                    break;
                 }
                 // Pack expansion in a tuple/function type: `(..F(Ts))` /
                 // `(..F(Ts.Arg))` / `(..Ts)`. Reuses `spread_expr`; its operand
@@ -769,11 +793,22 @@ pub const Parser = struct {
                 self.advance(); // skip '->'
                 const return_type = try self.parseFnReturnType();
                 const abi = try self.parseOptionalAbi();
+                // A type has no linkage slot, so `abi(.c)` is the only spelling
+                // that gives the tail its C signature.
+                if (is_c_variadic) {
+                    if (abi == .naked) {
+                        return self.failAt(tail_span, "a C-variadic '..' tail cannot use explicit ABI '.naked'; use 'abi(.c)'");
+                    }
+                    if (abi != .c) {
+                        return self.failAt(tail_span, "a C-variadic '..' tail requires 'abi(.c)'");
+                    }
+                }
                 return try self.createNode(start, .{ .function_type_expr = .{
                     .param_types = try param_types.toOwnedSlice(self.allocator),
                     .param_names = if (has_names) try param_names.toOwnedSlice(self.allocator) else null,
                     .return_type = return_type,
                     .abi = abi,
+                    .is_c_variadic = is_c_variadic,
                 } });
             }
             // Empty parens `()` with no `->` is the void/unit type:
@@ -5034,11 +5069,15 @@ pub const Parser = struct {
             if (self.current.tag == .kw_intrinsic) return true;
             if (self.current.tag == .hash_get) return true; // `-> R #get => …` is a fn def
             if (self.current.tag == .hash_set) return true; // `-> R #set { … }` is a fn def
-            if (self.current.tag == .kw_abi) return true;
             // Postfix linkage modifier after the return type: `-> R extern;` /
             // `-> R export { … }` (and `-> R abi(.c) extern`). Marks a fn def.
             if (self.current.tag == .kw_extern or self.current.tag == .kw_export) return true;
             if (self.current.tag == .identifier or self.current.tag.isTypeKeyword() or
+                // `abi(...)` states a convention, not a body: `-> R abi(.c) { … }`
+                // is a definition and `-> R abi(.c);` a function-type alias, so
+                // the scan reads through the annotation to whatever follows.
+                // (Its `(`/`.`/name/`)` tokens are already skipped below.)
+                self.current.tag == .kw_abi or
                 // A compiler-formed `@Init(T)` is a type spelling like any
                 // other here: skipping it keeps the scan on course to the body
                 // brace, so the decl is classified as a fn DEF and the

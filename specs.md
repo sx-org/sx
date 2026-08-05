@@ -3319,6 +3319,27 @@ carrying the C convention. Anything else — an aggregate, a `string` or slice
 (two words), a width C has no variadic slot for — is refused at the call, naming
 the argument.
 
+#### A C-variadic function type
+
+A function TYPE takes the same tail, and `abi(.c)` is the only spelling that
+gives it its C signature — a type carries no linkage slot:
+
+```sx
+Callback :: (fixed: i32, ..) -> i64 abi(.c);
+Zero     :: (..) -> i64 abi(.c);
+```
+
+A signature with a body is a definition and a bodyless one is a function-type
+alias. `abi(...)` states a convention rather than a body, so it appears on
+both.
+
+The tail joins the type's identity. `(fixed: i32) -> i64 abi(.c)` and
+`(fixed: i32, ..) -> i64 abi(.c)` are different types, and so are
+`() -> i64 abi(.c)` and `(..) -> i64 abi(.c)`; a function binds only to the one
+that states its own tail. A call through such a value states the fixed arguments
+and then as many tail arguments as it likes, each crossing under the promotions
+and the admissibility rule above. Every other function type is exact-arity.
+
 #### Reading a tail: the `@VaList` cursor
 
 A definition reads its own tail through a cursor. `@VaList` and the four
@@ -6852,8 +6873,10 @@ type            = '$' IDENT | 'i32' | 'f32' | 'f64' | 'bool' | 'string'
                 | 'any' | 'Type' | '..' type | '[' expr ']' type | IDENT
                 | 'Tuple' '(' tuple_type_list? ')'           // tuple type: Tuple(A, B) / Tuple(x: A) / Tuple() / Tuple(..F(Ts))
                 | '(' type ')'                               // grouping (bare parens never form a tuple)
-                | '(' (type (',' type)*)? ')' '->' type ('!' IDENT?)?  // function type (params optional; optional error channel)
+                | '(' fn_type_list? ')' '->' type ('!' IDENT?)?  // function type (params optional; optional error channel)
                 | '!' IDENT?                                  // pure failable (`!` / `!Named`)
+fn_type_list    = type (',' type)* (',' c_tail)? ','?
+                | c_tail ','?       // a C-variadic function type needs `abi(.c)`
 tuple_type_list = tuple_type_elem (',' tuple_type_elem)* ','?
 tuple_type_elem = IDENT ':' type | '..' type | type
 ```

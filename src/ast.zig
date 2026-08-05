@@ -976,6 +976,11 @@ pub const FunctionTypeExpr = struct {
     param_names: ?[]const ?[]const u8 = null, // optional documentation names
     return_type: ?*Node, // null = void return
     abi: ABI = .default,
+    /// The parameter list ends in a bare `..` — a C-variadic tail, which binds
+    /// no name and no type and is therefore a signature flag rather than an
+    /// entry of `param_types`. Legal only with `abi(.c)`, so the fixed count is
+    /// `param_types.len` and may be zero.
+    is_c_variadic: bool = false,
 };
 
 pub const ClosureTypeExpr = struct {

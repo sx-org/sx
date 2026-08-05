@@ -76,6 +76,48 @@ test "function type interning" {
     try std.testing.expect(fn1 != fn3);
 }
 
+test "a C-variadic tail is part of a function type's identity" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    const params = &[_]TypeId{.i32};
+    const fixed = table.functionTypeVariadic(params, .i64, .c, false);
+    const tail = table.functionTypeVariadic(params, .i64, .c, true);
+    try std.testing.expect(fixed != tail);
+    try std.testing.expectEqual(tail, table.functionTypeVariadic(params, .i64, .c, true));
+
+    // Zero fixed parameters and an empty parameter list are likewise distinct.
+    const empty = table.functionTypeVariadic(&.{}, .i64, .c, false);
+    const zero_fixed = table.functionTypeVariadic(&.{}, .i64, .c, true);
+    try std.testing.expect(empty != zero_fixed);
+
+    // The convention joins the key alongside the tail.
+    try std.testing.expect(tail != table.functionTypeVariadic(params, .i64, .default, true));
+}
+
+test "a C-variadic function type spells its tail and its convention" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    try std.testing.expectEqualStrings(
+        "(i32, ..) -> i64 abi(.c)",
+        table.formatTypeName(a, table.functionTypeVariadic(&[_]TypeId{.i32}, .i64, .c, true)),
+    );
+    try std.testing.expectEqualStrings(
+        "(..) -> i64 abi(.c)",
+        table.formatTypeName(a, table.functionTypeVariadic(&.{}, .i64, .c, true)),
+    );
+    try std.testing.expectEqualStrings(
+        "() -> i64 abi(.c)",
+        table.formatTypeName(a, table.functionTypeVariadic(&.{}, .i64, .c, false)),
+    );
+}
+
 test "string pool interning" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);

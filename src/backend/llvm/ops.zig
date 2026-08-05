@@ -1657,6 +1657,17 @@ pub const Ops = struct {
             break :blk false;
         } else false;
 
+        // A C-variadic fn-pointer type's call site is built variadic over its
+        // FIXED prefix, so the tail arguments land in the ABI's variadic slots
+        // rather than in named ones.
+        const fp_is_c_variadic: bool = if (callee_ir_ty) |cty| blk: {
+            if (!cty.isBuiltin()) {
+                const ci = self.e.ir_mod.types.get(cty);
+                if (ci == .function and ci.function.is_c_variadic) break :blk true;
+            }
+            break :blk false;
+        } else false;
+
         // Default-conv fn-pointers under implicit-ctx carry a hidden
         // `*void` (the implicit __sx_ctx) at LLVM slot 0. The IR fn
         // type does not include it, so shift fn_params lookups by 1.
@@ -1757,7 +1768,13 @@ pub const Ops = struct {
                 param_tys[i + sret_off] = c.LLVMTypeOf(args[i + sret_off]);
             }
         }
-        const fn_ty = c.LLVMFunctionType(ret_ty, param_tys.ptr, arg_count, 0);
+        // A variadic type names only its fixed prefix; the call still passes
+        // every argument.
+        const named_count: c_uint = if (fp_is_c_variadic)
+            @intCast(fn_params.?.len + sret_off)
+        else
+            arg_count;
+        const fn_ty = c.LLVMFunctionType(ret_ty, param_tys.ptr, named_count, if (fp_is_c_variadic) 1 else 0);
         const icall_void_like = instruction.ty == .void or instruction.ty == .noreturn;
         var result = c.LLVMBuildCall2(self.e.builder, fn_ty, callee, args.ptr, arg_count, if (icall_void_like or uses_sret) "" else "icall");
 

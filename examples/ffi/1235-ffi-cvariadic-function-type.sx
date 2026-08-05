@@ -1,0 +1,91 @@
+// A C-variadic FUNCTION TYPE ends its parameter list in a bare `..`:
+// `(fixed, ..) -> R abi(.c)` names a pointer to a C-variadic function, and
+// `(..) -> R abi(.c)` one that fixes no parameter at all. `abi(.c)` is required
+// — a type carries no linkage slot, so it is the only spelling that gives the
+// tail its C signature.
+//
+// The tail is part of the type's identity. A fixed signature and the otherwise
+// identical variadic one are different types, and so are `() -> R abi(.c)` and
+// `(..) -> R abi(.c)`: each holds only its own functions.
+//
+// A call through such a value states the fixed arguments and then as many tail
+// arguments as it likes. Each tail argument crosses under the default argument
+// promotions and the admissibility rule a direct C-variadic call applies, so an
+// sx definition and its `<stdarg.h>` twin read the same values through one
+// pointer type.
+
+#import "modules/std.sx";
+
+#import c {
+    #source "1235-ffi-cvariadic-function-type.c";
+};
+
+c_sum_ints :: (n: i32, ..) -> i64 extern;
+
+sum_ints :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    total: i64 = 0;
+    for 0..n (i) {
+        total += xx @va_arg(i32, *ap);
+    }
+    return total;
+}
+
+constant :: (..) -> i64 abi(.c) {
+    return 7;
+}
+
+plain :: () -> i64 abi(.c) {
+    return 11;
+}
+
+fixed_one :: (n: i32) -> i64 abi(.c) {
+    return xx n;
+}
+
+Summer :: (n: i32, ..) -> i64 abi(.c);
+Fixed  :: (n: i32) -> i64 abi(.c);
+Zero   :: (..) -> i64 abi(.c);
+Empty  :: () -> i64 abi(.c);
+
+// A zero-fixed tail and an empty parameter list sit in two fields of the same
+// struct, each taking only the function whose signature it names.
+Table :: struct {
+    open: Zero;
+    shut: Empty;
+}
+
+main :: () -> i32 {
+    a: i32 = 4;
+    b: i32 = 5;
+    c: i32 = 6;
+
+    sx: Summer = sum_ints;
+    ct: Summer = c_sum_ints;
+    print("fixed sx={} c={}\n", sx(3, a, b, c), ct(3, a, b, c));
+
+    // The narrow widths the caller promotes are read at the width C promoted
+    // them to, through the pointer exactly as through the name.
+    narrow: u8 = 7;
+    signed_narrow: i16 = -3;
+    print("promoted sx={} c={}\n", sx(2, narrow, signed_narrow), ct(2, narrow, signed_narrow));
+
+    // Zero fixed parameters: a call with no argument at all passes an empty
+    // tail, and a call with arguments passes them all through it.
+    z: Zero = constant;
+    print("zero_empty={} zero_tail={}\n", z(), z(1, 2));
+
+    fx: Fixed = fixed_one;
+    print("fixed_one={}\n", fx(9));
+
+    t := Table{ open = constant, shut = plain };
+    print("field_open={} field_shut={}\n", t.open(1, 2), t.shut());
+
+    print("summer={}\n", type_name(Summer));
+    print("zero={}\n", type_name(Zero));
+    print("empty={}\n", type_name(Empty));
+    print("summer_is_fixed={} zero_is_empty={}\n", Summer == Fixed, Zero == Empty);
+    return 0;
+}

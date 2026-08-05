@@ -739,11 +739,16 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
                 if (i > 0) buf.appendSlice(self.alloc, ", ") catch break :blk "function";
                 buf.appendSlice(self.alloc, self.formatTypeName(p)) catch break :blk "function";
             }
+            if (f.is_c_variadic) {
+                if (f.params.len > 0) buf.appendSlice(self.alloc, ", ") catch break :blk "function";
+                buf.appendSlice(self.alloc, "..") catch break :blk "function";
+            }
             buf.append(self.alloc, ')') catch break :blk "function";
             if (f.ret != .void) {
                 buf.appendSlice(self.alloc, " -> ") catch break :blk "function";
                 buf.appendSlice(self.alloc, self.formatTypeName(f.ret)) catch break :blk "function";
             }
+            if (f.call_conv == .c) buf.appendSlice(self.alloc, " abi(.c)") catch break :blk "function";
             break :blk buf.toOwnedSlice(self.alloc) catch "function";
         },
         // A compiler-formed `@` type renders through the type table's canonical

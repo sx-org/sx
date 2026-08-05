@@ -1785,3 +1785,88 @@ test "parser: a three-dot parameter list is not a tail" {
     try std.testing.expectError(error.ParseError, parser.parse());
     try std.testing.expectEqualStrings("expected parameter name", parser.err_msg.?);
 }
+
+// ── The bare `..` tail in a function TYPE ────────────────────────────────────
+
+test "parser: a function type carries the bare `..` tail" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(),
+        \\Callback :: (fixed: i32, ..) -> i64 abi(.c);
+        \\Zero :: (..) -> i64 abi(.c);
+        \\Comma :: (fixed: i32, ..,) -> i64 abi(.c);
+        \\Fixed :: (fixed: i32) -> i64 abi(.c);
+    );
+    const root = try parser.parse();
+    const decls = root.data.root.decls;
+
+    const callback = decls[0].data.const_decl.value.data.function_type_expr;
+    try std.testing.expect(callback.is_c_variadic);
+    try std.testing.expectEqual(ast.ABI.c, callback.abi);
+    try std.testing.expectEqual(@as(usize, 1), callback.param_types.len);
+
+    // Zero fixed parameters is an ordinary count, not a separate case.
+    const zero = decls[1].data.const_decl.value.data.function_type_expr;
+    try std.testing.expect(zero.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 0), zero.param_types.len);
+
+    try std.testing.expect(decls[2].data.const_decl.value.data.function_type_expr.is_c_variadic);
+    try std.testing.expect(!decls[3].data.const_decl.value.data.function_type_expr.is_c_variadic);
+}
+
+test "parser: a function type's tail requires abi(.c)" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    for ([_][:0]const u8{
+        "F :: (n: i32, ..) -> i64;",
+        "F :: (n: i32, ..) -> i64 abi(.naked);",
+        "F :: (n: i32, .., x: i32) -> i64 abi(.c);", // not the last entry
+        "F :: (.., ..) -> i64 abi(.c);", // two tails
+    }) |src| {
+        var p = Parser.init(alloc, src);
+        try std.testing.expectError(error.ParseError, p.parse());
+    }
+}
+
+// Without a `->` the parens are a grouping, the void type, or a result list —
+// a `..` there is the pack spread and keeps its own path.
+test "parser: the tail arm leaves grouping, void and pack spreads alone" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(),
+        \\Grouped :: (n: (i64)) -> i64;
+        \\Voided :: (n: ()) -> i64;
+        \\Spread :: (..Ts) -> i64;
+    );
+    const root = try parser.parse();
+    const decls = root.data.root.decls;
+
+    const grouped = decls[0].data.const_decl.value.data.function_type_expr;
+    try std.testing.expect(!grouped.is_c_variadic);
+    try std.testing.expectEqualStrings("i64", grouped.param_types[0].data.type_expr.name);
+
+    const voided = decls[1].data.const_decl.value.data.function_type_expr;
+    try std.testing.expect(!voided.is_c_variadic);
+    try std.testing.expectEqualStrings("void", voided.param_types[0].data.type_expr.name);
+
+    const spread = decls[2].data.const_decl.value.data.function_type_expr;
+    try std.testing.expect(!spread.is_c_variadic);
+    try std.testing.expectEqual(@as(usize, 1), spread.param_types.len);
+    try std.testing.expect(spread.param_types[0].data == .spread_expr);
+}
+
+test "parser: abi(...) alone is a convention, not a body" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(),
+        \\Alias :: (n: i32) -> i64 abi(.c);
+        \\defined :: (n: i32) -> i64 abi(.c) { 0 }
+        \\imported :: (n: i32) -> i64 abi(.c) extern;
+    );
+    const root = try parser.parse();
+    const decls = root.data.root.decls;
+    try std.testing.expect(decls[0].data.const_decl.value.data == .function_type_expr);
+    try std.testing.expect(decls[1].data == .fn_decl);
+    try std.testing.expect(decls[2].data == .fn_decl);
+}

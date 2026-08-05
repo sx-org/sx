@@ -517,8 +517,13 @@ fn writeType(id: TypeId, tt: *const TypeTable, writer: Writer) !void {
                 if (i > 0) try writer.writeAll(", ");
                 try writeType(p, tt, writer);
             }
+            if (f.is_c_variadic) {
+                if (f.params.len > 0) try writer.writeAll(", ");
+                try writer.writeAll("..");
+            }
             try writer.writeAll(") -> ");
             try writeType(f.ret, tt, writer);
+            if (f.call_conv == .c) try writer.writeAll(" abi(.c)");
         },
         .closure => |c| {
             try writer.writeAll("closure(");

@@ -189,6 +189,11 @@ pub const TypeInfo = union(enum) {
         /// per-call-site type list binds the remainder. `pack_start == 0`
         /// with `params.len == 0` denotes `fn(..$args)`.
         pack_start: ?u32 = null,
+        /// The signature ends in a bare `..` C-variadic tail: `params` is the
+        /// fixed prefix and the C ABI carries the rest. Part of the type's
+        /// identity — a fixed signature and the otherwise identical variadic one
+        /// are different ABIs, and neither stands in for the other.
+        is_c_variadic: bool = false,
     };
 
     pub const CallConv = enum { default, c };
@@ -890,8 +895,19 @@ pub const TypeTable = struct {
     }
 
     pub fn functionTypeCC(self: *TypeTable, params: []const TypeId, ret: TypeId, cc: TypeInfo.CallConv) TypeId {
+        return self.functionTypeVariadic(params, ret, cc, false);
+    }
+
+    /// `params` is the FIXED prefix when `is_c_variadic` is set — the bare `..`
+    /// tail binds no slot of its own.
+    pub fn functionTypeVariadic(self: *TypeTable, params: []const TypeId, ret: TypeId, cc: TypeInfo.CallConv, is_c_variadic: bool) TypeId {
         const owned_params = self.slice_arena.allocator().dupe(TypeId, params) catch unreachable;
-        return self.intern(.{ .function = .{ .params = owned_params, .ret = ret, .call_conv = cc } });
+        return self.intern(.{ .function = .{
+            .params = owned_params,
+            .ret = ret,
+            .call_conv = cc,
+            .is_c_variadic = is_c_variadic,
+        } });
     }
 
     pub fn functionTypePack(self: *TypeTable, params: []const TypeId, ret: TypeId, cc: TypeInfo.CallConv, pack_start: u32) TypeId {
@@ -1406,11 +1422,16 @@ pub const TypeTable = struct {
                     if (i > 0) buf.appendSlice(alloc, ", ") catch break :blk "(?)";
                     buf.appendSlice(alloc, self.formatTypeName(alloc, p)) catch break :blk "(?)";
                 }
+                if (f.is_c_variadic) {
+                    if (f.params.len > 0) buf.appendSlice(alloc, ", ") catch break :blk "(?)";
+                    buf.appendSlice(alloc, "..") catch break :blk "(?)";
+                }
                 buf.append(alloc, ')') catch break :blk "(?)";
                 if (f.ret != .void) {
                     buf.appendSlice(alloc, " -> ") catch break :blk "(?)";
                     buf.appendSlice(alloc, self.formatTypeName(alloc, f.ret)) catch break :blk "(?)";
                 }
+                if (f.call_conv == .c) buf.appendSlice(alloc, " abi(.c)") catch break :blk "(?)";
                 break :blk buf.toOwnedSlice(alloc) catch "(?)";
             },
             .closure => |co| blk: {
@@ -1513,6 +1534,8 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
             const pack_present: u8 = if (f.pack_start != null) 1 else 0;
             h.update(&.{pack_present});
             if (f.pack_start) |ps| h.update(std.mem.asBytes(&ps));
+            const tail_byte: u8 = if (f.is_c_variadic) 1 else 0;
+            h.update(&.{tail_byte});
         },
         .closure => |c| {
             for (c.params) |p| h.update(std.mem.asBytes(&p));
@@ -1582,6 +1605,7 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
                 if (fp != gp) return false;
             }
             if (f.call_conv != g.call_conv) return false;
+            if (f.is_c_variadic != g.is_c_variadic) return false;
             if ((f.pack_start == null) != (g.pack_start == null)) return false;
             if (f.pack_start) |fp| if (fp != g.pack_start.?) return false;
             return f.ret == g.ret;
