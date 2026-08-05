@@ -199,9 +199,8 @@ pub const Op = union(enum) {
     volatile_load: UnaryOp, // load the optimizer may not elide, duplicate, or fuse
     volatile_store: Store, // store the optimizer may not elide, duplicate, or fuse
 
-    // ── C-variadic cursor ───────────────────────────────────────────
-    // Each operand is the address of a `@VaList`. `va_arg`'s result type is
-    // the instruction's type; the other three are void.
+    // Each cursor operand is the address of a `@VaList`. `va_arg`'s result type
+    // is the instruction's type; the other three are void.
     va_start: UnaryOp, // open a cursor over the caller's tail arguments
     va_arg: UnaryOp, // read the next tail argument, advancing the cursor
     va_copy: VaCopy, // duplicate a cursor's position into a second cursor

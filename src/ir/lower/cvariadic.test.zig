@@ -155,7 +155,6 @@ test "an incoming C list is a cursor place, and a boundary argument passes one" 
                     places += 1;
                     try std.testing.expectEqual(@as(u32, 1), u.operand.index());
                 },
-                // The argument carries that same place, reached as an address.
                 .va_pass => |u| {
                     passes += 1;
                     const addr = defOf(relay, u.operand) orelse return error.PassOperandHasNoProducer;
@@ -203,6 +202,129 @@ test "each list spelling belongs to one side of the C boundary" {
     defer lowered.module.deinit();
     try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "is the C boundary parameter"));
     try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "is the sx-internal borrow"));
+}
+
+test "a wrapper carrying a cursor is refused wherever the cursor is" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\Wraps :: struct {
+        \\    row: [1]@VaList;
+        \\    lent: [2]*@VaList;
+        \\}
+        \\rows: [1]@VaList;
+        \\borrows: []*@VaList;
+        \\hands_back :: () -> [1]@VaList { return ---; }
+        \\takes :: (rows: [1]@VaList) -> i64 abi(.c) { return 0; }
+        \\takes_borrow :: (rows: []*@VaList) -> i64 { return 0; }
+        \\main :: () -> i64 { return 0; }
+    , &lowered);
+    defer lowered.module.deinit();
+
+    try std.testing.expectEqual(@as(usize, 3), countMessages(&lowered, "it holds a '@VaList'"));
+    try std.testing.expectEqual(@as(usize, 2), countMessages(&lowered, "it addresses a '@VaList'"));
+    try std.testing.expectEqual(@as(usize, 2), countMessages(&lowered, "a list crosses only as"));
+}
+
+test "an unwrapped C boundary and an internal borrow stay legal" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\Reader :: (i32, @VaList) -> i64 abi(.c);
+        \\Api :: struct { read: Reader; }
+        \\c_reader :: (n: i32, ap: @VaList) -> i64 extern;
+        \\borrow :: (n: i32, ap: *@VaList) -> i64 { return c_reader(n, ap.*); }
+        \\own :: (n: i32, ..) -> i64 abi(.c) {
+        \\    ap: @VaList = ---;
+        \\    @va_start(*ap);
+        \\    defer @va_end(*ap);
+        \\    return borrow(n, *ap);
+        \\}
+        \\main :: () -> i64 { return own(1, 7); }
+    , &lowered);
+    defer lowered.module.deinit();
+    try std.testing.expect(!lowered.diagnostics.hasErrors());
+}
+
+test "one C symbol's fixed and variadic views conflict, equal variadic ones share" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\fixed :: (n: i32) -> i32 extern "same";
+        \\tail  :: (n: i32, ..) -> i32 extern "same";
+        \\first  :: (n: i32, ..) -> i32 extern "other";
+        \\second :: (n: i32, ..) -> i32 extern "other";
+        \\main :: () -> i32 { return tail(1, 2) + first(1, 2) + second(1, 2, 3); }
+    , &lowered);
+    defer lowered.module.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "is already bound with a different signature"));
+    try std.testing.expectEqual(@as(usize, 1), countExterns(&lowered, "other"));
+}
+
+test "a named tail converts each argument to its element type" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\joins :: (n: i32, ..args: []cstring) -> i64 extern;
+        \\sums  :: (n: i32, ..args: []i32) -> i64 extern;
+        \\main :: () -> i64 {
+        \\    held: cstring = "de";
+        \\    return joins(2, "abc", held) + sums(2, 1, 2);
+        \\}
+    , &lowered);
+    defer lowered.module.deinit();
+    try std.testing.expect(!lowered.diagnostics.hasErrors());
+
+    const main = &lowered.module.functions.items[@intFromEnum(lowered.lowering.resolveFuncByName("main").?)];
+    const joins = lowered.lowering.resolveFuncByName("joins").?;
+    var tail_args: usize = 0;
+    for (main.blocks.items) |blk| {
+        for (blk.insts.items) |ins| {
+            const call = switch (ins.op) {
+                .call => |c| c,
+                else => continue,
+            };
+            if (call.callee != joins) continue;
+            for (call.args[1..]) |arg| {
+                const producer = defOf(main, arg) orelse return error.TailArgumentHasNoProducer;
+                try std.testing.expectEqual(TypeId.cstring, producer.ty);
+                tail_args += 1;
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 2), tail_args);
+}
+
+test "a C tail reads isize and usize at the target's address width" {
+    var module = ir_mod.Module.init(std.testing.allocator);
+    defer module.deinit();
+    var lowering = Lowering.init(&module);
+
+    try std.testing.expectEqual(@as(?u32, 64), lowering.tailIntegerWidth(.isize));
+    try std.testing.expectEqual(@as(?u32, 64), lowering.tailIntegerWidth(.usize));
+
+    module.types.pointer_size = 4;
+    try std.testing.expectEqual(@as(?u32, 32), lowering.tailIntegerWidth(.isize));
+    try std.testing.expectEqual(@as(?u32, 32), lowering.tailIntegerWidth(.usize));
+
+    // The fixed widths do not move with the target.
+    try std.testing.expectEqual(@as(?u32, 64), lowering.tailIntegerWidth(.i64));
+    try std.testing.expectEqual(@as(?u32, 16), lowering.tailIntegerWidth(.u16));
+    try std.testing.expect(lowering.tailIntegerWidth(.f64) == null);
+}
+
+/// How many extern functions carry `sym` as their symbol name.
+fn countExterns(lowered: *const Lowered, sym: []const u8) usize {
+    var n: usize = 0;
+    for (lowered.module.functions.items) |func| {
+        if (func.is_extern and std.mem.eql(u8, lowered.module.types.getString(func.name), sym)) n += 1;
+    }
+    return n;
 }
 
 /// How many error diagnostics carry `needle`.

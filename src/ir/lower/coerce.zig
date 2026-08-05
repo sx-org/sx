@@ -1924,14 +1924,16 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
 }
 
 /// The bit width of an integer type, or null when `ty` is not an integer.
-/// `isize`/`usize` are the target's address width, 64 on every ABI sx supports.
-fn integerWidth(self: *Lowering, ty: TypeId) ?u8 {
+/// `isize`/`usize` carry the target's address width, which the C tail rules
+/// must read from the target rather than assume.
+pub fn tailIntegerWidth(self: *Lowering, ty: TypeId) ?u32 {
     return switch (ty) {
         .bool => 1,
         .i8, .u8 => 8,
         .i16, .u16 => 16,
         .i32, .u32 => 32,
-        .i64, .u64, .isize, .usize => 64,
+        .i64, .u64 => 64,
+        .isize, .usize => self.typeBitsEx(ty),
         else => if (ty.isBuiltin()) null else switch (self.module.types.get(ty)) {
             .signed, .unsigned => |bits| bits,
             else => null,
@@ -1945,7 +1947,7 @@ fn integerWidth(self: *Lowering, ty: TypeId) ?u8 {
 /// family, and `abi(.c)` function values are already tail-width.
 pub fn promotedTailType(self: *Lowering, ty: TypeId) ?TypeId {
     if (ty == .f32) return .f64;
-    if (integerWidth(self, ty)) |bits| {
+    if (tailIntegerWidth(self, ty)) |bits| {
         if (bits < 32) return .i32;
     }
     return null;
@@ -1956,32 +1958,23 @@ pub fn promotedTailType(self: *Lowering, ty: TypeId) ?TypeId {
 /// belongs there: the 32- and 64-bit integers, `f64`, the pointer family and
 /// its nullable forms, and function values that carry the C convention.
 pub fn tailAdmissible(self: *Lowering, ty: TypeId) bool {
-    return switch (ty) {
-        .f64, .cstring => true,
-        .i32, .u32, .i64, .u64, .isize, .usize => true,
-        else => if (ty.isBuiltin()) false else switch (self.module.types.get(ty)) {
-            .signed, .unsigned => |bits| bits == 32 or bits == 64,
-            .pointer, .many_pointer => true,
-            // A nullable pointer is one word with null as its absent value; any
-            // other optional carries a separate presence flag.
-            .optional => |o| switch (o.child) {
-                .cstring => true,
-                else => !o.child.isBuiltin() and switch (self.module.types.get(o.child)) {
-                    .pointer, .many_pointer => true,
-                    else => false,
-                },
+    if (ty == .f64 or ty == .cstring) return true;
+    if (tailIntegerWidth(self, ty)) |bits| return bits == 32 or bits == 64;
+    if (ty.isBuiltin()) return false;
+    return switch (self.module.types.get(ty)) {
+        .pointer, .many_pointer => true,
+        // A nullable pointer is one word with null as its absent value; any
+        // other optional carries a separate presence flag.
+        .optional => |o| switch (o.child) {
+            .cstring => true,
+            else => !o.child.isBuiltin() and switch (self.module.types.get(o.child)) {
+                .pointer, .many_pointer => true,
+                else => false,
             },
-            .function => |f| f.call_conv == .c,
-            else => false,
         },
+        .function => |f| f.call_conv == .c,
+        else => false,
     };
-}
-
-/// Whether a value of `ty` reaches a C-variadic tail at all — as it stands, or
-/// through the default argument promotions.
-pub fn tailReachable(self: *Lowering, ty: TypeId) bool {
-    if (promotedTailType(self, ty)) |promoted| return tailAdmissible(self, promoted);
-    return tailAdmissible(self, ty);
 }
 
 /// Promote and check every argument at or past the fixed count. One

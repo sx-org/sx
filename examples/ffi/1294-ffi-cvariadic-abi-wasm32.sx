@@ -8,7 +8,6 @@
 
 #import "modules/std/core.sx";
 
-// A definition reads its own tail through a cursor.
 sum_ints :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @va_start(*ap);
@@ -30,7 +29,6 @@ read_ints :: (n: i32, ap: @VaList) -> i64 abi(.c) {
     return total;
 }
 
-// The sx-internal borrow, handed back across the boundary as `ap.*`.
 forward :: (n: i32, ap: *@VaList) -> i64 {
     return read_ints(n, ap.*);
 }
@@ -42,7 +40,6 @@ own_forward :: (n: i32, ..) -> i64 abi(.c) {
     return forward(n, *ap);
 }
 
-// A fork reads one tail twice.
 twice :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @va_start(*ap);
@@ -64,6 +61,20 @@ twice :: (n: i32, ..) -> i64 abi(.c) {
 
 Summer :: (i32, ..) -> i64 abi(.c);
 
+// `isize` and `usize` are the target's address width, which is 32 bits here and
+// 64 on every other target in the matrix. Each crosses and is read at that
+// width, so the reader names it rather than a fixed one.
+sum_addresses :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    total: i64 = 0;
+    for 0..n (i) {
+        total += xx @va_arg(isize, *ap);
+    }
+    return total;
+}
+
 main :: () -> i32 {
     a: i32 = 4;
     b: i32 = 5;
@@ -78,5 +89,9 @@ main :: () -> i32 {
     narrow: u8 = 7;
     signed_narrow: i16 = -3;
     if sum_ints(2, narrow, signed_narrow) != 4 { return 5; }
+
+    offset: isize = 9;
+    count: usize = 11;
+    if sum_addresses(2, offset, xx count) != 20 { return 6; }
     return 0;
 }

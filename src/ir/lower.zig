@@ -3475,7 +3475,7 @@ pub const Lowering = struct {
     pub const promoteCVariadicArgs = lower_coerce.promoteCVariadicArgs;
     pub const promotedTailType = lower_coerce.promotedTailType;
     pub const tailAdmissible = lower_coerce.tailAdmissible;
-    pub const tailReachable = lower_coerce.tailReachable;
+    pub const tailIntegerWidth = lower_coerce.tailIntegerWidth;
     pub const coerceCallArgs = lower_coerce.coerceCallArgs;
 
     // --- lower/ffi.zig (lower_ffi) ---
@@ -3561,6 +3561,7 @@ pub const Lowering = struct {
     pub const refuseCursorInspection = lower_cvariadic.refuseInspection;
     pub const refuseCursorCapture = lower_cvariadic.refuseCapture;
     pub const refuseCursorMember = lower_cvariadic.refuseMember;
+    pub const mentionsCursorType = lower_cvariadic.mentionsCursorType;
     pub const refuseCursorParam = lower_cvariadic.refuseParam;
     pub const refuseCursorSignature = lower_cvariadic.refuseSignature;
     pub const bindBoundaryCursorParam = lower_cvariadic.bindBoundaryParam;

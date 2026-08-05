@@ -3271,12 +3271,14 @@ fn returnGenericLeaf(node: *const Node) ?[]const u8 {
 /// signature shares the first registration; a CONFLICTING one is diagnosed —
 /// silently letting the first registration win mis-types every call through
 /// the later declaration (a `-> string` view of a symbol registered `-> *u8`
-/// reads the wrong shape). True = handled (shared or diagnosed),
-/// caller must not declare again.
-pub fn dedupeExternSymbol(self: *Lowering, fd: *const ast.FnDecl, sym_name: StringId, params: []const Function.Param, ret_ty: TypeId) bool {
+/// reads the wrong shape). The C-variadic tail is part of that equality: a
+/// fixed prototype and a variadic one are different ABIs, and sharing the fixed
+/// registration would emit calls whose argument count its signature refuses.
+/// True = handled (shared or diagnosed), caller must not declare again.
+pub fn dedupeExternSymbol(self: *Lowering, fd: *const ast.FnDecl, sym_name: StringId, params: []const Function.Param, ret_ty: TypeId, is_variadic: bool) bool {
     for (self.module.functions.items, 0..) |*func, i| {
         if (func.name != sym_name or !func.is_extern) continue;
-        var same = func.ret == ret_ty and func.params.len == params.len;
+        var same = func.ret == ret_ty and func.params.len == params.len and func.is_variadic == is_variadic;
         if (same) {
             for (func.params, params) |a, b| {
                 if (a.ty != b.ty) {
@@ -3404,7 +3406,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
         null;
     if (rename_c_name) |c_name| {
         const c_name_id = self.module.types.internString(c_name);
-        if (self.dedupeExternSymbol(fd, c_name_id, params.items, ret_ty)) {
+        if (self.dedupeExternSymbol(fd, c_name_id, params.items, ret_ty, is_variadic)) {
             self.extern_name_map.put(name, c_name) catch {};
             return;
         }
@@ -3423,7 +3425,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     }
 
     const name_id = self.module.types.internString(name);
-    if (is_extern_decl and self.dedupeExternSymbol(fd, name_id, params.items, ret_ty)) return;
+    if (is_extern_decl and self.dedupeExternSymbol(fd, name_id, params.items, ret_ty, is_variadic)) return;
     const fid = self.builder.declareExtern(name_id, params.items, ret_ty);
     const func = self.module.getFunctionMut(fid);
     func.call_conv = cc;

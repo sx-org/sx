@@ -160,7 +160,6 @@ pub const Id = enum(u16) {
     // std/core.sx declares these two; the `@` is part of the name.
     @"@volatile_load",
     @"@volatile_store",
-    // ── std/core.sx — the C-variadic cursor ─────────────────────────────────
     @"@va_start",
     @"@va_arg",
     @"@va_copy",

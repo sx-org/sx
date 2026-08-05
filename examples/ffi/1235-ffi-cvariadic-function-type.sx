@@ -50,8 +50,6 @@ Fixed  :: (n: i32) -> i64 abi(.c);
 Zero   :: (..) -> i64 abi(.c);
 Empty  :: () -> i64 abi(.c);
 
-// A zero-fixed tail and an empty parameter list sit in two fields of the same
-// struct, each taking only the function whose signature it names.
 Table :: struct {
     open: Zero;
     shut: Empty;

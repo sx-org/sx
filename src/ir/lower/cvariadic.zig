@@ -59,13 +59,24 @@ fn isCursorPointer(self: *Lowering, ty: TypeId) bool {
     return self.module.types.isCVariadicCursorPointer(ty);
 }
 
+/// How `ty` reaches cursor storage: as its own bytes, through an indirection, or
+/// not at all. Every rule below asks this rather than the two bare spellings, so
+/// a wrapper carries the same contract the cursor does.
+fn reach(self: *Lowering, ty: TypeId) types.TypeTable.CursorReach {
+    return self.module.types.cvariadicCursorReach(ty);
+}
+
 /// Refuse a position that would need the cursor AS A VALUE. It has no value
 /// form: only a local's storage exists, and a borrow reaches it through
 /// `*name`. `action` completes "cannot <action>". Returns true when refused.
 pub fn refuseValue(self: *Lowering, ty: TypeId, span: ?ast.Span, action: []const u8) bool {
-    if (!isCursorType(self, ty)) return false;
-    if (self.diagnostics) |d|
-        d.addFmt(.err, span, "cannot {s} '{s}' — a C-variadic cursor has no value form; declare it as a local and pass '*name'", .{ action, cursor_name });
+    if (reach(self, ty) != .owned) return false;
+    if (self.diagnostics) |d| {
+        if (isCursorType(self, ty))
+            d.addFmt(.err, span, "cannot {s} '{s}' — a C-variadic cursor has no value form; declare it as a local and pass '*name'", .{ action, cursor_name })
+        else
+            d.addFmt(.err, span, "cannot {s} '{s}' — it holds a '{s}', which has no value form", .{ action, self.formatTypeName(ty), cursor_name });
+    }
     return true;
 }
 
@@ -75,36 +86,68 @@ pub fn refuseValue(self: *Lowering, ty: TypeId, span: ?ast.Span, action: []const
 /// gone. Returns true when refused.
 pub fn refuseEscape(self: *Lowering, ty: TypeId, span: ?ast.Span, action: []const u8) bool {
     if (refuseValue(self, ty, span, action)) return true;
-    if (!isCursorPointer(self, ty)) return false;
-    if (self.diagnostics) |d|
-        d.addFmt(.err, span, "cannot {s} '*{s}' — a C-variadic cursor cannot outlive the call frame whose tail it reads", .{ action, cursor_name });
+    if (reach(self, ty) != .borrowed) return false;
+    if (self.diagnostics) |d| {
+        if (isCursorPointer(self, ty))
+            d.addFmt(.err, span, "cannot {s} '*{s}' — a C-variadic cursor cannot outlive the call frame whose tail it reads", .{ action, cursor_name })
+        else
+            d.addFmt(.err, span, "cannot {s} '{s}' — it addresses a '{s}', which cannot outlive the call frame whose tail it reads", .{ action, self.formatTypeName(ty), cursor_name });
+    }
     return true;
 }
 
 /// Refuse a query that would publish the cursor's shape — a layout or reflection
 /// builtin's type argument, a member selection. Its storage is the target's,
 /// substituted at registration, so any answer describes something no sx source
-/// can hold.
+/// can hold. A wrapper's own layout is built out of that storage and publishes
+/// it just as directly.
 pub fn refuseInspection(self: *Lowering, ty: TypeId, span: ?ast.Span) bool {
-    if (!isCursorType(self, ty)) return false;
-    if (self.diagnostics) |d|
-        d.addFmt(.err, span, "'{s}' is opaque — its storage is the target's and has no published layout", .{cursor_name});
+    if (reach(self, ty) != .owned) return false;
+    if (self.diagnostics) |d| {
+        if (isCursorType(self, ty))
+            d.addFmt(.err, span, "'{s}' is opaque — its storage is the target's and has no published layout", .{cursor_name})
+        else
+            d.addFmt(.err, span, "'{s}' holds a '{s}', whose storage is the target's — it has no published layout", .{ self.formatTypeName(ty), cursor_name });
+    }
     return true;
 }
 
 /// Refuse capturing a cursor or a borrow of one. The list reads a tail the
 /// enclosing frame owns, and a closure may outlive that frame.
 pub fn refuseCapture(self: *Lowering, ty: TypeId, span: ?ast.Span) bool {
-    if (!isCursorType(self, ty) and !isCursorPointer(self, ty)) return false;
+    if (reach(self, ty) == .none) return false;
     if (self.diagnostics) |d|
         d.addFmt(.err, span, "cannot capture a C-variadic cursor — it reads a tail the enclosing frame owns, which a closure may outlive", .{});
     return true;
 }
 
-/// Refuse selecting a member through a cursor or a borrow of one.
+/// Refuse selecting a member through a cursor or a borrow of one. Only a
+/// selection that lands on the cursor's own storage is refused — a wrapper's
+/// members are its own, and answering for them publishes nothing.
 pub fn refuseMember(self: *Lowering, ty: TypeId, span: ?ast.Span) bool {
-    if (isCursorPointer(self, ty)) return refuseInspection(self, self.module.types.get(ty).pointer.pointee, span);
-    return refuseInspection(self, ty, span);
+    const selected = if (isCursorPointer(self, ty)) self.module.types.get(ty).pointer.pointee else ty;
+    if (!isCursorType(self, selected)) return false;
+    return refuseInspection(self, selected, span);
+}
+
+/// True when a composite type expression spells the cursor at some leaf. The
+/// reflection guard resolves only such an argument, leaving every other one to
+/// the single resolution its own builtin performs.
+pub fn mentionsCursorType(self: *Lowering, node: *const ast.Node) bool {
+    return switch (node.data) {
+        .type_expr => |te| std.mem.eql(u8, te.name, cursor_name),
+        .identifier => |id| std.mem.eql(u8, id.name, cursor_name),
+        .array_type_expr => |a| mentionsCursorType(self, a.element_type),
+        .slice_type_expr => |s| mentionsCursorType(self, s.element_type),
+        .optional_type_expr => |o| mentionsCursorType(self, o.inner_type),
+        .pointer_type_expr => |p| mentionsCursorType(self, p.pointee_type),
+        .many_pointer_type_expr => |p| mentionsCursorType(self, p.element_type),
+        .unary_op => |u| u.op == .address_of and mentionsCursorType(self, u.operand),
+        .tuple_type_expr => |t| for (t.field_types) |f| {
+            if (mentionsCursorType(self, f)) break true;
+        } else false,
+        else => false,
+    };
 }
 
 // ── The C boundary and the sx-internal borrow ────────────────────────────────
@@ -113,8 +156,9 @@ pub fn refuseMember(self: *Lowering, ty: TypeId, span: ?ast.Span) bool {
 // borrow sx helpers forward synchronously and belongs only outside one.
 
 /// Refuse a parameter that spells a cursor for the wrong side of the boundary.
-/// `is_c` is the enclosing signature's effective-C verdict. Returns true when
-/// refused.
+/// `is_c` is the enclosing signature's effective-C verdict. The two bare
+/// spellings are the whole permitted surface — a wrapper carrying a cursor has
+/// no slot on either side. Returns true when refused.
 pub fn refuseParam(self: *Lowering, ty: TypeId, span: ?ast.Span, is_c: bool) bool {
     if (isCursorType(self, ty)) {
         if (is_c) return false;
@@ -122,16 +166,22 @@ pub fn refuseParam(self: *Lowering, ty: TypeId, span: ?ast.Span, is_c: bool) boo
             d.addFmt(.err, span, "'{s}' is the C boundary parameter — declare this signature 'abi(.c)', 'extern', or 'export', or take the sx-internal borrow '*{s}'", .{ cursor_name, cursor_name });
         return true;
     }
-    if (!isCursorPointer(self, ty)) return false;
-    if (!is_c) return false;
+    if (isCursorPointer(self, ty)) {
+        if (!is_c) return false;
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "'*{s}' is the sx-internal borrow — a C signature takes the list itself, '{s}'", .{ cursor_name, cursor_name });
+        return true;
+    }
+    if (reach(self, ty) == .none) return false;
     if (self.diagnostics) |d|
-        d.addFmt(.err, span, "'*{s}' is the sx-internal borrow — a C signature takes the list itself, '{s}'", .{ cursor_name, cursor_name });
+        d.addFmt(.err, span, "'{s}' carries a '{s}' — a list crosses only as the C boundary parameter '{s}' or the sx-internal borrow '*{s}'", .{ self.formatTypeName(ty), cursor_name, cursor_name, cursor_name });
     return true;
 }
 
-/// Refuse a FUNCTION TYPE whose parameter list spells a cursor for the wrong
-/// side of the boundary. A type carries no linkage slot, so `abi(.c)` is the
-/// only spelling that makes its signature the C one. Returns true when refused.
+/// Refuse a FUNCTION TYPE whose signature spells a cursor for the wrong side of
+/// the boundary. A type carries no linkage slot, so `abi(.c)` is the only
+/// spelling that makes its signature the C one, and no side returns a list.
+/// Returns true when refused.
 pub fn refuseSignature(self: *Lowering, ty: TypeId, span: ?ast.Span) bool {
     if (ty.isBuiltin()) return false;
     const info = self.module.types.get(ty);
@@ -140,7 +190,7 @@ pub fn refuseSignature(self: *Lowering, ty: TypeId, span: ?ast.Span) bool {
     for (info.function.params) |p| {
         if (refuseParam(self, p, span, is_c)) return true;
     }
-    return false;
+    return refuseEscape(self, info.function.ret, span, "return");
 }
 
 /// The cursor place of an incoming C `va_list` parameter, bound so the body

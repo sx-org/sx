@@ -36,7 +36,6 @@ c_sum_doubles :: (n: i32, ..) -> f64 extern;
 c_total_text :: (n: i32, ..) -> i64 extern;
 c_twice :: (n: i32, ..) -> i64 extern;
 
-// One fixed parameter, then the tail.
 tally :: (n: i32, ..) -> i64 abi(.c) {
     return xx n;
 }

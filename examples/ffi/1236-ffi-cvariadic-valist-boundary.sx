@@ -30,7 +30,6 @@
     #source "1236-ffi-cvariadic-valist-boundary.c";
 };
 
-// The C readers, each taking a count and a list.
 c_sum_ints    :: (n: i32, ap: @VaList) -> i64 extern;
 c_sum_doubles :: (n: i32, ap: @VaList) -> f64 extern;
 c_total_text  :: (n: i32, ap: @VaList) -> i64 extern;
@@ -44,7 +43,6 @@ c_calls_sx_doubles :: (n: i32, ..) -> f64 extern;
 c_calls_sx_text    :: (n: i32, ..) -> i64 extern;
 c_calls_sx_twice   :: (n: i32, ..) -> i64 extern;
 
-// The three pinned public API shapes.
 vmprintf     :: (fmt: cstring, ap: @VaList) -> ?cstring extern;
 xvsnprintf   :: (size: i32, out: [*]u8, fmt: cstring, ap: @VaList) -> [*]u8 extern;
 str_vappendf :: (s: *sqlite3_str, fmt: cstring, ap: @VaList) -> void extern;
@@ -54,7 +52,6 @@ sqlite3_str :: struct {
     used: i32;
 }
 
-// The same three shapes as function TYPES, which a struct field holds.
 VMPrintf    :: (cstring, @VaList) -> ?cstring abi(.c);
 XVsnprintf  :: (i32, [*]u8, cstring, @VaList) -> [*]u8 abi(.c);
 StrVAppendF :: (*sqlite3_str, cstring, @VaList) -> void abi(.c);
@@ -65,8 +62,6 @@ Api :: struct {
     appendf: StrVAppendF;
 }
 
-// The sx exports. Each takes an incoming list by value and traverses it without
-// opening or ending it.
 sx_sum_ints :: (n: i32, ap: @VaList) -> i64 export {
     total: i64 = 0;
     for 0..n (i) {
@@ -83,8 +78,6 @@ sx_sum_doubles :: (n: i32, ap: @VaList) -> f64 export {
     return total;
 }
 
-// A borrow of the incoming list reaches an sx helper as `*ap`, and the helper
-// forwards it back to C as `ap.*`.
 count_one :: (ap: *@VaList) -> i64 {
     return xx cstring_len(@va_arg(cstring, ap));
 }
@@ -97,8 +90,6 @@ sx_total_text :: (n: i32, ap: @VaList) -> i64 export {
     return total;
 }
 
-// An incoming list may be forked: `@va_copy` reads it without ending it, and
-// the copy this frame owns is the one it ends.
 sx_twice :: (n: i32, ap: @VaList) -> i64 export {
     dup: @VaList = ---;
     @va_copy(*dup, *ap);
@@ -108,7 +99,6 @@ sx_twice :: (n: i32, ap: @VaList) -> i64 export {
     return first * 100 + second;
 }
 
-// An sx OWNER: it opens a list over its own tail and hands the place to C.
 own_ints :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @va_start(*ap);
@@ -123,7 +113,6 @@ own_doubles :: (n: i32, ..) -> f64 abi(.c) {
     return c_sum_doubles(n, ap);
 }
 
-// An sx BORROWER: it holds no list of its own and forwards the one it was lent.
 borrow_text :: (n: i32, ap: *@VaList) -> i64 {
     return c_total_text(n, ap.*);
 }
@@ -135,8 +124,6 @@ own_text :: (n: i32, ..) -> i64 abi(.c) {
     return borrow_text(n, *ap);
 }
 
-// Two traversals of one tail. `@va_copy` forks the position before the first
-// traversal moves it, so both readers see the same arguments.
 own_twice :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @va_start(*ap);
@@ -149,8 +136,6 @@ own_twice :: (n: i32, ..) -> i64 abi(.c) {
     return first * 100 + second;
 }
 
-// The sx twin of `c_calls_sx_twice`: an owner hands its list to the export that
-// forks it, so the same borrowed-list copy runs behind an sx caller and a C one.
 own_forward_twice :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @va_start(*ap);
@@ -158,7 +143,6 @@ own_forward_twice :: (n: i32, ..) -> i64 abi(.c) {
     return sx_twice(n, ap);
 }
 
-// The pinned shapes, called by name.
 format_direct :: (fmt: cstring, ..) -> ?cstring abi(.c) {
     ap: @VaList = ---;
     @va_start(*ap);
@@ -180,8 +164,6 @@ append_direct :: (s: *sqlite3_str, fmt: cstring, ..) -> void abi(.c) {
     str_vappendf(s, fmt, ap);
 }
 
-// The same three shapes reached through struct fields — an indirect call whose
-// callee type carries the `@VaList` parameter.
 format_field :: (api: *Api, fmt: cstring, ..) -> ?cstring abi(.c) {
     ap: @VaList = ---;
     @va_start(*ap);
@@ -208,7 +190,6 @@ main :: () -> i32 {
     b: i32 = 5;
     c: i32 = 6;
 
-    // Outgoing: an sx owner hands its list to C.
     print("ints own={} c={}\n", own_ints(3, a, b, c), c_calls_sx_ints(3, a, b, c));
 
     x: f64 = 1.25;
@@ -221,16 +202,13 @@ main :: () -> i32 {
     signed_narrow: i16 = -3;
     print("promoted own={} c={}\n", own_ints(2, narrow, signed_narrow), c_calls_sx_ints(2, narrow, signed_narrow));
 
-    // A borrower forwards the list it was lent, in sx and then back to C.
     one: cstring = "abc";
     two: cstring = "defgh";
     print("text own={} c={}\n", own_text(2, one, two), c_calls_sx_text(2, one, two));
 
-    // Copy before the second traversal: both readers see the same arguments.
     print("twice own={} c={}\n", own_twice(3, a, b, c), c_twice_tail(3, a, b, c));
     print("twice_borrowed sx={} c={}\n", own_forward_twice(3, a, b, c), c_calls_sx_twice(3, a, b, c));
 
-    // The three pinned shapes, by name.
     print("mprintf={}\n", from_cstring(format_direct("%d-%s", 42, one)!));
     buf: [64]u8 = ---;
     print("snprint={}\n", from_cstring(xx into_direct(buf, "%d/%d", a, b)));
@@ -239,7 +217,6 @@ main :: () -> i32 {
     append_direct(*s, "%d", c);
     print("appendf={}\n", from_cstring(xx *s.text[0]));
 
-    // The same three through fields of one struct.
     api := Api{ mprintf = vmprintf, snprint = xvsnprintf, appendf = str_vappendf };
     print("field_mprintf={}\n", from_cstring(format_field(*api, "%s+%d", two, a)!));
     print("field_snprint={}\n", from_cstring(xx into_field(*api, buf, "%d*%d", b, c)));

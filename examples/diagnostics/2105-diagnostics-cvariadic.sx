@@ -40,6 +40,26 @@ Keeps :: struct {
     borrow: *@VaList;
 }
 
+// The rules follow the cursor into whatever carries it. A wrapper's own bytes
+// ARE the list's where it holds one by value, and address another frame's where
+// it holds a borrow — so a field, a global, a return, a parameter, and a layout
+// query each refuse the wrapper exactly as they refuse the bare spelling.
+Wraps :: struct {
+    row: [1]@VaList;
+    pair: Tuple(@VaList, i64);
+    maybe: ?@VaList;
+    lent: [2]*@VaList;
+}
+
+wrapped_global: [1]@VaList;
+wrapped_borrows: []*@VaList;
+
+hands_back_wrapped :: (ap: *@VaList) -> [1]@VaList { return ---; }
+
+takes_wrapped :: (rows: [1]@VaList) -> i64 abi(.c) { return 0; }
+
+takes_wrapped_borrow :: (rows: []*@VaList) -> i64 { return 0; }
+
 // The two boundary spellings, each on the wrong side.
 by_value :: (ap: @VaList) -> i64 { return 0; }
 
@@ -88,6 +108,8 @@ reads :: (n: i32, ..) -> i64 abi(.c) {
     copied := ap;                 // no value form to copy
     word := ap.w0;                // no published fields
     later := () -> i64 { return @va_arg(i64, *ap); }; // a closure may outlive the frame
+    rows: [1]@VaList = ---;
+    kept := () -> i64 { return xx rows.len; }; // a wrapper carries the same tail
     @va_end(*ap);
     return xx narrow;
 }
@@ -125,6 +147,7 @@ main :: () -> i32 {
     sum_ints(1, pair);           // the same refusal on a named typed tail
 
     printf("%d %d %d\n", size_of(@VaList), align_of(@VaList), struct_field_count(@VaList));
+    printf("%d %d %d\n", size_of([1]@VaList), align_of(?@VaList), struct_field_count(Tuple(@VaList, i64)));
     made := @VaList{};
     printf("%d\n", reads(1, 2) + no_tail() + ends_a_borrow(*made));
     printf("%d\n", boundary_actuals(1, 2) + walks_a_borrowed_list(1, made));

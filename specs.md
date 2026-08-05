@@ -3318,12 +3318,26 @@ before the tail.
 
 Every argument at or past the fixed count crosses under the **C default argument
 promotions**: `f32` widens to `f64`, and an integer narrower than 32 bits widens
-to `i32` — every width, not just the builtin ones. Past the promotions, a tail
-argument must be something a C ABI can pass through `va_arg`: a 32- or 64-bit
-integer, `f64`, the pointer family or its nullable forms, or a function value
-carrying the C convention. Anything else — an aggregate, a `string` or slice
-(two words), a width C has no variadic slot for — is refused at the call, naming
-the argument.
+to `i32` — every width, not just the builtin ones. `isize` and `usize` are the
+target's address width and take the promotions at it. Past the promotions, a
+tail argument must be something a C ABI can pass through `va_arg`: a 32- or
+64-bit integer, `f64`, the pointer family or its nullable forms, or a function
+value carrying the C convention. Anything else — an aggregate, a `string` or
+slice (two words), a width C has no variadic slot for — is refused at the call,
+naming the argument.
+
+An `extern` declaration may instead end in `..name: []T`, the **homogeneous
+constraint** over the tail: the author asserts every tail argument is a `T`.
+Each argument at or past the fixed count takes the ordinary implicit conversion
+to `T` — the one any typed parameter of `T` performs, so a string literal reaches
+a `[]cstring` tail as its data pointer — and then the promotions above. The
+emitted operand carries `T`'s width rather than the argument's written one, and
+each crosses its own C variadic slot; nothing is packed into an sx slice.
+
+The tail is part of a symbol's signature. Two declarations of one C symbol share
+a registration only when their signatures match, the tail included: a fixed
+prototype and a variadic one over the same fixed parameters state different ABIs
+and are refused where the second is written.
 
 #### A C-variadic function type
 
@@ -3395,6 +3409,13 @@ The cursor is **owned by the function that declares it**: `@va_start`,
 and leaves the closing to the owner. A cursor cannot escape the frame whose tail
 it reads: neither `@VaList` nor `*@VaList` may be returned, stored in a field or
 a global, captured by a closure, or passed through a C-variadic tail.
+
+Both rules follow the cursor into whatever carries it. A type whose own bytes
+hold a list — `[1]@VaList`, `?@VaList`, a struct or tuple with such a field — is
+the list's storage and is refused everywhere the bare spelling is; one that
+addresses another frame's — `[]*@VaList`, a struct of borrows — is refused
+everywhere the borrow is. A function type is a code address, so a parameter of
+its own signature is the callee's storage and carries nothing.
 
 #### Crossing the C boundary: a `va_list` parameter
 

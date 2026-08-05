@@ -8,7 +8,6 @@
 
 #import "modules/std/core.sx";
 
-// A definition reads its own tail through a cursor.
 sum_ints :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @va_start(*ap);
@@ -30,7 +29,6 @@ read_ints :: (n: i32, ap: @VaList) -> i64 abi(.c) {
     return total;
 }
 
-// The sx-internal borrow, handed back across the boundary as `ap.*`.
 forward :: (n: i32, ap: *@VaList) -> i64 {
     return read_ints(n, ap.*);
 }
@@ -42,7 +40,6 @@ own_forward :: (n: i32, ..) -> i64 abi(.c) {
     return forward(n, *ap);
 }
 
-// A fork reads one tail twice.
 twice :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @va_start(*ap);

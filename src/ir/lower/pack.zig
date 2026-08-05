@@ -380,17 +380,26 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
         fd.params.len > 0 and fd.params[fd.params.len - 1].is_variadic)
     {
         // `..name: []U` asserts that every tail argument is a `U`, so each one
-        // coerces to it before the default argument promotions apply. A value
-        // that cannot reach a tail at all is left for the admissibility check,
-        // which names it once.
+        // takes the ordinary implicit typed-parameter conversion to `U` before
+        // the default argument promotions apply. Where no conversion models the
+        // pair the argument is left as written, for the admissibility check to
+        // name once.
         const fixed = ast.fixedParamCount(fd.params);
         const declared = self.resolveTypeWithBindings(fd.params[fd.params.len - 1].type_expr);
         if (!declared.isBuiltin() and self.module.types.get(declared) == .slice) {
             const elem = self.module.types.get(declared).slice.element;
             for (args.items[@min(fixed, args.items.len)..]) |*arg| {
                 const src_ty = self.builder.getRefType(arg.*);
-                if (src_ty == elem or !self.tailReachable(src_ty)) continue;
-                arg.* = self.coerceToType(arg.*, src_ty, elem);
+                switch (self.coercionResolver().classify(src_ty, elem)) {
+                    .no_op,
+                    .none,
+                    .cstring_to_string_reject,
+                    .many_to_slice_reject,
+                    .optional_to_bool_reject,
+                    .closure_to_fn_reject,
+                    => continue,
+                    else => arg.* = self.coerceToType(arg.*, src_ty, elem),
+                }
             }
         }
         return;

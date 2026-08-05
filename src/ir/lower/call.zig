@@ -3530,6 +3530,25 @@ fn isReflectionCall(name: []const u8) bool {
     };
 }
 
+/// The type a reflection argument names, for the C-variadic cursor rule alone,
+/// or null when the argument names none. A bare name goes through the nominal
+/// leaf, so an alias of the cursor answers with it; a composite expression is
+/// resolved only where it spells the cursor, leaving every other argument to the
+/// single resolution its own builtin performs.
+fn reflectionArgTypeForCursorCheck(self: *Lowering, a: *const Node) ?TypeId {
+    const named: []const u8 = switch (a.data) {
+        .type_expr => |te| te.name,
+        .identifier => |id| id.name,
+        else => return if (self.isStaticTypeArg(a) and self.mentionsCursorType(a)) self.resolveTypeArg(a) else null,
+    };
+    if (self.scope) |s| if (s.lookup(named) != null) return null;
+    const from = self.current_source_file orelse self.main_file orelse return null;
+    return switch (self.selectNominalLeaf(named, from, false)) {
+        .resolved => |t| t,
+        else => null,
+    };
+}
+
 /// Try to lower a call as a reflection intrinsic (expanded inline during
 /// lowering). Returns null if the call is not one.
 ///
@@ -3546,20 +3565,10 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
 
     // The C-variadic cursor's storage is the target's, substituted where its
     // declaration's fields would land, so no reflection builtin publishes a
-    // shape for it.
+    // shape for it — nor for a type whose own layout is built out of one.
     for (c.args) |a| {
-        const named: []const u8 = switch (a.data) {
-            .type_expr => |te| te.name,
-            .identifier => |id| id.name,
-            else => continue,
-        };
-        if (self.scope) |s| if (s.lookup(named) != null) continue;
-        const from = self.current_source_file orelse self.main_file orelse continue;
-        const named_ty = switch (self.selectNominalLeaf(named, from, false)) {
-            .resolved => |t| t,
-            else => continue,
-        };
-        if (self.refuseCursorInspection(named_ty, a.span)) return self.reflectionErrorSentinel(name);
+        const arg_ty = reflectionArgTypeForCursorCheck(self, a) orelse continue;
+        if (self.refuseCursorInspection(arg_ty, a.span)) return self.reflectionErrorSentinel(name);
     }
 
     // `declare(name)` and `define(handle, info)` are ordinary sx functions

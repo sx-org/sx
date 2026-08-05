@@ -478,8 +478,7 @@ pub const Ops = struct {
         self.e.advanceRefCounter();
     }
 
-    // ── C-variadic cursor ─────────────────────────────────
-    // The three lifetime ops are calls to LLVM's overloaded va intrinsics,
+    // The three cursor lifetime ops are calls to LLVM's overloaded va intrinsics,
     // which must be named with their pointer-address-space suffix
     // (`llvm.va_start.p0`); the unsuffixed spelling fails verification. The
     // read is `LLVMBuildVAArg`, which lowers per the target ABI.

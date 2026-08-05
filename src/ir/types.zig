@@ -650,6 +650,95 @@ pub const TypeTable = struct {
         };
     }
 
+    /// How a type reaches C-variadic cursor storage.
+    pub const CursorReach = enum {
+        none,
+        /// The type's own bytes ARE cursor storage, or contain some.
+        owned,
+        /// The type addresses cursor storage another frame holds.
+        borrowed,
+    };
+
+    /// How `ty` reaches a `@VaList`. The cursor's rules govern every type that
+    /// carries one, not the two bare spellings alone: `[1]@VaList` is cursor
+    /// storage the same way `@VaList` is, and a struct of `*@VaList` dangles the
+    /// same way the borrow does.
+    pub fn cvariadicCursorReach(self: *const TypeTable, ty: TypeId) CursorReach {
+        if (self.ownsCVariadicCursor(ty)) return .owned;
+        if (self.borrowsCVariadicCursor(ty)) return .borrowed;
+        return .none;
+    }
+
+    /// True when a value of `ty` holds cursor storage IN ITS OWN BYTES. The walk
+    /// crosses only by-value containers, which cannot contain themselves, so it
+    /// terminates; a function type is a code address and carries no storage of
+    /// its parameters.
+    pub fn ownsCVariadicCursor(self: *const TypeTable, ty: TypeId) bool {
+        if (ty.isBuiltin()) return false;
+        if (self.isCVariadicCursor(ty)) return true;
+        return switch (self.get(ty)) {
+            .@"struct" => |s| self.anyFieldOwnsCursor(s.fields),
+            .@"union" => |u| self.anyFieldOwnsCursor(u.fields),
+            .tagged_union => |u| self.anyFieldOwnsCursor(u.fields),
+            .tuple => |t| for (t.fields) |f| {
+                if (self.ownsCVariadicCursor(f)) break true;
+            } else false,
+            .array => |a| self.ownsCVariadicCursor(a.element),
+            .vector => |v| self.ownsCVariadicCursor(v.element),
+            .optional => |o| self.ownsCVariadicCursor(o.child),
+            else => false,
+        };
+    }
+
+    fn anyFieldOwnsCursor(self: *const TypeTable, fields: anytype) bool {
+        for (fields) |f| {
+            if (self.ownsCVariadicCursor(f.ty)) return true;
+        }
+        return false;
+    }
+
+    /// True when a value of `ty` ADDRESSES cursor storage: a pointer or slice at
+    /// it, or a by-value container of such. Each indirection resolves through
+    /// `ownsCVariadicCursor`, which never crosses one, so a self-referential
+    /// aggregate cannot cycle here.
+    pub fn borrowsCVariadicCursor(self: *const TypeTable, ty: TypeId) bool {
+        if (ty.isBuiltin()) return false;
+        return switch (self.get(ty)) {
+            .pointer => |p| self.pointeeReachesCursor(p.pointee),
+            .many_pointer => |p| self.pointeeReachesCursor(p.element),
+            .slice => |s| self.pointeeReachesCursor(s.element),
+            .@"struct" => |s| self.anyFieldBorrowsCursor(s.fields),
+            .@"union" => |u| self.anyFieldBorrowsCursor(u.fields),
+            .tagged_union => |u| self.anyFieldBorrowsCursor(u.fields),
+            .tuple => |t| for (t.fields) |f| {
+                if (self.borrowsCVariadicCursor(f)) break true;
+            } else false,
+            .array => |a| self.borrowsCVariadicCursor(a.element),
+            .vector => |v| self.borrowsCVariadicCursor(v.element),
+            .optional => |o| self.borrowsCVariadicCursor(o.child),
+            else => false,
+        };
+    }
+
+    /// What an indirection reaches: the storage it points at, or a further
+    /// indirection to it. Only pointer-like pointees recurse, and a pointer
+    /// chain is finite.
+    fn pointeeReachesCursor(self: *const TypeTable, pointee: TypeId) bool {
+        if (self.ownsCVariadicCursor(pointee)) return true;
+        if (pointee.isBuiltin()) return false;
+        return switch (self.get(pointee)) {
+            .pointer, .many_pointer, .slice => self.borrowsCVariadicCursor(pointee),
+            else => false,
+        };
+    }
+
+    fn anyFieldBorrowsCursor(self: *const TypeTable, fields: anytype) bool {
+        for (fields) |f| {
+            if (self.borrowsCVariadicCursor(f.ty)) return true;
+        }
+        return false;
+    }
+
     /// Member count of an aggregate type: struct/union/tagged-union fields, enum
     /// variants, or array/vector length. Returns null for a type that has no
     /// member count (a scalar, pointer, the `unresolved` sentinel, …) — so a

@@ -739,7 +739,7 @@ pub const Parser = struct {
                     const dots = self.current.loc;
                     is_c_variadic = true;
                     tail_span = .{ .start = dots.start, .end = dots.end };
-                    self.advance(); // skip '..'
+                    self.advance();
                     if (self.current.tag == .comma) self.advance();
                     if (self.current.tag != .r_paren) {
                         return self.failAt(tail_span, "a C-variadic '..' tail must be the last parameter entry");

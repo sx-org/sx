@@ -107,7 +107,6 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 @volatile_load  :: ($T: Type, address: *T) -> T;
 @volatile_store :: ($T: Type, address: *T, value: T);
 
-// ── The C-variadic cursor ────────────────────────────────────────────────────
 // The reader a definition whose parameter list ends in a bare `..` walks its
 // tail arguments with. `@VaList` is opaque: it has no fields, no size, and no
 // value form — a local declaration gives it storage, and the four operations

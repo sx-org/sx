@@ -33,8 +33,6 @@ Tally    :: (i32, ..) -> i64 abi(.c);
 Fixed    :: (i32) -> i64 abi(.c);
 Relay    :: (i32, @VaList) -> i64 abi(.c);
 
-// An sx owner opens a list over its own tail and hands it to the imported
-// reader, whose parameter arrived as `@VaList`.
 own :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @va_start(*ap);
@@ -42,7 +40,6 @@ own :: (n: i32, ..) -> i64 abi(.c) {
     return relay(n, ap);
 }
 
-// The same hand-off through the reader's function TYPE rather than its name.
 own_through :: (read: Relay, n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @va_start(*ap);
@@ -68,11 +65,9 @@ main :: () -> i32 {
     narrow: f32 = 0.5;
     print("zero_fixed_doubles sx={} c={}\n", scale_all(n, x, 2.5, narrow), c_scale_all());
 
-    // The fixed-parameter form, and the same tail read through a borrowed list.
     print("fixed sx={} c={}\n", tally(3, p, q, r), c_tally());
     print("borrowed sx={}\n", own(3, p, q, r));
 
-    // Each imported function binds to the type that states its own tail.
     zero: SumAll = sum_all;
     doubles: ScaleAll = scale_all;
     counted: Tally = tally;
