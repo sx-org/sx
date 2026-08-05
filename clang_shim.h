@@ -12,6 +12,10 @@ extern "C" {
 typedef struct {
     const char *name;
     const char *type_spelling;
+    /* The parameter is written as the C `va_list` typedef. Canonicalization
+       erases that identity into a target-specific pointer, array or record, so
+       `type_spelling` cannot answer it. */
+    int is_va_list;
 } SxCParamInfo;
 
 typedef struct {
@@ -21,6 +25,9 @@ typedef struct {
     int num_params;
     const char *source_file;
     unsigned source_line;
+    /* The prototype ends in `...`; `num_params` is then the fixed count and may
+       be zero (C23). */
+    int is_variadic;
 } SxCFunctionInfo;
 
 typedef struct {

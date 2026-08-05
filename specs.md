@@ -3071,6 +3071,7 @@ SxFoo     :: #objc_class("SxFoo")    export { counter: i32; bump :: (self: *Self
 | `unsigned*` (single out) | `*u32` | |
 | `float*` (buffer) | `[*]f32` | |
 | `void*` (generic) | `*void` | only for truly opaque/generic data |
+| `va_list` | `@VaList` | the C-variadic boundary, place-only |
 
 ### Vector Types (SIMD)
 LLVM SIMD vectors, parameterized by length and element type.
@@ -3310,6 +3311,11 @@ Each emits the C shape with no implicit sx context, so the LLVM type is exactly
 what a C compiler builds for the same prototype. `abi(.naked)` and a `Closure`
 literal carry no such shape and refuse the tail.
 
+A C prototype imported by `#import c { #include … }` keeps its tail: a
+declaration ending in `...` synthesizes an `extern` ending in `..`, over the
+fixed parameters C wrote — none of them where C23 states no named parameter
+before the tail.
+
 Every argument at or past the fixed count crosses under the **C default argument
 promotions**: `f32` widens to `f64`, and an integer narrower than 32 bits widens
 to `i32` — every width, not just the builtin ones. Past the promotions, a tail
@@ -3407,6 +3413,10 @@ sx_vsum :: (n: i32, ap: @VaList) -> i64 export {
     return total;
 }
 ```
+
+An imported `va_list` parameter arrives as this one. The typedef names it, not
+what it canonicalizes to — that is a pointer on one target and an array of
+records on another, and neither shape is the boundary on its own.
 
 Forwarding a list **inside sx** is `ap: *@VaList`, the same borrow a helper
 reads through. Neither spelling stands in for the other: an ordinary non-C
