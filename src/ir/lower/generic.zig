@@ -127,6 +127,14 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     self.builder.currentFunc().is_naked = (fd.abi == .naked);
     self.builder.currentFunc().is_get = fd.is_get;
     self.builder.currentFunc().is_set = fd.is_set;
+    // A monomorph keeps the declaration's C shape: the convention, the bare
+    // `..` tail, and the declaration itself, which `@va_start` reads its tail
+    // requirement from.
+    self.builder.currentFunc().call_conv = if (ast.isEffectiveCSignature(fd)) .c else .default;
+    self.builder.currentFunc().is_c_variadic = fd.is_c_variadic;
+    const saved_fn_decl_mono = self.current_fn_decl;
+    defer self.current_fn_decl = saved_fn_decl_mono;
+    self.current_fn_decl = fd;
 
     // Create entry block
     const entry_name = self.module.types.internString("entry");
@@ -147,8 +155,13 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
         for (fd.params, 0..) |p, param_decl_idx| {
             if (isTypeParamDecl(&p, fd.type_params)) continue;
             const pty = self.resolveDeclParamType(fd, param_decl_idx);
-            const slot = self.builder.alloca(pty);
             const param_ref = Ref.fromIndex(param_idx);
+            if (self.module.types.isCVariadicCursor(pty)) {
+                scope.put(p.name, .{ .ref = self.bindBoundaryCursorParam(param_ref, pty), .ty = pty, .is_alloca = true, .borrowed_cursor = true });
+                param_idx += 1;
+                continue;
+            }
+            const slot = self.builder.alloca(pty);
             self.builder.store(slot, param_ref);
             scope.put(p.name, .{ .ref = slot, .ty = pty, .is_alloca = true });
             param_idx += 1;

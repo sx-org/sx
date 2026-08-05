@@ -1063,7 +1063,7 @@ fn inferBareFnBindingType(self: *Lowering, value: *const ast.Node) ?TypeId {
     for (fd.params) |*param| {
         params.append(self.alloc, self.resolveParamType(param)) catch unreachable;
     }
-    const cc: types.TypeInfo.CallConv = if (fd.abi == .c or fd.extern_export == .export_) .c else .default;
+    const cc: types.TypeInfo.CallConv = if (ast.isEffectiveCSignature(fd)) .c else .default;
     return self.module.types.functionTypeVariadic(params.items, self.resolveReturnType(fd), cc, fd.is_c_variadic);
 }
 

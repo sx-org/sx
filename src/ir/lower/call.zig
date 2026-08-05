@@ -792,9 +792,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // the rest, so the count has to answer for itself here — the
                 // arity check the main dispatch runs is downstream of this arm.
                 if (self.checkCallArity(fd, c.callee.data.identifier.name, c.args.len, false, c.callee.span)) return Ref.none;
-                // Types are explicit when call args match param count (e.g., are_equal(Point, p1, p2))
-                // Types are inferred when call args < param count (e.g., are_equal(p1, p2))
-                const types_explicit = c.args.len == fd.params.len;
+                const types_explicit = self.genericResolver().typesPassedExplicitly(fd, c.args);
                 // Resolve the DECLARED param types up front — in the callee's
                 // source, with $T bindings inferred from the arg nodes — and
                 // align them to the ARG positions (inference calls omit the
@@ -841,6 +839,13 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             // (same arm as the direct path).
                             if (tgt) |ptv| {
                                 if (protocolArgErasure(self, arg, ptv)) |ib| break :blk ib;
+                            }
+                            // A `@VaList` param is the C boundary: the argument
+                            // names a live list and its PLACE crosses (same arm
+                            // as the direct path) — a cursor has no value form
+                            // for `lowerExpr` to read.
+                            if (tgt) |ptv| {
+                                if (self.boundaryCursorArg(arg, ptv)) |place| break :blk place;
                             }
                             break :blk self.lowerExpr(arg);
                         };
@@ -2845,7 +2850,7 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
         }
     }
 
-    const types_passed_explicitly = call_node.args.len == fd.params.len;
+    const types_passed_explicitly = self.genericResolver().typesPassedExplicitly(fd, call_node.args);
     const mangled_name = self.genericResolver().mangleGenericName(base_name, fd, &bindings);
 
     if (!self.lowered_functions.contains(mangled_name)) {
@@ -2879,8 +2884,21 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
             }
             arg_idx += 1;
         }
+        // A C-variadic monomorph takes whatever follows its fixed parameters:
+        // the tail arguments ride behind the value params and cross under the
+        // shared promotion/admissibility rule.
+        const fixed_count = value_args.items.len;
+        if (func.is_c_variadic) {
+            while (arg_idx < lowered_args.len) : (arg_idx += 1) {
+                value_args.append(self.alloc, lowered_args[arg_idx]) catch unreachable;
+            }
+        }
         const final_args = self.prependCtxIfNeeded(func, value_args.items);
         self.coerceCallArgs(final_args, params);
+        if (func.is_c_variadic) {
+            const ctx_off: usize = final_args.len - value_args.items.len;
+            self.promoteCVariadicArgs(final_args, ctx_off + fixed_count);
+        }
         return self.builder.call(fid, final_args, ret_ty);
     }
 

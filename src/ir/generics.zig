@@ -212,13 +212,31 @@ pub const GenericResolver = struct {
     /// Strategy 1: explicit type args (the param named `$T` IS a type
     /// expression). Strategy 2: infer from value params that use `T`
     /// (`a: $T`, `items: []$T`), picking the widest match.
+    /// Whether a generic call spells its type arguments. Exact arity answers on
+    /// its own; a bare `..` tail keeps the arity open, so the answer comes from
+    /// what stands in the type-parameter positions. `args_ast` is parallel to
+    /// `fd.params` (dot-call callers prepend the receiver's node).
+    pub fn typesPassedExplicitly(self: GenericResolver, fd: *const ast.FnDecl, args_ast: []const *const Node) bool {
+        if (!fd.is_c_variadic) return args_ast.len == fd.params.len;
+        if (args_ast.len < fd.params.len) return false;
+        for (fd.params, 0..) |*param, pi| {
+            if (!Lowering.isTypeParamDecl(param, fd.type_params)) continue;
+            const node = args_ast[pi];
+            if (!(type_bridge.isTypeShapedAstNode(node, &self.l.module.types) or
+                self.l.isTypeReturningCallNode(node) or
+                self.l.isGenericTypeConstructorCallNode(node) or
+                self.argIsBoundTypeParam(node))) return false;
+        }
+        return true;
+    }
+
     pub fn buildTypeBindings(
         self: GenericResolver,
         fd: *const ast.FnDecl,
         args_ast: []const *const Node,
     ) std.StringHashMap(TypeId) {
         var bindings = std.StringHashMap(TypeId).init(self.l.alloc);
-        const types_passed_explicitly = args_ast.len == fd.params.len;
+        const types_passed_explicitly = self.typesPassedExplicitly(fd, args_ast);
         for (fd.type_params) |tp| {
             var found = false;
             // Strategy 1: explicit — the param whose name matches `tp.name` IS

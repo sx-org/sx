@@ -430,6 +430,47 @@ test "a named tail converts each argument to its element type" {
     try std.testing.expectEqual(@as(usize, 2), tail_args);
 }
 
+test "a generic monomorph keeps the declaration's convention and tail" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\read_tail :: ($T: Type, first: $T, ..) -> i64 abi(.c) {
+        \\    ap: @VaList = ---;
+        \\    @va_start(*ap);
+        \\    defer @va_end(*ap);
+        \\    total: i64 = xx first;
+        \\    total += xx @va_arg(i32, *ap);
+        \\    return total;
+        \\}
+        \\main :: () -> i64 { return read_tail(i32, 40, 2); }
+    , &lowered);
+    defer lowered.module.deinit();
+    try std.testing.expect(!lowered.diagnostics.hasErrors());
+
+    // `i32` binds `$T` even though the tail argument keeps the arity open.
+    const fid = lowered.lowering.resolveFuncByName("read_tail__i32") orelse return error.MonomorphNotFound;
+    const func = &lowered.module.functions.items[@intFromEnum(fid)];
+    try std.testing.expect(func.is_c_variadic);
+    try std.testing.expect(func.call_conv == .c);
+
+    // The call carries the fixed argument AND the tail argument.
+    const main_fn = &lowered.module.functions.items[@intFromEnum(lowered.lowering.resolveFuncByName("main").?)];
+    var seen: usize = 0;
+    for (main_fn.blocks.items) |blk| {
+        for (blk.insts.items) |ins| {
+            const call = switch (ins.op) {
+                .call => |c| c,
+                else => continue,
+            };
+            if (call.callee != fid) continue;
+            seen += 1;
+            try std.testing.expectEqual(@as(usize, 2), call.args.len);
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), seen);
+}
+
 test "a C tail reads isize and usize at the target's address width" {
     var module = ir_mod.Module.init(std.testing.allocator);
     defer module.deinit();
