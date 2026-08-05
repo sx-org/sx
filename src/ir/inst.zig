@@ -207,6 +207,13 @@ pub const Op = union(enum) {
     va_copy: VaCopy, // duplicate a cursor's position into a second cursor
     va_end: UnaryOp, // release a cursor
 
+    // The two C-boundary adapters, inverses of each other. A C `va_list`
+    // parameter is one pointer-shaped word on every supported target, which is
+    // the cursor's address where the target's list is composite and the list
+    // itself where it is one word.
+    va_place: UnaryOp, // operand: an incoming C `va_list` parameter → its cursor address
+    va_pass: UnaryOp, // operand: a cursor address → the C `va_list` parameter word
+
     // ── Atomics ─────────────────────────────────────────────────────
     atomic_load: AtomicLoad, // atomic load from pointer with memory ordering
     atomic_store: AtomicStore, // atomic store to pointer with memory ordering

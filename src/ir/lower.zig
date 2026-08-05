@@ -254,6 +254,10 @@ pub const Binding = struct {
     /// typing, and the interface-only constraint check.
     pack_elem: ?*ast.Node = null,
     origin: Origin = .other,
+    /// The binding names a C `va_list` this frame BORROWS — an incoming
+    /// boundary parameter. Its caller opened it and ends it, so `@va_start` /
+    /// `@va_end` here would act on another frame's list.
+    borrowed_cursor: bool = false,
 };
 
 // `init` / `deinit` / `put` are pub so collaborator unit tests (e.g.
@@ -3556,7 +3560,12 @@ pub const Lowering = struct {
     pub const refuseCursorValue = lower_cvariadic.refuseValue;
     pub const refuseCursorEscape = lower_cvariadic.refuseEscape;
     pub const refuseCursorInspection = lower_cvariadic.refuseInspection;
+    pub const refuseCursorCapture = lower_cvariadic.refuseCapture;
     pub const refuseCursorMember = lower_cvariadic.refuseMember;
+    pub const refuseCursorParam = lower_cvariadic.refuseParam;
+    pub const refuseCursorSignature = lower_cvariadic.refuseSignature;
+    pub const bindBoundaryCursorParam = lower_cvariadic.bindBoundaryParam;
+    pub const boundaryCursorArg = lower_cvariadic.boundaryArg;
     pub const cursorStorageFields = lower_cvariadic.storageFields;
 
     // --- lower/pack.zig (lower_pack) ---

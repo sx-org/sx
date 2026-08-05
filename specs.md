@@ -3379,16 +3379,62 @@ integer narrower than 32 bits are refused where they are written:
 
 `@VaList` is **opaque**. Its storage is the target's `va_list` and it has no
 value form, so it cannot be constructed, inspected, measured (`size_of` /
-`align_of` / the reflection builtins), copied by assignment, or written as a
-field, parameter, or return type. A local declaration is the only thing that
-gives a cursor storage, and `*name` is the only way to reach one.
+`align_of` / the reflection builtins), or copied by assignment. A local
+declaration and an incoming C parameter are the only things that give a cursor
+storage, and `*name` is the only way to reach one.
 
 The cursor is **owned by the function that declares it**: `@va_start`,
 `@va_end`, and `@va_copy`'s destination each take the address of a local. A
 `*@VaList` handed to another function is a **borrow** — it reads with `@va_arg`
 and leaves the closing to the owner. A cursor cannot escape the frame whose tail
-it reads: neither `@VaList` nor `*@VaList` may be returned, stored in a field,
-or passed through a C-variadic tail.
+it reads: neither `@VaList` nor `*@VaList` may be returned, stored in a field or
+a global, captured by a closure, or passed through a C-variadic tail.
+
+#### Crossing the C boundary: a `va_list` parameter
+
+C's own tail readers take the list as a parameter — `vprintf`, `vsnprintf`,
+`sqlite3_vmprintf`. That parameter is written **by value** as `ap: @VaList`,
+and only in an **effective-C signature**: an `abi(.c)` or `export` definition,
+an `extern` declaration, or an `abi(.c)` function type. The rule is independent
+of a bare `..` tail — a signature that takes a list needs none of its own:
+
+```sx
+vmprintf :: (fmt: cstring, ap: @VaList) -> ?cstring extern;
+
+sx_vsum :: (n: i32, ap: @VaList) -> i64 export {
+    total: i64 = 0;
+    for 0..n (i) { total += xx @va_arg(i32, *ap); }
+    return total;
+}
+```
+
+Forwarding a list **inside sx** is `ap: *@VaList`, the same borrow a helper
+reads through. Neither spelling stands in for the other: an ordinary non-C
+`@VaList` parameter and a C-boundary `*@VaList` parameter are both refused.
+
+The boundary parameter is **place-only**. A call names a live list — `f(fmt, ap)`
+from an `ap: @VaList` local or parameter, `f(fmt, ap.*)` from an internal
+`ap: *@VaList` — and the place crosses under the target's C ABI with no sx
+value copy:
+
+```sx
+relay :: (fmt: cstring, ..) -> i32 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    return c_vformat(fmt, ap);
+}
+
+forward :: (fmt: cstring, ap: *@VaList) -> i32 {
+    return c_vformat(fmt, ap.*);
+}
+```
+
+An incoming list is **borrowed and already open**. The callee never calls
+`@va_start` or `@va_end` on it — its caller did and will — but reads it with
+`@va_arg` and forks it with `@va_copy`. A traversal may move the caller-visible
+position, as C specifies, so a caller that needs a second traversal copies
+first.
 
 ### Variadic Heterogeneous Type Packs
 
@@ -5797,7 +5843,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `align_of($T: Type) -> i64` — alignment of type `T` in bytes
 - `@volatile_load($T: Type, address: *T) -> T` / `@volatile_store($T: Type, address: *T, value: T)` — one typed access emitted exactly as written: the optimizer may not elide it, duplicate it, fuse it with a neighbour, or move it across another volatile access. For storage whose reads and writes are themselves observable — a memory-mapped device register, a buffer a signal handler touches, memory another process maps. **Volatile is not atomic**: the access carries no memory ordering, orders nothing between threads, and is not guaranteed indivisible; sharing data between threads is `Atomic($T)`'s job (`modules/std/atomic.sx`). `T` is any type with storage — integer, float, bool, pointer, enum, vector, or an aggregate, which moves as a whole rather than field by field. A valueless `T` is a compile error. Both carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`, and the unprefixed spellings are ordinary identifiers a program may bind.
 
-- `@va_start(list: *@VaList)` / `@va_arg($T: Type, list: *@VaList) -> T` / `@va_copy(dst: *@VaList, src: *@VaList)` / `@va_end(list: *@VaList)` — the C-variadic cursor: `@va_start` opens one over the tail arguments of the definition being lowered, `@va_arg` reads the next and advances, `@va_copy` forks a second cursor at the first's position, and `@va_end` closes one. `@VaList` is opaque, owned by the function that declares it, and cannot escape the frame whose tail it reads; `T` is the type the C default argument promotions leave in the slot. Full rules under §Variadic Functions, The C-Variadic Tail. All five carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`.
+- `@va_start(list: *@VaList)` / `@va_arg($T: Type, list: *@VaList) -> T` / `@va_copy(dst: *@VaList, src: *@VaList)` / `@va_end(list: *@VaList)` — the C-variadic cursor: `@va_start` opens one over the tail arguments of the definition being lowered, `@va_arg` reads the next and advances, `@va_copy` forks a second cursor at the first's position, and `@va_end` closes one. `@VaList` is opaque, owned by the function that declares it, and cannot escape the frame whose tail it reads; `T` is the type the C default argument promotions leave in the slot. A C `va_list` parameter is written by value as `ap: @VaList` in an effective-C signature and passed as the place it names; sx-internal forwarding is `ap: *@VaList`. Full rules under §Variadic Functions, The C-Variadic Tail. All five carry the `@` sigil: they are compiler-maintained contracts (§Lexical Structure, The `@` namespace) declared by `modules/std/core.sx`.
 
 ### Type Introspection
 - `type_of(val: $T) -> Type` — returns the runtime type tag of a value

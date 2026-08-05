@@ -2,6 +2,9 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ast = @import("../ast.zig");
 
+/// The contract name of the C-variadic cursor type, `@` included.
+pub const cvariadic_cursor = "@VaList";
+
 // ── TypeId ──────────────────────────────────────────────────────────────
 // Opaque handle into the TypeTable. First 16 slots are reserved for builtins.
 
@@ -626,6 +629,25 @@ pub const TypeTable = struct {
             if (n != null and n.? == name) return TypeId.fromIndex(@intCast(i));
         }
         return null;
+    }
+
+    /// True when `ty` IS the C-variadic cursor. Its storage is the target's
+    /// `va_list`, substituted when the declaration registers, so identity is
+    /// the whole test — the layout says nothing about the type.
+    pub fn isCVariadicCursor(self: *const TypeTable, ty: TypeId) bool {
+        if (ty.isBuiltin()) return false;
+        const info = self.get(ty);
+        if (info != .@"struct") return false;
+        return std.mem.eql(u8, self.getString(info.@"struct".name), cvariadic_cursor);
+    }
+
+    /// True when `ty` is `*@VaList` — the borrow an sx helper reads through.
+    pub fn isCVariadicCursorPointer(self: *const TypeTable, ty: TypeId) bool {
+        if (ty.isBuiltin()) return false;
+        return switch (self.get(ty)) {
+            .pointer => |p| self.isCVariadicCursor(p.pointee),
+            else => false,
+        };
     }
 
     /// Member count of an aggregate type: struct/union/tagged-union fields, enum

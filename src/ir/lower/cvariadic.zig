@@ -1,9 +1,11 @@
-//! The C-variadic cursor: `@VaList` and the four operations that walk it.
+//! The C-variadic cursor: `@VaList`, the four operations that walk it, and the
+//! C boundary it crosses.
 //!
 //! `@VaList` is declared with no fields; its storage is the target's `va_list`,
 //! substituted when the declaration registers. Those words are not spellable, so
-//! every rule below keeps a cursor to the two shapes that reach the backend
-//! intact — a local's storage, and a borrowed `*@VaList`.
+//! every rule below keeps a cursor to the three shapes that reach the backend
+//! intact — a local's storage, an incoming C parameter's, and a borrowed
+//! `*@VaList`.
 
 const std = @import("std");
 const ast = @import("../../ast.zig");
@@ -18,25 +20,13 @@ const target_mod = @import("../../target.zig");
 const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
 
-/// The contract name of the cursor type, `@` included.
-pub const cursor_name = "@VaList";
+const cursor_name = types.cvariadic_cursor;
 
-/// How many pointer-sized words the target's `va_list` occupies.
-///
-/// x86-64 SysV holds a three-word register-save record; AArch64 AAPCS holds a
-/// four-word one. Windows and Apple's AArch64 pass the tail on the stack, so a
-/// cursor there is one pointer, as it is on wasm.
-pub fn storageWords(tc: target_mod.TargetConfig) u8 {
-    if (tc.isWindows()) return 1;
-    if (tc.isX86_64()) return 3;
-    if (tc.isAarch64() and !tc.isMacOS() and !tc.isIOS()) return 4;
-    return 1;
-}
-
-/// The field list `@VaList` registers with: `storageWords` pointer-sized words,
-/// which give the type the target `va_list`'s size and alignment.
+/// The field list `@VaList` registers with: `TargetConfig.vaListWords`
+/// pointer-sized words, which give the type the target `va_list`'s size and
+/// alignment.
 pub fn storageFields(self: *Lowering) []const types.TypeInfo.StructInfo.Field {
-    const n = storageWords(self.target_config orelse .{});
+    const n = (self.target_config orelse target_mod.TargetConfig{}).vaListWords();
     const fields = self.alloc.alloc(types.TypeInfo.StructInfo.Field, n) catch return &.{};
     for (fields, 0..) |*f, i| {
         f.* = .{ .name = self.module.types.internString(wordName(i)), .ty = .usize };
@@ -61,20 +51,12 @@ pub fn isCursorDecl(sd: *const ast.StructDecl) bool {
 
 /// True when `ty` IS the cursor type.
 fn isCursorType(self: *Lowering, ty: TypeId) bool {
-    if (ty.isBuiltin()) return false;
-    const info = self.module.types.get(ty);
-    if (info != .@"struct") return false;
-    return std.mem.eql(u8, self.module.types.getString(info.@"struct".name), cursor_name);
+    return self.module.types.isCVariadicCursor(ty);
 }
 
-/// True when `ty` is `*@VaList` — the one shape a cursor crosses a call in.
+/// True when `ty` is `*@VaList` — the shape an sx helper reads a borrow through.
 fn isCursorPointer(self: *Lowering, ty: TypeId) bool {
-    if (ty.isBuiltin()) return false;
-    const info = self.module.types.get(ty);
-    return switch (info) {
-        .pointer => |p| isCursorType(self, p.pointee),
-        else => false,
-    };
+    return self.module.types.isCVariadicCursorPointer(ty);
 }
 
 /// Refuse a position that would need the cursor AS A VALUE. It has no value
@@ -110,10 +92,102 @@ pub fn refuseInspection(self: *Lowering, ty: TypeId, span: ?ast.Span) bool {
     return true;
 }
 
+/// Refuse capturing a cursor or a borrow of one. The list reads a tail the
+/// enclosing frame owns, and a closure may outlive that frame.
+pub fn refuseCapture(self: *Lowering, ty: TypeId, span: ?ast.Span) bool {
+    if (!isCursorType(self, ty) and !isCursorPointer(self, ty)) return false;
+    if (self.diagnostics) |d|
+        d.addFmt(.err, span, "cannot capture a C-variadic cursor — it reads a tail the enclosing frame owns, which a closure may outlive", .{});
+    return true;
+}
+
 /// Refuse selecting a member through a cursor or a borrow of one.
 pub fn refuseMember(self: *Lowering, ty: TypeId, span: ?ast.Span) bool {
     if (isCursorPointer(self, ty)) return refuseInspection(self, self.module.types.get(ty).pointer.pointee, span);
     return refuseInspection(self, ty, span);
+}
+
+// ── The C boundary and the sx-internal borrow ────────────────────────────────
+// Two spellings, neither standing in for the other. `ap: @VaList` is the C
+// parameter and belongs only to an effective-C signature; `ap: *@VaList` is the
+// borrow sx helpers forward synchronously and belongs only outside one.
+
+/// Refuse a parameter that spells a cursor for the wrong side of the boundary.
+/// `is_c` is the enclosing signature's effective-C verdict. Returns true when
+/// refused.
+pub fn refuseParam(self: *Lowering, ty: TypeId, span: ?ast.Span, is_c: bool) bool {
+    if (isCursorType(self, ty)) {
+        if (is_c) return false;
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "'{s}' is the C boundary parameter — declare this signature 'abi(.c)', 'extern', or 'export', or take the sx-internal borrow '*{s}'", .{ cursor_name, cursor_name });
+        return true;
+    }
+    if (!isCursorPointer(self, ty)) return false;
+    if (!is_c) return false;
+    if (self.diagnostics) |d|
+        d.addFmt(.err, span, "'*{s}' is the sx-internal borrow — a C signature takes the list itself, '{s}'", .{ cursor_name, cursor_name });
+    return true;
+}
+
+/// Refuse a FUNCTION TYPE whose parameter list spells a cursor for the wrong
+/// side of the boundary. A type carries no linkage slot, so `abi(.c)` is the
+/// only spelling that makes its signature the C one. Returns true when refused.
+pub fn refuseSignature(self: *Lowering, ty: TypeId, span: ?ast.Span) bool {
+    if (ty.isBuiltin()) return false;
+    const info = self.module.types.get(ty);
+    if (info != .function) return false;
+    const is_c = info.function.call_conv == .c;
+    for (info.function.params) |p| {
+        if (refuseParam(self, p, span, is_c)) return true;
+    }
+    return false;
+}
+
+/// The cursor place of an incoming C `va_list` parameter, bound so the body
+/// reads it exactly as it reads a local's storage.
+pub fn bindBoundaryParam(self: *Lowering, param_ref: Ref, ty: TypeId) Ref {
+    return self.builder.emit(.{ .va_place = .{ .operand = param_ref } }, self.module.types.ptrTo(ty));
+}
+
+/// The argument for a C `va_list` parameter, or null when `param_ty` is not one.
+///
+/// The parameter is PLACE-ONLY: `ap` names a list this frame holds — a local or
+/// an incoming boundary parameter — and `ap.*` the one a borrow points at.
+/// Neither is read as a value; the place crosses under the target's C ABI.
+pub fn boundaryArg(self: *Lowering, node: *const Node, param_ty: TypeId) ?Ref {
+    if (!isCursorType(self, param_ty)) return null;
+    const place = boundaryPlace(self, node) orelse blk: {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, node.span, "a '{s}' argument names a live list — pass a '{s}' local or parameter as 'ap', or a borrow's list as 'ap.*'", .{ cursor_name, cursor_name });
+        // The diagnostic halts the build; an unopened local keeps the argument
+        // the same shape the accepted spellings produce.
+        break :blk self.builder.alloca(param_ty);
+    };
+    return self.builder.emit(.{ .va_pass = .{ .operand = place } }, param_ty);
+}
+
+/// The address of the list `node` names, or null when it names no place.
+fn boundaryPlace(self: *Lowering, node: *const Node) ?Ref {
+    if (node.data == .identifier) {
+        const b = cursorBinding(self, node.data.identifier.name) orelse return null;
+        return self.builder.emit(.{ .addr_of = .{ .operand = b.ref } }, self.module.types.ptrTo(b.ty));
+    }
+    if (node.data == .deref_expr) {
+        const ref = self.lowerExpr(node.data.deref_expr.operand);
+        if (!isCursorPointer(self, self.builder.getRefType(ref))) return null;
+        return ref;
+    }
+    return null;
+}
+
+/// The binding `name` denotes when it holds a cursor's storage, or null.
+fn cursorBinding(self: *Lowering, name: []const u8) ?lower.Binding {
+    const scope = self.scope orelse return null;
+    const sb = scope.lookupBoundary(name);
+    if (sb.crossed_fn_boundary) return null;
+    const binding = sb.binding orelse return null;
+    if (!binding.is_alloca or !isCursorType(self, binding.ty)) return null;
+    return binding;
 }
 
 /// Which cursor operation `name` is, or null.
@@ -177,19 +251,25 @@ fn requireVariadicDefinition(self: *Lowering, name: []const u8, span: ast.Span) 
 
 /// The address of a cursor this function OWNS: `*name`, where `name` is a local
 /// of type `@VaList`. `@va_start`, `@va_end`, and `@va_copy`'s destination act
-/// on the owner's storage — a borrowed `*@VaList` belongs to another frame,
-/// which ends it itself.
+/// on the owner's storage — an incoming list and a borrowed `*@VaList` both
+/// belong to another frame, which ends them itself.
 fn ownedCursor(self: *Lowering, node: *const Node, name: []const u8) ?Ref {
-    if (localCursorSlot(self, node)) |slot| return slot;
+    if (localCursorSlot(self, node)) |local| {
+        if (!local.borrowed) return local.slot;
+        if (self.diagnostics) |d|
+            d.addFmt(.err, node.span, "'{s}' acts on a cursor this function owns — an incoming '{s}' is borrowed already open, and its caller ends it", .{ name, cursor_name });
+        return null;
+    }
     if (self.diagnostics) |d|
         d.addFmt(.err, node.span, "'{s}' acts on a cursor this function owns — pass '*name' for a local '{s}'", .{ name, cursor_name });
     return null;
 }
 
-/// The address of any cursor: an owned local's storage, or a `*@VaList` passed
-/// in. Reading and copying FROM a cursor are both legal on a borrow.
+/// The address of any cursor: a local's storage, an incoming list's, or a
+/// `*@VaList` passed in. Reading and copying FROM a cursor are both legal on a
+/// borrow.
 fn borrowedCursor(self: *Lowering, node: *const Node, name: []const u8) ?Ref {
-    if (localCursorSlot(self, node)) |slot| return slot;
+    if (localCursorSlot(self, node)) |local| return local.slot;
     const ref = self.lowerExpr(node);
     const ty = self.builder.getRefType(ref);
     if (isCursorPointer(self, ty)) return ref;
@@ -201,16 +281,15 @@ fn borrowedCursor(self: *Lowering, node: *const Node, name: []const u8) ?Ref {
 /// `*name` over a cursor-typed local, lowered to that local's storage address.
 /// Reading the binding's slot directly is what makes the argument the ADDRESS in
 /// every statement position — a cursor has no value form to fall back to.
-fn localCursorSlot(self: *Lowering, node: *const Node) ?Ref {
+fn localCursorSlot(self: *Lowering, node: *const Node) ?struct { slot: Ref, borrowed: bool } {
     if (node.data != .unary_op) return null;
     const uop = node.data.unary_op;
     if (uop.op != .address_of or uop.operand.data != .identifier) return null;
-    const scope = self.scope orelse return null;
-    const sb = scope.lookupBoundary(uop.operand.data.identifier.name);
-    if (sb.crossed_fn_boundary) return null;
-    const binding = sb.binding orelse return null;
-    if (!binding.is_alloca or !isCursorType(self, binding.ty)) return null;
-    return self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, self.module.types.ptrTo(binding.ty));
+    const binding = cursorBinding(self, uop.operand.data.identifier.name) orelse return null;
+    return .{
+        .slot = self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, self.module.types.ptrTo(binding.ty)),
+        .borrowed = binding.borrowed_cursor,
+    };
 }
 
 /// The type `@va_arg` reads. The caller asks for what the C default argument

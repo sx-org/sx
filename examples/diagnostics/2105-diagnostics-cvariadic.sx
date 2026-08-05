@@ -13,10 +13,17 @@
 // to open, `@va_arg` asks for the type the promotions LEAVE in the slot, and the
 // `@VaList` cursor itself is opaque: it has no value form, no published layout,
 // and no way out of the frame whose tail it reads.
+//
+// The C boundary has two spellings and neither substitutes for the other:
+// `ap: @VaList` is the C parameter and belongs only to an effective-C signature,
+// `ap: *@VaList` the sx-internal borrow and belongs only outside one. A boundary
+// argument names a live list — `ap` or `ap.*` — and an incoming list is borrowed
+// already open, so its callee neither starts nor ends it.
 
 #import "modules/std.sx";
 
 printf :: (fmt: cstring, ..) -> i32 extern;
+c_reader :: (n: i32, ap: @VaList) -> i64 extern;
 
 // `..name: []U` is the homogeneous constraint: every tail argument coerces to
 // `U`. A value that reaches no tail at all is named by the same refusal.
@@ -33,7 +40,24 @@ Keeps :: struct {
     borrow: *@VaList;
 }
 
+// The two boundary spellings, each on the wrong side.
 by_value :: (ap: @VaList) -> i64 { return 0; }
+
+c_borrow :: (ap: *@VaList) -> i64 abi(.c) { return 0; }
+
+// The same pair as function TYPES: `abi(.c)` is the only spelling that makes a
+// type's signature the C one, so the by-value list needs it and the borrow
+// refuses it. Each is named at every declaration that carries it.
+NotC    :: (i32, @VaList) -> i64;
+CBorrow :: (i32, *@VaList) -> i64 abi(.c);
+
+Signatures :: struct {
+    plain: NotC;
+}
+
+// A cursor in a global outlives every frame that could open one.
+stored: @VaList;
+stored_borrow: *@VaList;
 
 hands_one_back :: (ap: *@VaList) -> @VaList { return *ap; }
 
@@ -63,8 +87,29 @@ reads :: (n: i32, ..) -> i64 abi(.c) {
     printf("%d\n", *ap);          // the cursor cannot leave this frame
     copied := ap;                 // no value form to copy
     word := ap.w0;                // no published fields
+    later := () -> i64 { return @va_arg(i64, *ap); }; // a closure may outlive the frame
     @va_end(*ap);
     return xx narrow;
+}
+
+// A `@VaList` parameter names a place, so its argument must name one too:
+// neither a borrow nor a plain value is one. A local annotated with either
+// mis-signed function type is refused where it is written.
+boundary_actuals :: (n: i32, ..) -> i64 abi(.c) {
+    ap: @VaList = ---;
+    @va_start(*ap);
+    defer @va_end(*ap);
+    lent: *@VaList = *ap;
+    unusable: NotC = ---;
+    also_unusable: CBorrow = ---;
+    return c_reader(n, *ap) + c_reader(n, lent) + c_reader(n, 7);
+}
+
+// An incoming list is borrowed already open: its caller started it and ends it.
+walks_a_borrowed_list :: (n: i32, ap: @VaList) -> i64 export {
+    @va_start(*ap);
+    @va_end(*ap);
+    return c_reader(n, ap);
 }
 
 main :: () -> i32 {
@@ -82,5 +127,6 @@ main :: () -> i32 {
     printf("%d %d %d\n", size_of(@VaList), align_of(@VaList), struct_field_count(@VaList));
     made := @VaList{};
     printf("%d\n", reads(1, 2) + no_tail() + ends_a_borrow(*made));
+    printf("%d\n", boundary_actuals(1, 2) + walks_a_borrowed_list(1, made));
     return 0;
 }

@@ -263,6 +263,8 @@ fn printInst(instruction: *const Inst, ref_idx: u32, tt: *const TypeTable, write
             try writer.print("va_end %{d}\n", .{u.operand.index()});
             return;
         },
+        .va_place => |u| try writer.print("va_place %{d} : ", .{u.operand.index()}),
+        .va_pass => |u| try writer.print("va_pass %{d} : ", .{u.operand.index()}),
         .atomic_load => |a| try writer.print("atomic_load %{d} {s} : ", .{ a.ptr.index(), @tagName(a.ordering) }),
         .atomic_store => |a| {
             try writer.print("atomic_store %{d}, %{d} {s}\n", .{ a.ptr.index(), a.val.index(), @tagName(a.ordering) });

@@ -1,16 +1,16 @@
 //! The cursor's target storage table and the ops the four operations lower to.
 
 const std = @import("std");
-const cvariadic = @import("cvariadic.zig");
 const errors = @import("../../errors.zig");
 const parser = @import("../../parser.zig");
 const corpus_paths = @import("corpus_paths");
+const target_mod = @import("../../target.zig");
 const ir_mod = @import("../ir.zig");
 const TypeId = ir_mod.TypeId;
 const Lowering = ir_mod.Lowering;
 
 fn wordsFor(triple: [*:0]const u8) u8 {
-    return cvariadic.storageWords(.{ .triple = triple });
+    return (target_mod.TargetConfig{ .triple = triple }).vaListWords();
 }
 
 test "cursor storage matches the target's va_list" {
@@ -66,7 +66,7 @@ test "the cursor type carries the target's storage words" {
 
     const table = &lowered.module.types;
     const tid = table.findByName(table.internString("@VaList")).?;
-    const words = cvariadic.storageWords(.{});
+    const words = (target_mod.TargetConfig{}).vaListWords();
     try std.testing.expectEqual(@as(usize, words), table.get(tid).@"struct".fields.len);
     try std.testing.expectEqual(@as(usize, words) * table.pointer_size, table.typeSizeBytes(tid));
     try std.testing.expectEqual(@as(usize, table.pointer_size), table.typeAlignBytes(tid));
@@ -127,6 +127,91 @@ test "each cursor operation takes the local's address in every statement positio
     try std.testing.expectEqual(@as(usize, 1), copies);
     // The direct statement and the deferred one.
     try std.testing.expectEqual(@as(usize, 2), ends);
+}
+
+test "an incoming C list is a cursor place, and a boundary argument passes one" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\reader :: (n: i32, ap: @VaList) -> i64 extern;
+        \\relay :: (n: i32, ap: @VaList) -> i64 export {
+        \\    return reader(n, ap);
+        \\}
+        \\main :: () -> i64 { return 0; }
+    , &lowered);
+    defer lowered.module.deinit();
+    try std.testing.expect(!lowered.diagnostics.hasErrors());
+
+    const relay = &lowered.module.functions.items[@intFromEnum(lowered.lowering.resolveFuncByName("relay").?)];
+    var places: usize = 0;
+    var passes: usize = 0;
+    for (relay.blocks.items) |blk| {
+        for (blk.insts.items) |ins| {
+            switch (ins.op) {
+                // The place opens over the incoming parameter itself — ref 1,
+                // the list slot of `(n, ap)`.
+                .va_place => |u| {
+                    places += 1;
+                    try std.testing.expectEqual(@as(u32, 1), u.operand.index());
+                },
+                // The argument carries that same place, reached as an address.
+                .va_pass => |u| {
+                    passes += 1;
+                    const addr = defOf(relay, u.operand) orelse return error.PassOperandHasNoProducer;
+                    try std.testing.expect(addr.op == .addr_of);
+                    const place = defOf(relay, addr.op.addr_of.operand) orelse return error.AddressOfHasNoProducer;
+                    try std.testing.expect(place.op == .va_place);
+                },
+                else => {},
+            }
+        }
+    }
+    try std.testing.expectEqual(@as(usize, 1), places);
+    try std.testing.expectEqual(@as(usize, 1), passes);
+}
+
+test "a boundary argument names a place, not a borrow or a value" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\reader :: (n: i32, ap: @VaList) -> i64 extern;
+        \\walk :: (n: i32, ..) -> i64 abi(.c) {
+        \\    ap: @VaList = ---;
+        \\    @va_start(*ap);
+        \\    defer @va_end(*ap);
+        \\    return reader(n, *ap) + reader(n, 7);
+        \\}
+        \\main :: () -> i64 { return walk(1, 7); }
+    , &lowered);
+    defer lowered.module.deinit();
+    try std.testing.expectEqual(@as(usize, 2), countMessages(&lowered, "names a live list"));
+}
+
+test "each list spelling belongs to one side of the C boundary" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var lowered: Lowered = undefined;
+    try lower(arena.allocator(),
+        \\c_by_value  :: (ap: @VaList) -> i64 extern;
+        \\sx_borrow   :: (ap: *@VaList) -> i64 { return 0; }
+        \\sx_by_value :: (ap: @VaList) -> i64 { return 0; }
+        \\c_borrow    :: (ap: *@VaList) -> i64 abi(.c) { return 0; }
+        \\main :: () -> i64 { return 0; }
+    , &lowered);
+    defer lowered.module.deinit();
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "is the C boundary parameter"));
+    try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "is the sx-internal borrow"));
+}
+
+/// How many error diagnostics carry `needle`.
+fn countMessages(lowered: *const Lowered, needle: []const u8) usize {
+    var n: usize = 0;
+    for (lowered.diagnostics.items.items) |d| {
+        if (d.level == .err and std.mem.indexOf(u8, d.message, needle) != null) n += 1;
+    }
+    return n;
 }
 
 /// A cursor operand is the STORAGE address: an `addr_of` over the local's

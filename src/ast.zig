@@ -223,6 +223,14 @@ pub const FnDecl = struct {
     is_c_variadic: bool = false,
 };
 
+/// True when `fd` declares an EFFECTIVE-C SIGNATURE: a definition carrying
+/// `abi(.c)` or `export`, or an `extern` declaration. Each emits the C shape
+/// with no implicit sx context, so the C-only signature spellings — the bare
+/// `..` tail and the by-value `@VaList` parameter — belong exactly here.
+pub fn isEffectiveCSignature(fd: *const FnDecl) bool {
+    return fd.abi == .c or fd.extern_export != .none;
+}
+
 /// The number of fixed parameters a signature declares — the argument index at
 /// which its variadic tail begins. The two tail forms hold their tail
 /// differently: a bare `..` binds no `Param`, while `..name: []U` keeps its

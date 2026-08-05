@@ -532,6 +532,33 @@ pub const Ops = struct {
         self.e.mapRef(c.LLVMBuildVAArg(self.e.builder, cursor, llvm_ty, "va_arg"));
     }
 
+    // The C boundary. A `va_list` parameter is one pointer-shaped word on every
+    // supported target; what that word HOLDS is the target's shape. Where the
+    // list is composite the word addresses it, so the cursor and the parameter
+    // are the same pointer. Where the list is one word the parameter IS the
+    // list, and the cursor is a slot holding it — the va intrinsics take a
+    // pointer TO the list, never the list.
+
+    pub fn emitVaPlace(self: Ops, un: UnaryOp) void {
+        const incoming = self.e.resolveRef(un.operand);
+        if (self.e.target_config.vaListWords() > 1) {
+            self.e.mapRef(incoming);
+            return;
+        }
+        const slot = self.e.buildEntryAlloca(self.e.cached_ptr, "va.place");
+        _ = c.LLVMBuildStore(self.e.builder, incoming, slot);
+        self.e.mapRef(slot);
+    }
+
+    pub fn emitVaPass(self: Ops, un: UnaryOp) void {
+        const place = self.e.resolveRef(un.operand);
+        if (self.e.target_config.vaListWords() > 1) {
+            self.e.mapRef(place);
+            return;
+        }
+        self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, self.e.cached_ptr, place, "va.pass"));
+    }
+
     // ── Atomics ───────────────────────────────────────────
     // Atomic load/store = ordinary LLVMBuildLoad2/Store made atomic via
     // LLVMSetOrdering, with a MANDATORY explicit alignment (the LLVM verifier

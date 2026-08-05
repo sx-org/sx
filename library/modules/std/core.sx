@@ -130,6 +130,18 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 // `@va_arg` reads the type C's default argument promotions leave in the slot, so
 // it asks for `i32` where the caller wrote a `u8` and `f64` where it wrote an
 // `f32`.
+//
+// C's own tail readers take the list as a parameter. That parameter is written
+// by value as `ap: @VaList`, and only in an effective-C signature — an `abi(.c)`
+// or `export` definition, an `extern` declaration, or an `abi(.c)` function
+// type:
+//
+//     vmprintf :: (fmt: cstring, ap: @VaList) -> ?cstring extern;
+//
+// It is place-only: a call names a live list, `f(fmt, ap)` from a `@VaList`
+// local or parameter and `f(fmt, ap.*)` from a `*@VaList` borrow. An incoming
+// list is borrowed already open, so the callee reads and copies it but leaves
+// `@va_start` and `@va_end` to its caller.
 @VaList :: struct {
 }
 

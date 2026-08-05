@@ -1096,6 +1096,14 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 self.target_type = saved_target;
                 continue;
             }
+            // A `@VaList` parameter is the C boundary: the argument names a
+            // live list and its PLACE crosses. Precedes every value-shaped arm
+            // below — a cursor has no value form for them to read.
+            if (self.boundaryCursorArg(arg, param_types[ai])) |r| {
+                args.append(self.alloc, r) catch unreachable;
+                self.target_type = saved_target;
+                continue;
+            }
         }
         // Implicit float→int narrowing of a compile-time float argument
         // (incl. an expanded `param: T = expr` default) follows the unified

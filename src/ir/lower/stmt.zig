@@ -726,6 +726,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         _ = self.rejectMultiReturnValueType(ta, "variable");
         const ty = self.resolveType(ta);
         if (rejectVoidAnnotation(self, ta, vd.name, ty, "a variable holds a value")) return;
+        _ = self.refuseCursorSignature(ty, ta.span);
         const slot = self.builder.alloca(ty);
         // The annotation already names the valueless type; lowering the
         // initializer would only restate the refusal at the erasure.

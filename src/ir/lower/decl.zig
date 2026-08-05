@@ -1597,6 +1597,9 @@ pub fn registerTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
             d.addFmt(.err, null, "top-level var '{s}' has no type annotation and no initializer to infer from", .{vd.name});
         break :blk .void;
     };
+    const ty_span: ?ast.Span = if (vd.type_annotation) |ta| ta.span else null;
+    _ = self.refuseCursorEscape(var_ty, ty_span, "declare a global of type");
+    _ = self.refuseCursorSignature(var_ty, ty_span);
     // Extern globals reference a symbol defined in libSystem etc.
     // (`_NSConcreteStackBlock : *void extern;` or `… : *void extern;`). The C
     // symbol name is the optional override (`extern_name`) or the sx name itself.
@@ -3309,6 +3312,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     if (fd.return_type) |rtn| {
         _ = self.refuseValuelessProtocol(ret_ty, rtn.span, "declare a return of type");
         _ = self.refuseCursorEscape(ret_ty, rtn.span, "declare a return of type");
+        _ = self.refuseCursorSignature(ret_ty, rtn.span);
     }
 
     // A `$T`-generic return with NO parameter mentioning `$T`: the fn isn't
@@ -3374,9 +3378,8 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
         // its concrete type and calls monomorphize, so every kind takes part.
         if (!p.is_pack and !p.is_comptime)
             _ = self.refuseValuelessProtocol(pty, p.type_expr.span, "declare a parameter of type");
-        // A borrowed `*@VaList` parameter is the forwarding shape, so only the
-        // cursor BY VALUE is refused here.
-        _ = self.refuseCursorValue(pty, p.type_expr.span, "declare a parameter of type");
+        _ = self.refuseCursorParam(pty, p.type_expr.span, ast.isEffectiveCSignature(fd));
+        _ = self.refuseCursorSignature(pty, p.type_expr.span);
         params.append(self.alloc, .{
             .name = self.module.types.internString(p.name),
             .ty = pty,
@@ -3803,8 +3806,12 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
             self.protocol_impl_receiver_types.get(fd) orelse self.resolveParamType(&p)
         else
             self.resolveParamType(&p);
-        const slot = self.builder.alloca(pty);
         const param_ref = Ref.fromIndex(@intCast(i + user_param_base));
+        if (self.module.types.isCVariadicCursor(pty)) {
+            scope.put(p.name, .{ .ref = self.bindBoundaryCursorParam(param_ref, pty), .ty = pty, .is_alloca = true, .borrowed_cursor = true });
+            continue;
+        }
+        const slot = self.builder.alloca(pty);
         self.builder.store(slot, param_ref);
         scope.put(p.name, .{ .ref = slot, .ty = pty, .is_alloca = true });
     };
@@ -3959,8 +3966,12 @@ pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, i
         const pty = self.resolveParamType(&p);
         // Allocate stack slot for param, store initial value.
         // Refs 0..N-1 are reserved for function parameters by beginFunction.
-        const slot = self.builder.alloca(pty);
         const param_ref = Ref.fromIndex(@intCast(i + user_param_base_lf));
+        if (self.module.types.isCVariadicCursor(pty)) {
+            scope.put(p.name, .{ .ref = self.bindBoundaryCursorParam(param_ref, pty), .ty = pty, .is_alloca = true, .borrowed_cursor = true });
+            continue;
+        }
+        const slot = self.builder.alloca(pty);
         self.builder.store(slot, param_ref);
         scope.put(p.name, .{ .ref = slot, .ty = pty, .is_alloca = true });
     };
