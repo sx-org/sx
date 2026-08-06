@@ -151,8 +151,6 @@ pub const TokenList = struct {
     }
 };
 
-
-
 fn expectIdx(expected: u32, actual: Index) !void {
     try std.testing.expectEqual(expected, @intFromEnum(actual));
 }

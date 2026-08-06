@@ -11,6 +11,159 @@ fn deinitT(tl: *TokenList) void {
     tl.deinit(std.testing.allocator);
 }
 
+test "lex a minimal fn declaration into its token rows" {
+    var tl = try lexT("main :: () { 42; }");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{
+        .identifier, .colon_colon, .l_paren, .r_paren, .l_brace,
+        .int_literal, .semicolon, .r_brace, .eof,
+    }, tl.tags);
+}
+
+test "a leading comment produces no token row" {
+    var tl = try lexT("// comment\nmain :: () { 0; }");
+    defer deinitT(&tl);
+    try std.testing.expectEqual(Tag.identifier, tl.tags[0]);
+    try std.testing.expectEqual(Tag.colon_colon, tl.tags[1]);
+    try std.testing.expectEqual(@as(usize, 1), tl.commentsFor(tl.first()).len);
+}
+
+test "lex the compound operator spellings" {
+    var tl = try lexT(":= : :: += -= *= /= -> => == != <= >=");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{
+        .colon_equal, .colon,       .colon_colon,   .plus_equal, .minus_equal,
+        .star_equal,  .slash_equal, .arrow,         .fat_arrow,  .equal_equal,
+        .bang_equal,  .less_equal,  .greater_equal, .eof,
+    }, tl.tags);
+}
+
+test "a `.` between digits lexes as one float literal" {
+    var tl = try lexT("0.3 42 0.9");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .float_literal, .int_literal, .float_literal, .eof }, tl.tags);
+}
+
+test "lex the reserved keyword spellings" {
+    var tl = try lexT("if else then true false enum case break return f32 f64 struct");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{
+        .kw_if,   .kw_else, .kw_then,   .kw_true, .kw_false,
+        .kw_enum, .kw_case, .kw_break,  .kw_return, .kw_f32,
+        .kw_f64,  .kw_struct, .eof,
+    }, tl.tags);
+}
+
+test "abi/extern/export lex as keywords" {
+    var tl = try lexT("abi extern export");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .kw_abi, .kw_extern, .kw_export, .eof }, tl.tags);
+}
+
+test "i32/u8/bool/string stay identifiers" {
+    var tl = try lexT("i32 u8 bool string");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .identifier, .identifier, .identifier, .identifier, .eof }, tl.tags);
+}
+
+test "a bare identifier is not raw" {
+    var tl = try lexT("i2");
+    defer deinitT(&tl);
+    try std.testing.expectEqual(Tag.identifier, tl.tags[0]);
+    try std.testing.expect(!tl.flags[0].is_raw);
+}
+
+test "a backtick with no identifier after it is invalid" {
+    var tl = try lexT("` 5");
+    defer deinitT(&tl);
+    try std.testing.expectEqual(Tag.invalid, tl.tags[0]);
+}
+
+test "#run lexes as a directive; #running does not" {
+    var tl = try lexT("#run compute(5)");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .hash_run, .identifier, .l_paren, .int_literal, .r_paren, .eof }, tl.tags);
+
+    var tl2 = try lexT("#running");
+    defer deinitT(&tl2);
+    try std.testing.expectEqual(Tag.invalid, tl2.tags[0]);
+}
+
+test "#import lexes as a directive; #importing does not" {
+    var tl = try lexT("#import \"foo.sx\"");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .hash_import, .string_literal, .eof }, tl.tags);
+
+    var tl2 = try lexT("#importing");
+    defer deinitT(&tl2);
+    try std.testing.expectEqual(Tag.invalid, tl2.tags[0]);
+}
+
+test "#insert lexes as a directive; #inserting does not" {
+    var tl = try lexT("#insert #run generate()");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .hash_insert, .hash_run, .identifier, .l_paren, .r_paren, .eof }, tl.tags);
+
+    var tl2 = try lexT("#inserting");
+    defer deinitT(&tl2);
+    try std.testing.expectEqual(Tag.invalid, tl2.tags[0]);
+}
+
+test "#library lexes as a directive; #librarypath does not" {
+    var tl = try lexT("#library \"raylib\"");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .hash_library, .string_literal, .eof }, tl.tags);
+
+    var tl2 = try lexT("#librarypath");
+    defer deinitT(&tl2);
+    try std.testing.expectEqual(Tag.invalid, tl2.tags[0]);
+}
+
+test "a double-quoted run lexes as one string literal" {
+    var tl = try lexT("\"Hello\"");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .string_literal, .eof }, tl.tags);
+    try std.testing.expectEqualStrings("\"Hello\"", tl.slice(tl.first()));
+}
+
+test "a string literal spans line breaks" {
+    const source: [:0]const u8 = "\"line1\nline2\nline3\"";
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    try std.testing.expectEqual(Tag.string_literal, tl.tags[0]);
+    try std.testing.expectEqualStrings(source, tl.slice(tl.first()));
+}
+
+test "a heredoc's span is its content, excluding the delimiter lines" {
+    var tl = try lexT("#string END\nhello world\nEND");
+    defer deinitT(&tl);
+    try std.testing.expectEqual(Tag.raw_string_literal, tl.tags[0]);
+    try std.testing.expectEqualStrings("hello world\n", tl.slice(tl.first()));
+}
+
+test "a heredoc keeps every content line" {
+    var tl = try lexT("#string GLSL\n#version 330\nvoid main() {}\nGLSL");
+    defer deinitT(&tl);
+    try std.testing.expectEqual(Tag.raw_string_literal, tl.tags[0]);
+    try std.testing.expectEqualStrings("#version 330\nvoid main() {}\n", tl.slice(tl.first()));
+}
+
+test "0x/0X runs lex as one int literal" {
+    var tl = try lexT("0xFF 0X1A");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .int_literal, .int_literal, .eof }, tl.tags);
+    try std.testing.expectEqualStrings("0xFF", tl.slice(tl.first()));
+    try std.testing.expectEqualStrings("0X1A", tl.slice(tl.next(tl.first())));
+}
+
+test "0b/0B runs lex as one int literal" {
+    var tl = try lexT("0b1010 0B110");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .int_literal, .int_literal, .eof }, tl.tags);
+    try std.testing.expectEqualStrings("0b1010", tl.slice(tl.first()));
+    try std.testing.expectEqualStrings("0B110", tl.slice(tl.next(tl.first())));
+}
+
 // `asm` lexes as the dedicated `kw_asm` keyword, while
 // `volatile` / `clobbers` deliberately stay plain identifiers (recognized
 // contextually inside an `asm { … }` body, never reserved globally).
@@ -154,7 +307,7 @@ test "lone cr is one comment row" {
     try std.testing.expectEqual(Tag.eof, tl.tags[0]);
 }
 
-test "batch fixture: raw-backtick" {
+test "a raw identifier is glued to the token before its backtick" {
     var tl = try lexT("*`i2");
     defer deinitT(&tl);
     const id = tl.tokenAtStart(2).?;
@@ -166,7 +319,7 @@ test "batch fixture: raw-backtick" {
     try std.testing.expect(tl.flagsOf(id).glued_left);
 }
 
-test "batch fixture: eof-comment-no-newline" {
+test "a trailing comment with no final newline is owned by the eof row" {
     const source: [:0]const u8 = "x :: 1;\n// c";
     var tl = try lexT(source);
     defer deinitT(&tl);
@@ -176,30 +329,25 @@ test "batch fixture: eof-comment-no-newline" {
     try std.testing.expectEqual(@as(u32, 12), trailing[0].end);
 }
 
-fn expectHeredocTerminator(source: [:0]const u8, terminator: Tag) !void {
-    var tl = try lexT(source);
-    defer deinitT(&tl);
-    const heredoc = tl.first();
-    try std.testing.expectEqual(Tag.raw_string_literal, tl.tag(heredoc));
-    try std.testing.expectEqual(@as(u32, 12), tl.start(heredoc));
-    try std.testing.expectEqual(@as(u32, 20), tl.end(heredoc));
-    const after = tl.next(heredoc);
-    try std.testing.expectEqual(terminator, tl.tag(after));
-    // The gap is the terminator word: neither glued nor across a line.
-    try std.testing.expect(!tl.flagsOf(after).glued_left);
-    try std.testing.expect(!tl.flagsOf(after).newline_left);
-}
-
-test "batch fixture: heredoc-glued-semicolon" {
-    try expectHeredocTerminator("#string END\ncontent\nEND;", .semicolon);
-}
-
-test "batch fixture: heredoc-glued-comma" {
-    try expectHeredocTerminator("#string END\ncontent\nEND,", .comma);
-}
-
-test "batch fixture: heredoc-glued-paren" {
-    try expectHeredocTerminator("#string END\ncontent\nEND)", .r_paren);
+test "the token after a heredoc terminator is neither glued nor line-separated" {
+    const Case = struct { src: [:0]const u8, terminator: Tag };
+    const cases = [_]Case{
+        .{ .src = "#string END\ncontent\nEND;", .terminator = .semicolon },
+        .{ .src = "#string END\ncontent\nEND,", .terminator = .comma },
+        .{ .src = "#string END\ncontent\nEND)", .terminator = .r_paren },
+    };
+    for (cases) |c| {
+        var tl = try lexT(c.src);
+        defer deinitT(&tl);
+        const heredoc = tl.first();
+        try std.testing.expectEqual(Tag.raw_string_literal, tl.tag(heredoc));
+        try std.testing.expectEqual(@as(u32, 12), tl.start(heredoc));
+        try std.testing.expectEqual(@as(u32, 20), tl.end(heredoc));
+        const after = tl.next(heredoc);
+        try std.testing.expectEqual(c.terminator, tl.tag(after));
+        try std.testing.expect(!tl.flagsOf(after).glued_left);
+        try std.testing.expect(!tl.flagsOf(after).newline_left);
+    }
 }
 
 fn expectSingleInvalid(source: [:0]const u8) !void {
@@ -212,7 +360,7 @@ fn expectSingleInvalid(source: [:0]const u8) !void {
     try std.testing.expectEqual(Tag.eof, tl.tags[1]);
 }
 
-test "batch fixture: unterminated-string" {
+test "an unterminated string is one invalid row spanning to end of file" {
     try expectSingleInvalid("\"abc");
 }
 

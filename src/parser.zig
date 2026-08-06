@@ -4823,7 +4823,6 @@ pub const Parser = struct {
     /// two are structurally identical (operators / splat / `.0` all work with no
     /// target type). Supports positional, 1-tuple, empty, named (`x = a`, using
     /// `=`), spread (`..xs` / `..xs.field`) and nesting.
-    /// Save state, skip past matching parens, return the tag of the next token, then restore.
     /// Returns null if no matching ')' found before EOF.
     fn peekPastParens(self: *Parser) ?Tag {
         const close = self.tokens.scanBalanced(self.tok, .l_paren, .r_paren) orelse return null;
