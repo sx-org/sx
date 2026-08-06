@@ -15,8 +15,8 @@ test "lex a minimal fn declaration into its token rows" {
     var tl = try lexT("main :: () { 42; }");
     defer deinitT(&tl);
     try std.testing.expectEqualSlices(Tag, &.{
-        .identifier, .colon_colon, .l_paren, .r_paren, .l_brace,
-        .int_literal, .semicolon, .r_brace, .eof,
+        .identifier,  .colon_colon, .l_paren, .r_paren, .l_brace,
+        .int_literal, .semicolon,   .r_brace, .eof,
     }, tl.tags);
 }
 
@@ -48,8 +48,8 @@ test "lex the reserved keyword spellings" {
     var tl = try lexT("if else then true false enum case break return f32 f64 struct");
     defer deinitT(&tl);
     try std.testing.expectEqualSlices(Tag, &.{
-        .kw_if,   .kw_else, .kw_then,   .kw_true, .kw_false,
-        .kw_enum, .kw_case, .kw_break,  .kw_return, .kw_f32,
+        .kw_if,   .kw_else,   .kw_then,  .kw_true,   .kw_false,
+        .kw_enum, .kw_case,   .kw_break, .kw_return, .kw_f32,
         .kw_f64,  .kw_struct, .eof,
     }, tl.tags);
 }

@@ -538,7 +538,7 @@ pub fn lowerInsertExprValue(self: *Lowering, expr: *const Node) Ref {
 
     // Step 3: Parse the string as sx code and lower each statement
     // The last expression's value is captured as the return value
-    var p = parser_mod.Parser.init(self.alloc, code_str) catch return self.builder.constInt(0, .void);
+    var p = parser_mod.Parser.init(self.alloc, code_str) catch unreachable;
     var last_val: Ref = self.builder.constInt(0, .void);
     while (!p.atEof()) {
         const stmt = p.parseStmt() catch break;

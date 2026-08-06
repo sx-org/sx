@@ -106,7 +106,6 @@ pub const Parser = struct {
         return node;
     }
 
-    /// True once the cursor sits on the `.eof` row.
     pub fn atEof(self: *const Parser) bool {
         return self.tokens.tag(self.tok) == .eof;
     }
@@ -7515,12 +7514,12 @@ test "peekTag saturates at the eof row for any runtime offset" {
     }
 }
 
-test "Parser.init: a lex OOM is error.OutOfMemory, never ParseError" {
+test "a lex OOM during construction surfaces as error.OutOfMemory, never ParseError" {
     var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
     try std.testing.expectError(error.OutOfMemory, Parser.init(failing.allocator(), "x :: 1;"));
 }
 
-test "Parser.init: malformed source fails at parse, not construction" {
+test "malformed source fails at parse, not at construction" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), "f :: (");

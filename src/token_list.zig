@@ -166,15 +166,14 @@ const balanced = TokenList{
     .comments = &.{},
 };
 
-test "scanBalanced: balanced nested group" {
+test "nested groups close at their own depth" {
     const close = balanced.scanBalanced(balanced.first(), .l_paren, .r_paren).?;
     try expectIdx(6, close);
-    // The inner group closes at its own depth.
     const inner = balanced.scanBalanced(@enumFromInt(2), .l_paren, .r_paren).?;
     try expectIdx(4, inner);
 }
 
-test "scanBalanced: unbalanced and EOF-truncated input" {
+test "a group without a matching closer returns null" {
     // `( a (` — a second opener with no closer at all.
     const unbalanced = TokenList{
         .source = "",
@@ -199,8 +198,8 @@ test "scanBalanced: unbalanced and EOF-truncated input" {
     try std.testing.expectEqual(null, truncated.scanBalanced(truncated.first(), .l_paren, .r_paren));
 }
 
-test "scanBalanced: mixed delimiters pass through unmatched" {
-    // `( [ ) ]` — the paren scan ignores brackets and vice versa.
+test "a balanced scan ignores the other delimiter kinds" {
+    // `( [ ) ]`
     const mixed = TokenList{
         .source = "",
         .tags = &.{ .l_paren, .l_bracket, .r_paren, .r_bracket, .eof },
@@ -214,7 +213,7 @@ test "scanBalanced: mixed delimiters pass through unmatched" {
     try expectIdx(3, mixed.scanBalanced(@enumFromInt(1), .l_bracket, .r_bracket).?);
 }
 
-test "tokenAtStart: raw identifier start, heredoc body, eof row" {
+test "exact-start lookup distinguishes raw names, heredoc interiors and the eof row" {
     // `*`i2` — the raw identifier's start excludes the backtick.
     const raw = TokenList{
         .source = "*`i2",
