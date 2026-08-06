@@ -1475,7 +1475,7 @@ pub fn rootIsConstant(self: *Lowering, root: []const u8) bool {
 /// level with the whole target as the span, and covers the multi-assign ident
 /// arm (a direct `scope.lookup` store that silently no-op'd into the dead
 /// alloca).
-fn diagEnclosingRootWrite(self: *Lowering, target: *const Node) bool {
+pub fn diagEnclosingRootWrite(self: *Lowering, target: *const Node) bool {
     var root = target;
     peel: while (true) {
         switch (root.data) {
@@ -1499,7 +1499,7 @@ fn diagEnclosingRootWrite(self: *Lowering, target: *const Node) bool {
 /// caller skips the store). A deref along the chain breaks the walk
 /// (`assignmentRootIdent`) — writing through a pointer VALUE is not a write
 /// to the named root, so `CONST_PTR.* = v` stays accepted in both forms.
-fn diagConstRootWrite(self: *Lowering, target: *const Node) bool {
+pub fn diagConstRootWrite(self: *Lowering, target: *const Node) bool {
     const root = assignmentRootIdent(target) orelse return false;
     const shadowed = if (self.scope) |s| s.lookup(root) != null else false;
     if (!shadowed and rootIsConstant(self, root)) {
@@ -1518,7 +1518,7 @@ fn diagConstRootWrite(self: *Lowering, target: *const Node) bool {
 /// dereferences into pointee memory stays allowed: a pointer
 /// field along the chain (`context.s.n = 5`), an explicit deref, or indexing
 /// a slice/string field's backing data.
-fn diagContextRootWrite(self: *Lowering, target: *const Node) bool {
+pub fn diagContextRootWrite(self: *Lowering, target: *const Node) bool {
     if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) return false;
     var node = target;
     while (true) {
@@ -1841,9 +1841,7 @@ fn lowerSelectedQualifiedGlobalStore(
             val;
         self.builder.emitVoid(.{ .global_set = .{ .global = target.global.id, .value = store_val } }, .void);
     } else {
-        const loaded = self.builder.emit(.{ .global_get = target.global.id }, target.global.ty);
-        const result = self.emitCompoundOp(loaded, val, op, target.global.ty);
-        self.builder.emitVoid(.{ .global_set = .{ .global = target.global.id, .value = result } }, .void);
+        _ = self.lowerPlaceRmw(.{ .global = target.global }, op, val);
     }
 }
 
@@ -2006,9 +2004,7 @@ fn tryLowerQualifiedGlobalStore(
                 val;
             self.builder.emitVoid(.{ .global_set = .{ .global = gi.id, .value = store_val } }, .void);
         } else {
-            const loaded = self.builder.emit(.{ .global_get = gi.id }, gi.ty);
-            const result = self.emitCompoundOp(loaded, val, op, gi.ty);
-            self.builder.emitVoid(.{ .global_set = .{ .global = gi.id, .value = result } }, .void);
+            _ = self.lowerPlaceRmw(.{ .global = gi }, op, val);
         }
         return .handled;
     }
@@ -2394,10 +2390,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                             }
                             self.builder.store(binding.ref, store_val);
                         } else {
-                            // Compound assignment: load, op, store
-                            const loaded = self.builder.load(binding.ref, binding.ty);
-                            const result = self.emitCompoundOp(loaded, val, asgn.op, binding.ty);
-                            self.builder.store(binding.ref, result);
+                            _ = self.lowerPlaceRmw(.{ .slot = .{ .ptr = binding.ref, .ty = binding.ty } }, asgn.op, val);
                         }
                     }
                 }
@@ -2431,10 +2424,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                             val;
                         self.builder.emitVoid(.{ .global_set = .{ .global = gi.id, .value = store_val } }, .void);
                     } else {
-                        // Compound assignment: load current value, apply op, store back
-                        const loaded = self.builder.emit(.{ .global_get = gi.id }, gi.ty);
-                        const result = self.emitCompoundOp(loaded, val, asgn.op, gi.ty);
-                        self.builder.emitVoid(.{ .global_set = .{ .global = gi.id, .value = result } }, .void);
+                        _ = self.lowerPlaceRmw(.{ .global = gi }, asgn.op, val);
                     }
                 } else if (std.mem.eql(u8, id.name, "_")) {
                     // `_ = expr;` is the discard idiom — plain assign only.
@@ -2685,6 +2675,136 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
     }
 }
 
+/// Author-aware global lookup that stays silent on every failing outcome, so a
+/// caller that resolves a place can report its own message.
+fn quietGlobalRef(self: *Lowering, name: []const u8) ?program_index_mod.GlobalInfo {
+    const gi = self.program_index.global_names.get(name) orelse return null;
+    return switch (self.selectGlobalAuthor(name)) {
+        .resolved => |g| g,
+        .untracked => gi,
+        .not_a_global, .ambiguous, .not_visible => null,
+    };
+}
+
+/// The one addressable storage slot an assignable target names, with every
+/// subexpression evaluated exactly once. Null when the target names no slot: an
+/// accessor property (a get/set call pair), an Obj-C `#property` or
+/// `__sx_state` field, a tagged-union variant, a slice's `.len`/`.ptr` header
+/// word, and a comptime tuple/struct index. The caller diagnoses; this emits no
+/// diagnostic of its own.
+///
+/// The arms mirror `lowerAssignment`'s target switch and reuse its helpers.
+/// `lowerAssignment` deliberately does NOT route through here: it freezes the
+/// qualified-global identity before the RHS and resolves field/index addresses
+/// after it, and hoisting resolution across the RHS would reorder side effects.
+pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
+    switch (target.data) {
+        .identifier => |id| {
+            if (self.scope) |scope| {
+                if (scope.lookup(id.name)) |binding| {
+                    if (!binding.is_alloca) return null;
+                    return .{ .slot = .{ .ptr = binding.ref, .ty = binding.ty } };
+                }
+            }
+            return .{ .global = quietGlobalRef(self, id.name) orelse return null };
+        },
+        .field_access => |fa| {
+            switch (selectQualifiedGlobalStoreTarget(self, target)) {
+                .not_applicable => {},
+                .target => |qt| {
+                    const field = qt.field orelse return .{ .global = qt.global };
+                    const base = self.builder.emit(.{ .global_addr = qt.global.id }, self.module.types.ptrTo(qt.global.ty));
+                    const ptr = self.builder.structGepTyped(base, field.index, self.module.types.ptrTo(field.ty), qt.global.ty);
+                    return .{ .slot = .{ .ptr = ptr, .ty = field.ty } };
+                },
+                .missing, .ambiguous, .immutable, .non_lvalue => return null,
+            }
+
+            var accessor_recv_ty = self.inferExprType(fa.object);
+            if (!accessor_recv_ty.isBuiltin()) {
+                const di = self.module.types.get(accessor_recv_ty);
+                if (di == .pointer) accessor_recv_ty = di.pointer.pointee;
+            }
+            if (!accessor_recv_ty.isBuiltin() and
+                (self.getSetterFor(accessor_recv_ty, fa.field) != null or
+                    self.getAccessorFor(accessor_recv_ty, fa.field) != null)) return null;
+
+            if (self.lookupObjcPropertyOnPointer(fa.object, fa.field) != null) return null;
+            if (self.lookupObjcDefinedStateFieldOnPointer(fa.object, fa.field) != null) return null;
+
+            var obj_ptr = self.lowerExprAsPtr(fa.object);
+            var obj_ty = self.inferExprType(fa.object);
+            if (fa.object.data == .identifier and !obj_ty.isBuiltin()) {
+                const ninfo = self.module.types.get(obj_ty);
+                if (ninfo == .optional and self.narrowed.count() > 0 and
+                    self.narrowed.contains(fa.object.data.identifier.name))
+                {
+                    const child = ninfo.optional.child;
+                    if (!child.isBuiltin() and self.module.types.get(child) == .pointer) {
+                        const opt_val = self.builder.load(obj_ptr, obj_ty);
+                        obj_ptr = self.builder.emit(.{ .optional_unwrap = .{ .operand = opt_val } }, child);
+                        obj_ty = self.module.types.get(child).pointer.pointee;
+                    }
+                }
+            }
+            if (fa.object.data != .identifier and !obj_ty.isBuiltin()) {
+                const pinfo = self.module.types.get(obj_ty);
+                if (pinfo == .pointer) {
+                    obj_ptr = self.builder.load(obj_ptr, obj_ty);
+                    obj_ty = pinfo.pointer.pointee;
+                }
+            }
+
+            if (isTaggedUnionVariantField(self, obj_ty, fa.field)) return null;
+
+            const is_special_container = obj_ty == .string or (if (!obj_ty.isBuiltin()) blk: {
+                const obj_info = self.module.types.get(obj_ty);
+                break :blk obj_info == .slice or obj_info == .array or obj_info == .vector;
+            } else false);
+            if (is_special_container and
+                (std.mem.eql(u8, fa.field, "len") or std.mem.eql(u8, fa.field, "ptr"))) return null;
+
+            const fl = self.fieldLvaluePtr(obj_ptr, obj_ty, fa.field) orelse return null;
+            return .{ .slot = .{ .ptr = fl.ptr, .ty = fl.ty } };
+        },
+        .index_expr => |ie| {
+            const obj_ty = self.inferExprType(ie.object);
+            if (!obj_ty.isBuiltin() and
+                (self.module.types.get(obj_ty) == .tuple or self.module.types.get(obj_ty) == .@"struct") and
+                self.comptimeIndexOf(ie.index) != null) return null;
+
+            const idx = self.lowerIndexOperand(ie.index);
+            const elem_ty = self.ptrToArrayElem(obj_ty) orelse self.ptrToSliceElem(obj_ty) orelse self.getElementType(obj_ty);
+            if (elem_ty == .unresolved) return null;
+            const ptr_ty = self.module.types.ptrTo(elem_ty);
+
+            const is_array = !obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .array;
+            const obj_alloca = if (is_array) self.getExprAlloca(ie.object) else null;
+            const base = if (obj_alloca) |alloca_ref|
+                alloca_ref
+            else if (is_array)
+                self.lowerExprAsPtr(ie.object)
+            else
+                self.derefPtrToSliceIndexBase(self.lowerExpr(ie.object), obj_ty);
+            const gep = self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = idx } }, ptr_ty);
+            return .{ .slot = .{ .ptr = gep, .ty = elem_ty } };
+        },
+        .deref_expr => |de| {
+            const ptr = self.lowerExpr(de.operand);
+            const operand_ty = self.inferExprType(de.operand);
+            const elem_ty = blk: {
+                if (!operand_ty.isBuiltin()) {
+                    const info = self.module.types.get(operand_ty);
+                    if (info == .pointer) break :blk info.pointer.pointee;
+                }
+                break :blk operand_ty;
+            };
+            return .{ .slot = .{ .ptr = ptr, .ty = elem_ty } };
+        },
+        else => return null,
+    }
+}
+
 const FieldLvalue = struct { ptr: Ref, ty: TypeId };
 
 /// Pure description of which slot `obj.field` resolves to — the GEP path plus
@@ -2912,12 +3032,12 @@ pub fn lowerUnionLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Type
     return self.builder.load(slot, ty);
 }
 
-/// True (and emits the diagnostic) when `obj.field` names a DIRECT variant of a
-/// tagged union — a store target that would set the payload but NOT the tag
-/// — a tagged union is laid out `{ tag, payload }`, the write path
-/// emits a `union_gep` into the payload only, so the discriminant goes stale and
-/// a later `match`/`==` takes the wrong arm. The variant is set via construction
-/// (`x = .variant(...)`, which writes both), so a direct member write is rejected.
+/// True when `obj.field` names a DIRECT variant of a tagged union — a store
+/// target that would set the payload but NOT the tag: a tagged union is laid
+/// out `{ tag, payload }`, the write path emits a `union_gep` into the payload
+/// only, so the discriminant goes stale and a later `match`/`==` takes the
+/// wrong arm. The variant is set via construction (`x = .variant(...)`, which
+/// writes both), so a direct member write is rejected.
 ///
 /// Returns false (keeps working) for: plain `union` (no tag); promoted / nested
 /// sub-field writes (`s.rect.w = ...`, where the immediate object is the payload
@@ -2925,7 +3045,7 @@ pub fn lowerUnionLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Type
 /// non-aggregates. Derefs one pointer level so a `*TaggedUnion` receiver is
 /// caught too. Uses the shared `fieldLvalueResolve` matcher, so the guard can't
 /// drift from the store path's notion of which member a name resolves to.
-pub fn diagTaggedUnionVariantWrite(self: *Lowering, obj_ty: TypeId, field: []const u8, span: ast.Span) bool {
+fn isTaggedUnionVariantField(self: *Lowering, obj_ty: TypeId, field: []const u8) bool {
     var ty = obj_ty;
     if (!ty.isBuiltin()) {
         const info = self.module.types.get(ty);
@@ -2933,7 +3053,12 @@ pub fn diagTaggedUnionVariantWrite(self: *Lowering, obj_ty: TypeId, field: []con
     }
     if (ty.isBuiltin() or self.module.types.get(ty) != .tagged_union) return false;
     const res = self.fieldLvalueResolve(ty, field) orelse return false;
-    if (res != .union_direct) return false;
+    return res == .union_direct;
+}
+
+/// Emit that rejection; true when the caller must skip the store.
+pub fn diagTaggedUnionVariantWrite(self: *Lowering, obj_ty: TypeId, field: []const u8, span: ast.Span) bool {
+    if (!isTaggedUnionVariantField(self, obj_ty, field)) return false;
     if (self.diagnostics) |d|
         d.addFmt(.err, span, "cannot assign to tagged-union variant '{s}' directly — a member write sets the payload but leaves the tag stale; construct the variant instead (e.g. `x = .{s}(...)`)", .{ field, field });
     return true;
@@ -3125,6 +3250,45 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
     return self.lowerExpr(node);
 }
 
+/// An addressable storage place, already resolved to the exact slot it names.
+/// A global is its own arm: it reads and writes through `global_get` /
+/// `global_set`, never through a load/store on an address.
+pub const Place = union(enum) {
+    slot: struct { ptr: Ref, ty: TypeId },
+    global: program_index_mod.GlobalInfo,
+};
+
+pub fn placeType(p: Place) TypeId {
+    return switch (p) {
+        .slot => |s| s.ty,
+        .global => |g| g.ty,
+    };
+}
+
+pub fn loadPlace(self: *Lowering, p: Place) Ref {
+    return switch (p) {
+        .slot => |s| self.builder.load(s.ptr, s.ty),
+        .global => |g| self.builder.emit(.{ .global_get = g.id }, g.ty),
+    };
+}
+
+pub fn storePlace(self: *Lowering, p: Place, val: Ref) void {
+    switch (p) {
+        .slot => |s| self.builder.store(s.ptr, val),
+        .global => |g| self.builder.emitVoid(.{ .global_set = .{ .global = g.id, .value = val } }, .void),
+    }
+}
+
+/// Load, apply `op` with `rhs`, store back; yields the STORED value, and reads
+/// the place exactly once. No coercion: the operator's result already carries
+/// the place's type.
+pub fn lowerPlaceRmw(self: *Lowering, p: Place, op: ast.Assignment.Op, rhs: Ref) Ref {
+    const loaded = self.loadPlace(p);
+    const result = self.emitCompoundOp(loaded, rhs, op, placeType(p));
+    self.storePlace(p, result);
+    return result;
+}
+
 /// Store a value to a GEP, handling both plain and compound assignment.
 pub fn storeOrCompound(self: *Lowering, gep: Ref, val: Ref, op: ast.Assignment.Op, ty: TypeId) void {
     if (op == .assign) {
@@ -3135,9 +3299,7 @@ pub fn storeOrCompound(self: *Lowering, gep: Ref, val: Ref, op: ast.Assignment.O
             val;
         self.builder.store(gep, store_val);
     } else {
-        const loaded = self.builder.load(gep, ty);
-        const result = self.emitCompoundOp(loaded, val, op, ty);
-        self.builder.store(gep, result);
+        _ = self.lowerPlaceRmw(.{ .slot = .{ .ptr = gep, .ty = ty } }, op, val);
     }
 }
 
