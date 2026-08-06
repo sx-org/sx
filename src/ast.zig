@@ -5,6 +5,10 @@ pub const Span = struct {
     end: u32,
 };
 
+/// Byte-start sentinel for a member name the parser synthesized (`__anon_N`):
+/// no spelling exists in the source to point at.
+pub const no_source_start: u32 = std.math.maxInt(u32);
+
 /// Module-scope declaration visibility. `.private` restricts the name to its
 /// declaring SOURCE FILE: it stays fully usable throughout that file (forward
 /// references included) but is never carried by flat imports and never
@@ -533,6 +537,9 @@ pub const DestructureDecl = struct {
 pub const EnumDecl = struct {
     name: []const u8,
     variant_names: []const []const u8,
+    /// Byte start of each variant name's spelling, one per entry in
+    /// `variant_names`, same order; `no_source_start` when synthesized.
+    variant_name_starts: []const u32,
     variant_types: []const ?*Node = &.{}, // null entries = no payload; empty = payload-less enum
     is_flags: bool = false,
     variant_values: []const ?*Node = &.{}, // explicit value per variant (null = auto), empty = all auto
@@ -546,6 +553,9 @@ pub const EnumDecl = struct {
 pub const UnionDecl = struct {
     name: []const u8,
     field_names: []const []const u8,
+    /// Byte start of each field name's spelling, one per entry in
+    /// `field_names`, same order; `no_source_start` when synthesized.
+    field_name_starts: []const u32,
     field_types: []const *Node,
     /// True when the declared NAME was a backtick raw identifier — exempt from
     /// the reserved-type-name decl check.
@@ -557,6 +567,9 @@ pub const UnionDecl = struct {
 pub const ErrorSetDecl = struct {
     name: []const u8,
     tag_names: []const []const u8,
+    /// Byte start of each tag name's spelling, one per entry in `tag_names`,
+    /// same order; `no_source_start` when synthesized.
+    tag_name_starts: []const u32,
     /// True when the declared NAME was a backtick raw identifier — exempt from
     /// the reserved-type-name decl check.
     is_raw: bool = false,
@@ -580,6 +593,10 @@ pub const UsingEntry = struct {
 pub const StructDecl = struct {
     name: []const u8,
     field_names: []const []const u8,
+    /// Byte start of each field name's spelling, one per entry in
+    /// `field_names`, same order; `no_source_start` when synthesized. A `_`
+    /// field keeps its `_` token's start under its `_N` stored name.
+    field_name_starts: []const u32,
     field_types: []const *Node, // type_expr nodes
     field_defaults: []const ?*Node, // default value per field, null if none
     type_params: []const StructTypeParam = &.{},

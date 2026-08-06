@@ -1864,3 +1864,150 @@ test "parser: abi(...) alone is a convention, not a body" {
     try std.testing.expect(decls[1].data == .fn_decl);
     try std.testing.expect(decls[2].data == .fn_decl);
 }
+
+// Every source-backed member name must read back from its recorded start:
+// `source[start .. start + name.len] == name`. Raw names hold too — a token's
+// start excludes the backtick.
+fn expectNameStarts(src: [:0]const u8, names: []const []const u8, starts: []const u32) !void {
+    try std.testing.expectEqual(names.len, starts.len);
+    for (names, starts) |name, start| {
+        if (start == ast.no_source_start) continue;
+        try std.testing.expectEqualStrings(name, src[start .. start + name.len]);
+    }
+}
+
+test "parser: struct field name starts point at each field's spelling" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 =
+        \\Rec :: struct {
+        \\    plain: i32;
+        \\    `i2: i64;
+        \\}
+    ;
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const sd = root.data.root.decls[0].data.struct_decl;
+    try std.testing.expectEqual(@as(usize, 2), sd.field_names.len);
+    try expectNameStarts(src, sd.field_names, sd.field_name_starts);
+}
+
+test "parser: a grouped field records every name in source order" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 = "Point :: struct { x, y, z: f32; }";
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const sd = root.data.root.decls[0].data.struct_decl;
+    try expectNameStarts(src, sd.field_names, sd.field_name_starts);
+    try std.testing.expectEqual(@as(usize, 3), sd.field_name_starts.len);
+    try std.testing.expect(sd.field_name_starts[0] < sd.field_name_starts[1]);
+    try std.testing.expect(sd.field_name_starts[1] < sd.field_name_starts[2]);
+}
+
+test "parser: a '_' field's start is the '_' token under its renamed name" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 = "Holes :: struct { _, x: i32; }";
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const sd = root.data.root.decls[0].data.struct_decl;
+    try std.testing.expectEqual(@as(usize, 2), sd.field_name_starts.len);
+    try std.testing.expectEqualStrings("_0", sd.field_names[0]);
+    try std.testing.expectEqualStrings("_", src[sd.field_name_starts[0] .. sd.field_name_starts[0] + 1]);
+    try std.testing.expectEqualStrings("x", src[sd.field_name_starts[1] .. sd.field_name_starts[1] + 1]);
+}
+
+test "parser: enum variant name starts point at each variant" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 =
+        \\Kind :: enum {
+        \\    none;
+        \\    tagged: i32;
+        \\    fixed :: 7;
+        \\}
+    ;
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const ed = root.data.root.decls[0].data.enum_decl;
+    try std.testing.expectEqual(@as(usize, 3), ed.variant_names.len);
+    try expectNameStarts(src, ed.variant_names, ed.variant_name_starts);
+}
+
+test "parser: error tag name starts point at each tag" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 = "ParseErr :: error { BadDigit, Overflow };";
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const esd = root.data.root.decls[0].data.error_set_decl;
+    try std.testing.expectEqual(@as(usize, 2), esd.tag_names.len);
+    try expectNameStarts(src, esd.tag_names, esd.tag_name_starts);
+}
+
+test "parser: an anonymous union field has no source start" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 =
+        \\Payload :: union {
+        \\    struct { x, y: f32; };
+        \\    b: i64;
+        \\}
+    ;
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const ud = root.data.root.decls[0].data.union_decl;
+    try std.testing.expectEqualStrings("__anon_0", ud.field_names[0]);
+    try std.testing.expectEqual(ast.no_source_start, ud.field_name_starts[0]);
+    try expectNameStarts(src, ud.field_names, ud.field_name_starts);
+}
+
+test "parser: empty member lists have empty name-start arrays" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(),
+        \\S :: struct {}
+        \\E :: enum {}
+        \\U :: union {}
+        \\Er :: error {}
+    );
+    const decls = (try parser.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 0), decls[0].data.struct_decl.field_name_starts.len);
+    try std.testing.expectEqual(@as(usize, 0), decls[1].data.enum_decl.variant_name_starts.len);
+    try std.testing.expectEqual(@as(usize, 0), decls[2].data.union_decl.field_name_starts.len);
+    try std.testing.expectEqual(@as(usize, 0), decls[3].data.error_set_decl.tag_name_starts.len);
+}
+
+test "parser: a struct-body typed constant adds no field name start" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 =
+        \\Limits :: struct {
+        \\    MAX: i32: 10;
+        \\    x: i32;
+        \\}
+    ;
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const sd = root.data.root.decls[0].data.struct_decl;
+    try std.testing.expectEqual(@as(usize, 1), sd.field_names.len);
+    try expectNameStarts(src, sd.field_names, sd.field_name_starts);
+}
+
+test "parser: '#using' leaves the declaration's name starts in step with its names" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 =
+        \\Base :: struct { a: i32; }
+        \\Derived :: struct {
+        \\    #using Base;
+        \\    b: i64;
+        \\}
+    ;
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const sd = root.data.root.decls[1].data.struct_decl;
+    try std.testing.expectEqual(@as(usize, 1), sd.using_entries.len);
+    try expectNameStarts(src, sd.field_names, sd.field_name_starts);
+}

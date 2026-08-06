@@ -160,6 +160,7 @@ test "resolveAstType: error_set_decl registers an error-set type + interns tags"
     node.* = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .error_set_decl = .{
         .name = "ParseErr",
         .tag_names = &tag_names,
+        .tag_name_starts = &.{ ast.no_source_start, ast.no_source_start },
     } } };
 
     const id = type_bridge.resolveAstType(node, &table, null, null);

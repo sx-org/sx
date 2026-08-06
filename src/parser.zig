@@ -1168,6 +1168,7 @@ pub const Parser = struct {
 
         try self.expect(.l_brace);
         var variant_names = std.ArrayList([]const u8).empty;
+        var variant_name_starts = std.ArrayList(u32).empty;
         var variant_types = std.ArrayList(?*Node).empty;
         var variant_values = std.ArrayList(?*Node).empty;
         var has_any_type = false;
@@ -1177,6 +1178,7 @@ pub const Parser = struct {
                 return self.failMemberDeclName("expected variant name");
             }
             try variant_names.append(self.allocator, self.tokens.slice(self.tok));
+            try variant_name_starts.append(self.allocator, self.tokens.start(self.tok));
             self.advance();
             if (self.tokens.tag(self.tok) == .colon_colon) {
                 // Explicit value: name :: expr;  or  name :: expr: type;
@@ -1220,6 +1222,7 @@ pub const Parser = struct {
         return try self.createNode(start_pos, .{ .enum_decl = .{
             .name = name,
             .variant_names = try variant_names.toOwnedSlice(self.allocator),
+            .variant_name_starts = try variant_name_starts.toOwnedSlice(self.allocator),
             .variant_types = if (has_any_type) try variant_types.toOwnedSlice(self.allocator) else &.{},
             .is_flags = is_flags,
             .variant_values = if (has_any_value) try variant_values.toOwnedSlice(self.allocator) else &.{},
@@ -1232,6 +1235,7 @@ pub const Parser = struct {
         self.advance(); // skip 'error'
         try self.expect(.l_brace);
         var tag_names = std.ArrayList([]const u8).empty;
+        var tag_name_starts = std.ArrayList(u32).empty;
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             if (tag_names.items.len > 0) {
                 try self.expect(.comma);
@@ -1241,6 +1245,7 @@ pub const Parser = struct {
                 return self.fail("expected error tag name");
             }
             try tag_names.append(self.allocator, self.tokens.slice(self.tok));
+            try tag_name_starts.append(self.allocator, self.tokens.start(self.tok));
             self.advance();
         }
         try self.expect(.r_brace);
@@ -1250,6 +1255,7 @@ pub const Parser = struct {
         return try self.createNode(start_pos, .{ .error_set_decl = .{
             .name = name,
             .tag_names = try tag_names.toOwnedSlice(self.allocator),
+            .tag_name_starts = try tag_name_starts.toOwnedSlice(self.allocator),
             .is_raw = name_is_raw,
         } });
     }
@@ -1258,6 +1264,7 @@ pub const Parser = struct {
         self.advance(); // skip 'union'
         try self.expect(.l_brace);
         var field_names = std.ArrayList([]const u8).empty;
+        var field_name_starts = std.ArrayList(u32).empty;
         var field_types = std.ArrayList(*Node).empty;
         var anon_idx: u32 = 0;
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
@@ -1268,6 +1275,7 @@ pub const Parser = struct {
                 const anon_struct_name = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ name, anon_field });
                 const struct_node = try self.parseStructDecl(anon_struct_name, self.tokens.start(self.tok), false);
                 try field_names.append(self.allocator, anon_field);
+                try field_name_starts.append(self.allocator, ast.no_source_start);
                 try field_types.append(self.allocator, struct_node);
                 if (self.tokens.tag(self.tok) == .semicolon) {
                     self.advance();
@@ -1278,6 +1286,7 @@ pub const Parser = struct {
                 return self.fail("expected field name or 'struct'");
             }
             try field_names.append(self.allocator, self.tokens.slice(self.tok));
+            try field_name_starts.append(self.allocator, self.tokens.start(self.tok));
             self.advance();
             if (self.tokens.tag(self.tok) != .colon) {
                 return self.fail("union fields must have a type");
@@ -1293,6 +1302,7 @@ pub const Parser = struct {
         return try self.createNode(start_pos, .{ .union_decl = .{
             .name = name,
             .field_names = try field_names.toOwnedSlice(self.allocator),
+            .field_name_starts = try field_name_starts.toOwnedSlice(self.allocator),
             .field_types = try field_types.toOwnedSlice(self.allocator),
             .is_raw = name_is_raw,
         } });
@@ -1373,6 +1383,7 @@ pub const Parser = struct {
         defer self.struct_type_params = saved_struct_type_params;
 
         var field_names = std.ArrayList([]const u8).empty;
+        var field_name_starts = std.ArrayList(u32).empty;
         var field_types = std.ArrayList(*Node).empty;
         var field_defaults = std.ArrayList(?*Node).empty;
         var using_entries = std.ArrayList(ast.UsingEntry).empty;
@@ -1424,6 +1435,7 @@ pub const Parser = struct {
             // Parse field group: name1, name2, ...: type (= default)?;
             // Or typed constant: name :Type: value;
             var group_names = std.ArrayList([]const u8).empty;
+            var group_starts = std.ArrayList(u32).empty;
 
             if (!self.isMemberDeclName()) {
                 return self.failMemberDeclName("expected field name in struct");
@@ -1437,6 +1449,7 @@ pub const Parser = struct {
             const field_name_span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
             const field_is_raw = self.tokens.flagsOf(self.tok).is_raw;
             try group_names.append(self.allocator, self.tokens.slice(self.tok));
+            try group_starts.append(self.allocator, self.tokens.start(self.tok));
             self.advance();
 
             while (self.tokens.tag(self.tok) == .comma) {
@@ -1445,6 +1458,7 @@ pub const Parser = struct {
                     return self.failMemberDeclName("expected field name after ','");
                 }
                 try group_names.append(self.allocator, self.tokens.slice(self.tok));
+                try group_starts.append(self.allocator, self.tokens.start(self.tok));
                 self.advance();
             }
 
@@ -1474,13 +1488,14 @@ pub const Parser = struct {
             }
 
             // All names in the group share the same type and default
-            for (group_names.items) |fname| {
+            for (group_names.items, group_starts.items) |fname, fstart| {
                 // `_` is an ignore identifier — auto-rename to unique internal name
                 const actual_name = if (std.mem.eql(u8, fname, "_"))
                     try std.fmt.allocPrint(self.allocator, "_{d}", .{field_names.items.len})
                 else
                     fname;
                 try field_names.append(self.allocator, actual_name);
+                try field_name_starts.append(self.allocator, fstart);
                 try field_types.append(self.allocator, field_type);
                 try field_defaults.append(self.allocator, default_val);
             }
@@ -1494,6 +1509,7 @@ pub const Parser = struct {
         return try self.createNode(start_pos, .{ .struct_decl = .{
             .name = name,
             .field_names = try field_names.toOwnedSlice(self.allocator),
+            .field_name_starts = try field_name_starts.toOwnedSlice(self.allocator),
             .field_types = try field_types.toOwnedSlice(self.allocator),
             .field_defaults = try field_defaults.toOwnedSlice(self.allocator),
             .type_params = try type_params.toOwnedSlice(self.allocator),
