@@ -1,0 +1,55 @@
+// Targets that are NOT an addressable storage place still take `OP=` through
+// their own path. A `#get`/`#set` property is a call pair: `obj.prop += 1`
+// reads via the getter and writes via the setter, with the receiver evaluated
+// exactly once. A slice's `.len` / `.ptr` are the two header words, so `OP=`
+// retargets the view itself. A comptime tuple or struct index is a
+// heterogeneous member, reached by a typed field GEP rather than a stride.
+#import "modules/std.sx";
+
+Temp :: struct {
+    raw: i64 = 0;
+    celsius :: (self: *Temp) -> i64 #get => self.raw;
+    celsius :: (self: *Temp, v: i64) #set { self.raw = v * 2; }
+}
+
+Wide :: struct { a: i64; b: i64; }
+
+cells : [2]Temp = .[ .{}, .{} ];
+visits : i64 = 0;
+next_cell :: () -> *Temp {
+    cur := visits;
+    visits += 1;
+    return *cells[cur];
+}
+
+main :: () -> i32 {
+    // The scaling setter shows both halves of the get-modify-set ran.
+    t : Temp = .{ raw = 3 };
+    t.celsius += 1;
+    print("prop={}\n", t.celsius);                  // 8
+
+    // A moving receiver is visited once, so the read and the write land on the
+    // same cell.
+    cells[0].raw = 10;
+    cells[1].raw = 20;
+    next_cell().celsius += 5;
+    print("once={} {} visits={}\n", cells[0].raw, cells[1].raw, visits);   // 30 20 1
+
+    arr : [5]i64 = .[1, 2, 3, 4, 5];
+    s := arr[0..5];
+    s.len -= 2;
+    print("len={} last={}\n", s.len, s[s.len - 1]);  // 3 3
+    s.ptr += 1;
+    print("ptr={} len={}\n", s[0], s.len);           // 2 3
+
+    tup := .{a = 1, b = 2};
+    tup[0] += 40;
+    tup[1] -= 1;
+    print("tuple={} {}\n", tup.a, tup.b);            // 41 1
+
+    w : Wide = .{ a = 5, b = 6 };
+    w[1] += 10;
+    print("struct={} {}\n", w.a, w.b);               // 5 16
+
+    return 0;
+}

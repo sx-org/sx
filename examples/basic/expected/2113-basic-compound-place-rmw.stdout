@@ -1,0 +1,8 @@
+local=12
+global=103
+qualified=5 field=42
+field=10 1
+elem=0 10
+deref=40
+elem0=5 calls=1
+order=21 elem1=47
