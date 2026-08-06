@@ -5,8 +5,8 @@ pub const Span = struct {
     end: u32,
 };
 
-/// Byte-start sentinel for a member name the parser synthesized (`__anon_N`):
-/// no spelling exists in the source to point at.
+/// Byte-start sentinel for a member name with no spelling in the source, such
+/// as a union's anonymous `__anon_N` field.
 pub const no_source_start: u32 = std.math.maxInt(u32);
 
 /// Module-scope declaration visibility. `.private` restricts the name to its

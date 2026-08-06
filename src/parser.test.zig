@@ -1865,9 +1865,10 @@ test "parser: abi(...) alone is a convention, not a body" {
     try std.testing.expect(decls[2].data == .fn_decl);
 }
 
-// Every source-backed member name must read back from its recorded start:
-// `source[start .. start + name.len] == name`. Raw names hold too — a token's
-// start excludes the backtick.
+// Reads each name back from its recorded start:
+// `source[start .. start + name.len] == name`. Raw names hold — a token's start
+// excludes the backtick — but a renamed `_` field does not, so those are
+// asserted at their own site.
 fn expectNameStarts(src: [:0]const u8, names: []const []const u8, starts: []const u32) !void {
     try std.testing.expectEqual(names.len, starts.len);
     for (names, starts) |name, start| {
