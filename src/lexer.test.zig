@@ -1,6 +1,9 @@
 const std = @import("std");
+const lexer = @import("lexer.zig");
 const Lexer = @import("lexer.zig").Lexer;
 const Tag = @import("token.zig").Tag;
+const TokenList = @import("token_list.zig").TokenList;
+const corpus_paths = @import("corpus_paths");
 
 // `asm` lexes as the dedicated `kw_asm` keyword, while
 // `volatile` / `clobbers` deliberately stay plain identifiers (recognized
@@ -101,4 +104,289 @@ test "lex private keyword; backtick escape stays identifier" {
     const tok3 = lex.next();
     try std.testing.expectEqual(Tag.identifier, tok3.tag);
     try std.testing.expect(!tok3.is_raw);
+}
+
+// ---- batch lexing: named fixtures ----
+
+fn lexT(source: [:0]const u8) !TokenList {
+    return lexer.lex(std.testing.allocator, source);
+}
+
+fn deinitT(tl: *TokenList) void {
+    tl.deinit(std.testing.allocator);
+}
+
+test "batch fixture: empty" {
+    try lexer.assertBatchMatchesStream(std.testing.allocator, "");
+    var tl = try lexT("");
+    defer deinitT(&tl);
+    try std.testing.expectEqual(@as(usize, 1), tl.tags.len);
+    try std.testing.expectEqual(Tag.eof, tl.tags[0]);
+    try std.testing.expect(!tl.flags[0].glued_left);
+    try std.testing.expect(tl.flags[0].newline_left);
+    try std.testing.expectEqual(@as(usize, 2), tl.trivia_index.len);
+}
+
+test "batch fixture: whitespace-only" {
+    const source: [:0]const u8 = "  \t\n";
+    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    try std.testing.expectEqual(@as(usize, 1), tl.tags.len);
+    try std.testing.expectEqual(Tag.eof, tl.tags[0]);
+    try std.testing.expectEqual(@as(usize, 0), tl.comments.len);
+}
+
+test "batch fixture: crlf" {
+    const source: [:0]const u8 = "// a\r\na :: 1;\r\n// b\r\nb :: 2;\r\n";
+    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    // Both comment rows end before their CR.
+    try std.testing.expectEqual(@as(usize, 2), tl.comments.len);
+    try std.testing.expectEqual(@as(u32, 0), tl.comments[0].start);
+    try std.testing.expectEqual(@as(u32, 4), tl.comments[0].end);
+    try std.testing.expectEqual(@as(u32, 15), tl.comments[1].start);
+    try std.testing.expectEqual(@as(u32, 19), tl.comments[1].end);
+    // Both code rows sit below a line break.
+    const a = tl.tokenAtStart(6).?;
+    const b = tl.tokenAtStart(21).?;
+    try std.testing.expect(tl.flagsOf(a).newline_left);
+    try std.testing.expect(tl.flagsOf(b).newline_left);
+}
+
+test "batch fixture: lone-cr is one comment row" {
+    // The comment run stops only at LF, so a CR-separated file is one row.
+    const source: [:0]const u8 = "// a\r// b\rx :: 1;";
+    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    try std.testing.expectEqual(@as(usize, 1), tl.comments.len);
+    try std.testing.expectEqual(@as(u32, 0), tl.comments[0].start);
+    try std.testing.expectEqual(@as(u32, @intCast(source.len)), tl.comments[0].end);
+    try std.testing.expectEqual(@as(usize, 1), tl.tags.len);
+    try std.testing.expectEqual(Tag.eof, tl.tags[0]);
+}
+
+test "batch fixture: raw-backtick" {
+    const source: [:0]const u8 = "*`i2";
+    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    const id = tl.tokenAtStart(2).?;
+    try std.testing.expectEqual(Tag.identifier, tl.tag(id));
+    try std.testing.expect(tl.flagsOf(id).is_raw);
+    // The written start is the backtick, so the identifier is glued to `*`.
+    try std.testing.expectEqual(@as(u32, 1), tl.writtenStart(id));
+    try std.testing.expect(tl.flagsOf(id).glued_left);
+}
+
+test "batch fixture: eof-comment-no-newline" {
+    const source: [:0]const u8 = "x :: 1;\n// c";
+    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    const trailing = tl.commentsFor(tl.last());
+    try std.testing.expectEqual(@as(usize, 1), trailing.len);
+    try std.testing.expectEqual(@as(u32, 8), trailing[0].start);
+    try std.testing.expectEqual(@as(u32, 12), trailing[0].end);
+}
+
+fn expectHeredocTerminator(source: [:0]const u8, terminator: Tag) !void {
+    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    const heredoc = tl.first();
+    try std.testing.expectEqual(Tag.raw_string_literal, tl.tag(heredoc));
+    try std.testing.expectEqual(@as(u32, 12), tl.start(heredoc));
+    try std.testing.expectEqual(@as(u32, 20), tl.end(heredoc));
+    const after = tl.next(heredoc);
+    try std.testing.expectEqual(terminator, tl.tag(after));
+    // The gap is the terminator word: neither glued nor across a line.
+    try std.testing.expect(!tl.flagsOf(after).glued_left);
+    try std.testing.expect(!tl.flagsOf(after).newline_left);
+}
+
+test "batch fixture: heredoc-glued-semicolon" {
+    try expectHeredocTerminator("#string END\ncontent\nEND;", .semicolon);
+}
+
+test "batch fixture: heredoc-glued-comma" {
+    try expectHeredocTerminator("#string END\ncontent\nEND,", .comma);
+}
+
+test "batch fixture: heredoc-glued-paren" {
+    try expectHeredocTerminator("#string END\ncontent\nEND)", .r_paren);
+}
+
+fn expectSingleInvalid(source: [:0]const u8) !void {
+    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    try std.testing.expectEqual(@as(usize, 2), tl.tags.len);
+    try std.testing.expectEqual(Tag.invalid, tl.tags[0]);
+    try std.testing.expectEqual(@as(u32, 0), tl.starts[0]);
+    try std.testing.expectEqual(@as(u32, @intCast(source.len)), tl.ends[0]);
+    try std.testing.expectEqual(Tag.eof, tl.tags[1]);
+}
+
+test "batch fixture: unterminated-string" {
+    try expectSingleInvalid("\"abc");
+}
+
+test "batch fixture: unterminated-char" {
+    try expectSingleInvalid("'a");
+}
+
+test "batch fixture: unterminated-heredoc" {
+    try expectSingleInvalid("#string END\ncontent\n");
+}
+
+// ---- comment ownership: rows attach to the FOLLOWING code token ----
+
+test "comment ownership: leading rows per declaration" {
+    const source: [:0]const u8 = "// a\nx :: 1;\n// b\ny :: 2;";
+    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    const x = tl.tokenAtStart(5).?;
+    const y = tl.tokenAtStart(18).?;
+    const x_rows = tl.commentsFor(x);
+    try std.testing.expectEqual(@as(usize, 1), x_rows.len);
+    try std.testing.expectEqualStrings("// a", source[x_rows[0].start..x_rows[0].end]);
+    const y_rows = tl.commentsFor(y);
+    try std.testing.expectEqual(@as(usize, 1), y_rows.len);
+    try std.testing.expectEqualStrings("// b", source[y_rows[0].start..y_rows[0].end]);
+    try std.testing.expectEqual(@as(usize, 0), tl.commentsFor(tl.last()).len);
+}
+
+test "comment ownership: trailing then leading rows in source order" {
+    const source: [:0]const u8 = "x :: 1; // t\n// d\ny :: 2;";
+    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    const y = tl.tokenAtStart(18).?;
+    const rows = tl.commentsFor(y);
+    try std.testing.expectEqual(@as(usize, 2), rows.len);
+    try std.testing.expectEqualStrings("// t", source[rows[0].start..rows[0].end]);
+    try std.testing.expectEqualStrings("// d", source[rows[1].start..rows[1].end]);
+    try std.testing.expect(!rows[0].line_leading);
+    try std.testing.expect(rows[1].line_leading);
+}
+
+// ---- line_leading / blank_left matrix ----
+
+test "trivia matrix: leading comment, no blank line" {
+    const source: [:0]const u8 = "// a\nx :: 1;";
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    const rows = tl.commentsFor(tl.first());
+    try std.testing.expectEqual(@as(usize, 1), rows.len);
+    try std.testing.expect(rows[0].line_leading);
+    try std.testing.expect(!rows[0].blank_left);
+    try std.testing.expect(!tl.flagsOf(tl.first()).blank_left);
+}
+
+test "trivia matrix: blank line between comment and token" {
+    const source: [:0]const u8 = "// a\n\nx :: 1;";
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    try std.testing.expect(tl.flagsOf(tl.first()).blank_left);
+}
+
+test "trivia matrix: blank line between comment rows" {
+    const source: [:0]const u8 = "// a\n\n// b\nx :: 1;";
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    const rows = tl.commentsFor(tl.first());
+    try std.testing.expectEqual(@as(usize, 2), rows.len);
+    try std.testing.expect(!rows[0].blank_left);
+    try std.testing.expect(rows[1].blank_left);
+}
+
+test "trivia matrix: trailing comment is not line-leading" {
+    const source: [:0]const u8 = "y :: 1; // t\nx :: 2;";
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    const x = tl.tokenAtStart(13).?;
+    const rows = tl.commentsFor(x);
+    try std.testing.expectEqual(@as(usize, 1), rows.len);
+    try std.testing.expect(!rows[0].line_leading);
+}
+
+test "trivia matrix: comment at offset 0 has no blank line above" {
+    // The start of the file is one line start, not two.
+    const source: [:0]const u8 = "// a";
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    const rows = tl.commentsFor(tl.last());
+    try std.testing.expectEqual(@as(usize, 1), rows.len);
+    try std.testing.expect(!rows[0].blank_left);
+}
+
+// ---- allocation failure ----
+
+test "lex under OOM returns error.OutOfMemory and leaks nothing" {
+    const source: [:0]const u8 = "// c\nmain :: () { 42; }\n// t";
+    var fail_index: usize = 0;
+    while (true) : (fail_index += 1) {
+        var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = fail_index });
+        if (lexer.lex(failing.allocator(), source)) |list| {
+            var tl = list;
+            tl.deinit(failing.allocator());
+            break;
+        } else |err| {
+            try std.testing.expectEqual(error.OutOfMemory, err);
+            // Every partially built column was released.
+            try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
+        }
+    }
+}
+
+// ---- differential oracle over the corpus ----
+
+var g_test_threaded: ?std.Io.Threaded = null;
+fn testIo() std.Io {
+    if (g_test_threaded == null) {
+        g_test_threaded = std.Io.Threaded.init(std.heap.page_allocator, .{});
+    }
+    return g_test_threaded.?.io();
+}
+
+fn assertDirMatches(alloc: std.mem.Allocator, io: std.Io, dir_path: []const u8) !usize {
+    var count: usize = 0;
+    var dir = try std.Io.Dir.openDirAbsolute(io, dir_path, .{ .iterate = true });
+    defer dir.close(io);
+    var it = dir.iterate();
+    while (try it.next(io)) |entry| {
+        const child = try std.fs.path.join(alloc, &.{ dir_path, entry.name });
+        defer alloc.free(child);
+        switch (entry.kind) {
+            .directory => count += try assertDirMatches(alloc, io, child),
+            .file => {
+                if (!std.mem.endsWith(u8, entry.name, ".sx")) continue;
+                const bytes = try std.Io.Dir.readFileAlloc(.cwd(), io, child, alloc, .limited(16 * 1024 * 1024));
+                defer alloc.free(bytes);
+                const source = try alloc.dupeZ(u8, bytes);
+                defer alloc.free(source);
+                lexer.assertBatchMatchesStream(alloc, source) catch |err| {
+                    std.debug.print("batch/stream divergence in {s}\n", .{child});
+                    return err;
+                };
+                count += 1;
+            },
+            else => {},
+        }
+    }
+    return count;
+}
+
+test "batch lexing matches the stream over every corpus file" {
+    const alloc = std.testing.allocator;
+    const io = testIo();
+    var total: usize = 0;
+    for ([_][]const u8{ corpus_paths.examples_dir, corpus_paths.issues_dir, corpus_paths.library_dir }) |root| {
+        total += try assertDirMatches(alloc, io, root);
+    }
+    try std.testing.expect(total > 0);
 }
