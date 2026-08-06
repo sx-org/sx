@@ -1,5 +1,6 @@
 pub const llvm_api = @import("llvm_api.zig");
 pub const token = @import("token.zig");
+pub const token_list = @import("token_list.zig");
 pub const lexer = @import("lexer.zig");
 pub const lexer_tests = @import("lexer.test.zig");
 pub const ast = @import("ast.zig");
