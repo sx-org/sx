@@ -3253,14 +3253,11 @@ pub const Parser = struct {
                 continue;
             }
 
-            // Spacing rule (specs: Whitespace is Syntax): `-` and `*` carry a
-            // prefix reading too, so they are infix only when their gaps match.
-            // Lopsided on one line is fatal; across a line the operand below
-            // starts fresh and the caller reports what it finds.
-            if ((self.current.tag == .minus or self.current.tag == .star) and !self.infixSpacingMatches()) {
-                if (!self.gapCrossesLine()) return self.failLopsidedOperator();
-                break;
-            }
+            // Spacing rule (specs: Whitespace is Syntax): on one line a
+            // completed left operand makes `-` / `*` infix; across a break a
+            // glued operator opens a fresh operand below.
+            if ((self.current.tag == .minus or self.current.tag == .star) and
+                self.gapCrossesLine() and self.rightIsGlued()) break;
 
             const prec = self.binaryPrec();
             if (prec == 0 or prec < min_prec) break;
@@ -5669,6 +5666,12 @@ pub const Parser = struct {
         return std.mem.indexOfScalar(u8, self.source[self.prev_end..writtenStart(self.current)], '\n') != null;
     }
 
+    /// True when the current operator token is glued to the token after it.
+    fn rightIsGlued(self: *const Parser) bool {
+        var lex = self.lexer;
+        return self.current.loc.end == writtenStart(lex.next());
+    }
+
     /// The written form with the offending gap closed — `foo (2)` → `foo(2)` —
     /// for the spacing diagnostics. Null when the bracket group is unbalanced,
     /// spans a line, or is too long to quote back usefully.
@@ -5730,40 +5733,12 @@ pub const Parser = struct {
         if (!self.currentIsGlued()) return self.failSpacedForm(head_start, .type_args);
     }
 
-    /// The spacing rule for infix `-` / `*`: they read as infix only when the
-    /// gaps on BOTH sides match — `a - b` or `a-b`. Glued on the right and
-    /// spaced on the left, the operator is a prefix `-` / `*` opening a new
-    /// operand; the mirror shape (`a- b`) is neither reading.
-    fn infixSpacingMatches(self: *const Parser) bool {
-        var lex = self.lexer;
-        const next = lex.next();
-        const left_spaced = self.prev_end != self.current.loc.start;
-        const right_spaced = self.current.loc.end != writtenStart(next);
-        return left_spaced == right_spaced;
-    }
-
-    fn failLopsidedOperator(self: *Parser) error{ParseError} {
-        const op = self.tokenSlice(self.current);
-        const reads_as_prefix = self.prev_end != self.current.loc.start;
-        return if (reads_as_prefix)
-            self.failFmt(
-                "`{s}` is spaced on its left and glued on its right, so it reads as a prefix `{s}` opening a new operand — an infix `{s}` needs matching spacing: write `a {s} b` or `a{s}b`",
-                .{ op, op, op, op, op },
-            )
-        else
-            self.failFmt(
-                "`{s}` is glued on its left and spaced on its right — an infix operator needs matching spacing on both sides: write `a {s} b` or `a{s}b`",
-                .{ op, op, op },
-            );
-    }
-
     /// A token that cannot START a statement, so a line break in front of it
     /// continues the statement above instead of ending it. `-` and `*` are
-    /// deliberately absent: the spacing rule already decided them — a leading
-    /// `- b` keeps the gaps matched and never reaches a terminator, while `-b`
-    /// opens a fresh operand and so is a statement of its own. `case` is absent
-    /// too: it heads a `match` arm, and an arm is a statement in the only
-    /// position where `case` is legal.
+    /// deliberately absent: a line-leading `- b` continues the expression
+    /// above, while a glued `-b` opens a fresh operand and so is a statement of
+    /// its own. `case` is absent too: it heads a `match` arm, and an arm is a
+    /// statement in the only position where `case` is legal.
     ///
     /// The property is the rule and this list is its enumeration, so a token
     /// belongs here as soon as some construct parser can reach a terminator
@@ -5840,8 +5815,7 @@ pub const Parser = struct {
     }
 
     /// The spacing rule for a prefix `-` / `--` / `*`: it binds only when glued
-    /// to its operand. That is what makes `a -b` the prefix reading and `a - b`
-    /// the infix one, so a spaced prefix has no reading left.
+    /// to its operand, so a spaced prefix has no reading left.
     fn requirePrefixGlue(self: *Parser, op: Token.Loc) !void {
         if (self.currentIsGlued()) return;
         const text = self.source[op.start..op.end];

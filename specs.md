@@ -363,26 +363,30 @@ v := risky() catch (e) -1;                    // catch binding
 onfail (e) { … }                              // onfail binding
 ```
 
-**Spacing — `-` and `*` are infix only when spaced symmetrically.** Both glyphs
-also have a prefix reading (negation, address-of), so the gaps on the two sides
-decide. Matching gaps — both present or both absent — is infix; spaced on the
-left and glued on the right is the prefix reading; the mirror shape has no
-reading at all:
+**Spacing — `-` and `*` are infix wherever a left operand is complete.** Both
+glyphs also have a prefix reading (negation, address-of), and position decides
+between the two. On one line the operand to the left settles it: after a
+completed operand the glyph is infix, whatever the gaps around it are, and a
+slot with no left operand takes the prefix reading. Only at a line break does
+glue decide, because the operator could belong to either line:
 
 ```sx
 a - b       // infix subtraction
 a-b         // infix subtraction
-a -b        // `a`, then a prefix `-b`
-a- b        // error: neither reading
+a -b        // infix subtraction
+a- b        // infix subtraction
+a - -b      // infix `-`, then a prefix `-b`
 ```
 
 A prefix `-` / `*` binds only when glued to its operand, which is what makes
-`-b` and `*p` unambiguous. This is also how an expression continues across a
-line: a leading `- b` keeps the gaps matched and continues the expression,
-while `-b` starts a fresh operand. `--` is a lexeme of its own with one
-reading, the prefix pre-decrement, and the same glue rule: `--b` decrements
-`b` and yields the new value, while `a--b`, `a --b` and `-- b` have no reading
-at all.
+`-b` and `*p` unambiguous. That glue is what a break reads: an operator opening
+the line below glued to its operand starts a fresh statement, while every other
+shape continues the expression above — a line-leading `- b`, and a trailing
+`a-` with its operand on the next line, are both subtraction. The gap is read
+as written, so a raw identifier's backtick counts: `` -`x `` is glued and
+`` - `x `` is not. `--` is a lexeme of its own with one reading, the prefix
+pre-decrement, and the same glue rule: `--b` decrements `b` and yields the new
+value, while `a--b`, `a --b` and `-- b` have no reading at all.
 
 **Postfix — `(`, `[`, `{`, and `!` bind only on their expression's own line.**
 The third rule governs what attaches to an expression from behind, and it
@@ -518,9 +522,9 @@ hand. Today that list is `and`, `or`, `then`, `else`, `catch`, `|`, `+`, `==`,
 `!=`, `<=`, `>=`, `<<`, `>>`, `|>`, `??`, `?.`, `,`, `=`, `::`, `->`, `=>`,
 `:`, `extern`, and `intrinsic`. `else` is on it only where it chains an `if`;
 `else:` heads a `match` default arm, which starts one. `-` and `*` are absent
-because the spacing rule above already decided them: a leading `- b` keeps its
-gaps matched and reads as subtraction, while `-b` opens a fresh operand and so
-begins a statement. `case` is absent because it heads a `match` arm, and an arm
+because the spacing rule above already decided them: a leading `- b` reads as
+subtraction, while a glued `-b` opens a fresh operand and so begins a
+statement. `case` is absent because it heads a `match` arm, and an arm
 is a statement. A form that is simply still open — an unclosed `(`, an argument
 list, a `{` with no `}` yet — reads on for the same reason: nothing has ended.
 

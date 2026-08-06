@@ -1,0 +1,17 @@
+// Whitespace is syntax (specs §1), spacing rule: on a single line, position
+// decides the fixity of `-` and `*`. Once the left operand is complete the
+// operator is infix, whatever the gaps around it are, so all four spellings of
+// each glyph mean the same thing. A prefix reading needs a slot with no left
+// operand — the right-hand side of an infix operator is such a slot, which is
+// what `a - -b` and `a- -b` write.
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    a := 10;
+    b := 3;
+
+    print("minus: {} {} {} {}\n", a - b, a-b, a -b, a- b);
+    print("star: {} {} {} {}\n", a * b, a*b, a *b, a* b);
+    print("prefix rhs: {} {}\n", a - -b, a- -b);
+    return 0;
+}

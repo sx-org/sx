@@ -1,5 +1,0 @@
-error: `*` is glued on its left and spaced on its right — an infix operator needs matching spacing on both sides: write `a * b` or `a*b`
-  --> examples/diagnostics/2063-diagnostics-spacing-lopsided-star.sx:10:11
-   |
-10 |     x := a* b;
-   |           ^
