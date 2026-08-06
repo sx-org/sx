@@ -1,0 +1,5 @@
+error: cannot pre-decrement pointer target '*i64' — use '-= 1' for pointer arithmetic
+  --> examples/diagnostics/2121-diagnostics-pre-decrement-pointer.sx:6:5
+   |
+ 6 |     --p;
+   |     ^^^

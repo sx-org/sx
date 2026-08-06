@@ -379,7 +379,10 @@ a- b        // error: neither reading
 A prefix `-` / `*` binds only when glued to its operand, which is what makes
 `-b` and `*p` unambiguous. This is also how an expression continues across a
 line: a leading `- b` keeps the gaps matched and continues the expression,
-while `-b` starts a fresh operand.
+while `-b` starts a fresh operand. `--` is a lexeme of its own with one
+reading, the prefix pre-decrement, and the same glue rule: `--b` decrements
+`b` and yields the new value, while `a--b`, `a --b` and `-- b` have no reading
+at all.
 
 **Postfix — `(`, `[`, `{`, and `!` bind only on their expression's own line.**
 The third rule governs what attaches to an expression from behind, and it
@@ -6922,9 +6925,9 @@ range_op        = '..' | '..=' | '..<' | '<..' | '<..=' | '<..<' | '=..' | '=..=
 for_capture     = '(' ['*'] IDENT (',' ['*'] IDENT)* ')'
 binary          = catch_expr (binop catch_expr)*    // binop includes `or` (fallback / chain)
 catch_expr      = unary ('catch' ('(' IDENT ')')? (block | '==' '{' case_arm* else_arm? '}' | unary))?
-unary           = ('-' | '*' | '!' | '~' | 'xx' | 'try') unary | postfix
+unary           = ('-' | '--' | '*' | '!' | '~' | 'xx' | 'try') unary | postfix
                   // right-recursive, so prefixes stack (`xx try f()`, `!!ok`);
-                  // a prefix '-' / '*' must be GLUED to its operand (§1 Whitespace is Syntax)
+                  // a prefix '-' / '--' / '*' must be GLUED to its operand (§1 Whitespace is Syntax)
 postfix         = primary ('(' args? ')' | '[' expr ']' | '.' IDENT | '.{' field_init_list '}')*
                   // a postfix '(' / '[' must be GLUED to what precedes it (§1 Whitespace is Syntax)
 primary         = INT | HEX_INT | OCT_INT | BIN_INT | FLOAT | STRING | BOOL | IDENT | '---'

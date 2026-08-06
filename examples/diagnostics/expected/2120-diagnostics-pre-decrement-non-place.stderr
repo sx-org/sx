@@ -1,0 +1,5 @@
+error: pre-decrement needs an addressable storage place
+  --> examples/diagnostics/2120-diagnostics-pre-decrement-non-place.sx:4:10
+   |
+ 4 |     x := --5;
+   |          ^^^

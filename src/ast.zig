@@ -398,6 +398,7 @@ pub const UnaryOp = struct {
         bit_not,
         xx,
         address_of,
+        pre_decrement,
     };
 };
 

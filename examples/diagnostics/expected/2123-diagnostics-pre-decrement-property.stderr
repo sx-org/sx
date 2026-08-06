@@ -1,0 +1,11 @@
+error: pre-decrement needs an addressable storage place
+  --> examples/diagnostics/2123-diagnostics-pre-decrement-property.sx:16:5
+   |
+16 |     --t.celsius;
+   |     ^^^^^^^^^^^
+
+error: pre-decrement needs an addressable storage place
+  --> examples/diagnostics/2123-diagnostics-pre-decrement-property.sx:19:5
+   |
+19 |     --r.scaled;
+   |     ^^^^^^^^^^

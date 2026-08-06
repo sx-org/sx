@@ -1559,6 +1559,27 @@ pub fn diagContextRootWrite(self: *Lowering, target: *const Node) bool {
     }
 }
 
+/// `--x` on a target that names no slot: a literal, an accessor property, a
+/// slice header word, a comptime tuple index — everything `resolveMutablePlace`
+/// answers null for.
+pub fn diagDecrementTarget(self: *Lowering, span: ast.Span) Ref {
+    if (self.diagnostics) |d|
+        d.add(.err, "pre-decrement needs an addressable storage place", span);
+    return self.emitPlaceholder("pre-decrement");
+}
+
+pub fn diagDecrementPointer(self: *Lowering, ty: TypeId, span: ast.Span) Ref {
+    if (self.diagnostics) |d|
+        d.addFmt(.err, span, "cannot pre-decrement pointer target '{s}' — use '-= 1' for pointer arithmetic", .{self.formatTypeName(ty)});
+    return self.emitPlaceholder("pre-decrement");
+}
+
+pub fn diagDecrementNonInteger(self: *Lowering, ty: TypeId, span: ast.Span) Ref {
+    if (self.diagnostics) |d|
+        d.addFmt(.err, span, "pre-decrement needs an integer target; got '{s}'", .{self.formatTypeName(ty)});
+    return self.emitPlaceholder("pre-decrement");
+}
+
 /// Shape-aware diagnostic for an assignment whose target is a NON-ALLOCA
 /// scope binding — a name that resolves but has no storable slot. Shared by
 /// lowerAssignment's ident arm and lowerMultiAssign's ident arm. A store that

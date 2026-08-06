@@ -227,6 +227,10 @@ pub const Lexer = struct {
                     self.index += 2;
                     return self.makeToken(.triple_minus, start, self.index);
                 }
+                if (self.peek() == '-') {
+                    self.index += 1;
+                    return self.makeToken(.minus_minus, start, self.index);
+                }
                 if (self.peek() == '>') {
                     self.index += 1;
                     return self.makeToken(.arrow, start, self.index);
