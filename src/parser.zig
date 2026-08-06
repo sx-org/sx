@@ -1,7 +1,6 @@
 const std = @import("std");
 const Token = @import("token.zig").Token;
 const Tag = @import("token.zig").Tag;
-const getKeyword = @import("token.zig").getKeyword;
 const lexer = @import("lexer.zig");
 const token_list = @import("token_list.zig");
 const TokenList = token_list.TokenList;
@@ -2906,8 +2905,7 @@ pub const Parser = struct {
             }
 
             // Check for assignment operators
-            if (self.isAssignOp()) {
-                const op = self.assignOp();
+            if (assignmentInfo(self.tokens.tag(self.tok))) |op| {
                 self.advance();
                 const value = try self.parseExpr();
                 try self.expectStatementEnd();
@@ -3159,8 +3157,7 @@ pub const Parser = struct {
         }
 
         // Check for field assignment: expr = value; (e.g. a.b = 1;)
-        if (self.isAssignOp()) {
-            const op = self.assignOp();
+        if (assignmentInfo(self.tokens.tag(self.tok))) |op| {
             self.advance();
             const value = try self.parseExpr();
             try self.expectStatementEnd();
@@ -3244,30 +3241,30 @@ pub const Parser = struct {
             if ((self.tokens.tag(self.tok) == .minus or self.tokens.tag(self.tok) == .star) and
                 self.tokens.flagsOf(self.tok).newline_left and self.tokens.flagsOf(self.tokens.next(self.tok)).glued_left) break;
 
-            const prec = self.binaryPrec();
-            if (prec == 0 or prec < min_prec) break;
+            const info = binaryInfo(self.tokens.tag(self.tok)) orelse break;
+            if (info.prec < min_prec) break;
 
-            const op = self.binaryOp() orelse break;
+            const op = info.op;
             self.advance();
 
-            const rhs = try self.parseBinary(prec + 1);
+            const rhs = try self.parseBinary(info.prec + 1);
 
             // Chained comparison detection: if op is a comparison and the next
             // token is also a comparison at the same precedence, accumulate
             // into a ChainedComparison node.
-            if (isComparisonOp(op) and self.binaryPrec() == prec and self.isComparisonToken()) {
+            if (isComparisonOp(op) and self.atComparison()) {
                 var operands = std.ArrayList(*Node).empty;
                 var ops = std.ArrayList(ast.BinaryOp.Op).empty;
                 try operands.append(self.allocator, lhs);
                 try operands.append(self.allocator, rhs);
                 try ops.append(self.allocator, op);
 
-                while (self.binaryPrec() == prec and self.isComparisonToken()) {
-                    const chain_op = self.binaryOp() orelse break;
+                while (self.atComparison()) {
+                    const chain_info = binaryInfo(self.tokens.tag(self.tok)) orelse break;
                     self.advance();
-                    const chain_rhs = try self.parseBinary(prec + 1);
+                    const chain_rhs = try self.parseBinary(info.prec + 1);
                     try operands.append(self.allocator, chain_rhs);
-                    try ops.append(self.allocator, chain_op);
+                    try ops.append(self.allocator, chain_info.op);
                 }
 
                 lhs = try self.createNode(lhs.span.start, .{ .chained_comparison = .{
@@ -3537,7 +3534,7 @@ pub const Parser = struct {
             } else if (self.tokens.tag(self.tok) == .question_dot) {
                 // Optional chaining: expr?.field
                 self.advance();
-                if (self.tokens.tag(self.tok) == .identifier or (self.tokens.tag(self.tok) != .int_literal and self.tokens.tag(self.tok) != .l_paren and getKeyword(self.tokens.slice(self.tok)) != null)) {
+                if (self.tokens.tag(self.tok) == .identifier or self.tokens.tag(self.tok).isKeyword()) {
                     const field = self.tokens.slice(self.tok);
                     self.advance();
                     expr = try self.createNode(expr.span.start, .{ .field_access = .{ .object = expr, .field = field, .is_optional = true } });
@@ -4259,12 +4256,12 @@ pub const Parser = struct {
 
         // Handle comparisons with chain detection and match disambiguation.
         // All comparisons (< <= > >= == !=) are at the same precedence.
-        if (self.isComparisonToken()) {
+        if (self.atComparison()) {
             var operands = std.ArrayList(*Node).empty;
             var ops = std.ArrayList(ast.BinaryOp.Op).empty;
             try operands.append(self.allocator, condition);
 
-            while (self.isComparisonToken()) {
+            while (self.atComparison()) {
                 // Match disambiguation: == followed by { is a match expression
                 if (self.tokens.tag(self.tok) == .equal_equal) {
                     self.advance();
@@ -4282,11 +4279,11 @@ pub const Parser = struct {
                     try operands.append(self.allocator, rhs);
                     try ops.append(self.allocator, .eq);
                 } else {
-                    const cmp_op = self.binaryOp() orelse break;
+                    const cmp_info = binaryInfo(self.tokens.tag(self.tok)) orelse break;
                     self.advance();
                     const rhs = try self.parseBinary(Prec.shift);
                     try operands.append(self.allocator, rhs);
-                    try ops.append(self.allocator, cmp_op);
+                    try ops.append(self.allocator, cmp_info.op);
                 }
             }
 
@@ -5116,26 +5113,8 @@ pub const Parser = struct {
         }
     }
 
-    fn isAssignOp(self: *const Parser) bool {
-        return switch (self.tokens.tag(self.tok)) {
-            .equal,
-            .plus_equal,
-            .minus_equal,
-            .star_equal,
-            .slash_equal,
-            .percent_equal,
-            .ampersand_equal,
-            .pipe_equal,
-            .caret_equal,
-            .less_less_equal,
-            .greater_greater_equal,
-            => true,
-            else => false,
-        };
-    }
-
-    fn assignOp(self: *const Parser) ast.Assignment.Op {
-        return switch (self.tokens.tag(self.tok)) {
+    fn assignmentInfo(tag: Tag) ?ast.Assignment.Op {
+        return switch (tag) {
             .equal => .assign,
             .plus_equal => .add_assign,
             .minus_equal => .sub_assign,
@@ -5147,7 +5126,27 @@ pub const Parser = struct {
             .caret_equal => .xor_assign,
             .less_less_equal => .shl_assign,
             .greater_greater_equal => .shr_assign,
-            else => unreachable,
+            .int_literal, .float_literal, .string_literal, .raw_string_literal, .char_literal,
+            .identifier, .at_identifier, .kw_if, .kw_else, .kw_then, .kw_true, .kw_false, .kw_enum,
+            .kw_error, .kw_raise, .kw_try, .kw_catch, .kw_onfail, .kw_case, .kw_break,
+            .kw_continue, .kw_while, .kw_for, .kw_return, .kw_defer, .kw_f32, .kw_f64, .kw_struct,
+            .kw_union, .kw_xx, .kw_and, .kw_or, .kw_Type, .kw_null, .kw_push, .kw_ufcs, .kw_in,
+            .kw_protocol, .kw_impl, .kw_Self, .kw_inline, .kw_abi, .kw_extern, .kw_export, .kw_asm,
+            .kw_intrinsic, .kw_private, .colon, .colon_colon, .colon_equal, .semicolon, .comma,
+            .dot, .dot_dot, .dot_dot_eq, .dot_dot_lt, .lt_dot_dot, .lt_dot_dot_eq, .lt_dot_dot_lt,
+            .eq_dot_dot, .eq_dot_dot_eq, .eq_dot_dot_lt, .dollar, .plus, .minus, .star, .slash,
+            .equal_equal, .bang, .bang_equal, .less, .less_equal, .greater, .greater_equal,
+            .percent, .ampersand, .pipe, .pipe_arrow, .caret, .question, .question_question,
+            .question_dot, .tilde, .less_less, .greater_greater, .l_paren, .r_paren, .l_brace,
+            .r_brace, .l_bracket, .r_bracket, .arrow, .fat_arrow, .hash_run, .hash_error,
+            .hash_import, .hash_insert, .hash_library, .hash_framework, .hash_using, .hash_include,
+            .hash_source, .hash_define, .hash_flags, .hash_identity, .hash_expand, .hash_objc_call,
+            .hash_jni_call, .hash_jni_static_call, .hash_jni_class, .hash_jni_interface,
+            .hash_objc_class, .hash_objc_protocol, .hash_swift_class, .hash_swift_struct,
+            .hash_swift_protocol, .hash_extends, .hash_implements, .hash_jni_method_descriptor,
+            .hash_selector, .hash_property, .hash_get, .hash_set, .hash_jni_env, .hash_jni_main,
+            .hash_context_extend, .triple_minus, .minus_minus, .eof, .invalid
+            => null,
         };
     }
 
@@ -5230,43 +5229,53 @@ pub const Parser = struct {
         const multiplicative: u8 = 11; // * / %
     };
 
-    fn binaryPrec(self: *const Parser) u8 {
-        return switch (self.tokens.tag(self.tok)) {
-            .kw_or => Prec.logical_or,
-            .kw_and => Prec.logical_and,
-            .pipe => Prec.bit_or,
-            .caret => Prec.bit_xor,
-            .ampersand => Prec.bit_and,
-            .equal_equal, .bang_equal, .less, .less_equal, .greater, .greater_equal, .kw_in => Prec.comparison,
-            .less_less, .greater_greater => Prec.shift,
-            .plus, .minus => Prec.additive,
-            .star, .slash, .percent => Prec.multiplicative,
-            else => Prec.none,
-        };
-    }
+    const BinaryInfo = struct { prec: u8, op: ast.BinaryOp.Op, comparison: bool };
 
-    fn binaryOp(self: *const Parser) ?ast.BinaryOp.Op {
-        return switch (self.tokens.tag(self.tok)) {
-            .kw_and => .and_op,
-            .kw_or => .or_op,
-            .pipe => .bit_or,
-            .caret => .bit_xor,
-            .ampersand => .bit_and,
-            .plus => .add,
-            .minus => .sub,
-            .star => .mul,
-            .slash => .div,
-            .percent => .mod,
-            .equal_equal => .eq,
-            .bang_equal => .neq,
-            .less => .lt,
-            .less_equal => .lte,
-            .greater => .gt,
-            .greater_equal => .gte,
-            .less_less => .shl,
-            .greater_greater => .shr,
-            .kw_in => .in_op,
-            else => null,
+    /// One lookup per infix token: precedence tier, AST operator, and whether
+    /// the token joins a comparison chain (`in` shares the tier but never
+    /// chains).
+    fn binaryInfo(tag: Tag) ?BinaryInfo {
+        return switch (tag) {
+            .kw_or => .{ .prec = Prec.logical_or, .op = .or_op, .comparison = false },
+            .kw_and => .{ .prec = Prec.logical_and, .op = .and_op, .comparison = false },
+            .pipe => .{ .prec = Prec.bit_or, .op = .bit_or, .comparison = false },
+            .caret => .{ .prec = Prec.bit_xor, .op = .bit_xor, .comparison = false },
+            .ampersand => .{ .prec = Prec.bit_and, .op = .bit_and, .comparison = false },
+            .equal_equal => .{ .prec = Prec.comparison, .op = .eq, .comparison = true },
+            .bang_equal => .{ .prec = Prec.comparison, .op = .neq, .comparison = true },
+            .less => .{ .prec = Prec.comparison, .op = .lt, .comparison = true },
+            .less_equal => .{ .prec = Prec.comparison, .op = .lte, .comparison = true },
+            .greater => .{ .prec = Prec.comparison, .op = .gt, .comparison = true },
+            .greater_equal => .{ .prec = Prec.comparison, .op = .gte, .comparison = true },
+            .kw_in => .{ .prec = Prec.comparison, .op = .in_op, .comparison = false },
+            .less_less => .{ .prec = Prec.shift, .op = .shl, .comparison = false },
+            .greater_greater => .{ .prec = Prec.shift, .op = .shr, .comparison = false },
+            .plus => .{ .prec = Prec.additive, .op = .add, .comparison = false },
+            .minus => .{ .prec = Prec.additive, .op = .sub, .comparison = false },
+            .star => .{ .prec = Prec.multiplicative, .op = .mul, .comparison = false },
+            .slash => .{ .prec = Prec.multiplicative, .op = .div, .comparison = false },
+            .percent => .{ .prec = Prec.multiplicative, .op = .mod, .comparison = false },
+            .int_literal, .float_literal, .string_literal, .raw_string_literal, .char_literal,
+            .identifier, .at_identifier, .kw_if, .kw_else, .kw_then, .kw_true, .kw_false, .kw_enum,
+            .kw_error, .kw_raise, .kw_try, .kw_catch, .kw_onfail, .kw_case, .kw_break,
+            .kw_continue, .kw_while, .kw_for, .kw_return, .kw_defer, .kw_f32, .kw_f64, .kw_struct,
+            .kw_union, .kw_xx, .kw_Type, .kw_null, .kw_push, .kw_ufcs, .kw_protocol, .kw_impl,
+            .kw_Self, .kw_inline, .kw_abi, .kw_extern, .kw_export, .kw_asm, .kw_intrinsic,
+            .kw_private, .colon, .colon_colon, .colon_equal, .semicolon, .comma, .dot, .dot_dot,
+            .dot_dot_eq, .dot_dot_lt, .lt_dot_dot, .lt_dot_dot_eq, .lt_dot_dot_lt, .eq_dot_dot,
+            .eq_dot_dot_eq, .eq_dot_dot_lt, .dollar, .equal, .bang, .plus_equal, .minus_equal,
+            .star_equal, .slash_equal, .percent_equal, .ampersand_equal, .pipe_equal, .pipe_arrow,
+            .caret_equal, .question, .question_question, .question_dot, .tilde, .less_less_equal,
+            .greater_greater_equal, .l_paren, .r_paren, .l_brace, .r_brace, .l_bracket, .r_bracket,
+            .arrow, .fat_arrow, .hash_run, .hash_error, .hash_import, .hash_insert, .hash_library,
+            .hash_framework, .hash_using, .hash_include, .hash_source, .hash_define, .hash_flags,
+            .hash_identity, .hash_expand, .hash_objc_call, .hash_jni_call, .hash_jni_static_call,
+            .hash_jni_class, .hash_jni_interface, .hash_objc_class, .hash_objc_protocol,
+            .hash_swift_class, .hash_swift_struct, .hash_swift_protocol, .hash_extends,
+            .hash_implements, .hash_jni_method_descriptor, .hash_selector, .hash_property,
+            .hash_get, .hash_set, .hash_jni_env, .hash_jni_main, .hash_context_extend,
+            .triple_minus, .minus_minus, .eof, .invalid
+            => null,
         };
     }
 
@@ -5277,11 +5286,10 @@ pub const Parser = struct {
         };
     }
 
-    fn isComparisonToken(self: *const Parser) bool {
-        return switch (self.tokens.tag(self.tok)) {
-            .less, .less_equal, .greater, .greater_equal, .equal_equal, .bang_equal => true,
-            else => false,
-        };
+    /// True when the current token is a chainable comparison operator.
+    fn atComparison(self: *const Parser) bool {
+        const info = binaryInfo(self.tokens.tag(self.tok)) orelse return false;
+        return info.comparison;
     }
 
     /// Prefix shapes that may take a named aggregate body `Type{...}`:
@@ -5427,7 +5435,7 @@ pub const Parser = struct {
                     names = top;
                 },
                 .identifier => names = top,
-                else => names = top and getKeyword(self.tokens.slice(i)) != null,
+                else => names = top and t.isKeyword(),
             }
             prev_was_name = names;
         }
@@ -5779,7 +5787,7 @@ pub const Parser = struct {
     /// left for the caller to report).
     fn dotMemberName(self: *Parser) ?[]const u8 {
         const txt = self.tokens.slice(self.tok);
-        if (self.tokens.tag(self.tok) == .identifier or getKeyword(txt) != null) {
+        if (self.tokens.tag(self.tok) == .identifier or self.tokens.tag(self.tok).isKeyword()) {
             self.advance();
             return txt;
         }
@@ -5793,7 +5801,7 @@ pub const Parser = struct {
     fn isMemberDeclName(self: *Parser) bool {
         if (self.tokens.tag(self.tok) == .identifier) return true;
         if (self.tokens.tag(self.tok) == .kw_inline) return false;
-        return getKeyword(self.tokens.slice(self.tok)) != null;
+        return self.tokens.tag(self.tok).isKeyword();
     }
 
     /// Member-name reject: `inline` (the one excluded keyword) gets its
