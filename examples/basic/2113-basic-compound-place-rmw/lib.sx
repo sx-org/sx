@@ -1,6 +1,3 @@
-// Companion module for 2113 — a mutable module global reached through a
-// namespace-import alias, plus a struct global whose field is written through
-// the qualified path.
 lib_g : i64 = 0;
 
 Pair :: struct { a, b: i64; }
