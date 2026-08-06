@@ -1,5 +1,0 @@
-error: `-` is spaced on its left and glued on its right, so it reads as a prefix `-` opening a new operand — an infix `-` needs matching spacing: write `a - b` or `a-b`
-  --> examples/diagnostics/2062-diagnostics-spacing-lopsided-minus.sx:11:12
-   |
-11 |     x := a -b;
-   |            ^

@@ -1,0 +1,12 @@
+// The mirror of the positional `-` (2062), on the other glyph that carries a
+// prefix reading. `a` is a completed operand, so `a* b` multiplies — the gap on
+// the right of the `*` decides nothing on a single line.
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    a := 6;
+    b := 7;
+    x := a* b;
+    print("{}\n", x);
+    return 0;
+}

@@ -599,17 +599,20 @@ test "parser: the spaced alias orphan reports the spacing" {
     try std.testing.expect(std.mem.indexOf(u8, msg, "write `Box(i64)`") != null);
 }
 
-test "parser: `-` is infix only when its gaps match" {
+test "parser: `-` is infix wherever a left operand is complete" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // Matching gaps — present on both sides, absent on both, or spanning a
-    // line — all read as subtraction.
+    // On one line every spacing reads as subtraction; across a break, so does
+    // every shape but an operator glued to the operand below it.
     for ([_][:0]const u8{
         "f :: () -> i64 { a - b }",
         "f :: () -> i64 { a-b }",
+        "f :: () -> i64 { a -b }",
+        "f :: () -> i64 { a- b }",
         "f :: () -> i64 { a\n    - b }",
+        "f :: () -> i64 { a-\nb }",
     }) |src| {
         var p = Parser.init(alloc, src);
         const root = try p.parse();
@@ -617,20 +620,18 @@ test "parser: `-` is infix only when its gaps match" {
         try std.testing.expect(body.data.block.stmts[0].data == .binary_op);
     }
 
-    // Lopsided on one line: fatal, and the report says which reading the
-    // spacing picked.
-    const prefix_side = try parseErrMsg(alloc, "f :: () -> i64 { a -b }");
-    try std.testing.expect(std.mem.indexOf(u8, prefix_side, "reads as a prefix") != null);
-    const mirror = try parseErrMsg(alloc, "f :: () -> i64 { a- b }");
-    try std.testing.expect(std.mem.indexOf(u8, mirror, "glued on its left and spaced on its right") != null);
-
-    // Across a line the prefix reading is a fresh operand, not a spacing
-    // mistake — so the newline ends the statement and `-b` is the next one.
+    // Glued at the head of the next line: the newline ends the statement and
+    // `-b` is the next one.
     var split = Parser.init(alloc, "f :: () -> i64 { g()\n-b }");
     const split_body = (try split.parse()).data.root.decls[0].data.fn_decl.body;
     try std.testing.expectEqual(@as(usize, 2), split_body.data.block.stmts.len);
     try std.testing.expect(split_body.data.block.stmts[0].data == .call);
     try std.testing.expect(split_body.data.block.stmts[1].data.unary_op.op == .negate);
+
+    // The gap is read as written, so a raw identifier's backtick is part of it.
+    var raw = Parser.init(alloc, "f :: () -> i64 { g()\n-`b }");
+    const raw_body = (try raw.parse()).data.root.decls[0].data.fn_decl.body;
+    try std.testing.expectEqual(@as(usize, 2), raw_body.data.block.stmts.len);
 }
 
 test "parser: a prefix `-` / `*` binds only when glued" {
