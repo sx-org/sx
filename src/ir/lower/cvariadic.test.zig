@@ -44,7 +44,7 @@ const Lowered = struct {
 
 fn lower(alloc: std.mem.Allocator, body: []const u8, out: *Lowered) !void {
     const src = try std.fmt.allocPrintSentinel(alloc, "@VaList :: struct {{\n}}\n{s}\n", .{body}, 0);
-    var p = parser.Parser.init(alloc, src);
+    var p = try parser.Parser.init(alloc, src);
     const root = p.parse() catch return error.ParseFailed;
 
     const core_sx = try std.fs.path.join(alloc, &.{ corpus_paths.library_dir, "modules/std/core.sx" });

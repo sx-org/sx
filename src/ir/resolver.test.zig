@@ -41,7 +41,7 @@ const Facts = struct {
 fn buildFacts(alloc: std.mem.Allocator, io: std.Io, absdir: []const u8, main_path: []const u8) !Facts {
     const main_bytes = try std.Io.Dir.readFileAlloc(.cwd(), io, main_path, alloc, .limited(1 << 20));
     const main_source = try alloc.dupeZ(u8, main_bytes);
-    var p = parser.Parser.init(alloc, main_source);
+    var p = try parser.Parser.init(alloc, main_source);
     const root = p.parse() catch return error.ParseFailed;
 
     var diags = errors.DiagnosticList.init(alloc, main_source, main_path);

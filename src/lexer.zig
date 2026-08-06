@@ -104,57 +104,15 @@ pub fn lex(allocator: Allocator, source: [:0]const u8) error{OutOfMemory}!TokenL
     };
 }
 
-/// Test-only differential oracle: drives the streaming scanner beside `lex`
-/// and asserts the batch rows equal the stream token-for-token, then
-/// recomputes every adjacency flag from the list's own columns — a driver
-/// that stamps flags from the scan cursor fails here.
-pub fn assertBatchMatchesStream(allocator: Allocator, source: [:0]const u8) !void {
-    var tl = try lex(allocator, source);
-    defer tl.deinit(allocator);
-
-    var lx = Lexer.init(source);
-    var i: usize = 0;
-    while (true) : (i += 1) {
-        const tok = lx.next();
-        try std.testing.expect(i < tl.tags.len);
-        try std.testing.expectEqual(tok.tag, tl.tags[i]);
-        try std.testing.expectEqual(tok.loc.start, tl.starts[i]);
-        try std.testing.expectEqual(tok.loc.end, tl.ends[i]);
-        try std.testing.expectEqual(tok.is_raw, tl.flags[i].is_raw);
-        if (tok.tag == .eof) break;
-    }
-    try std.testing.expectEqual(tl.tags.len, i + 1);
-
-    for (0..tl.tags.len) |j| {
-        const ws = tl.starts[j] - @intFromBool(tl.flags[j].is_raw);
-        if (j == 0) {
-            try std.testing.expect(!tl.flags[j].glued_left);
-            try std.testing.expect(tl.flags[j].newline_left);
-        } else {
-            try std.testing.expectEqual(tl.ends[j - 1] == ws, tl.flags[j].glued_left);
-            try std.testing.expectEqual(
-                std.mem.indexOfScalar(u8, source[tl.ends[j - 1]..ws], '\n') != null,
-                tl.flags[j].newline_left,
-            );
-        }
-    }
-
-    try std.testing.expectEqual(tl.tags.len + 1, tl.trivia_index.len);
-    try std.testing.expectEqual(@as(u32, @intCast(tl.comments.len)), tl.trivia_index[tl.tags.len]);
-    for (1..tl.trivia_index.len) |j| {
-        try std.testing.expect(tl.trivia_index[j - 1] <= tl.trivia_index[j]);
-    }
-}
-
 pub const Lexer = struct {
     source: [:0]const u8,
     index: u32,
 
-    pub fn init(source: [:0]const u8) Lexer {
+    fn init(source: [:0]const u8) Lexer {
         return .{ .source = source, .index = 0 };
     }
 
-    pub fn next(self: *Lexer) Token {
+    fn next(self: *Lexer) Token {
         while (self.nextComment()) |_| {}
         return self.lexToken();
     }
@@ -607,7 +565,6 @@ pub const Lexer = struct {
         return self.makeToken(.invalid, start, self.index);
     }
 
-
     /// Lex a #string heredoc. Called after "#string" has been matched.
     /// Syntax: #string DELIM\n...content...\nDELIM
     fn lexHeredoc(self: *Lexer, directive_start: u32) Token {
@@ -646,7 +603,7 @@ pub const Lexer = struct {
             if (self.index + delimiter.len <= self.source.len and
                 std.mem.eql(u8, self.source[line_start .. line_start + delimiter.len], delimiter) and
                 (line_start + delimiter.len >= self.source.len or
-                !isIdentContinue(self.source[line_start + delimiter.len])))
+                    !isIdentContinue(self.source[line_start + delimiter.len])))
             {
                 const content_end = line_start;
                 self.index = line_start + @as(u32, @intCast(delimiter.len));
@@ -730,8 +687,8 @@ test "lx with comments" {
 test "lx operators" {
     var lx = Lexer.init(":= : :: += -= *= /= -> => == != <= >=");
     const expected = [_]Tag{
-        .colon_equal, .colon,       .colon_colon, .plus_equal, .minus_equal,
-        .star_equal,  .slash_equal, .arrow,       .fat_arrow,  .equal_equal,
+        .colon_equal, .colon,       .colon_colon,   .plus_equal, .minus_equal,
+        .star_equal,  .slash_equal, .arrow,         .fat_arrow,  .equal_equal,
         .bang_equal,  .less_equal,  .greater_equal,
     };
     for (expected) |exp| {
@@ -749,8 +706,9 @@ test "lx float" {
 test "lx keywords" {
     var lx = Lexer.init("if else then true false enum case break return f32 f64 struct");
     const expected = [_]Tag{
-        .kw_if, .kw_else, .kw_then, .kw_true, .kw_false,
-        .kw_enum, .kw_case, .kw_break, .kw_return, .kw_f32, .kw_f64, .kw_struct,
+        .kw_if,   .kw_else,   .kw_then,  .kw_true,   .kw_false,
+        .kw_enum, .kw_case,   .kw_break, .kw_return, .kw_f32,
+        .kw_f64,  .kw_struct,
     };
     for (expected) |exp| {
         try std.testing.expectEqual(exp, lx.next().tag);

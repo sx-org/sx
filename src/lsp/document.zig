@@ -191,7 +191,7 @@ pub const DocumentStore = struct {
 
         // Parse if needed
         if (doc.root == null) {
-            var p = sx.parser.Parser.init(self.allocator, doc.source);
+            var p = try sx.parser.Parser.init(self.allocator, doc.source);
             doc.root = p.parse() catch return;
         }
 

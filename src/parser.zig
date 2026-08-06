@@ -106,6 +106,11 @@ pub const Parser = struct {
         return node;
     }
 
+    /// True once the cursor sits on the `.eof` row.
+    pub fn atEof(self: *const Parser) bool {
+        return self.tokens.tag(self.tok) == .eof;
+    }
+
     pub fn parse(self: *Parser) anyerror!*Node {
         var decls = std.ArrayList(*Node).empty;
         while (self.tokens.tag(self.tok) != .eof) {
@@ -4636,7 +4641,7 @@ pub const Parser = struct {
     /// `Tuple(...)` a precise lowering-time "element is not a type" diagnostic
     /// (instead of a generic parse error) when a literal is supplied as a tuple
     /// element.
-    fn currentTokenIsValueLiteral(self: *Parser) bool {
+    fn atValueLiteral(self: *Parser) bool {
         switch (self.tokens.tag(self.tok)) {
             .int_literal,
             .float_literal,
@@ -4781,7 +4786,7 @@ pub const Parser = struct {
             // than `parseTypeExpr` bailing here with a generic "expected type
             // name" parse error. Type-shaped elements still go through the type
             // parser (so `*T`, `[N]T`, `Tuple(...)`, names all parse).
-            if (self.currentTokenIsValueLiteral()) {
+            if (self.atValueLiteral()) {
                 // A leading `+` on a signed literal (`Tuple(i32, +1)`) has no
                 // unary-op parse; consume it so the number parses as a bare
                 // value literal. `parseUnary` handles the `-` case and falls
@@ -4984,9 +4989,8 @@ pub const Parser = struct {
             {
                 self.advance(); // the keyword
                 if (self.tokens.tag(self.tok) != .l_brace) return false;
-                // On an unterminated type brace group, park at `.eof` — the
-                // outer scan then ends without finding a body, exactly as the
-                // token-by-token walk did.
+                // On an unterminated type brace group, park at `.eof` so the
+                // outer scan ends without finding a body.
                 if (self.tokens.scanBalanced(self.tok, .l_brace, .r_brace)) |brace_close| {
                     self.tok = self.tokens.next(brace_close);
                 } else {
@@ -5126,26 +5130,136 @@ pub const Parser = struct {
             .caret_equal => .xor_assign,
             .less_less_equal => .shl_assign,
             .greater_greater_equal => .shr_assign,
-            .int_literal, .float_literal, .string_literal, .raw_string_literal, .char_literal,
-            .identifier, .at_identifier, .kw_if, .kw_else, .kw_then, .kw_true, .kw_false, .kw_enum,
-            .kw_error, .kw_raise, .kw_try, .kw_catch, .kw_onfail, .kw_case, .kw_break,
-            .kw_continue, .kw_while, .kw_for, .kw_return, .kw_defer, .kw_f32, .kw_f64, .kw_struct,
-            .kw_union, .kw_xx, .kw_and, .kw_or, .kw_Type, .kw_null, .kw_push, .kw_ufcs, .kw_in,
-            .kw_protocol, .kw_impl, .kw_Self, .kw_inline, .kw_abi, .kw_extern, .kw_export, .kw_asm,
-            .kw_intrinsic, .kw_private, .colon, .colon_colon, .colon_equal, .semicolon, .comma,
-            .dot, .dot_dot, .dot_dot_eq, .dot_dot_lt, .lt_dot_dot, .lt_dot_dot_eq, .lt_dot_dot_lt,
-            .eq_dot_dot, .eq_dot_dot_eq, .eq_dot_dot_lt, .dollar, .plus, .minus, .star, .slash,
-            .equal_equal, .bang, .bang_equal, .less, .less_equal, .greater, .greater_equal,
-            .percent, .ampersand, .pipe, .pipe_arrow, .caret, .question, .question_question,
-            .question_dot, .tilde, .less_less, .greater_greater, .l_paren, .r_paren, .l_brace,
-            .r_brace, .l_bracket, .r_bracket, .arrow, .fat_arrow, .hash_run, .hash_error,
-            .hash_import, .hash_insert, .hash_library, .hash_framework, .hash_using, .hash_include,
-            .hash_source, .hash_define, .hash_flags, .hash_identity, .hash_expand, .hash_objc_call,
-            .hash_jni_call, .hash_jni_static_call, .hash_jni_class, .hash_jni_interface,
-            .hash_objc_class, .hash_objc_protocol, .hash_swift_class, .hash_swift_struct,
-            .hash_swift_protocol, .hash_extends, .hash_implements, .hash_jni_method_descriptor,
-            .hash_selector, .hash_property, .hash_get, .hash_set, .hash_jni_env, .hash_jni_main,
-            .hash_context_extend, .triple_minus, .minus_minus, .eof, .invalid
+            .int_literal,
+            .float_literal,
+            .string_literal,
+            .raw_string_literal,
+            .char_literal,
+            .identifier,
+            .at_identifier,
+            .kw_if,
+            .kw_else,
+            .kw_then,
+            .kw_true,
+            .kw_false,
+            .kw_enum,
+            .kw_error,
+            .kw_raise,
+            .kw_try,
+            .kw_catch,
+            .kw_onfail,
+            .kw_case,
+            .kw_break,
+            .kw_continue,
+            .kw_while,
+            .kw_for,
+            .kw_return,
+            .kw_defer,
+            .kw_f32,
+            .kw_f64,
+            .kw_struct,
+            .kw_union,
+            .kw_xx,
+            .kw_and,
+            .kw_or,
+            .kw_Type,
+            .kw_null,
+            .kw_push,
+            .kw_ufcs,
+            .kw_in,
+            .kw_protocol,
+            .kw_impl,
+            .kw_Self,
+            .kw_inline,
+            .kw_abi,
+            .kw_extern,
+            .kw_export,
+            .kw_asm,
+            .kw_intrinsic,
+            .kw_private,
+            .colon,
+            .colon_colon,
+            .colon_equal,
+            .semicolon,
+            .comma,
+            .dot,
+            .dot_dot,
+            .dot_dot_eq,
+            .dot_dot_lt,
+            .lt_dot_dot,
+            .lt_dot_dot_eq,
+            .lt_dot_dot_lt,
+            .eq_dot_dot,
+            .eq_dot_dot_eq,
+            .eq_dot_dot_lt,
+            .dollar,
+            .plus,
+            .minus,
+            .star,
+            .slash,
+            .equal_equal,
+            .bang,
+            .bang_equal,
+            .less,
+            .less_equal,
+            .greater,
+            .greater_equal,
+            .percent,
+            .ampersand,
+            .pipe,
+            .pipe_arrow,
+            .caret,
+            .question,
+            .question_question,
+            .question_dot,
+            .tilde,
+            .less_less,
+            .greater_greater,
+            .l_paren,
+            .r_paren,
+            .l_brace,
+            .r_brace,
+            .l_bracket,
+            .r_bracket,
+            .arrow,
+            .fat_arrow,
+            .hash_run,
+            .hash_error,
+            .hash_import,
+            .hash_insert,
+            .hash_library,
+            .hash_framework,
+            .hash_using,
+            .hash_include,
+            .hash_source,
+            .hash_define,
+            .hash_flags,
+            .hash_identity,
+            .hash_expand,
+            .hash_objc_call,
+            .hash_jni_call,
+            .hash_jni_static_call,
+            .hash_jni_class,
+            .hash_jni_interface,
+            .hash_objc_class,
+            .hash_objc_protocol,
+            .hash_swift_class,
+            .hash_swift_struct,
+            .hash_swift_protocol,
+            .hash_extends,
+            .hash_implements,
+            .hash_jni_method_descriptor,
+            .hash_selector,
+            .hash_property,
+            .hash_get,
+            .hash_set,
+            .hash_jni_env,
+            .hash_jni_main,
+            .hash_context_extend,
+            .triple_minus,
+            .minus_minus,
+            .eof,
+            .invalid,
             => null,
         };
     }
@@ -5255,26 +5369,128 @@ pub const Parser = struct {
             .star => .{ .prec = Prec.multiplicative, .op = .mul, .comparison = false },
             .slash => .{ .prec = Prec.multiplicative, .op = .div, .comparison = false },
             .percent => .{ .prec = Prec.multiplicative, .op = .mod, .comparison = false },
-            .int_literal, .float_literal, .string_literal, .raw_string_literal, .char_literal,
-            .identifier, .at_identifier, .kw_if, .kw_else, .kw_then, .kw_true, .kw_false, .kw_enum,
-            .kw_error, .kw_raise, .kw_try, .kw_catch, .kw_onfail, .kw_case, .kw_break,
-            .kw_continue, .kw_while, .kw_for, .kw_return, .kw_defer, .kw_f32, .kw_f64, .kw_struct,
-            .kw_union, .kw_xx, .kw_Type, .kw_null, .kw_push, .kw_ufcs, .kw_protocol, .kw_impl,
-            .kw_Self, .kw_inline, .kw_abi, .kw_extern, .kw_export, .kw_asm, .kw_intrinsic,
-            .kw_private, .colon, .colon_colon, .colon_equal, .semicolon, .comma, .dot, .dot_dot,
-            .dot_dot_eq, .dot_dot_lt, .lt_dot_dot, .lt_dot_dot_eq, .lt_dot_dot_lt, .eq_dot_dot,
-            .eq_dot_dot_eq, .eq_dot_dot_lt, .dollar, .equal, .bang, .plus_equal, .minus_equal,
-            .star_equal, .slash_equal, .percent_equal, .ampersand_equal, .pipe_equal, .pipe_arrow,
-            .caret_equal, .question, .question_question, .question_dot, .tilde, .less_less_equal,
-            .greater_greater_equal, .l_paren, .r_paren, .l_brace, .r_brace, .l_bracket, .r_bracket,
-            .arrow, .fat_arrow, .hash_run, .hash_error, .hash_import, .hash_insert, .hash_library,
-            .hash_framework, .hash_using, .hash_include, .hash_source, .hash_define, .hash_flags,
-            .hash_identity, .hash_expand, .hash_objc_call, .hash_jni_call, .hash_jni_static_call,
-            .hash_jni_class, .hash_jni_interface, .hash_objc_class, .hash_objc_protocol,
-            .hash_swift_class, .hash_swift_struct, .hash_swift_protocol, .hash_extends,
-            .hash_implements, .hash_jni_method_descriptor, .hash_selector, .hash_property,
-            .hash_get, .hash_set, .hash_jni_env, .hash_jni_main, .hash_context_extend,
-            .triple_minus, .minus_minus, .eof, .invalid
+            .int_literal,
+            .float_literal,
+            .string_literal,
+            .raw_string_literal,
+            .char_literal,
+            .identifier,
+            .at_identifier,
+            .kw_if,
+            .kw_else,
+            .kw_then,
+            .kw_true,
+            .kw_false,
+            .kw_enum,
+            .kw_error,
+            .kw_raise,
+            .kw_try,
+            .kw_catch,
+            .kw_onfail,
+            .kw_case,
+            .kw_break,
+            .kw_continue,
+            .kw_while,
+            .kw_for,
+            .kw_return,
+            .kw_defer,
+            .kw_f32,
+            .kw_f64,
+            .kw_struct,
+            .kw_union,
+            .kw_xx,
+            .kw_Type,
+            .kw_null,
+            .kw_push,
+            .kw_ufcs,
+            .kw_protocol,
+            .kw_impl,
+            .kw_Self,
+            .kw_inline,
+            .kw_abi,
+            .kw_extern,
+            .kw_export,
+            .kw_asm,
+            .kw_intrinsic,
+            .kw_private,
+            .colon,
+            .colon_colon,
+            .colon_equal,
+            .semicolon,
+            .comma,
+            .dot,
+            .dot_dot,
+            .dot_dot_eq,
+            .dot_dot_lt,
+            .lt_dot_dot,
+            .lt_dot_dot_eq,
+            .lt_dot_dot_lt,
+            .eq_dot_dot,
+            .eq_dot_dot_eq,
+            .eq_dot_dot_lt,
+            .dollar,
+            .equal,
+            .bang,
+            .plus_equal,
+            .minus_equal,
+            .star_equal,
+            .slash_equal,
+            .percent_equal,
+            .ampersand_equal,
+            .pipe_equal,
+            .pipe_arrow,
+            .caret_equal,
+            .question,
+            .question_question,
+            .question_dot,
+            .tilde,
+            .less_less_equal,
+            .greater_greater_equal,
+            .l_paren,
+            .r_paren,
+            .l_brace,
+            .r_brace,
+            .l_bracket,
+            .r_bracket,
+            .arrow,
+            .fat_arrow,
+            .hash_run,
+            .hash_error,
+            .hash_import,
+            .hash_insert,
+            .hash_library,
+            .hash_framework,
+            .hash_using,
+            .hash_include,
+            .hash_source,
+            .hash_define,
+            .hash_flags,
+            .hash_identity,
+            .hash_expand,
+            .hash_objc_call,
+            .hash_jni_call,
+            .hash_jni_static_call,
+            .hash_jni_class,
+            .hash_jni_interface,
+            .hash_objc_class,
+            .hash_objc_protocol,
+            .hash_swift_class,
+            .hash_swift_struct,
+            .hash_swift_protocol,
+            .hash_extends,
+            .hash_implements,
+            .hash_jni_method_descriptor,
+            .hash_selector,
+            .hash_property,
+            .hash_get,
+            .hash_set,
+            .hash_jni_env,
+            .hash_jni_main,
+            .hash_context_extend,
+            .triple_minus,
+            .minus_minus,
+            .eof,
+            .invalid,
             => null,
         };
     }
@@ -5842,16 +6058,16 @@ pub const Parser = struct {
 // of token that CAN open one and therefore must end the statement above.
 test "continuesStatement: the suppression set member by member" {
     const members = [_]Tag{
-        .kw_and,          .kw_or,     .kw_then,          .kw_else,
-        .kw_catch,        .pipe,      .plus,
-        .equal_equal,     .bang_equal, .less_equal,      .greater_equal,
-        .less_less,       .greater_greater, .pipe_arrow, .question_question,
-        .question_dot,    .comma,     .equal,            .colon_colon,
-        .arrow,           .fat_arrow,
+        .kw_and,          .kw_or,      .kw_then,           .kw_else,
+        .kw_catch,        .pipe,       .plus,              .equal_equal,
+        .bang_equal,      .less_equal, .greater_equal,     .less_less,
+        .greater_greater, .pipe_arrow, .question_question, .question_dot,
+        .comma,           .equal,      .colon_colon,       .arrow,
+        .fat_arrow,
         // Reorder-forced members: `parseTypedBinding` and `parseConstBinding`
         // now ask `atStatementEnd` before dispatching on these three, so each
         // one reaches a terminator query and has to answer it.
-        .colon,           .kw_extern, .kw_intrinsic,
+              .colon,      .kw_extern,         .kw_intrinsic,
     };
     for (members) |tag| try std.testing.expect(Parser.continuesStatement(tag));
 
@@ -5859,20 +6075,20 @@ test "continuesStatement: the suppression set member by member" {
     // rules own — none of them suppresses a terminator. `case` heads a `match`
     // arm, which is a statement, so it ends the statement above it.
     const negatives = [_]Tag{
-        .kw_case,    .identifier,  .int_literal,    .string_literal,
-        .l_brace,    .r_brace,
-        .l_paren,    .l_bracket,   .bang,           .dot,      .minus,
-        .minus_minus,
-        .star,       .semicolon,   .eof,            .kw_if,    .kw_while,
-        .kw_for,     .kw_return,   .kw_defer,       .kw_onfail, .kw_break,
-        .kw_continue, .kw_raise,   .kw_export,      .kw_push,   .kw_try,
-        .colon_equal, .plus_equal, .minus_equal,    .star_equal, .slash_equal,
-        .percent_equal, .ampersand_equal, .pipe_equal, .caret_equal,
+        .kw_case,       .identifier,      .int_literal, .string_literal,
+        .l_brace,       .r_brace,         .l_paren,     .l_bracket,
+        .bang,          .dot,             .minus,       .minus_minus,
+        .star,          .semicolon,       .eof,         .kw_if,
+        .kw_while,      .kw_for,          .kw_return,   .kw_defer,
+        .kw_onfail,     .kw_break,        .kw_continue, .kw_raise,
+        .kw_export,     .kw_push,         .kw_try,      .colon_equal,
+        .plus_equal,    .minus_equal,     .star_equal,  .slash_equal,
+        .percent_equal, .ampersand_equal, .pipe_equal,  .caret_equal,
         // Binary operators outside the set: the Pratt loop consumes them before
         // any terminator query, so membership decides nothing for them — the
         // behavioural lock lives in parser.test.zig.
-        .slash,      .percent,     .ampersand,      .caret,    .less,
-        .greater,    .kw_in,
+        .slash,         .percent,         .ampersand,   .caret,
+        .less,          .greater,         .kw_in,
     };
     for (negatives) |tag| try std.testing.expect(!Parser.continuesStatement(tag));
 }
@@ -5881,7 +6097,7 @@ test "parse minimal main" {
     const source = "main :: () { 42; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expect(root.data == .root);
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
@@ -5901,15 +6117,15 @@ test "parseOptionalExternExport recognizes linkage keywords (unconsumed)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     {
-        var parser = Parser.init(arena.allocator(), "extern");
+        var parser = try Parser.init(arena.allocator(), "extern");
         try std.testing.expectEqual(ast.ExternExportModifier.extern_, parser.parseOptionalExternExport());
     }
     {
-        var parser = Parser.init(arena.allocator(), "export");
+        var parser = try Parser.init(arena.allocator(), "export");
         try std.testing.expectEqual(ast.ExternExportModifier.export_, parser.parseOptionalExternExport());
     }
     {
-        var parser = Parser.init(arena.allocator(), "foo");
+        var parser = try Parser.init(arena.allocator(), "foo");
         try std.testing.expectEqual(ast.ExternExportModifier.none, parser.parseOptionalExternExport());
     }
 }
@@ -5919,7 +6135,7 @@ test "extern/export AST fields default to absent (unconsumed)" {
     // the fn-decl path does not consume the modifier.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () {}");
+    var parser = try Parser.init(arena.allocator(), "f :: () {}");
     const root = try parser.parse();
     const fd = root.data.root.decls[0].data.fn_decl;
     try std.testing.expectEqual(ast.ExternExportModifier.none, fd.extern_export);
@@ -5940,7 +6156,7 @@ test "extern/export AST fields default to absent (unconsumed)" {
 test "block value: trailing expr without `;` produces a value" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> i32 { 42 }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> i32 { 42 }");
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     try std.testing.expect(body.data.block.produces_value);
@@ -5949,7 +6165,7 @@ test "block value: trailing expr without `;` produces a value" {
 test "block value: a trailing `;` leaves the value untouched" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> i32 { 42; }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> i32 { 42; }");
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     try std.testing.expect(body.data.block.produces_value);
@@ -5958,7 +6174,7 @@ test "block value: a trailing `;` leaves the value untouched" {
 test "block value: a declaration tail leaves the block value-less" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> i32 { n := 42; }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> i32 { n := 42; }");
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     try std.testing.expect(!body.data.block.produces_value);
@@ -5967,7 +6183,7 @@ test "block value: a declaration tail leaves the block value-less" {
 test "block value: an arm's written `;` still leaves the arm producing a value" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: (n: i32) -> i32 { if n == { case 1: 5; else: 0; } }");
+    var parser = try Parser.init(arena.allocator(), "f :: (n: i32) -> i32 { if n == { case 1: 5; else: 0; } }");
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     // Function body's trailing match has no `;` → the body is a value.
@@ -5984,7 +6200,7 @@ test "parse #run const binding" {
     const source = "x :: #run compute(5);";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -5999,7 +6215,7 @@ test "parse top-level #run" {
     const source = "#run main();";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6012,7 +6228,7 @@ test "parse flat import" {
     const source = "#import \"modules/std/math.sx\";";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6025,7 +6241,7 @@ test "parse namespaced import" {
     const source = "std :: #import \"modules/std/std.sx\";";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6038,7 +6254,7 @@ test "parse library declaration" {
     const source = "rl :: #library \"raylib\";";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6051,7 +6267,7 @@ test "parse void function with builtin body" {
     const source = "foo :: () intrinsic;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6066,7 +6282,7 @@ test "parse void function with extern import" {
     const source = "InitWindow :: (width: i32, height: i32, title: *u8) -> void extern rl;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6083,7 +6299,7 @@ test "parse void function with arrow body" {
     const source = "foo :: () => 42;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6102,7 +6318,7 @@ test "parse hex and binary literals" {
     const source = "main :: () { 0xFF; 0b1010; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     try std.testing.expectEqual(@as(usize, 2), body.data.block.stmts.len);
@@ -6114,7 +6330,7 @@ test "parse array type with identifier length" {
     const source = "foo :: (arr: [N]f32) => arr;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const decl = root.data.root.decls[0];
     try std.testing.expect(decl.data == .fn_decl);
@@ -6130,7 +6346,7 @@ test "parse lambda with generic params" {
     const source = "f :: (x: $T) => x;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const decl = root.data.root.decls[0];
     // A named `::` arrow function is a fn_decl (carrying its own type params).
@@ -6146,7 +6362,7 @@ test "parse lambda with return type" {
     const source = "f :: (x: i32) -> i32 => x;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const decl = root.data.root.decls[0];
     try std.testing.expect(decl.data == .fn_decl);
@@ -6168,7 +6384,7 @@ test "parse match with else arm" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     // second stmt is the match expr (after var decl)
@@ -6186,7 +6402,7 @@ test "integer literal overflow error" {
     const source = "main :: () { 99999999999999999999; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const result = parser.parse();
     try std.testing.expectError(error.ParseError, result);
     try std.testing.expectEqualStrings("integer literal overflow", parser.err_msg.?);
@@ -6196,7 +6412,7 @@ test "parse pack-constrained variadic parameter (..xs: Protocol)" {
     const source = "map :: (..sources: ValueListenable) => sources;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const params = root.data.root.decls[0].data.fn_decl.params;
     try std.testing.expectEqual(@as(usize, 1), params.len);
@@ -6214,7 +6430,7 @@ test "parse slice variadic is NOT a pack (..xs: []T)" {
     const source = "join :: (..parts: []string) => parts;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const p = root.data.root.decls[0].data.fn_decl.params[0];
     try std.testing.expect(p.is_variadic);
@@ -6226,7 +6442,7 @@ test "parse comptime type-pack is NOT a protocol pack (..$args)" {
     const source = "foo :: (..$args) => args;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const p = root.data.root.decls[0].data.fn_decl.params[0];
     try std.testing.expect(p.is_variadic);
@@ -6243,7 +6459,7 @@ test "parse pack expansion: brace value .{..xs}" {
     const source = "f :: () => .{..xs};";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const lit = body.data.block.stmts[0];
@@ -6259,7 +6475,7 @@ test "parse pack expansion: brace value projection .{..xs.value}" {
     const source = "f :: () => .{..xs.value};";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const lit = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
     const el = lit.data.struct_literal.field_inits[0].value;
@@ -6275,7 +6491,7 @@ test "parse pack expansion: tuple type Tuple(..F(Ts))" {
     const source = "g :: (x: Tuple(..F(Ts))) => x;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const ty = root.data.root.decls[0].data.fn_decl.params[0].type_expr;
     try std.testing.expect(ty.data == .tuple_type_expr);
@@ -6291,7 +6507,7 @@ test "parse pack expansion: closure sig projection Closure(..sources.T)" {
     const source = "h :: (cb: Closure(..sources.T) -> i32) => cb;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const ty = root.data.root.decls[0].data.fn_decl.params[0].type_expr;
     try std.testing.expect(ty.data == .closure_type_expr);
@@ -6303,7 +6519,7 @@ test "parse closure sig bare pack Closure(..Ts) has no projection" {
     const source = "j :: (cb: Closure(..Ts) -> i32) => cb;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const ty = root.data.root.decls[0].data.fn_decl.params[0].type_expr;
     try std.testing.expect(ty.data == .closure_type_expr);
@@ -6315,7 +6531,7 @@ test "parse pack expansion: call-arg spread q(..xs) reuses spread_expr" {
     const source = "k :: () => q(..xs);";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const call = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
     try std.testing.expect(call.data == .call);
@@ -6329,7 +6545,7 @@ test "parse error-set decl: tags collected" {
     const source = "ParseErr :: error { BadDigit, Overflow, Empty }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6346,7 +6562,7 @@ test "parse error-set decl: single tag, trailing comma, trailing semicolon" {
     const source = "E :: error { Only, };";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const decl = root.data.root.decls[0];
     try std.testing.expect(decl.data == .error_set_decl);
@@ -6359,7 +6575,7 @@ test "parse bare failable return: inferred `!`" {
     const source = "f :: () -> ! { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     try std.testing.expect(rt.data == .error_type_expr);
@@ -6370,7 +6586,7 @@ test "parse bare failable return: named `!Foo`" {
     const source = "f :: () -> !ParseErr { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     try std.testing.expect(rt.data == .error_type_expr);
@@ -6381,7 +6597,7 @@ test "parse single-value failable `-> (T, !)`" {
     const source = "f :: () -> (i32, !) { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     try std.testing.expect(rt.data == .tuple_type_expr);
@@ -6397,7 +6613,7 @@ test "parse multi-value named failable `-> (A, B, !Foo)`" {
     const source = "f :: () -> (i32, i64, !ParseErr) { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     try std.testing.expect(rt.data == .return_type_expr or rt.data == .tuple_type_expr);
@@ -6411,7 +6627,7 @@ test "parse bare failable `-> T !` is rejected" {
     const source = "f :: () -> i32 ! { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -6419,7 +6635,7 @@ test "parse bare-paren failable `-> (!, i32)` is rejected" {
     const source = "f :: () -> (!, i32) { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -6427,7 +6643,7 @@ test "parse bare-paren failable `-> (i32, !, i64)` is rejected" {
     const source = "f :: () -> (i32, !, i64) { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -6435,7 +6651,7 @@ test "round-trip print: error-set decl" {
     const source = "ParseErr :: error { BadDigit, Overflow, Empty }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     var aw = std.Io.Writer.Allocating.init(arena.allocator());
     try print.printNode(root.data.root.decls[0], &aw.writer);
@@ -6448,7 +6664,7 @@ test "print: failable result list with pointer + named error renders canonically
     const source = "open :: () -> (*Handle, !IoErr) { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     var aw = std.Io.Writer.Allocating.init(arena.allocator());
@@ -6460,7 +6676,7 @@ test "round-trip print: bare inferred and named error types" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     {
-        var parser = Parser.init(arena.allocator(), "f :: () -> ! { 0; }");
+        var parser = try Parser.init(arena.allocator(), "f :: () -> ! { 0; }");
         const root = try parser.parse();
         const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
         var aw = std.Io.Writer.Allocating.init(arena.allocator());
@@ -6468,7 +6684,7 @@ test "round-trip print: bare inferred and named error types" {
         try std.testing.expectEqualStrings("!", aw.writer.toArrayList().items);
     }
     {
-        var parser = Parser.init(arena.allocator(), "f :: () -> !ParseErr { 0; }");
+        var parser = try Parser.init(arena.allocator(), "f :: () -> !ParseErr { 0; }");
         const root = try parser.parse();
         const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
         var aw = std.Io.Writer.Allocating.init(arena.allocator());
@@ -6482,7 +6698,7 @@ test "round-trip print: bare inferred and named error types" {
 /// Parse `src` (a single `f :: () { ... }` decl) and return its body's first
 /// statement node.
 fn e02FirstStmt(alloc: std.mem.Allocator, src: [:0]const u8) anyerror!*Node {
-    var parser = Parser.init(alloc, src);
+    var parser = try Parser.init(alloc, src);
     const root = try parser.parse();
     return root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
 }
@@ -6639,7 +6855,7 @@ test "catch without binding and unbraced body is rejected" {
     // the no-binding form requires a braced body.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { v := foo() catch 42; }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { v := foo() catch 42; }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -6666,49 +6882,49 @@ test "raise variable form" {
 test "raise rejected in expression position" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { x := 1 + raise error.X; }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { x := 1 + raise error.X; }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "raise rejected inside an onfail body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { onfail { raise error.X; } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { onfail { raise error.X; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "raise rejected inside a defer body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { defer { raise error.X; } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { defer { raise error.X; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "return rejected inside a defer body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { defer { return; } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { defer { return; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "try rejected inside an onfail body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { onfail { try g(); } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { onfail { try g(); } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "break rejected inside a defer body (transitive through a loop)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { defer { for 0..1 (i) { break; } } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { defer { for 0..1 (i) { break; } } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "continue rejected inside an onfail body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { onfail (e) { continue; } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { onfail (e) { continue; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -6717,7 +6933,7 @@ test "return inside a closure within a cleanup body is allowed" {
     // flags, so `return` from the closure body is legal even inside `defer`.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { defer g((x: i32) -> i32 { return x; }); }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { defer g((x: i32) -> i32 { return x; }); }");
     _ = try parser.parse();
 }
 
@@ -6725,7 +6941,7 @@ test "control-flow legal after the cleanup body (flag restored)" {
     // The cleanup-body flag must not leak to statements that follow the defer.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { defer cleanup(); return; }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { defer cleanup(); return; }");
     _ = try parser.parse();
 }
 
@@ -6858,7 +7074,7 @@ test "full failable function parses end-to-end (every failable form)" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const decl = root.data.root.decls[0];
     try std.testing.expect(decl.data == .fn_decl);
@@ -6893,7 +7109,7 @@ test "parse named aggregate Type{ fields } without separator dot" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[1].data.fn_decl.body;
     const stmts = body.data.block.stmts;
@@ -6920,7 +7136,7 @@ test "parse parameterized named aggregate List(T){}" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
@@ -6937,7 +7153,7 @@ test "parse empty trailing block after value-arg call" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[1].data.fn_decl.body;
     const call = body.data.block.stmts[0];
@@ -6954,7 +7170,7 @@ test "parse empty trailing block after capitalized value-arg call" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[1].data.fn_decl.body;
     const call = body.data.block.stmts[0];
@@ -6971,7 +7187,7 @@ test "parse lowercase parameterized named aggregate list(T){}" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
@@ -6990,7 +7206,7 @@ test "parse empty trailing block with identifier value args" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[1].data.fn_decl.body;
     const call = body.data.block.stmts[1];
@@ -7009,7 +7225,7 @@ test "parse empty trailing block with PascalCase callee and identifier arg" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[1].data.fn_decl.body;
     const call = body.data.block.stmts[1];
@@ -7030,7 +7246,7 @@ test "parse tight empty brace as aggregate regardless of arg spelling" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     for (body.data.block.stmts) |stmt| {
@@ -7051,7 +7267,7 @@ test "parse spaced empty brace with a type-expr arg as aggregate" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     for (body.data.block.stmts) |stmt| {
@@ -7075,7 +7291,7 @@ test "parse spaced empty brace with name-only args as trailing" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[3].data.fn_decl.body;
     for (body.data.block.stmts) |stmt| {
@@ -7093,7 +7309,7 @@ test "parse zero-arg empty brace as trailing even when tight" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[1].data.fn_decl.body;
     const call = body.data.block.stmts[0];
@@ -7111,7 +7327,7 @@ test "parse comment-only body keeps the tight aggregate reading" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
@@ -7135,7 +7351,7 @@ test "parse parameterized aggregate with compound and PascalCase type args" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     for (body.data.block.stmts) |stmt| {
@@ -7153,7 +7369,7 @@ test "parse rejects separator-dot Type.{}" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const result = parser.parse();
     try std.testing.expectError(error.ParseError, result);
     try std.testing.expect(parser.err_msg != null);
@@ -7170,7 +7386,7 @@ test "parse aggregate self-trailing via dot binds self flag" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
@@ -7189,7 +7405,7 @@ test "parse aggregate bare post-scope does not bind self" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
@@ -7208,7 +7424,7 @@ test "parse push Context{ fields } { body } without parens" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const stmt = body.data.block.stmts[0];
@@ -7226,11 +7442,88 @@ test "parse if cond { body } is not Type{}" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const ife = body.data.block.stmts[0];
     try std.testing.expect(ife.data == .if_expr);
     try std.testing.expect(ife.data.if_expr.condition.data == .identifier);
     try std.testing.expectEqualStrings("neg", ife.data.if_expr.condition.data.identifier.name);
+}
+
+/// Parse `src`, expect `error.ParseError`, and pin the diagnostic text +
+/// offset — the malformed-group policies (crossed, missing, EOF-truncated
+/// delimiters) each report through a specific site.
+fn expectParseErrorAt(src: [:0]const u8, msg: []const u8, offset: u32) !void {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), src);
+    try std.testing.expectError(error.ParseError, parser.parse());
+    try std.testing.expectEqualStrings(msg, parser.err_msg orelse "");
+    try std.testing.expectEqual(offset, parser.err_offset orelse std.math.maxInt(u32));
+}
+
+test "malformed groups: unterminated paren in lambda/grouping position" {
+    // isLambda and isFunctionTypeExprAtLParen both see no closer and decline;
+    // the grouping parse then runs into EOF.
+    try expectParseErrorAt("x := (a, b\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 7);
+    try expectParseErrorAt("x := ((a, b)\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 8);
+}
+
+test "malformed groups: crossed delimiters" {
+    // The paren scan passes `]` through unmatched; the element parse reports
+    // the missing `)` at the bracket.
+    try expectParseErrorAt("x := (a]; y := 1;", "expected ')'", 7);
+}
+
+test "malformed groups: function-type path without its closer" {
+    // tagAfterParenGroup finds no `)` before EOF, so the `->` never counts as
+    // a function type and the tuple refusal fires.
+    try expectParseErrorAt("F :: (i32, i32 -> i32;", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 9);
+}
+
+test "malformed groups: return-type inline struct without its closer" {
+    // hasFnBodyAfterArrow parks at .eof and classifies no body; the alias
+    // parse then demands the struct body's `}`.
+    try expectParseErrorAt("f :: () -> struct { x: i64;", "expected '}'", 27);
+}
+
+test "malformed groups: brace shape scan on an unterminated aggregate" {
+    try expectParseErrorAt("x := Plan{ a = 1", "expected '}'", 16);
+}
+
+test "malformed groups: spaced call with and without a quotable fix" {
+    // gluedSpelling finds no balanced group before EOF-of-statement, so the
+    // diagnostic carries no `write …` fix; the balanced spelling gets one.
+    try expectParseErrorAt("f :: () { g (1; }", "a space before `(` — a call binds only when the `(` is glued to its callee", 11);
+    try expectParseErrorAt("f :: () { g (1) }", "a space before `(` — a call binds only when the `(` is glued to its callee: write `g(1)`", 11);
+}
+
+test "malformed groups: lambda param list missing its closer" {
+    try expectParseErrorAt("f :: (a: i32 { 1 }", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 6);
+}
+
+test "peekTag saturates at the eof row for any runtime offset" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "x :: 1;");
+    // identifier, ::, 1, ;, eof
+    try std.testing.expectEqual(Tag.semicolon, parser.peekTag(3));
+    try std.testing.expectEqual(Tag.eof, parser.peekTag(4));
+    var offset: usize = 5;
+    while (offset < 100) : (offset += 17) {
+        try std.testing.expectEqual(Tag.eof, parser.peekTag(offset));
+    }
+}
+
+test "Parser.init: a lex OOM is error.OutOfMemory, never ParseError" {
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
+    try std.testing.expectError(error.OutOfMemory, Parser.init(failing.allocator(), "x :: 1;"));
+}
+
+test "Parser.init: malformed source fails at parse, not construction" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "f :: (");
+    try std.testing.expectError(error.ParseError, parser.parse());
 }

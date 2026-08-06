@@ -714,10 +714,10 @@ pub const Server = struct {
         }
 
         const keywords = [_][]const u8{
-            "if",       "else",  "then",    "return",    "defer",
-            "case",     "break", "enum",    "struct",    "true",
-            "false",    "xx",    "while",   "continue",
-            "and",      "or",    "union",
+            "if",    "else",  "then",  "return",   "defer",
+            "case",  "break", "enum",  "struct",   "true",
+            "false", "xx",    "while", "continue", "and",
+            "or",    "union",
         };
 
         const builtins = [_]struct { label: []const u8, detail: []const u8 }{
@@ -1320,10 +1320,11 @@ pub const Server = struct {
         var prev_line: u32 = 0;
         var prev_char: u32 = 0;
 
-        var lexer = sx.lexer.Lexer.init(doc.source);
-        while (true) {
-            const tok = lexer.next();
-            if (tok.tag == .eof) break;
+        var tl = try sx.lexer.lex(self.allocator, doc.source);
+        defer tl.deinit(self.allocator);
+        var i = tl.first();
+        while (tl.tag(i) != .eof) : (i = tl.next(i)) {
+            const tok = tl.token(i);
 
             if (tok.tag == .string_literal or tok.tag == .raw_string_literal) {
                 try emitStringParts(&data, self.allocator, doc.source, tok.loc.start, tok.loc.end, &prev_line, &prev_char);
@@ -1447,8 +1448,13 @@ pub const Server = struct {
                 }
                 // Skip functions, types, structs, enums, unions, comptime, extern, library
                 switch (cd.value.data) {
-                    .fn_decl, .type_expr, .struct_decl, .enum_decl, .union_decl,
-                    .comptime_expr, .library_decl,
+                    .fn_decl,
+                    .type_expr,
+                    .struct_decl,
+                    .enum_decl,
+                    .union_decl,
+                    .comptime_expr,
+                    .library_decl,
                     => return,
                     else => {},
                 }
@@ -3795,12 +3801,10 @@ test "lsp/project: whole-program check attributes a reachable error to its modul
     // `use` forwards a `*Move` into a by-value parameter — an error the compiler
     // only sees because `main` calls `use` (reachability). Lowering mod.sx alone
     // would miss it; the whole-program check catches it and pins it to mod.sx.
-    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/mod.sx", .data =
-        "Move :: struct { flag: i64; }\n" ++
+    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/mod.sx", .data = "Move :: struct { flag: i64; }\n" ++
         "take :: (m: Move) -> i64 { return m.flag; }\n" ++
         "use :: (p: *Move) -> i64 { return take(p); }\n" });
-    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/main.sx", .data =
-        "#import \"mod.sx\";\n" ++
+    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/main.sx", .data = "#import \"mod.sx\";\n" ++
         "main :: () -> i32 { mv : Move = .{ flag = 1 }; return xx use(*mv); }\n" });
 
     const store = doc_mod.DocumentStore.init(alloc, io, &.{});

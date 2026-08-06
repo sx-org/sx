@@ -100,7 +100,7 @@ test "lower: writable slice ptr keeps pointer type on wasm32" {
         \\}
         \\
     );
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -133,7 +133,7 @@ test "lower: bare function values use a pointer-width word on wasm32" {
         \\}
         \\
     );
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -1779,7 +1779,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
     const main_path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{absdir});
     const main_bytes = try std.Io.Dir.readFileAlloc(.cwd(), io, main_path, alloc, .limited(1 << 20));
     const main_source = try alloc.dupeZ(u8, main_bytes);
-    var p = parser.Parser.init(alloc, main_source);
+    var p = try parser.Parser.init(alloc, main_source);
     const root = p.parse() catch return error.ParseFailed;
 
     var chain = std.StringHashMap(void).init(alloc);
@@ -1941,7 +1941,7 @@ test "lower: scan populates source-keyed caches per declaring source" {
     const main_path = try std.fmt.allocPrint(alloc, "{s}/main.sx", .{absdir});
     const main_bytes = try std.Io.Dir.readFileAlloc(.cwd(), io, main_path, alloc, .limited(1 << 20));
     const main_source = try alloc.dupeZ(u8, main_bytes);
-    var p = parser.Parser.init(alloc, main_source);
+    var p = try parser.Parser.init(alloc, main_source);
     const root = p.parse() catch return error.ParseFailed;
 
     var chain = std.StringHashMap(void).init(alloc);
@@ -2036,7 +2036,7 @@ test "struct literal: non-aggregate target and uninferable untyped literal diagn
         \\
     ;
     const source = try alloc.dupeZ(u8, src);
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -2080,7 +2080,7 @@ test "struct literal: untyped shapes SELF-TYPE — global const, inferred return
         const alloc = arena.allocator();
 
         const source = try alloc.dupeZ(u8, src);
-        var p = parser.Parser.init(alloc, source);
+        var p = try parser.Parser.init(alloc, source);
         const root = p.parse() catch return error.ParseFailed;
 
         var module = ir_mod.Module.init(alloc);
@@ -2356,7 +2356,7 @@ test "call: a local fn-pointer binding shadows a same-named top-level fn" {
         \\
     ;
     const source = try alloc.dupeZ(u8, src);
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -2722,7 +2722,7 @@ test "type alias: tuple-type alias registers the structural tuple TypeId" {
         \\
     ;
     const source = try alloc.dupeZ(u8, src);
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -2766,7 +2766,7 @@ test "`@volatile_load` / `@volatile_store` reach the volatile ops" {
         \\
     ;
     const source = try alloc.dupeZ(u8, src);
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -2814,7 +2814,7 @@ test "a narrower signed value reaches `@volatile_store` sign-extended" {
         \\
     ;
     const source = try alloc.dupeZ(u8, src);
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -2873,7 +2873,7 @@ test "the unprefixed spelling is an ordinary call, not a volatile access" {
         \\
     ;
     const source = try alloc.dupeZ(u8, src);
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -2909,7 +2909,7 @@ test "type alias: pack-spread tuple alias poisons to .unresolved with a diagnost
         \\
     ;
     const source = try alloc.dupeZ(u8, src);
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -2943,7 +2943,7 @@ test "type alias: tuple element referencing a LATER-declared alias resolves via 
         \\
     ;
     const source = try alloc.dupeZ(u8, src);
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -2979,7 +2979,7 @@ test "type alias: tuple alias referenced ABOVE its declaration diagnoses instead
         \\
     ;
     const source = try alloc.dupeZ(u8, src);
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -3014,7 +3014,7 @@ test "type alias: mutually-recursive tuple aliases diagnose a reference cycle an
         \\
     ;
     const source = try alloc.dupeZ(u8, src);
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -3050,7 +3050,7 @@ test "type alias: array element referencing a LATER-declared alias resolves via 
         \\
     ;
     const source = try alloc.dupeZ(u8, src);
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -3089,7 +3089,7 @@ test "type alias: forward composite elements across all shapes adopt the real el
         \\
     ;
     const source = try alloc.dupeZ(u8, src);
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -3139,7 +3139,7 @@ test "type alias: generic-instantiation element in a composite RHS instantiates 
         \\
     ;
     const source = try alloc.dupeZ(u8, src);
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -3178,7 +3178,7 @@ test "type alias: function-alias with a pointer to a LATER-declared nominal reso
         \\
     ;
     const source = try alloc.dupeZ(u8, src);
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);
@@ -3342,7 +3342,7 @@ fn checkInlineExitCell(cell: InlineExitCell) !void {
     const alloc = arena.allocator();
 
     const source = try inlineExitSource(alloc, cell);
-    var p = parser.Parser.init(alloc, source);
+    var p = try parser.Parser.init(alloc, source);
     const root = p.parse() catch return error.ParseFailed;
 
     var module = ir_mod.Module.init(alloc);

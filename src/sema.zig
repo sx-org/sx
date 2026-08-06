@@ -2049,7 +2049,7 @@ test "sema: collect top-level declarations" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
 
     var analyzer = Analyzer.init(alloc);
@@ -2069,7 +2069,7 @@ test "sema: function params as symbols" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
 
     var analyzer = Analyzer.init(alloc);
@@ -2096,7 +2096,7 @@ test "sema: variable declaration and reference" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
 
     var analyzer = Analyzer.init(alloc);
@@ -2122,7 +2122,7 @@ test "sema: undefined variable diagnostic" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
 
     var analyzer = Analyzer.init(alloc);
@@ -2141,7 +2141,7 @@ test "sema: enum and struct declarations" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
 
     var analyzer = Analyzer.init(alloc);
@@ -2171,7 +2171,7 @@ test "sema: a function type carries its C-variadic tail and convention" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
 
     var analyzer = Analyzer.init(alloc);
@@ -2204,7 +2204,7 @@ test "sema: var_decl infers struct type from parameterized struct literal" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
 
     var analyzer = Analyzer.init(alloc);
@@ -2235,7 +2235,7 @@ test "sema: var_decl infers struct type from parameterized call literal" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
 
     var analyzer = Analyzer.init(alloc);
@@ -2267,7 +2267,7 @@ test "sema: index into generic List(T).items resolves the element struct" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
 
     var analyzer = Analyzer.init(alloc);
@@ -2295,7 +2295,7 @@ test "sema: generic index resolves with pre-registered (imported) struct types" 
     // An "imported" module defining List + Move.
     const lib_src = "Move :: struct { score: i64; }" ++
         "List :: struct ($T: Type) { items: [*]T = null; len: i64; }";
-    var lib_parser = parser_mod.Parser.init(alloc, lib_src);
+    var lib_parser = try parser_mod.Parser.init(alloc, lib_src);
     const lib_root = try lib_parser.parse();
     var lib = Analyzer.init(alloc);
     const lib_res = try lib.analyze(lib_root);
@@ -2307,7 +2307,7 @@ test "sema: generic index resolves with pre-registered (imported) struct types" 
     while (it.next()) |e| try main_an.struct_types.put(e.key_ptr.*, e.value_ptr.*);
 
     const main_src = "main :: () { legal := List(Move){}; m := legal.items[0]; }";
-    var main_parser = parser_mod.Parser.init(alloc, main_src);
+    var main_parser = try parser_mod.Parser.init(alloc, main_src);
     const main_root = try main_parser.parse();
     const main_res = try main_an.analyze(main_root);
 
@@ -2335,7 +2335,7 @@ test "sema: generic index resolves with realistic List/Move (methods, cross-refs
         "MoveFlag :: enum { none; promote_rook; }" ++
         "Move :: struct { from: Square; to: Square; flag: MoveFlag; is_capture :: (self: Move) -> bool { true; } }" ++
         "List :: struct ($T: Type) { items: [*]T = null; len: i64 = 0; cap: i64 = 0; append :: (list: *List(T), item: T) {} }";
-    var lib_parser = parser_mod.Parser.init(alloc, lib_src);
+    var lib_parser = try parser_mod.Parser.init(alloc, lib_src);
     const lib_root = try lib_parser.parse();
     var lib = Analyzer.init(alloc);
     const lib_res = try lib.analyze(lib_root);
@@ -2347,7 +2347,7 @@ test "sema: generic index resolves with realistic List/Move (methods, cross-refs
     while (eit.next()) |e| try main_an.enum_types.put(e.key_ptr.*, e.value_ptr.*);
 
     const main_src = "main :: () { legal := List(Move){}; m := legal.items[0]; f := m.from; }";
-    var main_parser = parser_mod.Parser.init(alloc, main_src);
+    var main_parser = try parser_mod.Parser.init(alloc, main_src);
     const main_root = try main_parser.parse();
     const main_res = try main_an.analyze(main_root);
 
@@ -2373,7 +2373,7 @@ test "sema: method-return slice + .ptr index + tagged-enum element" {
         "Event :: enum { none; click: i64; }" ++
         "Plat :: protocol { poll :: (self: *Self) -> []Event; }" ++
         "go :: (p: *Plat) { evs := p.poll(); e := evs.ptr[0]; }";
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
     var an = Analyzer.init(alloc);
     const res = try an.analyze(root);
@@ -2402,7 +2402,7 @@ test "sema: field access + index through a *Struct param" {
         "Cell :: struct { v: i64; }" ++
         "Grid :: struct { cells: [4]Cell; }" ++
         "look :: (g: *Grid) { c := g.cells[0]; }";
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
     var an = Analyzer.init(alloc);
     const res = try an.analyze(root);
@@ -2430,7 +2430,7 @@ test "sema: for-loop captures resolve element, by-ref pointer, and range cursor"
         "    for self.legal (*p) { b := p.flag; }" ++
         "    for 0..10 (i) { c := i; }" ++
         "  } }";
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
     var an = Analyzer.init(alloc);
     an.source = source;
@@ -2487,7 +2487,7 @@ test "sema: passing *T where a T value is expected is diagnosed" {
         "take_ptr :: (m: *Move) -> i64 { m.flag; }" ++
         "bad :: (p: *Move) -> i64 { take(p); }" ++ // *Move into a Move param → flagged
         "good :: (p: *Move) -> i64 { take_ptr(p); }"; // *Move into a *Move param → fine
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
     var an = Analyzer.init(alloc);
     an.source = source;
@@ -2510,7 +2510,7 @@ test "sema: member references record fields, methods, and enum variants" {
         "Color :: enum { red; green; }" ++
         "P :: struct { x: i64; m :: (self: P) -> i64 { self.x; } }" ++
         "use :: (p: *P) { a := p.x; b := p.m(); c := Color.red; }";
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
     var an = Analyzer.init(alloc);
     an.source = source;
@@ -2540,7 +2540,7 @@ test "sema: context in an abi(.c) function reports a specific diagnostic" {
         "Context :: struct { allocator: i64; data: i64; }" ++
         "cb :: () -> i64 abi(.c) { context; 0; }" ++
         "ok :: () -> i64 { context; 0; }";
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
     var an = Analyzer.init(alloc);
     an.source = source;
@@ -2565,7 +2565,7 @@ test "sema: variable shadowing in same scope is allowed" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
 
     var analyzer = Analyzer.init(alloc);
@@ -2587,7 +2587,7 @@ test "sema: ufcs_alias registers symbol" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
 
     var analyzer = Analyzer.init(alloc);
@@ -2620,7 +2620,7 @@ test "sema: top-level ufcs_alias registers symbol" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var parser = parser_mod.Parser.init(alloc, source);
+    var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
 
     var analyzer = Analyzer.init(alloc);

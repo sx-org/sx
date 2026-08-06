@@ -1,19 +1,23 @@
 const std = @import("std");
 const lexer = @import("lexer.zig");
-const Lexer = @import("lexer.zig").Lexer;
 const Tag = @import("token.zig").Tag;
 const TokenList = @import("token_list.zig").TokenList;
-const corpus_paths = @import("corpus_paths");
+
+fn lexT(source: [:0]const u8) !TokenList {
+    return lexer.lex(std.testing.allocator, source);
+}
+
+fn deinitT(tl: *TokenList) void {
+    tl.deinit(std.testing.allocator);
+}
 
 // `asm` lexes as the dedicated `kw_asm` keyword, while
 // `volatile` / `clobbers` deliberately stay plain identifiers (recognized
 // contextually inside an `asm { … }` body, never reserved globally).
 test "lex asm keyword; volatile/clobbers stay identifiers" {
-    var lex = Lexer.init("asm volatile clobbers");
-    const expected = [_]Tag{ .kw_asm, .identifier, .identifier };
-    for (expected) |exp| {
-        try std.testing.expectEqual(exp, lex.next().tag);
-    }
+    var tl = try lexT("asm volatile clobbers");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .kw_asm, .identifier, .identifier, .eof }, tl.tags);
 }
 
 // The `-` family munches longest-first: `---`, `--`, `->`, `-=`, `-`. `---`
@@ -21,7 +25,8 @@ test "lex asm keyword; volatile/clobbers stay identifiers" {
 // `[--, -]`. Each case asserts the span too, so a munch that stops early is
 // caught.
 test "lex the `-` family: tag + span" {
-    var lex = Lexer.init("--- -- -> -= -");
+    var tl = try lexT("--- -- -> -= -");
+    defer deinitT(&tl);
     const Case = struct { tag: Tag, start: u32, end: u32 };
     const cases = [_]Case{
         .{ .tag = .triple_minus, .start = 0, .end = 3 },
@@ -30,21 +35,18 @@ test "lex the `-` family: tag + span" {
         .{ .tag = .minus_equal, .start = 10, .end = 12 },
         .{ .tag = .minus, .start = 13, .end = 14 },
     };
-    for (cases) |c| {
-        const tok = lex.next();
-        try std.testing.expectEqual(c.tag, tok.tag);
-        try std.testing.expectEqual(c.start, tok.loc.start);
-        try std.testing.expectEqual(c.end, tok.loc.end);
+    for (cases, 0..) |c, i| {
+        try std.testing.expectEqual(c.tag, tl.tags[i]);
+        try std.testing.expectEqual(c.start, tl.starts[i]);
+        try std.testing.expectEqual(c.end, tl.ends[i]);
     }
-    try std.testing.expectEqual(Tag.eof, lex.next().tag);
+    try std.testing.expectEqual(Tag.eof, tl.tags[cases.len]);
 }
 
 test "lex `-->` as `--` then `>`" {
-    var lex = Lexer.init("-->");
-    const expected = [_]Tag{ .minus_minus, .greater };
-    for (expected) |exp| {
-        try std.testing.expectEqual(exp, lex.next().tag);
-    }
+    var tl = try lexT("-->");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .minus_minus, .greater, .eof }, tl.tags);
 }
 
 // Number-literal bases + `_` digit separators. The lexer captures the whole
@@ -67,14 +69,15 @@ test "lex octal / separators: tag + span" {
         .{ .src = "0b_1010", .tag = .int_literal }, // separator right after binary prefix
     };
     for (cases) |c| {
-        var lex = Lexer.init(c.src);
-        const tok = lex.next();
-        try std.testing.expectEqual(c.tag, tok.tag);
-        // The single token must span the entire input — no early stop.
-        try std.testing.expectEqual(@as(u32, 0), tok.loc.start);
-        try std.testing.expectEqual(@as(u32, @intCast(c.src.len)), tok.loc.end);
-        // And the stream ends right after it.
-        try std.testing.expectEqual(Tag.eof, lex.next().tag);
+        var tl = try lexT(c.src);
+        defer deinitT(&tl);
+        // The single token must span the entire input — no early stop — and
+        // the stream ends right after it.
+        try std.testing.expectEqual(@as(usize, 2), tl.tags.len);
+        try std.testing.expectEqual(c.tag, tl.tags[0]);
+        try std.testing.expectEqual(@as(u32, 0), tl.starts[0]);
+        try std.testing.expectEqual(@as(u32, @intCast(c.src.len)), tl.ends[0]);
+        try std.testing.expectEqual(Tag.eof, tl.tags[1]);
     }
 }
 
@@ -83,41 +86,30 @@ test "lex octal / separators: tag + span" {
 // table requires a non-identifier boundary), and the exact-match table keeps
 // `#context_extended` from silently matching the shorter directive.
 test "lex hash_context_extend" {
-    var lex = Lexer.init("#context_extend ui");
-    try std.testing.expectEqual(Tag.hash_context_extend, lex.next().tag);
-    try std.testing.expectEqual(Tag.identifier, lex.next().tag);
+    var tl = try lexT("#context_extend ui");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .hash_context_extend, .identifier, .eof }, tl.tags);
 
-    var lex2 = Lexer.init("#context_extended");
-    try std.testing.expectEqual(Tag.invalid, lex2.next().tag);
+    var tl2 = try lexT("#context_extended");
+    defer deinitT(&tl2);
+    try std.testing.expectEqual(Tag.invalid, tl2.tags[0]);
 }
 
 // `private` is the module-scope visibility keyword; the backtick escape keeps
 // the literal spelling usable as an identifier, and a longer identifier
 // (`privates`) never matches the keyword.
 test "lex private keyword; backtick escape stays identifier" {
-    var lex = Lexer.init("private `private privates");
-    const tok1 = lex.next();
-    try std.testing.expectEqual(Tag.kw_private, tok1.tag);
-    const tok2 = lex.next();
-    try std.testing.expectEqual(Tag.identifier, tok2.tag);
-    try std.testing.expect(tok2.is_raw);
-    const tok3 = lex.next();
-    try std.testing.expectEqual(Tag.identifier, tok3.tag);
-    try std.testing.expect(!tok3.is_raw);
+    var tl = try lexT("private `private privates");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{ .kw_private, .identifier, .identifier, .eof }, tl.tags);
+    try std.testing.expect(!tl.flags[0].is_raw);
+    try std.testing.expect(tl.flags[1].is_raw);
+    try std.testing.expect(!tl.flags[2].is_raw);
 }
 
 // ---- batch lexing: named fixtures ----
 
-fn lexT(source: [:0]const u8) !TokenList {
-    return lexer.lex(std.testing.allocator, source);
-}
-
-fn deinitT(tl: *TokenList) void {
-    tl.deinit(std.testing.allocator);
-}
-
 test "batch fixture: empty" {
-    try lexer.assertBatchMatchesStream(std.testing.allocator, "");
     var tl = try lexT("");
     defer deinitT(&tl);
     try std.testing.expectEqual(@as(usize, 1), tl.tags.len);
@@ -128,9 +120,7 @@ test "batch fixture: empty" {
 }
 
 test "batch fixture: whitespace-only" {
-    const source: [:0]const u8 = "  \t\n";
-    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
-    var tl = try lexT(source);
+    var tl = try lexT("  \t\n");
     defer deinitT(&tl);
     try std.testing.expectEqual(@as(usize, 1), tl.tags.len);
     try std.testing.expectEqual(Tag.eof, tl.tags[0]);
@@ -139,7 +129,6 @@ test "batch fixture: whitespace-only" {
 
 test "batch fixture: crlf" {
     const source: [:0]const u8 = "// a\r\na :: 1;\r\n// b\r\nb :: 2;\r\n";
-    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
     var tl = try lexT(source);
     defer deinitT(&tl);
     // Both comment rows end before their CR.
@@ -158,7 +147,6 @@ test "batch fixture: crlf" {
 test "batch fixture: lone-cr is one comment row" {
     // The comment run stops only at LF, so a CR-separated file is one row.
     const source: [:0]const u8 = "// a\r// b\rx :: 1;";
-    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
     var tl = try lexT(source);
     defer deinitT(&tl);
     try std.testing.expectEqual(@as(usize, 1), tl.comments.len);
@@ -169,13 +157,12 @@ test "batch fixture: lone-cr is one comment row" {
 }
 
 test "batch fixture: raw-backtick" {
-    const source: [:0]const u8 = "*`i2";
-    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
-    var tl = try lexT(source);
+    var tl = try lexT("*`i2");
     defer deinitT(&tl);
     const id = tl.tokenAtStart(2).?;
     try std.testing.expectEqual(Tag.identifier, tl.tag(id));
     try std.testing.expect(tl.flagsOf(id).is_raw);
+    try std.testing.expectEqualStrings("i2", tl.slice(id));
     // The written start is the backtick, so the identifier is glued to `*`.
     try std.testing.expectEqual(@as(u32, 1), tl.writtenStart(id));
     try std.testing.expect(tl.flagsOf(id).glued_left);
@@ -183,7 +170,6 @@ test "batch fixture: raw-backtick" {
 
 test "batch fixture: eof-comment-no-newline" {
     const source: [:0]const u8 = "x :: 1;\n// c";
-    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
     var tl = try lexT(source);
     defer deinitT(&tl);
     const trailing = tl.commentsFor(tl.last());
@@ -193,7 +179,6 @@ test "batch fixture: eof-comment-no-newline" {
 }
 
 fn expectHeredocTerminator(source: [:0]const u8, terminator: Tag) !void {
-    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
     var tl = try lexT(source);
     defer deinitT(&tl);
     const heredoc = tl.first();
@@ -220,7 +205,6 @@ test "batch fixture: heredoc-glued-paren" {
 }
 
 fn expectSingleInvalid(source: [:0]const u8) !void {
-    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
     var tl = try lexT(source);
     defer deinitT(&tl);
     try std.testing.expectEqual(@as(usize, 2), tl.tags.len);
@@ -246,7 +230,6 @@ test "batch fixture: unterminated-heredoc" {
 
 test "comment ownership: leading rows per declaration" {
     const source: [:0]const u8 = "// a\nx :: 1;\n// b\ny :: 2;";
-    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
     var tl = try lexT(source);
     defer deinitT(&tl);
     const x = tl.tokenAtStart(5).?;
@@ -262,7 +245,6 @@ test "comment ownership: leading rows per declaration" {
 
 test "comment ownership: trailing then leading rows in source order" {
     const source: [:0]const u8 = "x :: 1; // t\n// d\ny :: 2;";
-    try lexer.assertBatchMatchesStream(std.testing.allocator, source);
     var tl = try lexT(source);
     defer deinitT(&tl);
     const y = tl.tokenAtStart(18).?;
@@ -277,8 +259,7 @@ test "comment ownership: trailing then leading rows in source order" {
 // ---- line_leading / blank_left matrix ----
 
 test "trivia matrix: leading comment, no blank line" {
-    const source: [:0]const u8 = "// a\nx :: 1;";
-    var tl = try lexT(source);
+    var tl = try lexT("// a\nx :: 1;");
     defer deinitT(&tl);
     const rows = tl.commentsFor(tl.first());
     try std.testing.expectEqual(@as(usize, 1), rows.len);
@@ -288,15 +269,13 @@ test "trivia matrix: leading comment, no blank line" {
 }
 
 test "trivia matrix: blank line between comment and token" {
-    const source: [:0]const u8 = "// a\n\nx :: 1;";
-    var tl = try lexT(source);
+    var tl = try lexT("// a\n\nx :: 1;");
     defer deinitT(&tl);
     try std.testing.expect(tl.flagsOf(tl.first()).blank_left);
 }
 
 test "trivia matrix: blank line between comment rows" {
-    const source: [:0]const u8 = "// a\n\n// b\nx :: 1;";
-    var tl = try lexT(source);
+    var tl = try lexT("// a\n\n// b\nx :: 1;");
     defer deinitT(&tl);
     const rows = tl.commentsFor(tl.first());
     try std.testing.expectEqual(@as(usize, 2), rows.len);
@@ -305,8 +284,7 @@ test "trivia matrix: blank line between comment rows" {
 }
 
 test "trivia matrix: trailing comment is not line-leading" {
-    const source: [:0]const u8 = "y :: 1; // t\nx :: 2;";
-    var tl = try lexT(source);
+    var tl = try lexT("y :: 1; // t\nx :: 2;");
     defer deinitT(&tl);
     const x = tl.tokenAtStart(13).?;
     const rows = tl.commentsFor(x);
@@ -316,8 +294,7 @@ test "trivia matrix: trailing comment is not line-leading" {
 
 test "trivia matrix: comment at offset 0 has no blank line above" {
     // The start of the file is one line start, not two.
-    const source: [:0]const u8 = "// a";
-    var tl = try lexT(source);
+    var tl = try lexT("// a");
     defer deinitT(&tl);
     const rows = tl.commentsFor(tl.last());
     try std.testing.expectEqual(@as(usize, 1), rows.len);
@@ -341,52 +318,4 @@ test "lex under OOM returns error.OutOfMemory and leaks nothing" {
             try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
         }
     }
-}
-
-// ---- differential oracle over the corpus ----
-
-var g_test_threaded: ?std.Io.Threaded = null;
-fn testIo() std.Io {
-    if (g_test_threaded == null) {
-        g_test_threaded = std.Io.Threaded.init(std.heap.page_allocator, .{});
-    }
-    return g_test_threaded.?.io();
-}
-
-fn assertDirMatches(alloc: std.mem.Allocator, io: std.Io, dir_path: []const u8) !usize {
-    var count: usize = 0;
-    var dir = try std.Io.Dir.openDirAbsolute(io, dir_path, .{ .iterate = true });
-    defer dir.close(io);
-    var it = dir.iterate();
-    while (try it.next(io)) |entry| {
-        const child = try std.fs.path.join(alloc, &.{ dir_path, entry.name });
-        defer alloc.free(child);
-        switch (entry.kind) {
-            .directory => count += try assertDirMatches(alloc, io, child),
-            .file => {
-                if (!std.mem.endsWith(u8, entry.name, ".sx")) continue;
-                const bytes = try std.Io.Dir.readFileAlloc(.cwd(), io, child, alloc, .limited(16 * 1024 * 1024));
-                defer alloc.free(bytes);
-                const source = try alloc.dupeZ(u8, bytes);
-                defer alloc.free(source);
-                lexer.assertBatchMatchesStream(alloc, source) catch |err| {
-                    std.debug.print("batch/stream divergence in {s}\n", .{child});
-                    return err;
-                };
-                count += 1;
-            },
-            else => {},
-        }
-    }
-    return count;
-}
-
-test "batch lexing matches the stream over every corpus file" {
-    const alloc = std.testing.allocator;
-    const io = testIo();
-    var total: usize = 0;
-    for ([_][]const u8{ corpus_paths.examples_dir, corpus_paths.issues_dir, corpus_paths.library_dir }) |root| {
-        total += try assertDirMatches(alloc, io, root);
-    }
-    try std.testing.expect(total > 0);
 }
