@@ -1,4 +1,4 @@
-pub const Tag = enum {
+pub const Tag = enum(u8) {
     // Literals
     int_literal,
     float_literal,
