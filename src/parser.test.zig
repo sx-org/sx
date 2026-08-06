@@ -1877,7 +1877,7 @@ fn expectNameStarts(src: [:0]const u8, names: []const []const u8, starts: []cons
     }
 }
 
-test "parser: struct field name starts point at each field's spelling" {
+test "struct field name starts point at each field's spelling" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const src: [:0]const u8 =
@@ -1893,7 +1893,7 @@ test "parser: struct field name starts point at each field's spelling" {
     try expectNameStarts(src, sd.field_names, sd.field_name_starts);
 }
 
-test "parser: a grouped field records every name in source order" {
+test "a grouped field records every name in source order" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const src: [:0]const u8 = "Point :: struct { x, y, z: f32; }";
@@ -1906,7 +1906,7 @@ test "parser: a grouped field records every name in source order" {
     try std.testing.expect(sd.field_name_starts[1] < sd.field_name_starts[2]);
 }
 
-test "parser: a '_' field's start is the '_' token under its renamed name" {
+test "a '_' field's start is the '_' token under its renamed name" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const src: [:0]const u8 = "Holes :: struct { _, x: i32; }";
@@ -1919,7 +1919,7 @@ test "parser: a '_' field's start is the '_' token under its renamed name" {
     try std.testing.expectEqualStrings("x", src[sd.field_name_starts[1] .. sd.field_name_starts[1] + 1]);
 }
 
-test "parser: enum variant name starts point at each variant" {
+test "enum variant name starts point at each variant" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const src: [:0]const u8 =
@@ -1936,7 +1936,7 @@ test "parser: enum variant name starts point at each variant" {
     try expectNameStarts(src, ed.variant_names, ed.variant_name_starts);
 }
 
-test "parser: error tag name starts point at each tag" {
+test "error tag name starts point at each tag" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const src: [:0]const u8 = "ParseErr :: error { BadDigit, Overflow };";
@@ -1947,7 +1947,7 @@ test "parser: error tag name starts point at each tag" {
     try expectNameStarts(src, esd.tag_names, esd.tag_name_starts);
 }
 
-test "parser: an anonymous union field has no source start" {
+test "an anonymous union field has no source start" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const src: [:0]const u8 =
@@ -1964,7 +1964,7 @@ test "parser: an anonymous union field has no source start" {
     try expectNameStarts(src, ud.field_names, ud.field_name_starts);
 }
 
-test "parser: empty member lists have empty name-start arrays" {
+test "empty member lists have empty name-start arrays" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(),
@@ -1980,7 +1980,7 @@ test "parser: empty member lists have empty name-start arrays" {
     try std.testing.expectEqual(@as(usize, 0), decls[3].data.error_set_decl.tag_name_starts.len);
 }
 
-test "parser: a struct-body typed constant adds no field name start" {
+test "a struct-body typed constant adds no field name start" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const src: [:0]const u8 =
@@ -1996,7 +1996,7 @@ test "parser: a struct-body typed constant adds no field name start" {
     try expectNameStarts(src, sd.field_names, sd.field_name_starts);
 }
 
-test "parser: '#using' leaves the declaration's name starts in step with its names" {
+test "'#using' leaves the declaration's name starts in step with its names" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const src: [:0]const u8 =
