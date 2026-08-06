@@ -672,7 +672,7 @@ pub const Parser = struct {
             self.advance();
             // Pack-index access: $<pack_name>[<int_literal>]
             if (self.tokens.tag(self.tok) == .l_bracket) {
-                if (!self.currentIsGlued()) return self.failSpacedForm(start, .index);
+                if (!self.tokens.flagsOf(self.tok).glued_left) return self.failSpacedForm(start, .index);
                 self.advance(); // skip '['
                 if (self.tokens.tag(self.tok) != .int_literal) {
                     return self.fail("expected integer literal in pack index");
@@ -3242,7 +3242,7 @@ pub const Parser = struct {
             // completed left operand makes `-` / `*` infix; across a break a
             // glued operator opens a fresh operand below.
             if ((self.tokens.tag(self.tok) == .minus or self.tokens.tag(self.tok) == .star) and
-                self.gapCrossesLine() and self.rightIsGlued()) break;
+                self.tokens.flagsOf(self.tok).newline_left and self.tokens.flagsOf(self.tokens.next(self.tok)).glued_left) break;
 
             const prec = self.binaryPrec();
             if (prec == 0 or prec < min_prec) break;
@@ -3355,8 +3355,8 @@ pub const Parser = struct {
                 // only when glued to the callee. On the same line that space
                 // is fatal; across a line the `(` opens whatever comes next,
                 // and the caller reports what it finds there.
-                if (!self.currentIsGlued()) {
-                    if (!self.gapCrossesLine()) return self.failSpacedForm(expr.span.start, .call);
+                if (!self.tokens.flagsOf(self.tok).glued_left) {
+                    if (!self.tokens.flagsOf(self.tok).newline_left) return self.failSpacedForm(expr.span.start, .call);
                     break;
                 }
                 // Call. Argument expressions are an ordinary nested context —
@@ -3399,7 +3399,6 @@ pub const Parser = struct {
                         try args.append(self.allocator, try self.parseExpr());
                     }
                 }
-                const rparen_end = self.tokens.end(self.tok);
                 try self.expect(.r_paren);
                 // Trailing block (specs: Trailing Blocks): `f(args) { body }`.
                 // The `{` must sit on the SAME LINE as `)` — a next-line
@@ -3415,14 +3414,14 @@ pub const Parser = struct {
                 // block on `f`.
                 if (self.tokens.tag(self.tok) == .l_brace and
                     !saved_ntb_args and !saved_hdr_args and !saved_if_args and
-                    std.mem.indexOfScalar(u8, self.source[rparen_end..self.tokens.start(self.tok)], '\n') == null)
+                    !self.tokens.flagsOf(self.tok).newline_left)
                 {
                     // Same-line `{` after a call: trailing block OR parameterized
                     // named aggregate `List(T){…}`. Prefer the aggregate when the
                     // brace body is aggregate-shaped (fields / commas). An empty
                     // body carries no shape, so the spelling decides — see
                     // emptyBraceIsTypeApplication.
-                    const brace_is_tight = rparen_end == self.tokens.start(self.tok);
+                    const brace_is_tight = self.tokens.flagsOf(self.tok).glued_left;
                     if (self.braceLooksLikeNamedAggregate(args.items, brace_is_tight)) {
                         expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                         // Fall through: next postfix iteration takes Type{}.
@@ -3443,7 +3442,7 @@ pub const Parser = struct {
                 } else {
                     expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                 }
-            } else if (self.tokens.tag(self.tok) == .l_brace and !self.gapCrossesLine() and
+            } else if (self.tokens.tag(self.tok) == .l_brace and !self.tokens.flagsOf(self.tok).newline_left and
                 self.shouldParseNamedAggregate(expr))
             {
                 // Named aggregate: Type{ ... }. The `{` binds only on the same
@@ -3562,8 +3561,8 @@ pub const Parser = struct {
             } else if (self.tokens.tag(self.tok) == .l_bracket) {
                 // Glue rule (specs: Whitespace is Syntax) — same reading as the
                 // call `(` above.
-                if (!self.currentIsGlued()) {
-                    if (!self.gapCrossesLine()) return self.failSpacedForm(expr.span.start, .index);
+                if (!self.tokens.flagsOf(self.tok).glued_left) {
+                    if (!self.tokens.flagsOf(self.tok).newline_left) return self.failSpacedForm(expr.span.start, .index);
                     break;
                 }
                 // Index or slice access: expr[expr] or expr[start..end]
@@ -3621,7 +3620,7 @@ pub const Parser = struct {
                         } });
                     }
                 }
-            } else if (self.tokens.tag(self.tok) == .bang and !self.gapCrossesLine()) {
+            } else if (self.tokens.tag(self.tok) == .bang and !self.tokens.flagsOf(self.tok).newline_left) {
                 // Force unwrap: expr! — postfix on the expression's own line.
                 // `!` is also the prefix `not`, so a leading `!b` below a
                 // complete expression opens a statement of its own.
@@ -3852,8 +3851,8 @@ pub const Parser = struct {
                 // pack only when glued to it. Same-line, that space is fatal;
                 // across a line the `[` stops binding and the whole pack is
                 // the expression.
-                if (!self.currentIsGlued()) {
-                    if (!self.gapCrossesLine()) return self.failSpacedForm(start, .index);
+                if (!self.tokens.flagsOf(self.tok).glued_left) {
+                    if (!self.tokens.flagsOf(self.tok).newline_left) return self.failSpacedForm(start, .index);
                     return try self.createNode(start, .{ .comptime_pack_ref = .{
                         .pack_name = pname,
                     } });
@@ -5470,9 +5469,10 @@ pub const Parser = struct {
     /// Separator-dot `Type.{…}` is invalid. Point at the `.` and offer the
     /// compact `Type{…}` spelling.
     fn failNamedAggregateDot(self: *Parser) error{ParseError} {
-        // `current` is `{`; the separator `.` ends at `prev_end`.
-        const dot_start = if (self.prev_end > 0) self.prev_end - 1 else self.tokens.start(self.tok);
-        const dot_end = self.prev_end;
+        // The cursor is on `{`; the separator `.` is the token before it.
+        const sep_end = self.tokens.end(self.tokens.prev(self.tok));
+        const dot_start = if (sep_end > 0) sep_end - 1 else self.tokens.start(self.tok);
+        const dot_end = sep_end;
         const msg = named_aggregate_dot_msg;
         self.err_msg = msg;
         self.err_offset = dot_start;
@@ -5481,9 +5481,9 @@ pub const Parser = struct {
             const id = diags.addId(.err, msg, .{ .start = dot_start, .end = dot_end });
             // Rebuild the current line with the separator dot removed as fix-it.
             // Help span covers the `.{` region so carets sit on the edit.
-            const line = errors.lineAt(self.source, dot_start);
+            const line = errors.lineAt(self.tokens.source, dot_start);
             var line_start: u32 = dot_start;
-            while (line_start > 0 and self.source[line_start - 1] != '\n') : (line_start -= 1) {}
+            while (line_start > 0 and self.tokens.source[line_start - 1] != '\n') : (line_start -= 1) {}
             const rel_dot = dot_start - line_start;
             var fix_buf: std.ArrayList(u8) = .empty;
             defer fix_buf.deinit(self.allocator);
@@ -5553,56 +5553,19 @@ pub const Parser = struct {
 
     // ---- Whitespace is syntax (specs §1: Whitespace is Syntax) ----
 
-    /// Where a token was WRITTEN. A raw identifier's `loc` deliberately
-    /// excludes its leading backtick so its text is the bare name, but the
-    /// whitespace rules read the source as typed — `` *`i2 `` is glued.
-    fn writtenStart(tok: Token) u32 {
-        return if (tok.is_raw) tok.loc.start - 1 else tok.loc.start;
-    }
-
-    /// True when nothing at all separates `current` from the token before it.
-    /// The glue rule reads this: `(` and `[` bind to what precedes them only
-    /// when glued.
-    fn currentIsGlued(self: *const Parser) bool {
-        return self.prev_end == writtenStart(self.current);
-    }
-
-    /// True when the gap before `current` crosses a line. A same-line gap is
-    /// fatal wherever the glue rule applies; a line break is not a spacing
-    /// mistake, so it leaves the ordinary path to report what it finds.
-    fn gapCrossesLine(self: *const Parser) bool {
-        return std.mem.indexOfScalar(u8, self.source[self.prev_end..writtenStart(self.current)], '\n') != null;
-    }
-
-    /// True when the current operator token is glued to the token after it.
-    fn rightIsGlued(self: *const Parser) bool {
-        var lex = self.lexer;
-        return self.tokens.end(self.tok) == writtenStart(lex.next());
-    }
-
     /// The written form with the offending gap closed — `foo (2)` → `foo(2)` —
     /// for the spacing diagnostics. Null when the bracket group is unbalanced,
     /// spans a line, or is too long to quote back usefully.
     fn gluedSpelling(self: *Parser, head_start: u32) ?[]const u8 {
         const open = self.tokens.tag(self.tok);
         const close: Tag = if (open == .l_paren) .r_paren else .r_bracket;
-        var lex = self.lexer;
-        var depth: u32 = 1;
-        var end: u32 = self.tokens.end(self.tok);
-        while (depth > 0) {
-            const tok = lex.next();
-            if (tok.tag == .eof) return null;
-            if (tok.tag == open) {
-                depth += 1;
-            } else if (tok.tag == close) {
-                depth -= 1;
-                end = tok.loc.end;
-            }
-        }
+        const close_idx = self.tokens.scanBalanced(self.tok, open, close) orelse return null;
+        const end = self.tokens.end(close_idx);
         // A raw head's span starts after its backtick; quote it back as written.
-        const head_written = if (head_start > 0 and self.source[head_start - 1] == '`') head_start - 1 else head_start;
-        const head = self.source[head_written..self.prev_end];
-        const args = self.source[self.tokens.start(self.tok)..end];
+        const source = self.tokens.source;
+        const head_written = if (head_start > 0 and source[head_start - 1] == '`') head_start - 1 else head_start;
+        const head = source[head_written..self.tokens.end(self.tokens.prev(self.tok))];
+        const args = source[self.tokens.start(self.tok)..end];
         if (head.len + args.len > 48) return null;
         if (std.mem.indexOfScalar(u8, head, '\n') != null) return null;
         if (std.mem.indexOfScalar(u8, args, '\n') != null) return null;
@@ -5616,7 +5579,7 @@ pub const Parser = struct {
     /// that fixes it. Spans the gap plus the bracket, so the caret sits under
     /// what has to go.
     fn failSpacedForm(self: *Parser, head_start: u32, form: SpacedForm) error{ParseError} {
-        const loc: Token.Loc = .{ .start = self.prev_end, .end = self.tokens.end(self.tok) };
+        const loc: Token.Loc = .{ .start = self.tokens.end(self.tokens.prev(self.tok)), .end = self.tokens.end(self.tok) };
         const fix = self.gluedSpelling(head_start);
         const msg = switch (form) {
             .call => if (fix) |f|
@@ -5638,7 +5601,7 @@ pub const Parser = struct {
     /// The glue rule in a TYPE position: an argument list never crosses a
     /// statement boundary, so any gap at all is the spacing mistake.
     fn requireTypeArgGlue(self: *Parser, head_start: u32) !void {
-        if (!self.currentIsGlued()) return self.failSpacedForm(head_start, .type_args);
+        if (!self.tokens.flagsOf(self.tok).glued_left) return self.failSpacedForm(head_start, .type_args);
     }
 
     /// A token that cannot START a statement, so a line break in front of it
@@ -5692,7 +5655,7 @@ pub const Parser = struct {
     fn implicitTerminator(self: *const Parser) bool {
         if (self.tokens.tag(self.tok) == .eof) return true;
         if (continuesStatement(self.tokens.tag(self.tok)) and !self.atMatchDefaultArm()) return false;
-        return self.gapCrossesLine();
+        return self.tokens.flagsOf(self.tok).newline_left;
     }
 
     /// `else` with a GLUED `:` heads a `match`'s default arm; every other
@@ -5701,9 +5664,8 @@ pub const Parser = struct {
     /// statement above it, a chaining `else` reads on through the break.
     fn atMatchDefaultArm(self: *const Parser) bool {
         if (self.tokens.tag(self.tok) != .kw_else) return false;
-        var lex = self.lexer;
-        const tok = lex.next();
-        return tok.tag == .colon and writtenStart(tok) == self.tokens.end(self.tok);
+        const n = self.tokens.next(self.tok);
+        return self.tokens.tag(n) == .colon and self.tokens.flagsOf(n).glued_left;
     }
 
     /// True at an `else` that chains the enclosing `if` — every `else` but a
@@ -5725,10 +5687,10 @@ pub const Parser = struct {
     /// The spacing rule for a prefix `-` / `--` / `*`: it binds only when glued
     /// to its operand, so a spaced prefix has no reading left.
     fn requirePrefixGlue(self: *Parser, op: Token.Loc) !void {
-        if (self.currentIsGlued()) return;
-        const text = self.source[op.start..op.end];
+        if (self.tokens.flagsOf(self.tok).glued_left) return;
+        const text = self.tokens.source[op.start..op.end];
         return self.failAt(
-            Token.Loc{ .start = op.start, .end = writtenStart(self.current) },
+            Token.Loc{ .start = op.start, .end = self.tokens.writtenStart(self.tok) },
             std.fmt.allocPrint(
                 self.allocator,
                 "a space after the prefix `{s}` — a prefix operator binds only when glued to its operand",
@@ -5771,10 +5733,6 @@ pub const Parser = struct {
         if (self.inCleanupBody()) {
             return self.failFmt("`" ++ kw ++ "` is not allowed inside {s} body — cleanup runs while the function is already exiting, so there is nothing to transfer control to", .{self.cleanupKind()});
         }
-    }
-
-    fn tokenSlice(self: *const Parser, token: Token) []const u8 {
-        return self.source[token.loc.start..token.loc.end];
     }
 
     /// Detect the base of an integer-literal token (`0x`/`0o`/`0b` prefixes),
