@@ -5500,7 +5500,6 @@ pub const Parser = struct {
         };
     }
 
-    /// True when the current token is a chainable comparison operator.
     fn atComparison(self: *const Parser) bool {
         const info = binaryInfo(self.tokens.tag(self.tok)) orelse return false;
         return info.comparison;
@@ -7505,7 +7504,6 @@ test "peekTag saturates at the eof row for any runtime offset" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), "x :: 1;");
-    // identifier, ::, 1, ;, eof
     try std.testing.expectEqual(Tag.semicolon, parser.peekTag(3));
     try std.testing.expectEqual(Tag.eof, parser.peekTag(4));
     var offset: usize = 5;

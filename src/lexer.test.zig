@@ -282,13 +282,11 @@ test "crlf source correctly sets newline_left and comment ends" {
     const source: [:0]const u8 = "// a\r\na :: 1;\r\n// b\r\nb :: 2;\r\n";
     var tl = try lexT(source);
     defer deinitT(&tl);
-    // Both comment rows end before their CR.
     try std.testing.expectEqual(@as(usize, 2), tl.comments.len);
     try std.testing.expectEqual(@as(u32, 0), tl.comments[0].start);
     try std.testing.expectEqual(@as(u32, 4), tl.comments[0].end);
     try std.testing.expectEqual(@as(u32, 15), tl.comments[1].start);
     try std.testing.expectEqual(@as(u32, 19), tl.comments[1].end);
-    // Both code rows sit below a line break.
     const a = tl.tokenAtStart(6).?;
     const b = tl.tokenAtStart(21).?;
     try std.testing.expect(tl.flagsOf(a).newline_left);
@@ -454,7 +452,6 @@ test "lex under OOM returns error.OutOfMemory and leaks nothing" {
             break;
         } else |err| {
             try std.testing.expectEqual(error.OutOfMemory, err);
-            // Every partially built column was released.
             try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
         }
     }
