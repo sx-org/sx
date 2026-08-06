@@ -25,7 +25,7 @@ test "sema: backtick raw type reference resolves to the user type; bare stays bu
         \\`i2 :: struct { x: i64; }
         \\
     ;
-    var parser = Parser.init(alloc, src);
+    var parser = try Parser.init(alloc, src);
     const root = try parser.parse();
 
     var analyzer = sema.Analyzer.init(alloc);
@@ -61,7 +61,7 @@ test "sema: a raw struct-field annotation resolves to the user type; bare stays 
         \\Holder :: struct { a: `u8; b: u8; }
         \\
     ;
-    var parser = Parser.init(alloc, src);
+    var parser = try Parser.init(alloc, src);
     const root = try parser.parse();
 
     var analyzer = sema.Analyzer.init(alloc);
@@ -112,7 +112,7 @@ test "sema: field access through a raw `*`i2` pointer resolves the user field; b
         \\g :: (q: *i2) { w := q.*; }
         \\
     ;
-    var parser = Parser.init(alloc, src);
+    var parser = try Parser.init(alloc, src);
     const root = try parser.parse();
     var analyzer = sema.Analyzer.init(alloc);
     const res = try analyzer.analyze(root);
@@ -140,7 +140,7 @@ test "sema: unwrapping a raw `?`i2` optional resolves the user field; bare `?i2`
         \\g :: (b: ?i2) { if v := b { w := v; } }
         \\
     ;
-    var parser = Parser.init(alloc, src);
+    var parser = try Parser.init(alloc, src);
     const root = try parser.parse();
     var analyzer = sema.Analyzer.init(alloc);
     const res = try analyzer.analyze(root);
@@ -167,7 +167,7 @@ test "sema: indexing a raw `[N]`i2` array resolves the user element; bare `[N]i2
         \\f :: (a: [4]`i2, b: [4]i2) { y := a[0]; w := b[0]; }
         \\
     ;
-    var parser = Parser.init(alloc, src);
+    var parser = try Parser.init(alloc, src);
     const root = try parser.parse();
     var analyzer = sema.Analyzer.init(alloc);
     const res = try analyzer.analyze(root);
@@ -199,7 +199,7 @@ test "sema: a raw parameterized type `` `i2(i64) `` instantiates the user generi
         \\f :: (v: `i2(i64)) { y := v.n; }
         \\
     ;
-    var parser = Parser.init(alloc, src);
+    var parser = try Parser.init(alloc, src);
     const root = try parser.parse();
     var analyzer = sema.Analyzer.init(alloc);
     const res = try analyzer.analyze(root);

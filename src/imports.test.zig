@@ -28,7 +28,7 @@ const Facts = struct {
 fn buildFacts(alloc: std.mem.Allocator, io: std.Io, absdir: []const u8, main_path: []const u8) !Facts {
     const main_bytes = try std.Io.Dir.readFileAlloc(.cwd(), io, main_path, alloc, .limited(1 << 20));
     const main_source = try alloc.dupeZ(u8, main_bytes);
-    var p = parser.Parser.init(alloc, main_source);
+    var p = try parser.Parser.init(alloc, main_source);
     const root = p.parse() catch return error.ParseFailed;
 
     var diags = errors.DiagnosticList.init(alloc, main_source, main_path);
@@ -109,7 +109,7 @@ test "imports: module_decls retains same-name cross-module fns; flat_import_grap
 
     const main_bytes = try std.Io.Dir.readFileAlloc(.cwd(), io, main_path, alloc, .limited(1 << 20));
     const main_source = try alloc.dupeZ(u8, main_bytes);
-    var p = parser.Parser.init(alloc, main_source);
+    var p = try parser.Parser.init(alloc, main_source);
     const root = p.parse() catch return error.ParseFailed;
 
     var chain = std.StringHashMap(void).init(alloc);
@@ -211,7 +211,7 @@ test "imports: mixed non-fn/fn same-name collision stays first-wins in merged sc
 
     const main_bytes = try std.Io.Dir.readFileAlloc(.cwd(), io, main_path, alloc, .limited(1 << 20));
     const main_source = try alloc.dupeZ(u8, main_bytes);
-    var p = parser.Parser.init(alloc, main_source);
+    var p = try parser.Parser.init(alloc, main_source);
     const root = p.parse() catch return error.ParseFailed;
 
     var chain = std.StringHashMap(void).init(alloc);
@@ -609,7 +609,7 @@ test "buildDeclTable: stable DeclId per decl, round-trip, struct keying, namespa
 
     const main_bytes = try std.Io.Dir.readFileAlloc(.cwd(), io, main_path, alloc, .limited(1 << 20));
     const main_source = try alloc.dupeZ(u8, main_bytes);
-    var p = parser.Parser.init(alloc, main_source);
+    var p = try parser.Parser.init(alloc, main_source);
     const root = p.parse() catch return error.ParseFailed;
 
     var diags = errors.DiagnosticList.init(alloc, main_source, main_path);

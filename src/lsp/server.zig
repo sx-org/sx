@@ -714,10 +714,10 @@ pub const Server = struct {
         }
 
         const keywords = [_][]const u8{
-            "if",       "else",  "then",    "return",    "defer",
-            "case",     "break", "enum",    "struct",    "true",
-            "false",    "xx",    "while",   "continue",
-            "and",      "or",    "union",
+            "if",    "else",  "then",  "return",   "defer",
+            "case",  "break", "enum",  "struct",   "true",
+            "false", "xx",    "while", "continue", "and",
+            "or",    "union",
         };
 
         const builtins = [_]struct { label: []const u8, detail: []const u8 }{
@@ -1320,10 +1320,11 @@ pub const Server = struct {
         var prev_line: u32 = 0;
         var prev_char: u32 = 0;
 
-        var lexer = sx.lexer.Lexer.init(doc.source);
-        while (true) {
-            const tok = lexer.next();
-            if (tok.tag == .eof) break;
+        var tl = try sx.lexer.lex(self.allocator, doc.source);
+        defer tl.deinit(self.allocator);
+        var i = tl.first();
+        while (tl.tag(i) != .eof) : (i = tl.next(i)) {
+            const tok = tl.token(i);
 
             if (tok.tag == .string_literal or tok.tag == .raw_string_literal) {
                 try emitStringParts(&data, self.allocator, doc.source, tok.loc.start, tok.loc.end, &prev_line, &prev_char);
@@ -1447,8 +1448,13 @@ pub const Server = struct {
                 }
                 // Skip functions, types, structs, enums, unions, comptime, extern, library
                 switch (cd.value.data) {
-                    .fn_decl, .type_expr, .struct_decl, .enum_decl, .union_decl,
-                    .comptime_expr, .library_decl,
+                    .fn_decl,
+                    .type_expr,
+                    .struct_decl,
+                    .enum_decl,
+                    .union_decl,
+                    .comptime_expr,
+                    .library_decl,
                     => return,
                     else => {},
                 }
@@ -1773,149 +1779,13 @@ pub const Server = struct {
 
     fn classifyToken(tok: sx.token.Token, sema: SemaResult, source: [:0]const u8) ?u32 {
         const ST = lsp.SemanticTokenType;
-        return switch (tok.tag) {
-            .kw_if,
-            .kw_else,
-            .kw_then,
-            .kw_true,
-            .kw_false,
-            .kw_enum,
-            .kw_error,
-            .kw_raise,
-            .kw_try,
-            .kw_catch,
-            .kw_onfail,
-            .kw_case,
-            .kw_break,
-            .kw_continue,
-            .kw_while,
-            .kw_for,
-            .kw_return,
-            .kw_defer,
-            .kw_struct,
-            .kw_union,
-            .kw_xx,
-            .kw_and,
-            .kw_or,
-            .kw_null,
-            .kw_push,
-            .kw_ufcs,
-            .kw_in,
-            .kw_protocol,
-            .kw_impl,
-            .kw_inline,
-            .kw_abi,
-            .kw_extern,
-            .kw_export,
-            .kw_asm,
-            .kw_intrinsic,
-            .kw_private,
-            .hash_run,
-            .hash_error,
-            .hash_import,
-            .hash_insert,
-            .hash_library,
-            .hash_framework,
-            .hash_using,
-            .hash_include,
-            .hash_source,
-            .hash_define,
-            .hash_flags,
-            .hash_identity,
-            .hash_expand,
-            .hash_objc_call,
-            .hash_jni_call,
-            .hash_jni_static_call,
-            .hash_jni_class,
-            .hash_jni_interface,
-            .hash_objc_class,
-            .hash_objc_protocol,
-            .hash_swift_class,
-            .hash_swift_struct,
-            .hash_swift_protocol,
-            .hash_extends,
-            .hash_implements,
-            .hash_jni_method_descriptor,
-            .hash_jni_env,
-            .hash_jni_main,
-            .hash_selector,
-            .hash_property,
-            .hash_get,
-            .hash_set,
-            .hash_context_extend,
-            => ST.keyword,
-
-            .kw_f32, .kw_f64, .kw_Type, .kw_Self, .at_identifier => ST.type_,
-
-            .int_literal, .float_literal, .char_literal => ST.number,
-            .string_literal, .raw_string_literal => null,
-
-            .plus,
-            .minus,
-            .star,
-            .slash,
-            .equal,
-            .equal_equal,
-            .bang,
-            .bang_equal,
-            .less,
-            .less_equal,
-            .greater,
-            .greater_equal,
-            .plus_equal,
-            .minus_equal,
-            .star_equal,
-            .slash_equal,
-            .percent,
-            .percent_equal,
-            .ampersand,
-            .ampersand_equal,
-            .pipe,
-            .pipe_equal,
-            .pipe_arrow,
-            .caret,
-            .caret_equal,
-            .question,
-            .question_question,
-            .question_dot,
-            .tilde,
-            .less_less,
-            .less_less_equal,
-            .greater_greater,
-            .greater_greater_equal,
-            .arrow,
-            .fat_arrow,
-            .colon_colon,
-            .colon_equal,
-            .triple_minus,
-            .minus_minus,
-            => ST.operator_,
-
+        return switch (tok.tag.family()) {
+            .keyword, .directive => ST.keyword,
+            .type_keyword => ST.type_,
+            .number => ST.number,
+            .operator => ST.operator_,
             .identifier => classifyIdentifier(tok, sema, source),
-
-            .colon,
-            .semicolon,
-            .comma,
-            .dot,
-            .dot_dot,
-            .dot_dot_eq,
-            .dot_dot_lt,
-            .lt_dot_dot,
-            .lt_dot_dot_eq,
-            .lt_dot_dot_lt,
-            .eq_dot_dot,
-            .eq_dot_dot_eq,
-            .eq_dot_dot_lt,
-            .dollar,
-            .l_paren,
-            .r_paren,
-            .l_brace,
-            .r_brace,
-            .l_bracket,
-            .r_bracket,
-            .eof,
-            .invalid,
-            => null,
+            .string, .punctuation, .eof, .invalid => null,
         };
     }
 
@@ -3931,12 +3801,10 @@ test "lsp/project: whole-program check attributes a reachable error to its modul
     // `use` forwards a `*Move` into a by-value parameter — an error the compiler
     // only sees because `main` calls `use` (reachability). Lowering mod.sx alone
     // would miss it; the whole-program check catches it and pins it to mod.sx.
-    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/mod.sx", .data =
-        "Move :: struct { flag: i64; }\n" ++
+    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/mod.sx", .data = "Move :: struct { flag: i64; }\n" ++
         "take :: (m: Move) -> i64 { return m.flag; }\n" ++
         "use :: (p: *Move) -> i64 { return take(p); }\n" });
-    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/main.sx", .data =
-        "#import \"mod.sx\";\n" ++
+    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/main.sx", .data = "#import \"mod.sx\";\n" ++
         "main :: () -> i32 { mv : Move = .{ flag = 1 }; return xx use(*mv); }\n" });
 
     const store = doc_mod.DocumentStore.init(alloc, io, &.{});

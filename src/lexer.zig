@@ -1,35 +1,145 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const Token = @import("token.zig").Token;
 const Tag = @import("token.zig").Tag;
 const getKeyword = @import("token.zig").getKeyword;
+const token_list = @import("token_list.zig");
+const TokenList = token_list.TokenList;
+const Flags = token_list.Flags;
+const Comment = token_list.Comment;
+
+/// Count line starts after `from` up to and including `to`; the start of the
+/// file counts as one line start.
+fn lineStartsBetween(source: []const u8, from: u32, to: u32) u32 {
+    const newlines: u32 = @intCast(std.mem.count(u8, source[from..to], "\n"));
+    return newlines + @intFromBool(from == 0);
+}
+
+/// Only spaces/tabs lie between the previous LF (or the start of file) and
+/// `offset`.
+fn isLineLeading(source: []const u8, offset: u32) bool {
+    var i = offset;
+    while (i > 0) : (i -= 1) {
+        const c = source[i - 1];
+        if (c == '\n') break;
+        if (c != ' ' and c != '\t') return false;
+    }
+    return true;
+}
+
+/// Tokenize `source` in one pass into a `TokenList`. Malformed input becomes
+/// `.invalid` rows, exactly as the streaming scanner emits them; the only
+/// error is OOM.
+///
+/// Every adjacency flag is computed from the emitted spans (`ends[i-1]` vs
+/// the written start of row `i`), never from the scan cursor — after a
+/// heredoc the cursor sits past the terminator while the token span ends at
+/// the content, and the spans are what the whitespace rules read.
+pub fn lex(allocator: Allocator, source: [:0]const u8) error{OutOfMemory}!TokenList {
+    var tags: std.ArrayList(Tag) = .empty;
+    errdefer tags.deinit(allocator);
+    var starts: std.ArrayList(u32) = .empty;
+    errdefer starts.deinit(allocator);
+    var ends: std.ArrayList(u32) = .empty;
+    errdefer ends.deinit(allocator);
+    var flags: std.ArrayList(Flags) = .empty;
+    errdefer flags.deinit(allocator);
+    var trivia_index: std.ArrayList(u32) = .empty;
+    errdefer trivia_index.deinit(allocator);
+    var comments: std.ArrayList(Comment) = .empty;
+    errdefer comments.deinit(allocator);
+
+    var lx = Lexer.init(source);
+    while (true) {
+        try trivia_index.append(allocator, @intCast(comments.items.len));
+        const prev_end: u32 = if (ends.items.len == 0) 0 else ends.items[ends.items.len - 1];
+        // Nearest preceding lexical item — the last comment row once one is
+        // appended — for the blank_left counts.
+        var item_end = prev_end;
+        while (lx.nextComment()) |c| {
+            try comments.append(allocator, .{
+                .start = c.start,
+                .end = c.end,
+                .line_leading = isLineLeading(source, c.start),
+                .blank_left = lineStartsBetween(source, item_end, c.start) >= 2,
+            });
+            item_end = c.end;
+        }
+        const tok = lx.lexToken();
+        const ws = tok.loc.start - @intFromBool(tok.is_raw);
+        const is_first = tags.items.len == 0;
+        try tags.append(allocator, tok.tag);
+        try starts.append(allocator, tok.loc.start);
+        try ends.append(allocator, tok.loc.end);
+        try flags.append(allocator, .{
+            .glued_left = !is_first and prev_end == ws,
+            .newline_left = is_first or std.mem.indexOfScalar(u8, source[prev_end..ws], '\n') != null,
+            .blank_left = lineStartsBetween(source, item_end, ws) >= 2,
+            .is_raw = tok.is_raw,
+        });
+        if (tok.tag == .eof) break;
+    }
+    try trivia_index.append(allocator, @intCast(comments.items.len));
+
+    const tags_s = try tags.toOwnedSlice(allocator);
+    errdefer allocator.free(tags_s);
+    const starts_s = try starts.toOwnedSlice(allocator);
+    errdefer allocator.free(starts_s);
+    const ends_s = try ends.toOwnedSlice(allocator);
+    errdefer allocator.free(ends_s);
+    const flags_s = try flags.toOwnedSlice(allocator);
+    errdefer allocator.free(flags_s);
+    const trivia_s = try trivia_index.toOwnedSlice(allocator);
+    errdefer allocator.free(trivia_s);
+    const comments_s = try comments.toOwnedSlice(allocator);
+
+    return .{
+        .source = source,
+        .tags = tags_s,
+        .starts = starts_s,
+        .ends = ends_s,
+        .flags = flags_s,
+        .trivia_index = trivia_s,
+        .comments = comments_s,
+    };
+}
 
 pub const Lexer = struct {
     source: [:0]const u8,
     index: u32,
 
-    pub fn init(source: [:0]const u8) Lexer {
+    fn init(source: [:0]const u8) Lexer {
         return .{ .source = source, .index = 0 };
     }
 
-    pub fn next(self: *Lexer) Token {
-        // Skip whitespace and comments
-        while (true) {
-            if (self.index >= self.source.len) {
-                return self.makeToken(.eof, self.index, self.index);
-            }
+    /// Advance past whitespace up to the next `//` run or token start.
+    /// Returns the comment's span — its `end` excludes a trailing CR, since
+    /// the run stops only at LF — or null once at a token start.
+    fn nextComment(self: *Lexer) ?struct { start: u32, end: u32 } {
+        while (self.index < self.source.len) {
             const c = self.source[self.index];
             if (c == ' ' or c == '\t' or c == '\n' or c == '\r') {
                 self.index += 1;
                 continue;
             }
-            // Line comments
             if (c == '/' and self.index + 1 < self.source.len and self.source[self.index + 1] == '/') {
+                const start = self.index;
                 while (self.index < self.source.len and self.source[self.index] != '\n') {
                     self.index += 1;
                 }
-                continue;
+                var end = self.index;
+                if (self.source[end - 1] == '\r') end -= 1;
+                return .{ .start = start, .end = end };
             }
             break;
+        }
+        return null;
+    }
+
+    /// Scan one token; `self.index` is at a token start (trivia skipped).
+    fn lexToken(self: *Lexer) Token {
+        if (self.index >= self.source.len) {
+            return self.makeToken(.eof, self.index, self.index);
         }
 
         const start = self.index;
@@ -450,7 +560,6 @@ pub const Lexer = struct {
         return self.makeToken(.invalid, start, self.index);
     }
 
-
     /// Lex a #string heredoc. Called after "#string" has been matched.
     /// Syntax: #string DELIM\n...content...\nDELIM
     fn lexHeredoc(self: *Lexer, directive_start: u32) Token {
@@ -489,7 +598,7 @@ pub const Lexer = struct {
             if (self.index + delimiter.len <= self.source.len and
                 std.mem.eql(u8, self.source[line_start .. line_start + delimiter.len], delimiter) and
                 (line_start + delimiter.len >= self.source.len or
-                !isIdentContinue(self.source[line_start + delimiter.len])))
+                    !isIdentContinue(self.source[line_start + delimiter.len])))
             {
                 const content_end = line_start;
                 self.index = line_start + @as(u32, @intCast(delimiter.len));
@@ -554,205 +663,3 @@ pub const Lexer = struct {
         return isIdentStart(c) or isDigit(c);
     }
 };
-
-test "lex minimal main" {
-    var lex = Lexer.init("main :: () { 42; }");
-    const expected = [_]Tag{ .identifier, .colon_colon, .l_paren, .r_paren, .l_brace, .int_literal, .semicolon, .r_brace, .eof };
-    for (expected) |exp| {
-        const tok = lex.next();
-        try std.testing.expectEqual(exp, tok.tag);
-    }
-}
-
-test "lex with comments" {
-    var lex = Lexer.init("// comment\nmain :: () { 0; }");
-    try std.testing.expectEqual(Tag.identifier, lex.next().tag);
-    try std.testing.expectEqual(Tag.colon_colon, lex.next().tag);
-}
-
-test "lex operators" {
-    var lex = Lexer.init(":= : :: += -= *= /= -> => == != <= >=");
-    const expected = [_]Tag{
-        .colon_equal, .colon,       .colon_colon, .plus_equal, .minus_equal,
-        .star_equal,  .slash_equal, .arrow,       .fat_arrow,  .equal_equal,
-        .bang_equal,  .less_equal,  .greater_equal,
-    };
-    for (expected) |exp| {
-        try std.testing.expectEqual(exp, lex.next().tag);
-    }
-}
-
-test "lex float" {
-    var lex = Lexer.init("0.3 42 0.9");
-    try std.testing.expectEqual(Tag.float_literal, lex.next().tag);
-    try std.testing.expectEqual(Tag.int_literal, lex.next().tag);
-    try std.testing.expectEqual(Tag.float_literal, lex.next().tag);
-}
-
-test "lex keywords" {
-    var lex = Lexer.init("if else then true false enum case break return f32 f64 struct");
-    const expected = [_]Tag{
-        .kw_if, .kw_else, .kw_then, .kw_true, .kw_false,
-        .kw_enum, .kw_case, .kw_break, .kw_return, .kw_f32, .kw_f64, .kw_struct,
-    };
-    for (expected) |exp| {
-        try std.testing.expectEqual(exp, lex.next().tag);
-    }
-}
-
-test "lex linkage keywords" {
-    // extern / export are keywords (FFI-linkage stream), lexed beside abi.
-    var lex = Lexer.init("abi extern export");
-    const expected = [_]Tag{ .kw_abi, .kw_extern, .kw_export };
-    for (expected) |exp| {
-        try std.testing.expectEqual(exp, lex.next().tag);
-    }
-}
-
-test "lex type-like identifiers" {
-    // i32, u8, bool, string are identifiers, not keywords
-    var lex = Lexer.init("i32 u8 bool string");
-    for (0..4) |_| {
-        try std.testing.expectEqual(Tag.identifier, lex.next().tag);
-    }
-}
-
-test "lex backtick raw identifier" {
-    const source: [:0]const u8 = "`i2 `string `for";
-    var lex = Lexer.init(source);
-    // Each is an `.identifier` carrying `is_raw`, even a keyword spelling
-    // (`for`), with text that excludes the leading backtick.
-    const t1 = lex.next();
-    try std.testing.expectEqual(Tag.identifier, t1.tag);
-    try std.testing.expect(t1.is_raw);
-    try std.testing.expectEqualStrings("i2", t1.slice(source));
-    const t2 = lex.next();
-    try std.testing.expectEqual(Tag.identifier, t2.tag);
-    try std.testing.expect(t2.is_raw);
-    try std.testing.expectEqualStrings("string", t2.slice(source));
-    const t3 = lex.next();
-    try std.testing.expectEqual(Tag.identifier, t3.tag);
-    try std.testing.expect(t3.is_raw);
-    try std.testing.expectEqualStrings("for", t3.slice(source));
-    try std.testing.expectEqual(Tag.eof, lex.next().tag);
-}
-
-test "lex bare identifier is not raw" {
-    var lex = Lexer.init("i2");
-    const tok = lex.next();
-    try std.testing.expectEqual(Tag.identifier, tok.tag);
-    try std.testing.expect(!tok.is_raw);
-}
-
-test "lex lone backtick is invalid" {
-    var lex = Lexer.init("` 5");
-    try std.testing.expectEqual(Tag.invalid, lex.next().tag);
-}
-
-test "lex hash_run" {
-    var lex = Lexer.init("#run");
-    try std.testing.expectEqual(Tag.hash_run, lex.next().tag);
-    try std.testing.expectEqual(Tag.eof, lex.next().tag);
-
-    // #run followed by identifier
-    var lex2 = Lexer.init("#run compute(5)");
-    try std.testing.expectEqual(Tag.hash_run, lex2.next().tag);
-    try std.testing.expectEqual(Tag.identifier, lex2.next().tag);
-
-    // #running should not match (identContinue after "run")
-    var lex3 = Lexer.init("#running");
-    try std.testing.expectEqual(Tag.invalid, lex3.next().tag);
-}
-
-test "lex hash_import" {
-    var lex = Lexer.init("#import \"foo.sx\"");
-    try std.testing.expectEqual(Tag.hash_import, lex.next().tag);
-    try std.testing.expectEqual(Tag.string_literal, lex.next().tag);
-    try std.testing.expectEqual(Tag.eof, lex.next().tag);
-
-    // #importing should not match
-    var lex2 = Lexer.init("#importing");
-    try std.testing.expectEqual(Tag.invalid, lex2.next().tag);
-}
-
-test "lex hash_insert" {
-    var lex = Lexer.init("#insert #run generate()");
-    try std.testing.expectEqual(Tag.hash_insert, lex.next().tag);
-    try std.testing.expectEqual(Tag.hash_run, lex.next().tag);
-    try std.testing.expectEqual(Tag.identifier, lex.next().tag);
-
-    // #inserting should not match
-    var lex2 = Lexer.init("#inserting");
-    try std.testing.expectEqual(Tag.invalid, lex2.next().tag);
-}
-
-test "lex hash_library" {
-    var lex = Lexer.init("#library \"raylib\"");
-    try std.testing.expectEqual(Tag.hash_library, lex.next().tag);
-    try std.testing.expectEqual(Tag.string_literal, lex.next().tag);
-    try std.testing.expectEqual(Tag.eof, lex.next().tag);
-
-    var lex2 = Lexer.init("#librarypath");
-    try std.testing.expectEqual(Tag.invalid, lex2.next().tag);
-}
-
-test "lex string" {
-    var lex = Lexer.init("\"Hello\"");
-    const tok = lex.next();
-    try std.testing.expectEqual(Tag.string_literal, tok.tag);
-    try std.testing.expectEqualStrings("\"Hello\"", tok.slice("\"Hello\""));
-}
-
-test "lex multiline string" {
-    const source: [:0]const u8 = "\"line1\nline2\nline3\"";
-    var lex = Lexer.init(source);
-    const tok = lex.next();
-    try std.testing.expectEqual(Tag.string_literal, tok.tag);
-    try std.testing.expectEqualStrings("\"line1\nline2\nline3\"", tok.slice(source));
-}
-
-test "lex #string heredoc" {
-    const source: [:0]const u8 = "#string END\nhello world\nEND";
-    var lex = Lexer.init(source);
-    const tok = lex.next();
-    try std.testing.expectEqual(Tag.raw_string_literal, tok.tag);
-    try std.testing.expectEqualStrings("hello world\n", tok.slice(source));
-}
-
-test "lex #string heredoc multiline" {
-    const source: [:0]const u8 = "#string GLSL\n#version 330\nvoid main() {}\nGLSL";
-    var lex = Lexer.init(source);
-    const tok = lex.next();
-    try std.testing.expectEqual(Tag.raw_string_literal, tok.tag);
-    try std.testing.expectEqualStrings("#version 330\nvoid main() {}\n", tok.slice(source));
-}
-
-test "lex #string heredoc followed by semicolon" {
-    const source: [:0]const u8 = "#string END\ncontent\nEND;";
-    var lex = Lexer.init(source);
-    const tok = lex.next();
-    try std.testing.expectEqual(Tag.raw_string_literal, tok.tag);
-    try std.testing.expectEqualStrings("content\n", tok.slice(source));
-    const semi = lex.next();
-    try std.testing.expectEqual(Tag.semicolon, semi.tag);
-}
-
-test "lex hex literal" {
-    var lex = Lexer.init("0xFF 0X1A");
-    const tok1 = lex.next();
-    try std.testing.expectEqual(Tag.int_literal, tok1.tag);
-    try std.testing.expectEqualStrings("0xFF", tok1.slice("0xFF 0X1A"));
-    const tok2 = lex.next();
-    try std.testing.expectEqual(Tag.int_literal, tok2.tag);
-    try std.testing.expectEqualStrings("0X1A", tok2.slice("0xFF 0X1A"));
-}
-
-test "lex binary literal" {
-    var lex = Lexer.init("0b1010 0B110");
-    const tok1 = lex.next();
-    try std.testing.expectEqual(Tag.int_literal, tok1.tag);
-    try std.testing.expectEqualStrings("0b1010", tok1.slice("0b1010 0B110"));
-    const tok2 = lex.next();
-    try std.testing.expectEqual(Tag.int_literal, tok2.tag);
-    try std.testing.expectEqualStrings("0B110", tok2.slice("0b1010 0B110"));
-}

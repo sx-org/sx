@@ -1226,7 +1226,7 @@ fn loadImport(
             sm.put(resolved_path, imp_source) catch {};
         }
 
-        var p = parser.Parser.init(allocator, imp_source);
+        var p = try parser.Parser.init(allocator, imp_source);
         const imp_root = p.parse() catch {
             if (diagnostics) |diags| {
                 diags.addFmtInFile(.err, resolved_path, importErrSpan(&p), "parse error in '{s}': {s}", .{ resolved_path, p.err_msg orelse "unknown" });
@@ -1439,7 +1439,7 @@ fn resolveDirectoryImport(
                 sm.put(file_path, imp_source) catch {};
             }
 
-            var p = parser.Parser.init(allocator, imp_source);
+            var p = try parser.Parser.init(allocator, imp_source);
             const imp_root = p.parse() catch {
                 if (diagnostics) |diags| {
                     diags.addFmtInFile(.err, file_path, importErrSpan(&p), "parse error in '{s}': {s}", .{ file_path, p.err_msg orelse "unknown" });
