@@ -151,7 +151,7 @@ pub const TokenList = struct {
     }
 };
 
-// ---- unit tests (hand-built columns; batch production is lexer.zig's) ----
+
 
 fn expectIdx(expected: u32, actual: Index) !void {
     try std.testing.expectEqual(expected, @intFromEnum(actual));

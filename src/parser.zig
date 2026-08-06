@@ -7463,43 +7463,43 @@ fn expectParseErrorAt(src: [:0]const u8, msg: []const u8, offset: u32) !void {
     try std.testing.expectEqual(offset, parser.err_offset orelse std.math.maxInt(u32));
 }
 
-test "malformed groups: unterminated paren in lambda/grouping position" {
+test "unterminated paren in lambda or grouping position fails as tuple" {
     // isLambda and isFunctionTypeExprAtLParen both see no closer and decline;
     // the grouping parse then runs into EOF.
     try expectParseErrorAt("x := (a, b\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 7);
     try expectParseErrorAt("x := ((a, b)\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 8);
 }
 
-test "malformed groups: crossed delimiters" {
+test "crossed delimiters report missing closer at the unexpected token" {
     // The paren scan passes `]` through unmatched; the element parse reports
     // the missing `)` at the bracket.
     try expectParseErrorAt("x := (a]; y := 1;", "expected ')'", 7);
 }
 
-test "malformed groups: function-type path without its closer" {
+test "function-type path without closer fails as tuple" {
     // tagAfterParenGroup finds no `)` before EOF, so the `->` never counts as
     // a function type and the tuple refusal fires.
     try expectParseErrorAt("F :: (i32, i32 -> i32;", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 9);
 }
 
-test "malformed groups: return-type inline struct without its closer" {
+test "return-type inline struct without closer reports missing brace" {
     // hasFnBodyAfterArrow parks at .eof and classifies no body; the alias
     // parse then demands the struct body's `}`.
     try expectParseErrorAt("f :: () -> struct { x: i64;", "expected '}'", 27);
 }
 
-test "malformed groups: brace shape scan on an unterminated aggregate" {
+test "unterminated aggregate reports missing brace" {
     try expectParseErrorAt("x := Plan{ a = 1", "expected '}'", 16);
 }
 
-test "malformed groups: spaced call with and without a quotable fix" {
+test "spaced call reports glue diagnostic with fix only when balanced" {
     // gluedSpelling finds no balanced group before EOF-of-statement, so the
     // diagnostic carries no `write …` fix; the balanced spelling gets one.
     try expectParseErrorAt("f :: () { g (1; }", "a space before `(` — a call binds only when the `(` is glued to its callee", 11);
     try expectParseErrorAt("f :: () { g (1) }", "a space before `(` — a call binds only when the `(` is glued to its callee: write `g(1)`", 11);
 }
 
-test "malformed groups: lambda param list missing its closer" {
+test "lambda param list missing closer fails as tuple" {
     try expectParseErrorAt("f :: (a: i32 { 1 }", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 6);
 }
 

@@ -107,9 +107,7 @@ test "lex private keyword; backtick escape stays identifier" {
     try std.testing.expect(!tl.flags[2].is_raw);
 }
 
-// ---- batch lexing: named fixtures ----
-
-test "batch fixture: empty" {
+test "empty source emits one eof row" {
     var tl = try lexT("");
     defer deinitT(&tl);
     try std.testing.expectEqual(@as(usize, 1), tl.tags.len);
@@ -119,7 +117,7 @@ test "batch fixture: empty" {
     try std.testing.expectEqual(@as(usize, 2), tl.trivia_index.len);
 }
 
-test "batch fixture: whitespace-only" {
+test "whitespace-only source emits only eof" {
     var tl = try lexT("  \t\n");
     defer deinitT(&tl);
     try std.testing.expectEqual(@as(usize, 1), tl.tags.len);
@@ -127,7 +125,7 @@ test "batch fixture: whitespace-only" {
     try std.testing.expectEqual(@as(usize, 0), tl.comments.len);
 }
 
-test "batch fixture: crlf" {
+test "crlf source correctly sets newline_left and comment ends" {
     const source: [:0]const u8 = "// a\r\na :: 1;\r\n// b\r\nb :: 2;\r\n";
     var tl = try lexT(source);
     defer deinitT(&tl);
@@ -144,7 +142,7 @@ test "batch fixture: crlf" {
     try std.testing.expect(tl.flagsOf(b).newline_left);
 }
 
-test "batch fixture: lone-cr is one comment row" {
+test "lone cr is one comment row" {
     // The comment run stops only at LF, so a CR-separated file is one row.
     const source: [:0]const u8 = "// a\r// b\rx :: 1;";
     var tl = try lexT(source);
@@ -218,17 +216,15 @@ test "batch fixture: unterminated-string" {
     try expectSingleInvalid("\"abc");
 }
 
-test "batch fixture: unterminated-char" {
+test "unterminated char is reported invalid" {
     try expectSingleInvalid("'a");
 }
 
-test "batch fixture: unterminated-heredoc" {
+test "unterminated heredoc is reported invalid" {
     try expectSingleInvalid("#string END\ncontent\n");
 }
 
-// ---- comment ownership: rows attach to the FOLLOWING code token ----
-
-test "comment ownership: leading rows per declaration" {
+test "commentsFor attaches leading rows to the following token" {
     const source: [:0]const u8 = "// a\nx :: 1;\n// b\ny :: 2;";
     var tl = try lexT(source);
     defer deinitT(&tl);
@@ -243,7 +239,7 @@ test "comment ownership: leading rows per declaration" {
     try std.testing.expectEqual(@as(usize, 0), tl.commentsFor(tl.last()).len);
 }
 
-test "comment ownership: trailing then leading rows in source order" {
+test "commentsFor returns trailing then leading rows in source order" {
     const source: [:0]const u8 = "x :: 1; // t\n// d\ny :: 2;";
     var tl = try lexT(source);
     defer deinitT(&tl);
@@ -256,9 +252,7 @@ test "comment ownership: trailing then leading rows in source order" {
     try std.testing.expect(rows[1].line_leading);
 }
 
-// ---- line_leading / blank_left matrix ----
-
-test "trivia matrix: leading comment, no blank line" {
+test "leading comment without blank line sets line_leading but not blank_left" {
     var tl = try lexT("// a\nx :: 1;");
     defer deinitT(&tl);
     const rows = tl.commentsFor(tl.first());
@@ -268,13 +262,13 @@ test "trivia matrix: leading comment, no blank line" {
     try std.testing.expect(!tl.flagsOf(tl.first()).blank_left);
 }
 
-test "trivia matrix: blank line between comment and token" {
+test "blank line between comment and token sets blank_left" {
     var tl = try lexT("// a\n\nx :: 1;");
     defer deinitT(&tl);
     try std.testing.expect(tl.flagsOf(tl.first()).blank_left);
 }
 
-test "trivia matrix: blank line between comment rows" {
+test "blank line between comment rows sets blank_left on second row" {
     var tl = try lexT("// a\n\n// b\nx :: 1;");
     defer deinitT(&tl);
     const rows = tl.commentsFor(tl.first());
@@ -283,7 +277,7 @@ test "trivia matrix: blank line between comment rows" {
     try std.testing.expect(rows[1].blank_left);
 }
 
-test "trivia matrix: trailing comment is not line-leading" {
+test "trailing comment is not line-leading" {
     var tl = try lexT("y :: 1; // t\nx :: 2;");
     defer deinitT(&tl);
     const x = tl.tokenAtStart(13).?;
@@ -292,7 +286,7 @@ test "trivia matrix: trailing comment is not line-leading" {
     try std.testing.expect(!rows[0].line_leading);
 }
 
-test "trivia matrix: comment at offset 0 has no blank line above" {
+test "comment at offset 0 has no blank line above" {
     // The start of the file is one line start, not two.
     var tl = try lexT("// a");
     defer deinitT(&tl);
@@ -300,8 +294,6 @@ test "trivia matrix: comment at offset 0 has no blank line above" {
     try std.testing.expectEqual(@as(usize, 1), rows.len);
     try std.testing.expect(!rows[0].blank_left);
 }
-
-// ---- allocation failure ----
 
 test "lex under OOM returns error.OutOfMemory and leaks nothing" {
     const source: [:0]const u8 = "// c\nmain :: () { 42; }\n// t";
