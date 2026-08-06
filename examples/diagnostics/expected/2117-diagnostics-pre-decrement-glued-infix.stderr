@@ -1,0 +1,5 @@
+error: expected ';'
+  --> examples/diagnostics/2117-diagnostics-pre-decrement-glued-infix.sx:6:11
+   |
+ 6 |     x := a--b;
+   |           ^^

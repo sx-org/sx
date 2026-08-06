@@ -3519,6 +3519,20 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     break :blk self.builder.emit(.{ .const_type = ptid }, .type_value);
                 }
             }
+            // `--x` writes the place its operand names. Must run before the
+            // operand is lowered: lowering it as a value would evaluate the
+            // place's subexpressions a second time (`--xs[idx()]`).
+            if (uop.op == .pre_decrement) {
+                if (self.diagConstRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
+                if (self.diagContextRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
+                if (self.diagEnclosingRootWrite(uop.operand)) break :blk self.emitPlaceholder("pre-decrement");
+                const place = self.resolveMutablePlace(uop.operand) orelse
+                    break :blk self.diagDecrementTarget(node.span);
+                const ty = Lowering.placeType(place);
+                if (self.pointerElement(ty) != null) break :blk self.diagDecrementPointer(ty, node.span);
+                if (!self.isIntEx(ty)) break :blk self.diagDecrementNonInteger(ty, node.span);
+                break :blk self.lowerPlaceRmw(place, .sub_assign, self.builder.constInt(1, ty));
+            }
             // An explicit `xx` cast requests the conversion, truncation
             // included — literal operands skip the fits-check.
             const saved_fit = self.suppress_int_fit_check;
@@ -3556,6 +3570,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     const ptr_ty = self.module.types.ptrTo(inner_ty);
                     break :blk2 self.builder.emit(.{ .addr_of = .{ .operand = operand } }, ptr_ty);
                 },
+                .pre_decrement => unreachable,
             };
         },
 

@@ -612,8 +612,9 @@ pub const Parser = struct {
 
         // Pointer type: *T
         if (self.current.tag == .star) {
+            const op_loc = self.current.loc;
             self.advance(); // skip '*'
-            try self.requirePrefixGlue(start);
+            try self.requirePrefixGlue(op_loc);
             const pointee_type = try self.parseTypeExpr();
             return try self.createNode(start, .{ .pointer_type_expr = .{ .pointee_type = pointee_type } });
         }
@@ -3300,10 +3301,19 @@ pub const Parser = struct {
     }
 
     fn parseUnary(self: *Parser) anyerror!*Node {
+        if (self.current.tag == .minus_minus) {
+            const start = self.current.loc.start;
+            const op_loc = self.current.loc;
+            self.advance();
+            try self.requirePrefixGlue(op_loc);
+            const operand = try self.parseUnary();
+            return try self.createNode(start, .{ .unary_op = .{ .op = .pre_decrement, .operand = operand } });
+        }
         if (self.current.tag == .minus) {
             const start = self.current.loc.start;
+            const op_loc = self.current.loc;
             self.advance();
-            try self.requirePrefixGlue(start);
+            try self.requirePrefixGlue(op_loc);
             const operand = try self.parseUnary();
             return try self.createNode(start, .{ .unary_op = .{ .op = .negate, .operand = operand } });
         }
@@ -3332,8 +3342,9 @@ pub const Parser = struct {
         // Type-arg positions keep working); on a value it is address-of.
         if (self.current.tag == .star) {
             const start = self.current.loc.start;
+            const op_loc = self.current.loc;
             self.advance();
-            try self.requirePrefixGlue(start);
+            try self.requirePrefixGlue(op_loc);
             const operand = try self.parseUnary();
             return try self.createNode(start, .{ .unary_op = .{ .op = .address_of, .operand = operand } });
         }
@@ -5828,18 +5839,18 @@ pub const Parser = struct {
         return self.current.tag == .semicolon or self.implicitTerminator();
     }
 
-    /// The spacing rule for a prefix `-` / `*`: it binds only when glued to its
-    /// operand. That is what makes `a -b` the prefix reading and `a - b` the
-    /// infix one, so a spaced prefix has no reading left.
-    fn requirePrefixGlue(self: *Parser, op_start: u32) !void {
+    /// The spacing rule for a prefix `-` / `--` / `*`: it binds only when glued
+    /// to its operand. That is what makes `a -b` the prefix reading and `a - b`
+    /// the infix one, so a spaced prefix has no reading left.
+    fn requirePrefixGlue(self: *Parser, op: Token.Loc) !void {
         if (self.currentIsGlued()) return;
-        const op = self.source[op_start .. op_start + 1];
+        const text = self.source[op.start..op.end];
         return self.failAt(
-            Token.Loc{ .start = op_start, .end = writtenStart(self.current) },
+            Token.Loc{ .start = op.start, .end = writtenStart(self.current) },
             std.fmt.allocPrint(
                 self.allocator,
                 "a space after the prefix `{s}` — a prefix operator binds only when glued to its operand",
-                .{op},
+                .{text},
             ) catch return error.ParseError,
         );
     }
@@ -6003,6 +6014,7 @@ test "continuesStatement: the suppression set member by member" {
         .kw_case,    .identifier,  .int_literal,    .string_literal,
         .l_brace,    .r_brace,
         .l_paren,    .l_bracket,   .bang,           .dot,      .minus,
+        .minus_minus,
         .star,       .semicolon,   .eof,            .kw_if,    .kw_while,
         .kw_for,     .kw_return,   .kw_defer,       .kw_onfail, .kw_break,
         .kw_continue, .kw_raise,   .kw_export,      .kw_push,   .kw_try,

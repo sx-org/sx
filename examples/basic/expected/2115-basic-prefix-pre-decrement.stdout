@@ -1,0 +1,7 @@
+local=2 value=2
+global=99
+qualified=-1 field=0
+field=4
+nested=8
+elem=2
+deref=0

@@ -156,6 +156,7 @@ pub const Tag = enum {
     hash_jni_main, // `#jni_main #jni_class(...) { ... }` — class is the launchable Android Activity
     hash_context_extend, // `#context_extend name: Type = default;` — top-level Context field declaration
     triple_minus, // ---
+    minus_minus,
 
     // Special
     eof,
@@ -222,6 +223,7 @@ pub const Tag = enum {
             .arrow => "->",
             .fat_arrow => "=>",
             .triple_minus => "---",
+            .minus_minus => "--",
             else => null,
         };
     }

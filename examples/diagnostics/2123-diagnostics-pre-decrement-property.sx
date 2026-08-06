@@ -1,0 +1,23 @@
+#import "modules/std.sx";
+
+Temp :: struct {
+    raw: i64 = 0;
+    celsius :: (self: *Temp) -> i64 #get => self.raw;
+    celsius :: (self: *Temp, v: i64) #set { self.raw = v * 2; }
+}
+
+Reading :: struct {
+    raw: i64 = 0;
+    scaled :: (self: *Reading) -> i64 #get => self.raw * 10;
+}
+
+main :: () -> i32 {
+    t : Temp = .{ raw = 3 };
+    --t.celsius;
+
+    r : Reading = .{ raw = 3 };
+    --r.scaled;
+
+    print("{} {}\n", t.raw, r.raw);
+    return 0;
+}

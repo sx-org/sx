@@ -1888,6 +1888,7 @@ pub const Server = struct {
             .colon_colon,
             .colon_equal,
             .triple_minus,
+            .minus_minus,
             => ST.operator_,
 
             .identifier => classifyIdentifier(tok, sema, source),

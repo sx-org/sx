@@ -13,6 +13,37 @@ test "lex asm keyword; volatile/clobbers stay identifiers" {
     }
 }
 
+// The `-` family munches longest-first: `---`, `--`, `->`, `-=`, `-`. `---`
+// must be tried before `--`, or every undefined-value literal reads as
+// `[--, -]`. Each case asserts the span too, so a munch that stops early is
+// caught.
+test "lex the `-` family: tag + span" {
+    var lex = Lexer.init("--- -- -> -= -");
+    const Case = struct { tag: Tag, start: u32, end: u32 };
+    const cases = [_]Case{
+        .{ .tag = .triple_minus, .start = 0, .end = 3 },
+        .{ .tag = .minus_minus, .start = 4, .end = 6 },
+        .{ .tag = .arrow, .start = 7, .end = 9 },
+        .{ .tag = .minus_equal, .start = 10, .end = 12 },
+        .{ .tag = .minus, .start = 13, .end = 14 },
+    };
+    for (cases) |c| {
+        const tok = lex.next();
+        try std.testing.expectEqual(c.tag, tok.tag);
+        try std.testing.expectEqual(c.start, tok.loc.start);
+        try std.testing.expectEqual(c.end, tok.loc.end);
+    }
+    try std.testing.expectEqual(Tag.eof, lex.next().tag);
+}
+
+test "lex `-->` as `--` then `>`" {
+    var lex = Lexer.init("-->");
+    const expected = [_]Tag{ .minus_minus, .greater };
+    for (expected) |exp| {
+        try std.testing.expectEqual(exp, lex.next().tag);
+    }
+}
+
 // Number-literal bases + `_` digit separators. The lexer captures the whole
 // literal (prefix + digits + separators) in a single token; the parser strips
 // the `_`s before computing the value. Each case asserts BOTH the tag and the

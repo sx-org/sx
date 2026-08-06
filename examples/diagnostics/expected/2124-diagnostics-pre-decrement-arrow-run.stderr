@@ -1,0 +1,5 @@
+error: expected ';'
+  --> examples/diagnostics/2124-diagnostics-pre-decrement-arrow-run.sx:6:11
+   |
+ 6 |     x := a-->b;
+   |           ^^
