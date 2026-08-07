@@ -283,6 +283,30 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
+    const pkg_migrate = b.addExecutable(.{
+        .name = "pkg-migrate",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/pkg_migrate/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "sxlex", .module = lexmod }},
+        }),
+    });
+    b.installArtifact(pkg_migrate);
+    const run_pkg_migrate = b.addRunArtifact(pkg_migrate);
+    if (b.args) |args| run_pkg_migrate.addArgs(args);
+    b.step("pkg-migrate", "Run the package-migration tool").dependOn(&run_pkg_migrate.step);
+
+    const pkg_migrate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/pkg_migrate/main.test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "sxlex", .module = lexmod }},
+        }),
+    });
+    const run_pkg_migrate_tests = b.addRunArtifact(pkg_migrate_tests);
+
     // Install the stdlib alongside the binary so `<prefix>/bin/sx` finds
     // `<prefix>/library/modules/...` via the install-layout fallback in
     // `src/imports.zig::discoverStdlibPaths`.
@@ -395,6 +419,7 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run unit tests + the example/issue regression suite");
     test_step.dependOn(&run_lex_tests.step);
+    test_step.dependOn(&run_pkg_migrate_tests.step);
     test_step.dependOn(&run_async_substrate_tests.step);
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
