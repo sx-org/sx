@@ -3171,9 +3171,11 @@ pub const Server = struct {
         // Last resort: simple format
         var buf = std.ArrayList(u8).empty;
 
-        if (doc.docFor(sym.def_span.start, sym.name)) |comment| {
-            try buf.appendSlice(allocator, comment);
-            try buf.appendSlice(allocator, "\n\n");
+        if (doc.root != null) {
+            if (doc.docFor(sym.def_span.start, sym.name)) |comment| {
+                try buf.appendSlice(allocator, comment);
+                try buf.appendSlice(allocator, "\n\n");
+            }
         }
 
         try buf.appendSlice(allocator, "```sx\n");
@@ -4243,7 +4245,6 @@ test "semantic tokens: repeat requests on an unchanged document lex nothing" {
     try std.testing.expectEqual(lexed, counter.allocated);
 }
 
-/// The symbol named `name` in `doc`'s editor index.
 fn symbolNamed(doc: *const Document, name: []const u8) ?sx.sema.Symbol {
     for (doc.sema.?.symbols) |sym| {
         if (std.mem.eql(u8, sym.name, name)) return sym;
@@ -4435,8 +4436,8 @@ test "lsp/hover: an imported struct field and enum variant keep their docs" {
     );
 }
 
-// A defining document with no AST renders the symbol fallback from its OWN
-// source; no other document's root can supply a decl node or a comment.
+// A defining document with no AST renders the symbol fallback without
+// a comment; no other document's root can supply a decl node or a comment.
 test "lsp/hover: a null-root defining document falls back to the symbol alone" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -4460,7 +4461,7 @@ test "lsp/hover: a null-root defining document falls back to the symbol alone" {
     var server = Server{ .allocator = alloc, .documents = store, .transport = undefined, .io = test_io(), .project_diag_uris = std.StringHashMap(void).init(alloc) };
     try std.testing.expectEqual(@as(*const Document, other_doc), server.resolveSymbolDoc(main_doc, sym));
     try std.testing.expectEqualStrings(
-        "// The defining file's note.\n\n```sx\nhelper :: (constant)\n```",
+        "```sx\nhelper :: (constant)\n```",
         try Server.formatSymbolHover(alloc, sym, other_doc),
     );
 }

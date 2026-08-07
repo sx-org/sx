@@ -492,6 +492,15 @@ test "docBlock drops the trailing cr of its last row" {
     try std.testing.expectEqualStrings("// a\r\n// b", tl.docBlock(tl.tokenAtStart(12).?).?);
 }
 
+test "lone-CR file is one comment row and yields no declaration doc site" {
+    const source: [:0]const u8 = "// doc\rx :: 1;";
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    try std.testing.expectEqual(@as(usize, 1), tl.comments.len);
+    try std.testing.expectEqual(Tag.eof, tl.tags[0]);
+    try std.testing.expectEqual(null, tl.tokenAtStart(7));
+}
+
 test "a heredoc content line beginning with // is not a comment row" {
     const source: [:0]const u8 = "s :: #string END\n// not a comment\nEND;\nx :: 1;";
     var tl = try lexT(source);
