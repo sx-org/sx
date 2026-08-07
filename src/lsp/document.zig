@@ -48,6 +48,17 @@ pub const Document = struct {
         const sr = self.sema orelse return &.{};
         return sr.symbols;
     }
+
+    /// The doc-comment block above the site at `site_start`, which must spell
+    /// `name` in this document's source. A site spelling anything else came
+    /// from another document and yields null, never this file's comment at
+    /// that offset.
+    pub fn docFor(self: *const Document, site_start: u32, name: []const u8) ?[]const u8 {
+        if (site_start == sx.ast.no_source_start) return null;
+        const i = self.tokens.tokenAtStart(site_start) orelse return null;
+        if (!std.mem.eql(u8, self.tokens.slice(i), name)) return null;
+        return self.tokens.docBlock(i);
+    }
 };
 
 pub const DocumentStore = struct {
