@@ -1,7 +1,8 @@
 const std = @import("std");
-const lexer = @import("lexer.zig");
-const Tag = @import("token.zig").Tag;
-const TokenList = @import("token_list.zig").TokenList;
+const sxlex = @import("sxlex");
+const lexer = sxlex.lexer;
+const Tag = sxlex.token.Tag;
+const TokenList = sxlex.token_list.TokenList;
 
 fn lexT(source: [:0]const u8) !TokenList {
     return lexer.lex(std.testing.allocator, source);
