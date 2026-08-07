@@ -404,19 +404,24 @@ test "openOrUpdate: a failed lex leaves the previous source, tokens and version 
     try std.testing.expectEqualStrings("a", doc.tokens.slice(doc.tokens.first()));
 }
 
-test "createDocument: an allocation failure anywhere reclaims the new token arena" {
+test "createDocument: store allocation failures reclaim the token arena" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     const src: [:0]const u8 = "a :: 1;";
     var reached_tokens = false;
+    var reached_success = false;
     var index: usize = 0;
     while (index < 32) : (index += 1) {
         var failing = std.testing.FailingAllocator.init(alloc, .{ .fail_index = index });
-        var counter = CountingAllocator{ .child = alloc };
+        var counter = CountingAllocator{ .child = std.testing.allocator };
         var store = doc_mod.DocumentStore.init(failing.allocator(), test_io(), &.{}, counter.allocator());
-        if (store.openOrUpdate("main.sx", src, 1)) |_| break else |err| {
+        if (store.openOrUpdate("main.sx", src, 1)) |doc| {
+            reached_success = true;
+            doc.token_arena.deinit();
+            break;
+        } else |err| {
             try std.testing.expect(err == error.OutOfMemory);
             try std.testing.expectEqual(@as(usize, 0), counter.live());
             if (counter.allocated > 0) reached_tokens = true;
@@ -424,6 +429,32 @@ test "createDocument: an allocation failure anywhere reclaims the new token aren
     }
     // Without a failure landing after the lex the sweep would prove nothing.
     try std.testing.expect(reached_tokens);
+    try std.testing.expect(reached_success);
+}
+
+test "createDocument: token-backing allocation failures reclaim the token arena" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src: [:0]const u8 = "a :: 1;";
+    var reached_success = false;
+    var index: usize = 0;
+    while (index < 32) : (index += 1) {
+        var counter = CountingAllocator{ .child = std.testing.allocator };
+        var failing = std.testing.FailingAllocator.init(counter.allocator(), .{ .fail_index = index });
+        var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, failing.allocator());
+        if (store.openOrUpdate("main.sx", src, 1)) |doc| {
+            reached_success = true;
+            doc.token_arena.deinit();
+            try std.testing.expectEqual(@as(usize, 0), counter.live());
+            break;
+        } else |err| {
+            try std.testing.expect(err == error.OutOfMemory);
+            try std.testing.expectEqual(@as(usize, 0), counter.live());
+        }
+    }
+    try std.testing.expect(reached_success);
 }
 
 test "openOrUpdate: repeated updates return the prior token arena to its backing" {
