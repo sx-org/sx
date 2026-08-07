@@ -42,7 +42,7 @@ fn sweepDirectory(alloc: std.mem.Allocator, io: std.Io, dir: []const u8) !usize 
     const verbose = sweepVerbose();
 
     const lib_paths = [_][]const u8{corpus_paths.library_dir};
-    var store = doc_mod.DocumentStore.init(alloc, io, &lib_paths);
+    var store = doc_mod.DocumentStore.init(alloc, io, &lib_paths, alloc);
     store.root_path = std.fs.path.dirname(corpus_paths.examples_dir) orelse "";
 
     // `examples/` is organized into category subdirs (`examples/<cat>/*.sx`),

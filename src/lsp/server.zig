@@ -2,7 +2,6 @@ const std = @import("std");
 const sx = struct {
     pub const ast = @import("../ast.zig");
     pub const parser = @import("../parser.zig");
-    pub const lexer = @import("../lexer.zig");
     pub const token = @import("../token.zig");
     pub const types = @import("../types.zig");
     pub const sema = @import("../sema.zig");
@@ -33,7 +32,7 @@ pub const Server = struct {
     pub fn init(allocator: std.mem.Allocator, transport: *Transport, io: std.Io, stdlib_paths: []const []const u8) Server {
         return .{
             .allocator = allocator,
-            .documents = DocumentStore.init(allocator, io, stdlib_paths),
+            .documents = DocumentStore.init(allocator, io, stdlib_paths, std.heap.page_allocator),
             .transport = transport,
             .io = io,
             .stdlib_paths = stdlib_paths,
@@ -1316,27 +1315,36 @@ pub const Server = struct {
             return try self.sendResponse(id_json, "{\"data\":[]}");
         };
 
+        const data = try self.semanticTokenData(doc, sema);
+        const result_json = try lsp.semanticTokensJson(self.allocator, data);
+        try self.sendResponse(id_json, result_json);
+    }
+
+    /// The `textDocument/semanticTokens/full` delta stream for `doc`, walked
+    /// over its retained token vector.
+    fn semanticTokenData(self: *Server, doc: *const Document, sema: SemaResult) ![]const u32 {
         var data = std.ArrayList(u32).empty;
         var prev_line: u32 = 0;
         var prev_char: u32 = 0;
 
-        var tl = try sx.lexer.lex(self.allocator, doc.source);
-        defer tl.deinit(self.allocator);
-        var i = tl.first();
-        while (tl.tag(i) != .eof) : (i = tl.next(i)) {
-            const tok = tl.token(i);
+        var i = doc.tokens.first();
+        while (doc.tokens.tag(i) != .eof) : (i = doc.tokens.next(i)) {
+            const s = doc.tokens.start(i);
+            const e = doc.tokens.end(i);
 
-            if (tok.tag == .string_literal or tok.tag == .raw_string_literal) {
-                try emitStringParts(&data, self.allocator, doc.source, tok.loc.start, tok.loc.end, &prev_line, &prev_char);
-                continue;
+            switch (doc.tokens.tag(i)) {
+                .string_literal, .raw_string_literal => {
+                    try emitStringParts(&data, self.allocator, doc.source, s, e, &prev_line, &prev_char);
+                    continue;
+                },
+                else => {},
             }
 
-            const token_type = classifyToken(tok, sema, doc.source) orelse continue;
-            try emitToken(&data, self.allocator, doc.source, tok.loc.start, tok.loc.end, token_type, &prev_line, &prev_char);
+            const token_type = classifyToken(doc.tokens.token(i), sema, doc.source) orelse continue;
+            try emitToken(&data, self.allocator, doc.source, s, e, token_type, &prev_line, &prev_char);
         }
 
-        const result_json = try lsp.semanticTokensJson(self.allocator, data.items);
-        try self.sendResponse(id_json, result_json);
+        return data.items;
     }
 
     // ---- Inlay hints ----
@@ -3448,7 +3456,7 @@ test "analyzeDocument: parse and sema basic function" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 = "add :: (a: i32, b: i32) -> i32 { a + b; }";
     const doc = try store.openOrUpdate("main.sx", src, 1);
     try store.analyzeDocument(doc);
@@ -3465,7 +3473,7 @@ test "analyzeDocument: flat import pre-registers symbols" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
     // Pre-load the imported module
     const lib_src: [:0]const u8 = "mul :: (a: i32, b: i32) -> i32 { a * b; }";
@@ -3492,7 +3500,7 @@ test "analyzeDocument: namespaced import registers namespace symbol" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
     // Pre-load the imported module
     const lib_src: [:0]const u8 = "add :: (a: i32, b: i32) -> i32 { a + b; }";
@@ -3519,7 +3527,7 @@ test "analyzeDocument: namespaced import fn_signatures have prefix" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
     const lib_src: [:0]const u8 = "add :: (a: i32, b: i32) -> i32 { a + b; }";
     const lib_doc = try store.openOrUpdate("lib.sx", lib_src, 1);
@@ -3542,7 +3550,7 @@ test "analyzeDocument: pipe operator desugars to call" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
     const lib_src: [:0]const u8 = "add :: (a: i32, b: i32) -> i32 { a + b; }";
     const lib_doc = try store.openOrUpdate("lib.sx", lib_src, 1);
@@ -3566,7 +3574,7 @@ test "analyzeDocument: for-loop capture variables are registered" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
     const src: [:0]const u8 =
         \\main :: () {
@@ -3592,7 +3600,7 @@ test "analyzeDocument: for-loop with underscore capture" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
     const src: [:0]const u8 =
         \\main :: () {
@@ -3617,7 +3625,7 @@ test "analyzeDocument: for-loop value-only capture" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
     const src: [:0]const u8 =
         \\main :: () {
@@ -3652,7 +3660,7 @@ test "lsp/references: a field's uses are found across documents" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
     const lib_src: [:0]const u8 = "Move :: struct { flag: i64; }";
     const lib_doc = try store.openOrUpdate("lib.sx", lib_src, 1);
@@ -3683,7 +3691,7 @@ test "lsp/references: excluding the declaration drops the definition" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 = "Move :: struct { flag: i64; } use :: (m: *Move) -> i64 { m.flag; }";
     const doc = try store.openOrUpdate("main.sx", src, 1);
     try store.analyzeDocument(doc);
@@ -3702,7 +3710,7 @@ test "lsp/definition: cursor on a member declaration resolves to itself" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 = "Move :: struct { flag: i64; }";
     const doc = try store.openOrUpdate("main.sx", src, 1);
     try store.analyzeDocument(doc);
@@ -3724,7 +3732,7 @@ test "lsp/inlayHint: a for-loop capture in a struct method shows its element typ
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const lib_src: [:0]const u8 =
         \\Move :: struct { flag: i64; }
         \\List :: struct ($T: Type) { items: [*]T = null; len: i64 = 0; }
@@ -3773,7 +3781,7 @@ test "lsp/workspace: loadWorkspaceFiles analyses .sx files that were never opene
     try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/a.sx", .data = "Foo :: struct { x: i64; }" });
     try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/b.sx", .data = "Bar :: struct { y: i64; }" });
 
-    var store = doc_mod.DocumentStore.init(alloc, io, &.{});
+    var store = doc_mod.DocumentStore.init(alloc, io, &.{}, alloc);
     store.root_path = dir;
     store.loadWorkspaceFiles();
 
@@ -3807,7 +3815,7 @@ test "lsp/project: whole-program check attributes a reachable error to its modul
     try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/main.sx", .data = "#import \"mod.sx\";\n" ++
         "main :: () -> i32 { mv : Move = .{ flag = 1 }; return xx use(*mv); }\n" });
 
-    const store = doc_mod.DocumentStore.init(alloc, io, &.{});
+    const store = doc_mod.DocumentStore.init(alloc, io, &.{}, alloc);
     var server = Server{
         .allocator = alloc,
         .documents = store,
@@ -3836,7 +3844,7 @@ test "lsp/context: cross-file field def resolves without an import" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
     const decl_src: [:0]const u8 = "#context_extend trace_depth: i64 = 3;";
     const decl_doc = try store.openOrUpdate("ctx_decl.sx", decl_src, 1);
@@ -3870,7 +3878,7 @@ test "lsp/context: references span reads and push sites across documents" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
     const decl_src: [:0]const u8 = "#context_extend trace_depth: i64 = 3;";
     const decl_doc = try store.openOrUpdate("ctx_decl.sx", decl_src, 1);
@@ -3902,7 +3910,7 @@ test "lsp/context: hover carries type, default, and declaring module" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const decl_src: [:0]const u8 = "#context_extend ui_scale: f64 = 1.5;";
     const decl_doc = try store.openOrUpdate("ui_mod.sx", decl_src, 1);
     try store.analyzeDocument(decl_doc);
@@ -3921,7 +3929,7 @@ test "lsp/context: completion lists extension fields" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const decl_src: [:0]const u8 = "#context_extend ui_scale: f64 = 1.5;\n#context_extend frame_no: i64 = 0;";
     const decl_doc = try store.openOrUpdate("ui_mod.sx", decl_src, 1);
     try store.analyzeDocument(decl_doc);
@@ -3967,7 +3975,7 @@ test "lsp/context: bare context hover enumerates the assembled struct" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 =
         \\Context :: struct { allocator: i64; }
         \\#context_extend ui_scale: f64 = 1.5;
@@ -3993,7 +4001,7 @@ test "lsp/uri: relative document paths absolutize against the server cwd" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var server = Server{ .allocator = alloc, .documents = doc_mod.DocumentStore.init(alloc, test_io(), &.{}), .transport = undefined, .io = test_io(), .project_diag_uris = std.StringHashMap(void).init(alloc) };
+    var server = Server{ .allocator = alloc, .documents = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc), .transport = undefined, .io = test_io(), .project_diag_uris = std.StringHashMap(void).init(alloc) };
 
     const rel = try server.fileUri("modules/ffi/objc_block.sx");
     try std.testing.expect(std.mem.startsWith(u8, rel, "file:///"));
@@ -4010,7 +4018,7 @@ test "lsp/uri: references payload URIs are absolute for relative-keyed docs" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 = "Move :: struct { flag: i64; } use :: (m: *Move) -> i64 { m.flag; }";
     const doc = try store.openOrUpdate("rel_dir/main.sx", src, 1);
     try store.analyzeDocument(doc);
@@ -4022,4 +4030,259 @@ test "lsp/uri: references payload URIs are absolute for relative-keyed docs" {
     try std.testing.expect(std.mem.indexOf(u8, payload, "\"uri\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, payload, "file:///") != null);
     try std.testing.expect(std.mem.indexOf(u8, payload, "file://rel_dir") == null);
+}
+
+const CountingAllocator = @import("document.test.zig").CountingAllocator;
+
+/// A semantic token decoded back to absolute 0-based line/col.
+const SemTok = struct { line: u32, col: u32, len: u32, ty: u32 };
+
+fn decodeSemTokens(alloc: std.mem.Allocator, data: []const u32) ![]const SemTok {
+    var out: std.ArrayList(SemTok) = .empty;
+    var line: u32 = 0;
+    var col: u32 = 0;
+    var i: usize = 0;
+    while (i + 5 <= data.len) : (i += 5) {
+        line += data[i];
+        col = if (data[i] == 0) col + data[i + 1] else data[i + 1];
+        try out.append(alloc, .{ .line = line, .col = col, .len = data[i + 2], .ty = data[i + 3] });
+    }
+    return out.items;
+}
+
+/// Drive `src` through didOpen → analyze → `textDocument/semanticTokens/full`
+/// and hand back the decoded stream.
+fn semTokens(alloc: std.mem.Allocator, src: [:0]const u8) ![]const SemTok {
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const doc = try store.openOrUpdate("main.sx", src, 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema orelse return error.TestUnexpectedResult;
+
+    var server = Server{
+        .allocator = alloc,
+        .documents = store,
+        .transport = undefined,
+        .io = test_io(),
+        .project_diag_uris = std.StringHashMap(void).init(alloc),
+    };
+    return decodeSemTokens(alloc, try server.semanticTokenData(doc, sema));
+}
+
+/// The token starting at byte `off` of `src`, or null when none does.
+fn semTokenAt(toks: []const SemTok, src: [:0]const u8, off: u32) ?SemTok {
+    const loc = sx.errors.SourceLoc.compute(src, off);
+    for (toks) |t| {
+        if (t.line == loc.line - 1 and t.col == loc.col - 1) return t;
+    }
+    return null;
+}
+
+fn countOfType(toks: []const SemTok, ty: u32) usize {
+    var n: usize = 0;
+    for (toks) |t| {
+        if (t.ty == ty) n += 1;
+    }
+    return n;
+}
+
+test "semantic tokens: a plain string literal is one run spanning its quotes" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src: [:0]const u8 = "greet :: () -> i32 { s := \"hi\"; 0 }";
+    const toks = try semTokens(alloc, src);
+
+    const quote: u32 = @intCast(std.mem.indexOfScalar(u8, src, '"').?);
+    const run = semTokenAt(toks, src, quote) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(lsp.SemanticTokenType.string_, run.ty);
+    try std.testing.expectEqual(@as(u32, 4), run.len);
+    try std.testing.expectEqual(@as(usize, 1), countOfType(toks, lsp.SemanticTokenType.string_));
+}
+
+test "semantic tokens: interpolation splits the run and leaves the hole unclassified" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src: [:0]const u8 = "f :: (n: i32) -> i32 { s := \"a{n}b\"; n }";
+    const toks = try semTokens(alloc, src);
+
+    const quote: u32 = @intCast(std.mem.indexOfScalar(u8, src, '"').?);
+    const head = semTokenAt(toks, src, quote) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(lsp.SemanticTokenType.string_, head.ty);
+    try std.testing.expectEqual(@as(u32, 2), head.len);
+
+    const tail_off: u32 = @intCast(std.mem.indexOf(u8, src, "b\"").?);
+    const tail = semTokenAt(toks, src, tail_off) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(lsp.SemanticTokenType.string_, tail.ty);
+    try std.testing.expectEqual(@as(u32, 2), tail.len);
+
+    try std.testing.expectEqual(@as(usize, 2), countOfType(toks, lsp.SemanticTokenType.string_));
+
+    // The literal is one token, so the interpolated name carries no token of its own.
+    const hole: u32 = @intCast(std.mem.indexOf(u8, src, "{n}").? + 1);
+    try std.testing.expect(semTokenAt(toks, src, hole) == null);
+}
+
+test "semantic tokens: a heredoc emits its content lines and not its delimiters" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src: [:0]const u8 =
+        \\f :: () -> i32 {
+        \\    s := #string END
+        \\alpha
+        \\beta
+        \\END
+        \\    0
+        \\}
+    ;
+    const toks = try semTokens(alloc, src);
+
+    const alpha: u32 = @intCast(std.mem.indexOf(u8, src, "alpha").?);
+    const beta: u32 = @intCast(std.mem.indexOf(u8, src, "beta").?);
+    const a_run = semTokenAt(toks, src, alpha) orelse return error.TestUnexpectedResult;
+    const b_run = semTokenAt(toks, src, beta) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(lsp.SemanticTokenType.string_, a_run.ty);
+    try std.testing.expectEqual(lsp.SemanticTokenType.string_, b_run.ty);
+    // Each content line's run carries its terminating newline.
+    try std.testing.expectEqual(@as(u32, 6), a_run.len);
+    try std.testing.expectEqual(@as(u32, 5), b_run.len);
+    try std.testing.expectEqual(@as(usize, 2), countOfType(toks, lsp.SemanticTokenType.string_));
+
+    const directive: u32 = @intCast(std.mem.indexOf(u8, src, "#string").?);
+    try std.testing.expect(semTokenAt(toks, src, directive) == null);
+    const closer: u32 = @intCast(std.mem.indexOf(u8, src, "\nEND").? + 1);
+    try std.testing.expect(semTokenAt(toks, src, closer) == null);
+}
+
+test "semantic tokens: a raw identifier's range excludes its backtick" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src: [:0]const u8 = "f :: () -> i32 { `x := 7; `x }";
+    const toks = try semTokens(alloc, src);
+
+    const tick: u32 = @intCast(std.mem.indexOfScalar(u8, src, '`').?);
+    try std.testing.expect(semTokenAt(toks, src, tick) == null);
+    const name = semTokenAt(toks, src, tick + 1) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(lsp.SemanticTokenType.variable, name.ty);
+    try std.testing.expectEqual(@as(u32, 1), name.len);
+}
+
+test "semantic tokens: a directive is a keyword and its path a string" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src: [:0]const u8 = "#import \"nowhere.sx\";\nf :: () -> i32 { 0 }";
+    const toks = try semTokens(alloc, src);
+
+    const directive = semTokenAt(toks, src, 0) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(lsp.SemanticTokenType.keyword, directive.ty);
+    try std.testing.expectEqual(@as(u32, 7), directive.len);
+
+    const quote: u32 = @intCast(std.mem.indexOfScalar(u8, src, '"').?);
+    const path = semTokenAt(toks, src, quote) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(lsp.SemanticTokenType.string_, path.ty);
+}
+
+test "semantic tokens: a type keyword classifies as a type" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src: [:0]const u8 = "f :: (a: i32) -> i32 { a }";
+    const toks = try semTokens(alloc, src);
+
+    const ty_off: u32 = @intCast(std.mem.indexOf(u8, src, "i32").?);
+    const ty = semTokenAt(toks, src, ty_off) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqual(lsp.SemanticTokenType.type_, ty.ty);
+    try std.testing.expectEqual(@as(u32, 3), ty.len);
+}
+
+test "semantic tokens: sema classifies functions, parameters, structs and locals" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src: [:0]const u8 =
+        \\Point :: struct { v: i32; }
+        \\scale :: (p: *Point, k: i32) -> i32 { total := k; total }
+    ;
+    const toks = try semTokens(alloc, src);
+
+    const ST = lsp.SemanticTokenType;
+    const at = struct {
+        fn f(t: []const SemTok, s: [:0]const u8, needle: []const u8) !SemTok {
+            const off: u32 = @intCast(std.mem.indexOf(u8, s, needle) orelse return error.TestUnexpectedResult);
+            return semTokenAt(t, s, off) orelse error.TestUnexpectedResult;
+        }
+    }.f;
+
+    try std.testing.expectEqual(ST.struct_, (try at(toks, src, "Point ::")).ty);
+    try std.testing.expectEqual(ST.function, (try at(toks, src, "scale ::")).ty);
+    try std.testing.expectEqual(ST.parameter, (try at(toks, src, "p: *Point")).ty);
+    try std.testing.expectEqual(ST.struct_, (try at(toks, src, "Point,")).ty);
+    try std.testing.expectEqual(ST.parameter, (try at(toks, src, "k: i32")).ty);
+    try std.testing.expectEqual(ST.variable, (try at(toks, src, "total :=")).ty);
+}
+
+test "semantic tokens: invalid and eof tokens classify to nothing" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const src: [:0]const u8 = "f :: () -> i32 { 0 }";
+    const doc = try store.openOrUpdate("main.sx", src, 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema orelse return error.TestUnexpectedResult;
+
+    try std.testing.expect(Server.classifyToken(.{ .tag = .invalid, .loc = .{ .start = 0, .end = 1 } }, sema, src) == null);
+    try std.testing.expect(Server.classifyToken(.{ .tag = .eof, .loc = .{ .start = @intCast(src.len), .end = @intCast(src.len) } }, sema, src) == null);
+}
+
+test "semantic tokens: a document of only trivia emits an empty stream" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const toks = try semTokens(alloc, "// nothing here\n\n");
+    try std.testing.expectEqual(@as(usize, 0), toks.len);
+}
+
+test "semantic tokens: repeat requests on an unchanged document lex nothing" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var counter = CountingAllocator{ .child = alloc };
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, counter.allocator());
+    const src: [:0]const u8 = "add :: (a: i32, b: i32) -> i32 { a + b }";
+    const doc = try store.openOrUpdate("main.sx", src, 1);
+    try store.analyzeDocument(doc);
+    const sema = doc.sema orelse return error.TestUnexpectedResult;
+
+    var server = Server{
+        .allocator = alloc,
+        .documents = store,
+        .transport = undefined,
+        .io = test_io(),
+        .project_diag_uris = std.StringHashMap(void).init(alloc),
+    };
+
+    const lexed = counter.allocated;
+    try std.testing.expect(lexed > 0);
+
+    var n: usize = 0;
+    while (n < 100) : (n += 1) {
+        const data = try server.semanticTokenData(doc, sema);
+        try std.testing.expect(data.len > 0);
+    }
+
+    try std.testing.expectEqual(lexed, counter.allocated);
 }
