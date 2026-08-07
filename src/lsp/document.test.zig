@@ -287,8 +287,6 @@ test "analyzeDocument: typed struct-literal field name records a member use" {
     try std.testing.expect(findMemberRef(sema, "x", "Point", true) != null);
 }
 
-// ---- Lexical-state transactions ----
-
 /// Tracks bytes handed out and returned by `child`, so a test can bound the
 /// storage a document's token arenas hold across updates.
 pub const CountingAllocator = struct {
@@ -404,6 +402,21 @@ test "openOrUpdate: a failed lex leaves the previous source, tokens and version 
     try std.testing.expectEqual(@as(i64, 1), doc.version);
     try std.testing.expectEqual(first_count, tokenCount(doc));
     try std.testing.expectEqualStrings("a", doc.tokens.slice(doc.tokens.first()));
+}
+
+test "createDocument: map insertion failure reclaims the new token arena" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var failing = std.testing.FailingAllocator.init(alloc, .{});
+    var counter = CountingAllocator{ .child = alloc };
+    var store = doc_mod.DocumentStore.init(failing.allocator(), test_io(), &.{}, counter.allocator());
+    const src: [:0]const u8 = "a :: 1;";
+
+    failing.fail_index = 2; // doc(0), path_owned(1), by_path.put(2)
+    try std.testing.expectError(error.OutOfMemory, store.openOrUpdate("main.sx", src, 1));
+    try std.testing.expectEqual(@as(usize, 0), counter.live());
 }
 
 test "openOrUpdate: repeated updates return the prior token arena to its backing" {

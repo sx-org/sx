@@ -23,8 +23,7 @@ pub const Document = struct {
     source: [:0]const u8,
     /// Token vector for `source`. Replaced only by `setSource`, never alone.
     tokens: sx.token_list.TokenList,
-    /// Backs `tokens`. Replaced wholesale in the same transaction as `source`;
-    /// `last_good_sema` / `last_good_imports` are never paired with a newer `tokens`.
+    /// Backs `tokens`. Replaced wholesale in the same transaction as `source`.
     token_arena: std.heap.ArenaAllocator,
     /// LSP version (from didOpen/didChange), -1 for disk-loaded imports.
     version: i64,
@@ -199,7 +198,9 @@ pub const DocumentStore = struct {
 
     fn createDocument(self: *DocumentStore, path: []const u8, source: [:0]const u8, version: i64) !*Document {
         const doc = try self.allocator.create(Document);
+        errdefer self.allocator.destroy(doc);
         const path_owned = try self.allocator.dupe(u8, path);
+        errdefer self.allocator.free(path_owned);
         doc.* = .{
             .path = path_owned,
             .source = undefined,
@@ -211,6 +212,7 @@ pub const DocumentStore = struct {
             .imports = &.{},
             .c_source_locations = std.StringHashMap(sx.c_import.CSourceLocation).init(self.allocator),
         };
+        errdefer doc.token_arena.deinit();
         try self.setSource(doc, source, version);
         try self.by_path.put(path_owned, doc);
         return doc;
