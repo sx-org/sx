@@ -1,0 +1,1 @@
+error: testdata/insert/has_package.sx: already declares `package demo;` (wanted `other`) — refusing

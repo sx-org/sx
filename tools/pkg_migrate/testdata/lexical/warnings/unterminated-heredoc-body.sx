@@ -1,0 +1,2 @@
+package :: #string END
+import inside the body stays opaque

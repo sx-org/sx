@@ -1,0 +1,4 @@
+testdata/insert/doc_attached.sx: already declares `package demo;` — no change
+testdata/insert/has_package.sx: already declares `package demo;` — no change
+testdata/insert/header.sx: already declares `package demo;` — no change
+testdata/insert/plain.sx: already declares `package demo;` — no change

@@ -1,0 +1,148 @@
+===== testdata/imports/app.sx
+// import-rewrite fixture. The occurrences below in comments and strings
+// must never be rewritten: #import "modules/old/thing.sx"
+#import "modules/old/thing.sx";
+#import "modules/keep/asis.sx";
+name_bound :: #import "modules/old/other.sx";
+
+main :: () {
+    // a string mentioning an import path must survive untouched:
+    s := "#import \"modules/old/thing.sx\";";
+    print("{}\n", s);
+}
+===== testdata/imports/map.txt
+# old=new import-path mapping
+modules/old/thing.sx=modules/new/thing.sx
+modules/old/other.sx=modules/new/other.sx
+# unused entries are fine:
+modules/old/unused.sx=modules/new/unused.sx
+===== testdata/insert/doc_attached.sx
+// header paragraph for the whole file.
+
+package demo;
+
+// doc comment attached to main — the package line must go ABOVE this
+// comment, not between it and the declaration.
+main :: () {
+    print("hello\n");
+}
+===== testdata/insert/has_package.sx
+// already migrated.
+
+package demo;
+
+main :: () {
+    print("hello\n");
+}
+===== testdata/insert/header.sx
+// =============================================
+// header.sx — a file with a leading header block.
+// =============================================
+
+package demo;
+
+main :: () {
+    print("hello\n");
+}
+===== testdata/insert/plain.sx
+package demo;
+
+main :: () {
+    print("hello\n");
+}
+===== testdata/inventory/words.sx
+// inventory fixture. This comment mentions package import private intrinsic
+// and none of those may count. Only identifier tokens below count.
+
+// 1 hit: `package` as a parameter (typed-decl)
+build :: (package: string, lib: string) -> string {
+    // 2 hits: `package` use + `import` decl-local
+    import := package;
+    // 1 hit: `private` decl-const
+    private :: 7;
+    // 1 hit: `intrinsic` call
+    r := intrinsic(private);
+    // in a string: no hits
+    s := "package import private intrinsic";
+    // in a char literal's neighborhood: no hits ('p' is a char token)
+    c := 'p';
+    // backticked: 1 hit for `import`, flagged (backticked)
+    t := `import;
+    // member access: 1 hit for `private` (member-access)
+    v := obj.private;
+    // heredoc: no hits
+    h := #string XML
+<manifest package="demo" import="x" private intrinsic />
+XML;
+    return s;
+}
+===== testdata/lexical/drift/directive-drift.sx
+#identity #expand #context_extend #builtin
+===== testdata/lexical/drift/map.txt
+identity=ns
+expand=ns
+context_extend=ns
+builtin=ns
+===== testdata/lexical/warnings/string-no-delimiter.sx
+package :: #string 123
+import();
+===== testdata/lexical/warnings/unterminated-char.sx
+package :: () {
+    c := 'x;
+    import();
+}
+===== testdata/lexical/warnings/unterminated-heredoc-body.sx
+package :: #string END
+import inside the body stays opaque
+===== testdata/lexical/warnings/unterminated-heredoc-header.sx
+package :: #string END===== testdata/lexical/warnings/unterminated-string.sx
+package :: () {
+    s := "unterminated;
+    import();
+}
+===== testdata/pkgdir/a.sx
+// part one of the demo package.
+
+value :: 40;
+===== testdata/pkgdir/b.sx
+// part two — already declares the package.
+
+package demo;
+
+more :: 2;
+===== testdata/qualify/ambiguous_map.txt
+# `helper` is provided by two different sources — AMBIGUOUS, the tool must
+# refuse to rewrite anything.
+helper=util
+helper=other
+CONSTANT=util
+===== testdata/qualify/map.txt
+# name=alias mapping for qualify
+helper=util
+CONSTANT=util
+===== testdata/qualify/shadow.sx
+// shadow fixture: this file declares `helper` locally, so NO occurrence of
+// `helper` may be rewritten — every one must be reported as a skip.
+#import "modules/util.sx";
+
+helper :: (n: int) -> int {
+    return n + 1;
+}
+
+main :: () {
+    x := helper(3); // local, not util.helper — rewriting would break it
+    print("{}\n", x);
+}
+===== testdata/qualify/uses.sx
+// qualify fixture: flat uses of `helper` and `CONSTANT` should become
+// qualified; mentions in this comment (helper) and in strings must not.
+#import "modules/util.sx";
+
+main :: () {
+    x := helper(3);            // call position -> util.helper(3)
+    y := x + CONSTANT;         // use position  -> util.CONSTANT
+    s := "helper CONSTANT";    // inside a string: untouched
+    already := util.helper(4); // already qualified: untouched
+    lit := Config{ helper = 1 }; // field init: SKIP, reported
+    print("{} {} {} {}\n", x, y, s, already, lit);
+}

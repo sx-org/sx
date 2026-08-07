@@ -1,0 +1,4 @@
+plan: directory 'testdata/pkgdir' becomes package 'demo' (2 file(s))
+  testdata/pkgdir/a.sx:3: would insert `package demo;`
+  testdata/pkgdir/b.sx: already declares `package demo;` — no change
+plan: 1 file(s) would change; apply via: pkg_migrate insert-package --name demo --apply <files>
