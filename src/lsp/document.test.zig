@@ -404,19 +404,26 @@ test "openOrUpdate: a failed lex leaves the previous source, tokens and version 
     try std.testing.expectEqualStrings("a", doc.tokens.slice(doc.tokens.first()));
 }
 
-test "createDocument: map insertion failure reclaims the new token arena" {
+test "createDocument: an allocation failure anywhere reclaims the new token arena" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var failing = std.testing.FailingAllocator.init(alloc, .{});
-    var counter = CountingAllocator{ .child = alloc };
-    var store = doc_mod.DocumentStore.init(failing.allocator(), test_io(), &.{}, counter.allocator());
     const src: [:0]const u8 = "a :: 1;";
-
-    failing.fail_index = 2; // doc(0), path_owned(1), by_path.put(2)
-    try std.testing.expectError(error.OutOfMemory, store.openOrUpdate("main.sx", src, 1));
-    try std.testing.expectEqual(@as(usize, 0), counter.live());
+    var reached_tokens = false;
+    var index: usize = 0;
+    while (index < 32) : (index += 1) {
+        var failing = std.testing.FailingAllocator.init(alloc, .{ .fail_index = index });
+        var counter = CountingAllocator{ .child = alloc };
+        var store = doc_mod.DocumentStore.init(failing.allocator(), test_io(), &.{}, counter.allocator());
+        if (store.openOrUpdate("main.sx", src, 1)) |_| break else |err| {
+            try std.testing.expect(err == error.OutOfMemory);
+            try std.testing.expectEqual(@as(usize, 0), counter.live());
+            if (counter.allocated > 0) reached_tokens = true;
+        }
+    }
+    // Without a failure landing after the lex the sweep would prove nothing.
+    try std.testing.expect(reached_tokens);
 }
 
 test "openOrUpdate: repeated updates return the prior token arena to its backing" {
@@ -424,11 +431,12 @@ test "openOrUpdate: repeated updates return the prior token arena to its backing
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var counter = CountingAllocator{ .child = alloc };
+    var counter = CountingAllocator{ .child = std.testing.allocator };
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, counter.allocator());
     const src: [:0]const u8 = "add :: (a: i32, b: i32) -> i32 { a + b }";
 
-    _ = try store.openOrUpdate("main.sx", src, 1);
+    const doc = try store.openOrUpdate("main.sx", src, 1);
+    defer doc.token_arena.deinit();
     _ = try store.openOrUpdate("main.sx", src, 2);
     const live_after_two = counter.live();
     try std.testing.expect(live_after_two > 0);
@@ -438,7 +446,6 @@ test "openOrUpdate: repeated updates return the prior token arena to its backing
         _ = try store.openOrUpdate("main.sx", src, version);
     }
 
-    // One document's worth of lexical storage, however many updates it took.
     try std.testing.expectEqual(live_after_two, counter.live());
     try std.testing.expect(counter.freed > 0);
 }
