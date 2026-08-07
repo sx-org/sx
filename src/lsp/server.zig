@@ -4032,7 +4032,7 @@ test "lsp/uri: references payload URIs are absolute for relative-keyed docs" {
     try std.testing.expect(std.mem.indexOf(u8, payload, "file://rel_dir") == null);
 }
 
-// ---- Semantic token tests ----
+// ---- Semantic tokens ----
 
 const CountingAllocator = @import("document.test.zig").CountingAllocator;
 
