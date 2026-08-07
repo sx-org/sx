@@ -140,6 +140,24 @@ pub const TokenList = struct {
         return tl.comments[tl.trivia_index[v]..tl.trivia_index[v + 1]];
     }
 
+    /// The row that opens `i`'s line. Terminates at row 0, whose
+    /// `newline_left` the lexer always sets.
+    pub fn lineLeading(tl: TokenList, i: Index) Index {
+        var j = i;
+        while (!tl.flagsOf(j).newline_left) j = tl.prev(j);
+        return j;
+    }
+
+    /// The doc-comment block attached to `i`, indentation included: the
+    /// comment run adjacent to the token that opens `i`'s line, so every name
+    /// in `x, y: f32;` shares the block above `x`.
+    pub fn docBlock(tl: TokenList, i: Index) ?[]const u8 {
+        const j = tl.lineLeading(i);
+        const rows = tl.commentsFor(j);
+        const run = docRows(rows, tl.flagsOf(j).blank_left) orelse return null;
+        return tl.source[lineStartOf(tl.source, rows[run.lo].start)..rows[run.hi].end];
+    }
+
     pub fn deinit(tl: *TokenList, allocator: Allocator) void {
         allocator.free(tl.tags);
         allocator.free(tl.starts);
@@ -150,6 +168,32 @@ pub const TokenList = struct {
         tl.* = undefined;
     }
 };
+
+/// The start of the line `off` sits on, given that only spaces/tabs precede
+/// `off` there.
+fn lineStartOf(source: []const u8, off: u32) u32 {
+    var p = off;
+    while (p > 0 and (source[p - 1] == ' ' or source[p - 1] == '\t')) : (p -= 1) {}
+    return p;
+}
+
+/// The attached doc block for a line-leading token: the maximal run of
+/// line-leading comment rows adjacent to it, as row bounds into `rows`. Null
+/// when a blank line separates the run from the token, or when the nearest row
+/// is trailing. A blank line ABOVE the run bounds it rather than rejecting it.
+pub fn docRows(rows: []const Comment, anchor_blank_left: bool) ?struct { lo: usize, hi: usize } {
+    if (rows.len == 0 or anchor_blank_left) return null;
+    var lo = rows.len;
+    var i = rows.len;
+    while (i > 0) : (i -= 1) {
+        const r = rows[i - 1];
+        if (!r.line_leading) break;
+        lo = i - 1;
+        if (r.blank_left) break;
+    }
+    if (lo == rows.len) return null;
+    return .{ .lo = lo, .hi = rows.len - 1 };
+}
 
 fn expectIdx(expected: u32, actual: Index) !void {
     try std.testing.expectEqual(expected, @intFromEnum(actual));
@@ -242,6 +286,33 @@ test "exact-start lookup distinguishes raw names, heredoc interiors and the eof 
     try expectIdx(0, heredoc.tokenAtStart(12).?);
     try std.testing.expectEqual(null, heredoc.tokenAtStart(15));
     try expectIdx(2, heredoc.tokenAtStart(24).?);
+}
+
+fn row(line_leading: bool, blank_left: bool) Comment {
+    return .{ .start = 0, .end = 0, .line_leading = line_leading, .blank_left = blank_left };
+}
+
+fn expectRun(lo: usize, hi: usize, actual: anytype) !void {
+    try std.testing.expectEqual(lo, actual.?.lo);
+    try std.testing.expectEqual(hi, actual.?.hi);
+}
+
+test "a doc run is the adjacent line-leading rows above its anchor" {
+    try std.testing.expectEqual(null, docRows(&.{}, false));
+    try expectRun(0, 0, docRows(&.{row(true, false)}, false));
+    try expectRun(0, 2, docRows(&.{ row(true, false), row(true, false), row(true, false) }, false));
+}
+
+test "only a blank line under the run cuts it; one above bounds it" {
+    try std.testing.expectEqual(null, docRows(&.{row(true, false)}, true));
+    try expectRun(0, 0, docRows(&.{row(true, true)}, false));
+    try expectRun(1, 2, docRows(&.{ row(true, false), row(true, true), row(true, false) }, false));
+}
+
+test "a trailing row never attaches and bounds the run below it" {
+    try std.testing.expectEqual(null, docRows(&.{row(false, false)}, false));
+    try std.testing.expectEqual(null, docRows(&.{ row(true, false), row(false, false) }, false));
+    try expectRun(1, 1, docRows(&.{ row(false, false), row(true, false) }, false));
 }
 
 test "next/prev/peek saturate at the list edges" {

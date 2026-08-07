@@ -441,6 +441,74 @@ test "comment at offset 0 has no blank line above" {
     try std.testing.expect(!rows[0].blank_left);
 }
 
+test "docBlock anchors on the token that opens the line" {
+    const source: [:0]const u8 = "// The window's logical scale.\nprivate ui_scale: f32 = 1.0;";
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    const name = tl.tokenAtStart(39).?;
+    try std.testing.expectEqualStrings("ui_scale", tl.slice(name));
+    try std.testing.expectEqualStrings("private", tl.slice(tl.lineLeading(name)));
+    try std.testing.expectEqualStrings("// The window's logical scale.", tl.docBlock(name).?);
+}
+
+test "docBlock shares one block across a grouped field's names" {
+    const source: [:0]const u8 = "Point :: struct {\n    // Both coordinates.\n    x, y: f32;\n}";
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    const y = tl.tokenAtStart(50).?;
+    try std.testing.expectEqualStrings("y", tl.slice(y));
+    // The block keeps the indentation of its line.
+    try std.testing.expectEqualStrings("    // Both coordinates.", tl.docBlock(y).?);
+}
+
+test "docBlock keeps a multi-row run and its divider" {
+    const source: [:0]const u8 = "// \xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n// A point.\nPoint :: struct {}";
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    const p = tl.tokenAtStart(25).?;
+    try std.testing.expectEqualStrings("// \xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n// A point.", tl.docBlock(p).?);
+}
+
+test "docBlock cuts on a blank line below the run but not above it" {
+    const source: [:0]const u8 = "x :: 1;\n\n// doc\ny :: 2;\n\n// orphan\n\nz :: 3;";
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    try std.testing.expectEqualStrings("// doc", tl.docBlock(tl.tokenAtStart(16).?).?);
+    try std.testing.expectEqual(null, tl.docBlock(tl.tokenAtStart(36).?));
+}
+
+test "docBlock ignores a trailing comment and a line-1 declaration" {
+    const source: [:0]const u8 = "x :: 1; // trailing\ny :: 2;";
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    try std.testing.expectEqual(null, tl.docBlock(tl.first()));
+    try std.testing.expectEqual(null, tl.docBlock(tl.tokenAtStart(20).?));
+}
+
+test "docBlock drops the trailing cr of its last row" {
+    const source: [:0]const u8 = "// a\r\n// b\r\nx :: 1;\r\n";
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    try std.testing.expectEqualStrings("// a\r\n// b", tl.docBlock(tl.tokenAtStart(12).?).?);
+}
+
+test "lone-CR file is one comment row and yields no declaration doc site" {
+    const source: [:0]const u8 = "// doc\rx :: 1;";
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    try std.testing.expectEqual(@as(usize, 1), tl.comments.len);
+    try std.testing.expectEqual(Tag.eof, tl.tags[0]);
+    try std.testing.expectEqual(null, tl.tokenAtStart(7));
+}
+
+test "a heredoc content line beginning with // is not a comment row" {
+    const source: [:0]const u8 = "s :: #string END\n// not a comment\nEND;\nx :: 1;";
+    var tl = try lexT(source);
+    defer deinitT(&tl);
+    try std.testing.expectEqual(@as(usize, 0), tl.comments.len);
+    try std.testing.expectEqual(null, tl.docBlock(tl.tokenAtStart(39).?));
+}
+
 test "lex under OOM returns error.OutOfMemory and leaks nothing" {
     const source: [:0]const u8 = "// c\nmain :: () { 42; }\n// t";
     var fail_index: usize = 0;
