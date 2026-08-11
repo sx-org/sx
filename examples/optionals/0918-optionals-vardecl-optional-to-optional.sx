@@ -44,11 +44,14 @@ main :: () {
     nsl : ?[]i64 = narr;
     if nsl { print("arr2slice-null: present\n"); } else { print("arr2slice-null: absent\n"); }
 
-    // Aggregate payload: ?Sq → ?Shape (presence-preserving protocol erasure).
+    // Aggregate payload ?Sq → ?Shape: explicit unwrap + owning erasure
+    // (the payload copy allocates, so no implicit spelling exists).
     sq : ?Sq = Sq{ s = 4 };
-    sh : ?Shape = sq;
+    sh : ?Shape = null;
+    if s := sq { sh = s.(Shape); }
     if x := sh { print("erase-pres: area={}\n", x.area()); }
     nsq : ?Sq = null;
-    nsh : ?Shape = nsq;
+    nsh : ?Shape = null;
+    if s := nsq { nsh = s.(Shape); }
     if nsh { print("erase-null: present\n"); } else { print("erase-null: absent\n"); }
 }

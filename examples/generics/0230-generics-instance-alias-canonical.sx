@@ -51,6 +51,6 @@ main :: () {
     print("{} {}\n", type_name(type_of(b)), type_name(type_of(BoxI{ v = 6 })));
     //stdout: Box__i64 Box__i64
 
-    print("{} {}\n", seen(Box(i64){ v = 1 }), seen(BoxI{ v = 2 }));
+    print("{} {}\n", seen(Box(i64){ v = 1 }.(Show)), seen(BoxI{ v = 2 }.(Show)));
     //stdout: 1 2
 }

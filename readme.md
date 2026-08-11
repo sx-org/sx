@@ -464,10 +464,10 @@ shape := my_circle.(Drawable);     // type erasure — an owned copy
 shape.draw(10, 20);                // dynamic dispatch
 ```
 
-**A protocol value owns its data; `*P` is the borrowed view.** Erasing
-an **rvalue** heap-copies it through `context.allocator`; an **lvalue**
-must say what it means — `my_circle.(Drawable)` copies (also
-`.(Drawable, alloc)` through a named allocator), while a `*Drawable`
+**A protocol value owns its data; `*P` is the borrowed view.** An
+implicit erasure never allocates: every operand must say what it means —
+`my_circle.(Drawable)` copies (also `.(Drawable, alloc)` through a named
+allocator), while a `*Drawable`
 position borrows a transient view (mutations reach the original). An
 implicit `shape : Drawable = my_circle` is a compile error with those
 fixits. Release owned values with `free(shape)` (context allocator

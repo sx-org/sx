@@ -59,9 +59,9 @@ form_Wide :: ufcs (value: $I/@Init(Wide)) {
 
 main :: () -> i32 {
     n : Named = Round{ s = "tagged" };
-    b : Boxed = Round{ s = "vtable" };
-    w : Wired = Round{ s = "inline" };
-    x : Boxed = Wide{ a = 1, b = 2 };
+    b := Round{ s = "vtable" }.(Boxed);
+    w := Round{ s = "inline" }.(Wired);
+    x := Wide{ a = 1, b = 2 }.(Boxed);
 
     form_Round(n);
     n.form_Round();

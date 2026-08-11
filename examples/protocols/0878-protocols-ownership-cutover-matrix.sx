@@ -1,5 +1,5 @@
 // The ownership POSITIVE matrix — "P owns, *P views":
-//   - rvalue implicit erasure OWNS;
+//   - postfix on an RVALUE owns (the only rvalue spelling);
 //   - postfix on an LVALUE owns an independent copy;
 //   - postfix on a *Concrete SNAPSHOTS the pointee;
 //   - postfix on a *P view PROMOTES (well-typed view → owned; the fresh
@@ -28,8 +28,8 @@ main :: () {
     gpa := GPA.init();
     w := W{ v = 10 };
 
-    // rvalue implicit erasure owns (heap copy via context.allocator).
-    r : Sizable = xx make();
+    // postfix rvalue erasure owns (heap copy via context.allocator).
+    r := make().(Sizable);
     print("rvalue:   {}\n", r.size());
     free(r);
 

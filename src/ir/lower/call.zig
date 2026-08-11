@@ -2658,11 +2658,11 @@ pub fn prependCtxIfNeeded(self: *Lowering, callee: *const Function, args: []Ref)
 /// Concrete arg at a PROTOCOL param target: erase NODE-AWARE so
 /// `buildProtocolErasure` classifies from the AST — an #identity target
 /// BORROWS lvalues (`free(t, gpa)` aliases `gpa`), a value/own target
-/// DEMANDS the owning spelling for lvalues/pointers and owning-copies
-/// genuine rvalues (a literal-with-init-block materializes through a temp
-/// slot, which the node-LESS refStorageAddress heuristic would misread as
-/// an lvalue). Returns null when the shape doesn't apply (caller falls
-/// through to its normal path).
+/// DEMANDS the owning spelling for every shape (a literal-with-init-block
+/// materializes through a temp slot, which the node-LESS
+/// refStorageAddress heuristic would misread as an lvalue). Returns null
+/// when the shape doesn't apply (caller falls through to its normal
+/// path).
 fn protocolArgErasure(self: *Lowering, arg: *const Node, pt: TypeId) ?Ref {
     if (self.getProtocolInfo(pt) == null) return null;
     const cty = self.inferExprType(arg);

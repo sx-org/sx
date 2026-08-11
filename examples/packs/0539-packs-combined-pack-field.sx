@@ -2,8 +2,8 @@
 // struct whose field is a pack of PARAMETERIZED-protocol values,
 // `sources: Tuple(..VL(Ts))` → `Tuple(VL(T0), VL(T1), …)`. Each `VL(Ti)` is a real
 // 16-byte protocol value, and `Tuple(..VL(Ts))` applies `VL` per pack element.
-// Instantiate + whole-tuple store of `xx`-erased values + per-element method
-// dispatch all work.
+// Instantiate + whole-tuple store of postfix-erased values + per-element
+// method dispatch all work.
 
 #import "modules/std.sx";
 
@@ -22,7 +22,7 @@ main :: () -> i32 {
     // Combined(i64, i64, string): R=i64, Ts=[i64, string],
     // sources: (VL(i64), VL(string)).
     c : Combined(i64, i64, string) = ---;
-    c.sources = .{xx IntCell{ v = 10 }, xx StrCell{ s = "hi" }};
+    c.sources = .{IntCell{ v = 10 }.(VL(i64)), StrCell{ s = "hi" }.(VL(string))};
     c.value = 99;
     print("{} {} {}\n", c.sources.0.get(), c.sources.1.get(), c.value);  // 10 hi 99
     0

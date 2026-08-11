@@ -1324,7 +1324,7 @@ pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: T
             const size_ref = self.builder.constInt(psize, .i64);
             const heap = erasureAlloc(self, alloc_val, size_ref);
             _ = self.callExtern("memcpy", &.{ heap, operand, size_ref }, void_ptr_ty);
-            return self.buildProtocolValue(heap, dst_pi.name, ctn, dst_ty, pointee, false);
+            return self.buildProtocolValue(heap, dst_pi.name, ctn, dst_ty, pointee);
         }
     }
 
@@ -1340,7 +1340,7 @@ pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: T
     const size_ref = self.builder.constInt(vsize, .i64);
     const heap = erasureAlloc(self, alloc_val, size_ref);
     _ = self.callExtern("memcpy", &.{ heap, slot, size_ref }, void_ptr_ty);
-    return self.buildProtocolValue(heap, dst_pi.name, ctn, dst_ty, src_ty, false);
+    return self.buildProtocolValue(heap, dst_pi.name, ctn, dst_ty, src_ty);
 }
 
 /// Number of Era-2 dispatchable methods — the slot count of the protocol's
@@ -1353,13 +1353,12 @@ pub fn dispatchableCount(methods: []const ProtocolMethodInfo) usize {
     return n;
 }
 
-/// Build a protocol value from a concrete pointer.
+/// Build a protocol value over `concrete_ptr` as its ctx.
 /// For inline protocols: struct_init { ctx, thunk1, thunk2, ... }
 /// For vtable protocols: struct_init { ctx, vtable_ptr } where vtable is stack-allocated
-/// When `heap_copy` is true, the concrete data is heap-copied so the protocol value
-/// outlives the current stack frame (used when source is a value, not an explicit pointer).
-/// When false, the pointer is used directly (user manages the pointee's lifetime).
-pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []const u8, concrete_type_name: []const u8, proto_ty: TypeId, concrete_ty: TypeId, heap_copy: bool) Ref {
+/// The pointer is used directly — the caller owns the pointee's lifetime;
+/// any owning heap copy is made BEFORE this call (`lowerOwningErasure`).
+pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []const u8, concrete_type_name: []const u8, proto_ty: TypeId, concrete_ty: TypeId) Ref {
     const pd = self.getProtocolInfo(proto_ty) orelse return concrete_ptr;
 
     // Neither polarity of the multiplicity read is publishable while an
@@ -1377,21 +1376,7 @@ pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []cons
     const thunks = self.getOrCreateThunks(proto_ty, concrete_type_name, concrete_ty);
     if (thunks.len != dispatchableCount(pd.methods)) return concrete_ptr;
 
-    const void_ptr_ty = self.module.types.ptrTo(.void);
-
-    // When source is a value (not an explicit pointer), heap-allocate
-    // so the protocol value outlives the current stack frame.
-    // When source is an explicit pointer (xx @obj), use it directly —
-    // the user is responsible for the pointee's lifetime.
-    var ctx_ptr = concrete_ptr;
-    if (heap_copy) {
-        const concrete_size = self.module.types.typeSizeBytes(concrete_ty);
-        const size_ref = self.builder.constInt(@intCast(concrete_size), .i64);
-        const heap_ptr = self.allocViaContext(size_ref);
-        _ = self.callExtern("memcpy", &.{ heap_ptr, concrete_ptr, size_ref }, void_ptr_ty);
-        ctx_ptr = heap_ptr;
-    }
-    return buildErasedValue(self, ctx_ptr, proto_name, concrete_type_name, proto_ty, concrete_ty, thunks, pd);
+    return buildErasedValue(self, concrete_ptr, proto_name, concrete_type_name, proto_ty, concrete_ty, thunks, pd);
 }
 
 /// The soft probe `x.(?P)` on a CONCRETE receiver (§7.9): under `?`, a

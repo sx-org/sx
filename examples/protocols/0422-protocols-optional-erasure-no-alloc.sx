@@ -52,8 +52,8 @@ main :: () -> i32 {
         op2 : ?P = s.(P);
         if gpa.alloc_count != base + 2 { print("owned-into-optional: wrong count\n"); fails = fails + 1; }
 
-        // Call arg: rvalue erasure into a ?P param — one allocation.
-        r := take(xx S{ v = 7 });
+        // Call arg: postfix owning copy into a ?P param — one allocation.
+        r := take(S{ v = 7 }.(P));
         if gpa.alloc_count != base + 3 { print("call-arg rvalue: wrong count\n"); fails = fails + 1; }
 
         // Presence + dispatch through every constructed optional.

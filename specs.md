@@ -1373,11 +1373,13 @@ writers); `vtable` keeps many-method values small.
 Every erased protocol belongs to one of two classes:
 
 - **value/own** (unmarked): erasure creates manually managed,
-  allocation-backed storage — a heap copy of the receiver, made at
-  erasure through `context.allocator`. The handles over that storage
-  may ALIAS it (§5.3a); "owning erasure" names the operation and the
-  storage's discipline, not a per-handle claim. `*P` is the borrowed
-  view.
+  allocation-backed storage — a heap copy of the receiver, made only
+  under the explicit postfix spellings `.(P)` / `.(P, alloc)`, through
+  `context.allocator` or the named allocator. An implicit erasure never
+  allocates: every operand shape at a value/own target is the demand
+  diagnostic. The handles over that storage may ALIAS it (§5.3a);
+  "owning erasure" names the operation and the storage's discipline,
+  not a per-handle claim. `*P` is the borrowed view.
 - **`#identity`**: for protocols whose runtime object *is* unique
   state (an allocator, an io runtime). Values only ever borrow, in
   every spelling; there is nothing to free.
@@ -1386,13 +1388,12 @@ Every erased protocol belongs to one of two classes:
 
 | spelling | receiver | result |
 |---|---|---|
-| implicit / `xx` | rvalue | **owns** — heap copy via `context.allocator` |
 | `expr.(P)` | concrete lvalue or rvalue | **owns** — independent heap copy |
 | `expr.(P)` | `*Concrete` | **owns** — snapshot of the pointee |
 | `expr.(P)` | `P` (same protocol, value) | **owns** — independent copy of the receiver (`rt_size_of(type_id)` bytes; vtable/fn words reused) |
 | `expr.(P)` | `*P` (same protocol) | **owns** — promotion: fresh ctx copy, vtable/fn words reused |
 | `expr.(P, alloc)` | any owning shape | **owns** — the copy allocates through `alloc` (an lvalue naming an allocator); pairs with `free(p, alloc)` |
-| implicit / `xx` | lvalue or pointer | **compile error** — the demand diagnostic |
+| implicit / `xx` | any shape | **compile error** — the demand diagnostic |
 | any lvalue / pointer | at a `*P` target | **view** — borrows storage (§5.5) |
 
 Re-erasure to a *different* protocol (`p.(Q)`) is a conversion in
@@ -1437,9 +1438,10 @@ values, tagged values, and `*P` views copy as borrowed handles over
 storage they never own (§5.2, §5.5, §6.2) — there is nothing to
 free, and `free` refuses them (§5.4).
 
-The demand diagnostic exists because an implicit erasure of named
-storage would silently heap-copy (or silently alias) something the
-reader believes is shared:
+The demand diagnostic exists because an implicit erasure would
+allocate silently: a copy of named storage the reader believes is
+shared, an alias of a pointee, or a fresh backing allocation for an
+rvalue. Allocation happens only where a spelling names it:
 
 ```sx
 Widget  :: struct { value: i64; }
@@ -1452,7 +1454,10 @@ w := Widget{value = 7 };
 s : Sizable = w;      // error: 'w' is an lvalue and 'Sizable' values own
                       // their storage — write the copy ('w.(Sizable)')
                       // or pass a view ('*Sizable') for transient use
-s := w.(Sizable);     // the explicit owning copy — independent of w
+t : Sizable = Widget{value = 8 };   // error: rvalue — an implicit
+                                    // erasure would silently heap-allocate
+s := w.(Sizable);                   // the explicit owning copy — independent of w
+t := Widget{value = 8 }.(Sizable);  // the rvalue's explicit owning copy
 ```
 
 **Shallow-copy caveat.** Owning erasure copies the receiver's BYTES.
@@ -2415,6 +2420,7 @@ conformer identity.
 | bare `Self` later parameter | erased: excluded. tagged: dispatchable — caller passes a `P`; the arm tag-checks (checked runtime failure on mismatch) |
 | `Self` at depth in parameter or return (`[]Self`, `?Self`, `Buffer(Self)`) | excluded from dynamic dispatch on every kind; concrete/bound calls fine |
 | bare `-> Self` through a tagged value | call-site-inlined switch; caller-frame temp per call + warn-note (§6.4), no fixit; returning the result directly is the §6.2 return error; EXCLUDED from dispatch on `#identity` tagged protocols (would mint an anonymous instance) |
+| rvalue at `P` (value/own), implicit / `xx` | compile error — the demand diagnostic; the owning copy is postfix-only (`.(P)` / `.(P, alloc)`) |
 | rvalue at `*P` (erased) | compile error — nothing durable to borrow |
 | rvalue at `P` (tagged), non-return position | frame-scoped temp, borrow — the `any`-box placement rule |
 | rvalue at `P` (tagged), `return` position | compile error — nothing durable to borrow beyond the frame |

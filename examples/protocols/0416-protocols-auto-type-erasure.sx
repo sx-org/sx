@@ -66,17 +66,19 @@ main :: () {
         print("AE2: {}\n", a.value());
     }
 
-    // AE3: struct literal passed directly (no xx)
+    // AE3: struct-literal argument — the postfix owning copy (an
+    // implicit `use_counter(SimpleCounter{...})` is the demand error)
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
-        result := use_counter(SimpleCounter{ val = 100 });
+        result := use_counter(SimpleCounter{ val = 100 }.(Counter));
         print("AE3: {}\n", result);
     }
 
-    // AE4: explicit xx still works (not broken)
+    // AE4: call-result receiver — the postfix owning copy of an rvalue
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.get() }
-        result := use_counter(xx SimpleCounter{ val = 50 });
+        mk :: () -> SimpleCounter { SimpleCounter{ val = 50 } }
+        result := use_counter(mk().(Counter));
         print("AE4: {}\n", result);
     }
 

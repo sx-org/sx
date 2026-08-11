@@ -42,10 +42,10 @@ main :: () {
         else: { print("switch:      miss\n"); }
     }
 
-    // free is legal on an OWNED (rvalue-erased, heap-copied) value even
+    // free is legal on an OWNED (postfix-erased, heap-copied) value even
     // with an empty vtable.
-    mo : Marker = xx Sq{ side = 9 };
-    eo : Eqish = xx Sq{ side = 9 };
+    mo := Sq{ side = 9 }.(Marker);
+    eo := Sq{ side = 9 }.(Eqish);
     free(mo);
     free(eo);
     print("freed\n");

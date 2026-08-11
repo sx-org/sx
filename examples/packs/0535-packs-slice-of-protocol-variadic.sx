@@ -25,7 +25,7 @@ each :: (..xs: []Show) -> void {
 }
 
 main :: () -> i32 {
-    each(A{ x = 1 }, B{ s = "hi" }, A{ x = 3 });   // heterogeneous, erased to Show
+    each(A{ x = 1 }.(Show), B{ s = "hi" }.(Show), A{ x = 3 }.(Show));   // heterogeneous, owned Show copies
     each();                                            // empty is fine (len 0)
     0
 }

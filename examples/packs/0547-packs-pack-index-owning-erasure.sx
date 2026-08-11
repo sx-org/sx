@@ -1,10 +1,10 @@
-// `xx <pack>[i]` erased to a protocol-typed local.
+// `<pack>[i].(P)` — a pack element owned into a protocol-typed local.
 //
 // Erasing a single comptime-pack element to a protocol scalar routes through
-// buildProtocolErasure. A pack index is a comptime rvalue (a pack has no
-// runtime storage — `sources[i]` resolves to the call-site arg, which only
-// gets storage when lowered as a value), so the erasure must heap-copy the
-// materialized element rather than take its address.
+// the postfix owning erasure. A pack index is a comptime rvalue (a pack has
+// no runtime storage — `sources[i]` resolves to the call-site arg, which
+// only gets storage when lowered as a value), so the erasure heap-copies
+// the materialized element rather than taking its address.
 
 #import "modules/std.sx";
 
@@ -13,7 +13,7 @@ IntCell :: struct { v: i64; }
 impl VL(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
 
 first :: (..sources: VL) -> i64 {
-    x : VL(i64) = xx sources[0];   // erase element 0 to VL(i64)
+    x := sources[0].(VL(i64));   // own element 0 as VL(i64)
     return x.get();
 }
 

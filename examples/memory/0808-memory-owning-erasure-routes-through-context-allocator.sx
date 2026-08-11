@@ -1,13 +1,11 @@
-// The compiler-internal heap-copy that backs `xx <rvalue>`
-// protocol erasure dispatches through `context.allocator`, not libc
-// malloc directly. So when a `push .{ allocator = tracer }`
-// block is active, a `xx StructLiteral{}` inside it is allocated
-// by the tracker.
+// The compiler-internal heap-copy that backs the owning erasure
+// `expr.(P)` dispatches through `context.allocator`, not libc malloc
+// directly. So when a `push .{ allocator = tracer }` block is active,
+// a `StructLiteral{}.(P)` inside it is allocated by the tracker.
 //
-// `xx` only heap-copies for RVALUES (struct literals, call results).
-// `xx <lvalue>` (an identifier, field access, index, or deref) borrows
-// the operand's storage, so it never allocates and never reaches this
-// path. See specs.md §3 — Protocol value ownership and lifetime.
+// Only the postfix owning spellings allocate; an implicit erasure
+// (bare operand or `xx`) never does — every shape at a value/own
+// target is the demand error, pinned in diagnostics/1256.
 #import "modules/std.sx";
 #import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
 
@@ -31,7 +29,7 @@ impl Allocator for Tracer {
     }
 }
 
-// The rvalue erasure target must be a VALUE/OWN protocol — `Allocator`
+// The owning-erasure target must be a VALUE/OWN protocol — `Allocator`
 // itself is `#identity` (borrow-only; rvalue erasure to it refuses,
 // pinned in diagnostics/1255), and erasure is impl-driven,
 // so a small owning protocol impl'd by Tracer stands in.
@@ -43,9 +41,9 @@ impl Boxed for Tracer {
 main :: () -> i32 {
     tracer := Tracer.init();
     push .{ allocator = tracer } {
-        // Struct-literal operand: rvalue → heap-copy through
+        // Struct-literal receiver: the owning copy allocates through
         // context.allocator — i.e. through the pushed tracer.
-        ignore : Boxed = xx Tracer{ count = 0 };
+        ignore := Tracer{ count = 0 }.(Boxed);
         _ = ignore;
     }
     print("Tracer.count = {}\n", tracer.count);
