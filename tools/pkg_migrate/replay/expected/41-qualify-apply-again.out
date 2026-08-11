@@ -1,0 +1,3 @@
+testdata/qualify/shadow.sx:5:1: SKIP 'helper' [decl-const]: declared in this file (possible shadow) — not rewriting any occurrence
+testdata/qualify/shadow.sx:10:10: SKIP 'helper' [call]: declared in this file (possible shadow) — not rewriting any occurrence
+testdata/qualify/uses.sx:10:20: SKIP 'helper' [assign-or-field-init]: ambiguous position (struct-literal field init or assignment) — not rewriting

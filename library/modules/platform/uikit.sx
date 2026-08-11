@@ -412,7 +412,7 @@ impl Platform for UIKitPlatform {
         self.gl_ctx = ctx;
         EAGLContext.setCurrentContext(ctx);
 
-        load_gl(*ios_gl_proc);
+        load_gl(ios_gl_proc);
     }
 
     // Allocate the color renderbuffer + framebuffer and bind them. The
@@ -723,7 +723,7 @@ uikit_pointer :: (pos: Point) -> PointerEvent {
 
 // dlsym(RTLD_DEFAULT, name) — Apple platforms. RTLD_DEFAULT is (void*)-2.
 // abi(.c) so this is callable from `load_gl`'s C-conv proc-loader slot.
-ios_gl_proc :: (name: [*]u8) -> *void abi(.c) {
+ios_gl_proc :: (name: cstring) -> *void abi(.c) {
     rtld_default : *void = xx (0 - 2);
     dlsym(rtld_default, name)
 }

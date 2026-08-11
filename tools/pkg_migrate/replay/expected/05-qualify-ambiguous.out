@@ -1,0 +1,2 @@
+error: AMBIGUOUS name: 'helper' is provided by multiple sources in testdata/qualify/ambiguous_map.txt
+refusing to rewrite anything: resolve the ambiguity in the mapping first

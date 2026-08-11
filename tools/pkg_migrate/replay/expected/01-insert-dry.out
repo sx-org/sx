@@ -1,0 +1,16 @@
+--- a/testdata/insert/doc_attached.sx
++++ b/testdata/insert/doc_attached.sx
+@@ -2,0 +3,2 @@
++package demo;
++
+testdata/insert/has_package.sx: already declares `package demo;` — no change
+--- a/testdata/insert/header.sx
++++ b/testdata/insert/header.sx
+@@ -4,0 +5,2 @@
++package demo;
++
+--- a/testdata/insert/plain.sx
++++ b/testdata/insert/plain.sx
+@@ -0,0 +1,2 @@
++package demo;
++

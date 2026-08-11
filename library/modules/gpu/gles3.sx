@@ -31,7 +31,7 @@
 // the EGL context is current. We declare only the loader here; EGL
 // surface/context creation belongs in the consumer's `#jni_main`
 // Activity (e.g. an `onCreate` body that calls `eglCreateContext`).
-eglGetProcAddress :: (name: [*]u8) -> *void extern;
+eglGetProcAddress :: (name: cstring) -> *void abi(.c) extern;
 
 
 // ── State + resource tables ────────────────────────────────────────────
@@ -84,7 +84,7 @@ impl GPU for Gles3Gpu {
         self.parent_allocator = context.allocator;
 
         if !self.gl_loaded {
-            load_gl(*eglGetProcAddress);
+            load_gl(eglGetProcAddress);
             self.gl_loaded = true;
         }
 

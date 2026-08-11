@@ -1,0 +1,10 @@
+== D9 collision inventory: `package` / `import` / `private` / `intrinsic` as ordinary identifiers ==
+(comments, string/char literals, and #string heredocs excluded by the scanner)
+
+
+== summary ==
+package: 0
+import: 0
+private: 0
+intrinsic: 0
+total identifier hits: 0 in 0 file(s) (scanned 1 .sx file(s))

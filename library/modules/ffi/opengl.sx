@@ -105,7 +105,7 @@ GL_CLAMP_TO_EDGE         :u32: 0x812F;
 
 // Loader: call once after creating GL context
 // Pass in a proc loader (e.g. SDL_GL_GetProcAddress)
-load_gl :: (get_proc: ([*]u8) -> *void abi(.c)) {
+load_gl :: (get_proc: (cstring) -> *void abi(.c)) {
     glClearColor          = xx get_proc("glClearColor");
     glClear               = xx get_proc("glClear");
     glEnable              = xx get_proc("glEnable");

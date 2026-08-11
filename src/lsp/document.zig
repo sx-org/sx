@@ -1,8 +1,8 @@
 const std = @import("std");
 const sx = struct {
     pub const ast = @import("../ast.zig");
-    pub const lexer = @import("../lexer.zig");
-    pub const token_list = @import("../token_list.zig");
+    pub const lexer = @import("sxlex").lexer;
+    pub const token_list = @import("sxlex").token_list;
     pub const parser = @import("../parser.zig");
     pub const sema = @import("../sema.zig");
     pub const imports = @import("../imports.zig");

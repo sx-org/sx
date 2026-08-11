@@ -1,0 +1,30 @@
+warning: testdata/lexical/warnings/string-no-delimiter.sx:1:12: #string without delimiter identifier
+--- a/testdata/lexical/warnings/string-no-delimiter.sx
++++ b/testdata/lexical/warnings/string-no-delimiter.sx
+@@ -0,0 +1,2 @@
++package demo;
++
+warning: testdata/lexical/warnings/unterminated-char.sx:2:10: unterminated char literal (rest of file skipped as literal)
+--- a/testdata/lexical/warnings/unterminated-char.sx
++++ b/testdata/lexical/warnings/unterminated-char.sx
+@@ -0,0 +1,2 @@
++package demo;
++
+warning: testdata/lexical/warnings/unterminated-heredoc-body.sx:1:12: unterminated #string heredoc (rest of file skipped as literal)
+--- a/testdata/lexical/warnings/unterminated-heredoc-body.sx
++++ b/testdata/lexical/warnings/unterminated-heredoc-body.sx
+@@ -0,0 +1,2 @@
++package demo;
++
+warning: testdata/lexical/warnings/unterminated-heredoc-header.sx:1:12: unterminated #string heredoc
+--- a/testdata/lexical/warnings/unterminated-heredoc-header.sx
++++ b/testdata/lexical/warnings/unterminated-heredoc-header.sx
+@@ -0,0 +1,2 @@
++package demo;
++
+warning: testdata/lexical/warnings/unterminated-string.sx:2:10: unterminated string literal (rest of file skipped as literal)
+--- a/testdata/lexical/warnings/unterminated-string.sx
++++ b/testdata/lexical/warnings/unterminated-string.sx
+@@ -0,0 +1,2 @@
++package demo;
++

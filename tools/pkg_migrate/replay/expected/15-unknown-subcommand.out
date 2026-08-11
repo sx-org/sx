@@ -1,0 +1,27 @@
+error: unknown subcommand 'frobnicate'
+
+usage: pkg_migrate <subcommand> [options] <paths...>
+
+subcommands:
+  insert-package  --name <pkg> [--apply] <files/dirs...>
+      Insert `package <pkg>;` after each file's leading comment block.
+  rewrite-imports --map <file> [--apply] <files/dirs...>
+      Rewrite #import path strings per `old=new` mapping lines.
+  qualify         --map <file> [--apply] <files/dirs...>
+      Convert flat uses of mapped names to `alias.name` per
+      `name=alias` mapping lines. Never rewrites ambiguous names.
+  to-package-dir  --name <pkg> <files...>
+      Report (plan only) how a same-directory file set becomes a
+      package directory.
+  inventory       <dirs/files...>
+      D9 collision inventory: every use of `package`, `import`,
+      `private`, `intrinsic` as an ordinary identifier, with spans.
+
+options:
+  --apply   write changes (default is dry-run/check)
+  --check   explicit dry-run (the default)
+  --name    package name (insert-package, to-package-dir)
+  --map     mapping file (rewrite-imports: old=new; qualify: name=alias)
+
+exit codes: 0 = clean / applied; 1 = dry-run found pending changes;
+            2 = error (usage, IO, ambiguous mapping, package conflict)
