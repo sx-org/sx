@@ -1,8 +1,11 @@
 const std = @import("std");
-const Token = @import("token.zig").Token;
-const Tag = @import("token.zig").Tag;
-const getKeyword = @import("token.zig").getKeyword;
-const Lexer = @import("lexer.zig").Lexer;
+const sxlex = @import("sxlex");
+const Token = sxlex.token.Token;
+const Tag = sxlex.token.Tag;
+const lexer = sxlex.lexer;
+const token_list = sxlex.token_list;
+const TokenList = token_list.TokenList;
+const Index = token_list.Index;
 const ast = @import("ast.zig");
 const contracts = @import("contracts.zig");
 const Node = ast.Node;
@@ -14,14 +17,12 @@ const unescape = @import("unescape.zig");
 const named_aggregate_dot_msg = "a named aggregate literal places '{' directly after its type";
 
 pub const Parser = struct {
-    lexer: Lexer,
-    current: Token,
-    source: [:0]const u8,
+    tokens: TokenList,
+    tok: Index,
     allocator: std.mem.Allocator,
     err_msg: ?[]const u8,
     err_offset: ?u32 = null,
     err_end: ?u32 = null,
-    prev_end: u32 = 0,
     diagnostics: ?*errors.DiagnosticList = null,
     /// Type param names from enclosing generic struct (set while parsing methods)
     struct_type_params: []const []const u8 = &.{},
@@ -84,13 +85,16 @@ pub const Parser = struct {
     /// `@caller` may be written.
     in_param_default: bool = false,
 
-    pub fn init(allocator: std.mem.Allocator, source: [:0]const u8) Parser {
-        var lexer = Lexer.init(source);
-        const first = lexer.next();
+    /// Lexes `source` and owns the resulting list from `allocator`.
+    pub fn init(allocator: std.mem.Allocator, source: [:0]const u8) error{OutOfMemory}!Parser {
+        return initFromTokens(allocator, try lexer.lex(allocator, source));
+    }
+
+    /// Borrows an already-built list.
+    pub fn initFromTokens(allocator: std.mem.Allocator, tokens: TokenList) Parser {
         return .{
-            .lexer = lexer,
-            .current = first,
-            .source = source,
+            .tokens = tokens,
+            .tok = tokens.first(),
             .allocator = allocator,
             .err_msg = null,
             .err_offset = null,
@@ -99,13 +103,17 @@ pub const Parser = struct {
 
     fn createNode(self: *Parser, start: u32, data: Node.Data) !*Node {
         const node = try self.allocator.create(Node);
-        node.* = .{ .span = .{ .start = start, .end = self.prev_end }, .data = data };
+        node.* = .{ .span = .{ .start = start, .end = self.tokens.end(self.tokens.prev(self.tok)) }, .data = data };
         return node;
+    }
+
+    pub fn atEof(self: *const Parser) bool {
+        return self.tokens.tag(self.tok) == .eof;
     }
 
     pub fn parse(self: *Parser) anyerror!*Node {
         var decls = std.ArrayList(*Node).empty;
-        while (self.current.tag != .eof) {
+        while (self.tokens.tag(self.tok) != .eof) {
             const decl = try self.parseTopLevel();
             try decls.append(self.allocator, decl);
         }
@@ -114,15 +122,15 @@ pub const Parser = struct {
     }
 
     fn parseTopLevel(self: *Parser) anyerror!*Node {
-        const start = self.current.loc.start;
+        const start = self.tokens.start(self.tok);
 
         // `private NAME …` — a module-scope declaration restricted to its
         // declaring source file. Only identifier-headed declarations take the
         // modifier; every directive/block form is rejected with a placement
         // diagnostic.
-        if (self.current.tag == .kw_private) {
+        if (self.tokens.tag(self.tok) == .kw_private) {
             self.advance();
-            switch (self.current.tag) {
+            switch (self.tokens.tag(self.tok)) {
                 .hash_import => return self.fail("'private' is not allowed on a flat '#import'; only a named import ('name :: #import \"…\"') can be private"),
                 .kw_asm => return self.fail("'private' is not allowed on global 'asm'"),
                 .hash_run => return self.fail("'private' is not allowed on a standalone '#run'"),
@@ -134,7 +142,7 @@ pub const Parser = struct {
                 .kw_private => return self.fail("duplicate 'private'"),
                 else => {},
             }
-            if (!self.isIdentLike() and self.current.tag != .kw_Self) {
+            if (!self.isIdentLike() and self.tokens.tag(self.tok) != .kw_Self) {
                 return self.fail("expected a declaration name after 'private'");
             }
             const node = try self.parseTopLevelNamedDecl();
@@ -143,17 +151,17 @@ pub const Parser = struct {
         }
 
         // Top-level flat import: #import "path"; or #import c { ... };
-        if (self.current.tag == .hash_import) {
+        if (self.tokens.tag(self.tok) == .hash_import) {
             self.advance();
             // Check for #import c { ... } (C import block)
-            if (self.current.tag == .identifier and std.mem.eql(u8, self.tokenSlice(self.current), "c") and self.peekNext() == .l_brace) {
+            if (self.tokens.tag(self.tok) == .identifier and std.mem.eql(u8, self.tokens.slice(self.tok), "c") and self.peekNext() == .l_brace) {
                 self.advance(); // consume 'c'
                 return self.parseCImportBlock(start, null, false);
             }
-            if (self.current.tag != .string_literal) {
+            if (self.tokens.tag(self.tok) != .string_literal) {
                 return self.fail("expected string path after '#import'");
             }
-            const raw = self.tokenSlice(self.current);
+            const raw = self.tokens.slice(self.tok);
             const path = raw[1 .. raw.len - 1];
             self.advance();
             try self.expectStatementEnd();
@@ -163,12 +171,12 @@ pub const Parser = struct {
         // Top-level (module-scope) global assembly: `asm { "tmpl", };`
         // (template only — no operands/volatile/clobbers). The in-function
         // `asm { … }` expression form is parsed in `parsePrimary` instead.
-        if (self.current.tag == .kw_asm) {
+        if (self.tokens.tag(self.tok) == .kw_asm) {
             return self.parseAsmGlobal(start);
         }
 
         // Top-level #run directive
-        if (self.current.tag == .hash_run) {
+        if (self.tokens.tag(self.tok) == .hash_run) {
             self.advance();
             const expr = try self.parseExpr();
             try self.expectStatementEnd();
@@ -176,12 +184,12 @@ pub const Parser = struct {
         }
 
         // Top-level #framework directive: link against an Apple framework.
-        if (self.current.tag == .hash_framework) {
+        if (self.tokens.tag(self.tok) == .hash_framework) {
             self.advance();
-            if (self.current.tag != .string_literal) {
+            if (self.tokens.tag(self.tok) != .string_literal) {
                 return self.fail("expected string after '#framework'");
             }
-            const raw = self.tokenSlice(self.current);
+            const raw = self.tokens.slice(self.tok);
             const fw_name = raw[1 .. raw.len - 1];
             self.advance();
             try self.expectStatementEnd();
@@ -189,14 +197,14 @@ pub const Parser = struct {
         }
 
         // impl Protocol for Type { methods }
-        if (self.current.tag == .kw_impl) {
+        if (self.tokens.tag(self.tok) == .kw_impl) {
             return self.parseImplBlock(start);
         }
 
         // Top-level `inline if` / `inline for` — compile-time expansion forms.
         // Both bodies hold module-scope declarations, spliced into module scope
         // by lowering's `expandModuleDrivers`.
-        if (self.current.tag == .kw_inline) {
+        if (self.tokens.tag(self.tok) == .kw_inline) {
             if (self.peekNext() == .kw_if) {
                 self.advance(); // skip 'inline'
                 const saved_module_expansion = self.in_module_expansion;
@@ -222,20 +230,20 @@ pub const Parser = struct {
         }
 
         // Top-level `#error "msg";` — compile-time diagnostic.
-        if (self.current.tag == .hash_error) {
+        if (self.tokens.tag(self.tok) == .hash_error) {
             return self.parseErrorDirective();
         }
 
         // Top-level `#context_extend name: Type = default;` — declares a field
         // of the program's assembled Context.
-        if (self.current.tag == .hash_context_extend) return self.parseContextExtend(start);
+        if (self.tokens.tag(self.tok) == .hash_context_extend) return self.parseContextExtend(start);
 
         // All top-level declarations start with an identifier. An `@` name is
         // one too: the compiler-maintained contracts are ordinary stdlib
         // declarations, source-visible and reviewable. Which `@` names exist
         // and which module owns each is `contracts`' registry, checked after
         // parsing where the declaring file is known.
-        if (!self.isIdentLike() and self.current.tag != .kw_Self and self.current.tag != .at_identifier) {
+        if (!self.isIdentLike() and self.tokens.tag(self.tok) != .kw_Self and self.tokens.tag(self.tok) != .at_identifier) {
             return self.fail("expected identifier at top level");
         }
         return self.parseTopLevelNamedDecl();
@@ -246,27 +254,27 @@ pub const Parser = struct {
     /// `private`-prefixed top-level paths; the caller has already verified an
     /// identifier-like token is current.
     fn parseTopLevelNamedDecl(self: *Parser) anyerror!*Node {
-        const start = self.current.loc.start;
-        const name = self.tokenSlice(self.current);
-        const name_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
-        const name_is_raw = self.current.is_raw;
+        const start = self.tokens.start(self.tok);
+        const name = self.tokens.slice(self.tok);
+        const name_span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
+        const name_is_raw = self.tokens.flagsOf(self.tok).is_raw;
         self.advance();
 
         // IDENT :: ...
-        if (self.current.tag == .colon_colon) {
+        if (self.tokens.tag(self.tok) == .colon_colon) {
             self.advance();
             return self.parseConstBinding(name, name_span, start, name_is_raw);
         }
 
         // IDENT : type : value; (typed constant)
         // IDENT : type = value; (typed variable)
-        if (self.current.tag == .colon) {
+        if (self.tokens.tag(self.tok) == .colon) {
             self.advance();
             return self.parseTypedBinding(name, name_span, start, name_is_raw);
         }
 
         // IDENT := value; (variable)
-        if (self.current.tag == .colon_equal) {
+        if (self.tokens.tag(self.tok) == .colon_equal) {
             self.advance();
             const value = try self.parseExpr();
             try self.endDeclaration(value);
@@ -281,17 +289,17 @@ pub const Parser = struct {
         // Could be: #run expr, enum { ... }, (params) -> type { body }, or expr;
 
         // Namespaced import: name :: #import "path"; or name :: #import c { ... };
-        if (self.current.tag == .hash_import) {
+        if (self.tokens.tag(self.tok) == .hash_import) {
             self.advance();
             // Check for name :: #import c { ... }
-            if (self.current.tag == .identifier and std.mem.eql(u8, self.tokenSlice(self.current), "c") and self.peekNext() == .l_brace) {
+            if (self.tokens.tag(self.tok) == .identifier and std.mem.eql(u8, self.tokens.slice(self.tok), "c") and self.peekNext() == .l_brace) {
                 self.advance(); // consume 'c'
                 return self.parseCImportBlock(start_pos, name, name_is_raw);
             }
-            if (self.current.tag != .string_literal) {
+            if (self.tokens.tag(self.tok) != .string_literal) {
                 return self.fail("expected string path after '#import'");
             }
-            const raw = self.tokenSlice(self.current);
+            const raw = self.tokens.slice(self.tok);
             const path = raw[1 .. raw.len - 1];
             self.advance();
             try self.expectStatementEnd();
@@ -299,12 +307,12 @@ pub const Parser = struct {
         }
 
         // Named library: name :: #library "libname";
-        if (self.current.tag == .hash_library) {
+        if (self.tokens.tag(self.tok) == .hash_library) {
             self.advance();
-            if (self.current.tag != .string_literal) {
+            if (self.tokens.tag(self.tok) != .string_literal) {
                 return self.fail("expected string after '#library'");
             }
-            const raw = self.tokenSlice(self.current);
+            const raw = self.tokens.slice(self.tok);
             const lib_name = raw[1 .. raw.len - 1];
             self.advance();
             try self.expectStatementEnd();
@@ -312,8 +320,8 @@ pub const Parser = struct {
         }
 
         // Compile-time evaluation: name :: #run expr;
-        if (self.current.tag == .hash_run) {
-            const run_start = self.current.loc.start;
+        if (self.tokens.tag(self.tok) == .hash_run) {
+            const run_start = self.tokens.start(self.tok);
             self.advance();
             const inner = try self.parseExpr();
             try self.expectStatementEnd();
@@ -322,8 +330,8 @@ pub const Parser = struct {
         }
 
         // Intrinsic declaration: name :: intrinsic;
-        if (self.current.tag == .kw_intrinsic) {
-            const bi_start = self.current.loc.start;
+        if (self.tokens.tag(self.tok) == .kw_intrinsic) {
+            const bi_start = self.tokens.start(self.tok);
             self.advance();
             try self.expectStatementEnd();
             const bi = try self.createNode(bi_start, .{ .intrinsic_expr = {} });
@@ -331,30 +339,30 @@ pub const Parser = struct {
         }
 
         // Enum declaration
-        if (self.current.tag == .kw_enum) {
+        if (self.tokens.tag(self.tok) == .kw_enum) {
             return self.parseEnumDecl(name, start_pos, name_is_raw);
         }
 
         // Error-set declaration: name :: error { TagA, TagB }
-        if (self.current.tag == .kw_error) {
+        if (self.tokens.tag(self.tok) == .kw_error) {
             return self.parseErrorSetDecl(name, start_pos, name_is_raw);
         }
 
         // Struct declaration
-        if (self.current.tag == .kw_struct) {
+        if (self.tokens.tag(self.tok) == .kw_struct) {
             return self.parseStructDecl(name, start_pos, name_is_raw);
         }
 
         // Protocol declaration
-        if (self.current.tag == .kw_protocol) {
+        if (self.tokens.tag(self.tok) == .kw_protocol) {
             return self.parseProtocolDecl(name, start_pos, name_is_raw);
         }
 
         // Open-set declaration heads. Both are `@` names with an argument list,
         // and both open a body, so they are declaration FORMS — neither a
         // stdlib-declared contract nor a compiler-formed type.
-        if (self.current.tag == .at_identifier) {
-            const at_name = self.tokenSlice(self.current);
+        if (self.tokens.tag(self.tok) == .at_identifier) {
+            const at_name = self.tokens.slice(self.tok);
             if (std.mem.eql(u8, at_name, contracts.open_set_head)) {
                 return self.parseOpenSetDecl(name, start_pos, name_is_raw);
             }
@@ -375,24 +383,24 @@ pub const Parser = struct {
         }
 
         // C-style union declaration
-        if (self.current.tag == .kw_union) {
+        if (self.tokens.tag(self.tok) == .kw_union) {
             return self.parseUnionDecl(name, start_pos, name_is_raw);
         }
 
         // UFCS forms:
         //   name :: ufcs (params) -> ret { body }   — fn declared dot-callable
         //   name :: ufcs target;                    — dot-callable alias
-        if (self.current.tag == .kw_ufcs) {
+        if (self.tokens.tag(self.tok) == .kw_ufcs) {
             self.advance();
-            if (self.current.tag == .l_paren) {
+            if (self.tokens.tag(self.tok) == .l_paren) {
                 const node = try self.parseFnDecl(name, name_span, name_is_raw, start_pos);
                 node.data.fn_decl.is_ufcs = true;
                 return node;
             }
-            if (self.current.tag != .identifier) {
+            if (self.tokens.tag(self.tok) != .identifier) {
                 return self.fail("expected '(' (a ufcs function declaration) or a function name (a ufcs alias) after 'ufcs'");
             }
-            const target = self.tokenSlice(self.current);
+            const target = self.tokens.slice(self.tok);
             self.advance();
             try self.expectStatementEnd();
             return try self.createNode(start_pos, .{ .ufcs_alias = .{ .name = name, .target = target, .is_raw = name_is_raw } });
@@ -403,12 +411,12 @@ pub const Parser = struct {
         // form a plain name spells with the `intrinsic` keyword. It routes
         // ahead of the function-definition heuristic, which reads a bodyless
         // `(types) -> R` as a function-type alias.
-        if (name.len > 0 and name[0] == '@' and self.current.tag == .l_paren) {
+        if (name.len > 0 and name[0] == '@' and self.tokens.tag(self.tok) == .l_paren) {
             return self.parseAtFnDecl(name, name_span, start_pos, name_is_raw);
         }
 
         // Function declaration: (params) -> type { body } or () { body }
-        if (self.current.tag == .l_paren) {
+        if (self.tokens.tag(self.tok) == .l_paren) {
             // Look ahead: is this a function or an expression starting with `(`?
             // Heuristic: if after matching parens we see `{` or `->`, it's a function.
             if (self.isFunctionDef()) {
@@ -417,7 +425,7 @@ pub const Parser = struct {
         }
 
         // Bare block shorthand: name :: { body } is equivalent to name :: () { body }
-        if (self.current.tag == .l_brace) {
+        if (self.tokens.tag(self.tok) == .l_brace) {
             const body = try self.parseBlock();
             return try self.createNode(start_pos, .{ .fn_decl = .{ .name = name, .params = &.{}, .return_type = null, .body = body, .name_span = name_span, .is_raw = name_is_raw } });
         }
@@ -428,8 +436,8 @@ pub const Parser = struct {
         // name :: type_expr intrinsic; — intrinsic with type annotation. The
         // declaration is already whole without the tail, so the tail binds only
         // where the declaration has not already ended.
-        if (!self.atStatementEnd() and self.current.tag == .kw_intrinsic) {
-            const bi_start = self.current.loc.start;
+        if (!self.atStatementEnd() and self.tokens.tag(self.tok) == .kw_intrinsic) {
+            const bi_start = self.tokens.start(self.tok);
             self.advance();
             try self.expectStatementEnd();
             const bi = try self.createNode(bi_start, .{ .intrinsic_expr = {} });
@@ -447,32 +455,32 @@ pub const Parser = struct {
         var defines = std.ArrayList([]const u8).empty;
         var flags = std.ArrayList([]const u8).empty;
 
-        while (self.current.tag != .r_brace and self.current.tag != .eof) {
-            if (self.current.tag == .hash_include) {
+        while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
+            if (self.tokens.tag(self.tok) == .hash_include) {
                 self.advance();
-                if (self.current.tag != .string_literal) return self.fail("expected string after '#include'");
-                const raw = self.tokenSlice(self.current);
+                if (self.tokens.tag(self.tok) != .string_literal) return self.fail("expected string after '#include'");
+                const raw = self.tokens.slice(self.tok);
                 try includes.append(self.allocator, raw[1 .. raw.len - 1]);
                 self.advance();
                 try self.expect(.semicolon);
-            } else if (self.current.tag == .hash_source) {
+            } else if (self.tokens.tag(self.tok) == .hash_source) {
                 self.advance();
-                if (self.current.tag != .string_literal) return self.fail("expected string after '#source'");
-                const raw = self.tokenSlice(self.current);
+                if (self.tokens.tag(self.tok) != .string_literal) return self.fail("expected string after '#source'");
+                const raw = self.tokens.slice(self.tok);
                 try sources.append(self.allocator, raw[1 .. raw.len - 1]);
                 self.advance();
                 try self.expect(.semicolon);
-            } else if (self.current.tag == .hash_define) {
+            } else if (self.tokens.tag(self.tok) == .hash_define) {
                 self.advance();
-                if (self.current.tag != .string_literal) return self.fail("expected string after '#define'");
-                const raw = self.tokenSlice(self.current);
+                if (self.tokens.tag(self.tok) != .string_literal) return self.fail("expected string after '#define'");
+                const raw = self.tokens.slice(self.tok);
                 try defines.append(self.allocator, raw[1 .. raw.len - 1]);
                 self.advance();
                 try self.expect(.semicolon);
-            } else if (self.current.tag == .hash_flags) {
+            } else if (self.tokens.tag(self.tok) == .hash_flags) {
                 self.advance();
-                if (self.current.tag != .string_literal) return self.fail("expected string after '#flags'");
-                const raw = self.tokenSlice(self.current);
+                if (self.tokens.tag(self.tok) != .string_literal) return self.fail("expected string after '#flags'");
+                const raw = self.tokens.slice(self.tok);
                 try flags.append(self.allocator, raw[1 .. raw.len - 1]);
                 self.advance();
                 try self.expect(.semicolon);
@@ -508,7 +516,7 @@ pub const Parser = struct {
             return try self.createNode(start_pos, .{ .var_decl = .{ .name = name, .name_span = name_span, .type_annotation = type_node, .value = null, .is_raw = name_is_raw } });
         }
 
-        if (self.current.tag == .colon) {
+        if (self.tokens.tag(self.tok) == .colon) {
             // name : type : value; (typed constant)
             self.advance();
             const value = try self.parseExpr();
@@ -516,7 +524,7 @@ pub const Parser = struct {
             return try self.createNode(start_pos, .{ .const_decl = .{ .name = name, .type_annotation = type_node, .value = value, .name_span = name_span, .is_raw = name_is_raw } });
         }
 
-        if (self.current.tag == .equal) {
+        if (self.tokens.tag(self.tok) == .equal) {
             // name : type = value; (typed variable)
             self.advance();
             const value = try self.parseExpr();
@@ -524,7 +532,7 @@ pub const Parser = struct {
             return try self.createNode(start_pos, .{ .var_decl = .{ .name = name, .name_span = name_span, .type_annotation = type_node, .value = value, .is_raw = name_is_raw } });
         }
 
-        if (self.current.tag == .kw_extern) {
+        if (self.tokens.tag(self.tok) == .kw_extern) {
             // name : type extern [LIB] ["csym"];   (extern data global, resolved
             // at link time)
             self.advance();
@@ -561,30 +569,30 @@ pub const Parser = struct {
         // (`-> !` already parsed to an error_type_expr above, so a
         // `!` after one would be a doubled channel — leave that to the normal
         // "unexpected token" path.)
-        if (self.current.tag == .bang and ty.data != .error_type_expr) {
+        if (self.tokens.tag(self.tok) == .bang and ty.data != .error_type_expr) {
             return self.fail("a failable return is written `(T, !)` — or `(A, B, !)` for multiple values — not `T !`");
         }
         return ty;
     }
 
     fn parseTypeExpr(self: *Parser) anyerror!*Node {
-        const start = self.current.loc.start;
+        const start = self.tokens.start(self.tok);
         // A compiler-formed contract (`@Init`, `@BuildBlock`) is a CONSTRAINT: it
         // names a bound, never a type, and `parseCompilerFormedType` says so.
         // Every other `@` name in type position names a compiler-maintained
         // stdlib declaration (`@SourceSite`) and resolves like any other type.
-        if (self.current.tag == .at_identifier) {
-            if (isCompilerFormedTypeName(self.tokenSlice(self.current))) {
+        if (self.tokens.tag(self.tok) == .at_identifier) {
+            if (isCompilerFormedTypeName(self.tokens.slice(self.tok))) {
                 return self.parseCompilerFormedType(start);
             }
-            const at_tok = self.current;
-            const at_name = self.tokenSlice(at_tok);
+            const at_idx = self.tok;
+            const at_name = self.tokens.slice(at_idx);
             self.advance();
             // A type-argument list is what a compiler-formed type takes; a
             // declared contract is a plain type name.
-            if (self.current.tag == .l_paren) {
+            if (self.tokens.tag(self.tok) == .l_paren) {
                 try self.requireTypeArgGlue(start);
-                return self.failAt(at_tok.loc, try self.unknownCompilerFormedTypeMsg(at_name));
+                return self.failAt(self.tokens.token(at_idx).loc, try self.unknownCompilerFormedTypeMsg(at_name));
             }
             return try self.createNode(start, .{ .type_expr = .{ .name = at_name } });
         }
@@ -593,41 +601,42 @@ pub const Parser = struct {
         // Legal only as the trailing element of a multi-return result list
         // (enforced by the parenthesized-list loop below) or as a bare
         // failable return type. Sema restricts it to return positions.
-        if (self.current.tag == .bang) {
+        if (self.tokens.tag(self.tok) == .bang) {
             self.advance(); // skip '!'
             var set_name: ?[]const u8 = null;
-            if (self.current.tag == .identifier) {
-                set_name = self.tokenSlice(self.current);
+            if (self.tokens.tag(self.tok) == .identifier) {
+                set_name = self.tokens.slice(self.tok);
                 self.advance();
             }
             return try self.createNode(start, .{ .error_type_expr = .{ .name = set_name } });
         }
 
         // Optional type: ?T
-        if (self.current.tag == .question) {
+        if (self.tokens.tag(self.tok) == .question) {
             self.advance(); // skip '?'
             const inner_type = try self.parseTypeExpr();
             return try self.createNode(start, .{ .optional_type_expr = .{ .inner_type = inner_type } });
         }
 
         // Pointer type: *T
-        if (self.current.tag == .star) {
+        if (self.tokens.tag(self.tok) == .star) {
+            const op_loc = self.tokens.token(self.tok).loc;
             self.advance(); // skip '*'
-            try self.requirePrefixGlue(start);
+            try self.requirePrefixGlue(op_loc);
             const pointee_type = try self.parseTypeExpr();
             return try self.createNode(start, .{ .pointer_type_expr = .{ .pointee_type = pointee_type } });
         }
 
         // Array type: [N]T, Slice type: []T, Many-pointer type: [*]T, Sentinel slice: [:0]T
-        if (self.current.tag == .l_bracket) {
+        if (self.tokens.tag(self.tok) == .l_bracket) {
             self.advance(); // skip '['
-            if (self.current.tag == .colon) {
+            if (self.tokens.tag(self.tok) == .colon) {
                 // Sentinel-terminated slice: [:0]T
                 self.advance(); // skip ':'
-                if (self.current.tag != .int_literal) {
+                if (self.tokens.tag(self.tok) != .int_literal) {
                     return self.fail("expected sentinel value after ':'");
                 }
-                const sentinel_str = self.tokenSlice(self.current);
+                const sentinel_str = self.tokens.slice(self.tok);
                 self.advance(); // skip sentinel value
                 try self.expect(.r_bracket); // expect ']'
                 const elem_type = try self.parseTypeExpr();
@@ -636,13 +645,13 @@ pub const Parser = struct {
                 const name = try std.fmt.allocPrint(self.allocator, "[:{s}]{s}", .{ sentinel_str, elem_name });
                 return try self.createNode(start, .{ .type_expr = .{ .name = name } });
             }
-            if (self.current.tag == .r_bracket) {
+            if (self.tokens.tag(self.tok) == .r_bracket) {
                 // Slice type: []T
                 self.advance(); // skip ']'
                 const elem_type = try self.parseTypeExpr();
                 return try self.createNode(start, .{ .slice_type_expr = .{ .element_type = elem_type } });
             }
-            if (self.current.tag == .star) {
+            if (self.tokens.tag(self.tok) == .star) {
                 // Many-pointer type: [*]T
                 self.advance(); // skip '*'
                 try self.expect(.r_bracket); // expect ']'
@@ -658,21 +667,21 @@ pub const Parser = struct {
         // Generic type parameter introduction: $T or $T/Protocol1/Protocol2.
         // Also: pack-index type access $args[<int_literal>] — resolves to
         // the i-th element type of the active pack binding.
-        if (self.current.tag == .dollar) {
+        if (self.tokens.tag(self.tok) == .dollar) {
             self.advance();
-            if (self.current.tag != .identifier) {
+            if (self.tokens.tag(self.tok) != .identifier) {
                 return self.fail("expected type parameter name after '$'");
             }
-            const name = self.tokenSlice(self.current);
+            const name = self.tokens.slice(self.tok);
             self.advance();
             // Pack-index access: $<pack_name>[<int_literal>]
-            if (self.current.tag == .l_bracket) {
-                if (!self.currentIsGlued()) return self.failSpacedForm(start, .index);
+            if (self.tokens.tag(self.tok) == .l_bracket) {
+                if (!self.tokens.flagsOf(self.tok).glued_left) return self.failSpacedForm(start, .index);
                 self.advance(); // skip '['
-                if (self.current.tag != .int_literal) {
+                if (self.tokens.tag(self.tok) != .int_literal) {
                     return self.fail("expected integer literal in pack index");
                 }
-                const idx_text = self.tokenSlice(self.current);
+                const idx_text = self.tokens.slice(self.tok);
                 // Strip `_` separators / honor `0x`/`0o`/`0b` prefixes via the
                 // shared literal parser (matches every other int-literal site).
                 const idx_u64 = self.parseIntLiteralText(idx_text) orelse {
@@ -694,7 +703,7 @@ pub const Parser = struct {
         // Function type: (ParamTypes) -> ReturnType
         // Tuple type: (T1, T2) or (T1) — no '->' after ')'
         // Named params (documentation only): (name: Type, ...) -> ReturnType
-        if (self.current.tag == .l_paren) {
+        if (self.tokens.tag(self.tok) == .l_paren) {
             // A bare `..` tail belongs to a function TYPE. Without a `->` these
             // parens are a grouping, the void type, or a result list, where a
             // `..` is the pack spread — so the tail is recognized only here.
@@ -718,10 +727,10 @@ pub const Parser = struct {
             var is_c_variadic = false;
             // Span of the bare `..`, for the refusals that name it.
             var tail_span: ast.Span = .{ .start = 0, .end = 0 };
-            while (self.current.tag != .r_paren and self.current.tag != .eof) {
+            while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                 if (param_types.items.len > 0) {
                     try self.expect(.comma);
-                    if (self.current.tag == .r_paren) {
+                    if (self.tokens.tag(self.tok) == .r_paren) {
                         had_trailing_comma = true;
                         break; // trailing comma ok
                     }
@@ -733,15 +742,15 @@ pub const Parser = struct {
                 // separates it from every pack spread, which always carries an
                 // operand. It is the last entry, so an ordinary trailing comma
                 // may follow it and nothing else may.
-                if (self.current.tag == .dot_dot and is_fn_type and
+                if (self.tokens.tag(self.tok) == .dot_dot and is_fn_type and
                     (self.peekTag(1) == .r_paren or self.peekTag(1) == .comma))
                 {
-                    const dots = self.current.loc;
+                    const dots = self.tokens.token(self.tok).loc;
                     is_c_variadic = true;
                     tail_span = .{ .start = dots.start, .end = dots.end };
                     self.advance();
-                    if (self.current.tag == .comma) self.advance();
-                    if (self.current.tag != .r_paren) {
+                    if (self.tokens.tag(self.tok) == .comma) self.advance();
+                    if (self.tokens.tag(self.tok) != .r_paren) {
                         return self.failAt(tail_span, "a C-variadic '..' tail must be the last parameter entry");
                     }
                     break;
@@ -750,8 +759,8 @@ pub const Parser = struct {
                 // `(..F(Ts.Arg))` / `(..Ts)`. Reuses `spread_expr`; its operand
                 // is the per-element type expression (e.g. `F(Ts)`), carrying any
                 // projection in `Ts.Arg` form.
-                if (self.current.tag == .dot_dot) {
-                    const spread_start = self.current.loc.start;
+                if (self.tokens.tag(self.tok) == .dot_dot) {
+                    const spread_start = self.tokens.start(self.tok);
                     self.advance(); // skip '..'
                     const operand = try self.parseTypeExpr();
                     const spread = try self.createNode(spread_start, .{ .spread_expr = .{ .operand = operand } });
@@ -763,7 +772,7 @@ pub const Parser = struct {
                 // Check for optional param name: `name: Type`
                 // An identifier followed by `:` (not `::` or `:=`) is a param name
                 if (self.isIdentLike() and self.peekNext() == .colon) {
-                    const pname = self.tokenSlice(self.current);
+                    const pname = self.tokens.slice(self.tok);
                     self.advance(); // skip name
                     self.advance(); // skip ':'
                     try param_names.append(self.allocator, pname);
@@ -778,7 +787,7 @@ pub const Parser = struct {
                 // slot default. Parse it for every element (1:1 with types) and
                 // attach only to a `return_type_expr` below.
                 var elem_default: ?*Node = null;
-                if (self.current.tag == .equal) {
+                if (self.tokens.tag(self.tok) == .equal) {
                     self.advance(); // skip '='
                     elem_default = try self.parseExpr();
                     any_default = true;
@@ -786,7 +795,7 @@ pub const Parser = struct {
                 try param_defaults.append(self.allocator, elem_default);
             }
             try self.expect(.r_paren);
-            if (self.current.tag == .arrow) {
+            if (self.tokens.tag(self.tok) == .arrow) {
                 // '->' present: function type. A failable return is the canonical
                 // parenthesized list `(i64) -> (i64, !E)` (parseFnReturnType
                 // rejects the bare `-> i64 !E` spelling).
@@ -872,7 +881,7 @@ pub const Parser = struct {
             return self.fail("tuple types use `Tuple( … )` (e.g. `Tuple(A, B)`)");
         }
 
-        if (self.current.tag.isTypeKeyword() or self.isIdentLike()) {
+        if (self.tokens.tag(self.tok).isTypeKeyword() or self.isIdentLike()) {
             // A backtick raw identifier (`` `i2 ``) in type position is the
             // LITERAL name `i2` used as a type reference — never the builtin /
             // reserved keyword. The raw flag rides the type ATOM through the
@@ -881,24 +890,20 @@ pub const Parser = struct {
             // parse); it is threaded onto the final `type_expr` /
             // `parameterized_type_expr` so resolution skips the builtin
             // classifier and looks up a `` `i2 ``-declared type.
-            const atom_is_raw = self.current.is_raw;
-            var name = self.tokenSlice(self.current);
+            const atom_is_raw = self.tokens.flagsOf(self.tok).is_raw;
+            var name = self.tokens.slice(self.tok);
             self.advance();
 
             // Qualified name: ns.Type or ns.Type(args)
-            while (self.current.tag == .dot) {
-                const dot_lexer = self.lexer;
-                const dot_current = self.current;
-                const dot_prev_end = self.prev_end;
+            while (self.tokens.tag(self.tok) == .dot) {
+                const dot_saved = self.tok;
                 self.advance();
-                if (self.isIdentLike() or self.current.tag.isTypeKeyword()) {
-                    name = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ name, self.tokenSlice(self.current) });
+                if (self.isIdentLike() or self.tokens.tag(self.tok).isTypeKeyword()) {
+                    name = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ name, self.tokens.slice(self.tok) });
                     self.advance();
                 } else {
                     // Not a qualified name continuation — restore the dot
-                    self.lexer = dot_lexer;
-                    self.current = dot_current;
-                    self.prev_end = dot_prev_end;
+                    self.tok = dot_saved;
                     break;
                 }
             }
@@ -909,7 +914,7 @@ pub const Parser = struct {
             // args, match-arm type patterns — and the `Tuple` / `Closure`
             // fixed forms below. A type application never spans a statement
             // boundary, so ANY gap here is the spacing mistake.
-            if (self.current.tag == .l_paren) try self.requireTypeArgGlue(start);
+            if (self.tokens.tag(self.tok) == .l_paren) try self.requireTypeArgGlue(start);
 
             // Tuple type: `Tuple(A, B)` / `Tuple(T)` / `Tuple()` /
             //   named `Tuple(x: A, y: B)` / pack `Tuple(..Ts)` / `Tuple(..F(Ts))`.
@@ -918,7 +923,7 @@ pub const Parser = struct {
             //   (mirrors `Closure`). Lowers to the SAME `tuple_type_expr` the
             //   inline `(A, B)` / `(x: A, y: B)` / `(..Ts)` forms produce.
             //   Unlike `Closure`, a trailing `->` is REJECTED (no return type).
-            if (std.mem.eql(u8, name, "Tuple") and self.current.tag == .l_paren) {
+            if (std.mem.eql(u8, name, "Tuple") and self.tokens.tag(self.tok) == .l_paren) {
                 return self.parseTupleTypeBody(start);
             }
 
@@ -926,21 +931,21 @@ pub const Parser = struct {
             //   Variadic-pack trailing form: `Closure(Prefix..., ..$pack) -> R`
             //   binds `pack` to a heterogeneous comptime type list at impl
             //   match time.
-            if (std.mem.eql(u8, name, "Closure") and self.current.tag == .l_paren) {
+            if (std.mem.eql(u8, name, "Closure") and self.tokens.tag(self.tok) == .l_paren) {
                 return self.parseClosureTypeBody(start);
             }
 
             // Parameterized type: Vector(N, T) or later generic struct instantiation
-            if (self.current.tag == .l_paren) {
+            if (self.tokens.tag(self.tok) == .l_paren) {
                 self.advance(); // skip '('
                 var args = std.ArrayList(*Node).empty;
-                while (self.current.tag != .r_paren and self.current.tag != .eof) {
+                while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                     if (args.items.len > 0) {
                         try self.expect(.comma);
                     }
                     // Pack-spread type arg: `Combined($R, ..sources.T)`.
-                    if (self.current.tag == .dot_dot) {
-                        const sp_start = self.current.loc.start;
+                    if (self.tokens.tag(self.tok) == .dot_dot) {
+                        const sp_start = self.tokens.start(self.tok);
                         self.advance(); // skip '..'
                         const operand = try self.parseTypeExpr();
                         try args.append(self.allocator, try self.createNode(sp_start, .{ .spread_expr = .{ .operand = operand } }));
@@ -957,9 +962,9 @@ pub const Parser = struct {
                     // `+ - * / %`. The shared evaluator folds the expression; a
                     // non-const value position is diagnosed during lowering.
                     var arg: *Node = undefined;
-                    if (self.current.tag == .int_literal) {
-                        const arg_start = self.current.loc.start;
-                        const text = self.tokenSlice(self.current);
+                    if (self.tokens.tag(self.tok) == .int_literal) {
+                        const arg_start = self.tokens.start(self.tok);
+                        const text = self.tokens.slice(self.tok);
                         // Parse the full u64 range and store the bit pattern,
                         // matching the main int-literal path.
                         const value: i64 = @bitCast(self.parseIntLiteralText(text) orelse {
@@ -967,14 +972,14 @@ pub const Parser = struct {
                         });
                         self.advance();
                         arg = try self.createNode(arg_start, .{ .int_literal = .{ .value = value } });
-                    } else if (self.current.tag == .char_literal) {
+                    } else if (self.tokens.tag(self.tok) == .char_literal) {
                         // A char literal in a value position (`Buf('A')`) is a
                         // compile-time integer code point — decode it the same
                         // way the primary-expression path does and emit a
                         // `char_literal` node (keeps the `c…` value mangle in
                         // generics.zig distinct from the integer instantiation).
-                        const arg_start = self.current.loc.start;
-                        const raw = self.tokenSlice(self.current);
+                        const arg_start = self.tokens.start(self.tok);
+                        const raw = self.tokens.slice(self.tok);
                         const inner = raw[1 .. raw.len - 1];
                         const value = unescape.decodeCharLiteral(inner) catch |err| {
                             return self.fail(unescape.charLiteralReason(err));
@@ -1006,15 +1011,15 @@ pub const Parser = struct {
             return try self.createNode(start, .{ .type_expr = .{ .name = name, .is_generic = is_struct_generic, .is_raw = atom_is_raw } });
         }
         // Inline struct type in type position: struct { ... }
-        if (self.current.tag == .kw_struct) {
+        if (self.tokens.tag(self.tok) == .kw_struct) {
             return try self.parseStructDecl("__anon", start, false);
         }
         // Inline C-style union in type position: union { ... }
-        if (self.current.tag == .kw_union) {
+        if (self.tokens.tag(self.tok) == .kw_union) {
             return try self.parseUnionDecl("__anon", start, false);
         }
         // Inline enum type in type position: enum { ... }
-        if (self.current.tag == .kw_enum) {
+        if (self.tokens.tag(self.tok) == .kw_enum) {
             return try self.parseEnumDecl("__anon", start, false);
         }
         return self.fail("expected type name");
@@ -1023,7 +1028,7 @@ pub const Parser = struct {
     /// The bounds trailing a type-variable binder: `('/' BoundExpr)*`.
     fn parseBoundList(self: *Parser) anyerror![]const *Node {
         var bounds = std.ArrayList(*Node).empty;
-        while (self.current.tag == .slash) {
+        while (self.tokens.tag(self.tok) == .slash) {
             self.advance(); // skip '/'
             try bounds.append(self.allocator, try self.parseBoundExpr());
         }
@@ -1040,36 +1045,36 @@ pub const Parser = struct {
     /// bound argument may introduce its own binder with its own bounds
     /// (`@Init($V/P)`).
     fn parseBoundExpr(self: *Parser) anyerror!*Node {
-        const start = self.current.loc.start;
-        if (self.current.tag != .identifier and self.current.tag != .at_identifier) {
+        const start = self.tokens.start(self.tok);
+        if (self.tokens.tag(self.tok) != .identifier and self.tokens.tag(self.tok) != .at_identifier) {
             return self.fail("expected protocol name after '/'");
         }
-        var head = self.tokenSlice(self.current);
+        var head = self.tokens.slice(self.tok);
         self.advance();
         // A head may be QUALIFIED (`$V/pkg.View`): a module reached by name owns
         // the protocol or set the bound asks about, exactly as a type
         // annotation names it. The path is carried whole; `lower/bound.zig`
         // resolves it.
-        while (self.current.tag == .dot) {
+        while (self.tokens.tag(self.tok) == .dot) {
             self.advance();
-            if (self.current.tag != .identifier) return self.fail("expected a name after '.' in a bound head");
-            const seg = self.tokenSlice(self.current);
+            if (self.tokens.tag(self.tok) != .identifier) return self.fail("expected a name after '.' in a bound head");
+            const seg = self.tokens.slice(self.tok);
             self.advance();
             head = std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ head, seg }) catch head;
         }
-        if (self.current.tag != .l_paren) {
+        if (self.tokens.tag(self.tok) != .l_paren) {
             return try self.createNode(start, .{ .type_expr = .{ .name = head } });
         }
         // Glue rule: a bound's arguments bind like any other type application
         // (`$B/@BuildBlock(Drawable)`).
         try self.requireTypeArgGlue(start);
-        const l_paren_loc = self.current.loc;
+        const l_paren_loc = self.tokens.token(self.tok).loc;
         self.advance(); // skip '('
         var args = std.ArrayList(*Node).empty;
-        while (self.current.tag != .r_paren and self.current.tag != .eof) {
+        while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
             if (args.items.len > 0) {
                 try self.expect(.comma);
-                if (self.current.tag == .r_paren) break;
+                if (self.tokens.tag(self.tok) == .r_paren) break;
             }
             // A bound argument may itself bind: `@Init($V/P)`.
             try args.append(self.allocator, try self.parseTypeExpr());
@@ -1108,25 +1113,25 @@ pub const Parser = struct {
     }
 
     fn parseCompilerFormedType(self: *Parser, start: u32) anyerror!*Node {
-        const name_tok = self.current;
-        const name = self.tokenSlice(name_tok);
+        const name_idx = self.tok;
+        const name = self.tokens.slice(name_idx);
         self.advance();
         const contract = contracts.find(name);
         const spelling = if (contract != null and contract.?.kind == .compiler_formed)
             contract.?.spelling
         else
-            return self.failAt(name_tok.loc, try self.unknownCompilerFormedTypeMsg(name));
+            return self.failAt(self.tokens.token(name_idx).loc, try self.unknownCompilerFormedTypeMsg(name));
         // A bound-only contract names a constraint: its implementors are minted
         // per formation site, so no type position can name one.
         if (contract.?.bound_only) {
-            return self.failAt(name_tok.loc, try std.fmt.allocPrint(
+            return self.failAt(self.tokens.token(name_idx).loc, try std.fmt.allocPrint(
                 self.allocator,
                 "'{s}' is a generic bound, not a type — write the parameter as '{s}'",
                 .{ spelling, contract.?.bound_spelling },
             ));
         }
-        if (self.current.tag != .l_paren) {
-            return self.failAt(name_tok.loc, try std.fmt.allocPrint(
+        if (self.tokens.tag(self.tok) != .l_paren) {
+            return self.failAt(self.tokens.token(name_idx).loc, try std.fmt.allocPrint(
                 self.allocator,
                 "'{s}' needs its type argument: write '{s}'",
                 .{ name, spelling },
@@ -1151,37 +1156,39 @@ pub const Parser = struct {
 
         // Check for 'flags' modifier: enum flags { ... }
         var is_flags = false;
-        if (self.current.tag == .identifier and std.mem.eql(u8, self.tokenSlice(self.current), "flags")) {
+        if (self.tokens.tag(self.tok) == .identifier and std.mem.eql(u8, self.tokens.slice(self.tok), "flags")) {
             is_flags = true;
             self.advance();
         }
 
         // Check for optional backing type: enum u8 { ... } or enum flags u32 { ... }
         var backing_type: ?*Node = null;
-        if (self.current.tag != .l_brace) {
+        if (self.tokens.tag(self.tok) != .l_brace) {
             backing_type = try self.parseTypeExpr();
         }
 
         try self.expect(.l_brace);
         var variant_names = std.ArrayList([]const u8).empty;
+        var variant_name_starts = std.ArrayList(u32).empty;
         var variant_types = std.ArrayList(?*Node).empty;
         var variant_values = std.ArrayList(?*Node).empty;
         var has_any_type = false;
         var has_any_value = false;
-        while (self.current.tag != .r_brace and self.current.tag != .eof) {
+        while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             if (!self.isMemberDeclName()) {
                 return self.failMemberDeclName("expected variant name");
             }
-            try variant_names.append(self.allocator, self.tokenSlice(self.current));
+            try variant_names.append(self.allocator, self.tokens.slice(self.tok));
+            try variant_name_starts.append(self.allocator, self.tokens.start(self.tok));
             self.advance();
-            if (self.current.tag == .colon_colon) {
+            if (self.tokens.tag(self.tok) == .colon_colon) {
                 // Explicit value: name :: expr;  or  name :: expr: type;
                 self.advance();
                 const val_expr = try self.parseExpr();
                 try variant_values.append(self.allocator, val_expr);
                 has_any_value = true;
                 // Check for payload type after value: name :: 0x300: KeyData
-                if (self.current.tag == .colon) {
+                if (self.tokens.tag(self.tok) == .colon) {
                     if (is_flags) {
                         return self.fail("flags enum variants cannot have payloads");
                     }
@@ -1192,7 +1199,7 @@ pub const Parser = struct {
                 } else {
                     try variant_types.append(self.allocator, null);
                 }
-            } else if (self.current.tag == .colon) {
+            } else if (self.tokens.tag(self.tok) == .colon) {
                 // Typed variant: name: type;
                 if (is_flags) {
                     return self.fail("flags enum variants cannot have payloads");
@@ -1207,7 +1214,7 @@ pub const Parser = struct {
                 try variant_types.append(self.allocator, null);
                 try variant_values.append(self.allocator, null);
             }
-            if (self.current.tag == .semicolon) {
+            if (self.tokens.tag(self.tok) == .semicolon) {
                 self.advance();
             }
         }
@@ -1216,6 +1223,7 @@ pub const Parser = struct {
         return try self.createNode(start_pos, .{ .enum_decl = .{
             .name = name,
             .variant_names = try variant_names.toOwnedSlice(self.allocator),
+            .variant_name_starts = try variant_name_starts.toOwnedSlice(self.allocator),
             .variant_types = if (has_any_type) try variant_types.toOwnedSlice(self.allocator) else &.{},
             .is_flags = is_flags,
             .variant_values = if (has_any_value) try variant_values.toOwnedSlice(self.allocator) else &.{},
@@ -1228,24 +1236,27 @@ pub const Parser = struct {
         self.advance(); // skip 'error'
         try self.expect(.l_brace);
         var tag_names = std.ArrayList([]const u8).empty;
-        while (self.current.tag != .r_brace and self.current.tag != .eof) {
+        var tag_name_starts = std.ArrayList(u32).empty;
+        while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             if (tag_names.items.len > 0) {
                 try self.expect(.comma);
-                if (self.current.tag == .r_brace) break; // trailing comma ok
+                if (self.tokens.tag(self.tok) == .r_brace) break; // trailing comma ok
             }
-            if (self.current.tag != .identifier) {
+            if (self.tokens.tag(self.tok) != .identifier) {
                 return self.fail("expected error tag name");
             }
-            try tag_names.append(self.allocator, self.tokenSlice(self.current));
+            try tag_names.append(self.allocator, self.tokens.slice(self.tok));
+            try tag_name_starts.append(self.allocator, self.tokens.start(self.tok));
             self.advance();
         }
         try self.expect(.r_brace);
         // Accept an optional trailing `;` — error-set decls read like value
         // bindings and are commonly written `Foo :: error { ... };`.
-        if (self.current.tag == .semicolon) self.advance();
+        if (self.tokens.tag(self.tok) == .semicolon) self.advance();
         return try self.createNode(start_pos, .{ .error_set_decl = .{
             .name = name,
             .tag_names = try tag_names.toOwnedSlice(self.allocator),
+            .tag_name_starts = try tag_name_starts.toOwnedSlice(self.allocator),
             .is_raw = name_is_raw,
         } });
     }
@@ -1254,34 +1265,37 @@ pub const Parser = struct {
         self.advance(); // skip 'union'
         try self.expect(.l_brace);
         var field_names = std.ArrayList([]const u8).empty;
+        var field_name_starts = std.ArrayList(u32).empty;
         var field_types = std.ArrayList(*Node).empty;
         var anon_idx: u32 = 0;
-        while (self.current.tag != .r_brace and self.current.tag != .eof) {
+        while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             // Anonymous struct field: struct { x, y: f32; };
-            if (self.current.tag == .kw_struct) {
+            if (self.tokens.tag(self.tok) == .kw_struct) {
                 const anon_field = try std.fmt.allocPrint(self.allocator, "__anon_{d}", .{anon_idx});
                 anon_idx += 1;
                 const anon_struct_name = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ name, anon_field });
-                const struct_node = try self.parseStructDecl(anon_struct_name, self.current.loc.start, false);
+                const struct_node = try self.parseStructDecl(anon_struct_name, self.tokens.start(self.tok), false);
                 try field_names.append(self.allocator, anon_field);
+                try field_name_starts.append(self.allocator, ast.no_source_start);
                 try field_types.append(self.allocator, struct_node);
-                if (self.current.tag == .semicolon) {
+                if (self.tokens.tag(self.tok) == .semicolon) {
                     self.advance();
                 }
                 continue;
             }
-            if (self.current.tag != .identifier) {
+            if (self.tokens.tag(self.tok) != .identifier) {
                 return self.fail("expected field name or 'struct'");
             }
-            try field_names.append(self.allocator, self.tokenSlice(self.current));
+            try field_names.append(self.allocator, self.tokens.slice(self.tok));
+            try field_name_starts.append(self.allocator, self.tokens.start(self.tok));
             self.advance();
-            if (self.current.tag != .colon) {
+            if (self.tokens.tag(self.tok) != .colon) {
                 return self.fail("union fields must have a type");
             }
             self.advance();
             const ftype = try self.parseTypeExpr();
             try field_types.append(self.allocator, ftype);
-            if (self.current.tag == .semicolon) {
+            if (self.tokens.tag(self.tok) == .semicolon) {
                 self.advance();
             }
         }
@@ -1289,6 +1303,7 @@ pub const Parser = struct {
         return try self.createNode(start_pos, .{ .union_decl = .{
             .name = name,
             .field_names = try field_names.toOwnedSlice(self.allocator),
+            .field_name_starts = try field_name_starts.toOwnedSlice(self.allocator),
             .field_types = try field_types.toOwnedSlice(self.allocator),
             .is_raw = name_is_raw,
         } });
@@ -1326,26 +1341,26 @@ pub const Parser = struct {
 
         // Optional type params: struct($N: u32, $T: Type) { ... }
         var type_params = std.ArrayList(ast.StructTypeParam).empty;
-        if (self.current.tag == .l_paren) {
+        if (self.tokens.tag(self.tok) == .l_paren) {
             self.advance(); // skip '('
-            while (self.current.tag != .r_paren and self.current.tag != .eof) {
+            while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                 if (type_params.items.len > 0) {
                     try self.expect(.comma);
-                    if (self.current.tag == .r_paren) break;
+                    if (self.tokens.tag(self.tok) == .r_paren) break;
                 }
                 // Optional leading `..` — a pack type-param `..$Ts: []Type`
                 // (must be the last param; binds the remaining type args).
                 var is_variadic = false;
-                if (self.current.tag == .dot_dot) {
+                if (self.tokens.tag(self.tok) == .dot_dot) {
                     is_variadic = true;
                     self.advance();
                 }
                 // Expect $name : constraint
                 try self.expect(.dollar);
-                if (self.current.tag != .identifier) {
+                if (self.tokens.tag(self.tok) != .identifier) {
                     return self.fail("expected type parameter name after '$'");
                 }
-                const param_name = self.tokenSlice(self.current);
+                const param_name = self.tokens.slice(self.tok);
                 self.advance();
                 try self.expect(.colon);
                 const constraint = try self.parseTypeExpr();
@@ -1369,43 +1384,44 @@ pub const Parser = struct {
         defer self.struct_type_params = saved_struct_type_params;
 
         var field_names = std.ArrayList([]const u8).empty;
+        var field_name_starts = std.ArrayList(u32).empty;
         var field_types = std.ArrayList(*Node).empty;
         var field_defaults = std.ArrayList(?*Node).empty;
         var using_entries = std.ArrayList(ast.UsingEntry).empty;
         var methods = std.ArrayList(*Node).empty;
         var constants = std.ArrayList(*Node).empty;
 
-        while (self.current.tag != .r_brace and self.current.tag != .eof) {
+        while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             // Check for #using directive
-            if (self.current.tag == .hash_using) {
+            if (self.tokens.tag(self.tok) == .hash_using) {
                 self.advance(); // skip #using
-                if (self.current.tag != .identifier) {
+                if (self.tokens.tag(self.tok) != .identifier) {
                     return self.fail("expected type name after '#using'");
                 }
-                const used_type = self.tokenSlice(self.current);
+                const used_type = self.tokens.slice(self.tok);
                 self.advance();
                 try using_entries.append(self.allocator, .{
                     .insert_index = @intCast(field_names.items.len),
                     .type_name = used_type,
                 });
-                if (self.current.tag == .semicolon) self.advance();
+                if (self.tokens.tag(self.tok) == .semicolon) self.advance();
                 continue;
             }
 
             // Method declaration: name :: (params) -> type { body }
             if (self.isMemberDeclName() and self.peekNext() == .colon_colon) {
-                const method_start = self.current.loc.start;
-                const method_name = self.tokenSlice(self.current);
-                const method_name_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
-                const method_is_raw = self.current.is_raw;
+                const method_start = self.tokens.start(self.tok);
+                const method_name = self.tokens.slice(self.tok);
+                const method_name_span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
+                const method_is_raw = self.tokens.flagsOf(self.tok).is_raw;
                 self.advance(); // skip name
                 self.advance(); // skip ::
-                if (self.current.tag == .l_paren and self.isFunctionDef()) {
+                if (self.tokens.tag(self.tok) == .l_paren and self.isFunctionDef()) {
                     try methods.append(self.allocator, try self.parseFnDecl(method_name, method_name_span, method_is_raw, method_start));
                 } else {
                     // Non-function constant: name :: value;
                     const value = try self.parseExpr();
-                    if (self.current.tag == .semicolon) self.advance();
+                    if (self.tokens.tag(self.tok) == .semicolon) self.advance();
                     try constants.append(self.allocator, try self.createNode(method_start, .{ .const_decl = .{
                         .name = method_name,
                         .type_annotation = null,
@@ -1420,27 +1436,30 @@ pub const Parser = struct {
             // Parse field group: name1, name2, ...: type (= default)?;
             // Or typed constant: name :Type: value;
             var group_names = std.ArrayList([]const u8).empty;
+            var group_starts = std.ArrayList(u32).empty;
 
             if (!self.isMemberDeclName()) {
                 return self.failMemberDeclName("expected field name in struct");
             }
-            const field_start = self.current.loc.start;
+            const field_start = self.tokens.start(self.tok);
             // Captured for the single-name typed-const path (`name :Type: value`)
             // below: a struct-body const binds a name like any other decl, so
             // its name_span + raw flag must travel to the `const_decl` node
             // (finding 1 — they were being dropped to a 1:1 caret / false
             // reserved-name reject).
-            const field_name_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
-            const field_is_raw = self.current.is_raw;
-            try group_names.append(self.allocator, self.tokenSlice(self.current));
+            const field_name_span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
+            const field_is_raw = self.tokens.flagsOf(self.tok).is_raw;
+            try group_names.append(self.allocator, self.tokens.slice(self.tok));
+            try group_starts.append(self.allocator, self.tokens.start(self.tok));
             self.advance();
 
-            while (self.current.tag == .comma) {
+            while (self.tokens.tag(self.tok) == .comma) {
                 self.advance(); // skip ','
                 if (!self.isMemberDeclName()) {
                     return self.failMemberDeclName("expected field name after ','");
                 }
-                try group_names.append(self.allocator, self.tokenSlice(self.current));
+                try group_names.append(self.allocator, self.tokens.slice(self.tok));
+                try group_starts.append(self.allocator, self.tokens.start(self.tok));
                 self.advance();
             }
 
@@ -1448,10 +1467,10 @@ pub const Parser = struct {
             const field_type = try self.parseTypeExpr();
 
             // Typed constant: name :Type: value; (second colon after type)
-            if (self.current.tag == .colon and group_names.items.len == 1) {
+            if (self.tokens.tag(self.tok) == .colon and group_names.items.len == 1) {
                 self.advance(); // skip second ':'
                 const value = try self.parseExpr();
-                if (self.current.tag == .semicolon) self.advance();
+                if (self.tokens.tag(self.tok) == .semicolon) self.advance();
                 try constants.append(self.allocator, try self.createNode(field_start, .{ .const_decl = .{
                     .name = group_names.items[0],
                     .type_annotation = field_type,
@@ -1464,24 +1483,25 @@ pub const Parser = struct {
 
             // Check for default value: = expr
             var default_val: ?*Node = null;
-            if (self.current.tag == .equal) {
+            if (self.tokens.tag(self.tok) == .equal) {
                 self.advance();
                 default_val = try self.parseExpr();
             }
 
             // All names in the group share the same type and default
-            for (group_names.items) |fname| {
+            for (group_names.items, group_starts.items) |fname, fstart| {
                 // `_` is an ignore identifier — auto-rename to unique internal name
                 const actual_name = if (std.mem.eql(u8, fname, "_"))
                     try std.fmt.allocPrint(self.allocator, "_{d}", .{field_names.items.len})
                 else
                     fname;
                 try field_names.append(self.allocator, actual_name);
+                try field_name_starts.append(self.allocator, fstart);
                 try field_types.append(self.allocator, field_type);
                 try field_defaults.append(self.allocator, default_val);
             }
 
-            if (self.current.tag == .semicolon) {
+            if (self.tokens.tag(self.tok) == .semicolon) {
                 self.advance();
             }
         }
@@ -1490,6 +1510,7 @@ pub const Parser = struct {
         return try self.createNode(start_pos, .{ .struct_decl = .{
             .name = name,
             .field_names = try field_names.toOwnedSlice(self.allocator),
+            .field_name_starts = try field_name_starts.toOwnedSlice(self.allocator),
             .field_types = try field_types.toOwnedSlice(self.allocator),
             .field_defaults = try field_defaults.toOwnedSlice(self.allocator),
             .type_params = try type_params.toOwnedSlice(self.allocator),
@@ -1506,45 +1527,45 @@ pub const Parser = struct {
 
     /// `V :: @OpenVariant(P) [($T: Type)] { fields + the set's methods }`.
     fn parseOpenVariantDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
-        const head_start = self.current.loc.start;
+        const head_start = self.tokens.start(self.tok);
         self.advance(); // skip '@OpenVariant'
         // Glue rule: the set argument binds like any other type application.
-        if (self.current.tag == .l_paren) try self.requireTypeArgGlue(head_start);
+        if (self.tokens.tag(self.tok) == .l_paren) try self.requireTypeArgGlue(head_start);
         try self.expect(.l_paren);
-        const set_tok = self.current;
-        if (self.current.tag != .identifier) {
+        const set_idx = self.tok;
+        if (self.tokens.tag(self.tok) != .identifier) {
             return self.fail("expected the open set's name in '@OpenVariant(…)'");
         }
-        var set_name = self.tokenSlice(set_tok);
+        var set_name = self.tokens.slice(set_idx);
         self.advance();
         // The head may be QUALIFIED (`@OpenVariant(pkg.View)`): the set a module
         // reached by name declares. The path is carried whole; `lower/open_set.zig`
         // resolves it from this declaration's own file.
-        var head_end = set_tok.loc.end;
-        while (self.current.tag == .dot) {
+        var head_end = self.tokens.end(set_idx);
+        while (self.tokens.tag(self.tok) == .dot) {
             self.advance();
-            if (self.current.tag != .identifier) {
+            if (self.tokens.tag(self.tok) != .identifier) {
                 return self.fail("expected a name after '.' in the open set's name");
             }
-            const seg_tok = self.current;
+            const seg_idx = self.tok;
             self.advance();
-            set_name = std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ set_name, self.tokenSlice(seg_tok) }) catch set_name;
-            head_end = seg_tok.loc.end;
+            set_name = std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ set_name, self.tokens.slice(seg_idx) }) catch set_name;
+            head_end = self.tokens.end(seg_idx);
         }
         try self.expect(.r_paren);
-        return self.parseStructTail(name, start_pos, name_is_raw, set_name, .{ .start = set_tok.loc.start, .end = head_end });
+        return self.parseStructTail(name, start_pos, name_is_raw, set_name, .{ .start = self.tokens.start(set_idx), .end = head_end });
     }
 
     /// `P :: @OpenSet(.{ max = …, align = … }) { required methods }`.
     fn parseOpenSetDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
-        const head_start = self.current.loc.start;
+        const head_start = self.tokens.start(self.tok);
         self.advance(); // skip '@OpenSet'
         // Glue rule: the options argument binds like any other type application.
-        if (self.current.tag == .l_paren) try self.requireTypeArgGlue(head_start);
+        if (self.tokens.tag(self.tok) == .l_paren) try self.requireTypeArgGlue(head_start);
         try self.expect(.l_paren);
-        const opt_start = self.current.loc.start;
+        const opt_start = self.tokens.start(self.tok);
         const options = try self.parseExpr();
-        const opt_end = self.current.loc.end;
+        const opt_end = self.tokens.end(self.tok);
         try self.expect(.r_paren);
         try self.expect(.l_brace);
 
@@ -1577,12 +1598,12 @@ pub const Parser = struct {
     };
 
     fn parseRequiredMethods(self: *Parser, methods: *std.ArrayList(ast.ProtocolMethodDecl), ctx: RequiredMethodsCtx) anyerror!void {
-        while (self.current.tag != .r_brace and self.current.tag != .eof) {
+        while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             // Method: name :: (params) -> type;  or  name :: (params) -> type { body }
             if (!self.isMemberDeclName()) {
                 return self.failMemberDeclName("expected method name in protocol body");
             }
-            const method_name = self.tokenSlice(self.current);
+            const method_name = self.tokens.slice(self.tok);
             self.advance();
             try self.expect(.colon_colon);
             try self.expect(.l_paren);
@@ -1592,18 +1613,18 @@ pub const Parser = struct {
             var param_name_spans = std.ArrayList(ast.Span).empty;
             var param_name_is_raw = std.ArrayList(bool).empty;
 
-            while (self.current.tag != .r_paren and self.current.tag != .eof) {
+            while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                 if (param_types.items.len > 0) {
                     try self.expect(.comma);
-                    if (self.current.tag == .r_paren) break;
+                    if (self.tokens.tag(self.tok) == .r_paren) break;
                 }
                 // Parse: name: type
-                if (self.current.tag != .identifier and self.current.tag != .kw_Self) {
+                if (self.tokens.tag(self.tok) != .identifier and self.tokens.tag(self.tok) != .kw_Self) {
                     return self.fail("expected parameter name in protocol method");
                 }
-                const pname = self.tokenSlice(self.current);
-                try param_name_spans.append(self.allocator, .{ .start = self.current.loc.start, .end = self.current.loc.end });
-                try param_name_is_raw.append(self.allocator, self.current.is_raw);
+                const pname = self.tokens.slice(self.tok);
+                try param_name_spans.append(self.allocator, .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) });
+                try param_name_is_raw.append(self.allocator, self.tokens.flagsOf(self.tok).is_raw);
                 self.advance();
                 try self.expect(.colon);
                 const ptype = try self.parseTypeExpr();
@@ -1634,7 +1655,7 @@ pub const Parser = struct {
 
             // Optional return type
             var return_type: ?*Node = null;
-            if (self.current.tag == .arrow) {
+            if (self.tokens.tag(self.tok) == .arrow) {
                 self.advance();
                 return_type = try self.parseFnReturnType();
             }
@@ -1642,7 +1663,7 @@ pub const Parser = struct {
             // Per-method `#expand`, in the same trailing attribute slot `#get` /
             // `#set` occupy on an ordinary method.
             var method_expand = false;
-            while (self.current.tag == .hash_expand) {
+            while (self.tokens.tag(self.tok) == .hash_expand) {
                 if (method_expand) return self.failFmt("duplicate #expand on method '{s}'", .{method_name});
                 if (!ctx.expand_allowed) {
                     return self.failFmt("#expand is a tagged-protocol attribute — only a tagged protocol dispatches through a generated switch, and '{s}' is declared '{s}'", .{ ctx.owner, ctx.kind_spelling });
@@ -1656,14 +1677,14 @@ pub const Parser = struct {
 
             // Optional body (default method) or semicolon
             var default_body: ?*Node = null;
-            if (self.current.tag == .l_brace) {
+            if (self.tokens.tag(self.tok) == .l_brace) {
                 // A default-method body's declarations are locals.
                 const saved_module_expansion = self.in_module_expansion;
                 self.in_module_expansion = false;
                 defer self.in_module_expansion = saved_module_expansion;
                 default_body = try self.parseBlock();
             } else {
-                if (self.current.tag == .semicolon) self.advance();
+                if (self.tokens.tag(self.tok) == .semicolon) self.advance();
             }
 
             // Strip the receiver (index 0) — the method's stored params are the
@@ -1693,17 +1714,17 @@ pub const Parser = struct {
         // Names are introduced without a `$` sigil (unlike struct's $T) because
         // the parens after `protocol` already mark this as a parameter list.
         var type_params = std.ArrayList(ast.StructTypeParam).empty;
-        if (self.current.tag == .l_paren) {
+        if (self.tokens.tag(self.tok) == .l_paren) {
             self.advance(); // skip '('
-            while (self.current.tag != .r_paren and self.current.tag != .eof) {
+            while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                 if (type_params.items.len > 0) {
                     try self.expect(.comma);
-                    if (self.current.tag == .r_paren) break;
+                    if (self.tokens.tag(self.tok) == .r_paren) break;
                 }
-                if (self.current.tag != .identifier) {
+                if (self.tokens.tag(self.tok) != .identifier) {
                     return self.fail("expected type parameter name in protocol header");
                 }
-                const param_name = self.tokenSlice(self.current);
+                const param_name = self.tokens.slice(self.tok);
                 self.advance();
                 try self.expect(.colon);
                 const constraint = try self.parseTypeExpr();
@@ -1718,11 +1739,11 @@ pub const Parser = struct {
         // double duty. Absent ⇒ constraint. Nothing but a kind word or `{`
         // may stand here, so an identifier is unambiguously a kind.
         var kind: ast.ProtocolKind = .constraint;
-        if (self.current.tag == .kw_inline) {
+        if (self.tokens.tag(self.tok) == .kw_inline) {
             kind = .@"inline";
             self.advance();
-        } else if (self.current.tag == .identifier and !self.current.is_raw) {
-            const word = self.tokenSlice(self.current);
+        } else if (self.tokens.tag(self.tok) == .identifier and !self.tokens.flagsOf(self.tok).is_raw) {
+            const word = self.tokens.slice(self.tok);
             if (std.mem.eql(u8, word, "constraint")) {
                 kind = .constraint;
             } else if (std.mem.eql(u8, word, "vtable")) {
@@ -1739,8 +1760,8 @@ pub const Parser = struct {
         // dispatch expansion). Order between them is free.
         var is_identity = false;
         var is_expand = false;
-        while (self.current.tag == .hash_identity or self.current.tag == .hash_expand) {
-            if (self.current.tag == .hash_identity) {
+        while (self.tokens.tag(self.tok) == .hash_identity or self.tokens.tag(self.tok) == .hash_expand) {
+            if (self.tokens.tag(self.tok) == .hash_identity) {
                 if (is_identity) return self.fail("duplicate #identity on protocol");
                 if (kind == .constraint) {
                     return self.fail("#identity is meaningless on a constraint protocol — there are no runtime values to classify");
@@ -1789,7 +1810,7 @@ pub const Parser = struct {
     }
 
     fn runtimeKindForCurrent(self: *Parser) ?ast.RuntimeKind {
-        return switch (self.current.tag) {
+        return switch (self.tokens.tag(self.tok)) {
             .hash_jni_class => .jni_class,
             .hash_jni_interface => .jni_interface,
             .hash_objc_class => .objc_class,
@@ -1836,17 +1857,10 @@ pub const Parser = struct {
     }
 
     fn peekTag(self: *Parser, offset: usize) Tag {
-        if (offset == 0) return self.current.tag;
-        var lexer_copy = self.lexer;
-        var tok: Token = undefined;
-        var i: usize = 0;
-        while (i < offset) : (i += 1) {
-            tok = lexer_copy.next();
-        }
-        return tok.tag;
+        return self.tokens.tag(self.tokens.peek(self.tok, @intCast(offset)));
     }
 
-    /// With `self.current` at `(`, true iff the parens enclose exactly a single
+    /// With the cursor at `(`, true iff the parens enclose exactly a single
     /// identifier — `( ident )`. Distinguishes a match-arm payload capture from
     /// a parenthesized / tuple arm-value expression (`(5)`, `(a, b)`).
     fn isLoneIdentParen(self: *Parser) bool {
@@ -1871,10 +1885,10 @@ pub const Parser = struct {
         self.advance(); // skip directive token
 
         try self.expect(.l_paren);
-        if (self.current.tag != .string_literal) {
+        if (self.tokens.tag(self.tok) != .string_literal) {
             return self.fail("expected string literal runtime-class type path after directive");
         }
-        const raw = self.tokenSlice(self.current);
+        const raw = self.tokens.slice(self.tok);
         const runtime_path = raw[1 .. raw.len - 1];
         self.advance();
         try self.expect(.r_paren);
@@ -1885,23 +1899,23 @@ pub const Parser = struct {
         //   `… export { … }`  ⇒ define + register a new sx class (the default).
         // Maps onto `is_extern`, threaded into the runtime_class_decl node.
         var is_extern_eff = false;
-        if (self.current.tag == .kw_extern or self.current.tag == .kw_export) {
-            is_extern_eff = self.current.tag == .kw_extern;
+        if (self.tokens.tag(self.tok) == .kw_extern or self.tokens.tag(self.tok) == .kw_export) {
+            is_extern_eff = self.tokens.tag(self.tok) == .kw_extern;
             self.advance();
         }
 
         try self.expect(.l_brace);
 
         var members = std.ArrayList(ast.RuntimeClassMember).empty;
-        while (self.current.tag != .r_brace and self.current.tag != .eof) {
+        while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             // #extends Alias;  or  #implements Alias;
-            if (self.current.tag == .hash_extends or self.current.tag == .hash_implements) {
-                const is_extends = self.current.tag == .hash_extends;
+            if (self.tokens.tag(self.tok) == .hash_extends or self.tokens.tag(self.tok) == .hash_implements) {
+                const is_extends = self.tokens.tag(self.tok) == .hash_extends;
                 self.advance();
-                if (self.current.tag != .identifier) {
+                if (self.tokens.tag(self.tok) != .identifier) {
                     return self.fail(if (is_extends) "expected superclass alias after '#extends'" else "expected interface alias after '#implements'");
                 }
-                const alias = self.tokenSlice(self.current);
+                const alias = self.tokens.slice(self.tok);
                 self.advance();
                 try self.expect(.semicolon);
                 try members.append(self.allocator, if (is_extends)
@@ -1913,13 +1927,13 @@ pub const Parser = struct {
 
             // Field: name: Type;       (instance field — JNI Get/Set<Type>Field)
             // Method: name :: (args...) -> Ret;
-            if (self.current.tag != .identifier) {
+            if (self.tokens.tag(self.tok) != .identifier) {
                 return self.fail("expected member name in '#jni_class' body");
             }
-            const member_name = self.tokenSlice(self.current);
+            const member_name = self.tokens.slice(self.tok);
             self.advance();
 
-            if (self.current.tag == .colon) {
+            if (self.tokens.tag(self.tok) == .colon) {
                 self.advance(); // consume `:`
                 const field_type = try self.parseTypeExpr();
 
@@ -1928,27 +1942,27 @@ pub const Parser = struct {
                 // getter/setter dispatch at access sites.
                 var is_property = false;
                 var property_modifiers = std.ArrayList([]const u8).empty;
-                if (self.current.tag == .hash_property) {
+                if (self.tokens.tag(self.tok) == .hash_property) {
                     is_property = true;
                     self.advance();
-                    if (self.current.tag == .l_paren) {
+                    if (self.tokens.tag(self.tok) == .l_paren) {
                         self.advance(); // consume `(`
-                        while (self.current.tag != .r_paren and self.current.tag != .eof) {
+                        while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                             if (property_modifiers.items.len > 0) {
                                 try self.expect(.comma);
-                                if (self.current.tag == .r_paren) break;
+                                if (self.tokens.tag(self.tok) == .r_paren) break;
                             }
-                            if (self.current.tag != .identifier) {
+                            if (self.tokens.tag(self.tok) != .identifier) {
                                 return self.fail("expected property modifier name (strong, weak, copy, readonly, ...)");
                             }
-                            const mod_name = self.tokenSlice(self.current);
+                            const mod_name = self.tokens.slice(self.tok);
                             self.advance();
                             // Optional argument: getter("name") / setter("name")
                             // — parsed but stored as part of the modifier string
                             // — the ARC wiring does not read it.
-                            if (self.current.tag == .l_paren) {
+                            if (self.tokens.tag(self.tok) == .l_paren) {
                                 self.advance();
-                                if (self.current.tag != .string_literal) {
+                                if (self.tokens.tag(self.tok) != .string_literal) {
                                     return self.fail("expected string literal argument for property modifier");
                                 }
                                 self.advance();
@@ -1980,7 +1994,7 @@ pub const Parser = struct {
             // Apple's runtime calls the IMP from `[Cls foo]` — there's no
             // runtime-level distinction between a class-level constant and
             // a niladic class method, just a difference in source spelling.
-            if (self.current.tag != .l_paren) {
+            if (self.tokens.tag(self.tok) != .l_paren) {
                 const ret_type = try self.parseTypeExpr();
                 try self.expect(.equal);
                 const expr_node = try self.parseExpr();
@@ -2008,17 +2022,17 @@ pub const Parser = struct {
             var param_names = std.ArrayList([]const u8).empty;
             var param_name_spans = std.ArrayList(ast.Span).empty;
             var param_name_is_raw = std.ArrayList(bool).empty;
-            while (self.current.tag != .r_paren and self.current.tag != .eof) {
+            while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                 if (param_types.items.len > 0) {
                     try self.expect(.comma);
-                    if (self.current.tag == .r_paren) break;
+                    if (self.tokens.tag(self.tok) == .r_paren) break;
                 }
-                if (self.current.tag != .identifier and self.current.tag != .kw_Self) {
+                if (self.tokens.tag(self.tok) != .identifier and self.tokens.tag(self.tok) != .kw_Self) {
                     return self.fail("expected parameter name in '#jni_class' method");
                 }
-                const pname = self.tokenSlice(self.current);
-                try param_name_spans.append(self.allocator, .{ .start = self.current.loc.start, .end = self.current.loc.end });
-                try param_name_is_raw.append(self.allocator, self.current.is_raw);
+                const pname = self.tokens.slice(self.tok);
+                try param_name_spans.append(self.allocator, .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) });
+                try param_name_is_raw.append(self.allocator, self.tokens.flagsOf(self.tok).is_raw);
                 self.advance();
                 try self.expect(.colon);
                 const ptype = try self.parseTypeExpr();
@@ -2043,20 +2057,20 @@ pub const Parser = struct {
             };
 
             var return_type: ?*Node = null;
-            if (self.current.tag == .arrow) {
+            if (self.tokens.tag(self.tok) == .arrow) {
                 self.advance();
                 return_type = try self.parseFnReturnType();
             }
 
             // Optional `#jni_method_descriptor("(Sig)Ret")` — explicit JNI descriptor override.
             var desc_override: ?[]const u8 = null;
-            if (self.current.tag == .hash_jni_method_descriptor) {
+            if (self.tokens.tag(self.tok) == .hash_jni_method_descriptor) {
                 self.advance(); // skip `#jni_method_descriptor`
                 try self.expect(.l_paren);
-                if (self.current.tag != .string_literal) {
+                if (self.tokens.tag(self.tok) != .string_literal) {
                     return self.fail("expected string literal JNI descriptor after '#jni_method_descriptor('");
                 }
-                const raw_desc = self.tokenSlice(self.current);
+                const raw_desc = self.tokens.slice(self.tok);
                 desc_override = raw_desc[1 .. raw_desc.len - 1];
                 self.advance();
                 try self.expect(.r_paren);
@@ -2066,13 +2080,13 @@ pub const Parser = struct {
             // Same slot as the JNI descriptor; they're not mutually
             // exclusive at parse time though they belong to different runtimes.
             var sel_override: ?[]const u8 = null;
-            if (self.current.tag == .hash_selector) {
+            if (self.tokens.tag(self.tok) == .hash_selector) {
                 self.advance(); // skip `#selector`
                 try self.expect(.l_paren);
-                if (self.current.tag != .string_literal) {
+                if (self.tokens.tag(self.tok) != .string_literal) {
                     return self.fail("expected string literal selector after '#selector('");
                 }
-                const raw_sel = self.tokenSlice(self.current);
+                const raw_sel = self.tokens.slice(self.tok);
                 sel_override = raw_sel[1 .. raw_sel.len - 1];
                 self.advance();
                 try self.expect(.r_paren);
@@ -2083,13 +2097,13 @@ pub const Parser = struct {
             // for sx-defined classes; `=> expr;` → expression-body form
             // Lowered as a single-statement block holding `expr`.
             var body_node: ?*Node = null;
-            if (self.current.tag == .l_brace) {
+            if (self.tokens.tag(self.tok) == .l_brace) {
                 // A runtime-class method body's declarations are locals.
                 const saved_module_expansion = self.in_module_expansion;
                 self.in_module_expansion = false;
                 defer self.in_module_expansion = saved_module_expansion;
                 body_node = try self.parseBlock();
-            } else if (self.current.tag == .fat_arrow) {
+            } else if (self.tokens.tag(self.tok) == .fat_arrow) {
                 self.advance();
                 const expr = try self.parseExpr();
                 try self.expect(.semicolon);
@@ -2131,25 +2145,25 @@ pub const Parser = struct {
 
         // Protocol name. A contract protocol (`impl @BuildSink(P) for …`) is an
         // ordinary protocol here — the `@` is part of its name.
-        if (self.current.tag != .identifier and self.current.tag != .at_identifier) {
+        if (self.tokens.tag(self.tok) != .identifier and self.tokens.tag(self.tok) != .at_identifier) {
             return self.fail("expected protocol name after 'impl'");
         }
-        const protocol_head_start = self.current.loc.start;
-        const protocol_name = self.tokenSlice(self.current);
+        const protocol_head_start = self.tokens.start(self.tok);
+        const protocol_name = self.tokens.slice(self.tok);
         self.advance();
 
         // Optional protocol type args: impl Into(Block) for ...
         var protocol_type_args = std.ArrayList(*Node).empty;
-        if (self.current.tag == .l_paren) {
+        if (self.tokens.tag(self.tok) == .l_paren) {
             // Glue rule: these are the protocol's ARGUMENTS, so they bind like
             // any other type application (the target's `($T)` below is a
             // parameter list and stays free).
             try self.requireTypeArgGlue(protocol_head_start);
             self.advance(); // skip '('
-            while (self.current.tag != .r_paren and self.current.tag != .eof) {
+            while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                 if (protocol_type_args.items.len > 0) {
                     try self.expect(.comma);
-                    if (self.current.tag == .r_paren) break;
+                    if (self.tokens.tag(self.tok) == .r_paren) break;
                 }
                 try protocol_type_args.append(self.allocator, try self.parseTypeExpr());
             }
@@ -2157,7 +2171,7 @@ pub const Parser = struct {
         }
 
         // 'for' — note: 'for' is a keyword (kw_for), not an identifier
-        if (self.current.tag != .kw_for) {
+        if (self.tokens.tag(self.tok) != .kw_for) {
             return self.fail("expected 'for' after protocol name in impl block");
         }
         self.advance();
@@ -2180,28 +2194,28 @@ pub const Parser = struct {
             }
         } else {
             // Nullary protocol: single identifier source.
-            if (self.current.tag != .identifier and !self.current.tag.isTypeKeyword()) {
+            if (self.tokens.tag(self.tok) != .identifier and !self.tokens.tag(self.tok).isTypeKeyword()) {
                 return self.fail("expected type name after 'for'");
             }
-            target_type = self.tokenSlice(self.current);
+            target_type = self.tokens.slice(self.tok);
             self.advance();
 
             // Optional type params: impl Protocol for List($T)
-            if (self.current.tag == .l_paren) {
+            if (self.tokens.tag(self.tok) == .l_paren) {
                 self.advance(); // skip '('
-                while (self.current.tag != .r_paren and self.current.tag != .eof) {
+                while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                     if (target_type_params.items.len > 0) {
                         try self.expect(.comma);
-                        if (self.current.tag == .r_paren) break;
+                        if (self.tokens.tag(self.tok) == .r_paren) break;
                     }
                     try self.expect(.dollar);
-                    if (self.current.tag != .identifier) {
+                    if (self.tokens.tag(self.tok) != .identifier) {
                         return self.fail("expected type parameter name after '$'");
                     }
-                    const param_name = self.tokenSlice(self.current);
+                    const param_name = self.tokens.slice(self.tok);
                     self.advance();
                     // Optional constraint — always `Type`.
-                    const constraint = try self.createNode(self.current.loc.start, .{ .type_expr = .{ .name = "Type" } });
+                    const constraint = try self.createNode(self.tokens.start(self.tok), .{ .type_expr = .{ .name = "Type" } });
                     try target_type_params.append(self.allocator, .{ .name = param_name, .constraint = constraint });
                 }
                 try self.expect(.r_paren);
@@ -2219,19 +2233,19 @@ pub const Parser = struct {
 
         var methods = std.ArrayList(*Node).empty;
 
-        while (self.current.tag != .r_brace and self.current.tag != .eof) {
+        while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             // Method: name :: (params) -> type { body }
             if (!self.isMemberDeclName()) {
                 return self.failMemberDeclName("expected method name in impl block");
             }
-            const method_start = self.current.loc.start;
-            const method_name = self.tokenSlice(self.current);
-            const method_name_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
-            const method_is_raw = self.current.is_raw;
+            const method_start = self.tokens.start(self.tok);
+            const method_name = self.tokens.slice(self.tok);
+            const method_name_span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
+            const method_is_raw = self.tokens.flagsOf(self.tok).is_raw;
             self.advance();
             try self.expect(.colon_colon);
 
-            if (self.current.tag == .l_paren and self.isFunctionDef()) {
+            if (self.tokens.tag(self.tok) == .l_paren and self.isFunctionDef()) {
                 try methods.append(self.allocator, try self.parseFnDecl(method_name, method_name_span, method_is_raw, method_start));
             } else {
                 return self.fail("expected function declaration in impl block");
@@ -2255,17 +2269,17 @@ pub const Parser = struct {
 
         var field_inits = std.ArrayList(ast.StructFieldInit).empty;
 
-        while (self.current.tag != .r_brace and self.current.tag != .eof) {
+        while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             if (field_inits.items.len > 0) {
                 try self.expect(.comma);
-                if (self.current.tag == .r_brace) break;
+                if (self.tokens.tag(self.tok) == .r_brace) break;
             }
 
             // Spread element: `.{ ..xs }` / `.{ a, ..t, b }` — reuses
             // `spread_expr` as a positional init, mirroring `.( )`'s spread
             // (tuple/pack spreads route in lowering).
-            if (self.current.tag == .dot_dot) {
-                const sp_start = self.current.loc.start;
+            if (self.tokens.tag(self.tok) == .dot_dot) {
+                const sp_start = self.tokens.start(self.tok);
                 self.advance(); // skip '..'
                 const operand = try self.parseExpr();
                 const spread = try self.createNode(sp_start, .{ .spread_expr = .{ .operand = operand } });
@@ -2278,21 +2292,19 @@ pub const Parser = struct {
             // expression (`.{ if x then 1 else 2 }`); shorthand stays
             // identifier-only (a keyword can never name a local to forward).
             if (self.isMemberDeclName()) {
-                const was_identifier = self.current.tag == .identifier;
-                const saved_lexer = self.lexer;
-                const saved_current = self.current;
-                const saved_prev_end = self.prev_end;
-                const fname = self.tokenSlice(self.current);
-                const ident_start = self.current.loc.start;
+                const was_identifier = self.tokens.tag(self.tok) == .identifier;
+                const saved = self.tok;
+                const fname = self.tokens.slice(self.tok);
+                const ident_start = self.tokens.start(self.tok);
                 self.advance();
 
-                if (self.current.tag == .equal) {
+                if (self.tokens.tag(self.tok) == .equal) {
                     // Named field: name = expr
                     self.advance(); // skip '='
                     const value = try self.parseExpr();
                     try field_inits.append(self.allocator, .{ .name = fname, .value = value });
                     continue;
-                } else if (was_identifier and (self.current.tag == .comma or self.current.tag == .r_brace)) {
+                } else if (was_identifier and (self.tokens.tag(self.tok) == .comma or self.tokens.tag(self.tok) == .r_brace)) {
                     // Shorthand: just an identifier (name = identifier with same name)
                     const ident_node = try self.createNode(ident_start, .{ .identifier = .{ .name = fname } });
                     try field_inits.append(self.allocator, .{ .name = fname, .value = ident_node, .was_shorthand = true });
@@ -2300,9 +2312,7 @@ pub const Parser = struct {
                 }
 
                 // Not named — backtrack and parse as positional expression
-                self.lexer = saved_lexer;
-                self.current = saved_current;
-                self.prev_end = saved_prev_end;
+                self.tok = saved;
             }
 
             // Positional field: just an expression
@@ -2315,7 +2325,7 @@ pub const Parser = struct {
         // plain block in the enclosing scope (no `self`). Taught self-trailing
         // is `T{ fields }.{ stmts }` (attached in parsePostfix). Suppressed in
         // if-conditions and push context expressions (`push Context{…} { body }`).
-        const init_block: ?*Node = if (self.current.tag == .l_brace and !self.in_if_condition and !self.in_push_context)
+        const init_block: ?*Node = if (self.tokens.tag(self.tok) == .l_brace and !self.in_if_condition and !self.in_push_context)
             try self.parseBlock()
         else
             null;
@@ -2356,47 +2366,47 @@ pub const Parser = struct {
         var params = std.ArrayList(ast.Param).empty;
         var is_c_variadic = false;
         var tail_span: ast.Span = .{ .start = 0, .end = 0 };
-        while (self.current.tag != .r_paren and self.current.tag != .eof) {
+        while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
             if (params.items.len > 0) {
                 try self.expect(.comma);
-                if (self.current.tag == .r_paren) break;
+                if (self.tokens.tag(self.tok) == .r_paren) break;
             }
             // Leading `..` marks a variadic param at the binding site:
             // `..$args` (heterogeneous comptime pack), `..xs: []T` (slice),
             // `..xs: P` (protocol-constrained pack).
             var is_variadic = false;
-            if (self.current.tag == .dot_dot) {
-                const dots = self.current.loc;
+            if (self.tokens.tag(self.tok) == .dot_dot) {
+                const dots = self.tokens.token(self.tok).loc;
                 is_variadic = true;
                 self.advance();
                 // A bare `..` — one token of lookahead separates the C-variadic
                 // tail from every named form: the tail carries no operand. It
                 // is the last entry, so an ordinary trailing comma may follow
                 // it and nothing else may.
-                if (self.current.tag == .r_paren or self.current.tag == .comma) {
+                if (self.tokens.tag(self.tok) == .r_paren or self.tokens.tag(self.tok) == .comma) {
                     is_c_variadic = true;
                     tail_span = .{ .start = dots.start, .end = dots.end };
-                    if (self.current.tag == .comma) self.advance();
-                    if (self.current.tag != .r_paren) {
+                    if (self.tokens.tag(self.tok) == .comma) self.advance();
+                    if (self.tokens.tag(self.tok) != .r_paren) {
                         return self.failAt(tail_span, "a C-variadic '..' tail must be the last parameter entry");
                     }
                     break;
                 }
             }
             var is_ct_param = false;
-            if (self.current.tag == .dollar) {
+            if (self.tokens.tag(self.tok) == .dollar) {
                 is_ct_param = true;
                 self.advance();
             }
             if (!self.isIdentLike()) {
                 return self.fail("expected parameter name");
             }
-            const param_name = self.tokenSlice(self.current);
-            const param_name_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
-            const param_is_raw = self.current.is_raw;
+            const param_name = self.tokens.slice(self.tok);
+            const param_name_span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
+            const param_is_raw = self.tokens.flagsOf(self.tok).is_raw;
             self.advance();
             // Optional type annotation: if no ':', infer type from context
-            if (self.current.tag != .colon) {
+            if (self.tokens.tag(self.tok) != .colon) {
                 // A variadic binding has no context to infer from: the slice
                 // and protocol forms are their annotation, and `..$name` is a
                 // comptime pack whose types come from the call.
@@ -2426,7 +2436,7 @@ pub const Parser = struct {
             // Optional default value: `param: T = expr`. Stored on the Param
             // node; lowering fills it in for callers that omit this positional arg.
             var default_expr: ?*Node = null;
-            if (self.current.tag == .equal) {
+            if (self.tokens.tag(self.tok) == .equal) {
                 self.advance(); // consume '='
                 const saved_in_default = self.in_param_default;
                 self.in_param_default = true;
@@ -2597,12 +2607,12 @@ pub const Parser = struct {
         const params = list.params;
 
         var return_type: ?*Node = null;
-        if (self.current.tag == .arrow) {
+        if (self.tokens.tag(self.tok) == .arrow) {
             self.advance();
             return_type = try self.parseFnReturnType();
         }
 
-        const body_start = self.current.loc.start;
+        const body_start = self.tokens.start(self.tok);
         try self.expectStatementEnd();
         const body = try self.createNode(body_start, .{ .intrinsic_expr = {} });
         const type_params = try self.collectTypeParams(params);
@@ -2624,7 +2634,7 @@ pub const Parser = struct {
 
         // Optional return type
         var return_type: ?*Node = null;
-        if (self.current.tag == .arrow) {
+        if (self.tokens.tag(self.tok) == .arrow) {
             self.advance();
             return_type = try self.parseFnReturnType();
         }
@@ -2636,10 +2646,10 @@ pub const Parser = struct {
         // takes the receiver plus exactly one value parameter.
         var is_get = false;
         var is_set = false;
-        if (self.current.tag == .hash_get) {
+        if (self.tokens.tag(self.tok) == .hash_get) {
             is_get = true;
             self.advance();
-        } else if (self.current.tag == .hash_set) {
+        } else if (self.tokens.tag(self.tok) == .hash_set) {
             is_set = true;
             self.advance();
             if (return_type != null)
@@ -2663,7 +2673,7 @@ pub const Parser = struct {
         // an import or a definition, never both. Reject the redundant second keyword
         // with a clear message rather than the bare "expected ';'" the body parser
         // would otherwise emit.
-        if (extern_export != .none and (self.current.tag == .kw_extern or self.current.tag == .kw_export)) {
+        if (extern_export != .none and (self.tokens.tag(self.tok) == .kw_extern or self.tokens.tag(self.tok) == .kw_export)) {
             return self.fail("conflicting linkage: 'extern' and 'export' cannot be combined — a declaration is either an import ('extern') or a definition ('export')");
         }
 
@@ -2713,16 +2723,16 @@ pub const Parser = struct {
         defer self.in_module_expansion = saved_module_expansion;
         var is_arrow = false;
         const body = if (extern_export == .extern_) blk: {
-            const semi_start = self.current.loc.start;
+            const semi_start = self.tokens.start(self.tok);
             try self.expectStatementEnd();
             const stmts = try self.allocator.alloc(*Node, 0);
             break :blk try self.createNode(semi_start, .{ .block = .{ .stmts = stmts, .produces_value = false } });
-        } else if (self.current.tag == .kw_intrinsic) blk: {
-            const bi_start = self.current.loc.start;
+        } else if (self.tokens.tag(self.tok) == .kw_intrinsic) blk: {
+            const bi_start = self.tokens.start(self.tok);
             self.advance();
             try self.expectStatementEnd();
             break :blk try self.createNode(bi_start, .{ .intrinsic_expr = {} });
-        } else if (self.current.tag == .fat_arrow) blk: {
+        } else if (self.tokens.tag(self.tok) == .fat_arrow) blk: {
             is_arrow = true;
             self.advance();
             const expr = try self.parseExpr();
@@ -2756,7 +2766,7 @@ pub const Parser = struct {
     }
 
     fn parseBlock(self: *Parser) anyerror!*Node {
-        const start = self.current.loc.start;
+        const start = self.tokens.start(self.tok);
         try self.expect(.l_brace);
         // The header ambiguity `no_trailing_block` guards against ends at
         // this `{` — statements inside any braced block may take trailing
@@ -2771,7 +2781,7 @@ pub const Parser = struct {
         defer self.last_stmt_produces_value = saved_produces;
         var stmts = std.ArrayList(*Node).empty;
         var produces_value = false;
-        while (self.current.tag != .r_brace and self.current.tag != .eof) {
+        while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             const stmt = try self.parseStmt();
             try stmts.append(self.allocator, stmt);
             // The block's value-ness is its LAST statement's value-ness.
@@ -2793,11 +2803,11 @@ pub const Parser = struct {
             .call => |call| call.args.len > 0 and call.args[call.args.len - 1].data == .trailing_block,
             else => false,
         };
-        if (self.current.tag == .semicolon) {
+        if (self.tokens.tag(self.tok) == .semicolon) {
             self.advance();
             return;
         }
-        if (block_form or self.current.tag == .r_brace or self.implicitTerminator()) return;
+        if (block_form or self.tokens.tag(self.tok) == .r_brace or self.implicitTerminator()) return;
         try self.expect(.semicolon); // emits "expected ;"
     }
 
@@ -2825,7 +2835,7 @@ pub const Parser = struct {
         // correctly leave the enclosing block value-less.
         self.last_stmt_produces_value = false;
         // `#error "msg";` — compile-time diagnostic (fires when reached in live code).
-        if (self.current.tag == .hash_error) {
+        if (self.tokens.tag(self.tok) == .hash_error) {
             return self.parseErrorDirective();
         }
         // `#context_extend` is a top-level-only directive: the Context is
@@ -2835,37 +2845,37 @@ pub const Parser = struct {
         // MODULE-SCOPE expansion body is top level, though: its statements
         // become module-scope declarations, and a branch that declares a
         // Context field is exactly what the expansion scheduler weighs.
-        if (self.current.tag == .hash_context_extend) {
+        if (self.tokens.tag(self.tok) == .hash_context_extend) {
             if (!self.in_module_expansion) {
                 return self.fail("'#context_extend' is only allowed at top level (module scope)");
             }
-            return self.parseContextExtend(self.current.loc.start);
+            return self.parseContextExtend(self.tokens.start(self.tok));
         }
         // `impl Protocol for T { … }` inside a MODULE-SCOPE expansion body is an
         // ordinary module-scope declaration that the flatten pass surfaces to
         // the top level (comptime-expanded conformance). A bare `impl` followed
         // by a binding operator is the ordinary name.
-        if (self.current.tag == .kw_impl and self.in_module_expansion and self.peekNext() == .identifier) {
-            return self.parseImplBlock(self.current.loc.start);
+        if (self.tokens.tag(self.tok) == .kw_impl and self.in_module_expansion and self.peekNext() == .identifier) {
+            return self.parseImplBlock(self.tokens.start(self.tok));
         }
         // `private` on a statement: legal only inside a MODULE-SCOPE expansion
         // body, whose statements become top-level declarations after comptime
         // flattening. Anywhere else (function/method/lambda bodies) the
         // declaration is a local — visibility does not apply.
-        if (self.current.tag == .kw_private) {
+        if (self.tokens.tag(self.tok) == .kw_private) {
             if (!self.in_module_expansion) {
                 return self.fail("'private' is only allowed on module-scope declarations");
             }
             self.advance();
-            if (!self.isIdentLike() and self.current.tag != .kw_Self) {
+            if (!self.isIdentLike() and self.tokens.tag(self.tok) != .kw_Self) {
                 return self.fail("expected a declaration name after 'private'");
             }
-            const decl_start = self.current.loc.start;
-            const decl_name = self.tokenSlice(self.current);
-            const decl_name_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
-            const decl_is_raw = self.current.is_raw;
+            const decl_start = self.tokens.start(self.tok);
+            const decl_name = self.tokens.slice(self.tok);
+            const decl_name_span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
+            const decl_is_raw = self.tokens.flagsOf(self.tok).is_raw;
             self.advance();
-            const node = switch (self.current.tag) {
+            const node = switch (self.tokens.tag(self.tok)) {
                 .colon_colon => blk: {
                     self.advance();
                     break :blk try self.parseConstBinding(decl_name, decl_name_span, decl_start, decl_is_raw);
@@ -2887,39 +2897,36 @@ pub const Parser = struct {
         }
         // Check if this is a declaration (IDENT followed by ::, :=, or : type)
         if (self.isIdentLike()) {
-            const saved_lexer = self.lexer;
-            const saved_current = self.current;
-            const saved_prev_end = self.prev_end;
-            const start = self.current.loc.start;
-            const name = self.tokenSlice(self.current);
-            const name_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
-            const name_is_raw = self.current.is_raw;
+            const saved = self.tok;
+            const start = self.tokens.start(self.tok);
+            const name = self.tokens.slice(self.tok);
+            const name_span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
+            const name_is_raw = self.tokens.flagsOf(self.tok).is_raw;
             self.advance();
 
-            if (self.current.tag == .colon_colon) {
+            if (self.tokens.tag(self.tok) == .colon_colon) {
                 self.advance();
                 return self.parseConstBinding(name, name_span, start, name_is_raw);
             }
-            if (self.current.tag == .colon_equal) {
+            if (self.tokens.tag(self.tok) == .colon_equal) {
                 self.advance();
                 const value = try self.parseExpr();
                 try self.endDeclaration(value);
                 return try self.createNode(start, .{ .var_decl = .{ .name = name, .name_span = name_span, .type_annotation = null, .value = value, .is_raw = name_is_raw } });
             }
-            if (self.current.tag == .colon) {
+            if (self.tokens.tag(self.tok) == .colon) {
                 self.advance();
                 return self.parseTypedBinding(name, name_span, start, name_is_raw);
             }
 
             // Multi-target assignment: ident, expr, ... = expr, expr, ...;
-            if (self.current.tag == .comma) {
+            if (self.tokens.tag(self.tok) == .comma) {
                 const first_target = try self.createNode(start, .{ .identifier = .{ .name = name, .is_raw = name_is_raw } });
                 return try self.parseMultiAssign(first_target, start);
             }
 
             // Check for assignment operators
-            if (self.isAssignOp()) {
-                const op = self.assignOp();
+            if (assignmentInfo(self.tokens.tag(self.tok))) |op| {
                 self.advance();
                 const value = try self.parseExpr();
                 try self.expectStatementEnd();
@@ -2928,15 +2935,13 @@ pub const Parser = struct {
             }
 
             // Not a declaration or assignment — backtrack and parse as expression
-            self.lexer = saved_lexer;
-            self.current = saved_current;
-            self.prev_end = saved_prev_end;
+            self.tok = saved;
         }
 
         // Return statement: return expr; or return;
-        if (self.current.tag == .kw_return) {
+        if (self.tokens.tag(self.tok) == .kw_return) {
             try self.rejectInCleanup("return");
-            const start = self.current.loc.start;
+            const start = self.tokens.start(self.tok);
             self.advance();
             if (self.atStatementEnd()) {
                 // `return` with no value — terminated by its `;` or by the
@@ -2956,7 +2961,7 @@ pub const Parser = struct {
             var ret_any_named = false;
             while (true) {
                 if (self.isIdentLike() and self.peekNext() == .equal) {
-                    const fname = self.tokenSlice(self.current);
+                    const fname = self.tokens.slice(self.tok);
                     self.advance(); // skip name
                     self.advance(); // skip '='
                     const v = try self.parseExpr();
@@ -2966,7 +2971,7 @@ pub const Parser = struct {
                     const v = try self.parseExpr();
                     try ret_elems.append(self.allocator, .{ .name = null, .value = v });
                 }
-                if (self.current.tag == .comma) {
+                if (self.tokens.tag(self.tok) == .comma) {
                     self.advance();
                     continue;
                 }
@@ -2984,13 +2989,13 @@ pub const Parser = struct {
         // A braced body parses as a full statement block (like `onfail`), so it
         // supports every statement form (destructure, `catch`-statement, …); the
         // bare-expression form keeps its trailing `;`.
-        if (self.current.tag == .kw_defer) {
-            const start = self.current.loc.start;
+        if (self.tokens.tag(self.tok) == .kw_defer) {
+            const start = self.tokens.start(self.tok);
             self.advance();
             const saved_defer = self.in_defer_body;
             self.in_defer_body = true;
             defer self.in_defer_body = saved_defer;
-            const deferred: *Node = if (self.current.tag == .l_brace)
+            const deferred: *Node = if (self.tokens.tag(self.tok) == .l_brace)
                 try self.parseBlock()
             else blk: {
                 const e = try self.parseExpr();
@@ -3001,8 +3006,8 @@ pub const Parser = struct {
         }
 
         // Raise statement: raise <expr>;
-        if (self.current.tag == .kw_raise) {
-            const start = self.current.loc.start;
+        if (self.tokens.tag(self.tok) == .kw_raise) {
+            const start = self.tokens.start(self.tok);
             if (self.in_onfail_body) {
                 return self.fail("`raise` is not allowed inside an `onfail` body — an error during cleanup has no propagation target");
             }
@@ -3018,32 +3023,32 @@ pub const Parser = struct {
         // Onfail statement: onfail { body } | onfail (e) { body } | onfail <expr>;
         // A binding is present only when an identifier is immediately followed
         // by `{`; otherwise the text after `onfail` is the (no-binding) body.
-        if (self.current.tag == .kw_onfail) {
-            const start = self.current.loc.start;
+        if (self.tokens.tag(self.tok) == .kw_onfail) {
+            const start = self.tokens.start(self.tok);
             self.advance();
             var binding: ?[]const u8 = null;
             var binding_span: ?ast.Span = null;
             var binding_is_raw = false;
-            if (self.current.tag == .identifier and self.peekNext() == .l_brace) {
+            if (self.tokens.tag(self.tok) == .identifier and self.peekNext() == .l_brace) {
                 return self.fail("the onfail error binding needs parens: `onfail (e) { ... }`");
             }
             // `(e)` followed by `{` is the binding form; any other paren
             // group is an ordinary expression cleanup (`onfail (f());`).
-            if (self.current.tag == .l_paren and self.tagAfterParenGroup() == .l_brace) {
+            if (self.tokens.tag(self.tok) == .l_paren and self.tagAfterParenGroup() == .l_brace) {
                 self.advance();
-                if (self.current.tag != .identifier) {
+                if (self.tokens.tag(self.tok) != .identifier) {
                     return self.fail("expected an error binding name in `onfail (e)`");
                 }
-                binding = self.tokenSlice(self.current);
-                binding_span = .{ .start = self.current.loc.start, .end = self.current.loc.end };
-                binding_is_raw = self.current.is_raw;
+                binding = self.tokens.slice(self.tok);
+                binding_span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
+                binding_is_raw = self.tokens.flagsOf(self.tok).is_raw;
                 self.advance();
                 try self.expect(.r_paren);
             }
             const saved_onfail = self.in_onfail_body;
             self.in_onfail_body = true;
             defer self.in_onfail_body = saved_onfail;
-            const body: *Node = if (self.current.tag == .l_brace)
+            const body: *Node = if (self.tokens.tag(self.tok) == .l_brace)
                 try self.parseBlock()
             else blk: {
                 const e = try self.parseExpr();
@@ -3054,26 +3059,26 @@ pub const Parser = struct {
         }
 
         // Break statement: break;
-        if (self.current.tag == .kw_break) {
+        if (self.tokens.tag(self.tok) == .kw_break) {
             try self.rejectInCleanup("break");
-            const start = self.current.loc.start;
+            const start = self.tokens.start(self.tok);
             self.advance();
             try self.expectStatementEnd();
             return try self.createNode(start, .{ .break_expr = {} });
         }
 
         // Continue statement: continue;
-        if (self.current.tag == .kw_continue) {
+        if (self.tokens.tag(self.tok) == .kw_continue) {
             try self.rejectInCleanup("continue");
-            const start = self.current.loc.start;
+            const start = self.tokens.start(self.tok);
             self.advance();
             try self.expectStatementEnd();
             return try self.createNode(start, .{ .continue_expr = {} });
         }
 
         // Insert directive: #insert <expr>;
-        if (self.current.tag == .hash_insert) {
-            const start = self.current.loc.start;
+        if (self.tokens.tag(self.tok) == .hash_insert) {
+            const start = self.tokens.start(self.tok);
             self.advance();
             const inner = try self.parseExpr();
             try self.expectStatementEnd();
@@ -3085,25 +3090,25 @@ pub const Parser = struct {
         // the imports.zig flatten pass surfaces those
         // declarations to the top level before resolution. Anywhere else
         // these nodes survive into lowering and produce a clear error.
-        if (self.current.tag == .hash_import) {
-            const start = self.current.loc.start;
+        if (self.tokens.tag(self.tok) == .hash_import) {
+            const start = self.tokens.start(self.tok);
             self.advance();
-            if (self.current.tag != .string_literal) {
+            if (self.tokens.tag(self.tok) != .string_literal) {
                 return self.fail("expected string path after '#import'");
             }
-            const raw = self.tokenSlice(self.current);
+            const raw = self.tokens.slice(self.tok);
             const path = raw[1 .. raw.len - 1];
             self.advance();
             try self.expectStatementEnd();
             return try self.createNode(start, .{ .import_decl = .{ .path = path, .name = null } });
         }
-        if (self.current.tag == .hash_framework) {
-            const start = self.current.loc.start;
+        if (self.tokens.tag(self.tok) == .hash_framework) {
+            const start = self.tokens.start(self.tok);
             self.advance();
-            if (self.current.tag != .string_literal) {
+            if (self.tokens.tag(self.tok) != .string_literal) {
                 return self.fail("expected string after '#framework'");
             }
-            const raw = self.tokenSlice(self.current);
+            const raw = self.tokens.slice(self.tok);
             const fw_name = raw[1 .. raw.len - 1];
             self.advance();
             try self.expectStatementEnd();
@@ -3111,7 +3116,7 @@ pub const Parser = struct {
         }
 
         // inline if — compile-time conditional
-        if (self.current.tag == .kw_inline) {
+        if (self.tokens.tag(self.tok) == .kw_inline) {
             if (self.peekNext() == .kw_if) {
                 self.advance(); // skip 'inline'
                 const expr = try self.parseIfExpr();
@@ -3134,22 +3139,22 @@ pub const Parser = struct {
 
         // Block-form if/while/for as statements — parse directly to prevent
         // postfix chaining (e.g. `if cond { ... }.field` being misparsed)
-        if (self.current.tag == .kw_if) {
+        if (self.tokens.tag(self.tok) == .kw_if) {
             const expr = try self.parseIfExpr();
             try self.endExprStatement(expr);
             return expr;
         }
-        if (self.current.tag == .kw_while) {
+        if (self.tokens.tag(self.tok) == .kw_while) {
             const expr = try self.parsePrimary();
             try self.endExprStatement(expr);
             return expr;
         }
-        if (self.current.tag == .kw_for) {
+        if (self.tokens.tag(self.tok) == .kw_for) {
             const expr = try self.parsePrimary();
             try self.endExprStatement(expr);
             return expr;
         }
-        if (self.current.tag == .kw_push) {
+        if (self.tokens.tag(self.tok) == .kw_push) {
             return try self.parsePushStmt();
         }
 
@@ -3158,7 +3163,7 @@ pub const Parser = struct {
         // `{ … }` then `.flush()` on the next line is two statements. An
         // EXPRESSION that happens to end in a block — a trailing-block call, an
         // aggregate literal — is a different thing and keeps chaining.
-        if (self.current.tag == .l_brace) {
+        if (self.tokens.tag(self.tok) == .l_brace) {
             const block = try self.parseBlock();
             try self.endExprStatement(block);
             return block;
@@ -3168,13 +3173,12 @@ pub const Parser = struct {
         const expr = try self.parseExpr();
 
         // Multi-target assignment: expr, expr, ... = expr, expr, ...;
-        if (self.current.tag == .comma) {
+        if (self.tokens.tag(self.tok) == .comma) {
             return try self.parseMultiAssign(expr, expr.span.start);
         }
 
         // Check for field assignment: expr = value; (e.g. a.b = 1;)
-        if (self.isAssignOp()) {
-            const op = self.assignOp();
+        if (assignmentInfo(self.tokens.tag(self.tok))) |op| {
             self.advance();
             const value = try self.parseExpr();
             try self.expectStatementEnd();
@@ -3208,7 +3212,7 @@ pub const Parser = struct {
             //   a |> try f(x)            → try f(a, x)
             //   a |> f(x) catch (e) {...}  → f(a, x) catch (e) {...}
             //   a |> f(x) or default     → f(a, x) or default   (only f gets a)
-            if (self.current.tag == .pipe_arrow and Prec.pipe >= min_prec) {
+            if (self.tokens.tag(self.tok) == .pipe_arrow and Prec.pipe >= min_prec) {
                 self.advance();
                 const rhs = try self.parseBinary(Prec.pipe + 1);
                 // Walk through error-handling wrappers to the head call node.
@@ -3245,46 +3249,43 @@ pub const Parser = struct {
             }
 
             // Null coalescing: expr ?? default
-            if (self.current.tag == .question_question and Prec.null_coalesce >= min_prec) {
+            if (self.tokens.tag(self.tok) == .question_question and Prec.null_coalesce >= min_prec) {
                 self.advance();
                 const rhs = try self.parseBinary(Prec.null_coalesce);
                 lhs = try self.createNode(lhs.span.start, .{ .null_coalesce = .{ .lhs = lhs, .rhs = rhs } });
                 continue;
             }
 
-            // Spacing rule (specs: Whitespace is Syntax): `-` and `*` carry a
-            // prefix reading too, so they are infix only when their gaps match.
-            // Lopsided on one line is fatal; across a line the operand below
-            // starts fresh and the caller reports what it finds.
-            if ((self.current.tag == .minus or self.current.tag == .star) and !self.infixSpacingMatches()) {
-                if (!self.gapCrossesLine()) return self.failLopsidedOperator();
-                break;
-            }
+            // Spacing rule (specs: Whitespace is Syntax): on one line a
+            // completed left operand makes `-` / `*` infix; across a break a
+            // glued operator opens a fresh operand below.
+            if ((self.tokens.tag(self.tok) == .minus or self.tokens.tag(self.tok) == .star) and
+                self.tokens.flagsOf(self.tok).newline_left and self.tokens.flagsOf(self.tokens.next(self.tok)).glued_left) break;
 
-            const prec = self.binaryPrec();
-            if (prec == 0 or prec < min_prec) break;
+            const info = binaryInfo(self.tokens.tag(self.tok)) orelse break;
+            if (info.prec < min_prec) break;
 
-            const op = self.binaryOp() orelse break;
+            const op = info.op;
             self.advance();
 
-            const rhs = try self.parseBinary(prec + 1);
+            const rhs = try self.parseBinary(info.prec + 1);
 
             // Chained comparison detection: if op is a comparison and the next
             // token is also a comparison at the same precedence, accumulate
             // into a ChainedComparison node.
-            if (isComparisonOp(op) and self.binaryPrec() == prec and self.isComparisonToken()) {
+            if (isComparisonOp(op) and self.atComparison()) {
                 var operands = std.ArrayList(*Node).empty;
                 var ops = std.ArrayList(ast.BinaryOp.Op).empty;
                 try operands.append(self.allocator, lhs);
                 try operands.append(self.allocator, rhs);
                 try ops.append(self.allocator, op);
 
-                while (self.binaryPrec() == prec and self.isComparisonToken()) {
-                    const chain_op = self.binaryOp() orelse break;
+                while (self.atComparison()) {
+                    const chain_info = binaryInfo(self.tokens.tag(self.tok)) orelse break;
                     self.advance();
-                    const chain_rhs = try self.parseBinary(prec + 1);
+                    const chain_rhs = try self.parseBinary(info.prec + 1);
                     try operands.append(self.allocator, chain_rhs);
-                    try ops.append(self.allocator, chain_op);
+                    try ops.append(self.allocator, chain_info.op);
                 }
 
                 lhs = try self.createNode(lhs.span.start, .{ .chained_comparison = .{
@@ -3300,27 +3301,36 @@ pub const Parser = struct {
     }
 
     fn parseUnary(self: *Parser) anyerror!*Node {
-        if (self.current.tag == .minus) {
-            const start = self.current.loc.start;
+        if (self.tokens.tag(self.tok) == .minus_minus) {
+            const start = self.tokens.start(self.tok);
+            const op_loc = self.tokens.token(self.tok).loc;
             self.advance();
-            try self.requirePrefixGlue(start);
+            try self.requirePrefixGlue(op_loc);
+            const operand = try self.parseUnary();
+            return try self.createNode(start, .{ .unary_op = .{ .op = .pre_decrement, .operand = operand } });
+        }
+        if (self.tokens.tag(self.tok) == .minus) {
+            const start = self.tokens.start(self.tok);
+            const op_loc = self.tokens.token(self.tok).loc;
+            self.advance();
+            try self.requirePrefixGlue(op_loc);
             const operand = try self.parseUnary();
             return try self.createNode(start, .{ .unary_op = .{ .op = .negate, .operand = operand } });
         }
-        if (self.current.tag == .bang) {
-            const start = self.current.loc.start;
+        if (self.tokens.tag(self.tok) == .bang) {
+            const start = self.tokens.start(self.tok);
             self.advance();
             const operand = try self.parseUnary();
             return try self.createNode(start, .{ .unary_op = .{ .op = .not, .operand = operand } });
         }
-        if (self.current.tag == .tilde) {
-            const start = self.current.loc.start;
+        if (self.tokens.tag(self.tok) == .tilde) {
+            const start = self.tokens.start(self.tok);
             self.advance();
             const operand = try self.parseUnary();
             return try self.createNode(start, .{ .unary_op = .{ .op = .bit_not, .operand = operand } });
         }
-        if (self.current.tag == .kw_xx) {
-            const start = self.current.loc.start;
+        if (self.tokens.tag(self.tok) == .kw_xx) {
+            const start = self.tokens.start(self.tok);
             self.advance();
             const operand = try self.parseUnary();
             return try self.createNode(start, .{ .unary_op = .{ .op = .xx, .operand = operand } });
@@ -3330,10 +3340,11 @@ pub const Parser = struct {
         // a type position is the pointer TYPE. On a Type-valued operand the
         // lowering resolves `*T` to the pointer type (so `size_of(*T)` and
         // Type-arg positions keep working); on a value it is address-of.
-        if (self.current.tag == .star) {
-            const start = self.current.loc.start;
+        if (self.tokens.tag(self.tok) == .star) {
+            const start = self.tokens.start(self.tok);
+            const op_loc = self.tokens.token(self.tok).loc;
             self.advance();
-            try self.requirePrefixGlue(start);
+            try self.requirePrefixGlue(op_loc);
             const operand = try self.parseUnary();
             return try self.createNode(start, .{ .unary_op = .{ .op = .address_of, .operand = operand } });
         }
@@ -3341,9 +3352,9 @@ pub const Parser = struct {
         // tighter than any binary op incl. `or`); right-recursive so prefixes
         // stack by adjacency (`xx try foo()` = `xx (try foo())`). Failability
         // of the operand is a sema check, not a parse-time restriction.
-        if (self.current.tag == .kw_try) {
+        if (self.tokens.tag(self.tok) == .kw_try) {
             try self.rejectInCleanup("try");
-            const start = self.current.loc.start;
+            const start = self.tokens.start(self.tok);
             self.advance();
             const operand = try self.parseUnary();
             return try self.createNode(start, .{ .try_expr = .{ .operand = operand } });
@@ -3357,13 +3368,13 @@ pub const Parser = struct {
         var expr = try self.parsePrimary();
 
         while (true) {
-            if (self.current.tag == .l_paren and !self.parenGroupIsForCapture()) {
+            if (self.tokens.tag(self.tok) == .l_paren and !self.parenGroupIsForCapture()) {
                 // Glue rule (specs: Whitespace is Syntax): the `(` is a call
                 // only when glued to the callee. On the same line that space
                 // is fatal; across a line the `(` opens whatever comes next,
                 // and the caller reports what it finds there.
-                if (!self.currentIsGlued()) {
-                    if (!self.gapCrossesLine()) return self.failSpacedForm(expr.span.start, .call);
+                if (!self.tokens.flagsOf(self.tok).glued_left) {
+                    if (!self.tokens.flagsOf(self.tok).newline_left) return self.failSpacedForm(expr.span.start, .call);
                     break;
                 }
                 // Call. Argument expressions are an ordinary nested context —
@@ -3381,14 +3392,14 @@ pub const Parser = struct {
                 defer self.no_trailing_block = saved_ntb_args;
                 defer self.in_if_condition = saved_if_args;
                 var args = std.ArrayList(*Node).empty;
-                while (self.current.tag != .r_paren and self.current.tag != .eof) {
+                while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                     if (args.items.len > 0) {
                         try self.expect(.comma);
-                        if (self.current.tag == .r_paren) break;
+                        if (self.tokens.tag(self.tok) == .r_paren) break;
                     }
                     // Spread operator: ..expr
-                    if (self.current.tag == .dot_dot) {
-                        const spread_start = self.current.loc.start;
+                    if (self.tokens.tag(self.tok) == .dot_dot) {
+                        const spread_start = self.tokens.start(self.tok);
                         self.advance();
                         const operand = try self.parseExpr();
                         try args.append(self.allocator, try self.createNode(spread_start, .{ .spread_expr = .{ .operand = operand } }));
@@ -3396,8 +3407,8 @@ pub const Parser = struct {
                         // Named argument: `name = value` (specs: Named
                         // Arguments). Unambiguous — assignment is statement-
                         // only, and `==` lexes as one token.
-                        const named_start = self.current.loc.start;
-                        const arg_name = self.tokenSlice(self.current);
+                        const named_start = self.tokens.start(self.tok);
+                        const arg_name = self.tokens.slice(self.tok);
                         self.advance(); // name
                         self.advance(); // '='
                         const value = try self.parseExpr();
@@ -3406,7 +3417,6 @@ pub const Parser = struct {
                         try args.append(self.allocator, try self.parseExpr());
                     }
                 }
-                const rparen_end = self.current.loc.end;
                 try self.expect(.r_paren);
                 // Trailing block (specs: Trailing Blocks): `f(args) { body }`.
                 // The `{` must sit on the SAME LINE as `)` — a next-line
@@ -3420,16 +3430,16 @@ pub const Parser = struct {
                 // cleared `self.in_if_condition`: args may parse Type{} freely,
                 // but `if f(x) { body }` must not steal the if-body as a trailing
                 // block on `f`.
-                if (self.current.tag == .l_brace and
+                if (self.tokens.tag(self.tok) == .l_brace and
                     !saved_ntb_args and !saved_hdr_args and !saved_if_args and
-                    std.mem.indexOfScalar(u8, self.source[rparen_end..self.current.loc.start], '\n') == null)
+                    !self.tokens.flagsOf(self.tok).newline_left)
                 {
                     // Same-line `{` after a call: trailing block OR parameterized
                     // named aggregate `List(T){…}`. Prefer the aggregate when the
                     // brace body is aggregate-shaped (fields / commas). An empty
                     // body carries no shape, so the spelling decides — see
                     // emptyBraceIsTypeApplication.
-                    const brace_is_tight = rparen_end == self.current.loc.start;
+                    const brace_is_tight = self.tokens.flagsOf(self.tok).glued_left;
                     if (self.braceLooksLikeNamedAggregate(args.items, brace_is_tight)) {
                         expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                         // Fall through: next postfix iteration takes Type{}.
@@ -3445,12 +3455,12 @@ pub const Parser = struct {
                         // After the block's `}` only DOT-led postfix
                         // continues the chain (`f() { … }.map()`); every other
                         // token ends it.
-                        if (self.current.tag != .dot) break;
+                        if (self.tokens.tag(self.tok) != .dot) break;
                     }
                 } else {
                     expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                 }
-            } else if (self.current.tag == .l_brace and !self.gapCrossesLine() and
+            } else if (self.tokens.tag(self.tok) == .l_brace and !self.tokens.flagsOf(self.tok).newline_left and
                 self.shouldParseNamedAggregate(expr))
             {
                 // Named aggregate: Type{ ... }. The `{` binds only on the same
@@ -3466,15 +3476,15 @@ pub const Parser = struct {
                 } else {
                     expr = try self.parseStructLiteral(null, expr, expr.span.start);
                 }
-            } else if (self.current.tag == .dot) {
+            } else if (self.tokens.tag(self.tok) == .dot) {
                 self.advance();
-                if (self.current.tag == .l_paren and expr.data == .tuple_type_expr) {
+                if (self.tokens.tag(self.tok) == .l_paren and expr.data == .tuple_type_expr) {
                     // The one aggregate literal is `.{ … }`; typed construction
                     // is `Tuple(A, B){ v1, v2 }`. `.(` on a tuple-TYPE receiver
                     // can only be a tuple literal, so it takes the dedicated
                     // message instead of parsing as a cast.
                     return self.fail("'.( )' was removed — the aggregate literal is '.{ … }' (typed tuple construction: 'Tuple(A, B){ v1, v2 }')");
-                } else if (self.current.tag == .l_paren) {
+                } else if (self.tokens.tag(self.tok) == .l_paren) {
                     // Postfix cast `expr.(T)`. One type, plus
                     // an optional ALLOCATOR expression for the owning
                     // erasure `expr.(P, alloc)` (protocol targets only —
@@ -3482,15 +3492,15 @@ pub const Parser = struct {
                     self.advance(); // '('
                     const target = try self.parseTypeExpr();
                     var alloc_arg: ?*Node = null;
-                    if (self.current.tag == .comma) {
+                    if (self.tokens.tag(self.tok) == .comma) {
                         self.advance(); // ','
                         alloc_arg = try self.parseExpr();
-                        if (self.current.tag == .comma)
+                        if (self.tokens.tag(self.tok) == .comma)
                             return self.fail("a postfix cast takes one type and at most one allocator: '.(T)' or '.(P, alloc)'");
                     }
                     try self.expect(.r_paren);
                     expr = try self.createNode(expr.span.start, .{ .postfix_cast = .{ .operand = expr, .type_expr = target, .alloc_arg = alloc_arg } });
-                } else if (self.current.tag == .l_brace) {
+                } else if (self.tokens.tag(self.tok) == .l_brace) {
                     // `T{ fields }.{ stmts }` — self-trailing after a completed
                     // aggregate (`self` binds to T). Bare `T{}{ stmts }` is a
                     // plain post-scope without `self` (set in parseStructLiteral).
@@ -3508,14 +3518,14 @@ pub const Parser = struct {
                     } else {
                         return self.fail(named_aggregate_dot_msg);
                     }
-                } else if (self.current.tag == .l_bracket) {
+                } else if (self.tokens.tag(self.tok) == .l_bracket) {
                     // Typed array/vector literal: Type.[elem, ...]
                     self.advance(); // skip '['
                     var elements = std.ArrayList(*Node).empty;
-                    while (self.current.tag != .r_bracket and self.current.tag != .eof) {
+                    while (self.tokens.tag(self.tok) != .r_bracket and self.tokens.tag(self.tok) != .eof) {
                         if (elements.items.len > 0) {
                             try self.expect(.comma);
-                            if (self.current.tag == .r_bracket) break;
+                            if (self.tokens.tag(self.tok) == .r_bracket) break;
                         }
                         const elem = try self.parseExpr();
                         try elements.append(self.allocator, elem);
@@ -3525,13 +3535,13 @@ pub const Parser = struct {
                         .elements = try elements.toOwnedSlice(self.allocator),
                         .type_expr = expr,
                     } });
-                } else if (self.current.tag == .star) {
+                } else if (self.tokens.tag(self.tok) == .star) {
                     // Dereference: expr.*
                     self.advance();
                     expr = try self.createNode(expr.span.start, .{ .deref_expr = .{ .operand = expr } });
-                } else if (self.current.tag == .int_literal) {
+                } else if (self.tokens.tag(self.tok) == .int_literal) {
                     // Numeric field access: tuple.0, tuple.1
-                    const field = self.tokenSlice(self.current);
+                    const field = self.tokens.slice(self.tok);
                     self.advance();
                     expr = try self.createNode(expr.span.start, .{ .field_access = .{ .object = expr, .field = field } });
                 } else if (self.dotMemberName()) |field| {
@@ -3542,35 +3552,35 @@ pub const Parser = struct {
                 } else {
                     return self.fail("expected field name or index after '.'");
                 }
-            } else if (self.current.tag == .question_dot) {
+            } else if (self.tokens.tag(self.tok) == .question_dot) {
                 // Optional chaining: expr?.field
                 self.advance();
-                if (self.current.tag == .identifier or (self.current.tag != .int_literal and self.current.tag != .l_paren and getKeyword(self.tokenSlice(self.current)) != null)) {
-                    const field = self.tokenSlice(self.current);
+                if (self.tokens.tag(self.tok) == .identifier or self.tokens.tag(self.tok).isKeyword()) {
+                    const field = self.tokens.slice(self.tok);
                     self.advance();
                     expr = try self.createNode(expr.span.start, .{ .field_access = .{ .object = expr, .field = field, .is_optional = true } });
-                } else if (self.current.tag == .int_literal) {
-                    const field = self.tokenSlice(self.current);
+                } else if (self.tokens.tag(self.tok) == .int_literal) {
+                    const field = self.tokens.slice(self.tok);
                     self.advance();
                     expr = try self.createNode(expr.span.start, .{ .field_access = .{ .object = expr, .field = field, .is_optional = true } });
-                } else if (self.current.tag == .l_paren) {
+                } else if (self.tokens.tag(self.tok) == .l_paren) {
                     // Optional-chained postfix cast `x?.(T)`: null
                     // propagates, the cast/assertion applies to the
                     // payload; the result is `?T`.
                     self.advance(); // '('
                     const target = try self.parseTypeExpr();
-                    if (self.current.tag == .comma)
+                    if (self.tokens.tag(self.tok) == .comma)
                         return self.fail("a postfix cast '.(T)' takes exactly one type");
                     try self.expect(.r_paren);
                     expr = try self.createNode(expr.span.start, .{ .postfix_cast = .{ .operand = expr, .type_expr = target, .is_optional_chain = true } });
                 } else {
                     return self.fail("expected field name after '?.'");
                 }
-            } else if (self.current.tag == .l_bracket) {
+            } else if (self.tokens.tag(self.tok) == .l_bracket) {
                 // Glue rule (specs: Whitespace is Syntax) — same reading as the
                 // call `(` above.
-                if (!self.currentIsGlued()) {
-                    if (!self.gapCrossesLine()) return self.failSpacedForm(expr.span.start, .index);
+                if (!self.tokens.flagsOf(self.tok).glued_left) {
+                    if (!self.tokens.flagsOf(self.tok).newline_left) return self.failSpacedForm(expr.span.start, .index);
                     break;
                 }
                 // Index or slice access: expr[expr] or expr[start..end]
@@ -3579,14 +3589,14 @@ pub const Parser = struct {
                 const saved_hdr_idx = self.in_for_header;
                 self.in_for_header = false;
                 defer self.in_for_header = saved_hdr_idx;
-                if (rangeTokenInfo(self.current.tag)) |rt| {
+                if (rangeTokenInfo(self.tokens.tag(self.tok))) |rt| {
                     // Prefix form: [..end] / [..=end] / [..] — implicit 0 start
                     // (a start marker applies to it: [<..end] begins at 1).
                     self.advance();
-                    if (rt.end_marked and self.current.tag == .r_bracket) {
+                    if (rt.end_marked and self.tokens.tag(self.tok) == .r_bracket) {
                         return self.fail("a range with an explicit end marker ('..=' / '..<') requires an end expression — the open form is '..'");
                     }
-                    const end_expr: ?*ast.Node = if (self.current.tag != .r_bracket)
+                    const end_expr: ?*ast.Node = if (self.tokens.tag(self.tok) != .r_bracket)
                         try self.parseExpr()
                     else
                         null;
@@ -3600,14 +3610,14 @@ pub const Parser = struct {
                     } });
                 } else {
                     const first = try self.parseExpr();
-                    if (rangeTokenInfo(self.current.tag)) |rt| {
+                    if (rangeTokenInfo(self.tokens.tag(self.tok))) |rt| {
                         // [start..end] or [start..] — same bound-marker matrix
                         // as the for-header ranges.
                         self.advance();
-                        if (rt.end_marked and self.current.tag == .r_bracket) {
+                        if (rt.end_marked and self.tokens.tag(self.tok) == .r_bracket) {
                             return self.fail("a range with an explicit end marker ('..=' / '..<') requires an end expression — the open form is 'a..'");
                         }
-                        const end_expr: ?*ast.Node = if (self.current.tag != .r_bracket)
+                        const end_expr: ?*ast.Node = if (self.tokens.tag(self.tok) != .r_bracket)
                             try self.parseExpr()
                         else
                             null;
@@ -3628,14 +3638,14 @@ pub const Parser = struct {
                         } });
                     }
                 }
-            } else if (self.current.tag == .bang and !self.gapCrossesLine()) {
+            } else if (self.tokens.tag(self.tok) == .bang and !self.tokens.flagsOf(self.tok).newline_left) {
                 // Force unwrap: expr! — postfix on the expression's own line.
                 // `!` is also the prefix `not`, so a leading `!b` below a
                 // complete expression opens a statement of its own.
                 // Only if it's not != (bang_equal would have been lexed as a single token)
                 self.advance();
                 expr = try self.createNode(expr.span.start, .{ .force_unwrap = .{ .operand = expr } });
-            } else if (self.current.tag == .kw_catch) {
+            } else if (self.tokens.tag(self.tok) == .kw_catch) {
                 // `X catch [(binding)] BODY` — postfix failure handler.
                 // Four shapes, disambiguated by peeking after `catch`:
                 //   catch { block }            — no binding (braces required)
@@ -3646,25 +3656,25 @@ pub const Parser = struct {
                 var binding: ?[]const u8 = null;
                 var binding_span: ?ast.Span = null;
                 var binding_is_raw = false;
-                if (self.current.tag == .identifier) {
+                if (self.tokens.tag(self.tok) == .identifier) {
                     return self.fail("the catch error binding needs parens: `catch (e) { ... }`");
                 }
-                if (self.current.tag == .l_paren) {
+                if (self.tokens.tag(self.tok) == .l_paren) {
                     self.advance();
-                    if (self.current.tag != .identifier) {
+                    if (self.tokens.tag(self.tok) != .identifier) {
                         return self.fail("expected an error binding name in `catch (e)`");
                     }
-                    binding = self.tokenSlice(self.current);
-                    binding_span = .{ .start = self.current.loc.start, .end = self.current.loc.end };
-                    binding_is_raw = self.current.is_raw;
+                    binding = self.tokens.slice(self.tok);
+                    binding_span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
+                    binding_is_raw = self.tokens.flagsOf(self.tok).is_raw;
                     self.advance();
                     try self.expect(.r_paren);
                 }
                 var is_match_body = false;
-                const body: *Node = if (self.current.tag == .l_brace)
+                const body: *Node = if (self.tokens.tag(self.tok) == .l_brace)
                     try self.parseBlock()
-                else if (binding != null and self.current.tag == .equal_equal) blk: {
-                    const m_start = self.current.loc.start;
+                else if (binding != null and self.tokens.tag(self.tok) == .equal_equal) blk: {
+                    const m_start = self.tokens.start(self.tok);
                     self.advance(); // consume '=='
                     is_match_body = true;
                     const subject = try self.createNode(m_start, .{ .identifier = .{ .name = binding.?, .is_raw = binding_is_raw } });
@@ -3693,7 +3703,7 @@ pub const Parser = struct {
     /// for the contextual keywords `volatile` / `clobbers` that appear only
     /// inside an `asm { … }` body and are NOT globally reserved.
     fn isContextualWord(self: *const Parser, word: []const u8) bool {
-        return self.current.tag == .identifier and std.mem.eql(u8, self.tokenSlice(self.current), word);
+        return self.tokens.tag(self.tok) == .identifier and std.mem.eql(u8, self.tokens.slice(self.tok), word);
     }
 
     /// Inline assembly expression (design §II.2–II.4):
@@ -3716,9 +3726,9 @@ pub const Parser = struct {
         var operands = std.ArrayList(ast.AsmOperand).empty;
         var clobbers = std.ArrayList([]const u8).empty;
 
-        while (self.current.tag == .comma) {
+        while (self.tokens.tag(self.tok) == .comma) {
             self.advance(); // consume the separating comma
-            if (self.current.tag == .r_brace) break; // trailing comma
+            if (self.tokens.tag(self.tok) == .r_brace) break; // trailing comma
 
             // `clobbers(.name, .name, …)` clause.
             if (self.isContextualWord("clobbers")) {
@@ -3726,11 +3736,11 @@ pub const Parser = struct {
                 try self.expect(.l_paren);
                 while (true) {
                     try self.expect(.dot);
-                    if (self.current.tag != .identifier)
+                    if (self.tokens.tag(self.tok) != .identifier)
                         return self.fail("expected a clobber name after '.' in clobbers(...)");
-                    try clobbers.append(self.allocator, self.tokenSlice(self.current));
+                    try clobbers.append(self.allocator, self.tokens.slice(self.tok));
                     self.advance();
-                    if (self.current.tag == .comma) {
+                    if (self.tokens.tag(self.tok) == .comma) {
                         self.advance();
                         continue;
                     }
@@ -3742,25 +3752,25 @@ pub const Parser = struct {
 
             // Operand: `[name]? "constraint" (-> Type | = expr)`.
             var op_name: ?[]const u8 = null;
-            if (self.current.tag == .l_bracket) {
+            if (self.tokens.tag(self.tok) == .l_bracket) {
                 self.advance();
-                if (self.current.tag != .identifier)
+                if (self.tokens.tag(self.tok) != .identifier)
                     return self.fail("expected an operand name in '[...]'");
-                op_name = self.tokenSlice(self.current);
+                op_name = self.tokens.slice(self.tok);
                 self.advance();
                 try self.expect(.r_bracket);
             }
-            if (self.current.tag != .string_literal)
+            if (self.tokens.tag(self.tok) != .string_literal)
                 return self.fail("expected a \"constraint\" string in asm operand");
-            const craw = self.tokenSlice(self.current);
+            const craw = self.tokens.slice(self.tok);
             const constraint = craw[1 .. craw.len - 1]; // strip quotes
             self.advance();
 
             var role: ast.AsmOperand.Role = undefined;
             var payload: *Node = undefined;
-            if (self.current.tag == .arrow) {
+            if (self.tokens.tag(self.tok) == .arrow) {
                 self.advance();
-                if (self.current.tag == .star) {
+                if (self.tokens.tag(self.tok) == .star) {
                     // `-> *place`: write-through output — an ordinary
                     // address-of expression (a pointer); lowering stores
                     // the asm result through it. The output does NOT join
@@ -3772,7 +3782,7 @@ pub const Parser = struct {
                     role = .out_value;
                     payload = try self.parseTypeExpr();
                 }
-            } else if (self.current.tag == .equal) {
+            } else if (self.tokens.tag(self.tok) == .equal) {
                 self.advance();
                 role = .input;
                 payload = try self.parseExpr();
@@ -3805,8 +3815,8 @@ pub const Parser = struct {
         }
         try self.expect(.l_brace);
         const template = try self.parseExpr();
-        if (self.current.tag == .comma) self.advance(); // optional trailing comma
-        if (self.current.tag != .r_brace) {
+        if (self.tokens.tag(self.tok) == .comma) self.advance(); // optional trailing comma
+        if (self.tokens.tag(self.tok) != .r_brace) {
             return self.fail("global (top-level) asm takes no operands, inputs, or clobbers — only a template string");
         }
         try self.expect(.r_brace);
@@ -3815,13 +3825,13 @@ pub const Parser = struct {
     }
 
     fn parsePrimary(self: *Parser) anyerror!*Node {
-        const start = self.current.loc.start;
+        const start = self.tokens.start(self.tok);
         // `@Init` is a type the compiler forms, never a value a program builds:
         // there is no `@Init(T){ … }` literal and no `@Init` expression. A
         // declared `@` contract is an ordinary type, so it names values and
         // takes an aggregate literal (`@SourceSite{ … }`) like any other.
-        if (self.current.tag == .at_identifier) {
-            const at_name = self.tokenSlice(self.current);
+        if (self.tokens.tag(self.tok) == .at_identifier) {
+            const at_name = self.tokens.slice(self.tok);
             if (isCompilerFormedTypeName(at_name)) {
                 return self.failFmt(
                     "'{s}' is a compiler-formed type — it has no literal form and cannot be named in an expression",
@@ -3847,29 +3857,29 @@ pub const Parser = struct {
         //       (the whole pack as a []Type value)
         // Lowering routes each through `pack_arg_types` to either
         // a `const_type(TypeId)` or a `[]Type` aggregate of them.
-        if (self.current.tag == .dollar) {
+        if (self.tokens.tag(self.tok) == .dollar) {
             self.advance();
-            if (self.current.tag != .identifier) {
+            if (self.tokens.tag(self.tok) != .identifier) {
                 return self.fail("expected pack name after '$'");
             }
-            const pname = self.tokenSlice(self.current);
+            const pname = self.tokens.slice(self.tok);
             self.advance();
-            if (self.current.tag == .l_bracket) {
+            if (self.tokens.tag(self.tok) == .l_bracket) {
                 // Glue rule (specs: Whitespace is Syntax): the `[` indexes the
                 // pack only when glued to it. Same-line, that space is fatal;
                 // across a line the `[` stops binding and the whole pack is
                 // the expression.
-                if (!self.currentIsGlued()) {
-                    if (!self.gapCrossesLine()) return self.failSpacedForm(start, .index);
+                if (!self.tokens.flagsOf(self.tok).glued_left) {
+                    if (!self.tokens.flagsOf(self.tok).newline_left) return self.failSpacedForm(start, .index);
                     return try self.createNode(start, .{ .comptime_pack_ref = .{
                         .pack_name = pname,
                     } });
                 }
                 self.advance(); // skip '['
-                if (self.current.tag != .int_literal) {
+                if (self.tokens.tag(self.tok) != .int_literal) {
                     return self.fail("expected integer literal in pack index");
                 }
-                const idx_text = self.tokenSlice(self.current);
+                const idx_text = self.tokens.slice(self.tok);
                 // Strip `_` separators / honor `0x`/`0o`/`0b` prefixes via the
                 // shared literal parser (matches every other int-literal site).
                 const idx_u64 = self.parseIntLiteralText(idx_text) orelse {
@@ -3889,9 +3899,9 @@ pub const Parser = struct {
                 .pack_name = pname,
             } });
         }
-        switch (self.current.tag) {
+        switch (self.tokens.tag(self.tok)) {
             .int_literal => {
-                const text = self.tokenSlice(self.current);
+                const text = self.tokens.slice(self.tok);
                 // A bare integer literal is a non-negative magnitude — parse the
                 // FULL u64 range (not i64) so a value with the high bit set
                 // (`0xcbf29ce484222325`, `18446744073709551615`) is representable
@@ -3905,7 +3915,7 @@ pub const Parser = struct {
                 return try self.createNode(start, .{ .int_literal = .{ .value = value } });
             },
             .float_literal => {
-                const text = self.tokenSlice(self.current);
+                const text = self.tokens.slice(self.tok);
                 // std.fmt.parseFloat rejects `_`, so strip all separators first.
                 const stripped = try self.stripSeparators(text);
                 defer self.allocator.free(stripped);
@@ -3917,19 +3927,19 @@ pub const Parser = struct {
             },
             .string_literal => {
                 // raw includes quotes
-                const raw = self.tokenSlice(self.current);
+                const raw = self.tokens.slice(self.tok);
                 self.advance();
                 return try self.createNode(start, .{ .string_literal = .{ .raw = raw[1 .. raw.len - 1] } });
             },
             .raw_string_literal => {
                 // #string heredoc — token span is content only, no stripping needed
-                const raw = self.tokenSlice(self.current);
+                const raw = self.tokens.slice(self.tok);
                 self.advance();
                 return try self.createNode(start, .{ .string_literal = .{ .raw = raw, .is_raw = true } });
             },
             .char_literal => {
                 // raw includes the surrounding `'`s; strip them for the inner body.
-                const raw = self.tokenSlice(self.current);
+                const raw = self.tokens.slice(self.tok);
                 self.advance();
                 const inner = raw[1 .. raw.len - 1];
                 const value = unescape.decodeCharLiteral(inner) catch |err| {
@@ -3950,8 +3960,8 @@ pub const Parser = struct {
                 return try self.createNode(start, .{ .null_literal = {} });
             },
             .identifier => {
-                const name = self.tokenSlice(self.current);
-                const is_raw = self.current.is_raw;
+                const name = self.tokens.slice(self.tok);
+                const is_raw = self.tokens.flagsOf(self.tok).is_raw;
                 // `Tuple(...)` in expression position is a tuple TYPE node —
                 // identical to the one the type parser produces — NOT a value.
                 // It is first-class in `size_of` / `type_info` / generic type
@@ -3991,7 +4001,7 @@ pub const Parser = struct {
             },
             .kw_protocol, .kw_impl, .kw_ufcs => {
                 // Contextual keywords used as identifiers in expressions
-                const name = self.tokenSlice(self.current);
+                const name = self.tokens.slice(self.tok);
                 self.advance();
                 return try self.createNode(start, .{ .identifier = .{ .name = name } });
             },
@@ -3999,17 +4009,17 @@ pub const Parser = struct {
             .dot => {
                 self.advance();
                 // Anonymous struct literal: .{ ... }
-                if (self.current.tag == .l_brace) {
+                if (self.tokens.tag(self.tok) == .l_brace) {
                     return self.parseStructLiteral(null, null, start);
                 }
                 // Array literal: .[expr, expr, ...]
-                if (self.current.tag == .l_bracket) {
+                if (self.tokens.tag(self.tok) == .l_bracket) {
                     self.advance(); // skip '['
                     var elements = std.ArrayList(*Node).empty;
-                    while (self.current.tag != .r_bracket and self.current.tag != .eof) {
+                    while (self.tokens.tag(self.tok) != .r_bracket and self.tokens.tag(self.tok) != .eof) {
                         if (elements.items.len > 0) {
                             try self.expect(.comma);
-                            if (self.current.tag == .r_bracket) break;
+                            if (self.tokens.tag(self.tok) == .r_bracket) break;
                         }
                         const elem = try self.parseExpr();
                         try elements.append(self.allocator, elem);
@@ -4020,7 +4030,7 @@ pub const Parser = struct {
                 // `.( )` is not an aggregate literal: the one aggregate
                 // literal is `.{ … }`. The spelling is reserved for the
                 // postfix cast.
-                if (self.current.tag == .l_paren) {
+                if (self.tokens.tag(self.tok) == .l_paren) {
                     return self.fail("'.( )' was removed — the aggregate literal is '.{ … }' (an untyped '.{ … }' self-types as an anonymous struct; annotate with 'Tuple(…)' for a tuple)");
                 }
                 // Enum literal: .variant_name. A reserved keyword is a valid
@@ -4059,20 +4069,20 @@ pub const Parser = struct {
                 // Bare `(...)` is GROUPING ONLY. Tuple VALUES are written
                 // `.{ … }` with a `Tuple(…)` annotation, so a named element, an
                 // empty group, a leading spread, or a top-level comma is an error.
-                if (self.current.tag == .identifier and self.peekNext() == .colon) {
+                if (self.tokens.tag(self.tok) == .identifier and self.peekNext() == .colon) {
                     return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
                 }
-                if (self.current.tag == .r_paren) {
+                if (self.tokens.tag(self.tok) == .r_paren) {
                     return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
                 }
-                if (self.current.tag == .dot_dot) {
+                if (self.tokens.tag(self.tok) == .dot_dot) {
                     return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
                 }
 
                 const first = try self.parseExpr();
 
                 // A top-level comma is an error — tuples need the annotated form.
-                if (self.current.tag == .comma) {
+                if (self.tokens.tag(self.tok) == .comma) {
                     return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
                 }
 
@@ -4082,7 +4092,7 @@ pub const Parser = struct {
             },
             .kw_f32, .kw_f64, .kw_Type => {
                 // Type keyword used as expression (for type aliases: SOME_TYPE :: f64;)
-                const name = self.tokenSlice(self.current);
+                const name = self.tokens.slice(self.tok);
                 self.advance();
                 return try self.createNode(start, .{ .type_expr = .{ .name = name } });
             },
@@ -4169,7 +4179,7 @@ pub const Parser = struct {
     /// return type sits in the first parens; the actual call args
     /// follow in the second.
     fn parseJniEnvBlock(self: *Parser) anyerror!*Node {
-        const start = self.current.loc.start;
+        const start = self.tokens.start(self.tok);
         self.advance(); // skip `#jni_env`
 
         try self.expect(.l_paren);
@@ -4177,7 +4187,7 @@ pub const Parser = struct {
         try self.expect(.r_paren);
 
         // Body is a brace-delimited block.
-        if (self.current.tag != .l_brace) {
+        if (self.tokens.tag(self.tok) != .l_brace) {
             return self.fail("expected '{' after '#jni_env(env)'");
         }
         const body = try self.parseBlock();
@@ -4189,8 +4199,8 @@ pub const Parser = struct {
     }
 
     fn parseFfiIntrinsicCall(self: *Parser) anyerror!*Node {
-        const start = self.current.loc.start;
-        const kind: ast.FfiIntrinsicKind = switch (self.current.tag) {
+        const start = self.tokens.start(self.tok);
+        const kind: ast.FfiIntrinsicKind = switch (self.tokens.tag(self.tok)) {
             .hash_objc_call => .objc_call,
             .hash_jni_call => .jni_call,
             .hash_jni_static_call => .jni_static_call,
@@ -4204,10 +4214,10 @@ pub const Parser = struct {
 
         try self.expect(.l_paren);
         var args = std.ArrayList(*Node).empty;
-        while (self.current.tag != .r_paren and self.current.tag != .eof) {
+        while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
             const arg = try self.parseExpr();
             try args.append(self.allocator, arg);
-            if (self.current.tag == .comma) {
+            if (self.tokens.tag(self.tok) == .comma) {
                 self.advance();
             } else {
                 break;
@@ -4223,15 +4233,15 @@ pub const Parser = struct {
     }
 
     fn parseIfExpr(self: *Parser) anyerror!*Node {
-        const start = self.current.loc.start;
+        const start = self.tokens.start(self.tok);
         self.advance(); // skip 'if'
 
         // Optional binding: if val := expr { ... }
         // Detect: identifier followed by :=
-        if (self.current.tag == .identifier and self.peekNext() == .colon_equal) {
-            const binding_name = self.tokenSlice(self.current);
-            const binding_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
-            const binding_is_raw = self.current.is_raw;
+        if (self.tokens.tag(self.tok) == .identifier and self.peekNext() == .colon_equal) {
+            const binding_name = self.tokens.slice(self.tok);
+            const binding_span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
+            const binding_is_raw = self.tokens.flagsOf(self.tok).is_raw;
             self.advance(); // skip identifier
             self.advance(); // skip :=
             const saved_if_cond = self.in_if_condition;
@@ -4242,7 +4252,7 @@ pub const Parser = struct {
             var else_branch: ?*Node = null;
             if (self.atChainingElse()) {
                 self.advance();
-                if (self.current.tag == .kw_if) {
+                if (self.tokens.tag(self.tok) == .kw_if) {
                     else_branch = try self.parseIfExpr();
                 } else {
                     else_branch = try self.parseBlock();
@@ -4267,16 +4277,16 @@ pub const Parser = struct {
 
         // Handle comparisons with chain detection and match disambiguation.
         // All comparisons (< <= > >= == !=) are at the same precedence.
-        if (self.isComparisonToken()) {
+        if (self.atComparison()) {
             var operands = std.ArrayList(*Node).empty;
             var ops = std.ArrayList(ast.BinaryOp.Op).empty;
             try operands.append(self.allocator, condition);
 
-            while (self.isComparisonToken()) {
+            while (self.atComparison()) {
                 // Match disambiguation: == followed by { is a match expression
-                if (self.current.tag == .equal_equal) {
+                if (self.tokens.tag(self.tok) == .equal_equal) {
                     self.advance();
-                    if (self.current.tag == .l_brace) {
+                    if (self.tokens.tag(self.tok) == .l_brace) {
                         // Match expression: if expr == { case ... }
                         // Only valid as the first comparison (no chain before it)
                         if (ops.items.len == 0) {
@@ -4290,11 +4300,11 @@ pub const Parser = struct {
                     try operands.append(self.allocator, rhs);
                     try ops.append(self.allocator, .eq);
                 } else {
-                    const cmp_op = self.binaryOp() orelse break;
+                    const cmp_info = binaryInfo(self.tokens.tag(self.tok)) orelse break;
                     self.advance();
                     const rhs = try self.parseBinary(Prec.shift);
                     try operands.append(self.allocator, rhs);
-                    try ops.append(self.allocator, cmp_op);
+                    try ops.append(self.allocator, cmp_info.op);
                 }
             }
 
@@ -4319,7 +4329,7 @@ pub const Parser = struct {
         self.in_if_condition = saved_if_cond;
 
         // Inline form: if cond then expr [else expr]
-        if (self.current.tag == .kw_then) {
+        if (self.tokens.tag(self.tok) == .kw_then) {
             self.advance();
             const then_branch = try self.parseExpr();
             var else_branch: ?*Node = null;
@@ -4340,7 +4350,7 @@ pub const Parser = struct {
         var else_branch: ?*Node = null;
         if (self.atChainingElse()) {
             self.advance();
-            if (self.current.tag == .kw_if) {
+            if (self.tokens.tag(self.tok) == .kw_if) {
                 else_branch = try self.parseIfExpr();
             } else {
                 else_branch = try self.parseBlock();
@@ -4355,14 +4365,14 @@ pub const Parser = struct {
     }
 
     fn parseWhileExpr(self: *Parser) anyerror!*Node {
-        const start = self.current.loc.start;
+        const start = self.tokens.start(self.tok);
         self.advance(); // skip 'while'
 
         // Optional binding: while val := expr { ... }
-        if (self.current.tag == .identifier and self.peekNext() == .colon_equal) {
-            const binding_name = self.tokenSlice(self.current);
-            const binding_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
-            const binding_is_raw = self.current.is_raw;
+        if (self.tokens.tag(self.tok) == .identifier and self.peekNext() == .colon_equal) {
+            const binding_name = self.tokens.slice(self.tok);
+            const binding_span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
+            const binding_is_raw = self.tokens.flagsOf(self.tok).is_raw;
             self.advance(); // skip identifier
             self.advance(); // skip :=
             const saved_ntb = self.no_trailing_block;
@@ -4392,7 +4402,7 @@ pub const Parser = struct {
     }
 
     fn parsePushStmt(self: *Parser) anyerror!*Node {
-        const start = self.current.loc.start;
+        const start = self.tokens.start(self.tok);
         self.advance(); // skip 'push'
 
         // No call trailing on the context expr (`push f() {` must not bind the
@@ -4416,7 +4426,7 @@ pub const Parser = struct {
     }
 
     fn parseForExpr(self: *Parser) anyerror!*Node {
-        const start = self.current.loc.start;
+        const start = self.tokens.start(self.tok);
         self.advance(); // skip 'for'
 
         var iterables = std.ArrayList(ast.ForIterable).empty;
@@ -4430,7 +4440,7 @@ pub const Parser = struct {
         while (true) {
             const expr = try self.parseExpr();
             var it = ast.ForIterable{ .expr = expr };
-            if (rangeTokenInfo(self.current.tag)) |rt| {
+            if (rangeTokenInfo(self.tokens.tag(self.tok))) |rt| {
                 it.is_range = true;
                 it.start_exclusive = rt.start_exclusive;
                 it.end_inclusive = rt.end_inclusive;
@@ -4438,7 +4448,7 @@ pub const Parser = struct {
                 // End expression — absent for the open range `a..`, i.e. when
                 // the header continues (`,`), the body starts (`{` / `=>`),
                 // or the capture group follows.
-                const open = switch (self.current.tag) {
+                const open = switch (self.tokens.tag(self.tok)) {
                     .comma, .l_brace, .fat_arrow => true,
                     .l_paren => self.parenGroupIsForCapture(),
                     else => false,
@@ -4450,32 +4460,32 @@ pub const Parser = struct {
                 }
             }
             try iterables.append(self.allocator, it);
-            if (self.current.tag != .comma) break;
+            if (self.tokens.tag(self.tok) != .comma) break;
             self.advance();
         }
         self.in_for_header = saved_hdr;
 
-        if (self.current.tag == .colon) {
+        if (self.tokens.tag(self.tok) == .colon) {
             return self.fail("for-loop syntax: the ':' before the capture was removed — write `for xs (x) { }` (index via `for xs, 0.. (x, i)`)");
         }
 
         // Capture group: `(x)`, `(*x)`, `(a, b, ...)` — positional, one
         // capture per iterable.
-        if (self.current.tag == .l_paren) {
+        if (self.tokens.tag(self.tok) == .l_paren) {
             self.advance();
             while (true) {
                 var cap = ast.ForCapture{ .name = "" };
-                if (self.current.tag == .star) {
+                if (self.tokens.tag(self.tok) == .star) {
                     cap.by_ref = true;
                     self.advance();
                 }
-                if (self.current.tag != .identifier) return self.fail("expected capture variable name (a call iterable also needs a capture: `for f(n) (x) { }`)");
-                cap.name = self.tokenSlice(self.current);
-                cap.span = .{ .start = self.current.loc.start, .end = self.current.loc.end };
-                cap.is_raw = self.current.is_raw;
+                if (self.tokens.tag(self.tok) != .identifier) return self.fail("expected capture variable name (a call iterable also needs a capture: `for f(n) (x) { }`)");
+                cap.name = self.tokens.slice(self.tok);
+                cap.span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
+                cap.is_raw = self.tokens.flagsOf(self.tok).is_raw;
                 self.advance();
                 try captures.append(self.allocator, cap);
-                if (self.current.tag != .comma) break;
+                if (self.tokens.tag(self.tok) != .comma) break;
                 self.advance();
             }
             try self.expect(.r_paren);
@@ -4496,7 +4506,7 @@ pub const Parser = struct {
         // Body: a block, or the arrow form `=> stmt` (a full statement, so
         // assignments like `=> s += x;` work; parseStmt owns the `;`).
         var body: *Node = undefined;
-        if (self.current.tag == .fat_arrow) {
+        if (self.tokens.tag(self.tok) == .fat_arrow) {
             self.advance();
             // A braced body isolates the mark in `parseBlock`; the arrow body is
             // one statement parsed in place, so it isolates it here.
@@ -4522,12 +4532,12 @@ pub const Parser = struct {
         const saved_produces = self.last_stmt_produces_value;
         defer self.last_stmt_produces_value = saved_produces;
         var arms = std.ArrayList(ast.MatchArm).empty;
-        while (self.current.tag == .kw_case) {
-            const arm_start = self.current.loc.start;
+        while (self.tokens.tag(self.tok) == .kw_case) {
+            const arm_start = self.tokens.start(self.tok);
             self.advance(); // skip 'case'
             // Allow keyword tokens (struct, enum, union) as type category names in match arms
-            const pattern: *Node = if (self.current.tag == .kw_struct or self.current.tag == .kw_enum or self.current.tag == .kw_union) blk: {
-                const name = self.tokenSlice(self.current);
+            const pattern: *Node = if (self.tokens.tag(self.tok) == .kw_struct or self.tokens.tag(self.tok) == .kw_enum or self.tokens.tag(self.tok) == .kw_union) blk: {
+                const name = self.tokens.slice(self.tok);
                 self.advance();
                 break :blk try self.createNode(arm_start, .{ .identifier = .{ .name = name } });
             } else if (self.isIdentLike() and self.peekNext() == .l_paren)
@@ -4547,22 +4557,22 @@ pub const Parser = struct {
             var capture: ?[]const u8 = null;
             var capture_span: ?ast.Span = null;
             var capture_is_raw = false;
-            if (self.current.tag == .l_paren and self.isLoneIdentParen()) {
+            if (self.tokens.tag(self.tok) == .l_paren and self.isLoneIdentParen()) {
                 self.advance(); // '('
-                capture = self.tokenSlice(self.current);
-                capture_span = .{ .start = self.current.loc.start, .end = self.current.loc.end };
-                capture_is_raw = self.current.is_raw;
+                capture = self.tokens.slice(self.tok);
+                capture_span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
+                capture_is_raw = self.tokens.flagsOf(self.tok).is_raw;
                 self.advance(); // ident
                 try self.expect(.r_paren);
             }
 
-            if (self.current.tag == .kw_break) {
+            if (self.tokens.tag(self.tok) == .kw_break) {
                 self.advance();
                 // The arm's `break` ends like a `break` statement anywhere.
                 try self.expectStatementEnd();
                 const body = try self.createNode(arm_start, .{ .block = .{ .stmts = &.{} } });
                 try arms.append(self.allocator, .{ .pattern = pattern, .body = body, .is_break = true, .capture = capture, .capture_span = capture_span, .capture_is_raw = capture_is_raw });
-            } else if (self.current.tag == .fat_arrow) {
+            } else if (self.tokens.tag(self.tok) == .fat_arrow) {
                 // Short form: (ident) => expr
                 self.advance();
                 const expr = try self.parseExpr();
@@ -4572,9 +4582,9 @@ pub const Parser = struct {
                 const body = try self.createNode(arm_start, .{ .block = .{ .stmts = try self.allocator.dupe(*Node, &.{expr}), .produces_value = true } });
                 try arms.append(self.allocator, .{ .pattern = pattern, .body = body, .is_break = false, .capture = capture, .capture_span = capture_span, .capture_is_raw = capture_is_raw });
             } else {
-                const stmts_start = self.current.loc.start;
+                const stmts_start = self.tokens.start(self.tok);
                 var stmts = std.ArrayList(*Node).empty;
-                while (self.current.tag != .kw_case and self.current.tag != .kw_else and self.current.tag != .r_brace and self.current.tag != .eof) {
+                while (self.tokens.tag(self.tok) != .kw_case and self.tokens.tag(self.tok) != .kw_else and self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
                     try stmts.append(self.allocator, try self.parseStmt());
                 }
                 // The wrapper yields its last statement's value — which, for a
@@ -4584,12 +4594,12 @@ pub const Parser = struct {
             }
         }
         // Optional else arm (default)
-        if (self.current.tag == .kw_else) {
-            const else_start = self.current.loc.start;
+        if (self.tokens.tag(self.tok) == .kw_else) {
+            const else_start = self.tokens.start(self.tok);
             self.advance(); // skip 'else'
             try self.expect(.colon);
             var stmts = std.ArrayList(*Node).empty;
-            while (self.current.tag != .r_brace and self.current.tag != .eof) {
+            while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
                 try stmts.append(self.allocator, try self.parseStmt());
             }
             const body = try self.createNode(else_start, .{ .block = .{ .stmts = try stmts.toOwnedSlice(self.allocator), .produces_value = true } });
@@ -4603,13 +4613,13 @@ pub const Parser = struct {
     /// a top-level item; the message fires only when the node reaches live decls
     /// (the flatten pass drops it in non-taken `inline if` arms).
     fn parseErrorDirective(self: *Parser) anyerror!*Node {
-        const start = self.current.loc.start;
+        const start = self.tokens.start(self.tok);
         self.advance(); // skip '#error'
         try self.expect(.l_paren);
-        if (self.current.tag != .string_literal) {
+        if (self.tokens.tag(self.tok) != .string_literal) {
             return self.fail("expected a string message in '#error(...)'");
         }
-        const raw = self.tokenSlice(self.current);
+        const raw = self.tokens.slice(self.tok);
         const message = raw[1 .. raw.len - 1];
         self.advance();
         try self.expect(.r_paren);
@@ -4624,13 +4634,13 @@ pub const Parser = struct {
         if (!self.isIdentLike()) {
             return self.fail("expected field name after '#context_extend'");
         }
-        const field_name = self.tokenSlice(self.current);
-        const field_name_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
+        const field_name = self.tokens.slice(self.tok);
+        const field_name_span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
         self.advance();
         try self.expect(.colon);
         const type_node = try self.parseTypeExpr();
         var default_node: ?*Node = null;
-        if (self.current.tag == .equal) {
+        if (self.tokens.tag(self.tok) == .equal) {
             self.advance();
             default_node = try self.parseExpr();
         }
@@ -4647,8 +4657,8 @@ pub const Parser = struct {
     /// `Tuple(...)` a precise lowering-time "element is not a type" diagnostic
     /// (instead of a generic parse error) when a literal is supplied as a tuple
     /// element.
-    fn currentTokenIsValueLiteral(self: *Parser) bool {
-        switch (self.current.tag) {
+    fn atValueLiteral(self: *Parser) bool {
+        switch (self.tokens.tag(self.tok)) {
             .int_literal,
             .float_literal,
             .string_literal,
@@ -4691,38 +4701,38 @@ pub const Parser = struct {
         var has_names = false;
         var pack_name: ?[]const u8 = null;
         var pack_projection: ?[]const u8 = null;
-        while (self.current.tag != .r_paren and self.current.tag != .eof) {
+        while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
             if (param_types.items.len > 0) {
                 try self.expect(.comma);
-                if (self.current.tag == .r_paren) break; // trailing comma ok
+                if (self.tokens.tag(self.tok) == .r_paren) break; // trailing comma ok
             }
             // Trailing pack marker: `..$name` or `..pack.Arg` (terminal only).
-            if (self.current.tag == .dot_dot) {
+            if (self.tokens.tag(self.tok) == .dot_dot) {
                 self.advance(); // skip '..'
-                if (self.current.tag == .dollar) self.advance(); // optional sigil
+                if (self.tokens.tag(self.tok) == .dollar) self.advance(); // optional sigil
                 if (!self.isIdentLike()) {
                     return self.fail("expected pack name after '..' in Closure type");
                 }
-                pack_name = self.tokenSlice(self.current);
+                pack_name = self.tokens.slice(self.tok);
                 self.advance();
                 // Optional projection: `..sources.T` picks a type-arg per element.
-                if (self.current.tag == .dot) {
+                if (self.tokens.tag(self.tok) == .dot) {
                     self.advance(); // skip '.'
                     if (!self.isIdentLike()) {
                         return self.fail("expected projection name after '.' in Closure pack");
                     }
-                    pack_projection = self.tokenSlice(self.current);
+                    pack_projection = self.tokens.slice(self.tok);
                     self.advance();
                 }
                 // Pack must be the LAST item — only `)` accepted next.
-                if (self.current.tag != .r_paren) {
+                if (self.tokens.tag(self.tok) != .r_paren) {
                     return self.fail("variadic pack must be the last parameter in Closure type");
                 }
                 break;
             }
             // Check for optional param name: `name: Type`
-            if (self.current.tag == .identifier and self.peekNext() == .colon) {
-                const pname = self.tokenSlice(self.current);
+            if (self.tokens.tag(self.tok) == .identifier and self.peekNext() == .colon) {
+                const pname = self.tokens.slice(self.tok);
                 self.advance(); // skip name
                 self.advance(); // skip ':'
                 try param_names.append(self.allocator, pname);
@@ -4734,7 +4744,7 @@ pub const Parser = struct {
         }
         try self.expect(.r_paren);
         var return_type: ?*Node = null;
-        if (self.current.tag == .arrow) {
+        if (self.tokens.tag(self.tok) == .arrow) {
             self.advance();
             // A failable closure return is the canonical parenthesized
             // list `Closure(i64) -> (i64, !E)` (parseFnReturnType rejects
@@ -4760,16 +4770,16 @@ pub const Parser = struct {
         var field_types = std.ArrayList(*Node).empty;
         var field_name_opt = std.ArrayList(?[]const u8).empty;
         var has_names = false;
-        while (self.current.tag != .r_paren and self.current.tag != .eof) {
+        while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
             if (field_types.items.len > 0) {
                 try self.expect(.comma);
-                if (self.current.tag == .r_paren) break; // trailing comma ok
+                if (self.tokens.tag(self.tok) == .r_paren) break; // trailing comma ok
             }
             // Pack-spread field: `Tuple(..Ts)` / `Tuple(..F(Ts))` /
             // `Tuple(..Ts.Arg)`. Reuses `spread_expr` (same machinery as
             // the inline tuple-type and Closure pack paths).
-            if (self.current.tag == .dot_dot) {
-                const sp_start = self.current.loc.start;
+            if (self.tokens.tag(self.tok) == .dot_dot) {
+                const sp_start = self.tokens.start(self.tok);
                 self.advance(); // skip '..'
                 const operand = try self.parseTypeExpr();
                 try field_name_opt.append(self.allocator, null);
@@ -4778,7 +4788,7 @@ pub const Parser = struct {
             }
             // Named field: `name: Type` (keeps `:`).
             if (self.isIdentLike() and self.peekNext() == .colon) {
-                const fname = self.tokenSlice(self.current);
+                const fname = self.tokens.slice(self.tok);
                 self.advance(); // skip name
                 self.advance(); // skip ':'
                 try field_name_opt.append(self.allocator, fname);
@@ -4792,12 +4802,12 @@ pub const Parser = struct {
             // than `parseTypeExpr` bailing here with a generic "expected type
             // name" parse error. Type-shaped elements still go through the type
             // parser (so `*T`, `[N]T`, `Tuple(...)`, names all parse).
-            if (self.currentTokenIsValueLiteral()) {
+            if (self.atValueLiteral()) {
                 // A leading `+` on a signed literal (`Tuple(i32, +1)`) has no
                 // unary-op parse; consume it so the number parses as a bare
                 // value literal. `parseUnary` handles the `-` case and falls
                 // through to `parsePrimary` for an unsigned literal.
-                if (self.current.tag == .plus) self.advance();
+                if (self.tokens.tag(self.tok) == .plus) self.advance();
                 try field_types.append(self.allocator, try self.parseUnary());
             } else {
                 try field_types.append(self.allocator, try self.parseTypeExpr());
@@ -4806,7 +4816,7 @@ pub const Parser = struct {
         try self.expect(.r_paren);
         // A `Tuple(...)` has NO return type — reject `-> R` loudly rather
         // than silently swallowing it the way `Closure` consumes it.
-        if (self.current.tag == .arrow) {
+        if (self.tokens.tag(self.tok) == .arrow) {
             return self.fail("`Tuple` has no return type — remove the `->`");
         }
         // Per-slot field names are non-optional in the AST; synthesize
@@ -4829,27 +4839,10 @@ pub const Parser = struct {
     /// two are structurally identical (operators / splat / `.0` all work with no
     /// target type). Supports positional, 1-tuple, empty, named (`x = a`, using
     /// `=`), spread (`..xs` / `..xs.field`) and nesting.
-    /// Save state, skip past matching parens, return the tag of the next token, then restore.
     /// Returns null if no matching ')' found before EOF.
     fn peekPastParens(self: *Parser) ?Tag {
-        const saved_lexer = self.lexer;
-        const saved_current = self.current;
-        const saved_prev_end = self.prev_end;
-        defer {
-            self.lexer = saved_lexer;
-            self.current = saved_current;
-            self.prev_end = saved_prev_end;
-        }
-        self.advance(); // skip '('
-        var depth: u32 = 1;
-        while (depth > 0 and self.current.tag != .eof) {
-            if (self.current.tag == .l_paren) depth += 1;
-            if (self.current.tag == .r_paren) depth -= 1;
-            if (depth > 0) self.advance();
-        }
-        if (self.current.tag != .r_paren) return null;
-        self.advance(); // skip ')'
-        return self.current.tag;
+        const close = self.tokens.scanBalanced(self.tok, .l_paren, .r_paren) orelse return null;
+        return self.tokens.tag(self.tokens.next(close));
     }
 
     /// Returns true when the current `(` opens a function-type literal `(T1, T2) -> R`
@@ -4858,62 +4851,31 @@ pub const Parser = struct {
     /// only be a function type, since any body (`=>` or `{`) would have made it
     /// a lambda.
     fn isFunctionTypeExprAtLParen(self: *Parser) bool {
-        const saved_lexer = self.lexer;
-        const saved_current = self.current;
-        const saved_prev_end = self.prev_end;
-        defer {
-            self.lexer = saved_lexer;
-            self.current = saved_current;
-            self.prev_end = saved_prev_end;
-        }
-        self.advance(); // skip '('
-        var depth: u32 = 1;
-        while (depth > 0 and self.current.tag != .eof) {
-            if (self.current.tag == .l_paren) depth += 1;
-            if (self.current.tag == .r_paren) depth -= 1;
-            if (depth > 0) self.advance();
-        }
-        if (self.current.tag != .r_paren) return false;
-        self.advance(); // skip ')'
-        return self.current.tag == .arrow;
+        const close = self.tokens.scanBalanced(self.tok, .l_paren, .r_paren) orelse return false;
+        return self.tokens.tag(self.tokens.next(close)) == .arrow;
     }
 
     fn isLambda(self: *Parser) bool {
-        const saved_lexer = self.lexer;
-        const saved_current = self.current;
-        const saved_prev_end = self.prev_end;
-        defer {
-            self.lexer = saved_lexer;
-            self.current = saved_current;
-            self.prev_end = saved_prev_end;
-        }
+        const saved = self.tok;
+        defer self.tok = saved;
 
         // Check upfront if parens look like function params (for block-body disambiguation)
         const has_param_parens = blk: {
             self.advance(); // skip '('
-            if (self.current.tag == .r_paren) break :blk true; // empty parens
-            if (self.current.tag != .identifier) break :blk false;
+            if (self.tokens.tag(self.tok) == .r_paren) break :blk true; // empty parens
+            if (self.tokens.tag(self.tok) != .identifier) break :blk false;
             self.advance();
-            break :blk self.current.tag == .colon or
-                self.current.tag == .comma or
-                self.current.tag == .r_paren;
+            break :blk self.tokens.tag(self.tok) == .colon or
+                self.tokens.tag(self.tok) == .comma or
+                self.tokens.tag(self.tok) == .r_paren;
         };
 
-        // Restore to '(' and scan past parens inline (not via peekPastParens which restores state)
-        self.lexer = saved_lexer;
-        self.current = saved_current;
-        self.prev_end = saved_prev_end;
-        self.advance(); // skip '('
-        var depth: u32 = 1;
-        while (depth > 0 and self.current.tag != .eof) {
-            if (self.current.tag == .l_paren) depth += 1;
-            if (self.current.tag == .r_paren) depth -= 1;
-            if (depth > 0) self.advance();
-        }
-        if (self.current.tag != .r_paren) return false;
-        self.advance(); // skip ')' — now positioned on token after parens
+        // Restore to '(' and scan past the paren group
+        self.tok = saved;
+        const close = self.tokens.scanBalanced(self.tok, .l_paren, .r_paren) orelse return false;
+        self.tok = self.tokens.next(close); // now positioned on token after parens
 
-        const tag = self.current.tag;
+        const tag = self.tokens.tag(self.tok);
         // (params) => expr
         if (tag == .fat_arrow) return true;
         // (params) -> ReturnType => expr
@@ -4921,16 +4883,16 @@ pub const Parser = struct {
         if (tag == .arrow) {
             self.advance(); // skip '->'
             // Skip past the return type tokens until we see '=>', '{', or something unexpected
-            while (self.current.tag != .eof) {
-                if (self.current.tag == .fat_arrow) return true;
-                if (self.current.tag == .l_brace) return true;
-                if (self.current.tag == .identifier or self.current.tag.isTypeKeyword() or
-                    self.current.tag == .dot or self.current.tag == .dollar or
-                    self.current.tag == .l_bracket or self.current.tag == .r_bracket or
-                    self.current.tag == .l_paren or self.current.tag == .r_paren or
-                    self.current.tag == .comma or self.current.tag == .int_literal or
-                    self.current.tag == .star or self.current.tag == .question or
-                    self.current.tag == .bang)
+            while (self.tokens.tag(self.tok) != .eof) {
+                if (self.tokens.tag(self.tok) == .fat_arrow) return true;
+                if (self.tokens.tag(self.tok) == .l_brace) return true;
+                if (self.tokens.tag(self.tok) == .identifier or self.tokens.tag(self.tok).isTypeKeyword() or
+                    self.tokens.tag(self.tok) == .dot or self.tokens.tag(self.tok) == .dollar or
+                    self.tokens.tag(self.tok) == .l_bracket or self.tokens.tag(self.tok) == .r_bracket or
+                    self.tokens.tag(self.tok) == .l_paren or self.tokens.tag(self.tok) == .r_paren or
+                    self.tokens.tag(self.tok) == .comma or self.tokens.tag(self.tok) == .int_literal or
+                    self.tokens.tag(self.tok) == .star or self.tokens.tag(self.tok) == .question or
+                    self.tokens.tag(self.tok) == .bang)
                 {
                     self.advance();
                 } else break;
@@ -4946,7 +4908,7 @@ pub const Parser = struct {
     }
 
     fn parseLambda(self: *Parser) anyerror!*Node {
-        const start = self.current.loc.start;
+        const start = self.tokens.start(self.tok);
         const param_list = try self.parseParams();
         // A closure carries an sx environment, so it has no C signature to hang
         // a tail on; the C-variadic function pointer is a function TYPE.
@@ -4957,7 +4919,7 @@ pub const Parser = struct {
 
         // Optional return type: (params) -> Type => expr  OR  (params) -> Type { stmts }
         var return_type: ?*Node = null;
-        if (self.current.tag == .arrow) {
+        if (self.tokens.tag(self.tok) == .arrow) {
             self.advance();
             return_type = try self.parseFnReturnType();
         }
@@ -4985,7 +4947,7 @@ pub const Parser = struct {
         // Two body forms:
         // (params) => expr          — expression lambda
         // (params) { stmts }        — block-body lambda
-        const body = if (self.current.tag == .l_brace)
+        const body = if (self.tokens.tag(self.tok) == .l_brace)
             try self.parseBlock()
         else blk: {
             try self.expect(.fat_arrow);
@@ -5005,7 +4967,7 @@ pub const Parser = struct {
     /// Includes actual identifiers plus contextual keywords that are only
     /// keywords in specific syntactic positions (e.g., `protocol`, `impl`).
     fn isIdentLike(self: *const Parser) bool {
-        return switch (self.current.tag) {
+        return switch (self.tokens.tag(self.tok)) {
             .identifier, .kw_protocol, .kw_impl, .kw_ufcs => true,
             else => false,
         };
@@ -5024,87 +4986,74 @@ pub const Parser = struct {
     }
 
     fn hasFnBodyAfterArrow(self: *Parser) bool {
-        const saved_lexer = self.lexer;
-        const saved_current = self.current;
-        const saved_prev_end = self.prev_end;
-        defer {
-            self.lexer = saved_lexer;
-            self.current = saved_current;
-            self.prev_end = saved_prev_end;
-        }
-        self.advance(); // skip '('
-        var depth: u32 = 1;
-        while (depth > 0 and self.current.tag != .eof) {
-            if (self.current.tag == .l_paren) depth += 1;
-            if (self.current.tag == .r_paren) depth -= 1;
-            if (depth > 0) self.advance();
-        }
-        if (self.current.tag != .r_paren) return false;
-        self.advance(); // skip ')'
-        if (self.current.tag != .arrow) return false;
+        const saved = self.tok;
+        defer self.tok = saved;
+        const paren_close = self.tokens.scanBalanced(self.tok, .l_paren, .r_paren) orelse return false;
+        self.tok = self.tokens.next(paren_close); // skip past ')'
+        if (self.tokens.tag(self.tok) != .arrow) return false;
         self.advance(); // skip '->'
-        while (self.current.tag != .eof) {
+        while (self.tokens.tag(self.tok) != .eof) {
             // An inline `struct { … }` / `union { … }` / `enum { … }` return
             // type: the brace group after the keyword belongs to the TYPE,
             // not the body — skip it balanced and keep scanning for the real
             // body `{`. The bodyless alias edge still holds:
             // `F :: () -> struct { x: i64; };` resumes the scan at `;`,
             // finds no body, and classifies as a type alias.
-            if (self.current.tag == .kw_struct or self.current.tag == .kw_union or
-                self.current.tag == .kw_enum)
+            if (self.tokens.tag(self.tok) == .kw_struct or self.tokens.tag(self.tok) == .kw_union or
+                self.tokens.tag(self.tok) == .kw_enum)
             {
                 self.advance(); // the keyword
-                if (self.current.tag != .l_brace) return false;
-                self.advance(); // the type's '{'
-                var brace_depth: u32 = 1;
-                while (brace_depth > 0 and self.current.tag != .eof) {
-                    if (self.current.tag == .l_brace) brace_depth += 1;
-                    if (self.current.tag == .r_brace) brace_depth -= 1;
-                    self.advance();
+                if (self.tokens.tag(self.tok) != .l_brace) return false;
+                // On an unterminated type brace group, park at `.eof` so the
+                // outer scan ends without finding a body.
+                if (self.tokens.scanBalanced(self.tok, .l_brace, .r_brace)) |brace_close| {
+                    self.tok = self.tokens.next(brace_close);
+                } else {
+                    self.tok = self.tokens.last();
                 }
                 continue;
             }
-            if (self.current.tag == .fat_arrow) return true;
-            if (self.current.tag == .l_brace) return true;
-            if (self.current.tag == .kw_intrinsic) return true;
-            if (self.current.tag == .hash_get) return true; // `-> R #get => …` is a fn def
-            if (self.current.tag == .hash_set) return true; // `-> R #set { … }` is a fn def
+            if (self.tokens.tag(self.tok) == .fat_arrow) return true;
+            if (self.tokens.tag(self.tok) == .l_brace) return true;
+            if (self.tokens.tag(self.tok) == .kw_intrinsic) return true;
+            if (self.tokens.tag(self.tok) == .hash_get) return true; // `-> R #get => …` is a fn def
+            if (self.tokens.tag(self.tok) == .hash_set) return true; // `-> R #set { … }` is a fn def
             // Postfix linkage modifier after the return type: `-> R extern;` /
             // `-> R export { … }` (and `-> R abi(.c) extern`). Marks a fn def.
-            if (self.current.tag == .kw_extern or self.current.tag == .kw_export) return true;
-            if (self.current.tag == .identifier or self.current.tag.isTypeKeyword() or
+            if (self.tokens.tag(self.tok) == .kw_extern or self.tokens.tag(self.tok) == .kw_export) return true;
+            if (self.tokens.tag(self.tok) == .identifier or self.tokens.tag(self.tok).isTypeKeyword() or
                 // `abi(...)` states a convention, not a body: `-> R abi(.c) { … }`
                 // is a definition and `-> R abi(.c);` a function-type alias, so
                 // the scan reads through the annotation to whatever follows.
                 // (Its `(`/`.`/name/`)` tokens are already skipped below.)
-                self.current.tag == .kw_abi or
+                self.tokens.tag(self.tok) == .kw_abi or
                 // A compiler-formed `@Init(T)` is a type spelling like any
                 // other here: skipping it keeps the scan on course to the body
                 // brace, so the decl is classified as a fn DEF and the
                 // return-position refusal lands on the return type.
-                self.current.tag == .at_identifier or
-                self.current.tag == .dot or self.current.tag == .dollar or
-                self.current.tag == .l_bracket or self.current.tag == .r_bracket or
-                self.current.tag == .l_paren or self.current.tag == .r_paren or
-                self.current.tag == .comma or self.current.tag == .int_literal or
+                self.tokens.tag(self.tok) == .at_identifier or
+                self.tokens.tag(self.tok) == .dot or self.tokens.tag(self.tok) == .dollar or
+                self.tokens.tag(self.tok) == .l_bracket or self.tokens.tag(self.tok) == .r_bracket or
+                self.tokens.tag(self.tok) == .l_paren or self.tokens.tag(self.tok) == .r_paren or
+                self.tokens.tag(self.tok) == .comma or self.tokens.tag(self.tok) == .int_literal or
                 // Arithmetic operators appear in a const-expression dimension /
                 // lane / value-param in a return type: `-> [N + 1]f32`,
                 // `-> Vector(N + 1, f32)`. They must be skipped while scanning
                 // for the body brace, else the decl is misread as a bodyless
                 // function-type alias and the `{` body errors as "expected ';'".
                 // (`.star` doubles as the pointer sigil and is already listed.)
-                self.current.tag == .star or self.current.tag == .slash or
-                self.current.tag == .percent or self.current.tag == .plus or
-                self.current.tag == .minus or self.current.tag == .question or
-                self.current.tag == .bang or
+                self.tokens.tag(self.tok) == .star or self.tokens.tag(self.tok) == .slash or
+                self.tokens.tag(self.tok) == .percent or self.tokens.tag(self.tok) == .plus or
+                self.tokens.tag(self.tok) == .minus or self.tokens.tag(self.tok) == .question or
+                self.tokens.tag(self.tok) == .bang or
                 // A named multi-return slot DEFAULT (`-> (sum: i32 = 0, …)`):
                 // skip the `=` and the value expression's literal tokens so the
                 // scan keeps going to the body `{`, instead of misreading the
                 // decl as a bodyless function-type alias.
-                self.current.tag == .equal or self.current.tag == .float_literal or
-                self.current.tag == .string_literal or self.current.tag == .char_literal or
-                self.current.tag == .kw_true or self.current.tag == .kw_false or
-                self.current.tag == .colon or self.current.tag == .arrow)
+                self.tokens.tag(self.tok) == .equal or self.tokens.tag(self.tok) == .float_literal or
+                self.tokens.tag(self.tok) == .string_literal or self.tokens.tag(self.tok) == .char_literal or
+                self.tokens.tag(self.tok) == .kw_true or self.tokens.tag(self.tok) == .kw_false or
+                self.tokens.tag(self.tok) == .colon or self.tokens.tag(self.tok) == .arrow)
             {
                 self.advance();
             } else break;
@@ -5116,13 +5065,13 @@ pub const Parser = struct {
     /// `abi(.naked)` in the postfix slot before `extern`/`export`. `.default` when
     /// absent.
     fn parseOptionalAbi(self: *Parser) anyerror!ast.ABI {
-        if (self.current.tag != .kw_abi) return .default;
+        if (self.tokens.tag(self.tok) != .kw_abi) return .default;
         self.advance();
         try self.expect(.l_paren);
         try self.expect(.dot);
-        if (self.current.tag != .identifier)
+        if (self.tokens.tag(self.tok) != .identifier)
             return self.fail("expected ABI name ('.c' or '.naked') after '.'");
-        const abi_name = self.tokenSlice(self.current);
+        const abi_name = self.tokens.slice(self.tok);
         const abi: ast.ABI = if (std.mem.eql(u8, abi_name, "c"))
             .c
         else if (std.mem.eql(u8, abi_name, "naked"))
@@ -5153,14 +5102,14 @@ pub const Parser = struct {
     fn parseLinkageTail(self: *Parser, ends: TailEnds, admits_symbol: bool) LinkageTail {
         var tail: LinkageTail = .{};
         if (ends == .may_end and self.atStatementEnd()) return tail;
-        if (self.current.tag == .identifier) {
-            tail.lib = self.tokenSlice(self.current);
+        if (self.tokens.tag(self.tok) == .identifier) {
+            tail.lib = self.tokens.slice(self.tok);
             self.advance();
         }
         if (!admits_symbol) return tail;
         if (ends == .may_end and self.atStatementEnd()) return tail;
-        if (self.current.tag == .string_literal) {
-            const raw = self.tokenSlice(self.current);
+        if (self.tokens.tag(self.tok) == .string_literal) {
+            const raw = self.tokens.slice(self.tok);
             tail.name = raw[1 .. raw.len - 1];
             self.advance();
         }
@@ -5170,7 +5119,7 @@ pub const Parser = struct {
     /// Postfix linkage modifier in the slot after `abi(...)`:
     /// `extern` (import) or `export` (define + expose), or `.none` if neither.
     fn parseOptionalExternExport(self: *Parser) ast.ExternExportModifier {
-        switch (self.current.tag) {
+        switch (self.tokens.tag(self.tok)) {
             .kw_extern => {
                 self.advance();
                 return .extern_;
@@ -5183,26 +5132,8 @@ pub const Parser = struct {
         }
     }
 
-    fn isAssignOp(self: *const Parser) bool {
-        return switch (self.current.tag) {
-            .equal,
-            .plus_equal,
-            .minus_equal,
-            .star_equal,
-            .slash_equal,
-            .percent_equal,
-            .ampersand_equal,
-            .pipe_equal,
-            .caret_equal,
-            .less_less_equal,
-            .greater_greater_equal,
-            => true,
-            else => false,
-        };
-    }
-
-    fn assignOp(self: *const Parser) ast.Assignment.Op {
-        return switch (self.current.tag) {
+    fn assignmentInfo(tag: Tag) ?ast.Assignment.Op {
+        return switch (tag) {
             .equal => .assign,
             .plus_equal => .add_assign,
             .minus_equal => .sub_assign,
@@ -5214,7 +5145,137 @@ pub const Parser = struct {
             .caret_equal => .xor_assign,
             .less_less_equal => .shl_assign,
             .greater_greater_equal => .shr_assign,
-            else => unreachable,
+            .int_literal,
+            .float_literal,
+            .string_literal,
+            .raw_string_literal,
+            .char_literal,
+            .identifier,
+            .at_identifier,
+            .kw_if,
+            .kw_else,
+            .kw_then,
+            .kw_true,
+            .kw_false,
+            .kw_enum,
+            .kw_error,
+            .kw_raise,
+            .kw_try,
+            .kw_catch,
+            .kw_onfail,
+            .kw_case,
+            .kw_break,
+            .kw_continue,
+            .kw_while,
+            .kw_for,
+            .kw_return,
+            .kw_defer,
+            .kw_f32,
+            .kw_f64,
+            .kw_struct,
+            .kw_union,
+            .kw_xx,
+            .kw_and,
+            .kw_or,
+            .kw_Type,
+            .kw_null,
+            .kw_push,
+            .kw_ufcs,
+            .kw_in,
+            .kw_protocol,
+            .kw_impl,
+            .kw_Self,
+            .kw_inline,
+            .kw_abi,
+            .kw_extern,
+            .kw_export,
+            .kw_asm,
+            .kw_intrinsic,
+            .kw_private,
+            .colon,
+            .colon_colon,
+            .colon_equal,
+            .semicolon,
+            .comma,
+            .dot,
+            .dot_dot,
+            .dot_dot_eq,
+            .dot_dot_lt,
+            .lt_dot_dot,
+            .lt_dot_dot_eq,
+            .lt_dot_dot_lt,
+            .eq_dot_dot,
+            .eq_dot_dot_eq,
+            .eq_dot_dot_lt,
+            .dollar,
+            .plus,
+            .minus,
+            .star,
+            .slash,
+            .equal_equal,
+            .bang,
+            .bang_equal,
+            .less,
+            .less_equal,
+            .greater,
+            .greater_equal,
+            .percent,
+            .ampersand,
+            .pipe,
+            .pipe_arrow,
+            .caret,
+            .question,
+            .question_question,
+            .question_dot,
+            .tilde,
+            .less_less,
+            .greater_greater,
+            .l_paren,
+            .r_paren,
+            .l_brace,
+            .r_brace,
+            .l_bracket,
+            .r_bracket,
+            .arrow,
+            .fat_arrow,
+            .hash_run,
+            .hash_error,
+            .hash_import,
+            .hash_insert,
+            .hash_library,
+            .hash_framework,
+            .hash_using,
+            .hash_include,
+            .hash_source,
+            .hash_define,
+            .hash_flags,
+            .hash_identity,
+            .hash_expand,
+            .hash_objc_call,
+            .hash_jni_call,
+            .hash_jni_static_call,
+            .hash_jni_class,
+            .hash_jni_interface,
+            .hash_objc_class,
+            .hash_objc_protocol,
+            .hash_swift_class,
+            .hash_swift_struct,
+            .hash_swift_protocol,
+            .hash_extends,
+            .hash_implements,
+            .hash_jni_method_descriptor,
+            .hash_selector,
+            .hash_property,
+            .hash_get,
+            .hash_set,
+            .hash_jni_env,
+            .hash_jni_main,
+            .hash_context_extend,
+            .triple_minus,
+            .minus_minus,
+            .eof,
+            .invalid,
+            => null,
         };
     }
 
@@ -5223,14 +5284,14 @@ pub const Parser = struct {
         try targets.append(self.allocator, first_target);
 
         // Consume remaining targets separated by commas
-        while (self.current.tag == .comma) {
+        while (self.tokens.tag(self.tok) == .comma) {
             self.advance();
             const target = try self.parseExpr();
             try targets.append(self.allocator, target);
         }
 
         // Destructuring declaration: a, b := expr;
-        if (self.current.tag == .colon_equal) {
+        if (self.tokens.tag(self.tok) == .colon_equal) {
             self.advance();
             // All targets must be plain identifiers
             var names = std.ArrayList([]const u8).empty;
@@ -5255,7 +5316,7 @@ pub const Parser = struct {
         }
 
         // Multi-target assignment: only plain '=' is allowed
-        if (self.current.tag != .equal) {
+        if (self.tokens.tag(self.tok) != .equal) {
             return self.fail("multi-target assignment requires '=' or ':='");
         }
         self.advance();
@@ -5264,7 +5325,7 @@ pub const Parser = struct {
         var values = std.ArrayList(*Node).empty;
         const first_val = try self.parseExpr();
         try values.append(self.allocator, first_val);
-        while (self.current.tag == .comma) {
+        while (self.tokens.tag(self.tok) == .comma) {
             self.advance();
             const val = try self.parseExpr();
             try values.append(self.allocator, val);
@@ -5297,43 +5358,155 @@ pub const Parser = struct {
         const multiplicative: u8 = 11; // * / %
     };
 
-    fn binaryPrec(self: *const Parser) u8 {
-        return switch (self.current.tag) {
-            .kw_or => Prec.logical_or,
-            .kw_and => Prec.logical_and,
-            .pipe => Prec.bit_or,
-            .caret => Prec.bit_xor,
-            .ampersand => Prec.bit_and,
-            .equal_equal, .bang_equal, .less, .less_equal, .greater, .greater_equal, .kw_in => Prec.comparison,
-            .less_less, .greater_greater => Prec.shift,
-            .plus, .minus => Prec.additive,
-            .star, .slash, .percent => Prec.multiplicative,
-            else => Prec.none,
-        };
-    }
+    const BinaryInfo = struct { prec: u8, op: ast.BinaryOp.Op, comparison: bool };
 
-    fn binaryOp(self: *const Parser) ?ast.BinaryOp.Op {
-        return switch (self.current.tag) {
-            .kw_and => .and_op,
-            .kw_or => .or_op,
-            .pipe => .bit_or,
-            .caret => .bit_xor,
-            .ampersand => .bit_and,
-            .plus => .add,
-            .minus => .sub,
-            .star => .mul,
-            .slash => .div,
-            .percent => .mod,
-            .equal_equal => .eq,
-            .bang_equal => .neq,
-            .less => .lt,
-            .less_equal => .lte,
-            .greater => .gt,
-            .greater_equal => .gte,
-            .less_less => .shl,
-            .greater_greater => .shr,
-            .kw_in => .in_op,
-            else => null,
+    /// One lookup per infix token: precedence tier, AST operator, and whether
+    /// the token joins a comparison chain (`in` shares the tier but never
+    /// chains).
+    fn binaryInfo(tag: Tag) ?BinaryInfo {
+        return switch (tag) {
+            .kw_or => .{ .prec = Prec.logical_or, .op = .or_op, .comparison = false },
+            .kw_and => .{ .prec = Prec.logical_and, .op = .and_op, .comparison = false },
+            .pipe => .{ .prec = Prec.bit_or, .op = .bit_or, .comparison = false },
+            .caret => .{ .prec = Prec.bit_xor, .op = .bit_xor, .comparison = false },
+            .ampersand => .{ .prec = Prec.bit_and, .op = .bit_and, .comparison = false },
+            .equal_equal => .{ .prec = Prec.comparison, .op = .eq, .comparison = true },
+            .bang_equal => .{ .prec = Prec.comparison, .op = .neq, .comparison = true },
+            .less => .{ .prec = Prec.comparison, .op = .lt, .comparison = true },
+            .less_equal => .{ .prec = Prec.comparison, .op = .lte, .comparison = true },
+            .greater => .{ .prec = Prec.comparison, .op = .gt, .comparison = true },
+            .greater_equal => .{ .prec = Prec.comparison, .op = .gte, .comparison = true },
+            .kw_in => .{ .prec = Prec.comparison, .op = .in_op, .comparison = false },
+            .less_less => .{ .prec = Prec.shift, .op = .shl, .comparison = false },
+            .greater_greater => .{ .prec = Prec.shift, .op = .shr, .comparison = false },
+            .plus => .{ .prec = Prec.additive, .op = .add, .comparison = false },
+            .minus => .{ .prec = Prec.additive, .op = .sub, .comparison = false },
+            .star => .{ .prec = Prec.multiplicative, .op = .mul, .comparison = false },
+            .slash => .{ .prec = Prec.multiplicative, .op = .div, .comparison = false },
+            .percent => .{ .prec = Prec.multiplicative, .op = .mod, .comparison = false },
+            .int_literal,
+            .float_literal,
+            .string_literal,
+            .raw_string_literal,
+            .char_literal,
+            .identifier,
+            .at_identifier,
+            .kw_if,
+            .kw_else,
+            .kw_then,
+            .kw_true,
+            .kw_false,
+            .kw_enum,
+            .kw_error,
+            .kw_raise,
+            .kw_try,
+            .kw_catch,
+            .kw_onfail,
+            .kw_case,
+            .kw_break,
+            .kw_continue,
+            .kw_while,
+            .kw_for,
+            .kw_return,
+            .kw_defer,
+            .kw_f32,
+            .kw_f64,
+            .kw_struct,
+            .kw_union,
+            .kw_xx,
+            .kw_Type,
+            .kw_null,
+            .kw_push,
+            .kw_ufcs,
+            .kw_protocol,
+            .kw_impl,
+            .kw_Self,
+            .kw_inline,
+            .kw_abi,
+            .kw_extern,
+            .kw_export,
+            .kw_asm,
+            .kw_intrinsic,
+            .kw_private,
+            .colon,
+            .colon_colon,
+            .colon_equal,
+            .semicolon,
+            .comma,
+            .dot,
+            .dot_dot,
+            .dot_dot_eq,
+            .dot_dot_lt,
+            .lt_dot_dot,
+            .lt_dot_dot_eq,
+            .lt_dot_dot_lt,
+            .eq_dot_dot,
+            .eq_dot_dot_eq,
+            .eq_dot_dot_lt,
+            .dollar,
+            .equal,
+            .bang,
+            .plus_equal,
+            .minus_equal,
+            .star_equal,
+            .slash_equal,
+            .percent_equal,
+            .ampersand_equal,
+            .pipe_equal,
+            .pipe_arrow,
+            .caret_equal,
+            .question,
+            .question_question,
+            .question_dot,
+            .tilde,
+            .less_less_equal,
+            .greater_greater_equal,
+            .l_paren,
+            .r_paren,
+            .l_brace,
+            .r_brace,
+            .l_bracket,
+            .r_bracket,
+            .arrow,
+            .fat_arrow,
+            .hash_run,
+            .hash_error,
+            .hash_import,
+            .hash_insert,
+            .hash_library,
+            .hash_framework,
+            .hash_using,
+            .hash_include,
+            .hash_source,
+            .hash_define,
+            .hash_flags,
+            .hash_identity,
+            .hash_expand,
+            .hash_objc_call,
+            .hash_jni_call,
+            .hash_jni_static_call,
+            .hash_jni_class,
+            .hash_jni_interface,
+            .hash_objc_class,
+            .hash_objc_protocol,
+            .hash_swift_class,
+            .hash_swift_struct,
+            .hash_swift_protocol,
+            .hash_extends,
+            .hash_implements,
+            .hash_jni_method_descriptor,
+            .hash_selector,
+            .hash_property,
+            .hash_get,
+            .hash_set,
+            .hash_jni_env,
+            .hash_jni_main,
+            .hash_context_extend,
+            .triple_minus,
+            .minus_minus,
+            .eof,
+            .invalid,
+            => null,
         };
     }
 
@@ -5344,11 +5517,9 @@ pub const Parser = struct {
         };
     }
 
-    fn isComparisonToken(self: *const Parser) bool {
-        return switch (self.current.tag) {
-            .less, .less_equal, .greater, .greater_equal, .equal_equal, .bang_equal => true,
-            else => false,
-        };
+    fn atComparison(self: *const Parser) bool {
+        const info = binaryInfo(self.tokens.tag(self.tok)) orelse return false;
+        return info.comparison;
     }
 
     /// Prefix shapes that may take a named aggregate body `Type{...}`:
@@ -5432,10 +5603,8 @@ pub const Parser = struct {
     }
 
     fn braceIsEmpty(self: *Parser) bool {
-        if (self.current.tag != .l_brace) return false;
-        var lex = self.lexer;
-        const tok = lex.next();
-        return tok.tag == .r_brace;
+        if (self.tokens.tag(self.tok) != .l_brace) return false;
+        return self.tokens.tag(self.tokens.next(self.tok)) == .r_brace;
     }
 
     /// The markers a brace group carries at its OWN top level — what tells an
@@ -5458,20 +5627,20 @@ pub const Parser = struct {
     /// belongs to that group rather than to the brace body.
     fn scanBraceShape(self: *Parser) BraceShape {
         var shape = BraceShape{};
-        var lex = self.lexer;
+        var i = self.tokens.next(self.tok);
         var depth: u32 = 1;
         var prev_was_name = false;
-        while (true) {
-            const tok = lex.next();
-            if (tok.tag == .eof) break;
-            if (tok.tag == .r_brace) {
+        while (true) : (i = self.tokens.next(i)) {
+            const t = self.tokens.tag(i);
+            if (t == .eof) break;
+            if (t == .r_brace) {
                 depth -= 1;
                 if (depth == 0) break;
             }
             shape.saw_token = true;
             const top = depth == 1;
             var names = false;
-            switch (tok.tag) {
+            switch (t) {
                 .l_brace, .l_paren, .l_bracket => depth += 1,
                 .r_paren, .r_bracket => if (depth > 1) {
                     depth -= 1;
@@ -5496,7 +5665,7 @@ pub const Parser = struct {
                     names = top;
                 },
                 .identifier => names = top,
-                else => names = top and getKeyword(self.source[tok.loc.start..tok.loc.end]) != null,
+                else => names = top and t.isKeyword(),
             }
             prev_was_name = names;
         }
@@ -5506,7 +5675,7 @@ pub const Parser = struct {
     /// Peek whether the brace group at `current` is aggregate-shaped (fields /
     /// commas / empty) vs statement-shaped (`;`, `:=`, statement keywords).
     fn braceLooksLikeAggregateBody(self: *Parser) bool {
-        if (self.current.tag != .l_brace) return false;
+        if (self.tokens.tag(self.tok) != .l_brace) return false;
         const shape = self.scanBraceShape();
         if (!shape.saw_token) return true; // empty `{}` is aggregate-shaped
         if (shape.semi or shape.stmt_kw or shape.push_kw or shape.colon_eq) return false;
@@ -5522,7 +5691,7 @@ pub const Parser = struct {
     /// - top-level `name =` or top-level `,` → aggregate (`Plan{ x = 1 }`, `T{1, 2}`)
     /// - otherwise → trailing (statement blocks that omit `;` after `if`/`for`)
     fn braceLooksLikeNamedAggregate(self: *Parser, call_args: []const *Node, brace_is_tight: bool) bool {
-        if (self.current.tag != .l_brace) return false;
+        if (self.tokens.tag(self.tok) != .l_brace) return false;
         const shape = self.scanBraceShape();
         if (!shape.saw_token) {
             // Empty / comment-only `{}`: type application vs empty trailing
@@ -5538,20 +5707,21 @@ pub const Parser = struct {
     /// Separator-dot `Type.{…}` is invalid. Point at the `.` and offer the
     /// compact `Type{…}` spelling.
     fn failNamedAggregateDot(self: *Parser) error{ParseError} {
-        // `current` is `{`; the separator `.` ends at `prev_end`.
-        const dot_start = if (self.prev_end > 0) self.prev_end - 1 else self.current.loc.start;
-        const dot_end = self.prev_end;
+        // The cursor is on `{`; the separator `.` is the token before it.
+        const sep_end = self.tokens.end(self.tokens.prev(self.tok));
+        const dot_start = if (sep_end > 0) sep_end - 1 else self.tokens.start(self.tok);
+        const dot_end = sep_end;
         const msg = named_aggregate_dot_msg;
         self.err_msg = msg;
         self.err_offset = dot_start;
-        self.err_end = self.current.loc.end;
+        self.err_end = self.tokens.end(self.tok);
         if (self.diagnostics) |diags| {
             const id = diags.addId(.err, msg, .{ .start = dot_start, .end = dot_end });
             // Rebuild the current line with the separator dot removed as fix-it.
             // Help span covers the `.{` region so carets sit on the edit.
-            const line = errors.lineAt(self.source, dot_start);
+            const line = errors.lineAt(self.tokens.source, dot_start);
             var line_start: u32 = dot_start;
-            while (line_start > 0 and self.source[line_start - 1] != '\n') : (line_start -= 1) {}
+            while (line_start > 0 and self.tokens.source[line_start - 1] != '\n') : (line_start -= 1) {}
             const rel_dot = dot_start - line_start;
             var fix_buf: std.ArrayList(u8) = .empty;
             defer fix_buf.deinit(self.allocator);
@@ -5559,7 +5729,7 @@ pub const Parser = struct {
                 fix_buf.appendSlice(self.allocator, line[0..rel_dot]) catch {};
                 fix_buf.appendSlice(self.allocator, line[rel_dot + 1 ..]) catch {};
                 const fix = fix_buf.toOwnedSlice(self.allocator) catch null;
-                diags.addHelp(id, .{ .start = dot_start, .end = self.current.loc.end }, "write the type, then '{'", fix);
+                diags.addHelp(id, .{ .start = dot_start, .end = self.tokens.end(self.tok) }, "write the type, then '{'", fix);
             } else {
                 diags.addHelp(id, null, "write `Type{...}` — remove the separator dot", null);
             }
@@ -5569,30 +5739,15 @@ pub const Parser = struct {
 
     /// Peek at the next token's tag without consuming.
     fn peekNext(self: *Parser) Tag {
-        const saved_lexer = self.lexer;
-        const tok = self.lexer.next();
-        self.lexer = saved_lexer;
-        return tok.tag;
+        return self.tokens.tag(self.tokens.next(self.tok));
     }
 
     /// With `current` on `(`: the tag of the token right after the matching
     /// `)`, scanning a throwaway copy of the lexer. Only parens are counted —
     /// they must balance lexically regardless of what nests inside.
     fn tagAfterParenGroup(self: *Parser) Tag {
-        var lex = self.lexer;
-        var depth: u32 = 1;
-        while (true) {
-            const tok = lex.next();
-            switch (tok.tag) {
-                .l_paren => depth += 1,
-                .r_paren => {
-                    depth -= 1;
-                    if (depth == 0) return lex.next().tag;
-                },
-                .eof => return .eof,
-                else => {},
-            }
-        }
+        const close = self.tokens.scanBalanced(self.tok, .l_paren, .r_paren) orelse return .eof;
+        return self.tokens.tag(self.tokens.next(close));
     }
 
     /// For-header capture rule: a top-level `(` group immediately followed by
@@ -5631,56 +5786,24 @@ pub const Parser = struct {
     }
 
     fn advance(self: *Parser) void {
-        self.prev_end = self.current.loc.end;
-        self.current = self.lexer.next();
+        self.tok = self.tokens.next(self.tok);
     }
 
     // ---- Whitespace is syntax (specs §1: Whitespace is Syntax) ----
-
-    /// Where a token was WRITTEN. A raw identifier's `loc` deliberately
-    /// excludes its leading backtick so its text is the bare name, but the
-    /// whitespace rules read the source as typed — `` *`i2 `` is glued.
-    fn writtenStart(tok: Token) u32 {
-        return if (tok.is_raw) tok.loc.start - 1 else tok.loc.start;
-    }
-
-    /// True when nothing at all separates `current` from the token before it.
-    /// The glue rule reads this: `(` and `[` bind to what precedes them only
-    /// when glued.
-    fn currentIsGlued(self: *const Parser) bool {
-        return self.prev_end == writtenStart(self.current);
-    }
-
-    /// True when the gap before `current` crosses a line. A same-line gap is
-    /// fatal wherever the glue rule applies; a line break is not a spacing
-    /// mistake, so it leaves the ordinary path to report what it finds.
-    fn gapCrossesLine(self: *const Parser) bool {
-        return std.mem.indexOfScalar(u8, self.source[self.prev_end..writtenStart(self.current)], '\n') != null;
-    }
 
     /// The written form with the offending gap closed — `foo (2)` → `foo(2)` —
     /// for the spacing diagnostics. Null when the bracket group is unbalanced,
     /// spans a line, or is too long to quote back usefully.
     fn gluedSpelling(self: *Parser, head_start: u32) ?[]const u8 {
-        const open = self.current.tag;
+        const open = self.tokens.tag(self.tok);
         const close: Tag = if (open == .l_paren) .r_paren else .r_bracket;
-        var lex = self.lexer;
-        var depth: u32 = 1;
-        var end: u32 = self.current.loc.end;
-        while (depth > 0) {
-            const tok = lex.next();
-            if (tok.tag == .eof) return null;
-            if (tok.tag == open) {
-                depth += 1;
-            } else if (tok.tag == close) {
-                depth -= 1;
-                end = tok.loc.end;
-            }
-        }
+        const close_idx = self.tokens.scanBalanced(self.tok, open, close) orelse return null;
+        const end = self.tokens.end(close_idx);
         // A raw head's span starts after its backtick; quote it back as written.
-        const head_written = if (head_start > 0 and self.source[head_start - 1] == '`') head_start - 1 else head_start;
-        const head = self.source[head_written..self.prev_end];
-        const args = self.source[self.current.loc.start..end];
+        const source = self.tokens.source;
+        const head_written = if (head_start > 0 and source[head_start - 1] == '`') head_start - 1 else head_start;
+        const head = source[head_written..self.tokens.end(self.tokens.prev(self.tok))];
+        const args = source[self.tokens.start(self.tok)..end];
         if (head.len + args.len > 48) return null;
         if (std.mem.indexOfScalar(u8, head, '\n') != null) return null;
         if (std.mem.indexOfScalar(u8, args, '\n') != null) return null;
@@ -5694,7 +5817,7 @@ pub const Parser = struct {
     /// that fixes it. Spans the gap plus the bracket, so the caret sits under
     /// what has to go.
     fn failSpacedForm(self: *Parser, head_start: u32, form: SpacedForm) error{ParseError} {
-        const loc: Token.Loc = .{ .start = self.prev_end, .end = self.current.loc.end };
+        const loc: Token.Loc = .{ .start = self.tokens.end(self.tokens.prev(self.tok)), .end = self.tokens.end(self.tok) };
         const fix = self.gluedSpelling(head_start);
         const msg = switch (form) {
             .call => if (fix) |f|
@@ -5716,43 +5839,15 @@ pub const Parser = struct {
     /// The glue rule in a TYPE position: an argument list never crosses a
     /// statement boundary, so any gap at all is the spacing mistake.
     fn requireTypeArgGlue(self: *Parser, head_start: u32) !void {
-        if (!self.currentIsGlued()) return self.failSpacedForm(head_start, .type_args);
-    }
-
-    /// The spacing rule for infix `-` / `*`: they read as infix only when the
-    /// gaps on BOTH sides match — `a - b` or `a-b`. Glued on the right and
-    /// spaced on the left, the operator is a prefix `-` / `*` opening a new
-    /// operand; the mirror shape (`a- b`) is neither reading.
-    fn infixSpacingMatches(self: *const Parser) bool {
-        var lex = self.lexer;
-        const next = lex.next();
-        const left_spaced = self.prev_end != self.current.loc.start;
-        const right_spaced = self.current.loc.end != writtenStart(next);
-        return left_spaced == right_spaced;
-    }
-
-    fn failLopsidedOperator(self: *Parser) error{ParseError} {
-        const op = self.tokenSlice(self.current);
-        const reads_as_prefix = self.prev_end != self.current.loc.start;
-        return if (reads_as_prefix)
-            self.failFmt(
-                "`{s}` is spaced on its left and glued on its right, so it reads as a prefix `{s}` opening a new operand — an infix `{s}` needs matching spacing: write `a {s} b` or `a{s}b`",
-                .{ op, op, op, op, op },
-            )
-        else
-            self.failFmt(
-                "`{s}` is glued on its left and spaced on its right — an infix operator needs matching spacing on both sides: write `a {s} b` or `a{s}b`",
-                .{ op, op, op },
-            );
+        if (!self.tokens.flagsOf(self.tok).glued_left) return self.failSpacedForm(head_start, .type_args);
     }
 
     /// A token that cannot START a statement, so a line break in front of it
     /// continues the statement above instead of ending it. `-` and `*` are
-    /// deliberately absent: the spacing rule already decided them — a leading
-    /// `- b` keeps the gaps matched and never reaches a terminator, while `-b`
-    /// opens a fresh operand and so is a statement of its own. `case` is absent
-    /// too: it heads a `match` arm, and an arm is a statement in the only
-    /// position where `case` is legal.
+    /// deliberately absent: a line-leading `- b` continues the expression
+    /// above, while a glued `-b` opens a fresh operand and so is a statement of
+    /// its own. `case` is absent too: it heads a `match` arm, and an arm is a
+    /// statement in the only position where `case` is legal.
     ///
     /// The property is the rule and this list is its enumeration, so a token
     /// belongs here as soon as some construct parser can reach a terminator
@@ -5783,7 +5878,7 @@ pub const Parser = struct {
     /// and keep demanding their `;`. A statement-list arm holds ordinary
     /// statements, which end here like any others.
     fn expectStatementEnd(self: *Parser) !void {
-        if (self.current.tag == .semicolon) {
+        if (self.tokens.tag(self.tok) == .semicolon) {
             self.advance();
             return;
         }
@@ -5796,9 +5891,9 @@ pub const Parser = struct {
     /// exactly where a `;` would, and so does the end of the file — there is
     /// no next statement for the one below to run into.
     fn implicitTerminator(self: *const Parser) bool {
-        if (self.current.tag == .eof) return true;
-        if (continuesStatement(self.current.tag) and !self.atMatchDefaultArm()) return false;
-        return self.gapCrossesLine();
+        if (self.tokens.tag(self.tok) == .eof) return true;
+        if (continuesStatement(self.tokens.tag(self.tok)) and !self.atMatchDefaultArm()) return false;
+        return self.tokens.flagsOf(self.tok).newline_left;
     }
 
     /// `else` with a GLUED `:` heads a `match`'s default arm; every other
@@ -5806,16 +5901,15 @@ pub const Parser = struct {
     /// disambiguation, and it decides both readings: an arm head ends the
     /// statement above it, a chaining `else` reads on through the break.
     fn atMatchDefaultArm(self: *const Parser) bool {
-        if (self.current.tag != .kw_else) return false;
-        var lex = self.lexer;
-        const tok = lex.next();
-        return tok.tag == .colon and writtenStart(tok) == self.current.loc.end;
+        if (self.tokens.tag(self.tok) != .kw_else) return false;
+        const n = self.tokens.next(self.tok);
+        return self.tokens.tag(n) == .colon and self.tokens.flagsOf(n).glued_left;
     }
 
     /// True at an `else` that chains the enclosing `if` — every `else` but a
     /// `match` default-arm head.
     fn atChainingElse(self: *const Parser) bool {
-        return self.current.tag == .kw_else and !self.atMatchDefaultArm();
+        return self.tokens.tag(self.tok) == .kw_else and !self.atMatchDefaultArm();
     }
 
     /// True where the statement or declaration could end right here — at its
@@ -5825,27 +5919,26 @@ pub const Parser = struct {
     /// declaration would not have, so arm ordering stops deciding which of the
     /// two readings wins.
     fn atStatementEnd(self: *const Parser) bool {
-        return self.current.tag == .semicolon or self.implicitTerminator();
+        return self.tokens.tag(self.tok) == .semicolon or self.implicitTerminator();
     }
 
-    /// The spacing rule for a prefix `-` / `*`: it binds only when glued to its
-    /// operand. That is what makes `a -b` the prefix reading and `a - b` the
-    /// infix one, so a spaced prefix has no reading left.
-    fn requirePrefixGlue(self: *Parser, op_start: u32) !void {
-        if (self.currentIsGlued()) return;
-        const op = self.source[op_start .. op_start + 1];
+    /// The spacing rule for a prefix `-` / `--` / `*`: it binds only when glued
+    /// to its operand, so a spaced prefix has no reading left.
+    fn requirePrefixGlue(self: *Parser, op: Token.Loc) !void {
+        if (self.tokens.flagsOf(self.tok).glued_left) return;
+        const text = self.tokens.source[op.start..op.end];
         return self.failAt(
-            Token.Loc{ .start = op_start, .end = writtenStart(self.current) },
+            Token.Loc{ .start = op.start, .end = self.tokens.writtenStart(self.tok) },
             std.fmt.allocPrint(
                 self.allocator,
                 "a space after the prefix `{s}` — a prefix operator binds only when glued to its operand",
-                .{op},
+                .{text},
             ) catch return error.ParseError,
         );
     }
 
     fn expect(self: *Parser, tag: Tag) !void {
-        if (self.current.tag != tag) {
+        if (self.tokens.tag(self.tok) != tag) {
             const expected = tag.lexeme() orelse @tagName(tag);
             return self.failFmt("expected '{s}'", .{expected});
         }
@@ -5878,10 +5971,6 @@ pub const Parser = struct {
         if (self.inCleanupBody()) {
             return self.failFmt("`" ++ kw ++ "` is not allowed inside {s} body — cleanup runs while the function is already exiting, so there is nothing to transfer control to", .{self.cleanupKind()});
         }
-    }
-
-    fn tokenSlice(self: *const Parser, token: Token) []const u8 {
-        return self.source[token.loc.start..token.loc.end];
     }
 
     /// Detect the base of an integer-literal token (`0x`/`0o`/`0b` prefixes),
@@ -5927,8 +6016,8 @@ pub const Parser = struct {
     /// an identifier-shaped keyword; null otherwise (a real syntax error there,
     /// left for the caller to report).
     fn dotMemberName(self: *Parser) ?[]const u8 {
-        const txt = self.tokenSlice(self.current);
-        if (self.current.tag == .identifier or getKeyword(txt) != null) {
+        const txt = self.tokens.slice(self.tok);
+        if (self.tokens.tag(self.tok) == .identifier or self.tokens.tag(self.tok).isKeyword()) {
             self.advance();
             return txt;
         }
@@ -5940,15 +6029,15 @@ pub const Parser = struct {
     /// identifiers, and every keyword except `inline` — declaration
     /// position holds only declarations, access is dot-disambiguated.
     fn isMemberDeclName(self: *Parser) bool {
-        if (self.current.tag == .identifier) return true;
-        if (self.current.tag == .kw_inline) return false;
-        return getKeyword(self.tokenSlice(self.current)) != null;
+        if (self.tokens.tag(self.tok) == .identifier) return true;
+        if (self.tokens.tag(self.tok) == .kw_inline) return false;
+        return self.tokens.tag(self.tok).isKeyword();
     }
 
     /// Member-name reject: `inline` (the one excluded keyword) gets its
     /// targeted escape-hint; anything else the site's own message.
     fn failMemberDeclName(self: *Parser, msg: []const u8) error{ParseError} {
-        if (self.current.tag == .kw_inline) {
+        if (self.tokens.tag(self.tok) == .kw_inline) {
             return self.fail("'inline' cannot name a member bare — escape it with a backtick (`inline) or rename");
         }
         return self.fail(msg);
@@ -5956,16 +6045,16 @@ pub const Parser = struct {
 
     fn fail(self: *Parser, msg: []const u8) error{ParseError} {
         self.err_msg = msg;
-        self.err_offset = self.current.loc.start;
-        self.err_end = self.current.loc.end;
+        self.err_offset = self.tokens.start(self.tok);
+        self.err_end = self.tokens.end(self.tok);
         if (self.diagnostics) |diags| {
-            diags.add(.err, msg, .{ .start = self.current.loc.start, .end = self.current.loc.end });
+            diags.add(.err, msg, .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) });
         }
         return error.ParseError;
     }
 
     /// Like `fail`, but pins the diagnostic to an explicit source span rather
-    /// than `self.current` — used when the offending token has already been
+    /// than the current token — used when the offending token has already been
     /// consumed (e.g. a lookahead committed past it before the reject decision).
     fn failAt(self: *Parser, loc: anytype, msg: []const u8) error{ParseError} {
         self.err_msg = msg;
@@ -5983,16 +6072,16 @@ pub const Parser = struct {
 // of token that CAN open one and therefore must end the statement above.
 test "continuesStatement: the suppression set member by member" {
     const members = [_]Tag{
-        .kw_and,          .kw_or,     .kw_then,          .kw_else,
-        .kw_catch,        .pipe,      .plus,
-        .equal_equal,     .bang_equal, .less_equal,      .greater_equal,
-        .less_less,       .greater_greater, .pipe_arrow, .question_question,
-        .question_dot,    .comma,     .equal,            .colon_colon,
-        .arrow,           .fat_arrow,
+        .kw_and,          .kw_or,      .kw_then,           .kw_else,
+        .kw_catch,        .pipe,       .plus,              .equal_equal,
+        .bang_equal,      .less_equal, .greater_equal,     .less_less,
+        .greater_greater, .pipe_arrow, .question_question, .question_dot,
+        .comma,           .equal,      .colon_colon,       .arrow,
+        .fat_arrow,
         // Reorder-forced members: `parseTypedBinding` and `parseConstBinding`
         // now ask `atStatementEnd` before dispatching on these three, so each
         // one reaches a terminator query and has to answer it.
-        .colon,           .kw_extern, .kw_intrinsic,
+              .colon,      .kw_extern,         .kw_intrinsic,
     };
     for (members) |tag| try std.testing.expect(Parser.continuesStatement(tag));
 
@@ -6000,19 +6089,20 @@ test "continuesStatement: the suppression set member by member" {
     // rules own — none of them suppresses a terminator. `case` heads a `match`
     // arm, which is a statement, so it ends the statement above it.
     const negatives = [_]Tag{
-        .kw_case,    .identifier,  .int_literal,    .string_literal,
-        .l_brace,    .r_brace,
-        .l_paren,    .l_bracket,   .bang,           .dot,      .minus,
-        .star,       .semicolon,   .eof,            .kw_if,    .kw_while,
-        .kw_for,     .kw_return,   .kw_defer,       .kw_onfail, .kw_break,
-        .kw_continue, .kw_raise,   .kw_export,      .kw_push,   .kw_try,
-        .colon_equal, .plus_equal, .minus_equal,    .star_equal, .slash_equal,
-        .percent_equal, .ampersand_equal, .pipe_equal, .caret_equal,
+        .kw_case,       .identifier,      .int_literal, .string_literal,
+        .l_brace,       .r_brace,         .l_paren,     .l_bracket,
+        .bang,          .dot,             .minus,       .minus_minus,
+        .star,          .semicolon,       .eof,         .kw_if,
+        .kw_while,      .kw_for,          .kw_return,   .kw_defer,
+        .kw_onfail,     .kw_break,        .kw_continue, .kw_raise,
+        .kw_export,     .kw_push,         .kw_try,      .colon_equal,
+        .plus_equal,    .minus_equal,     .star_equal,  .slash_equal,
+        .percent_equal, .ampersand_equal, .pipe_equal,  .caret_equal,
         // Binary operators outside the set: the Pratt loop consumes them before
         // any terminator query, so membership decides nothing for them — the
         // behavioural lock lives in parser.test.zig.
-        .slash,      .percent,     .ampersand,      .caret,    .less,
-        .greater,    .kw_in,
+        .slash,         .percent,         .ampersand,   .caret,
+        .less,          .greater,         .kw_in,
     };
     for (negatives) |tag| try std.testing.expect(!Parser.continuesStatement(tag));
 }
@@ -6021,7 +6111,7 @@ test "parse minimal main" {
     const source = "main :: () { 42; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expect(root.data == .root);
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
@@ -6041,15 +6131,15 @@ test "parseOptionalExternExport recognizes linkage keywords (unconsumed)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     {
-        var parser = Parser.init(arena.allocator(), "extern");
+        var parser = try Parser.init(arena.allocator(), "extern");
         try std.testing.expectEqual(ast.ExternExportModifier.extern_, parser.parseOptionalExternExport());
     }
     {
-        var parser = Parser.init(arena.allocator(), "export");
+        var parser = try Parser.init(arena.allocator(), "export");
         try std.testing.expectEqual(ast.ExternExportModifier.export_, parser.parseOptionalExternExport());
     }
     {
-        var parser = Parser.init(arena.allocator(), "foo");
+        var parser = try Parser.init(arena.allocator(), "foo");
         try std.testing.expectEqual(ast.ExternExportModifier.none, parser.parseOptionalExternExport());
     }
 }
@@ -6059,7 +6149,7 @@ test "extern/export AST fields default to absent (unconsumed)" {
     // the fn-decl path does not consume the modifier.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () {}");
+    var parser = try Parser.init(arena.allocator(), "f :: () {}");
     const root = try parser.parse();
     const fd = root.data.root.decls[0].data.fn_decl;
     try std.testing.expectEqual(ast.ExternExportModifier.none, fd.extern_export);
@@ -6080,7 +6170,7 @@ test "extern/export AST fields default to absent (unconsumed)" {
 test "block value: trailing expr without `;` produces a value" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> i32 { 42 }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> i32 { 42 }");
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     try std.testing.expect(body.data.block.produces_value);
@@ -6089,7 +6179,7 @@ test "block value: trailing expr without `;` produces a value" {
 test "block value: a trailing `;` leaves the value untouched" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> i32 { 42; }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> i32 { 42; }");
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     try std.testing.expect(body.data.block.produces_value);
@@ -6098,7 +6188,7 @@ test "block value: a trailing `;` leaves the value untouched" {
 test "block value: a declaration tail leaves the block value-less" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> i32 { n := 42; }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> i32 { n := 42; }");
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     try std.testing.expect(!body.data.block.produces_value);
@@ -6107,7 +6197,7 @@ test "block value: a declaration tail leaves the block value-less" {
 test "block value: an arm's written `;` still leaves the arm producing a value" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: (n: i32) -> i32 { if n == { case 1: 5; else: 0; } }");
+    var parser = try Parser.init(arena.allocator(), "f :: (n: i32) -> i32 { if n == { case 1: 5; else: 0; } }");
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     // Function body's trailing match has no `;` → the body is a value.
@@ -6124,7 +6214,7 @@ test "parse #run const binding" {
     const source = "x :: #run compute(5);";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6139,7 +6229,7 @@ test "parse top-level #run" {
     const source = "#run main();";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6152,7 +6242,7 @@ test "parse flat import" {
     const source = "#import \"modules/std/math.sx\";";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6165,7 +6255,7 @@ test "parse namespaced import" {
     const source = "std :: #import \"modules/std/std.sx\";";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6178,7 +6268,7 @@ test "parse library declaration" {
     const source = "rl :: #library \"raylib\";";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6191,7 +6281,7 @@ test "parse void function with builtin body" {
     const source = "foo :: () intrinsic;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6206,7 +6296,7 @@ test "parse void function with extern import" {
     const source = "InitWindow :: (width: i32, height: i32, title: *u8) -> void extern rl;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6223,7 +6313,7 @@ test "parse void function with arrow body" {
     const source = "foo :: () => 42;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6242,7 +6332,7 @@ test "parse hex and binary literals" {
     const source = "main :: () { 0xFF; 0b1010; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     try std.testing.expectEqual(@as(usize, 2), body.data.block.stmts.len);
@@ -6254,7 +6344,7 @@ test "parse array type with identifier length" {
     const source = "foo :: (arr: [N]f32) => arr;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const decl = root.data.root.decls[0];
     try std.testing.expect(decl.data == .fn_decl);
@@ -6270,7 +6360,7 @@ test "parse lambda with generic params" {
     const source = "f :: (x: $T) => x;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const decl = root.data.root.decls[0];
     // A named `::` arrow function is a fn_decl (carrying its own type params).
@@ -6286,7 +6376,7 @@ test "parse lambda with return type" {
     const source = "f :: (x: i32) -> i32 => x;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const decl = root.data.root.decls[0];
     try std.testing.expect(decl.data == .fn_decl);
@@ -6308,7 +6398,7 @@ test "parse match with else arm" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     // second stmt is the match expr (after var decl)
@@ -6326,7 +6416,7 @@ test "integer literal overflow error" {
     const source = "main :: () { 99999999999999999999; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const result = parser.parse();
     try std.testing.expectError(error.ParseError, result);
     try std.testing.expectEqualStrings("integer literal overflow", parser.err_msg.?);
@@ -6336,7 +6426,7 @@ test "parse pack-constrained variadic parameter (..xs: Protocol)" {
     const source = "map :: (..sources: ValueListenable) => sources;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const params = root.data.root.decls[0].data.fn_decl.params;
     try std.testing.expectEqual(@as(usize, 1), params.len);
@@ -6354,7 +6444,7 @@ test "parse slice variadic is NOT a pack (..xs: []T)" {
     const source = "join :: (..parts: []string) => parts;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const p = root.data.root.decls[0].data.fn_decl.params[0];
     try std.testing.expect(p.is_variadic);
@@ -6366,7 +6456,7 @@ test "parse comptime type-pack is NOT a protocol pack (..$args)" {
     const source = "foo :: (..$args) => args;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const p = root.data.root.decls[0].data.fn_decl.params[0];
     try std.testing.expect(p.is_variadic);
@@ -6383,7 +6473,7 @@ test "parse pack expansion: brace value .{..xs}" {
     const source = "f :: () => .{..xs};";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const lit = body.data.block.stmts[0];
@@ -6399,7 +6489,7 @@ test "parse pack expansion: brace value projection .{..xs.value}" {
     const source = "f :: () => .{..xs.value};";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const lit = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
     const el = lit.data.struct_literal.field_inits[0].value;
@@ -6415,7 +6505,7 @@ test "parse pack expansion: tuple type Tuple(..F(Ts))" {
     const source = "g :: (x: Tuple(..F(Ts))) => x;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const ty = root.data.root.decls[0].data.fn_decl.params[0].type_expr;
     try std.testing.expect(ty.data == .tuple_type_expr);
@@ -6431,7 +6521,7 @@ test "parse pack expansion: closure sig projection Closure(..sources.T)" {
     const source = "h :: (cb: Closure(..sources.T) -> i32) => cb;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const ty = root.data.root.decls[0].data.fn_decl.params[0].type_expr;
     try std.testing.expect(ty.data == .closure_type_expr);
@@ -6443,7 +6533,7 @@ test "parse closure sig bare pack Closure(..Ts) has no projection" {
     const source = "j :: (cb: Closure(..Ts) -> i32) => cb;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const ty = root.data.root.decls[0].data.fn_decl.params[0].type_expr;
     try std.testing.expect(ty.data == .closure_type_expr);
@@ -6455,7 +6545,7 @@ test "parse pack expansion: call-arg spread q(..xs) reuses spread_expr" {
     const source = "k :: () => q(..xs);";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const call = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
     try std.testing.expect(call.data == .call);
@@ -6469,7 +6559,7 @@ test "parse error-set decl: tags collected" {
     const source = "ParseErr :: error { BadDigit, Overflow, Empty }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     try std.testing.expectEqual(@as(usize, 1), root.data.root.decls.len);
     const decl = root.data.root.decls[0];
@@ -6486,7 +6576,7 @@ test "parse error-set decl: single tag, trailing comma, trailing semicolon" {
     const source = "E :: error { Only, };";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const decl = root.data.root.decls[0];
     try std.testing.expect(decl.data == .error_set_decl);
@@ -6499,7 +6589,7 @@ test "parse bare failable return: inferred `!`" {
     const source = "f :: () -> ! { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     try std.testing.expect(rt.data == .error_type_expr);
@@ -6510,7 +6600,7 @@ test "parse bare failable return: named `!Foo`" {
     const source = "f :: () -> !ParseErr { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     try std.testing.expect(rt.data == .error_type_expr);
@@ -6521,7 +6611,7 @@ test "parse single-value failable `-> (T, !)`" {
     const source = "f :: () -> (i32, !) { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     try std.testing.expect(rt.data == .tuple_type_expr);
@@ -6537,7 +6627,7 @@ test "parse multi-value named failable `-> (A, B, !Foo)`" {
     const source = "f :: () -> (i32, i64, !ParseErr) { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     try std.testing.expect(rt.data == .return_type_expr or rt.data == .tuple_type_expr);
@@ -6551,7 +6641,7 @@ test "parse bare failable `-> T !` is rejected" {
     const source = "f :: () -> i32 ! { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -6559,7 +6649,7 @@ test "parse bare-paren failable `-> (!, i32)` is rejected" {
     const source = "f :: () -> (!, i32) { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -6567,7 +6657,7 @@ test "parse bare-paren failable `-> (i32, !, i64)` is rejected" {
     const source = "f :: () -> (i32, !, i64) { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -6575,7 +6665,7 @@ test "round-trip print: error-set decl" {
     const source = "ParseErr :: error { BadDigit, Overflow, Empty }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     var aw = std.Io.Writer.Allocating.init(arena.allocator());
     try print.printNode(root.data.root.decls[0], &aw.writer);
@@ -6588,7 +6678,7 @@ test "print: failable result list with pointer + named error renders canonically
     const source = "open :: () -> (*Handle, !IoErr) { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     var aw = std.Io.Writer.Allocating.init(arena.allocator());
@@ -6600,7 +6690,7 @@ test "round-trip print: bare inferred and named error types" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     {
-        var parser = Parser.init(arena.allocator(), "f :: () -> ! { 0; }");
+        var parser = try Parser.init(arena.allocator(), "f :: () -> ! { 0; }");
         const root = try parser.parse();
         const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
         var aw = std.Io.Writer.Allocating.init(arena.allocator());
@@ -6608,7 +6698,7 @@ test "round-trip print: bare inferred and named error types" {
         try std.testing.expectEqualStrings("!", aw.writer.toArrayList().items);
     }
     {
-        var parser = Parser.init(arena.allocator(), "f :: () -> !ParseErr { 0; }");
+        var parser = try Parser.init(arena.allocator(), "f :: () -> !ParseErr { 0; }");
         const root = try parser.parse();
         const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
         var aw = std.Io.Writer.Allocating.init(arena.allocator());
@@ -6622,7 +6712,7 @@ test "round-trip print: bare inferred and named error types" {
 /// Parse `src` (a single `f :: () { ... }` decl) and return its body's first
 /// statement node.
 fn e02FirstStmt(alloc: std.mem.Allocator, src: [:0]const u8) anyerror!*Node {
-    var parser = Parser.init(alloc, src);
+    var parser = try Parser.init(alloc, src);
     const root = try parser.parse();
     return root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
 }
@@ -6779,7 +6869,7 @@ test "catch without binding and unbraced body is rejected" {
     // the no-binding form requires a braced body.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { v := foo() catch 42; }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { v := foo() catch 42; }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -6806,49 +6896,49 @@ test "raise variable form" {
 test "raise rejected in expression position" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { x := 1 + raise error.X; }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { x := 1 + raise error.X; }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "raise rejected inside an onfail body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { onfail { raise error.X; } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { onfail { raise error.X; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "raise rejected inside a defer body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { defer { raise error.X; } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { defer { raise error.X; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "return rejected inside a defer body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { defer { return; } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { defer { return; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "try rejected inside an onfail body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { onfail { try g(); } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { onfail { try g(); } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "break rejected inside a defer body (transitive through a loop)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { defer { for 0..1 (i) { break; } } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { defer { for 0..1 (i) { break; } } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
 test "continue rejected inside an onfail body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { onfail (e) { continue; } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { onfail (e) { continue; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -6857,7 +6947,7 @@ test "return inside a closure within a cleanup body is allowed" {
     // flags, so `return` from the closure body is legal even inside `defer`.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { defer g((x: i32) -> i32 { return x; }); }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { defer g((x: i32) -> i32 { return x; }); }");
     _ = try parser.parse();
 }
 
@@ -6865,7 +6955,7 @@ test "control-flow legal after the cleanup body (flag restored)" {
     // The cleanup-body flag must not leak to statements that follow the defer.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { defer cleanup(); return; }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { defer cleanup(); return; }");
     _ = try parser.parse();
 }
 
@@ -6998,7 +7088,7 @@ test "full failable function parses end-to-end (every failable form)" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const decl = root.data.root.decls[0];
     try std.testing.expect(decl.data == .fn_decl);
@@ -7033,7 +7123,7 @@ test "parse named aggregate Type{ fields } without separator dot" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[1].data.fn_decl.body;
     const stmts = body.data.block.stmts;
@@ -7060,7 +7150,7 @@ test "parse parameterized named aggregate List(T){}" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
@@ -7077,7 +7167,7 @@ test "parse empty trailing block after value-arg call" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[1].data.fn_decl.body;
     const call = body.data.block.stmts[0];
@@ -7094,7 +7184,7 @@ test "parse empty trailing block after capitalized value-arg call" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[1].data.fn_decl.body;
     const call = body.data.block.stmts[0];
@@ -7111,7 +7201,7 @@ test "parse lowercase parameterized named aggregate list(T){}" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
@@ -7130,7 +7220,7 @@ test "parse empty trailing block with identifier value args" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[1].data.fn_decl.body;
     const call = body.data.block.stmts[1];
@@ -7149,7 +7239,7 @@ test "parse empty trailing block with PascalCase callee and identifier arg" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[1].data.fn_decl.body;
     const call = body.data.block.stmts[1];
@@ -7170,7 +7260,7 @@ test "parse tight empty brace as aggregate regardless of arg spelling" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     for (body.data.block.stmts) |stmt| {
@@ -7191,7 +7281,7 @@ test "parse spaced empty brace with a type-expr arg as aggregate" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     for (body.data.block.stmts) |stmt| {
@@ -7215,7 +7305,7 @@ test "parse spaced empty brace with name-only args as trailing" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[3].data.fn_decl.body;
     for (body.data.block.stmts) |stmt| {
@@ -7233,7 +7323,7 @@ test "parse zero-arg empty brace as trailing even when tight" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[1].data.fn_decl.body;
     const call = body.data.block.stmts[0];
@@ -7251,7 +7341,7 @@ test "parse comment-only body keeps the tight aggregate reading" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
@@ -7275,7 +7365,7 @@ test "parse parameterized aggregate with compound and PascalCase type args" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     for (body.data.block.stmts) |stmt| {
@@ -7293,7 +7383,7 @@ test "parse rejects separator-dot Type.{}" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const result = parser.parse();
     try std.testing.expectError(error.ParseError, result);
     try std.testing.expect(parser.err_msg != null);
@@ -7310,7 +7400,7 @@ test "parse aggregate self-trailing via dot binds self flag" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
@@ -7329,7 +7419,7 @@ test "parse aggregate bare post-scope does not bind self" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
@@ -7348,7 +7438,7 @@ test "parse push Context{ fields } { body } without parens" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const stmt = body.data.block.stmts[0];
@@ -7366,11 +7456,87 @@ test "parse if cond { body } is not Type{}" {
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const ife = body.data.block.stmts[0];
     try std.testing.expect(ife.data == .if_expr);
     try std.testing.expect(ife.data.if_expr.condition.data == .identifier);
     try std.testing.expectEqualStrings("neg", ife.data.if_expr.condition.data.identifier.name);
+}
+
+/// Parse `src`, expect `error.ParseError`, and pin the diagnostic text +
+/// offset — the malformed-group policies (crossed, missing, EOF-truncated
+/// delimiters) each report through a specific site.
+fn expectParseErrorAt(src: [:0]const u8, msg: []const u8, offset: u32) !void {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), src);
+    try std.testing.expectError(error.ParseError, parser.parse());
+    try std.testing.expectEqualStrings(msg, parser.err_msg orelse "");
+    try std.testing.expectEqual(offset, parser.err_offset orelse std.math.maxInt(u32));
+}
+
+test "unterminated paren in lambda or grouping position fails as tuple" {
+    // isLambda and isFunctionTypeExprAtLParen both see no closer and decline;
+    // the grouping parse then runs into EOF.
+    try expectParseErrorAt("x := (a, b\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 7);
+    try expectParseErrorAt("x := ((a, b)\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 8);
+}
+
+test "crossed delimiters report missing closer at the unexpected token" {
+    // The paren scan passes `]` through unmatched; the element parse reports
+    // the missing `)` at the bracket.
+    try expectParseErrorAt("x := (a]; y := 1;", "expected ')'", 7);
+}
+
+test "function-type path without closer fails as tuple" {
+    // tagAfterParenGroup finds no `)` before EOF, so the `->` never counts as
+    // a function type and the tuple refusal fires.
+    try expectParseErrorAt("F :: (i32, i32 -> i32;", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 9);
+}
+
+test "return-type inline struct without closer reports missing brace" {
+    // hasFnBodyAfterArrow parks at .eof and classifies no body; the alias
+    // parse then demands the struct body's `}`.
+    try expectParseErrorAt("f :: () -> struct { x: i64;", "expected '}'", 27);
+}
+
+test "unterminated aggregate reports missing brace" {
+    try expectParseErrorAt("x := Plan{ a = 1", "expected '}'", 16);
+}
+
+test "spaced call reports glue diagnostic with fix only when balanced" {
+    // gluedSpelling finds no balanced group before EOF-of-statement, so the
+    // diagnostic carries no `write …` fix; the balanced spelling gets one.
+    try expectParseErrorAt("f :: () { g (1; }", "a space before `(` — a call binds only when the `(` is glued to its callee", 11);
+    try expectParseErrorAt("f :: () { g (1) }", "a space before `(` — a call binds only when the `(` is glued to its callee: write `g(1)`", 11);
+}
+
+test "lambda param list missing closer fails as tuple" {
+    try expectParseErrorAt("f :: (a: i32 { 1 }", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 6);
+}
+
+test "peekTag saturates at the eof row for any runtime offset" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "x :: 1;");
+    try std.testing.expectEqual(Tag.semicolon, parser.peekTag(3));
+    try std.testing.expectEqual(Tag.eof, parser.peekTag(4));
+    var offset: usize = 5;
+    while (offset < 100) : (offset += 17) {
+        try std.testing.expectEqual(Tag.eof, parser.peekTag(offset));
+    }
+}
+
+test "a lex OOM during construction surfaces as error.OutOfMemory, never ParseError" {
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
+    try std.testing.expectError(error.OutOfMemory, Parser.init(failing.allocator(), "x :: 1;"));
+}
+
+test "malformed source fails at parse, not at construction" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "f :: (");
+    try std.testing.expectError(error.ParseError, parser.parse());
 }

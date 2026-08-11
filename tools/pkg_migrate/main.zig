@@ -1,10 +1,10 @@
 //! pkg_migrate — syntax-aware migration tool for sx packages.
 //!
-//! Standalone on purpose: it must not require build.zig wiring, so it embeds
-//! a dedicated minimal scanner (scanner.zig) instead of importing the
-//! compiler's lexer. Run with:
+//! A build-wired executable over the compiler's own `TokenList`, so the
+//! lexical surface it migrates against is the one the compiler enforces. Run
+//! with:
 //!
-//!   zig run tools/pkg_migrate/main.zig -- <subcommand> [options] <paths...>
+//!   zig build pkg-migrate -- <subcommand> [options] <paths...>
 //!
 //! Subcommands: insert-package, rewrite-imports, qualify, to-package-dir,
 //! inventory. All mutating subcommands default to DRY-RUN (a unified-diff-
@@ -13,10 +13,14 @@
 //!
 //! Never perform the import migration with blind
 //! global substitutions — every rewrite below is occurrence-precise (exact
-//! token spans from the scanner) and fully reported.
+//! token spans) and fully reported.
 
 const std = @import("std");
-const scanner = @import("scanner.zig");
+const sxlex = @import("sxlex");
+const Tag = sxlex.token.Tag;
+const TokenList = sxlex.token_list.TokenList;
+const Index = sxlex.token_list.Index;
+pub const LineIndex = @import("line_index.zig").LineIndex;
 
 const usage_text =
     \\usage: pkg_migrate <subcommand> [options] <paths...>
@@ -143,8 +147,10 @@ fn run(
 
 const max_file_size = 64 * 1024 * 1024;
 
-fn readFile(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![]u8 {
-    return std.Io.Dir.readFileAlloc(.cwd(), io, path, allocator, .limited(max_file_size));
+fn readFile(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![:0]u8 {
+    const bytes = try std.Io.Dir.readFileAlloc(.cwd(), io, path, allocator, .limited(max_file_size));
+    defer allocator.free(bytes);
+    return allocator.dupeZ(u8, bytes);
 }
 
 /// Expand a mixed list of files and directories into a sorted list of `.sx`
@@ -234,7 +240,7 @@ fn printDiff(
     edits: []const Edit,
 ) !void {
     if (edits.len == 0) return;
-    const idx = try scanner.LineIndex.build(allocator, source);
+    const idx = try LineIndex.build(allocator, source);
     try w.print("--- a/{s}\n+++ b/{s}\n", .{ path, path });
 
     var line_delta: isize = 0;
@@ -351,27 +357,14 @@ fn isValidIdent(s: []const u8) bool {
     return true;
 }
 
-/// Non-comment token neighbors, for positional classification.
-fn prevCode(tokens: []const scanner.Token, i: usize) ?scanner.Token {
-    var j = i;
-    while (j > 0) {
-        j -= 1;
-        if (tokens[j].kind != .comment) return tokens[j];
-    }
-    return null;
+/// A bare word in the source. The compiler tags reserved spellings as their
+/// own keyword (`private` -> `.kw_private`), and a migration that reads them
+/// as anything but words would not see the collisions it exists to find.
+pub fn isWord(tag: Tag) bool {
+    return tag == .identifier or Tag.isKeyword(tag);
 }
 
-fn nextCode(tokens: []const scanner.Token, i: usize) ?scanner.Token {
-    var j = i + 1;
-    while (j < tokens.len) : (j += 1) {
-        if (tokens[j].kind == .comment) continue;
-        if (tokens[j].kind == .eof) return null;
-        return tokens[j];
-    }
-    return null;
-}
-
-const Category = enum {
+pub const Category = enum {
     member_access, // .name (also enum-literal position)
     decl_const, // name ::
     decl_local, // name :=
@@ -380,7 +373,7 @@ const Category = enum {
     assign_or_field_init, // name =  (assignment or struct-literal field init)
     other_use,
 
-    fn label(self: Category) []const u8 {
+    pub fn label(self: Category) []const u8 {
         return switch (self) {
             .member_access => "member-access",
             .decl_const => "decl-const",
@@ -393,28 +386,78 @@ const Category = enum {
     }
 };
 
-fn classify(source: []const u8, tokens: []const scanner.Token, i: usize) Category {
-    if (prevCode(tokens, i)) |p| {
-        if (p.kind == .punct and std.mem.eql(u8, p.slice(source), ".")) return .member_access;
+pub fn classify(tl: TokenList, i: Index) Category {
+    const p = tl.prev(i);
+    if (p != i) switch (tl.tag(p)) {
+        .dot, .question_dot => return .member_access,
+        else => {},
+    };
+    switch (tl.tag(tl.next(i))) {
+        .colon_colon => return .decl_const,
+        .colon_equal => return .decl_local,
+        .colon => return .typed_decl,
+        .l_paren => return .call,
+        .equal => return .assign_or_field_init,
+        else => return .other_use,
     }
-    if (nextCode(tokens, i)) |n| {
-        if (n.kind == .punct) {
-            const t = n.slice(source);
-            if (std.mem.eql(u8, t, "::")) return .decl_const;
-            if (std.mem.eql(u8, t, ":=")) return .decl_local;
-            if (std.mem.eql(u8, t, ":")) return .typed_decl;
-            if (std.mem.eql(u8, t, "(")) return .call;
-            if (std.mem.eql(u8, t, "=")) return .assign_or_field_init;
+}
+
+pub const Warning = struct {
+    offset: u32,
+    message: []const u8,
+};
+
+/// The malformed-literal message for an `.invalid` row, read off the source
+/// spelling at `at`. Compiler `.invalid` rows carry no reason and most of them
+/// are not literals at all — a lone `#` from an unrecognized directive, a
+/// stray backtick or `@`, an unknown byte — so anything but the five literal
+/// spellings warns about nothing.
+pub fn literalWarning(source: []const u8, at: u32) ?[]const u8 {
+    switch (source[at]) {
+        '"' => return "unterminated string literal (rest of file skipped as literal)",
+        '\'' => return "unterminated char literal (rest of file skipped as literal)",
+        '#' => {},
+        else => return null,
+    }
+    const kw = "#string";
+    var j: usize = at;
+    if (j + kw.len > source.len or !std.mem.eql(u8, source[j..][0..kw.len], kw)) return null;
+    j += kw.len;
+    if (j < source.len and isIdentContinue(source[j])) return null;
+    while (j < source.len and (source[j] == ' ' or source[j] == '\t')) j += 1;
+    if (j >= source.len or !isIdentStart(source[j])) return "#string without delimiter identifier";
+    while (j < source.len and isIdentContinue(source[j])) j += 1;
+    while (j < source.len and source[j] != '\n') j += 1;
+    if (j >= source.len) return "unterminated #string heredoc";
+    return "unterminated #string heredoc (rest of file skipped as literal)";
+}
+
+fn isIdentStart(c: u8) bool {
+    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_';
+}
+
+fn isIdentContinue(c: u8) bool {
+    return isIdentStart(c) or (c >= '0' and c <= '9');
+}
+
+pub fn scanWarnings(allocator: std.mem.Allocator, tl: TokenList) ![]Warning {
+    var out: std.ArrayList(Warning) = .empty;
+    var i = tl.first();
+    while (tl.tag(i) != .eof) : (i = tl.next(i)) {
+        if (tl.tag(i) != .invalid) continue;
+        const at = tl.start(i);
+        if (literalWarning(tl.source, at)) |message| {
+            try out.append(allocator, .{ .offset = at, .message = message });
         }
     }
-    return .other_use;
+    return out.toOwnedSlice(allocator);
 }
 
 fn printScanWarnings(
     w: *std.Io.Writer,
     path: []const u8,
-    idx: scanner.LineIndex,
-    warnings: []const scanner.Warning,
+    idx: LineIndex,
+    warnings: []const Warning,
 ) !void {
     for (warnings) |warn| {
         const p = idx.pos(warn.offset);
@@ -422,21 +465,17 @@ fn printScanWarnings(
     }
 }
 
-/// Detect an existing leading `package <name>;` declaration: the first
-/// non-comment token is the identifier `package`, followed by an identifier,
-/// followed by `;`. Returns the declared name.
-fn existingPackageDecl(source: []const u8, tokens: []const scanner.Token) ?[]const u8 {
-    var first: usize = 0;
-    while (first < tokens.len and tokens[first].kind == .comment) first += 1;
-    if (first + 2 >= tokens.len) return null;
-    const a = tokens[first];
-    const b = tokens[first + 1];
-    const c = tokens[first + 2];
-    if (a.kind == .identifier and !a.is_raw and std.mem.eql(u8, a.slice(source), "package") and
-        b.kind == .identifier and
-        c.kind == .punct and std.mem.eql(u8, c.slice(source), ";"))
+/// Detect an existing leading `package <name>;` declaration: the first token is
+/// the word `package`, followed by a word, followed by `;`. Returns the
+/// declared name.
+pub fn existingPackageDecl(tl: TokenList) ?[]const u8 {
+    const a = tl.first();
+    const b = tl.next(a);
+    const c = tl.next(b);
+    if (isWord(tl.tag(a)) and !tl.flagsOf(a).is_raw and std.mem.eql(u8, tl.slice(a), "package") and
+        isWord(tl.tag(b)) and tl.tag(c) == .semicolon)
     {
-        return b.slice(source);
+        return tl.slice(b);
     }
     return null;
 }
@@ -452,7 +491,7 @@ fn existingPackageDecl(source: []const u8, tokens: []const scanner.Token) ?[]con
 /// treated as that declaration's doc comment and stays attached to it). A
 /// file with no blank line in the leading run gets the package line at the
 /// very top.
-fn insertionOffset(source: []const u8) usize {
+pub fn insertionOffset(source: []const u8) usize {
     var offset: usize = 0; // start of current line
     var insert_at: usize = 0; // start of line after the last blank leading line
     var i: usize = 0;
@@ -503,11 +542,12 @@ fn cmdInsertPackage(
     var conflict = false;
     for (files) |path| {
         const source = try readFile(allocator, io, path);
-        const res = try scanner.scan(allocator, source);
-        const idx = try scanner.LineIndex.build(allocator, source);
-        try printScanWarnings(w, path, idx, res.warnings);
+        var tl = try sxlex.lexer.lex(allocator, source);
+        defer tl.deinit(allocator);
+        const idx = try LineIndex.build(allocator, source);
+        try printScanWarnings(w, path, idx, try scanWarnings(allocator, tl));
 
-        if (existingPackageDecl(source, res.tokens)) |existing| {
+        if (existingPackageDecl(tl)) |existing| {
             if (std.mem.eql(u8, existing, name)) {
                 try w.print("{s}: already declares `package {s};` — no change\n", .{ path, name });
             } else {
@@ -589,23 +629,24 @@ fn cmdRewriteImports(
     var pending = false;
     for (files) |path| {
         const source = try readFile(allocator, io, path);
-        const res = try scanner.scan(allocator, source);
-        const idx = try scanner.LineIndex.build(allocator, source);
-        try printScanWarnings(w, path, idx, res.warnings);
+        var tl = try sxlex.lexer.lex(allocator, source);
+        defer tl.deinit(allocator);
+        const idx = try LineIndex.build(allocator, source);
+        try printScanWarnings(w, path, idx, try scanWarnings(allocator, tl));
 
         var edits: std.ArrayList(Edit) = .empty;
-        for (res.tokens, 0..) |tok, ti| {
-            if (tok.kind != .directive) continue;
-            if (!std.mem.eql(u8, tok.slice(source), "#import")) continue;
-            const n = nextCode(res.tokens, ti) orelse continue;
-            if (n.kind != .string) continue;
-            const inner = source[n.start + 1 .. n.end - 1];
+        var ti = tl.first();
+        while (tl.tag(ti) != .eof) : (ti = tl.next(ti)) {
+            if (tl.tag(ti) != .hash_import) continue;
+            const n = tl.next(ti);
+            if (tl.tag(n) != .string_literal) continue;
+            const inner = source[tl.start(n) + 1 .. tl.end(n) - 1];
             const new_path = mapping.entries.get(inner) orelse continue;
-            const p = idx.pos(n.start);
+            const p = idx.pos(tl.start(n));
             try w.print("{s}:{d}:{d}: #import \"{s}\" -> \"{s}\"\n", .{ path, p.line, p.col, inner, new_path });
             try edits.append(allocator, .{
-                .start = n.start + 1,
-                .end = n.end - 1,
+                .start = tl.start(n) + 1,
+                .end = tl.end(n) - 1,
                 .replacement = new_path,
             });
         }
@@ -662,9 +703,10 @@ fn cmdQualify(
     var pending = false;
     for (files) |path| {
         const source = try readFile(allocator, io, path);
-        const res = try scanner.scan(allocator, source);
-        const idx = try scanner.LineIndex.build(allocator, source);
-        try printScanWarnings(w, path, idx, res.warnings);
+        var tl = try sxlex.lexer.lex(allocator, source);
+        defer tl.deinit(allocator);
+        const idx = try LineIndex.build(allocator, source);
+        try printScanWarnings(w, path, idx, try scanWarnings(allocator, tl));
 
         // Pass 1 (conservative shadow guard): if a mapped name appears in a
         // declaration position ANYWHERE in this file (name ::, name :=,
@@ -672,11 +714,12 @@ fn cmdQualify(
         // scope-resolve, so we refuse to rewrite that name in this whole
         // file and report every occurrence instead of guessing.
         var declared_here: std.StringArrayHashMapUnmanaged(void) = .empty;
-        for (res.tokens, 0..) |tok, ti| {
-            if (tok.kind != .identifier) continue;
-            const text = tok.slice(source);
+        var ti = tl.first();
+        while (tl.tag(ti) != .eof) : (ti = tl.next(ti)) {
+            if (!isWord(tl.tag(ti))) continue;
+            const text = tl.slice(ti);
             if (mapping.entries.get(text) == null) continue;
-            switch (classify(source, res.tokens, ti)) {
+            switch (classify(tl, ti)) {
                 .decl_const, .decl_local, .typed_decl => _ = try declared_here.getOrPut(allocator, text),
                 else => {},
             }
@@ -684,17 +727,18 @@ fn cmdQualify(
 
         // Pass 2: rewrite clear use positions; report every skip.
         var edits: std.ArrayList(Edit) = .empty;
-        for (res.tokens, 0..) |tok, ti| {
-            if (tok.kind != .identifier) continue;
-            const text = tok.slice(source);
+        ti = tl.first();
+        while (tl.tag(ti) != .eof) : (ti = tl.next(ti)) {
+            if (!isWord(tl.tag(ti))) continue;
+            const text = tl.slice(ti);
             const alias = mapping.entries.get(text) orelse continue;
-            const p = idx.pos(tok.start);
-            const cat = classify(source, res.tokens, ti);
+            const p = idx.pos(tl.start(ti));
+            const cat = classify(tl, ti);
             if (declared_here.get(text) != null) {
                 try w.print("{s}:{d}:{d}: SKIP '{s}' [{s}]: declared in this file (possible shadow) — not rewriting any occurrence\n", .{ path, p.line, p.col, text, cat.label() });
                 continue;
             }
-            if (tok.is_raw) {
+            if (tl.flagsOf(ti).is_raw) {
                 try w.print("{s}:{d}:{d}: SKIP '`{s}' [{s}]: backtick-escaped identifier\n", .{ path, p.line, p.col, text, cat.label() });
                 continue;
             }
@@ -710,7 +754,7 @@ fn cmdQualify(
                 .call, .other_use => {
                     const repl = try std.fmt.allocPrint(allocator, "{s}.{s}", .{ alias, text });
                     try w.print("{s}:{d}:{d}: '{s}' -> '{s}' [{s}]\n", .{ path, p.line, p.col, text, repl, cat.label() });
-                    try edits.append(allocator, .{ .start = tok.start, .end = tok.end, .replacement = repl });
+                    try edits.append(allocator, .{ .start = tl.start(ti), .end = tl.end(ti), .replacement = repl });
                 },
             }
         }
@@ -773,10 +817,11 @@ fn cmdToPackageDir(
     var conflict = false;
     for (paths) |path| {
         const source = try readFile(allocator, io, path);
-        const res = try scanner.scan(allocator, source);
-        const idx = try scanner.LineIndex.build(allocator, source);
-        try printScanWarnings(w, path, idx, res.warnings);
-        if (existingPackageDecl(source, res.tokens)) |existing| {
+        var tl = try sxlex.lexer.lex(allocator, source);
+        defer tl.deinit(allocator);
+        const idx = try LineIndex.build(allocator, source);
+        try printScanWarnings(w, path, idx, try scanWarnings(allocator, tl));
+        if (existingPackageDecl(tl)) |existing| {
             if (std.mem.eql(u8, existing, name)) {
                 try w.print("  {s}: already declares `package {s};` — no change\n", .{ path, name });
             } else {
@@ -827,30 +872,33 @@ fn cmdInventory(
 
     for (files) |path| {
         const source = try readFile(allocator, io, path);
-        const res = try scanner.scan(allocator, source);
-        const idx = try scanner.LineIndex.build(allocator, source);
+        var tl = try sxlex.lexer.lex(allocator, source);
+        defer tl.deinit(allocator);
+        const idx = try LineIndex.build(allocator, source);
         var file_hits: usize = 0;
-        for (res.tokens, 0..) |tok, ti| {
-            if (tok.kind != .identifier) continue;
-            const text = tok.slice(source);
+        var ti = tl.first();
+        while (tl.tag(ti) != .eof) : (ti = tl.next(ti)) {
+            if (!isWord(tl.tag(ti))) continue;
+            const text = tl.slice(ti);
             const wi = for (d9_words, 0..) |word, k| {
                 if (std.mem.eql(u8, text, word)) break k;
             } else continue;
-            const cat = classify(source, res.tokens, ti);
-            const p = idx.pos(tok.start);
+            const cat = classify(tl, ti);
+            const p = idx.pos(tl.start(ti));
+            const is_raw = tl.flagsOf(ti).is_raw;
             const line_text = std.mem.trim(u8, idx.lineText(source, p.line), " \t");
             try w.print("{s}:{d}:{d}: {s} [{s}]{s} | {s}\n", .{
-                path,                                    p.line, p.col, text, cat.label(),
-                if (tok.is_raw) " (backticked)" else "", line_text,
+                path,                              p.line, p.col, text, cat.label(),
+                if (is_raw) " (backticked)" else "", line_text,
             });
             per_word[wi] += 1;
             per_cat[wi][@intFromEnum(cat)] += 1;
-            if (tok.is_raw) raw_count += 1;
+            if (is_raw) raw_count += 1;
             total += 1;
             file_hits += 1;
         }
         if (file_hits > 0) files_with_hits += 1;
-        for (res.warnings) |warn| {
+        for (try scanWarnings(allocator, tl)) |warn| {
             const p = idx.pos(warn.offset);
             try w.print("scan-warning: {s}:{d}:{d}: {s}\n", .{ path, p.line, p.col, warn.message });
             warning_count += 1;

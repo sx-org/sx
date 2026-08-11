@@ -72,7 +72,7 @@ reachable :: (ready: bool, loaded: bool, forced: bool) -> bool {
 }
 
 // `-` and `*` are not continuation tokens: the spacing rule decides them. A
-// leading `- b` keeps its gaps matched and reads as subtraction.
+// leading `- b` is not glued to its operand, so it reads as subtraction.
 gap :: (a: i64, b: i64) -> i64 {
     a
         - b

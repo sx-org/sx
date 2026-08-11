@@ -1,0 +1,9 @@
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    xs : [3]i64 = .[1, 2, 3];
+    p : *i64 = *xs[2];
+    --p;
+    print("{}\n", p.*);
+    return 0;
+}

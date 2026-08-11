@@ -214,7 +214,7 @@ impl Platform for SdlPlatform {
         // immediate). Ignored on wasm, where emscripten's rAF loop paces.
         SDL_GL_SetSwapInterval(1);
 
-        load_gl(*SDL_GL_GetProcAddress);
+        load_gl(SDL_GL_GetProcAddress);
 
         SDL_GetWindowSize(self.window, *self.width, *self.height);
         SDL_GetWindowSizeInPixels(self.window, *self.pixel_w, *self.pixel_h);

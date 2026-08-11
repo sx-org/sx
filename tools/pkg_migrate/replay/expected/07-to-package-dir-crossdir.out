@@ -1,0 +1,1 @@
+error: files span multiple directories ('testdata/pkgdir' vs 'testdata/insert') — one package is one directory

@@ -33,7 +33,7 @@ test "parser: comptime type-metaprogramming surface parses" {
         \\field_type :: ($T: Type, idx: i64) -> Type intrinsic;
         \\
     ;
-    var parser = Parser.init(alloc, src);
+    var parser = try Parser.init(alloc, src);
     const root = try parser.parse();
 
     try std.testing.expect(root.data == .root);
@@ -95,7 +95,7 @@ test "parser: bare extern leaves abi == .default" {
         \\puts :: (s: *u8) -> i32 extern;
         \\
     ;
-    var parser = Parser.init(alloc, src);
+    var parser = try Parser.init(alloc, src);
     const root = try parser.parse();
     const decls = root.data.root.decls;
     try std.testing.expectEqual(@as(usize, 1), decls.len);
@@ -117,7 +117,7 @@ test "parser: abi(.c) and abi(.naked) parse standalone" {
         \\nk :: () -> i64 abi(.naked) { 0; }
         \\
     ;
-    var parser = Parser.init(alloc, src);
+    var parser = try Parser.init(alloc, src);
     const root = try parser.parse();
     const decls = root.data.root.decls;
     try std.testing.expectEqual(@as(usize, 2), decls.len);
@@ -143,7 +143,7 @@ test "parser: plain struct leaves abi == .default, extern_lib == null" {
         \\Point :: struct { x: i64; y: i64; }
         \\
     ;
-    var parser = Parser.init(alloc, src);
+    var parser = try Parser.init(alloc, src);
     const root = try parser.parse();
     const decls = root.data.root.decls;
     try std.testing.expectEqual(@as(usize, 1), decls.len);
@@ -161,7 +161,7 @@ test "parser: plain struct leaves abi == .default, extern_lib == null" {
 test "parser: Tuple(A, B) type parses to positional tuple_type_expr" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> Tuple(i64, i32) { 0 }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> Tuple(i64, i32) { 0 }");
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     try std.testing.expect(rt.data == .tuple_type_expr);
@@ -174,7 +174,7 @@ test "parser: Tuple(A, B) type parses to positional tuple_type_expr" {
 test "parser: named Tuple(x: A, y: B) stores field names" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> Tuple(x: i64, y: i32) { 0 }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> Tuple(x: i64, y: i32) { 0 }");
     const root = try parser.parse();
     const t = root.data.root.decls[0].data.fn_decl.return_type.?.data.tuple_type_expr;
     try std.testing.expectEqual(@as(usize, 2), t.field_types.len);
@@ -188,12 +188,12 @@ test "parser: named Tuple(x: A, y: B) stores field names" {
 test "parser: Tuple(T) is a 1-tuple, Tuple() is empty" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var p1 = Parser.init(arena.allocator(), "f :: () -> Tuple(i64) { 0 }");
+    var p1 = try Parser.init(arena.allocator(), "f :: () -> Tuple(i64) { 0 }");
     const r1 = try p1.parse();
     const t1 = r1.data.root.decls[0].data.fn_decl.return_type.?.data.tuple_type_expr;
     try std.testing.expectEqual(@as(usize, 1), t1.field_types.len);
 
-    var p2 = Parser.init(arena.allocator(), "f :: () -> Tuple() { 0 }");
+    var p2 = try Parser.init(arena.allocator(), "f :: () -> Tuple() { 0 }");
     const r2 = try p2.parse();
     const t2 = r2.data.root.decls[0].data.fn_decl.return_type.?.data.tuple_type_expr;
     try std.testing.expectEqual(@as(usize, 0), t2.field_types.len);
@@ -205,7 +205,7 @@ test "parser: Tuple(T) is a 1-tuple, Tuple() is empty" {
 test "parser: Tuple(..Ts) pack field is a spread_expr" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: (t: Tuple(..Ts)) { }");
+    var parser = try Parser.init(arena.allocator(), "f :: (t: Tuple(..Ts)) { }");
     const root = try parser.parse();
     const t = root.data.root.decls[0].data.fn_decl.params[0].type_expr.data.tuple_type_expr;
     try std.testing.expectEqual(@as(usize, 1), t.field_types.len);
@@ -216,7 +216,7 @@ test "parser: Tuple(..Ts) pack field is a spread_expr" {
 test "parser: Tuple(A, B) -> C is rejected" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> Tuple(i64, i64) -> i64 { 0 }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> Tuple(i64, i64) -> i64 { 0 }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -224,7 +224,7 @@ test "parser: Tuple(A, B) -> C is rejected" {
 test "parser: bare Tuple (no paren) is an identifier, not a tuple type" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> i64 { Tuple := 1; Tuple }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> i64 { Tuple := 1; Tuple }");
     const root = try parser.parse();
     // Parses without error; the body references `Tuple` as a value name.
     try std.testing.expect(root.data.root.decls[0].data == .fn_decl);
@@ -234,7 +234,7 @@ test "parser: bare Tuple (no paren) is an identifier, not a tuple type" {
 test "parser: .(a, b) is rejected" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { x := .(1, 2); }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { x := .(1, 2); }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -243,7 +243,7 @@ test "parser: .(a, b) is rejected" {
 test "parser: Tuple(A, B).( ... ) is rejected after the cutover" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { x := Tuple(i64, i64).(1, 2); }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { x := Tuple(i64, i64).(1, 2); }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -252,7 +252,7 @@ test "parser: Tuple(A, B).( ... ) is rejected after the cutover" {
 test "parser: .{ ..t, 3 } parses spread as a positional field init" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { x := .{ ..t, 3 }; }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { x := .{ ..t, 3 }; }");
     const root = try parser.parse();
     const val = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0].data.var_decl.value.?;
     try std.testing.expect(val.data == .struct_literal);
@@ -268,7 +268,7 @@ test "parser: .{ ..t, 3 } parses spread as a positional field init" {
 test "parser: .{ x } shorthand records was_shorthand" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { s := .{ x }; }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { s := .{ x }; }");
     const root = try parser.parse();
     const val = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0].data.var_decl.value.?;
     try std.testing.expect(val.data == .struct_literal);
@@ -283,7 +283,7 @@ test "parser: .{ x } shorthand records was_shorthand" {
 test "parser: bare `-> T !` is rejected" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> i64 ! { 0 }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> i64 ! { 0 }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -291,7 +291,7 @@ test "parser: bare `-> T !` is rejected" {
 test "parser: bare `-> Tuple(A, B) !` is rejected" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> Tuple(i64, i32) !ParseErr { 0 }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> Tuple(i64, i32) !ParseErr { 0 }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -300,7 +300,7 @@ test "parser: bare `-> Tuple(A, B) !` is rejected" {
 test "parser: -> ! stays a bare error_type_expr" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> ! { }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> ! { }");
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     try std.testing.expect(rt.data == .error_type_expr);
@@ -312,7 +312,7 @@ test "parser: -> ! stays a bare error_type_expr" {
 test "parser: -> (T, !) is a single-value failable, not multi-return" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> (i64, !) { 0 }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> (i64, !) { 0 }");
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     try std.testing.expect(rt.data == .tuple_type_expr);
@@ -328,7 +328,7 @@ test "parser: -> (T, !) is a single-value failable, not multi-return" {
 test "parser: bare-paren (A, B) parses to a return_type_expr" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> (i64, i32) { 0 }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> (i64, i32) { 0 }");
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
     try std.testing.expect(rt.data == .return_type_expr);
@@ -339,7 +339,7 @@ test "parser: bare-paren (A, B) parses to a return_type_expr" {
 test "parser: bare-paren tuple value (a, b) is rejected" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () { x := (1, 2); }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { x := (1, 2); }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -347,7 +347,7 @@ test "parser: bare-paren tuple value (a, b) is rejected" {
 test "parser: bare-paren grouping (a + b) still parses" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: () -> i64 { (1 + 2) }");
+    var parser = try Parser.init(arena.allocator(), "f :: () -> i64 { (1 + 2) }");
     const root = try parser.parse();
     try std.testing.expect(root.data.root.decls[0].data == .fn_decl);
 }
@@ -359,7 +359,7 @@ test "parser: bare-paren grouping (a + b) still parses" {
 test "parser: closure-type alias in const-decl RHS parses to closure_type_expr" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "CB :: Closure(i32) -> i32;");
+    var parser = try Parser.init(arena.allocator(), "CB :: Closure(i32) -> i32;");
     const root = try parser.parse();
     const cd = root.data.root.decls[0];
     try std.testing.expect(cd.data == .const_decl);
@@ -374,7 +374,7 @@ test "parser: closure-type alias in const-decl RHS parses to closure_type_expr" 
 test "parser: non-Closure call followed by '->' still fails" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "BAD :: foo(1) -> i32;");
+    var parser = try Parser.init(arena.allocator(), "BAD :: foo(1) -> i32;");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -394,7 +394,7 @@ test "parser: #context_extend parses to context_extend_decl" {
         \\#context_extend bare: i64;
         \\
     ;
-    var parser = Parser.init(alloc, src);
+    var parser = try Parser.init(alloc, src);
     const root = try parser.parse();
     const decls = root.data.root.decls;
     try std.testing.expectEqual(@as(usize, 2), decls.len);
@@ -425,7 +425,7 @@ test "parser: #context_extend rejected in statement position" {
         \\}
         \\
     ;
-    var parser = Parser.init(alloc, src);
+    var parser = try Parser.init(alloc, src);
     try std.testing.expectError(error.ParseError, parser.parse());
     try std.testing.expect(parser.err_msg != null);
     try std.testing.expect(std.mem.indexOf(u8, parser.err_msg.?, "top level") != null);
@@ -448,7 +448,7 @@ test "parser: private stamps module-scope declarations" {
         \\pub_fn :: () -> i64 { return 0; }
         \\
     ;
-    var p = Parser.init(alloc, src);
+    var p = try Parser.init(alloc, src);
     const root = try p.parse();
     const decls = root.data.root.decls;
     try std.testing.expectEqual(@as(usize, 7), decls.len);
@@ -476,7 +476,7 @@ test "parser: private rejected on locals and directive forms" {
         "private #run 1;",
     };
     for (cases) |src| {
-        var p = Parser.init(alloc, src);
+        var p = try Parser.init(alloc, src);
         try std.testing.expectError(error.ParseError, p.parse());
     }
 }
@@ -497,7 +497,7 @@ test "parser: private inside top-level inline if" {
         \\}
         \\
     ;
-    var p = Parser.init(alloc, ok_src);
+    var p = try Parser.init(alloc, ok_src);
     const root = try p.parse();
     try std.testing.expect(root.data == .root);
 
@@ -507,7 +507,7 @@ test "parser: private inside top-level inline if" {
         \\}
         \\
     ;
-    var p2 = Parser.init(alloc, bad_src);
+    var p2 = try Parser.init(alloc, bad_src);
     try std.testing.expectError(error.ParseError, p2.parse());
 }
 
@@ -519,7 +519,7 @@ test "parser: private inside top-level inline if" {
 // then builds on.
 
 fn parseErrMsg(alloc: std.mem.Allocator, src: [:0]const u8) ![]const u8 {
-    var p = Parser.init(alloc, src);
+    var p = try Parser.init(alloc, src);
     try std.testing.expectError(error.ParseError, p.parse());
     return p.err_msg orelse return error.MissingMessage;
 }
@@ -529,7 +529,7 @@ test "parser: a postfix `(` binds only when glued" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var ok = Parser.init(alloc, "f :: () -> i64 { g(1) }");
+    var ok = try Parser.init(alloc, "f :: () -> i64 { g(1) }");
     const root = try ok.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     try std.testing.expect(body.data.block.stmts[0].data == .call);
@@ -540,7 +540,7 @@ test "parser: a postfix `(` binds only when glued" {
 
     // Across a line the `(` does not bind, so the newline ends the statement
     // and the `(` opens the next one.
-    var split = Parser.init(alloc, "f :: () -> i64 { g\n(1) }");
+    var split = try Parser.init(alloc, "f :: () -> i64 { g\n(1) }");
     const split_body = (try split.parse()).data.root.decls[0].data.fn_decl.body;
     try std.testing.expectEqual(@as(usize, 2), split_body.data.block.stmts.len);
     try std.testing.expect(split_body.data.block.stmts[0].data == .identifier);
@@ -552,7 +552,7 @@ test "parser: a postfix `[` binds only when glued" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var ok = Parser.init(alloc, "f :: () -> i64 { xs[0] }");
+    var ok = try Parser.init(alloc, "f :: () -> i64 { xs[0] }");
     const root = try ok.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     try std.testing.expect(body.data.block.stmts[0].data == .index_expr);
@@ -568,7 +568,7 @@ test "parser: a type's arguments bind only when glued" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var ok = Parser.init(alloc, "f :: (b: Box(i64)) { }");
+    var ok = try Parser.init(alloc, "f :: (b: Box(i64)) { }");
     _ = try ok.parse();
 
     for ([_][:0]const u8{
@@ -592,45 +592,46 @@ test "parser: the spaced alias orphan reports the spacing" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var ok = Parser.init(alloc, "BI :: Box;");
+    var ok = try Parser.init(alloc, "BI :: Box;");
     _ = try ok.parse();
 
     const msg = try parseErrMsg(alloc, "BI :: Box (i64);");
     try std.testing.expect(std.mem.indexOf(u8, msg, "write `Box(i64)`") != null);
 }
 
-test "parser: `-` is infix only when its gaps match" {
+test "parser: `-` is infix wherever a left operand is complete" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // Matching gaps — present on both sides, absent on both, or spanning a
-    // line — all read as subtraction.
+    // On one line every spacing reads as subtraction; across a break, so does
+    // every shape but an operator glued to the operand below it.
     for ([_][:0]const u8{
         "f :: () -> i64 { a - b }",
         "f :: () -> i64 { a-b }",
+        "f :: () -> i64 { a -b }",
+        "f :: () -> i64 { a- b }",
         "f :: () -> i64 { a\n    - b }",
+        "f :: () -> i64 { a-\nb }",
     }) |src| {
-        var p = Parser.init(alloc, src);
+        var p = try Parser.init(alloc, src);
         const root = try p.parse();
         const body = root.data.root.decls[0].data.fn_decl.body;
         try std.testing.expect(body.data.block.stmts[0].data == .binary_op);
     }
 
-    // Lopsided on one line: fatal, and the report says which reading the
-    // spacing picked.
-    const prefix_side = try parseErrMsg(alloc, "f :: () -> i64 { a -b }");
-    try std.testing.expect(std.mem.indexOf(u8, prefix_side, "reads as a prefix") != null);
-    const mirror = try parseErrMsg(alloc, "f :: () -> i64 { a- b }");
-    try std.testing.expect(std.mem.indexOf(u8, mirror, "glued on its left and spaced on its right") != null);
-
-    // Across a line the prefix reading is a fresh operand, not a spacing
-    // mistake — so the newline ends the statement and `-b` is the next one.
-    var split = Parser.init(alloc, "f :: () -> i64 { g()\n-b }");
+    // Glued at the head of the next line: the newline ends the statement and
+    // `-b` is the next one.
+    var split = try Parser.init(alloc, "f :: () -> i64 { g()\n-b }");
     const split_body = (try split.parse()).data.root.decls[0].data.fn_decl.body;
     try std.testing.expectEqual(@as(usize, 2), split_body.data.block.stmts.len);
     try std.testing.expect(split_body.data.block.stmts[0].data == .call);
     try std.testing.expect(split_body.data.block.stmts[1].data.unary_op.op == .negate);
+
+    // The gap is read as written, so a raw identifier's backtick is part of it.
+    var raw = try Parser.init(alloc, "f :: () -> i64 { g()\n-`b }");
+    const raw_body = (try raw.parse()).data.root.decls[0].data.fn_decl.body;
+    try std.testing.expectEqual(@as(usize, 2), raw_body.data.block.stmts.len);
 }
 
 test "parser: a prefix `-` / `*` binds only when glued" {
@@ -638,7 +639,7 @@ test "parser: a prefix `-` / `*` binds only when glued" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var ok = Parser.init(alloc, "f :: () -> i64 { x := -5; y := *n; 0 }");
+    var ok = try Parser.init(alloc, "f :: () -> i64 { x := -5; y := *n; 0 }");
     _ = try ok.parse();
 
     for ([_][:0]const u8{
@@ -658,7 +659,7 @@ test "parser: the glue rules see a raw identifier's backtick" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var ok = Parser.init(alloc, "f :: (p: *`i2(i64)) { }");
+    var ok = try Parser.init(alloc, "f :: (p: *`i2(i64)) { }");
     _ = try ok.parse();
 
     const msg = try parseErrMsg(alloc, "f :: (p: * `i2(i64)) { }");
@@ -671,7 +672,7 @@ test "parser: a pack index binds only when glued" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var ok = Parser.init(alloc, "f :: (..$args) -> string { g($args[0]) }");
+    var ok = try Parser.init(alloc, "f :: (..$args) -> string { g($args[0]) }");
     const root = try ok.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     try std.testing.expect(body.data.block.stmts[0].data.call.args[0].data == .pack_index_type_expr);
@@ -692,7 +693,7 @@ test "parser: a pack index binds only when glued" {
 // statement running.
 
 fn parseBody(alloc: std.mem.Allocator, src: [:0]const u8) !*Node {
-    var p = Parser.init(alloc, src);
+    var p = try Parser.init(alloc, src);
     const root = try p.parse();
     return root.data.root.decls[0].data.fn_decl.body;
 }
@@ -732,7 +733,7 @@ test "parser: a newline ends a top-level declaration" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = Parser.init(alloc,
+    var p = try Parser.init(alloc,
         \\#import "modules/std.sx"
         \\TAU :: 6
         \\seed : i64 = 1
@@ -947,7 +948,7 @@ test "parser: a newline ends the last declaration in a file" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = Parser.init(alloc, "TAU :: 6\nseed : i64\n");
+    var p = try Parser.init(alloc, "TAU :: 6\nseed : i64\n");
     const decls = (try p.parse()).data.root.decls;
     try std.testing.expectEqual(@as(usize, 2), decls.len);
     try std.testing.expect(decls[0].data == .const_decl);
@@ -969,7 +970,7 @@ test "parser: a terminable extern tail binds only on its own line" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = Parser.init(alloc,
+    var p = try Parser.init(alloc,
         \\puts :: (s: *u8) -> i32 extern
         \\LIMIT :: 9
     );
@@ -990,7 +991,7 @@ test "parser: a terminable extern tail binds only on its own line" {
     try std.testing.expect(std.mem.indexOf(u8, orphan, "expected identifier at top level") != null);
 
     // On its own line the tail still binds.
-    var same = Parser.init(alloc, "puts :: (s: *u8) -> i32 extern C \"puts\"\n");
+    var same = try Parser.init(alloc, "puts :: (s: *u8) -> i32 extern C \"puts\"\n");
     const bound = (try same.parse()).data.root.decls[0].data.fn_decl;
     try std.testing.expectEqualStrings("C", bound.extern_lib.?);
     try std.testing.expectEqualStrings("puts", bound.extern_name.?);
@@ -1002,7 +1003,7 @@ test "parser: a terminable extern data tail binds only on its own line" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = Parser.init(alloc,
+    var p = try Parser.init(alloc,
         \\errno_loc : *i32 extern
         \\LIMIT :: 9
     );
@@ -1019,7 +1020,7 @@ test "parser: a terminable extern data tail binds only on its own line" {
     );
     try std.testing.expect(std.mem.indexOf(u8, orphan, "expected identifier at top level") != null);
 
-    var same = Parser.init(alloc, "errno_loc : *i32 extern libc \"__error\"\n");
+    var same = try Parser.init(alloc, "errno_loc : *i32 extern libc \"__error\"\n");
     const bound = (try same.parse()).data.root.decls[0].data.var_decl;
     try std.testing.expectEqualStrings("libc", bound.extern_lib.?);
     try std.testing.expectEqualStrings("__error", bound.extern_name.?);
@@ -1032,7 +1033,7 @@ test "parser: an export tail reads through a line break" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = Parser.init(alloc,
+    var p = try Parser.init(alloc,
         \\seven :: () -> i64 export
         \\"renamed_c"
         \\{ 7 }
@@ -1042,7 +1043,7 @@ test "parser: an export tail reads through a line break" {
     try std.testing.expectEqualStrings("renamed_c", fd.extern_name.?);
     try std.testing.expectEqual(@as(usize, 1), fd.body.data.block.stmts.len);
 
-    var with_lib = Parser.init(alloc,
+    var with_lib = try Parser.init(alloc,
         \\seven :: () -> i64 export
         \\C
         \\"renamed_c"
@@ -1052,7 +1053,7 @@ test "parser: an export tail reads through a line break" {
     try std.testing.expectEqualStrings("C", lib_fd.extern_lib.?);
     try std.testing.expectEqualStrings("renamed_c", lib_fd.extern_name.?);
 
-    var same = Parser.init(alloc, "seven :: () -> i64 export C \"renamed_c\" { 7 }\n");
+    var same = try Parser.init(alloc, "seven :: () -> i64 export C \"renamed_c\" { 7 }\n");
     const same_fd = (try same.parse()).data.root.decls[0].data.fn_decl;
     try std.testing.expectEqualStrings("C", same_fd.extern_lib.?);
     try std.testing.expectEqualStrings("renamed_c", same_fd.extern_name.?);
@@ -1064,7 +1065,7 @@ test "parser: a struct linkage tail reads through a line break" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = Parser.init(alloc,
+    var p = try Parser.init(alloc,
         \\Handle :: struct abi(.c) extern
         \\compiler
         \\{ x: i64; }
@@ -1074,7 +1075,7 @@ test "parser: a struct linkage tail reads through a line break" {
     try std.testing.expectEqual(ast.ABI.c, sd.abi);
     try std.testing.expectEqual(@as(usize, 1), sd.field_names.len);
 
-    var same = Parser.init(alloc, "Handle :: struct abi(.c) extern compiler { x: i64; }\n");
+    var same = try Parser.init(alloc, "Handle :: struct abi(.c) extern compiler { x: i64; }\n");
     const same_sd = (try same.parse()).data.root.decls[0].data.struct_decl;
     try std.testing.expectEqualStrings("compiler", same_sd.extern_lib.?);
     try std.testing.expectEqual(@as(usize, 1), same_sd.field_names.len);
@@ -1090,7 +1091,7 @@ test "parser: a complete binding asks whether it ended before its tail" {
     const alloc = arena.allocator();
 
     // `extern` below a complete `name : T`.
-    var ext = Parser.init(alloc,
+    var ext = try Parser.init(alloc,
         \\errno_loc : *i32
         \\    extern libc "__error"
     );
@@ -1101,7 +1102,7 @@ test "parser: a complete binding asks whether it ended before its tail" {
     try std.testing.expectEqualStrings("__error", ext_decls[0].data.var_decl.extern_name.?);
 
     // A split `:` still makes a typed constant.
-    var col = Parser.init(alloc,
+    var col = try Parser.init(alloc,
         \\LIMIT : i64
         \\    : 1
     );
@@ -1111,7 +1112,7 @@ test "parser: a complete binding asks whether it ended before its tail" {
     try std.testing.expect(col_decls[0].data.const_decl.value.data == .int_literal);
 
     // A split `=` still makes a typed variable.
-    var eq = Parser.init(alloc,
+    var eq = try Parser.init(alloc,
         \\seed : i64
         \\    = 7
     );
@@ -1120,7 +1121,7 @@ test "parser: a complete binding asks whether it ended before its tail" {
     try std.testing.expect(eq_decls[0].data.var_decl.value.?.data == .int_literal);
 
     // A split `intrinsic` still annotates the constant.
-    var intr = Parser.init(alloc,
+    var intr = try Parser.init(alloc,
         \\mystery :: i64
         \\    intrinsic
     );
@@ -1131,7 +1132,7 @@ test "parser: a complete binding asks whether it ended before its tail" {
 
     // The same-line controls, and the ordinary next statement the reorder must
     // still recognize: a bare `name : T` followed by an unrelated declaration.
-    var plain = Parser.init(alloc,
+    var plain = try Parser.init(alloc,
         \\slot : i64
         \\LIMIT :: 9
     );
@@ -1310,7 +1311,7 @@ test "parser: an enum header reads through a line break" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = Parser.init(alloc,
+    var p = try Parser.init(alloc,
         \\Perms :: enum
         \\    flags
         \\    u32
@@ -1321,7 +1322,7 @@ test "parser: an enum header reads through a line break" {
     try std.testing.expect(ed.backing_type != null);
     try std.testing.expectEqual(@as(usize, 2), ed.variant_names.len);
 
-    var same = Parser.init(alloc, "Perms :: enum flags u32 { read; write; }\n");
+    var same = try Parser.init(alloc, "Perms :: enum flags u32 { read; write; }\n");
     const same_ed = (try same.parse()).data.root.decls[0].data.enum_decl;
     try std.testing.expect(same_ed.is_flags);
     try std.testing.expect(same_ed.backing_type != null);
@@ -1333,7 +1334,7 @@ test "parser: a ufcs alias target reads through a line break" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = Parser.init(alloc,
+    var p = try Parser.init(alloc,
         \\multiply :: ufcs
         \\    mat4_multiply
     );
@@ -1341,7 +1342,7 @@ test "parser: a ufcs alias target reads through a line break" {
     try std.testing.expectEqual(@as(usize, 1), decls.len);
     try std.testing.expectEqualStrings("mat4_multiply", decls[0].data.ufcs_alias.target);
 
-    var same = Parser.init(alloc, "multiply :: ufcs mat4_multiply\n");
+    var same = try Parser.init(alloc, "multiply :: ufcs mat4_multiply\n");
     try std.testing.expectEqualStrings("mat4_multiply", (try same.parse()).data.root.decls[0].data.ufcs_alias.target);
 }
 
@@ -1351,7 +1352,7 @@ test "parser: a runtime-class linkage word reads through a line break" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = Parser.init(alloc,
+    var p = try Parser.init(alloc,
         \\NSString :: #objc_class("NSString")
         \\    extern
         \\    { length :: (self: *Self) -> i32; }
@@ -1359,7 +1360,7 @@ test "parser: a runtime-class linkage word reads through a line break" {
     const rc = (try p.parse()).data.root.decls[0].data.runtime_class_decl;
     try std.testing.expect(rc.is_extern);
 
-    var same = Parser.init(alloc, "NSString :: #objc_class(\"NSString\") extern { length :: (self: *Self) -> i32; }\n");
+    var same = try Parser.init(alloc, "NSString :: #objc_class(\"NSString\") extern { length :: (self: *Self) -> i32; }\n");
     try std.testing.expect((try same.parse()).data.root.decls[0].data.runtime_class_decl.is_extern);
 }
 
@@ -1369,7 +1370,7 @@ test "parser: a struct type-parameter list reads through a line break" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = Parser.init(alloc,
+    var p = try Parser.init(alloc,
         \\Box :: struct
         \\    ($T: Type)
         \\    { v: T; }
@@ -1378,7 +1379,7 @@ test "parser: a struct type-parameter list reads through a line break" {
     try std.testing.expectEqual(@as(usize, 1), sd.type_params.len);
     try std.testing.expectEqual(@as(usize, 1), sd.field_names.len);
 
-    var same = Parser.init(alloc, "Box :: struct($T: Type) { v: T; }\n");
+    var same = try Parser.init(alloc, "Box :: struct($T: Type) { v: T; }\n");
     try std.testing.expectEqual(@as(usize, 1), (try same.parse()).data.root.decls[0].data.struct_decl.type_params.len);
 }
 
@@ -1388,7 +1389,7 @@ test "parser: a protocol kind word reads through a line break" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = Parser.init(alloc,
+    var p = try Parser.init(alloc,
         \\Lerpable :: protocol
         \\    inline
         \\    { lerp :: (self: *Self, t: f32) -> Self; }
@@ -1396,7 +1397,7 @@ test "parser: a protocol kind word reads through a line break" {
     const pd = (try p.parse()).data.root.decls[0].data.protocol_decl;
     try std.testing.expectEqual(ast.ProtocolKind.@"inline", pd.kind);
 
-    var same = Parser.init(alloc, "Lerpable :: protocol inline { lerp :: (self: *Self, t: f32) -> Self; }\n");
+    var same = try Parser.init(alloc, "Lerpable :: protocol inline { lerp :: (self: *Self, t: f32) -> Self; }\n");
     try std.testing.expectEqual(ast.ProtocolKind.@"inline", (try same.parse()).data.root.decls[0].data.protocol_decl.kind);
 }
 
@@ -1406,7 +1407,7 @@ test "parser: a function header reads through a line break" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = Parser.init(alloc,
+    var p = try Parser.init(alloc,
         \\cb :: ()
         \\    -> i64
         \\    abi(.c)
@@ -1425,7 +1426,7 @@ test "parser: a #context_extend default reads through a line break" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var split = Parser.init(alloc,
+    var split = try Parser.init(alloc,
         \\#context_extend depth: i64
         \\    = 3
     );
@@ -1433,11 +1434,11 @@ test "parser: a #context_extend default reads through a line break" {
     try std.testing.expectEqual(@as(usize, 1), split_decls.len);
     try std.testing.expect(split_decls[0].data.context_extend_decl.default_expr != null);
 
-    var same = Parser.init(alloc, "#context_extend depth: i64 = 3\n");
+    var same = try Parser.init(alloc, "#context_extend depth: i64 = 3\n");
     try std.testing.expect((try same.parse()).data.root.decls[0].data.context_extend_decl.default_expr != null);
 
     // Absent default, and the declaration below is its own.
-    var bare = Parser.init(alloc,
+    var bare = try Parser.init(alloc,
         \\#context_extend depth: i64
         \\LIMIT :: 9
     );
@@ -1454,7 +1455,7 @@ test "parser: values inside fixed delimiters read through a line break" {
     const alloc = arena.allocator();
 
     // A struct field's default.
-    var field = Parser.init(alloc,
+    var field = try Parser.init(alloc,
         \\Cfg :: struct {
         \\    depth: i64
         \\        = 3;
@@ -1531,7 +1532,7 @@ test "parser: a fixed form's list still demands its `;`" {
         \\    #include "stdio.h"
         \\}
     );
-    var c_ok = Parser.init(alloc,
+    var c_ok = try Parser.init(alloc,
         \\c :: #import c {
         \\    #include "stdio.h";
         \\}
@@ -1645,7 +1646,7 @@ test "parser: a glued `:` separates a default arm from a chaining `else`" {
 test "parser: an `@` function declaration is its signature, with an intrinsic body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(),
+    var parser = try Parser.init(arena.allocator(),
         \\@va_arg :: ($T: Type, list: *@VaList) -> T;
         \\@va_end :: (list: *@VaList);
     );
@@ -1669,7 +1670,7 @@ test "parser: an `@` function declaration is its signature, with an intrinsic bo
 test "parser: an `@` function declaration takes no `intrinsic` marker" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "@va_end :: (list: *@VaList) intrinsic;");
+    var parser = try Parser.init(arena.allocator(), "@va_end :: (list: *@VaList) intrinsic;");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -1684,7 +1685,7 @@ test "parser: an `@` function declaration takes no body, ABI, or linkage" {
         "@f :: (n: i32) -> i32 extern;",
         "@f :: (n: i32) -> i32 export;",
     }) |src| {
-        var p = Parser.init(alloc, src);
+        var p = try Parser.init(alloc, src);
         try std.testing.expectError(error.ParseError, p.parse());
     }
 }
@@ -1692,7 +1693,7 @@ test "parser: an `@` function declaration takes no body, ABI, or linkage" {
 test "parser: a plain bodyless signature is a function-type alias" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "Fn :: (list: *i32) -> i32;");
+    var parser = try Parser.init(arena.allocator(), "Fn :: (list: *i32) -> i32;");
     const root = try parser.parse();
     try std.testing.expect(root.data.root.decls[0].data != .fn_decl);
 }
@@ -1700,7 +1701,7 @@ test "parser: a plain bodyless signature is a function-type alias" {
 test "parser: a bare `..` tail sets the signature flag and binds no parameter" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(),
+    var parser = try Parser.init(arena.allocator(),
         \\one :: (n: i32, ..) -> i64 abi(.c) { 0 }
         \\zero :: (..) -> i64 abi(.c) { 0 }
         \\imported :: (fmt: cstring, ..) -> i32 extern;
@@ -1725,7 +1726,7 @@ test "parser: a bare `..` tail sets the signature flag and binds no parameter" {
 test "parser: a tail takes sx's ordinary trailing comma" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(),
+    var parser = try Parser.init(arena.allocator(),
         \\one :: (n: i32, ..,) -> i64 abi(.c) { 0 }
         \\zero :: (..,) -> i64 abi(.c) { 0 }
     );
@@ -1745,7 +1746,7 @@ test "parser: a tail is legal only on an effective-C signature" {
         "f :: (n: i32, ..args: []i32, ..) -> i32 abi(.c) { 0 }", // two tails
         "@f :: (n: i32, ..) -> i32;",
     }) |src| {
-        var p = Parser.init(alloc, src);
+        var p = try Parser.init(alloc, src);
         try std.testing.expectError(error.ParseError, p.parse());
     }
 }
@@ -1755,7 +1756,7 @@ test "parser: a tail is legal only on an effective-C signature" {
 test "parser: a named variadic form does not set the C-tail flag" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(),
+    var parser = try Parser.init(arena.allocator(),
         \\pack :: (..$args) -> i64 { 0 }
         \\slice :: (n: i32, ..xs: []i32) -> i64 { 0 }
     );
@@ -1776,7 +1777,7 @@ test "parser: a named variadic form does not set the C-tail flag" {
 test "parser: a three-dot parameter list is not a tail" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(), "f :: (n: i32, ...) -> i32 abi(.c) { 0 }");
+    var parser = try Parser.init(arena.allocator(), "f :: (n: i32, ...) -> i32 abi(.c) { 0 }");
     try std.testing.expectError(error.ParseError, parser.parse());
     try std.testing.expectEqualStrings("expected parameter name", parser.err_msg.?);
 }
@@ -1784,7 +1785,7 @@ test "parser: a three-dot parameter list is not a tail" {
 test "parser: a function type carries the bare `..` tail" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(),
+    var parser = try Parser.init(arena.allocator(),
         \\Callback :: (fixed: i32, ..) -> i64 abi(.c);
         \\Zero :: (..) -> i64 abi(.c);
         \\Comma :: (fixed: i32, ..,) -> i64 abi(.c);
@@ -1817,7 +1818,7 @@ test "parser: a function type's tail requires abi(.c)" {
         "F :: (n: i32, .., x: i32) -> i64 abi(.c);", // not the last entry
         "F :: (.., ..) -> i64 abi(.c);", // two tails
     }) |src| {
-        var p = Parser.init(alloc, src);
+        var p = try Parser.init(alloc, src);
         try std.testing.expectError(error.ParseError, p.parse());
     }
 }
@@ -1827,7 +1828,7 @@ test "parser: a function type's tail requires abi(.c)" {
 test "parser: the tail arm leaves grouping, void and pack spreads alone" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(),
+    var parser = try Parser.init(arena.allocator(),
         \\Grouped :: (n: (i64)) -> i64;
         \\Voided :: (n: ()) -> i64;
         \\Spread :: (..Ts) -> i64;
@@ -1852,7 +1853,7 @@ test "parser: the tail arm leaves grouping, void and pack spreads alone" {
 test "parser: abi(...) alone is a convention, not a body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = Parser.init(arena.allocator(),
+    var parser = try Parser.init(arena.allocator(),
         \\Alias :: (n: i32) -> i64 abi(.c);
         \\defined :: (n: i32) -> i64 abi(.c) { 0 }
         \\imported :: (n: i32) -> i64 abi(.c) extern;
@@ -1862,4 +1863,152 @@ test "parser: abi(...) alone is a convention, not a body" {
     try std.testing.expect(decls[0].data.const_decl.value.data == .function_type_expr);
     try std.testing.expect(decls[1].data == .fn_decl);
     try std.testing.expect(decls[2].data == .fn_decl);
+}
+
+// Reads each name back from its recorded start:
+// `source[start .. start + name.len] == name`. Raw names hold — a token's start
+// excludes the backtick — but a renamed `_` field does not, so those are
+// asserted at their own site.
+fn expectNameStarts(src: [:0]const u8, names: []const []const u8, starts: []const u32) !void {
+    try std.testing.expectEqual(names.len, starts.len);
+    for (names, starts) |name, start| {
+        if (start == ast.no_source_start) continue;
+        try std.testing.expectEqualStrings(name, src[start .. start + name.len]);
+    }
+}
+
+test "struct field name starts point at each field's spelling" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 =
+        \\Rec :: struct {
+        \\    plain: i32;
+        \\    `i2: i64;
+        \\}
+    ;
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const sd = root.data.root.decls[0].data.struct_decl;
+    try std.testing.expectEqual(@as(usize, 2), sd.field_names.len);
+    try expectNameStarts(src, sd.field_names, sd.field_name_starts);
+}
+
+test "a grouped field records every name in source order" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 = "Point :: struct { x, y, z: f32; }";
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const sd = root.data.root.decls[0].data.struct_decl;
+    try expectNameStarts(src, sd.field_names, sd.field_name_starts);
+    try std.testing.expectEqual(@as(usize, 3), sd.field_name_starts.len);
+    try std.testing.expect(sd.field_name_starts[0] < sd.field_name_starts[1]);
+    try std.testing.expect(sd.field_name_starts[1] < sd.field_name_starts[2]);
+}
+
+test "a '_' field's start is the '_' token under its renamed name" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 = "Holes :: struct { _, x: i32; }";
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const sd = root.data.root.decls[0].data.struct_decl;
+    try std.testing.expectEqual(@as(usize, 2), sd.field_name_starts.len);
+    try std.testing.expectEqualStrings("_0", sd.field_names[0]);
+    try std.testing.expectEqualStrings("_", src[sd.field_name_starts[0] .. sd.field_name_starts[0] + 1]);
+    try std.testing.expectEqualStrings("x", src[sd.field_name_starts[1] .. sd.field_name_starts[1] + 1]);
+}
+
+test "enum variant name starts point at each variant" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 =
+        \\Kind :: enum {
+        \\    none;
+        \\    tagged: i32;
+        \\    fixed :: 7;
+        \\}
+    ;
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const ed = root.data.root.decls[0].data.enum_decl;
+    try std.testing.expectEqual(@as(usize, 3), ed.variant_names.len);
+    try expectNameStarts(src, ed.variant_names, ed.variant_name_starts);
+}
+
+test "error tag name starts point at each tag" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 = "ParseErr :: error { BadDigit, Overflow };";
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const esd = root.data.root.decls[0].data.error_set_decl;
+    try std.testing.expectEqual(@as(usize, 2), esd.tag_names.len);
+    try expectNameStarts(src, esd.tag_names, esd.tag_name_starts);
+}
+
+test "an anonymous union field has no source start" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 =
+        \\Payload :: union {
+        \\    struct { x, y: f32; };
+        \\    b: i64;
+        \\}
+    ;
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const ud = root.data.root.decls[0].data.union_decl;
+    try std.testing.expectEqualStrings("__anon_0", ud.field_names[0]);
+    try std.testing.expectEqual(ast.no_source_start, ud.field_name_starts[0]);
+    try expectNameStarts(src, ud.field_names, ud.field_name_starts);
+}
+
+test "empty member lists have empty name-start arrays" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(),
+        \\S :: struct {}
+        \\E :: enum {}
+        \\U :: union {}
+        \\Er :: error {}
+    );
+    const decls = (try parser.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 0), decls[0].data.struct_decl.field_name_starts.len);
+    try std.testing.expectEqual(@as(usize, 0), decls[1].data.enum_decl.variant_name_starts.len);
+    try std.testing.expectEqual(@as(usize, 0), decls[2].data.union_decl.field_name_starts.len);
+    try std.testing.expectEqual(@as(usize, 0), decls[3].data.error_set_decl.tag_name_starts.len);
+}
+
+test "a struct-body typed constant adds no field name start" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 =
+        \\Limits :: struct {
+        \\    MAX: i32: 10;
+        \\    x: i32;
+        \\}
+    ;
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const sd = root.data.root.decls[0].data.struct_decl;
+    try std.testing.expectEqual(@as(usize, 1), sd.field_names.len);
+    try expectNameStarts(src, sd.field_names, sd.field_name_starts);
+}
+
+test "'#using' leaves the declaration's name starts in step with its names" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const src: [:0]const u8 =
+        \\Base :: struct { a: i32; }
+        \\Derived :: struct {
+        \\    #using Base;
+        \\    b: i64;
+        \\}
+    ;
+    var parser = try Parser.init(arena.allocator(), src);
+    const root = try parser.parse();
+    const sd = root.data.root.decls[1].data.struct_decl;
+    try std.testing.expectEqual(@as(usize, 1), sd.using_entries.len);
+    try expectNameStarts(src, sd.field_names, sd.field_name_starts);
 }

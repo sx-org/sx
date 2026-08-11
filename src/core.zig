@@ -89,7 +89,7 @@ pub const Compilation = struct {
     }
 
     pub fn parse(self: *Compilation) !void {
-        var p = parser.Parser.init(self.allocator, self.source);
+        var p = try parser.Parser.init(self.allocator, self.source);
         p.diagnostics = &self.diagnostics;
         self.root = p.parse() catch return error.CompileError;
     }

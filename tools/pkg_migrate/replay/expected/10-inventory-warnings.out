@@ -1,0 +1,24 @@
+== D9 collision inventory: `package` / `import` / `private` / `intrinsic` as ordinary identifiers ==
+(comments, string/char literals, and #string heredocs excluded by the scanner)
+
+testdata/lexical/warnings/string-no-delimiter.sx:1:1: package [decl-const] | package :: #string 123
+testdata/lexical/warnings/string-no-delimiter.sx:2:1: import [call] | import();
+scan-warning: testdata/lexical/warnings/string-no-delimiter.sx:1:12: #string without delimiter identifier
+testdata/lexical/warnings/unterminated-char.sx:1:1: package [decl-const] | package :: () {
+scan-warning: testdata/lexical/warnings/unterminated-char.sx:2:10: unterminated char literal (rest of file skipped as literal)
+testdata/lexical/warnings/unterminated-heredoc-body.sx:1:1: package [decl-const] | package :: #string END
+scan-warning: testdata/lexical/warnings/unterminated-heredoc-body.sx:1:12: unterminated #string heredoc (rest of file skipped as literal)
+testdata/lexical/warnings/unterminated-heredoc-header.sx:1:1: package [decl-const] | package :: #string END
+scan-warning: testdata/lexical/warnings/unterminated-heredoc-header.sx:1:12: unterminated #string heredoc
+testdata/lexical/warnings/unterminated-string.sx:1:1: package [decl-const] | package :: () {
+scan-warning: testdata/lexical/warnings/unterminated-string.sx:2:10: unterminated string literal (rest of file skipped as literal)
+
+== summary ==
+package: 5
+  decl-const: 5
+import: 1
+  call: 1
+private: 0
+intrinsic: 0
+total identifier hits: 6 in 5 file(s) (scanned 5 .sx file(s))
+scan warnings: 5

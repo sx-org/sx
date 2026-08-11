@@ -79,6 +79,7 @@ pub const ExprTyper = struct {
                     const inner = self.l.inferExprType(uop.operand);
                     break :blk self.l.module.types.ptrTo(inner);
                 },
+                .pre_decrement => self.l.inferExprType(uop.operand),
                 else => .unresolved,
             },
             // `try X` evaluates to X's success type (the value part). A

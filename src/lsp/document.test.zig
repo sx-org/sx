@@ -36,7 +36,7 @@ test "analyzeDocument: identifier array dimension folds to the const value" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 =
         \\MAX :: 4;
         \\Thing :: struct { buf: [MAX]u8; }
@@ -58,7 +58,7 @@ test "analyzeDocument: int-literal array dimension still resolves to its length"
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 = "Buf :: struct { data: [64]u8; }";
     const doc = try store.openOrUpdate("main.sx", src, 1);
     try store.analyzeDocument(doc);
@@ -74,7 +74,7 @@ test "analyzeDocument: unresolvable array dimension records an explicit unknown 
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     // `N` is never declared as an integer const → the dimension is unknown.
     // Must not panic and must not fabricate a concrete length.
     const src: [:0]const u8 = "Holder :: struct { slots: [N]u8; }";
@@ -96,7 +96,7 @@ test "analyzeDocument: method call return type infers by receiver type" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 =
         \\ByteWriter :: struct {
         \\    n: i64;
@@ -147,7 +147,7 @@ test "DocumentStore: absolute didOpen of a relatively-keyed file reuses the Docu
     try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = rel, .data = disk_src });
     defer std.Io.Dir.deleteFile(.cwd(), io, rel) catch {};
 
-    var store = doc_mod.DocumentStore.init(alloc, io, &.{});
+    var store = doc_mod.DocumentStore.init(alloc, io, &.{}, alloc);
 
     // Import resolution path: loaded from disk under the relative spelling.
     const rel_doc = try store.getOrLoad(rel);
@@ -181,7 +181,7 @@ test "DocumentStore: relative import lookup after absolute didOpen sees editor c
     try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = rel, .data = "on_disk :: 1;\n" });
     defer std.Io.Dir.deleteFile(.cwd(), io, rel) catch {};
 
-    var store = doc_mod.DocumentStore.init(alloc, io, &.{});
+    var store = doc_mod.DocumentStore.init(alloc, io, &.{}, alloc);
 
     const cwd = sx.imports.processCwd(alloc) orelse return error.SkipZigTest;
     const abs = try std.fmt.allocPrint(alloc, "{s}/{s}", .{ cwd, rel });
@@ -214,7 +214,7 @@ test "analyzeDocument: #context_extend records a Context member def" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 = "#context_extend trace_depth: i64 = 3;";
     const doc = try store.openOrUpdate("ctx_decl.sx", src, 1);
     try store.analyzeDocument(doc);
@@ -234,7 +234,7 @@ test "analyzeDocument: context.field read records a Context member use" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 = "reader :: () -> i64 { return context.trace_depth; }";
     const doc = try store.openOrUpdate("reader.sx", src, 1);
     try store.analyzeDocument(doc);
@@ -252,7 +252,7 @@ test "analyzeDocument: push-literal field name records a Context member use" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 = "user :: () { push .{ trace_depth = 7 } { } }";
     const doc = try store.openOrUpdate("user.sx", src, 1);
     try store.analyzeDocument(doc);
@@ -271,7 +271,7 @@ test "analyzeDocument: typed struct-literal field name records a member use" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 =
         \\Point :: struct { x: i64; y: i64; }
         \\mk :: () { p := Point{ x = 1, y = 2 }; }
@@ -287,3 +287,196 @@ test "analyzeDocument: typed struct-literal field name records a member use" {
     try std.testing.expect(findMemberRef(sema, "x", "Point", true) != null);
 }
 
+/// Tracks bytes handed out and returned by `child`, so a test can bound the
+/// storage a document's token arenas hold across updates.
+pub const CountingAllocator = struct {
+    child: std.mem.Allocator,
+    allocated: usize = 0,
+    freed: usize = 0,
+
+    pub fn allocator(self: *CountingAllocator) std.mem.Allocator {
+        return .{ .ptr = self, .vtable = &.{
+            .alloc = alloc,
+            .resize = resize,
+            .remap = remap,
+            .free = free,
+        } };
+    }
+
+    pub fn live(self: *const CountingAllocator) usize {
+        return self.allocated - self.freed;
+    }
+
+    fn alloc(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ra: usize) ?[*]u8 {
+        const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
+        const p = self.child.rawAlloc(len, alignment, ra) orelse return null;
+        self.allocated += len;
+        return p;
+    }
+
+    fn resize(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ra: usize) bool {
+        const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
+        if (!self.child.rawResize(memory, alignment, new_len, ra)) return false;
+        self.note(memory.len, new_len);
+        return true;
+    }
+
+    fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ra: usize) ?[*]u8 {
+        const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
+        const p = self.child.rawRemap(memory, alignment, new_len, ra) orelse return null;
+        self.note(memory.len, new_len);
+        return p;
+    }
+
+    fn free(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, ra: usize) void {
+        const self: *CountingAllocator = @ptrCast(@alignCast(ctx));
+        self.child.rawFree(memory, alignment, ra);
+        self.freed += memory.len;
+    }
+
+    fn note(self: *CountingAllocator, old_len: usize, new_len: usize) void {
+        if (new_len >= old_len) self.allocated += new_len - old_len else self.freed += old_len - new_len;
+    }
+};
+
+fn tokenCount(doc: *const doc_mod.Document) usize {
+    var i = doc.tokens.first();
+    var n: usize = 0;
+    while (doc.tokens.tag(i) != .eof) : (i = doc.tokens.next(i)) n += 1;
+    return n;
+}
+
+test "openOrUpdate: a new document carries a token list over its own source" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const src: [:0]const u8 = "add :: (a: i32) -> i32 { a }";
+    const doc = try store.openOrUpdate("main.sx", src, 1);
+
+    try std.testing.expectEqual(src.ptr, doc.source.ptr);
+    try std.testing.expectEqual(src.ptr, doc.tokens.source.ptr);
+    try std.testing.expectEqual(@as(i64, 1), doc.version);
+    try std.testing.expect(tokenCount(doc) > 0);
+}
+
+test "openOrUpdate: an update replaces source, tokens and version together" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const first: [:0]const u8 = "a :: 1;";
+    const second: [:0]const u8 = "a :: 1; b :: 2; c :: 3;";
+
+    const doc = try store.openOrUpdate("main.sx", first, 1);
+    const first_count = tokenCount(doc);
+
+    const again = try store.openOrUpdate("main.sx", second, 2);
+    try std.testing.expectEqual(doc, again);
+    try std.testing.expectEqual(second.ptr, doc.source.ptr);
+    try std.testing.expectEqual(second.ptr, doc.tokens.source.ptr);
+    try std.testing.expectEqual(@as(i64, 2), doc.version);
+    try std.testing.expect(tokenCount(doc) > first_count);
+}
+
+test "openOrUpdate: a failed lex leaves the previous source, tokens and version readable" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var failing = std.testing.FailingAllocator.init(alloc, .{});
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, failing.allocator());
+    const first: [:0]const u8 = "a :: 1;";
+    const second: [:0]const u8 = "a :: 1; b :: 2;";
+
+    const doc = try store.openOrUpdate("main.sx", first, 1);
+    const first_count = tokenCount(doc);
+
+    failing.fail_index = failing.alloc_index;
+    try std.testing.expectError(error.OutOfMemory, store.openOrUpdate("main.sx", second, 2));
+
+    try std.testing.expectEqual(first.ptr, doc.source.ptr);
+    try std.testing.expectEqual(first.ptr, doc.tokens.source.ptr);
+    try std.testing.expectEqual(@as(i64, 1), doc.version);
+    try std.testing.expectEqual(first_count, tokenCount(doc));
+    try std.testing.expectEqualStrings("a", doc.tokens.slice(doc.tokens.first()));
+}
+
+test "createDocument: store allocation failures reclaim the token arena" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src: [:0]const u8 = "a :: 1;";
+    var reached_tokens = false;
+    var reached_success = false;
+    var index: usize = 0;
+    while (index < 32) : (index += 1) {
+        var failing = std.testing.FailingAllocator.init(alloc, .{ .fail_index = index });
+        var counter = CountingAllocator{ .child = std.testing.allocator };
+        var store = doc_mod.DocumentStore.init(failing.allocator(), test_io(), &.{}, counter.allocator());
+        if (store.openOrUpdate("main.sx", src, 1)) |doc| {
+            reached_success = true;
+            doc.token_arena.deinit();
+            break;
+        } else |err| {
+            try std.testing.expect(err == error.OutOfMemory);
+            try std.testing.expectEqual(@as(usize, 0), counter.live());
+            if (counter.allocated > 0) reached_tokens = true;
+        }
+    }
+    // Without a failure landing after the lex the sweep would prove nothing.
+    try std.testing.expect(reached_tokens);
+    try std.testing.expect(reached_success);
+}
+
+test "createDocument: token-backing allocation failures reclaim the token arena" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src: [:0]const u8 = "a :: 1;";
+    var reached_success = false;
+    var index: usize = 0;
+    while (index < 32) : (index += 1) {
+        var counter = CountingAllocator{ .child = std.testing.allocator };
+        var failing = std.testing.FailingAllocator.init(counter.allocator(), .{ .fail_index = index });
+        var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, failing.allocator());
+        if (store.openOrUpdate("main.sx", src, 1)) |doc| {
+            reached_success = true;
+            doc.token_arena.deinit();
+            try std.testing.expectEqual(@as(usize, 0), counter.live());
+            break;
+        } else |err| {
+            try std.testing.expect(err == error.OutOfMemory);
+            try std.testing.expectEqual(@as(usize, 0), counter.live());
+        }
+    }
+    try std.testing.expect(reached_success);
+}
+
+test "openOrUpdate: repeated updates return the prior token arena to its backing" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var counter = CountingAllocator{ .child = std.testing.allocator };
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, counter.allocator());
+    const src: [:0]const u8 = "add :: (a: i32, b: i32) -> i32 { a + b }";
+
+    const doc = try store.openOrUpdate("main.sx", src, 1);
+    defer doc.token_arena.deinit();
+    _ = try store.openOrUpdate("main.sx", src, 2);
+    const live_after_two = counter.live();
+    try std.testing.expect(live_after_two > 0);
+
+    var version: i64 = 3;
+    while (version <= 50) : (version += 1) {
+        _ = try store.openOrUpdate("main.sx", src, version);
+    }
+
+    try std.testing.expectEqual(live_after_two, counter.live());
+    try std.testing.expect(counter.freed > 0);
+}

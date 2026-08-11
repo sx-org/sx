@@ -1,0 +1,2 @@
+testdata/lexical/drift/directive-drift.sx:1:36: 'builtin' -> 'ns.builtin' [use]
+testdata/lexical/drift/directive-drift.sx: qualified 1 occurrence(s)

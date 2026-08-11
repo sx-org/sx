@@ -11,7 +11,7 @@ const site = @import("source_site.zig");
 const Node = ast.Node;
 
 fn parse(alloc: std.mem.Allocator, source: [:0]const u8) ![]const *const Node {
-    var p = Parser.init(alloc, source);
+    var p = try Parser.init(alloc, source);
     const root = try p.parse();
     return root.data.root.decls;
 }

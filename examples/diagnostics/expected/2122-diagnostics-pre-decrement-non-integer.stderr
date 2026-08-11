@@ -1,0 +1,5 @@
+error: pre-decrement needs an integer target; got 'f64'
+  --> examples/diagnostics/2122-diagnostics-pre-decrement-non-integer.sx:5:5
+   |
+ 5 |     --f;
+   |     ^^^

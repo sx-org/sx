@@ -1,0 +1,9 @@
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    a := 7;
+    b := 2;
+    x := a-->b;
+    print("{}\n", x);
+    return 0;
+}

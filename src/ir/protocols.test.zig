@@ -172,6 +172,7 @@ test "protocols: empty impl adoption is order-independent and excludes foreign d
     const circle_sd = ast.StructDecl{
         .name = "Circle",
         .field_names = &.{},
+        .field_name_starts = &.{},
         .field_types = &.{},
         .field_defaults = &.{},
     };

@@ -44,7 +44,7 @@ SxAppDelegate :: #objc_class("SxAppDelegate") export {
                 xx "UIKeyboardWillChangeFrameNotification",
                 null);
         }
-        return 1;
+        return xx 1;
     }
 
     sxKeyboardWillChangeFrame :: (self: *Self, notification: *void) {

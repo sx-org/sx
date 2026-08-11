@@ -1,6 +1,8 @@
 const std = @import("std");
 const sx = struct {
     pub const ast = @import("../ast.zig");
+    pub const lexer = @import("sxlex").lexer;
+    pub const token_list = @import("sxlex").token_list;
     pub const parser = @import("../parser.zig");
     pub const sema = @import("../sema.zig");
     pub const imports = @import("../imports.zig");
@@ -19,6 +21,10 @@ pub const Document = struct {
     path: []const u8,
     /// Source text of this file.
     source: [:0]const u8,
+    /// Token vector for `source`. Replaced only by `setSource`, never alone.
+    tokens: sx.token_list.TokenList,
+    /// Backs `tokens`. Replaced wholesale in the same transaction as `source`.
+    token_arena: std.heap.ArenaAllocator,
     /// LSP version (from didOpen/didChange), -1 for disk-loaded imports.
     version: i64,
     /// AST root for this file only (not merged).
@@ -42,6 +48,17 @@ pub const Document = struct {
         const sr = self.sema orelse return &.{};
         return sr.symbols;
     }
+
+    /// The doc-comment block above the site at `site_start`, which must spell
+    /// `name` in this document's source. A site spelling anything else came
+    /// from another document and yields null, never this file's comment at
+    /// that offset.
+    pub fn docFor(self: *const Document, site_start: u32, name: []const u8) ?[]const u8 {
+        if (site_start == sx.ast.no_source_start) return null;
+        const i = self.tokens.tokenAtStart(site_start) orelse return null;
+        if (!std.mem.eql(u8, self.tokens.slice(i), name)) return null;
+        return self.tokens.docBlock(i);
+    }
 };
 
 pub const DocumentStore = struct {
@@ -58,13 +75,23 @@ pub const DocumentStore = struct {
     /// so absolute (didOpen URI) and CWD-relative (import resolution)
     /// spellings of the same file share one Document.
     by_path: std.StringHashMap(*Document),
+    /// Backs every Document's `token_arena`, and must reclaim on free: an
+    /// arena child of an arena never returns its blocks, and `allocator` is
+    /// the process arena in production.
+    token_backing: std.mem.Allocator,
 
-    pub fn init(allocator: std.mem.Allocator, io: std.Io, stdlib_paths: []const []const u8) DocumentStore {
+    pub fn init(
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        stdlib_paths: []const []const u8,
+        token_backing: std.mem.Allocator,
+    ) DocumentStore {
         return .{
             .allocator = allocator,
             .io = io,
             .stdlib_paths = stdlib_paths,
             .by_path = std.StringHashMap(*Document).init(allocator),
+            .token_backing = token_backing,
         };
     }
 
@@ -156,8 +183,7 @@ pub const DocumentStore = struct {
         const existing = self.by_path.get(key) orelse
             (if (!std.mem.eql(u8, key, path)) self.by_path.get(path) else null);
         if (existing) |doc| {
-            doc.source = source;
-            doc.version = version;
+            try self.setSource(doc, source, version);
             // Invalidate analysis
             doc.root = null;
             doc.sema = null;
@@ -167,18 +193,38 @@ pub const DocumentStore = struct {
         return self.createDocument(key, source, version);
     }
 
+    /// The one place `source` changes. Lexes into a fresh arena first, so an
+    /// allocation failure leaves the document's previous
+    /// source/tokens/version triple intact and mutually consistent.
+    fn setSource(self: *DocumentStore, doc: *Document, source: [:0]const u8, version: i64) !void {
+        var arena = std.heap.ArenaAllocator.init(self.token_backing);
+        errdefer arena.deinit();
+        const tokens = try sx.lexer.lex(arena.allocator(), source);
+        doc.token_arena.deinit();
+        doc.token_arena = arena;
+        doc.tokens = tokens;
+        doc.source = source;
+        doc.version = version;
+    }
+
     fn createDocument(self: *DocumentStore, path: []const u8, source: [:0]const u8, version: i64) !*Document {
         const doc = try self.allocator.create(Document);
+        errdefer self.allocator.destroy(doc);
         const path_owned = try self.allocator.dupe(u8, path);
+        errdefer self.allocator.free(path_owned);
         doc.* = .{
             .path = path_owned,
-            .source = source,
-            .version = version,
+            .source = undefined,
+            .tokens = undefined,
+            .token_arena = std.heap.ArenaAllocator.init(self.token_backing),
+            .version = undefined,
             .root = null,
             .sema = null,
             .imports = &.{},
             .c_source_locations = std.StringHashMap(sx.c_import.CSourceLocation).init(self.allocator),
         };
+        errdefer doc.token_arena.deinit();
+        try self.setSource(doc, source, version);
         try self.by_path.put(path_owned, doc);
         return doc;
     }
@@ -191,7 +237,7 @@ pub const DocumentStore = struct {
 
         // Parse if needed
         if (doc.root == null) {
-            var p = sx.parser.Parser.init(self.allocator, doc.source);
+            var p = sx.parser.Parser.initFromTokens(self.allocator, doc.tokens);
             doc.root = p.parse() catch return;
         }
 

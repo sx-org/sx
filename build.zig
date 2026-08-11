@@ -13,11 +13,20 @@ pub fn build(b: *std.Build) void {
     const lib_dir = b.fmt("{s}/lib", .{llvm_prefix});
     const llvm_config = b.fmt("{s}/bin/llvm-config", .{llvm_prefix});
 
+    // The lexical layer alone — no C sources, no LLVM. Tools that only need to
+    // tokenize import this instead of the whole compiler.
+    const lexmod = b.addModule("sxlex", .{
+        .root_source_file = b.path("src/lex_root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
     const mod = b.addModule("sx", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
+    mod.addImport("sxlex", lexmod);
 
     mod.addSystemIncludePath(.{ .cwd_relative = include_dir });
     mod.addSystemIncludePath(.{ .cwd_relative = "." }); // for clang_shim.h
@@ -274,6 +283,30 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
+    const pkg_migrate = b.addExecutable(.{
+        .name = "pkg-migrate",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/pkg_migrate/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "sxlex", .module = lexmod }},
+        }),
+    });
+    b.installArtifact(pkg_migrate);
+    const run_pkg_migrate = b.addRunArtifact(pkg_migrate);
+    if (b.args) |args| run_pkg_migrate.addArgs(args);
+    b.step("pkg-migrate", "Run the package-migration tool").dependOn(&run_pkg_migrate.step);
+
+    const pkg_migrate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/pkg_migrate/main.test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "sxlex", .module = lexmod }},
+        }),
+    });
+    const run_pkg_migrate_tests = b.addRunArtifact(pkg_migrate_tests);
+
     // Install the stdlib alongside the binary so `<prefix>/bin/sx` finds
     // `<prefix>/library/modules/...` via the install-layout fallback in
     // `src/imports.zig::discoverStdlibPaths`.
@@ -381,7 +414,12 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    const lex_tests = b.addTest(.{ .root_module = lexmod });
+    const run_lex_tests = b.addRunArtifact(lex_tests);
+
     const test_step = b.step("test", "Run unit tests + the example/issue regression suite");
+    test_step.dependOn(&run_lex_tests.step);
+    test_step.dependOn(&run_pkg_migrate_tests.step);
     test_step.dependOn(&run_async_substrate_tests.step);
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);

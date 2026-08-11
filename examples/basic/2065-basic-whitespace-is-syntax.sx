@@ -3,7 +3,7 @@
 //
 // glue    — `(` applies and `[` indexes only when glued to what precedes
 //           them, so every application here is written tight;
-// spacing — `-` / `*` are infix only when their gaps match, and a prefix
+// spacing — `-` / `*` are infix after a completed left operand, and a prefix
 //           `-` / `*` must be glued to its operand.
 //
 // A `(` that OPENS something instead of continuing something is untouched by
@@ -82,13 +82,13 @@ main :: () -> i32 {
     pd := Padded(Leaf){ inner = Leaf{ n = 4 } };
     print("tag={} boxed={}\n", pd.tag(), boxed_value(Box(i64){ v = 9 }));
 
-    // matching gaps read as infix, spaced or tight alike
+    // a completed left operand reads the operator as infix, spaced or tight
     a := 10;
     c := 3;
     print("infix={} tight={} mul={} tightmul={}\n", a - c, a-c, a * c, a*c);
 
-    // an infix operator continues the expression across a line: the gaps still
-    // match (a line break is a gap like any other)
+    // an infix operator continues the expression across a line while it is not
+    // glued to the operand below it
     spread := a
         - c;
     print("spread={}\n", spread);

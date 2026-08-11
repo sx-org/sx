@@ -91,7 +91,7 @@ test "ProgramIndex declaration maps round-trip" {
     try std.testing.expect(idx.protocol_ast_map.get("Show").? == &pd);
 
     // struct_template_map: generic struct name → template.
-    const list_sd = ast.StructDecl{ .name = "List", .field_names = &.{}, .field_types = &.{}, .field_defaults = &.{} };
+    const list_sd = ast.StructDecl{ .name = "List", .field_names = &.{}, .field_name_starts = &.{}, .field_types = &.{}, .field_defaults = &.{} };
     try idx.struct_template_map.put("List", .{ .name = "List", .type_params = &.{}, .field_names = &.{}, .field_type_nodes = &.{}, .decl = &list_sd });
     try std.testing.expectEqualStrings("List", idx.struct_template_map.get("List").?.name);
 

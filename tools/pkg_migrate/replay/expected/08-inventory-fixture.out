@@ -1,0 +1,27 @@
+== D9 collision inventory: `package` / `import` / `private` / `intrinsic` as ordinary identifiers ==
+(comments, string/char literals, and #string heredocs excluded by the scanner)
+
+testdata/inventory/words.sx:5:11: package [typed-decl(param/field/local)] | build :: (package: string, lib: string) -> string {
+testdata/inventory/words.sx:7:5: import [decl-local] | import := package;
+testdata/inventory/words.sx:7:15: package [use] | import := package;
+testdata/inventory/words.sx:9:5: private [decl-const] | private :: 7;
+testdata/inventory/words.sx:11:10: intrinsic [call] | r := intrinsic(private);
+testdata/inventory/words.sx:11:20: private [use] | r := intrinsic(private);
+testdata/inventory/words.sx:17:11: import [use] (backticked) | t := `import;
+testdata/inventory/words.sx:19:14: private [member-access] | v := obj.private;
+
+== summary ==
+package: 2
+  typed-decl(param/field/local): 1
+  use: 1
+import: 2
+  decl-local: 1
+  use: 1
+private: 3
+  member-access: 1
+  decl-const: 1
+  use: 1
+intrinsic: 1
+  call: 1
+total identifier hits: 8 in 1 file(s) (scanned 1 .sx file(s))
+backticked (already escape-protected): 1

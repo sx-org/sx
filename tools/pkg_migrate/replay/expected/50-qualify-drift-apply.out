@@ -1,0 +1,4 @@
+testdata/lexical/drift/directive-drift.sx:1:2: 'identity' -> 'ns.identity' [use]
+testdata/lexical/drift/directive-drift.sx:1:12: 'expand' -> 'ns.expand' [use]
+testdata/lexical/drift/directive-drift.sx:1:20: 'context_extend' -> 'ns.context_extend' [use]
+testdata/lexical/drift/directive-drift.sx: qualified 3 occurrence(s)
