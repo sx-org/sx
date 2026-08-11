@@ -17,6 +17,6 @@ inline if POINTER_SIZE == 8 {
 
 main :: () {
     s := Slot{ n = 2 };
-    m := s.(Mark);
+    m := s.(Mark, context.allocator);
     print("{} {}\n", ADMITTED, m.tag());
 }

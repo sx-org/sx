@@ -36,7 +36,7 @@ Pt :: struct { x: i64; }
 
 main :: () {
     w := Widget{ value = 1 };
-    s := w.(Sizable);
+    s := w.(Sizable, context.allocator);
     xs : []i64 = .[1, 2, 3];
     o : ?i64 = 5;
     ga := GPA.init();

@@ -28,7 +28,7 @@ main :: () {
     for (v.items()) (x) { total += x; }
     print("total: {}\n", total);
     // Owned-receiver parity.
-    o := c.(P);
+    o := c.(P, context.allocator);
     for o.items() (x) { total += x; }
     print("both:  {}\n", total);
 }

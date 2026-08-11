@@ -2,6 +2,6 @@
 P :: protocol(T: Type) vtable { first :: (self: *Self) -> T; tag :: (self: *Self) -> T; }
 Cell :: struct { v: i64; }
 impl P(i64) for Cell { first :: (self: *Cell) -> i64 => 7; tag :: (self: *Cell) -> i64 => 200 + self.v; }
-erase :: () -> P(i64) { return Cell{ v = 1 }.(P(i64)); }
+erase :: () -> P(i64) { return Cell{ v = 1 }.(P(i64), context.allocator); }
 own_first :: () -> i64 { return erase().first(); }
 own_tag :: () -> i64 { return erase().tag(); }

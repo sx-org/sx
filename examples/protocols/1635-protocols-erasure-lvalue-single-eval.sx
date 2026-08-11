@@ -1,5 +1,5 @@
 // The OWNING erasure of an effectful operand evaluates the expression
-// ONCE. `arr[next()].(P)` lowers the receiver a single time — the
+// ONCE. `arr[next()].(P, alloc)` lowers the receiver a single time — the
 // side-effectful index runs once, and the copied element is the one that
 // single evaluation picked. It holds for the postfix owning copy, for every
 // index base shape: a LOCAL array, a module-GLOBAL array, and a STRUCT-FIELD
@@ -45,7 +45,7 @@ main :: () -> i32 {
 
     // Plain P destination: one eval, right element, independent copy.
     g_calls = 0;
-    p := arr[next()].(P);
+    p := arr[next()].(P, context.allocator);
     if g_calls != 1 { print("plain evals {}\n", g_calls); fails += 1; }
     if p.get() != 20 { print("plain element {}\n", p.get()); fails += 1; }
     p.bump();
@@ -54,7 +54,7 @@ main :: () -> i32 {
 
     // ?P destination: one eval, same copy semantics.
     g_calls = 0;
-    op : ?P = arr[next()].(P);
+    op : ?P = arr[next()].(P, context.allocator);
     if g_calls != 1 { print("opt evals {}\n", g_calls); fails += 1; }
     if op == null { print("opt null\n"); fails += 1; }
     if op.get() != 20 { print("opt element {}\n", op.get()); fails += 1; }
@@ -62,14 +62,14 @@ main :: () -> i32 {
     // Module-GLOBAL array base: one eval, right element.
     next_ret = 0;
     g_calls = 0;
-    pg := g_arr[next()].(P);
+    pg := g_arr[next()].(P, context.allocator);
     if g_calls != 1 { print("global evals {}\n", g_calls); fails += 1; }
     if pg.get() != 100 { print("global element {}\n", pg.get()); fails += 1; }
 
     // STRUCT-FIELD array base: one eval, right element.
     h : H = .{ arr = .[ S{ v = 300 }, S{ v = 400 } ] };
     g_calls = 0;
-    pf := h.arr[next()].(P);
+    pf := h.arr[next()].(P, context.allocator);
     if g_calls != 1 { print("field evals {}\n", g_calls); fails += 1; }
     if pf.get() != 300 { print("field element {}\n", pf.get()); fails += 1; }
 
@@ -78,7 +78,7 @@ main :: () -> i32 {
     warr : [2]S = .[ S{ v = 1 }, S{ v = 2 } ];
     total : i64 = 0;
     for warr (x) {
-        pv := x.(P);
+        pv := x.(P, context.allocator);
         pv.bump();
         total += pv.get();
     }

@@ -25,11 +25,11 @@ impl Eqish for Sq {
 main :: () {
     sq := Sq{ side = 4 };
 
-    m := sq.(Marker);
+    m := sq.(Marker, context.allocator);
     print("marker type: {}\n", type_of(m) == Sq);
     print("marker raw:  {}\n", m.(ProtocolRaw).type_id == Sq);
 
-    e := sq.(Eqish);
+    e := sq.(Eqish, context.allocator);
     print("eqish type:  {}\n", type_of(e) == Sq);
 
     // Checked downcast through the {ctx, __type_id} prefix.
@@ -44,8 +44,8 @@ main :: () {
 
     // free is legal on an OWNED (postfix-erased, heap-copied) value even
     // with an empty vtable.
-    mo := Sq{ side = 9 }.(Marker);
-    eo := Sq{ side = 9 }.(Eqish);
+    mo := Sq{ side = 9 }.(Marker, context.allocator);
+    eo := Sq{ side = 9 }.(Eqish, context.allocator);
     free(mo);
     free(eo);
     print("freed\n");

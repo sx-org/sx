@@ -26,7 +26,7 @@ impl Provider for Holder {
 
 main :: () -> i32 {
     h : Holder = .{};
-    p := h.(Provider);
+    p := h.(Provider, context.allocator);
     b := p.get();
     print("m={} dep={}\n", b.m, dep_box());
     0

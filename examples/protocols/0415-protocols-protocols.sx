@@ -384,7 +384,7 @@ main :: () {
     // `inline`-kind protocol — xx conversion + dynamic dispatch
     {
         acc := Accumulator{ total = 0 };
-        a := acc.(Adder);              // owning copy (postfix erasure)
+        a := acc.(Adder, context.allocator);              // owning copy (postfix erasure)
         a.add(10);
         a.add(20);
         a.add(12);
@@ -398,7 +398,7 @@ main :: () {
             a.value()
         }
         acc := Accumulator{ total = 100 };
-        result := use_adder(acc.(Adder), 50);
+        result := use_adder(acc.(Adder, context.allocator), 50);
         print("P2.2: {}\n", result);
     }
 
@@ -406,8 +406,8 @@ main :: () {
     {
         acc := Accumulator{ total = 0 };
         dbl := Doubler{ val = 0 };
-        a1 := acc.(Adder);
-        a2 := dbl.(Adder);
+        a1 := acc.(Adder, context.allocator);
+        a2 := dbl.(Adder, context.allocator);
         a1.add(5);
         a2.add(5);
         print("P2.3: {} {}\n", a1.value(), a2.value());
@@ -416,7 +416,7 @@ main :: () {
     // vtable-pointer protocol
     {
         sc := SimpleCounter{ val = 0 };
-        c := sc.(Counter);
+        c := sc.(Counter, context.allocator);
         c.inc();
         c.inc();
         c.inc();
@@ -433,7 +433,7 @@ main :: () {
             c.get()
         }
         sc := SimpleCounter{ val = 10 };
-        result := use_counter(sc.(Counter));
+        result := use_counter(sc.(Counter, context.allocator));
         print("P3.2: {}\n", result);
     }
 
@@ -556,7 +556,7 @@ main :: () {
     {
         acc := Accumulator{ total = 0 };
         dbl := Doubler{ val = 0 };
-        adders : [2]Adder = .[acc.(Adder), dbl.(Adder)];
+        adders : [2]Adder = .[acc.(Adder, context.allocator), dbl.(Adder, context.allocator)];
         i := 0;
         while i < 2 {
             adders[i].add(5);
@@ -568,14 +568,14 @@ main :: () {
     // postfix owning copy of an inline struct literal (no intermediate variable)
     {
         use_adder :: (a: Adder) -> i32 { a.add(10); a.value() }
-        result := use_adder(Accumulator{ total = 5 }.(Adder));
+        result := use_adder(Accumulator{ total = 5 }.(Adder, context.allocator));
         print("P2.7: {}\n", result);
     }
 
     // postfix owning copy of a struct literal at a vtable protocol
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
-        result := use_counter(SimpleCounter{ val = 100 }.(Counter));
+        result := use_counter(SimpleCounter{ val = 100 }.(Counter, context.allocator));
         print("P3.3: {}\n", result);
     }
 }

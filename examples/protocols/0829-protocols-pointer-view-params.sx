@@ -41,7 +41,7 @@ main :: () {
     print("field: {}\n", h.inner.value);
 
     // owned protocol value lends a view via plain @
-    s := w.(Sizable);
+    s := w.(Sizable, context.allocator);
     print("owned-view: {}\n", measure(*s));
 
     // `inline` layout dispatches through *P too, mutating the original

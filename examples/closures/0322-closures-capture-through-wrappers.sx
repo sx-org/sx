@@ -1,5 +1,5 @@
 // A capture is reached through every expression WRAPPER a closure body can
-// put it behind: a postfix cast's operand (`V{ w = side }.(Shape)`), a
+// put it behind: a postfix cast's operand (`V{ w = side }.(Shape, a)`), a
 // named argument's value (`f(b = side)`), and a trailing block's lambda
 // (`f(1.0) { … side … }`).
 // `collectCaptures` carries an arm for `postfix_cast`, `named_arg` and
@@ -18,7 +18,7 @@ named :: (a: f32 = 0.0, b: f32 = 0.0) { print("named {} {}\n", a, b); }
 block :: (x: f32, body: Closure()) { print("block {}\n", x); body(); }
 
 erase_in_closure :: (side: f32) {
-    run(() { put(Box{ w = side }.(Shape)); });
+    run(() { put(Box{ w = side }.(Shape, context.allocator)); });
 }
 
 named_arg_in_closure :: (side: f32) {
@@ -34,7 +34,7 @@ all_at_once :: (side: f32) {
     run(() {
         for 0..2 (i) {
             n := i;
-            block(side) { put(Box{ w = side + n.(f32) }.(Shape)); };
+            block(side) { put(Box{ w = side + n.(f32) }.(Shape, context.allocator)); };
         }
     });
 }

@@ -53,14 +53,14 @@ main :: () {
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
         sc := SimpleCounter{ val = 10 };
-        result := use_counter(sc.(Counter));
+        result := use_counter(sc.(Counter, context.allocator));
         print("AE1: {}\n", result);
     }
 
     // AE2: protocol variable from an lvalue — the postfix owning copy
     {
         acc := Accumulator{ total = 0 };
-        a := acc.(Adder);
+        a := acc.(Adder, context.allocator);
         a.add(5);
         a.add(3);
         print("AE2: {}\n", a.value());
@@ -70,7 +70,7 @@ main :: () {
     // implicit `use_counter(SimpleCounter{...})` is the demand error)
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
-        result := use_counter(SimpleCounter{ val = 100 }.(Counter));
+        result := use_counter(SimpleCounter{ val = 100 }.(Counter, context.allocator));
         print("AE3: {}\n", result);
     }
 
@@ -78,7 +78,7 @@ main :: () {
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.get() }
         mk :: () -> SimpleCounter { SimpleCounter{ val = 50 } }
-        result := use_counter(mk().(Counter));
+        result := use_counter(mk().(Counter, context.allocator));
         print("AE4: {}\n", result);
     }
 

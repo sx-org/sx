@@ -64,11 +64,11 @@ main :: () -> void {
     s := Square{ side = 5 };
 
     a : StackA = .{};
-    a.add(c.(Drawable));
+    a.add(c.(Drawable, context.allocator));
     print("StackA: draw={}\n", a.children.items[0].child.draw());
 
     b : StackB = .{};
-    b.add(s.(Drawable));
+    b.add(s.(Drawable, context.allocator));
     print("StackB: draw={}\n", b.children.items[0].child.draw());
 
     print("OK\n");

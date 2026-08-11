@@ -107,7 +107,7 @@ main :: () {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
         result := use_counter(SimpleCounter{ val = 0 }.{
             self.val = 50;
-        }.(Counter));
+        }.(Counter, context.allocator));
         print("IB5: {}\n", result);
     }
 

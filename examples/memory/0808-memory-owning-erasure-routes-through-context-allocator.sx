@@ -1,11 +1,11 @@
-// The compiler-internal heap-copy that backs the owning erasure
-// `expr.(P)` dispatches through `context.allocator`, not libc malloc
-// directly. So when a `push .{ allocator = tracer }` block is active,
-// a `StructLiteral{}.(P)` inside it is allocated by the tracker.
+// `context.allocator` as the NAMED allocator of an owning erasure
+// resolves at the erasure site: inside a `push .{ allocator = tracer }`
+// block, `StructLiteral{}.(P, context.allocator)` allocates through the
+// tracker.
 //
-// Only the postfix owning spellings allocate; an implicit erasure
-// (bare operand or `xx`) never does — every shape at a value/own
-// target is the demand error, pinned in diagnostics/1256.
+// Only `.(P, alloc)` allocates; an implicit erasure (bare operand or
+// `xx`) and the one-argument `.(P)` refuse — pinned in
+// diagnostics/1256.
 #import "modules/std.sx";
 #import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
 
@@ -43,7 +43,7 @@ main :: () -> i32 {
     push .{ allocator = tracer } {
         // Struct-literal receiver: the owning copy allocates through
         // context.allocator — i.e. through the pushed tracer.
-        ignore := Tracer{ count = 0 }.(Boxed);
+        ignore := Tracer{ count = 0 }.(Boxed, context.allocator);
         _ = ignore;
     }
     print("Tracer.count = {}\n", tracer.count);

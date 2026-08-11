@@ -35,6 +35,6 @@ main :: () {
         print("bound:   {}\n", g.n());
     }
     // ?P (owned optional) parity.
-    op : ?P = c.(P);
+    op : ?P = c.(P, context.allocator);
     print("owned:   {}\n", op.n());
 }

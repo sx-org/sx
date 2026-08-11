@@ -23,7 +23,7 @@ main :: () -> i32 {
     print("g initially null\n");
   }
 
-  g = Impl{}.(GPU);
+  g = Impl{}.(GPU, context.allocator);
   if g != null {
     n := g.ping();
     print("after assign: g.ping() = {}\n", n);

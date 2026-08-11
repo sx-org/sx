@@ -41,11 +41,11 @@ main :: () {
     sq := Sq{ side = 4 };
 
     // Vtable layout: dispatchable methods through an owned P.
-    s := sq.(Shape);
+    s := sq.(Shape, context.allocator);
     print("vtable: {} {}\n", s.area(), s.name());
 
     // `inline` layout: same filtered slots as fn-ptr fields.
-    i := sq.(InlShape);
+    i := sq.(InlShape, context.allocator);
     print("inline: {} {}\n", i.area(), i.name());
 
     // *P view dispatch over the same filtered slots.

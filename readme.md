@@ -132,9 +132,11 @@ an explicit `xx` / `x.(T)` is always the escape hatch for a deliberate
 reinterpretation.
 
 **Postfix cast.** `expr.(T)` converts to the written type through the same
-engine as `xx` — one coercion ladder. A protocol target is the OWNING
-erasure: `dog.(Speaker)` copies, `dog.(Speaker, alloc)` copies through a
-named allocator, a `*Speaker` view receiver promotes to owned.
+engine as `xx` — one coercion ladder. A protocol target with the
+allocator argument is the OWNING erasure: `dog.(Speaker, alloc)` copies
+through the named allocator (`context.allocator` spelled out for the
+ambient one), a `*Speaker` view receiver promotes to owned. Plain
+`dog.(Speaker)` refuses — an owning erasure names its allocator.
 Well-defined, not value-preserving: `1000.(i8)` truncates. Chains
 left-to-right (`x.(u8).(i64)`), binds tighter than unary (`-x.(i8)`). On an
 `any` receiver it is the checked assertion, three temperaments:
@@ -460,17 +462,16 @@ impl Drawable for Circle {
     draw :: (self: *Circle, x: i32, y: i32) { ... }
 }
 
-shape := my_circle.(Drawable);     // type erasure — an owned copy
-shape.draw(10, 20);                // dynamic dispatch
+shape := my_circle.(Drawable, context.allocator);  // type erasure — an owned copy
+shape.draw(10, 20);                                // dynamic dispatch
 ```
 
-**A protocol value owns its data; `*P` is the borrowed view.** An
-implicit erasure never allocates: every operand must say what it means —
-`my_circle.(Drawable)` copies (also `.(Drawable, alloc)` through a named
-allocator), while a `*Drawable`
-position borrows a transient view (mutations reach the original). An
-implicit `shape : Drawable = my_circle` is a compile error with those
-fixits. Release owned values with `free(shape)` (context allocator
+**A protocol value owns its data; `*P` is the borrowed view.** Only
+`.(Drawable, alloc)` allocates — the copy is made through the named
+allocator, and every other spelling must say what it means: a
+`*Drawable` position borrows a transient view (mutations reach the
+original), while an implicit `shape : Drawable = my_circle` or a plain
+`my_circle.(Drawable)` is a compile error with those fixits. Release owned values with `free(shape)` (context allocator
 current at the free) or `free(shape, allocator)` (explicit pairing,
 immune to context drift).
 

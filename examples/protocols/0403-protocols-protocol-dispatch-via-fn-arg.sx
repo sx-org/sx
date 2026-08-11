@@ -15,7 +15,7 @@ impl Sizable for Leaf {
 
 add :: (items: *List(Sizable), w: Leaf) {
     p := w;
-    items.append(p.(Sizable));  // explicit owning copy
+    items.append(p.(Sizable, context.allocator));  // explicit owning copy
 }
 
 dispatch_fn :: (items: *List(Sizable)) {

@@ -17,7 +17,7 @@ Combined :: struct($R: Type, ..$Ts: []Type) {
 
 make :: (..sources: VL) -> i64 {
     c : Combined(i64, ..sources.T) = ---;   // instantiate with the spread type-arg
-    c.sources.0 = sources[0].(VL(i64));     // owning copy of the concrete source
+    c.sources.0 = sources[0].(VL(i64), context.allocator);     // owning copy of the concrete source
     return c.sources.0.get();
 }
 

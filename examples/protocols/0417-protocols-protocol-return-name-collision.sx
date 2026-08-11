@@ -26,7 +26,7 @@ impl Plat for Impl {
 
 main :: () {
     impl : Impl = .{ dummy = 0 };
-    g_plat := impl.(Plat);
+    g_plat := impl.(Plat, context.allocator);
     ev := g_plat.one_event();          // type INFERRED from protocol return
     if ev == {
         case .key_up: (e) {

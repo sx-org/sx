@@ -54,7 +54,7 @@ main :: () {
     print("{}\n", sl.get());
 
     // The unparameterized vtable kind, owning erasure and all.
-    s := p.(Show);
+    s := p.(Show, context.allocator);
     print("{}\n", s.fmt());
     free(s);
 

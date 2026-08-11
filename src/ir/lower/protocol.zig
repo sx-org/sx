@@ -1211,10 +1211,9 @@ pub fn refuseProtocolAssertTargetOnAny(self: *Lowering, type_node: *const Node, 
     return true;
 }
 
-/// Allocate `size_ref` bytes through an ALLOCATOR VALUE — the named-allocator
-/// dual of `allocViaContext`, for the `.(P, alloc)` owning erasure. Goes
-/// through the ordinary method dispatch, so the allocator protocol's kind
-/// stays a property of its declaration.
+/// Allocate `size_ref` bytes through an ALLOCATOR VALUE — the `.(P, alloc)`
+/// owning erasure's allocation. Goes through the ordinary method dispatch,
+/// so the allocator protocol's kind stays a property of its declaration.
 pub fn allocViaAllocatorValue(self: *Lowering, allocator: Ref, size_ref: Ref) Ref {
     const alloc_ty = self.builder.getRefType(allocator);
     const pd = self.getProtocolInfo(alloc_ty) orelse return self.emitError("allocator", null);
@@ -1222,23 +1221,20 @@ pub fn allocViaAllocatorValue(self: *Lowering, allocator: Ref, size_ref: Ref) Re
     return emitProtocolDispatch(self, allocator, pd, "alloc_bytes", &.{size_ref}, alloc_ty, .{ .start = cs.start, .end = cs.end });
 }
 
-fn erasureAlloc(self: *Lowering, alloc_val: ?Ref, size_ref: Ref) Ref {
-    if (alloc_val) |a| return allocViaAllocatorValue(self, a, size_ref);
-    return self.allocViaContext(size_ref);
-}
-
-/// Postfix OWNING erasure `expr.(P)` / `expr.(P, alloc)` — the ownership
-/// model's explicit owning spelling (P values own their ctx). Receiver
-/// shapes:
+/// Postfix OWNING erasure `expr.(P, alloc)` — the ownership model's only
+/// allocating spelling (P values own their ctx). Receiver shapes:
 ///   - concrete VALUE (lvalue or rvalue — both copy): heap-copy the data;
 ///   - `*Concrete`: SNAPSHOT — heap-copy the pointee;
-///   - `*P` (same protocol): PROMOTION — the pointee protocol value with
-///     its ctx replaced by a fresh heap copy of rt_size_of(type_id) bytes
-///     (vtable / fn words reused — well-typed by construction);
-///   - `#identity` target: `.(P)` stays the borrow; `.(P, alloc)` refuses
+///   - `P` (same protocol, value): CLONE — an independent copy of the
+///     receiver's ctx (rt_size_of(type_id) bytes; vtable / fn words
+///     reused — well-typed by construction);
+///   - `*P` (same protocol): PROMOTION — the same, over the pointee;
+///   - `#identity` target: `.(P)` is the borrow; `.(P, alloc)` refuses
 ///     (a borrow allocates nothing).
-/// The allocator argument must be an LVALUE naming an allocator; absent =
-/// context.allocator at the erasure.
+/// The allocator argument is REQUIRED on the owning shapes (plain `.(P)`
+/// refuses — every allocation names its allocator; `context.allocator` is
+/// spelled out to use the ambient one) and must be an LVALUE naming an
+/// allocator.
 pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: TypeId, span: ast.Span) Ref {
     if (self.refuseValuelessProtocol(dst_ty, span, "make a value of")) return self.builder.constUndef(dst_ty);
     const dst_pi = self.getProtocolInfo(dst_ty) orelse return self.builder.constUndef(dst_ty);
@@ -1266,49 +1262,59 @@ pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: T
         return self.buildProtocolErasure(operand, pc.operand, self.builder.getRefType(operand), dst_ty);
     }
 
-    var alloc_val: ?Ref = null;
-    if (pc.alloc_arg) |an| {
-        if (!self.isLvalueExpr(an)) {
-            if (self.diagnostics) |d|
-                d.addFmt(.err, an.span, "the allocator argument of an owning erasure must be an LVALUE naming an allocator — bind it first (the value must outlive the erasure so `free(p, a)` can pair with it)", .{});
-            return self.builder.constUndef(dst_ty);
-        }
-        const av = self.lowerExpr(an);
-        const avt = self.builder.getRefType(av);
-        const alloc_ty = self.module.types.findByName(self.module.types.internString("Allocator")) orelse {
-            if (self.diagnostics) |d|
-                d.addFmt(.err, an.span, "'.(P, alloc)' needs the 'Allocator' protocol in scope — #import \"modules/std.sx\"", .{});
-            return self.builder.constUndef(dst_ty);
-        };
-        alloc_val = if (avt == alloc_ty) av else self.coerceOrErase(av, avt, alloc_ty, an);
+    const an = pc.alloc_arg orelse {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "an owning erasure allocates and must name its allocator — write '.({s}, <alloc>)'; for the ambient allocator write '.({s}, context.allocator)'", .{ dst_pi.name, dst_pi.name });
+        return self.builder.constUndef(dst_ty);
+    };
+    if (!self.isLvalueExpr(an)) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, an.span, "the allocator argument of an owning erasure must be an LVALUE naming an allocator — bind it first (the value must outlive the erasure so `free(p, a)` can pair with it)", .{});
+        return self.builder.constUndef(dst_ty);
     }
+    const av = self.lowerExpr(an);
+    const avt = self.builder.getRefType(av);
+    const alloc_ty = self.module.types.findByName(self.module.types.internString("Allocator")) orelse {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, an.span, "'.(P, alloc)' needs the 'Allocator' protocol in scope — #import \"modules/std.sx\"", .{});
+        return self.builder.constUndef(dst_ty);
+    };
+    const alloc_val = if (avt == alloc_ty) av else self.coerceOrErase(av, avt, alloc_ty, an);
 
     const operand = self.lowerExpr(pc.operand);
     const src_ty = self.builder.getRefType(operand);
 
     if (!src_ty.isBuiltin()) {
         const si = self.module.types.get(src_ty);
+        // CLONE (`p.(P, alloc)`, same-protocol value) and PROMOTION
+        // (`pv.(P, alloc)`, `*P`) share one body: the receiver protocol
+        // value with its ctx replaced by a fresh heap copy of
+        // rt_size_of(type_id) bytes; vtable / fn words reused.
+        const proto_recv: ?Ref = if (src_ty == dst_ty)
+            operand
+        else if (si == .pointer and si.pointer.pointee == dst_ty)
+            self.builder.load(operand, dst_ty)
+        else
+            null;
+        if (proto_recv) |pv| {
+            const old_ctx = self.builder.structGet(pv, 0, void_ptr_ty);
+            const tid = self.builder.structGet(pv, 1, .type_value);
+            const sz_args = self.alloc.dupe(Ref, &.{tid}) catch unreachable;
+            const size_ref = self.builder.callBuiltin(.rt_size_of, sz_args, .i64);
+            const heap = allocViaAllocatorValue(self, alloc_val, size_ref);
+            _ = self.callExtern("memcpy", &.{ heap, old_ctx, size_ref }, void_ptr_ty);
+            const dfields = self.module.types.get(dst_ty).@"struct".fields;
+            var out = std.ArrayList(Ref).empty;
+            defer out.deinit(self.alloc);
+            out.append(self.alloc, heap) catch unreachable;
+            for (dfields[1..], 1..) |f, i| {
+                out.append(self.alloc, self.builder.structGet(pv, @intCast(i), f.ty)) catch unreachable;
+            }
+            const owned = self.alloc.dupe(Ref, out.items) catch unreachable;
+            return self.builder.emit(.{ .struct_init = .{ .fields = owned } }, dst_ty);
+        }
         if (si == .pointer) {
             const pointee = si.pointer.pointee;
-            if (pointee == dst_ty) {
-                // PROMOTION: *P → owned P.
-                const pv = self.builder.load(operand, dst_ty);
-                const old_ctx = self.builder.structGet(pv, 0, void_ptr_ty);
-                const tid = self.builder.structGet(pv, 1, .type_value);
-                const sz_args = self.alloc.dupe(Ref, &.{tid}) catch unreachable;
-                const size_ref = self.builder.callBuiltin(.rt_size_of, sz_args, .i64);
-                const heap = erasureAlloc(self, alloc_val, size_ref);
-                _ = self.callExtern("memcpy", &.{ heap, old_ctx, size_ref }, void_ptr_ty);
-                const dfields = self.module.types.get(dst_ty).@"struct".fields;
-                var out = std.ArrayList(Ref).empty;
-                defer out.deinit(self.alloc);
-                out.append(self.alloc, heap) catch unreachable;
-                for (dfields[1..], 1..) |f, i| {
-                    out.append(self.alloc, self.builder.structGet(pv, @intCast(i), f.ty)) catch unreachable;
-                }
-                const owned = self.alloc.dupe(Ref, out.items) catch unreachable;
-                return self.builder.emit(.{ .struct_init = .{ .fields = owned } }, dst_ty);
-            }
             if (self.getProtocolInfo(pointee) != null) {
                 if (self.diagnostics) |d|
                     d.addFmt(.err, span, "cannot promote a '*{s}' view to owned '{s}' — promotion requires the same protocol", .{ self.formatTypeName(pointee), dst_pi.name });
@@ -1322,7 +1328,7 @@ pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: T
             };
             const psize: i64 = @intCast(self.module.types.typeSizeBytes(pointee));
             const size_ref = self.builder.constInt(psize, .i64);
-            const heap = erasureAlloc(self, alloc_val, size_ref);
+            const heap = allocViaAllocatorValue(self, alloc_val, size_ref);
             _ = self.callExtern("memcpy", &.{ heap, operand, size_ref }, void_ptr_ty);
             return self.buildProtocolValue(heap, dst_pi.name, ctn, dst_ty, pointee);
         }
@@ -1338,7 +1344,7 @@ pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: T
     self.builder.store(slot, operand);
     const vsize: i64 = @intCast(self.module.types.typeSizeBytes(src_ty));
     const size_ref = self.builder.constInt(vsize, .i64);
-    const heap = erasureAlloc(self, alloc_val, size_ref);
+    const heap = allocViaAllocatorValue(self, alloc_val, size_ref);
     _ = self.callExtern("memcpy", &.{ heap, slot, size_ref }, void_ptr_ty);
     return self.buildProtocolValue(heap, dst_pi.name, ctn, dst_ty, src_ty);
 }

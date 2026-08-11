@@ -38,6 +38,6 @@ inline for SHAPES (T) {
 
 main :: () {
     i := Item{ n = 2 };
-    s := i.(Show);
+    s := i.(Show, context.allocator);
     print("{} {} {} {}\n", REPAIRED, UNIQUE, PARTITION, s.fmt());
 }

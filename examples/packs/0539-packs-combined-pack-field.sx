@@ -22,7 +22,7 @@ main :: () -> i32 {
     // Combined(i64, i64, string): R=i64, Ts=[i64, string],
     // sources: (VL(i64), VL(string)).
     c : Combined(i64, i64, string) = ---;
-    c.sources = .{IntCell{ v = 10 }.(VL(i64)), StrCell{ s = "hi" }.(VL(string))};
+    c.sources = .{IntCell{ v = 10 }.(VL(i64), context.allocator), StrCell{ s = "hi" }.(VL(string), context.allocator)};
     c.value = 99;
     print("{} {} {}\n", c.sources.0.get(), c.sources.1.get(), c.value);  // 10 hi 99
     0

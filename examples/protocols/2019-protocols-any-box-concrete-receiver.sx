@@ -23,8 +23,8 @@ main :: () {
     c := Cube{ side = 4 };
 
     // Each kind's handle, boxed by a plain declaration.
-    v := c.(Sized);
-    i := c.(Boxed);
+    v := c.(Sized, context.allocator);
+    i := c.(Boxed, context.allocator);
     n : Noted = c;
 
     av : any = v;

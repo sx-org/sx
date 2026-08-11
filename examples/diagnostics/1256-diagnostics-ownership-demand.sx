@@ -8,6 +8,8 @@
 //   - pointer-to-concrete at a P target;
 //   - implicit / `xx` RVALUE erasure (decl, call arg) — the owning
 //     copy is postfix-only;
+//   - `.(P)` without the allocator — an owning erasure names its
+//     allocator;
 // plus the two `.(P, alloc)` refusals: an rvalue allocator argument, and
 // `.(P, alloc)` on an `#identity` target (a borrow allocates nothing).
 #import "modules/std.sx";
@@ -44,6 +46,9 @@ main :: () {
     r2 : Sizable = xx mk_w();   // xx rvalue (call result) → same demand
     _ = r2;
     _ = use_val(mk_w());        // implicit rvalue call arg → demand
+
+    f := w.(Sizable);           // owning erasure without an allocator → refusal
+    _ = f;
 
     d := w.(Sizable, mk_gpa()); // allocator argument must be an lvalue
     _ = d;

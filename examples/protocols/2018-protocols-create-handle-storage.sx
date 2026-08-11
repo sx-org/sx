@@ -42,7 +42,7 @@ main :: () {
     // vtable (erased): same shape, one indirection more at dispatch.
     c := Counter{ total = 10 };
     kp := a.create(Tally);
-    kp.* = c.(Tally);
+    kp.* = c.(Tally, context.allocator);
     print("{}\n", kp.push(7));
     owned := kp.*;
     owned.free(a);

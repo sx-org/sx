@@ -47,7 +47,7 @@ main :: () {
     // (— the value is independent of its source; borrow-for-transient
     // moved to `*Speaker` views).
     d := Dog{ n = 42 };
-    s := d.(Speaker);
+    s := d.(Speaker, context.allocator);
     print("speak: {}\n", s.speak());
     d.n = 43;
     print("borrow: {}\n", s.speak());

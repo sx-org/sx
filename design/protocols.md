@@ -329,10 +329,11 @@ Every erased protocol belongs to one of two classes:
 
 - **value/own** (unmarked): erasure creates manually managed,
   allocation-backed storage — a heap copy of the receiver, made only
-  under the explicit postfix spellings `.(P)` / `.(P, alloc)`, through
-  `context.allocator` or the named allocator. An implicit erasure never
-  allocates: every operand shape at a value/own target is the demand
-  diagnostic. The handles over that storage may ALIAS it (§5.3a);
+  under the explicit postfix spelling `.(P, alloc)`, through the named
+  allocator (`context.allocator` is spelled out to use the ambient
+  one). No other spelling allocates: an implicit erasure is the demand
+  diagnostic for every operand shape, and the one-argument `.(P)` on
+  an owning shape refuses — an owning erasure names its allocator. The handles over that storage may ALIAS it (§5.3a);
   "owning erasure" names the operation and the storage's discipline,
   not a per-handle claim. `*P` is the borrowed view.
 - **`#identity`**: for protocols whose runtime object *is* unique
@@ -343,11 +344,12 @@ Every erased protocol belongs to one of two classes:
 
 | spelling | receiver | result |
 |---|---|---|
-| `expr.(P)` | concrete lvalue or rvalue | **owns** — independent heap copy |
-| `expr.(P)` | `*Concrete` | **owns** — snapshot of the pointee |
-| `expr.(P)` | `P` (same protocol, value) | **owns** — independent copy of the receiver (`rt_size_of(type_id)` bytes; vtable/fn words reused) |
-| `expr.(P)` | `*P` (same protocol) | **owns** — promotion: fresh ctx copy, vtable/fn words reused |
-| `expr.(P, alloc)` | any owning shape | **owns** — the copy allocates through `alloc` (an lvalue naming an allocator); pairs with `free(p, alloc)` |
+| `expr.(P, alloc)` | concrete lvalue or rvalue | **owns** — independent heap copy |
+| `expr.(P, alloc)` | `*Concrete` | **owns** — snapshot of the pointee |
+| `expr.(P, alloc)` | `P` (same protocol, value) | **owns** — clone: independent copy of the receiver (`rt_size_of(type_id)` bytes; vtable/fn words reused) |
+| `expr.(P, alloc)` | `*P` (same protocol) | **owns** — promotion: fresh ctx copy, vtable/fn words reused |
+| `expr.(P)` | any owning shape | **compile error** — an owning erasure names its allocator |
+| `expr.(P)` | `P` (same protocol, value) | no-op — an ordinary handle copy, aliasing |
 | implicit / `xx` | any shape | **compile error** — the demand diagnostic |
 | any lvalue / pointer | at a `*P` target | **view** — borrows storage (§5.5) |
 

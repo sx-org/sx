@@ -1,7 +1,7 @@
 // Protocol value as a field of a wrapper struct, constructed from a stack
 // local inside a function and appended to a `List`. The payload must be
 // heap-copied so dispatch survives the constructing function returning —
-// under the ownership model the copy is EXPLICIT: `p.(Sizable)` owns
+// under the ownership model the copy is EXPLICIT: `p.(Sizable, alloc)` owns
 // (an implicit `view = p` is the demand error, pinned in 1256).
 
 #import "modules/std.sx";
@@ -25,7 +25,7 @@ Container :: struct {
 
     add :: (self: *Container, w: Widget) {
         p := w;  // local copy
-        self.items.append(Item{ view = p.(Sizable) });  // explicit owning copy
+        self.items.append(Item{ view = p.(Sizable, context.allocator) });  // explicit owning copy
 
         // Works here: stack local `p` is still alive
         out("inside add: ");

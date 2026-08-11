@@ -1,5 +1,6 @@
 // The owning-erasure free story: a protocol value made from
-// an RVALUE (`Widget{…}.(Sizable)`) heap-copies its concrete data — `free(s)`
+// an RVALUE (`Widget{…}.(Sizable, <alloc>)`) heap-copies its concrete data —
+// `free(s)`
 // releases that backing through `context.allocator` (the allocator current
 // AT THE FREE — a context pushed since the erasure redirects it: the
 // documented drift hazard), and `free(s, allocator)` is the symmetric,
@@ -38,7 +39,7 @@ main :: () {
     // context allocator — the explicit pairing is immune to the drift.
     s : Sizable = ---;
     push .{ allocator = ta } {
-        s = Widget{ value = 1 }.(Sizable);
+        s = Widget{ value = 1 }.(Sizable, context.allocator);
     }
     push .{ allocator = tb } {
         free(s, ta);        // implicit borrow at the Allocator param
@@ -47,7 +48,7 @@ main :: () {
 
     // free(s): pairs with the context allocator current at the free.
     push .{ allocator = tb } {
-        s2 := Widget{ value = 2 }.(Sizable);
+        s2 := Widget{ value = 2 }.(Sizable, context.allocator);
         free(s2);
     }
     print("context: B {}/{}\n", tb.allocs, tb.deallocs);
@@ -59,7 +60,7 @@ main :: () {
     av : Allocator = xx ta;
     s3 : Sizable = ---;
     push .{ allocator = av } {
-        s3 = Widget{ value = 3 }.(Sizable);
+        s3 = Widget{ value = 3 }.(Sizable, context.allocator);
     }
     free(s3, av);
     print("values: A {}/{}\n", ta.allocs, ta.deallocs);

@@ -19,6 +19,6 @@ inline if has_impl(Mark, Slot) { ADMITTED :: 1; } else { ADMITTED :: 0; }
 
 main :: () {
     s := Slot{ n = 2 };
-    m := s.(Mark);
+    m := s.(Mark, context.allocator);
     print("{} {}\n", ADMITTED, m.tag());
 }

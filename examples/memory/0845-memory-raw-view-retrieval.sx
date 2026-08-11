@@ -36,7 +36,7 @@ main :: () {
     // OWNS its ctx: the recovered pointer is the heap copy — a
     // faithful Widget that is NOT w's address.
     w := Widget{ value = 7 };
-    sz := w.(Sizable);
+    sz := w.(Sizable, context.allocator);
     pr : ProtocolRaw = xx sz;
     wc : *Widget = xx sz.(ProtocolRaw).ctx;
     print("default: {} {}\n", wc.value == 7 and sz.(ProtocolRaw).ctx != xx *w, pr.ctx == sz.(ProtocolRaw).ctx);

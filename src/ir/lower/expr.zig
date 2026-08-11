@@ -3825,9 +3825,10 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     d.addFmt(.err, pc.type_expr.span, "unknown type in postfix cast '.(T)'", .{});
                 break :blk self.builder.constUndef(.unresolved);
             }
-            // Owning erasure `expr.(P)` / `expr.(P, alloc)`: a PROTOCOL
-            // target with a CONCRETE (or pointer) receiver OWNS — copy /
-            // snapshot / promotion per receiver shape; #identity targets
+            // Owning erasure `expr.(P, alloc)`: a PROTOCOL target with a
+            // CONCRETE (or pointer) receiver OWNS — copy / snapshot /
+            // promotion per receiver shape, always through the named
+            // allocator (plain `.(P)` refuses there); #identity targets
             // keep the borrow. Erased receivers (any / protocol) were
             // handled above; a protocol receiver reaching here is the
             // recovery/re-erasure family and stays on lowerXX.
@@ -3856,6 +3857,11 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     break :blk self.builder.constUndef(dst);
             }
             if (pc.alloc_arg != null) {
+                // Same-protocol CLONE `p.(P, alloc)`: an erased value/own
+                // receiver duplicated through the named allocator.
+                if (self.getProtocolInfo(dst) != null and self.inferExprType(pc.operand) == dst) {
+                    break :blk self.lowerOwningErasure(&pc, dst, node.span);
+                }
                 if (self.diagnostics) |d| {
                     // An open set is not a protocol conversion at all: the active
                     // member lives INLINE in the slot, so forming one is ordinary

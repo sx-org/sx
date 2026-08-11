@@ -23,8 +23,8 @@ main :: () {
     print("view: {}\n", v.make(10, .bgra8));
     ov : ?*P = v;
     print("opt:  {}\n", ov.make(20, .bgra8));
-    op : ?P = c.(P);
+    op : ?P = c.(P, context.allocator);
     print("optP: {}\n", op.make(25, .bgra8));
-    o := c.(P);
+    o := c.(P, context.allocator);
     print("own:  {}\n", o.make(30, .bgra8));
 }

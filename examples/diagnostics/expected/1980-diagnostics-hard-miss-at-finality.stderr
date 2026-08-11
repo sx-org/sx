@@ -13,8 +13,8 @@ error: no impl of 'Mark' exists in this program — a tagged protocol's conforme
 error: 'Loose' does not implement protocol 'Show': no `impl Show for Loose` provides method 'fmt' (protocol erasure is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy a protocol)
   --> examples/diagnostics/1980-diagnostics-hard-miss-at-finality.sx:26:16
    |
-26 |     unshown := l.(Show);
-   |                ^^^^^^^^
+26 |     unshown := l.(Show, context.allocator);
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: no impl of 'Mark' exists in this program — a tagged protocol's conformer set is whole-program, and nothing implements this one, so no value of it can exist
   --> examples/diagnostics/1980-diagnostics-hard-miss-at-finality.sx:28:41

@@ -42,17 +42,17 @@ main :: () {
     x : f32 = 1.0;
 
     // Direct erasure of a builtin value to a protocol param.
-    print("use_one    = {}\n", use_one(x.(Lerpable)));       // lerp(1,3,0.5) = 2
+    print("use_one    = {}\n", use_one(x.(Lerpable, context.allocator)));       // lerp(1,3,0.5) = 2
 
     // Two generic hops carrying the erased value.
-    print("use_two    = {}\n", use_two(x.(Lerpable)));       // 2
+    print("use_two    = {}\n", use_two(x.(Lerpable, context.allocator)));       // 2
 
     // Explicit `xx` of a builtin VALUE to a protocol.
-    l := x.(Lerpable);
+    l := x.(Lerpable, context.allocator);
     print("via_cast   = {}\n", l.lerp(3.0, 0.5)); // 2
 
     // Erased value bound into a struct field (multi-method protocol).
-    print("use_struct = {}\n", use_struct(x.(Lerpable)));    // "f32"
+    print("use_struct = {}\n", use_struct(x.(Lerpable, context.allocator)));    // "f32"
 
     // Concrete (non-erased) value into a generic $T.
     print("gen_concr  = {}\n", gen_concrete(x));  // 2

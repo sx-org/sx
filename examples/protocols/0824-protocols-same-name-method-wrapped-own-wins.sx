@@ -48,7 +48,7 @@ impl Provider for Holder {
 main :: () -> i32 {
     h : Holder = ---;
     h.b.m = 7;
-    p := h.(Provider);
+    p := h.(Provider, context.allocator);
 
     // discriminating returns — `.m` only resolves if each binds main's `Box`
     bp := p.getp();

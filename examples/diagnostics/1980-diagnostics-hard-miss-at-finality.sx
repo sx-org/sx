@@ -23,7 +23,7 @@ main :: () {
     // Tagged, final-EMPTY set.
     empty : Mark = w;
     // Erased, no visible impl for this concrete type.
-    unshown := l.(Show);
+    unshown := l.(Show, context.allocator);
 
     print("{} {} {}\n", outside.area(), empty.tag(), unshown.fmt());
 }

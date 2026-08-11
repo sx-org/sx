@@ -24,6 +24,6 @@ inline if POINTER_SIZE == 8 {
 
 main :: () {
     i := Item{ n = 2 };
-    s := i.(Show);
+    s := i.(Show, context.allocator);
     print("{} {}\n", ADMITTED, s.fmt());
 }

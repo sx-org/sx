@@ -1374,10 +1374,11 @@ Every erased protocol belongs to one of two classes:
 
 - **value/own** (unmarked): erasure creates manually managed,
   allocation-backed storage — a heap copy of the receiver, made only
-  under the explicit postfix spellings `.(P)` / `.(P, alloc)`, through
-  `context.allocator` or the named allocator. An implicit erasure never
-  allocates: every operand shape at a value/own target is the demand
-  diagnostic. The handles over that storage may ALIAS it (§5.3a);
+  under the explicit postfix spelling `.(P, alloc)`, through the named
+  allocator (`context.allocator` is spelled out to use the ambient
+  one). No other spelling allocates: an implicit erasure is the demand
+  diagnostic for every operand shape, and the one-argument `.(P)` on
+  an owning shape refuses — an owning erasure names its allocator. The handles over that storage may ALIAS it (§5.3a);
   "owning erasure" names the operation and the storage's discipline,
   not a per-handle claim. `*P` is the borrowed view.
 - **`#identity`**: for protocols whose runtime object *is* unique
@@ -1386,13 +1387,17 @@ Every erased protocol belongs to one of two classes:
 
 ##### 5.3 Erasure spellings (value/own)
 
+`alloc` is an LVALUE naming an allocator; the copy allocates through
+it and pairs with `free(p, alloc)`.
+
 | spelling | receiver | result |
 |---|---|---|
-| `expr.(P)` | concrete lvalue or rvalue | **owns** — independent heap copy |
-| `expr.(P)` | `*Concrete` | **owns** — snapshot of the pointee |
-| `expr.(P)` | `P` (same protocol, value) | **owns** — independent copy of the receiver (`rt_size_of(type_id)` bytes; vtable/fn words reused) |
-| `expr.(P)` | `*P` (same protocol) | **owns** — promotion: fresh ctx copy, vtable/fn words reused |
-| `expr.(P, alloc)` | any owning shape | **owns** — the copy allocates through `alloc` (an lvalue naming an allocator); pairs with `free(p, alloc)` |
+| `expr.(P, alloc)` | concrete lvalue or rvalue | **owns** — independent heap copy |
+| `expr.(P, alloc)` | `*Concrete` | **owns** — snapshot of the pointee |
+| `expr.(P, alloc)` | `P` (same protocol, value) | **owns** — clone: independent copy of the receiver (`rt_size_of(type_id)` bytes; vtable/fn words reused) |
+| `expr.(P, alloc)` | `*P` (same protocol) | **owns** — promotion: fresh ctx copy, vtable/fn words reused |
+| `expr.(P)` | any owning shape | **compile error** — an owning erasure names its allocator |
+| `expr.(P)` | `P` (same protocol, value) | no-op — an ordinary handle copy, aliasing (§5.3a) |
 | implicit / `xx` | any shape | **compile error** — the demand diagnostic |
 | any lvalue / pointer | at a `*P` target | **view** — borrows storage (§5.5) |
 
@@ -1407,9 +1412,9 @@ argument passing, returning, struct/array/tuple copying, storing
 into and reading out of containers, a generic body copying a `P` —
 copies the handle itself and nothing else: no allocation, no second
 erasure. Every handle so copied aliases the SAME backing allocation.
-`p.(P)` (the same-protocol row of §5.3) is the explicit clone: a new
-backing allocation holding an independent shallow byte-copy of the
-concrete receiver.
+`p.(P, alloc)` (the same-protocol row of §5.3) is the explicit
+clone: a new backing allocation through `alloc` holding an
+independent shallow byte-copy of the concrete receiver.
 
 There are no compiler-enforced moves: protocol values are ordinarily
 copyable handles. A program may transfer responsibility by copying a
@@ -1425,12 +1430,12 @@ allocator word and the allocation no header — pairing the free with
 the right allocator is the program's job (§5.4).
 
 ```sx
-p := circle.(Show);  // allocation A: concrete-to-Show erasure
-q := p;              // aliases A; no allocation
-r := p.(Show);       // allocation B: explicit shallow clone
+p := circle.(Show, a);  // allocation A: concrete-to-Show erasure through a
+q := p;                 // aliases A; no allocation
+r := p.(Show, a);       // allocation B: explicit shallow clone
 
-free(q);             // releases A; p and q are now invalid
-free(r);             // releases B
+free(q, a);             // releases A; p and q are now invalid
+free(r, a);             // releases B
 ```
 
 Borrowed representations sit outside this discipline: `#identity`
@@ -1441,7 +1446,8 @@ free, and `free` refuses them (§5.4).
 The demand diagnostic exists because an implicit erasure would
 allocate silently: a copy of named storage the reader believes is
 shared, an alias of a pointee, or a fresh backing allocation for an
-rvalue. Allocation happens only where a spelling names it:
+rvalue. Allocation happens only where a spelling names the
+allocator:
 
 ```sx
 Widget  :: struct { value: i64; }
@@ -1452,12 +1458,14 @@ impl Sizable for Widget {
 
 w := Widget{value = 7 };
 s : Sizable = w;      // error: 'w' is an lvalue and 'Sizable' values own
-                      // their storage — write the copy ('w.(Sizable)')
+                      // their storage — write the copy ('w.(Sizable, <alloc>)')
                       // or pass a view ('*Sizable') for transient use
 t : Sizable = Widget{value = 8 };   // error: rvalue — an implicit
                                     // erasure would silently heap-allocate
-s := w.(Sizable);                   // the explicit owning copy — independent of w
-t := Widget{value = 8 }.(Sizable);  // the rvalue's explicit owning copy
+u := w.(Sizable);                   // error: an owning erasure names its
+                                    // allocator — '.(Sizable, <alloc>)'
+s := w.(Sizable, context.allocator);       // the explicit owning copy
+t := Widget{value = 8 }.(Sizable, context.allocator);  // the rvalue's copy
 ```
 
 **Shallow-copy caveat.** Owning erasure copies the receiver's BYTES.
@@ -2072,12 +2080,13 @@ known, so only the compiler can perform it. Semantics:
 - **`#identity` `Q`** — either representation — **refuses at
   compile time**: identity conformers are named objects, and a
   dynamic conversion cannot prove the referent is one.
-- **Result ownership follows `Q`'s kind**: value/own `Q` → an
-  owning copy of the receiver (`rt_size_of` via the concrete type
-  id) through `context.allocator`; the two-argument `p.(Q, alloc)`
-  routes it explicitly and pairs with `free(q, alloc)`. Tagged `Q`
-  (non-identity) → a borrow of `p`'s ctx with `Q`'s tag; a borrow
-  result ties its lifetime to `p`'s referent.
+- **Result ownership follows `Q`'s kind**: value/own `Q` → the
+  two-argument `p.(Q, alloc)` makes an owning copy of the receiver
+  (`rt_size_of` via the concrete type id) through `alloc`, pairing
+  with `free(q, alloc)`; the one-argument `p.(Q)` refuses — an
+  owning result names its allocator. Tagged `Q` (non-identity) → a
+  borrow of `p`'s ctx with `Q`'s tag; a borrow result ties its
+  lifetime to `p`'s referent.
 - `Q == P` degenerates to the same-protocol rows of §5.3 (erased)
   or the identity coercion (tagged).
 
@@ -2420,7 +2429,8 @@ conformer identity.
 | bare `Self` later parameter | erased: excluded. tagged: dispatchable — caller passes a `P`; the arm tag-checks (checked runtime failure on mismatch) |
 | `Self` at depth in parameter or return (`[]Self`, `?Self`, `Buffer(Self)`) | excluded from dynamic dispatch on every kind; concrete/bound calls fine |
 | bare `-> Self` through a tagged value | call-site-inlined switch; caller-frame temp per call + warn-note (§6.4), no fixit; returning the result directly is the §6.2 return error; EXCLUDED from dispatch on `#identity` tagged protocols (would mint an anonymous instance) |
-| rvalue at `P` (value/own), implicit / `xx` | compile error — the demand diagnostic; the owning copy is postfix-only (`.(P)` / `.(P, alloc)`) |
+| rvalue at `P` (value/own), implicit / `xx` | compile error — the demand diagnostic; the owning copy is postfix-only (`.(P, alloc)`) |
+| `.(P)` without the allocator at a value/own owning shape | compile error — an owning erasure names its allocator (`.(P, alloc)`; `context.allocator` for the ambient one) |
 | rvalue at `*P` (erased) | compile error — nothing durable to borrow |
 | rvalue at `P` (tagged), non-return position | frame-scoped temp, borrow — the `any`-box placement rule |
 | rvalue at `P` (tagged), `return` position | compile error — nothing durable to borrow beyond the frame |
@@ -3727,13 +3737,15 @@ ladder, one engine rather than a second cast. "Safe" means
 **well-defined**, not value-preserving: `1000.(i8)` truncates by definition.
 
 A PROTOCOL target follows the target's KIND (see Protocols). For an
-erased value/own target the postfix form is the **owning erasure** — an
-independent heap copy for concrete receivers (lvalue and rvalue alike),
-a SNAPSHOT of the pointee for a `*Concrete` receiver, a PROMOTION for a
-`*P` view, and an independent receiver copy for a same-protocol `P`
-value; the two-argument form `expr.(P, alloc)` routes the copy through a
-named allocator (an LVALUE naming an allocator; pair with
-`free(p, alloc)`). `#identity` targets keep the borrow (`gpa.(Allocator)`)
+erased value/own target the two-argument form `expr.(P, alloc)` is the
+**owning erasure** — an independent heap copy through `alloc` (an
+LVALUE naming an allocator; pair with `free(p, alloc)`;
+`context.allocator` is spelled out to use the ambient one) for
+concrete receivers (lvalue and rvalue alike), a SNAPSHOT of the
+pointee for a `*Concrete` receiver, a CLONE for a same-protocol `P`
+value, and a PROMOTION for a `*P` view. The one-argument `expr.(P)`
+refuses on every owning shape — an owning erasure names its
+allocator. `#identity` targets keep the borrow (`gpa.(Allocator)`)
 and refuse the allocator form. A TAGGED target is the implicit borrow
 coercion made explicit (never required; no allocator form). A CONSTRAINT
 target refuses (no runtime values). A soft protocol target on a concrete
@@ -3745,8 +3757,8 @@ b := a.(i8);            // narrow (truncates)
 v := f.(i64);           // float → int
 p := raw.(*Point);      // pointer bitcast; composite targets parse: *T, []u8, ?T
 o := 5.(?i64);          // optional wrap
-s := dog.(Speaker);     // protocol erasure — an OWNED, independent copy
-u := dog.(Speaker, a);  // the same, allocated through `a`
+s := dog.(Speaker, a);                 // owning erasure through `a`
+u := dog.(Speaker, context.allocator); // the same, through the ambient allocator
 x.(u8).(i64)            // postfix chains left to right
 -x.(i8)                 // postfix binds tighter: -(x.(i8))
 ```

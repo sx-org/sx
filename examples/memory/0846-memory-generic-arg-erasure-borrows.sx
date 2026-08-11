@@ -65,7 +65,7 @@ main :: () {
     t3 := Tracker{ allocs = 0, deallocs = 0 };
     s : Sizable = ---;
     push .{ allocator = t3 } {
-        s = Widget{ value = 5 }.(Sizable);
+        s = Widget{ value = 5 }.(Sizable, context.allocator);
     }
     free(s, xx t3);
     print("free pairing: {}/{}\n", t3.allocs, t3.deallocs);

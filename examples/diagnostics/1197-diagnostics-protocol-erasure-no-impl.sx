@@ -12,6 +12,6 @@ Holder :: struct { s: Speaker; b: i64 = 0; }
 
 main :: () {
   d := Dog{ n = 42 };
-  h : Holder = .{ s = d.(Speaker), b = 5 };   // <- 'Dog' does not implement 'Speaker'
+  h : Holder = .{ s = d.(Speaker, context.allocator), b = 5 };   // <- 'Dog' does not implement 'Speaker'
   print("{}\n", h.s.speak());
 }

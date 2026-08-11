@@ -36,9 +36,9 @@ main :: () {
     ca : i64 = 0;
     da : i64 = 0;
     push .{ allocator = tracker } {
-        c := Sq{ side = 2 }.(Shape);
+        c := Sq{ side = 2 }.(Shape, context.allocator);
         c.grow();
-        d := sq.(Shape);
+        d := sq.(Shape, context.allocator);
         ca = c.area();
         da = d.area();
         free(c);

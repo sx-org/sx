@@ -50,7 +50,7 @@ main :: () {
     print("q {} {} {} {} {}\n", q.return(), q.while, q.for, q.f32, Q.case);
 
     r := R{};
-    p : P = r.(P);
+    p : P = r.(P, context.allocator);
     print("impl {}\n", p.push(3));
 
     o : ?Q = Q{ if = 4 };

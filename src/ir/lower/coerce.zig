@@ -703,8 +703,8 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
     // Ownership classes split the conversion-mode arms: an #identity
     // target BORROWS lvalues/pointers; a value/own target OWNS its ctx and
     // an implicit erasure never allocates, so EVERY shape at a value/own
-    // target is the DEMAND error. (The owning spellings are the postfix
-    // `.(P)` / `.(P, alloc)` — lowerOwningErasure.)
+    // target is the DEMAND error. (The owning spelling is the postfix
+    // `.(P, alloc)` — lowerOwningErasure.)
     const dst_identity = self.protocolIsIdentity(dst_ty);
     // A tagged value is a borrow in every spelling, so it takes the identity
     // arms below; it differs only at an rvalue, which materializes a
@@ -729,9 +729,9 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
             //     DEMANDS the explicit owning spelling.
             //   - rvalue (struct literal, call result, etc.): value/own
             //     DEMANDS too — an implicit erasure never allocates, so
-            //     the owning copy exists only under the explicit postfix
-            //     spellings; tagged borrows a frame temp; identity
-            //     refuses — no name.
+            //     the owning copy exists only under postfix `.(P, alloc)`;
+            //     tagged borrows a frame temp; identity refuses — no
+            //     name.
             concrete_type_name = self.module.types.getString(src_info.@"struct".name);
             concrete_ty = src_ty;
             if (self.isLvalueExpr(operand_node)) {
@@ -831,9 +831,9 @@ pub fn protocolIsIdentity(self: *Lowering, ty: TypeId) bool {
 pub const ErasureOperandShape = enum { lvalue, pointer, rvalue };
 
 /// The DEMAND diagnostic: a value/own protocol value always OWNS its ctx,
-/// and only the explicit postfix spellings `.(P)` / `.(P, alloc)` may fund
-/// that copy — an implicit erasure (a bare operand at a `P` target, or
-/// `xx`, the conversion operator) would silently heap-allocate. Demand the
+/// and only the explicit postfix spelling `.(P, alloc)` may fund that
+/// copy — an implicit erasure (a bare operand at a `P` target, or `xx`,
+/// the conversion operator) would silently heap-allocate. Demand the
 /// explicit spelling instead, for every operand shape.
 /// `subject` is the operand's source name when known (identifier), else a
 /// generic subject. Emits and returns a protocol-typed placeholder.
@@ -845,18 +845,18 @@ pub fn demandOwnedErasure(self: *Lowering, dst_ty: TypeId, proto_name: []const u
         };
         const named: ?[]const u8 = if (operand_node) |n| (if (n.data == .identifier) n.data.identifier.name else null) else null;
         if (shape == .rvalue) {
-            d.addFmt(.err, span, "the operand is an rvalue and '{s}' values own their storage — an implicit erasure here would silently heap-allocate the copy; write the owning copy (postfix '.({s})' or '.({s}, <alloc>)')", .{ proto_name, proto_name, proto_name });
+            d.addFmt(.err, span, "the operand is an rvalue and '{s}' values own their storage — an implicit erasure here would silently heap-allocate the copy; write the owning copy (postfix '.({s}, <alloc>)')", .{ proto_name, proto_name });
         } else if (shape == .pointer) {
             if (named) |nm| {
-                d.addFmt(.err, span, "'{s}' is a pointer and '{s}' values own their storage — an implicit erasure here would silently alias or copy the pointee; write the snapshot ('{s}.({s})' copies the pointee, '{s}.({s}, <alloc>)' through a named allocator) or pass a view ('*{s}' parameter) for transient use", .{ nm, proto_name, nm, proto_name, nm, proto_name, proto_name });
+                d.addFmt(.err, span, "'{s}' is a pointer and '{s}' values own their storage — an implicit erasure here would silently alias or copy the pointee; write the snapshot ('{s}.({s}, <alloc>)' copies the pointee through the named allocator) or pass a view ('*{s}' parameter) for transient use", .{ nm, proto_name, nm, proto_name, proto_name });
             } else {
-                d.addFmt(.err, span, "the operand is a pointer and '{s}' values own their storage — an implicit erasure here would silently alias or copy the pointee; write the snapshot (postfix '.({s})' copies the pointee, '.({s}, <alloc>)' through a named allocator) or pass a view ('*{s}' parameter) for transient use", .{ proto_name, proto_name, proto_name, proto_name });
+                d.addFmt(.err, span, "the operand is a pointer and '{s}' values own their storage — an implicit erasure here would silently alias or copy the pointee; write the snapshot (postfix '.({s}, <alloc>)' copies the pointee through the named allocator) or pass a view ('*{s}' parameter) for transient use", .{ proto_name, proto_name, proto_name });
             }
         } else {
             if (named) |nm| {
-                d.addFmt(.err, span, "'{s}' is an lvalue and '{s}' values own their storage — an implicit erasure here would silently heap-copy it; write the copy ('{s}.({s})' or '{s}.({s}, <alloc>)') or pass a view ('*{s}' parameter) for transient use", .{ nm, proto_name, nm, proto_name, nm, proto_name, proto_name });
+                d.addFmt(.err, span, "'{s}' is an lvalue and '{s}' values own their storage — an implicit erasure here would silently heap-copy it; write the copy ('{s}.({s}, <alloc>)') or pass a view ('*{s}' parameter) for transient use", .{ nm, proto_name, nm, proto_name, proto_name });
             } else {
-                d.addFmt(.err, span, "the operand is an lvalue and '{s}' values own their storage — an implicit erasure here would silently heap-copy it; write the copy (postfix '.({s})' or '.({s}, <alloc>)') or pass a view ('*{s}' parameter) for transient use", .{ proto_name, proto_name, proto_name, proto_name });
+                d.addFmt(.err, span, "the operand is an lvalue and '{s}' values own their storage — an implicit erasure here would silently heap-copy it; write the copy (postfix '.({s}, <alloc>)') or pass a view ('*{s}' parameter) for transient use", .{ proto_name, proto_name, proto_name });
             }
         }
     }
@@ -1848,8 +1848,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 //     borrow a frame temp.
                 //   - value/own target: the DEMAND error for every shape —
                 //     an implicit erasure never allocates, so the owning
-                //     copy exists only under the explicit postfix
-                //     spellings.
+                //     copy exists only under postfix `.(P, alloc)`.
                 if (node_less_borrows) {
                     if (self.refStorageAddress(val)) |addr| {
                         concrete_ptr = addr;
