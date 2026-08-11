@@ -37,9 +37,16 @@ sdl_chdir_to_bundle :: () {
     if found { chdir(bp); }
 }
 
+SdlGpuMode :: enum {
+    opengl;
+    metal;
+}
+
 SdlPlatform :: struct {
     window: *void = null;
     gl_ctx: *void = null;
+    metal_view: *void = null;
+    gpu_mode: SdlGpuMode = .opengl;
     running: bool = true;
 
     width: i32 = 0;
@@ -203,18 +210,27 @@ impl Platform for SdlPlatform {
             }
         }
 
-        self.window = SDL_CreateWindow(title, init_w, init_h,
-            SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        window_flags: u64 = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+        if self.gpu_mode == .opengl {
+            window_flags |= SDL_WINDOW_OPENGL;
+        } else {
+            window_flags |= SDL_WINDOW_METAL;
+        }
+
+        self.window = SDL_CreateWindow(title, init_w, init_h, window_flags);
         if self.window == null { return false; }
 
-        self.gl_ctx = SDL_GL_CreateContext(self.window);
-        SDL_GL_MakeCurrent(self.window, self.gl_ctx);
-        // Vsync: pace swaps to the display refresh. Without this the frame
-        // loop free-runs and pins every core it can get (interval 0 =
-        // immediate). Ignored on wasm, where emscripten's rAF loop paces.
-        SDL_GL_SetSwapInterval(1);
-
-        load_gl(SDL_GL_GetProcAddress);
+        if self.gpu_mode == .opengl {
+            self.gl_ctx = SDL_GL_CreateContext(self.window);
+            SDL_GL_MakeCurrent(self.window, self.gl_ctx);
+            // Vsync: pace swaps to the display refresh. Without this the frame
+            // loop free-runs and pins every core it can get (interval 0 =
+            // immediate). Ignored on wasm, where emscripten's rAF loop paces.
+            SDL_GL_SetSwapInterval(1);
+            load_gl(SDL_GL_GetProcAddress);
+        } else {
+            self.metal_view = SDL_Metal_CreateView(self.window);
+        }
 
         SDL_GetWindowSize(self.window, *self.width, *self.height);
         SDL_GetWindowSizeInPixels(self.window, *self.pixel_w, *self.pixel_h);
@@ -222,7 +238,9 @@ impl Platform for SdlPlatform {
         pw : f32 = xx self.pixel_w;
         self.dpi_scale = if wf > 0.0 then pw / wf else 1.0;
 
-        glViewport(0, 0, self.pixel_w, self.pixel_h);
+        if self.gpu_mode == .opengl {
+            glViewport(0, 0, self.pixel_w, self.pixel_h);
+        }
 
         g_sdl_plat = self;
         self.last_perf = SDL_GetPerformanceCounter();
@@ -307,7 +325,11 @@ impl Platform for SdlPlatform {
     }
 
     end_frame :: (self: *SdlPlatform) {
-        SDL_GL_SwapWindow(self.window);
+        if self.running {
+            if self.gpu_mode == .opengl {
+                SDL_GL_SwapWindow(self.window);
+            }
+        }
     }
 
     safe_insets :: (self: *SdlPlatform) -> EdgeInsets {
