@@ -4450,6 +4450,10 @@ pub const Parser = struct {
                 cap.span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
                 cap.is_raw = self.tokens.flagsOf(self.tok).is_raw;
                 self.advance();
+                if (self.tokens.tag(self.tok) == .colon) {
+                    self.advance();
+                    cap.type_annotation = try self.parseTypeExpr();
+                }
                 try captures.append(self.allocator, cap);
                 if (self.tokens.tag(self.tok) != .comma) break;
                 self.advance();
@@ -5710,18 +5714,44 @@ pub const Parser = struct {
     }
 
     /// With `current` on the token after `for`: whether the header opens with
-    /// a capture list — `('*')? name` over commas, closed by `in`.
+    /// a capture list — `('*')? name (':' type)?` over commas, closed by `in`.
     fn forHeaderOpensWithCaptures(self: *Parser) bool {
         var idx = self.tok;
         while (true) {
             if (self.tokens.tag(idx) == .star) idx = self.tokens.next(idx);
             if (self.tokens.tag(idx) != .identifier) return false;
             idx = self.tokens.next(idx);
+            if (self.tokens.tag(idx) == .colon) {
+                idx = self.tokens.next(idx);
+                idx = self.skipCaptureTypeTokens(idx) orelse return false;
+            }
             switch (self.tokens.tag(idx)) {
                 .kw_in => return true,
                 .comma => idx = self.tokens.next(idx),
                 else => return false,
             }
+        }
+    }
+
+    /// From the first token of a capture's type annotation: the index of the
+    /// `,` or `in` that closes it. A type argument list carries its own commas
+    /// (`Map(K, V)`), so only depth-0 ones separate captures. Null when the
+    /// header ends first — the `:` is then not an annotation.
+    fn skipCaptureTypeTokens(self: *Parser, from: Index) ?Index {
+        var idx = from;
+        var depth: u32 = 0;
+        while (true) {
+            switch (self.tokens.tag(idx)) {
+                .l_paren, .l_bracket => depth += 1,
+                .r_paren, .r_bracket => {
+                    if (depth == 0) return null;
+                    depth -= 1;
+                },
+                .comma, .kw_in => if (depth == 0) return idx,
+                .l_brace, .r_brace, .fat_arrow, .semicolon, .eof => return null,
+                else => {},
+            }
+            idx = self.tokens.next(idx);
         }
     }
 

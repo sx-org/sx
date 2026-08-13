@@ -1408,6 +1408,7 @@ pub const Server = struct {
             },
             .for_expr => |fe| {
                 for (fe.captures) |cap| {
+                    if (cap.type_annotation != null) continue;
                     if (!std.mem.eql(u8, cap.name, "_")) {
                         addForCaptureHint(allocator, cap.name, node.span, symbols, source, hints);
                     }
@@ -3716,6 +3717,40 @@ test "lsp/inlayHint: a for-loop capture in a struct method shows its element typ
         if (std.mem.indexOf(u8, h.label, "Move") != null) found_move = true;
     }
     try std.testing.expect(found_move);
+}
+
+test "lsp/inlayHint: a for-loop capture that writes its type gets no hint" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const lib_src: [:0]const u8 =
+        \\Move :: struct { flag: i64; }
+        \\List :: struct ($T: Type) { items: [*]T = null; len: i64 = 0; }
+    ;
+    const lib_doc = try store.openOrUpdate("lib.sx", lib_src, 1);
+    try store.analyzeDocument(lib_doc);
+
+    const main_src: [:0]const u8 =
+        \\#import "lib.sx";
+        \\Game :: struct {
+        \\    legal: List(Move);
+        \\    scan :: (self: *Game) {
+        \\        for m: Move in self.legal { x := m.flag; }
+        \\    }
+        \\}
+    ;
+    const main_doc = try store.openOrUpdate("main.sx", main_src, 1);
+    try store.analyzeDocument(main_doc);
+
+    const sema = main_doc.sema orelse return error.SkipZigTest;
+    var hints = std.ArrayList(lsp.InlayHint).empty;
+    Server.collectInlayHints(alloc, main_doc.root.?, sema.symbols, sema.fn_signatures, main_doc.source, &hints);
+
+    for (hints.items) |h| {
+        try std.testing.expect(std.mem.indexOf(u8, h.label, "Move") == null);
+    }
 }
 
 test "lsp/workspace: loadWorkspaceFiles analyses .sx files that were never opened" {

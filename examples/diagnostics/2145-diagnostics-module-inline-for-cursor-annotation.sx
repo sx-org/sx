@@ -1,0 +1,12 @@
+// A module-scope `inline for` cursor is a substituted spelling — a type name
+// or an index literal — so it takes no type annotation either.
+
+#import "modules/std.sx";
+
+TYPES :: .[i32, i64];
+
+inline for T: i64 in TYPES {
+    Box :: struct { v: T; }
+}
+
+main :: () { }

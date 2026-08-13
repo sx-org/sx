@@ -1,0 +1,5 @@
+error: capture 'c' is annotated '*View' but the element type is 'View'
+  --> examples/diagnostics/2141-diagnostics-for-capture-type-mismatch.sx:10:13
+   |
+10 |     for *c: *View in children { _ = c; }
+   |             ^^^^^

@@ -919,7 +919,7 @@ pub const ForIterable = struct {
     end_inclusive: bool = false,
 };
 
-/// One capture of a `for` header: `x`, `*x`.
+/// One capture of a `for` header: `x`, `*x`, `x: T`, `*x: T`.
 pub const ForCapture = struct {
     name: []const u8,
     span: ?Span = null,
@@ -928,6 +928,8 @@ pub const ForCapture = struct {
     is_raw: bool = false,
     /// `*x` — bind a pointer into the collection (no per-element copy).
     by_ref: bool = false,
+    /// `x: T` — the ELEMENT type, independent of `by_ref`: `*x: T` binds `*T`.
+    type_annotation: ?*Node = null,
 };
 
 /// `for c1, c2, ... in it1, it2, ... { }` — parallel iteration. The FIRST

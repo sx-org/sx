@@ -5265,6 +5265,22 @@ omitted. Capture names shadow outer bindings, like any inner declaration.
 Use `_` to discard a position. An index alongside the elements is written
 `for x, i in xs, 0..`.
 
+**A capture may write its type**, `for x: T in xs`. `T` is the ELEMENT
+type — what the position yields — and `*` is orthogonal to it:
+
+```sx
+for c: View in children { }      // c : View
+for *c: View in children { }     // c : *View — the element type is still View
+for x, i: i64 in xs, 0.. { }     // a range cursor is i64
+```
+
+The annotation restates the type; it never converts. It must name the
+element type exactly — a range cursor is `i64` whatever its bounds are
+spelled as, and an `inline for` over a pack checks the annotation against
+every unrolled element. An `inline for` cursor over a type list binds a
+type rather than a value, so it takes no annotation, at module scope as in
+a function body.
+
 **The iterables are ordinary expressions.** Nothing in the header is
 reserved for captures, so a call iterable is written as it is anywhere else
 (`for x in f(n) { }`, `for x, y in zip(a, b) { }`) — no parenthesizing and
@@ -6948,7 +6964,8 @@ while_expr      = 'while' expr block
 for_expr        = 'for' [for_capture (',' for_capture)* 'in'] for_iter (',' for_iter)* (block | '=>' stmt)
 for_iter        = expr [range_op [expr]]
 range_op        = '..' | '..=' | '..<' | '<..' | '<..=' | '<..<' | '=..' | '=..=' | '=..<'
-for_capture     = ['*'] IDENT       // the '*' is GLUED to its name (§1 Whitespace is Syntax)
+for_capture     = ['*'] IDENT [':' type]   // the '*' is GLUED to its name (§1 Whitespace is Syntax);
+                                           // the type is the ELEMENT type
 binary          = catch_expr (binop catch_expr)*    // binop includes `or` (fallback / chain)
 catch_expr      = unary ('catch' ('(' IDENT ')')? (block | '==' '{' case_arm* else_arm? '}' | unary))?
 unary           = ('-' | '--' | '*' | '!' | '~' | 'xx' | 'try') unary | postfix

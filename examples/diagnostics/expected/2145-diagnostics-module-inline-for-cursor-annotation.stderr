@@ -1,0 +1,5 @@
+error: a module-scope `inline for` cursor takes no type annotation
+  --> examples/diagnostics/2145-diagnostics-module-inline-for-cursor-annotation.sx:8:15
+   |
+ 8 | inline for T: i64 in TYPES {
+   |               ^^^
