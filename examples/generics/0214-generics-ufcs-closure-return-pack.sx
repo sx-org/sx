@@ -17,8 +17,8 @@ mymk :: ufcs (b: Box, worker: Closure(..$args) -> $R, ..$args) -> Wrap($R) {
 
 main :: () -> i32 {
     bx : Box = .{ n = 1 };
-    direct := mymk(bx, (a: i64, b: i64) -> i64 => a + b, 40, 2);
-    ufcs   := bx.mymk((a: i64, b: i64) -> i64 => a + b, 40, 2);
+    direct := mymk(bx, |a: i64, b: i64| -> i64 a + b, 40, 2);
+    ufcs   := bx.mymk(|a: i64, b: i64| -> i64 a + b, 40, 2);
     print("direct={}\n", direct.value);
     print("ufcs={}\n", ufcs.value);
     return 0;

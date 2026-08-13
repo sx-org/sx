@@ -1,0 +1,7 @@
+// A closure literal is a value, so it cannot open a statement.
+
+#import "modules/std.sx";
+
+main :: () {
+    |x: i64| x + 1;
+}

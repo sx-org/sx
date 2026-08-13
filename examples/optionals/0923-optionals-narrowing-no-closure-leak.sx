@@ -17,7 +17,7 @@ main :: () {
     if n != null {
         // `n` is narrowed HERE, but the closure body is a separate function:
         // `n` is `?i64` inside it, so this implicit unwrap must be rejected.
-        g := () { takes_i64(n); };
+        g := || { takes_i64(n); };
         g();
     }
 }

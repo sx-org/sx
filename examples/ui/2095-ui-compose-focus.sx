@@ -41,20 +41,20 @@ main :: () -> i32 {
         // Three focusable rows; the last one asks for the soft keyboard and
         // takes text as well as keys.
         root : View = vstack(0.0) {
-            focusable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, (e: *KeyEvent) {
+            focusable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, |e: *KeyEvent| {
                 tally.a += 1
                 tally.last = e.logical
             })
-            focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, (e: *KeyEvent) {
+            focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, |e: *KeyEvent| {
                 tally.b += 1
                 tally.last = e.logical
             })
             focusable(Rect{ fill = ui.COLOR_RED, height = 20.0 },
-                (e: *KeyEvent) {
+                |e: *KeyEvent| {
                     tally.c += 1
                     tally.last = e.logical
                 },
-                (s: string) {
+                |s: string| {
                     tally.typed += s.len
                 },
                 true)

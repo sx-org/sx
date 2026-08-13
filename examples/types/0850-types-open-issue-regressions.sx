@@ -38,7 +38,7 @@ main :: () -> i32 {
     wide := if false { small } else { 9000000000 };
     color : Color0850 = .red;
     matched := ident_0850(match color { case .red: { 1.5 } case .green: { 2 } });
-    out_0850 := () => 7;
+    out_0850 := || 7;
     opt_read := 0;
     if op := goptptr_0850 { opt_read = op.*; }
     print("{} {} {} {} {} {} {} {} {} {} {} {} {}\n",

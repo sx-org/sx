@@ -108,7 +108,7 @@ run_locals :: () -> i32 {
 // A closure declared inside a NAMED-return function must not see the enclosing
 // function's named-return slots: its own body is its own boundary.
 named_return_host :: () -> (x: i32, y: i32) {
-    inner := () -> !Failed => tick("inside-named-return");
+    inner := || -> !Failed tick("inside-named-return");
     inner() catch { print("NOT REACHED inner\n"); }
     x = 3;
     y = 4;
@@ -130,12 +130,12 @@ main :: () -> i32 {
     r := run_locals();
 
     // Closure ARROW bodies — the tail is the whole body.
-    arrow_value := () -> !Failed => tick("arrow");
-    arrow_wide := () -> !Failed => tick64("arrow");
-    arrow_string := () -> !Failed => name("arrow");
-    arrow_void := () -> !Failed => nothing("arrow");
-    arrow_error := () -> !Failed => error.Nope;
-    arrow_forward := () -> !Failed => fails();
+    arrow_value := || -> !Failed tick("arrow");
+    arrow_wide := || -> !Failed tick64("arrow");
+    arrow_string := || -> !Failed name("arrow");
+    arrow_void := || -> !Failed nothing("arrow");
+    arrow_error := || -> !Failed error.Nope;
+    arrow_forward := || -> !Failed fails();
     arrow_value() catch { print("NOT REACHED arrow-value\n"); }
     arrow_wide() catch { print("NOT REACHED arrow-wide\n"); }
     arrow_string() catch { print("NOT REACHED arrow-string\n"); }
@@ -144,18 +144,18 @@ main :: () -> i32 {
     arrow_forward() catch { print("caught arrow-forward\n"); }
 
     // Closure BLOCK bodies.
-    block_value := () -> !Failed { tick("block") };
-    block_wide := () -> !Failed { tick64("block") };
-    block_compound := () -> !Failed { { x := tick("block-compound"); } };
-    block_prefix := () -> !Failed {
+    block_value := || -> !Failed { tick("block") };
+    block_wide := || -> !Failed { tick64("block") };
+    block_compound := || -> !Failed { { x := tick("block-compound"); } };
+    block_prefix := || -> !Failed {
         v := tick("block-prefix");
         v
     };
-    block_defer := () -> !Failed {
+    block_defer := || -> !Failed {
         defer print("block defer\n");
         tick("block-defer")
     };
-    block_error := () -> !Failed {
+    block_error := || -> !Failed {
         defer print("block defer error\n");
         fails()
     };
@@ -167,7 +167,7 @@ main :: () -> i32 {
     block_error() catch { print("caught block-error\n"); }
 
     // Mixed control flow inside a closure, both arm orders.
-    clo_mixed := (b: bool) -> !Failed {
+    clo_mixed := |b: bool| -> !Failed {
         if b { fails() } else { tick("clo-mixed") }
     };
     clo_mixed(false) catch { print("NOT REACHED clo-mixed\n"); }

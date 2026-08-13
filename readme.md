@@ -118,7 +118,7 @@ double :: (n: i32) -> i32 { n * 2; }   // returns n * 2 — as does `{ n * 2 }`
 | `*T`, `[*]T` | Single / many pointer |
 | `?T` | Optional |
 | `struct`, `enum`, `union` | Composite types |
-| `Closure(args) -> ret` | Closure type |
+| `Closure(args) -> ret` | Closure type (`\|params\| body` is its literal) |
 
 A fixed array `[N]T` coerces to a slice `[]T` (its length is known); a `[*]T`
 many-pointer carries no length, so slice it explicitly with `ptr[0..len]`.
@@ -319,7 +319,7 @@ public API: renaming a parameter breaks named call sites.
 ### Trailing blocks
 
 A block after a call binds the callee's **last** parameter as a zero-param
-closure — `f(args) { body }` is exactly `f(args, content = () => { body })`:
+closure — `f(args) { body }` is exactly `f(args, content = || { body })`:
 
 ```sx
 vstack :: (spacing: f32, content: Closure()) -> View { … }
@@ -439,7 +439,7 @@ are_equal :: ($T: Type/Eq, a: T, b: T) -> bool { a.eq(b); }
 
 ```sx
 make_adder :: (n: i64) -> Closure(i64) -> i64 {
-    (x: i64) -> i64 => x + n
+    return |x: i64| -> i64 x + n;
 }
 
 add5 := make_adder(5);
@@ -1029,10 +1029,10 @@ main :: () {
     // Install the fiber scheduler as `context.io`; the coordinator runs as a
     // fiber so `await` has a fiber to park.
     push .{ io = xx s } {
-        ps.spawn(() => {
-            a := context.io.async(() -> (i64, !) => { try context.io.sleep(30); 100 });
-            b := context.io.async(() -> (i64, !) => { try context.io.sleep(10); 20  });
-            c := context.io.async(() -> (i64, !) => { try context.io.sleep(20); 3   });
+        ps.spawn(|| {
+            a := context.io.async(|| -> (i64, !) { try context.io.sleep(30); 100 });
+            b := context.io.async(|| -> (i64, !) { try context.io.sleep(10); 20  });
+            c := context.io.async(|| -> (i64, !) { try context.io.sleep(20); 3   });
 
             sum := (a.await() or 0) + (b.await() or 0) + (c.await() or 0);  // 123
             print("sum: {}\n", sum);

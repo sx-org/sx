@@ -27,7 +27,7 @@ snap :: (..xs: Box) -> void {
 // Closure signature `Closure(..xs.T) -> i64` — here `Closure(i64, i64) -> i64`.
 // The closure literal's params are contextually typed from the projection.
 fold :: (..xs: Box) -> i64 {
-    cb : Closure(..xs.T) -> i64 = (a, b) => a + b;
+    cb : Closure(..xs.T) -> i64 = |a, b| a + b;
     return cb(xs[0].get(), xs[1].get());
 }
 

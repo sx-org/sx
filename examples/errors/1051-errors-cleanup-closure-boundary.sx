@@ -22,11 +22,11 @@ recover :: () -> (i32, !E) { return 21; }
 
 work :: () {
     defer {
-        // (a) bare lambda statement — checkCleanupNode stops at the `.lambda`.
-        () -> !E { failing(); };
+        // (a) discarded closure literal — checkCleanupNode stops at the `.lambda`.
+        _ = || -> !E { failing(); };
 
         // (b) called closure — its body is analysed as its own boundary.
-        emit := () -> !E {
+        emit := || -> !E {
             v, err := recover();
             if !err { print("defer closure: v={}\n", v); }   // live under guard
             try failing();

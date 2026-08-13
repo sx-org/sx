@@ -26,7 +26,7 @@ main :: () -> i32 {
     root := UiRoot.init(Size{ width = 100.0, height = 40.0 }, context.allocator, .{ value = 7 })
     app := *root
 
-    loop := FrameLoop.init(*root, () -> View {
+    loop := FrameLoop.init(*root, || -> View {
         // Three entries this root keeps. The handlers below write into two of
         // them long after the build that claimed them returned.
         frame := use_state(i64, 0)
@@ -46,10 +46,10 @@ main :: () -> i32 {
             frame.get(), taps.get(), keys.get(), pressed, focused)
 
         v : View = vstack(0.0) {
-            tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, () {
+            tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {
                 taps.set(taps.get() + 1)
             })
-            focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, (e: *KeyEvent) {
+            focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, |e: *KeyEvent| {
                 keys.set(keys.get() + 1)
             })
         }
@@ -98,11 +98,11 @@ main :: () -> i32 {
         quiet := UiRoot.init(Size{ width = 100.0, height = 40.0 }, tracker)
         seen := 0
         counter := *seen
-        spin := FrameLoop.init(*quiet, () -> View {
+        spin := FrameLoop.init(*quiet, || -> View {
             n := use_state(i64, 0)
             n.set(n.get() + 1)
             v : View = vstack(0.0) {
-                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, () {
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {
                     counter.* += 1
                 })
                 focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 })
@@ -141,10 +141,10 @@ main :: () -> i32 {
     push .{ allocator = owner } {
         far := UiRoot.init(Size{ width = 100.0, height = 40.0 }, owner)
         counted := *built
-        build := () -> View {
+        build := || -> View {
             counted.* += 1
             v : View = vstack(0.0) {
-                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, () {})
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
             }
             v
         }
@@ -170,7 +170,7 @@ main :: () -> i32 {
         push .{ compose_ui = *marks } {
             marks.begin_build()
             tree : View = vstack(0.0) {
-                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, () {})
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
                 focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 })
             }
             snap := CommittedUiSnapshot.init(solo)

@@ -26,7 +26,7 @@ main :: () -> i64 {
     ps := *s;
     print("outside: marker id = {}\n", mk.id);
     push .{ marker = *mk } {
-        ps.spawn(() {
+        ps.spawn(|| {
             m := context.marker!;                 // inherited from the spawn-time context
             print("inside fiber: context.marker id = {}\n", m.id);
         });

@@ -1,0 +1,14 @@
+inc 8
+scale 13
+pump 2
+apply 21
+run
+variadic 6
+nested 6
+bit-or 7
+default 9
+bit-or-default 0
+call-default 1
+index-default 2
+branch-default 3
+closure-default 9

@@ -49,12 +49,12 @@ main :: () -> i64 {
     pl := *lg;
 
     // Spawn order A, B, C, D, E — but the WAKE order is set by deadline.
-    ps.spawn(() { ps.sleep(30); rec(pl, 1, ps.now_ms()); });   // A: latest
-    ps.spawn(() { ps.sleep(10); rec(pl, 2, ps.now_ms()); });   // B: earliest
-    ps.spawn(() { ps.sleep(20); rec(pl, 3, ps.now_ms()); });   // C: middle
+    ps.spawn(|| { ps.sleep(30); rec(pl, 1, ps.now_ms()); });   // A: latest
+    ps.spawn(|| { ps.sleep(10); rec(pl, 2, ps.now_ms()); });   // B: earliest
+    ps.spawn(|| { ps.sleep(20); rec(pl, 3, ps.now_ms()); });   // C: middle
     // Same-deadline FIFO pair: D before E, both at t=15 → wake D then E.
-    ps.spawn(() { ps.sleep(15); rec(pl, 4, ps.now_ms()); });   // D
-    ps.spawn(() { ps.sleep(15); rec(pl, 5, ps.now_ms()); });   // E
+    ps.spawn(|| { ps.sleep(15); rec(pl, 4, ps.now_ms()); });   // D
+    ps.spawn(|| { ps.sleep(15); rec(pl, 5, ps.now_ms()); });   // E
 
     s.run();
 

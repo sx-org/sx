@@ -28,10 +28,10 @@ main :: () -> i64 {
         ps := *s;
         pbase.* = gpa.alloc_count;            // baseline: scheduler is live, no tasks yet
         push .{ io = xx s, allocator = xx gpa } {
-            ps.spawn(() {
-                a := context.io.async(() -> (i64, !) { try context.io.sleep(10); 100 });
-                b := context.io.async(() -> (i64, !) { try context.io.sleep(20); 20  });
-                c := context.io.async(() -> (i64, !) { try context.io.sleep(30); 3   });
+            ps.spawn(|| {
+                a := context.io.async(|| -> (i64, !) { try context.io.sleep(10); 100 });
+                b := context.io.async(|| -> (i64, !) { try context.io.sleep(20); 20  });
+                c := context.io.async(|| -> (i64, !) { try context.io.sleep(30); 3   });
                 psum.* = (a.await() or 0) + (b.await() or 0) + (c.await() or 0);
             });
             ps.run();

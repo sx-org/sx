@@ -1,0 +1,44 @@
+// An expression-bodied closure types its body against its
+// OWN declared return type, exactly as a named fn's body — enum
+// literals resolve against `-> E` in a block tail, in a bare
+// if-else body, and when the literal sits in a call argument (where
+// the enclosing closure-typed target must NOT leak in as the body's
+// destination).
+#import "modules/std.sx";
+
+Pol :: enum { a; b; }
+
+Region :: struct { policy: ?Closure(f32) -> Pol = null; }
+
+sink :: (policy: ?Closure(f32) -> Pol = null) -> Region {
+    Region{ policy = policy }
+}
+
+main :: () {
+    // Enum-literal block tail — a `.`-led bare body continues the return
+    // type's qualified path, so the literal comes in through a block.
+    f := |x: f32| -> Pol { .a };
+    process.assert(f(0.0) == .a, "block-tail literal body");
+
+    // If-else bare body of enum literals.
+    g := |x: f32| -> Pol if x < 0.0 then .a else .b;
+    process.assert(g(-1.0) == .a and g(1.0) == .b, "if-else literal body");
+
+    // The same closure as a CALL ARGUMENT: the parameter's closure type
+    // is the argument's destination — the body still types against Pol.
+    r := sink(|x: f32| -> Pol if x < 0.0 then .a else .b);
+    if pf := r.policy {
+        process.assert(pf(-1.0) == .a and pf(1.0) == .b, "call-argument body");
+    } else {
+        process.assert(false, "policy present");
+    }
+
+    // Block body with explicit returns.
+    h := |x: f32| -> Pol {
+        if x < 0.0 { return .a; }
+        return .b;
+    };
+    process.assert(h(1.0) == .b, "block body");
+
+    print("ok\n");
+}

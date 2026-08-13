@@ -2160,7 +2160,7 @@ pub const Lowering = struct {
             const gop = self.diag_enclosing_seen.getOrPut(key) catch null;
             const first = if (gop) |g| !g.found_existing else true;
             if (first) {
-                diags.addFmt(.err, span, "a nested function cannot reference the enclosing local '{s}' — use a closure ('{s} := () => ...') to capture it", .{ name, name });
+                diags.addFmt(.err, span, "a nested function cannot reference the enclosing local '{s}' — use a closure ('{s} := || ...') to capture it", .{ name, name });
             }
         }
         return self.emitPlaceholder(name);

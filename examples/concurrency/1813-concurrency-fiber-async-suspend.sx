@@ -43,16 +43,16 @@ main :: () -> i64 {
     // cancel. It runs as a fiber so `await` has a `self.current` to park. The
     // scheduler is installed as `context.io`, so the unified async layer reaches it.
     push .{ io = xx s } {
-        ps.spawn(() {
+        ps.spawn(|| {
             // Worker A yields mid-body so B interleaves before A completes.
-            a := context.io.async(() -> (i64, !) {
+            a := context.io.async(|| -> (i64, !) {
                 rec(pl, 1);
                 ps.yield_now();   // suspend A; B (already spawned) runs to completion
                 rec(pl, 3);
                 42
             });
             // Worker B runs straight through (no yield).
-            b := context.io.async(() -> (i64, !) {
+            b := context.io.async(|| -> (i64, !) {
                 rec(pl, 2);
                 100
             });
@@ -65,7 +65,7 @@ main :: () -> i64 {
 
             // Cancel case: cancel before the worker runs; `await` raises .Canceled
             // off the sticky flag, the `or` default (-99) is taken.
-            c := context.io.async(() -> (i64, !) => 7);
+            c := context.io.async(|| -> (i64, !) 7);
             c.cancel();
             rec(pl, c.await() or { -99 });
         });

@@ -17,6 +17,6 @@ main :: () {
     vari(1) { print("x\n"); };
     rower() { print("x\n"); };
     scaffold(content = toolbar) { print("x\n"); };
-    q := () => print("q\n");
+    q := || print("q\n");
     q() { print("x\n"); };
 }

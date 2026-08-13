@@ -17,7 +17,7 @@ main :: () {
     r := 0;
     push .{ allocator = ta } {
         n := 40;
-        cl := (x: i64) -> i64 { x + n };
+        cl := |x: i64| -> i64 { x + n };
         r = cl(2);
         free(cl);
     }
@@ -27,10 +27,10 @@ main :: () {
     // Explicit form: env allocated under the tracker, freed AFTER the
     // push scope ended — free(cl2, ta) pairs the allocator explicitly,
     // immune to whatever context.allocator is current at the free.
-    cl2 := (x: i64) -> i64 { x };
+    cl2 := |x: i64| -> i64 { x };
     push .{ allocator = ta } {
         m := 7;
-        cl2 = (x: i64) -> i64 { x * m };
+        cl2 = |x: i64| -> i64 { x * m };
     }
     r2 := cl2(6);
     free(cl2, ta);
@@ -40,7 +40,7 @@ main :: () {
     // Capture-free closure: env is null — free is a no-op, no dealloc
     // reaches the allocator, nothing crashes.
     before := ta.dealloc_count;
-    k := (x: i64) -> i64 { x * 2 };
+    k := |x: i64| -> i64 { x * 2 };
     free(k, ta);
     print("null env: no-op {}\n", ta.dealloc_count == before);
 }

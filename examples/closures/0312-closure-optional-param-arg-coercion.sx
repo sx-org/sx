@@ -7,7 +7,7 @@
 #import "modules/std.sx";
 
 main :: () {
-    pick := (p: ?i64) -> i64 {
+    pick := |p: ?i64| -> i64 {
         if p == null { return -1; }
         return p;            // narrowed inside the lambda body
     };

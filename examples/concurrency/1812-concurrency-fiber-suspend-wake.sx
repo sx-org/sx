@@ -36,7 +36,7 @@ main :: () -> i64 {
     // Fiber A: record 10, park, then (after wake) record 11. Store A's handle in
     // the shared state so B can wake it.
     mk_a :: (ps: *sched.Scheduler, psh: *Sh) {
-        psh.parked = ps.spawn(() {
+        psh.parked = ps.spawn(|| {
             rec(psh, 10);
             ps.suspend_self();
             rec(psh, 11);
@@ -45,7 +45,7 @@ main :: () -> i64 {
     // Fiber B: record 20, wake A (legit) + a spurious second wake (safe no-op),
     // record 21.
     mk_b :: (ps: *sched.Scheduler, psh: *Sh) {
-        ps.spawn(() {
+        ps.spawn(|| {
             rec(psh, 20);
             ps.wake(psh.parked);     // legitimate: A is parked
             ps.wake(psh.parked);     // spurious: A is now .ready/queued — must no-op

@@ -16,6 +16,6 @@ run :: (f: () -> i64) -> i64 { return f(); }
 main :: () -> i64 {
     greet();
     greet2();
-    print("{}\n", run(() => 7));
+    print("{}\n", run(|| 7));
     return 0;
 }

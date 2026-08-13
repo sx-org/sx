@@ -24,16 +24,16 @@ respread :: (..xs: any) -> i64 {
 
 // pack captured into a closure that OUTLIVES the spawner's frame
 make_thunk :: (..args: any) -> Closure() -> i64 {
-    return () -> i64 => add2(..args);
+    return || -> i64 add2(..args);
 }
 
 // pack captured into a closure: spread AND comptime-indexed
 capture_both :: (dst: *string, ..args: any) {
-    captured := () => { dst.* = join(..args); };
+    captured := || { dst.* = join(..args); };
     captured();
 }
 capture_index :: (po: *i64, ..args: any) {
-    captured := () => { po.* = args[0] + args[1]; };
+    captured := || { po.* = args[0] + args[1]; };
     captured();
 }
 

@@ -8,7 +8,7 @@
 
 run :: () {
     defer {
-        cb := (n: i32) -> i32 { return n * 2; };
+        cb := |n: i32| -> i32 { return n * 2; };
         print("defer closure: {}\n", cb(21));   // 42, at scope exit
     }
     print("body\n");

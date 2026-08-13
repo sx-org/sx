@@ -21,6 +21,6 @@ boxed :: ufcs (io: Io, worker: Closure(..$args) -> $R, ..$args) -> Box($R) {
 }
 
 main :: () {
-    r := context.io.boxed((a: i64, b: i64) -> i64 => a + b, 40, 2);
+    r := context.io.boxed(|a: i64, b: i64| -> i64 a + b, 40, 2);
     print("r: {}\n", r.v);   // r: 42
 }

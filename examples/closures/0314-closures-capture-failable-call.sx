@@ -14,7 +14,7 @@ Box :: struct { run: Closure() -> void; }
 // `catch` path: the nested closure absorbs the worker's error.
 run_catch :: (worker: Closure() -> (i64, !)) {
     b : Box = ---;
-    b.run = () {
+    b.run = || {
         v := worker() catch {
             print("caught\n");
             return;
@@ -26,17 +26,17 @@ run_catch :: (worker: Closure() -> (i64, !)) {
 
 // `try` path: the nested closure is itself failable and propagates.
 mk_trier :: (worker: Closure() -> (i64, !)) -> Closure() -> (i64, !) {
-    return () -> (i64, !) {
+    return || -> (i64, !) {
         v := try worker();
         v + 100
     };
 }
 
 main :: () -> i64 {
-    run_catch(() -> (i64, !) { 7 });            // ok 7
-    run_catch(() -> (i64, !) { raise error.Bad; }); // caught
+    run_catch(|| -> (i64, !) { 7 });            // ok 7
+    run_catch(|| -> (i64, !) { raise error.Bad; }); // caught
 
-    t := mk_trier(() -> (i64, !) { 5 });
+    t := mk_trier(|| -> (i64, !) { 5 });
     r := t() catch { return 1; };
     print("try {}\n", r);                          // try 105
     return 0;
