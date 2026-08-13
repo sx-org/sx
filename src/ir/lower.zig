@@ -56,6 +56,7 @@ const lower_expr = @import("lower/expr.zig");
 const lower_closure = @import("lower/closure.zig");
 const lower_init_plan = @import("lower/init_plan.zig");
 const lower_build_block = @import("lower/build_block.zig");
+const lower_empty_brace = @import("lower/empty_brace.zig");
 const lower_open_set = @import("lower/open_set.zig");
 const lower_bound = @import("lower/bound.zig");
 
@@ -3295,6 +3296,7 @@ pub const Lowering = struct {
     pub const funcWantsImplicitCtx = lower_decl.funcWantsImplicitCtx;
     pub const fnPtrTypeWantsCtx = lower_decl.fnPtrTypeWantsCtx;
     pub const scanDecls = lower_decl.scanDecls;
+    pub const normalizeEmptyBraceCalls = lower_empty_brace.normalizeEmptyBraceCalls;
     pub const expandModuleDrivers = lower_expand.expandModuleDrivers;
     pub const registerConstAliases = lower_decl.registerConstAliases;
     pub const registerLiteralModuleConsts = lower_decl.registerLiteralModuleConsts;

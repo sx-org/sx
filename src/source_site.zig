@@ -554,6 +554,10 @@ fn walk(b: *Builder, node: *const Node) anyerror!void {
             try walk(b, l.body);
         },
         .trailing_block => |tb| try walk(b, tb.lambda),
+        .empty_brace_call => |ebc| {
+            try walk(b, ebc.call);
+            try walk(b, ebc.block);
+        },
 
         .root => |r| for (r.decls) |d| try walkModuleDecl(b, d),
         .binary_op => |o| {

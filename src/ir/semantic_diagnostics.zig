@@ -442,6 +442,10 @@ pub const UnknownTypeChecker = struct {
             .spread_expr => |se| self.checkBindingNames(se.operand),
             .named_arg => |na| self.checkBindingNames(na.value),
             .trailing_block => |tb| self.checkBindingNames(tb.lambda),
+            .empty_brace_call => |ebc| {
+                self.checkBindingNames(ebc.call);
+                self.checkBindingNames(ebc.block);
+            },
             .asm_expr => |ae| {
                 self.checkBindingNames(ae.template);
                 for (ae.operands) |op| self.checkBindingNames(op.payload);

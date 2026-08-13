@@ -1124,17 +1124,17 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                 // forward identifier alias in the annotation resolves to its
                 // target instead of a fabricated stub. Untyped
                 // literal constants carry no annotation to resolve, so they
-                // stay here (their type comes from the literal / inference).
+                // stay here (their type comes from the literal).
                 if (cd.type_annotation == null) {
-                    // Untyped literal constants (e.g. UI_VERT_SRC :: #string GLSL...GLSL;)
+                    // Untyped literal constants (e.g. UI_VERT_SRC :: #string GLSL...GLSL;).
+                    // An aggregate-valued one registers in pass 1c' instead —
+                    // its value node is final only once the brace front runs.
                     const lit_ty: ?TypeId = switch (cd.value.data) {
                         .string_literal => .string,
                         .int_literal => .i64,
                         .float_literal => .f64,
                         .bool_literal => .bool,
                         .char_literal => .i64,
-                        // Complex constant expressions (e.g. COLOR_WHITE :: Color{ r = 255, ... })
-                        .struct_literal => self.inferExprType(cd.value),
                         else => null,
                     };
                     if (lit_ty) |ty| {
@@ -1214,6 +1214,21 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
         else
             false;
         self.protocolResolver().registerImplBlock(&decl.data.impl_block, is_imported, decl);
+    }
+    // Pass 1c: settle every `F(args){}` on its callee. Every type and function
+    // this list declares is registered by now, and no global initializer has
+    // been folded and no body lowered yet — so each undecided brace is already
+    // the aggregate or the trailing block wherever it is read.
+    self.normalizeEmptyBraceCalls(decls);
+    // Pass 1c': untyped aggregate-valued module constants (`WHITE :: Color{ … }`,
+    // `SLOT :: p.Slot(i64){}`). Their type is inferred from the value node,
+    // which the brace front above has just settled.
+    for (decls) |decl| {
+        if (decl.data != .const_decl) continue;
+        const cd = decl.data.const_decl;
+        if (cd.type_annotation != null or cd.value.data != .struct_literal) continue;
+        self.setCurrentSourceFile(decl.source_file);
+        self.putModuleConst(self.current_source_file, cd.name, .{ .value = cd.value, .ty = self.inferExprType(cd.value) });
     }
     // Pass 2: registrations that resolve a top-level type annotation run
     // after the alias fixpoint, so a forward identifier alias used as the

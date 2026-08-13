@@ -3437,10 +3437,18 @@ pub const Parser = struct {
                     // Same-line `{` after a call: trailing block OR parameterized
                     // named aggregate `List(T){…}`. Prefer the aggregate when the
                     // brace body is aggregate-shaped (fields / commas). An empty
-                    // body carries no shape, so the spelling decides — see
-                    // emptyBraceIsTypeApplication.
-                    const brace_is_tight = self.tokens.flagsOf(self.tok).glued_left;
-                    if (self.braceLooksLikeNamedAggregate(args.items, brace_is_tight)) {
+                    // body carries no shape and the gap says nothing, so an
+                    // argument-carrying call parks it in an `empty_brace_call`
+                    // for the callee to settle.
+                    const shape = self.scanBraceShape();
+                    if (!shape.saw_token and args.items.len > 0) {
+                        const call = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
+                        const block = try self.parseBlock();
+                        expr = try self.createNode(expr.span.start, .{ .empty_brace_call = .{ .call = call, .block = block } });
+                        // Same as the trailing block below: only DOT-led postfix
+                        // continues the chain past the `}`.
+                        if (self.tokens.tag(self.tok) != .dot) break;
+                    } else if (braceShapeIsNamedAggregate(shape)) {
                         expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                         // Fall through: next postfix iteration takes Type{}.
                     } else {
@@ -5546,48 +5554,6 @@ pub const Parser = struct {
         return !self.no_trailing_block;
     }
 
-    /// Unambiguous type syntax: nodes that can only be a type (builtin scalars
-    /// reach this path as `.type_expr`, see `parsePrimary`), or a nested type
-    /// application that itself carries one (`Holder(Vec(3, f32))`). A bare name
-    /// is deliberately excluded — `Limit` and `pair` are indistinguishable from
-    /// values here, and the brace spelling settles those.
-    fn argIsTypeExpr(expr: *const Node) bool {
-        return switch (expr.data) {
-            .parameterized_type_expr,
-            .type_expr,
-            .tuple_type_expr,
-            .slice_type_expr,
-            .pointer_type_expr,
-            .optional_type_expr,
-            .array_type_expr,
-            .many_pointer_type_expr,
-            .closure_type_expr,
-            .function_type_expr,
-            => true,
-            .call => |c| argsHaveTypeExpr(c.args),
-            else => false,
-        };
-    }
-
-    fn argsHaveTypeExpr(call_args: []const *Node) bool {
-        for (call_args) |a| {
-            if (argIsTypeExpr(a)) return true;
-        }
-        return false;
-    }
-
-    /// Empty `{}` after a call carries no body shape, so the spelling decides:
-    /// - `{` tight against `)` → parameterized aggregate (`Box(pair){}`,
-    ///   `Buf(16){}`, `Sink(View){}`);
-    /// - one space or more → trailing block (`run(n) {}`, `Group(2) {}`),
-    ///   unless an argument is unambiguous type syntax and can only be a type
-    ///   application (`List(i64) {}`, `Vec(3, f32) {}`).
-    /// Zero-arg `f() {}` is always trailing — `T{}` covers the empty aggregate.
-    fn emptyBraceIsTypeApplication(call_args: []const *Node, brace_is_tight: bool) bool {
-        if (call_args.len == 0) return false;
-        return brace_is_tight or argsHaveTypeExpr(call_args);
-    }
-
     /// Whether `{` after `expr` should start a named aggregate (vs a push body).
     /// Outside `push`, any aggregate-prefix + allowed header context takes `{`
     /// as `Type{…}`. Inside `push`, body shape decides so
@@ -5682,22 +5648,17 @@ pub const Parser = struct {
         return shape.field_eq or shape.comma;
     }
 
-    /// With `current` on `{` after a call: true when the brace body looks
-    /// like a named-aggregate body rather than a trailing-block statement
-    /// list.
+    /// Whether the body a call's `{` opens is a named-aggregate body rather
+    /// than a trailing-block statement list.
     ///
-    /// - empty `{}` → see `emptyBraceIsTypeApplication`
+    /// - empty / comment-only `{}` → trailing; only zero-arg `f() {}` arrives
+    ///   empty here (`T{}` is the empty aggregate), since an argument-carrying
+    ///   call parks its empty body in an `empty_brace_call`
     /// - top-level `;` or statement-lead keywords → trailing (`vstack() { a; }`)
     /// - top-level `name =` or top-level `,` → aggregate (`Plan{ x = 1 }`, `T{1, 2}`)
     /// - otherwise → trailing (statement blocks that omit `;` after `if`/`for`)
-    fn braceLooksLikeNamedAggregate(self: *Parser, call_args: []const *Node, brace_is_tight: bool) bool {
-        if (self.tokens.tag(self.tok) != .l_brace) return false;
-        const shape = self.scanBraceShape();
-        if (!shape.saw_token) {
-            // Empty / comment-only `{}`: type application vs empty trailing
-            // block (see emptyBraceIsTypeApplication).
-            return emptyBraceIsTypeApplication(call_args, brace_is_tight);
-        }
+    fn braceShapeIsNamedAggregate(shape: BraceShape) bool {
+        if (!shape.saw_token) return false;
         // Statement markers force trailing even when an assignment `x = e`
         // looks like a field init (`slot = Label{…};` inside a build block).
         if (shape.semi or shape.stmt_kw or shape.colon_eq) return false;
@@ -7142,10 +7103,42 @@ test "parse named aggregate Type{ fields } without separator dot" {
     try std.testing.expect(r_init.data.struct_literal.type_expr == null);
 }
 
-test "parse parameterized named aggregate List(T){}" {
+test "parse empty brace after an argument call as the undecided carrier" {
+    // Neither spelling decides: tight, spaced, a wide gap, a type-expr
+    // argument, a value argument, a lowercase or PascalCase callee, and `*x`
+    // all park in one `empty_brace_call` for the callee to settle.
     const source =
         \\main :: () {
-        \\  xs := List(i64){};
+        \\  a := List(i64){};
+        \\  b := List(i64) {};
+        \\  c := List(Move)     {};
+        \\  d := Box(pair){};
+        \\  e := Buf(16){};
+        \\  f := list(i64){};
+        \\  g := Group(n) {};
+        \\  h := render(*screen) {};
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    for (body.data.block.stmts) |stmt| {
+        const init_expr = stmt.data.var_decl.value.?;
+        try std.testing.expect(init_expr.data == .empty_brace_call);
+        const carrier = init_expr.data.empty_brace_call;
+        try std.testing.expect(carrier.call.data == .call);
+        try std.testing.expectEqual(@as(usize, 1), carrier.call.data.call.args.len);
+        try std.testing.expectEqual(@as(usize, 0), carrier.block.data.block.stmts.len);
+    }
+}
+
+test "parse comment-only body is an undecided carrier too" {
+    const source =
+        \\main :: () {
+        \\  b := Box(pair){ // nothing yet
+        \\  };
         \\}
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -7154,165 +7147,50 @@ test "parse parameterized named aggregate List(T){}" {
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
-    try std.testing.expect(init_expr.data == .struct_literal);
-    try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
-    try std.testing.expect(init_expr.data.struct_literal.type_expr.?.data == .call);
+    try std.testing.expect(init_expr.data == .empty_brace_call);
 }
 
-test "parse empty trailing block after value-arg call" {
-    // `run(2) {}` is spaced with no type-expr arg — a trailing block.
-    const source =
-        \\run :: (n: i64, body: Closure()) { body(); }
-        \\main :: () { run(2) {} }
-    ;
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), source);
-    const root = try parser.parse();
-    const body = root.data.root.decls[1].data.fn_decl.body;
-    const call = body.data.block.stmts[0];
-    try std.testing.expect(call.data == .call);
-    try std.testing.expectEqual(@as(usize, 2), call.data.call.args.len);
-    try std.testing.expect(call.data.call.args[1].data == .trailing_block);
-}
-
-test "parse empty trailing block after capitalized value-arg call" {
-    // The callee's case is not a signal — only the brace spelling is.
-    const source =
-        \\Group :: (n: i64, body: Closure()) { body(); }
-        \\main :: () { Group(2) {} }
-    ;
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), source);
-    const root = try parser.parse();
-    const body = root.data.root.decls[1].data.fn_decl.body;
-    const call = body.data.block.stmts[0];
-    try std.testing.expect(call.data == .call);
-    try std.testing.expectEqual(@as(usize, 2), call.data.call.args.len);
-    try std.testing.expect(call.data.call.args[1].data == .trailing_block);
-}
-
-test "parse lowercase parameterized named aggregate list(T){}" {
+test "parse undecided carrier continues only on a dot" {
+    // `.len` chains onto the carrier; the next statement starts on its own.
     const source =
         \\main :: () {
-        \\  xs := list(i64){};
-        \\}
-    ;
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), source);
-    const root = try parser.parse();
-    const body = root.data.root.decls[0].data.fn_decl.body;
-    const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
-    try std.testing.expect(init_expr.data == .struct_literal);
-    try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
-}
-
-test "parse empty trailing block with identifier value args" {
-    // `run(n) {}` — a bare name is never a type signal; the space decides.
-    const source =
-        \\run :: (n: i64, body: Closure()) { body(); }
-        \\main :: () {
-        \\  n := 2;
-        \\  run(n) {}
-        \\}
-    ;
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), source);
-    const root = try parser.parse();
-    const body = root.data.root.decls[1].data.fn_decl.body;
-    const call = body.data.block.stmts[1];
-    try std.testing.expect(call.data == .call);
-    try std.testing.expectEqual(@as(usize, 2), call.data.call.args.len);
-    try std.testing.expect(call.data.call.args[1].data == .trailing_block);
-}
-
-test "parse empty trailing block with PascalCase callee and identifier arg" {
-    const source =
-        \\Group :: (n: i64, body: Closure()) { body(); }
-        \\main :: () {
-        \\  n := 2;
+        \\  n := List(i64){}.len;
         \\  Group(n) {}
+        \\  m := 1;
         \\}
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
-    const body = root.data.root.decls[1].data.fn_decl.body;
-    const call = body.data.block.stmts[1];
-    try std.testing.expect(call.data == .call);
-    try std.testing.expect(call.data.call.args[1].data == .trailing_block);
+    const stmts = root.data.root.decls[0].data.fn_decl.body.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 3), stmts.len);
+    const chained = stmts[0].data.var_decl.value.?;
+    try std.testing.expect(chained.data == .field_access);
+    try std.testing.expect(chained.data.field_access.object.data == .empty_brace_call);
+    try std.testing.expect(stmts[1].data == .empty_brace_call);
 }
 
-test "parse tight empty brace as aggregate regardless of arg spelling" {
-    // The tight `){}` spelling is the aggregate signal: a lowercase user type
-    // (`pair`), a PascalCase name, and a pure value parameter all qualify.
+test "parse non-empty body after a call keeps its parse-time reading" {
+    // A body with an aggregate marker at its own top level is the aggregate;
+    // one with statement shape is the trailing block. Both are decided here.
     const source =
         \\main :: () {
-        \\  b := Box(pair){};
-        \\  m := List(Move){};
-        \\  v := Buf(16){};
-        \\  g := Group(n){};
+        \\  b := Box(i64){ pair(1, 2), };
+        \\  vstack(8) { tappable(hit, on_tap) }
         \\}
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
-    const body = root.data.root.decls[0].data.fn_decl.body;
-    for (body.data.block.stmts) |stmt| {
-        const init_expr = stmt.data.var_decl.value.?;
-        try std.testing.expect(init_expr.data == .struct_literal);
-        try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
-    }
-}
-
-test "parse spaced empty brace with a type-expr arg as aggregate" {
-    // A space does not force trailing when an argument can only be a type.
-    const source =
-        \\main :: () {
-        \\  xs := List(i64) {};
-        \\  vs := Vec(3, f32) {};
-        \\  hs := Holder(Vec(3, f32)) {};
-        \\}
-    ;
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), source);
-    const root = try parser.parse();
-    const body = root.data.root.decls[0].data.fn_decl.body;
-    for (body.data.block.stmts) |stmt| {
-        const init_expr = stmt.data.var_decl.value.?;
-        try std.testing.expect(init_expr.data == .struct_literal);
-        try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
-    }
-}
-
-test "parse spaced empty brace with name-only args as trailing" {
-    // Bare names and `*x` are values here — `run(Limit) {}` and
-    // `render(*screen) {}` bind the block instead of inventing a type app.
-    const source =
-        \\Limit :: 7;
-        \\run :: (n: i64, body: Closure()) { body(); }
-        \\render :: (s: *Screen, body: Closure()) { body(); }
-        \\main :: () {
-        \\  run(Limit) {}
-        \\  render(*screen) {}
-        \\}
-    ;
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), source);
-    const root = try parser.parse();
-    const body = root.data.root.decls[3].data.fn_decl.body;
-    for (body.data.block.stmts) |stmt| {
-        try std.testing.expect(stmt.data == .call);
-        const args = stmt.data.call.args;
-        try std.testing.expect(args[args.len - 1].data == .trailing_block);
-    }
+    const stmts = root.data.root.decls[0].data.fn_decl.body.data.block.stmts;
+    const agg = stmts[0].data.var_decl.value.?;
+    try std.testing.expect(agg.data == .struct_literal);
+    try std.testing.expect(agg.data.struct_literal.type_expr.?.data == .call);
+    try std.testing.expect(stmts[1].data == .call);
+    const args = stmts[1].data.call.args;
+    try std.testing.expect(args[args.len - 1].data == .trailing_block);
 }
 
 test "parse zero-arg empty brace as trailing even when tight" {
@@ -7331,34 +7209,15 @@ test "parse zero-arg empty brace as trailing even when tight" {
     try std.testing.expect(call.data.call.args[0].data == .trailing_block);
 }
 
-test "parse comment-only body keeps the tight aggregate reading" {
-    // A comment-only body is still empty, so the brace spelling decides.
-    const source =
-        \\main :: () {
-        \\  b := Box(pair){ // nothing yet
-        \\  };
-        \\}
-    ;
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), source);
-    const root = try parser.parse();
-    const body = root.data.root.decls[0].data.fn_decl.body;
-    const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
-    try std.testing.expect(init_expr.data == .struct_literal);
-    try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
-}
-
-test "parse parameterized aggregate with compound and PascalCase type args" {
+test "parse compound and multi-argument type applications as carriers" {
     // `[]u8` → slice_type_expr; `?i64` → optional_type_expr;
     // `(i64) -> i64` → function_type_expr; `Vec(3, f32)` mixes value + type
-    // args. `*Node` and `Move` are name-shaped and ride the tight spelling.
+    // args. Every shape reaches the callee the same way.
     const source =
         \\main :: () {
         \\  xs := List([]u8){};
         \\  ps := List(*Node){};
         \\  os := List(?i64){};
-        \\  ms := List(Move){};
         \\  fs := Marker((i64) -> i64, [:0]u8){};
         \\  vs := Vec(3, f32){};
         \\}
@@ -7370,8 +7229,8 @@ test "parse parameterized aggregate with compound and PascalCase type args" {
     const body = root.data.root.decls[0].data.fn_decl.body;
     for (body.data.block.stmts) |stmt| {
         const init_expr = stmt.data.var_decl.value.?;
-        try std.testing.expect(init_expr.data == .struct_literal);
-        try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
+        try std.testing.expect(init_expr.data == .empty_brace_call);
+        try std.testing.expect(init_expr.data.empty_brace_call.call.data == .call);
     }
 }
 

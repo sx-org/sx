@@ -95,6 +95,7 @@ pub const Node = struct {
         spread_expr: SpreadExpr,
         named_arg: NamedArg,
         trailing_block: TrailingBlock,
+        empty_brace_call: EmptyBraceCall,
         break_expr: void,
         continue_expr: void,
         undef_literal: void,
@@ -963,6 +964,16 @@ pub const NamedArg = struct {
 /// callee's last declared parameter, which is where its checks live.
 pub const TrailingBlock = struct {
     lambda: *Node,
+};
+
+/// `F(args){}` / `F(args) {}` — an argument-carrying call followed by a
+/// same-line empty brace body. The parameterized-aggregate and the
+/// trailing-block readings both fit that spelling, so the callee settles it:
+/// the lowering front rewrites this node into a `struct_literal` over `call`,
+/// or into `call` with `block` appended as a `trailing_block` argument.
+pub const EmptyBraceCall = struct {
+    call: *Node,
+    block: *Node,
 };
 
 pub const NamespaceDecl = struct {
