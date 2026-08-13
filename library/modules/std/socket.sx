@@ -27,6 +27,7 @@ libc  :: clib.libc;   // the socket-specific externs below bind through the shar
 read  :: clib.read;
 write :: clib.write;
 close :: clib.close;
+fcntl :: clib.fcntl;
 socket     :: (domain: i32, kind: i32, protocol: i32) -> i32 extern libc;
 setsockopt :: (fd: i32, level: i32, optname: i32, optval: *i32, optlen: u32) -> i32 extern libc;
 bind       :: (fd: i32, addr: *SockAddr, addrlen: u32) -> i32 extern libc;
@@ -35,7 +36,6 @@ accept     :: (fd: i32, addr: *SockAddr, addrlen: *u32) -> i32 extern libc;
 connect    :: (fd: i32, addr: *SockAddr, addrlen: u32) -> i32 extern libc;
 shutdown   :: (fd: i32, how: i32) -> i32 extern libc;
 socketpair :: (domain: i32, kind: i32, protocol: i32, fds: *i32) -> i32 extern libc;
-fcntl      :: (fd: i32, cmd: i32, ..args: []i32) -> i32 extern libc;
 
 // OS-neutral constants (same numeric value on darwin + linux).
 AF_UNSPEC    :i32: 0;

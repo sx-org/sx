@@ -1,0 +1,30 @@
+// Several colliding `(tagged P, T)` pairs in one program are diagnosed in
+// source order — the pair bookkeeping is a hash map, so its iteration order is
+// not the diagnostic order.
+#import "modules/std.sx";
+
+Alpha :: protocol tagged { a :: (self: *Self) -> i64; }
+Beta  :: protocol tagged { b :: (self: *Self) -> i64; }
+Gamma :: protocol tagged { c :: (self: *Self) -> i64; }
+Delta :: protocol tagged { d :: (self: *Self) -> i64; }
+
+One   :: struct { n: i64; }
+Two   :: struct { n: i64; }
+Three :: struct { n: i64; }
+Four  :: struct { n: i64; }
+
+impl Alpha for One { a :: (self: *One) -> i64 { self.n } }
+impl Alpha for One { a :: (self: *One) -> i64 { self.n + 1 } }
+
+impl Beta for Two { b :: (self: *Two) -> i64 { self.n } }
+impl Beta for Two { b :: (self: *Two) -> i64 { self.n + 2 } }
+
+impl Gamma for Three { c :: (self: *Three) -> i64 { self.n } }
+impl Gamma for Three { c :: (self: *Three) -> i64 { self.n + 3 } }
+
+impl Delta for Four { d :: (self: *Four) -> i64 { self.n } }
+impl Delta for Four { d :: (self: *Four) -> i64 { self.n + 4 } }
+
+main :: () {
+    print("{}\n", 0);
+}

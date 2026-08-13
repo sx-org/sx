@@ -1,0 +1,16 @@
+// `spawn` succeeds even when the program does not exist: the fork happened,
+// and it is the CHILD's failed execvp that exits 127 — which the parent
+// learns only by reaping. `stderr = .null` wires the child's error slot to
+// /dev/null.
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    child, e := process.spawn(.["sx-no-such-program-anywhere"], .{ stderr = .null });
+    if e { print("spawn failed\n"); return 1; }
+
+    code := child.wait(true);
+    if code == null { print("wait produced no status\n"); return 1; }
+    print("exec failure: {}\n", code!);
+    if code! != 127 { return 1; }
+    return 0;
+}

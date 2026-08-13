@@ -1,0 +1,27 @@
+// std.process.spawn hands back a LIVE child: the parent writes into its
+// stdin, reads the echo out of its stdout while it is still running,
+// closes stdin so the child sees EOF, then reaps exit 0.
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    child, e := process.spawn(.["cat"], .{ stdin = .pipe, stdout = .pipe });
+    if e { print("spawn failed\n"); return 1; }
+
+    msg := "ping\n";
+    wrote := child.stdin_write(xx msg);
+    if wrote != xx msg.len { print("write: {}\n", wrote); return 1; }
+
+    buf := alloc_string(64);
+    got := child.stdout_read(xx buf);
+    if got <= 0 { print("read: {}\n", got); return 1; }
+    print("echoed: {}", substr(buf, 0, xx got));
+
+    if child.wait(false) != null { print("cat exited before EOF\n"); return 1; }
+
+    child.stdin_close();
+    code := child.wait(true);
+    child.stdout_close();
+    if code == null { print("wait produced no status\n"); return 1; }
+    print("exit: {}\n", code!);
+    return 0;
+}

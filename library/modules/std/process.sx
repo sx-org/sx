@@ -1,19 +1,22 @@
 #import "modules/std/core.sx";   // @SourceSite
 #import "modules/std/fmt.sx";    // print, concat, substr, alloc_string, to_cstring, from_cstring
 c :: #import "modules/std/c.sx"; // c.exit (_exit) + the shared libc handle
+posix :: #import "modules/std/posix.sx";
 trace :: #import "modules/std/trace.sx";
 
 // =====================================================================
 // process.sx — subprocess + environment stdlib (POSIX backend).
 //
-// The surface is one entry point `run(cmd)` that shells out to
-// /bin/sh, captures stdout, returns exit code + stdout. Plus
-// `env(name)` / `find_executable(name)`. The bundler uses these to
-// invoke `codesign`, `plutil`, `security`, `aapt2`, `javac`, `d8`,
-// `keytool`, `apksigner`.
+// Two spawn surfaces. `run(cmd)` shells out to /bin/sh, captures stdout
+// and blocks to completion; the bundler uses it to invoke `codesign`,
+// `plutil`, `security`, `aapt2`, `javac`, `d8`, `keytool`, `apksigner`.
+// `spawn(argv, opts)` fork/execs directly and hands back a live `Child`
+// whose stdin/stdout/stderr are pipes the parent drives while the child
+// runs. Plus `env(name)` / `find_executable(name)`.
 //
 // `run` goes through /bin/sh, so the caller owns quoting and uses `2>&1`
-// to fold stderr into the captured stream.
+// to fold stderr into the captured stream. `spawn` takes an argv vector
+// and no shell, so nothing is re-parsed.
 // =====================================================================
 
 // The module-specific externs below (not in the shared c.sx surface) bind
@@ -67,18 +70,17 @@ run :: (cmd: [:0]u8) -> ?ProcessResult {
     }
     raw_status := pclose(f);
     if raw_status < 0 { return null; }
-    // POSIX wait(2) status encoding: low byte = signal (if signaled),
-    // next byte = exit code (if normally exited). For our MVP we just
-    // surface the exit-code byte; the signal case is folded into the
-    // non-zero return.
-    exit_code := (raw_status >> 8) & 0xFF;
-    if exit_code == 0 {
-        if (raw_status & 0x7F) != 0 {
-            // Killed by signal — surface as a non-zero exit.
-            exit_code = 128 + (raw_status & 0x7F);
-        }
-    }
-    ProcessResult{ exit_code = exit_code, stdout = out }
+    ProcessResult{ exit_code = decode_status(raw_status), stdout = out }
+}
+
+// POSIX wait(2) status word -> exit code. Low 7 bits = the terminating
+// signal, next byte = the exit code; a signal death has no exit code of
+// its own and folds to `128 + sig`, the shell's `$?` convention.
+decode_status :: (raw: i32) -> i32 {
+    code := (raw >> 8) & 0xFF;
+    sig := raw & 0x7F;
+    if code == 0 and sig != 0 { return 128 + sig; }
+    code
 }
 
 // Read an environment variable. Returns null if unset; an empty
@@ -113,6 +115,265 @@ find_executable :: (name: [:0]u8) -> ?string {
         return out;
     }
     null
+}
+
+// ── Child processes: fork + exec with piped fds ──────────────────────
+//
+// `spawn` returns while the child is still running: the parent writes
+// its stdin, reads its stdout/stderr, signals it, and reaps it. The raw
+// fds stay public, so a `socket.poll` loop over several children needs
+// nothing from this module.
+//
+// SINGLE-THREADED FORK CONTRACT: `pipe` + the FD_CLOEXEC `fcntl` that
+// follows it are not one atomic step, so a `fork` on another thread in
+// that gap inherits this run's pipe ends. Callers spawn from ONE thread.
+// An embedder that must spawn from many wraps the pipe→fork span in its
+// own mutex; the API is unchanged.
+//
+// REAPING IS THE CALLER'S: an unreaped child stays a zombie until the
+// parent exits, so every spawned Child ends at `wait`.
+
+// fcntl commands + fd flag, signal numbers, and the waitpid flag — all
+// identical on darwin and linux.
+O_RDWR     :i32: 2;
+FD_CLOEXEC :i32: 1;
+F_GETFD    :i32: 1;
+F_SETFD    :i32: 2;
+WNOHANG    :i32: 1;
+SIGKILL    :i32: 9;
+SIGPIPE    :i32: 13;
+SIGTERM    :i32: 15;
+SIG_IGN    :usize: 1;
+
+// The one fcntl command whose number is per-libc. NO silent fallback: an
+// unsupported target must add its own case rather than inherit a number
+// that means something else there.
+inline if OS == {
+    case .macos:   F_DUPFD_CLOEXEC :i32: 67;
+    case .ios:     F_DUPFD_CLOEXEC :i32: 67;
+    case .linux:   F_DUPFD_CLOEXEC :i32: 1030;
+    case .android: F_DUPFD_CLOEXEC :i32: 1030;
+    case .wasm:    F_DUPFD_CLOEXEC :i32: 1030;   // Emscripten's musl
+    else:          #error("std/process.sx: F_DUPFD_CLOEXEC is only known for Darwin (67) and Linux/Android/Emscripten (1030) — add a case for this target.");
+}
+
+// What a child's standard slot is wired to. `inherit` passes the
+// parent's own fd through; `pipe` gives the parent a handle on it;
+// `null` opens /dev/null.
+Stdio :: enum {
+    inherit;
+    pipe;
+    null;
+}
+
+SpawnOpts :: struct {
+    stdin:  Stdio = .inherit;
+    stdout: Stdio = .inherit;
+    stderr: Stdio = .inherit;
+}
+
+// A running (or reaped) child. `pid` is -1 once reaped; each of the
+// three fds is -1 when its slot is not piped or has been closed.
+Child :: struct {
+    pid:    i32 = -1;
+    stdin:  i32 = -1;
+    stdout: i32 = -1;
+    stderr: i32 = -1;
+    status: ?i32 = null;
+
+    // Blocking `write(2)` of `line` into the child's stdin, and blocking
+    // `read(2)` of up to `buf.len` bytes out of stdout/stderr. Each
+    // returns exactly what libc returned: the byte count, 0 for EOF on a
+    // read, or -1 with the reason in `posix.errno()`.
+    stdin_write :: (self: *Child, line: []u8) -> isize {
+        return c.write(self.stdin, line.ptr, xx line.len);
+    }
+    stdout_read :: (self: *Child, buf: []u8) -> isize {
+        return c.read(self.stdout, buf.ptr, xx buf.len);
+    }
+    stderr_read :: (self: *Child, buf: []u8) -> isize {
+        return c.read(self.stderr, buf.ptr, xx buf.len);
+    }
+
+    // Close the parent's end of a slot. Closing stdin is how the child
+    // sees EOF. A slot already at -1 is a no-op.
+    stdin_close :: (self: *Child) {
+        if self.stdin >= 0 { c.close(self.stdin); self.stdin = -1; }
+    }
+    stdout_close :: (self: *Child) {
+        if self.stdout >= 0 { c.close(self.stdout); self.stdout = -1; }
+    }
+    stderr_close :: (self: *Child) {
+        if self.stderr >= 0 { c.close(self.stderr); self.stderr = -1; }
+    }
+
+    // Signal the child. The `pid > 0` guard is the whole safety of this
+    // call: `kill(-1, sig)` broadcasts to every process the user may
+    // signal and `kill(0, sig)` hits the caller's own process group, so a
+    // reaped or unspawned Child must signal NOTHING. Returns libc's
+    // result (0 delivered), or -1 for a Child with no live pid.
+    kill :: (self: *Child, sig: i32) -> i32 {
+        if self.pid <= 0 { return -1; }
+        return c.kill(self.pid, sig);
+    }
+
+    // Reap the child and return its exit code (`128 + sig` when a signal
+    // killed it). `block` = true waits for it to die, retrying on EINTR;
+    // false is the WNOHANG probe and returns null while it still runs.
+    // The kernel reuses pids, so a reaped Child answers from its stored
+    // status and never touches waitpid again. Null also covers a waitpid
+    // that refused outright (the child is unreapable by this parent).
+    wait :: (self: *Child, block: bool) -> ?i32 {
+        if self.pid <= 0 { return self.status; }
+        options : i32 = if block then 0 else WNOHANG;
+        raw : i32 = 0;
+        while true {
+            r := c.waitpid(self.pid, *raw, options);
+            if r == self.pid {
+                self.status = decode_status(raw);
+                self.pid = -1;
+                return self.status;
+            }
+            if r == 0 { return null; }
+            if posix.errno() != posix.EINTR { return null; }
+        }
+        return null;
+    }
+}
+
+// Fork/exec `argv[0]` (PATH-resolved by execvp, with the parent's
+// environment) and return the live child. Raises `EmptyArgv` for an argv
+// with no program, `Pipe` when wiring the fds fails, `Fork` when the fork
+// itself refuses; every fd already created is closed before the raise, so
+// a failed spawn leaks nothing.
+spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
+    if argv.len == 0 { raise error.EmptyArgv; }
+
+    // Marshalling happens HERE, in the parent — see THE FORK WINDOW below.
+    vec : [*]?cstring = xx context.allocator.alloc_bytes((argv.len + 1) * size_of(?cstring));
+    i := 0;
+    while i < argv.len {
+        vec[i] = to_cstring(argv[i]);
+        i += 1;
+    }
+    vec[argv.len] = null;
+    file := vec[0]!;
+
+    // Per-slot fds, indexed by the standard slot they serve. `child` is
+    // the end the child dup2s onto slot 0/1/2; `parent` is the end the
+    // Child hands back.
+    child  : [3]i32 = .[-1, -1, -1];
+    parent : [3]i32 = .[-1, -1, -1];
+    onfail {
+        s := 0;
+        while s < 3 {
+            if child[s] >= 0 { c.close(child[s]); }
+            if parent[s] >= 0 { c.close(parent[s]); }
+            s += 1;
+        }
+        free_argv(vec, argv.len);
+    }
+
+    slot := 0;
+    while slot < 3 {
+        mode := opts.stdin;
+        if slot == 1 { mode = opts.stdout; }
+        if slot == 2 { mode = opts.stderr; }
+        if mode == .pipe {
+            fds : [2]i32 = ---;
+            if c.pipe(*fds) != 0 { raise error.Pipe; }
+            // Both ends CLOEXEC immediately: a sibling spawn's exec then
+            // drops them, so no run's pipe ends leak into another's child.
+            // The dup2'd copies in the child do NOT carry the flag, which
+            // is what keeps slots 0/1/2 open across exec.
+            if !set_cloexec(fds[0]) or !set_cloexec(fds[1]) {
+                c.close(fds[0]);
+                c.close(fds[1]);
+                raise error.Pipe;
+            }
+            if slot == 0 {
+                child[0] = fds[0];
+                parent[0] = fds[1];
+            } else {
+                child[slot] = fds[1];
+                parent[slot] = fds[0];
+            }
+        }
+        if mode == .null {
+            fd := c.open("/dev/null", O_RDWR);
+            if fd < 0 { raise error.Pipe; }
+            if !set_cloexec(fd) { c.close(fd); raise error.Pipe; }
+            child[slot] = fd;
+        }
+        slot += 1;
+    }
+
+    // Lift every prepared child-side fd clear of the standard slots. It
+    // can only sit there when the embedder runs with its own 0/1/2
+    // closed, and the lift makes the child's dup2 sequence non-
+    // overlapping by construction: no source is ever also a target, so
+    // `dup2(x, x)` — which would leave FD_CLOEXEC set and close the slot
+    // at exec — cannot arise.
+    slot = 0;
+    while slot < 3 {
+        if child[slot] >= 0 and child[slot] < 3 {
+            lifted := c.fcntl(child[slot], F_DUPFD_CLOEXEC, 3);
+            if lifted < 0 { raise error.Pipe; }
+            c.close(child[slot]);
+            child[slot] = lifted;
+        }
+        slot += 1;
+    }
+
+    pid := c.fork();
+    if pid < 0 { raise error.Fork; }
+    if pid == 0 {
+        // ── THE FORK WINDOW — FROZEN ──────────────────────────────────
+        // This block runs in a memory snapshot taken while other threads
+        // may have held the allocator lock; those threads do not exist
+        // here, so such a lock never unlocks. Only async-signal-safe
+        // syscalls on already-prepared values are permitted: no
+        // allocation, no `!`-raising path, no closure, no logging, no sx
+        // convenience of any kind. Every edit to it is reviewed against
+        // that rule.
+        if child[0] >= 0 { c.dup2(child[0], 0); }
+        if child[1] >= 0 { c.dup2(child[1], 1); }
+        if child[2] >= 0 { c.dup2(child[2], 2); }
+        c.execvp(file, vec);
+        c.exit(127);
+        // ── end fork window ───────────────────────────────────────────
+    }
+
+    slot = 0;
+    while slot < 3 {
+        if child[slot] >= 0 { c.close(child[slot]); }
+        slot += 1;
+    }
+    free_argv(vec, argv.len);
+
+    return Child{ pid = pid, stdin = parent[0], stdout = parent[1], stderr = parent[2] };
+}
+
+// Stop SIGPIPE from killing this process when it writes into a dead
+// child's stdin; the write reports `posix.EPIPE` instead. Process-wide
+// because darwin's per-fd F_SETNOSIGPIPE has no linux counterpart for
+// write(2). Long-lived spawners call this once at startup.
+ignore_sigpipe :: () {
+    c.signal(SIGPIPE, SIG_IGN);
+}
+
+// FD_CLOEXEC is the only fd flag, so F_SETFD writes the word directly.
+set_cloexec :: (fd: i32) -> bool {
+    return c.fcntl(fd, F_SETFD, FD_CLOEXEC) >= 0;
+}
+
+free_argv :: (vec: [*]?cstring, n: i64) {
+    i := 0;
+    while i < n {
+        if p := vec[i] { context.allocator.dealloc_bytes(xx p); }
+        i += 1;
+    }
+    context.allocator.dealloc_bytes(xx vec);
 }
 
 // ── Process termination ───────────────────────────────
