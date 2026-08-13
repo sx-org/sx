@@ -21,7 +21,7 @@ main :: () -> i32 {
     // failable closure literal through a bare fn-type param (matching ABI)
     print("bare ok={} err={}\n",
         bare(|x: i64| -> (i64, !E) { if x < 0 { raise error.Neg; } return x * 2; }, 5),
-        bare(|x: i64| -> (i64, !E) x * 2, -1));                 // ok=10; err: arrow never raises → cb(-1) = -2
+        bare(|x: i64| -> (i64, !E) x * 2, -1));                 // ok=10; err: expression body never raises → cb(-1) = -2
 
     // Closure(...) param, try-propagated, then caught at the call site
     print("chain ok={} err={}\n",

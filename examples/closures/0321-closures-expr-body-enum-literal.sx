@@ -24,7 +24,7 @@ main :: () {
     g := |x: f32| -> Pol if x < 0.0 then .a else .b;
     process.assert(g(-1.0) == .a and g(1.0) == .b, "if-else literal body");
 
-    // The same lambda as a CALL ARGUMENT: the parameter's closure type
+    // The same closure as a CALL ARGUMENT: the parameter's closure type
     // is the argument's destination — the body still types against Pol.
     r := sink(|x: f32| -> Pol if x < 0.0 then .a else .b);
     if pf := r.policy {

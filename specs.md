@@ -4124,8 +4124,8 @@ a closure body reads like a named one, and so do a generic instance, a nested
 local function and an inlined comptime callee:
 
 ```sx
-report := () -> !ParseErr => measure();   // discarded, then the success exit
-raise_it := () -> !ParseErr => error.BadDigit;
+report := || -> !ParseErr measure();   // discarded, then the success exit
+raise_it := || -> !ParseErr error.BadDigit;
 ```
 
 It is also decided per live path: where the tail is an `if` or a `match`, each
