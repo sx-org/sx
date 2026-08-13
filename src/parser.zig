@@ -5735,8 +5735,9 @@ pub const Parser = struct {
 
     /// From the first token of a capture's type annotation: the index of the
     /// `,` or `in` that closes it. A type argument list carries its own commas
-    /// (`Map(K, V)`), so only depth-0 ones separate captures. Null when the
-    /// header ends first — the `:` is then not an annotation.
+    /// (`Map(K, V)`), so only depth-0 ones separate captures. A brace group
+    /// (`struct { … }`) belongs to the type and is skipped balanced. Null when
+    /// the header ends first — the `:` is then not an annotation.
     fn skipCaptureTypeTokens(self: *Parser, from: Index) ?Index {
         var idx = from;
         var depth: u32 = 0;
@@ -5748,7 +5749,12 @@ pub const Parser = struct {
                     depth -= 1;
                 },
                 .comma, .kw_in => if (depth == 0) return idx,
-                .l_brace, .r_brace, .fat_arrow, .semicolon, .eof => return null,
+                .l_brace => {
+                    const close = self.tokens.scanBalanced(idx, .l_brace, .r_brace) orelse return null;
+                    idx = self.tokens.next(close);
+                    continue;
+                },
+                .r_brace, .fat_arrow, .semicolon, .eof => return null,
                 else => {},
             }
             idx = self.tokens.next(idx);

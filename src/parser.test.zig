@@ -2012,3 +2012,25 @@ test "'#using' leaves the declaration's name starts in step with its names" {
     try std.testing.expectEqual(@as(usize, 1), sd.using_entries.len);
     try expectNameStarts(src, sd.field_names, sd.field_name_starts);
 }
+
+test "parser: a for-capture type may contain a brace group" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const body = try parseBody(alloc,
+        \\f :: () {
+        \\    for x: struct { a: i64 } in items { }
+        \\    for p: Pair(struct { a: i64 }, i64) in ps { }
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 2), body.data.block.stmts.len);
+    const first = body.data.block.stmts[0].data.for_expr;
+    try std.testing.expectEqual(@as(usize, 1), first.captures.len);
+    try std.testing.expect(first.captures[0].type_annotation != null);
+    try std.testing.expect(first.captures[0].type_annotation.?.data == .struct_decl);
+    const second = body.data.block.stmts[1].data.for_expr;
+    try std.testing.expectEqual(@as(usize, 1), second.captures.len);
+    try std.testing.expect(second.captures[0].type_annotation != null);
+    try std.testing.expect(second.captures[0].type_annotation.?.data == .parameterized_type_expr);
+}

@@ -3744,9 +3744,38 @@ test "lsp/inlayHint: a for-loop capture that writes its type gets no hint" {
     const main_doc = try store.openOrUpdate("main.sx", main_src, 1);
     try store.analyzeDocument(main_doc);
 
-    const sema = main_doc.sema orelse return error.SkipZigTest;
+    const sema = main_doc.sema orelse return error.NoSema;
+    const root = main_doc.root orelse return error.NoRoot;
+
+    const Walk = struct {
+        fn hasAnnotatedCapture(node: *const sx.ast.Node, name: []const u8) bool {
+            switch (node.data) {
+                .root => |r| {
+                    for (r.decls) |d| if (hasAnnotatedCapture(d, name)) return true;
+                },
+                .block => |b| {
+                    for (b.stmts) |s| if (hasAnnotatedCapture(s, name)) return true;
+                },
+                .fn_decl => |fd| return hasAnnotatedCapture(fd.body, name),
+                .const_decl => |cd| return hasAnnotatedCapture(cd.value, name),
+                .struct_decl => |sd| {
+                    for (sd.methods) |m| if (hasAnnotatedCapture(m, name)) return true;
+                },
+                .for_expr => |fe| {
+                    for (fe.captures) |cap| {
+                        if (std.mem.eql(u8, cap.name, name) and cap.type_annotation != null) return true;
+                    }
+                    return hasAnnotatedCapture(fe.body, name);
+                },
+                else => {},
+            }
+            return false;
+        }
+    };
+    try std.testing.expect(Walk.hasAnnotatedCapture(root, "m"));
+
     var hints = std.ArrayList(lsp.InlayHint).empty;
-    Server.collectInlayHints(alloc, main_doc.root.?, sema.symbols, sema.fn_signatures, main_doc.source, &hints);
+    Server.collectInlayHints(alloc, root, sema.symbols, sema.fn_signatures, main_doc.source, &hints);
 
     for (hints.items) |h| {
         try std.testing.expect(std.mem.indexOf(u8, h.label, "Move") == null);

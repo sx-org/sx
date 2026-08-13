@@ -5272,8 +5272,11 @@ type — what the position yields — and `*` is orthogonal to it:
 for c: View in children { }      // c : View
 for *c: View in children { }     // c : *View — the element type is still View
 for x, i: i64 in xs, 0.. { }     // a range cursor is i64
+for x: struct { a: i64 } in items { }  // a brace group belongs to the type
 ```
 
+The type is an ordinary `type`, so a brace group in it (`struct { a: i64 }`,
+`Pair(struct { a: i64 }, i64)`) belongs to the annotation, not the body.
 The annotation restates the type; it never converts. It must name the
 element type exactly — a range cursor is `i64` whatever its bounds are
 spelled as, and an `inline for` over a pack checks the annotation against

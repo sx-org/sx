@@ -756,6 +756,7 @@ fn checkElementCaptureType(self: *Lowering, cap: ast.ForCapture, elem_ty: TypeId
     const ta = cap.type_annotation orelse return true;
     const want = self.resolveType(ta);
     if (want == elem_ty) return true;
+    if (self.externalErrorsExist() or want == .unresolved) return false;
     if (self.diagnostics) |d| {
         d.addFmt(.err, ta.span, "capture '{s}' is annotated '{s}' but the element type is '{s}'", .{
             cap.name, self.formatTypeName(want), self.formatTypeName(elem_ty),
@@ -780,6 +781,7 @@ fn checkRangeCaptureType(self: *Lowering, cap: ast.ForCapture) void {
     const ta = cap.type_annotation orelse return;
     const want = self.resolveType(ta);
     if (want == .i64) return;
+    if (self.externalErrorsExist() or want == .unresolved) return;
     if (self.diagnostics) |d| {
         d.addFmt(.err, ta.span, "a range cursor is 'i64' — capture '{s}' is annotated '{s}'", .{
             cap.name, self.formatTypeName(want),
