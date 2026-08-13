@@ -17,10 +17,10 @@ error: cannot erase an rvalue into tagged protocol 'View' at a 'return' — the 
    |                           ^^^^^^^^^^^^^^^
 
 error: cannot erase an rvalue into tagged protocol 'View' at a 'return' — the frame that would hold the temporary is about to die, so there is nothing durable to borrow beyond this frame; bind it, or place it in storage the caller owns
-  --> examples/diagnostics/2016-diagnostics-tagged-rvalue-tail-return.sx:22:35
+  --> examples/diagnostics/2016-diagnostics-tagged-rvalue-tail-return.sx:22:32
    |
-22 |     f : Closure() -> View = () => Widget{ n = 5 }.(View);
-   |                                   ^^^^^^^^^^^^^^^
+22 |     f : Closure() -> View = || Widget{ n = 5 }.(View);
+   |                                ^^^^^^^^^^^^^^^
 
 error: cannot erase an rvalue into tagged protocol 'View' at a 'return' — the frame that would hold the temporary is about to die, so there is nothing durable to borrow beyond this frame; bind it, or place it in storage the caller owns
   --> examples/diagnostics/2016-diagnostics-tagged-rvalue-tail-return.sx:28:9

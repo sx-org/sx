@@ -38,7 +38,7 @@ recover :: (n: i64) -> (i64, !Bad) {
 }
 
 lambda :: ($tag: string, n: i64) -> i64 {
-    twice := (v: i64) -> i64 { if v > 0 { return v * 2; } return 0; };
+    twice := |v: i64| -> i64 { if v > 0 { return v * 2; } return 0; };
     if n < 0 { return 0; }
     twice(n)
 }

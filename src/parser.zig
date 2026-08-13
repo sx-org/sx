@@ -2368,13 +2368,19 @@ pub const Parser = struct {
     /// Expects opening `(` already NOT consumed — this function consumes `(` through `)`.
     fn parseParams(self: *Parser) anyerror!ParamList {
         try self.expect(.l_paren);
+        return self.parseParamsUntil(.r_paren);
+    }
+
+    /// The parameter list itself, with its opener already consumed and `close`
+    /// as its closer: `)` for a signature, `|` for a closure literal.
+    fn parseParamsUntil(self: *Parser, close: Tag) anyerror!ParamList {
         var params = std.ArrayList(ast.Param).empty;
         var is_c_variadic = false;
         var tail_span: ast.Span = .{ .start = 0, .end = 0 };
-        while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
+        while (self.tokens.tag(self.tok) != close and self.tokens.tag(self.tok) != .eof) {
             if (params.items.len > 0) {
                 try self.expect(.comma);
-                if (self.tokens.tag(self.tok) == .r_paren) break;
+                if (self.tokens.tag(self.tok) == close) break;
             }
             // Leading `..` marks a variadic param at the binding site:
             // `..$args` (heterogeneous comptime pack), `..xs: []T` (slice),
@@ -2388,11 +2394,11 @@ pub const Parser = struct {
                 // tail from every named form: the tail carries no operand. It
                 // is the last entry, so an ordinary trailing comma may follow
                 // it and nothing else may.
-                if (self.tokens.tag(self.tok) == .r_paren or self.tokens.tag(self.tok) == .comma) {
+                if (self.tokens.tag(self.tok) == close or self.tokens.tag(self.tok) == .comma) {
                     is_c_variadic = true;
                     tail_span = .{ .start = dots.start, .end = dots.end };
                     if (self.tokens.tag(self.tok) == .comma) self.advance();
-                    if (self.tokens.tag(self.tok) != .r_paren) {
+                    if (self.tokens.tag(self.tok) != close) {
                         return self.failAt(tail_span, "a C-variadic '..' tail must be the last parameter entry");
                     }
                     break;
@@ -2468,7 +2474,7 @@ pub const Parser = struct {
         if (is_c_variadic and params.items.len > 0 and params.items[params.items.len - 1].is_variadic) {
             return self.failAt(tail_span, "a signature has one variadic tail: '..name: []T' or bare '..'");
         }
-        try self.expect(.r_paren);
+        try self.expect(close);
         return .{
             .params = try params.toOwnedSlice(self.allocator),
             .is_c_variadic = is_c_variadic,
@@ -2839,6 +2845,9 @@ pub const Parser = struct {
         // return/raise, break/continue, defer/onfail) never set it, so they
         // correctly leave the enclosing block value-less.
         self.last_stmt_produces_value = false;
+        if (self.tokens.tag(self.tok) == .pipe) {
+            return self.fail("a closure literal cannot open a statement — bind it (`f := |x| …`) or pass it as an argument");
+        }
         // `#error "msg";` — compile-time diagnostic (fires when reached in live code).
         if (self.tokens.tag(self.tok) == .hash_error) {
             return self.parseErrorDirective();
@@ -4056,12 +4065,9 @@ pub const Parser = struct {
                 // Enum literal: .variant_name — parsePostfix handles optional (...) as a call
                 return try self.createNode(start, .{ .enum_literal = .{ .name = name } });
             },
+            .pipe => return self.parseClosure(start),
             .l_paren => {
-                // Lambda: (params) => expr
-                if (self.isLambda()) {
-                    return self.parseLambda();
-                }
-                // Function-type literal: (T1, T2) -> R (no body — isLambda would have caught a body)
+                // Function-type literal: (T1, T2) -> R
                 if (self.isFunctionTypeExprAtLParen()) {
                     return try self.parseTypeExpr();
                 }
@@ -4841,81 +4847,26 @@ pub const Parser = struct {
         } });
     }
 
-    /// Builds the SAME `tuple_literal` node as the inline `(a, b)` form so the
-    /// two are structurally identical (operators / splat / `.0` all work with no
-    /// target type). Supports positional, 1-tuple, empty, named (`x = a`, using
-    /// `=`), spread (`..xs` / `..xs.field`) and nesting.
-    /// Returns null if no matching ')' found before EOF.
+    /// The tag after the `)` matching the current `(`, or null when no matching
+    /// `)` is found before EOF.
     fn peekPastParens(self: *Parser) ?Tag {
         const close = self.tokens.scanBalanced(self.tok, .l_paren, .r_paren) orelse return null;
         return self.tokens.tag(self.tokens.next(close));
     }
 
-    /// Returns true when the current `(` opens a function-type literal `(T1, T2) -> R`
-    /// rather than a tuple/grouping/lambda. Only meaningful after `isLambda` has
-    /// returned false — at that point a trailing `->` after the matching `)` can
-    /// only be a function type, since any body (`=>` or `{`) would have made it
-    /// a lambda.
+    /// Returns true when the current `(` opens a function-type literal
+    /// `(T1, T2) -> R` rather than a grouping.
     fn isFunctionTypeExprAtLParen(self: *Parser) bool {
         const close = self.tokens.scanBalanced(self.tok, .l_paren, .r_paren) orelse return false;
         return self.tokens.tag(self.tokens.next(close)) == .arrow;
     }
 
-    fn isLambda(self: *Parser) bool {
-        const saved = self.tok;
-        defer self.tok = saved;
-
-        // Check upfront if parens look like function params (for block-body disambiguation)
-        const has_param_parens = blk: {
-            self.advance(); // skip '('
-            if (self.tokens.tag(self.tok) == .r_paren) break :blk true; // empty parens
-            if (self.tokens.tag(self.tok) != .identifier) break :blk false;
-            self.advance();
-            break :blk self.tokens.tag(self.tok) == .colon or
-                self.tokens.tag(self.tok) == .comma or
-                self.tokens.tag(self.tok) == .r_paren;
-        };
-
-        // Restore to '(' and scan past the paren group
-        self.tok = saved;
-        const close = self.tokens.scanBalanced(self.tok, .l_paren, .r_paren) orelse return false;
-        self.tok = self.tokens.next(close); // now positioned on token after parens
-
-        const tag = self.tokens.tag(self.tok);
-        // (params) => expr
-        if (tag == .fat_arrow) return true;
-        // (params) -> ReturnType => expr
-        // (params) -> ReturnType { stmts }
-        if (tag == .arrow) {
-            self.advance(); // skip '->'
-            // Skip past the return type tokens until we see '=>', '{', or something unexpected
-            while (self.tokens.tag(self.tok) != .eof) {
-                if (self.tokens.tag(self.tok) == .fat_arrow) return true;
-                if (self.tokens.tag(self.tok) == .l_brace) return true;
-                if (self.tokens.tag(self.tok) == .identifier or self.tokens.tag(self.tok).isTypeKeyword() or
-                    self.tokens.tag(self.tok) == .dot or self.tokens.tag(self.tok) == .dollar or
-                    self.tokens.tag(self.tok) == .l_bracket or self.tokens.tag(self.tok) == .r_bracket or
-                    self.tokens.tag(self.tok) == .l_paren or self.tokens.tag(self.tok) == .r_paren or
-                    self.tokens.tag(self.tok) == .comma or self.tokens.tag(self.tok) == .int_literal or
-                    self.tokens.tag(self.tok) == .star or self.tokens.tag(self.tok) == .question or
-                    self.tokens.tag(self.tok) == .bang)
-                {
-                    self.advance();
-                } else break;
-            }
-            return false;
-        }
-        // (params) { stmts } — block-body lambda
-        // Only if contents look like function params (have `:` type annotations or is empty `()`)
-        if (tag == .l_brace) {
-            return has_param_parens;
-        }
-        return false;
-    }
-
-    fn parseLambda(self: *Parser) anyerror!*Node {
-        const start = self.tokens.start(self.tok);
-        const param_list = try self.parseParams();
+    /// `|params| body` — the closure literal, parsed where a primary starts.
+    /// After a completed operand `|` is bitwise OR, so only this position ever
+    /// reaches here; `||` is two `|` tokens around an empty list.
+    fn parseClosure(self: *Parser, start: u32) anyerror!*Node {
+        try self.expect(.pipe);
+        const param_list = try self.parseParamsUntil(.pipe);
         // A closure carries an sx environment, so it has no C signature to hang
         // a tail on; the C-variadic function pointer is a function TYPE.
         if (param_list.is_c_variadic) {
@@ -4923,15 +4874,11 @@ pub const Parser = struct {
         }
         const params = param_list.params;
 
-        // Optional return type: (params) -> Type => expr  OR  (params) -> Type { stmts }
         var return_type: ?*Node = null;
         if (self.tokens.tag(self.tok) == .arrow) {
             self.advance();
             return_type = try self.parseFnReturnType();
         }
-
-        // Optional ABI annotation: abi(.c) / abi(.zig) / abi(.naked)
-        const abi = try self.parseOptionalAbi();
 
         // A closure is its own function boundary: clear the cleanup-body flags
         // so control-flow exits inside the closure body (`return` from the
@@ -4950,22 +4897,16 @@ pub const Parser = struct {
             self.in_module_expansion = saved_module_expansion;
         }
 
-        // Two body forms:
-        // (params) => expr          — expression lambda
-        // (params) { stmts }        — block-body lambda
         const body = if (self.tokens.tag(self.tok) == .l_brace)
             try self.parseBlock()
-        else blk: {
-            try self.expect(.fat_arrow);
-            break :blk try self.parseExpr();
-        };
+        else
+            try self.parseExpr();
         const type_params = try self.collectTypeParams(params);
         return try self.createNode(start, .{ .lambda = .{
             .params = params,
             .return_type = return_type,
             .body = body,
             .type_params = type_params,
-            .abi = abi,
         } });
     }
 
@@ -5967,7 +5908,7 @@ pub const Parser = struct {
     /// cleanup runs while the block/function is already exiting, so there is
     /// nothing to propagate or transfer to. The ban is transitive through nested
     /// `catch` bodies and loops, but NOT through a nested closure body — a
-    /// closure is its own function boundary (parseLambda clears the flags).
+    /// closure is its own function boundary (parseClosure clears the flags).
     fn inCleanupBody(self: *const Parser) bool {
         return self.in_onfail_body or self.in_defer_body;
     }
@@ -6368,7 +6309,7 @@ test "parse array type with identifier length" {
     try std.testing.expect(param_type.data.array_type_expr.element_type.data == .type_expr);
 }
 
-test "parse lambda with generic params" {
+test "parse fn decl with generic params" {
     const source = "f :: (x: $T) => x;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -6384,7 +6325,7 @@ test "parse lambda with generic params" {
     try std.testing.expectEqualStrings("T", fd.type_params[0].name);
 }
 
-test "parse lambda with return type" {
+test "parse fn decl with return type" {
     const source = "f :: (x: i32) -> i32 => x;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -6396,6 +6337,52 @@ test "parse lambda with return type" {
     try std.testing.expect(fd.return_type != null);
     try std.testing.expect(fd.return_type.?.data == .type_expr);
     try std.testing.expectEqualStrings("i32", fd.return_type.?.data.type_expr.name);
+}
+
+test "a closure literal is `|params| body`" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "f :: () { g := |x: i32| -> i32 x + 1; }");
+    const root = try parser.parse();
+    const decl = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    const lam = decl.data.var_decl.value.?.data.lambda;
+    try std.testing.expectEqual(@as(usize, 1), lam.params.len);
+    try std.testing.expectEqualStrings("x", lam.params[0].name);
+    try std.testing.expectEqualStrings("i32", lam.return_type.?.data.type_expr.name);
+    try std.testing.expect(lam.body.data == .binary_op);
+}
+
+test "`||` is an empty parameter list" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "f :: () { g := || { h(); }; }");
+    const root = try parser.parse();
+    const decl = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    const lam = decl.data.var_decl.value.?.data.lambda;
+    try std.testing.expectEqual(@as(usize, 0), lam.params.len);
+    try std.testing.expect(lam.body.data == .block);
+}
+
+test "`|` after a completed operand is bitwise OR" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "f :: () { m := a | b; }");
+    const root = try parser.parse();
+    const decl = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    const bin = decl.data.var_decl.value.?.data.binary_op;
+    try std.testing.expectEqual(ast.BinaryOp.Op.bit_or, bin.op);
+}
+
+test "a closure literal takes no `=>` and no abi tail" {
+    try expectParseMessage("f :: () { g := |x: i32| => x; }", "unexpected token in expression");
+    try expectParseMessage("f :: () { g := |x: i32| abi(.c) x; }", "unexpected token in expression");
+}
+
+test "a closure literal cannot open a statement" {
+    try expectParseMessage(
+        "f :: () { |x: i32| x + 1; }",
+        "a closure literal cannot open a statement — bind it (`f := |x| …`) or pass it as an argument",
+    );
 }
 
 test "parse match with else arm" {
@@ -6952,11 +6939,11 @@ test "continue rejected inside an onfail body" {
 }
 
 test "return inside a closure within a cleanup body is allowed" {
-    // A closure is its own function boundary: parseLambda clears the cleanup
+    // A closure is its own function boundary: parseClosure clears the cleanup
     // flags, so `return` from the closure body is legal even inside `defer`.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "f :: () { defer g((x: i32) -> i32 { return x; }); }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { defer g(|x: i32| -> i32 { return x; }); }");
     _ = try parser.parse();
 }
 
@@ -7421,6 +7408,14 @@ test "parse inline match as a comptime match" {
 /// Parse `src`, expect `error.ParseError`, and pin the diagnostic text +
 /// offset — the malformed-group policies (crossed, missing, EOF-truncated
 /// delimiters) each report through a specific site.
+fn expectParseMessage(src: [:0]const u8, msg: []const u8) !void {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), src);
+    try std.testing.expectError(error.ParseError, parser.parse());
+    try std.testing.expectEqualStrings(msg, parser.err_msg orelse "");
+}
+
 fn expectParseErrorAt(src: [:0]const u8, msg: []const u8, offset: u32) !void {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -7430,9 +7425,9 @@ fn expectParseErrorAt(src: [:0]const u8, msg: []const u8, offset: u32) !void {
     try std.testing.expectEqual(offset, parser.err_offset orelse std.math.maxInt(u32));
 }
 
-test "unterminated paren in lambda or grouping position fails as tuple" {
-    // isLambda and isFunctionTypeExprAtLParen both see no closer and decline;
-    // the grouping parse then runs into EOF.
+test "unterminated paren in grouping position fails as tuple" {
+    // isFunctionTypeExprAtLParen sees no closer and declines; the grouping
+    // parse then runs into EOF.
     try expectParseErrorAt("x := (a, b\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 7);
     try expectParseErrorAt("x := ((a, b)\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 8);
 }
@@ -7466,7 +7461,7 @@ test "spaced call reports glue diagnostic with fix only when balanced" {
     try expectParseErrorAt("f :: () { g (1) }", "a space before `(` — a call binds only when the `(` is glued to its callee: write `g(1)`", 11);
 }
 
-test "lambda param list missing closer fails as tuple" {
+test "param list missing closer fails as tuple" {
     try expectParseErrorAt("f :: (a: i32 { 1 }", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 6);
 }
 

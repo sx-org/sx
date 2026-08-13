@@ -1,6 +1,6 @@
 // Trailing blocks (specs: Trailing Blocks): `f(args) { body }` passes the
 // block as a zero-param closure literal bound to the callee's LAST declared
-// parameter — definitionally `f(args, content = () => { body })`. Covers:
+// parameter — definitionally `f(args, content = || { body })`. Covers:
 // statement position (no `;` after `}`), middle defaults skipped, named args
 // + block, expression position with `;`, capture-by-value semantics,
 // next-line `{` staying a scope block, and header calls being unaffected.
@@ -33,11 +33,11 @@ main :: () {
     _ = vstack(1.0) { n += 9; };
     print("by-value {}\n", n);
     // a next-line `{` is an ordinary scope block, not a trailing block.
-    _ = vstack(3.0, () => print("lam\n"));
+    _ = vstack(3.0, || print("lam\n"));
     { print("scope\n"); }
     // a call in a while/if header never grabs the statement body.
     m := 0;
-    while check(() => print("hdr\n")) and m < 1 { m += 1; }
+    while check(|| print("hdr\n")) and m < 1 { m += 1; }
     // Nested trailing block inside call args (parens disambiguate).
-    _ = vstack(4.0, () => { _ = vstack(5.0) { print("inner\n"); }; });
+    _ = vstack(4.0, || { _ = vstack(5.0) { print("inner\n"); }; });
 }

@@ -67,7 +67,7 @@ UiRoot :: struct {
 
     // The queue is this root's own, so every event in it reaches both routers.
     pump :: (self: *UiRoot) {
-        self.queue.drain((e: *InputEvent) {
+        self.queue.drain(|e: *InputEvent| {
             self.taps.dispatch(e)
             self.focus.dispatch(e)
         })

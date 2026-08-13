@@ -17,18 +17,18 @@ take :: (g: ?Closure() -> void) {
 }
 
 give :: () -> ?Closure() -> void {
-  return () => print("from-give\n");
+  return || print("from-give\n");
 }
 
 main :: () {
   // With captures.
   n := 7;
-  a : ?Closure() -> void = () => print("a n={}\n", n);
+  a : ?Closure() -> void = || print("a n={}\n", n);
   if a { print("a-present\n"); } else { print("a-absent\n"); }
   a!();
 
   // Without captures.
-  b : ?Closure() -> void = () { print("b-called\n"); };
+  b : ?Closure() -> void = || { print("b-called\n"); };
   if b { b!(); }
 
   // Null tests absent; == / != null.
@@ -38,15 +38,15 @@ main :: () {
   print("c!=null: {}\n", c != null);
 
   // Reassign: null -> value -> null.
-  c = () { print("c-reassigned\n"); };
+  c = || { print("c-reassigned\n"); };
   if c { c!(); }
   c = null;
   if c { print("c2-present\n"); } else { print("c2-absent\n"); }
 
   // Coalesce: null falls back, present uses self.
-  fallback := () { print("fallback\n"); };
+  fallback := || { print("fallback\n"); };
   (c ?? fallback)();
-  e : ?Closure() -> void = () { print("e-real\n"); };
+  e : ?Closure() -> void = || { print("e-real\n"); };
   (e ?? fallback)();
 
   // Pass as param (present + null).
@@ -58,6 +58,6 @@ main :: () {
   if r { r!(); }
 
   // Args + non-void return.
-  add : ?Closure(i64, i64) -> i64 = (x: i64, y: i64) => x + y;
+  add : ?Closure(i64, i64) -> i64 = |x: i64, y: i64| x + y;
   if add { print("add: {}\n", add!(3, 4)); }
 }

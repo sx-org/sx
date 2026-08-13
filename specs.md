@@ -310,10 +310,11 @@ ordinary comparisons. Native codegen and the comptime interpreter agree on this.
 | `,`    | separator (trailing commas allowed)   |
 | `.`    | field access / enum literal prefix   |
 | `->`   | return type annotation               |
-| `=>`   | lambda arrow                         |
+| `=>`   | expression body of a function declaration |
 | `$`    | generic type parameter introduction   |
 | `---`  | undefined value                      |
 | `()`   | grouping / params                    |
+| `\|…\|` | closure literal parameters           |
 | `{}`   | blocks / bodies                      |
 
 ### Whitespace is Syntax
@@ -2522,8 +2523,8 @@ Bare parentheses are grouping and never a tuple:
 [1](Closure(i64,i64) -> i64)  // grouping → array of one closure
 ```
 Grouping lets a closure/optional/function type be parenthesized for readability.
-Function types `(A, B) -> R`, parameter lists, lambdas, and `match` bindings keep
-using bare parens — they are unaffected by the tuple grammar.
+Function types `(A, B) -> R`, parameter lists and `match` bindings keep using
+bare parens — they are unaffected by the tuple grammar.
 
 #### Field Access
 ```sx
@@ -3637,14 +3638,14 @@ map :: (mapper: Closure(..sources.T) -> $R, ..sources: ValueListenable)
   c.mapper        = mapper;
   c.sources       = .{..sources};           // pack-to-tuple materialization
   inline for i in 0..sources.len {          // comptime unroll over the pack
-    sources[i].addListener((_) => c.recompute());
+    sources[i].addListener(|_| c.recompute());
   }
   c.value = mapper(..sources.value);        // pack spread + projection in a call
   return xx c;                              // needs impl ValueListenable for Combined
 }
 
 isReady : ValueListenable(bool) = map(
-  (va, vb, vc) => va and vb > 10 and vc == "cool",
+  |va, vb, vc| va and vb > 10 and vc == "cool",
   a, b, c);                                 // a,b,c : ValueListenable(bool/i32/string)
 ```
 
@@ -5349,16 +5350,30 @@ for val, ix in arr, 0.. {
 }
 ```
 
-### Lambda
+### Closure Literal
 ```sx
-(params) => expr
-(params) -> return_type => expr
+|params| expr
+|params| { body }
+|params| -> return_type expr
 ```
-Anonymous function. Produces a function value. Supports the same parameter features as named functions: `$` generic type params, `..` variadic params, and optional return type annotation.
+Anonymous function. Produces a `Closure` value. `|` opens a closure literal
+only where a primary starts; after a completed operand it is bitwise OR. `||`
+is two `|` tokens around an empty parameter list. Parameters take the same
+forms a named function's do — `$` generic type params, `..` variadic params —
+and the return type annotation is optional. A closure literal may not open an
+expression statement: bind it, pass it, or `return` it.
+
 ```sx
-SOME_FUNC :: () => 42;                    // () -> i32
-double :: (x: $T) -> T => x + x;         // generic lambda with return type
+n := 5;
+inc := |x: i32| x + n;                        // Closure(i32) -> i32
+pump := || { print("tick\n"); };               // Closure()
+scaled := |x: i64, k: i64| -> i64 x * k + n;  // annotated return
+add : Closure(i64, i64) -> i64 = |a, b| a + b;  // params typed from the target
 ```
+
+With a return type annotation the body follows the type directly, so a bare
+body that opens with `.` continues the type's qualified path (`-> Pol .a`
+reads the type `Pol.a`): write such a body as a block (`-> Pol { .a }`).
 
 ### Closures
 
@@ -5372,19 +5387,19 @@ Closure(param_types)          // void return: Closure(i64) -> void
 Closure(..Ts) -> R            // pack-expanded params (see Variadic Heterogeneous Type Packs)
 ```
 
-#### Creating Closures — lambda literals
-A lambda literal IS the closure value — there is no wrapping
+#### Creating Closures — closure literals
+A closure literal IS the closure value — there is no wrapping
 intrinsic, and `closure` is an ordinary identifier, not a keyword.
 ```sx
 offset := 50;
-f := (x: i32) -> i32 => x + offset;   // expression body
-g := (x: i32) -> i32 {                 // block body
+f := |x: i32| -> i32 x + offset;   // expression body
+g := |x: i32| -> i32 {             // block body
     if x < 0 { return 0; }
     return x + offset;
 };
 ```
 
-A lambda literal:
+A closure literal:
 1. Analyzes its body for free variables (variables from outer scope)
 2. Allocates an env struct on the heap containing captured values
 3. Generates a trampoline function with signature `(env: *void, params...) -> R`
@@ -5393,7 +5408,7 @@ A lambda literal:
 **Capture semantics**: capture by value (snapshot at creation time). Mutating the original variable after creating the closure does not affect the captured value.
 ```sx
 n := 10;
-f := (x: i64) -> i64 => x + n;
+f := |x: i64| -> i64 x + n;
 n = 999;
 print("{}\n", f(5));  // 15, not 1004
 ```
@@ -5417,7 +5432,7 @@ apply(double, 10);  // double auto-promoted to Closure
 Functions can return closures, enabling the factory pattern:
 ```sx
 make_adder :: (n: i32) -> Closure(i32) -> i32 {
-    return (x: i32) -> i32 => x + n;
+    return |x: i32| -> i32 x + n;
 }
 add5 := make_adder(5);
 print("{}\n", add5(100));  // 105
@@ -5439,7 +5454,7 @@ if handler := btn.on_click {
 #### Memory
 Closure env is allocated via `context.allocator`. The compiler auto-initializes `context` with a default GPA (malloc/free wrapper) at the start of `main()`. Use `push Context` to override with a custom allocator. Auto-promoted closures have a null env and require no allocation.
 ```sx
-f := (x: i64) -> i64 => x + 10;   // env allocated via default GPA
+f := |x: i64| -> i64 x + 10;   // env allocated via default GPA
 print("{}\n", f(5));
 ```
 
@@ -5514,7 +5529,7 @@ follows from it; the block is not a special argument kind:
 ```sx
 vstack(8.0) { text("a"); text("b"); }
 // ≡
-vstack(8.0, content = () => { text("a"); text("b"); });
+vstack(8.0, content = || { text("a"); text("b"); });
 
 scaffold(top_bar = toolbar) { chat_list(); }   // named slots + trailing block
 scaffold() { chat_list(); }                    // defaults skipped, block binds `content`
@@ -5529,7 +5544,7 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
 - **One block**: at most one trailing block per call. Other closure
   arguments are named args or ordinary positional slots.
 - **Zero-param only**: the block is a `Closure()` literal; a parameterized
-  closure argument is spelled explicitly (`f(x, (a) => { … })`).
+  closure argument is spelled explicitly (`f(x, |a| { … })`).
 - **Same line**: the `{` must sit on the same line as the call's `)`. A `{`
   on the next line is an ordinary scope block statement, never a trailing
   block. (This is the `{` half of
@@ -6856,8 +6871,8 @@ function, or at top level, is rejected.
 
 - **Explicit annotation required.** A closure literal's value type is inferred
   as today, but if its body raises or `try`-escapes, the `!` channel is **not**
-  inferred — declare it (`(x: i32) -> (i32, !) { ... }`). This keeps
-  adding a `raise` from silently changing a lambda's type.
+  inferred — declare it (`|x: i32| -> (i32, !) { ... }`). This keeps
+  adding a `raise` from silently changing a closure's type.
 - **Program-wide union per shape.** All `Closure(<sig>) -> (T, !)` occurrences
   with the same signature share one inferred-set node; the SCC pass unions
   every closure flowing into any matching slot.
@@ -6962,7 +6977,7 @@ push_stmt       = 'push' expr block
 assignment      = lvalue ('=' | '+=' | '-=' | '*=' | '/=') expr
 multi_assign    = lvalue (',' lvalue)+ '=' expr (',' expr)+
 lvalue          = IDENT | postfix '.' IDENT
-expr            = if_expr | match_expr | while_expr | for_expr | lambda | binary
+expr            = if_expr | match_expr | while_expr | for_expr | closure | binary
 while_expr      = 'while' expr block
 for_expr        = 'for' [for_capture (',' for_capture)* 'in'] for_iter (',' for_iter)* (block | '=>' stmt)
 for_iter        = expr [range_op [expr]]
@@ -6993,7 +7008,7 @@ arm_body        = 'break' end
                 | stmt*                 // every form ends as a statement does
 else_arm        = 'else' ':' stmt*      // the ':' is GLUED to the 'else'
 pattern         = '.' IDENT | INT | BOOL | IDENT
-lambda          = '(' params? ')' ('->' type)? '=>' expr
+closure         = '|' params? '|' ('->' type)? (expr | block)
 args            = expr (',' expr)* ','?
 type            = '$' IDENT | 'i32' | 'f32' | 'f64' | 'bool' | 'string'
                 | 'any' | 'Type' | '..' type | '[' expr ']' type | IDENT
@@ -7019,8 +7034,8 @@ tuple_type_elem = IDENT ':' type | '..' type | type
   may **not** reference an enclosing function's local, parameter, or local `::`
   const — a static fn has no captured frame to read it from, and doing so is a
   compile error ("a nested function cannot reference the enclosing local 'x' —
-  use a closure ('x := () => …') to capture it"). Capturing enclosing locals is
-  the CLOSURE's job — spell it `x := () => …` (`:=` + `=>`), which captures by
+  use a closure ('x := || …') to capture it"). Capturing enclosing locals is
+  the CLOSURE's job — spell it `x := || …` (`:=` + a `|…|` literal), which captures by
   pointer. (Enclosing local consts are rejected too rather than comptime-folded:
   a static nested fn's frame cannot carry them, and the closure spelling captures
   them uniformly.)

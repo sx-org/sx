@@ -186,7 +186,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         // expects `*T` (a fn arg slot, a var typed as a pointer-to-aggregate)
         // can be satisfied by `impl Into(T) for src` plus an implicit
         // alloca+store on the result. Lets users write
-        // `fn(xx () => { ... })` instead of materialising a named Block local
+        // `fn(xx || { ... })` instead of materialising a named Block local
         // just to take its address.
         if (!dst_ty.isBuiltin()) {
             const dst_info = self.module.types.get(dst_ty);

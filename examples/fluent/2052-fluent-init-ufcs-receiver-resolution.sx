@@ -124,7 +124,7 @@ main :: () -> i32 {
     print("generic {} {} v={}\n", g.emit_at(1, 2), pg.emit_at(1, 2), g.v);
 
     // A callable field is called, and the free function of that name still forms.
-    o := Obj{ stow = () => "field closure" };
+    o := Obj{ stow = || "field closure" };
     print("field {} free {}\n", o.stow(), 5.stow());
 
     // A renaming alias reaches its target.

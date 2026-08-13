@@ -252,7 +252,7 @@ test "an anonymous closure folds into the nearest named declaration" {
     const a = arena.allocator();
     const decls = try parse(a,
         \\outer :: () {
-        \\    f := () => { inside(); };
+        \\    f := || { inside(); };
         \\    { nested_block(); }
         \\    direct();
         \\}

@@ -35,7 +35,7 @@ zip_map :: (mapper: Closure(..sources.T) -> $R, ..sources: VL) -> VL($R) {
 }
 
 main :: () -> i32 {
-    r := zip_map((a, b) => a + b, IntCell{ v = 40 }, IntCell{ v = 2 });
+    r := zip_map(|a, b| a + b, IntCell{ v = 40 }, IntCell{ v = 2 });
     print("{}\n", r.get());     // 42
     0
 }

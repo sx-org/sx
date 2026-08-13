@@ -1,0 +1,8 @@
+inc 8
+scale 13
+pump 2
+apply 21
+run
+variadic 6
+nested 6
+bit-or 7

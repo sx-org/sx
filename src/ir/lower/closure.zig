@@ -104,7 +104,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     // Without implicit_ctx, env is slot 0 and user params follow.
     var params = std.ArrayList(Function.Param).empty;
     const env_ptr_ty = self.module.types.ptrTo(.void);
-    const lambda_wants_ctx = self.implicit_ctx_enabled and lam.abi != .c;
+    const lambda_wants_ctx = self.implicit_ctx_enabled;
     if (lambda_wants_ctx) {
         params.append(self.alloc, .{
             .name = self.module.types.internString("__sx_ctx"),
@@ -187,10 +187,10 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
             const pty = params.items[user_param_base + i].ty;
             temp_scope.put(p.name, .{ .ref = @enumFromInt(0), .ty = pty, .is_alloca = false });
         }
-        // Two body forms (parser.zig parseLambda), inferred exactly as a named
+        // Two body forms (parser.zig parseClosure), inferred exactly as a named
         // fn (resolveReturnType in lower.zig):
-        //   (params) => expr    — arrow: the body expression IS the value.
-        //   (params) { stmts }  — block: an explicit `return <val>` sets the
+        //   |params| expr       — the body expression IS the value.
+        //   |params| { stmts }  — block: an explicit `return <val>` sets the
         //                         type; with none the return is VOID (the
         //                         block's tail is a discarded statement, not an
         //                         implicit return — only an explicit `-> R`,
@@ -209,9 +209,6 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     };
     const name_id = self.module.types.internString(name);
     const func_id = self.builder.beginFunction(name_id, params.items, ret_ty);
-    if (lam.abi == .c) {
-        self.module.getFunctionMut(func_id).call_conv = .c;
-    }
     self.builder.currentFunc().has_implicit_ctx = lambda_wants_ctx;
 
     // Param-slot layout: ctx at 0 (if present), env at ctx_slots,

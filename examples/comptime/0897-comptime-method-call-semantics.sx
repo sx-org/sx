@@ -77,7 +77,7 @@ main :: () {
     print("after={}\n", n);
 
     // The untyped lambda gets its parameter type from the method signature.
-    print("lambda={}\n", thing.apply((v) => v + 2, .one));
+    print("lambda={}\n", thing.apply(|v| v + 2, .one));
 
     // A static inline call must not replace the caller's x binding.
     made := Thing.make(3, .one);

@@ -14,20 +14,20 @@
 mutate :: () -> i64 {
     result : i64 = 0;
     out := *result;              // local named like the prelude fn `out`
-    c := () => { out.* = 42; };  // must capture `out`, not skip it
+    c := || { out.* = 42; };  // must capture `out`, not skip it
     c();
     result
 }
 
 // 2. Param shadow, captured by value.
 add_one :: (out: i64) -> i64 {
-    c := () => out + 1;
+    c := || out + 1;
     c()
 }
 
 // 3. No shadow: the closure calls the REAL prelude fn `out` (unchanged).
 call_real :: () {
-    c := () => { out("real-out\n"); };
+    c := || { out("real-out\n"); };
     c();
 }
 

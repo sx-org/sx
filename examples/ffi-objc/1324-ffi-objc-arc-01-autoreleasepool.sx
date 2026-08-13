@@ -34,7 +34,7 @@ main :: () -> i32 {
         // (NSObject.new returns a +1 retained, NOT autoreleased), so this
         // is a smoke test of the helper's shape, not the runtime
         // behavior.
-        autoreleasepool(() {
+        autoreleasepool(|| {
             inner := NSObject.new();
             if inner != null {
                 inner.release();

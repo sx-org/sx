@@ -10,7 +10,7 @@ Ctx :: struct {
 }
 
 main :: () -> i32 {
-  c : Ctx = .{ on = (f: Fmt) {
+  c : Ctx = .{ on = |f: Fmt| {
     n : i64 = xx f;
     print("cl f = {}\n", n);
   }};

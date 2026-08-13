@@ -1,0 +1,44 @@
+// `|params| body` is the closure value: pipes bind, the body follows the
+// closing `|` directly. Covers inferred and annotated params, an explicit
+// return type, the empty list `||`, a block body, argument position, a
+// variadic tail, nesting, and the `|` that is bitwise OR.
+#import "modules/std.sx";
+
+apply :: (f: Closure(i64) -> i64, v: i64) -> i64 { f(v) }
+run :: (f: Closure()) { f(); }
+
+main :: () {
+    n := 5;
+
+    // Params typed from the annotated target.
+    inc : Closure(i64) -> i64 = |x| x + n;
+    print("inc {}\n", inc(3));
+
+    // Annotated params and return type.
+    scale := |x: i64, k: i64| -> i64 x * k + n;
+    print("scale {}\n", scale(4, 2));
+
+    // `||` is an empty parameter list; the block is the body.
+    total := 0;
+    counter := *total;
+    pump := || { counter.* = counter.* + 1; };
+    pump();
+    pump();
+    print("pump {}\n", total);
+
+    // Argument position, both parameterized and zero-param.
+    print("apply {}\n", apply(|x: i64| -> i64 x * 3, 7));
+    run(|| print("run\n"));
+
+    // Slice variadic tail.
+    sum := |..xs: []i64| -> i64 { t := 0; for v in xs { t += v; } return t; };
+    print("variadic {}\n", sum(.[1, 2, 3]));
+
+    // A closure body is an ordinary expression, so literals nest.
+    print("nested {}\n", apply(|x: i64| -> i64 apply(|y: i64| -> i64 y + n, x), 1));
+
+    // After a completed operand `|` is bitwise OR.
+    a := 5;
+    b := 2;
+    print("bit-or {}\n", a | b);
+}

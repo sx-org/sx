@@ -8,20 +8,20 @@
 // (void) value.
 //
 // Syntax note: a block body is the `(params) -> R? { ... }` form; the
-// bare `(params) => expr` lambda is arrow + EXPRESSION only (no block).
+// bare `|params| expr` closure is EXPRESSION only (no block).
 #import "modules/std.sx";
 
 main :: () {
   // early returns only — inferred return, no optionals
-  f := () { if 1 > 0 { return 11; } return 22; };
+  f := || { if 1 > 0 { return 11; } return 22; };
   print("f: {}\n", f());
 
   // early return + trailing-expression block value
-  g := (n: i64) { if n > 0 { return 100; } 200 };
+  g := |n: i64| { if n > 0 { return 100; } 200 };
   print("g+: {}\n", g(1));
   print("g-: {}\n", g(-1));
 
   // inferred float return via early returns
-  h := (n: i64) { if n > 0 { return 3.5; } return 1.5; };
+  h := |n: i64| { if n > 0 { return 3.5; } return 1.5; };
   print("h: {}\n", h(1));
 }

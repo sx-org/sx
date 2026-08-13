@@ -8,6 +8,6 @@
 apply :: (f: Closure (i64) -> i64, n: i64) -> i64 => f(n);
 
 main :: () -> i32 {
-    print("{}\n", apply((x: i64) => x + 1, 41));
+    print("{}\n", apply(|x: i64| x + 1, 41));
     return 0;
 }

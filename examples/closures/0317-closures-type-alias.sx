@@ -21,11 +21,11 @@ apply2    :: (f: CB2, a: i32, b: i32) -> i32 { return f(a, b); }
 apply_b   :: (f: CB_B, x: i32) -> i32        { return f(x); }
 call_held :: (h: Holder, x: i32) -> i32      { return h.cb(x); }
 run0      :: (f: CB0)                         { f(); }
-make      :: () -> CB { inc := (v: i32) -> i32 => v + 1; return xx inc; }
+make      :: () -> CB { inc := |v: i32| -> i32 v + 1; return xx inc; }
 
 main :: () -> i32 {
-    dbl := (v: i32) -> i32 => v * 2;
-    add := (a: i32, b: i32) -> i32 => a + b;
+    dbl := |v: i32| -> i32 v * 2;
+    add := |a: i32, b: i32| -> i32 a + b;
 
     print("{}\n", apply(xx dbl, 21));       // 42
     print("{}\n", apply2(xx add, 20, 22));  // 42
@@ -37,6 +37,6 @@ main :: () -> i32 {
     f := make();                            // return type CB
     print("{}\n", f(41));                   // 42
 
-    run0(xx () -> void => { print("ok\n"); });  // zero-arg void
+    run0(xx || -> void { print("ok\n"); });  // zero-arg void
     0
 }

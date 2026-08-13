@@ -146,7 +146,7 @@ pub const Root = struct {
 };
 
 /// ABI / calling-convention annotation written as the postfix `abi(.x)` form on a
-/// function declaration, function-type literal, or lambda.
+/// function declaration or function-type literal.
 /// - `.default` — no annotation: the ordinary sx-internal convention (implicit
 ///   context, sx ABI). There is no surface spelling for `.default`; it is the
 ///   value when `abi(...)` is absent.
@@ -671,7 +671,6 @@ pub const Lambda = struct {
     return_type: ?*Node,
     body: *Node,
     type_params: []const StructTypeParam = &.{},
-    abi: ABI = .default,
 };
 
 pub const TypeExpr = struct {

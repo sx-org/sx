@@ -624,7 +624,7 @@ impl Io for Scheduler {
             print("sched: spawn_raw called with a null entry function\n");
             c.abort();
         }
-        f := self.spawn(() {
+        f := self.spawn(|| {
             entry_fn : (*void) -> void = xx entry;
             entry_fn(arg);
         });
@@ -1064,8 +1064,8 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 // meta.sx imports only std.sx — pulling it into the io.sx prelude part-file would
 // cycle.
 //
-//     fa := context.io.async(() -> (A, !) => read_a(conn));   // *Future(A)
-//     fb := context.io.async(() -> (B, !) => read_b(conn));   // *Future(B)
+//     fa := context.io.async(|| -> (A, !) read_a(conn));   // *Future(A)
+//     fb := context.io.async(|| -> (B, !) read_b(conn));   // *Future(B)
 //     winner := context.io.race(.{a = fa, b = fb});           // enum { a: A; b: B }
 //     match winner { case .a: |v| {…}  case .b: |v| {…} }     // losers cancelled
 
