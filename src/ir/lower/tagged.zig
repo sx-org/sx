@@ -80,19 +80,40 @@ fn sameModulePair(sites: []const ImplSite) bool {
 /// Global coherence (spec §3, §6.6): a duplicate `(tagged P, T)` pair is an
 /// error, diagnosed once the instantiation is reached — or immediately when one
 /// module declares both — and naming both impl sites. An unreached collision
-/// across modules is not diagnosed: nothing exists to collide at.
+/// across modules is not diagnosed: nothing exists to collide at. Collisions
+/// emit in source order of their first impl site — the pair map is a hash, and
+/// the diagnostic sequence is not its iteration order.
 fn checkCoherence(self: *Lowering) void {
     checkParamCoherence(self);
     const d = self.diagnostics orelse return;
+    const Collision = struct {
+        key: PairKey,
+        sites: []const ImplSite,
+
+        fn before(_: void, a: @This(), b: @This()) bool {
+            return switch (std.mem.order(u8, a.sites[0].source orelse "", b.sites[0].source orelse "")) {
+                .lt => true,
+                .gt => false,
+                .eq => a.sites[0].span.start < b.sites[0].span.start,
+            };
+        }
+    };
+    var collisions = std.ArrayList(Collision).empty;
+    defer collisions.deinit(self.alloc);
     var it = self.tagged_impl_sites.iterator();
     while (it.next()) |entry| {
         const sites = entry.value_ptr.items;
         if (sites.len < 2) continue;
         if (!self.tagged_reached.contains(entry.key_ptr.proto) and !sameModulePair(sites)) continue;
+        collisions.append(self.alloc, .{ .key = entry.key_ptr.*, .sites = sites }) catch @panic("out of memory");
+    }
+    std.mem.sort(Collision, collisions.items, {}, Collision.before);
+    for (collisions.items) |collision| {
+        const sites = collision.sites;
         const saved = d.current_source_file;
         defer d.current_source_file = saved;
         if (sites[0].source) |src| d.current_source_file = src;
-        const id = d.addFmtId(.err, sites[0].span, "duplicate impl of tagged protocol '{s}' for '{s}' — a tagged conformer set is whole-program, so its coherence is global: exactly one impl of a pair may exist, whatever the import visibility", .{ self.formatTypeName(entry.key_ptr.proto), self.formatTypeName(entry.key_ptr.concrete) });
+        const id = d.addFmtId(.err, sites[0].span, "duplicate impl of tagged protocol '{s}' for '{s}' — a tagged conformer set is whole-program, so its coherence is global: exactly one impl of a pair may exist, whatever the import visibility", .{ self.formatTypeName(collision.key.proto), self.formatTypeName(collision.key.concrete) });
         for (sites[1..]) |s| {
             if (s.source) |src| d.current_source_file = src;
             d.addNoteFmt(id, s.span, "also implemented here", .{});
