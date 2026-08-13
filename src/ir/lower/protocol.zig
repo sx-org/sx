@@ -1652,14 +1652,14 @@ pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: Protocol
             continue;
         }
         // A protocol method that expects `*void` accepts any single-pointer
-        // value directly (`*T`, `[*]T`). Only wrap non-pointer values in an
-        // alloca-slot — wrapping a pointer would pass the stack slot's
-        // address instead of the actual pointer, and the callee would read
-        // 8 bytes of pointer plus garbage from beyond the stack.
-        const is_pointer_ty = if (!arg_ty.isBuiltin()) blk: {
-            const info = self.module.types.get(arg_ty);
-            break :blk info == .pointer or info == .many_pointer;
-        } else false;
+        // value directly (`*T`, `[*]T`, `cstring`). Only wrap non-pointer
+        // values in an alloca-slot — wrapping a pointer would pass the stack
+        // slot's address instead of the actual pointer, and the callee would
+        // read 8 bytes of pointer plus garbage from beyond the stack.
+        const is_pointer_ty = switch (self.module.types.get(arg_ty)) {
+            .pointer, .many_pointer, .cstring => true,
+            else => false,
+        };
         if (expected_ty == void_ptr and arg_ty != void_ptr and !is_pointer_ty) {
             const slot = self.builder.alloca(arg_ty);
             self.builder.store(slot, a);
