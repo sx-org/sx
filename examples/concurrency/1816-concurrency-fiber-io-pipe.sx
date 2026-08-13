@@ -24,10 +24,9 @@
 #import "modules/std.sx";
 sched :: #import "modules/std/sched.sx";
 
-// Raw libc fd primitives. read/write/close MUST match the canonical signatures
-// already bound by std (socket.sx / core.sx), or the extern dedupe rejects a
-// divergent re-binding of the same C symbol. `pipe` is ours alone.
-pipe   :: (fds: *i32) -> i32 extern libc "pipe";
+// Raw libc fd primitives. These MUST match the canonical signatures already
+// bound by std (socket.sx / core.sx), or the extern dedupe rejects a divergent
+// re-binding of the same C symbol. `pipe` comes from the c.sx surface itself.
 read   :: (fd: i32, buf: [*]u8, count: usize) -> isize extern libc "read";
 write  :: (fd: i32, buf: [*]u8, count: usize) -> isize extern libc "write";
 close  :: (fd: i32) -> i32 extern libc "close";
@@ -44,7 +43,7 @@ main :: () -> i64 {
     st : S = .{ wrote = false, read_n = 0, read_done = false };   // bytes[] zero-filled
 
     fds : [2]i32 = ---;
-    if pipe(*fds[0]) != 0 {
+    if c.pipe(*fds) != 0 {
         print("1816: pipe() failed\n");
         return 1;
     }

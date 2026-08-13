@@ -35,8 +35,8 @@
 sched :: #import "modules/std/sched.sx";
 
 // Raw libc fd primitives — canonical signatures (the extern dedupe rejects a
-// divergent re-binding of the same C symbol). `close` matches sched.sx's own.
-pipe   :: (fds: *i32) -> i32 extern libc "pipe";
+// divergent re-binding of the same C symbol). `close` matches sched.sx's own;
+// `pipe` comes from the c.sx surface itself.
 read   :: (fd: i32, buf: [*]u8, count: usize) -> isize extern libc "read";
 write  :: (fd: i32, buf: [*]u8, count: usize) -> isize extern libc "write";
 close  :: (fd: i32) -> i32 extern libc "close";
@@ -51,7 +51,7 @@ main :: () -> i64 {
     st : S = .{ read_n = 0, read_done = false };   // bytes[] zero-filled; read() fills it
 
     fds : [2]i32 = ---;
-    if pipe(*fds[0]) != 0 {
+    if c.pipe(*fds) != 0 {
         print("1820: pipe() failed\n");
         return 1;
     }
