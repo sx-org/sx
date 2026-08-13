@@ -43,6 +43,7 @@ access :: (path: [:0]u8, mode: i32) -> i32 extern libc;
 chmod  :: (path: [:0]u8, mode: u32) -> i32 extern libc;
 rename :: (oldp: [:0]u8, newp: [:0]u8) -> i32 extern libc;
 fstat  :: (fd: i32, output: *void) -> i32 extern libc;
+fcntl  :: (fd: i32, cmd: i32, ..args: []i32) -> i32 extern libc;
 
 // ── time ────────────────────────────────────────────────────────────────────
 // std/time.sx owns the clock-id policy; this module owns the raw C ABI type.
@@ -109,6 +110,17 @@ abort :: () -> noreturn extern libc;
 // flush / atexit handlers (that's `exit(3)`). We expose it under the clean sx
 // name `exit`, symbol pinned to `_exit`.
 exit :: (code: i32) -> noreturn extern libc "_exit";
+
+// fork/exec + reaping. `execvp` resolves `file` through $PATH and hands the
+// child the parent's environment — there is no envp marshalling anywhere.
+// `argv` is NUL-terminated: the last slot is null.
+pipe    :: (fds: *[2]i32) -> i32 extern libc;
+fork    :: () -> i32 extern libc;
+execvp  :: (file: cstring, argv: [*]?cstring) -> i32 extern libc;
+dup2    :: (oldfd: i32, newfd: i32) -> i32 extern libc;
+waitpid :: (pid: i32, status: *i32, options: i32) -> i32 extern libc;
+kill    :: (pid: i32, sig: i32) -> i32 extern libc;
+signal  :: (sig: i32, handler: usize) -> usize extern libc;
 
 // ── errno location (per-OS symbol) ──────────────────────────────────────────
 // `errno` is a macro over a per-thread int* in C. Darwin resolves it via
