@@ -277,7 +277,7 @@ inline if OS == .linux or OS == .android or OS == .wasm {
 
     // ── per-OS io-timeout surface ──────────────────────────────
     SO_ERROR :i32: 4;
-    inline if OS == {
+    inline match OS {
         case .wasm:
             // Emscripten is wasm32 with 64-bit time_t and 32-bit suseconds_t.
             // Its time64 socket-option numbers are distinct from 64-bit Linux.

@@ -142,7 +142,7 @@ main :: () {
 
     // Pattern matching
     sh2 : Shape = .rect(.{ 5, 3 });
-    if sh2 == {
+    match sh2 {
         case .circle: print("match: circle\n");
         case .rect: print("match: rect\n");
         case .none: print("match: none\n");
@@ -150,7 +150,7 @@ main :: () {
 
     // Match as expression
     sh3 : Shape = .circle(1.0);
-    ms := if sh3 == {
+    ms := match sh3 {
         case .circle: 10;
         case .rect: 20;
         case .none: 30;
@@ -159,7 +159,7 @@ main :: () {
 
     // Match expression with else
     me_val := 42;
-    me_res := if me_val == {
+    me_res := match me_val {
         case 1: 10;
         case 2: 20;
         else: 99;
@@ -168,23 +168,23 @@ main :: () {
 
     // Payload capture (block form)
     sh4 : Shape = .circle(9.5);
-    if sh4 == {
-        case .circle: (r) { print("capture: {}\n", r); }
-        case .rect: (sz) { print("capture: {}\n", sz); }
+    match sh4 {
+        case .circle: |r| { print("capture: {}\n", r); }
+        case .rect: |sz| { print("capture: {}\n", sz); }
         case .none: print("capture: none\n");
     }
 
     // Payload capture (arrow form)
     sh_ca : Shape = .circle(7.5);
-    if sh_ca == {
-        case .circle: (r) => print("capture-arrow: {}\n", r);
-        case .rect: (sz) => print("capture-arrow: rect\n");
+    match sh_ca {
+        case .circle: |r| print("capture-arrow: {}\n", r);
+        case .rect: |sz| print("capture-arrow: rect\n");
         case .none: print("capture-arrow: none\n");
     }
 
     // else arm in match
     num := 42;
-    if num == {
+    match num {
         case 1: print("else-match: one\n");
         case 2: print("else-match: two\n");
         else: print("else-match: other\n");
@@ -192,7 +192,7 @@ main :: () {
 
     // Integer pattern matching
     code := 2;
-    if code == {
+    match code {
         case 1: print("int-match: one\n");
         case 2: print("int-match: two\n");
         case 3: print("int-match: three\n");
@@ -200,7 +200,7 @@ main :: () {
 
     // Integer match with else
     im_code := 99;
-    if im_code == {
+    match im_code {
         case 1: print("int-match-else: one\n");
         case 2: print("int-match-else: two\n");
         else: print("int-match-else: unknown\n");
@@ -208,12 +208,12 @@ main :: () {
 
     // Bool pattern matching
     bm := true;
-    if bm == {
+    match bm {
         case true: print("bool-match-t: yes\n");
         case false: print("bool-match-t: no\n");
     }
     bm2 := false;
-    if bm2 == {
+    match bm2 {
         case true: print("bool-match-f: yes\n");
         case false: print("bool-match-f: no\n");
     }

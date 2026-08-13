@@ -26,6 +26,7 @@ pub const Tag = enum(u8) {
     kw_try, // try (failable-attempt prefix)
     kw_catch, // catch (failable handler postfix)
     kw_onfail, // onfail (error-exit cleanup statement)
+    kw_match,
     kw_case,
     kw_break,
     kw_continue,
@@ -268,6 +269,7 @@ pub const Tag = enum(u8) {
             .kw_try,
             .kw_catch,
             .kw_onfail,
+            .kw_match,
             .kw_case,
             .kw_break,
             .kw_continue,
@@ -409,6 +411,7 @@ pub const Tag = enum(u8) {
             .kw_try,
             .kw_catch,
             .kw_onfail,
+            .kw_match,
             .kw_case,
             .kw_break,
             .kw_continue,
@@ -577,6 +580,7 @@ pub const keywords = std.StaticStringMap(Tag).initComptime(.{
     .{ "try", .kw_try },
     .{ "catch", .kw_catch },
     .{ "onfail", .kw_onfail },
+    .{ "match", .kw_match },
     .{ "case", .kw_case },
     .{ "break", .kw_break },
     .{ "continue", .kw_continue },

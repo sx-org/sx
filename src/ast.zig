@@ -459,10 +459,10 @@ pub const MatchArm = struct {
     pattern: ?*Node, // null = else (default) arm
     body: *Node,
     is_break: bool,
-    capture: ?[]const u8 = null, // payload binding name: case .variant: (name) { ... }
+    capture: ?[]const u8 = null, // payload binding name: case .variant: |name| { ... }
     capture_span: ?Span = null, // span of `capture` (set iff `capture` is)
     /// True when the capture was a backtick raw identifier
-    /// (`` case .v: (`i2) ``) — exempt from the reserved-type-name check.
+    /// (`` case .v: |`i2| ``) — exempt from the reserved-type-name check.
     capture_is_raw: bool = false,
 };
 
@@ -726,10 +726,8 @@ pub const TryExpr = struct {
     operand: *Node,
 };
 
-/// `X catch [e] BODY` — inline failure handler (postfix). The binding is a
-/// bare name (no parens) and optional. Body is a block, a bare expression,
-/// or — when `is_match_body` — a `match_expr` from the `== { case ... }`
-/// sugar (whose subject is the binding).
+/// `X catch [(e)] BODY` — inline failure handler (postfix). The binding is
+/// optional. Body is a block or a bare expression.
 pub const CatchExpr = struct {
     operand: *Node,
     binding: ?[]const u8 = null,
@@ -738,7 +736,6 @@ pub const CatchExpr = struct {
     /// (`` x catch `i2 { … } ``) — exempt from the reserved-type-name check.
     binding_is_raw: bool = false,
     body: *Node,
-    is_match_body: bool = false,
 };
 
 /// `onfail [e] BODY` — cleanup run on error-exit of the enclosing block.
@@ -764,7 +761,7 @@ pub const ComptimeExpr = struct {
 
 /// `#error "message"` — a compile-time diagnostic. When it survives the
 /// comptime-conditional flatten pass into live decls (e.g. the taken arm of an
-/// `inline if OS == { ... }` is an unsupported-target `else`), the flatten pass
+/// `inline match OS { ... }` is an unsupported-target `else`), the flatten pass
 /// emits `message` as an error and drops the node. In a non-taken arm it is
 /// pruned before it can fire.
 pub const ErrorDirective = struct {

@@ -138,7 +138,7 @@ main :: () -> ! {
     report("st-min",  o.items[3].val.int == 0 - 9223372036854775807 - 1);
     report("st-max",  o.items[4].val.int == 9223372036854775807);
     report("st-bool", o.items[5].val.bool == true);
-    is_null := if o.items[6].val == { case .null: true; else: false; };
+    is_null := match o.items[6].val { case .null: true; else: false; };
     report("st-null", is_null);
     xs := o.items[7].val.array;
     report("st-xs", xs.len == 3 and xs.items[0].int == 1 and

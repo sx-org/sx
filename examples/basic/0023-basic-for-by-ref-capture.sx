@@ -16,8 +16,8 @@ main :: () -> i32 {
     // Pointer subject matches through the deref; payload reads through the ref.
     shapes : [2]Shape = .[.circle(2.0), .none];
     for *s in shapes {
-        if s == {
-            case .circle: (r) { print("circle {}\n", r); }
+        match s {
+            case .circle: |r| { print("circle {}\n", r); }
             case .none:        { print("none\n"); }
         }
     }

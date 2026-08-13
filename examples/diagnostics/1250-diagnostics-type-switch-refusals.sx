@@ -11,19 +11,19 @@
 
 main :: () {
     av : any = 5;
-    if av == {
+    match av {
         case int: { print("int\n"); }
-        case i64: (v) { print("i64 {}\n", v); }   // unreachable: int claims i64
+        case i64: |v| { print("i64 {}\n", v); }   // unreachable: int claims i64
     }
-    if av == {
-        case struct: (s) { _ = s; }               // category arms bind nothing
+    match av {
+        case struct: |s| { _ = s; }               // category arms bind nothing
         else: {}
     }
-    if av == {
+    match av {
         case i64: {}
         case i64: { }                             // duplicate = unreachable
     }
-    if av == {
+    match av {
         case 5: { }                               // value pattern
         else: {}
     }

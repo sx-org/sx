@@ -481,7 +481,7 @@ std_zip_writer_append_file :: (path: [:0]u8, force_zip64: bool = false, max_meta
 }
 
 private std_zip_writer_stream :: (state: *StdZipWriterState) -> *ZipStreamWriter {
-    if state == {
+    match state {
         case .memory: { return *state.*.memory.writer; }
         case .sink: { return *state.*.sink.writer; }
         case .file: { return *state.*.file.owned.writer; }
@@ -492,7 +492,7 @@ private std_zip_writer_stream :: (state: *StdZipWriterState) -> *ZipStreamWriter
 }
 
 private std_zip_writer_failure :: (state: *StdZipWriterState, fallback: Error) -> Error {
-    if state == { case .sink: {} else: { return fallback; } }
+    match state { case .sink: {} else: { return fallback; } }
     bridge := state.*.sink.bridge;
     if bridge.failure != null {
         bridge.poisoned = true;
@@ -502,7 +502,7 @@ private std_zip_writer_failure :: (state: *StdZipWriterState, fallback: Error) -
 }
 
 private std_zip_writer_transfer_failure :: (target: *StdZipWriterState, source: *StdZipReaderState, fallback: Error) -> Error {
-    if target == {
+    match target {
         case .sink: {
             bridge := target.*.sink.bridge;
             if bridge.failure != null {
@@ -517,9 +517,9 @@ private std_zip_writer_transfer_failure :: (target: *StdZipWriterState, source: 
 
 private std_zip_writer_ready :: (state: *StdZipWriterState) -> (*ZipStreamWriter, !Error) {
     if state == null { raise error.Finished; }
-    closed := if state == { case .closed: { true } else: { false } };
+    closed := match state { case .closed: { true } else: { false } };
     if closed { raise error.Finished; }
-    if state == {
+    match state {
         case .sink: {
             bridge := state.*.sink.bridge;
             if bridge.poisoned {
@@ -536,7 +536,7 @@ private std_zip_writer_ready :: (state: *StdZipWriterState) -> (*ZipStreamWriter
 }
 
 private std_zip_writer_default_comment :: (state: *StdZipWriterState) -> string {
-    if state == {
+    match state {
         case .memory: { return state.*.memory.default_comment; }
         case .update_file: { return state.*.update_file.source.reader.comment; }
         else: {}
@@ -611,7 +611,7 @@ std_zip_writer_finish :: (state: *StdZipWriterState, comment: ?string = null) ->
 }
 
 std_zip_writer_take :: (state: *StdZipWriterState) -> (string, !Error) {
-    memory := if state == { case .memory: { true } else: { false } };
+    memory := match state { case .memory: { true } else: { false } };
     if !memory { raise error.Unsupported; }
     output := state.*.memory.output;
     if !state.*.memory.writer.finished or output.taken { raise error.Finished; }
@@ -628,7 +628,7 @@ std_zip_writer_take :: (state: *StdZipWriterState) -> (string, !Error) {
 // deinit() is a no-op and take() reports Finished.
 std_zip_writer_close :: (state: *StdZipWriterState) -> !Error {
     ok := true;
-    if state == {
+    match state {
         case .memory: {
             if !state.*.memory.writer.end() { ok = false; }
             state.*.memory.output.bytes.deinit();
@@ -655,7 +655,7 @@ std_zip_writer_close :: (state: *StdZipWriterState) -> !Error {
 }
 
 std_zip_writer_deinit :: (state: *StdZipWriterState) {
-    if state == {
+    match state {
         case .memory: {
             state.*.memory.writer.deinit();
             state.*.memory.output.bytes.deinit();

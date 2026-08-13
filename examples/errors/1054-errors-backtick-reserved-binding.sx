@@ -15,7 +15,7 @@ parse :: (n: i32) -> (i32, !E) {
 
 // `catch` tag binding spelled `i2`, referenced in the match body.
 classify :: (n: i32) -> i32 {
-    return parse(n) catch (`i2) == {
+    return parse(n) catch (`i2) match `i2 {
         case .Bad:   1;
         case .Empty: 2;
         else:        3

@@ -33,7 +33,7 @@ Zone :: enum {
 
 // Match expression as implicit return with mixed null/concrete arms
 zone_to_alignment :: (zone: Zone) -> ?Alignment {
-    if zone == {
+    match zone {
         case .floating:     null;
         case .fill:         ALIGN_CENTER;
         case .center:       ALIGN_CENTER;
@@ -52,7 +52,7 @@ zone_to_alignment :: (zone: Zone) -> ?Alignment {
 // affected by optional inference (no null arms here)
 NodeType :: enum { rect; text; image; }
 process_node :: (t: NodeType) -> bool {
-    if t == {
+    match t {
         case .rect: { out("rect\n"); }
         case .text: { out("text\n"); }
         case .image: { out("image\n"); }

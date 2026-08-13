@@ -16,14 +16,14 @@ E :: define(declare("E"), .enum(.{ variants = .[
 
 main :: () -> i32 {
     e := E.value(3);
-    if e == {
-        case .value: (v) { print("value {}\n", v); }
+    match e {
+        case .value: |v| { print("value {}\n", v); }
         case .closed: { print("closed\n"); }
     }
 
     c : E = .closed;
-    if c == {
-        case .value: (v) { print("value {}\n", v); }
+    match c {
+        case .value: |v| { print("value {}\n", v); }
         case .closed: { print("closed\n"); }
     }
     return 0;

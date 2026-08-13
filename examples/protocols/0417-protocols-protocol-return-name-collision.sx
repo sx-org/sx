@@ -5,7 +5,7 @@
 // Here the user's `Event` enum shares its name with the stdlib
 // `std/event.sx` `Event :: struct` (pulled in, namespaced as `event`, by
 // `#import "modules/std.sx"`). `Plat.one_event` returns the user's `Event`;
-// `ev := g_plat.one_event()` infers that type, so the `case .key_up:(e)`
+// `ev := g_plat.one_event()` infers that type, so the `case .key_up:|e|`
 // payload binds a `KeyData` and `.escape` resolves against `Keycode`.
 //
 // `registerProtocolDecl` anchors signature resolution to `pd.source_file`, as
@@ -28,8 +28,8 @@ main :: () {
     impl : Impl = .{ dummy = 0 };
     g_plat := impl.(Plat, context.allocator);
     ev := g_plat.one_event();          // type INFERRED from protocol return
-    if ev == {
-        case .key_up: (e) {
+    match ev {
+        case .key_up: |e| {
             // `e` is KeyData (payload of the user's Event), `.escape` a Keycode
             if e.key == .escape { print("escape!\n"); }
         }

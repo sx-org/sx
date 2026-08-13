@@ -3,6 +3,6 @@
 s :: #import "shapes.sx";
 
 name_of :: (x: s.Suit) -> string {
-    if x == { case .hearts: { return "hearts"; } case .spades: { return "spades"; } }
+    match x { case .hearts: { return "hearts"; } case .spades: { return "spades"; } }
     return "?";
 }

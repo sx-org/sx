@@ -1,5 +1,5 @@
 error: no variant 'Bogus' on type 'Shape'
   --> examples/diagnostics/1103-diagnostics-err-bad-variant.sx:16:14
    |
-16 |         case .Bogus: (x) { print("bogus={}\n", x); }
+16 |         case .Bogus: |x| { print("bogus={}\n", x); }
    |              ^^^^^^

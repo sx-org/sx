@@ -37,15 +37,15 @@ main :: () -> i32 {
 
     // 3. match-arm payload capture (tagged union)
     s : Shape = .circle(3.0);
-    if s == {
-        case .circle: (r) { r = 5.0; }
-        case .rect: (n) { n = 7; }
+    match s {
+        case .circle: |r| { r = 5.0; }
+        case .rect: |n| { n = 7; }
     }
 
     // 3b. optional-match payload capture
     o : ?i64 = 5;
-    if o == {
-        case .some: (ov) { ov = 9; }
+    match o {
+        case .some: |ov| { ov = 9; }
         case .none: {}
     }
 

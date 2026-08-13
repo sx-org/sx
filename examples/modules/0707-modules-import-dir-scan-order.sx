@@ -19,9 +19,9 @@
 
 main :: () -> i32 {
     e := make_my();
-    if e == {
+    match e {
         case .a: { print("a\n"); }
-        case .b: (v) { print("b={}\n", v); }
+        case .b: |v| { print("b={}\n", v); }
     }
     0
 }

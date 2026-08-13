@@ -26,7 +26,7 @@ index c2f4b564..c2a99271 100644
 +// unsupported target matches no case → MAP_AP undefined → a loud compile error
 +// on use rather than a silent wrong flag. (The fiber runtime is aarch64-only
 +// anyway — the swap_context asm — so only these two platforms are wired.)
-+inline if OS == {
++inline match OS {
 +    case .linux: MAP_AP :: 0x22;      // linux MAP_PRIVATE (0x2) | MAP_ANON (0x20)
 +    case .macos: MAP_AP :: 0x1002;    // macOS MAP_PRIVATE (0x2) | MAP_ANON (0x1000)
 +}
@@ -59,7 +59,7 @@ index c2f4b564..c2a99271 100644
 +        // just "the readiness queue fd".
          if self.kq < 0 {
 -            self.kq = kqb.kqueue();
-+            inline if OS == {
++            inline match OS {
 +                case .linux: self.kq = ep.ep_create();
 +                case .macos: self.kq = kqb.kqueue();
 +            }
@@ -80,7 +80,7 @@ index c2f4b564..c2a99271 100644
 +        // darwin EV_ONESHOT auto-removes the registration on fire; epoll's
 +        // EPOLLONESHOT only DISABLES it, so the linux paths additionally
 +        // EPOLL_CTL_DEL on fire (run) and on early-wake (cancel_io_waiter_for).
-+        inline if OS == {
++        inline match OS {
 +            case .linux: {
 +                if !ep.ep_ctl(self.kq, ep.EPOLL_CTL_ADD, fd, ep.EPOLLIN | ep.EPOLLONESHOT) {
 +                    print("sched: epoll_ctl() failed to register fd {} for read readiness\n", fd);
@@ -118,7 +118,7 @@ index c2f4b564..c2a99271 100644
 +                // BLOCK on the readiness queue until ≥1 fd fires (timeout -1 =
 +                // forever), then for each fired event match the fd back to its
 +                // io-waiter, evict the record, and wake the fiber.
-+                inline if OS == {
++                inline match OS {
 +                    case .linux: {
 +                        evbuf : [MAXEV]ep.EpollEvent = ---;
 +                        n := ep.ep_wait(self.kq, .{ ptr = @evbuf[0], len = MAXEV }, MAXEV, -1);
@@ -213,7 +213,7 @@ index c2f4b564..c2a99271 100644
 +            // harmlessly (a never-fired one-shot the drain ignores); epoll's
 +            // EPOLLONESHOT registration stays enabled — it could fire later with
 +            // no waiter, and blocks a re-arm of the same fd — so remove it.
-+            inline if OS == {
++            inline match OS {
 +                case .linux: {
 +                    fd := self.io_waiters.items[i].fd;
 +                    remove_io_waiter(self, i);

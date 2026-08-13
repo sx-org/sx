@@ -34,8 +34,8 @@ help: handle it as a statement (`f() catch (e) { ... };`), or give the callee a 
 error: 'd' has nothing to bind — `catch` on a pure failable ('!E') produces no value
   --> examples/errors/1080-errors-catch-pure-failable-binding-reject.sx:14:10
    |
-14 |     d := must(-1) catch (e) == {
-   |          ^^^^^^^^^^^^^^^^^^^^^^^
+14 |     d := must(-1) catch (e) match e {
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 15 |         case .Bad:   0;
    | ^^^^^^^^^^^^^^^^^^^^^^^
 16 |         else:        1
@@ -45,8 +45,8 @@ error: 'd' has nothing to bind — `catch` on a pure failable ('!E') produces no
 
 help: handle it as a statement (`f() catch (e) { ... };`), or give the callee a value channel (`-> (T, !E)`)
    |
-14 |     d := must(-1) catch (e) == {
-   |          ^^^^^^^^^^^^^^^^^^^^^^^
+14 |     d := must(-1) catch (e) match e {
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 15 |         case .Bad:   0;
    | ^^^^^^^^^^^^^^^^^^^^^^^
 16 |         else:        1

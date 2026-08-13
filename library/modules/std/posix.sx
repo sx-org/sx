@@ -23,7 +23,7 @@ set_errno :: (v: i32)  { c.errno_location().* = v; }
 // level — matches the leak rule std/sched.sx relies on). NO silent fallback:
 // errno numbers are per-kernel, so an unsupported OS must add its own case —
 // the `else` forces a loud compile error instead of shipping wrong constants.
-inline if OS == {
+inline match OS {
     case .macos:
         EAGAIN       :i32: 35;   // == EWOULDBLOCK on darwin
         EINPROGRESS  :i32: 36;

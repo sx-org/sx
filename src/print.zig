@@ -85,14 +85,10 @@ pub fn printExpr(node: *const Node, writer: Writer) anyerror!void {
                 try writer.writeAll(bnd);
                 try writer.writeByte(')');
             }
-            if (c.is_match_body) {
-                try writer.writeAll(" == ");
-                try printMatchArms(c.body, writer);
-            } else {
-                try writer.writeByte(' ');
-                try printExpr(c.body, writer);
-            }
+            try writer.writeByte(' ');
+            try printExpr(c.body, writer);
         },
+        .match_expr => |m| try printMatch(m, writer),
         .raise_stmt => |r| {
             try writer.writeAll("raise ");
             try printExpr(r.tag, writer);
@@ -169,14 +165,13 @@ pub fn printType(node: *const Node, writer: Writer) anyerror!void {
     }
 }
 
-/// Print the `{ case ... }` arms of a `match_expr` (used for the catch
-/// match-body form `catch e == { ... }`). The subject is implicit (the catch
-/// binding), so only the arms are emitted. Each arm body must be a one-statement
+/// Print `match <subject> { case ... }`. Each arm body must be a one-statement
 /// block (the common case); anything else bails loudly.
-fn printMatchArms(node: *const Node, writer: Writer) anyerror!void {
-    if (node.data != .match_expr) return error.UnsupportedNode;
-    try writer.writeByte('{');
-    for (node.data.match_expr.arms) |arm| {
+fn printMatch(m: ast.MatchExpr, writer: Writer) anyerror!void {
+    try writer.writeAll("match ");
+    try printExpr(m.subject, writer);
+    try writer.writeAll(" {");
+    for (m.arms) |arm| {
         try writer.writeByte(' ');
         if (arm.pattern) |pat| {
             try writer.writeAll("case ");
@@ -184,6 +179,11 @@ fn printMatchArms(node: *const Node, writer: Writer) anyerror!void {
             try writer.writeAll(": ");
         } else {
             try writer.writeAll("else: ");
+        }
+        if (arm.capture) |name| {
+            try writer.writeByte('|');
+            try writer.writeAll(name);
+            try writer.writeAll("| ");
         }
         if (arm.body.data != .block or arm.body.data.block.stmts.len != 1) {
             return error.UnsupportedNode;

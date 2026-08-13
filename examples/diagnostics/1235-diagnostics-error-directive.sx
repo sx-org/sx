@@ -1,5 +1,5 @@
 // `#error "msg"` is a compile-time diagnostic. Reached in live code — a bare
-// top-level one here; in practice the taken `else` arm of an `inline if OS == { … }`
+// top-level one here; in practice the taken `else` arm of an `inline match OS { … }`
 // on an unsupported target — the compiler emits `msg` as an error and stops. In a
 // NON-taken comptime arm it is pruned before it can fire, which is how std/c.sx and
 // std/posix.sx guard their per-OS tables.

@@ -85,7 +85,7 @@ main :: () {
     print("catch-expr: {}\n", ce);
 
     // catch — match-body per-tag dispatch
-    cm := sm_parse(200) catch (e) == {
+    cm := sm_parse(200) catch (e) match e {
         case .Overflow: 1;
         case .Empty:    2;
         else:           3;

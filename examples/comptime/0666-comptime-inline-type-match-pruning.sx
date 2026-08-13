@@ -1,4 +1,4 @@
-// `inline if T == { case <category|Type>: … }` over a BOUND generic type
+// `inline match T { case <category|Type>: … }` over a BOUND generic type
 // param selects its arm at LOWER time and drops the siblings whole — each
 // kind arm only type-checks for its own kind (`x.len` on slices,
 // `x.(ProtocolRaw)` on protocol values), so pruning is the only way a
@@ -20,7 +20,7 @@ Widget :: struct { value: i64; }
 impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
 
 describe :: (x: $T) -> string {
-    inline if T == {
+    inline match T {
         case protocol: { p := x.(ProtocolRaw); if p.ctx != null { return "protocol"; } return "null-proto"; }
         case slice:    { if x.len >= 0 { return "slice"; } return "?"; }
         case int:      return "int";

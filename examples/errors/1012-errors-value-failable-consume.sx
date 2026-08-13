@@ -36,7 +36,7 @@ safe :: (n: i32) -> i32 {
 
 // value-carrying `catch`, match-body value.
 classify :: (n: i32) -> i32 {
-    return parse(n) catch (e) == {
+    return parse(n) catch (e) match e {
         case .Bad:   1;
         case .Empty: 2;
         else:        3

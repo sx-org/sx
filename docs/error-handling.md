@@ -198,13 +198,13 @@ Omit the binding entirely (the body must be braced):
 flush(buf) catch { };              // attempt it; ignore any failure
 ```
 
-### Dispatch on the tag — the `catch e == { }` form
+### Dispatch on the tag — `catch (e) match e { }`
 
-When you want to handle specific tags differently, use the match form —
-it's sugar for `catch e { if e == { ... } }`:
+When you want to handle specific tags differently, the catch body is a
+`match` over the binding:
 
 ```sx
-v := parse_int(s) catch e == {
+v := parse_int(s) catch (e) match e {
   case .Empty:    0;
   case .BadDigit: -1;
   else:           raise e;         // forward the rest
@@ -404,7 +404,7 @@ open_db :: (url: string) -> (Conn, !DbErr) {
 
 ```sx
 load :: (path: string) -> (Data, !) {
-  return read(path) catch e == {
+  return read(path) catch (e) match e {
     case .NotFound: try read(fallback_path);   // recover one case
     else:           raise e;                   // forward the rest
   };

@@ -337,7 +337,7 @@ write_float :: (f: f64, sink: *Sink) -> !JsonError {
 
 // Serialize one value into `sink`. Recurses for arrays / objects.
 write_value :: (v: Value, sink: *Sink) -> !JsonError {
-    if v == {
+    match v {
         case .null:  try sink.put("null");
         case .bool:  try sink.put(if v.bool then "true" else "false");
         case .int:   try write_int(v.int, sink);

@@ -16,8 +16,8 @@ main :: () -> i32 {
     for bool in xs { }                   // for capture name
     for v, i32 in xs, 0.. { }            // for index name
     opt: ?i64 = 5;
-    r := if opt == {                     // match-arm capture
-        case .some: (string) { 0 }
+    r := match opt {                     // match-arm capture
+        case .some: |string| { 0 }
         case .none: { 0 }
     };
     return 0;

@@ -31,7 +31,7 @@ scoped :: () -> Color {
 
 // A `match` statement ends at its `}` the same way.
 named :: (c: Color) -> string {
-    if c == {
+    match c {
         case .red:   return "red";
         case .green: return "green";
         case .blue:  return "blue";

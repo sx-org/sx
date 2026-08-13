@@ -175,14 +175,14 @@ if_val_first :: (b: bool) -> !Failed {
 }
 
 match_err_first :: (n: i32) -> !Failed {
-    if n == {
+    match n {
         case 0: fails();
         else:   tick("match-err-first");
     }
 }
 
 match_val_first :: (n: i32) -> !Failed {
-    if n == {
+    match n {
         case 0: tick("match-val-first");
         else:   fails();
     }

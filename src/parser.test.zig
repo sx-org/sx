@@ -788,7 +788,7 @@ test "parser: a nested tail never reclassifies the statement that encloses it" {
         // An assignment whose RHS branches both end in `;`.
         "f :: () -> i32 {\nz = if c { 1; } else { 2; }\n}",
         // A match arm ending in a `;`-ended expression.
-        "f :: () -> i32 {\nz = if s == { case 0: 1; else: 2; }\n}",
+        "f :: () -> i32 {\nz = match s { case 0: 1; else: 2; }\n}",
         // A `for` arrow body — one statement parsed in place, not a block.
         "f :: () -> i32 {\ndefer for xs => g(x);\n}",
         // A `defer` whose braced body ends in a `;`-ended expression.
@@ -1556,12 +1556,12 @@ test "parser: an arm ends at the break before the next `case`" {
 
     const body = try parseBody(alloc,
         \\f :: (v: i64) -> i64 {
-        \\    if v == {
+        \\    match v {
         \\        case 1:
         \\            g()
         \\            10
         \\        case 2: break
-        \\        case 3: (e) => e
+        \\        case 3: |e| e
         \\        else:
         \\            0
         \\    }
@@ -1574,7 +1574,7 @@ test "parser: an arm ends at the break before the next `case`" {
     try std.testing.expect(match.arms[3].pattern == null);
 
     // On ONE line nothing implies the terminator, so the separator is written.
-    _ = try parseErrMsg(alloc, "f :: (v: i64) -> i64 { if v == { case 1: 10 case 2: 20 } }");
+    _ = try parseErrMsg(alloc, "f :: (v: i64) -> i64 { match v { case 1: 10 case 2: 20 } }");
 }
 
 // `else` glued to a `:` heads the default arm; every other `else` chains the
@@ -1589,7 +1589,7 @@ test "parser: a glued `:` separates a default arm from a chaining `else`" {
     const body = try parseBody(alloc,
         \\f :: (v: i64) -> i64 {
         \\    n := 0
-        \\    if v == {
+        \\    match v {
         \\        case 1:
         \\            if n == 0 {
         \\                n = 1
@@ -1610,7 +1610,7 @@ test "parser: a glued `:` separates a default arm from a chaining `else`" {
     const chained_arm = try parseBody(alloc,
         \\f :: (v: i64) -> i64 {
         \\    n := 0
-        \\    if v == {
+        \\    match v {
         \\        case 1:
         \\            if n == 0 {
         \\                n = 1

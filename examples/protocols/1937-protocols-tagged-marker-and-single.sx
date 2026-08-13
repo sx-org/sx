@@ -19,7 +19,7 @@ Steady :: struct { t: i64; }
 impl Clock for Steady { now :: (self: *Steady) -> i64 { self.t * 2 } }
 
 kind_of :: (t: Tracked) -> string {
-    if t == {
+    match t {
         case Node: { return "node"; }
         case Edge: { return "edge"; }
     }

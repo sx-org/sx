@@ -39,10 +39,10 @@ main :: () -> i64 {
             // Race them. `a` (sleep 10) wins; `b` and `c` are cancelled — their
             // post-sleep work never runs (true cancellation).
             winner := context.io.race(.{a = a, b = b, c = c});
-            if winner == {
-                case .a: (v) { print("winner: a (i64)  = {}\n", v); }
-                case .b: (v) { print("winner: b (bool) = {}\n", v); }
-                case .c: (v) { print("winner: c (f64)  = {}\n", v); }
+            match winner {
+                case .a: |v| { print("winner: a (i64)  = {}\n", v); }
+                case .b: |v| { print("winner: b (bool) = {}\n", v); }
+                case .c: |v| { print("winner: c (f64)  = {}\n", v); }
             }
 
             // The losers were cancelled; their work was stopped at the suspend.

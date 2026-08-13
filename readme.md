@@ -366,9 +366,9 @@ Shape :: enum {
 }
 
 area :: (s: Shape) -> f32 {
-    if s == {
-        case .circle: (r) => 3.14159 * r * r;
-        case .rect: (r) => r.w * r.h;
+    match s {
+        case .circle: |r| 3.14159 * r * r;
+        case .rect: |r| r.w * r.h;
         case .none: 0;
     }
 }
@@ -479,7 +479,7 @@ Every protocol value knows its concrete type (a `type_id` word stamped at
 erasure): `type_of(shape)` answers `Circle`, the checked downcast
 `shape.(Circle)` has the same three temperaments as `any` assertions
 (panic / `or`·`catch` / soft `.(?T)`), and the type switch takes protocol
-subjects directly — `if shape == { case Circle: (c) {…} else: {…} }`.
+subjects directly — `match shape { case Circle: |c| {…} else: {…} }`.
 
 Erasability is **per-method**: a method whose signature mentions `Self`
 beyond the receiver (`eq :: (self: *Self, other: Self) -> bool`) can't be
@@ -550,8 +550,8 @@ Label :: @OpenVariant(View) {                 // a member joins by declaring it
 
 v: View = Label{ text = "hi" };               // formation: no allocator, no box
 v.render();                                   // dispatch on the tag word
-if v == {
-    case Label: (l) { print("{}\n", l.text); }
+match v {
+    case Label: |l| { print("{}\n", l.text); }
     else: { }                                 // a set is open — `else` is required
 }
 ```
@@ -565,20 +565,20 @@ bigger one grows it. `type_of(v)` answers the member, `v.(Label)` reads it back
 
 ```sx
 // On enums
-if shape == {
-    case .circle: (r) => print("radius: {}\n", r);
-    case .rect: (r) => print("{}x{}\n", r.w, r.h);
+match shape {
+    case .circle: |r| print("radius: {}\n", r);
+    case .rect: |r| print("{}x{}\n", r.w, r.h);
     case .none: print("nothing\n");
 }
 
 // On optionals
-if opt == {
-    case .some: (val) => use(val);
+match opt {
+    case .some: |val| use(val);
     case .none: fallback();
 }
 
 // On type categories (via any)
-if type_of(val) == {
+match type_of(val) {
     case int: print("integer\n");
     case string: print("string\n");
     case struct: print("struct\n");
@@ -586,9 +586,9 @@ if type_of(val) == {
 
 // Type switch — an `any` dispatches on its runtime type tag; concrete
 // arms (composites included) bind the typed value, category arms don't
-if av == {
-    case i64: (v) print("int {}\n", v);
-    case []u8: (b) print("{} bytes\n", b.len);
+match av {
+    case i64: |v| print("int {}\n", v);
+    case []u8: |b| print("{} bytes\n", b.len);
     case struct: print("some struct\n");
     else: print("{}\n", type_name(type_of(av)));
 }
@@ -828,12 +828,12 @@ none of them.
 describe :: (tp: Type) {
     print("{} (size {})\n", type_name(tp), size_of(tp));
     ti := type_info(tp);                       // kind-first dispatch
-    if ti == {
-        case .struct: (si) {
+    match ti {
+        case .struct: |si| {
             for i, f in si.fields { print("  +{} {}\n", f.offset, f.name); }
         }
-        case .enum: (ei) { print("  {} variants\n", ei.variants.len); }
-        case .int:  (ii) { print("  int, {} bits\n", ii.bits); }
+        case .enum: |ei| { print("  {} variants\n", ei.variants.len); }
+        case .int:  |ii| { print("  int, {} bits\n", ii.bits); }
         else: {}
     }
 }
@@ -859,8 +859,8 @@ copying a byte:
 
 ```sx
 print_any :: (av: any) {
-    if type_info(type_of(av)) == {
-        case .struct: (si) {
+    match type_info(type_of(av)) {
+        case .struct: |si| {
             print("{");
             i := 0;
             while i < si.fields.len {
@@ -871,7 +871,7 @@ print_any :: (av: any) {
             }
             print("}");
         }
-        case .array: (ai) {
+        case .array: |ai| {
             i := 0;
             while i < ai.len {
                 print_any(any_element(av, ai.elem, i)); // stride view

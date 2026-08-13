@@ -38,6 +38,11 @@ pub const Parser = struct {
     /// struct literal starts the if body, not the literal's optional init
     /// block (`if x != .{1, 2} { ... }`).
     in_if_condition: bool = false,
+    /// While parsing a `match` subject, the `{` that follows opens the arm
+    /// list — never a named aggregate, an init block, or a call's trailing
+    /// block (`match F(args) {` is a match over the call's result). Cleared
+    /// inside nested paren/argument contexts alongside `in_for_header`.
+    in_match_subject: bool = false,
     /// Trailing blocks (specs: Trailing Blocks): while parsing a header
     /// expression whose `{` opens the statement body (`while cond {`,
     /// `push expr {`), a call may not take a trailing block. `if`/`for`
@@ -212,11 +217,16 @@ pub const Parser = struct {
                 self.in_module_expansion = true;
                 defer self.in_module_expansion = saved_module_expansion;
                 const expr = try self.parseIfExpr();
-                if (expr.data == .if_expr) {
-                    expr.data.if_expr.is_comptime = true;
-                } else if (expr.data == .match_expr) {
-                    expr.data.match_expr.is_comptime = true;
-                }
+                expr.data.if_expr.is_comptime = true;
+                return expr;
+            }
+            if (self.peekNext() == .kw_match) {
+                self.advance(); // skip 'inline'
+                const saved_module_expansion = self.in_module_expansion;
+                self.in_module_expansion = true;
+                defer self.in_module_expansion = saved_module_expansion;
+                const expr = try self.parseMatchExpr();
+                expr.data.match_expr.is_comptime = true;
                 return expr;
             }
             if (self.peekNext() == .kw_for) {
@@ -1861,13 +1871,6 @@ pub const Parser = struct {
         return self.tokens.tag(self.tokens.peek(self.tok, @intCast(offset)));
     }
 
-    /// With the cursor at `(`, true iff the parens enclose exactly a single
-    /// identifier — `( ident )`. Distinguishes a match-arm payload capture from
-    /// a parenthesized / tuple arm-value expression (`(5)`, `(a, b)`).
-    fn isLoneIdentParen(self: *Parser) bool {
-        return self.peekTag(1) == .identifier and self.peekTag(2) == .r_paren;
-    }
-
     fn runtimeKindForOffset(self: *Parser, offset: usize) ?ast.RuntimeKind {
         const tag = self.peekTag(offset);
         return switch (tag) {
@@ -2325,8 +2328,9 @@ pub const Parser = struct {
         // Optional bare post-scope: T{ fields } { stmts } — construct T, then a
         // plain block in the enclosing scope (no `self`). Taught self-trailing
         // is `T{ fields }.{ stmts }` (attached in parsePostfix). Suppressed in
-        // if-conditions and push context expressions (`push Context{…} { body }`).
-        const init_block: ?*Node = if (self.tokens.tag(self.tok) == .l_brace and !self.in_if_condition and !self.in_push_context)
+        // if-conditions, match subjects, and push context expressions
+        // (`push Context{…} { body }`).
+        const init_block: ?*Node = if (self.tokens.tag(self.tok) == .l_brace and !self.in_if_condition and !self.in_match_subject and !self.in_push_context)
             try self.parseBlock()
         else
             null;
@@ -3116,16 +3120,19 @@ pub const Parser = struct {
             return try self.createNode(start, .{ .framework_decl = .{ .name = fw_name } });
         }
 
-        // inline if — compile-time conditional
+        // inline if / inline match — compile-time conditionals
         if (self.tokens.tag(self.tok) == .kw_inline) {
             if (self.peekNext() == .kw_if) {
                 self.advance(); // skip 'inline'
                 const expr = try self.parseIfExpr();
-                if (expr.data == .if_expr) {
-                    expr.data.if_expr.is_comptime = true;
-                } else if (expr.data == .match_expr) {
-                    expr.data.match_expr.is_comptime = true;
-                }
+                expr.data.if_expr.is_comptime = true;
+                try self.endExprStatement(expr);
+                return expr;
+            }
+            if (self.peekNext() == .kw_match) {
+                self.advance(); // skip 'inline'
+                const expr = try self.parseMatchExpr();
+                expr.data.match_expr.is_comptime = true;
                 try self.endExprStatement(expr);
                 return expr;
             }
@@ -3142,6 +3149,11 @@ pub const Parser = struct {
         // postfix chaining (e.g. `if cond { ... }.field` being misparsed)
         if (self.tokens.tag(self.tok) == .kw_if) {
             const expr = try self.parseIfExpr();
+            try self.endExprStatement(expr);
+            return expr;
+        }
+        if (self.tokens.tag(self.tok) == .kw_match) {
+            const expr = try self.parseMatchExpr();
             try self.endExprStatement(expr);
             return expr;
         }
@@ -3384,14 +3396,17 @@ pub const Parser = struct {
                 const saved_hdr_args = self.in_for_header;
                 const saved_ntb_args = self.no_trailing_block;
                 const saved_if_args = self.in_if_condition;
+                const saved_match_args = self.in_match_subject;
                 self.in_for_header = false;
                 self.no_trailing_block = false;
+                self.in_match_subject = false;
                 // Arguments may contain `Type{…}` / `string{…}` even when the
                 // call sits in an if/while header (`if f(Point{…}) {`).
                 self.in_if_condition = false;
                 defer self.in_for_header = saved_hdr_args;
                 defer self.no_trailing_block = saved_ntb_args;
                 defer self.in_if_condition = saved_if_args;
+                defer self.in_match_subject = saved_match_args;
                 var args = std.ArrayList(*Node).empty;
                 while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                     if (args.items.len > 0) {
@@ -3430,9 +3445,9 @@ pub const Parser = struct {
                 // Use the OUTER if-header flag (`saved_if_args`), not the
                 // cleared `self.in_if_condition`: args may parse Type{} freely,
                 // but `if f(x) { body }` must not steal the if-body as a trailing
-                // block on `f`.
+                // block on `f`. `match f(x) { case … }` reads the same way.
                 if (self.tokens.tag(self.tok) == .l_brace and
-                    !saved_ntb_args and !saved_hdr_args and !saved_if_args and
+                    !saved_ntb_args and !saved_hdr_args and !saved_if_args and !saved_match_args and
                     !self.tokens.flagsOf(self.tok).newline_left)
                 {
                     // Same-line `{` after a call: trailing block OR parameterized
@@ -3656,10 +3671,9 @@ pub const Parser = struct {
                 expr = try self.createNode(expr.span.start, .{ .force_unwrap = .{ .operand = expr } });
             } else if (self.tokens.tag(self.tok) == .kw_catch) {
                 // `X catch [(binding)] BODY` — postfix failure handler.
-                // Four shapes, disambiguated by peeking after `catch`:
+                // Three shapes, disambiguated by peeking after `catch`:
                 //   catch { block }            — no binding (braces required)
                 //   catch (e) { block }        — binding + block body
-                //   catch (e) == { case ... }  — binding + match body (sugar)
                 //   catch (e) EXPR             — binding + bare-expression body
                 self.advance(); // consume 'catch'
                 var binding: ?[]const u8 = null;
@@ -3679,16 +3693,9 @@ pub const Parser = struct {
                     self.advance();
                     try self.expect(.r_paren);
                 }
-                var is_match_body = false;
                 const body: *Node = if (self.tokens.tag(self.tok) == .l_brace)
                     try self.parseBlock()
-                else if (binding != null and self.tokens.tag(self.tok) == .equal_equal) blk: {
-                    const m_start = self.tokens.start(self.tok);
-                    self.advance(); // consume '=='
-                    is_match_body = true;
-                    const subject = try self.createNode(m_start, .{ .identifier = .{ .name = binding.?, .is_raw = binding_is_raw } });
-                    break :blk try self.parseMatchBody(subject, m_start);
-                } else if (binding != null)
+                else if (binding != null)
                     try self.parseExpr()
                 else
                     return self.fail("`catch` without a binding requires a braced body: `catch { ... }`");
@@ -3698,7 +3705,6 @@ pub const Parser = struct {
                     .binding_span = binding_span,
                     .binding_is_raw = binding_is_raw,
                     .body = body,
-                    .is_match_body = is_match_body,
                 } });
             } else {
                 break;
@@ -4062,17 +4068,20 @@ pub const Parser = struct {
                 self.advance(); // skip '('
 
                 // A `(` opens a grouping, so nested calls / named aggregates parse
-                // normally even within for/if/push headers (`if (Button{}) {`).
+                // normally even within for/if/match/push headers (`if (Button{}) {`).
                 const saved_hdr_grp = self.in_for_header;
                 const saved_if_grp = self.in_if_condition;
                 const saved_ntb_grp = self.no_trailing_block;
+                const saved_match_grp = self.in_match_subject;
                 self.in_for_header = false;
                 self.in_if_condition = false;
                 self.no_trailing_block = false;
+                self.in_match_subject = false;
                 defer {
                     self.in_for_header = saved_hdr_grp;
                     self.in_if_condition = saved_if_grp;
                     self.no_trailing_block = saved_ntb_grp;
+                    self.in_match_subject = saved_match_grp;
                 }
 
                 // Bare `(...)` is GROUPING ONLY. Tuple VALUES are written
@@ -4119,6 +4128,9 @@ pub const Parser = struct {
             },
             .kw_if => {
                 return self.parseIfExpr();
+            },
+            .kw_match => {
+                return self.parseMatchExpr();
             },
             .kw_while => {
                 return self.parseWhileExpr();
@@ -4279,12 +4291,11 @@ pub const Parser = struct {
         }
 
         // Parse condition above comparison level, leaving comparisons
-        // unconsumed for manual handling with match disambiguation.
+        // unconsumed so a chain (`a < b < c`) is collected as one node.
         const saved_if_cond = self.in_if_condition;
         self.in_if_condition = true;
         var condition = try self.parseBinary(Prec.shift);
 
-        // Handle comparisons with chain detection and match disambiguation.
         // All comparisons (< <= > >= == !=) are at the same precedence.
         if (self.atComparison()) {
             var operands = std.ArrayList(*Node).empty;
@@ -4292,29 +4303,11 @@ pub const Parser = struct {
             try operands.append(self.allocator, condition);
 
             while (self.atComparison()) {
-                // Match disambiguation: == followed by { is a match expression
-                if (self.tokens.tag(self.tok) == .equal_equal) {
-                    self.advance();
-                    if (self.tokens.tag(self.tok) == .l_brace) {
-                        // Match expression: if expr == { case ... }
-                        // Only valid as the first comparison (no chain before it)
-                        if (ops.items.len == 0) {
-                            self.in_if_condition = saved_if_cond;
-                            return self.parseMatchBody(condition, start);
-                        }
-                        // Chain followed by == { is an error — fall through to
-                        // regular comparison (will likely fail at parse time)
-                    }
-                    const rhs = try self.parseBinary(Prec.shift);
-                    try operands.append(self.allocator, rhs);
-                    try ops.append(self.allocator, .eq);
-                } else {
-                    const cmp_info = binaryInfo(self.tokens.tag(self.tok)) orelse break;
-                    self.advance();
-                    const rhs = try self.parseBinary(Prec.shift);
-                    try operands.append(self.allocator, rhs);
-                    try ops.append(self.allocator, cmp_info.op);
-                }
+                const cmp_info = binaryInfo(self.tokens.tag(self.tok)) orelse break;
+                self.advance();
+                const rhs = try self.parseBinary(Prec.shift);
+                try operands.append(self.allocator, rhs);
+                try ops.append(self.allocator, cmp_info.op);
             }
 
             if (ops.items.len == 1) {
@@ -4529,6 +4522,18 @@ pub const Parser = struct {
         } });
     }
 
+    /// `match <subject> { case … }` — the subject is a header expression, so
+    /// the `{` that closes it opens the arm list.
+    fn parseMatchExpr(self: *Parser) anyerror!*Node {
+        const start = self.tokens.start(self.tok);
+        self.advance(); // skip 'match'
+        const saved_match = self.in_match_subject;
+        self.in_match_subject = true;
+        const subject = try self.parseExpr();
+        self.in_match_subject = saved_match;
+        return self.parseMatchBody(subject, start);
+    }
+
     fn parseMatchBody(self: *Parser, subject: *Node, start_pos: u32) anyerror!*Node {
         try self.expect(.l_brace);
         // An arm body is its own statement list — an arm wrapper always carries
@@ -4555,20 +4560,21 @@ pub const Parser = struct {
                 try self.parsePrimary(); // .variant
             try self.expect(.colon);
 
-            // Optional payload capture: `(ident)`. Disambiguated from a
-            // parenthesized / tuple arm-value expression (`(5)`, `(1, 1)`):
-            // a capture is exactly `( <identifier> )`; anything else is the
-            // arm body (an expression) and is left for the body parse below.
+            // Optional payload capture: `|ident|`. An arm with no payload
+            // carries no pipes (`case .none: 0`).
             var capture: ?[]const u8 = null;
             var capture_span: ?ast.Span = null;
             var capture_is_raw = false;
-            if (self.tokens.tag(self.tok) == .l_paren and self.isLoneIdentParen()) {
-                self.advance(); // '('
+            if (self.tokens.tag(self.tok) == .pipe) {
+                self.advance(); // '|'
+                if (self.tokens.tag(self.tok) != .identifier) {
+                    return self.fail("expected a payload binding name in `case .variant: |name|`");
+                }
                 capture = self.tokens.slice(self.tok);
                 capture_span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
                 capture_is_raw = self.tokens.flagsOf(self.tok).is_raw;
                 self.advance(); // ident
-                try self.expect(.r_paren);
+                try self.expect(.pipe);
             }
 
             if (self.tokens.tag(self.tok) == .kw_break) {
@@ -4577,15 +4583,6 @@ pub const Parser = struct {
                 try self.expectStatementEnd();
                 const body = try self.createNode(arm_start, .{ .block = .{ .stmts = &.{} } });
                 try arms.append(self.allocator, .{ .pattern = pattern, .body = body, .is_break = true, .capture = capture, .capture_span = capture_span, .capture_is_raw = capture_is_raw });
-            } else if (self.tokens.tag(self.tok) == .fat_arrow) {
-                // Short form: (ident) => expr
-                self.advance();
-                const expr = try self.parseExpr();
-                // The arm body is its expression, so it ends like an expression
-                // statement — including at the match's own `}`.
-                try self.expectSemicolonAfter(expr);
-                const body = try self.createNode(arm_start, .{ .block = .{ .stmts = try self.allocator.dupe(*Node, &.{expr}), .produces_value = true } });
-                try arms.append(self.allocator, .{ .pattern = pattern, .body = body, .is_break = false, .capture = capture, .capture_span = capture_span, .capture_is_raw = capture_is_raw });
             } else {
                 const stmts_start = self.tokens.start(self.tok);
                 var stmts = std.ArrayList(*Node).empty;
@@ -5168,6 +5165,7 @@ pub const Parser = struct {
             .kw_try,
             .kw_catch,
             .kw_onfail,
+            .kw_match,
             .kw_case,
             .kw_break,
             .kw_continue,
@@ -5407,6 +5405,7 @@ pub const Parser = struct {
             .kw_try,
             .kw_catch,
             .kw_onfail,
+            .kw_match,
             .kw_case,
             .kw_break,
             .kw_continue,
@@ -5540,13 +5539,14 @@ pub const Parser = struct {
         };
     }
 
-    /// Header contexts (`if cond {`, `while cond {`, `for … {`) reserve the
-    /// final brace group for the statement body — a bare `Type{}` at the end
-    /// of the condition would steal it, so parenthesize: `if (Button{}) {`.
+    /// Header contexts (`if cond {`, `while cond {`, `for … {`, `match s {`)
+    /// reserve the final brace group for the statement body — a bare `Type{}`
+    /// at the end of the header would steal it, so parenthesize:
+    /// `if (Button{}) {`.
     /// `push` is different: `push Context{ fields } { body }` is legal; the
     /// second brace is the push body (not an init_block on the context expr).
     fn namedAggregateAllowedHere(self: *const Parser) bool {
-        if (self.in_if_condition or self.in_for_header) return false;
+        if (self.in_if_condition or self.in_for_header or self.in_match_subject) return false;
         if (self.in_push_context) return true;
         return !self.no_trailing_block;
     }
@@ -5620,6 +5620,7 @@ pub const Parser = struct {
                 .kw_raise,
                 .kw_onfail,
                 .kw_if,
+                .kw_match,
                 .kw_for,
                 .kw_while,
                 => shape.stmt_kw = shape.stmt_kw or top,
@@ -6172,7 +6173,7 @@ test "block value: a declaration tail leaves the block value-less" {
 test "block value: an arm's written `;` still leaves the arm producing a value" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "f :: (n: i32) -> i32 { if n == { case 1: 5; else: 0; } }");
+    var parser = try Parser.init(arena.allocator(), "f :: (n: i32) -> i32 { match n { case 1: 5; else: 0; } }");
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     // Function body's trailing match has no `;` → the body is a value.
@@ -6365,7 +6366,7 @@ test "parse match with else arm" {
     const source =
         \\main :: () {
         \\  x := 5;
-        \\  if x == {
+        \\  match x {
         \\    case 1: 10;
         \\    else: 99;
         \\  };
@@ -6794,7 +6795,6 @@ test "catch no binding, braced body" {
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := foo() catch { }; }");
     try std.testing.expect(v.data == .catch_expr);
     try std.testing.expect(v.data.catch_expr.binding == null);
-    try std.testing.expect(v.data.catch_expr.is_match_body == false);
     try std.testing.expect(v.data.catch_expr.body.data == .block);
 }
 
@@ -6813,16 +6813,14 @@ test "catch with binding, bare-expression body" {
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := foo() catch (e) bar(); }");
     try std.testing.expect(v.data == .catch_expr);
     try std.testing.expectEqualStrings("e", v.data.catch_expr.binding.?);
-    try std.testing.expect(v.data.catch_expr.is_match_body == false);
     try std.testing.expect(v.data.catch_expr.body.data == .call);
 }
 
-test "catch match-body desugars to match_expr over the binding" {
+test "catch body is a match over the binding" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := foo() catch (e) == { case .Empty: 0; else: 1; }; }");
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := foo() catch (e) match e { case .Empty: 0; else: 1; }; }");
     try std.testing.expect(v.data == .catch_expr);
-    try std.testing.expect(v.data.catch_expr.is_match_body);
     try std.testing.expect(v.data.catch_expr.body.data == .match_expr);
     try std.testing.expectEqual(@as(usize, 2), v.data.catch_expr.body.data.match_expr.arms.len);
     // subject is the binding identifier
@@ -7016,12 +7014,12 @@ test "round-trip print: try / or precedence / raise / catch / onfail" {
     try e02ExpectPrints(a, try e02FirstStmt(a, "f :: () { onfail (e) { close(h); } }"), "onfail (e) { close(h); }");
 }
 
-test "round-trip print: catch match-body form" {
+test "round-trip print: a match over the catch binding" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const v = try e02FirstValue(a, "f :: () { v := foo() catch (e) == { case .Empty: 0; else: 1; }; }");
-    try e02ExpectPrints(a, v, "foo() catch (e) == { case .Empty: 0; else: 1; }");
+    const v = try e02FirstValue(a, "f :: () { v := foo() catch (e) match e { case .Empty: 0; else: 1; }; }");
+    try e02ExpectPrints(a, v, "foo() catch (e) match e { case .Empty: 0; else: 1; }");
 }
 
 test "try in statement position (propagate, discard value)" {
@@ -7336,6 +7334,52 @@ test "parse if cond { body } is not Type{}" {
     try std.testing.expect(ife.data == .if_expr);
     try std.testing.expect(ife.data.if_expr.condition.data == .identifier);
     try std.testing.expectEqualStrings("neg", ife.data.if_expr.condition.data.identifier.name);
+}
+
+test "parse `if x == y {` stays an if over a comparison" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "main :: () {\n  if x == y { g(); }\n}");
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    try std.testing.expect(stmt.data == .if_expr);
+    const cond = stmt.data.if_expr.condition;
+    try std.testing.expect(cond.data == .binary_op and cond.data.binary_op.op == .eq);
+}
+
+test "parse the match subject as a header expression" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    // A call subject: the `{` opens the arm list, not a trailing block on `f`.
+    var parser = try Parser.init(arena.allocator(), "main :: () {\n  match f(1) { case .a: |v| v; }\n}");
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    try std.testing.expect(stmt.data == .match_expr);
+    const me = stmt.data.match_expr;
+    try std.testing.expect(me.subject.data == .call);
+    try std.testing.expectEqual(@as(usize, 1), me.arms.len);
+    try std.testing.expectEqualStrings("v", me.arms[0].capture.?);
+}
+
+test "parse empty braces after a call subject as the arm list" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "main :: () {\n  match f(1) {}\n}");
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    try std.testing.expect(stmt.data == .match_expr);
+    try std.testing.expect(stmt.data.match_expr.subject.data == .call);
+    try std.testing.expectEqual(@as(usize, 0), stmt.data.match_expr.arms.len);
+}
+
+test "parse inline match as a comptime match" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "inline match OS {\n  case .macos: X :: 1;\n  else: X :: 2;\n}");
+    const root = try parser.parse();
+    const decl = root.data.root.decls[0];
+    try std.testing.expect(decl.data == .match_expr);
+    try std.testing.expect(decl.data.match_expr.is_comptime);
 }
 
 /// Parse `src`, expect `error.ParseError`, and pin the diagnostic text +

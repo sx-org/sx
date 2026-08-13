@@ -37,8 +37,8 @@ main :: () {
     print("downcast:    {}\n", back.side);
 
     // Type switch on a protocol subject.
-    if e == {
-        case Sq: (v) { print("switch:      {}\n", v.side); }
+    match e {
+        case Sq: |v| { print("switch:      {}\n", v.side); }
         else: { print("switch:      miss\n"); }
     }
 

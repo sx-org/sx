@@ -7,7 +7,7 @@ Widget :: struct { n: i64; }
 impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
 
 match_bind :: (k: i64) -> i64 {
-    v := if k == {
+    v := match k {
         case 0: { Widget{ n = 7 }.(View) }
         else: { Widget{ n = 9 }.(View) }
     };

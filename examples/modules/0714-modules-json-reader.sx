@@ -61,7 +61,7 @@ main :: () -> ! {
     src := DOC;
     root := try parse(src, arena);
 
-    is_object := if root == { case .object: true; else: false; };
+    is_object := match root { case .object: true; else: false; };
     report("root-is-object", is_object);
 
     o := root.object;
@@ -77,7 +77,7 @@ main :: () -> ! {
 
     report("bool-value", o.items[3].val.bool == true);
 
-    is_null := if o.items[4].val == { case .null: true; else: false; };
+    is_null := match o.items[4].val { case .null: true; else: false; };
     report("null-value", is_null);
 
     // The nested pair asserted as one expression — a string `==` on each

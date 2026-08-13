@@ -9,7 +9,7 @@ Point :: struct {
 print_any :: (..args: []any) {
     for it in args {
         type := type_of(it);
-        if type == {
+        match type {
             case int: out(int_to_string(xx it));
             case string: out(it.(string));
             case bool: out(bool_to_string(it.(bool)));

@@ -3673,7 +3673,7 @@ pub fn lazyLowerFunction(self: *Lowering, name: []const u8) void {
     if (fd.type_params.len > 0) return; // generics handled by monomorphization
 
     // Defer functions with type-category matches until all types are registered.
-    // any_to_string uses `if type == { case slice: ... }` which compiles a switch
+    // any_to_string uses `match type { case slice: ... }` which compiles a switch
     // with type tags from resolveTypeCategoryTags. This must happen AFTER main is
     // fully lowered so all types ([]i32, List__i32, etc.) are in the TypeTable.
     if (!self.processing_deferred and std.mem.eql(u8, name, "any_to_string")) {

@@ -62,7 +62,7 @@ main :: () {
     // T2: Bare .variant (no payload) in typed variable
     {
         sh : Shape = .none;
-        ms := if sh == {
+        ms := match sh {
             case .circle: 1;
             case .rect: 2;
             case .none: 3;
@@ -85,9 +85,9 @@ main :: () {
     // T5: Match with payload capture
     {
         sh : Shape = .circle(9.5);
-        if sh == {
-            case .circle: (r) { print("T5: {}\n", r); }
-            case .rect: (sz) { print("T5: rect\n"); }
+        match sh {
+            case .circle: |r| { print("T5: {}\n", r); }
+            case .rect: |sz| { print("T5: rect\n"); }
             case .none: print("T5: none\n");
         }
     }
@@ -106,7 +106,7 @@ main :: () {
         sh = .rect(.{ 2.0, 3.0 });
         print("T7b: {} {}\n", sh.rect.w, sh.rect.h);
         sh = .none;
-        ms := if sh == {
+        ms := match sh {
             case .circle: 1;
             case .rect: 2;
             case .none: 3;
@@ -117,7 +117,7 @@ main :: () {
     // T8: .variant(payload) as function argument (match-as-expression)
     {
         describe :: (sh: Shape) -> i32 {
-            if sh == {
+            match sh {
                 case .circle: 10;
                 case .rect: 20;
                 case .none: 30;
@@ -131,9 +131,9 @@ main :: () {
     // T9: Tagged enum with string payload
     {
         r : Result = .ok(42);
-        ms := if r == {
-            case .ok: (v) { v }
-            case .err: (e) { -1 }
+        ms := match r {
+            case .ok: |v| { v }
+            case .err: |e| { -1 }
         };
         print("T9: {}\n", ms);
     }
@@ -141,13 +141,13 @@ main :: () {
     // T10: Match as expression returning tagged enum
     {
         select :: (n: i32) -> Shape {
-            if n == {
+            match n {
                 case 0: .none;
                 case 1: .circle(1.0);
                 else: .rect(.{ 9.0, 9.0 });
             }
         }
-        print("T10a: {}\n", if select(0) == { case .none: 1; else: 0; });
+        print("T10a: {}\n", match select(0) { case .none: 1; else: 0; });
         print("T10b: {}\n", select(1).circle);
         print("T10c: {}\n", select(2).rect.w);
     }
@@ -231,7 +231,7 @@ main :: () {
     {
         use_both :: (sh: Shape, v: Vec2) {
             ms : i32 = 0;
-            if sh == { case .circle: (r) { ms = xx r; } else: {} }
+            match sh { case .circle: |r| { ms = xx r; } else: {} }
             print("E2: {} {} {}\n", ms, v.x, v.y);
         }
         use_both(.circle(9.0), .create(1.0, 2.0));
@@ -239,7 +239,7 @@ main :: () {
 
     {
         check_none :: (sh: Shape) -> i32 {
-            if sh == { case .none: 1; else: 0; }
+            match sh { case .none: 1; else: 0; }
         }
         print("E3: {}\n", check_none(.none));
     }
@@ -253,9 +253,9 @@ main :: () {
     {
         sh : Shape = .circle(42.0);
         r : i32 = 0;
-        if sh == {
-            case .circle: (v) { r = xx v; }
-            case .rect: (sz) { r = xx sz.w; }
+        match sh {
+            case .circle: |v| { r = xx v; }
+            case .rect: |sz| { r = xx sz.w; }
             case .none: r = xx -1;
         }
         print("E5: {}\n", r);

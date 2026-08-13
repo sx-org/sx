@@ -64,17 +64,17 @@ grapha_kind :: #run raw_type_kind(raw_find_type(raw_intern("GraphA"))); // 3 = t
 main :: () -> i32 {
     // Suit is a real, usable enum.
     s := Suit.spades;
-    if s == {
+    match s {
         case .hearts:   { print("hearts\n"); }
         case .spades:   { print("spades\n"); }
         case .diamonds: { print("diamonds\n"); }
     }
     // GraphA is a real, usable tagged union.
     a := GraphA.tag(7);
-    if a == {
-        case .tag: (n)      { print("tag={}\n", n); }
-        case .self_ref: (p) { print("self_ref\n"); }
-        case .to_b: (b)     { print("to_b\n"); }
+    match a {
+        case .tag: |n|      { print("tag={}\n", n); }
+        case .self_ref: |p| { print("self_ref\n"); }
+        case .to_b: |b|     { print("to_b\n"); }
     }
     print("Suit kind={}, GraphA kind={}\n", suit_kind, grapha_kind);
     return 0;

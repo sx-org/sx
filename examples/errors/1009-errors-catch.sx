@@ -4,7 +4,7 @@
 // value). BODY may diverge (`return` / `raise` — typed `noreturn`) or
 // fall through. `catch` needs no failable *enclosing* function — it handles
 // the error locally. All four body forms appear below: block, no-binding
-// block, match-body (`== { case ... }`), and the selective handle + re-raise
+// block, a `match` over the binding, and the selective handle + re-raise
 // pattern. Value-carrying `-> (T, !)` catch is exercised in 1012.
 
 #import "modules/std.sx";
@@ -27,9 +27,9 @@ classify :: (n: i32) -> i32 {
     return 0;                               // must(n) succeeded
 }
 
-// Match-body form — sugar for `catch (e) { if e == { case ... } }`.
+// Bare-expression body: a `match` over the binding.
 mclassify :: (n: i32) -> i32 {
-    must(n) catch (e) == {
+    must(n) catch (e) match e {
         case .Bad:   return 11;
         case .Empty: return 22;
         else:        return 99;

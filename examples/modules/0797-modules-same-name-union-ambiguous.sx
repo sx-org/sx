@@ -19,7 +19,7 @@
 #import "0797-modules-same-name-union-ambiguous/b.sx";
 
 describe :: ($T: Type) -> i32 {
-    r := if T == {
+    r := match T {
         case Pair: 1;
         else: 0;
     }
