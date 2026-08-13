@@ -33,7 +33,7 @@ chosen :: () -> [1]Type {
     return .[Flat];
 }
 
-inline for #run chosen() (T) {
+inline for T in #run chosen() {
     impl Show for T { fmt :: (self: *T) -> i64 { self.n * 2 } }
 }
 

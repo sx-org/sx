@@ -55,7 +55,7 @@ main :: () -> i32 {
         if show_title {
             Label{ text = "title" };
         }
-        for rows (row) {
+        for row in rows {
             Label{ text = row };
         }
     };

@@ -58,6 +58,6 @@ main :: () {
     mk : Make(N, i64) = ---;  mk[2] = 33; print("vp.typefn.expr: len={} v={}\n", mk.len, mk[2]);
 
     // inline-for bound — expr const (3) and integral float (4)
-    s := 0; inline for 0..N (i) { s += i; } print("for.expr: {}\n", s);    // 0+1+2 = 3
-    t := 0; inline for 0..F (i) { t += i; } print("for.float: {}\n", t);   // 0+1+2+3 = 6
+    s := 0; inline for i in 0..N { s += i; } print("for.expr: {}\n", s);    // 0+1+2 = 3
+    t := 0; inline for i in 0..F { t += i; } print("for.float: {}\n", t);   // 0+1+2+3 = 6
 }

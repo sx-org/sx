@@ -64,7 +64,7 @@ main :: () {
     s := Screen{ root = pv };
     print("{}\n", s.root.area());
     vs : [2]View = .[w, b];
-    for vs (e) { print("{} {}\n", e.label(), e.area()); }
+    for e in vs { print("{} {}\n", e.label(), e.area()); }
 
     // Copying a tagged value copies the handle — both refer to one object.
     v2 := v;

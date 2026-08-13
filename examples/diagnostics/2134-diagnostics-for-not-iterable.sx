@@ -1,0 +1,11 @@
+// A for iterable must be a collection or a range; a scalar has no elements
+// and no length to drive the loop.
+
+#import "modules/std.sx";
+
+f :: (n: i64) -> i64 { n }
+
+main :: () {
+    n := 1;
+    for x in f(n) { _ = x; }
+}

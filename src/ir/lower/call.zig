@@ -1251,7 +1251,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         self.force_block_value = saved_fbv;
         self.target_type = saved_target;
         // Passing a `*T` where a `T` value is expected — a by-reference loop
-        // capture (`for xs: (*m)`), a `*T` parameter, or any pointer local —
+        // capture (`for *m in xs`), a `*T` parameter, or any pointer local —
         // otherwise slips through to LLVM as an opaque "call parameter type
         // does not match function signature" verifier error. Flag it at the
         // call site with a `.*` fix-it.

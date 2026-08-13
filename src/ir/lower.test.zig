@@ -3211,7 +3211,7 @@ test "lower: assignment to a by-value loop capture is diagnosed as immutable, a 
     const span = ast.Span{ .start = 0, .end = 0 };
 
     // main :: () {
-    //     for 0..3 (x) { x += 100; }   // by-value capture → immutable, diagnosed
+    //     for x in 0..3 { x += 100; }   // by-value capture → immutable, diagnosed
     //     y := 0;                       // real alloca local
     //     y += 100;                     // legal — NOT diagnosed
     // }

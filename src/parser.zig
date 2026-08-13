@@ -27,11 +27,11 @@ pub const Parser = struct {
     /// Type param names from enclosing generic struct (set while parsing methods)
     struct_type_params: []const []const u8 = &.{},
     /// When true (set while parsing a `for` header's iterable expressions),
-    /// a top-level `(` group immediately followed by `{` or `=>` is the loop
-    /// CAPTURE, never call arguments — `for xs (x) { }` reads `(x)` as the
-    /// capture, while `for zip(a, b) (x, y) { }` still calls `zip(a, b)`
-    /// because that group is not the trailing one. Cleared inside any nested
-    /// bracket/paren/argument context.
+    /// a SPACED top-level `(` group immediately followed by `{` or `=>` ends
+    /// the header rather than binding as call arguments, so `for xs (x) { }`
+    /// reports the missing body. A glued group is an ordinary call
+    /// (`for x in f(n) { }`). Cleared inside any nested bracket/paren/argument
+    /// context.
     in_for_header: bool = false,
     /// While parsing an if-condition, a `{` immediately after an anonymous
     /// struct literal starts the if body, not the literal's optional init
@@ -4440,9 +4440,29 @@ pub const Parser = struct {
         var iterables = std.ArrayList(ast.ForIterable).empty;
         var captures = std.ArrayList(ast.ForCapture).empty;
 
-        // Header: comma-separated iterables, each a collection expression or
-        // a range (`a..b`, `a..=b`, open `a..`). Top-level trailing call
-        // parens are read as the capture (see parenGroupIsForCapture).
+        // Captures lead the header, closed by `in`: `for x, *y in xs, ys`.
+        // Without `in` the header is iterables alone, so `for *p { }` iterates
+        // through the address of `p`.
+        if (self.forHeaderOpensWithCaptures()) {
+            while (true) {
+                var cap = ast.ForCapture{ .name = "" };
+                if (self.tokens.tag(self.tok) == .star) {
+                    cap.by_ref = true;
+                    self.advance();
+                }
+                cap.name = self.tokens.slice(self.tok);
+                cap.span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
+                cap.is_raw = self.tokens.flagsOf(self.tok).is_raw;
+                self.advance();
+                try captures.append(self.allocator, cap);
+                if (self.tokens.tag(self.tok) != .comma) break;
+                self.advance();
+            }
+            try self.expect(.kw_in);
+        }
+
+        // Iterables: comma-separated, each a collection expression or a range
+        // (`a..b`, `a..=b`, open `a..`).
         const saved_hdr = self.in_for_header;
         self.in_for_header = true;
         while (true) {
@@ -4453,9 +4473,9 @@ pub const Parser = struct {
                 it.start_exclusive = rt.start_exclusive;
                 it.end_inclusive = rt.end_inclusive;
                 self.advance();
-                // End expression — absent for the open range `a..`, i.e. when
-                // the header continues (`,`), the body starts (`{` / `=>`),
-                // or the capture group follows.
+                // End expression — absent for the open range `a..`: the
+                // header continues (`,`), the body starts (`{` / `=>`), or a
+                // spaced group ends the header.
                 const open = switch (self.tokens.tag(self.tok)) {
                     .comma, .l_brace, .fat_arrow => true,
                     .l_paren => self.parenGroupIsForCapture(),
@@ -4472,32 +4492,6 @@ pub const Parser = struct {
             self.advance();
         }
         self.in_for_header = saved_hdr;
-
-        if (self.tokens.tag(self.tok) == .colon) {
-            return self.fail("for-loop syntax: the ':' before the capture was removed — write `for xs (x) { }` (index via `for xs, 0.. (x, i)`)");
-        }
-
-        // Capture group: `(x)`, `(*x)`, `(a, b, ...)` — positional, one
-        // capture per iterable.
-        if (self.tokens.tag(self.tok) == .l_paren) {
-            self.advance();
-            while (true) {
-                var cap = ast.ForCapture{ .name = "" };
-                if (self.tokens.tag(self.tok) == .star) {
-                    cap.by_ref = true;
-                    self.advance();
-                }
-                if (self.tokens.tag(self.tok) != .identifier) return self.fail("expected capture variable name (a call iterable also needs a capture: `for f(n) (x) { }`)");
-                cap.name = self.tokens.slice(self.tok);
-                cap.span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
-                cap.is_raw = self.tokens.flagsOf(self.tok).is_raw;
-                self.advance();
-                try captures.append(self.allocator, cap);
-                if (self.tokens.tag(self.tok) != .comma) break;
-                self.advance();
-            }
-            try self.expect(.r_paren);
-        }
 
         if (captures.items.len != 0 and captures.items.len != iterables.items.len) {
             return self.fail("for capture count must match the iterable count — one capture per iterable");
@@ -5711,11 +5705,28 @@ pub const Parser = struct {
         return self.tokens.tag(self.tokens.next(close));
     }
 
-    /// For-header capture rule: a top-level `(` group immediately followed by
-    /// `{` or `=>` is the loop capture, so parsePostfix must not consume it
-    /// as call arguments.
+    /// With `current` on the token after `for`: whether the header opens with
+    /// a capture list — `('*')? name` over commas, closed by `in`.
+    fn forHeaderOpensWithCaptures(self: *Parser) bool {
+        var idx = self.tok;
+        while (true) {
+            if (self.tokens.tag(idx) == .star) idx = self.tokens.next(idx);
+            if (self.tokens.tag(idx) != .identifier) return false;
+            idx = self.tokens.next(idx);
+            switch (self.tokens.tag(idx)) {
+                .kw_in => return true,
+                .comma => idx = self.tokens.next(idx),
+                else => return false,
+            }
+        }
+    }
+
+    /// For-header rule: a SPACED top-level `(` group immediately followed by
+    /// `{` or `=>` closes the iterable list, so parsePostfix leaves it for the
+    /// body parse to report. A glued group is call arguments as anywhere else.
     fn parenGroupIsForCapture(self: *Parser) bool {
         if (!self.in_for_header) return false;
+        if (self.tokens.flagsOf(self.tok).glued_left) return false;
         const after = self.tagAfterParenGroup();
         return after == .l_brace or after == .fat_arrow;
     }
@@ -6892,7 +6903,7 @@ test "try rejected inside an onfail body" {
 test "break rejected inside a defer body (transitive through a loop)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "f :: () { defer { for 0..1 (i) { break; } } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { defer { for i in 0..1 { break; } } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 

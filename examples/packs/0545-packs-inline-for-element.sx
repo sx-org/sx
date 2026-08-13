@@ -4,9 +4,9 @@
 // the concrete per-position element viewed through the constraint protocol
 // (same semantics as `xs[i]`); a range capture is a comptime cursor.
 //
-//   inline for xs (x)            — element form
-//   inline for xs, 0.. (x, i)    — element + paired index
-//   inline for 0..xs.len, xs (i, x) — range driver, trailing pack
+//   inline for x in xs            — element form
+//   inline for x, i in xs, 0..    — element + paired index
+//   inline for i, x in 0..xs.len, xs — range driver, trailing pack
 //   inline for xs {}            — captureless; N=0 unrolls nothing
 
 #import "modules/std.sx";
@@ -18,22 +18,22 @@ impl Show for IntBox { show :: (self: *IntBox) -> string { int_to_string(self.v)
 impl Show for StrBox { show :: (self: *StrBox) -> string { self.s } }
 
 bare :: (..xs: Show) {
-    inline for xs (x) {
+    inline for x in xs {
         print("bare: {}\n", x.show());
     }
 }
 elem_and_index :: (..xs: Show) {
-    inline for xs, 0.. (x, i) {
+    inline for x, i in xs, 0.. {
         print("{}: {}\n", i, x.show());
     }
 }
 range_driver :: (..xs: Show) {
-    inline for 0..xs.len, xs (i, x) {
+    inline for i, x in 0..xs.len, xs {
         print("r{}: {}\n", i, x.show());
     }
 }
 offset_index :: (..xs: Show) {
-    inline for xs, 10.. (x, i) {
+    inline for x, i in xs, 10.. {
         print("{} -> {}\n", i, x.show());
     }
 }
@@ -43,12 +43,12 @@ captureless :: (..xs: Show) {
     print("ran {}\n", n);
 }
 value_pos :: (..xs: Show) {
-    inline for xs (x) {
+    inline for x in xs {
         print("val: {}\n", x);
     }
 }
 empty :: (..xs: Show) {
-    inline for xs (x) { print("never\n"); }
+    inline for x in xs { print("never\n"); }
     print("empty ok\n");
 }
 

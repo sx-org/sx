@@ -19,7 +19,7 @@ VStack :: @OpenVariant(View) {
     size_that_fits :: (self: *VStack, proposal: ProposedSize) -> Size {
         w := 0.0;
         h := 0.0;
-        for self.children (c) {
+        for c in self.children {
             s := c.size_that_fits(proposal);
             if s.width > w { w = s.width; }
             h += s.height;
@@ -32,7 +32,7 @@ VStack :: @OpenVariant(View) {
 
     layout :: (self: *VStack, bounds: Frame) {
         y := bounds.origin.y;
-        for self.children (c) {
+        for c in self.children {
             s := c.size_that_fits(ProposedSize.fixed(bounds.size.width, bounds.size.height));
             c.layout(Frame.make(bounds.origin.x, y, bounds.size.width, s.height));
             y += s.height + self.spacing;
@@ -41,7 +41,7 @@ VStack :: @OpenVariant(View) {
 
     render :: (self: *VStack, rc: *RenderContext, frame: Frame) {
         y := frame.origin.y;
-        for self.children (c) {
+        for c in self.children {
             s := c.size_that_fits(ProposedSize.fixed(frame.size.width, frame.size.height));
             c.render(rc, Frame.make(frame.origin.x, y, frame.size.width, s.height));
             y += s.height + self.spacing;

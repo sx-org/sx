@@ -58,13 +58,13 @@ Identity :: struct {
     // Every site starts the build at occurrence zero, which is what makes an
     // unchanged tree hand out unchanged ids.
     begin_build :: (self: *Identity) {
-        for self.counts (*c) {
+        for *c in self.counts {
             c.count = 0
         }
     }
 
     next_occurrence :: (self: *Identity, key: u64) -> i64 {
-        for self.counts, 0.. (c, i) {
+        for c, i in self.counts, 0.. {
             if c.key == key {
                 n := c.count
                 self.counts.items[i].count = n + 1

@@ -5,7 +5,7 @@
 //
 // The same lowering arm pins two more shapes, and diagnostics accumulate so none
 // masks another:
-// - a by-ref loop capture (`for xs (*x)`) assigned WITHOUT `.*` — there is no
+// - a by-ref loop capture (`for *x in xs`) assigned WITHOUT `.*` — there is no
 // store path through the bare name; the error points at `x.* = ...`;
 // - `_ OP= expr` — the discard has no value to read; only the plain `_ = expr`
 // discard idiom is allowed.
@@ -16,7 +16,7 @@ main :: () -> i32 {
     totl = 42;          // typo of `total` — plain `=` to an undeclared name
     cnt += 1;           // compound assign to an undeclared name
     xs : [2]i64 = .[1, 2];
-    for xs (*x) {
+    for *x in xs {
         x = 99;         // by-ref capture assigned without `.*`
     }
     _ += 1;             // compound assign to the discard

@@ -816,13 +816,11 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
 
             const elem_ty = self.getElementType(data_ty);
             if (elem_ty == .unresolved) {
-                // Not a collection. The common trip: `for f(n) { }` — the
-                // trailing parens are the CAPTURE, so the iterable is `f`.
                 if (self.diagnostics) |d| {
                     if (data_ty == .unresolved) {
-                        d.addFmt(.err, it.expr.span, "cannot iterate this expression — if the parens were call arguments, a call iterable also needs a capture (`for f(n) (x) {{ }}`) or parentheses (`for (f(n)) {{ }}`)", .{});
+                        d.addFmt(.err, it.expr.span, "cannot iterate this expression", .{});
                     } else {
-                        d.addFmt(.err, it.expr.span, "cannot iterate a value of type '{s}' — if the parens were call arguments, a call iterable also needs a capture (`for f(n) (x) {{ }}`) or parentheses (`for (f(n)) {{ }}`)", .{self.module.types.typeName(data_ty)});
+                        d.addFmt(.err, it.expr.span, "cannot iterate a value of type '{s}'", .{self.module.types.typeName(data_ty)});
                     }
                 }
                 return self.builder.constInt(0, .void);
@@ -940,10 +938,10 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
 /// substitution, typing, and the interface-only constraint check — and a
 /// type-list capture binds as a type param, legal in type position.
 ///
-///   inline for 0..xs.len (i) { xs[i].show(); }      // index form
-///   inline for xs (x) { x.show(); }                 // element form
-///   inline for xs, 0.. (x, i) { ... }               // element + index
-///   inline for TYPES (T) { v : T = ---; }           // type-list form
+///   inline for i in 0..xs.len { xs[i].show(); }      // index form
+///   inline for x in xs { x.show(); }                 // element form
+///   inline for x, i in xs, 0.. { ... }               // element + index
+///   inline for T in TYPES { v : T = ---; }           // type-list form
 pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     const IterClass = union(enum) {
         range: i64, // comptime start value
@@ -963,7 +961,7 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
             if (it.start_exclusive) start += 1;
             if (idx == 0) {
                 const end_node = it.range_end orelse {
-                    if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: the first range must be bounded — `inline for 0..N (i) {{ }}`", .{});
+                    if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: the first range must be bounded — `inline for i in 0..N {{ }}`", .{});
                     return self.builder.constInt(0, .void);
                 };
                 var end = self.evalComptimeInt(end_node) orelse {
@@ -998,12 +996,12 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
             }
             classes.append(self.alloc, .{ .type_list = list }) catch unreachable;
         } else {
-            if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: each iterable must be a comptime range, a pack, or a type list — `inline for 0..N (i) {{ }}` / `inline for xs (x) {{ }}` / `inline for TYPES (T) {{ }}`", .{});
+            if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: each iterable must be a comptime range, a pack, or a type list — `inline for i in 0..N {{ }}` / `inline for x in xs {{ }}` / `inline for T in TYPES {{ }}`", .{});
             return self.builder.constInt(0, .void);
         }
     }
 
-    // `(*x)` on a pack element: there is no storage to borrow — an element
+    // `*x` on a pack element: there is no storage to borrow — an element
     // is an AST-substituted call argument.
     for (fe.captures, 0..) |cap, ci| {
         if (cap.by_ref and ci < classes.items.len and classes.items[ci] == .pack) {
@@ -1123,7 +1121,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     var is_type_match = isTypeCategoryMatch(me);
     var subject = self.lowerExpr(me.subject);
     var subject_ty = self.inferExprType(me.subject);
-    // A pointer subject (e.g. a `for xs: (*x)` element capture) matches
+    // A pointer subject (e.g. a `for *x in xs` element capture) matches
     // through the deref (specs §for, by-reference capture): deref to the
     // pointed-to tagged union/enum so tag/payload extraction works, and to
     // an integer/bool pointee so the value drives the switch directly.

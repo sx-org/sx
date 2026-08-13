@@ -2,13 +2,13 @@
 // alias into storage the loop / match / error machinery owns. Every by-value
 // capture family is covered, and each `=` below gets a SHAPE-AWARE "cannot assign
 // to immutable capture" message: only the for-loop ELEMENT form suggests the
-// `(*x)` by-ref write-back, since its container storage exists. Range indexes,
+// `*x` by-ref write-back, since its container storage exists. Range indexes,
 // match payloads, catch/onfail bindings and pack-element aliases have no storage
 // behind them, so they get the copy-into-a-`:=`-local advice alone. A
 // function-local `::` const rides the same enforcement with the constant-family
 // message.
 //
-// The sibling by-REF misuse is `for xs (*x) { x = v }`.
+// The sibling by-REF misuse is `for *x in xs { x = v }`.
 
 #import "modules/std.sx";
 
@@ -18,7 +18,7 @@ E :: error { Bad, Empty }
 must :: (n: i32) -> !E { if n == 0 { raise error.Empty; } return; }
 
 pack_mut :: (..xs: i64) {
-    inline for xs (x) { x = 999; }          // pack-element alias — immutable
+    inline for x in xs { x = 999; }          // pack-element alias — immutable
 }
 
 fail_note :: () -> !E {
@@ -29,11 +29,11 @@ fail_note :: () -> !E {
 main :: () -> i32 {
     xs : [3]i64 = .[10, 20, 30];
 
-    // 1. for-loop element capture — the one shape with a (*x) write-back hint
-    for xs (x) { x += 100; }
+    // 1. for-loop element capture — the one shape with a `*x` write-back hint
+    for x in xs { x += 100; }
 
     // 2. paired range index capture — no storage, no (*i) spelling
-    for xs, 0.. (v, i) { i = 99; }
+    for v, i in xs, 0.. { i = 99; }
 
     // 3. match-arm payload capture (tagged union)
     s : Shape = .circle(3.0);
@@ -60,7 +60,7 @@ main :: () -> i32 {
 
     // 6. multi-assign spelling — capture on the LHS
     a := 0;
-    for xs (x) { x, a = 5, 6; }
+    for x in xs { x, a = 5, 6; }
 
     // 7. function-local '::' const — same enforcement, constant-family message
     c :: 5;

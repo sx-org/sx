@@ -708,7 +708,7 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
             }
         } else {
             // Method expects a value `T` but the receiver is a `*T` (e.g. a
-            // `for xs: (*x)` by-ref capture) — deref to pass the value.
+            // `for *x in xs` by-ref capture) — deref to pass the value.
             if (!obj_ty.isBuiltin()) {
                 const oi = self.module.types.get(obj_ty);
                 if (oi == .pointer and oi.pointer.pointee == first_param_ty) {
@@ -833,7 +833,7 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
 }
 
 pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.Span) Ref {
-    // `inline for xs (x)` element capture as the receiver: re-enter with the
+    // `inline for x in xs` element capture as the receiver: re-enter with the
     // synthesized `xs[<i>]` as the object, so every pack-element rule below
     // (interface-only constraint check, projection, substitution) sees the
     // canonical `xs[i].<field>` shape.
@@ -3088,7 +3088,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 const sb = scope.lookupBoundary(id.name);
                 if (sb.crossed_fn_boundary) break :blk self.diagEnclosingLocalRef(id.name, node.span);
                 if (sb.binding) |binding| {
-                    // `inline for xs (x)` element capture — lower the
+                    // `inline for x in xs` element capture — lower the
                     // synthesized `xs[<i>]` it aliases.
                     if (binding.pack_elem) |elem| break :blk self.lowerExpr(elem);
                     // Flow narrowing: a name proven present by a
@@ -4279,7 +4279,7 @@ pub fn lowerAsmExpr(self: *Lowering, ae: *const ast.AsmExpr, span: ast.Span) Ref
     } }, result_ty);
 }
 
-/// If `node` names a `for xs: (*x)` by-ref capture (an `*elem`), returns
+/// If `node` names a `for *x in xs` by-ref capture (an `*elem`), returns
 /// the element (pointee) type so a value-position use can auto-deref it.
 pub fn refCapturePointee(self: *Lowering, node: *const Node) ?TypeId {
     if (node.data != .identifier) return null;
@@ -4476,7 +4476,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         }
     }
     var lhs = self.lowerExpr(bop.lhs);
-    // A `for xs: (*x)` capture is a pointer; in a value position (here, an
+    // A `for *x in xs` capture is a pointer; in a value position (here, an
     // operand) it auto-derefs to the element.
     const lhs_ref_pointee = self.refCapturePointee(bop.lhs);
     if (lhs_ref_pointee) |p| lhs = self.builder.load(lhs, p);

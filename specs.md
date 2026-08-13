@@ -178,7 +178,7 @@ M :: union { `i1: i32; }          // union tag
 `u16 :: enum { A; B; }            // type-declaration name
 `u8, rest := pair();              // destructure name
 if `i16 := maybe() { }            // optional binding
-for xs, 0.. (`bool, `u16) { }     // for captures
+for `bool, `u16 in xs, 0.. { }    // for captures
 x catch (`i2) { }                   // catch tag binding
 ```
 
@@ -358,7 +358,6 @@ scaled :: ufcs (v: i64) -> i64 => v * 2;      // ufcs declaration
 Pair   :: struct ($T: Type) { a: $T; b: $T; } // struct type params
 Show   :: protocol (T) { render :: (self: *Self) -> T; }
 Padded :: @OpenVariant(View) ($T: Type) { … } // generic open-set member
-for xs (x) { … }                              // for capture
 v := risky() catch (e) -1;                    // catch binding
 onfail (e) { … }                              // onfail binding
 ```
@@ -1240,10 +1239,10 @@ Serialize :: protocol tagged {
 
 SERIALIZABLE :: .[Point, Rect, Color, Widget];
 
-inline for SERIALIZABLE (T) {
+inline for T in SERIALIZABLE {
     impl Serialize for T {
         write :: (self: *T, out: *Buf) {
-            inline for 0..struct_field_count(T) (i) {
+            inline for i in 0..struct_field_count(T) {
                 write_field(out, struct_field_name(T, i),
                             struct_field_value(self.*, i));
             }
@@ -3404,7 +3403,7 @@ sum :: (n: i32, ..) -> i64 abi(.c) {
     @va_start(*ap);
     defer @va_end(*ap);
     total: i64 = 0;
-    for 0..n (i) { total += xx @va_arg(i32, *ap); }
+    for i in 0..n { total += xx @va_arg(i32, *ap); }
     return total;
 }
 ```
@@ -3452,7 +3451,7 @@ vmprintf :: (fmt: cstring, ap: @VaList) -> ?cstring extern;
 
 sx_vsum :: (n: i32, ap: @VaList) -> i64 export {
     total: i64 = 0;
-    for 0..n (i) { total += xx @va_arg(i32, *ap); }
+    for i in 0..n { total += xx @va_arg(i32, *ap); }
     return total;
 }
 ```
@@ -3541,9 +3540,9 @@ may do, regardless of the concrete arg types at any particular call site.
 |---|---|---|
 | Length | `xs.len` | comptime int (field-style, not `len(xs)`) |
 | Index | `xs[i]` | i-th element; `i` must be comptime |
-| Comptime unroll (index) | `inline for 0..xs.len (i) { ... }` | unrolled loop; cursor `i` is a comptime constant per iteration; not `#for` |
-| Comptime unroll (element) | `inline for xs (x) { ... }` | unrolled loop; `x` is the concrete i-th element, viewed through the constraint protocol (≡ `xs[i]`) |
-| Comptime unroll (element + index) | `inline for xs, 0.. (x, i) { ... }` | multi-iterable parity with the runtime `for`: position 0 drives the count, a trailing open range pairs the cursor |
+| Comptime unroll (index) | `inline for i in 0..xs.len { ... }` | unrolled loop; cursor `i` is a comptime constant per iteration; not `#for` |
+| Comptime unroll (element) | `inline for x in xs { ... }` | unrolled loop; `x` is the concrete i-th element, viewed through the constraint protocol (≡ `xs[i]`) |
+| Comptime unroll (element + index) | `inline for x, i in xs, 0.. { ... }` | multi-iterable parity with the runtime `for`: position 0 drives the count, a trailing open range pairs the cursor |
 | Projection | `xs.field` | see "Pack projection" |
 | Spread → call args | `..xs` / `..xs.field` | expands to N positional args |
 | Spread → aggregate value | `.{..xs}` / `.{..xs.field}` | materializes the pack (anonymous positional struct; a tuple against a `Tuple(…)` target) |
@@ -3596,8 +3595,8 @@ suggestion:
   variadic `..xs: []P` (a runtime slice) instead of a pack `..xs: P`;
 - returning it (`return xs;`) → return a materialized `.{..xs}` (and make the return
   type that tuple);
-- iterating it (`for xs (x)`, `xs[runtime_i]`) → `inline for xs (x)` (or
-  `inline for 0..xs.len (i)` for the index) for a comptime unroll, or take
+- iterating it (`for x in xs`, `xs[runtime_i]`) → `inline for x in xs` (or
+  `inline for i in 0..xs.len` for the index) for a comptime unroll, or take
   `..xs: []P` for a runtime loop.
 
 The recurring runtime escape hatch is the **slice-of-protocol variadic**
@@ -3636,7 +3635,7 @@ map :: (mapper: Closure(..sources.T) -> $R, ..sources: ValueListenable)
   c.own_allocator = context.allocator;
   c.mapper        = mapper;
   c.sources       = .{..sources};           // pack-to-tuple materialization
-  inline for 0..sources.len (i) {           // comptime unroll over the pack
+  inline for i in 0..sources.len {           // comptime unroll over the pack
     sources[i].addListener((_) => c.recompute());
   }
   c.value = mapper(..sources.value);        // pack spread + projection in a call
@@ -4342,7 +4341,7 @@ collect :: (content: $B/@BuildBlock(View)) -> List(View) {
 
 rows := collect() {
     Label{ text = "Status" };
-    for items (item) { Row{ value = item }; }
+    for item in items { Row{ value = item }; }
 };
 ```
 
@@ -4397,7 +4396,7 @@ or without a `;`:
 ```sx
 collect() {
     if show { Label{ text = "in a branch" } }        // publishes
-    for rows (row) { Label{ text = row } }           // publishes, once per row
+    for row in rows { Label{ text = row } }           // publishes, once per row
     { Label{ text = "in bare braces" }; }            // publishes; the `;` only separates
     Label{ text = "at the top level" }               // publishes
 }
@@ -5202,30 +5201,31 @@ while i < 10 {
 ### For Loop
 
 ```sx
-for it1, it2, ... (c1, c2, ...) { }   // parallel iteration, one capture per iterable
-for it1, it2, ... (c1, c2, ...) => stmt;   // arrow body — a single statement
+for c1, c2, ... in it1, it2, ... { }        // parallel iteration, one capture per iterable
+for c1, c2, ... in it1, it2, ... => stmt;   // arrow body — a single statement
 ```
 
-A `for` header is a comma-separated list of **iterables** followed by an
-optional **capture group** and the body. Each iterable is a collection
-(array, slice, string, `List(T)`-like struct) or a range:
+A `for` header is an optional comma-separated list of **captures**, `in`, and
+a comma-separated list of **iterables**, then the body. Each iterable is a
+collection (array, slice, string, `List(T)`-like struct) or a range:
 
 ```sx
-for xs (x) { }                      // collection, element capture
-for 0..n (i) { }                    // range, `end` exclusive; cursor i (i64)
-for 1..=5 (a) { }                   // `..=` — end inclusive: 1 2 3 4 5
+for x in xs { }                     // collection, element capture
+for i in 0..n { }                   // range, `end` exclusive; cursor i (i64)
+for a in 1..=5 { }                  // `..=` — end inclusive: 1 2 3 4 5
 for 0..5 { }                        // no captures — body runs 5 times
 for xs { }                          // no captures — body runs xs.len times
-for xs, 0.. (x, i) { }              // THE index idiom: open range follows along
-for xs, ys (x, y) { }               // parallel (zip) iteration
-for 1..=5, 0.. (a, b) { }           // a: 1..5, b: 0..4 (end inferred)
-for a4, b4, 100.. (p, q, k) { }     // any number of positions
-for xs (x) => sum += x;             // arrow body
-inline for 0..n (i) { }             // comptime unroll; first range bounded
-inline for xs, 0.. (x, i) { }       // comptime unroll over a PACK: x = the
+for x, i in xs, 0.. { }             // THE index idiom: open range follows along
+for x, y in xs, ys { }              // parallel (zip) iteration
+for a, b in 1..=5, 0.. { }          // a: 1..5, b: 0..4 (end inferred)
+for p, q, k in a4, b4, 100.. { }    // any number of positions
+for x in xs => sum += x;            // arrow body
+for x in f(n) { }                   // a call iterable is an ordinary call
+inline for i in 0..n { }            // comptime unroll; first range bounded
+inline for x, i in xs, 0.. { }      // comptime unroll over a PACK: x = the
                                     // concrete i-th element (see "Variadic
                                     // Heterogeneous Type Packs")
-inline for TYPES (T) { }            // comptime unroll over a `[N]Type` list:
+inline for T in TYPES { }           // comptime unroll over a `[N]Type` list:
                                     // T is a comptime Type, legal in type
                                     // position (see "Protocols" §3)
 ```
@@ -5235,12 +5235,12 @@ inclusive, `<` exclusive — with defaults start-inclusive, end-exclusive
 (`a..b` ≡ `a=..<b`; `a..=b` is the short end-inclusive spelling):
 
 ```sx
-for 0<..<5 (i) { }    // 1 2 3 4      — both ends exclusive
-for 0=..=5 (i) { }    // 0 1 2 3 4 5  — both ends inclusive
-for 0<..=5 (i) { }    // 1 2 3 4 5
-for 0=..<5 (i) { }    // 0 1 2 3 4    — explicit spelling of `0..5`
-for 0..<5  (i) { }    // 0 1 2 3 4    — explicit spelling of `0..5`
-for xs, 2<.. (x, i) { }  // open range with an exclusive start: i = 3, 4, …
+for i in 0<..<5 { }       // 1 2 3 4      — both ends exclusive
+for i in 0=..=5 { }       // 0 1 2 3 4 5  — both ends inclusive
+for i in 0<..=5 { }       // 1 2 3 4 5
+for i in 0=..<5 { }       // 0 1 2 3 4    — explicit spelling of `0..5`
+for i in 0..<5 { }        // 0 1 2 3 4    — explicit spelling of `0..5`
+for x, i in xs, 2<.. { }  // open range with an exclusive start: i = 3, 4, …
 ```
 
 A marker after the dots (`..=` / `..<`) makes the end expression mandatory;
@@ -5257,45 +5257,41 @@ its own cursor; consequences:
 - a non-first collection shorter than the first is read **past its length**
   on mismatch — the first iterable is the authoritative one.
 
-**Captures are positional**: the group binds one name per iterable, in
+**Captures are positional**: they bind one name per iterable, in
 order — range positions bind the cursor value (i64), collection positions
-bind the element. An empty group is omitted entirely (no parens). Capture
-names shadow outer bindings, like any inner declaration. Use `_` to discard
-a position. An index alongside the elements is written `for xs, 0.. (x, i)`.
+bind the element. With nothing to bind, both the captures and `in` are
+omitted. Capture names shadow outer bindings, like any inner declaration.
+Use `_` to discard a position. An index alongside the elements is written
+`for x, i in xs, 0..`.
 
-**The capture/call rule.** In a for header, the parenthesized group
-immediately before `{` or `=>` is the capture; every earlier top-level paren
-group is ordinary call syntax. So `for zip(a, b) (x, y) { }` calls
-`zip(a, b)` and captures `(x, y)`, while `for f(n) { }` reads `(n)` as the
-capture — making the iterable `f` itself, which errors ("cannot iterate")
-with a hint. A call iterable therefore always needs a capture group; to
-iterate a call result without one, parenthesize (`for (f(n)) { }`) or bind
-it to a local first. A leading paren group is a normal grouped expression
-(`for (a ++ b) (x)` iterates the grouped value).
+**The iterables are ordinary expressions.** Nothing in the header is
+reserved for captures, so a call iterable is written as it is anywhere else
+(`for x in f(n) { }`, `for x, y in zip(a, b) { }`) — no parenthesizing and
+no intermediate binding.
 
 **By-value captures are immutable.** This rule is not
 specific to for-loop element captures — it holds for *every* by-value
 capture binding: the for-loop element and the paired range index
-(`for xs, 0.. (x, i)` — both `x` and `i`), a match-arm payload capture
+(`for x, i in xs, 0..` — both `x` and `i`), a match-arm payload capture
 (`case .circle: (r)`), a `catch` / `onfail` error binding
 (`f() catch (e)`), and an `inline for` pack-element alias
-(`inline for xs (x)`). A capture is a read-only alias into storage the
+(`inline for x in xs`). A capture is a read-only alias into storage the
 loop/match/error machinery owns, not a fresh mutable local; assigning to
 it bare (`x = v`, `i = 99`, `r = 5.0`, `e = error.Bad`) is a compile
 error rather than a silent no-op. To mutate, copy the capture into a
 `:=` local (`v := x; v += 100;`) — the copy is yours to change and
 cannot accidentally look like it writes back. To write *through* into
-the container, use a for-loop **by-reference** capture (`for xs (*x)`,
+the container, use a for-loop **by-reference** capture (`for *x in xs`,
 below) and store via the pointer (`x.* = v`); range positions and
 match/catch payloads have no container storage to write back into, so
 they are copy-into-a-local only. The diagnostic is shape-aware: only the
-for-loop element form suggests `(*x)`; the storage-less shapes get the
+for-loop element form suggests `*x`; the storage-less shapes get the
 copy-into-a-`:=`-local advice alone. A **function-local `::` constant**
 (`c :: 5`) is enforced by the same mechanism — assigning to it is a
 compile error with the constant-family message, mirroring module-level
 `::` consts. (Rationale: mutating a per-iteration
 copy that vanishes at the next iteration is almost always a bug — the
-author meant `(*x)`. This also matches the copy-semantics chosen for the
+author meant `*x`. This also matches the copy-semantics chosen for the
 `xx`-erasure materialization, where a by-value capture is
 likewise snapshotted into a fresh temp rather than written back.)
 
@@ -5307,7 +5303,7 @@ likewise snapshotted into a fresh temp rather than written back.)
 
 ```sx
 events := plat.poll_events();        // []Event
-for events (*ev) {                   // ev : *Event — no copy
+for *ev in events {                  // ev : *Event — no copy
     pipeline.dispatch_event(ev);     // passes the pointer
 }
 ```
@@ -5315,13 +5311,13 @@ for events (*ev) {                   // ev : *Event — no copy
 The `inline` variant requires a single bounded range with comptime-known
 bounds and unrolls the body once per value, binding the cursor as a
 compile-time constant (so it can index a pack:
-`inline for 0..xs.len (i) { xs[i].m() }`).
+`inline for i in 0..xs.len { xs[i].m() }`).
 
 `break;` exits the loop. `continue;` skips to the next iteration. Both run
 the iteration's pending `defer`s first (see Defer).
 ```sx
 arr : [5]i32 = .[1, 2, 3, 4, 5];
-for arr, 0.. (val, ix) {
+for val, ix in arr, 0.. {
     if ix == 2 { continue; }
     print("{}\n", val);
 }

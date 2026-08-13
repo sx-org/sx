@@ -7,14 +7,14 @@
 
 main :: () {
     s := 0;
-    inline for -2..1 (i) { s += i; }
+    inline for i in -2..1 { s += i; }
     print("inline for -2..1 sum = {}\n", s);   // -2 + -1 + 0 = -3
 
     r := 0;
-    for -2..1 (i) { r += i; }
+    for i in -2..1 { r += i; }
     print("for -2..1 sum = {}\n", r);          // -2 + -1 + 0 = -3 (runtime parity)
 
     e := 0;
-    inline for 0..(-2.0) (i) { e += i; }
+    inline for i in 0..(-2.0) { e += i; }
     print("inline for 0..(-2.0) sum = {}\n", e);  // empty range -> 0 iterations
 }

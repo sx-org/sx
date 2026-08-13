@@ -86,7 +86,7 @@ main :: () -> i32 {
         Label{ text = "last" };
     };
     print("collected {}\n", kept.len);
-    for kept (child) {
+    for child in kept {
         print("  {}\n", child.draw());
     }
     0

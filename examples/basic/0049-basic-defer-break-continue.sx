@@ -5,14 +5,14 @@
 #import "modules/std.sx";
 
 main :: () -> i32 {
-    for 0..3 (i) {
+    for i in 0..3 {
         defer print("cleanup {}\n", i);
         if i == 1 { break; }
         print("body {}\n", i);
     }
     print("after break loop\n");
 
-    for 0..3 (i) {
+    for i in 0..3 {
         defer print("c2 {}\n", i);
         if i == 1 { continue; }
         print("b2 {}\n", i);
@@ -31,7 +31,7 @@ main :: () -> i32 {
 
     // A break inside a nested block drains the nested block's defers AND the
     // loop body's, in LIFO order.
-    for 0..2 (j) {
+    for j in 0..2 {
         defer print("outer {}\n", j);
         {
             defer print("inner {}\n", j);

@@ -80,7 +80,7 @@ FocusRouter :: struct {
 
     index_of :: (self: *FocusRouter, id: u64) -> i64 {
         if self.snap == null then return -1
-        for self.snap.focus_list, 0.. (r, i) {
+        for r, i in self.snap.focus_list, 0.. {
             if r.id == id then return i
         }
         -1

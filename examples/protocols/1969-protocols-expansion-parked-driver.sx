@@ -35,7 +35,7 @@ inline if POINTER_SIZE == 8 {
 SHAPES :: .[Widget, Panel];
 inline if has_impl(Tally, Panel) { SECOND :: 1; } else { SECOND :: 0; }
 
-inline for SHAPES (T) {
+inline for T in SHAPES {
     impl Tally for T { count :: (self: *T) -> i64 { self.n } }
 }
 

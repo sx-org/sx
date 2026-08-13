@@ -27,7 +27,7 @@ sum_ints :: (n: i32, ..) -> i64 abi(.c) {
     @va_start(*ap);
     defer @va_end(*ap);
     total: i64 = 0;
-    for 0..n (i) {
+    for i in 0..n {
         total += xx @va_arg(i32, *ap);
     }
     return total;

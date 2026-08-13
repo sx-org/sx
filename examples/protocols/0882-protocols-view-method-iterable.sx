@@ -22,13 +22,13 @@ impl P for C {
 main :: () {
     c := C{};
     v : *P = c;
-    for v.items() (*x) { print("{}\n", x.*); }
+    for *x in v.items() { print("{}\n", x.*); }
     // Parenthesized spelling too.
     total := 0;
-    for (v.items()) (x) { total += x; }
+    for x in (v.items()) { total += x; }
     print("total: {}\n", total);
     // Owned-receiver parity.
     o := c.(P, context.allocator);
-    for o.items() (x) { total += x; }
+    for x in o.items() { total += x; }
     print("both:  {}\n", total);
 }

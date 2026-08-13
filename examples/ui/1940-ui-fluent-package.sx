@@ -30,7 +30,7 @@ main :: () -> i32 {
     print("children {}\n", stack.children.len);
 
     // The set answers for the member each element carries.
-    for stack.children (*c) {
+    for *c in stack.children {
         print("  {}\n", type_of(c.*));
     }
 

@@ -44,7 +44,7 @@ StackMetrics :: struct {
 // a column or heightens a row, and each one counts toward the slack share.
 measure_column :: (children: *List(View), width: ?f32, spacing: f32) -> StackMetrics {
     m := StackMetrics{};
-    for children (*c) {
+    for *c in children {
         if sp := c.*.(?Spacer) {
             m.main += sp.min_length;
             m.spacers += 1;
@@ -60,7 +60,7 @@ measure_column :: (children: *List(View), width: ?f32, spacing: f32) -> StackMet
 
 measure_row :: (children: *List(View), height: ?f32, spacing: f32) -> StackMetrics {
     m := StackMetrics{};
-    for children (*c) {
+    for *c in children {
         if sp := c.*.(?Spacer) {
             m.main += sp.min_length;
             m.spacers += 1;
@@ -95,7 +95,7 @@ VStack :: @OpenVariant(View) {
         m := measure_column(*self.children, bounds.size.width, self.spacing);
         extra := spacer_share(bounds.size.height - m.main, m.spacers);
         y := bounds.origin.y;
-        for self.children (*c) {
+        for *c in self.children {
             f := column_frame(c, bounds, self.alignment, y, extra);
             c.layout(f);
             y += f.size.height + self.spacing;
@@ -106,7 +106,7 @@ VStack :: @OpenVariant(View) {
         m := measure_column(*self.children, frame.size.width, self.spacing);
         extra := spacer_share(frame.size.height - m.main, m.spacers);
         y := frame.origin.y;
-        for self.children (*c) {
+        for *c in self.children {
             f := column_frame(c, frame, self.alignment, y, extra);
             c.render(rc, f);
             y += f.size.height + self.spacing;
@@ -128,7 +128,7 @@ HStack :: @OpenVariant(View) {
         m := measure_row(*self.children, bounds.size.height, self.spacing);
         extra := spacer_share(bounds.size.width - m.main, m.spacers);
         x := bounds.origin.x;
-        for self.children (*c) {
+        for *c in self.children {
             f := row_frame(c, bounds, self.alignment, x, extra);
             c.layout(f);
             x += f.size.width + self.spacing;
@@ -139,7 +139,7 @@ HStack :: @OpenVariant(View) {
         m := measure_row(*self.children, frame.size.height, self.spacing);
         extra := spacer_share(frame.size.width - m.main, m.spacers);
         x := frame.origin.x;
-        for self.children (*c) {
+        for *c in self.children {
             f := row_frame(c, frame, self.alignment, x, extra);
             c.render(rc, f);
             x += f.size.width + self.spacing;
@@ -154,7 +154,7 @@ ZStack :: @OpenVariant(View) {
     size_that_fits :: (self: *ZStack, proposal: ProposedSize) -> Size {
         w := 0.0;
         h := 0.0;
-        for self.children (*c) {
+        for *c in self.children {
             s := c.size_that_fits(proposal);
             if s.width > w { w = s.width; }
             if s.height > h { h = s.height; }
@@ -163,11 +163,11 @@ ZStack :: @OpenVariant(View) {
     }
 
     layout :: (self: *ZStack, bounds: Frame) {
-        for self.children (*c) { c.layout(stacked_frame(c, bounds, self.alignment)); }
+        for *c in self.children { c.layout(stacked_frame(c, bounds, self.alignment)); }
     }
 
     render :: (self: *ZStack, rc: *RenderContext, frame: Frame) {
-        for self.children (*c) { c.render(rc, stacked_frame(c, frame, self.alignment)); }
+        for *c in self.children { c.render(rc, stacked_frame(c, frame, self.alignment)); }
     }
 }
 
@@ -223,12 +223,12 @@ zstack :: (alignment: Alignment = ALIGN_CENTER, content: $B/@BuildBlock(View)) -
 // block collected through `collectViews`.
 fold_vstack :: (items: []View, spacing: f32, alignment: HAlignment = .leading) -> VStack {
     vs := VStack{ spacing = spacing, alignment = alignment };
-    for items (v) { vs.children.append(v); }
+    for v in items { vs.children.append(v); }
     vs
 }
 
 fold_hstack :: (items: []View, spacing: f32, alignment: VAlignment = .center) -> HStack {
     hs := HStack{ spacing = spacing, alignment = alignment };
-    for items (v) { hs.children.append(v); }
+    for v in items { hs.children.append(v); }
     hs
 }

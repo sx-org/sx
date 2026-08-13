@@ -10,7 +10,7 @@ Box :: struct {
 
 sum_ptr :: (xs: *List(i64)) -> i64 {
     total : i64 = 0;
-    for xs (n) { total = total + n; }         // iterate through a *List
+    for n in xs { total = total + n; }         // iterate through a *List
     total
 }
 
@@ -21,12 +21,12 @@ main :: () -> i32 {
     xs.append(30);
 
     s : i64 = 0;
-    for xs (n) { s = s + n; }                 // value capture
+    for n in xs { s = s + n; }                 // value capture
     print("sum {}\n", s);                      // 60
 
-    for xs (*n) { n.* = n + 100; }            // by-ref: writes back
+    for *n in xs { n.* = n + 100; }            // by-ref: writes back
     s = 0;
-    for xs (n) { s = s + n; }
+    for n in xs { s = s + n; }
     print("sum2 {}\n", s);                     // 360
 
     print("via ptr {}\n", sum_ptr(*xs));       // 360
@@ -34,7 +34,7 @@ main :: () -> i32 {
     bs := List(Box){};
     bs.append(.{ v = 7 });
     bt : i64 = 0;
-    for bs (*b) { bt = bt + b.boxed(); }      // *Box receiver, value-self method
+    for *b in bs { bt = bt + b.boxed(); }      // *Box receiver, value-self method
     print("boxes {}\n", bt);                   // 7
     0
 }

@@ -1154,7 +1154,7 @@ pub const Analyzer = struct {
                     try self.analyzeNode(arg);
                 }
                 // Mirror lower.zig: passing a `*T` where a `T` value is expected
-                // (a `for xs: (*m)` capture, a `*T` parameter, any pointer local).
+                // (a `for *m in xs` capture, a `*T` parameter, any pointer local).
                 // Restricted to direct (identifier) calls so args align 1:1 with
                 // the declared params — UFCS/method calls drop the receiver.
                 if (call.callee.data == .identifier) {
@@ -2446,9 +2446,9 @@ test "sema: for-loop captures resolve element, by-ref pointer, and range cursor"
         "List :: struct ($T: Type) { items: [*]T = null; len: i64 = 0; }" ++
         "Game :: struct { legal: List(Move);" ++
         "  scan :: (self: *Game) {" ++
-        "    for self.legal (m) { a := m.flag; }" ++
-        "    for self.legal (*p) { b := p.flag; }" ++
-        "    for 0..10 (i) { c := i; }" ++
+        "    for m in self.legal { a := m.flag; }" ++
+        "    for *p in self.legal { b := p.flag; }" ++
+        "    for i in 0..10 { c := i; }" ++
         "  } }";
     var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();

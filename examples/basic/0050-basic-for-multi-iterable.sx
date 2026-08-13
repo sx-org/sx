@@ -2,7 +2,7 @@
 
 pair_sum :: (xs: []i64, ys: []i64) -> i64 {
     total := 0;
-    for xs, ys (x, y) { total += x * y; }
+    for x, y in xs, ys { total += x * y; }
     total
 }
 
@@ -13,12 +13,12 @@ make :: () -> [3]i64 {
 
 main :: () -> i32 {
     // Agra's example: a 1..5 inclusive, b open-ended following along.
-    for 1..=5, 0.. (a, b) { print("{}:{} ", a, b); }
+    for a, b in 1..=5, 0.. { print("{}:{} ", a, b); }
     print("\n");
 
     // Index idiom.
     xs : [3]i64 = .[10, 20, 30];
-    for xs, 0.. (x, i) { print("[{}]={} ", i, x); }
+    for x, i in xs, 0.. { print("[{}]={} ", i, x); }
     print("\n");
 
     // Parallel slices.
@@ -28,27 +28,27 @@ main :: () -> i32 {
 
     // Arrow bodies.
     s := 0;
-    for 0..4 (i) => s += i;
+    for i in 0..4 => s += i;
     print("arrow-range s={}\n", s);
     t := 0;
-    for xs (x) => t += x;
+    for x in xs => t += x;
     print("arrow-coll t={}\n", t);
 
-    // Call iterable + capture (first group = args, last group = capture).
-    for make() (v) { print("v{} ", v); }
+    // Call iterable + capture.
+    for v in make() { print("v{} ", v); }
     print("\n");
 
-    // No-capture call iterable via leading-group escape.
+    // No-capture call iterable.
     n := 0;
-    for (make()) { n += 1; }
-    print("escape n={}\n", n);
+    for make() { n += 1; }
+    print("call n={}\n", n);
 
     // Three-way zip: two collections + cursor.
-    for a4, b4, 100.. (p, q, k) { print("{}/{}/{} ", p, q, k); }
+    for p, q, k in a4, b4, 100.. { print("{}/{}/{} ", p, q, k); }
     print("\n");
 
     // By-ref capture in a multi-iterable header.
-    for a4, 0.. (*p, i) { p.* += i; }
+    for *p, i in a4, 0.. { p.* += i; }
     print("after ref: {} {} {} {}\n", a4[0], a4[1], a4[2], a4[3]);
     0
 }

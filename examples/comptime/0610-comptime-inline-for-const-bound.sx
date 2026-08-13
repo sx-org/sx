@@ -12,10 +12,10 @@ M :: 3;
 
 main :: () {
     s := 0;
-    inline for 0..M (i) { s += i; }
+    inline for i in 0..M { s += i; }
     print("sum 0..M = {}\n", s);          // 0 + 1 + 2 = 3
 
     t := 0;
-    inline for 0..(M + 1) (i) { t += i; }
+    inline for i in 0..(M + 1) { t += i; }
     print("sum 0..(M+1) = {}\n", t);      // 0 + 1 + 2 + 3 = 6
 }

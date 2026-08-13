@@ -71,7 +71,7 @@ main :: () -> i32 {
 
     // 6. for capture
     total := 0;
-    for xs (x) { total = total + x; }
+    for x in xs { total = total + x; }
     print("total={}\n", total);
 
     // 7. catch binding (and, inside `parse_even`, the onfail binding)

@@ -2,14 +2,14 @@
 
 sum :: (..args: []i32) -> i32 {
     result := 0;
-    for args (it) {
+    for it in args {
         result = result + it;
     }
     result
 }
 
 print_all :: (..args: []i32) {
-    for args (it) {
+    for it in args {
         out(int_to_string(it));
         out(" ");
     }
@@ -26,7 +26,7 @@ main :: () -> i32 {
     out(int_to_string(sum(..arr)));
     out("\n");
 
-    for arr (it) {
+    for it in arr {
         out(int_to_string(it));
         out(" ");
     }

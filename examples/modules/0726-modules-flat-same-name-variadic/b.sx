@@ -4,7 +4,7 @@
 // subtracts its two fixed args.
 combine :: (..xs: []i64) -> i64 {
     result := 0;
-    for xs (it) { result = result + it; }
+    for it in xs { result = result + it; }
     result
 }
 pick :: (a: i64, b: i64) -> i64 { return b - a; }

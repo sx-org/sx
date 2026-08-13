@@ -44,14 +44,14 @@ BoardView :: @OpenVariant(View) {
 
 main :: () -> i32 {
     st := BoardViewState{};
-    for 0..81 (i) { st.cell_eids[i] = xx (i + 1); }
+    for i in 0..81 { st.cell_eids[i] = xx (i + 1); }
 
     screen := vstack(12.0) {
         Label{ text = "sudoku" };
 
         // One child per cell, published from inside the block by a loop.
         vstack(0.0) {
-            for 0..81 (i) {
+            for i in 0..81 {
                 Label{ text = "c" };
             }
         };

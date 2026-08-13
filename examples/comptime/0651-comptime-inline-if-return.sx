@@ -8,7 +8,7 @@
 
 // nested inline-if/else with returns, inside an inline-for, under a runtime if:
 classify :: (idx: i64) -> i64 {
-    inline for 0..3 (i) {
+    inline for i in 0..3 {
         if idx == i {
             inline if i == 0 { return 100; }
             else { inline if i == 1 { return 200; } else { return 300; } }
@@ -19,7 +19,7 @@ classify :: (idx: i64) -> i64 {
 
 // the comptime `case` match form, also with per-arm returns:
 tag :: (idx: i64) -> i64 {
-    inline for 0..3 (i) {
+    inline for i in 0..3 {
         if idx == i {
             inline if i == {
                 case 0: { return 10; }

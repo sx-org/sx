@@ -32,12 +32,12 @@ help: to return it, return a tuple `(..xs)` and make the return type that tuple
    |                                          ^^
 
 error: pack 'xs' has no runtime value — a pack is comptime-only and can't be used as a value here
-  --> examples/packs/0536-packs-pack-as-value.sx:17:39
+  --> examples/packs/0536-packs-pack-as-value.sx:17:44
    |
-17 | iter    :: (..xs: Show) -> void { for xs  (x) { _ = x; } }  // D: runtime iterate
-   |                                       ^^
+17 | iter    :: (..xs: Show) -> void { for x in xs { _ = x; } }  // D: runtime iterate
+   |                                            ^^
 
-help: to iterate at comptime use `inline for xs (x)` (or `inline for 0..xs.len (i)` for the index); for a runtime loop declare it as `..xs: []P` (a protocol slice) instead of a pack
+help: to iterate at comptime use `inline for x in xs` (or `inline for i in 0..xs.len` for the index); for a runtime loop declare it as `..xs: []P` (a protocol slice) instead of a pack
    |
-17 | iter    :: (..xs: Show) -> void { for xs  (x) { _ = x; } }  // D: runtime iterate
-   |                                       ^^
+17 | iter    :: (..xs: Show) -> void { for x in xs { _ = x; } }  // D: runtime iterate
+   |                                            ^^

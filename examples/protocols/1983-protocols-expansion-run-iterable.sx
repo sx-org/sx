@@ -17,7 +17,7 @@ pick_list :: () -> [2]Type {
     return .[Dot, Bar];
 }
 
-inline for #run pick_list() (T) {
+inline for T in #run pick_list() {
     impl Show for T { fmt :: (self: *T) -> i64 { self.n * 3 } }
 }
 

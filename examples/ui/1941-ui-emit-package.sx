@@ -22,7 +22,7 @@ main :: () -> i32 {
     };
 
     print("children {}\n", stack.children.len);
-    for stack.children (*c) {
+    for *c in stack.children {
         print("  {}\n", type_of(c.*));
     }
 

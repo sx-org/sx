@@ -31,7 +31,7 @@ inline if has_impl(Show, Note) { UNIQUE :: 1; } else { UNIQUE :: 0; }
 inline if has_impl(Ord, Note) { PARTITION :: 1; } else { PARTITION :: 0; }
 
 SHAPES :: .[Item];
-inline for SHAPES (T) {
+inline for T in SHAPES {
     impl Show for T { fmt :: (self: *T) -> i64 { self.n * 3 } }
     impl Ord for T { cmp :: (self: *T, o: *T) -> i64 { self.n - o.n } }
 }

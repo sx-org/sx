@@ -29,7 +29,7 @@ main :: () {
     print("neg: {}\n", -a.(i8));
     // `..(` is a range, not a cast.
     total := 0;
-    for 0..(5) (i) { total += i; }
+    for i in 0..(5) { total += i; }
     print("range: {}\n", total);
     // Chained casts evaluate left to right.
     x := 300;

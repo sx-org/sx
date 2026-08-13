@@ -64,7 +64,7 @@ Api :: struct {
 
 sx_sum_ints :: (n: i32, ap: @VaList) -> i64 export {
     total: i64 = 0;
-    for 0..n (i) {
+    for i in 0..n {
         total += xx @va_arg(i32, *ap);
     }
     return total;
@@ -72,7 +72,7 @@ sx_sum_ints :: (n: i32, ap: @VaList) -> i64 export {
 
 sx_sum_doubles :: (n: i32, ap: @VaList) -> f64 export {
     total: f64 = 0;
-    for 0..n (i) {
+    for i in 0..n {
         total += @va_arg(f64, *ap);
     }
     return total;
@@ -84,7 +84,7 @@ count_one :: (ap: *@VaList) -> i64 {
 
 sx_total_text :: (n: i32, ap: @VaList) -> i64 export {
     total: i64 = 0;
-    for 0..n (i) {
+    for i in 0..n {
         total += count_one(*ap);
     }
     return total;

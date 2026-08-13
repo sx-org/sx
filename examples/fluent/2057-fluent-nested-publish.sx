@@ -43,7 +43,7 @@ main :: () -> i32 {
         }
 
         // Once per iteration, for the same reason.
-        for rows (row) {
+        for row in rows {
             Label{ text = row }
         }
 

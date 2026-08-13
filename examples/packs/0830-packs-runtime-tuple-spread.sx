@@ -14,7 +14,7 @@
 
 add2 :: (a: i64, b: i64) -> i64 => a + b;
 join :: (s: string, n: i64) -> string { return format("{}-{}", s, n); }
-sum  :: (..xs: []i64) -> i64 { s := 0; for xs (x) { s = s + x; } return s; }
+sum  :: (..xs: []i64) -> i64 { s := 0; for x in xs { s = s + x; } return s; }
 
 // pack → tuple → re-spread (the spec's `stored := .(..xs); f(..stored)` shape)
 respread :: (..xs: any) -> i64 {

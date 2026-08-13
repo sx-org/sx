@@ -94,7 +94,7 @@ map_hash_into :: (v: $T, h: u64) -> u64 {
     }
     inline if is_struct(T) {
         hh := h;
-        inline for 0..struct_field_count(T) (i) {
+        inline for i in 0..struct_field_count(T) {
             hh = map_hash_into(struct_field_value(v, i).(struct_field_type(T, i)), hh);
         }
         return hh;

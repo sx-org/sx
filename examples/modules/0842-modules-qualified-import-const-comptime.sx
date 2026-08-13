@@ -20,7 +20,7 @@ main :: () -> i64 {
     v  : Vector(m.LANES, f32) = ---; // Vector lane count        → 4 lanes
     bx : Box(m.CAP) = ---;           // generic value-param arg  → 8
     iter := 0;
-    inline for 0..m.CAP (i) { iter += 1; }   // inline-for bound → 8
+    inline for i in 0..m.CAP { iter += 1; }   // inline-for bound → 8
 
     print("a={} b={} c={} box={} lanes-iter={}\n", a.len, b.len, c.len, bx.data.len, iter);
     return a.len + b.len + c.len + bx.data.len + iter;   // 8+17+4+8+8 = 45

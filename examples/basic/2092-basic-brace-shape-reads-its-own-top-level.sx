@@ -9,7 +9,7 @@
 
 pair :: ufcs (a: i64, b: i64) -> i64 => a + b
 
-show :: ufcs (xs: []i64) { for xs (x) { print("{}", x) } }
+show :: ufcs (xs: []i64) { for x in xs { print("{}", x) } }
 
 Box :: struct ($T: Type) { v: T = 0; w: T = 0 }
 

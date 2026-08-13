@@ -1078,7 +1078,7 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 // all name the SAME union.
 RaceResult :: ($T: Type) -> Type {
     vs : [struct_field_count(T)]EnumVariant = ---;
-    inline for 0..struct_field_count(T) (i) {
+    inline for i in 0..struct_field_count(T) {
         vs[i] = EnumVariant{
             name    = struct_field_name(T, i),                          // tuple label → variant name
             payload = struct_field_type(pointee_type(struct_field_type(T, i)), 0),  // *Future(R) -> Future(R) -> R
@@ -1111,13 +1111,13 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     // hazard `wake` guards). A spurious wake with nothing ready re-registers + re-parks.
     winner_idx : i64 = -1;
     while winner_idx < 0 {
-        inline for 0..struct_field_count(T) (i) {
+        inline for i in 0..struct_field_count(T) {
             if winner_idx < 0 and futures[i].state == .ready { winner_idx = i; }
         }
         if winner_idx >= 0 { break; }
         me := io.current_park();
         any_pending := false;
-        inline for 0..struct_field_count(T) (i) {
+        inline for i in 0..struct_field_count(T) {
             if futures[i].state == .pending { futures[i].park.handle = me.handle; any_pending = true; }
         }
         // No `.ready` winner and nothing still `.pending` → every racer settled
@@ -1134,7 +1134,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
         // never raises here; the `catch {}` just discards the `!` for the type.
         pk : ParkToken = .{ handle = null };
         io.suspend_raw(*pk) catch {};
-        inline for 0..struct_field_count(T) (i) {
+        inline for i in 0..struct_field_count(T) {
             if futures[i].park.handle == me.handle { futures[i].park.handle = null; }
         }
     }
@@ -1144,7 +1144,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     // unrolled arm constructs `RaceResult(T)`'s i-th variant directly. `i` is the
     // comptime cursor; the runtime `if i == winner_idx` selects the one arm.
     result : RaceResult(T) = ---;
-    inline for 0..struct_field_count(T) (i) {
+    inline for i in 0..struct_field_count(T) {
         if i == winner_idx {
             result = make_variant(RaceResult(T), i, futures[i].value);
         }
@@ -1156,7 +1156,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     // `race` returns now. Only `.pending` losers are cancelled: a loser that
     // already settled (`.ready`/`.failed`) is done — cancelling it would do
     // nothing useful and would stomp its real outcome label to `.canceled`.
-    inline for 0..struct_field_count(T) (i) {
+    inline for i in 0..struct_field_count(T) {
         if i != winner_idx and futures[i].state == .pending { futures[i].cancel(); }
     }
 

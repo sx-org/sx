@@ -4,7 +4,7 @@
 //
 // The same lowering arm pins two more shapes, and diagnostics accumulate so none
 // masks another:
-// - a by-ref loop capture (`for xs (*x)`) as a multi-assign target WITHOUT `.*`;
+// - a by-ref loop capture (`for *x in xs`) as a multi-assign target WITHOUT `.*`;
 // the error points at `x.* = ...`, and the capture SHADOWS a same-named global,
 // so the store never resolves past it to different storage;
 // - a `::` constant as a multi-assign target, which the global fallback rejects
@@ -22,10 +22,10 @@ main :: () -> i32 {
     b := 2;
     a, undeclared_b = b, a;     // typo'd target — plain multi-assign to an undeclared name
     xs : [2]i64 = .[1, 2];
-    for xs (*x) {
+    for *x in xs {
         x, a = 9, 9;            // by-ref capture target assigned without `.*`
     }
-    for xs (*g) {
+    for *g in xs {
         g, a = 9, 9;            // capture shadows the module global `g` — same diagnostic
     }
     GC, a = 1, 2;               // `::` const as a multi-assign target

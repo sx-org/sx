@@ -18,10 +18,10 @@ Serialize :: protocol tagged {
 // of types" — the set stays intentional.
 SERIALIZABLE :: .[Point, Rect, Color];
 
-inline for SERIALIZABLE (T) {
+inline for T in SERIALIZABLE {
     impl Serialize for T {
         write :: (self: *T) {
-            inline for 0..struct_field_count(T) (i) {
+            inline for i in 0..struct_field_count(T) {
                 print("{}={} ", struct_field_name(T, i), struct_field_value(self.*, i));
             }
             print("\n");
@@ -49,5 +49,5 @@ main :: () {
 
     // A protocol value in an aggregate, dispatched element-wise.
     vs : [3]Serialize = .[p, r, c];
-    for vs (v) { v.write(); }
+    for v in vs { v.write(); }
 }

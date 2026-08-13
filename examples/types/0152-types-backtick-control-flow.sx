@@ -34,7 +34,7 @@ main :: () -> i32 {
 
     // for capture + index names
     xs: [3]i64 = .{ 10, 20, 30 };
-    for xs, 0.. (`bool, `u16) {
+    for `bool, `u16 in xs, 0.. {
         print("for   = {} @ {}\n", `bool, `u16);
     }
 

@@ -1,5 +1,5 @@
 // Passing a `*T` where a `T` value is expected is caught at the call site for any
-// pointer, not only a `for xs (*m)` loop capture (see 215) — here a `*Move`
+// pointer, not only a `for *m in xs` loop capture (see 215) — here a `*Move`
 // parameter forwarded into a by-value parameter.
 
 #import "modules/std.sx";
