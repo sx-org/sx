@@ -1,0 +1,23 @@
+// Killing a live child: the WNOHANG probe reports "still running", SIGTERM
+// ends it, and the blocking reap folds the signal death to 128 + SIGTERM.
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    child, e := process.spawn(.["sleep", "60"], .{});
+    if e { print("spawn failed\n"); return 1; }
+
+    if child.wait(false) != null { print("sleep 60 already reaped\n"); return 1; }
+    print("probe: still running\n");
+
+    if child.kill(process.SIGTERM) != 0 { print("kill refused\n"); return 1; }
+
+    code := child.wait(true);
+    if code == null { print("wait produced no status\n"); return 1; }
+    print("terminated: {}\n", code!);
+
+    // A reaped child answers from its stored status and never re-enters
+    // waitpid; its pid may already belong to someone else.
+    if child.kill(process.SIGKILL) != -1 { print("reaped child must signal nothing\n"); return 1; }
+    if child.wait(true)! != 128 + process.SIGTERM { print("status not retained\n"); return 1; }
+    return 0;
+}
