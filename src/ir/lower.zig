@@ -221,7 +221,7 @@ pub const SourceConstCtx = struct {
 pub const Binding = struct {
     /// Where a NON-ALLOCA binding came from. Drives the shape-specific
     /// "cannot assign" diagnostic: a for-loop
-    /// element can point at the `(*x)` by-ref spelling, while a range index /
+    /// element can point at the `*x` by-ref spelling, while a range index /
     /// match payload / catch binding has no container storage to write back
     /// into and gets copy-into-a-`:=`-local advice only; a function-local
     /// `::` const gets the constant-family message. `.other` covers synthetic
@@ -231,24 +231,24 @@ pub const Binding = struct {
         other,
         /// Function-local `x :: 5` (lowerConstDecl) — immutable constant.
         local_const,
-        /// `for xs (x)` by-value element — container-backed; `(*x)` exists.
+        /// `for x in xs` by-value element — container-backed; `*x` exists.
         for_element,
-        /// `for 0..N (i)` / paired range cursor (runtime or inline-for) —
+        /// `for i in 0..N` / paired range cursor (runtime or inline-for) —
         /// the position has no storage (`*` on a range capture is an error).
         range_index,
         /// Match-arm payload / optional-match binding.
         match_payload,
         /// `catch (e)` / `onfail e` error binding.
         catch_err,
-        /// `inline for xs (x)` pack-element alias (`pack_elem` is also set).
+        /// `inline for x in xs` pack-element alias (`pack_elem` is also set).
         pack_elem_alias,
     };
 
     ref: Ref,
     ty: TypeId,
     is_alloca: bool, // true if ref is a pointer that needs load
-    is_ref_capture: bool = false, // `for xs: (*x)` — `ref` is `*elem`; auto-deref in value positions
-    /// `inline for xs (x)` element capture: `x` is an AST ALIAS for the
+    is_ref_capture: bool = false, // `for *x in xs` — `ref` is `*elem`; auto-deref in value positions
+    /// `inline for x in xs` element capture: `x` is an AST ALIAS for the
     /// synthesized `xs[<i>]` of the current unroll iteration (`ref` is
     /// `.none`). Identifier consumers substitute this node, so the capture
     /// inherits the full pack-element semantics — concrete-arg substitution,

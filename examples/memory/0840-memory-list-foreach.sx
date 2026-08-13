@@ -14,17 +14,17 @@ main :: () -> i64 {
 
     // for-each over the items slice
     sum := 0;
-    for xs.items (e) { sum = sum + e; }
+    for e in xs.items { sum = sum + e; }
     print("foreach sum={}\n", sum);                       // 210
 
     // parallel for with index
     print("indexed:");
-    for xs.items, 0.. (e, ix) { if ix % 2 == 0 { print(" {}@{}", e, ix); } }
+    for e, ix in xs.items, 0.. { if ix % 2 == 0 { print(" {}@{}", e, ix); } }
     print("\n");                                          // 10@0 30@2 50@4
 
     // direct `for xs` over the List value (listView path)
     s2 := 0;
-    for xs (e) { s2 = s2 + e; }
+    for e in xs { s2 = s2 + e; }
     print("for-list sum={}\n", s2);                       // 210
 
     // len via #get used as a loop bound + indexing
@@ -36,7 +36,7 @@ main :: () -> i64 {
     // truncate to empty via the `len` #set accessor, then iterate (zero iters)
     xs.len = 0;
     cnt := 0;
-    for xs.items (e) { cnt = cnt + 1; }
+    for e in xs.items { cnt = cnt + 1; }
     print("after trunc: len={} iters={}\n", xs.len, cnt); // len=0 iters=0
 
     return 0;

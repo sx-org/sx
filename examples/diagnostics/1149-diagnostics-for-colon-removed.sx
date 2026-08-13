@@ -1,9 +1,0 @@
-// A `:` between a for-loop's iterable and its capture (`for xs: (x)`) is
-// rejected; the capture follows the iterable directly.
-
-#import "modules/std.sx";
-
-main :: () {
-    xs : [2]i64 = .[1, 2];
-    for xs: (x) { }
-}

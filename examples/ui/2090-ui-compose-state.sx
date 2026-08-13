@@ -37,7 +37,7 @@ frame :: (ui: *Identity, store: *StateStore, with_offset: bool) -> (a: i64, b: i
     // A struct payload rides the same claim, and the loop's three occurrences
     // of ONE site keep three entries.
     total := 0
-    for 0..3 (i) {
+    for i in 0..3 {
         cur := use_state(Cursor, .{})
         v := cur.get()
         v.row += 1

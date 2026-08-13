@@ -5,7 +5,7 @@
 // representation — so `args[i]` is valid only when `i` is a compile-time
 // constant (a literal, or an `inline for` cursor). A runtime index (here a
 // `while`-loop counter) gets a focused diagnostic naming the rule. To walk a
-// pack, use `inline for 0..args.len (i) { ... }`, which unrolls so each
+// pack, use `inline for i in 0..args.len { ... }`, which unrolls so each
 // `args[i]` is a comptime index.
 
 #import "modules/std.sx";

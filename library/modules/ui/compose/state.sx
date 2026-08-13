@@ -46,7 +46,7 @@ StateStore :: struct {
     init :: (gpa: Allocator) -> StateStore => .{ gpa = gpa }
 
     begin_build :: (self: *StateStore) {
-        for self.entries (e) {
+        for e in self.entries {
             e.claimed = false
         }
         self.in_build = true
@@ -69,7 +69,7 @@ StateStore :: struct {
     }
 
     teardown :: (self: *StateStore) {
-        for self.entries (e) {
+        for e in self.entries {
             self.release(e)
         }
         self.entries.len = 0
@@ -82,7 +82,7 @@ StateStore :: struct {
     }
 
     find :: (self: *StateStore, key: u64) -> ?*StateEntry {
-        for self.entries (e) {
+        for e in self.entries {
             if e.key == key then return e
         }
         null

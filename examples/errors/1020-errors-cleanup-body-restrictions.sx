@@ -14,7 +14,7 @@ g :: () -> !E { return; }
 f :: () -> !E {
     defer  { return; }                 // ERROR: return in defer body
     onfail { try g(); }                // ERROR: try in onfail body
-    defer  { for 0..1 (i) { break; } }   // ERROR: break in defer body (transitive through loop)
+    defer  { for i in 0..1 { break; } }   // ERROR: break in defer body (transitive through loop)
     onfail (e) { if e == error.Bad { continue; } }  // ERROR: continue in onfail body
     try g();
     return;

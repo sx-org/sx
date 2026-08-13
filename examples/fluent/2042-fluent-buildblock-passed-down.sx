@@ -71,7 +71,7 @@ main :: () -> i32 {
 
     print("two down {}\n", column("chain") {
         Label{ text = "top" };
-        for rows (row) {
+        for row in rows {
             Label{ text = row };
         }
         if show_extra {

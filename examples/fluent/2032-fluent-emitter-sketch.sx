@@ -42,7 +42,7 @@ Ascii :: struct {
     }
 
     write :: (self: *Ascii, text: string) {
-        for 0..self.indent (i) { print("  "); }
+        for i in 0..self.indent { print("  "); }
         print("{}\n", text);
     }
 }
@@ -70,7 +70,7 @@ main :: () -> i32 {
     lines := .["first", "second"];
 
     emit("report") {
-        for lines (line) {
+        for line in lines {
             Text{ body = line };
         }
         if show_divider {

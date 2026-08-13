@@ -18,7 +18,7 @@
 leaf_count :: (v: $T) -> i64 {
     inline if is_struct(T) {
         n := 0;
-        inline for 0..struct_field_count(T) (i) {
+        inline for i in 0..struct_field_count(T) {
             n = n + leaf_count(struct_field_value(v, i).(struct_field_type(T, i)));
         }
         return n;

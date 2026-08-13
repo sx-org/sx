@@ -9,7 +9,7 @@
 ui :: #import "modules/ui/types.sx";
 
 show :: (tree: *RenderTree) {
-    for tree.nodes (n) {
+    for n in tree.nodes {
         if n.type == .text {
             print("  {} '{}' at {},{} {}x{}\n", n.type, n.text,
                 n.frame.origin.x.(i64), n.frame.origin.y.(i64),

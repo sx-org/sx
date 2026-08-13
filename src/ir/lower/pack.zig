@@ -192,7 +192,7 @@ pub fn packArgNodeAt(self: *Lowering, ie: *const ast.IndexExpr) ?*const Node {
 
 /// Resolve an index expression to a comptime-known integer: a literal,
 /// or an identifier bound to an `int_val` in `comptime_constants` (e.g.
-/// the cursor of an `inline for 0..N (i)` unroll). Otherwise null.
+/// the cursor of an `inline for i in 0..N` unroll). Otherwise null.
 pub fn comptimeIndexOf(self: *Lowering, index: *const Node) ?i64 {
     switch (index.data) {
         .int_literal => |lit| return lit.value,
@@ -222,7 +222,7 @@ pub fn diagPackAsValue(self: *Lowering, name: []const u8, span: ast.Span, kind: 
             .storage => d.addHelpFmt(id, span, null, "to store it, materialize a tuple: `(..{s})`", .{name}),
             .call_arg => d.addHelpFmt(id, span, null, "to pass it to a `[]any`/`[]P` parameter, materialize it with `xx {s}`", .{name}),
             .return_value => d.addHelpFmt(id, span, null, "to return it, return a tuple `(..{s})` and make the return type that tuple", .{name}),
-            .runtime_iter => d.addHelpFmt(id, span, null, "to iterate at comptime use `inline for {s} (x)` (or `inline for 0..{s}.len (i)` for the index); for a runtime loop declare it as `..{s}: []P` (a protocol slice) instead of a pack", .{ name, name, name }),
+            .runtime_iter => d.addHelpFmt(id, span, null, "to iterate at comptime use `inline for x in {s}` (or `inline for i in 0..{s}.len` for the index); for a runtime loop declare it as `..{s}: []P` (a protocol slice) instead of a pack", .{ name, name, name }),
             .generic => d.addHelpFmt(id, span, null, "materialize a tuple `(..{s})` to store it, or `xx {s}` to convert it to an expected `[]any`/`[]P` slice", .{ name, name }),
         }
     }

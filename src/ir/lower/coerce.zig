@@ -481,7 +481,7 @@ pub fn isLvalueExpr(self: *Lowering, node: *const Node) bool {
 }
 
 /// True when `node` is an identifier bound to a by-VALUE SSA binding — a
-/// scope entry with no alloca of its own that is NOT a by-ref `(*x)`
+/// scope entry with no alloca of its own that is NOT a by-ref `*x`
 /// capture and NOT an `inline for` pack alias. These are the loop /
 /// match / catch captures and local `::` consts: each is semantically a
 /// COPY, so a protocol erasure must not see through its defining load to
@@ -744,14 +744,14 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
                     std.mem.startsWith(u8, operand_node.data.identifier.name, "__pack_");
                 if (!dst_borrows and !is_pack_temp) return self.demandOwnedErasure(dst_ty, proto_name, operand_node, .lvalue);
                 if (self.isByValueBindingIdent(operand_node)) {
-                    // A by-VALUE SSA binding (`for arr (x)`, a match/catch
+                    // A by-VALUE SSA binding (`for x in arr`, a match/catch
                     // capture, a `::` const) is semantically a COPY of the
                     // element it was read from. Deriving the borrow address
                     // through `refStorageAddress` would see through the
                     // binding's defining load to the CONTAINER's storage —
                     // making `xx x` alias the original element and mutate it
                     // through the protocol, indistinguishable from the
-                    // by-ref `(*x)` form. Materialize the copy instead: a
+                    // by-ref `*x` form. Materialize the copy instead: a
                     // fresh stack slot holds the already-lowered value and
                     // the protocol borrows THAT, so mutations land in the
                     // per-iteration copy. By-ref captures never reach here —

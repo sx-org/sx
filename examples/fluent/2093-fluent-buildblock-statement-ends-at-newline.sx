@@ -48,7 +48,7 @@ column :: (content: $B/@BuildBlock(View)) -> List(i64) {
 // A container that forwards its own build block, so the bodies below nest.
 stack :: (gap: i64, seed: i64, content: $B/@BuildBlock(View)) -> Group {
     sum := seed
-    for column(content) (w) {
+    for w in column(content) {
         sum += w
     }
     .{ gap = gap, total = sum }
@@ -56,7 +56,7 @@ stack :: (gap: i64, seed: i64, content: $B/@BuildBlock(View)) -> Group {
 
 show :: (label: string, ws: List(i64)) {
     print("{}:", label)
-    for ws (w) { print(" {}", w) }
+    for w in ws { print(" {}", w) }
     print("\n")
 }
 

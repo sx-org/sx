@@ -1563,7 +1563,7 @@ pub const Server = struct {
         }
     }
 
-    /// Hint for a `for` loop capture (`for xs: (m)` → `m: T`). The capture has
+    /// Hint for a `for` loop capture (`for m in xs` → `m: T`). The capture has
     /// no `:=`/`::`, so the label carries its own colon and lands right after
     /// the capture name, whose slice points into `source`.
     fn addForCaptureHint(
@@ -3537,7 +3537,7 @@ test "analyzeDocument: for-loop capture variables are registered" {
     const src: [:0]const u8 =
         \\main :: () {
         \\    arr : [3]i32 = ---;
-        \\    for arr, 0.. (it, ix) {
+        \\    for it, ix in arr, 0.. {
         \\        x := it + ix;
         \\    }
         \\}
@@ -3563,7 +3563,7 @@ test "analyzeDocument: for-loop with underscore capture" {
     const src: [:0]const u8 =
         \\main :: () {
         \\    arr : [3]i32 = ---;
-        \\    for arr, 0.. (_, ix) {
+        \\    for _, ix in arr, 0.. {
         \\        x := ix;
         \\    }
         \\}
@@ -3588,7 +3588,7 @@ test "analyzeDocument: for-loop value-only capture" {
     const src: [:0]const u8 =
         \\main :: () {
         \\    arr : [3]i32 = ---;
-        \\    for arr (val) {
+        \\    for val in arr {
         \\        x := val;
         \\    }
         \\}
@@ -3703,7 +3703,7 @@ test "lsp/inlayHint: a for-loop capture in a struct method shows its element typ
         \\Game :: struct {
         \\    legal: List(Move);
         \\    scan :: (self: *Game) {
-        \\        for self.legal (m) { x := m.flag; }
+        \\        for m in self.legal { x := m.flag; }
         \\    }
         \\}
     ;

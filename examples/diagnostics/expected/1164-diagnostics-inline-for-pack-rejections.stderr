@@ -5,19 +5,19 @@ error: 'v' is not part of protocol 'Show' — a pack element exposes only the pr
    |                       ^^^
 
 error: a pack element cannot be captured by reference
-  --> examples/diagnostics/1164-diagnostics-inline-for-pack-rejections.sx:19:21
+  --> examples/diagnostics/1164-diagnostics-inline-for-pack-rejections.sx:19:17
    |
-19 |     inline for xs (*x) { }
-   |                     ^
+19 |     inline for *x in xs { }
+   |                 ^
 
 error: inline for: pack 'xs' has 2 elements but the unroll is 5 iterations
-  --> examples/diagnostics/1164-diagnostics-inline-for-pack-rejections.sx:22:22
+  --> examples/diagnostics/1164-diagnostics-inline-for-pack-rejections.sx:22:30
    |
-22 |     inline for 0..5, xs (i, x) { }
-   |                      ^^
+22 |     inline for i, x in 0..5, xs { }
+   |                              ^^
 
-error: inline for: each iterable must be a comptime range, a pack, or a type list — `inline for 0..N (i) { }` / `inline for xs (x) { }` / `inline for TYPES (T) { }`
-  --> examples/diagnostics/1164-diagnostics-inline-for-pack-rejections.sx:30:16
+error: inline for: each iterable must be a comptime range, a pack, or a type list — `inline for i in 0..N { }` / `inline for x in xs { }` / `inline for T in TYPES { }`
+  --> examples/diagnostics/1164-diagnostics-inline-for-pack-rejections.sx:30:21
    |
-30 |     inline for arr (x) { }
-   |                ^^^
+30 |     inline for x in arr { }
+   |                     ^^^

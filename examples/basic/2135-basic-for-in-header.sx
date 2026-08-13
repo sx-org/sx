@@ -1,0 +1,28 @@
+// The for header: captures first, then `in`, then the iterables. Nothing in
+// the iterable list is reserved, so a call iterable is written plainly.
+
+#import "modules/std.sx";
+
+Node :: struct { v: i64; }
+
+kids :: (n: i64) -> [3]i64 {
+    out : [3]i64 = ---;
+    for i in 0..3 { out[i] = n + i; }
+    out
+}
+
+main :: () {
+    children : [3]Node = .[Node{ v = 1 }, Node{ v = 2 }, Node{ v = 3 }];
+    for *c, i in children, 0.. {
+        c.v = c.v * 10 + i;
+    }
+    for c in children { print("{}\n", c.v); }
+
+    for x in kids(100) { print("{}\n", x); }
+
+    n := 0;
+    for 0..4 { n += 1; }
+    print("{}\n", n);
+
+    for `bool in children { print("{}\n", `bool.v); }
+}

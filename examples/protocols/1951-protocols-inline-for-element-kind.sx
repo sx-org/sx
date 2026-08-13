@@ -8,7 +8,7 @@ Point :: struct { x: i64; y: i64; }
 SHAPES :: .[Point, 42];
 
 main :: () {
-    inline for SHAPES (T) {
+    inline for T in SHAPES {
         print("{}\n", size_of(T));
     }
 }

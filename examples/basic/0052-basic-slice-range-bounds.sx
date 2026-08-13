@@ -8,7 +8,7 @@
 
 dump :: (s: []i64, tag: string) {
     print("{}: ", tag);
-    for s (v) { print("{} ", v); }
+    for v in s { print("{} ", v); }
     print("(len {})\n", s.len);
 }
 

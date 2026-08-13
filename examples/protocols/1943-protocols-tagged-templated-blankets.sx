@@ -56,7 +56,7 @@ main :: () {
     // The two blankets land in the SAME set at `Series(f32)`, so both kinds
     // of conformer dispatch through one switch.
     vs : [3]Series(f32) = .[bf, ru, rs];
-    for vs (v) { print("{} {}\n", v.count(), v.at(0)); }
+    for v in vs { print("{} {}\n", v.count(), v.at(0)); }
 
     // A blanket conformer keeps its own instantiation's element type: the
     // `Series(i64)` space holds `Buffer(i64)` and `Counter`, nothing of f32.

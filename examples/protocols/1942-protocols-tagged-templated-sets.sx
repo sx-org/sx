@@ -63,5 +63,5 @@ main :: () {
     // Every conformer of one instantiation dispatches through that
     // instantiation's switch, whatever order the members were admitted in.
     vs : [2]Series(f32) = .[sn, rp];
-    for vs (v) { print("{} {}\n", v.count(), v.at(1)); }
+    for v in vs { print("{} {}\n", v.count(), v.at(1)); }
 }

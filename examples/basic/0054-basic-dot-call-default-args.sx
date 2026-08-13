@@ -15,7 +15,7 @@ bump :: ufcs (p: Point, by: i64 = 10) -> i64 { return p.x + by; }
 
 sum_var :: (..xs: []i64) -> i64 {
     t := 0;
-    for xs (x) { t = t + x; }
+    for x in xs { t = t + x; }
     return t;
 }
 

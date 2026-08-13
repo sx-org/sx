@@ -50,7 +50,7 @@ main :: () {
 
     // the type switch on a protocol subject
     shapes : [2]Drawable = .[s, t];
-    for shapes (sh) {
+    for sh in shapes {
         if sh == {
             case Circle: (ci) { print("circle r={}\n", ci.r); }
             case struct: { print("some struct\n"); }

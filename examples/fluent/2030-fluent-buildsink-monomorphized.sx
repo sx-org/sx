@@ -77,7 +77,7 @@ column :: (content: $B/@BuildBlock(Drawable)) {
 
     kept := Capture{};
     content.run(*kept);
-    for kept.items.items (item) { print("kept {}\n", item.draw()); }
+    for item in kept.items.items { print("kept {}\n", item.draw()); }
 }
 
 main :: () -> i32 {

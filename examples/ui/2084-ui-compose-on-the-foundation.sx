@@ -17,7 +17,7 @@ foundation :: #import "modules/ui/render.sx";
 // A reader written in the foundation's terms, which never mentions compose.
 count_text :: (tree: *foundation.RenderTree) -> i64 {
     n := 0;
-    for tree.nodes (node) {
+    for node in tree.nodes {
         if node.type == .text { n += 1; }
     }
     n
@@ -34,7 +34,7 @@ main :: () -> i32 {
     tree : foundation.RenderTree = .{};
     render_root(*root, Size{ width = 120.0, height = 60.0 }, *tree);
 
-    for tree.nodes (n) {
+    for n in tree.nodes {
         print("{} {}x{}\n", n.type, n.frame.size.width, n.frame.size.height);
     }
     print("text nodes {}\n", count_text(*tree));

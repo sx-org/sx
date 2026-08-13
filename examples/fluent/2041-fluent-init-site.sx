@@ -41,7 +41,7 @@ relay :: (tag: string, x: $T) -> i32 {
 
 // A runtime loop reuses one lexical site however many times it runs.
 looped :: () {
-    for 0..2 (i) {
+    for i in 0..2 {
         _ignored := report("loop", Button{ label = "in a loop" });
     }
 }

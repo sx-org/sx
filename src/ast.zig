@@ -922,21 +922,21 @@ pub const ForIterable = struct {
     end_inclusive: bool = false,
 };
 
-/// One capture of a `for` header: `(x)`, `(*x)`, `(x, y, ...)`.
+/// One capture of a `for` header: `x`, `*x`.
 pub const ForCapture = struct {
     name: []const u8,
     span: ?Span = null,
-    /// True when the name was a backtick raw identifier (`` for xs (`i2) ``)
+    /// True when the name was a backtick raw identifier (`` for `i2 in xs ``)
     /// — exempt from the reserved-type-name check.
     is_raw: bool = false,
-    /// `(*x)` — bind a pointer into the collection (no per-element copy).
+    /// `*x` — bind a pointer into the collection (no per-element copy).
     by_ref: bool = false,
 };
 
-/// `for it1, it2, ... (c1, c2, ...) { }` — parallel iteration. The FIRST
+/// `for c1, c2, ... in it1, it2, ... { }` — parallel iteration. The FIRST
 /// iterable's length drives the loop (first-iterable-wins); the others are
 /// indexed along it, and a non-first range's end is not consulted. The
-/// capture group is positional: empty (no bindings) or one capture per
+/// captures are positional: empty (no bindings) or one capture per
 /// iterable. The body is a block or an `=> expr;` arrow body.
 pub const ForExpr = struct {
     iterables: []ForIterable,

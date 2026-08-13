@@ -7,7 +7,7 @@ Point :: struct {
 
 // Print all arguments — accepts any type, dispatches via type-switch
 print_any :: (..args: []any) {
-    for args (it) {
+    for it in args {
         type := type_of(it);
         if type == {
             case int: out(int_to_string(xx it));

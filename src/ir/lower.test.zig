@@ -3211,7 +3211,7 @@ test "lower: assignment to a by-value loop capture is diagnosed as immutable, a 
     const span = ast.Span{ .start = 0, .end = 0 };
 
     // main :: () {
-    //     for 0..3 (x) { x += 100; }   // by-value capture → immutable, diagnosed
+    //     for x in 0..3 { x += 100; }   // by-value capture → immutable, diagnosed
     //     y := 0;                       // real alloca local
     //     y += 100;                     // legal — NOT diagnosed
     // }
@@ -3276,7 +3276,7 @@ test "lower: assignment to a function-local '::' const gets the constant message
     // A function-local `::` const binds non-alloca (lowerConstDecl), so the
     // assignment lands in the same nonstore_binding arm as captures. It must
     // get the CONSTANT-family message — the capture wording ("capture by
-    // reference with '(*c)'") is nonsense for a const. Undiagnosed, the store
+    // reference with '*c'") is nonsense for a const. Undiagnosed, the store
     // is silently dropped, same as the capture shapes.
     var five = Node{ .span = span, .data = .{ .int_literal = .{ .value = 5 } } };
     var c_decl = Node{ .span = span, .data = .{ .const_decl = .{ .name = "c", .name_span = span, .type_annotation = null, .value = &five, .is_raw = false } } };

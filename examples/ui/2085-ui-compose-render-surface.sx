@@ -59,7 +59,7 @@ main :: () -> i32 {
     key_size := key.size_that_fits(ProposedSize.flexible());
     key.render(*rc, Frame.make(0.0, 104.0, key_size.width, key_size.height));
 
-    for tree.nodes (n) { show(n); }
+    for n in tree.nodes { show(n); }
     print("nodes {} button {}x{}\n", command_count(*tree),
         key_size.width.(i64), key_size.height.(i64));
     0

@@ -16,7 +16,7 @@ pair_add :: (a: $T, b: $U) -> i64 {
 
 typed_sum :: (..args: []i32) -> i32 {
     result := 0;
-    for args (it) { result = result + it; }
+    for it in args { result = result + it; }
     result
 }
 

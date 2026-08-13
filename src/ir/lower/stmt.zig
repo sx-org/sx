@@ -1587,11 +1587,11 @@ pub fn diagDecrementNonInteger(self: *Lowering, ty: TypeId, span: ast.Span) Ref 
 /// must not be dropped silently. The binding's `origin` picks the message:
 /// - by-ref capture       → write through it (`x.* = ...`)
 /// - local `::` const     → constant-family message (a const is not a capture)
-/// - for-loop element     → `(*x)` write-back hint (container storage exists)
+/// - for-loop element     → `*x` write-back hint (container storage exists)
 /// - range index / match payload / catch binding / pack alias
 ///                        → copy-into-a-`:=`-local only (per specs.md
 ///                          §loops/captures these have no container storage
-///                          to write back into — a `(*x)` hint would be a lie)
+///                          to write back into — a `*x` hint would be a lie)
 /// - `.other`             → generic non-storable-binding message
 /// A `.unresolved`-typed binding is an error PLACEHOLDER from an earlier
 /// diagnostic (e.g. `y := xs` where `xs` is a pack — diagPackAsValue already
@@ -1605,7 +1605,7 @@ fn diagNonstoreBindingAssign(self: *Lowering, span: ast.Span, name: []const u8, 
     }
     switch (b.origin) {
         .local_const => d.addFmt(.err, span, "cannot assign to constant '{s}' — a '::' declaration is immutable; use ':=' to declare a mutable local", .{name}),
-        .for_element => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — it is a by-value copy of the element; capture by reference with '(*{s})' and write '{s}.* = ...' to modify the container, or copy it into a `:=` local to mutate", .{ name, name, name }),
+        .for_element => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — it is a by-value copy of the element; capture by reference with '*{s}' and write '{s}.* = ...' to modify the container, or copy it into a `:=` local to mutate", .{ name, name, name }),
         .range_index => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — a range/index position has no storage to write back into; copy it into a `:=` local to mutate", .{name}),
         .match_payload => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate", .{name}),
         .catch_err => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — a catch/onfail error binding is read-only; copy it into a `:=` local to mutate", .{name}),
@@ -2422,7 +2422,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             if (!handled) {
                 if (nonstore_binding) |b| {
                     // A scope binding SHADOWS any same-named global — without
-                    // this arm, `for xs (*g) { g = 77; }` with a module global
+                    // this arm, `for *g in xs { g = 77; }` with a module global
                     // `g` fell through to resolveGlobalRef and silently wrote
                     // the GLOBAL instead of addressing the capture. Reads
                     // resolve the capture; writes must never

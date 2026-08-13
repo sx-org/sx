@@ -11,17 +11,17 @@ E :: enum { X; Y; Z; W; }
 main :: () -> i32 {
     // struct_field_count as an inline-for bound
     s := 0;
-    inline for 0..struct_field_count(S) (i) { s = s + i; }   // 0+1+2 = 3
+    inline for i in 0..struct_field_count(S) { s = s + i; }   // 0+1+2 = 3
     print("struct_field_count(S) loop sum = {}\n", s);
 
     // struct_field_count as an array dimension; fill it in a folded loop
     xs : [struct_field_count(S)]i64 = ---;
-    inline for 0..struct_field_count(S) (i) { xs[i] = i * 10; }
+    inline for i in 0..struct_field_count(S) { xs[i] = i * 10; }
     print("array[struct_field_count(S)] len = {}  xs[2] = {}\n", xs.len, xs[2]);
 
     // struct_field_count of an enum (4 variants) driving a loop
     e := 0;
-    inline for 0..variant_count(E) (i) { e = e + 1; }
+    inline for i in 0..variant_count(E) { e = e + 1; }
     print("variant_count(E) = {}\n", e);
 
     // size_of / align_of fold too

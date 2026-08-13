@@ -32,7 +32,7 @@ trailing_block_in_closure :: (side: f32) {
 // The wrappers nest, and a loop variable between them stays the loop's own.
 all_at_once :: (side: f32) {
     run(() {
-        for 0..2 (i) {
+        for i in 0..2 {
             n := i;
             block(side) { put(Box{ w = side + n.(f32) }.(Shape, context.allocator)); };
         }

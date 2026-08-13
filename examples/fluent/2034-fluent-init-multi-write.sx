@@ -43,7 +43,7 @@ skip :: (value: $I/@Init($V/Drawable)) -> i32 { 0 }
 // or the receiver's control flow limits how often a write may happen.
 repeat :: (value: $I/@Init($V/Drawable), times: i32) -> i32 {
     i : i32 = 0;
-    for 0..times (_unused) {
+    for _unused in 0..times {
         slot: V = ---;
         value.write(*slot);
         i += 1;

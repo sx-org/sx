@@ -1,0 +1,5 @@
+error: cannot iterate a value of type 'i64'
+  --> examples/diagnostics/2134-diagnostics-for-not-iterable.sx:10:14
+   |
+10 |     for x in f(n) { _ = x; }
+   |              ^^^^

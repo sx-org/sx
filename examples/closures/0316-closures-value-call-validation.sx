@@ -20,7 +20,7 @@ mk :: (a: i64, b: i64, p: P, w: i32) -> i64 { return a + b + p.x * 10 + p.y + w;
 withdef :: (a: i64, b: i64 = 99) -> i64 { return a + b; }
 sum :: (..xs: []i64) -> i64 {
     t := 0;
-    for xs (x) { t = t + x; }
+    for x in xs { t = t + x; }
     return t;
 }
 

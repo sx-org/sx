@@ -82,7 +82,7 @@ total := (hi << 16)
 A `(` or `[` binds to what precedes it only when nothing separates them — in
 expressions and in every type position alike. A `(` that opens something new
 (grouping, parameters, a capture, a declaration form) is free:
-`add :: (a: i64) -> i64`, `for xs (x) { … }`, `risky() catch (e) -1`. `-` and
+`add :: (a: i64) -> i64`, `risky() catch (e) -1`. `-` and
 `*` also have prefix readings, so they are infix only when spaced the same on
 both sides, and a prefix `-` / `*` must be glued to its operand. The third rule
 governs what binds to an expression from behind — the trailing-block `{`
@@ -419,7 +419,7 @@ max :: (a: $T, b: T) -> T {
 
 List :: struct ($T: Type) {
     items: []T;          // a slice; items.len is the live count, so a List is
-    cap: i64;            // directly iterable: `for xs.items (e) { ... }`
+    cap: i64;            // directly iterable: `for e in xs.items { ... }`
 
     append :: (self: *List(T), item: T) { ... }
 
@@ -604,11 +604,11 @@ if 0 <= x <= 100 { ... }
 while i < 10 { i += 1; }
 
 // For — collections, ranges, and parallel iteration
-for items (val) { print("{}\n", val); }
-for items, 0.. (val, idx) { print("[{}] = {}\n", idx, val); }
-for 1..=5, 0.. (a, b) { print("{}:{}\n", a, b); }   // a: 1..5, b follows
-for items (val) => total += val;                    // arrow body
-for 0<..<n (i) { }                                  // bound markers: 1 .. n-1
+for val in items { print("{}\n", val); }
+for val, idx in items, 0.. { print("[{}] = {}\n", idx, val); }
+for a, b in 1..=5, 0.. { print("{}:{}\n", a, b); }  // a: 1..5, b follows
+for val in items => total += val;                   // arrow body
+for i in 0<..<n { }                                 // bound markers: 1 .. n-1
 sub := items[1..=3];                                // slices take them too
 
 // Defer
@@ -830,7 +830,7 @@ describe :: (tp: Type) {
     ti := type_info(tp);                       // kind-first dispatch
     if ti == {
         case .struct: (si) {
-            for si.fields (i, f) { print("  +{} {}\n", f.offset, f.name); }
+            for i, f in si.fields { print("  +{} {}\n", f.offset, f.name); }
         }
         case .enum: (ei) { print("  {} variants\n", ei.variants.len); }
         case .int:  (ii) { print("  int, {} bits\n", ii.bits); }
@@ -971,7 +971,7 @@ sum :: (n: i32, ..) -> i64 abi(.c) {
     @va_start(*ap);          // open a cursor over the arguments past `n`
     defer @va_end(*ap);      // every cursor opened is closed exactly once
     total: i64 = 0;
-    for 0..n (i) { total += xx @va_arg(i32, *ap); }
+    for i in 0..n { total += xx @va_arg(i32, *ap); }
     return total;
 }
 ```

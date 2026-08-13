@@ -189,12 +189,12 @@ InputQueue :: struct {
     // Deliver every queued event in order — payloads are borrowed for
     // the call — then clear, releasing owned text.
     drain :: (self: *InputQueue, f: Closure(*InputEvent)) {
-        for self.events (*e) { f(e); }
+        for *e in self.events { f(e); }
         self.clear();
     }
 
     clear :: (self: *InputQueue) {
-        for self.events (e) {
+        for e in self.events {
             if e == {
                 case .text: (t) { self.gpa.dealloc_bytes(xx t.text.ptr); true }
                 else: false

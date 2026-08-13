@@ -8,11 +8,11 @@ Rect  :: struct { w: i64; h: i64; }
 
 Show :: protocol tagged { show :: (self: *Self) -> i64; }
 
-inline for .[Point, Rect] (T) {
+inline for T in .[Point, Rect] {
     impl Show for T { show :: (self: *T) -> i64 { 1 } }
 }
 
-inline for .[Rect] (T) {
+inline for T in .[Rect] {
     impl Show for T { show :: (self: *T) -> i64 { 2 } }
 }
 

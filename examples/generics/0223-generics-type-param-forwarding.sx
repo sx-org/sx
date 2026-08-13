@@ -16,7 +16,7 @@ count_leaves :: ($T: Type) -> i64 {
     n := 0;
     inline if T == {
         case struct: {
-            inline for 0..struct_field_count(T) (i) {
+            inline for i in 0..struct_field_count(T) {
                 n += count_leaves(struct_field_type(T, i));
             }
         }

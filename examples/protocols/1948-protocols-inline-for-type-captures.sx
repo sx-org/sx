@@ -17,7 +17,7 @@ Sized :: protocol tagged {
 
 // Module scope: the cursor spells the impl head, the receiver, and the
 // reflection argument. A nested `inline if` selects per-target bodies.
-inline for ALSO (T) {
+inline for T in ALSO {
     inline if POINTER_SIZE == 8 {
         impl Sized for T {
             footprint :: (self: *T) -> i64 { size_of(T) }
@@ -32,16 +32,16 @@ inline for ALSO (T) {
 main :: () {
     // Statement scope: `T` names a type in an annotation, and the index cursor
     // rides the trailing open range.
-    inline for SHAPES, 0.. (T, i) {
+    inline for T, i in SHAPES, 0.. {
         v : T = ---;
         print("{} {} {} {}\n", i, size_of(T), align_of(T), struct_field_count(T));
     }
 
     // A literal list needs no name; an alias iterates the same set.
-    inline for .[i64, f64, bool] (T) {
+    inline for T in .[i64, f64, bool] {
         print("{} ", size_of(T));
     }
-    inline for ALSO (T) {
+    inline for T in ALSO {
         print("{} ", struct_field_count(T));
     }
     print("\n");

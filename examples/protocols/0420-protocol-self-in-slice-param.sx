@@ -15,7 +15,7 @@ T :: struct { n: i64 = 0; }
 impl P for T {
     total :: (self: *T, xs: []T, extra: T) -> i64 {
         sum := self.n + extra.n;
-        for xs (x) { sum = sum + x.n; }
+        for x in xs { sum = sum + x.n; }
         return sum;
     }
 }

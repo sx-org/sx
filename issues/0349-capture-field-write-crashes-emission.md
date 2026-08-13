@@ -20,15 +20,15 @@ Reproduces for every container shape: fixed array, slice, `List(T)`
     Item :: struct { n: i64 = 0; }
     main :: () {
         arr : [2]Item = .[.{ n = 1 }, .{ n = 2 }];
-        for arr (e) { e.n = e.n + 10; }   // ← should be the immutability error
+        for e in arr { e.n = e.n + 10; }   // ← should be the immutability error
         print("{}\n", arr[0].n);
     }
 
 ## Expected
 
 The immutability diagnostic, extended to field writes: a by-value capture is a
-read-only alias — suggest `(*x)` for the for-element shape (write
-through the pointer), copy-into-a-`:=`-local otherwise. `for arr (*e)
+read-only alias — suggest `*x` for the for-element shape (write
+through the pointer), copy-into-a-`:=`-local otherwise. `for *e in arr
 { e.n += 10; }` is the correct spelling and WORKS today.
 
 ## Actual

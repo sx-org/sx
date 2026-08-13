@@ -194,10 +194,10 @@ Serialize :: protocol tagged {
 
 SERIALIZABLE :: .[Point, Rect, Color, Widget];
 
-inline for SERIALIZABLE (T) {
+inline for T in SERIALIZABLE {
     impl Serialize for T {
         write :: (self: *T, out: *Buf) {
-            inline for 0..struct_field_count(T) (i) {
+            inline for i in 0..struct_field_count(T) {
                 write_field(out, struct_field_name(T, i),
                             struct_field_value(self.*, i));
             }

@@ -1,14 +1,14 @@
-error: cannot assign to immutable capture 'x' — it is a by-value copy of the element; capture by reference with '(*x)' and write 'x.* = ...' to modify the container, or copy it into a `:=` local to mutate
-  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:33:18
+error: cannot assign to immutable capture 'x' — it is a by-value copy of the element; capture by reference with '*x' and write 'x.* = ...' to modify the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:33:19
    |
-33 |     for xs (x) { x += 100; }
-   |                  ^^^^^^^^^
+33 |     for x in xs { x += 100; }
+   |                   ^^^^^^^^^
 
 error: cannot assign to immutable capture 'i' — a range/index position has no storage to write back into; copy it into a `:=` local to mutate
-  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:36:26
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:36:27
    |
-36 |     for xs, 0.. (v, i) { i = 99; }
-   |                          ^^^^^^^
+36 |     for v, i in xs, 0.. { i = 99; }
+   |                           ^^^^^^^
 
 error: cannot assign to immutable capture 'r' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate
   --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:41:29
@@ -41,16 +41,16 @@ error: cannot assign to immutable capture 'e' — a catch/onfail error binding i
    |                  ^^^^^^^^^^^^^^
 
 error: cannot assign to immutable capture 'x' — a pack-element alias is read-only; copy it into a `:=` local to mutate
-  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:21:25
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:21:26
    |
-21 |     inline for xs (x) { x = 999; }          // pack-element alias — immutable
-   |                         ^^^^^^^^
+21 |     inline for x in xs { x = 999; }          // pack-element alias — immutable
+   |                          ^^^^^^^^
 
-error: cannot assign to immutable capture 'x' — it is a by-value copy of the element; capture by reference with '(*x)' and write 'x.* = ...' to modify the container, or copy it into a `:=` local to mutate
-  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:63:18
+error: cannot assign to immutable capture 'x' — it is a by-value copy of the element; capture by reference with '*x' and write 'x.* = ...' to modify the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:63:19
    |
-63 |     for xs (x) { x, a = 5, 6; }
-   |                  ^
+63 |     for x in xs { x, a = 5, 6; }
+   |                   ^
 
 error: cannot assign to constant 'c' — a '::' declaration is immutable; use ':=' to declare a mutable local
   --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:67:5

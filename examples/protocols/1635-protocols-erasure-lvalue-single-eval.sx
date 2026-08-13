@@ -77,7 +77,7 @@ main :: () -> i32 {
     // copies THE COPY — bumps land there, the array is untouched.
     warr : [2]S = .[ S{ v = 1 }, S{ v = 2 } ];
     total : i64 = 0;
-    for warr (x) {
+    for x in warr {
         pv := x.(P, context.allocator);
         pv.bump();
         total += pv.get();
@@ -85,8 +85,8 @@ main :: () -> i32 {
     if total != 5 { print("byval total {}\n", total); fails += 1; }
     if warr[0].v != 1 or warr[1].v != 2 { print("byval capture aliased: {} {}\n", warr[0].v, warr[1].v); fails += 1; }
 
-    // By-REF (*x) capture through a *P VIEW: writes reach the array.
-    for warr (*x) {
+    // By-REF `*x` capture through a *P VIEW: writes reach the array.
+    for *x in warr {
         pr : *P = x;
         pr.bump();
     }

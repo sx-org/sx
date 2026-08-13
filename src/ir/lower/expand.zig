@@ -1202,7 +1202,7 @@ const Group = struct {
         const mint = g.claimRegistration(decl);
         const diags = if (mint) self.diagnostics else null;
         if (fe.captures.len == 0 or fe.captures[0].name.len == 0) {
-            if (diags) |d| d.addFmt(.err, decl.span, "a module-scope `inline for` needs a cursor — `inline for LIST (T) {{ … }}`", .{});
+            if (diags) |d| d.addFmt(.err, decl.span, "a module-scope `inline for` needs a cursor — `inline for T in LIST {{ … }}`", .{});
             return true;
         }
         if (fe.captures[0].by_ref) {
@@ -1211,7 +1211,7 @@ const Group = struct {
         }
         const list_iterable = fe.iterables[0];
         if (list_iterable.is_range) {
-            if (diags) |d| d.addFmt(.err, list_iterable.expr.span, "a module-scope `inline for` iterates a comptime type list — `inline for .[A, B] (T) {{ … }}`", .{});
+            if (diags) |d| d.addFmt(.err, list_iterable.expr.span, "a module-scope `inline for` iterates a comptime type list — `inline for T in .[A, B] {{ … }}`", .{});
             return true;
         }
         const literal = list orelse {
