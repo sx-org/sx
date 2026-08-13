@@ -1,0 +1,8 @@
+plain true
+inline many true
+inline single true
+inline void true
+inline cstring true
+vtable many true
+vtable cstring true
+inline scalar true
