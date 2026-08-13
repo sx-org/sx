@@ -82,7 +82,7 @@ total := (hi << 16)
 A `(` or `[` binds to what precedes it only when nothing separates them — in
 expressions and in every type position alike. A `(` that opens something new
 (grouping, parameters, a capture, a declaration form) is free:
-`add :: (a: i64) -> i64`, `for x in xs { … }`, `risky() catch (e) -1`. `-` and
+`add :: (a: i64) -> i64`, `risky() catch (e) -1`. `-` and
 `*` also have prefix readings, so they are infix only when spaced the same on
 both sides, and a prefix `-` / `*` must be glued to its operand. The third rule
 governs what binds to an expression from behind — the trailing-block `{`
