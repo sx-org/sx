@@ -90,9 +90,6 @@ pub const Parser = struct {
     /// True while parsing a parameter's default expression — the one place
     /// `@caller` may be written.
     in_param_default: bool = false,
-    /// True at the top level of a `|params|` parameter default. `|` closes
-    /// the list rather than bitwise-OR; a grouping restores bitwise OR.
-    in_pipe_param_default: bool = false,
 
     /// Lexes `source` and owns the resulting list from `allocator`.
     pub fn init(allocator: std.mem.Allocator, source: [:0]const u8) error{OutOfMemory}!Parser {
@@ -219,7 +216,7 @@ pub const Parser = struct {
                 const saved_module_expansion = self.in_module_expansion;
                 self.in_module_expansion = true;
                 defer self.in_module_expansion = saved_module_expansion;
-                const expr = try self.parseIfExpr();
+                const expr = try self.parseIfExpr(.bit_or);
                 expr.data.if_expr.is_comptime = true;
                 return expr;
             }
@@ -1003,7 +1000,7 @@ pub const Parser = struct {
                     } else {
                         arg = try self.parseTypeExpr();
                     }
-                    arg = try self.parseBinaryRhs(arg, Prec.additive);
+                    arg = try self.parseBinaryRhs(arg, Prec.additive, .bit_or);
                     try args.append(self.allocator, arg);
                 }
                 try self.expect(.r_paren);
@@ -2453,14 +2450,9 @@ pub const Parser = struct {
             if (self.tokens.tag(self.tok) == .equal) {
                 self.advance(); // consume '='
                 const saved_in_default = self.in_param_default;
-                const saved_in_pipe_default = self.in_pipe_param_default;
                 self.in_param_default = true;
-                self.in_pipe_param_default = close == .pipe;
-                defer {
-                    self.in_param_default = saved_in_default;
-                    self.in_pipe_param_default = saved_in_pipe_default;
-                }
-                default_expr = try self.parseExpr();
+                defer self.in_param_default = saved_in_default;
+                default_expr = try self.parseBinary(Prec.none, if (close == .pipe) PipeRole.closer else .bit_or);
             }
             // Protocol-constrained variadic pack: `..xs: Protocol` — a bare
             // type (not a slice/array) on a non-comptime variadic param. The
@@ -3141,7 +3133,7 @@ pub const Parser = struct {
         if (self.tokens.tag(self.tok) == .kw_inline) {
             if (self.peekNext() == .kw_if) {
                 self.advance(); // skip 'inline'
-                const expr = try self.parseIfExpr();
+                const expr = try self.parseIfExpr(.bit_or);
                 expr.data.if_expr.is_comptime = true;
                 try self.endExprStatement(expr);
                 return expr;
@@ -3165,7 +3157,7 @@ pub const Parser = struct {
         // Block-form if/while/for as statements — parse directly to prevent
         // postfix chaining (e.g. `if cond { ... }.field` being misparsed)
         if (self.tokens.tag(self.tok) == .kw_if) {
-            const expr = try self.parseIfExpr();
+            const expr = try self.parseIfExpr(.bit_or);
             try self.endExprStatement(expr);
             return expr;
         }
@@ -3175,12 +3167,12 @@ pub const Parser = struct {
             return expr;
         }
         if (self.tokens.tag(self.tok) == .kw_while) {
-            const expr = try self.parsePrimary();
+            const expr = try self.parsePrimary(.bit_or);
             try self.endExprStatement(expr);
             return expr;
         }
         if (self.tokens.tag(self.tok) == .kw_for) {
-            const expr = try self.parsePrimary();
+            const expr = try self.parsePrimary(.bit_or);
             try self.endExprStatement(expr);
             return expr;
         }
@@ -3222,19 +3214,32 @@ pub const Parser = struct {
 
     // ---- Expression parsing (Pratt / precedence climbing) ----
 
+    /// What a `|` after a completed operand means on this expression spine:
+    /// the bitwise-OR infix, or the closer of the `|params|` list whose
+    /// default this expression is. `.closer` reaches the default's own Pratt
+    /// spine and the last unbracketed child of the productions that carry it;
+    /// every other expression starts at `.bit_or` through `parseExpr`.
+    const PipeRole = enum { bit_or, closer };
+
     pub fn parseExpr(self: *Parser) anyerror!*Node {
-        return self.parseBinary(Prec.none);
+        return self.parseBinary(Prec.none, .bit_or);
     }
 
-    fn parseBinary(self: *Parser, min_prec: u8) anyerror!*Node {
-        const lhs = try self.parseUnary();
-        return self.parseBinaryRhs(lhs, min_prec);
+    fn parseExprRole(self: *Parser, pipe: PipeRole) anyerror!*Node {
+        return self.parseBinary(Prec.none, pipe);
     }
 
-    fn parseBinaryRhs(self: *Parser, initial_lhs: *Node, min_prec: u8) anyerror!*Node {
+    fn parseBinary(self: *Parser, min_prec: u8, pipe: PipeRole) anyerror!*Node {
+        const lhs = try self.parseUnary(pipe);
+        return self.parseBinaryRhs(lhs, min_prec, pipe);
+    }
+
+    fn parseBinaryRhs(self: *Parser, initial_lhs: *Node, min_prec: u8, pipe: PipeRole) anyerror!*Node {
         var lhs = initial_lhs;
 
         while (true) {
+            if (pipe == .closer and self.tokens.tag(self.tok) == .pipe) break;
+
             // Pipe operator: desugar a |> f(args) → f(a, args), a |> f → f(a).
             // Consumer-aware: the piped LHS goes into the RHS's HEAD call,
             // looking THROUGH a `try` prefix / `catch` postfix / `or` fallback
@@ -3244,7 +3249,7 @@ pub const Parser = struct {
             //   a |> f(x) or default     → f(a, x) or default   (only f gets a)
             if (self.tokens.tag(self.tok) == .pipe_arrow and Prec.pipe >= min_prec) {
                 self.advance();
-                const rhs = try self.parseBinary(Prec.pipe + 1);
+                const rhs = try self.parseBinary(Prec.pipe + 1, pipe);
                 // Walk through error-handling wrappers to the head call node.
                 var head = rhs;
                 const head_call: ?*Node = while (true) {
@@ -3281,7 +3286,7 @@ pub const Parser = struct {
             // Null coalescing: expr ?? default
             if (self.tokens.tag(self.tok) == .question_question and Prec.null_coalesce >= min_prec) {
                 self.advance();
-                const rhs = try self.parseBinary(Prec.null_coalesce);
+                const rhs = try self.parseBinary(Prec.null_coalesce, pipe);
                 lhs = try self.createNode(lhs.span.start, .{ .null_coalesce = .{ .lhs = lhs, .rhs = rhs } });
                 continue;
             }
@@ -3292,13 +3297,13 @@ pub const Parser = struct {
             if ((self.tokens.tag(self.tok) == .minus or self.tokens.tag(self.tok) == .star) and
                 self.tokens.flagsOf(self.tok).newline_left and self.tokens.flagsOf(self.tokens.next(self.tok)).glued_left) break;
 
-            const info = self.binaryInfo(self.tokens.tag(self.tok)) orelse break;
+            const info = binaryInfo(self.tokens.tag(self.tok)) orelse break;
             if (info.prec < min_prec) break;
 
             const op = info.op;
             self.advance();
 
-            const rhs = try self.parseBinary(info.prec + 1);
+            const rhs = try self.parseBinary(info.prec + 1, pipe);
 
             // Chained comparison detection: if op is a comparison and the next
             // token is also a comparison at the same precedence, accumulate
@@ -3311,9 +3316,9 @@ pub const Parser = struct {
                 try ops.append(self.allocator, op);
 
                 while (self.atComparison()) {
-                    const chain_info = self.binaryInfo(self.tokens.tag(self.tok)) orelse break;
+                    const chain_info = binaryInfo(self.tokens.tag(self.tok)) orelse break;
                     self.advance();
-                    const chain_rhs = try self.parseBinary(info.prec + 1);
+                    const chain_rhs = try self.parseBinary(info.prec + 1, pipe);
                     try operands.append(self.allocator, chain_rhs);
                     try ops.append(self.allocator, chain_info.op);
                 }
@@ -3330,13 +3335,13 @@ pub const Parser = struct {
         return lhs;
     }
 
-    fn parseUnary(self: *Parser) anyerror!*Node {
+    fn parseUnary(self: *Parser, pipe: PipeRole) anyerror!*Node {
         if (self.tokens.tag(self.tok) == .minus_minus) {
             const start = self.tokens.start(self.tok);
             const op_loc = self.tokens.token(self.tok).loc;
             self.advance();
             try self.requirePrefixGlue(op_loc);
-            const operand = try self.parseUnary();
+            const operand = try self.parseUnary(pipe);
             return try self.createNode(start, .{ .unary_op = .{ .op = .pre_decrement, .operand = operand } });
         }
         if (self.tokens.tag(self.tok) == .minus) {
@@ -3344,25 +3349,25 @@ pub const Parser = struct {
             const op_loc = self.tokens.token(self.tok).loc;
             self.advance();
             try self.requirePrefixGlue(op_loc);
-            const operand = try self.parseUnary();
+            const operand = try self.parseUnary(pipe);
             return try self.createNode(start, .{ .unary_op = .{ .op = .negate, .operand = operand } });
         }
         if (self.tokens.tag(self.tok) == .bang) {
             const start = self.tokens.start(self.tok);
             self.advance();
-            const operand = try self.parseUnary();
+            const operand = try self.parseUnary(pipe);
             return try self.createNode(start, .{ .unary_op = .{ .op = .not, .operand = operand } });
         }
         if (self.tokens.tag(self.tok) == .tilde) {
             const start = self.tokens.start(self.tok);
             self.advance();
-            const operand = try self.parseUnary();
+            const operand = try self.parseUnary(pipe);
             return try self.createNode(start, .{ .unary_op = .{ .op = .bit_not, .operand = operand } });
         }
         if (self.tokens.tag(self.tok) == .kw_xx) {
             const start = self.tokens.start(self.tok);
             self.advance();
-            const operand = try self.parseUnary();
+            const operand = try self.parseUnary(pipe);
             return try self.createNode(start, .{ .unary_op = .{ .op = .xx, .operand = operand } });
         }
         // Prefix `*` — address-of. One glyph, two sides of the same coin:
@@ -3375,7 +3380,7 @@ pub const Parser = struct {
             const op_loc = self.tokens.token(self.tok).loc;
             self.advance();
             try self.requirePrefixGlue(op_loc);
-            const operand = try self.parseUnary();
+            const operand = try self.parseUnary(pipe);
             return try self.createNode(start, .{ .unary_op = .{ .op = .address_of, .operand = operand } });
         }
         // `try X` — failable-attempt prefix. Joins the unary tier (binds
@@ -3386,16 +3391,16 @@ pub const Parser = struct {
             try self.rejectInCleanup("try");
             const start = self.tokens.start(self.tok);
             self.advance();
-            const operand = try self.parseUnary();
+            const operand = try self.parseUnary(pipe);
             return try self.createNode(start, .{ .try_expr = .{ .operand = operand } });
         }
         // `cast` is not a keyword — `cast(Type, value)` is an ordinary 2-arg
         // call, parsed by parsePostfix like any other.
-        return self.parsePostfix();
+        return self.parsePostfix(pipe);
     }
 
-    fn parsePostfix(self: *Parser) anyerror!*Node {
-        var expr = try self.parsePrimary();
+    fn parsePostfix(self: *Parser, pipe: PipeRole) anyerror!*Node {
+        var expr = try self.parsePrimary(pipe);
 
         while (true) {
             if (self.tokens.tag(self.tok) == .l_paren and !self.spacedGroupEndsHeader()) {
@@ -3713,7 +3718,7 @@ pub const Parser = struct {
                 const body: *Node = if (self.tokens.tag(self.tok) == .l_brace)
                     try self.parseBlock()
                 else if (binding != null)
-                    try self.parseExpr()
+                    try self.parseExprRole(pipe)
                 else
                     return self.fail("`catch` without a binding requires a braced body: `catch { ... }`");
                 expr = try self.createNode(expr.span.start, .{ .catch_expr = .{
@@ -3809,7 +3814,7 @@ pub const Parser = struct {
                     // the result tuple. (A pointer-TYPED value output is
                     // not expressible here — spell it `-> usize` and cast.)
                     role = .out_place;
-                    payload = try self.parseUnary();
+                    payload = try self.parseUnary(.bit_or);
                 } else {
                     role = .out_value;
                     payload = try self.parseTypeExpr();
@@ -3856,7 +3861,7 @@ pub const Parser = struct {
         return try self.createNode(start, .{ .asm_global = .{ .template = template } });
     }
 
-    fn parsePrimary(self: *Parser) anyerror!*Node {
+    fn parsePrimary(self: *Parser, pipe: PipeRole) anyerror!*Node {
         const start = self.tokens.start(self.tok);
         // `@Init` is a type the compiler forms, never a value a program builds:
         // there is no `@Init(T){ … }` literal and no `@Init` expression. A
@@ -4073,7 +4078,7 @@ pub const Parser = struct {
                 // Enum literal: .variant_name — parsePostfix handles optional (...) as a call
                 return try self.createNode(start, .{ .enum_literal = .{ .name = name } });
             },
-            .pipe => return self.parseClosure(start),
+            .pipe => return self.parseClosure(start, pipe),
             .l_paren => {
                 // Function-type literal: (T1, T2) -> R
                 if (self.isFunctionTypeExprAtLParen()) {
@@ -4087,18 +4092,15 @@ pub const Parser = struct {
                 const saved_if_grp = self.in_if_condition;
                 const saved_ntb_grp = self.no_trailing_block;
                 const saved_match_grp = self.in_match_subject;
-                const saved_pipe_default_grp = self.in_pipe_param_default;
                 self.in_for_header = false;
                 self.in_if_condition = false;
                 self.no_trailing_block = false;
                 self.in_match_subject = false;
-                self.in_pipe_param_default = false;
                 defer {
                     self.in_for_header = saved_hdr_grp;
                     self.in_if_condition = saved_if_grp;
                     self.no_trailing_block = saved_ntb_grp;
                     self.in_match_subject = saved_match_grp;
-                    self.in_pipe_param_default = saved_pipe_default_grp;
                 }
 
                 // Bare `(...)` is GROUPING ONLY. Tuple VALUES are written
@@ -4144,7 +4146,7 @@ pub const Parser = struct {
                 return try self.parseUnionDecl("__anon", start, false);
             },
             .kw_if => {
-                return self.parseIfExpr();
+                return self.parseIfExpr(pipe);
             },
             .kw_match => {
                 return self.parseMatchExpr();
@@ -4173,7 +4175,7 @@ pub const Parser = struct {
                 const value = if (self.atStatementEnd())
                     null
                 else
-                    try self.parseExpr();
+                    try self.parseExprRole(pipe);
                 return try self.createNode(start, .{ .return_stmt = .{ .value = value } });
             },
             .l_bracket, .question => {
@@ -4188,7 +4190,7 @@ pub const Parser = struct {
             },
             .hash_run => {
                 self.advance(); // skip '#run'
-                const inner = try self.parseExpr();
+                const inner = try self.parseExprRole(pipe);
                 return try self.createNode(start, .{ .comptime_expr = .{ .expr = inner } });
             },
             .hash_objc_call, .hash_jni_call, .hash_jni_static_call => {
@@ -4270,7 +4272,7 @@ pub const Parser = struct {
         } });
     }
 
-    fn parseIfExpr(self: *Parser) anyerror!*Node {
+    fn parseIfExpr(self: *Parser, pipe: PipeRole) anyerror!*Node {
         const start = self.tokens.start(self.tok);
         self.advance(); // skip 'if'
 
@@ -4291,7 +4293,7 @@ pub const Parser = struct {
             if (self.atChainingElse()) {
                 self.advance();
                 if (self.tokens.tag(self.tok) == .kw_if) {
-                    else_branch = try self.parseIfExpr();
+                    else_branch = try self.parseIfExpr(pipe);
                 } else {
                     else_branch = try self.parseBlock();
                 }
@@ -4311,7 +4313,7 @@ pub const Parser = struct {
         // unconsumed so a chain (`a < b < c`) is collected as one node.
         const saved_if_cond = self.in_if_condition;
         self.in_if_condition = true;
-        var condition = try self.parseBinary(Prec.shift);
+        var condition = try self.parseBinary(Prec.shift, .bit_or);
 
         // All comparisons (< <= > >= == !=) are at the same precedence.
         if (self.atComparison()) {
@@ -4320,9 +4322,9 @@ pub const Parser = struct {
             try operands.append(self.allocator, condition);
 
             while (self.atComparison()) {
-                const cmp_info = self.binaryInfo(self.tokens.tag(self.tok)) orelse break;
+                const cmp_info = binaryInfo(self.tokens.tag(self.tok)) orelse break;
                 self.advance();
-                const rhs = try self.parseBinary(Prec.shift);
+                const rhs = try self.parseBinary(Prec.shift, .bit_or);
                 try operands.append(self.allocator, rhs);
                 try ops.append(self.allocator, cmp_info.op);
             }
@@ -4344,17 +4346,17 @@ pub const Parser = struct {
         }
 
         // Handle and/or with proper Pratt precedence
-        condition = try self.parseBinaryRhs(condition, Prec.logical_or);
+        condition = try self.parseBinaryRhs(condition, Prec.logical_or, .bit_or);
         self.in_if_condition = saved_if_cond;
 
         // Inline form: if cond then expr [else expr]
         if (self.tokens.tag(self.tok) == .kw_then) {
             self.advance();
-            const then_branch = try self.parseExpr();
+            const then_branch = try self.parseExprRole(pipe);
             var else_branch: ?*Node = null;
             if (self.atChainingElse()) {
                 self.advance();
-                else_branch = try self.parseExpr();
+                else_branch = try self.parseExprRole(pipe);
             }
             return try self.createNode(start, .{ .if_expr = .{
                 .condition = condition,
@@ -4370,7 +4372,7 @@ pub const Parser = struct {
         if (self.atChainingElse()) {
             self.advance();
             if (self.tokens.tag(self.tok) == .kw_if) {
-                else_branch = try self.parseIfExpr();
+                else_branch = try self.parseIfExpr(pipe);
             } else {
                 else_branch = try self.parseBlock();
             }
@@ -4578,7 +4580,7 @@ pub const Parser = struct {
                 // here — the arm value grammar has no call form.
                 try self.parseTypeExpr()
             else
-                try self.parsePrimary(); // .variant
+                try self.parsePrimary(.bit_or); // .variant
             try self.expect(.colon);
 
             // Optional payload capture: `|ident|`. An arm with no payload
@@ -4831,7 +4833,7 @@ pub const Parser = struct {
                 // value literal. `parseUnary` handles the `-` case and falls
                 // through to `parsePrimary` for an unsigned literal.
                 if (self.tokens.tag(self.tok) == .plus) self.advance();
-                try field_types.append(self.allocator, try self.parseUnary());
+                try field_types.append(self.allocator, try self.parseUnary(.bit_or));
             } else {
                 try field_types.append(self.allocator, try self.parseTypeExpr());
             }
@@ -4875,7 +4877,7 @@ pub const Parser = struct {
     /// `|params| body` — the closure literal, parsed where a primary starts.
     /// After a completed operand `|` is bitwise OR, so only this position ever
     /// reaches here; `||` is two `|` tokens around an empty list.
-    fn parseClosure(self: *Parser, start: u32) anyerror!*Node {
+    fn parseClosure(self: *Parser, start: u32, pipe: PipeRole) anyerror!*Node {
         try self.expect(.pipe);
         const param_list = try self.parseParamsUntil(.pipe);
         // A closure carries an sx environment, so it has no C signature to hang
@@ -4911,7 +4913,7 @@ pub const Parser = struct {
         const body = if (self.tokens.tag(self.tok) == .l_brace)
             try self.parseBlock()
         else
-            try self.parseExpr();
+            try self.parseExprRole(pipe);
         const type_params = try self.collectTypeParams(params);
         return try self.createNode(start, .{ .lambda = .{
             .params = params,
@@ -5322,8 +5324,7 @@ pub const Parser = struct {
     /// One lookup per infix token: precedence tier, AST operator, and whether
     /// the token joins a comparison chain (`in` shares the tier but never
     /// chains).
-    fn binaryInfo(self: *const Parser, tag: Tag) ?BinaryInfo {
-        if (self.in_pipe_param_default and tag == .pipe) return null;
+    fn binaryInfo(tag: Tag) ?BinaryInfo {
         return switch (tag) {
             .kw_or => .{ .prec = Prec.logical_or, .op = .or_op, .comparison = false },
             .kw_and => .{ .prec = Prec.logical_and, .op = .and_op, .comparison = false },
@@ -5479,7 +5480,7 @@ pub const Parser = struct {
     }
 
     fn atComparison(self: *const Parser) bool {
-        const info = self.binaryInfo(self.tokens.tag(self.tok)) orelse return false;
+        const info = binaryInfo(self.tokens.tag(self.tok)) orelse return false;
         return info.comparison;
     }
 
@@ -6432,15 +6433,183 @@ test "`|` after a completed operand is bitwise OR" {
     try std.testing.expectEqual(ast.BinaryOp.Op.bit_or, bin.op);
 }
 
+/// Parses `f :: () { g := <literal>; }` and returns the bound lambda.
+fn pipeLambda(arena: std.mem.Allocator, literal: []const u8) !ast.Lambda {
+    const src = try std.fmt.allocPrintSentinel(arena, "f :: () {{ g := {s}; }}", .{literal}, 0);
+    var parser = try Parser.init(arena, src);
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    return stmt.data.var_decl.value.?.data.lambda;
+}
+
+fn expectBitOr(node: *const Node, lhs: []const u8, rhs: []const u8) !void {
+    try std.testing.expectEqual(ast.BinaryOp.Op.bit_or, node.data.binary_op.op);
+    try std.testing.expectEqualStrings(lhs, node.data.binary_op.lhs.data.identifier.name);
+    try std.testing.expectEqualStrings(rhs, node.data.binary_op.rhs.data.identifier.name);
+}
+
+test "a `|` inside a call argument of a pipe-parameter default is bitwise OR" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lam = try pipeLambda(arena.allocator(), "|x: i64 = mask(a | b)| x");
+    const dflt = lam.params[0].default_expr.?;
+    try expectBitOr(dflt.data.call.args[0], "a", "b");
+    try std.testing.expectEqualStrings("x", lam.body.data.identifier.name);
+}
+
+test "a `|` inside an index of a pipe-parameter default is bitwise OR" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lam = try pipeLambda(arena.allocator(), "|x: i64 = xs[a | b]| x");
+    const dflt = lam.params[0].default_expr.?;
+    try expectBitOr(dflt.data.index_expr.index, "a", "b");
+    try std.testing.expectEqualStrings("x", lam.body.data.identifier.name);
+}
+
+test "a `|` inside a braced branch of a pipe-parameter default is bitwise OR" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lam = try pipeLambda(arena.allocator(), "|x: i64 = if c { a | b } else { 0 }| x");
+    const dflt = lam.params[0].default_expr.?;
+    try std.testing.expect(!dflt.data.if_expr.is_inline);
+    try expectBitOr(dflt.data.if_expr.then_branch.data.block.stmts[0], "a", "b");
+    try std.testing.expectEqualStrings("x", lam.body.data.identifier.name);
+}
+
+test "a `|` inside an `if` condition of a pipe-parameter default is bitwise OR" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lam = try pipeLambda(arena.allocator(), "|x: i64 = if a | b { 1 } else { 0 }| x");
+    const dflt = lam.params[0].default_expr.?;
+    try expectBitOr(dflt.data.if_expr.condition, "a", "b");
+    try std.testing.expectEqualStrings("x", lam.body.data.identifier.name);
+}
+
+test "a pipe-parameter default descends the whole precedence spine" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const and_lam = try pipeLambda(arena.allocator(), "|x: i64 = a and b| x");
+    try std.testing.expectEqual(ast.BinaryOp.Op.and_op, and_lam.params[0].default_expr.?.data.binary_op.op);
+
+    const coalesce_lam = try pipeLambda(arena.allocator(), "|x: i64 = a ?? b| x");
+    try std.testing.expect(coalesce_lam.params[0].default_expr.?.data == .null_coalesce);
+
+    const pipe_lam = try pipeLambda(arena.allocator(), "|x: i64 = a |> f| x");
+    const piped = pipe_lam.params[0].default_expr.?.data.call;
+    try std.testing.expectEqualStrings("f", piped.callee.data.identifier.name);
+    try std.testing.expectEqualStrings("a", piped.args[0].data.identifier.name);
+}
+
+test "the first `|` on a pipe-parameter default's own spine closes the list" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lam = try pipeLambda(arena.allocator(), "|x: i64 = a | b| x");
+    try std.testing.expectEqualStrings("a", lam.params[0].default_expr.?.data.identifier.name);
+    try expectBitOr(lam.body, "b", "x");
+}
+
+test "an inline `if` is a pipe-parameter default" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const then_lam = try pipeLambda(arena.allocator(), "|x: i64 = if c then 7| x");
+    const then_if = then_lam.params[0].default_expr.?.data.if_expr;
+    try std.testing.expect(then_if.is_inline);
+    try std.testing.expectEqual(@as(i64, 7), then_if.then_branch.data.int_literal.value);
+    try std.testing.expectEqualStrings("x", then_lam.body.data.identifier.name);
+
+    const else_lam = try pipeLambda(arena.allocator(), "|x: i64 = if c then 1 else 7| x");
+    const else_if = else_lam.params[0].default_expr.?.data.if_expr;
+    try std.testing.expectEqual(@as(i64, 7), else_if.else_branch.?.data.int_literal.value);
+    try std.testing.expectEqualStrings("x", else_lam.body.data.identifier.name);
+
+    const closer_lam = try pipeLambda(arena.allocator(), "|x: i64 = if c then a | b| x");
+    const closer_if = closer_lam.params[0].default_expr.?.data.if_expr;
+    try std.testing.expectEqualStrings("a", closer_if.then_branch.data.identifier.name);
+    try expectBitOr(closer_lam.body, "b", "x");
+}
+
+test "a `catch` body is a pipe-parameter default" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lam = try pipeLambda(arena.allocator(), "|x: i64 = f() catch (e) 0| x");
+    const caught = lam.params[0].default_expr.?.data.catch_expr;
+    try std.testing.expectEqual(@as(i64, 0), caught.body.data.int_literal.value);
+    try std.testing.expectEqualStrings("x", lam.body.data.identifier.name);
+}
+
+test "a `#run` and a `return` are pipe-parameter defaults" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const run_lam = try pipeLambda(arena.allocator(), "|x: i64 = #run 13| x");
+    const inner = run_lam.params[0].default_expr.?.data.comptime_expr.expr;
+    try std.testing.expectEqual(@as(i64, 13), inner.data.int_literal.value);
+    try std.testing.expectEqualStrings("x", run_lam.body.data.identifier.name);
+
+    const ret_lam = try pipeLambda(arena.allocator(), "|x: i64 = return 1| x");
+    const value = ret_lam.params[0].default_expr.?.data.return_stmt.value.?;
+    try std.testing.expectEqual(@as(i64, 1), value.data.int_literal.value);
+    try std.testing.expectEqualStrings("x", ret_lam.body.data.identifier.name);
+}
+
+test "a closure literal is a pipe-parameter default" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lam = try pipeLambda(arena.allocator(), "|x: i64 = |y: i64| y| 0");
+    const inner = lam.params[0].default_expr.?.data.lambda;
+    try std.testing.expectEqualStrings("y", inner.params[0].name);
+    try std.testing.expectEqualStrings("y", inner.body.data.identifier.name);
+    try std.testing.expectEqual(@as(i64, 0), lam.body.data.int_literal.value);
+}
+
+test "a nested pipe-parameter default closes against its own list" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const lam = try pipeLambda(arena.allocator(), "|f: C = |y: i64 = 1| y| f(1)");
+    const inner = lam.params[0].default_expr.?.data.lambda;
+    try std.testing.expectEqual(@as(i64, 1), inner.params[0].default_expr.?.data.int_literal.value);
+    try std.testing.expectEqualStrings("y", inner.body.data.identifier.name);
+    try std.testing.expect(lam.body.data == .call);
+}
+
+test "a `|` on a paren-parameter default is bitwise OR" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "h :: (x: i64 = a | b) -> i64 { x }");
+    const root = try parser.parse();
+    const fd = root.data.root.decls[0].data.fn_decl;
+    try expectBitOr(fd.params[0].default_expr.?, "a", "b");
+}
+
+test "a closure body inside a paren-parameter default keeps `|` as bitwise OR" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "h :: (g: C = |y: i64| y | z) -> i64 { g(0) }");
+    const root = try parser.parse();
+    const fd = root.data.root.decls[0].data.fn_decl;
+    const inner = fd.params[0].default_expr.?.data.lambda;
+    try expectBitOr(inner.body, "y", "z");
+}
+
+test "a parenthesized closure literal is a block tail" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "f :: () { g := if c { (|x: i64| x) } else { (|x: i64| 0 - x) }; }");
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    const branch = stmt.data.var_decl.value.?.data.if_expr.then_branch;
+    try std.testing.expect(branch.data.block.stmts[0].data == .lambda);
+}
+
 test "a closure literal takes no `=>` and no abi tail" {
-    try expectParseMessage("f :: () { g := |x: i32| => x; }", "unexpected token in expression");
-    try expectParseMessage("f :: () { g := |x: i32| abi(.c) x; }", "unexpected token in expression");
+    try expectParseErrorAt("f :: () { g := |x: i32| => x; }", "unexpected token in expression", 24);
+    try expectParseErrorAt("f :: () { g := |x: i32| abi(.c) x; }", "unexpected token in expression", 24);
 }
 
 test "a closure literal cannot open a statement" {
-    try expectParseMessage(
+    try expectParseErrorAt(
         "f :: () { |x: i32| x + 1; }",
         "a closure literal cannot open a statement — bind it (`f := |x| …`) or pass it as an argument",
+        10,
     );
 }
 
@@ -7464,17 +7633,8 @@ test "parse inline match as a comptime match" {
     try std.testing.expect(decl.data.match_expr.is_comptime);
 }
 
-/// Parse `src`, expect `error.ParseError`, and pin the diagnostic text +
-/// offset — the malformed-group policies (crossed, missing, EOF-truncated
-/// delimiters) each report through a specific site.
-fn expectParseMessage(src: [:0]const u8, msg: []const u8) !void {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), src);
-    try std.testing.expectError(error.ParseError, parser.parse());
-    try std.testing.expectEqualStrings(msg, parser.err_msg orelse "");
-}
-
+/// Parse `src`, expect `error.ParseError`, and pin both the diagnostic text
+/// and the byte offset it reports at.
 fn expectParseErrorAt(src: [:0]const u8, msg: []const u8, offset: u32) !void {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

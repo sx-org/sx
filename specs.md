@@ -5359,11 +5359,18 @@ for val, ix in arr, 0.. {
 Anonymous function. Produces a `Closure` value. `|` opens a closure literal
 only where a primary starts; after a completed operand it is bitwise OR. `||`
 is two `|` tokens around an empty parameter list. A parameter default is an
-ordinary expression; `|` after it closes the list, so a bitwise-OR default is
-parenthesized (`|x: i64 = (a | b)|`). Parameters take the same
+ordinary expression except that the first `|` on that default's own value spine
+closes the parameter list. The value spine is the default's operator spine
+together with the trailing expression of an inline `if`, a `catch (e) expr`, a
+nested `|params| expr` body, `#run`, and `return`. Inside `(…)`, `[…]`, `{…}`,
+or an `if` / `while` / `for` / `match` header, `|` is bitwise OR — so a
+bitwise-OR default is parenthesized (`|x: i64 = (a | b)|`), while
+`|x: i64 = mask(a | b)|` and `|x: i64 = if a | b { 1 } else { 0 }|` need
+nothing. Parameters take the same
 forms a named function's do — `$` generic type params, `..` variadic params —
 and the return type annotation is optional. A closure literal may not open an
-expression statement: bind it, pass it, or `return` it.
+expression statement: bind it, pass it, or `return` it. In a value position — a
+block tail, an `if` branch, a `match` arm — it is parenthesized.
 
 ```sx
 n := 5;

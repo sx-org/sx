@@ -2,11 +2,14 @@
 // closing `|` directly. Covers inferred and annotated params, an explicit
 // return type, the empty list `||`, a block body, argument position, a
 // variadic tail, nesting, a parameter default, a parenthesized bitwise-OR
-// default, and the `|` that is bitwise OR.
+// default, a default whose `|` sits inside a call, an index or a braced
+// branch, a closure literal as a default, and the `|` that is bitwise OR.
+// Every default here is parse coverage — each call passes the argument.
 #import "modules/std.sx";
 
 apply :: (f: Closure(i64) -> i64, v: i64) -> i64 { f(v) }
 run :: (f: Closure()) { f(); }
+mask :: (v: i64) -> i64 { v }
 
 main :: () {
     n := 5;
@@ -45,4 +48,14 @@ main :: () {
 
     print("default {}\n", apply(|x: i64 = 1| x, 9));
     print("bit-or-default {}\n", apply(|x: i64 = (a | b)| x, 0));
+
+    // Inside a call, an index or a braced branch, a default's `|` is bitwise OR.
+    xs := .[0, 1, 2, 3, 4, 5, 6, 7];
+    print("call-default {}\n", apply(|x: i64 = mask(a | b)| x, 1));
+    print("index-default {}\n", apply(|x: i64 = xs[a | b]| x, 2));
+    print("branch-default {}\n", apply(|x: i64 = if a > b { a | b } else { 0 }| x, 3));
+
+    // A closure literal is a default; the `|` after it closes the outer list.
+    nest := |f: Closure(i64) -> i64 = |y: i64| y| f(4);
+    print("closure-default {}\n", nest(inc));
 }
