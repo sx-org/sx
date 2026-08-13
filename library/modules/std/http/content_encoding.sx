@@ -34,8 +34,7 @@ AcceptEncoding :: struct {
 Producer :: (ctx: usize, offset: i64, dst: [*]u8, dst_cap: i64) -> i64;
 
 ascii_lower :: (c: u8) -> u8 {
-    if c >= 'A' and c <= 'Z' { return c + ' '; }
-    c
+    c + if 'A' <= c <= 'Z' then ' ' else 0
 }
 
 ce_ascii_ieq :: (a: string, b: string) -> bool {
