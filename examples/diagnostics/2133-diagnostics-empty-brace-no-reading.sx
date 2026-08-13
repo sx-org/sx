@@ -1,0 +1,12 @@
+// An empty `{}` after a call with arguments is the callee's to read (specs:
+// Trailing Blocks — Empty block). `tally` names no parameterized type, and its
+// last parameter takes no block, so neither reading exists — one error names
+// both intents.
+
+tally :: (n: i32) -> i32 {
+    return n;
+}
+
+main :: () -> i32 {
+    return tally(2) {};
+}

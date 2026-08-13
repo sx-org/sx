@@ -1,0 +1,35 @@
+// An empty `{}` after a call with arguments has no body shape, and the gap
+// before it carries no signal (specs: Trailing Blocks — Empty block). The
+// callee decides: a generic type head constructs, a `Closure()` last parameter
+// takes the block. Both spellings reach the same reading, and names — the
+// callee's case, an argument's — decide nothing.
+#import "modules/std.sx";
+
+pair :: struct { a: i64; b: i64; }
+Move :: struct { d: i64; }
+
+Box :: struct ($T: Type) { v: T = ---; }
+Buf :: struct ($N: i64) { xs: [N]i64 = ---; }
+
+run :: (n: i64, body: Closure()) { body(); }
+Group :: (n: i64, body: Closure()) { body(); }
+
+main :: () -> i64 {
+    b := Box(pair){};             // lowercase user type arg
+    v := Buf(16){};               // pure value parameter
+    ms := List(Move){};           // bare PascalCase name
+    xs := List(i64) {};           // spaced: the same construction
+    ys := List(i64)     {};       // the gap is ignored
+
+    b.v.a = 3;
+    ms.append(Move{ d = 4 });
+    xs.append(5);
+    ys.append(6);
+    print("{} {} {} {} {}\n", b.v.a, v.xs.len, ms.len, xs.len, ys.len);
+
+    n := 2;
+    run(n) { print("run\n"); }
+    Group(n) {}                   // spaced: an empty trailing block
+    run(n){}                      // tight: the same block
+    return 0;
+}

@@ -393,8 +393,8 @@ The third rule governs what attaches to an expression from behind, and it
 splits the postfix tokens in two. These four are same-line only: `(` and `[`
 already are, since the glue rule above admits no gap at all, and the `{` and
 the `!` answer the question the same way. The `{` after a call opens a trailing
-block only on the same line as the `)`, and a same-line empty `{}` reads as a
-parameterized aggregate when written tight against the `)`; both readings are
+block only on the same line as the `)`, and a same-line empty `{}` is the one
+brace the gap says nothing about — the callee names its reading; both are
 specified with the form itself — see [Trailing Blocks](#trailing-blocks). A
 named aggregate's `{` and a postfix `!` join them because each has a second
 reading waiting on the other side of a break — a scope block, and the prefix
@@ -5510,24 +5510,23 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
   closure argument is spelled explicitly (`f(x, (a) => { … })`).
 - **Same line**: the `{` must sit on the same line as the call's `)`. A `{`
   on the next line is an ordinary scope block statement, never a trailing
-  block. (This and the empty-block spelling below are the `{` half of
+  block. (This is the `{` half of
   [Whitespace is Syntax](#whitespace-is-syntax); the call's own `(` obeys the
   glue rule there.)
-- **Empty block**: a same-line empty `{}` (comment-only bodies included) carries
-  no body shape, so the **brace spelling** decides. Written **tight** against
-  the `)` it is a parameterized named aggregate — `List(Move){}`,
-  `Sink(View){}`, `Box(pair){}`, `List(*Node){}`, `Buf(16){}`. Written with a
-  **space** it is a trailing block — `run(2) {}`, `Group(n) {}`,
-  `run(Limit) {}`, `render(*screen) {}` — unless at least one argument is
-  **unambiguously type syntax** (builtin scalar type nodes, compound forms
-  `[]u8`/`?T`/`[N]T`/`[*]T`, function types, or a nested type app carrying one),
-  which nothing but a type application can mean: `List(i64) {}`,
-  `Vec(3, f32) {}`, `Holder(Vec(3, f32)) {}`. Names never decide — neither the
-  callee's case nor an argument's, so a lowercase type (`pair`), a PascalCase
-  const (`Limit`), and `*x` (address-of, not `*T`) all take the spelling they
-  are written with. Zero-arg `f() {}` is always trailing, tight or not (`T{}`
-  is the empty non-parameterized aggregate). Bodies with statements/`;`/control
-  keywords are always trailing whatever the spelling.
+- **Empty block**: a same-line empty `{}` (comment-only bodies included) after
+  a call with arguments carries no body shape, and the gap before it carries no
+  signal — `List(Move){}` and `List(Move) {}` are one form, `run(2){}` and
+  `run(2) {}` are another. **The callee decides**: a head that names a generic
+  type or a `-> Type` function constructs it (`List(Move){}`, `Sink(View){}`,
+  `Box(pair){}`, `Buf(16){}`, `List(i64) {}`, `Vec(3, f32) {}`), and otherwise
+  the block trails where the callee's last parameter takes one (`run(2) {}`,
+  `Group(n){}`, `render(*screen) {}`). A callee that is neither — its last
+  parameter is no `Closure` / `@BuildBlock(P)` — takes one error naming both
+  intents. A head that names no declaration at all — a closure value, a
+  function pointer — carries only the trailing reading, and the binder reports
+  what it finds there. Zero-arg `f() {}` always trails, with or without a gap
+  (`T{}` is the empty non-parameterized aggregate), and bodies with
+  statements/`;`/control keywords always trail.
 - **Body shape**: a non-empty same-line body is a parameterized named aggregate
   only where it writes an aggregate marker at its OWN top level — a `,` between
   elements or a `name =` field init. Groups nest, so a `,`, `=` or `;` inside a

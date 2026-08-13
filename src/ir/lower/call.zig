@@ -4738,6 +4738,68 @@ fn namedCalleeDecl(
     }
 }
 
+/// The closure a trailing block fills at a parameter of type `pty` — the
+/// closure itself, or the child of an optional closure slot. `.unresolved`
+/// when the parameter holds no closure.
+fn trailingClosureType(self: *Lowering, pty: TypeId) TypeId {
+    if (pty.isBuiltin()) return .unresolved;
+    const info = self.module.types.get(pty);
+    if (info == .closure) return pty;
+    if (info == .optional and !info.optional.child.isBuiltin() and
+        self.module.types.get(info.optional.child) == .closure)
+    {
+        return info.optional.child;
+    }
+    return .unresolved;
+}
+
+/// How a callee's last declared parameter answers a trailing block.
+pub const TrailingBlockFit = union(enum) {
+    /// The callee names no declaration here — a closure value, a function
+    /// pointer, a builtin, a protocol method.
+    unknown,
+    /// The last declared parameter takes the block.
+    binds,
+    /// It does not; the parameter that would have taken it, null when the
+    /// callee declares no parameter at all.
+    refuses: ?RefusedBlockParam,
+};
+
+pub const RefusedBlockParam = struct { name: []const u8, ty: TypeId };
+
+/// Ask `c`'s callee whether a trailing block binds there, through the same
+/// declaration selection and the same last-parameter classification
+/// `mapNamedArgs` binds by.
+pub fn calleeTrailingBlockFit(self: *Lowering, c: *const ast.Call) TrailingBlockFit {
+    // The author selection `lowerCall` makes before it maps arguments: a bare
+    // name resolves through the source-aware flat-author selector, a namespace
+    // path through the qualified-member one.
+    var qualified_verdict = self.callResolver().classifyQualifiedCall(c);
+    var bare_verdict: Lowering.BareCallee = switch (qualified_verdict) {
+        .never_qualified, .value_receiver => self.callResolver().selectedFreeAuthor(c),
+        else => .none,
+    };
+    const bare_author: ?*SelectedFunc = switch (bare_verdict) {
+        .func => |*sf| sf,
+        else => null,
+    };
+    const qualified_author: ?*SelectedFunc = switch (qualified_verdict) {
+        .func => |*sf| sf,
+        else => null,
+    };
+    const declines = bare_verdict == .ambiguous or bare_verdict == .not_callable;
+    const callee = namedCalleeDecl(self, c, bare_author orelse qualified_author, qualified_author != null, declines) orelse return .unknown;
+    const fd = callee.fd;
+    if (fd.params.len == callee.receiver_params) return .{ .refuses = null };
+    const last = fd.params.len - 1;
+    const p = fd.params[last];
+    const pty = self.resolveDeclParamType(fd, last);
+    if (p.is_variadic or p.is_pack) return .{ .refuses = .{ .name = p.name, .ty = pty } };
+    if (self.blockProtocolOf(pty) != null) return .binds;
+    if (trailingClosureType(self, pty) != .unresolved) return .binds;
+    return .{ .refuses = .{ .name = p.name, .ty = pty } };
+}
+
 /// Strip `named_arg` wrappers in place of a failed mapping: downstream
 /// lowering sees each value as a plain positional node (the build aborts on
 /// the mapping diagnostic before codegen; this only prevents an
@@ -4952,18 +5014,7 @@ pub fn mapNamedArgs(
                     slots[last] = tb.lambda;
                     continue;
                 }
-                const closure_ty: TypeId = blk: {
-                    if (!pty.isBuiltin()) {
-                        const info = self.module.types.get(pty);
-                        if (info == .closure) break :blk pty;
-                        if (info == .optional and !info.optional.child.isBuiltin() and
-                            self.module.types.get(info.optional.child) == .closure)
-                        {
-                            break :blk info.optional.child;
-                        }
-                    }
-                    break :blk .unresolved;
-                };
+                const closure_ty = trailingClosureType(self, pty);
                 if (closure_ty == .unresolved) {
                     errored = true;
                     if (self.diagnostics) |d| {
