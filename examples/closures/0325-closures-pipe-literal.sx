@@ -1,7 +1,8 @@
 // `|params| body` is the closure value: pipes bind, the body follows the
 // closing `|` directly. Covers inferred and annotated params, an explicit
 // return type, the empty list `||`, a block body, argument position, a
-// variadic tail, nesting, and the `|` that is bitwise OR.
+// variadic tail, nesting, a parameter default, a parenthesized bitwise-OR
+// default, and the `|` that is bitwise OR.
 #import "modules/std.sx";
 
 apply :: (f: Closure(i64) -> i64, v: i64) -> i64 { f(v) }
@@ -41,4 +42,7 @@ main :: () {
     a := 5;
     b := 2;
     print("bit-or {}\n", a | b);
+
+    print("default {}\n", apply(|x: i64 = 1| x, 9));
+    print("bit-or-default {}\n", apply(|x: i64 = (a | b)| x, 0));
 }

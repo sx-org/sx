@@ -5358,7 +5358,9 @@ for val, ix in arr, 0.. {
 ```
 Anonymous function. Produces a `Closure` value. `|` opens a closure literal
 only where a primary starts; after a completed operand it is bitwise OR. `||`
-is two `|` tokens around an empty parameter list. Parameters take the same
+is two `|` tokens around an empty parameter list. A parameter default is an
+ordinary expression; `|` after it closes the list, so a bitwise-OR default is
+parenthesized (`|x: i64 = (a | b)|`). Parameters take the same
 forms a named function's do — `$` generic type params, `..` variadic params —
 and the return type annotation is optional. A closure literal may not open an
 expression statement: bind it, pass it, or `return` it.

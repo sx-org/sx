@@ -90,6 +90,9 @@ pub const Parser = struct {
     /// True while parsing a parameter's default expression — the one place
     /// `@caller` may be written.
     in_param_default: bool = false,
+    /// True at the top level of a `|params|` parameter default. `|` closes
+    /// the list rather than bitwise-OR; a grouping restores bitwise OR.
+    in_pipe_param_default: bool = false,
 
     /// Lexes `source` and owns the resulting list from `allocator`.
     pub fn init(allocator: std.mem.Allocator, source: [:0]const u8) error{OutOfMemory}!Parser {
@@ -2450,8 +2453,13 @@ pub const Parser = struct {
             if (self.tokens.tag(self.tok) == .equal) {
                 self.advance(); // consume '='
                 const saved_in_default = self.in_param_default;
+                const saved_in_pipe_default = self.in_pipe_param_default;
                 self.in_param_default = true;
-                defer self.in_param_default = saved_in_default;
+                self.in_pipe_param_default = close == .pipe;
+                defer {
+                    self.in_param_default = saved_in_default;
+                    self.in_pipe_param_default = saved_in_pipe_default;
+                }
                 default_expr = try self.parseExpr();
             }
             // Protocol-constrained variadic pack: `..xs: Protocol` — a bare
@@ -3284,7 +3292,7 @@ pub const Parser = struct {
             if ((self.tokens.tag(self.tok) == .minus or self.tokens.tag(self.tok) == .star) and
                 self.tokens.flagsOf(self.tok).newline_left and self.tokens.flagsOf(self.tokens.next(self.tok)).glued_left) break;
 
-            const info = binaryInfo(self.tokens.tag(self.tok)) orelse break;
+            const info = self.binaryInfo(self.tokens.tag(self.tok)) orelse break;
             if (info.prec < min_prec) break;
 
             const op = info.op;
@@ -3303,7 +3311,7 @@ pub const Parser = struct {
                 try ops.append(self.allocator, op);
 
                 while (self.atComparison()) {
-                    const chain_info = binaryInfo(self.tokens.tag(self.tok)) orelse break;
+                    const chain_info = self.binaryInfo(self.tokens.tag(self.tok)) orelse break;
                     self.advance();
                     const chain_rhs = try self.parseBinary(info.prec + 1);
                     try operands.append(self.allocator, chain_rhs);
@@ -4079,15 +4087,18 @@ pub const Parser = struct {
                 const saved_if_grp = self.in_if_condition;
                 const saved_ntb_grp = self.no_trailing_block;
                 const saved_match_grp = self.in_match_subject;
+                const saved_pipe_default_grp = self.in_pipe_param_default;
                 self.in_for_header = false;
                 self.in_if_condition = false;
                 self.no_trailing_block = false;
                 self.in_match_subject = false;
+                self.in_pipe_param_default = false;
                 defer {
                     self.in_for_header = saved_hdr_grp;
                     self.in_if_condition = saved_if_grp;
                     self.no_trailing_block = saved_ntb_grp;
                     self.in_match_subject = saved_match_grp;
+                    self.in_pipe_param_default = saved_pipe_default_grp;
                 }
 
                 // Bare `(...)` is GROUPING ONLY. Tuple VALUES are written
@@ -4309,7 +4320,7 @@ pub const Parser = struct {
             try operands.append(self.allocator, condition);
 
             while (self.atComparison()) {
-                const cmp_info = binaryInfo(self.tokens.tag(self.tok)) orelse break;
+                const cmp_info = self.binaryInfo(self.tokens.tag(self.tok)) orelse break;
                 self.advance();
                 const rhs = try self.parseBinary(Prec.shift);
                 try operands.append(self.allocator, rhs);
@@ -5311,7 +5322,8 @@ pub const Parser = struct {
     /// One lookup per infix token: precedence tier, AST operator, and whether
     /// the token joins a comparison chain (`in` shares the tier but never
     /// chains).
-    fn binaryInfo(tag: Tag) ?BinaryInfo {
+    fn binaryInfo(self: *const Parser, tag: Tag) ?BinaryInfo {
+        if (self.in_pipe_param_default and tag == .pipe) return null;
         return switch (tag) {
             .kw_or => .{ .prec = Prec.logical_or, .op = .or_op, .comparison = false },
             .kw_and => .{ .prec = Prec.logical_and, .op = .and_op, .comparison = false },
@@ -5467,7 +5479,7 @@ pub const Parser = struct {
     }
 
     fn atComparison(self: *const Parser) bool {
-        const info = binaryInfo(self.tokens.tag(self.tok)) orelse return false;
+        const info = self.binaryInfo(self.tokens.tag(self.tok)) orelse return false;
         return info.comparison;
     }
 
@@ -6350,6 +6362,53 @@ test "a closure literal is `|params| body`" {
     try std.testing.expectEqualStrings("x", lam.params[0].name);
     try std.testing.expectEqualStrings("i32", lam.return_type.?.data.type_expr.name);
     try std.testing.expect(lam.body.data == .binary_op);
+}
+
+test "a pipe-parameter default is `|x: i64 = 1| x`" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "f :: () { g := |x: i64 = 1| x; }");
+    const root = try parser.parse();
+    const decl = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    const lam = decl.data.var_decl.value.?.data.lambda;
+    try std.testing.expectEqual(@as(usize, 1), lam.params.len);
+    try std.testing.expectEqualStrings("x", lam.params[0].name);
+    try std.testing.expect(lam.params[0].default_expr != null);
+    try std.testing.expect(lam.params[0].default_expr.?.data == .int_literal);
+    try std.testing.expectEqual(@as(i64, 1), lam.params[0].default_expr.?.data.int_literal.value);
+    try std.testing.expect(lam.body.data == .identifier);
+    try std.testing.expectEqualStrings("x", lam.body.data.identifier.name);
+}
+
+test "a parenthesized bitwise OR is a pipe-parameter default" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "f :: () { g := |x: i64 = (a | b)| x; }");
+    const root = try parser.parse();
+    const decl = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    const lam = decl.data.var_decl.value.?.data.lambda;
+    try std.testing.expect(lam.params[0].default_expr != null);
+    const dflt = lam.params[0].default_expr.?.data.binary_op;
+    try std.testing.expectEqual(ast.BinaryOp.Op.bit_or, dflt.op);
+    try std.testing.expectEqualStrings("a", dflt.lhs.data.identifier.name);
+    try std.testing.expectEqualStrings("b", dflt.rhs.data.identifier.name);
+    try std.testing.expectEqualStrings("x", lam.body.data.identifier.name);
+}
+
+test "a pipe-parameter default may precede another parameter" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "f :: () { g := |x: i64 = 1, y: i64| x + y; }");
+    const root = try parser.parse();
+    const decl = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    const lam = decl.data.var_decl.value.?.data.lambda;
+    try std.testing.expectEqual(@as(usize, 2), lam.params.len);
+    try std.testing.expect(lam.params[0].default_expr != null);
+    try std.testing.expectEqual(@as(i64, 1), lam.params[0].default_expr.?.data.int_literal.value);
+    try std.testing.expect(lam.params[1].default_expr == null);
+    try std.testing.expectEqualStrings("y", lam.params[1].name);
+    try std.testing.expect(lam.body.data == .binary_op);
+    try std.testing.expectEqual(ast.BinaryOp.Op.add, lam.body.data.binary_op.op);
 }
 
 test "`||` is an empty parameter list" {

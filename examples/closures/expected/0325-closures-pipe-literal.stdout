@@ -6,3 +6,5 @@ run
 variadic 6
 nested 6
 bit-or 7
+default 9
+bit-or-default 0
