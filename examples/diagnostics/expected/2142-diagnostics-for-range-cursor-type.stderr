@@ -1,0 +1,5 @@
+error: a range cursor is 'i64' — capture 'i' is annotated 'i32'
+  --> examples/diagnostics/2142-diagnostics-for-range-cursor-type.sx:6:12
+   |
+ 6 |     for i: i32 in 0..3 { _ = i; }
+   |            ^^^

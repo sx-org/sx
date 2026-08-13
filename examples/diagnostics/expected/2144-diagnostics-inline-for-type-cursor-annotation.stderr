@@ -1,0 +1,5 @@
+error: a type-list cursor binds a type, not a value — it takes no type annotation
+  --> examples/diagnostics/2144-diagnostics-inline-for-type-cursor-annotation.sx:9:19
+   |
+ 9 |     inline for T: i64 in TYPES {
+   |                   ^^^

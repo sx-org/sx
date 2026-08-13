@@ -1,0 +1,12 @@
+// A pack is heterogeneous: one annotation has to name every unrolled
+// element's type. The first that disagrees answers.
+
+#import "modules/std.sx";
+
+show :: (..xs: $T) {
+    inline for x: i64 in xs { print("{}\n", x); }
+}
+
+main :: () {
+    show(1, 2.5);
+}

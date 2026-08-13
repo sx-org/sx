@@ -1209,6 +1209,13 @@ const Group = struct {
             if (diags) |d| d.addFmt(.err, decl.span, "a type-list cursor cannot be captured by reference", .{});
             return true;
         }
+        // Both cursors here are substituted spellings — a type name and an
+        // index literal — not bindings that hold a value of some type.
+        for (fe.captures) |cap| {
+            const ta = cap.type_annotation orelse continue;
+            if (diags) |d| d.addFmt(.err, ta.span, "a module-scope `inline for` cursor takes no type annotation", .{});
+            return true;
+        }
         const list_iterable = fe.iterables[0];
         if (list_iterable.is_range) {
             if (diags) |d| d.addFmt(.err, list_iterable.expr.span, "a module-scope `inline for` iterates a comptime type list — `inline for T in .[A, B] {{ … }}`", .{});

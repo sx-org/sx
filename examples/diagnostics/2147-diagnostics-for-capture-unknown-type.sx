@@ -1,0 +1,10 @@
+// An unknown name in a capture annotation is reported as an unknown type.
+
+#import "modules/std.sx";
+
+View :: struct { w: i64; }
+
+main :: () {
+    children : [1]View = .[View{ w = 1 }];
+    for c: NoSuchType in children { _ = c; }
+}

@@ -749,6 +749,46 @@ const IterPrep = struct {
     storage: ?Ref = null, // array's own alloca when addressable (not deref'd)
 };
 
+/// A written capture annotation names the ELEMENT type, whatever the capture
+/// binds: `*c: View` binds `*View`. It restates the type exactly — an
+/// annotation is not a conversion site.
+fn checkElementCaptureType(self: *Lowering, cap: ast.ForCapture, elem_ty: TypeId) bool {
+    const ta = cap.type_annotation orelse return true;
+    const want = self.resolveType(ta);
+    if (want == elem_ty) return true;
+    if (self.externalErrorsExist() or want == .unresolved) return false;
+    if (self.diagnostics) |d| {
+        d.addFmt(.err, ta.span, "capture '{s}' is annotated '{s}' but the element type is '{s}'", .{
+            cap.name, self.formatTypeName(want), self.formatTypeName(elem_ty),
+        });
+    }
+    return false;
+}
+
+/// The `xs[<index>]` node one unrolled pack iteration binds as its element.
+fn packElementNode(self: *Lowering, pack_name: []const u8, span: ast.Span, index: i64) ?*Node {
+    const id_node = self.alloc.create(Node) catch return null;
+    id_node.* = .{ .span = span, .data = .{ .identifier = .{ .name = pack_name } } };
+    const idx_node = self.alloc.create(Node) catch return null;
+    idx_node.* = .{ .span = span, .data = .{ .int_literal = .{ .value = index } } };
+    const elem_node = self.alloc.create(Node) catch return null;
+    elem_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = id_node, .index = idx_node } } };
+    return elem_node;
+}
+
+/// A range position binds the i64 cursor whatever its bounds are spelled as.
+fn checkRangeCaptureType(self: *Lowering, cap: ast.ForCapture) void {
+    const ta = cap.type_annotation orelse return;
+    const want = self.resolveType(ta);
+    if (want == .i64) return;
+    if (self.externalErrorsExist() or want == .unresolved) return;
+    if (self.diagnostics) |d| {
+        d.addFmt(.err, ta.span, "a range cursor is 'i64' — capture '{s}' is annotated '{s}'", .{
+            cap.name, self.formatTypeName(want),
+        });
+    }
+}
+
 /// `for c1, c2, ... in it1, it2, ... { }` — parallel iteration. The first
 /// iterable's length/bound drives the loop; the others follow by position.
 /// Consequences of first-iterable-wins: a non-first range's end is never
@@ -866,9 +906,11 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
         const prep = preps.items[i];
         const cur = if (i == 0) cur0 else self.builder.load(prep.slot, .i64);
         if (prep.is_range) {
+            checkRangeCaptureType(self, cap);
             body_scope.put(cap.name, .{ .ref = cur, .ty = .i64, .is_alloca = false, .origin = .range_index });
             continue;
         }
+        _ = checkElementCaptureType(self, cap, prep.elem_ty);
         const bind_ty = if (cap.by_ref) self.module.types.ptrTo(prep.elem_ty) else prep.elem_ty;
         const elem = if (cap.by_ref) blk: {
             // A slice value carries its backing pointer, so GEP on it writes
@@ -1016,6 +1058,26 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
         }
     }
 
+    for (fe.captures, 0..) |cap, ci| {
+        const ta = cap.type_annotation orelse continue;
+        switch (classes.items[ci]) {
+            .range => checkRangeCaptureType(self, cap),
+            .pack => |pack_name| {
+                // A pack is heterogeneous: one annotation has to name every
+                // unrolled element's type. The first that disagrees answers.
+                var e: i64 = 0;
+                while (e < count) : (e += 1) {
+                    const elem = packElementNode(self, pack_name, fe.iterables[ci].expr.span, e) orelse break;
+                    if (!checkElementCaptureType(self, cap, self.inferExprType(elem))) break;
+                }
+            },
+            .type_list => {
+                if (self.diagnostics) |d| d.addFmt(.err, ta.span, "a type-list cursor binds a type, not a value — it takes no type annotation", .{});
+                return self.builder.constInt(0, .void);
+            },
+        }
+    }
+
     // A type-list cursor binds as an ordinary type param for the iteration, so
     // it resolves everywhere a `$T: Type` binding does.
     const saved_type_bindings = self.type_bindings;
@@ -1060,13 +1122,7 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
                     self.comptime_constants.put(cap.name, .{ .int_val = v }) catch {};
                 },
                 .pack => |pack_name| {
-                    const span = fe.iterables[ci].expr.span;
-                    const id_node = self.alloc.create(Node) catch break;
-                    id_node.* = .{ .span = span, .data = .{ .identifier = .{ .name = pack_name } } };
-                    const idx_node = self.alloc.create(Node) catch break;
-                    idx_node.* = .{ .span = span, .data = .{ .int_literal = .{ .value = i } } };
-                    const elem_node = self.alloc.create(Node) catch break;
-                    elem_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = id_node, .index = idx_node } } };
+                    const elem_node = packElementNode(self, pack_name, fe.iterables[ci].expr.span, i) orelse break;
                     const elem_ty = self.inferExprType(elem_node);
                     body_scope.put(cap.name, .{ .ref = Ref.none, .ty = elem_ty, .is_alloca = false, .pack_elem = elem_node, .origin = .pack_elem_alias });
                 },

@@ -609,6 +609,7 @@ for val, idx in items, 0.. { print("[{}] = {}\n", idx, val); }
 for a, b in 1..=5, 0.. { print("{}:{}\n", a, b); }  // a: 1..5, b follows
 for val in items => total += val;                   // arrow body
 for i in 0<..<n { }                                 // bound markers: 1 .. n-1
+for val: Item in items { }                          // the element type, written out
 sub := items[1..=3];                                // slices take them too
 
 // Defer

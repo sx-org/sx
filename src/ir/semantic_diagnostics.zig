@@ -765,6 +765,11 @@ pub const UnknownTypeChecker = struct {
                     self.walkBodyTypes(it.expr, declared, in_scope, type_vals);
                     if (it.range_end) |re| self.walkBodyTypes(re, declared, in_scope, type_vals);
                 }
+                for (fe.captures) |cap| {
+                    if (cap.type_annotation) |ta| {
+                        self.checkTypeNodeForUnknown(ta, declared, in_scope.items, type_vals.items, false);
+                    }
+                }
                 // An `inline for` over a comptime type list binds its cursor as
                 // a type param for the body — the same standing as a `$T: Type`.
                 const save_s = in_scope.items.len;
