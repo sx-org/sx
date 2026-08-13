@@ -7,7 +7,7 @@
 
 main :: () {
     x := Suit.spades;
-    if x == {
+    match x {
         case .hearts: { print("hearts\n"); }
         case .spades: { print("spades\n"); }
     }

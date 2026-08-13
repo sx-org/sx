@@ -15,15 +15,15 @@ main :: () {
     c : Color = .red;
 
     // Value position, literal arms: i64 vs string.
-    r := if c == { case .red: { 1 } case .green: { "hi" } };
+    r := match c { case .red: { 1 } case .green: { "hi" } };
     print("{}\n", r);
 
     // Capture-typed arm (f64 payload) vs string arm.
     v : V = .num(2.5);
-    s := if v == { case .num: (x) { x } case .other: { "nope" } };
+    s := match v { case .num: |x| { x } case .other: { "nope" } };
     print("{}\n", s);
 
     // Arm tails are calls with incompatible result types.
-    w := if c == { case .red: { gi() } case .green: { gs() } };
+    w := match c { case .red: { gi() } case .green: { gs() } };
     print("{}\n", w);
 }

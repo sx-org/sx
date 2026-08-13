@@ -7,7 +7,7 @@
 #import "modules/std.sx";
 
 pick :: (v: $T) {
-    inline if T == {
+    inline match T {
         case i64: { print("int {}\n", v); }
         case string: { print("str {}\n", v); }
         else: { #error("pick: unsupported type — add an arm or convert at the call site"); }

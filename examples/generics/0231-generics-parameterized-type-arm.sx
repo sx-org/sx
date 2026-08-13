@@ -10,8 +10,8 @@ Buffer :: struct($T: Type) { n: i64; }
 impl Series($T) for Buffer($T) { count :: (self: *Buffer) -> i64 { self.n } }
 
 open :: (s: Series(f32)) {
-    if s == {
-        case Buffer(f32): (x) { print("f32 arm {}\n", x.n); }
+    match s {
+        case Buffer(f32): |x| { print("f32 arm {}\n", x.n); }
     }
 }
 
@@ -28,24 +28,24 @@ main :: () {
     // (no whole-program conformer set narrows it) and does not claim an f32
     // value.
     v : any = Buffer(f32){ n = 3 };
-    if v == {
-        case Buffer(i64): (x) { print("i64 arm {}\n", x.n); }
-        case Buffer(f32): (x) { print("f32 arm {}\n", x.n); }
+    match v {
+        case Buffer(i64): |x| { print("i64 arm {}\n", x.n); }
+        case Buffer(f32): |x| { print("f32 arm {}\n", x.n); }
         else: { print("no arm\n"); }
     }
     //stdout: f32 arm 3
 
     w : any = Buffer(i64){ n = 4 };
-    if w == {
-        case Buffer(f32): (x) { print("f32 arm {}\n", x.n); }
+    match w {
+        case Buffer(f32): |x| { print("f32 arm {}\n", x.n); }
         else: { print("no f32 arm\n"); }
     }
     //stdout: no f32 arm
 
     // Nested instantiation in arm and compare position.
     z : any = Buffer(Buffer(f32)){ n = 9 };
-    if z == {
-        case Buffer(Buffer(f32)): (x) { print("nested {}\n", x.n); }
+    match z {
+        case Buffer(Buffer(f32)): |x| { print("nested {}\n", x.n); }
         else: { print("nested miss\n"); }
     }
     //stdout: nested 9

@@ -39,8 +39,8 @@ main :: () -> i32 {
 
     // Pattern matching
     check :: (v: ?i32) -> i32 {
-        return if v == {
-            case .some: (val) { val }
+        return match v {
+            case .some: |val| { val }
             case .none: { 0 }
         };
     }

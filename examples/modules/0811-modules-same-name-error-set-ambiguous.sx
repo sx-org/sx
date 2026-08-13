@@ -22,7 +22,7 @@
 #import "0811-modules-same-name-error-set-ambiguous/b.sx";
 
 describe :: ($T: Type) -> i32 {
-    r := if T == {
+    r := match T {
         case IoErr: 1;
         else: 0;
     }

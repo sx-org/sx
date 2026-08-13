@@ -58,9 +58,9 @@ form_Named :: ufcs (value: $I/@Init(Named)) {
 form_any :: ufcs (value: $I/@Init(any)) {
     slot: any = ---;
     value.write(*slot);
-    if slot == {
-        case Round: (r) { print("any Round {}\n", r.s); }
-        case Label: (l) { print("any Label {}\n", l.text); }
+    match slot {
+        case Round: |r| { print("any Round {}\n", r.s); }
+        case Label: |l| { print("any Label {}\n", l.text); }
         else: { print("any other\n"); }
     }
 }

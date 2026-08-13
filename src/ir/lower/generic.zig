@@ -1186,7 +1186,7 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
     return tags.items;
 }
 
-/// The type a match arm's payload capture (`case .v: (x)`) binds, from the
+/// The type a match arm's payload capture (`case .v: |x|`) binds, from the
 /// subject's type: a tagged-union arm captures its variant's payload, an
 /// optional arm captures the unwrapped child (mirrors `lowerMatch`'s capture
 /// lowering). Null when the subject/pattern supplies no typed payload — the
@@ -1246,7 +1246,7 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
         // expression) never reaches the merge, so it must NOT decide the result
         // type (match analog): letting a diverging FIRST arm decide
         // makes `last_node` a void inner block and returns `.void` early,
-        // collapsing a real value-`match` (`z := if e == { case .A: { return
+        // collapsing a real value-`match` (`z := match e { case .A: { return
         // -9; } case .B: { 20 } }`) to a void statement that `alloca void`s.
         // Skip it — the
         // match is `noreturn` only if EVERY arm diverges (handled after the
@@ -1358,7 +1358,7 @@ pub fn unifyValueArmTypes(self: *Lowering, a: TypeId, b: TypeId) ?TypeId {
 /// types), for the `any`-subject type switch? Single-type names that the
 /// category match also accepts (`string` / `bool` / `void`) are NOT listed:
 /// the type switch routes those through the concrete-type path so their
-/// arms can bind a capture (`case string: (s)`), which a set never can.
+/// arms can bind a capture (`case string: |s|`), which a set never can.
 /// `type`/`Type` stay set-style (a Type-holding `any` is dispatch-only).
 pub fn isRuntimeCategoryName(name: []const u8) bool {
     const cats = [_][]const u8{

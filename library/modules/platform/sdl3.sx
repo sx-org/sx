@@ -68,7 +68,7 @@ SdlPlatform :: struct {
 // consume are mapped; everything else is `.unknown`. Letters/digits
 // arrive as TEXT, not keys.
 logical_key_from_sdl :: (k: SDL_Keycode) -> LogicalKey {
-    if k == {
+    match k {
         case .escape:     return .escape;
         case .return_key: return .enter;
         case .space:      return .space;
@@ -96,14 +96,14 @@ sdl_modifiers :: (m: SDL_Keymod) -> InputModifiers {
 // buttonless motion is a HOVER, not a move; wheel deltas normalize the
 // flipped direction; timestamps are SDL's nanosecond event times.
 translate_sdl_event :: (sdl: *SDL_Event) -> ?PlatformEvent {
-    if sdl == {
+    match sdl {
         case .quit: {
             return .quit;
         }
-        case .window_resized: (data) {
+        case .window_resized: |data| {
             return .window_resize(.{ width = xx data.data1, height = xx data.data2 });
         }
-        case .key_down: (data) {
+        case .key_down: |data| {
             return .input(.key_down(.{
                 header = .{ time_ns = data.timestamp, modifiers = sdl_modifiers(data.mod) },
                 physical = .{ code = data.scancode },
@@ -111,14 +111,14 @@ translate_sdl_event :: (sdl: *SDL_Event) -> ?PlatformEvent {
                 repeat = data.repeat != 0,
             }));
         }
-        case .key_up: (data) {
+        case .key_up: |data| {
             return .input(.key_up(.{
                 header = .{ time_ns = data.timestamp, modifiers = sdl_modifiers(data.mod) },
                 physical = .{ code = data.scancode },
                 logical = logical_key_from_sdl(data.key),
             }));
         }
-        case .mouse_motion: (data) {
+        case .mouse_motion: |data| {
             pe : PointerEvent = .{
                 header = .{ time_ns = data.timestamp },
                 pointer = .{ value = data.which.(u64) },
@@ -128,13 +128,13 @@ translate_sdl_event :: (sdl: *SDL_Event) -> ?PlatformEvent {
             if data.state == 0 { return .input(.pointer_hover(pe)); }
             return .input(.pointer_move(pe));
         }
-        case .mouse_button_down: (data) {
+        case .mouse_button_down: |data| {
             return .input(.pointer_down(sdl_pointer_button(data)));
         }
-        case .mouse_button_up: (data) {
+        case .mouse_button_up: |data| {
             return .input(.pointer_up(sdl_pointer_button(data)));
         }
-        case .mouse_wheel: (data) {
+        case .mouse_wheel: |data| {
             flip : f32 = if data.direction == 1 then -1.0 else 1.0;
             return .input(.scroll(.{
                 header = .{ time_ns = data.timestamp },
@@ -148,7 +148,7 @@ translate_sdl_event :: (sdl: *SDL_Event) -> ?PlatformEvent {
 }
 
 sdl_pointer_button :: (data: SDL_MouseButtonData) -> PointerEvent {
-    btn : PointerButton = if data.button == {
+    btn : PointerButton = match data.button {
         case 1: .primary;
         case 2: .middle;
         case 3: .secondary;
@@ -173,7 +173,7 @@ impl Platform for SdlPlatform {
         // Find bundled assets when launched as a `.app` (CWD=/ under Finder).
         sdl_chdir_to_bundle();
 
-        inline if OS == {
+        inline match OS {
             case .wasm: {
                 SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
                 SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -195,7 +195,7 @@ impl Platform for SdlPlatform {
 
         init_w := w;
         init_h := h;
-        inline if OS == {
+        inline match OS {
             case .wasm: {
                 init_w = c.emscripten_run_script_int("window.innerWidth");
                 init_h = c.emscripten_run_script_int("window.innerHeight");
@@ -252,12 +252,12 @@ impl Platform for SdlPlatform {
         self.has_frame_closure = true;
         g_sdl_plat = self;
 
-        inline if OS == {
+        inline match OS {
             case .wasm: {}
             else: { SDL_AddEventWatch(*sdl_event_watch, xx self); }
         }
 
-        inline if OS == {
+        inline match OS {
             case .wasm: { c.emscripten_set_main_loop(*sdl_wasm_tick, 0, 1); }
             else: {
                 while self.running {
@@ -271,9 +271,9 @@ impl Platform for SdlPlatform {
         self.events.len = 0;
         sdl_event : SDL_Event = .none;
         while SDL_PollEvent(*sdl_event) {
-            if sdl_event == {
+            match sdl_event {
                 case .quit: { self.running = false; }
-                case .window_resized: (data) {
+                case .window_resized: |data| {
                     self.width = data.data1;
                     self.height = data.data2;
                     SDL_GetWindowSizeInPixels(self.window, *self.pixel_w, *self.pixel_h);
@@ -300,7 +300,7 @@ impl Platform for SdlPlatform {
         }
         self.last_perf = current;
 
-        inline if OS == {
+        inline match OS {
             case .wasm: {
                 new_w : i32 = 0;
                 new_h : i32 = 0;
@@ -348,7 +348,7 @@ impl Platform for SdlPlatform {
     }
 
     shutdown :: (self: *SdlPlatform) {
-        inline if OS == {
+        inline match OS {
             case .wasm: {}
             else: {
                 SDL_GL_DestroyContext(self.gl_ctx);
@@ -364,8 +364,8 @@ impl Platform for SdlPlatform {
 // frame closure here keeps content rendering at the new size during the drag.
 sdl_event_watch :: (userdata: *void, event: *SDL_Event) -> bool abi(.c) {
     plat : *SdlPlatform = xx userdata;
-    if event.* == {
-        case .window_resized: (data) {
+    match event.* {
+        case .window_resized: |data| {
             plat.width = data.data1;
             plat.height = data.data2;
             SDL_GetWindowSizeInPixels(plat.window, *plat.pixel_w, *plat.pixel_h);

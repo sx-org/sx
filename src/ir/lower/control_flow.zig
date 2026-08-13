@@ -1104,7 +1104,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         if (self.evalComptimeMatch(me)) |arm_body| {
             return lowerSelectedBranch(self, arm_body, demand);
         }
-        // `inline if T == { case <category|Type>: … }` over a BOUND generic
+        // `inline match T { case <category|Type>: … }` over a BOUND generic
         // type param: select the arm by T's kind at lower time, siblings
         // dropped whole (each kind arm only type-checks for its own kind).
         if (self.evalStaticTypeMatch(me)) |sel| {
@@ -1146,7 +1146,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         }
     }
     // TYPE SWITCH: an `any` subject dispatches on its runtime type TAG —
-    // `if av == { case i64: (v) {…} case Point: (p) {…} case struct: {…}
+    // `match av { case i64: |v| {…} case Point: |p| {…} case struct: {…}
     // else: {…} }`. Concrete arms (named, builtin, and composite types) may
     // bind the typed value; category arms are tag SETS and bind nothing; arms
     // overlap first-wins with a loud unreachable-arm diagnostic.
@@ -1185,9 +1185,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         }
         break :blk false;
     };
-    // An error-set subject (`catch e == { case .X: ... }` / `if e == { ... }`):
-    // the value IS its u32 tag id, and `case .X` matches the global tag id
-    // of `X`. Used by the catch match-body form.
+    // An error-set subject (`match e { case .X: ... }`): the value IS its u32
+    // tag id, and `case .X` matches the global tag id of `X`.
     const is_error_set_match = blk: {
         if (!subject_ty.isBuiltin()) {
             break :blk self.module.types.get(subject_ty) == .error_set;

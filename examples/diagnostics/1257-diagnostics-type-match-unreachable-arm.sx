@@ -9,7 +9,7 @@
 Point :: struct { x, y: i64; }
 
 classify :: (t: Type) -> string {
-    if t == {
+    match t {
         case struct: return "struct";
         case Point:  return "Point";
         else:        return "other";

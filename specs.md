@@ -461,10 +461,10 @@ form's own list — a runtime class's members and the entries of
 not one of those. `case` heads an arm, and an arm is a statement in the only
 position where `case` is legal, so the break before the next `case` ends the
 statement above it exactly as any other break does. That holds for every arm
-body: a statement list, `case .x: break`, and `case .x: (e) => expr` alike.
+body: a statement list, `case .x: break`, and `case .x: |e| expr` alike.
 
 ```sx
-if c == {
+match c {
     case .a:
         setup()
         report()      // the next `case` starts an arm — the break ends this
@@ -793,7 +793,7 @@ Mutating a sub-field of the *active* variant's payload in place is allowed
 
 #### Pattern Matching
 ```sx
-if s == {
+match s {
     case .circle: print("circle\n");
     case .rect: print("rect\n");
     case .none: print("none\n");
@@ -803,14 +803,15 @@ if s == {
 #### Payload Capture
 Match arms can capture the variant's payload into a local variable:
 ```sx
-if s == {
-    case .circle: (radius) { print("radius: {}\n", radius); }
-    case .rect: (size) => print("size: {}\n", size);
+match s {
+    case .circle: |radius| { print("radius: {}\n", radius); }
+    case .rect: |size| print("size: {}\n", size);
 }
 ```
-The `(name)` after the colon binds the payload. Two forms:
-- Block: `case .variant: (name) { body }`
-- Short: `case .variant: (name) => expr;`
+The `|name|` after the colon binds the payload; an arm with no payload
+carries no pipes (`case .none: 0`). The body that follows is a block
+(`case .variant: |name| { body }`) or an expression
+(`case .variant: |name| expr;`).
 
 #### Enum Interpolation
 Payload-less enums print as `.variant`. Enums with payloads print as `.variant(value)` or `<TypeName tag=N>`:
@@ -863,7 +864,7 @@ would otherwise silently let a later store clobber an earlier one. An empty
 (`.{ 3.14 }`) is rejected as ambiguous.
 
 #### Restrictions
-- Pattern matching (`if x == { case ... }`) is not supported on unions.
+- Pattern matching (`match x { case ... }`) is not supported on unions.
 - Unions cannot be printed directly via `print("{}", union_val)` — access individual fields instead.
 
 ### Struct Types
@@ -2984,8 +2985,8 @@ while val := get_next() {
 #### Pattern Matching
 Optionals support `.some` and `.none` virtual enum variants:
 ```sx
-result := if opt == {
-    case .some: (val) { val * 2; }
+result := match opt {
+    case .some: |val| { val * 2; }
     case .none: { 0; }
 };
 ```
@@ -4157,7 +4158,7 @@ separates it from the next `case`:
 
 ```sx
 classify :: (n: i32) -> i32 {
-  if n == {
+  match n {
     case 0: 100             // arm value is 100
     case 1: { x := 5; x*2 } // braced block → value 10
     else:   7
@@ -4753,9 +4754,9 @@ required** — a set is open, so a member declared elsewhere in the program carr
 tag no arm here names, and the arms are never the whole of it.
 
 ```sx
-if v == {
-    case Label: (l) { print("{}\n", l.text); }
-    case Panel: (p) { print("{}\n", p.title); }
+match v {
+    case Label: |l| { print("{}\n", l.text); }
+    case Panel: |p| { print("{}\n", p.title); }
     else: { … }                  // a member beyond these arms may reach it
 }
 ```
@@ -5050,7 +5051,7 @@ y := x + if false {
 
 ### Pattern Matching
 ```sx
-if subject == {
+match subject {
   case pattern: body
   case pattern: body
   else: body          // optional default arm
@@ -5063,7 +5064,7 @@ Matches `subject` against each `case`. Patterns can be:
 
 `break` exits a case arm without producing a value. The optional `else:` arm matches when no `case` pattern matches — its `:` is glued to the `else`, which is what separates it from an `else` that chains an `if`.
 ```sx
-if z == {
+match z {
   case .variant1: break
   case .variant2:
     print("z: {z}")
@@ -5076,7 +5077,7 @@ if z == {
 When switching on a `Type` value (from `type_of`), category keywords match all registered types of that category:
 ```sx
 type := type_of(val);
-if type == {
+match type {
     case int: {
         if is_unsigned(type) { result = uint_to_string(xx val); }
         else { result = int_to_string(xx val); }
@@ -5108,11 +5109,11 @@ TAG — never the payload (Go's `switch v := x.(type)` / Odin's
 `switch v in x` parity):
 
 ```sx
-if av == {
-    case i64: (v)   { print("int {}\n", v + 1); }      // v: i64 — the typed value
-    case Point: (p) { plot(p); }                       // named types
-    case []u8: (b)  { print("{} bytes\n", b.len); }    // composite types are real tags
-    case ?i64: (o)  { print("{}\n", o ?? 0); }         // tags are EXACT — no flattening
+match av {
+    case i64: |v|   { print("int {}\n", v + 1); }      // v: i64 — the typed value
+    case Point: |p| { plot(p); }                       // named types
+    case []u8: |b|  { print("{} bytes\n", b.len); }    // composite types are real tags
+    case ?i64: |o|  { print("{}\n", o ?? 0); }         // tags are EXACT — no flattening
     case struct:    { walk_fields(av); }               // categories: tag SETS, no binding
     case int:       { print("{}\n", xx av); }          // xx width-dispatches over the set
     else:           { print("{}\n", type_name(type_of(av))); }   // av stays `any`
@@ -5143,15 +5144,15 @@ if av == {
   tag names, and its arms name members with an `else:` arm REQUIRED
   (see Open Sets) — same arms, same captures, over the concrete value
   behind the subject. A `?any` composes through the optional match
-  (`case .some: (av) { … }`).
+  (`case .some: |av| { … }`).
 - Division of labor: the type switch dispatches on CONCRETE types and
   binds typed values; kind-only dispatch also exists as the category match
-  on `type_of(av)` and as the static `inline if T == { … }` fold in
+  on `type_of(av)` and as the static `inline match T { … }` fold in
   generic bodies.
 
 #### Inline Type Match (static pruning)
 
-`inline if T == { case <category|Type>: … else: … }` over a **bound generic
+`inline match T { case <category|Type>: … else: … }` over a **bound generic
 type param** selects its arm at lower time — the siblings are dropped
 whole, exactly like `inline if` branch elimination. Each kind arm may
 therefore use kind-specific operations that would not type-check for other
@@ -5159,7 +5160,7 @@ kinds (`x.len` in a slice arm, `x.(ProtocolRaw)` in a protocol arm):
 
 ```sx
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
-    inline if T == {
+    inline match T {
         case protocol: a.dealloc_bytes(x.(ProtocolRaw).ctx);
         case closure:  { env := x.(ClosureRaw).env; if env != null { a.dealloc_bytes(env); } }
         case slice:    a.dealloc_bytes(xx x.ptr);
@@ -5279,7 +5280,7 @@ the first iterable.
 specific to for-loop element captures — it holds for *every* by-value
 capture binding: the for-loop element and the paired range index
 (`for x, i in xs, 0..` — both `x` and `i`), a match-arm payload capture
-(`case .circle: (r)`), a `catch` / `onfail` error binding
+(`case .circle: |r|`), a `catch` / `onfail` error binding
 (`f() catch (e)`), and an `inline for` pack-element alias
 (`inline for x in xs`). A capture is a read-only alias into storage the
 loop/match/error machinery owns, not a fresh mutable local; assigning to
@@ -5304,7 +5305,7 @@ likewise snapshotted into a fresh temp rather than written back.)
 **By-reference capture (`*elem`)** binds the element to a *pointer* into the collection (`*T`) instead of a value — no per-element copy. It GEPs straight into the array/slice backing, so:
 - Passing it onward is zero-copy — `f(elem)` where `f` takes `*T` hands over the pointer, not a copy.
 - Writes through it land in the original: `elem.* = v` (or `elem.field = v`).
-- In a value position the pointer auto-derefs to the element: `elem + 1` reads the value, and `if elem == { … }` matches the pointee (a pointer subject matches through the deref). Where a `*T` is expected, the pointer is passed as-is.
+- In a value position the pointer auto-derefs to the element: `elem + 1` reads the value, and `match elem { … }` matches the pointee (a pointer subject matches through the deref). Where a `*T` is expected, the pointer is passed as-is.
 - Range positions have no storage — `*` on a range capture is a compile error.
 
 ```sx
@@ -5906,7 +5907,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `type_of(val: $T) -> Type` — returns the runtime type tag of a value
 - `type_name($T: Type) -> string` — returns the name of type `T` as a string (e.g., `"Point"`)
 - `struct_field_count($T: Type) -> i64` — the number of fields of a struct/tuple (or arms of an untagged union). Scalars and other fieldless types fold to 0 (a leaf, so generic walkers can gate on it). An enum argument is a compile error naming `variant_count`; arrays/vectors are rejected — their lengths/lanes read as `.len` on the value.
-- The whole field family — `struct_field_name` / `struct_field_type` / `struct_field_offset` / `variant_name` / `variant_type` — also accepts a **runtime `Type` value**: reads go through lazily-emitted master-index tables (`__sx_member_name_ptrs` / `__sx_member_type_ptrs` / `__sx_field_offset_ptrs`, `[N x ptr]` keyed by the tag → per-type arrays), emitted only when a dynamic call site exists. At runtime the kind gates do not apply, and an index ≥ the member count is **undefined behavior** (in-bounds GEP — the caller gates on the counts, exactly like the static per-type arrays). Offsets answer per kind: struct/tuple members give their field offset; a tagged union gives its PAYLOAD offset (the header size — the same for every variant); an untagged union's arms all give 0. `struct_field_value(av, i)` / `variant_payload(av, i)` on an **`any` receiver** compose these tables directly: the result is the view `{struct_field_type(tag, i), av.data + struct_field_offset(tag, i)}` — reads go through the view, so nested access chains by repeated calls with no copies, and a wrong-kind tag or out-of-range index is the same UB as the raw table reads. Arbitrary-width int fields read through an any-receiver view carry their TRUE (non-builtin) tag — dispatch consumers (`x.(struct_field_type(T,i))`) monomorphize exactly; the `{}` formatter's builtin-width int arm does not match such a tag and prints `<?>`. `type_info(tp)` likewise accepts a runtime `Type`: it loads the type's constant record from `__sx_type_infos` (one record per type, bytes matching the `TypeInfo` layout; requires `modules/std/meta.sx` in scope, which the compile-time form already does) — kind-first dispatch (`if type_info(tp) == { case .struct: (si) { … } }`) works identically on compile-time and runtime `Type`s.
+- The whole field family — `struct_field_name` / `struct_field_type` / `struct_field_offset` / `variant_name` / `variant_type` — also accepts a **runtime `Type` value**: reads go through lazily-emitted master-index tables (`__sx_member_name_ptrs` / `__sx_member_type_ptrs` / `__sx_field_offset_ptrs`, `[N x ptr]` keyed by the tag → per-type arrays), emitted only when a dynamic call site exists. At runtime the kind gates do not apply, and an index ≥ the member count is **undefined behavior** (in-bounds GEP — the caller gates on the counts, exactly like the static per-type arrays). Offsets answer per kind: struct/tuple members give their field offset; a tagged union gives its PAYLOAD offset (the header size — the same for every variant); an untagged union's arms all give 0. `struct_field_value(av, i)` / `variant_payload(av, i)` on an **`any` receiver** compose these tables directly: the result is the view `{struct_field_type(tag, i), av.data + struct_field_offset(tag, i)}` — reads go through the view, so nested access chains by repeated calls with no copies, and a wrong-kind tag or out-of-range index is the same UB as the raw table reads. Arbitrary-width int fields read through an any-receiver view carry their TRUE (non-builtin) tag — dispatch consumers (`x.(struct_field_type(T,i))`) monomorphize exactly; the `{}` formatter's builtin-width int arm does not match such a tag and prints `<?>`. `type_info(tp)` likewise accepts a runtime `Type`: it loads the type's constant record from `__sx_type_infos` (one record per type, bytes matching the `TypeInfo` layout; requires `modules/std/meta.sx` in scope, which the compile-time form already does) — kind-first dispatch (`match type_info(tp) { case .struct: |si| { … } }`) works identically on compile-time and runtime `Type`s.
 - `struct_field_name($T: Type, idx: i64) -> string` — the name of the `idx`-th field of a struct/tuple (positional tuple elements have no name → `""`). Kind-gated like `struct_field_count`.
 - `struct_field_type($T: Type, idx: i64) -> Type` — the `idx`-th field's type. Kind-gated; also resolves in type position.
 - `struct_field_value(s: $T, idx: i64) -> any` — the `idx`-th field of a struct/tuple VALUE as an `any` VIEW: `{field type tag, pointer to the field inside `s`}` — an interior pointer, not a copy. For an addressable receiver the view borrows the struct's own storage (mutations of the struct stay visible through a live view); an rvalue receiver spills to a frame temp first. The view is valid only while the receiver's storage lives. Arrays/vectors/slices are rejected — index natively (`v[i]`, typed). Enum values are rejected — use `variant_payload`.
@@ -5967,7 +5968,7 @@ level where code goes dead:
   ARCH` without a silent fallback:
 
 ```sx
-inline if OS == {
+inline match OS {
     case .macos: errno_location :: () -> *i32 extern libc "__error";
     case .linux: errno_location :: () -> *i32 extern libc "__errno_location";
     else:        #error("errno_location: unsupported target — add its libc symbol.");
@@ -5980,7 +5981,7 @@ inline if OS == {
 
 ```sx
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
-    inline if T == {
+    inline match T {
         case protocol: { ... }
         case closure:  { ... }
         case slice:    a.dealloc_bytes(xx x.ptr);
@@ -6648,7 +6649,7 @@ tag — use `catch` for that.
 ### `catch`
 
 Expression form. Handles the error inline. The binding is **parenthesized**
-(`catch (e)`) — like a for-loop capture — and is **optional**. Four shapes,
+(`catch (e)`) — like a for-loop capture — and is **optional**. Three shapes,
 disambiguated by the token after `catch`:
 
 | Form | Binding | Body |
@@ -6656,7 +6657,9 @@ disambiguated by the token after `catch`:
 | `catch { ... }` | none (tag ignored) | block — braces required |
 | `catch (e) { ... }` | `e` | block |
 | `catch (e) EXPR` | `e` | bare expression (no braces) |
-| `catch (e) == { case ... }` | `e` | match over `e` (sugar for `{ if e == { ... } }`) |
+
+Dispatching on the tag is the bare-expression shape with a `match` over the
+binding: `catch (e) match e { case ... }`.
 
 An unparenthesized binding (`catch e { }`) is a parse error with a hint to
 parenthesize it.
@@ -6674,7 +6677,7 @@ v, n := parse(s) catch (e) {
   .{0, 0}                               // tuple body for a multi-value failable
 };
 
-v := parse(s) catch (e) == {           // match-body form
+v := parse(s) catch (e) match e {       // dispatch on the tag
   case .Empty:    0;
   case .BadDigit: -1;
   else:           raise e;

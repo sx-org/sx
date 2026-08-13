@@ -15,28 +15,28 @@ V :: enum { num: f64; other; }
 main :: () {
     // int ⊔ float = float — capture-typed f64 arm FIRST (the 0226 pinned order)...
     a : V = .num(2.5);
-    r1 := if a == { case .num: (x) { x } case .other: { 1 } };
+    r1 := match a { case .num: |x| { x } case .other: { 1 } };
     print("{}\n", r1);
 
     // ...and int-literal arm FIRST (a first-arm-wins join truncates 2.5 to 2).
-    r2 := if a == { case .other: { 1 } case .num: (x) { x } };
+    r2 := match a { case .other: { 1 } case .num: |x| { x } };
     print("{}\n", r2);
 
     // i32 ⊔ i64 = i64 in both orders; i32-first must not truncate the i64 arm.
     c : Color = .green;
     small : i32 = 5;
     big : i64 = 9000000000;
-    r3 := if c == { case .red: { small } case .green: { big } };
+    r3 := match c { case .red: { small } case .green: { big } };
     print("{}\n", r3);
-    r4 := if c == { case .red: { big } case .green: { small } };
+    r4 := match c { case .red: { big } case .green: { small } };
     print("{}\n", r4);
 
     // A `null` arm makes the result optional wherever it sits, trailing
     // included.
     d : Color = .red;
-    r5 := if d == { case .red: { 42 } case .green: { null } };
+    r5 := match d { case .red: { 42 } case .green: { null } };
     if v := r5 { print("some {}\n", v); } else { print("none\n"); }
     e : Color = .green;
-    r6 := if e == { case .red: { 42 } case .green: { null } };
+    r6 := match e { case .red: { 42 } case .green: { null } };
     if w := r6 { print("some {}\n", w); } else { print("none\n"); }
 }

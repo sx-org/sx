@@ -329,7 +329,7 @@ optional_to_string :: (o: $T) -> string {
 any_to_string :: (val: any) -> string {
     result := "<?>";
     type := type_of(val);
-    if type == {
+    match type {
         case void: result = "";
         case int: {
             if is_unsigned(type) { result = uint_to_string(xx val); }

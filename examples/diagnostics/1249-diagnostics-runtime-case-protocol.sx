@@ -7,7 +7,7 @@
 main :: () {
     av : any = 5;
     t := type_of(av);
-    if t == {
+    match t {
         case protocol: print("?\n");
         case int: print("int\n");
     }

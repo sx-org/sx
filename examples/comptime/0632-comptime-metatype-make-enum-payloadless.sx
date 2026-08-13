@@ -16,7 +16,7 @@ make_suit :: () -> Type {
 Suit :: make_suit();
 
 show :: (s: Suit) {
-    if s == {
+    match s {
         case .hearts:   { print("hearts\n"); }
         case .spades:   { print("spades\n"); }
         case .diamonds: { print("diamonds\n"); }

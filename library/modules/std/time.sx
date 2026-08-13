@@ -17,7 +17,7 @@
 c :: #import "modules/std/c.sx";
 Timespec :: c.Timespec;
 
-inline if OS == {
+inline match OS {
     case .macos:
         CLOCK_REALTIME  :i32: 0;
         CLOCK_MONOTONIC :i32: 6;
@@ -79,7 +79,7 @@ local_civil :: (unix_seconds: i64) -> (CivilTime, bool) {
     value := unix_seconds;
     broken : c.Tm = .{};
     valid := false;
-    inline if OS == {
+    inline match OS {
         case .windows: valid = c.localtime_s(*broken, *value) == 0;
         else: valid = c.localtime_r(*value, *broken) != null;
     }

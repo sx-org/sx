@@ -29,18 +29,18 @@ main :: () {
     process.assert(ret_bare() != null, "bare arm");
 
     if e := ret_plain() {
-        n := if e == { case .resize: (v) { v } else: 0.0 };
+        n := match e { case .resize: |v| { v } else: 0.0 };
         process.assert(n == 1.5, "plain payload intact");
     } else { process.assert(false, "plain present"); }
 
     if e := ret_struct() {
-        s := if e == { case .pair: (p) { p.a + p.b } else: 0.0 };
+        s := match e { case .pair: |p| { p.a + p.b } else: 0.0 };
         process.assert(s == 3.0, "struct payload intact");
     } else { process.assert(false, "struct present"); }
 
     if e := ret_nested() {
-        n := if e == { case .wrap: (i) {
-            if i == { case .two: (v) { v } else: 0 }
+        n := match e { case .wrap: |i| {
+            match i { case .two: |v| { v } else: 0 }
         } else: 0 };
         process.assert(n == 7, "nested union payload intact");
     } else { process.assert(false, "nested present"); }

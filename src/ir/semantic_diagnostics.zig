@@ -783,7 +783,7 @@ pub const UnknownTypeChecker = struct {
             },
             .match_expr => |me| {
                 self.walkBodyTypes(me.subject, declared, in_scope, type_vals);
-                // Comptime match (`inline if x == { case … }`): only the
+                // Comptime match (`inline match x { case … }`): only the
                 // matching arm is lowered — mirror lowerMatch.
                 if (me.is_comptime) {
                     if (self.lowering) |l| {

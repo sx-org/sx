@@ -9,7 +9,7 @@ Padded :: struct { a: u8; b: i64; c: u16; }
 
 parity :: () -> bool {
     ti := type_info(Padded);
-    if ti == { case .struct: (si) { return si.fields[1].offset == struct_field_offset(Padded, 1); } else: {} }
+    match ti { case .struct: |si| { return si.fields[1].offset == struct_field_offset(Padded, 1); } else: {} }
     return false;
 }
 PARITY :: #run parity();

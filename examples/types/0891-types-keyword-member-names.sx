@@ -22,6 +22,7 @@ Q :: struct {
 
     push :: (self: *Q, v: i64) { self.if += v; }
     return :: (self: *Q) -> i64 => self.if;
+    match :: (self: *Q) -> i64 => self.if * 2;
 }
 
 R :: struct { n: i64 = 0; }
@@ -47,7 +48,7 @@ Pair :: struct { a, b: i64; }
 main :: () {
     q := Q{ if = 10, while = 1.5, for = 2.5, f32 = 9.5 };
     q.push(5);
-    print("q {} {} {} {} {}\n", q.return(), q.while, q.for, q.f32, Q.case);
+    print("q {} {} {} {} {} {}\n", q.return(), q.match(), q.while, q.for, q.f32, Q.case);
 
     r := R{};
     p : P = r.(P, context.allocator);
@@ -66,6 +67,6 @@ main :: () {
 
     k : Kind = .struct(42);
     tagless : Kind = .bool;
-    kv := if k == { case .struct: (v) { v } else: 0 };
+    kv := match k { case .struct: |v| { v } else: 0 };
     print("variant {} {}\n", kv, tagless == .bool);
 }

@@ -2113,7 +2113,7 @@ test "lower: match on untagged union subject (payload binding) is diagnosed, not
 
     const span = ast.Span{ .start = 0, .end = 0 };
 
-    // main :: (s: Shape) { r := if s == { case .circle: (v) { } }; }
+    // main :: (s: Shape) { r := match s { case .circle: |v| { } }; }
     var shape_type = Node{ .span = span, .data = .{ .type_expr = .{ .name = "Shape", .is_generic = false } } };
     var s_ident = Node{ .span = span, .data = .{ .identifier = .{ .name = "s" } } };
     var pat = Node{ .span = span, .data = .{ .enum_literal = .{ .name = "circle" } } };
@@ -2163,7 +2163,7 @@ test "lower: match on untagged union subject (no binding) is diagnosed, not inva
 
     const span = ast.Span{ .start = 0, .end = 0 };
 
-    // main :: (s: Shape) { r := if s == { case .circle: { } case .rect: { } }; }
+    // main :: (s: Shape) { r := match s { case .circle: { } case .rect: { } }; }
     // NO payload binding — slipping past the arm-level guard reaches the
     // backend as a switch on the raw `[8 x i8]` union storage against `i0`
     // case constants (LLVM verifier failure, no diagnostic).
@@ -2207,7 +2207,7 @@ test "lower: match on a string subject is diagnosed, not invalid IR" {
 
     const span = ast.Span{ .start = 0, .end = 0 };
 
-    // main :: (s: string) { r := if s == { case "hi": { } }; }
+    // main :: (s: string) { r := match s { case "hi": { } }; }
     // Undiagnosed, this reaches the backend as `switch ptr` against integer
     // case constants (LLVM verifier failure). String subjects are
     // not matchable (specs §Pattern Matching: patterns are enum literals,
@@ -2249,7 +2249,7 @@ test "lower: match arms with incompatible result types are diagnosed, not a mixe
 
     const span = ast.Span{ .start = 0, .end = 0 };
 
-    // main :: (s: i64) { r := if s == { case 1: { 1 } case 2: { "hi" } }; }
+    // main :: (s: i64) { r := match s { case 1: { 1 } case 2: { "hi" } }; }
     // The unification pass diagnoses the true mismatch at the offending arm.
     // Taking the FIRST decisive arm's type without unifying feeds the raw
     // string arm value to the merge phi — an LLVM verifier failure ("PHI node
@@ -2305,7 +2305,7 @@ test "lower: payload binding on a payload-less enum match is diagnosed, not .unr
 
     const span = ast.Span{ .start = 0, .end = 0 };
 
-    // main :: (c: Color) { r := if c == { case .red: (v) { } }; }
+    // main :: (c: Color) { r := match c { case .red: |v| { } }; }
     var color_type = Node{ .span = span, .data = .{ .type_expr = .{ .name = "Color", .is_generic = false } } };
     var c_ident = Node{ .span = span, .data = .{ .identifier = .{ .name = "c" } } };
     var pat = Node{ .span = span, .data = .{ .enum_literal = .{ .name = "red" } } };

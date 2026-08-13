@@ -35,8 +35,8 @@ main :: () {
 
     // A dead arm is a warning, not an error — user code cannot spell "all
     // conformers", and the set is open to extension at the source level.
-    if v == {
-        case Widget: (x) { print("{}\n", x.n); }
-        case Timer:  (y) { print("{}\n", y.deadline); }
+    match v {
+        case Widget: |x| { print("{}\n", x.n); }
+        case Timer:  |y| { print("{}\n", y.deadline); }
     }
 }

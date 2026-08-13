@@ -26,7 +26,7 @@ main :: () {
     u := make_u();
     print("{}\n", u.i);
     e := make_e();
-    if e == { case .S: { print("S\n"); } case .T: { print("T\n"); } }
+    match e { case .S: { print("S\n"); } case .T: { print("T\n"); } }
     fp : FnAlias = make;
     r := fp();
     print("alias fp: {}\n", r.x);

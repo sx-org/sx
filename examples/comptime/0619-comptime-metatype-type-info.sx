@@ -19,9 +19,9 @@ Shape :: enum {
 ShapeCopy :: define(declare("ShapeCopy"), type_info(Shape));
 
 describe :: (s: ShapeCopy) {
-    if s == {
-        case .circle: (r) { print("circle r={}\n", r); }
-        case .rect:   (n) { print("rect n={}\n", n); }
+    match s {
+        case .circle: |r| { print("circle r={}\n", r); }
+        case .rect:   |n| { print("rect n={}\n", n); }
         case .empty:       { print("empty\n"); }
     }
 }

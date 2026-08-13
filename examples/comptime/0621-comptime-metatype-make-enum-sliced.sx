@@ -23,7 +23,7 @@ Axis :: build_axis();
 main :: () -> i32 {
     a : Axis = .north;
     b : Axis = .east(90);
-    if a == { case .north: { print("north\n"); } case .east: (d) { print("east {}\n", d); } }
-    if b == { case .north: { print("north\n"); } case .east: (d) { print("east {}\n", d); } }
+    match a { case .north: { print("north\n"); } case .east: |d| { print("east {}\n", d); } }
+    match b { case .north: { print("north\n"); } case .east: |d| { print("east {}\n", d); } }
     return 0;
 }

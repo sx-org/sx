@@ -8,7 +8,7 @@ s :: #import "0633-comptime-compiler-namespaced-type/shapes.sx";
 
 main :: () {
     x := s.Suit.spades;
-    if x == {
+    match x {
         case .hearts: { print("hearts\n"); }
         case .spades: { print("spades\n"); }
     }

@@ -1,4 +1,4 @@
-// A match-style `if x == { case .variant: (v) { ... } }` payload binding is valid
+// A match-style `match x { case .variant: |v| { ... } }` payload binding is valid
 // only on a tagged union (an enum with payloads). Two non-bindable subjects are
 // rejected at lowering:
 // - a plain UNTAGGED `union` (no discriminant) and a POINTER to one, where the
@@ -13,14 +13,14 @@ Color :: enum { red; green; }
 
 main :: () {
     s : Shape = .{ circle = 5 };
-    r := if s == { case .circle: (v) { v } case .rect: (v) { v * 2 } };
+    r := match s { case .circle: |v| { v } case .rect: |v| { v * 2 } };
     print("{}\n", r);
 
     p := *s;
-    q := if p == { case .circle: (v) { v } else: { 0 } };
+    q := match p { case .circle: |v| { v } else: { 0 } };
     print("{}\n", q);
 
     c := Color.red;
-    w := if c == { case .red: (v) { v } case .green: { 0 } };
+    w := match c { case .red: |v| { v } case .green: { 0 } };
     print("{}\n", w);
 }

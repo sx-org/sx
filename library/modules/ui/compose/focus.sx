@@ -137,8 +137,8 @@ FocusRouter :: struct {
     // hears; an up is not a focus event. Text rides its own channel, never
     // synthesized from keys.
     dispatch :: (self: *FocusRouter, ev: *InputEvent) {
-        if ev.* == {
-            case .key_down: (k) {
+        match ev.* {
+            case .key_down: |k| {
                 if k.logical == .tab {
                     self.step(if k.header.modifiers.shift then -1 else 1)
                     return
@@ -150,7 +150,7 @@ FocusRouter :: struct {
                     }
                 }
             }
-            case .text: (t) {
+            case .text: |t| {
                 if r := self.current() {
                     if h := r.on_text {
                         h(t.text)

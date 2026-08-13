@@ -175,18 +175,18 @@ main :: () {
 
     while running {
         while SDL_PollEvent(event) {
-            if event == {
+            match event {
                 case .quit: running = false;
-                case .key_up: (e) {
-                    if e.key == {
+                case .key_up: |e| {
+                    match e.key {
                         case .escape: running = false;
                         //case .
                     }
                 }
-                case .window_exposed: (e) {
+                case .window_exposed: |e| {
                     
                 }
-                case .key_down: (e) {
+                case .key_down: |e| {
                     k : u32 = xx e.key;
                     print("ts={} wid={} sc={} key={}\n",
                         e.timestamp, e.window_id, e.scancode, k);

@@ -21,7 +21,7 @@ classify :: (idx: i64) -> i64 {
 tag :: (idx: i64) -> i64 {
     inline for i in 0..3 {
         if idx == i {
-            inline if i == {
+            inline match i {
                 case 0: { return 10; }
                 case 1: { return 20; }
                 else:   { return 30; }

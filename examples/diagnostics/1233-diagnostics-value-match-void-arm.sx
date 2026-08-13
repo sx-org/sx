@@ -11,7 +11,7 @@ E :: enum { A; B; }
 
 main :: () {
     e := E.A;
-    y := if e == {
+    y := match e {
         case .A: { print("x\n"); }   // void tail — no value
         case .B: { 2 }               // i64 value
     };

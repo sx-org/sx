@@ -1,0 +1,83 @@
+// `match <subject> { case … }`. The subject is a header expression, so the
+// `{` that closes it opens the arm list — a call subject keeps its arms, and a
+// named aggregate there needs parens. A payload arm binds with `|name|`;
+// an arm with no payload carries no pipes. `==` is a comparison, never a match
+// head. `match` bare-names members and needs a backtick as a value name.
+
+#import "modules/std.sx";
+
+Shape :: enum {
+    circle: f32;
+    rect: f32;
+    none;
+}
+
+Box :: struct {
+    n: i64 = 0;
+    match :: (self: *Box, v: i64) -> i64 { return self.n + v; }
+}
+
+`match :: (n: i64) -> i64 { return n * 3; }
+
+pick :: (n: i64) -> Shape {
+    if n == 0 { return .circle(2.0); }
+    if n == 1 { return .rect(4.0); }
+    return .none;
+}
+
+kind :: (x: $T) -> string {
+    inline match T {
+        case int: return "int";
+        case float: return "float";
+        else: return "other";
+    }
+}
+
+area :: (s: Shape) -> f32 {
+    match s {
+        case .circle: |r| 3.0 * r * r;
+        case .rect: |w| w * 2.0;
+        case .none: 0;
+    }
+}
+
+main :: () {
+    // A call subject: the `{` opens the arms, never a trailing block on `pick`.
+    match pick(0) {
+        case .circle: |r| print("circle {}\n", r);
+        case .rect: |w| print("rect {}\n", w);
+        case .none: print("none\n");
+    }
+
+    print("{} {} {}\n", area(pick(0)), area(pick(1)), area(pick(2)));
+
+    // Empty braces after a call subject are the arm list, not a callee-settled
+    // empty body.
+    match pick(2) {}
+
+    // A named aggregate in subject position is parenthesized, like any header.
+    match (Box{ n = 4 }).n {
+        case 4: print("four\n");
+        else: print("other\n");
+    }
+
+    // An arm body is a statement list, a block, or a bare expression.
+    v := match pick(1) {
+        case .circle: |r| { xx r }
+        case .rect: |w| {
+            doubled := w * 2.0;
+            xx doubled
+        }
+        case .none: 0;
+    };
+    print("{}\n", v);
+
+    x := 3;
+    y := 3;
+    if x == y { print("eq\n"); }
+
+    b := Box{ n = 10 };
+    print("{} {}\n", b.match(5), `match(7));
+
+    print("{} {}\n", kind(1), kind(1.5));
+}

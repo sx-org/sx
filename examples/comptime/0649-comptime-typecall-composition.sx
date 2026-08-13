@@ -31,10 +31,10 @@ ResultOf :: ($T: Type) -> Type {
 R :: ResultOf(Tuple(a: *Box(i64), b: *Box(bool), c: *Box(f64)));
 
 use :: (r: R) {
-    if r == {
-        case .a: (v) { print("a (i64)  = {}\n", v); }
-        case .b: (v) { print("b (bool) = {}\n", v); }
-        case .c: (v) { print("c (f64)  = {}\n", v); }
+    match r {
+        case .a: |v| { print("a (i64)  = {}\n", v); }
+        case .b: |v| { print("b (bool) = {}\n", v); }
+        case .c: |v| { print("c (f64)  = {}\n", v); }
     }
 }
 

@@ -19,10 +19,10 @@ K :: struct { a: i64; b: i64; }
 Ev :: enum { quit :: 0x100; key :: 0x300: i64; mouse :: 0x400: K; }
 
 handle :: (e: Ev) -> i64 {
-    r := if e == {
+    r := match e {
         case .quit:      1;
-        case .key:  (k)  { 100 + k }
-        case .mouse: (m) { m.a + m.b }
+        case .key:  |k|  { 100 + k }
+        case .mouse: |m| { m.a + m.b }
         else: -999;
     };
     r

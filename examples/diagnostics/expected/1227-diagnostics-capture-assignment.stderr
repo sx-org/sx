@@ -13,19 +13,19 @@ error: cannot assign to immutable capture 'i' — a range/index position has no 
 error: cannot assign to immutable capture 'r' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate
   --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:41:29
    |
-41 |         case .circle: (r) { r = 5.0; }
+41 |         case .circle: |r| { r = 5.0; }
    |                             ^^^^^^^^
 
 error: cannot assign to immutable capture 'n' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate
   --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:42:27
    |
-42 |         case .rect: (n) { n = 7; }
+42 |         case .rect: |n| { n = 7; }
    |                           ^^^^^^
 
 error: cannot assign to immutable capture 'ov' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate
   --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:48:28
    |
-48 |         case .some: (ov) { ov = 9; }
+48 |         case .some: |ov| { ov = 9; }
    |                            ^^^^^^^
 
 error: cannot assign to immutable capture 'e' — a catch/onfail error binding is read-only; copy it into a `:=` local to mutate

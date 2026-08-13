@@ -19,8 +19,8 @@ build :: () -> Box(i64) {            // site A resolves Box(i64)
 }
 
 consume :: (b: Box(i64)) {           // site B resolves Box(i64) independently
-    if b == {
-        case .some: (n) { print("some {}\n", n); }
+    match b {
+        case .some: |n| { print("some {}\n", n); }
         case .none: { print("none\n"); }
     }
 }

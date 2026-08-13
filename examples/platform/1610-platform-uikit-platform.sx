@@ -53,8 +53,8 @@ tap_frame :: () {
     i : i64 = 0;
     while i < events.len {
         ev := events.ptr[i];
-        if ev == {
-            case .input: (ie) { if ie == { case .pointer_down: {
+        match ev {
+            case .input: |ie| { match ie { case .pointer_down: {
                 g_color_index += 1;
                 if g_keyboard_up {
                     g_uikit_plat.hide_keyboard();

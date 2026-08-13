@@ -15,9 +15,9 @@ impl Shape for Rect { area :: (self: *Rect) -> i64 { self.w * self.h } }
 describe :: (s: Shape) {
     // The type switch opens the value: each concrete arm binds the receiver
     // at its own type, exactly as a downcast would.
-    if s == {
-        case Square: (q) { print("square side {} area {}\n", q.side, s.area()); }
-        case Rect:   (r) { print("rect {}x{} area {}\n", r.w, r.h, s.area()); }
+    match s {
+        case Square: |q| { print("square side {} area {}\n", q.side, s.area()); }
+        case Rect:   |r| { print("rect {}x{} area {}\n", r.w, r.h, s.area()); }
     }
 }
 

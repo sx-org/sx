@@ -31,5 +31,5 @@ error: 'i32' is a reserved type name and cannot be used as an identifier
 error: 'string' is a reserved type name and cannot be used as an identifier
   --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:20:22
    |
-20 |         case .some: (string) { 0 }
+20 |         case .some: |string| { 0 }
    |                      ^^^^^^

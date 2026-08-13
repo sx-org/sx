@@ -9,8 +9,8 @@ meta :: #import "modules/std/meta.sx";
 
 print_any :: (av: any) {
     ti := type_info(type_of(av));
-    if ti == {
-        case .struct: (si) {
+    match ti {
+        case .struct: |si| {
             print("{");
             i := 0;
             while i < si.fields.len {
@@ -21,12 +21,12 @@ print_any :: (av: any) {
             }
             print("}");
         }
-        case .union: (ui) {
+        case .union: |ui| {
             // Untagged: arms overlay at offset 0 and nothing records which
             // is live — printing an arm would be a lie.
             print("<union>");
         }
-        case .array: (ai) {
+        case .array: |ai| {
             print("[");
             i := 0;
             while i < ai.len {
@@ -36,7 +36,7 @@ print_any :: (av: any) {
             }
             print("]");
         }
-        case .vector: (vi) {
+        case .vector: |vi| {
             print("[");
             i := 0;
             while i < vi.lanes {

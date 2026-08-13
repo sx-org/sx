@@ -7,7 +7,7 @@
 // 2. Protocol impl method body           impl Hashable for Probe
 // 3. Closure value body                  closure that calls hash
 //
-// `inline if OS == { case }` gating across targets is covered by
+// `inline match OS` gating across targets is covered by
 // `tests/cross_compile.sh`.
 
 #import "modules/std.sx";

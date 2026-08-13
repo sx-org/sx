@@ -7,7 +7,7 @@
 #import "modules/std.sx";
 
 describe :: (av: any) -> string {
-    if av == {
+    match av {
         case int:     return "int";
         case closure: return "closure";
         else:         return "other";
@@ -26,11 +26,11 @@ main :: () {
     print("{}\n", describe("s"));
 
     // The category match on a runtime Type value classifies the same way.
-    if type_of(cap) == {
+    match type_of(cap) {
         case closure: print("ty: closure\n");
         else:         print("ty: other\n");
     }
-    if type_of(42) == {
+    match type_of(42) {
         case closure: print("ty: closure\n");
         else:         print("ty: other\n");
     }

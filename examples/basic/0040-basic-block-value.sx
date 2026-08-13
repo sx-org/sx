@@ -28,7 +28,7 @@ sum3 :: (a: i32, b: i32, c: i32) -> i32 {
 // Each arm's `;` separates it from the next `case`, and each arm still yields
 // its expression as the match value.
 classify :: (n: i32) -> i32 {
-    if n == {
+    match n {
         case 0:  100;
         case 1:  10;
         else:    7;

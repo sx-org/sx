@@ -11,7 +11,7 @@ main :: () -> i32 {
     a := must(-1) catch (e) { };
     b := must(-1) catch { };
     c := must(-1) catch (e) e;
-    d := must(-1) catch (e) == {
+    d := must(-1) catch (e) match e {
         case .Bad:   0;
         else:        1
     };

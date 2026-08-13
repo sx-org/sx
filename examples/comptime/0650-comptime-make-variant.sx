@@ -32,7 +32,7 @@ pick :: (idx: i64, vv: Vec3, sv: string, bv: Big, nv: i64) -> R {
         if idx == i {
             // Comptime match on the loop cursor `i` selects the arm whose payload
             // type matches variant `i` — cleaner than nested `inline if`/`else`.
-            inline if i == {
+            inline match i {
                 case 0: { return make_variant(R, i, vv); }
                 case 1: { return make_variant(R, i, sv); }
                 case 2: { return make_variant(R, i, bv); }
@@ -44,11 +44,11 @@ pick :: (idx: i64, vv: Vec3, sv: string, bv: Big, nv: i64) -> R {
 }
 
 show :: (r: R) {
-    if r == {
-        case .v:   (p) { print("v = {} {} {}\n", p.x, p.y, p.z); }
-        case .s:   (p) { print("s = {}\n", p); }
-        case .big: (p) { print("big = {} {} {} {} {}\n", p.a, p.b, p.c, p.d, p.tag); }
-        case .n:   (p) { print("n = {}\n", p); }
+    match r {
+        case .v:   |p| { print("v = {} {} {}\n", p.x, p.y, p.z); }
+        case .s:   |p| { print("s = {}\n", p); }
+        case .big: |p| { print("big = {} {} {} {} {}\n", p.a, p.b, p.c, p.d, p.tag); }
+        case .n:   |p| { print("n = {}\n", p); }
     }
 }
 

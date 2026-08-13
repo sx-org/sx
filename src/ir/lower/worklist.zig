@@ -44,7 +44,7 @@ const Node = ast.Node;
 /// What a driver is. The drain treats all three alike — register, run, retire
 /// — and the kind exists so a class can be recognized in the registry.
 pub const Kind = enum {
-    /// A module-scope `inline if` / `inline if X == { … }` / `inline for`.
+    /// A module-scope `inline if` / `inline match` / `inline for`.
     module_driver,
     /// A `#run` a driver's condition reached.
     run,

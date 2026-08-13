@@ -27,7 +27,7 @@ main :: () {
     print("pointer size: {}\n", POINTER_SIZE);
 
     // Verify inline if with OS/ARCH works
-    inline if OS == {
+    inline match OS {
         case .macos: { print("os: macos\n"); }
         case .linux: { print("os: linux\n"); }
         case .windows: { print("os: windows\n"); }

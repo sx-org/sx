@@ -10,27 +10,27 @@
 
 main :: () -> i32 {
     r := RecvResult(i64).value(42);
-    if r == {
-        case .value:  (v) { print("recv value {}\n", v); }
+    match r {
+        case .value:  |v| { print("recv value {}\n", v); }
         case .closed: { print("recv closed\n"); }
     }
 
     rc : RecvResult(i64) = .closed;
-    if rc == {
-        case .value:  (v) { print("recv value {}\n", v); }
+    match rc {
+        case .value:  |v| { print("recv value {}\n", v); }
         case .closed: { print("recv closed\n"); }
     }
 
     t := TryResult(i64).value(7);
-    if t == {
-        case .value:  (v) { print("try value {}\n", v); }
+    match t {
+        case .value:  |v| { print("try value {}\n", v); }
         case .empty:  { print("try empty\n"); }
         case .closed: { print("try closed\n"); }
     }
 
     te : TryResult(i64) = .empty;
-    if te == {
-        case .value:  (v) { print("try value {}\n", v); }
+    match te {
+        case .value:  |v| { print("try value {}\n", v); }
         case .empty:  { print("try empty\n"); }
         case .closed: { print("try closed\n"); }
     }

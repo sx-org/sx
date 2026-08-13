@@ -14,7 +14,7 @@ outer :: ($T: Type, v: T) -> i64 { inner(T) }
 // Recursive comptime walk over a forwarded param (the TrivialState shape).
 count_leaves :: ($T: Type) -> i64 {
     n := 0;
-    inline if T == {
+    inline match T {
         case struct: {
             inline for i in 0..struct_field_count(T) {
                 n += count_leaves(struct_field_type(T, i));

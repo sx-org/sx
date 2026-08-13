@@ -75,8 +75,8 @@ main :: () -> i32 {
 
     // The core is held by value, so each wrapper is a copy: writing through one
     // set's slot leaves the other's alone.
-    if drawn == {
-        case DrawBoard: (b) { print("held {} rows {}\n", b.core.title, b.core.rows); }
+    match drawn {
+        case DrawBoard: |b| { print("held {} rows {}\n", b.core.title, b.core.rows); }
         else: { print("other\n"); }
     }
 

@@ -21,8 +21,8 @@ Wrap  :: enum { none; got: Event; }
 
 main :: () {
     w : Wrap = .got(.{ code = 7 });
-    if w == {
-        case .got: (e) { print("code={}\n", e.code); }
+    match w {
+        case .got: |e| { print("code={}\n", e.code); }
         case .none: print("none\n");
     }
 }

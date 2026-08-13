@@ -26,10 +26,10 @@ build_level :: () -> Type {
 Level :: build_level();
 
 show :: (l: Level) {
-    if l == {
+    match l {
         case .info:      { print("info\n"); }
         case .warn:      { print("warn\n"); }
-        case .fatal: (c) { print("fatal code={}\n", c); }
+        case .fatal: |c| { print("fatal code={}\n", c); }
     }
 }
 

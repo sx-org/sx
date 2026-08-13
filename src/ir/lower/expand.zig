@@ -1,5 +1,5 @@
-//! Module-scope declaration expansion: `inline if`, its `inline if X == { … }`
-//! match spelling, and `inline for`.
+//! Module-scope declaration expansion: `inline if`, `inline match`, and
+//! `inline for`.
 //!
 //! Import resolution leaves these drivers OPAQUE — a branch's declarations,
 //! including the modules a branch-local `#import` names, stay inside the node.
