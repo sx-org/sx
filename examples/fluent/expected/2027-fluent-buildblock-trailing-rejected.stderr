@@ -1,27 +1,33 @@
 error: 'plain' cannot take a trailing block — its last parameter 'b' is 'i64', which is neither a `Closure` nor a `@BuildBlock(P)`
-  --> examples/fluent/2027-fluent-buildblock-trailing-rejected.sx:27:21
+  --> examples/fluent/2027-fluent-buildblock-trailing-rejected.sx:28:21
    |
-27 |     _ = plain(1, 2) { 3; };   // refused: 'b' receives neither form
+28 |     _ = plain(1, 2) { 3; };   // refused: 'b' receives neither form
    |                     ^^^^^^
 
 help: declare 'b' as `Closure()` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block
    |
-27 |     _ = plain(1, 2) { 3; };   // refused: 'b' receives neither form
+28 |     _ = plain(1, 2) { 3; };   // refused: 'b' receives neither form
    |                     ^^^^^^
 
 error: a '@BuildBlock(Drawable)' parameter takes a build block — pass it as a trailing block
-  --> examples/fluent/2027-fluent-buildblock-trailing-rejected.sx:28:12
+  --> examples/fluent/2027-fluent-buildblock-trailing-rejected.sx:29:12
    |
-28 |     column(7);                // refused: a value is not a build block
+29 |     column(7);                // refused: a value is not a build block
    |            ^
 
 help: write the call with a trailing `{ … }`, or pass on a block this call already received
    |
-28 |     column(7);                // refused: a value is not a build block
+29 |     column(7);                // refused: a value is not a build block
    |            ^
 
 error: parameter 'content' is bound both by a positional argument and by the trailing block
-  --> examples/fluent/2027-fluent-buildblock-trailing-rejected.sx:23:21
+  --> examples/fluent/2027-fluent-buildblock-trailing-rejected.sx:24:21
    |
-23 |     column(content) { false; };
+24 |     column(content) { false; };
    |                     ^^^^^^^^^^
+
+error: 'column' takes a build block for 'content' — a build block has no parameter header
+  --> examples/fluent/2027-fluent-buildblock-trailing-rejected.sx:31:14
+   |
+31 |     column() { |x| false; };  // refused: a build block takes no header
+   |              ^^^^^^^^^^^^^^

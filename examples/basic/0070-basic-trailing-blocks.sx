@@ -1,9 +1,12 @@
 // Trailing blocks (specs: Trailing Blocks): `f(args) { body }` passes the
-// block as a zero-param closure literal bound to the callee's LAST declared
-// parameter — definitionally `f(args, content = || { body })`. Covers:
-// statement position (no `;` after `}`), middle defaults skipped, named args
-// + block, expression position with `;`, capture-by-value semantics,
-// next-line `{` staying a scope block, and header calls being unaffected.
+// block as a closure literal bound to the callee's LAST declared parameter —
+// definitionally `f(args, content = || { body })`, with the closure's
+// parameters written as a `|…|` header after the `{`. Covers: statement
+// position (no `;` after `}`), middle defaults skipped, named args + block,
+// expression position with `;`, capture-by-value semantics, next-line `{`
+// staying a scope block, header calls being unaffected, and the parameter
+// header — one param, several, an annotation, an empty body, and the `|` that
+// decides a parameterized-aggregate spelling as a block.
 #import "modules/std.sx";
 
 vstack :: (spacing: f32, content: Closure()) -> i64 {
@@ -12,6 +15,10 @@ vstack :: (spacing: f32, content: Closure()) -> i64 {
     print("end\n");
     7
 }
+
+each :: (xs: []i64, body: Closure(i64)) { for v in xs { body(v); } }
+pair :: (f: Closure(i64, i64)) { f(3, 4); }
+Sink :: struct($T: Type) { taken: Closure(i64); }
 
 scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: Closure()) {
     if tb := top_bar { tb(); }
@@ -40,4 +47,16 @@ main :: () {
     while check(|| print("hdr\n")) and m < 1 { m += 1; }
     // Nested trailing block inside call args (parens disambiguate).
     _ = vstack(4.0, || { _ = vstack(5.0) { print("inner\n"); }; });
+    // The header IS the closure's parameter list, so the two spellings agree.
+    xs := .[1, 2];
+    each(xs) { |x| print("each {}\n", x); }
+    each(xs, |x| { print("each-explicit {}\n", x); });
+    pair() { |a, b| print("pair {}\n", a + b); }
+    // An annotated header, and a body that is empty under it.
+    each(xs) { |x: i64| print("typed {}\n", x); }
+    each(xs) { |x| }
+    // A `|` right after the `{` reads as the header, so the parameterized
+    // aggregate spells a closure element in parens.
+    s := Sink(i64){ (|x: i64| print("sink {}\n", x)), };
+    s.taken(6);
 }

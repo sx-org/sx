@@ -925,14 +925,20 @@ its leading-dot form.
 After a completed aggregate, a following block may appear in two forms:
 
 ```sx
-// Taught: self-trailing — stores the value, binds `self` to a pointer to it,
-// runs the block, yields the (possibly mutated) value.
+// Taught: self-trailing — stores the value, binds a pointer to it, runs the
+// block, yields the (possibly mutated) value.
 b := Button{ label = "Play" }.{
     self.label = "Go";
 };
 
+// A `|name|` header names that pointer instead of `self`; it binds exactly
+// one name, and `*T` is its type.
+b1 := Button{ label = "Play" }.{ |btn|
+    btn.label = "Go";
+};
+
 // Legal, not taught: bare second brace group — construct T, then a plain
-// scope in the enclosing environment (no `self`). The value is still T.
+// scope in the enclosing environment (no binding). The value is still T.
 b2 := Button{ label = "Play" } {
     print("built\n");
 };
@@ -5372,6 +5378,12 @@ and the return type annotation is optional. A closure literal may not open an
 expression statement: bind it, pass it, or `return` it. In a value position — a
 block tail, an `if` branch, a `match` arm — it is parenthesized.
 
+Two brace forms carry the same `|…|` spelling as a **header** right after their
+`{`: a call's [trailing block](#trailing-blocks), whose header is its parameter
+list, and a [self-trailing](#struct-literals) `.{ … }`, whose header names the
+value pointer. No other `{` takes a header — there a `|` opens a statement and
+is refused.
+
 ```sx
 n := 5;
 inc := |x: i32| x + n;                        // Closure(i32) -> i32
@@ -5530,8 +5542,8 @@ breaking changes.
 ```sx
 callee(args) { body }
 ```
-A block after a call's closing `)` passes the block as a **zero-param closure
-literal bound to the callee's last declared parameter**. The equivalence is
+A block after a call's closing `)` passes the block as a **closure literal
+bound to the callee's last declared parameter**. The equivalence is
 definitional — every other rule (duplicates, defaults, evaluation order)
 follows from it; the block is not a special argument kind:
 
@@ -5539,6 +5551,10 @@ follows from it; the block is not a special argument kind:
 vstack(8.0) { text("a"); text("b"); }
 // ≡
 vstack(8.0, content = || { text("a"); text("b"); });
+
+each(items) { |x| print("{}\n", x); }
+// ≡
+each(items, |x| { print("{}\n", x); });
 
 scaffold(top_bar = toolbar) { chat_list(); }   // named slots + trailing block
 scaffold() { chat_list(); }                    // defaults skipped, block binds `content`
@@ -5552,8 +5568,16 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
   '..xs' is variadic").
 - **One block**: at most one trailing block per call. Other closure
   arguments are named args or ordinary positional slots.
-- **Zero-param only**: the block is a `Closure()` literal; a parameterized
-  closure argument is spelled explicitly (`f(x, |a| { … })`).
+- **Header**: a `|params|` header directly after the `{` declares the closure's
+  parameters, spelled exactly as a `|…|` closure literal spells them
+  (annotations and defaults included). Without a header the closure is
+  zero-param. The header's arity must match the parameter's `Closure(…)`, and a
+  build block takes no header — it is replayed against a sink, never called.
+- **Header decides the group**: where a `{` could open either a parameterized
+  named aggregate or a trailing block (`List(T){…}` vs `run(2) { … }`), a `|`
+  right after the `{` settles it as the block, ahead of any body shape. A
+  positional aggregate element that is a closure is parenthesized there:
+  `Box(Closure(i64)){ (|x| x), }`.
 - **Same line**: the `{` must sit on the same line as the call's `)`. A `{`
   on the next line is an ordinary scope block statement, never a trailing
   block. (This is the `{` half of

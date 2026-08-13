@@ -15,20 +15,32 @@ error: 'vari' cannot take a trailing block — its last parameter '..rest' is va
 17 |     vari(1) { print("x\n"); };
    |             ^^^^^^^^^^^^^^^^^
 
-error: 'rower' expects a parameterized closure for 'row' — a trailing block is zero-param; pass the closure explicitly
+error: 'rower' takes 1 parameter in the block for 'row' — its header binds 0
   --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:18:13
    |
 18 |     rower() { print("x\n"); };
    |             ^^^^^^^^^^^^^^^^^
 
-error: parameter 'content' is bound both by a named argument and by the trailing block
-  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:19:33
+error: 'rower' takes 1 parameter in the block for 'row' — its header binds 2
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:19:13
    |
-19 |     scaffold(content = toolbar) { print("x\n"); };
+19 |     rower() { |a, b| print("x\n"); };
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: 'vstack' takes 0 parameters in the block for 'content' — its header binds 1
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:20:21
+   |
+20 |     _ = vstack(1.0) { |x| print("x\n"); };
+   |                     ^^^^^^^^^^^^^^^^^^^^^
+
+error: parameter 'content' is bound both by a named argument and by the trailing block
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:21:33
+   |
+21 |     scaffold(content = toolbar) { print("x\n"); };
    |                                 ^^^^^^^^^^^^^^^^^
 
 error: cannot use a trailing block here — 'q' has no known declaration (closure and function-pointer values bind their arguments explicitly)
-  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:21:5
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:23:5
    |
-21 |     q() { print("x\n"); };
+23 |     q() { print("x\n"); };
    |     ^

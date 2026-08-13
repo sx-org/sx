@@ -1,8 +1,8 @@
 // Trailing-block mapping diagnostics (specs: Trailing Blocks), each firing exactly
 // once with no arity cascade: a last param that is not a Closure; a variadic last
-// param; a parameterized closure, since blocks are zero-param; the block-bound
-// param also named; and a callee without a known declaration, where closure values
-// bind explicitly.
+// param; a header whose arity misses the parameter's `Closure(…)`, in both
+// directions; the block-bound param also named; and a callee without a known
+// declaration, where closure values bind explicitly.
 #import "modules/std.sx";
 
 vstack :: (spacing: f32, content: Closure()) -> i64 { content(); 7 }
@@ -16,6 +16,8 @@ main :: () {
     _ = plain(1, 2) { print("x\n"); };
     vari(1) { print("x\n"); };
     rower() { print("x\n"); };
+    rower() { |a, b| print("x\n"); };
+    _ = vstack(1.0) { |x| print("x\n"); };
     scaffold(content = toolbar) { print("x\n"); };
     q := || print("q\n");
     q() { print("x\n"); };

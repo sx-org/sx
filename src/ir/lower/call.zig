@@ -4971,10 +4971,11 @@ pub fn mapNamedArgs(
             },
             .trailing_block => |tb| {
                 // Trailing block binds the callee's LAST declared parameter
-                // (specs: Trailing Blocks): a non-variadic zero-param
-                // Closure (an optional closure slot wraps like any named
-                // closure argument), rejected as a duplicate against a named
-                // or positional binding of the same parameter.
+                // (specs: Trailing Blocks): a non-variadic Closure whose
+                // parameters the block's header spells (an optional closure
+                // slot wraps like any named closure argument), rejected as a
+                // duplicate against a named or positional binding of the same
+                // parameter.
                 if (nparams == off) {
                     errored = true;
                     if (self.diagnostics) |d|
@@ -4990,15 +4991,22 @@ pub fn mapNamedArgs(
                     continue;
                 }
                 const pty = self.resolveDeclParamType(fd, last);
+                const block_params = tb.lambda.data.lambda.params;
                 // Dual bind (spec §7.1): a `$B/@BuildBlock(P)` last parameter
                 // makes the SAME source block a build block instead of a
-                // closure. The block is zero-param by construction, and
-                // formation owns the lambda, so there is no closure shape to
-                // check here. Asked through the shared classifier: the binder may
-                // already be bound to an implementor at this call (a block
-                // forwarded from the caller), and that is still a block
-                // parameter.
+                // closure. A build block is replayed against a sink, not
+                // called, so it takes no header. Asked through the shared
+                // classifier: the binder may already be bound to an
+                // implementor at this call (a block forwarded from the
+                // caller), and that is still a block parameter.
                 if (self.blockProtocolOf(pty) != null) {
+                    // The refused header still binds: an unbound block
+                    // parameter reports a second time as a missing one.
+                    if (block_params.len != 0) {
+                        errored = true;
+                        if (self.diagnostics) |d|
+                            d.addFmt(.err, a.span, "'{s}' takes a build block for '{s}' — a build block has no parameter header", .{ callee_name, p.name });
+                    }
                     if (last < pos) {
                         errored = true;
                         if (self.diagnostics) |d|
@@ -5023,10 +5031,11 @@ pub fn mapNamedArgs(
                     }
                     continue;
                 }
-                if (self.module.types.get(closure_ty).closure.params.len != 0) {
+                const want = self.module.types.get(closure_ty).closure.params.len;
+                if (want != block_params.len) {
                     errored = true;
                     if (self.diagnostics) |d|
-                        d.addFmt(.err, a.span, "'{s}' expects a parameterized closure for '{s}' — a trailing block is zero-param; pass the closure explicitly", .{ callee_name, p.name });
+                        d.addFmt(.err, a.span, "'{s}' takes {d} parameter{s} in the block for '{s}' — its header binds {d}", .{ callee_name, want, if (want == 1) @as([]const u8, "") else "s", p.name, block_params.len });
                     continue;
                 }
                 if (last < pos) {
