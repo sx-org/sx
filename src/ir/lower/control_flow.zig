@@ -687,7 +687,7 @@ pub fn lowerWhile(self: *Lowering, we: *const ast.WhileExpr) Ref {
 }
 
 /// View a `List(T)`-like struct as its backing `items` pointer + element type
-/// + live length, so `for list (x)` iterates the elements. Two shapes:
+/// + live length, so `for x in list` iterates the elements. Two shapes:
 ///   - `{ items: []T, cap }` — `items` is a `[]T` slice whose own `.ptr`/`.len`
 ///     ARE the backing pointer and live count.
 ///   - `{ items: [*]T, len, … }` — a many-pointer `items` paired with a sibling

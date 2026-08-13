@@ -233,7 +233,7 @@ pub const Binding = struct {
         local_const,
         /// `for x in xs` by-value element — container-backed; `*x` exists.
         for_element,
-        /// `for 0..N (i)` / paired range cursor (runtime or inline-for) —
+        /// `for i in 0..N` / paired range cursor (runtime or inline-for) —
         /// the position has no storage (`*` on a range capture is an error).
         range_index,
         /// Match-arm payload / optional-match binding.

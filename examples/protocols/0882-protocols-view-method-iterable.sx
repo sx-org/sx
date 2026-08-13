@@ -1,4 +1,4 @@
-// A method call on a `*P` view in ITERABLE position: `for v.items() (*x)`
+// A method call on a `*P` view in ITERABLE position: `for *x in v.items()`
 // classifies like the owned-receiver form — the call plan resolves the
 // protocol method's return type through the view (and through `?P`/`?*P`
 // receivers), so the for-iterable classifier sees the `[]T`.

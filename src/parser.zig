@@ -4447,9 +4447,12 @@ pub const Parser = struct {
             while (true) {
                 var cap = ast.ForCapture{ .name = "" };
                 if (self.tokens.tag(self.tok) == .star) {
+                    const op_loc = self.tokens.token(self.tok).loc;
                     cap.by_ref = true;
                     self.advance();
+                    try self.requirePrefixGlue(op_loc);
                 }
+                if (self.tokens.tag(self.tok) != .identifier) return self.fail("expected capture variable name");
                 cap.name = self.tokens.slice(self.tok);
                 cap.span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
                 cap.is_raw = self.tokens.flagsOf(self.tok).is_raw;

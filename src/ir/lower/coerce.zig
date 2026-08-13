@@ -744,7 +744,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
                     std.mem.startsWith(u8, operand_node.data.identifier.name, "__pack_");
                 if (!dst_borrows and !is_pack_temp) return self.demandOwnedErasure(dst_ty, proto_name, operand_node, .lvalue);
                 if (self.isByValueBindingIdent(operand_node)) {
-                    // A by-VALUE SSA binding (`for arr (x)`, a match/catch
+                    // A by-VALUE SSA binding (`for x in arr`, a match/catch
                     // capture, a `::` const) is semantically a COPY of the
                     // element it was read from. Deriving the borrow address
                     // through `refStorageAddress` would see through the
