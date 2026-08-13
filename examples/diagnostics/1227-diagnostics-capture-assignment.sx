@@ -32,7 +32,7 @@ main :: () -> i32 {
     // 1. for-loop element capture — the one shape with a `*x` write-back hint
     for x in xs { x += 100; }
 
-    // 2. paired range index capture — no storage, no (*i) spelling
+    // 2. paired range index capture — no storage, no `*i` spelling
     for v, i in xs, 0.. { i = 99; }
 
     // 3. match-arm payload capture (tagged union)

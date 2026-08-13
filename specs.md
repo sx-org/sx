@@ -3635,7 +3635,7 @@ map :: (mapper: Closure(..sources.T) -> $R, ..sources: ValueListenable)
   c.own_allocator = context.allocator;
   c.mapper        = mapper;
   c.sources       = .{..sources};           // pack-to-tuple materialization
-  inline for i in 0..sources.len {           // comptime unroll over the pack
+  inline for i in 0..sources.len {          // comptime unroll over the pack
     sources[i].addListener((_) => c.recompute());
   }
   c.value = mapper(..sources.value);        // pack spread + projection in a call
@@ -4396,7 +4396,7 @@ or without a `;`:
 ```sx
 collect() {
     if show { Label{ text = "in a branch" } }        // publishes
-    for row in rows { Label{ text = row } }           // publishes, once per row
+    for row in rows { Label{ text = row } }          // publishes, once per row
     { Label{ text = "in bare braces" }; }            // publishes; the `;` only separates
     Label{ text = "at the top level" }               // publishes
 }
@@ -5268,6 +5268,12 @@ Use `_` to discard a position. An index alongside the elements is written
 reserved for captures, so a call iterable is written as it is anywhere else
 (`for x in f(n) { }`, `for x, y in zip(a, b) { }`) — no parenthesizing and
 no intermediate binding.
+
+A spaced `(` group at the header's top level, immediately followed by `{`
+or `=>`, is neither a call nor a range end — the header has already
+closed. `for xs (x) { }` is a `for` whose body is missing; in
+`for i in 0.. (n) { }` the range stays open, and an open range cannot be
+the first iterable.
 
 **By-value captures are immutable.** This rule is not
 specific to for-loop element captures — it holds for *every* by-value
@@ -6936,10 +6942,10 @@ multi_assign    = lvalue (',' lvalue)+ '=' expr (',' expr)+
 lvalue          = IDENT | postfix '.' IDENT
 expr            = if_expr | match_expr | while_expr | for_expr | lambda | binary
 while_expr      = 'while' expr block
-for_expr        = 'for' for_iter (',' for_iter)* [for_capture] (block | '=>' stmt)
+for_expr        = 'for' [for_capture (',' for_capture)* 'in'] for_iter (',' for_iter)* (block | '=>' stmt)
 for_iter        = expr [range_op [expr]]
 range_op        = '..' | '..=' | '..<' | '<..' | '<..=' | '<..<' | '=..' | '=..=' | '=..<'
-for_capture     = '(' ['*'] IDENT (',' ['*'] IDENT)* ')'
+for_capture     = ['*'] IDENT       // the '*' is GLUED to its name (§1 Whitespace is Syntax)
 binary          = catch_expr (binop catch_expr)*    // binop includes `or` (fallback / chain)
 catch_expr      = unary ('catch' ('(' IDENT ')')? (block | '==' '{' case_arm* else_arm? '}' | unary))?
 unary           = ('-' | '--' | '*' | '!' | '~' | 'xx' | 'try') unary | postfix

@@ -749,7 +749,7 @@ const IterPrep = struct {
     storage: ?Ref = null, // array's own alloca when addressable (not deref'd)
 };
 
-/// `for it1, it2, ... (c1, c2, ...) { }` — parallel iteration. The first
+/// `for c1, c2, ... in it1, it2, ... { }` — parallel iteration. The first
 /// iterable's length/bound drives the loop; the others follow by position.
 /// Consequences of first-iterable-wins: a non-first range's end is never
 /// lowered (its side effects do not run), and a shorter non-first collection

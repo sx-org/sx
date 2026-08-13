@@ -28,8 +28,9 @@ pub const Parser = struct {
     struct_type_params: []const []const u8 = &.{},
     /// When true (set while parsing a `for` header's iterable expressions),
     /// a SPACED top-level `(` group immediately followed by `{` or `=>` ends
-    /// the header rather than binding as call arguments, so `for xs (x) { }`
-    /// reports the missing body. A glued group is an ordinary call
+    /// the header rather than binding as call arguments or a range end, so
+    /// `for xs (x) { }` reports the missing body and the range of
+    /// `for i in 0.. (n) { }` stays open. A glued group is an ordinary call
     /// (`for x in f(n) { }`). Cleared inside any nested bracket/paren/argument
     /// context.
     in_for_header: bool = false,
@@ -3368,7 +3369,7 @@ pub const Parser = struct {
         var expr = try self.parsePrimary();
 
         while (true) {
-            if (self.tokens.tag(self.tok) == .l_paren and !self.parenGroupIsForCapture()) {
+            if (self.tokens.tag(self.tok) == .l_paren and !self.spacedGroupEndsHeader()) {
                 // Glue rule (specs: Whitespace is Syntax): the `(` is a call
                 // only when glued to the callee. On the same line that space
                 // is fatal; across a line the `(` opens whatever comes next,
@@ -3378,7 +3379,7 @@ pub const Parser = struct {
                     break;
                 }
                 // Call. Argument expressions are an ordinary nested context —
-                // the for-header capture rule does not apply inside them.
+                // a `(` group inside them never closes a for header.
                 self.advance();
                 const saved_hdr_args = self.in_for_header;
                 const saved_ntb_args = self.no_trailing_block;
@@ -4441,8 +4442,8 @@ pub const Parser = struct {
         var captures = std.ArrayList(ast.ForCapture).empty;
 
         // Captures lead the header, closed by `in`: `for x, *y in xs, ys`.
-        // Without `in` the header is iterables alone, so `for *p { }` iterates
-        // through the address of `p`.
+        // Without `in` the header is iterables alone, so the `*` of
+        // `for *p { }` is the prefix operator.
         if (self.forHeaderOpensWithCaptures()) {
             while (true) {
                 var cap = ast.ForCapture{ .name = "" };
@@ -4452,7 +4453,6 @@ pub const Parser = struct {
                     self.advance();
                     try self.requirePrefixGlue(op_loc);
                 }
-                if (self.tokens.tag(self.tok) != .identifier) return self.fail("expected capture variable name");
                 cap.name = self.tokens.slice(self.tok);
                 cap.span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
                 cap.is_raw = self.tokens.flagsOf(self.tok).is_raw;
@@ -4481,7 +4481,7 @@ pub const Parser = struct {
                 // spaced group ends the header.
                 const open = switch (self.tokens.tag(self.tok)) {
                     .comma, .l_brace, .fat_arrow => true,
-                    .l_paren => self.parenGroupIsForCapture(),
+                    .l_paren => self.spacedGroupEndsHeader(),
                     else => false,
                 };
                 if (open) {
@@ -5724,10 +5724,10 @@ pub const Parser = struct {
         }
     }
 
-    /// For-header rule: a SPACED top-level `(` group immediately followed by
-    /// `{` or `=>` closes the iterable list, so parsePostfix leaves it for the
-    /// body parse to report. A glued group is call arguments as anywhere else.
-    fn parenGroupIsForCapture(self: *Parser) bool {
+    /// A SPACED top-level `(` group immediately followed by `{` or `=>` is
+    /// not a call and not a range end: parsePostfix leaves it, an open
+    /// range stays open, and the header ends.
+    fn spacedGroupEndsHeader(self: *Parser) bool {
         if (!self.in_for_header) return false;
         if (self.tokens.flagsOf(self.tok).glued_left) return false;
         const after = self.tagAfterParenGroup();

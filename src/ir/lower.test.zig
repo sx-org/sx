@@ -3276,7 +3276,7 @@ test "lower: assignment to a function-local '::' const gets the constant message
     // A function-local `::` const binds non-alloca (lowerConstDecl), so the
     // assignment lands in the same nonstore_binding arm as captures. It must
     // get the CONSTANT-family message — the capture wording ("capture by
-    // reference with '(*c)'") is nonsense for a const. Undiagnosed, the store
+    // reference with '*c'") is nonsense for a const. Undiagnosed, the store
     // is silently dropped, same as the capture shapes.
     var five = Node{ .span = span, .data = .{ .int_literal = .{ .value = 5 } } };
     var c_decl = Node{ .span = span, .data = .{ .const_decl = .{ .name = "c", .name_span = span, .type_annotation = null, .value = &five, .is_raw = false } } };
