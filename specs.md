@@ -321,8 +321,8 @@ ordinary comparisons. Native codegen and the comptime interpreter agree on this.
 
 Six glyphs — `(`, `[`, `-`, `*`, `{`, `!` — read differently depending on the
 whitespace around them, under three rules. Each rule exists because its glyphs
-carry two meanings and the gap is what tells them apart. A fourth rule is about
-the whitespace itself: a line break ends a statement.
+carry two meanings and the gap is what tells them apart. A line break is not one
+of those gaps: it is ordinary space, and `;` is what ends a statement.
 
 **Glue — `(` and `[` bind only when glued.** A `(` applies arguments, and a
 `[` indexes, only when *nothing at all* separates it from what precedes it:
@@ -365,10 +365,9 @@ onfail |e| { … }                              // onfail binding
 
 **Spacing — `-` and `*` are infix wherever a left operand is complete.** Both
 glyphs also have a prefix reading (negation, address-of), and position decides
-between the two. On one line the operand to the left settles it: after a
-completed operand the glyph is infix, whatever the gaps around it are, and a
-slot with no left operand takes the prefix reading. Only at a line break does
-glue decide, because the operator could belong to either line:
+between the two: after a completed operand the glyph is infix, whatever the gaps
+around it are, and a slot with no left operand takes the prefix reading. A line
+break changes nothing — the operand above it is still complete:
 
 ```sx
 a - b       // infix subtraction
@@ -376,17 +375,18 @@ a-b         // infix subtraction
 a -b        // infix subtraction
 a- b        // infix subtraction
 a - -b      // infix `-`, then a prefix `-b`
+a
+-b          // infix subtraction — the operand above is complete
+g();
+-b          // the `;` cut the operand — a prefix `-b`
 ```
 
 A prefix `-` / `*` binds only when glued to its operand, which is what makes
-`-b` and `*p` unambiguous. That glue is what a break reads: an operator opening
-the line below glued to its operand starts a fresh statement, while every other
-shape continues the expression above — a line-leading `- b`, and a trailing
-`a-` with its operand on the next line, are both subtraction. The gap is read
-as written, so a raw identifier's backtick counts: `` -`x `` is glued and
-`` - `x `` is not. `--` is a lexeme of its own with one reading, the prefix
-pre-decrement, and the same glue rule: `--b` decrements `b` and yields the new
-value, while `a--b`, `a --b` and `-- b` have no reading at all.
+`-b` and `*p` unambiguous. The gap is read as written, so a raw identifier's
+backtick counts: `` -`x `` is glued and `` - `x `` is not. `--` is a lexeme of
+its own with one reading, the prefix pre-decrement, and the same glue rule:
+`--b` decrements `b` and yields the new value, while `a--b`, `a --b` and `-- b`
+have no reading at all.
 
 **Postfix — `(`, `[`, `{`, and `!` bind only on their expression's own line.**
 The third rule governs what attaches to an expression from behind, and it
@@ -401,101 +401,96 @@ reading waiting on the other side of a break — a scope block, and the prefix
 `not`:
 
 ```sx
-p := Pair{ a = 1, b = 2 }     // same line — the aggregate
-Pair
+p := Pair{ a = 1, b = 2 };    // same line — the aggregate
+Pair;
 { setup() }                   // across the break — an expression and a block
 
-print("{}\n", maybe!)         // same line — force unwrap
-ready
-!ready                        // across the break — the prefix `not`
+print("{}\n", maybe!);        // same line — force unwrap
+ready;
+!ready;                       // across the break — the prefix `not`
 ```
 
 This is geometry, not completability: the brace is refused across a break
 inside an argument list exactly as it is at statement level.
 
 The dot-led postfixes are the other camp. `.`, `?.`, and `catch` have no second
-reading for a break to pick up, so each reads on down the page: `?.` and `catch`
-are in the continuation list below, and a leading `.` chains whenever what it
-follows is an expression rather than a statement — the line **Statements break,
-expressions chain** draws at the end of this section.
+reading for a break to pick up, so each reads on down the page, and a leading
+`.` chains whenever what it follows is an expression rather than a statement —
+the line **Statements break, expressions chain** draws at the end of this
+section.
 
-**Line breaks — a newline ends a statement.** A `;` terminates a statement, and
-so does the line break where the `;` would have gone. The two spellings are the
-same statement:
+**Terminators — `;` ends a statement.** A line break is ordinary space, so a
+statement runs until its `;`:
 
 ```sx
-a := 1
-b := compute(a)
-print("{}\n", b)
+a := 1;
+b := compute(a);
+print("{}\n", b);
 ```
 
 One rule, applied wherever a statement or a declaration ENDS: top-level and
 local bindings, expression statements, assignments, `return` / `raise` /
 `break` / `continue` / `defer` / `onfail`, `#import` / `#insert` / `#error` and
 the other directive forms, and a function's `extern` / `intrinsic` / `=> expr`
-body. The value-less spellings end the same way — a `return` with nothing to
+body. The value-less spellings take it the same way — a `return` with nothing to
 return, and a `name : Type` declaration with no initializer:
 
 ```sx
-counter : i64
+counter : i64;
 bump :: (by: i64) -> void {
-    counter = counter + by
-    return
+    counter = counter + by;
+    return;
 }
 ```
 
 This holds for a `return` in expression position too, so an early exit written
-`if quiet then return` takes the line below it as the next statement and not as
+`if quiet then return;` takes the statement below it as the next one and not as
 the value it returns:
 
 ```sx
 report :: (quiet: bool) -> void {
-    if quiet then return
-    print("loud\n")
+    if quiet then return;
+    print("loud\n");
 }
 ```
 
 The end of the file ends the declaration it lands on, so a file's last
-declaration needs no terminator either. The rule does not reach inside a fixed
-form's own list — a runtime class's members and the entries of
-`#import c { … }` each keep the `;` their grammar asks for. A `match` arm is
-not one of those. `case` heads an arm, and an arm is a statement in the only
-position where `case` is legal, so the break before the next `case` ends the
-statement above it exactly as any other break does. That holds for every arm
-body: a statement list, `case .x: break`, and `case .x: |e| expr` alike.
+declaration needs no terminator. Neither does the last statement before a `}`
+(see below). A `match` arm body is an ordinary statement list, so every
+statement in it takes its `;` — `case` and `else:` are statement heads, not
+terminators — and only the last statement of the last arm sits before the
+match's `}`:
 
 ```sx
 match c {
     case .a:
-        setup()
-        report()      // the next `case` starts an arm — the break ends this
+        setup();
+        report();
     case .b:
         if ready {
-            report()
+            report();
         }             // a statement that is a block ended at its `}`
-    case .c: break
+    case .c: break;
     else:
         done()        // the match's `}` ends it
 }
 ```
 
 `else` reads two ways and a glued `:` is what tells them apart: `else:` heads
-the default arm and ends the statement above it, while every other `else` —
-before a block, an `if`, or an expression — chains the `if` above it and reads
-straight through the break.
+the default arm, while every other `else` — before a block, an `if`, or an
+expression — chains the `if` above it.
 
 A statement whose last token is a `}` that closes a block form takes no
-terminator at all, written or implied: a statement that IS a block (`if`,
-`while`, `for`, `match`, a `push` body, a bare scope), a call ending in a
-trailing block, and a declaration whose INITIALIZER is one of those.
+terminator: a statement that IS a block (`if`, `while`, `for`, `match`, a
+`push` body, a bare scope), a call ending in a trailing block, and a declaration
+whose INITIALIZER is one of those.
 
 ```sx
 kind := if c { "hot" } else { "cold" }   // block-form initializer — no `;`
 row  := vstack(8.0) {
-    body()
+    body();
 }                                        // trailing block — no `;`
-n    := compute(3)                       // any other initializer takes the
-                                         // terminator, here the line break
+n    := compute(3);                      // any other initializer takes the `;`
 ```
 
 **`;` is a pure separator.** Ending a statement is all it does. It carries no
@@ -505,88 +500,68 @@ publishes. Wherever a value can flow, it flows the same with the `;` written and
 with it left out — see [Block values](#block-values) and
 [`@BuildBlock(P)`](#buildblockp).
 
-A line break does not end a statement that is still running. When the token
-below cannot START a statement, it continues the one above:
+An unterminated statement reads straight on through a line break, so an
+expression spread over several lines is one statement:
 
 ```sx
 mask := (hi << 16)
-    | lo
+    | lo;
 ok := ready
     and loaded
-    or forced
+    or forced;
 ```
 
-"Cannot start a statement" is the rule; the list below is its enumeration, and
-a token joins it as soon as some form can reach a terminator with that token in
-hand. Today that list is `and`, `or`, `then`, `else`, `catch`, `|`, `+`, `==`,
-`!=`, `<=`, `>=`, `<<`, `>>`, `|>`, `??`, `?.`, `,`, `=`, `::`, `->`, `=>`,
-`:`, `extern`, and `intrinsic`. `else` is on it only where it chains an `if`;
-`else:` heads a `match` default arm, which starts one. `-` and `*` are absent
-because the spacing rule above already decided them: a leading `- b` reads as
-subtraction, while a glued `-b` opens a fresh operand and so begins a
-statement. `case` is absent because it heads a `match` arm, and an arm
-is a statement. A form that is simply still open — an unclosed `(`, an argument
-list, a `{` with no `}` yet — reads on for the same reason: nothing has ended.
-
-The last three are the tails a completed declaration may still take, so each
-form asks whether it has ended before reading one:
+The same holds for the tails a declaration may still take, and for a form that
+is simply still open — an unclosed `(`, an argument list, a `{` with no `}` yet:
 
 ```sx
 LIMIT : i64
-    : 9                       // a typed constant
+    : 9;                      // a typed constant
 errno_loc : *i32
-    extern libc "__error"     // an extern data global
+    extern libc "__error";    // an extern data global
 mystery :: i64
-    intrinsic                 // a typed intrinsic
-```
-
-Whether a form may end at all is a grammar fact, not a whitespace one, and the
-`[LIB] ["csym"]` tail after `extern` / `export` turns on it. An `extern` import
-is whole the moment its keyword is read, so each empty slot is a place the
-declaration can stop and the tail binds only on its own line. An `export`
-definition and an `extern` struct still owe a body, so nothing there can end and
-the tail reads straight through a break:
-
-```sx
-__stdinp : *void extern
-LIMIT :: 9                    // the import ended; this name is its own
+    intrinsic;                // a typed intrinsic
 
 sx_double :: (n: i32) -> i32 export
     "double_c"
-    { n * 2 }                 // the definition owes a body — the tail reads on
+    { n * 2 }                 // the linkage tail reads on to the body
 ```
 
-The last expression before a `}` may leave its terminator out entirely, and a
-newline never supplies one there. Written or not, that expression is the block's
-value (see [Block values](#block-values)):
+An expression or a declaration written last before a `}` may leave its
+terminator out; every other statement form takes its `;` there as anywhere
+else. When that last statement is an expression it is the block's value, written
+either way (see [Block values](#block-values)):
 
 ```sx
 tight  :: () -> i64 { 41 }
 spread :: () -> i64 {
-    n := 41
+    n := 41;
     n                         // no terminator — the block's value, as above
 }
 ended  :: () -> i64 { 41; }   // the `;` separates; the value is still 41
 ```
 
+The rule does not reach inside a fixed form's own list — a runtime class's
+members and the entries of `#import c { … }` each keep the `;` their grammar
+asks for, in every position.
+
 **Statements break, expressions chain.** Whether a `}` can be continued is
 decided by what it closes. A statement that IS a block — `if`, `while`, `for`,
-`match`, a `push` body, a bare scope `{ … }` — ends at its `}`, so the line
-below starts a new statement unless it opens with a token that cannot start
-one. An expression that merely ENDS in a block — a trailing-block call, an
-aggregate literal, a self-trailing `.{ }` — is still an expression, and its
-postfix chain reads on:
+`match`, a `push` body, a bare scope `{ … }` — ends at its `}`, so what follows
+starts a new statement. An expression that merely ENDS in a block — a
+trailing-block call, an aggregate literal, a self-trailing `.{ }` — is still an
+expression, and its postfix chain reads on:
 
 ```sx
 {
     setup();
 }
-.unknown                      // the scope ended; this is the next statement
+.unknown;                     // the scope ended; this is the next statement
 
 if ready {
     setup();
 }
-else { … }                    // `else` cannot start a statement — the `if` chains
+else { … }                    // `else` continues the `if` above it
 
 c := vstack(1.0) {
     body();
@@ -4160,13 +4135,13 @@ c := { f(); x := 1 };  // error: this block is used as a value but produces none
 An EMPTY block is exempt — `{}` is how the void value itself is written, as in
 `.{ {}, 9 }` for a `Tuple(void, i32)`.
 
-An arm's last expression is the arm's value, with or without the `;` that
-separates it from the next `case`:
+An arm's last expression is the arm's value. Every arm statement takes its `;`;
+the last statement of the last arm sits before the match's `}` and may drop it:
 
 ```sx
 classify :: (n: i32) -> i32 {
   match n {
-    case 0: 100             // arm value is 100
+    case 0: 100;            // arm value is 100
     case 1: { x := 5; x*2 } // braced block → value 10
     else:   7
   }
@@ -5072,9 +5047,9 @@ Matches `subject` against each `case`. Patterns can be:
 `break` exits a case arm without producing a value. The optional `else:` arm matches when no `case` pattern matches — its `:` is glued to the `else`, which is what separates it from an `else` that chains an `if`.
 ```sx
 match z {
-  case .variant1: break
+  case .variant1: break;
   case .variant2:
-    print("z: {z}")
+    print("z: {z}");
   else:
     print("unknown")
 }
@@ -5726,10 +5701,10 @@ The enum type is inferred from context (expected type from declaration or parame
 
 ## 5. Statements
 
-Statements are terminated by `;` — or by the line break that ends them, which
-is the same terminator written as whitespace (§1
-[Whitespace is Syntax](#whitespace-is-syntax)). The forms below are spelled
-with their `;` throughout; every one of them may drop it at a line break.
+Statements are terminated by `;` (§1
+[Whitespace is Syntax](#whitespace-is-syntax)). A statement that IS a block ends
+at its `}` instead, and the last expression or declaration before a `}` may drop
+its terminator.
 
 - **Declaration**: `name :: value;` / `name := value;`
 - **Assignment**: `name = value;` / `name += value;` (and other compound assignments). Also supports field targets: `obj.field = value;`
@@ -6955,9 +6930,8 @@ implicit `context`.
 
 ```
 program         = top_level*
-end             = ';' | NEWLINE | EOF   // §1 Whitespace is Syntax: the line
-                  // break where the `;` would go, unless the token below cannot
-                  // start a statement (`and`, `|`, `,`, `=>`, … — see §1)
+end             = ';' | EOF   // §1 Whitespace is Syntax: a line break is
+                  // ordinary space; EOF ends the last declaration of a file
 top_level       = decl | import_decl | context_extend
 import_decl     = '#import' STRING end
                 | IDENT '::' '#import' STRING end
@@ -6974,10 +6948,8 @@ var_decl        = IDENT ':=' expr end
                 | IDENT ':' type '=' expr end
                 | IDENT ':' type end
                 | IDENT ':' type 'extern' linkage_tail end
-linkage_tail    = IDENT? STRING?    // `[LIB] ["csym"]`. On a form that may end
-                  // — an `extern` import — each slot binds only on the
-                  // declaration's own line; where a body is still owed
-                  // (`export`, an `extern` struct) it reads through the break
+linkage_tail    = IDENT? STRING?    // `[LIB] ["csym"]`; the declaration's
+                  // `end` closes the tail
 fn_decl         = IDENT '::' '(' params? ')' ('->' ret_type)? block
                 | IDENT '::' block
 ret_type        = type ('!' IDENT?)?    // trailing `!` = failable; channel outside any Tuple
@@ -6986,7 +6958,7 @@ struct_decl     = IDENT '::' 'struct' '{' struct_member* '}'
 struct_member   = field_group | '#using' IDENT ';'?
 field_group     = IDENT (',' IDENT)* ':' type ('=' expr)? ';'?
                   // a member list's `;` is an optional separator, not `end`:
-                  // the entry ends where the next one starts, line break or not
+                  // the entry ends where the next one starts
 params          = param (',' param)* (',' c_tail)? ','?
                 | c_tail ','?
 c_tail          = '..'              // the C-variadic tail; binds no name and no

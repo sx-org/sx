@@ -9,10 +9,10 @@
 //
 // The occurrence is POSITIONAL: a site's n-th element keeps its id only while
 // that site keeps producing its siblings in the same order.
-#import "modules/std.sx"
-#import "modules/std/core.sx"
-#import "modules/std/mem.sx"
-#import "modules/std/source_site.sx"
+#import "modules/std.sx";
+#import "modules/std/core.sx";
+#import "modules/std/mem.sx";
+#import "modules/std/source_site.sx";
 
 // A call site reduced to what identity needs, plus the position a diagnostic
 // prints. `key` is `@SourceSite.id`, so two sites collide only where their
@@ -26,18 +26,18 @@ SiteId :: struct {
 // Written as a parameter default — `site: SiteId = site_of(@caller)` — which
 // is the only position `@caller` is legal in, and which makes the CALLER's
 // site the one a component records.
-site_of :: (site: @SourceSite) -> SiteId => .{ key = site.id, file = site.file, line = site.line }
+site_of :: (site: @SourceSite) -> SiteId => .{ key = site.id, file = site.file, line = site.line };
 
 ElementId :: struct { value: u64 = 0 }
 
 // The domain separates compose element ids from every other key space built
 // on the same source-site state.
-ELEMENT_DOMAIN :: "ui.compose.element.v1"
+ELEMENT_DOMAIN :: "ui.compose.element.v1";
 
 // Resumes the hash from the site fingerprint the compiler already folded.
 site_hasher :: (site: SiteId, domain: string) -> SourceSiteHasher {
-    hasher := SourceSiteHasher{ state = site.key }
-    hasher.write_string(domain)
+    hasher := SourceSiteHasher{ state = site.key };
+    hasher.write_string(domain);
     hasher
 }
 
@@ -53,25 +53,25 @@ Identity :: struct {
     counts: List(SiteCount) = .{}
     gpa: Allocator
 
-    init :: (gpa: Allocator) -> Identity => .{ gpa = gpa }
+    init :: (gpa: Allocator) -> Identity => .{ gpa = gpa };
 
     // Every site starts the build at occurrence zero, which is what makes an
     // unchanged tree hand out unchanged ids.
     begin_build :: (self: *Identity) {
         for *c in self.counts {
-            c.count = 0
+            c.count = 0;
         }
     }
 
     next_occurrence :: (self: *Identity, key: u64) -> i64 {
         for c, i in self.counts, 0.. {
             if c.key == key {
-                n := c.count
-                self.counts.items[i].count = n + 1
-                return n
+                n := c.count;
+                self.counts.items[i].count = n + 1;
+                return n;
             }
         }
-        self.counts.append(.{ key = key, count = 1 }, self.gpa)
+        self.counts.append(.{ key = key, count = 1 }, self.gpa);
         0
     }
 
@@ -80,15 +80,15 @@ Identity :: struct {
     }
 }
 
-#context_extend compose_ui: *Identity = null
+#context_extend compose_ui: *Identity = null;
 
 // The id of the element being built at THIS call site. A component mints it
 // while the tree is built and carries it into render, where it names the hit
 // and focus regions the element declares.
 element_id :: (site: SiteId = site_of(@caller)) -> ElementId {
-    process.assert(context.compose_ui != null, "element_id outside a compose build — push .{ compose_ui = *root.identity }")
-    occurrence := context.compose_ui.next_occurrence(site.key)
-    hasher := site_hasher(site, ELEMENT_DOMAIN)
-    hasher.write_u64_le(occurrence.(u64))
+    process.assert(context.compose_ui != null, "element_id outside a compose build — push .{ compose_ui = *root.identity }");
+    occurrence := context.compose_ui.next_occurrence(site.key);
+    hasher := site_hasher(site, ELEMENT_DOMAIN);
+    hasher.write_u64_le(occurrence.(u64));
     ElementId{ value = hasher.state }
 }

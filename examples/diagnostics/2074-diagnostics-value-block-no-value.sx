@@ -28,7 +28,7 @@ main :: () -> i32 {
     // Refused: the branch tails are the assignment's value, not this block's.
     slot := 0;
     d := {
-        slot = if true { 1; } else { 2; }
+        slot = if true { 1; } else { 2; };
     }
 
     // Legal: `{}` is the void value, and the slot's type asks for one.

@@ -1,9 +1,7 @@
-// Whitespace is syntax (specs §1), spacing rule across a line break. Only at a
-// break does glue decide `-` and `*`: an operator that opens the next line
-// glued to its operand starts a fresh statement, and every other shape keeps
-// reading the expression above. So a spaced line-leading `- fee` continues, a
-// trailing `base-` continues onto the line below, and a glued `-fee` is a
-// statement of its own.
+// Whitespace is syntax (specs §1), the spacing rule across a line break. A
+// line break is ordinary space, so a completed left operand makes `-` and `*`
+// infix whatever the spacing around them — line-leading, trailing, glued, or
+// spaced. `;` is what cuts the expression, so a prefix `-b` needs one above it.
 //
 // The gap is read as WRITTEN, so a raw identifier's backtick counts as part of
 // it: `-`x is glued and `- `x is not.
@@ -51,12 +49,11 @@ main :: () -> i32 {
     trailing := base-
         fee;
 
-    // line-leading and glued: two statements, so `value` is `base`
+    // line-leading and glued: still one expression, so `value` is the difference
     value := base
 -fee;
 
-    // the same two readings with a raw identifier, whose backtick is part of
-    // the gap
+    // the same reading with a raw identifier, whose backtick is part of the gap
     raw_break := base
 -`x;
     raw_same_line := base -`x;
@@ -64,10 +61,14 @@ main :: () -> i32 {
     print("spaced={} trailing={} value={}\n", spaced, trailing, value);
     print("raw_break={} raw_same_line={}\n", raw_break, raw_same_line);
 
+    // the `;` is the cut: with one above it, `-fee` is a negation of its own
+    print("cut\n");
+-fee;
+
     // a build body reads the same way, so the join leaves the block one child
     c := column() {
         n := base-
-            fee
+            fee;
         Tile{ n = n }
     };
     print("children={} total={}\n", c.children, c.total);

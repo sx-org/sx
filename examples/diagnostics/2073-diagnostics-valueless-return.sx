@@ -1,7 +1,5 @@
 // A value-less `return` in a function whose return type demands a value is a
-// front-end error. Both spellings are the same statement — `return;` and a bare
-// `return` a line break ended — so both are refused, and the message names the
-// type the slot wanted.
+// front-end error, and the message names the type the slot wanted.
 //
 // Two shapes legitimately return nothing and are untouched: a `-> void` body,
 // and a PURE failable (`-> !Named`), where `return;` IS the success exit.
@@ -13,14 +11,6 @@ Broken :: error { Bad }
 early :: (x: i32) -> i32 {
     if x > 0 {
         return;
-    }
-    x
-}
-
-// Refused the same way without the terminator — the line break ends it.
-early_bare :: (x: i32) -> i32 {
-    if x > 0 {
-        return
     }
     x
 }
@@ -47,5 +37,5 @@ main :: () -> i32 {
     nothing();
     succeed(1) catch { 0 };
     v := early_failable(1) catch { 0 };
-    early(1) + early_bare(1) + v
+    early(1) + v
 }

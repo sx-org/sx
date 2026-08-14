@@ -118,24 +118,24 @@ ct_stop :: ($label: string) -> noreturn {
 }
 
 main :: () -> i32 {
-    ct_value("ct-value") catch { print("NOT REACHED ct-value\n"); }
-    ct_wide("ct-wide") catch { print("NOT REACHED ct-wide\n"); }
-    ct_void("ct-void") catch { print("NOT REACHED ct-void\n"); }
-    ct_compound("ct-compound") catch { print("NOT REACHED ct-compound\n"); }
-    ct_defer("ct-defer") catch { print("NOT REACHED ct-defer\n"); }
-    ct_mixed("ct-mixed", false) catch { print("NOT REACHED ct-mixed\n"); }
-    ct_error("a") catch { print("caught ct-error\n"); }
-    ct_forward("b") catch { print("caught ct-forward\n"); }
-    ct_defer_error("c") catch { print("caught ct-defer-error\n"); }
-    ct_mixed("d", true) catch { print("caught ct-mixed\n"); }
+    ct_value("ct-value") catch { print("NOT REACHED ct-value\n"); };
+    ct_wide("ct-wide") catch { print("NOT REACHED ct-wide\n"); };
+    ct_void("ct-void") catch { print("NOT REACHED ct-void\n"); };
+    ct_compound("ct-compound") catch { print("NOT REACHED ct-compound\n"); };
+    ct_defer("ct-defer") catch { print("NOT REACHED ct-defer\n"); };
+    ct_mixed("ct-mixed", false) catch { print("NOT REACHED ct-mixed\n"); };
+    ct_error("a") catch { print("caught ct-error\n"); };
+    ct_forward("b") catch { print("caught ct-forward\n"); };
+    ct_defer_error("c") catch { print("caught ct-defer-error\n"); };
+    ct_mixed("d", true) catch { print("caught ct-mixed\n"); };
 
-    ct_ret_value("ct-ret-value", 1) catch { print("NOT REACHED ct-ret-value\n"); }
-    ct_ret_value("ct-ret-none", -1) catch { print("NOT REACHED ct-ret-none\n"); }
-    ct_ret_early("ct-ret-early", -1) catch { print("NOT REACHED ct-ret-early\n"); }
-    ct_ret_raise("ct-ret-raise", 1) catch { print("NOT REACHED ct-ret-raise\n"); }
-    ct_ret_mixed("ct-ret-mixed", false) catch { print("NOT REACHED ct-ret-mixed\n"); }
-    ct_ret_error("e", 1) catch { print("caught ct-ret-error\n"); }
-    ct_ret_raise("f", -1) catch { print("caught ct-ret-raise\n"); }
+    ct_ret_value("ct-ret-value", 1) catch { print("NOT REACHED ct-ret-value\n"); };
+    ct_ret_value("ct-ret-none", -1) catch { print("NOT REACHED ct-ret-none\n"); };
+    ct_ret_early("ct-ret-early", -1) catch { print("NOT REACHED ct-ret-early\n"); };
+    ct_ret_raise("ct-ret-raise", 1) catch { print("NOT REACHED ct-ret-raise\n"); };
+    ct_ret_mixed("ct-ret-mixed", false) catch { print("NOT REACHED ct-ret-mixed\n"); };
+    ct_ret_error("e", 1) catch { print("caught ct-ret-error\n"); };
+    ct_ret_raise("f", -1) catch { print("caught ct-ret-raise\n"); };
 
     // The body runs, then diverges — so this is main's tail, and there is no
     // trailing value after it.

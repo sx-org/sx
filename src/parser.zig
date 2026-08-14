@@ -547,7 +547,7 @@ pub const Parser = struct {
             // name : type extern [LIB] ["csym"];   (extern data global, resolved
             // at link time)
             self.advance();
-            const tail = self.parseLinkageTail(.may_end, true);
+            const tail = self.parseLinkageTail(true);
             try self.expectStatementEnd();
             return try self.createNode(start_pos, .{ .var_decl = .{
                 .name = name,
@@ -1343,11 +1343,9 @@ pub const Parser = struct {
         // Parse-only — no layout/registry semantics.
         const struct_abi = try self.parseOptionalAbi();
         const struct_extern = self.parseOptionalExternExport();
-        // The `{ … }` below is unconditional, so nothing here can end — the tail
-        // reads through a line break.
         var struct_extern_lib: ?[]const u8 = null;
         if (struct_extern != .none) {
-            struct_extern_lib = self.parseLinkageTail(.must_continue, false).lib;
+            struct_extern_lib = self.parseLinkageTail(false).lib;
         }
 
         // Optional type params: struct($N: u32, $T: Type) { ... }
@@ -2705,17 +2703,10 @@ pub const Parser = struct {
         // ident then a C symbol-name string, both optional (mirrors
         // `extern LIB "csym"`). Stored on extern_lib/extern_name; the rename
         // is consumed in `declareFunction`, the lib reference in Part B.
-        // An `extern` import is whole without the tail, so past a line break the
-        // declaration has already ended and the name below belongs to the next
-        // one. An `export` definition still owes a body, so its tail reads
-        // through the break.
         var extern_lib: ?[]const u8 = null;
         var extern_name: ?[]const u8 = null;
         if (extern_export != .none) {
-            const tail = self.parseLinkageTail(
-                if (extern_export == .extern_) .may_end else .must_continue,
-                true,
-            );
+            const tail = self.parseLinkageTail(true);
             extern_lib = tail.lib;
             extern_name = tail.name;
         }
@@ -2808,9 +2799,10 @@ pub const Parser = struct {
         return try self.createNode(start, .{ .block = .{ .stmts = try stmts.toOwnedSlice(self.allocator), .produces_value = produces_value } });
     }
 
-    /// Consume the terminator after an expression: an explicit `;`, the one a
-    /// line break implies, or the position before `}` where a plain expression
-    /// may omit it. Block-form expressions never require one.
+    /// Consume the terminator after an expression: the written `;`, or one of
+    /// the positions that ends the expression on its own — before the `}` that
+    /// closes the enclosing block, or at the end of the file. A block-form
+    /// expression ends at its own `}` and never takes one.
     fn expectSemicolonAfter(self: *Parser, expr: *Node) anyerror!void {
         const block_form = switch (expr.data) {
             .if_expr => |ie| !ie.is_inline,
@@ -2824,14 +2816,14 @@ pub const Parser = struct {
             self.advance();
             return;
         }
-        if (block_form or self.tokens.tag(self.tok) == .r_brace or self.implicitTerminator()) return;
+        if (block_form or self.tokens.tag(self.tok) == .r_brace or self.tokens.tag(self.tok) == .eof) return;
         try self.expect(.semicolon); // emits "expected ;"
     }
 
     /// End an EXPRESSION statement: consume its terminator and mark the
     /// statement as carrying a value, which the enclosing block hands to
-    /// whatever position demands one. Both spellings of the terminator mark it
-    /// alike — `;` separates statements and decides nothing about the value.
+    /// whatever position demands one — `;` separates statements and decides
+    /// nothing about the value.
     fn endExprStatement(self: *Parser, expr: *Node) anyerror!void {
         try self.expectSemicolonAfter(expr);
         self.last_stmt_produces_value = true;
@@ -2964,8 +2956,7 @@ pub const Parser = struct {
             const start = self.tokens.start(self.tok);
             self.advance();
             if (self.atStatementEnd()) {
-                // `return` with no value — terminated by its `;` or by the
-                // line break standing in for it.
+                // `return` with no value — terminated by its `;`.
                 try self.expectStatementEnd();
                 return try self.createNode(start, .{ .return_stmt = .{ .value = null } });
             }
@@ -3293,12 +3284,6 @@ pub const Parser = struct {
                 continue;
             }
 
-            // Spacing rule (specs: Whitespace is Syntax): on one line a
-            // completed left operand makes `-` / `*` infix; across a break a
-            // glued operator opens a fresh operand below.
-            if ((self.tokens.tag(self.tok) == .minus or self.tokens.tag(self.tok) == .star) and
-                self.tokens.flagsOf(self.tok).newline_left and self.tokens.flagsOf(self.tokens.next(self.tok)).glued_left) break;
-
             const info = binaryInfo(self.tokens.tag(self.tok)) orelse break;
             if (info.prec < min_prec) break;
 
@@ -3408,8 +3393,8 @@ pub const Parser = struct {
             if (self.tokens.tag(self.tok) == .l_paren and !self.spacedGroupEndsHeader()) {
                 // Glue rule (specs: Whitespace is Syntax): the `(` is a call
                 // only when glued to the callee. On the same line that space
-                // is fatal; across a line the `(` opens whatever comes next,
-                // and the caller reports what it finds there.
+                // is fatal; across a line the `(` does not bind and the caller
+                // reports the terminator the statement is missing.
                 if (!self.tokens.flagsOf(self.tok).glued_left) {
                     if (!self.tokens.flagsOf(self.tok).newline_left) return self.failSpacedForm(expr.span.start, .call);
                     break;
@@ -3512,7 +3497,7 @@ pub const Parser = struct {
             {
                 // Named aggregate: Type{ ... }. The `{` binds only on the same
                 // line as its head, the same rule the trailing block above
-                // follows — across a break it is a scope block of its own.
+                // follows.
                 // Contextual `.{...}` still starts with a leading dot in
                 // parsePrimary. Header contexts reserve their final `{` for the
                 // statement body (`if cond {`). Body-shape rejects statement
@@ -3691,8 +3676,8 @@ pub const Parser = struct {
                 }
             } else if (self.tokens.tag(self.tok) == .bang and !self.tokens.flagsOf(self.tok).newline_left) {
                 // Force unwrap: expr! — postfix on the expression's own line.
-                // `!` is also the prefix `not`, so a leading `!b` below a
-                // complete expression opens a statement of its own.
+                // `!` is also the prefix `not`, which is what a `!` opening the
+                // line below spells.
                 // Only if it's not != (bang_equal would have been lexed as a single token)
                 self.advance();
                 expr = try self.createNode(expr.span.start, .{ .force_unwrap = .{ .operand = expr } });
@@ -4175,8 +4160,8 @@ pub const Parser = struct {
             },
             .kw_return => {
                 self.advance();
-                // The terminator can be implied, so whether a value follows is
-                // the same question a statement-position `return` asks.
+                // Whether a value follows is the same question a
+                // statement-position `return` asks.
                 const value = if (self.atStatementEnd())
                     null
                 else
@@ -5110,31 +5095,20 @@ pub const Parser = struct {
         return abi;
     }
 
-    /// Whether the construct that owns a linkage tail may end inside it. An
-    /// `extern` import is whole the moment its keyword is read, so each empty
-    /// slot is a place the declaration can stop; an `export` definition and an
-    /// `extern` struct still owe a body, so nothing there can end and the tail
-    /// reads straight through a line break.
-    const TailEnds = enum { may_end, must_continue };
-
     const LinkageTail = struct {
         lib: ?[]const u8 = null,
         name: ?[]const u8 = null,
     };
 
-    /// The `[LIB] ["csym"]` tail after `extern` / `export`. Both slots are bare
-    /// names, so on a terminable tail each one is asked whether the declaration
-    /// already ended — the name on the next line belongs to the next
-    /// declaration, not to this one.
-    fn parseLinkageTail(self: *Parser, ends: TailEnds, admits_symbol: bool) LinkageTail {
+    /// The `[LIB] ["csym"]` tail after `extern` / `export`. Both slots are
+    /// optional, and the declaration's `;` is what closes the tail.
+    fn parseLinkageTail(self: *Parser, admits_symbol: bool) LinkageTail {
         var tail: LinkageTail = .{};
-        if (ends == .may_end and self.atStatementEnd()) return tail;
         if (self.tokens.tag(self.tok) == .identifier) {
             tail.lib = self.tokens.slice(self.tok);
             self.advance();
         }
         if (!admits_symbol) return tail;
-        if (ends == .may_end and self.atStatementEnd()) return tail;
         if (self.tokens.tag(self.tok) == .string_literal) {
             const raw = self.tokens.slice(self.tok);
             tail.name = raw[1 .. raw.len - 1];
@@ -5875,64 +5849,21 @@ pub const Parser = struct {
         if (!self.tokens.flagsOf(self.tok).glued_left) return self.failSpacedForm(head_start, .type_args);
     }
 
-    /// A token that cannot START a statement, so a line break in front of it
-    /// continues the statement above instead of ending it. `-` and `*` are
-    /// deliberately absent: a line-leading `- b` continues the expression
-    /// above, while a glued `-b` opens a fresh operand and so is a statement of
-    /// its own. `case` is absent too: it heads a `match` arm, and an arm is a
-    /// statement in the only position where `case` is legal.
-    ///
-    /// The property is the rule and this list is its enumeration, so a token
-    /// belongs here as soon as some construct parser can reach a terminator
-    /// query with it current. `:`, `extern` and `intrinsic` are here because
-    /// the typed-binding and typed-constant parsers ask `atStatementEnd` before
-    /// dispatching on them; should `extern` ever become a declaration head
-    /// (issues/0030) it stops satisfying the property and leaves. `else`
-    /// satisfies the property only where it chains an `if` — the default-arm
-    /// spelling starts an arm, and `implicitTerminator` tells the two apart
-    /// through `atMatchDefaultArm`.
-    fn continuesStatement(tag: Tag) bool {
-        return switch (tag) {
-            .kw_and, .kw_or, .kw_then, .kw_else, .kw_catch => true,
-            .pipe, .plus, .equal_equal, .bang_equal, .less_equal, .greater_equal => true,
-            .less_less, .greater_greater, .pipe_arrow, .question_question, .question_dot => true,
-            .comma, .equal, .colon_colon, .arrow, .fat_arrow => true,
-            .colon, .kw_extern, .kw_intrinsic => true,
-            else => false,
-        };
-    }
-
     /// The terminator of a statement or of a declaration written in statement
-    /// or top-level position: an explicit `;`, or the implied one — the line
-    /// break where the `;` would have gone, or the end of the file. The `;`
-    /// inside a fixed form's member list (a runtime class's members,
-    /// `#import c { … }`'s entries) and the one closing a `break` or `=> expr`
-    /// match arm are separators under their own grammar, not statement ends,
-    /// and keep demanding their `;`. A statement-list arm holds ordinary
-    /// statements, which end here like any others.
+    /// or top-level position: the written `;`, or the end of the file — there is
+    /// no next statement for the last one to run into.
     fn expectStatementEnd(self: *Parser) !void {
         if (self.tokens.tag(self.tok) == .semicolon) {
             self.advance();
             return;
         }
-        if (self.implicitTerminator()) return;
+        if (self.tokens.tag(self.tok) == .eof) return;
         try self.expect(.semicolon);
-    }
-
-    /// True where the terminator is implied rather than written: a newline
-    /// between the statement's last token and the next one ends the statement
-    /// exactly where a `;` would, and so does the end of the file — there is
-    /// no next statement for the one below to run into.
-    fn implicitTerminator(self: *const Parser) bool {
-        if (self.tokens.tag(self.tok) == .eof) return true;
-        if (continuesStatement(self.tokens.tag(self.tok)) and !self.atMatchDefaultArm()) return false;
-        return self.tokens.flagsOf(self.tok).newline_left;
     }
 
     /// `else` with a GLUED `:` heads a `match`'s default arm; every other
     /// `else` chains the enclosing `if`. One token of lookahead is the whole
-    /// disambiguation, and it decides both readings: an arm head ends the
-    /// statement above it, a chaining `else` reads on through the break.
+    /// disambiguation.
     fn atMatchDefaultArm(self: *const Parser) bool {
         if (self.tokens.tag(self.tok) != .kw_else) return false;
         const n = self.tokens.next(self.tok);
@@ -5946,13 +5877,11 @@ pub const Parser = struct {
     }
 
     /// True where the statement or declaration could end right here — at its
-    /// written `;`, or at the terminator a line break (or the end of the file)
-    /// implies. The query form of `expectStatementEnd`, which consumes. A
-    /// construct parser asks it before every optional slot that a completed
-    /// declaration would not have, so arm ordering stops deciding which of the
-    /// two readings wins.
+    /// written `;`, or at the end of the file. The query form of
+    /// `expectStatementEnd`, which consumes. A construct parser asks it before
+    /// every optional slot that a completed declaration would not have.
     fn atStatementEnd(self: *const Parser) bool {
-        return self.tokens.tag(self.tok) == .semicolon or self.implicitTerminator();
+        return self.tokens.tag(self.tok) == .semicolon or self.tokens.tag(self.tok) == .eof;
     }
 
     /// The spacing rule for a prefix `-` / `--` / `*`: it binds only when glued
@@ -6099,46 +6028,6 @@ pub const Parser = struct {
         return error.ParseError;
     }
 };
-
-// The suppression set is the enumeration of one property — a token that cannot
-// START a statement — so every member is pinned by name, and so is every class
-// of token that CAN open one and therefore must end the statement above.
-test "continuesStatement: the suppression set member by member" {
-    const members = [_]Tag{
-        .kw_and,          .kw_or,      .kw_then,           .kw_else,
-        .kw_catch,        .pipe,       .plus,              .equal_equal,
-        .bang_equal,      .less_equal, .greater_equal,     .less_less,
-        .greater_greater, .pipe_arrow, .question_question, .question_dot,
-        .comma,           .equal,      .colon_colon,       .arrow,
-        .fat_arrow,
-        // Reorder-forced members: `parseTypedBinding` and `parseConstBinding`
-        // now ask `atStatementEnd` before dispatching on these three, so each
-        // one reaches a terminator query and has to answer it.
-              .colon,      .kw_extern,         .kw_intrinsic,
-    };
-    for (members) |tag| try std.testing.expect(Parser.continuesStatement(tag));
-
-    // Statement heads, literals, openers, and the operators the spacing/glue
-    // rules own — none of them suppresses a terminator. `case` heads a `match`
-    // arm, which is a statement, so it ends the statement above it.
-    const negatives = [_]Tag{
-        .kw_case,       .identifier,      .int_literal, .string_literal,
-        .l_brace,       .r_brace,         .l_paren,     .l_bracket,
-        .bang,          .dot,             .minus,       .minus_minus,
-        .star,          .semicolon,       .eof,         .kw_if,
-        .kw_while,      .kw_for,          .kw_return,   .kw_defer,
-        .kw_onfail,     .kw_break,        .kw_continue, .kw_raise,
-        .kw_export,     .kw_push,         .kw_try,      .colon_equal,
-        .plus_equal,    .minus_equal,     .star_equal,  .slash_equal,
-        .percent_equal, .ampersand_equal, .pipe_equal,  .caret_equal,
-        // Binary operators outside the set: the Pratt loop consumes them before
-        // any terminator query, so membership decides nothing for them — the
-        // behavioural lock lives in parser.test.zig.
-        .slash,         .percent,         .ampersand,   .caret,
-        .less,          .greater,         .kw_in,
-    };
-    for (negatives) |tag| try std.testing.expect(!Parser.continuesStatement(tag));
-}
 
 test "parse minimal main" {
     const source = "main :: () { 42; }";
@@ -7485,7 +7374,7 @@ test "parse undecided carrier continues only on a dot" {
     const source =
         \\main :: () {
         \\  n := List(i64){}.len;
-        \\  Group(n) {}
+        \\  Group(n) {};
         \\  m := 1;
         \\}
     ;

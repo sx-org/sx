@@ -4,21 +4,21 @@
 // importers, and both read the same site — engine's file, engine's declaration
 // path.
 
-#import "modules/std.sx"
-#import "modules/std/core.sx"
+#import "modules/std.sx";
+#import "modules/std/core.sx";
 
-eng :: #import "2088-modules-namespaced-site-names-its-module/engine.sx"
-fac :: #import "2088-modules-namespaced-site-names-its-module/facade.sx"
+eng :: #import "2088-modules-namespaced-site-names-its-module/engine.sx";
+fac :: #import "2088-modules-namespaced-site-names-its-module/facade.sx";
 
 main :: () -> i32 {
-    direct := eng.report()
-    through_facade := fac.via()
+    direct := eng.report();
+    through_facade := fac.via();
 
-    print("{}\n", direct.file)
-    print("{}\n", direct.declaration)
+    print("{}\n", direct.file);
+    print("{}\n", direct.declaration);
     // A non-zero ordinal is what says the index answered: the unindexed
     // fall-back reports the enclosing declaration at ordinal 0.
-    print("ordinal {}\n", direct.ordinal)
-    print("same {} {}\n", direct.id == through_facade.id, direct.ordinal == through_facade.ordinal)
+    print("ordinal {}\n", direct.ordinal);
+    print("same {} {}\n", direct.id == through_facade.id, direct.ordinal == through_facade.ordinal);
     0
 }

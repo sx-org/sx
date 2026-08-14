@@ -4152,7 +4152,7 @@ test "semantic tokens: a heredoc emits its content lines and not its delimiters"
         \\    s := #string END
         \\alpha
         \\beta
-        \\END
+        \\END;
         \\    0
         \\}
     ;

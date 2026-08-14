@@ -12,13 +12,13 @@
 // A request names an element rather than a position, so a build may focus the
 // element it is about to declare; the commit that follows is what validates it.
 // An element the committed build stopped declaring is no longer focused.
-#import "modules/std.sx"
-#import "modules/ui/types.sx"
-#import "modules/ui/render.sx"
-#import "modules/ui/input.sx"
-#import "modules/ui/compose/view.sx"
-#import "modules/ui/compose/identity.sx"
-#import "modules/ui/compose/frame.sx"
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/compose/view.sx";
+#import "modules/ui/compose/identity.sx";
+#import "modules/ui/compose/frame.sx";
 
 // A component wrapped in its own focus region. The child is stored inline at
 // its own type, so a focusable element is one value and the calls into it stay
@@ -39,7 +39,7 @@ Focusable :: @OpenVariant(View) ($V: Type) {
     }
 
     render :: (self: *Focusable(V), rc: *RenderContext, frame: Frame) {
-        rc.focus_region(self.id.value, frame, self.on_key, self.on_text, self.wants_keyboard)
+        rc.focus_region(self.id.value, frame, self.on_key, self.on_text, self.wants_keyboard);
         self.child.render(rc, frame)
     }
 }
@@ -57,29 +57,29 @@ FocusRouter :: struct {
     snap: *CommittedUiSnapshot = null
     focused: ?u64 = null
 
-    init :: () -> FocusRouter => .{}
+    init :: () -> FocusRouter => .{};
 
     // Point the router at the frame that just committed, and let go of an
     // element that frame no longer declares.
     observe :: (self: *FocusRouter, snap: *CommittedUiSnapshot) {
-        self.snap = snap
+        self.snap = snap;
         if id := self.focused {
             if self.index_of(id) < 0 {
-                self.focused = null
+                self.focused = null;
             }
         }
     }
 
     request_focus :: (self: *FocusRouter, id: ElementId) {
-        self.focused = id.value
+        self.focused = id.value;
     }
 
     clear_focus :: (self: *FocusRouter) {
-        self.focused = null
+        self.focused = null;
     }
 
     index_of :: (self: *FocusRouter, id: u64) -> i64 {
-        if self.snap == null then return -1
+        if self.snap == null then return -1;
         for r, i in self.snap.focus_list, 0.. {
             if r.id == id then return i
         }
@@ -89,9 +89,9 @@ FocusRouter :: struct {
     // The focused region in the committed frame.
     current :: (self: *FocusRouter) -> ?*FocusRegion {
         if id := self.focused {
-            at := self.index_of(id)
+            at := self.index_of(id);
             if at >= 0 {
-                return *self.snap.focus_list.items[at]
+                return *self.snap.focus_list.items[at];
             }
         }
         null
@@ -100,7 +100,7 @@ FocusRouter :: struct {
     // What the platform shell polls to drive the soft keyboard.
     wants_keyboard :: (self: *FocusRouter) -> bool {
         if r := self.current() {
-            return r.wants_keyboard
+            return r.wants_keyboard;
         }
         false
     }
@@ -116,20 +116,20 @@ FocusRouter :: struct {
     // Traversal wraps; from nothing, a forward step enters at the first region
     // and a backward one at the last.
     step :: (self: *FocusRouter, delta: i64) {
-        if self.snap == null then return
-        n := self.snap.focus_list.len
+        if self.snap == null then return;
+        n := self.snap.focus_list.len;
         if n == 0 {
-            self.focused = null
-            return
+            self.focused = null;
+            return;
         }
-        next := if delta > 0 then 0 else n - 1
+        next := if delta > 0 then 0 else n - 1;
         if id := self.focused {
-            at := self.index_of(id)
+            at := self.index_of(id);
             if at >= 0 {
-                next = (at + delta + n) % n
+                next = (at + delta + n) % n;
             }
         }
-        self.focused = self.snap.focus_list.items[next].id
+        self.focused = self.snap.focus_list.items[next].id;
     }
 
     // Tab steps the traversal and stops there — it is consumed whether or not
@@ -140,12 +140,12 @@ FocusRouter :: struct {
         match ev.* {
             case .key_down: |k| {
                 if k.logical == .tab {
-                    self.step(if k.header.modifiers.shift then -1 else 1)
-                    return
+                    self.step(if k.header.modifiers.shift then -1 else 1);
+                    return;
                 }
                 if r := self.current() {
                     if h := r.on_key {
-                        e := k
+                        e := k;
                         h(*e)
                     }
                 }
@@ -162,14 +162,14 @@ FocusRouter :: struct {
     }
 }
 
-#context_extend compose_focus: *FocusRouter = null
+#context_extend compose_focus: *FocusRouter = null;
 
 // The focus state a build reads to style an element by whether the keys reach
 // it. With no router in context nothing is focused.
 is_focused :: (id: ElementId) -> bool {
-    if context.compose_focus == null then return false
+    if context.compose_focus == null then return false;
     if f := context.compose_focus.focused {
-        return f == id.value
+        return f == id.value;
     }
     false
 }

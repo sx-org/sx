@@ -19,5 +19,5 @@ error: this block is used as a value but produces none — end it with a trailin
 error: this block is used as a value but produces none — end it with a trailing expression
   --> examples/diagnostics/2074-diagnostics-value-block-no-value.sx:31:9
    |
-31 |         slot = if true { 1; } else { 2; }
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+31 |         slot = if true { 1; } else { 2; };
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -7,24 +7,24 @@
 //
 // A `State(T)` borrows its entry's payload. The borrow stands until a committed
 // build stops reaching the site, which is when the entry goes.
-#import "modules/std.sx"
-#import "modules/std/core.sx"
-#import "modules/std/mem.sx"
-#import "modules/ui/compose/identity.sx"
+#import "modules/std.sx";
+#import "modules/std/core.sx";
+#import "modules/std/mem.sx";
+#import "modules/ui/compose/identity.sx";
 
-c :: #import "modules/std/c.sx"
+c :: #import "modules/std/c.sx";
 
 State :: struct ($T: Type) {
     ptr: *T
 
-    get :: (self: State(T)) -> T => self.ptr.*
+    get :: (self: State(T)) -> T => self.ptr.*;
     set :: (self: State(T), value: T) {
-        self.ptr.* = value
+        self.ptr.* = value;
     }
 }
 
 // The domain separates state keys from the element ids the same sites mint.
-STATE_DOMAIN :: "ui.compose.state.v1"
+STATE_DOMAIN :: "ui.compose.state.v1";
 
 // One site's persistent storage. `ty` is compared on every rebind, so a site
 // whose payload type changes is refused rather than reinterpreted.
@@ -43,26 +43,26 @@ StateStore :: struct {
     gpa: Allocator
     in_build: bool = false
 
-    init :: (gpa: Allocator) -> StateStore => .{ gpa = gpa }
+    init :: (gpa: Allocator) -> StateStore => .{ gpa = gpa };
 
     begin_build :: (self: *StateStore) {
         for e in self.entries {
-            e.claimed = false
+            e.claimed = false;
         }
-        self.in_build = true
+        self.in_build = true;
     }
 
     // A site the committed build did not reach loses its entry: state lasts
     // exactly as long as the element claiming it.
     commit_build :: (self: *StateStore) {
-        self.in_build = false
-        i := 0
+        self.in_build = false;
+        i := 0;
         while i < self.entries.len {
-            e := self.entries.items[i]
+            e := self.entries.items[i];
             if e.claimed {
-                i += 1
+                i += 1;
             } else {
-                self.release(e)
+                self.release(e);
                 self.entries.swap_remove(i)
             }
         }
@@ -72,12 +72,12 @@ StateStore :: struct {
         for e in self.entries {
             self.release(e)
         }
-        self.entries.len = 0
+        self.entries.len = 0;
         self.entries.deinit(self.gpa)
     }
 
     release :: (self: *StateStore, e: *StateEntry) {
-        self.gpa.dealloc_bytes(xx e.data)
+        self.gpa.dealloc_bytes(xx e.data);
         self.gpa.dealloc_bytes(xx e)
     }
 
@@ -89,38 +89,38 @@ StateStore :: struct {
     }
 }
 
-#context_extend compose_state: *StateStore = null
+#context_extend compose_state: *StateStore = null;
 
 // Claims the storage this call site owns for the build in progress.
 use_state :: ($T: Type, default: T, site: SiteId = site_of(@caller)) -> State(T) {
     process.assert(context.compose_ui != null and context.compose_state != null,
-        "use_state outside a compose build — push .{ compose_ui = *root.identity, compose_state = *root.store }")
-    store := context.compose_state
-    process.assert(store.in_build, "use_state outside a build transaction — call begin_build first")
+        "use_state outside a compose build — push .{ compose_ui = *root.identity, compose_state = *root.store }");
+    store := context.compose_state;
+    process.assert(store.in_build, "use_state outside a build transaction — call begin_build first");
 
-    hasher := site_hasher(site, STATE_DOMAIN)
-    hasher.write_u64_le(context.compose_ui.next_occurrence(site.key).(u64))
-    key := hasher.state
+    hasher := site_hasher(site, STATE_DOMAIN);
+    hasher.write_u64_le(context.compose_ui.next_occurrence(site.key).(u64));
+    key := hasher.state;
 
     if e := store.find(key) {
         if e.ty != T or e.size != size_of(T) {
-            print("use_state at {}:{} changed payload type between builds\n", site.file, site.line)
+            print("use_state at {}:{} changed payload type between builds\n", site.file, site.line);
             process.exit(1)
         }
-        e.claimed = true
-        return State(T){ ptr = xx e.data }
+        e.claimed = true;
+        return State(T){ ptr = xx e.data };
     }
 
-    e : *StateEntry = xx store.gpa.alloc_bytes(size_of(StateEntry))
+    e : *StateEntry = xx store.gpa.alloc_bytes(size_of(StateEntry));
     e.* = StateEntry{
         key = key,
         ty = T,
         size = size_of(T),
         data = xx store.gpa.alloc_bytes(size_of(T)),
         claimed = true,
-    }
-    seed := default
-    c.memcpy(e.data, xx *seed, size_of(T))
-    store.entries.append(e, store.gpa)
+    };
+    seed := default;
+    c.memcpy(e.data, xx *seed, size_of(T));
+    store.entries.append(e, store.gpa);
     State(T){ ptr = xx e.data }
 }
