@@ -92,7 +92,7 @@ raise a literal tag (`raise error.X`) or a tag held in a variable
 (`raise e`), which is handy for forwarding:
 
 ```sx
-v := parse(s) catch e {
+v := parse(s) catch |e| {
   if e == error.Recoverable return default;
   raise e;                  // forward everything else
 };
@@ -178,10 +178,10 @@ v := try fetch_local(key) or try fetch_remote(key) or default_value;
 ## Handling with `catch`
 
 `catch` handles an error inline and produces a value (or diverts
-control). The bound name (`catch e`) is the error tag:
+control). The bound name (`catch |e|`) is the error tag:
 
 ```sx
-v := parse_int(s) catch e {
+v := parse_int(s) catch |e| {
   log.warn("bad input '{}': {}", s, e);
   return -1;                       // bail out of the enclosing function
 };
@@ -198,13 +198,13 @@ Omit the binding entirely (the body must be braced):
 flush(buf) catch { };              // attempt it; ignore any failure
 ```
 
-### Dispatch on the tag — `catch (e) match e { }`
+### Dispatch on the tag — `catch |e| match e { }`
 
 When you want to handle specific tags differently, the catch body is a
 `match` over the binding:
 
 ```sx
-v := parse_int(s) catch (e) match e {
+v := parse_int(s) catch |e| match e {
   case .Empty:    0;
   case .BadDigit: -1;
   else:           raise e;         // forward the rest
@@ -217,7 +217,7 @@ If the function returns multiple values, the catch body produces a
 tuple:
 
 ```sx
-v, n := parse_pair(s) catch e {
+v, n := parse_pair(s) catch |e| {
   log.warn("parse failed: {}", e);
   (0, 0)
 };
@@ -296,7 +296,7 @@ unwinding), so absorb the error locally:
 ```sx
 onfail {
   close(h) catch { };              // ignore a failed close
-  flush(buf) catch fe { log.warn("flush failed: {}", fe); };
+  flush(buf) catch |fe| { log.warn("flush failed: {}", fe); };
 }
 ```
 
@@ -309,7 +309,7 @@ from its `raise` site up through every `try` that propagated it. Print
 it from a handler:
 
 ```sx
-v := parse(s) catch e {
+v := parse(s) catch |e| {
   log.error("parse failed: {}", e);
   trace.print_current();
   return default;
@@ -404,7 +404,7 @@ open_db :: (url: string) -> (Conn, !DbErr) {
 
 ```sx
 load :: (path: string) -> (Data, !) {
-  return read(path) catch (e) match e {
+  return read(path) catch |e| match e {
     case .NotFound: try read(fallback_path);   // recover one case
     else:           raise e;                   // forward the rest
   };

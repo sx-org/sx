@@ -76,7 +76,7 @@ test_zlib_bound_and_levels :: (alloc: Allocator) -> bool {
         level += 1;
     }
     bad_level := false;
-    rejected := zlib.encode(PLAIN, .{ level = 11 }, alloc) catch (e) {
+    rejected := zlib.encode(PLAIN, .{ level = 11 }, alloc) catch |e| {
         bad_level = e == error.InvalidOptions;
         ""
     };
@@ -92,7 +92,7 @@ test_public_checksum_failure :: (alloc: Allocator) -> bool {
     mutable := packed;
     mutable[8] = mutable[8] ^ 0xff;
     corrupted := false;
-    round := zlib.decode(mutable, 4096, alloc) catch (e) {
+    round := zlib.decode(mutable, 4096, alloc) catch |e| {
         corrupted = e == error.ChecksumMismatch or e == error.InvalidData or e == error.UnexpectedEnd;
         ""
     };
@@ -104,7 +104,7 @@ test_public_checksum_failure :: (alloc: Allocator) -> bool {
 test_gzip_truncation :: (alloc: Allocator) -> bool {
     packed := gzip.encode(PLAIN, .{ level = 6 }, .{}, alloc) catch { return false; };
     truncated := false;
-    round := gzip.decode(packed[..packed.len - 5], 4096, alloc) catch (e) {
+    round := gzip.decode(packed[..packed.len - 5], 4096, alloc) catch |e| {
         truncated = e == error.UnexpectedEnd or e == error.InvalidData or e == error.ChecksumMismatch;
         ""
     };

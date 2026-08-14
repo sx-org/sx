@@ -13,7 +13,7 @@
 E :: error { Z }
 
 bare  :: (cb: (i64) -> i64, n: i64) -> i64 { return cb(n); }
-baref :: (cb: (i64) -> (i64, !E), n: i64) -> i64 { return cb(n) catch (e) -1; }
+baref :: (cb: (i64) -> (i64, !E), n: i64) -> i64 { return cb(n) catch |e| -1; }
 
 main :: () -> i32 {
     inc := |x: i64| -> i64 x + 1;          // capture-free closure var

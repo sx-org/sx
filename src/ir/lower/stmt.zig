@@ -1017,7 +1017,7 @@ fn rejectVoidInitializer(
         if (d.errorCount() != errs_before) return false;
         if (val.data == .catch_expr) {
             const id = d.addFmtId(.err, val.span, "'{s}' has nothing to bind — `catch` on a pure failable ('!E') produces no value", .{name});
-            d.addHelpFmt(id, val.span, null, "handle it as a statement (`f() catch (e) {{ ... }};`), or give the callee a value channel (`-> (T, !E)`)", .{});
+            d.addHelpFmt(id, val.span, null, "handle it as a statement (`f() catch |e| {{ ... }};`), or give the callee a value channel (`-> (T, !E)`)", .{});
         } else {
             const id = d.addFmtId(.err, val.span, "'{s}' cannot bind 'void' — this expression produces no value", .{name});
             d.addHelpFmt(id, val.span, null, "call it as a statement instead of binding its result", .{});
@@ -3450,7 +3450,7 @@ pub fn lowerCleanupBody(self: *Lowering, body: *const Node) void {
 /// Emit cleanups from `base`..current in reverse order on an ERROR exit
 /// (raise / try-propagation): BOTH `defer` and `onfail` entries run,
 /// interleaved in reverse declaration order. `err_tag` is the in-flight
-/// error tag, bound to each `onfail e`'s binding. Does not truncate — the
+/// error tag, bound to each `onfail |e|`'s binding. Does not truncate — the
 /// terminating `ret` + the unwinding block-scope `emitBlockDefers` (which
 /// then see the terminator and skip) leave the stack consistent.
 pub fn emitErrorCleanup(self: *Lowering, base: usize, err_tag: Ref) void {

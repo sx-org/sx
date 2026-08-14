@@ -81,9 +81,9 @@ pub fn printExpr(node: *const Node, writer: Writer) anyerror!void {
             try printExpr(c.operand, writer);
             try writer.writeAll(" catch");
             if (c.binding) |bnd| {
-                try writer.writeAll(" (");
+                try writer.writeAll(" |");
                 try writer.writeAll(bnd);
-                try writer.writeByte(')');
+                try writer.writeByte('|');
             }
             try writer.writeByte(' ');
             try printExpr(c.body, writer);
@@ -96,9 +96,9 @@ pub fn printExpr(node: *const Node, writer: Writer) anyerror!void {
         .onfail_stmt => |o| {
             try writer.writeAll("onfail");
             if (o.binding) |bnd| {
-                try writer.writeAll(" (");
+                try writer.writeAll(" |");
                 try writer.writeAll(bnd);
-                try writer.writeByte(')');
+                try writer.writeByte('|');
             }
             try writer.writeByte(' ');
             try printExpr(o.body, writer);

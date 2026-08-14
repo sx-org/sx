@@ -20,10 +20,10 @@ guard :: (ok: bool) -> !E {
 }
 
 ok_v   :: #run parse(5);            // success → 10 (value, error stripped)
-caught :: #run parse(-1) catch (e) 99; // Bad   → 99
+caught :: #run parse(-1) catch |e| 99; // Bad   → 99
 ored   :: #run parse(0) or 55;       // Empty → 55
 
-#run guard(false) catch (e) {};       // onfail fires during the comptime unwind
+#run guard(false) catch |e| {};       // onfail fires during the comptime unwind
 
 main :: () -> i32 {
     print("ok={} caught={} ored={}\n", ok_v, caught, ored);

@@ -31,7 +31,7 @@ work :: () {
             if !err { print("defer closure: v={}\n", v); }   // live under guard
             try failing();
         };
-        emit() catch (e) print("defer closure: raised\n");
+        emit() catch |e| print("defer closure: raised\n");
     }
     print("body\n");
 }

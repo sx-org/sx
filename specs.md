@@ -179,7 +179,7 @@ M :: union { `i1: i32; }          // union tag
 `u8, rest := pair();              // destructure name
 if `i16 := maybe() { }            // optional binding
 for `bool, `u16 in xs, 0.. { }    // for captures
-x catch (`i2) { }                   // catch tag binding
+x catch |`i2| { }                   // catch tag binding
 ```
 
 In the **member-name positions** among these — struct field, union tag, and
@@ -359,8 +359,8 @@ scaled :: ufcs (v: i64) -> i64 => v * 2;      // ufcs declaration
 Pair   :: struct ($T: Type) { a: $T; b: $T; } // struct type params
 Show   :: protocol (T) { render :: (self: *Self) -> T; }
 Padded :: @OpenVariant(View) ($T: Type) { … } // generic open-set member
-v := risky() catch (e) -1;                    // catch binding
-onfail (e) { … }                              // onfail binding
+v := risky() catch |e| -1;                    // catch binding
+onfail |e| { … }                              // onfail binding
 ```
 
 **Spacing — `-` and `*` are infix wherever a left operand is complete.** Both
@@ -3812,7 +3812,7 @@ On an **`any` receiver** the assertion has three temperaments:
   failable `(T, !CastError)`; `try av.(i64)` propagates (the global
   `mismatch` tag is absorbed by an inferred `!` caller or any named set
   containing a `mismatch` tag), `av.(i64) or 0` falls back,
-  `av.(i64) catch (e) { … }` binds the tag. Only a DIRECT assertion operand
+  `av.(i64) catch |e| { … }` binds the tag. Only a DIRECT assertion operand
   is consumed — an assertion nested in a call argument stays unconsumed.
 - **`.(T)` unconsumed = panic on mismatch**: `v := av.(i64);` yields the
   value on a tag match and otherwise prints `type assertion failed at
@@ -5307,7 +5307,7 @@ specific to for-loop element captures — it holds for *every* by-value
 capture binding: the for-loop element and the paired range index
 (`for x, i in xs, 0..` — both `x` and `i`), a match-arm payload capture
 (`case .circle: |r|`), a `catch` / `onfail` error binding
-(`f() catch (e)`), and an `inline for` pack-element alias
+(`f() catch |e|`), and an `inline for` pack-element alias
 (`inline for x in xs`). A capture is a read-only alias into storage the
 loop/match/error machinery owns, not a fresh mutable local; assigning to
 it bare (`x = v`, `i = 99`, `r = 5.0`, `e = error.Bad`) is a compile
@@ -5367,7 +5367,7 @@ only where a primary starts; after a completed operand it is bitwise OR. `||`
 is two `|` tokens around an empty parameter list. A parameter default is an
 ordinary expression except that the first `|` on that default's own value spine
 closes the parameter list. The value spine is the default's operator spine
-together with the trailing expression of an inline `if`, a `catch (e) expr`, a
+together with the trailing expression of an inline `if`, a `catch |e| expr`, a
 nested `|params| expr` body, `#run`, and `return`. Inside `(…)`, `[…]`, `{…}`,
 or an `if` / `while` / `for` / `match` header, `|` is bitwise OR — so a
 bitwise-OR default is parenthesized (`|x: i64 = (a | b)|`), while
@@ -6681,7 +6681,7 @@ Statement form. Terminates the immediately enclosing failable function (like
 ```sx
 if bad raise error.BadDigit;   // literal tag
 
-v := foo() catch (e) {
+v := foo() catch |e| {
   if e == error.Specific return default;
   raise e;                     // variable tag — re-raise
 };
@@ -6716,42 +6716,42 @@ tag — use `catch` for that.
 
 ### `catch`
 
-Expression form. Handles the error inline. The binding is **parenthesized**
-(`catch (e)`) — like a for-loop capture — and is **optional**. Three shapes,
-disambiguated by the token after `catch`:
+Expression form. Handles the error inline. The binding sits in **pipes**
+(`catch |e|`) — like a match-arm payload capture — and is **optional**. Three
+shapes, disambiguated by the token after `catch`:
 
 | Form | Binding | Body |
 |---|---|---|
 | `catch { ... }` | none (tag ignored) | block — braces required |
-| `catch (e) { ... }` | `e` | block |
-| `catch (e) EXPR` | `e` | bare expression (no braces) |
+| `catch \|e\| { ... }` | `e` | block |
+| `catch \|e\| EXPR` | `e` | bare expression (no braces) |
 
 Dispatching on the tag is the bare-expression shape with a `match` over the
-binding: `catch (e) match e { case ... }`.
+binding: `catch |e| match e { case ... }`.
 
-An unparenthesized binding (`catch e { }`) is a parse error with a hint to
-parenthesize it.
+A bare binding (`catch e { }`) is a parse error with a hint to write the
+pipes.
 
 ```sx
-v := parse_digit(s) catch (e) {
+v := parse_digit(s) catch |e| {
   log.warn("bad input: {}", e);
   return default;                       // noreturn body
 };
 
-v := parse_digit(s) catch (e) compute_fallback(e);   // value-producing body
+v := parse_digit(s) catch |e| compute_fallback(e);   // value-producing body
 
-v, n := parse(s) catch (e) {
+v, n := parse(s) catch |e| {
   log.warn("parse failed: {}", e);
   .{0, 0}                               // tuple body for a multi-value failable
 };
 
-v := parse(s) catch (e) match e {       // dispatch on the tag
+v := parse(s) catch |e| match e {       // dispatch on the tag
   case .Empty:    0;
   case .BadDigit: -1;
   else:           raise e;
 };
 
-v := (try foo() or try boo()) catch (e) { return 0; };  // catch over an `or` chain
+v := (try foo() or try boo()) catch |e| { return 0; };  // catch over an `or` chain
 ```
 
 **Body type rule.** The body (block-as-expression) must produce the failable's
@@ -6767,8 +6767,8 @@ initialize `:=`, a typed mutable declaration (`name: T =`), or a body-local
 constant declaration (`name ::` or `name: T :`).
 
 ```sx
-must_init() catch (e) { log.warn("{}", e); };  // OK — statement
-x := must_init() catch (e) { 0 };              // ERROR: nothing to bind
+must_init() catch |e| { log.warn("{}", e); };  // OK — statement
+x := must_init() catch |e| { 0 };              // ERROR: nothing to bind
 ```
 
 Give the callee a value channel (`-> (T, !E)`) where the handled expression
@@ -6809,7 +6809,7 @@ of the other markers directly on `X`) is required.
 
 ```sx
 a := parse(s) or 0;          // OK — terminator on the path
-a := parse(s) catch (e) {...}; // OK — catch marks
+a := parse(s) catch |e| {...}; // OK — catch marks
 v, err := failable();        // OK — destructure marks
 a := try foo() or try boo(); // OK — each try marks its own exit
 
@@ -6863,7 +6863,7 @@ Dropping the error slot is a compile error:
 v, _ := failable();   // ERROR: the error slot cannot be dropped — handle it
 ```
 
-Value slots may be discarded (`_, n := parse(s) catch (e) { return; }`). The
+Value slots may be discarded (`_, n := parse(s) catch |e| { return; }`). The
 statement form `try foo();` is the explicit "propagate, use no value." On a
 value-carrying failable, the value slot is live only where the compiler can
 prove the error slot is null (path-sensitive flow-check).
@@ -6886,7 +6886,7 @@ make_handle :: () -> (Handle, !) {
 
 open :: (path: string) -> (Handle, !) {
   h := try sys_open(path);
-  onfail (e) { log.warn("init failed for {}: {}", path, e); sys_close(h); }
+  onfail |e| { log.warn("init failed for {}: {}", path, e); sys_close(h); }
   ...
 }
 ```
@@ -7004,7 +7004,7 @@ return_stmt     = 'return' expr? end
 break_stmt      = 'break' end
 continue_stmt   = 'continue' end
 raise_stmt      = 'raise' expr end
-onfail_stmt     = 'onfail' ('(' IDENT ')')? (block | expr end)
+onfail_stmt     = 'onfail' ('|' IDENT '|')? (block | expr end)
 defer_stmt      = 'defer' expr end
 insert_stmt     = '#insert' expr end
 push_stmt       = 'push' expr block
@@ -7019,7 +7019,7 @@ range_op        = '..' | '..=' | '..<' | '<..' | '<..=' | '<..<' | '=..' | '=..=
 for_capture     = ['*'] IDENT [':' type]   // the '*' is GLUED to its name (§1 Whitespace is Syntax);
                                            // the type is the ELEMENT type
 binary          = catch_expr (binop catch_expr)*    // binop includes `or` (fallback / chain)
-catch_expr      = unary ('catch' ('(' IDENT ')')? (block | '==' '{' case_arm* else_arm? '}' | unary))?
+catch_expr      = unary ('catch' ('|' IDENT '|')? (block | '==' '{' case_arm* else_arm? '}' | unary))?
 unary           = ('-' | '--' | '*' | '!' | '~' | 'xx' | 'try') unary | postfix
                   // right-recursive, so prefixes stack (`xx try f()`, `!!ok`);
                   // a prefix '-' / '--' / '*' must be GLUED to its operand (§1 Whitespace is Syntax)

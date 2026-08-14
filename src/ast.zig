@@ -726,26 +726,26 @@ pub const TryExpr = struct {
     operand: *Node,
 };
 
-/// `X catch [(e)] BODY` — inline failure handler (postfix). The binding is
+/// `X catch [|e|] BODY` — inline failure handler (postfix). The binding is
 /// optional. Body is a block or a bare expression.
 pub const CatchExpr = struct {
     operand: *Node,
     binding: ?[]const u8 = null,
     binding_span: ?Span = null, // span of `binding` (set iff `binding` is)
     /// True when the binding was a backtick raw identifier
-    /// (`` x catch `i2 { … } ``) — exempt from the reserved-type-name check.
+    /// (`` x catch |`i2| { … } ``) — exempt from the reserved-type-name check.
     binding_is_raw: bool = false,
     body: *Node,
 };
 
-/// `onfail [e] BODY` — cleanup run on error-exit of the enclosing block.
-/// Binding optional (bare name). Body is a block (`onfail [e] { ... }`) or
+/// `onfail [|e|] BODY` — cleanup run on error-exit of the enclosing block.
+/// The binding is optional. Body is a block (`onfail [|e|] { ... }`) or
 /// a bare expression (`onfail EXPR;`).
 pub const OnFailStmt = struct {
     binding: ?[]const u8 = null,
     binding_span: ?Span = null, // span of `binding` (set iff `binding` is)
     /// True when the binding was a backtick raw identifier
-    /// (`` onfail `i2 { … } ``) — exempt from the reserved-type-name check.
+    /// (`` onfail |`i2| { … } ``) — exempt from the reserved-type-name check.
     binding_is_raw: bool = false,
     body: *Node,
 };

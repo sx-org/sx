@@ -48,11 +48,11 @@ main :: () -> i32 {
     opt : ?Broad = .Wide;
     print("shorthand optional: {}\n", opt!);
     if short == error.Extra { print("spellings agree: {}\n", short == .Extra); }
-    raises_shorthand() catch (e) { print("shorthand return: {}\n", e); };
-    raises_wide() catch (e) { print("shorthand raise: {}\n", e); };
+    raises_shorthand() catch |e| { print("shorthand return: {}\n", e); };
+    raises_wide() catch |e| { print("shorthand raise: {}\n", e); };
 
     // Propagation through a wider channel keeps working.
-    x := via_broad() catch (e) { print("propagated: {}\n", e); return 0; };
+    x := via_broad() catch |e| { print("propagated: {}\n", e); return 0; };
     return 0;
 }
 

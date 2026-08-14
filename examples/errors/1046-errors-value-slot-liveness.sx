@@ -53,7 +53,7 @@ main :: () -> i32 {
     // (4) early-return / raise helpers
     total = total + guarded(4);             // +40
     total = total + guarded(-1);            // -1
-    total = total + (relay(2) catch (e) 0);   // parse(2)=20 → +1 = 21
+    total = total + (relay(2) catch |e| 0);   // parse(2)=20 → +1 = 21
 
     print("liveness total: {}\n", total);   // 50+70+30+40-1+21 = 210
     return total;

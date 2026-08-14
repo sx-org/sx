@@ -10,8 +10,8 @@ must :: (n: i32) -> !E {
 }
 
 classify :: (n: i32) -> !E {
-    onfail (i64) { }                  // onfail tag binding
-    must(n) catch (u8) { return; };   // catch tag binding
+    onfail |i64| { }                  // onfail tag binding
+    must(n) catch |u8| { return; };   // catch tag binding
     return;
 }
 

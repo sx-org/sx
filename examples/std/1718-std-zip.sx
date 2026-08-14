@@ -136,7 +136,7 @@ stream_reports_checksum :: (stream: *zip.EntryReader) -> bool {
 }
 
 metadata_limit_rejected :: (source: ZipSource, limit: i64, alloc: Allocator) -> bool {
-    reader := zip.open_source(source, .{ max_metadata = limit }, alloc) catch (e) { return e == error.OutputLimit; };
+    reader := zip.open_source(source, .{ max_metadata = limit }, alloc) catch |e| { return e == error.OutputLimit; };
     reader.deinit();
     false
 }
@@ -192,14 +192,14 @@ test_memory_reader :: (alloc: Allocator) -> bool {
     }
     if (reader.find("deflated.txt") catch { -1 }) != 1 { reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false; }
     wrong_case_failed := false;
-    ignored_index := reader.find("DEFLATED.TXT") catch (e) { wrong_case_failed = e == error.NotFound; -1 };
+    ignored_index := reader.find("DEFLATED.TXT") catch |e| { wrong_case_failed = e == error.NotFound; -1 };
     if !wrong_case_failed { reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false; }
 
     output : [128]u8 = ---;
     plain := reader.extract_into(1, output[..], alloc) catch { reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false; };
     if !same(plain, repeated) or plain.ptr != *output[0] { reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false; }
     limited := false;
-    unexpected := reader.extract(1, repeated.len - 1, alloc) catch (e) {
+    unexpected := reader.extract(1, repeated.len - 1, alloc) catch |e| {
         limited = e == error.OutputLimit;
         string{ ptr = null, len = 0 }
     };
@@ -659,23 +659,23 @@ test_files :: (alloc: Allocator) -> bool {
 test_errors_and_poison :: (alloc: Allocator) -> bool {
     invalid_level := zip.Writer.init(.{}, alloc) catch { return false; };
     level_failed := false;
-    invalid_level.add("bad", "x", .{ level = 11 }) catch (e) { level_failed = e == error.InvalidOptions; };
+    invalid_level.add("bad", "x", .{ level = 11 }) catch |e| { level_failed = e == error.InvalidOptions; };
     invalid_level.deinit();
     if !level_failed { return false; }
 
     old_time := zip.Writer.init(.{}, alloc) catch { return false; };
     time_failed := false;
-    old_time.add("old", "x", .{ modified_seconds = 0 }) catch (e) { time_failed = e == error.InvalidOptions; };
+    old_time.add("old", "x", .{ modified_seconds = 0 }) catch |e| { time_failed = e == error.InvalidOptions; };
     old_time.deinit();
     if !time_failed { return false; }
 
     failing := Collector{ fail_after = 1 };
     writer := zip.Writer.init_sink(xx failing, .{}, alloc) catch { return false; };
     first_failed := false;
-    writer.add("payload", "payload payload payload", .{ store_small = false }) catch (e) { first_failed = e == error.Io; };
+    writer.add("payload", "payload payload payload", .{ store_small = false }) catch |e| { first_failed = e == error.Io; };
     calls_after_failure := failing.calls;
     second_failed := false;
-    writer.add("again", "again", .{}) catch (e) { second_failed = e == error.Io; };
+    writer.add("again", "again", .{}) catch |e| { second_failed = e == error.Io; };
     poisoned := first_failed and second_failed and failing.calls == calls_after_failure;
     writer.deinit();
     poisoned
@@ -779,7 +779,7 @@ test_add_from_failures :: (alloc: Allocator) -> bool {
     test_writer.add("front", "front-data", .{ method = .store }) catch { ok = false; };
     flaky.fail_at = 30;
     source_error_seen := false;
-    test_writer.add_from(*reader, fail_index) catch (e) {
+    test_writer.add_from(*reader, fail_index) catch |e| {
         source_error_seen = e == error.NotFound;
     };
     if !source_error_seen { ok = false; }
@@ -815,7 +815,7 @@ test_add_from_failures :: (alloc: Allocator) -> bool {
     sink_writer := zip.Writer.init_sink(xx *sink, .{}, alloc) catch { reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false; };
     flaky.fail_at = 30;
     poisoned_error := false;
-    sink_writer.add_from(*reader, fail_index) catch (e) { poisoned_error = e == error.NotFound; };
+    sink_writer.add_from(*reader, fail_index) catch |e| { poisoned_error = e == error.NotFound; };
     if !poisoned_error { ok = false; }
     add_after_poison := false;
     sink_writer.add("later", "x", .{ method = .store }) catch { add_after_poison = true; };
@@ -832,7 +832,7 @@ test_add_from_failures :: (alloc: Allocator) -> bool {
     dual_writer := zip.Writer.init_sink(xx *dual_sink, .{}, alloc) catch { reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false; };
     flaky.fail_at = 30;
     target_won := false;
-    dual_writer.add_from(*reader, fail_index) catch (e) { target_won = e == error.Io; };
+    dual_writer.add_from(*reader, fail_index) catch |e| { target_won = e == error.Io; };
     if !target_won { ok = false; }
     dual_writer.deinit();
     flaky.fail_at = -1;
@@ -847,7 +847,7 @@ test_add_from_failures :: (alloc: Allocator) -> bool {
     fw.add("front", "front-data", .{ method = .store }) catch { ok = false; };
     flaky.fail_at = 30;
     file_source_error := false;
-    fw.add_from(*reader, fail_index) catch (e) { file_source_error = e == error.NotFound; };
+    fw.add_from(*reader, fail_index) catch |e| { file_source_error = e == error.NotFound; };
     if !file_source_error { ok = false; }
     flaky.fail_at = -1;
     fw.add_from(*reader, keep_index) catch { ok = false; };

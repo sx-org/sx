@@ -36,7 +36,7 @@ use :: () -> ! {
     o3 := bx?.(i64) or null;
     print("o3 null: {}\n", o3 == null);
     nil : ?i64 = null;
-    c1 := bx?.(i64) catch (e) { print("tag: {}\n", e); nil };
+    c1 := bx?.(i64) catch |e| { print("tag: {}\n", e); nil };
     print("c1 null: {}\n", c1 == null);
     // Unconsumed, non-panicking states.
     p1 := bn?.(i64);
@@ -54,5 +54,5 @@ use :: () -> ! {
 }
 
 main :: () {
-    use() catch (e) { print("outer: {}\n", e); };
+    use() catch |e| { print("outer: {}\n", e); };
 }

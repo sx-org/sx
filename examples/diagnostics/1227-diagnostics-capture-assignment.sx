@@ -22,7 +22,7 @@ pack_mut :: (..xs: i64) {
 }
 
 fail_note :: () -> !E {
-    onfail (e) { e = error.Bad; }           // onfail binding — immutable
+    onfail |e| { e = error.Bad; }           // onfail binding — immutable
     raise error.Empty;
 }
 
@@ -50,7 +50,7 @@ main :: () -> i32 {
     }
 
     // 4. catch error binding
-    must(0) catch (e) { e = error.Bad; };
+    must(0) catch |e| { e = error.Bad; };
 
     // 4b. onfail error binding (in fail_note above)
     fail_note() catch {};

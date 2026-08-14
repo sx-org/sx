@@ -2,7 +2,7 @@
 // Unlike `defer` (which runs on every exit), `onfail` fires
 // on an error exit — a `raise` or a propagating `try` — and is skipped on
 // success. On an error exit `defer` and `onfail` run interleaved in reverse
-// declaration order. `onfail (e) { … }` binds the in-flight error tag.
+// declaration order. `onfail |e| { … }` binds the in-flight error tag.
 // (Per-attempt-`try` gating and `or`-chain absorption are covered in 1028.)
 
 #import "modules/std.sx";
@@ -25,7 +25,7 @@ run :: (n: i32) -> !E {
 
 // `onfail e` binds the tag.
 classify :: (n: i32) -> !E {
-    onfail (e) { if e == error.Bad { print("cleanup: bad\n"); } }
+    onfail |e| { if e == error.Bad { print("cleanup: bad\n"); } }
     if n < 0 { raise error.Bad; }
     return;
 }

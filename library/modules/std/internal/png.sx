@@ -53,7 +53,7 @@ png_encode_bytes :: (
         row += 1;
     }
 
-    compressed := zlib_compress(filtered, level, alloc) catch (e) {
+    compressed := zlib_compress(filtered, level, alloc) catch |e| {
         alloc.dealloc_bytes(filtered_raw);
         raise e;
     };
@@ -223,7 +223,7 @@ png_decode_bytes :: (data: string, alloc: Allocator) -> (DecodedPng, !) {
     row_bytes := width * channels;
     filtered_row_bytes := row_bytes + 1;
     need := filtered_row_bytes * height;
-    filtered := decompress_exact(idat, need, alloc) catch (e) {
+    filtered := decompress_exact(idat, need, alloc) catch |e| {
         alloc.dealloc_bytes(idat_raw);
         raise error.DecompressionFailed;
     };

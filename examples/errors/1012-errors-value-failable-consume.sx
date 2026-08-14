@@ -2,7 +2,7 @@
 // consumer side of the error-channel tuple ABI). `try f()` on a
 // `-> (T, !E)` callee binds the value slot on success and propagates the error
 // on failure (a pure-failable caller returns the tag; a value-carrying caller
-// returns `{undef, tag}`). `f() catch (e) BODY` yields the value slot on success
+// returns `{undef, tag}`). `f() catch |e| BODY` yields the value slot on success
 // or the handler body's value on failure, merged through a block parameter.
 // The producer side is `examples/228-value-failable.sx`.
 
@@ -31,12 +31,12 @@ relay :: (n: i32) -> !E {
 
 // value-carrying `catch`, bare-expression fallback.
 safe :: (n: i32) -> i32 {
-    return parse(n) catch (e) 0;
+    return parse(n) catch |e| 0;
 }
 
 // value-carrying `catch`, match-body value.
 classify :: (n: i32) -> i32 {
-    return parse(n) catch (e) match e {
+    return parse(n) catch |e| match e {
         case .Bad:   1;
         case .Empty: 2;
         else:        3

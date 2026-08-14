@@ -81,8 +81,8 @@ total := (hi << 16)
 
 A `(` or `[` binds to what precedes it only when nothing separates them — in
 expressions and in every type position alike. A `(` that opens something new
-(grouping, parameters, a capture, a declaration form) is free:
-`add :: (a: i64) -> i64`, `risky() catch (e) -1`. `-` and
+(grouping, parameters, a declaration form) is free:
+`add :: (a: i64) -> i64`, `n := (a + b) * c`. `-` and
 `*` also have prefix readings, so they are infix only when spaced the same on
 both sides, and a prefix `-` / `*` must be glued to its operand. The third rule
 governs what binds to an expression from behind — the trailing-block `{`
@@ -280,7 +280,7 @@ classify :: (n: i32) -> (doubled: i32, big: bool, !) {
     if n < 0 { raise error.Bad; }
     return doubled = n * 2, big = n > 10;
 }
-d, b := classify(7) catch (e) { … };   // error stripped by `catch`; d, b are the values
+d, b := classify(7) catch |e| { … };   // error stripped by `catch`; d, b are the values
 ```
 
 **Named returns as locals.** Named slots are in-scope assignable locals; assigning

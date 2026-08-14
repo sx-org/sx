@@ -95,7 +95,7 @@ main :: () -> i32 {
     print("fwd(-1) raises Boom\n");
 
     // catch interop on the forwarded result
-    c := fwd(-1) catch (ce) {
+    c := fwd(-1) catch |ce| {
         if ce != error.Boom { return 4; }
         print("caught Boom\n");
         -7
