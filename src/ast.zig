@@ -95,7 +95,7 @@ pub const Node = struct {
         spread_expr: SpreadExpr,
         named_arg: NamedArg,
         trailing_block: TrailingBlock,
-        empty_brace_call: EmptyBraceCall,
+        juxtaposition: Juxtaposition,
         break_expr: void,
         continue_expr: void,
         undef_literal: void,
@@ -659,10 +659,8 @@ pub const StructLiteral = struct {
     struct_name: ?[]const u8, // null for anonymous `.{ ... }`
     type_expr: ?*Node = null, // for GenericType(args){ ... }
     field_inits: []const StructFieldInit,
-    /// Optional block after the aggregate. Self-trailing `T{…}.{…}` binds a
-    /// pointer to the value under `init_block_self` — the `|s|` header's name,
-    /// or `self`. Bare `T{…}{…}` is a plain scope after construction, binding
-    /// nothing.
+    /// Optional self-trailing block `T{…}.{…}`, binding a pointer to the value
+    /// under `init_block_self` — the `|s|` header's name, or `self`.
     init_block: ?*Node = null,
     init_block_self: ?[]const u8 = null,
 };
@@ -958,7 +956,7 @@ pub const NamedArg = struct {
 };
 
 /// `f(args) { body }` trailing block (specs: Trailing Blocks). `lambda` is
-/// the closure literal the parser built from the block. Exists
+/// the closure literal built from a juxtaposition's block. Exists
 /// only as the LAST element of `Call.args`; the mapping pass binds it to the
 /// callee's last declared parameter, which is where its checks live.
 pub const TrailingBlock = struct {
@@ -967,14 +965,25 @@ pub const TrailingBlock = struct {
     has_header: bool = false,
 };
 
-/// `F(args){}` / `F(args) {}` — an argument-carrying call followed by a
-/// same-line empty brace body. The parameterized-aggregate and the
-/// trailing-block readings both fit that spelling, so the callee settles it:
-/// the lowering front rewrites this node into a `struct_literal` over `call`,
-/// or into `call` with `block` appended as a `trailing_block` argument.
-pub const EmptyBraceCall = struct {
-    call: *Node,
+/// `expr { … }` — two adjacent expressions. The same spelling carries the
+/// named aggregate (`Label { text = "x" }`, `List(Move){}`) and the trailing
+/// block (`vstack(12.0) { … }`), so types settle it: `settle` rewrites the
+/// node into a `struct_literal` over `expr`, or into a call with `block`
+/// appended as a `trailing_block` argument.
+pub const Juxtaposition = struct {
+    expr: *Node,
+    /// The brace group, parsed as a statement list. An aggregate reading
+    /// re-reads each statement as a field init.
     block: *Node,
+    /// The block's `|params|` header, spelled as a closure literal's.
+    params: []const Param = &.{},
+    type_params: []const StructTypeParam = &.{},
+    /// True when the source wrote `|…|` after `{`, including empty `| |`.
+    has_header: bool = false,
+    /// `expr { … }.{ |s| … }` — the self-trailing block and the name it binds
+    /// the value's pointer to. Settling copies both onto the aggregate.
+    init_block: ?*Node = null,
+    init_block_self: ?[]const u8 = null,
 };
 
 pub const NamespaceDecl = struct {

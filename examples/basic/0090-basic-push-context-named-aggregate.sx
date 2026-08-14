@@ -1,7 +1,10 @@
-// `push Context{ fields } { body }` — named aggregate context without parens.
-// Idiomatic form remains `push .{ fields } { body }`.
+// The three `push` spellings, none of them needing parens: a patch over the
+// ambient context, an explicit named construction, and an existing value.
+// `push` owns the LAST brace group as its body.
 
 #import "modules/std.sx";
+
+Holder :: struct { ctx: Context = .{} }
 
 main :: () -> i64 {
     push Context{ allocator = context.allocator } {
@@ -9,6 +12,10 @@ main :: () -> i64 {
     }
     push .{ allocator = context.allocator } {
         print("idiomatic\n");
+    }
+    h := Holder{ ctx = context };
+    push h.ctx {
+        print("value\n");
     }
     return 0;
 }

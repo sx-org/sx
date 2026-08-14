@@ -49,7 +49,7 @@ main :: () -> i32 {
                     count.bottom += 1;
                 },
                 |p: Point| -> HitPolicy if p.x < 50.0 then .fail else .tap)
-        }
+        };
 
         snap := CommittedUiSnapshot.init(context.allocator);
         project(*root, Size{ width = 100.0, height = 80.0 }, *snap);
@@ -96,7 +96,7 @@ main :: () -> i32 {
         identity.begin_build();
         rest : View = vstack(0.0) {
             Rect{ fill = ui.COLOR_GREEN, height = 40.0 }
-        }
+        };
         next := CommittedUiSnapshot.init(context.allocator);
         project(*rest, Size{ width = 100.0, height = 80.0 }, *next);
         router.observe(*next);

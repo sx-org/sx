@@ -52,7 +52,7 @@ main :: () -> i32 {
             focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, |e: *KeyEvent| {
                 keys.set(keys.get() + 1)
             })
-        }
+        };
         v
     }, context.allocator);
 
@@ -106,7 +106,7 @@ main :: () -> i32 {
                     counter.* += 1;
                 });
                 focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 })
-            }
+            };
             v
         }, context.allocator);
 
@@ -145,7 +145,7 @@ main :: () -> i32 {
             counted.* += 1;
             v : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
-            }
+            };
             v
         };
         push .{ allocator = elsewhere } {
@@ -172,7 +172,7 @@ main :: () -> i32 {
             tree : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {});
                 focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 })
-            }
+            };
             snap := CommittedUiSnapshot.init(solo);
             project(*tree, Size{ width = 100.0, height = 40.0 }, *snap);
             warm := solo.alloc_count;

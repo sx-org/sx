@@ -798,10 +798,10 @@ pub const Analyzer = struct {
             .spread_expr => .void_type,
             .named_arg => |na| return self.inferExprType(na.value),
             .trailing_block => .void_type,
-            // `F(args){}` reads as the parameterized aggregate when the head
-            // names a type, and as a trailing block (void) otherwise — the
-            // editor's half of the rule the lowering front settles.
-            .empty_brace_call => |ebc| self.parameterizedStructType(ebc.call.data.call) orelse .void_type,
+            // `expr { … }` reads as the aggregate when the head names a type,
+            // and as a trailing block (void) otherwise — the editor's half of
+            // the rule the lowering front settles.
+            .juxtaposition => |jx| self.juxtapositionType(jx),
             .break_expr => .void_type,
             .continue_expr => .void_type,
             .enum_literal => .{ .enum_type = "" },
@@ -851,6 +851,16 @@ pub const Analyzer = struct {
 
     /// The struct a parameterized aggregate head names — the generic instance
     /// for a template, the struct itself otherwise.
+    /// The type `expr { … }` carries: the head's own struct type when the head
+    /// names one, void when the block fuses onto a call.
+    fn juxtapositionType(self: *Analyzer, jx: ast.Juxtaposition) Type {
+        return switch (jx.expr.data) {
+            .call => |c| self.parameterizedStructType(c) orelse .void_type,
+            .identifier => |id| if (self.struct_types.contains(id.name)) .{ .struct_type = id.name } else .void_type,
+            else => .void_type,
+        };
+    }
+
     fn parameterizedStructType(self: *Analyzer, c: ast.Call) ?Type {
         const callee = self.resolveCalleeName(c) orelse return null;
         if (self.instantiateGeneric(callee, c.args)) |inst| return inst;
@@ -1273,9 +1283,21 @@ pub const Analyzer = struct {
             .spread_expr => |se| try self.analyzeNode(se.operand),
             .named_arg => |na| try self.analyzeNode(na.value),
             .trailing_block => |tb| try self.analyzeNode(tb.lambda),
-            .empty_brace_call => |ebc| {
-                try self.analyzeNode(ebc.call);
-                try self.analyzeNode(ebc.block);
+            .juxtaposition => |jx| {
+                try self.analyzeNode(jx.expr);
+                // On the aggregate reading, a `name = …` item names a FIELD of
+                // the head's type — indexed as a member ref so go-to-definition
+                // works from it, exactly as for a `.{ … }` literal's names.
+                const owner = self.inferExprType(node).toName() orelse "";
+                for (jx.block.data.block.stmts) |item| {
+                    if (owner.len != 0 and item.data == .assignment) {
+                        const a = item.data.assignment;
+                        if (a.op == .assign and a.target.data == .identifier)
+                            self.recordMemberRef(a.target.data.identifier.name, owner, false);
+                    }
+                    try self.analyzeNode(item);
+                }
+                if (jx.init_block) |ib| try self.analyzeNode(ib);
             },
             .break_expr, .continue_expr => {},
             .assignment => |asgn| {
@@ -1821,9 +1843,12 @@ pub fn findNodeAtOffset(node: *Node, offset: u32) ?*Node {
         .trailing_block => |tb| {
             if (findNodeAtOffset(tb.lambda, offset)) |found| return found;
         },
-        .empty_brace_call => |ebc| {
-            if (findNodeAtOffset(ebc.call, offset)) |found| return found;
-            if (findNodeAtOffset(ebc.block, offset)) |found| return found;
+        .juxtaposition => |jx| {
+            if (findNodeAtOffset(jx.expr, offset)) |found| return found;
+            if (findNodeAtOffset(jx.block, offset)) |found| return found;
+            if (jx.init_block) |ib| {
+                if (findNodeAtOffset(ib, offset)) |found| return found;
+            }
         },
         .break_expr, .continue_expr => {},
         .caller_site => {},

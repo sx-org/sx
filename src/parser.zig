@@ -34,26 +34,26 @@ pub const Parser = struct {
     /// (`for x in f(n) { }`). Cleared inside any nested bracket/paren/argument
     /// context.
     in_for_header: bool = false,
-    /// While parsing an if-condition, a `{` immediately after an anonymous
-    /// struct literal starts the if body, not the literal's optional init
-    /// block (`if x != .{1, 2} { ... }`).
+    /// While parsing an if-condition, the `{` that follows opens the if body,
+    /// so it does not juxtapose (`if x != .{1, 2} { ... }`).
     in_if_condition: bool = false,
     /// While parsing a `match` subject, the `{` that follows opens the arm
-    /// list — never a named aggregate, an init block, or a call's trailing
-    /// block (`match F(args) {` is a match over the call's result). Cleared
-    /// inside nested paren/argument contexts alongside `in_for_header`.
+    /// list, so it does not juxtapose (`match F(args) {` is a match over the
+    /// call's result). Cleared inside nested paren/argument contexts alongside
+    /// `in_for_header`.
     in_match_subject: bool = false,
-    /// Trailing blocks (specs: Trailing Blocks): while parsing a header
-    /// expression whose `{` opens the statement body (`while cond {`,
-    /// `push expr {`), a call may not take a trailing block. `if`/`for`
+    /// While parsing a header expression whose `{` opens the statement body
+    /// (`while cond {`, `push expr {`), a `{` does not juxtapose. `if`/`for`
     /// headers are covered by `in_if_condition`/`in_for_header`. Cleared
     /// inside nested paren/argument contexts alongside `in_for_header`.
-    no_trailing_block: bool = false,
-    /// True while parsing the context expression of `push <expr> { body }`.
-    /// Named aggregates are allowed here (`push Context{ a = x } { body }`);
-    /// the second brace group is the push body (init_block attach is off).
-    /// Call trailing stays off via `no_trailing_block`.
+    no_juxtaposition: bool = false,
+    /// True while parsing the context expression of `push <expr> { body }`,
+    /// where brace shape picks between `push Context { a = x } { body }` (one
+    /// juxtaposition, then the body) and `push ctx { body }` (the body alone).
     in_push_context: bool = false,
+    /// True inside a juxtaposition's own brace group, where `,` ends an item
+    /// the way `;` does. Cleared by every nested block.
+    comma_separates_items: bool = false,
     /// When true (set while parsing an `onfail` body), a `raise` statement is
     /// rejected — an error during cleanup has no propagation target. The
     /// error-flow pass extends this to the full {try, return, break, continue} set.
@@ -2294,23 +2294,10 @@ pub const Parser = struct {
         }
         try self.expect(.r_brace);
 
-        // Optional bare post-scope: T{ fields } { stmts } — construct T, then a
-        // plain block in the enclosing scope, binding nothing. Taught
-        // self-trailing is `T{ fields }.{ stmts }` (attached in parsePostfix,
-        // where its `|name|` header lives too). Suppressed in
-        // if-conditions, match subjects, and push context expressions
-        // (`push Context{…} { body }`).
-        const init_block: ?*Node = if (self.tokens.tag(self.tok) == .l_brace and !self.in_if_condition and !self.in_match_subject and !self.in_push_context)
-            try self.parseBlock()
-        else
-            null;
-
         return try self.createNode(start_pos, .{ .struct_literal = .{
             .struct_name = struct_name,
             .type_expr = type_expr,
             .field_inits = try field_inits.toOwnedSlice(self.allocator),
-            .init_block = init_block,
-            .init_block_self = null,
         } });
     }
 
@@ -2747,13 +2734,21 @@ pub const Parser = struct {
 
     /// The statements of a block whose `{` — at `start` — is already consumed.
     fn parseBlockBody(self: *Parser, start: u32) anyerror!*Node {
-        // The header ambiguity `no_trailing_block` guards against ends at
-        // this `{` — statements inside any braced block may take trailing
-        // blocks again (e.g. the stolen struct-literal init block that
-        // becomes a `push` body, or a lambda body inside a while condition).
-        const saved_ntb_blk = self.no_trailing_block;
-        self.no_trailing_block = false;
-        defer self.no_trailing_block = saved_ntb_blk;
+        return self.parseBraceBody(start, false);
+    }
+
+    /// The items of a brace group whose `{` — at `start` — is already consumed.
+    /// `commas` marks a juxtaposition's group, where `,` ends an item too.
+    fn parseBraceBody(self: *Parser, start: u32, commas: bool) anyerror!*Node {
+        // The header ambiguity `no_juxtaposition` guards against ends at
+        // this `{` — statements inside any braced block juxtapose again (a
+        // `push` body, a lambda body inside a while condition).
+        const saved_njx_blk = self.no_juxtaposition;
+        self.no_juxtaposition = false;
+        defer self.no_juxtaposition = saved_njx_blk;
+        const saved_commas = self.comma_separates_items;
+        self.comma_separates_items = commas;
+        defer self.comma_separates_items = saved_commas;
         // This body's statements are classified here and nowhere else: the
         // enclosing statement's mark comes back untouched at the `}`.
         const saved_produces = self.last_stmt_produces_value;
@@ -2761,13 +2756,84 @@ pub const Parser = struct {
         var stmts = std.ArrayList(*Node).empty;
         var produces_value = false;
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
-            const stmt = try self.parseStmt();
+            const stmt = if (commas) try self.parseBraceItem() else try self.parseStmt();
             try stmts.append(self.allocator, stmt);
             // The block's value-ness is its LAST statement's value-ness.
             produces_value = self.last_stmt_produces_value;
         }
         try self.expect(.r_brace);
         return try self.createNode(start, .{ .block = .{ .stmts = try stmts.toOwnedSlice(self.allocator), .produces_value = produces_value } });
+    }
+
+    /// One item of a juxtaposition's brace group. `name = value` binds here so
+    /// that it ends on the group's separators — and so a keyword may NAME a
+    /// field (`Pair(i64){ push = 7 }`) instead of heading a statement.
+    fn parseBraceItem(self: *Parser) anyerror!*Node {
+        if (self.isMemberDeclName() and self.peekNext() == .equal) {
+            const start = self.tokens.start(self.tok);
+            const name = self.tokens.slice(self.tok);
+            const target = try self.createNode(start, .{ .identifier = .{ .name = name } });
+            self.advance(); // name
+            self.advance(); // '='
+            const value = try self.parseExpr();
+            const item = try self.createNode(start, .{ .assignment = .{ .target = target, .op = .assign, .value = value } });
+            try self.expectSemicolonAfter(item);
+            return item;
+        }
+        return self.parseStmt();
+    }
+
+    /// `expr { … }` with the `{` at the cursor: the block's optional `|params|`
+    /// header, then its items. The group is a function boundary — settling may
+    /// yet make it a closure body.
+    fn parseJuxtaposition(self: *Parser, head: *Node) anyerror!*Node {
+        const start = self.tokens.start(self.tok);
+        try self.expect(.l_brace);
+        var params: []const ast.Param = &.{};
+        var has_header = false;
+        if (self.tokens.tag(self.tok) == .pipe) {
+            has_header = true;
+            self.advance();
+            const param_list = try self.parseParamsUntil(.pipe);
+            if (param_list.is_c_variadic) {
+                return self.failAt(param_list.tail_span, "C-variadic function pointers use '(fixed, ..) -> R abi(.c)'; Closure values carry an sx environment");
+            }
+            params = param_list.params;
+        }
+        const block = blk: {
+            const boundary = self.beginFunctionBoundary();
+            defer self.endFunctionBoundary(boundary);
+            break :blk try self.parseBraceBody(start, true);
+        };
+        const node = try self.createNode(head.span.start, .{ .juxtaposition = .{
+            .expr = head,
+            .block = block,
+            .params = params,
+            .type_params = try self.collectTypeParams(params),
+            .has_header = has_header,
+        } });
+        node.span.end = block.span.end;
+        return node;
+    }
+
+    /// Whether the `{` at the cursor attaches to `expr`. A head that owns its
+    /// own brace group never juxtaposes, and a juxtaposition does not stack.
+    fn juxtaposes(self: *Parser, expr: *const Node) bool {
+        switch (expr.data) {
+            .if_expr, .match_expr, .while_expr, .for_expr, .block, .juxtaposition, .struct_literal => return false,
+            else => {},
+        }
+        // Header contexts reserve their final brace group for the statement
+        // body, so a juxtaposition at the end of one is parenthesized:
+        // `if (Button {}) { … }`.
+        if (self.in_if_condition or self.in_for_header or self.in_match_subject) return false;
+        if (self.in_push_context) {
+            // `push` takes its body from the LAST group, so brace shape splits
+            // `push Context { a = x } { body }` from `push ctx { body }`.
+            if (!self.braceLooksLikeAggregateBody()) return false;
+            return !(self.braceIsEmpty() and expr.data == .field_access);
+        }
+        return !self.no_juxtaposition;
     }
 
     /// Consume the terminator after an expression: the written `;`, or one of
@@ -2778,12 +2844,15 @@ pub const Parser = struct {
         const block_form = switch (expr.data) {
             .if_expr => |ie| !ie.is_inline,
             .match_expr, .while_expr, .for_expr, .block, .jni_env_block => true,
-            // A call ending in a trailing block reads as a block statement
-            // (`vstack(8.0) { … }`) — no `;` required after the `}`.
-            .call => |call| call.args.len > 0 and call.args[call.args.len - 1].data == .trailing_block,
             else => false,
         };
         if (self.tokens.tag(self.tok) == .semicolon) {
+            self.advance();
+            return;
+        }
+        // Inside a juxtaposition's brace group, `,` separates items — the group
+        // is an aggregate body or a statement list, and only types tell which.
+        if (self.comma_separates_items and self.tokens.tag(self.tok) == .comma) {
             self.advance();
             return;
         }
@@ -2903,7 +2972,7 @@ pub const Parser = struct {
             }
 
             // Multi-target assignment: ident, expr, ... = expr, expr, ...;
-            if (self.tokens.tag(self.tok) == .comma) {
+            if (self.tokens.tag(self.tok) == .comma and !self.comma_separates_items) {
                 const first_target = try self.createNode(start, .{ .identifier = .{ .name = name, .is_raw = name_is_raw } });
                 return try self.parseMultiAssign(first_target, start);
             }
@@ -3159,7 +3228,7 @@ pub const Parser = struct {
         const expr = try self.parseExpr();
 
         // Multi-target assignment: expr, expr, ... = expr, expr, ...;
-        if (self.tokens.tag(self.tok) == .comma) {
+        if (self.tokens.tag(self.tok) == .comma and !self.comma_separates_items) {
             return try self.parseMultiAssign(expr, expr.span.start);
         }
 
@@ -3360,17 +3429,17 @@ pub const Parser = struct {
                 // a `(` group inside them never closes a for header.
                 self.advance();
                 const saved_hdr_args = self.in_for_header;
-                const saved_ntb_args = self.no_trailing_block;
+                const saved_njx_args = self.no_juxtaposition;
                 const saved_if_args = self.in_if_condition;
                 const saved_match_args = self.in_match_subject;
                 self.in_for_header = false;
-                self.no_trailing_block = false;
+                self.no_juxtaposition = false;
                 self.in_match_subject = false;
                 // Arguments may contain `Type{…}` / `string{…}` even when the
                 // call sits in an if/while header (`if f(Point{…}) {`).
                 self.in_if_condition = false;
                 defer self.in_for_header = saved_hdr_args;
-                defer self.no_trailing_block = saved_ntb_args;
+                defer self.no_juxtaposition = saved_njx_args;
                 defer self.in_if_condition = saved_if_args;
                 defer self.in_match_subject = saved_match_args;
                 var args = std.ArrayList(*Node).empty;
@@ -3400,71 +3469,16 @@ pub const Parser = struct {
                     }
                 }
                 try self.expect(.r_paren);
-                // Trailing block (specs: Trailing Blocks): `f(args) { body }`.
-                // The `{` must sit on the SAME LINE as `)` — a next-line
-                // `{` stays an ordinary scope block; disabled in header
-                // position (the OUTER context's flags — the resets above only
-                // govern the nested argument list). The block becomes a
-                // closure literal in a `trailing_block` marker appended as the
-                // last argument; the mapping pass binds it to the callee's
-                // last declared param, where its checks live.
-                // Use the OUTER if-header flag (`saved_if_args`), not the
-                // cleared `self.in_if_condition`: args may parse Type{} freely,
-                // but `if f(x) { body }` must not steal the if-body as a trailing
-                // block on `f`. `match f(x) { case … }` reads the same way.
-                if (self.tokens.tag(self.tok) == .l_brace and
-                    !saved_ntb_args and !saved_hdr_args and !saved_if_args and !saved_match_args and
-                    !self.tokens.flagsOf(self.tok).newline_left)
-                {
-                    // Same-line `{` after a call: trailing block OR parameterized
-                    // named aggregate `List(T){…}`. A `|` right after the `{`
-                    // is the block's parameter header and decides the group
-                    // before any body shape is weighed — an aggregate element
-                    // that is a closure is parenthesized (`T{ (|x| x) }`).
-                    // Otherwise prefer the aggregate when the brace body is
-                    // aggregate-shaped (fields / commas). An empty body carries
-                    // no shape and the gap says nothing, so an
-                    // argument-carrying call parks it in an `empty_brace_call`
-                    // for the callee to settle.
-                    const headered = self.peekNext() == .pipe;
-                    const shape = self.scanBraceShape();
-                    if (!headered and !shape.saw_token and args.items.len > 0) {
-                        const call = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
-                        const block = try self.parseBlock();
-                        expr = try self.createNode(expr.span.start, .{ .empty_brace_call = .{ .call = call, .block = block } });
-                        // Same as the trailing block below: only DOT-led postfix
-                        // continues the chain past the `}`.
-                        if (self.tokens.tag(self.tok) != .dot) break;
-                    } else if (!headered and braceShapeIsNamedAggregate(shape)) {
-                        expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
-                        // Fall through: next postfix iteration takes Type{}.
-                    } else {
-                        try args.append(self.allocator, try self.parseTrailingLambda());
-                        expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
-                        // After the block's `}` only DOT-led postfix
-                        // continues the chain (`f() { … }.map()`); every other
-                        // token ends it.
-                        if (self.tokens.tag(self.tok) != .dot) break;
-                    }
-                } else {
-                    expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
-                }
-            } else if (self.tokens.tag(self.tok) == .l_brace and !self.tokens.flagsOf(self.tok).newline_left and
-                self.shouldParseNamedAggregate(expr))
-            {
-                // Named aggregate: Type{ ... }. The `{` binds only on the same
-                // line as its head, the same rule the trailing block above
-                // follows.
-                // Contextual `.{...}` still starts with a leading dot in
-                // parsePrimary. Header contexts reserve their final `{` for the
-                // statement body (`if cond {`). Body-shape rejects statement
-                // blocks so `push self.dctx { body }` keeps the brace as the
-                // push body.
-                if (expr.data == .identifier) {
-                    expr = try self.parseStructLiteral(expr.data.identifier.name, null, expr.span.start);
-                } else {
-                    expr = try self.parseStructLiteral(null, expr, expr.span.start);
-                }
+                expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
+            } else if (self.tokens.tag(self.tok) == .l_brace and self.juxtaposes(expr)) {
+                // `expr { … }` — two adjacent expressions. Whether the block
+                // constructs an aggregate or fuses as a trailing block is a
+                // question for types, so both readings park in one node.
+                expr = try self.parseJuxtaposition(expr);
+                // Only DOT-led postfix continues the chain past the `}`
+                // (`f() { … }.map()`); every other token ends it. Infix
+                // continues in `parseBinary`, above this loop.
+                if (self.tokens.tag(self.tok) != .dot) break;
             } else if (self.tokens.tag(self.tok) == .dot) {
                 self.advance();
                 if (self.tokens.tag(self.tok) == .l_paren and expr.data == .tuple_type_expr) {
@@ -3492,19 +3506,33 @@ pub const Parser = struct {
                 } else if (self.tokens.tag(self.tok) == .l_brace) {
                     // `T{ fields }.{ stmts }` — self-trailing after a completed
                     // aggregate, binding the value pointer to the header name or
-                    // to `self`. Bare `T{}{ stmts }` is a plain post-scope with
-                    // no binding (set in parseStructLiteral).
+                    // to `self`. It attaches to a juxtaposition (settling copies
+                    // it onto the aggregate) or to a `.{ … }` primary.
                     // Separator-dot `Type.{…}` on a type designator is removed.
-                    if (expr.data == .struct_literal) {
-                        if (expr.data.struct_literal.init_block != null) {
+                    if (expr.data == .juxtaposition or expr.data == .struct_literal) {
+                        const attached = switch (expr.data) {
+                            .juxtaposition => |jx| jx.init_block != null,
+                            .struct_literal => |sl| sl.init_block != null,
+                            else => unreachable,
+                        };
+                        if (attached) {
                             return self.fail("a struct literal already has a following block");
                         }
                         const start = self.tokens.start(self.tok);
                         try self.expect(.l_brace);
                         const name = try self.parseSelfBinder();
                         const block = try self.parseBlockBody(start);
-                        expr.data.struct_literal.init_block = block;
-                        expr.data.struct_literal.init_block_self = name;
+                        switch (expr.data) {
+                            .juxtaposition => |*jx| {
+                                jx.init_block = block;
+                                jx.init_block_self = name;
+                            },
+                            .struct_literal => |*sl| {
+                                sl.init_block = block;
+                                sl.init_block_self = name;
+                            },
+                            else => unreachable,
+                        }
                         expr.span.end = block.span.end;
                     } else if (isNamedAggregatePrefix(expr)) {
                         return self.failNamedAggregateDot();
@@ -4019,16 +4047,16 @@ pub const Parser = struct {
                 // normally even within for/if/match/push headers (`if (Button{}) {`).
                 const saved_hdr_grp = self.in_for_header;
                 const saved_if_grp = self.in_if_condition;
-                const saved_ntb_grp = self.no_trailing_block;
+                const saved_njx_grp = self.no_juxtaposition;
                 const saved_match_grp = self.in_match_subject;
                 self.in_for_header = false;
                 self.in_if_condition = false;
-                self.no_trailing_block = false;
+                self.no_juxtaposition = false;
                 self.in_match_subject = false;
                 defer {
                     self.in_for_header = saved_hdr_grp;
                     self.in_if_condition = saved_if_grp;
-                    self.no_trailing_block = saved_ntb_grp;
+                    self.no_juxtaposition = saved_njx_grp;
                     self.in_match_subject = saved_match_grp;
                 }
 
@@ -4325,10 +4353,10 @@ pub const Parser = struct {
             const binding_is_raw = self.tokens.flagsOf(self.tok).is_raw;
             self.advance(); // skip identifier
             self.advance(); // skip :=
-            const saved_ntb = self.no_trailing_block;
-            self.no_trailing_block = true;
+            const saved_njx = self.no_juxtaposition;
+            self.no_juxtaposition = true;
             const source_expr = try self.parseExpr();
-            self.no_trailing_block = saved_ntb;
+            self.no_juxtaposition = saved_njx;
             const body = try self.parseBlock();
             return try self.createNode(start, .{ .while_expr = .{
                 .condition = source_expr,
@@ -4339,10 +4367,10 @@ pub const Parser = struct {
             } });
         }
 
-        const saved_ntb = self.no_trailing_block;
-        self.no_trailing_block = true;
+        const saved_njx = self.no_juxtaposition;
+        self.no_juxtaposition = true;
         const condition = try self.parseExpr();
-        self.no_trailing_block = saved_ntb;
+        self.no_juxtaposition = saved_njx;
         const body = try self.parseBlock();
 
         return try self.createNode(start, .{ .while_expr = .{
@@ -4355,16 +4383,15 @@ pub const Parser = struct {
         const start = self.tokens.start(self.tok);
         self.advance(); // skip 'push'
 
-        // No call trailing on the context expr (`push f() {` must not bind the
-        // body to `f`). Named aggregates ARE allowed so
-        // `push Context{ fields } { body }` parses; init_block attach is off
-        // during the context expr so the following `{ body }` is the push body.
-        const saved_ntb = self.no_trailing_block;
+        // `push` owns the LAST brace group as its body. Brace shape inside the
+        // context expression splits `push Context { a = x } { body }` — one
+        // juxtaposition, then the body — from `push ctx { body }`.
+        const saved_njx = self.no_juxtaposition;
         const saved_push = self.in_push_context;
-        self.no_trailing_block = true;
+        self.no_juxtaposition = true;
         self.in_push_context = true;
         const context_expr = try self.parseExpr();
-        self.no_trailing_block = saved_ntb;
+        self.no_juxtaposition = saved_njx;
         self.in_push_context = saved_push;
 
         const body = try self.parseBlock();
@@ -4833,42 +4860,6 @@ pub const Parser = struct {
             .return_type = return_type,
             .body = body,
             .type_params = type_params,
-        } });
-    }
-
-    /// `{ |params| stmts }` — the `trailing_block` argument, with the `{` at
-    /// the cursor. The header spells the same parameter list a `|…|` closure
-    /// literal does; without it the closure is zero-param. `has_header` is
-    /// true when a `|` opened the list, including empty `| |`.
-    fn parseTrailingLambda(self: *Parser) anyerror!*Node {
-        const start = self.tokens.start(self.tok);
-        try self.expect(.l_brace);
-        var params: []const ast.Param = &.{};
-        var has_header = false;
-        if (self.tokens.tag(self.tok) == .pipe) {
-            has_header = true;
-            self.advance();
-            const param_list = try self.parseParamsUntil(.pipe);
-            if (param_list.is_c_variadic) {
-                return self.failAt(param_list.tail_span, "C-variadic function pointers use '(fixed, ..) -> R abi(.c)'; Closure values carry an sx environment");
-            }
-            params = param_list.params;
-        }
-        const body = blk: {
-            const boundary = self.beginFunctionBoundary();
-            defer self.endFunctionBoundary(boundary);
-            break :blk try self.parseBlockBody(start);
-        };
-        const type_params = try self.collectTypeParams(params);
-        const lambda = try self.createNode(start, .{ .lambda = .{
-            .params = params,
-            .return_type = null,
-            .body = body,
-            .type_params = type_params,
-        } });
-        return try self.createNode(start, .{ .trailing_block = .{
-            .lambda = lambda,
-            .has_header = has_header,
         } });
     }
 
@@ -5462,10 +5453,9 @@ pub const Parser = struct {
         return info.comparison;
     }
 
-    /// Prefix shapes that may take a named aggregate body `Type{...}`:
-    /// bare type name, qualified type, type application node, or a call that
-    /// stands for a parameterized type designator `F(args)` in expression
-    /// position (the shape `List(i64){}` takes).
+    /// The head shapes a separator-dot `Type.{…}` could have been written for,
+    /// which get the fix-it to the compact spelling rather than the generic
+    /// message.
     fn isNamedAggregatePrefix(expr: *const Node) bool {
         return switch (expr.data) {
             // Enum/variant heads (`.key{…}`, `Ev.key{…}`) share the compact
@@ -5475,39 +5465,13 @@ pub const Parser = struct {
         };
     }
 
-    /// Header contexts (`if cond {`, `while cond {`, `for … {`, `match s {`)
-    /// reserve the final brace group for the statement body — a bare `Type{}`
-    /// at the end of the header would steal it, so parenthesize:
-    /// `if (Button{}) {`.
-    /// `push` is different: `push Context{ fields } { body }` is legal; the
-    /// second brace is the push body (not an init_block on the context expr).
-    fn namedAggregateAllowedHere(self: *const Parser) bool {
-        if (self.in_if_condition or self.in_for_header or self.in_match_subject) return false;
-        if (self.in_push_context) return true;
-        return !self.no_trailing_block;
-    }
-
-    /// Whether `{` after `expr` should start a named aggregate (vs a push body).
-    /// Outside `push`, any aggregate-prefix + allowed header context takes `{`
-    /// as `Type{…}`. Inside `push`, body shape decides so
-    /// `push self.dctx { stmts }` keeps the brace as the push body while
-    /// `push Context{ fields } { body }` still parses the fields aggregate.
-    fn shouldParseNamedAggregate(self: *Parser, expr: *const Node) bool {
-        if (!isNamedAggregatePrefix(expr) or !self.namedAggregateAllowedHere()) return false;
-        if (!self.in_push_context) return true;
-        if (!self.braceLooksLikeAggregateBody()) return false;
-        // Empty `{}` after a value field access is the push body, not Type{}.
-        if (self.braceIsEmpty() and expr.data == .field_access) return false;
-        return true;
-    }
-
     fn braceIsEmpty(self: *Parser) bool {
         if (self.tokens.tag(self.tok) != .l_brace) return false;
         return self.tokens.tag(self.tokens.next(self.tok)) == .r_brace;
     }
 
-    /// The markers a brace group carries at its OWN top level — what tells an
-    /// aggregate body (field inits, element commas) from a statement list.
+    /// The markers a brace group carries at its OWN top level — what tells a
+    /// construction body (field inits, element commas) from a `push` body.
     /// `push` stays apart from the other statement heads because it can also
     /// name a field (`Pair(i64){ push = 7 }`).
     const BraceShape = struct {
@@ -5572,30 +5536,13 @@ pub const Parser = struct {
         return shape;
     }
 
-    /// Peek whether the brace group at `current` is aggregate-shaped (fields /
-    /// commas / empty) vs statement-shaped (`;`, `:=`, statement keywords).
+    /// Peek whether the brace group at `current` is construction-shaped (fields
+    /// / commas / empty) vs statement-shaped (`;`, `:=`, statement keywords).
     fn braceLooksLikeAggregateBody(self: *Parser) bool {
         if (self.tokens.tag(self.tok) != .l_brace) return false;
         const shape = self.scanBraceShape();
         if (!shape.saw_token) return true; // empty `{}` is aggregate-shaped
         if (shape.semi or shape.stmt_kw or shape.push_kw or shape.colon_eq) return false;
-        return shape.field_eq or shape.comma;
-    }
-
-    /// Whether the body a call's `{` opens is a named-aggregate body rather
-    /// than a trailing-block statement list.
-    ///
-    /// - empty / comment-only `{}` → trailing; only zero-arg `f() {}` arrives
-    ///   empty here (`T{}` is the empty aggregate), since an argument-carrying
-    ///   call parks its empty body in an `empty_brace_call`
-    /// - top-level `;` or statement-lead keywords → trailing (`vstack() { a; }`)
-    /// - top-level `name =` or top-level `,` → aggregate (`Plan{ x = 1 }`, `T{1, 2}`)
-    /// - otherwise → trailing (statement blocks that omit `;` after `if`/`for`)
-    fn braceShapeIsNamedAggregate(shape: BraceShape) bool {
-        if (!shape.saw_token) return false;
-        // Statement markers force trailing even when an assignment `x = e`
-        // looks like a field init (`slot = Label{…};` inside a build block).
-        if (shape.semi or shape.stmt_kw or shape.colon_eq) return false;
         return shape.field_eq or shape.comma;
     }
 
@@ -7160,7 +7107,7 @@ test "full failable function parses end-to-end (every failable form)" {
     try std.testing.expect(then_block.data.block.stmts[0].data == .raise_stmt);
 }
 
-test "parse named aggregate Type{ fields } without separator dot" {
+test "parse Type{ fields } as a juxtaposition" {
     const source =
         \\Point :: struct { x: i64; y: i64; }
         \\main :: () {
@@ -7177,23 +7124,22 @@ test "parse named aggregate Type{ fields } without separator dot" {
     const stmts = body.data.block.stmts;
     try std.testing.expect(stmts[0].data == .var_decl);
     const p_init = stmts[0].data.var_decl.value.?;
-    try std.testing.expect(p_init.data == .struct_literal);
-    try std.testing.expectEqualStrings("Point", p_init.data.struct_literal.struct_name.?);
-    try std.testing.expectEqual(@as(usize, 2), p_init.data.struct_literal.field_inits.len);
+    try std.testing.expect(p_init.data == .juxtaposition);
+    try std.testing.expectEqualStrings("Point", p_init.data.juxtaposition.expr.data.identifier.name);
+    try std.testing.expectEqual(@as(usize, 2), p_init.data.juxtaposition.block.data.block.stmts.len);
     const q_init = stmts[1].data.var_decl.value.?;
-    try std.testing.expect(q_init.data == .struct_literal);
-    try std.testing.expectEqual(@as(usize, 0), q_init.data.struct_literal.field_inits.len);
-    // Contextual .{} remains
+    try std.testing.expect(q_init.data == .juxtaposition);
+    try std.testing.expectEqual(@as(usize, 0), q_init.data.juxtaposition.block.data.block.stmts.len);
+    // Contextual .{} is a primary, not a juxtaposition.
     const r_init = stmts[2].data.var_decl.value.?;
     try std.testing.expect(r_init.data == .struct_literal);
     try std.testing.expect(r_init.data.struct_literal.struct_name == null);
     try std.testing.expect(r_init.data.struct_literal.type_expr == null);
 }
 
-test "parse empty brace after an argument call as the undecided carrier" {
+test "parse an empty brace after an argument call as a juxtaposition" {
     // Neither spelling decides: tight, spaced, a wide gap, a type-expr
-    // argument, a value argument, a lowercase or PascalCase callee, and `*x`
-    // all park in one `empty_brace_call` for the callee to settle.
+    // argument, a value argument, a lowercase or PascalCase callee, and `*x`.
     const source =
         \\main :: () {
         \\  a := List(i64){};
@@ -7213,15 +7159,15 @@ test "parse empty brace after an argument call as the undecided carrier" {
     const body = root.data.root.decls[0].data.fn_decl.body;
     for (body.data.block.stmts) |stmt| {
         const init_expr = stmt.data.var_decl.value.?;
-        try std.testing.expect(init_expr.data == .empty_brace_call);
-        const carrier = init_expr.data.empty_brace_call;
-        try std.testing.expect(carrier.call.data == .call);
-        try std.testing.expectEqual(@as(usize, 1), carrier.call.data.call.args.len);
-        try std.testing.expectEqual(@as(usize, 0), carrier.block.data.block.stmts.len);
+        try std.testing.expect(init_expr.data == .juxtaposition);
+        const jx = init_expr.data.juxtaposition;
+        try std.testing.expect(jx.expr.data == .call);
+        try std.testing.expectEqual(@as(usize, 1), jx.expr.data.call.args.len);
+        try std.testing.expectEqual(@as(usize, 0), jx.block.data.block.stmts.len);
     }
 }
 
-test "parse comment-only body is an undecided carrier too" {
+test "parse a comment-only body as a juxtaposition too" {
     const source =
         \\main :: () {
         \\  b := Box(pair){ // nothing yet
@@ -7234,11 +7180,11 @@ test "parse comment-only body is an undecided carrier too" {
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
-    try std.testing.expect(init_expr.data == .empty_brace_call);
+    try std.testing.expect(init_expr.data == .juxtaposition);
 }
 
-test "parse undecided carrier continues only on a dot" {
-    // `.len` chains onto the carrier; the next statement starts on its own.
+test "parse a juxtaposition continues only on a dot" {
+    // `.len` chains onto the juxtaposition; the next statement starts on its own.
     const source =
         \\main :: () {
         \\  n := List(i64){}.len;
@@ -7254,17 +7200,19 @@ test "parse undecided carrier continues only on a dot" {
     try std.testing.expectEqual(@as(usize, 3), stmts.len);
     const chained = stmts[0].data.var_decl.value.?;
     try std.testing.expect(chained.data == .field_access);
-    try std.testing.expect(chained.data.field_access.object.data == .empty_brace_call);
-    try std.testing.expect(stmts[1].data == .empty_brace_call);
+    try std.testing.expect(chained.data.field_access.object.data == .juxtaposition);
+    try std.testing.expect(stmts[1].data == .juxtaposition);
 }
 
-test "parse non-empty body after a call keeps its parse-time reading" {
-    // A body with an aggregate marker at its own top level is the aggregate;
-    // one with statement shape is the trailing block. Both are decided here.
+test "parse a juxtaposition does not stack" {
+    // `T { fields } { stmts }` is the aggregate, then an ordinary scope — with
+    // the `;` that ends the first statement.
     const source =
         \\main :: () {
-        \\  b := Box(i64){ pair(1, 2), };
-        \\  vstack(8) { tappable(hit, on_tap) }
+        \\  p := T { x = 1 };
+        \\  {
+        \\    work();
+        \\  }
         \\}
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -7272,17 +7220,94 @@ test "parse non-empty body after a call keeps its parse-time reading" {
     var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const stmts = root.data.root.decls[0].data.fn_decl.body.data.block.stmts;
-    const agg = stmts[0].data.var_decl.value.?;
-    try std.testing.expect(agg.data == .struct_literal);
-    try std.testing.expect(agg.data.struct_literal.type_expr.?.data == .call);
-    try std.testing.expect(stmts[1].data == .call);
-    const args = stmts[1].data.call.args;
-    try std.testing.expect(args[args.len - 1].data == .trailing_block);
-    try std.testing.expect(!args[args.len - 1].data.trailing_block.has_header);
+    try std.testing.expectEqual(@as(usize, 2), stmts.len);
+    try std.testing.expect(stmts[0].data.var_decl.value.?.data == .juxtaposition);
+    try std.testing.expect(stmts[1].data == .block);
 }
 
-test "parse zero-arg empty brace as trailing even when tight" {
-    // `f(){}` has no arguments to apply — `T{}` is the empty aggregate.
+test "a second brace group on one line wants the terminator" {
+    try expectParseErrorAt(
+        "main :: () { p := T { x = 1 } { work(); } }",
+        "expected ';'",
+        30,
+    );
+}
+
+test "parse a statement ending in a juxtaposition takes its terminator" {
+    const source =
+        \\main :: () {
+        \\  identity.begin_build();
+        \\  {
+        \\    work();
+        \\  }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmts = root.data.root.decls[0].data.fn_decl.body.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 2), stmts.len);
+    try std.testing.expect(stmts[0].data == .call);
+    try std.testing.expect(stmts[1].data == .block);
+}
+
+test "parse a wrapped brace juxtaposes the same way" {
+    const source =
+        \\main :: () {
+        \\  screen := vstack(12.0)
+        \\  {
+        \\    Label { text = "x" };
+        \\  };
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmts = root.data.root.decls[0].data.fn_decl.body.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 1), stmts.len);
+    const jx = stmts[0].data.var_decl.value.?.data.juxtaposition;
+    try std.testing.expect(jx.expr.data == .call);
+    try std.testing.expectEqual(@as(usize, 1), jx.block.data.block.stmts.len);
+    try std.testing.expect(jx.block.data.block.stmts[0].data == .juxtaposition);
+}
+
+test "infix continues past a juxtaposition's brace" {
+    const source =
+        \\main :: () {
+        \\  n := f() { } + x;
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmts = root.data.root.decls[0].data.fn_decl.body.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 1), stmts.len);
+    const sum = stmts[0].data.var_decl.value.?;
+    try std.testing.expect(sum.data == .binary_op and sum.data.binary_op.op == .add);
+    try std.testing.expect(sum.data.binary_op.lhs.data == .juxtaposition);
+}
+
+test "an if value does not juxtapose" {
+    const source =
+        \\main :: () {
+        \\  x := if true { 1 } else { 2 }
+        \\  { print("{}", x); }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmts = root.data.root.decls[0].data.fn_decl.body.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 2), stmts.len);
+    try std.testing.expect(stmts[0].data.var_decl.value.?.data == .if_expr);
+    try std.testing.expect(stmts[1].data == .block);
+}
+
+test "parse a zero-arg empty brace as a juxtaposition" {
     const source =
         \\f :: (body: Closure()) { body(); }
         \\main :: () { f(){} }
@@ -7292,13 +7317,13 @@ test "parse zero-arg empty brace as trailing even when tight" {
     var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const body = root.data.root.decls[1].data.fn_decl.body;
-    const call = body.data.block.stmts[0];
-    try std.testing.expect(call.data == .call);
-    try std.testing.expect(call.data.call.args[0].data == .trailing_block);
-    try std.testing.expect(!call.data.call.args[0].data.trailing_block.has_header);
+    const jx = body.data.block.stmts[0];
+    try std.testing.expect(jx.data == .juxtaposition);
+    try std.testing.expect(jx.data.juxtaposition.expr.data == .call);
+    try std.testing.expect(!jx.data.juxtaposition.has_header);
 }
 
-test "a trailing block's header is its closure's parameter list" {
+test "a juxtaposed block's header is its closure's parameter list" {
     const source =
         \\main :: () {
         \\  each(xs) { |x: i64, k| print("{}\n", x + k); }
@@ -7308,20 +7333,17 @@ test "a trailing block's header is its closure's parameter list" {
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
-    const call = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
-    const args = call.data.call.args;
-    const tb = args[args.len - 1].data.trailing_block;
-    try std.testing.expect(tb.has_header);
-    const lam = tb.lambda.data.lambda;
-    try std.testing.expectEqual(@as(usize, 2), lam.params.len);
-    try std.testing.expectEqualStrings("x", lam.params[0].name);
-    try std.testing.expectEqualStrings("i64", lam.params[0].type_expr.data.type_expr.name);
-    try std.testing.expectEqualStrings("k", lam.params[1].name);
-    try std.testing.expect(lam.params[1].type_expr.data == .inferred_type);
-    try std.testing.expect(lam.body.data == .block);
+    const jx = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0].data.juxtaposition;
+    try std.testing.expect(jx.has_header);
+    try std.testing.expectEqual(@as(usize, 2), jx.params.len);
+    try std.testing.expectEqualStrings("x", jx.params[0].name);
+    try std.testing.expectEqualStrings("i64", jx.params[0].type_expr.data.type_expr.name);
+    try std.testing.expectEqualStrings("k", jx.params[1].name);
+    try std.testing.expect(jx.params[1].type_expr.data == .inferred_type);
+    try std.testing.expect(jx.block.data == .block);
 }
 
-test "a trailing header is a function boundary inside a defer body" {
+test "a juxtaposed header is a function boundary inside a defer body" {
     const source =
         \\main :: () {
         \\  defer { each(xs) { |x| return; } }
@@ -7332,13 +7354,12 @@ test "a trailing header is a function boundary inside a defer body" {
     var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const defer_stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
-    const call = defer_stmt.data.defer_stmt.expr.data.block.stmts[0];
-    const tb = call.data.call.args[call.data.call.args.len - 1].data.trailing_block;
-    try std.testing.expect(tb.has_header);
-    try std.testing.expectEqual(@as(usize, 1), tb.lambda.data.lambda.params.len);
+    const jx = defer_stmt.data.defer_stmt.expr.data.block.stmts[0].data.juxtaposition;
+    try std.testing.expect(jx.has_header);
+    try std.testing.expectEqual(@as(usize, 1), jx.params.len);
 }
 
-test "an empty pipe pair is a trailing header" {
+test "an empty pipe pair is a juxtaposed header" {
     const source =
         \\main :: () {
         \\  each(xs) { || }
@@ -7348,33 +7369,12 @@ test "an empty pipe pair is a trailing header" {
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
-    const call = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
-    const tb = call.data.call.args[call.data.call.args.len - 1].data.trailing_block;
-    try std.testing.expect(tb.has_header);
-    try std.testing.expectEqual(@as(usize, 0), tb.lambda.data.lambda.params.len);
+    const jx = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0].data.juxtaposition;
+    try std.testing.expect(jx.has_header);
+    try std.testing.expectEqual(@as(usize, 0), jx.params.len);
 }
 
-test "a header decides the group ahead of the aggregate shape" {
-    // `Box(C){ e, }` is the aggregate; the same spelling under a header is the
-    // trailing block.
-    const source =
-        \\main :: () {
-        \\  b := Box(C){ (|x| x), };
-        \\  Box(C){ |x| use(x); }
-        \\}
-    ;
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), source);
-    const root = try parser.parse();
-    const stmts = root.data.root.decls[0].data.fn_decl.body.data.block.stmts;
-    try std.testing.expect(stmts[0].data.var_decl.value.?.data == .struct_literal);
-    const args = stmts[1].data.call.args;
-    try std.testing.expect(args[args.len - 1].data == .trailing_block);
-    try std.testing.expect(args[args.len - 1].data.trailing_block.has_header);
-}
-
-test "parse compound and multi-argument type applications as carriers" {
+test "parse compound and multi-argument type applications as juxtapositions" {
     // `[]u8` → slice_type_expr; `?i64` → optional_type_expr;
     // `(i64) -> i64` → function_type_expr; `Vec(3, f32)` mixes value + type
     // args. Every shape reaches the callee the same way.
@@ -7394,8 +7394,8 @@ test "parse compound and multi-argument type applications as carriers" {
     const body = root.data.root.decls[0].data.fn_decl.body;
     for (body.data.block.stmts) |stmt| {
         const init_expr = stmt.data.var_decl.value.?;
-        try std.testing.expect(init_expr.data == .empty_brace_call);
-        try std.testing.expect(init_expr.data.empty_brace_call.call.data == .call);
+        try std.testing.expect(init_expr.data == .juxtaposition);
+        try std.testing.expect(init_expr.data.juxtaposition.expr.data == .call);
     }
 }
 
@@ -7414,7 +7414,7 @@ test "parse rejects separator-dot Type.{}" {
     try std.testing.expect(std.mem.indexOf(u8, parser.err_msg.?, "named aggregate") != null);
 }
 
-test "parse aggregate self-trailing via dot binds self" {
+test "parse a self-trailing block on a juxtaposition binds self" {
     const source =
         \\main :: () {
         \\  b := Button{ label = "x" }.{
@@ -7428,9 +7428,9 @@ test "parse aggregate self-trailing via dot binds self" {
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
-    try std.testing.expect(init_expr.data == .struct_literal);
-    try std.testing.expect(init_expr.data.struct_literal.init_block != null);
-    try std.testing.expectEqualStrings("self", init_expr.data.struct_literal.init_block_self.?);
+    try std.testing.expect(init_expr.data == .juxtaposition);
+    try std.testing.expect(init_expr.data.juxtaposition.init_block != null);
+    try std.testing.expectEqualStrings("self", init_expr.data.juxtaposition.init_block_self.?);
 }
 
 test "a self-trailing header names the binding" {
@@ -7447,8 +7447,24 @@ test "a self-trailing header names the binding" {
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
-    try std.testing.expectEqualStrings("btn", init_expr.data.struct_literal.init_block_self.?);
-    try std.testing.expectEqual(@as(usize, 1), init_expr.data.struct_literal.init_block.?.data.block.stmts.len);
+    try std.testing.expectEqualStrings("btn", init_expr.data.juxtaposition.init_block_self.?);
+    try std.testing.expectEqual(@as(usize, 1), init_expr.data.juxtaposition.init_block.?.data.block.stmts.len);
+}
+
+test "a self-trailing block on a contextual literal stays a struct literal" {
+    const source =
+        \\main :: () {
+        \\  use(.{ f }.{ |s| s.f = 2; });
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const call = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    const arg = call.data.call.args[0];
+    try std.testing.expect(arg.data == .struct_literal);
+    try std.testing.expectEqualStrings("s", arg.data.struct_literal.init_block_self.?);
 }
 
 test "a self-trailing header binds one name" {
@@ -7459,26 +7475,15 @@ test "a self-trailing header binds one name" {
     );
 }
 
-test "parse aggregate bare post-scope does not bind self" {
-    const source =
-        \\main :: () {
-        \\  b := Button{ label = "x" } {
-        \\    x := 1;
-        \\  };
-        \\}
-    ;
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), source);
-    const root = try parser.parse();
-    const body = root.data.root.decls[0].data.fn_decl.body;
-    const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
-    try std.testing.expect(init_expr.data == .struct_literal);
-    try std.testing.expect(init_expr.data.struct_literal.init_block != null);
-    try std.testing.expect(init_expr.data.struct_literal.init_block_self == null);
+test "a second self-trailing block is refused" {
+    try expectParseErrorAt(
+        "main :: () { b := Button{ label = \"x\" }.{ self.a = 1; }.{ self.b = 2; }; }",
+        "a struct literal already has a following block",
+        56,
+    );
 }
 
-test "parse push Context{ fields } { body } without parens" {
+test "parse push Context { fields } { body } without parens" {
     const source =
         \\main :: () {
         \\  push Context{ allocator = context.allocator } {
@@ -7493,9 +7498,30 @@ test "parse push Context{ fields } { body } without parens" {
     const body = root.data.root.decls[0].data.fn_decl.body;
     const stmt = body.data.block.stmts[0];
     try std.testing.expect(stmt.data == .push_stmt);
-    try std.testing.expect(stmt.data.push_stmt.context_expr.data == .struct_literal);
-    try std.testing.expect(stmt.data.push_stmt.context_expr.data.struct_literal.init_block == null);
+    const ctx = stmt.data.push_stmt.context_expr;
+    try std.testing.expect(ctx.data == .juxtaposition);
+    try std.testing.expect(ctx.data.juxtaposition.init_block == null);
     try std.testing.expect(stmt.data.push_stmt.body.data == .block);
+}
+
+test "parse push over a value keeps the brace as the body" {
+    const source =
+        \\main :: () {
+        \\  push ctx { x := 1; }
+        \\  push self.dctx { y := 2; }
+        \\  push .{ allocator = a } { z := 3; }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmts = root.data.root.decls[0].data.fn_decl.body.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 3), stmts.len);
+    try std.testing.expect(stmts[0].data.push_stmt.context_expr.data == .identifier);
+    try std.testing.expect(stmts[1].data.push_stmt.context_expr.data == .field_access);
+    try std.testing.expect(stmts[2].data.push_stmt.context_expr.data == .struct_literal);
+    for (stmts) |s| try std.testing.expectEqual(@as(usize, 1), s.data.push_stmt.body.data.block.stmts.len);
 }
 
 test "parse if cond { body } is not Type{}" {

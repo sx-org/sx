@@ -1194,7 +1194,7 @@ test "parser: a postfix `!` binds only on its own line" {
 // A named aggregate's `{` binds only on the same line as its head. Across
 // a break the head is an expression of its own and the brace is a scope block,
 // whatever the head was: a type name, a type application, or a value call.
-test "parser: a named aggregate `{` binds only on its head's line" {
+test "parser: `;` cuts a statement off from the brace group after it" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1210,8 +1210,6 @@ test "parser: a named aggregate `{` binds only on its head's line" {
     try std.testing.expect(type_name.data.block.stmts[0].data == .identifier);
     try std.testing.expect(type_name.data.block.stmts[1].data == .block);
 
-    // The `mk()` fall-through: the next-line brace already failed the trailing
-    // block's same-line test, and it is not stolen as an aggregate either.
     const value_call = try parseBody(alloc,
         \\f :: () -> i64 {
         \\    mk();
@@ -1234,29 +1232,39 @@ test "parser: a named aggregate `{` binds only on its head's line" {
     try std.testing.expect(type_app.data.block.stmts[0].data == .call);
     try std.testing.expect(type_app.data.block.stmts[1].data == .block);
 
-    // Same-line controls: the aggregate and the trailing block both still bind.
+    // Without the `;` the statement is still open, so the brace juxtaposes
+    // across the break.
+    const wrapped = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    Box(i64)
+        \\    { g() }
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 1), wrapped.data.block.stmts.len);
+    try std.testing.expect(wrapped.data.block.stmts[0].data == .juxtaposition);
+
     const aggregate = try parseBody(alloc,
         \\f :: () -> i64 {
         \\    Pair{ a = 1, b = 2 }
         \\}
     );
-    try std.testing.expect(aggregate.data.block.stmts[0].data == .struct_literal);
+    try std.testing.expect(aggregate.data.block.stmts[0].data == .juxtaposition);
 
     const applied = try parseBody(alloc,
         \\f :: () -> i64 {
         \\    Box(i64){ v = 1 }
         \\}
     );
-    try std.testing.expect(applied.data.block.stmts[0].data == .struct_literal);
+    try std.testing.expect(applied.data.block.stmts[0].data == .juxtaposition);
 
     const trailing = try parseBody(alloc,
         \\f :: () -> i64 {
         \\    vstack(8) { g() }
         \\}
     );
-    const call = trailing.data.block.stmts[0].data.call;
-    try std.testing.expect(call.args[call.args.len - 1].data == .trailing_block);
-    try std.testing.expect(!call.args[call.args.len - 1].data.trailing_block.has_header);
+    const jx = trailing.data.block.stmts[0].data.juxtaposition;
+    try std.testing.expect(jx.expr.data == .call);
+    try std.testing.expect(!jx.has_header);
 }
 
 // ---- Must-continue locks ----
@@ -1452,7 +1460,7 @@ test "parser: values inside fixed delimiters read through a line break" {
         \\}
     );
     try std.testing.expectEqual(@as(usize, 2), agg.data.block.stmts.len);
-    try std.testing.expect(agg.data.block.stmts[0].data.var_decl.value.?.data == .struct_literal);
+    try std.testing.expect(agg.data.block.stmts[0].data.var_decl.value.?.data == .juxtaposition);
 }
 
 // The dot-led postfixes chain across a break, on the paths that own them.

@@ -1,5 +1,5 @@
 first: 2041-fluent-init-site.sx:32 in 2041-fluent-init-site.two_sites ordinal 5 parity=true
-second: 2041-fluent-init-site.sx:33 in 2041-fluent-init-site.two_sites ordinal 11 parity=true
+second: 2041-fluent-init-site.sx:33 in 2041-fluent-init-site.two_sites ordinal 15 parity=true
 generic Button: 2041-fluent-init-site.sx:39 in 2041-fluent-init-site.relay ordinal 7 parity=true
 generic i64: 2041-fluent-init-site.sx:39 in 2041-fluent-init-site.relay ordinal 7 parity=true
 loop: 2041-fluent-init-site.sx:45 in 2041-fluent-init-site.looped ordinal 9 parity=true

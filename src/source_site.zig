@@ -187,6 +187,14 @@ pub const SiteIndex = struct {
         return self.sites.get(node);
     }
 
+    /// Give `node` the site `written` carries. The closure a juxtaposition's
+    /// block becomes is minted during lowering, after this pass — it is the
+    /// same written block, so it is the same site.
+    pub fn adopt(self: *SiteIndex, node: *const Node, written: *const Node) void {
+        const site = self.sites.get(written) orelse return;
+        self.sites.put(self.alloc, node, site) catch {};
+    }
+
     /// The cached prefix for a declaration, for extending a site's ordinal
     /// under an `inline` expansion without re-hashing the source strings.
     pub fn prefixFor(self: *const SiteIndex, declaration: []const u8) ?u64 {
@@ -554,9 +562,10 @@ fn walk(b: *Builder, node: *const Node) anyerror!void {
             try walk(b, l.body);
         },
         .trailing_block => |tb| try walk(b, tb.lambda),
-        .empty_brace_call => |ebc| {
-            try walk(b, ebc.call);
-            try walk(b, ebc.block);
+        .juxtaposition => |jx| {
+            try walk(b, jx.expr);
+            try walk(b, jx.block);
+            if (jx.init_block) |ib| try walk(b, ib);
         },
 
         .root => |r| for (r.decls) |d| try walkModuleDecl(b, d),
