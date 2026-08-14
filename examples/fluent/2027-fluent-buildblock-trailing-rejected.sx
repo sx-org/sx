@@ -6,7 +6,7 @@
 // trailing block the compiler forms one from, or a block the caller already
 // received. An ordinary value is neither, and supplying both at once is
 // ambiguous — each is refused at the argument. A build block is replayed
-// against a sink rather than called, so it takes no parameter header.
+// against a sink rather than called, so it takes no parameter header. An empty `| |` is a header.
 #import "modules/std.sx";
 #import "modules/fluent.sx";
 
@@ -29,5 +29,6 @@ main :: () -> i32 {
     column(7);                // refused: a value is not a build block
     both() { false; };        // refused: rule 1 and rule 2 at one parameter
     column() { |x| false; };  // refused: a build block takes no header
+    column() { || false; };   // refused: empty `| |` is a header
     0
 }

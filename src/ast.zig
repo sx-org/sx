@@ -963,6 +963,8 @@ pub const NamedArg = struct {
 /// callee's last declared parameter, which is where its checks live.
 pub const TrailingBlock = struct {
     lambda: *Node,
+    /// True when the source wrote `|…|` after `{`, including empty `| |`.
+    has_header: bool = false,
 };
 
 /// `F(args){}` / `F(args) {}` — an argument-carrying call followed by a

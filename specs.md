@@ -5571,8 +5571,9 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
 - **Header**: a `|params|` header directly after the `{` declares the closure's
   parameters, spelled exactly as a `|…|` closure literal spells them
   (annotations and defaults included). Without a header the closure is
-  zero-param. The header's arity must match the parameter's `Closure(…)`, and a
-  build block takes no header — it is replayed against a sink, never called.
+  zero-param. An empty `| |` is a header with zero parameters. The header's
+  arity must match the parameter's `Closure(…)`, and a build block takes no
+  header — it is replayed against a sink, never called.
 - **Header decides the group**: where a `{` could open either a parameterized
   named aggregate or a trailing block (`List(T){…}` vs `run(2) { … }`), a `|`
   right after the `{` settles it as the block, ahead of any body shape. A

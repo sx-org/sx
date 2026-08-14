@@ -3501,8 +3501,7 @@ pub const Parser = struct {
                         expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                         // Fall through: next postfix iteration takes Type{}.
                     } else {
-                        const lambda = try self.parseTrailingLambda();
-                        try args.append(self.allocator, try self.createNode(lambda.span.start, .{ .trailing_block = .{ .lambda = lambda } }));
+                        try args.append(self.allocator, try self.parseTrailingLambda());
                         expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                         // After the block's `}` only DOT-led postfix
                         // continues the chain (`f() { … }.map()`); every other
@@ -4903,22 +4902,8 @@ pub const Parser = struct {
             return_type = try self.parseFnReturnType();
         }
 
-        // A closure is its own function boundary: clear the cleanup-body flags
-        // so control-flow exits inside the closure body (`return` from the
-        // closure, etc.) are legal even when the closure literal appears inside
-        // a `defer` / `onfail` body. Restored after the body.
-        const saved_onfail = self.in_onfail_body;
-        const saved_defer = self.in_defer_body;
-        const saved_module_expansion = self.in_module_expansion;
-        self.in_onfail_body = false;
-        self.in_defer_body = false;
-        // A closure body's declarations are locals, never module scope.
-        self.in_module_expansion = false;
-        defer {
-            self.in_onfail_body = saved_onfail;
-            self.in_defer_body = saved_defer;
-            self.in_module_expansion = saved_module_expansion;
-        }
+        const boundary = self.beginFunctionBoundary();
+        defer self.endFunctionBoundary(boundary);
 
         const body = if (self.tokens.tag(self.tok) == .l_brace)
             try self.parseBlock()
@@ -4933,14 +4918,17 @@ pub const Parser = struct {
         } });
     }
 
-    /// `{ |params| stmts }` — the closure a call's trailing block is, with the
-    /// `{` at the cursor. The header spells the same parameter list a `|…|`
-    /// closure literal does; without it the closure is zero-param.
+    /// `{ |params| stmts }` — the `trailing_block` argument, with the `{` at
+    /// the cursor. The header spells the same parameter list a `|…|` closure
+    /// literal does; without it the closure is zero-param. `has_header` is
+    /// true when a `|` opened the list, including empty `| |`.
     fn parseTrailingLambda(self: *Parser) anyerror!*Node {
         const start = self.tokens.start(self.tok);
         try self.expect(.l_brace);
         var params: []const ast.Param = &.{};
+        var has_header = false;
         if (self.tokens.tag(self.tok) == .pipe) {
+            has_header = true;
             self.advance();
             const param_list = try self.parseParamsUntil(.pipe);
             if (param_list.is_c_variadic) {
@@ -4948,14 +4936,48 @@ pub const Parser = struct {
             }
             params = param_list.params;
         }
-        const body = try self.parseBlockBody(start);
+        const body = blk: {
+            const boundary = self.beginFunctionBoundary();
+            defer self.endFunctionBoundary(boundary);
+            break :blk try self.parseBlockBody(start);
+        };
         const type_params = try self.collectTypeParams(params);
-        return try self.createNode(start, .{ .lambda = .{
+        const lambda = try self.createNode(start, .{ .lambda = .{
             .params = params,
             .return_type = null,
             .body = body,
             .type_params = type_params,
         } });
+        return try self.createNode(start, .{ .trailing_block = .{
+            .lambda = lambda,
+            .has_header = has_header,
+        } });
+    }
+
+    const FunctionBoundary = struct {
+        onfail: bool,
+        defer_body: bool,
+        module: bool,
+    };
+
+    /// A closure or trailing-block body is a function boundary: cleanup-body
+    /// flags and module expansion do not apply inside it.
+    fn beginFunctionBoundary(self: *Parser) FunctionBoundary {
+        const saved: FunctionBoundary = .{
+            .onfail = self.in_onfail_body,
+            .defer_body = self.in_defer_body,
+            .module = self.in_module_expansion,
+        };
+        self.in_onfail_body = false;
+        self.in_defer_body = false;
+        self.in_module_expansion = false;
+        return saved;
+    }
+
+    fn endFunctionBoundary(self: *Parser, saved: FunctionBoundary) void {
+        self.in_onfail_body = saved.onfail;
+        self.in_defer_body = saved.defer_body;
+        self.in_module_expansion = saved.module;
     }
 
     /// The name a self-trailing block binds the value's pointer to, with the
@@ -5969,8 +5991,8 @@ pub const Parser = struct {
     /// (`raise` / `try` / `return` / `break` / `continue`) are banned inside one:
     /// cleanup runs while the block/function is already exiting, so there is
     /// nothing to propagate or transfer to. The ban is transitive through nested
-    /// `catch` bodies and loops, but NOT through a nested closure body — a
-    /// closure is its own function boundary (parseClosure clears the flags).
+    /// `catch` bodies and loops, but NOT through a nested closure or
+    /// trailing-block body — those are their own function boundary.
     fn inCleanupBody(self: *const Parser) bool {
         return self.in_onfail_body or self.in_defer_body;
     }
@@ -7503,6 +7525,7 @@ test "parse non-empty body after a call keeps its parse-time reading" {
     try std.testing.expect(stmts[1].data == .call);
     const args = stmts[1].data.call.args;
     try std.testing.expect(args[args.len - 1].data == .trailing_block);
+    try std.testing.expect(!args[args.len - 1].data.trailing_block.has_header);
 }
 
 test "parse zero-arg empty brace as trailing even when tight" {
@@ -7519,6 +7542,7 @@ test "parse zero-arg empty brace as trailing even when tight" {
     const call = body.data.block.stmts[0];
     try std.testing.expect(call.data == .call);
     try std.testing.expect(call.data.call.args[0].data == .trailing_block);
+    try std.testing.expect(!call.data.call.args[0].data.trailing_block.has_header);
 }
 
 test "a trailing block's header is its closure's parameter list" {
@@ -7533,13 +7557,48 @@ test "a trailing block's header is its closure's parameter list" {
     const root = try parser.parse();
     const call = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
     const args = call.data.call.args;
-    const lam = args[args.len - 1].data.trailing_block.lambda.data.lambda;
+    const tb = args[args.len - 1].data.trailing_block;
+    try std.testing.expect(tb.has_header);
+    const lam = tb.lambda.data.lambda;
     try std.testing.expectEqual(@as(usize, 2), lam.params.len);
     try std.testing.expectEqualStrings("x", lam.params[0].name);
     try std.testing.expectEqualStrings("i64", lam.params[0].type_expr.data.type_expr.name);
     try std.testing.expectEqualStrings("k", lam.params[1].name);
     try std.testing.expect(lam.params[1].type_expr.data == .inferred_type);
     try std.testing.expect(lam.body.data == .block);
+}
+
+test "a trailing header is a function boundary inside a defer body" {
+    const source =
+        \\main :: () {
+        \\  defer { each(xs) { |x| return; } }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const defer_stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    const call = defer_stmt.data.defer_stmt.expr.data.block.stmts[0];
+    const tb = call.data.call.args[call.data.call.args.len - 1].data.trailing_block;
+    try std.testing.expect(tb.has_header);
+    try std.testing.expectEqual(@as(usize, 1), tb.lambda.data.lambda.params.len);
+}
+
+test "an empty pipe pair is a trailing header" {
+    const source =
+        \\main :: () {
+        \\  each(xs) { || }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const call = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    const tb = call.data.call.args[call.data.call.args.len - 1].data.trailing_block;
+    try std.testing.expect(tb.has_header);
+    try std.testing.expectEqual(@as(usize, 0), tb.lambda.data.lambda.params.len);
 }
 
 test "a header decides the group ahead of the aggregate shape" {
@@ -7559,6 +7618,7 @@ test "a header decides the group ahead of the aggregate shape" {
     try std.testing.expect(stmts[0].data.var_decl.value.?.data == .struct_literal);
     const args = stmts[1].data.call.args;
     try std.testing.expect(args[args.len - 1].data == .trailing_block);
+    try std.testing.expect(args[args.len - 1].data.trailing_block.has_header);
 }
 
 test "parse compound and multi-argument type applications as carriers" {

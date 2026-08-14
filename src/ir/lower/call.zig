@@ -5002,7 +5002,7 @@ pub fn mapNamedArgs(
                 if (self.blockProtocolOf(pty) != null) {
                     // The refused header still binds: an unbound block
                     // parameter reports a second time as a missing one.
-                    if (block_params.len != 0) {
+                    if (tb.has_header) {
                         errored = true;
                         if (self.diagnostics) |d|
                             d.addFmt(.err, a.span, "'{s}' takes a build block for '{s}' — a build block has no parameter header", .{ callee_name, p.name });

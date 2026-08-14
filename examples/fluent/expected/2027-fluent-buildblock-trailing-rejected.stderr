@@ -31,3 +31,9 @@ error: 'column' takes a build block for 'content' — a build block has no param
    |
 31 |     column() { |x| false; };  // refused: a build block takes no header
    |              ^^^^^^^^^^^^^^
+
+error: 'column' takes a build block for 'content' — a build block has no parameter header
+  --> examples/fluent/2027-fluent-buildblock-trailing-rejected.sx:32:14
+   |
+32 |     column() { || false; };   // refused: empty `| |` is a header
+   |              ^^^^^^^^^^^^^
