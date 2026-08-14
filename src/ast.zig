@@ -659,11 +659,12 @@ pub const StructLiteral = struct {
     struct_name: ?[]const u8, // null for anonymous `.{ ... }`
     type_expr: ?*Node = null, // for GenericType(args){ ... }
     field_inits: []const StructFieldInit,
-    /// Optional block after the aggregate. With `init_block_binds_self`
-    /// (`T{…}.{…}`), `self` is bound to the value. Bare `T{…}{…}` is a plain
-    /// scope after construction — no `self`.
+    /// Optional block after the aggregate. Self-trailing `T{…}.{…}` binds a
+    /// pointer to the value under `init_block_self` — the `|s|` header's name,
+    /// or `self`. Bare `T{…}{…}` is a plain scope after construction, binding
+    /// nothing.
     init_block: ?*Node = null,
-    init_block_binds_self: bool = false,
+    init_block_self: ?[]const u8 = null,
 };
 
 pub const Lambda = struct {
@@ -957,11 +958,13 @@ pub const NamedArg = struct {
 };
 
 /// `f(args) { body }` trailing block (specs: Trailing Blocks). `lambda` is
-/// the zero-param closure literal the parser built from the block. Exists
+/// the closure literal the parser built from the block. Exists
 /// only as the LAST element of `Call.args`; the mapping pass binds it to the
 /// callee's last declared parameter, which is where its checks live.
 pub const TrailingBlock = struct {
     lambda: *Node,
+    /// True when the source wrote `|…|` after `{`, including empty `| |`.
+    has_header: bool = false,
 };
 
 /// `F(args){}` / `F(args) {}` — an argument-carrying call followed by a

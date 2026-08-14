@@ -36,7 +36,8 @@ const contracts_build_sink = "@BuildSink";
 /// body belongs to the site rather than to the value, so the value carries only
 /// the capture environment and `run` can replay the body wherever it is received.
 pub const Site = struct {
-    /// The zero-param lambda the trailing block parsed to.
+    /// The lambda the trailing block parsed to — headerless, since a build
+    /// block is replayed against a sink rather than called.
     lambda: *const Node,
     protocol: TypeId,
     /// Where the block was WRITTEN — the file its site reports, which is the

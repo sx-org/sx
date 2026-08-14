@@ -318,8 +318,10 @@ public API: renaming a parameter breaks named call sites.
 
 ### Trailing blocks
 
-A block after a call binds the callee's **last** parameter as a zero-param
-closure — `f(args) { body }` is exactly `f(args, content = || { body })`:
+A block after a call binds the callee's **last** parameter as a closure —
+`f(args) { body }` is exactly `f(args, content = || { body })`. The block's
+parameters are a `|…|` header right after the `{`, so
+`each(items) { |x| … }` is `each(items, |x| { … })`:
 
 ```sx
 vstack :: (spacing: f32, content: Closure()) -> View { … }
@@ -330,12 +332,15 @@ vstack(8.0) {
 }
 
 scaffold(top_bar = toolbar) { chat_list(); }   // named slots + block
+
+each(items) { |item| text(item.name); }        // parameters in the header
 ```
 
-The `{` must sit on the same line as the `)`; one block per call; after the
-block's `}` a dot continues the chain (`vstack(8.0) { … }.padded()`). The
-call's own `(` still obeys the glue rule — `vstack (8.0) { … }` is a spacing
-error. A capture-free block promotes to a null-env thunk — zero allocation.
+The `{` must sit on the same line as the `)`; one block per call; the header
+binds exactly the parameters the closure declares; after the block's `}` a dot
+continues the chain (`vstack(8.0) { … }.padded()`). The call's own `(` still
+obeys the glue rule — `vstack (8.0) { … }` is a spacing error. A capture-free
+block promotes to a null-env thunk — zero allocation.
 
 ### Structs
 

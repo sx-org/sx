@@ -1,5 +1,6 @@
-// Struct self-trailing: after a named aggregate, `.{ stmts }` binds `self`.
-// Bare `T{ fields } { stmts }` is a plain post-scope (no `self`) — legal, untaught.
+// Struct self-trailing: after a named aggregate, `.{ stmts }` binds `self`, and
+// a `|name|` header binds that name instead — a `*T` either way.
+// Bare `T{ fields } { stmts }` is a plain post-scope (no binding) — legal, untaught.
 
 #import "modules/std.sx";
 
@@ -8,6 +9,8 @@ Button :: struct {
     n: i64 = 0;
 }
 
+bump :: (b: *Button) { b.n = b.n + 1; }
+
 main :: () -> i64 {
     b := Button{ label = "x", n = 1 }.{
         self.n = self.n + 1;
@@ -15,7 +18,18 @@ main :: () -> i64 {
     };
     print("{} {}\n", b.label, b.n); // y 2
 
-    // Bare second brace group — plain scope after construction, no `self`.
+    // A header names the binding; `self` is not in scope under it.
+    h := Button{ label = "h", n = 4 }.{ |btn|
+        btn.n = btn.n * 2;
+        btn.label = "hh";
+    };
+    print("{} {}\n", h.label, h.n); // hh 8
+
+    // The value the header binds is a pointer, so a method takes it directly.
+    p := Button{ label = "p", n = 1 }.{ |btn| bump(btn); };
+    print("{} {}\n", p.label, p.n); // p 2
+
+    // Bare second brace group — plain scope after construction, no binding.
     outer : i64 = 0;
     c := Button{ label = "a" } {
         outer = 7;

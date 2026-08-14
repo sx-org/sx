@@ -23,3 +23,11 @@ begin 5.000000
 inner
 end
 end
+each 1
+each 2
+each-explicit 1
+each-explicit 2
+pair 7
+typed 1
+typed 2
+sink 6

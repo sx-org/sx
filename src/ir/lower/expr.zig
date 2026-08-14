@@ -472,7 +472,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
 
         const result = self.builder.structInit(fields.items, ty);
         if (sl.init_block) |ib| {
-            if (sl.init_block_binds_self) return self.lowerInitBlock(result, ty, ib);
+            if (sl.init_block_self) |binder| return self.lowerInitBlock(result, ty, ib, binder);
             return self.lowerPostScopeBlock(result, ib);
         }
         return result;
@@ -558,7 +558,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
 
     // Lower following block if present
     if (sl.init_block) |ib| {
-        if (sl.init_block_binds_self) return self.lowerInitBlock(result, ty, ib);
+        if (sl.init_block_self) |binder| return self.lowerInitBlock(result, ty, ib, binder);
         return self.lowerPostScopeBlock(result, ib);
     }
 
@@ -571,21 +571,22 @@ pub fn lowerPostScopeBlock(self: *Lowering, struct_val: Ref, ib: *const Node) Re
     return struct_val;
 }
 
-/// Lower `T{…}.{ stmts }`: store struct value to alloca, bind `self`, execute block, reload.
-pub fn lowerInitBlock(self: *Lowering, struct_val: Ref, ty: TypeId, ib: *const Node) Ref {
+/// Lower `T{…}.{ stmts }`: store struct value to alloca, bind `binder` to a
+/// pointer to it, execute block, reload.
+pub fn lowerInitBlock(self: *Lowering, struct_val: Ref, ty: TypeId, ib: *const Node, binder: []const u8) Ref {
     // Store struct value to a temporary alloca
     const ptr_ty = self.module.types.ptrTo(ty);
     const slot = self.builder.alloca(ty);
     self.builder.store(slot, struct_val);
 
-    // Create a nested scope with `self` bound to the alloca pointer
+    // Create a nested scope with the binder bound to the alloca pointer
     var init_scope = Scope.init(self.alloc, self.scope);
     defer init_scope.deinit();
     const saved_scope = self.scope;
     self.scope = &init_scope;
 
-    // `self` is the pointer to the struct (not an alloca itself — it IS the pointer value)
-    init_scope.put("self", .{ .ref = slot, .ty = ptr_ty, .is_alloca = false });
+    // The binder IS the pointer value, not an alloca holding one.
+    init_scope.put(binder, .{ .ref = slot, .ty = ptr_ty, .is_alloca = false });
 
     // Lower the init block body
     self.lowerBlock(ib);

@@ -846,9 +846,9 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         .named_arg => |na| {
             self.collectCaptures(na.value, param_names, captures);
         },
-        // `f(a) { body }` — the block is a zero-param lambda sitting in the
-        // call's arg list; its body captures from here exactly like a written
-        // lambda literal.
+        // `f(a) { body }` — the block is a lambda sitting in the call's arg
+        // list; its body captures from here exactly like a written lambda
+        // literal.
         .trailing_block => |tb| {
             self.collectCaptures(tb.lambda, param_names, captures);
         },

@@ -1296,6 +1296,7 @@ test "parser: a named aggregate `{` binds only on its head's line" {
     );
     const call = trailing.data.block.stmts[0].data.call;
     try std.testing.expect(call.args[call.args.len - 1].data == .trailing_block);
+    try std.testing.expect(!call.args[call.args.len - 1].data.trailing_block.has_header);
 }
 
 // ---- Must-continue locks ----
