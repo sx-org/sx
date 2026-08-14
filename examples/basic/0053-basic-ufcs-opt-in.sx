@@ -1,7 +1,7 @@
 // Free-function dot-calls are OPT-IN. Two opt-in spellings:
 //   name :: ufcs (params) { body }   — the fn itself is dot-callable
 //   name :: ufcs target;             — dot-callable (renaming) alias
-// A plain fn is callable directly or via `|>` only (see 1166 for the
+// A plain fn is callable only by direct call (see 1166 for the
 // rejection). Generic ufcs fns dispatch through normal monomorphization,
 // and the plan-side return type binds from the receiver (structured
 // params like `[]$T` included).
@@ -22,7 +22,6 @@ main :: () {
     print("marked: {}\n", f.bump2());      // 42
     print("alias: {}\n", f.bump3());       // 41
     print("direct: {}\n", bump(f));        // 41 — plain fn, direct
-    print("pipe: {}\n", f |> bump());      // 41 — plain fn, pipe
     print("marked-direct: {}\n", bump2(f)); // 42 — marked fn callable directly
 
     c := Counter{ n = 10 };

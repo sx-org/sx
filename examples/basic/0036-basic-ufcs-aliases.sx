@@ -6,7 +6,7 @@ pkg :: #import "tests/fixtures/testpkg";
 
 main :: () {
 
-    // --- UFCS Aliases & Pipe ---
+    // --- UFCS Aliases ---
     {
         print("=== UFCS Aliases ===\n");
 
@@ -15,17 +15,12 @@ main :: () {
 
         print("{}\n", num_sum(40, 2));   // 42 — direct call
         print("{}\n", sum(40, 2));       // 42 — alias direct call
-        print("{}\n", 40 |> sum(2));     // 42 — pipe UFCS via alias
-
-        print("{}\n", num_sum(40, 2));   // 42 — direct (was tuple full-splat)
-        print("{}\n", 40 |> sum(2));     // 42 — pipe (was tuple partial-splat)
 
         compute :: (a: i64, b: i64, c: i64, d: i64) -> i64 { a + b * c - d }
         calc :: ufcs compute;
 
-        print("{}\n", compute(1, 2, 3, 4));    // 1+2*3-4 = 3 (was tuple full-splat)
-        print("{}\n", compute(1, 2, 3, 4));    // same = 3 (was tuple partial-splat)
-        print("{}\n", 1 |> calc(2, 3, 4));     // same = 3 — pipe UFCS
+        print("{}\n", compute(1, 2, 3, 4));    // 1+2*3-4 = 3
+        print("{}\n", calc(1, 2, 3, 4));       // same = 3 — alias direct call
 
         // Tuple return type
         swap :: (a: i64, b: i64) -> Tuple(i64, i64) { .{b, a} }

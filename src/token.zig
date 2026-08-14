@@ -98,7 +98,6 @@ pub const Tag = enum(u8) {
     ampersand_equal, // &=
     pipe, // |
     pipe_equal, // |=
-    pipe_arrow, // |>
     caret, // ^
     caret_equal, // ^=
     question, // ?
@@ -203,7 +202,6 @@ pub const Tag = enum(u8) {
             .ampersand_equal => "&=",
             .pipe => "|",
             .pipe_equal => "|=",
-            .pipe_arrow => "|>",
             .caret => "^",
             .caret_equal => "^=",
             .question => "?",
@@ -352,7 +350,6 @@ pub const Tag = enum(u8) {
             .ampersand_equal,
             .pipe,
             .pipe_equal,
-            .pipe_arrow,
             .caret,
             .caret_equal,
             .question,
@@ -487,7 +484,6 @@ pub const Tag = enum(u8) {
             .ampersand_equal,
             .pipe,
             .pipe_equal,
-            .pipe_arrow,
             .caret,
             .caret_equal,
             .question,

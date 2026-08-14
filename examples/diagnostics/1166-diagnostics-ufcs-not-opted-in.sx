@@ -1,5 +1,5 @@
 // A dot-call on a PLAIN free function (no `ufcs` marker, no alias) is
-// rejected with a tailored help: direct call, pipe, or declare it ufcs.
+// rejected with a tailored help: call it directly, or declare it ufcs.
 
 #import "modules/std.sx";
 

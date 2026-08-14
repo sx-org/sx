@@ -96,23 +96,6 @@ main :: () {
         print("{}\n", pkg.cwd_greet());       // cwd-import-ok
     }
 
-    // --- Pipe operator ---
-    {
-        print("--- pipe operator ---\n");
-        // Basic: a |> f(b) → f(a, b)
-        print("{}\n", 3 |> pkg.add(4));           // 7
-        print("{}\n", 5 |> pkg.mul(6));           // 30
-
-        // Chaining: a |> f(b) |> g(c) → g(f(a, b), c)
-        print("{}\n", 3 |> pkg.add(4) |> pkg.mul(2));  // 14
-
-        // With non-namespaced functions
-        print("{}\n", "hello" |> concat(" world"));     // hello world
-
-        // Chained string ops
-        print("{}\n", "piped" |> concat(" ok") |> concat("!"));  // piped ok!
-    }
-
     // ── alloc_slice ──────────────────────────────────────────
     {
         items := alloc_slice(i64, 5);

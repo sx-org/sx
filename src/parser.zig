@@ -3265,49 +3265,6 @@ pub const Parser = struct {
         while (true) {
             if (pipe == .closer and self.tokens.tag(self.tok) == .pipe) break;
 
-            // Pipe operator: desugar a |> f(args) → f(a, args), a |> f → f(a).
-            // Consumer-aware: the piped LHS goes into the RHS's HEAD call,
-            // looking THROUGH a `try` prefix / `catch` postfix / `or` fallback
-            // and leaving the wrapper intact:
-            //   a |> try f(x)            → try f(a, x)
-            //   a |> f(x) catch |e| {...}  → f(a, x) catch |e| {...}
-            //   a |> f(x) or default     → f(a, x) or default   (only f gets a)
-            if (self.tokens.tag(self.tok) == .pipe_arrow and Prec.pipe >= min_prec) {
-                self.advance();
-                const rhs = try self.parseBinary(Prec.pipe + 1, pipe);
-                // Walk through error-handling wrappers to the head call node.
-                var head = rhs;
-                const head_call: ?*Node = while (true) {
-                    switch (head.data) {
-                        .call => break head,
-                        .try_expr => head = head.data.try_expr.operand,
-                        .catch_expr => head = head.data.catch_expr.operand,
-                        .binary_op => |bo| {
-                            if (bo.op == .or_op) head = bo.lhs else break null;
-                        },
-                        else => break null,
-                    }
-                };
-                if (head_call) |cn| {
-                    // a |> ...f(args)... → ...f(a, args)... (wrapper preserved;
-                    // mutating the head call in place updates the wrapper).
-                    var new_args = std.ArrayList(*Node).empty;
-                    try new_args.append(self.allocator, lhs);
-                    for (cn.data.call.args) |arg| try new_args.append(self.allocator, arg);
-                    cn.data.call.args = try new_args.toOwnedSlice(self.allocator);
-                    lhs = rhs;
-                } else {
-                    // a |> f → f(a)
-                    const args = try self.allocator.alloc(*Node, 1);
-                    args[0] = lhs;
-                    lhs = try self.createNode(lhs.span.start, .{ .call = .{
-                        .callee = rhs,
-                        .args = args,
-                    } });
-                }
-                continue;
-            }
-
             // Null coalescing: expr ?? default
             if (self.tokens.tag(self.tok) == .question_question and Prec.null_coalesce >= min_prec) {
                 self.advance();
@@ -5104,7 +5061,6 @@ pub const Parser = struct {
             .percent,
             .ampersand,
             .pipe,
-            .pipe_arrow,
             .caret,
             .question,
             .question_question,
@@ -5227,17 +5183,16 @@ pub const Parser = struct {
 
     const Prec = struct {
         const none: u8 = 0;
-        const pipe: u8 = 1; // |>
-        const null_coalesce: u8 = 2; // ??
-        const logical_or: u8 = 3; // or
-        const logical_and: u8 = 4; // and
-        const bit_or: u8 = 5; // |
-        const bit_xor: u8 = 6; // ^
-        const bit_and: u8 = 7; // &
-        const comparison: u8 = 8; // == != < <= > >= in
-        const shift: u8 = 9; // << >>
-        const additive: u8 = 10; // + -
-        const multiplicative: u8 = 11; // * / %
+        const null_coalesce: u8 = 1; // ??
+        const logical_or: u8 = 2; // or
+        const logical_and: u8 = 3; // and
+        const bit_or: u8 = 4; // |
+        const bit_xor: u8 = 5; // ^
+        const bit_and: u8 = 6; // &
+        const comparison: u8 = 7; // == != < <= > >= in
+        const shift: u8 = 8; // << >>
+        const additive: u8 = 9; // + -
+        const multiplicative: u8 = 10; // * / %
     };
 
     const BinaryInfo = struct { prec: u8, op: ast.BinaryOp.Op, comparison: bool };
@@ -5336,7 +5291,6 @@ pub const Parser = struct {
             .percent_equal,
             .ampersand_equal,
             .pipe_equal,
-            .pipe_arrow,
             .caret_equal,
             .question,
             .question_question,
@@ -6217,11 +6171,6 @@ test "a pipe-parameter default descends the whole precedence spine" {
 
     const coalesce_lam = try pipeLambda(arena.allocator(), "|x: i64 = a ?? b| x");
     try std.testing.expect(coalesce_lam.params[0].default_expr.?.data == .null_coalesce);
-
-    const pipe_lam = try pipeLambda(arena.allocator(), "|x: i64 = a |> f| x");
-    const piped = pipe_lam.params[0].default_expr.?.data.call;
-    try std.testing.expectEqualStrings("f", piped.callee.data.identifier.name);
-    try std.testing.expectEqualStrings("a", piped.args[0].data.identifier.name);
 }
 
 test "the first `|` on a pipe-parameter default's own spine closes the list" {
@@ -6930,48 +6879,11 @@ test "onfail no-binding block vs bare-expression body" {
     try std.testing.expect(expr_body.data.onfail_stmt.body.data == .call);
 }
 
-test "consumer-aware pipe: x |> try f() inserts x into the head call" {
+test "`|>` is not an operator" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := x |> try f(); }");
-    try std.testing.expect(v.data == .try_expr);
-    const call = v.data.try_expr.operand;
-    try std.testing.expect(call.data == .call);
-    try std.testing.expectEqual(@as(usize, 1), call.data.call.args.len);
-    try std.testing.expect(call.data.call.args[0].data == .identifier);
-    try std.testing.expectEqualStrings("x", call.data.call.args[0].data.identifier.name);
-}
-
-test "consumer-aware pipe: x |> f() catch |e| { } preserves the catch" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := x |> g() catch |e| { }; }");
-    try std.testing.expect(v.data == .catch_expr);
-    try std.testing.expectEqualStrings("e", v.data.catch_expr.binding.?);
-    try std.testing.expect(v.data.catch_expr.operand.data == .call);
-    try std.testing.expectEqual(@as(usize, 1), v.data.catch_expr.operand.data.call.args.len);
-}
-
-test "consumer-aware pipe: x |> f() or d feeds only the head call" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := x |> g() or d; }");
-    try std.testing.expect(v.data == .binary_op and v.data.binary_op.op == .or_op);
-    // LHS (head call g) receives x; RHS fallback `d` is untouched.
-    try std.testing.expect(v.data.binary_op.lhs.data == .call);
-    try std.testing.expectEqual(@as(usize, 1), v.data.binary_op.lhs.data.call.args.len);
-    try std.testing.expect(v.data.binary_op.rhs.data == .identifier);
-    try std.testing.expectEqualStrings("d", v.data.binary_op.rhs.data.identifier.name);
-}
-
-test "plain pipe still works: x |> f(a) => f(x, a)" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := x |> g(a); }");
-    try std.testing.expect(v.data == .call);
-    try std.testing.expectEqual(@as(usize, 2), v.data.call.args.len);
-    try std.testing.expectEqualStrings("x", v.data.call.args[0].data.identifier.name);
-    try std.testing.expectEqualStrings("a", v.data.call.args[1].data.identifier.name);
+    try std.testing.expectError(error.ParseError, e02FirstValue(arena.allocator(), "f :: () { v := x |> g(a); }"));
+    try std.testing.expectError(error.ParseError, e02FirstValue(arena.allocator(), "f :: () { v := x |> g; }"));
 }
 
 test "round-trip print: try / or precedence / raise / catch / onfail" {

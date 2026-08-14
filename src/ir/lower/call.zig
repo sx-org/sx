@@ -2244,7 +2244,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // Free-function dot-call (`recv.fn(args)` → `fn(recv, args)`)
             // is OPT-IN: only a fn declared `name :: ufcs (...) {...}` or a
             // `name :: ufcs target;` alias dispatches. A plain fn is
-            // callable directly or via `|>` only — a dot-call on one gets a
+            // callable only by direct call — a dot-call on one gets a
             // tailored diagnostic rather than silently becoming a method.
             //
             // A free-function UFCS target with a
@@ -2406,7 +2406,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             if (ufcs_fd != null or self.resolveFuncByName(fa.field) != null) {
                 if (self.diagnostics) |d| {
                     const id = d.addFmtId(.err, c.callee.span, "'{s}' is not a ufcs function — a plain function does not dispatch via dot-call", .{fa.field});
-                    d.addHelpFmt(id, c.callee.span, null, "call it directly (`{s}(receiver, ...)`), pipe it (`receiver |> {s}(...)`), or declare it `{s} :: ufcs (...) {{ ... }}`", .{ fa.field, fa.field, fa.field });
+                    d.addHelpFmt(id, c.callee.span, null, "call it directly (`{s}(receiver, ...)`) or declare it `{s} :: ufcs (...) {{ ... }}`", .{ fa.field, fa.field });
                 }
                 return Ref.none;
             }

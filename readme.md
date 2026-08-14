@@ -624,13 +624,6 @@ defer close(f);
 a, b = b, a;
 ```
 
-### Pipe Operator
-
-```sx
-result := data |> parse() |> transform() |> serialize();
-// equivalent to: serialize(transform(parse(data)))
-```
-
 ### Compile-Time Execution
 
 ```sx

@@ -4,7 +4,7 @@ error: 'bump' is not a ufcs function — a plain function does not dispatch via 
 10 |     print("{}\n", f.bump());
    |                   ^^^^^^
 
-help: call it directly (`bump(receiver, ...)`), pipe it (`receiver |> bump(...)`), or declare it `bump :: ufcs (...) { ... }`
+help: call it directly (`bump(receiver, ...)`) or declare it `bump :: ufcs (...) { ... }`
    |
 10 |     print("{}\n", f.bump());
    |                   ^^^^^^

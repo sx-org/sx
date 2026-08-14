@@ -26,12 +26,6 @@ false
 30
 hello from testpkg
 cwd-import-ok
---- pipe operator ---
-7
-30
-14
-hello world
-piped ok!
 alloc len: 5
 alloc[0]: 10
 alloc[4]: 50
