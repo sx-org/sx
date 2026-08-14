@@ -982,7 +982,7 @@ pub const UnknownTypeChecker = struct {
     /// parameter (a compile-time integer such as a `@Vector` lane count or a
     /// generic `$N: u32` arg), not a type. Such a position must be skipped by
     /// the unknown-type walk: a module-const arg (`@Vector(N, f32)`) is a value,
-    /// not a type name. `@Vector`'s arg 0 is always its lane count; a generic
+    /// not a type name. A type constructor's arg 0 is always its count; a generic
     /// struct template's value-param positions come from its declared params; a
     /// type-RETURNING function (`Make :: ($K: u32, $T: Type) -> Type`) classifies
     /// each param from its constraint, mirroring `instantiateTypeFunction` — so
@@ -996,7 +996,7 @@ pub const UnknownTypeChecker = struct {
     }
 
     fn isValueParamPosition(self: UnknownTypeChecker, base: []const u8, i: usize) bool {
-        if (std.mem.eql(u8, base, contracts.vector_head)) return i == 0;
+        if (contracts.isTypeConstructor(base)) return i == 0;
         if (self.index.struct_template_map.get(base)) |tmpl| {
             if (i < tmpl.type_params.len) return !tmpl.type_params[i].is_type_param;
         }

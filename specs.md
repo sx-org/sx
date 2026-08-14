@@ -122,12 +122,13 @@ choose between: `@SourceSite` and `@VaList` are spelled bare wherever they are
 written.
 
 Separately, a few `@` names are **compiler-formed** — `@Init(T)`,
-`@BuildBlock(P)` and `@Vector(N, T)`. The compiler forms the type, so there is
-no stdlib declaration to read and declaring the name is an error. `@Init` and
-`@BuildBlock` are constraints, written only as a bound on the parameter
-(`value: $I/@Init(T)`, `content: $B/@BuildBlock(P)`) and never as its type —
-see [`@Init(T)`](#initt) and [`@BuildBlock(P)`](#buildblockp). `@Vector(N, T)`
-is a type constructor (§Vector Types), written wherever a type is.
+`@BuildBlock(P)`, `@Vector(N, T)` and `@Array(N, T)`. The compiler forms the
+type, so there is no stdlib declaration to read and declaring the name is an
+error. `@Init` and `@BuildBlock` are constraints, written only as a bound on the
+parameter (`value: $I/@Init(T)`, `content: $B/@BuildBlock(P)`) and never as its
+type — see [`@Init(T)`](#initt) and [`@BuildBlock(P)`](#buildblockp).
+`@Vector(N, T)` (§Vector Types) and `@Array(N, T)` (§Array Types) are type
+constructors, written wherever a type is.
 
 #### Backtick raw-identifier escape
 
@@ -2609,9 +2610,10 @@ of an array type — never the element type: a prefix that resolves to a
 non-array/vector/slice type (`i16.[…]`, `Point.[…]`) is a compile error
 pointing at the annotated form.
 
-Arrays can also be constructed programmatically with the `Array` builtin:
+`@Array(N, T)` is the named form of the same type, written wherever `[N]T` is:
 ```sx
-MyArr :: Array(5, i32);   // equivalent to [5]i32
+MyArr :: @Array(5, i32);       // equivalent to [5]i32
+grid : @Array(2, [3]f32);      // equivalent to [2][3]f32
 ```
 
 A **count** is a compile-time integer used as an array dimension, a `@Vector`
@@ -5848,7 +5850,7 @@ lowered, yet `atomic_load` evaluates under `#run` and `sqrt` does not: the
 evaluator interprets the atomic ops, but has no arm for the math call `sqrt`
 lowers to. A `#run sqrt(x)` fails loudly rather than folding to a wrong value.
 
-Two categories are **not** intrinsics. `string` and `@Vector` are
+Two categories are **not** intrinsics. `string`, `@Vector` and `@Array` are
 language primitives, resolved by name by the type system like `int` / `bool` /
 `f64`. And a handful of keywords (`type_eq`, `has_impl`, `is_struct`,
 `is_comptime`) are recognized bare, declared nowhere. `has_impl(P, T)`
@@ -5946,6 +5948,9 @@ An `any` is accepted because it can hold either a value or a `Type`. `type_name`
 
 ### Vectors
 - `@Vector($N: int, $T: Type) -> Type` — returns an LLVM vector type of `N` elements of type `T`
+
+### Arrays
+- `@Array($N: int, $T: Type) -> Type` — returns the fixed array type `[N]T`
 
 ---
 

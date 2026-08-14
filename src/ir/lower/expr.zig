@@ -2220,6 +2220,14 @@ pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
                     return self.module.types.vectorOf(elem, length);
                 }
             }
+            // `@Array(3, i32).[…]`
+            if (std.mem.eql(u8, callee_name, contracts.array_head)) {
+                if (cl.args.len == 2) {
+                    const length = self.resolveArrayLen(cl.args[0]) orelse return .unresolved;
+                    const elem = self.resolveTypeWithBindings(cl.args[1]);
+                    return self.module.types.arrayOf(elem, length);
+                }
+            }
             // Generic-struct typed-literal head (`Box(i64).[...]`): route
             // through the single layout choke-point (CP-1). A qualified head
             // `a.Box(i64).[...]` selects a's OWN template via the namespace edge
