@@ -5551,14 +5551,20 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
   `T { fields } { stmts }` is not one form. Written with the `;` it is the
   construction and then an ordinary scope; written without, the report names
   the missing terminator.
-- **Header position**: inside an `if`/`while`/`for` header the form is
-  disabled — `{` terminates the condition and opens the statement body;
-  bind the closure explicitly there.
+- **Header position**: a statement header — `if`, `while`, `for`, `match`,
+  `push` — reserves the brace group written at its own `{` `(` `[` depth, so
+  there `{` terminates the header and opens the statement body; bind the
+  closure explicitly. Inside a group opened after the header began, the form
+  is ordinary: `push .{ b = Box(i64){ 1 } } { … }`,
+  `for x in .[ Label { text = "a" } ] { … }`.
 - **Named aggregates in headers**: a named aggregate that ends a header
   expression must be parenthesized so the statement body keeps its `{`:
-  `if (Button{ label = "x" }.ready) { … }`. Push is different — named aggregates
-  are legal in the context expr and the following brace is the push body:
-  `push Context{ io = my_io } { … }`. Idiomatic: `push .{ … } { … }`.
+  `if (Button{ label = "x" }.ready) { … }`. A tail written on the header spine
+  is at the header's own depth and takes the same parentheses — after `try`,
+  `catch |e|`, `#run`, or a bare closure body:
+  `if (mk() catch |e| Pt { x = 0 }).x == 1 { … }`. Push is different — named
+  aggregates are legal in the context expr and the following brace is the push
+  body: `push Context{ io = my_io } { … }`. Idiomatic: `push .{ … } { … }`.
 - **`return` is local**: a `return` inside the block returns from the
   closure, never from the enclosing function (no non-local return).
 - **Chain continuation**: after the block's closing `}`, **dot-led** postfix

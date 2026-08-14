@@ -16,6 +16,14 @@ const unescape = @import("unescape.zig");
 
 const named_aggregate_dot_msg = "a named aggregate literal places '{' directly after its type";
 
+/// A statement header's claim on the brace group written at `depth`.
+const Header = struct {
+    kind: Kind,
+    depth: u32,
+
+    const Kind = enum { if_condition, while_condition, for_header, match_subject, push_context };
+};
+
 pub const Parser = struct {
     tokens: TokenList,
     tok: Index,
@@ -26,31 +34,16 @@ pub const Parser = struct {
     diagnostics: ?*errors.DiagnosticList = null,
     /// Type param names from enclosing generic struct (set while parsing methods)
     struct_type_params: []const []const u8 = &.{},
-    /// When true (set while parsing a `for` header's iterable expressions),
-    /// a SPACED top-level `(` group immediately followed by `{` or `=>` ends
-    /// the header rather than binding as call arguments or a range end, so
-    /// `for xs (x) { }` reports the missing body and the range of
-    /// `for i in 0.. (n) { }` stays open. A glued group is an ordinary call
-    /// (`for x in f(n) { }`). Cleared inside any nested bracket/paren/argument
-    /// context.
-    in_for_header: bool = false,
-    /// While parsing an if-condition, the `{` that follows opens the if body,
-    /// so it does not juxtapose (`if x != .{1, 2} { ... }`).
-    in_if_condition: bool = false,
-    /// While parsing a `match` subject, the `{` that follows opens the arm
-    /// list, so it does not juxtapose (`match F(args) {` is a match over the
-    /// call's result). Cleared inside nested paren/argument contexts alongside
-    /// `in_for_header`.
-    in_match_subject: bool = false,
-    /// While parsing a header expression whose `{` opens the statement body
-    /// (`while cond {`, `push expr {`), a `{` does not juxtapose. `if`/`for`
-    /// headers are covered by `in_if_condition`/`in_for_header`. Cleared
-    /// inside nested paren/argument contexts alongside `in_for_header`.
-    no_juxtaposition: bool = false,
-    /// True while parsing the context expression of `push <expr> { body }`,
-    /// where brace shape picks between `push Context { a = x } { body }` (one
-    /// juxtaposition, then the body) and `push ctx { body }` (the body alone).
-    in_push_context: bool = false,
+    /// The statement header being parsed, with the `{` `(` `[` depth it was
+    /// taken at: the header reserves exactly the group written at that depth,
+    /// so `{` opens the statement body (`if x != .{1, 2} { … }`,
+    /// `while cond { … }`, `match F(args) { case … }`, `push expr { … }`) and
+    /// a SPACED `(` before `{` or `=>` ends a `for` header. A group opened
+    /// after the header began holds its contents one deeper, where the
+    /// reservation no longer applies and `expr { … }` juxtaposes as usual.
+    /// Saved and restored around each header expression, so a header nested in
+    /// another gets its own.
+    header: ?Header = null,
     /// True inside a juxtaposition's own brace group, where `,` ends an item
     /// the way `;` does. Cleared by every nested block.
     comma_separates_items: bool = false,
@@ -2740,15 +2733,6 @@ pub const Parser = struct {
     /// The items of a brace group whose `{` — at `start` — is already consumed.
     /// `commas` marks a juxtaposition's group, where `,` ends an item too.
     fn parseBraceBody(self: *Parser, start: u32, commas: bool) anyerror!*Node {
-        // The header ambiguity `no_juxtaposition` guards against ends at
-        // this `{` — statements inside any braced block juxtapose again (a
-        // `push` body, a lambda body inside a while condition).
-        const saved_njx_blk = self.no_juxtaposition;
-        const saved_push_blk = self.in_push_context;
-        self.no_juxtaposition = false;
-        self.in_push_context = false;
-        defer self.no_juxtaposition = saved_njx_blk;
-        defer self.in_push_context = saved_push_blk;
         const saved_commas = self.comma_separates_items;
         self.comma_separates_items = commas;
         defer self.comma_separates_items = saved_commas;
@@ -2826,17 +2810,22 @@ pub const Parser = struct {
             .if_expr, .match_expr, .while_expr, .for_expr, .block, .juxtaposition, .struct_literal => return false,
             else => {},
         }
-        // Header contexts reserve their final brace group for the statement
-        // body, so a juxtaposition at the end of one is parenthesized:
+        // A header reserves the brace group written at its own depth for the
+        // statement body, so a juxtaposition that ends one is parenthesized:
         // `if (Button {}) { … }`.
-        if (self.in_if_condition or self.in_for_header or self.in_match_subject) return false;
-        if (self.in_push_context) {
-            // `push` takes its body from the LAST group, so brace shape splits
-            // `push Context { a = x } { body }` from `push ctx { body }`.
-            if (!self.braceLooksLikeAggregateBody()) return false;
-            return !(self.braceIsEmpty() and expr.data == .field_access);
-        }
-        return !self.no_juxtaposition;
+        const h = self.headerAtCursor() orelse return true;
+        if (h.kind != .push_context) return false;
+        // `push` takes its body from the LAST group, so brace shape splits
+        // `push Context { a = x } { body }` from `push ctx { body }`.
+        if (!self.braceLooksLikeAggregateBody()) return false;
+        return !(self.braceIsEmpty() and expr.data == .field_access);
+    }
+
+    /// The header whose reservation covers the token at the cursor: null once
+    /// the cursor sits inside a group opened after the header began.
+    fn headerAtCursor(self: *const Parser) ?Header {
+        const h = self.header orelse return null;
+        return if (self.tokens.depth(self.tok) == h.depth) h else null;
     }
 
     /// Consume the terminator after an expression: the written `;`, or one of
@@ -3428,26 +3417,7 @@ pub const Parser = struct {
 
         while (true) {
             if (self.tokens.tag(self.tok) == .l_paren and !self.spacedGroupEndsHeader()) {
-                // Call. Argument expressions are an ordinary nested context —
-                // a `(` group inside them never closes a for header.
                 self.advance();
-                const saved_hdr_args = self.in_for_header;
-                const saved_njx_args = self.no_juxtaposition;
-                const saved_if_args = self.in_if_condition;
-                const saved_match_args = self.in_match_subject;
-                const saved_push_args = self.in_push_context;
-                self.in_for_header = false;
-                self.no_juxtaposition = false;
-                self.in_match_subject = false;
-                // Arguments may contain `Type{…}` / `string{…}` even when the
-                // call sits in an if/while header (`if f(Point{…}) {`).
-                self.in_if_condition = false;
-                self.in_push_context = false;
-                defer self.in_for_header = saved_hdr_args;
-                defer self.no_juxtaposition = saved_njx_args;
-                defer self.in_if_condition = saved_if_args;
-                defer self.in_match_subject = saved_match_args;
-                defer self.in_push_context = saved_push_args;
                 var args = std.ArrayList(*Node).empty;
                 while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                     if (args.items.len > 0) {
@@ -3606,13 +3576,6 @@ pub const Parser = struct {
             } else if (self.tokens.tag(self.tok) == .l_bracket) {
                 // Index or slice access: expr[expr] or expr[start..end]
                 self.advance();
-                // Inside `[...]`, calls parse normally even within a for header.
-                const saved_hdr_idx = self.in_for_header;
-                const saved_push_idx = self.in_push_context;
-                self.in_for_header = false;
-                self.in_push_context = false;
-                defer self.in_for_header = saved_hdr_idx;
-                defer self.in_push_context = saved_push_idx;
                 if (rangeTokenInfo(self.tokens.tag(self.tok))) |rt| {
                     // Prefix form: [..end] / [..=end] / [..] — implicit 0 start
                     // (a start marker applies to it: [<..end] begins at 1).
@@ -4052,26 +4015,6 @@ pub const Parser = struct {
                 }
                 self.advance(); // skip '('
 
-                // A `(` opens a grouping, so nested calls / named aggregates parse
-                // normally even within for/if/match/push headers (`if (Button{}) {`).
-                const saved_hdr_grp = self.in_for_header;
-                const saved_if_grp = self.in_if_condition;
-                const saved_njx_grp = self.no_juxtaposition;
-                const saved_match_grp = self.in_match_subject;
-                const saved_push_grp = self.in_push_context;
-                self.in_for_header = false;
-                self.in_if_condition = false;
-                self.no_juxtaposition = false;
-                self.in_match_subject = false;
-                self.in_push_context = false;
-                defer {
-                    self.in_for_header = saved_hdr_grp;
-                    self.in_if_condition = saved_if_grp;
-                    self.no_juxtaposition = saved_njx_grp;
-                    self.in_match_subject = saved_match_grp;
-                    self.in_push_context = saved_push_grp;
-                }
-
                 // Bare `(...)` is GROUPING ONLY. Tuple VALUES are written
                 // `.{ … }` with a `Tuple(…)` annotation, so a named element, an
                 // empty group, a leading spread, or a top-level comma is an error.
@@ -4253,10 +4196,10 @@ pub const Parser = struct {
             const binding_is_raw = self.tokens.flagsOf(self.tok).is_raw;
             self.advance(); // skip identifier
             self.advance(); // skip :=
-            const saved_if_cond = self.in_if_condition;
-            self.in_if_condition = true;
+            const saved_if_cond = self.header;
+            self.header = .{ .kind = .if_condition, .depth = self.tokens.depth(self.tok) };
             const source_expr = try self.parseExpr();
-            self.in_if_condition = saved_if_cond;
+            self.header = saved_if_cond;
             const then_branch = try self.parseBlock();
             var else_branch: ?*Node = null;
             if (self.atChainingElse()) {
@@ -4280,8 +4223,8 @@ pub const Parser = struct {
 
         // Parse condition above comparison level, leaving comparisons
         // unconsumed so a chain (`a < b < c`) is collected as one node.
-        const saved_if_cond = self.in_if_condition;
-        self.in_if_condition = true;
+        const saved_if_cond = self.header;
+        self.header = .{ .kind = .if_condition, .depth = self.tokens.depth(self.tok) };
         var condition = try self.parseBinary(Prec.shift, .bit_or);
 
         // All comparisons (< <= > >= == !=) are at the same precedence.
@@ -4316,7 +4259,7 @@ pub const Parser = struct {
 
         // Handle and/or with proper Pratt precedence
         condition = try self.parseBinaryRhs(condition, Prec.logical_or, .bit_or);
-        self.in_if_condition = saved_if_cond;
+        self.header = saved_if_cond;
 
         // Inline form: if cond then expr [else expr]
         if (self.tokens.tag(self.tok) == .kw_then) {
@@ -4365,10 +4308,10 @@ pub const Parser = struct {
             const binding_is_raw = self.tokens.flagsOf(self.tok).is_raw;
             self.advance(); // skip identifier
             self.advance(); // skip :=
-            const saved_njx = self.no_juxtaposition;
-            self.no_juxtaposition = true;
+            const saved_hdr = self.header;
+            self.header = .{ .kind = .while_condition, .depth = self.tokens.depth(self.tok) };
             const source_expr = try self.parseExpr();
-            self.no_juxtaposition = saved_njx;
+            self.header = saved_hdr;
             const body = try self.parseBlock();
             return try self.createNode(start, .{ .while_expr = .{
                 .condition = source_expr,
@@ -4379,10 +4322,10 @@ pub const Parser = struct {
             } });
         }
 
-        const saved_njx = self.no_juxtaposition;
-        self.no_juxtaposition = true;
+        const saved_hdr = self.header;
+        self.header = .{ .kind = .while_condition, .depth = self.tokens.depth(self.tok) };
         const condition = try self.parseExpr();
-        self.no_juxtaposition = saved_njx;
+        self.header = saved_hdr;
         const body = try self.parseBlock();
 
         return try self.createNode(start, .{ .while_expr = .{
@@ -4398,13 +4341,10 @@ pub const Parser = struct {
         // `push` owns the LAST brace group as its body. Brace shape inside the
         // context expression splits `push Context { a = x } { body }` — one
         // juxtaposition, then the body — from `push ctx { body }`.
-        const saved_njx = self.no_juxtaposition;
-        const saved_push = self.in_push_context;
-        self.no_juxtaposition = true;
-        self.in_push_context = true;
+        const saved_hdr = self.header;
+        self.header = .{ .kind = .push_context, .depth = self.tokens.depth(self.tok) };
         const context_expr = try self.parseExpr();
-        self.no_juxtaposition = saved_njx;
-        self.in_push_context = saved_push;
+        self.header = saved_hdr;
 
         const body = try self.parseBlock();
 
@@ -4448,8 +4388,8 @@ pub const Parser = struct {
 
         // Iterables: comma-separated, each a collection expression or a range
         // (`a..b`, `a..=b`, open `a..`).
-        const saved_hdr = self.in_for_header;
-        self.in_for_header = true;
+        const saved_hdr = self.header;
+        self.header = .{ .kind = .for_header, .depth = self.tokens.depth(self.tok) };
         while (true) {
             const expr = try self.parseExpr();
             var it = ast.ForIterable{ .expr = expr };
@@ -4476,7 +4416,7 @@ pub const Parser = struct {
             if (self.tokens.tag(self.tok) != .comma) break;
             self.advance();
         }
-        self.in_for_header = saved_hdr;
+        self.header = saved_hdr;
 
         if (captures.items.len != 0 and captures.items.len != iterables.items.len) {
             return self.fail("for capture count must match the iterable count — one capture per iterable");
@@ -4516,10 +4456,10 @@ pub const Parser = struct {
     fn parseMatchExpr(self: *Parser) anyerror!*Node {
         const start = self.tokens.start(self.tok);
         self.advance(); // skip 'match'
-        const saved_match = self.in_match_subject;
-        self.in_match_subject = true;
+        const saved_hdr = self.header;
+        self.header = .{ .kind = .match_subject, .depth = self.tokens.depth(self.tok) };
         const subject = try self.parseExpr();
-        self.in_match_subject = saved_match;
+        self.header = saved_hdr;
         return self.parseMatchBody(subject, start);
     }
 
@@ -5656,7 +5596,8 @@ pub const Parser = struct {
     /// not a call and not a range end: parsePostfix leaves it, an open
     /// range stays open, and the header ends.
     fn spacedGroupEndsHeader(self: *Parser) bool {
-        if (!self.in_for_header) return false;
+        const h = self.headerAtCursor() orelse return false;
+        if (h.kind != .for_header) return false;
         if (self.tokens.flagsOf(self.tok).glued_left) return false;
         const after = self.tagAfterParenGroup();
         return after == .l_brace or after == .fat_arrow;
@@ -7590,6 +7531,140 @@ test "parse a juxtaposition inside a push context call argument" {
     try std.testing.expectEqual(@as(usize, 1), ctx.data.call.args.len);
     try std.testing.expect(ctx.data.call.args[0].data == .juxtaposition);
     try std.testing.expectEqual(@as(usize, 1), stmt.data.push_stmt.body.data.block.stmts.len);
+}
+
+test "parse a juxtaposition inside a push .{ } field value" {
+    const source =
+        \\main :: () {
+        \\  push .{ b = Box(i64){ 1 } } { }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    try std.testing.expect(stmt.data == .push_stmt);
+    const ctx = stmt.data.push_stmt.context_expr;
+    try std.testing.expect(ctx.data == .struct_literal);
+    const value = ctx.data.struct_literal.field_inits[0].value;
+    try std.testing.expect(value.data == .juxtaposition);
+    try std.testing.expect(value.data.juxtaposition.expr.data == .call);
+    try std.testing.expect(stmt.data.push_stmt.body.data == .block);
+}
+
+test "parse a juxtaposition inside a for-header .[ ] element" {
+    const source =
+        \\main :: () {
+        \\  for x in .[ Label { text = "a" } ] { g(); }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    try std.testing.expect(stmt.data == .for_expr);
+    const iterable = stmt.data.for_expr.iterables[0].expr;
+    try std.testing.expect(iterable.data == .array_literal);
+    try std.testing.expect(iterable.data.array_literal.elements[0].data == .juxtaposition);
+    try std.testing.expectEqual(@as(usize, 1), stmt.data.for_expr.body.data.block.stmts.len);
+}
+
+test "parse a juxtaposition inside an if-header index" {
+    const source =
+        \\main :: () {
+        \\  if xs[Pt{ 1 }.x] { g(); }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    try std.testing.expect(stmt.data == .if_expr);
+    const cond = stmt.data.if_expr.condition;
+    try std.testing.expect(cond.data == .index_expr);
+    try std.testing.expect(cond.data.index_expr.index.data.field_access.object.data == .juxtaposition);
+    try std.testing.expectEqual(@as(usize, 1), stmt.data.if_expr.then_branch.data.block.stmts.len);
+}
+
+test "parse a juxtaposition inside a Type.[ ] under a match subject" {
+    const source =
+        \\main :: () {
+        \\  match Pt.[ Pt{ 1 } ][0] { case .a: 1; }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    try std.testing.expect(stmt.data == .match_expr);
+    const subject = stmt.data.match_expr.subject;
+    try std.testing.expect(subject.data == .index_expr);
+    const arr = subject.data.index_expr.object;
+    try std.testing.expect(arr.data == .array_literal);
+    try std.testing.expect(arr.data.array_literal.elements[0].data == .juxtaposition);
+    try std.testing.expectEqual(@as(usize, 1), stmt.data.match_expr.arms.len);
+}
+
+test "parse a juxtaposition inside a brace-as-primary if condition" {
+    const source =
+        \\main :: () {
+        \\  if { Pt { 1 }.x } == 1 { g(); }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    try std.testing.expect(stmt.data == .if_expr);
+    const cond = stmt.data.if_expr.condition;
+    try std.testing.expect(cond.data == .binary_op and cond.data.binary_op.op == .eq);
+    const inner = cond.data.binary_op.lhs.data.block.stmts[0];
+    try std.testing.expect(inner.data.field_access.object.data == .juxtaposition);
+}
+
+test "parse a catch-bare tail in a while header keeps the body brace" {
+    const source =
+        \\main :: () {
+        \\  while mk(n) catch |e| false { n = n + 1; }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    try std.testing.expect(stmt.data == .while_expr);
+    try std.testing.expect(stmt.data.while_expr.condition.data == .catch_expr);
+    try std.testing.expectEqual(@as(usize, 1), stmt.data.while_expr.body.data.block.stmts.len);
+}
+
+test "parse a named aggregate ending an if header only when parenthesized" {
+    const source =
+        \\main :: () {
+        \\  if (Button{ label = "x" }.ready) { g(); }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    try std.testing.expect(stmt.data == .if_expr);
+    const cond = stmt.data.if_expr.condition;
+    try std.testing.expect(cond.data == .field_access);
+    try std.testing.expect(cond.data.field_access.object.data == .juxtaposition);
+    try std.testing.expectEqual(@as(usize, 1), stmt.data.if_expr.then_branch.data.block.stmts.len);
+    // Unparenthesized, the header keeps the brace: the aggregate's `{` is the body.
+    try expectParseErrorAt(
+        "main :: () {\n  if Button{ label = \"x\" }.ready { g(); }\n}",
+        "expected ';'",
+        38,
+    );
 }
 
 test "parse if cond { body } is not Type{}" {

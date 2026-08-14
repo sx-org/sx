@@ -68,13 +68,29 @@ fn namesTemplate(self: *Lowering, callee: *const Node) bool {
     };
 }
 
+/// The name a construction head is WRITTEN with, over the shapes `constructs`
+/// accepts. The head of `Box(i64){ … }` is `Box`, of `p.Slot(i64){ … }` is
+/// `Slot`.
+fn constructionHeadName(head: *const Node) []const u8 {
+    return switch (head.data) {
+        .identifier => |id| id.name,
+        .field_access => |fa| fa.field,
+        .enum_literal => |el| el.name,
+        .type_expr => |te| te.name,
+        .parameterized_type_expr => |pte| pte.name,
+        .call => |c| constructionHeadName(c.callee),
+        .tuple_type_expr => "Tuple",
+        else => "this head",
+    };
+}
+
 /// The aggregate reading: the brace group's items are field inits. `name =`
 /// names a field, a bare identifier is the shorthand for `name = name`, and
 /// anything else is positional.
 fn aggregate(self: *Lowering, node: *const Node, jx: ast.Juxtaposition) Node.Data {
     if (jx.has_header) {
         if (self.diagnostics) |d| {
-            const id = d.addFmtId(.err, node.span, "'{s}' names a type, and a construction takes no parameter header", .{self.formatTypeName(self.inferExprType(jx.expr))});
+            const id = d.addFmtId(.err, node.span, "'{s}' names a type, and a construction takes no parameter header", .{constructionHeadName(jx.expr)});
             d.addHelp(id, null, "a `|…|` header belongs to a block that becomes a closure; parenthesize a closure ELEMENT — `T{ (|x| x), }`", null);
         }
     }

@@ -44,12 +44,17 @@ pub fn lex(allocator: Allocator, source: [:0]const u8) error{OutOfMemory}!TokenL
     errdefer ends.deinit(allocator);
     var flags: std.ArrayList(Flags) = .empty;
     errdefer flags.deinit(allocator);
+    var depths: std.ArrayList(u32) = .empty;
+    errdefer depths.deinit(allocator);
     var trivia_index: std.ArrayList(u32) = .empty;
     errdefer trivia_index.deinit(allocator);
     var comments: std.ArrayList(Comment) = .empty;
     errdefer comments.deinit(allocator);
 
     var lx = Lexer.init(source);
+    // Saturating, so an unbalanced buffer — an editor's mid-edit source —
+    // still yields a defined column.
+    var depth: u32 = 0;
     while (true) {
         try trivia_index.append(allocator, @intCast(comments.items.len));
         const prev_end: u32 = if (ends.items.len == 0) 0 else ends.items[ends.items.len - 1];
@@ -77,6 +82,15 @@ pub fn lex(allocator: Allocator, source: [:0]const u8) error{OutOfMemory}!TokenL
             .blank_left = lineStartsBetween(source, item_end, ws) >= 2,
             .is_raw = tok.is_raw,
         });
+        switch (tok.tag) {
+            .r_paren, .r_bracket, .r_brace => depth -|= 1,
+            else => {},
+        }
+        try depths.append(allocator, depth);
+        switch (tok.tag) {
+            .l_paren, .l_bracket, .l_brace => depth += 1,
+            else => {},
+        }
         if (tok.tag == .eof) break;
     }
     try trivia_index.append(allocator, @intCast(comments.items.len));
@@ -89,6 +103,8 @@ pub fn lex(allocator: Allocator, source: [:0]const u8) error{OutOfMemory}!TokenL
     errdefer allocator.free(ends_s);
     const flags_s = try flags.toOwnedSlice(allocator);
     errdefer allocator.free(flags_s);
+    const depths_s = try depths.toOwnedSlice(allocator);
+    errdefer allocator.free(depths_s);
     const trivia_s = try trivia_index.toOwnedSlice(allocator);
     errdefer allocator.free(trivia_s);
     const comments_s = try comments.toOwnedSlice(allocator);
@@ -99,6 +115,7 @@ pub fn lex(allocator: Allocator, source: [:0]const u8) error{OutOfMemory}!TokenL
         .starts = starts_s,
         .ends = ends_s,
         .flags = flags_s,
+        .depths = depths_s,
         .trivia_index = trivia_s,
         .comments = comments_s,
     };

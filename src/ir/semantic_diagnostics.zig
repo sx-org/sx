@@ -723,10 +723,6 @@ pub const UnknownTypeChecker = struct {
         self.walkBodyTypes(body, declared, in_scope, type_vals);
     }
 
-    /// Walk a scope body checking type annotations on local var / const
-    /// declarations (and body-local struct fields), descending control flow and
-    /// expressions. Nested closure / function literals re-enter via `checkScope`
-    /// with their own params added to `in_scope`.
     /// A juxtaposition whose head is a bare name always constructs, so that
     /// name is a type reference and takes the same unknown-type check a named
     /// struct-literal head does. Any other head may still fuse onto a call, so
@@ -747,6 +743,10 @@ pub const UnknownTypeChecker = struct {
         if (jx.init_block) |ib| self.walkBodyTypes(ib, declared, in_scope, type_vals);
     }
 
+    /// Walk a scope body checking type annotations on local var / const
+    /// declarations (and body-local struct fields), descending control flow and
+    /// expressions. Nested closure / function literals re-enter via `checkScope`
+    /// with their own params added to `in_scope`.
     fn walkBodyTypes(
         self: UnknownTypeChecker,
         node: *const Node,
