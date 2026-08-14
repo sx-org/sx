@@ -15,11 +15,12 @@
 //!     recognizes it by (module, name) identity plus, for a struct, its field
 //!     shape. `@SourceSite`, `@BuildSink`, `@BuildShape`, `@VaList`,
 //!     `@volatile_load`, `@volatile_store`, the `@va_*` cursor operations.
-//!   - `.compiler_formed` — the compiler FORMS the type for a parameter; there
-//!     is no declaration anywhere, so declaring the name is an error wherever
-//!     it appears. `@Init`, `@BuildBlock`. Both are constraints, so both are
+//!   - `.compiler_formed` — the compiler FORMS the type; there is no
+//!     declaration anywhere, so declaring the name is an error wherever it
+//!     appears. `@Init` and `@BuildBlock` are constraints, so both are
 //!     `bound_only`: they are written as a generic bound on the parameter
-//!     (`$I/@Init(T)`, `$B/@BuildBlock(P)`), never as its type.
+//!     (`$I/@Init(T)`, `$B/@BuildBlock(P)`), never as its type. `@Vector` is a
+//!     type constructor: it is written wherever a type is.
 
 const std = @import("std");
 const imports = @import("imports.zig");
@@ -110,6 +111,11 @@ pub const entries = [_]Contract{
         .bound_only = true,
         .bound_spelling = "$B/@BuildBlock(P)",
     },
+    .{
+        .name = "@Vector",
+        .kind = .compiler_formed,
+        .spelling = "@Vector(N, T)",
+    },
 };
 
 /// The bound whose type argument the compiler INFERS from the argument an
@@ -119,6 +125,9 @@ pub const init_bound = "@Init";
 
 /// The bound naming the trailing-block contract.
 pub const build_block_bound = "@BuildBlock";
+
+/// The SIMD type constructor: `@Vector(N, T)` is N lanes of T.
+pub const vector_head = "@Vector";
 
 /// The two open-set DECLARATION heads. A third class of `@` name: neither a
 /// stdlib-declared contract nor a formed type, but a declaration form —
@@ -132,6 +141,13 @@ pub const open_variant_head = "@OpenVariant";
 pub fn isCompilerFormed(name: []const u8) bool {
     const c = find(name) orelse return false;
     return c.kind == .compiler_formed;
+}
+
+/// True for a contract that is only ever a generic BOUND head — it names no
+/// type and no value, so neither a type position nor an expression admits it.
+pub fn isBoundOnly(name: []const u8) bool {
+    const c = find(name) orelse return false;
+    return c.bound_only;
 }
 
 /// Every compiler-formed spelling, joined for the diagnostic that lists them.

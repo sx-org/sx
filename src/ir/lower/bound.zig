@@ -81,7 +81,7 @@ pub fn resolveHead(
     for (in_scope) |tp| {
         if (std.mem.eql(u8, tp, name)) return .{ .type_param = name };
     }
-    if (contracts.isCompilerFormed(name)) return .{ .formed = name };
+    if (contracts.isBoundOnly(name)) return .{ .formed = name };
     if (self.protocolResolver().resolveProtocol(name, source)) |p| {
         return .{ .protocol = .{ .ty = p.ty, .name = name, .params = p.decl.type_params.len } };
     }

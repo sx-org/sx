@@ -1,5 +1,5 @@
-error: Vector lane count must be a positive compile-time integer constant
-  --> examples/vectors/1505-vectors-zero-lane-rejected.sx:9:16
+error: @Vector lane count must be a positive compile-time integer constant
+  --> examples/vectors/1505-vectors-zero-lane-rejected.sx:9:17
    |
- 9 |     v : Vector(0, f32) = ---;
-   |                ^
+ 9 |     v : @Vector(0, f32) = ---;
+   |                 ^

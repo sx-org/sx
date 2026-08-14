@@ -1059,20 +1059,17 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     if (callee_name.len > 0) {
                         // Generic-struct alias head (`ABox :: Box(i64)` /
                         // `a.Box(i64)`): route layout selection through the single
-                        // choke-point (CP-1); the Vector / type-fn branches stay
-                        // as the non-generic fall-through.
+                        // choke-point (CP-1); the `@Vector` / type-fn branches
+                        // stay as the non-generic fall-through.
                         switch (self.selectGenericStructCallee(call_data.callee, call_data.callee.span)) {
                             .template => |t| self.registerGenericStructAlias(cd.name, &t, call_data.args),
                             .poisoned => self.putTypeAlias(self.current_source_file, cd.name, .unresolved),
                             .not_generic => {
-                                if (std.mem.eql(u8, callee_name, "Vector")) {
-                                    // Builtin type constructor — checked BEFORE
-                                    // the generic `fn_ast_map` branch because
-                                    // `Vector` IS in `fn_ast_map` (declared as a
-                                    // `intrinsic` fn) but `instantiateTypeFunction`
-                                    // can't resolve it (no body). Use
-                                    // `resolveTypeCallWithBindings` which
-                                    // hard-codes the vector layout.
+                                if (std.mem.eql(u8, callee_name, contracts.vector_head)) {
+                                    // The builtin constructor has no declaration
+                                    // for `instantiateTypeFunction` to read, so
+                                    // the vector layout comes from
+                                    // `resolveTypeCallWithBindings`.
                                     const result_ty = self.resolveTypeCallWithBindings(call_data);
                                     if (result_ty != .void) {
                                         self.putTypeAlias(self.current_source_file, cd.name, result_ty);
@@ -1101,12 +1098,12 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     // bare last-wins `struct_template_map`.
                     // Generic-struct alias base: route layout selection through the
                     // single choke-point (CP-1); the builtin parameterised-type
-                    // path (Vector etc.) stays as the non-generic fall-through.
+                    // path (`@Vector` etc.) stays as the non-generic fall-through.
                     switch (self.selectGenericStructHead(base_name, if (pt_qualified) pt.name else null, pt_qualified, cd.value.span)) {
                         .template => |t| self.registerGenericStructAlias(cd.name, &t, pt.args),
                         .poisoned => self.putTypeAlias(self.current_source_file, cd.name, .unresolved),
                         .not_generic => {
-                            // Builtin parameterised type (Vector(N, T) etc) —
+                            // Builtin parameterised type (`@Vector(N, T)` etc) —
                             // resolve via type_bridge and register the result
                             // under the alias name so `Vec4` in expression
                             // position can `const_type(<vector tid>)`.
@@ -2031,9 +2028,9 @@ pub fn typeNodeLeavesReady(self: *Lowering, node: *const Node, source: ?[]const 
         },
         // Generic instantiation element (`List(i64)`): the head's template
         // must be registered; a qualified head resolves through the stateful
-        // resolver's namespace guards, and the builtin `Vector` constructor
+        // resolver's namespace guards, and the builtin `@Vector` constructor
         // head has no template — both land in the last-chance round. A
-        // VALUE-const arg (`Vector(N, f32)`) is a name that never enters the
+        // VALUE-const arg (`@Vector(N, f32)`) is a name that never enters the
         // alias table, so it probes not-ready and likewise settles in the
         // last-chance round.
         .parameterized_type_expr => |pt| {
@@ -2044,7 +2041,7 @@ pub fn typeNodeLeavesReady(self: *Lowering, node: *const Node, source: ?[]const 
             for (pt.args) |arg| if (!typeNodeLeavesReady(self, arg, source)) return false;
             return true;
         },
-        // Literals (array dims / Vector lanes), inline type decls, error
+        // Literals (array dims / `@Vector` lanes), inline type decls, error
         // types, … — no bare name leaf to probe; owned by the stateful
         // resolver + post-validation.
         else => return true,
@@ -2290,7 +2287,7 @@ fn registerCompositeAlias(self: *Lowering, cd: *const ast.ConstDecl, source: ?[]
 /// identifier aliases converge in either declaration order. The LAST-CHANCE
 /// round resolves through the stateful resolver even when the readiness
 /// probe never turned true — covering its deliberate false-negatives
-/// (builtin `Vector` heads, value-const args) — gated on not referencing a
+/// (builtin `@Vector` heads, value-const args) — gated on not referencing a
 /// still-pending composite alias so a cycle member never resolves against a
 /// minted stub of its peer. True leftovers are reference cycles: diagnosed
 /// and poisoned, never registered with a stubbed member.
@@ -2732,7 +2729,7 @@ fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alia
 /// bypasses the builtin classifier and resolves only through the nominal
 /// author / alias path.
 ///
-/// Generic / parameterized-protocol / Vector / type-function heads never
+/// Generic / parameterized-protocol / `@Vector` / type-function heads never
 /// reach this leaf — `resolveTypeWithBindings` owns those above the leaf
 /// switch.
 pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, raw: bool) TypeHeadResolution {
@@ -3537,7 +3534,7 @@ pub fn registerNamespaceQualifiedFns(self: *Lowering, ns_name: []const u8, own_d
 
 pub fn registerQualifiedFn(self: *Lowering, ns_name: []const u8, fd: *const ast.FnDecl, short: []const u8) void {
     // Only PLAIN free functions need a qualified identity. Generic /
-    // comptime / pack functions (`Vector`, `print`, `any_to_string`) are
+    // comptime / pack functions (`@Vector`, `print`, `any_to_string`) are
     // dispatched by monomorphization off their BARE template name, not the
     // plain `resolveFuncByName` / `lazyLowerFunction` path that trips the
     // collision assert; registering a qualified alias for them

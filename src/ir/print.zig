@@ -509,7 +509,7 @@ fn writeType(id: TypeId, tt: *const TypeTable, writer: Writer) !void {
             try writeType(o.child, tt, writer);
         },
         .vector => |v| {
-            try writer.print("Vector({d}, ", .{v.length});
+            try writer.print("@Vector({d}, ", .{v.length});
             try writeType(v.element, tt, writer);
             try writer.writeByte(')');
         },

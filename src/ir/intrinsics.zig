@@ -18,7 +18,7 @@
 //! "every entry has a handler, every `intrinsic` declaration has an entry" holds
 //! with no exemption list:
 //!
-//!   * Language primitives (`string`, `Vector`) — resolved by name by the type
+//!   * Language primitives (`string`, `@Vector`) — resolved by name by the type
 //!     system (`type_resolver` / `type_bridge`) like `int` / `bool` / `f64`.
 //!     They are declared nowhere and are not call-dispatched.
 //!   * Keywords (`cast`, `type_eq`, `has_impl`, `is_struct`, `is_comptime`,

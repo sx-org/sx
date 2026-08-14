@@ -36,7 +36,7 @@ main :: () -> i32 {
     // arrays/vectors left the struct_field_* family: lengths/lanes read via
     // `.len` on the VALUE, elements via native indexing (typed).
     arr : [4]i64 = .[10, 20, 30, 40];
-    vec : Vector(4, f32) = .[1.0, 2.0, 3.0, 4.0];
+    vec : @Vector(4, f32) = .[1.0, 2.0, 3.0, 4.0];
     print("array: len={} a1={}\n", arr.len, arr[1]);
     print("vector: len={} v1={}\n", vec.len, vec[1]);
 

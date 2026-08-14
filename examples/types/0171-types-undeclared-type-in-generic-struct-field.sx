@@ -3,7 +3,7 @@
 //
 // The checker walks generic-struct fields with the struct's own type params
 // (`$T`) in scope: `good: T` resolves (it IS a param) while `bad: MissingType`
-// is reported. A value-param position (a `Vector` lane count, a `$N: u32` arg)
+// is reported. A value-param position (a `@Vector` lane count, a `$N: u32` arg)
 // is skipped, so a valid generic struct keeps compiling.
 #import "modules/std.sx";
 

@@ -7,7 +7,7 @@
 WIDTH  :f32: 800;
 HEIGHT :f32: 600;
 
-vec4 :: (x: f32, y: f32, z: f32, w: f32) -> Vector(4, f32) {
+vec4 :: (x: f32, y: f32, z: f32, w: f32) -> @Vector(4, f32) {
     .[x, y, z, w]
 }
 
@@ -15,7 +15,7 @@ vec4 :: (x: f32, y: f32, z: f32, w: f32) -> Vector(4, f32) {
 
 Matrix44 :: union {
     data: [16]f32;
-    struct { c0, c1, c2, c3: Vector(4, f32); };
+    struct { c0, c1, c2, c3: @Vector(4, f32); };
 }
 
 mat4_multiply :: (a: *Matrix44, b: *Matrix44) -> Matrix44 {
@@ -101,7 +101,7 @@ main :: () {
     wire_loc : i32 = glGetUniformLocation(program, "uWire");
 
     // Cube vertices: pos(vec4 w=1) + normal(vec4 w=0), 36 vertices × 2 vec4s = 72
-    vertices : []Vector(4, f32) = .[
+    vertices : []@Vector(4, f32) = .[
         // Front face (z = +0.5)
         .[-0.5, -0.5,  0.5, 1.0], vec4( 0.0,  0.0,  1.0, 0.0),
         vec4( 0.5, -0.5,  0.5, 1.0), vec4( 0.0,  0.0,  1.0, 0.0),

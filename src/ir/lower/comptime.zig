@@ -431,7 +431,7 @@ pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node
 
 /// Evaluate an `inline for` range bound to a comptime integer. Delegates to
 /// the shared `program_index.evalConstIntExpr` — the SAME integer folder the
-/// array dimension / Vector lane / value-param count paths build on — so a
+/// array dimension / `@Vector` lane / value-param count paths build on — so a
 /// literal, a comptime constant (cursor), a module/generic const
 /// (`inline for 0..M`), a `<pack>.len` leaf, a DIRECT integral float
 /// (`0..-2.0` → -2), and any constant-foldable expression over those

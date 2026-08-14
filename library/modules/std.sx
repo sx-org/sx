@@ -13,7 +13,7 @@ list :: #import "modules/std/list.sx";
 map  :: #import "modules/std/map.sx";
 
 // --- Compiler-resolved types ---
-// (`string` and `Vector` have no alias here: they are language primitives the
+// (`string` and `@Vector` have no alias here: they are language primitives the
 // type system resolves by name program-wide. They are declared nowhere and
 // cannot be re-bound.)
 
@@ -35,7 +35,7 @@ AnyRaw          :: core.AnyRaw;
 // compiler dispatches `size_of` / `struct_field_count` / … from its registry before
 // name resolution, so they resolve with no import at all — the declarations in
 // std/core.sx are their source identity, not their reachability. Same reason
-// `string` and `Vector` have no alias here.)
+// `string` and `@Vector` have no alias here.)
 
 // --- Output ---
 

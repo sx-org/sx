@@ -1,7 +1,7 @@
 // A generic value-param arg that does not fit the param's declared integer type
 // (`Box(5_000_000_000)` for `$K: u32`) is a hard error, not a truncating bind:
 // `resolveValueParamArg` routes a `u32` count through the same
-// `program_index.foldDimU32` gate array dims and Vector lanes use.
+// `program_index.foldDimU32` gate array dims and `@Vector` lanes use.
 #import "modules/std.sx";
 
 Box :: struct ($K: u32) { value: i64; }

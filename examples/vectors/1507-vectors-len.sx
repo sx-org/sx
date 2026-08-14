@@ -5,9 +5,9 @@
 #import "modules/std.sx";
 
 main :: () {
-    v : Vector(3, f32) = .[1.0, 3.0, 2.0];
+    v : @Vector(3, f32) = .[1.0, 3.0, 2.0];
     print("{}\n", v.len);
-    w : Vector(8, i32) = .[1, 2, 3, 4, 5, 6, 7, 8];
+    w : @Vector(8, i32) = .[1, 2, 3, 4, 5, 6, 7, 8];
     print("{}\n", w.len);
     total := 0.0;
     i := 0;

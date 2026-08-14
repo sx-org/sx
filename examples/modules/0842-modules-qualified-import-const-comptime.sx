@@ -1,10 +1,10 @@
 // A qualified-import-member const (`m.CAP`) folds as a compile-time constant in
 // every comptime position the bare-import form already supported: array
-// dimensions, const arithmetic, an integral-float dimension, a Vector lane
+// dimensions, const arithmetic, an integral-float dimension, a `@Vector` lane
 // count, and a generic value-param argument.
 //
 // `evalConstIntExpr`'s field_access arm carries a namespace-member arm, and a
-// qualified ref in type-argument position (`Vector(m.LANES, …)`) arrives as a
+// qualified ref in type-argument position (`@Vector(m.LANES, …)`) arrives as a
 // single dotted name. Both resolve through the namespace alias to the target
 // module's per-source const, so the value reaches the const folders rather than
 // only the runtime path.
@@ -17,7 +17,7 @@ main :: () -> i64 {
     a  : [m.CAP]u8 = ---;            // array dimension          → 8
     b  : [m.CAP * 2 + 1]u8 = ---;    // arithmetic over a qualified const → 17
     c  : [m.FOURF]u8 = ---;          // integral float const dim → 4
-    v  : Vector(m.LANES, f32) = ---; // Vector lane count        → 4 lanes
+    v  : @Vector(m.LANES, f32) = ---; // vector lane count        → 4 lanes
     bx : Box(m.CAP) = ---;           // generic value-param arg  → 8
     iter := 0;
     inline for i in 0..m.CAP { iter += 1; }   // inline-for bound → 8

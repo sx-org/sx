@@ -7,7 +7,7 @@
 // resolve: dispatch is keyed by the registry (`ir/intrinsics.zig`) and happens
 // before name resolution, which is why this file compiles.
 //
-// `string` and `Vector` are here for the same reason, one layer down: they are
+// `string` and `@Vector` are here for the same reason, one layer down: they are
 // language primitives the type system answers by name, declared nowhere at all.
 
 P :: struct { a: i64; b: f32; }

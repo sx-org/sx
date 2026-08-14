@@ -84,8 +84,8 @@ i2 :: struct { x: i64; }            // ERROR — and a type-declaration name
 ```
 
 (There is no exception for the stdlib: a reserved type name is reserved
-everywhere. `string` and `Vector` are language primitives — the compiler resolves
-them by name, they are declared nowhere, and they cannot be re-bound.)
+everywhere. `string` is a language primitive — the compiler resolves it by
+name, it is declared nowhere, and it cannot be re-bound.)
 
 #### The `@` namespace
 
@@ -121,12 +121,13 @@ declaration of it, so there is no second author for the import-visibility rule t
 choose between: `@SourceSite` and `@VaList` are spelled bare wherever they are
 written.
 
-Separately, a few `@` names are **compiler-formed** — `@Init(T)` and
-`@BuildBlock(P)`. Those are formed for a parameter, never declared and never
-constructed, so they have no stdlib declaration and no literal form.
-Both are constraints, so both are written only as a bound on the parameter
-(`value: $I/@Init(T)`, `content: $B/@BuildBlock(P)`) — see
-[`@Init(T)`](#initt) and [`@BuildBlock(P)`](#buildblockp).
+Separately, a few `@` names are **compiler-formed** — `@Init(T)`,
+`@BuildBlock(P)` and `@Vector(N, T)`. The compiler forms the type, so there is
+no stdlib declaration to read and declaring the name is an error. `@Init` and
+`@BuildBlock` are constraints, written only as a bound on the parameter
+(`value: $I/@Init(T)`, `content: $B/@BuildBlock(P)`) and never as its type —
+see [`@Init(T)`](#initt) and [`@BuildBlock(P)`](#buildblockp). `@Vector(N, T)`
+is a type constructor (§Vector Types), written wherever a type is.
 
 #### Backtick raw-identifier escape
 
@@ -2603,7 +2604,7 @@ buffer.len         // 5 (compile-time constant, i64)
 A `.[ … ]` literal takes its element type from the annotation or target
 (`x : [3]i16 = .[1, 2, 3]`), or infers it from the elements when bare
 (`.[1, 2, 3]` is `[3]i64`). A type prefix on the literal names the
-**aggregate** type — `Vector(3, f32).[…]`, `([2]?i64).[…]`, or an alias
+**aggregate** type — `@Vector(3, f32).[…]`, `([2]?i64).[…]`, or an alias
 of an array type — never the element type: a prefix that resolves to a
 non-array/vector/slice type (`i16.[…]`, `Point.[…]`) is a compile error
 pointing at the annotated form.
@@ -2613,7 +2614,7 @@ Arrays can also be constructed programmatically with the `Array` builtin:
 MyArr :: Array(5, i32);   // equivalent to [5]i32
 ```
 
-A **count** is a compile-time integer used as an array dimension, a `Vector`
+A **count** is a compile-time integer used as an array dimension, a `@Vector`
 lane count, or a generic value-param count. Every count must be **integral**: an
 integral compile-time float folds to its integer (`[4.0]i64` ≡ `[4]i64`), while a
 non-integral float is rejected (an array dimension reports "array dimension must
@@ -2641,8 +2642,8 @@ some counts and not others:
   instantiation); a value outside that type's range is rejected (`-1` or
   `5_000_000_000` for a `u32` param). A negative count is therefore accepted
   only when the declared type is signed.
-- **`Vector` lane count** — any compile-time integer ≥ 1 (strictly positive). A
-  zero-lane or negative vector (`Vector(0, f32)`) is rejected ("Vector lane
+- **`@Vector` lane count** — any compile-time integer ≥ 1 (strictly positive). A
+  zero-lane or negative vector (`@Vector(0, f32)`) is rejected ("@Vector lane
   count must be a positive compile-time integer constant").
 
 A **range bound** — the start/end of an `inline for` or `for` range — is a
@@ -3075,9 +3076,12 @@ SxFoo     :: #objc_class("SxFoo")    export { counter: i32; bump :: (self: *Self
 | `va_list` | `@VaList` | the C-variadic boundary, place-only |
 
 ### Vector Types (SIMD)
-LLVM SIMD vectors, parameterized by length and element type.
+LLVM SIMD vectors, written `@Vector(N, T)` — `N` lanes of element type `T`. The
+compiler forms the type, so the name carries its `@` (§Lexical Structure, The
+`@` namespace) and a bare `Vector` is an ordinary identifier.
 ```sx
-v := vec3(1, 3, 2);  // Vector(3, f32)
+a : @Vector(3, f32) = .[1.0, 3.0, 2.0];
+v := vec3(1, 3, 2);  // @Vector(3, f32)
 ```
 
 **Arithmetic**: Element-wise `+`, `-`, `*`, `/` on vectors of same dimensions.
@@ -5844,7 +5848,7 @@ lowered, yet `atomic_load` evaluates under `#run` and `sqrt` does not: the
 evaluator interprets the atomic ops, but has no arm for the math call `sqrt`
 lowers to. A `#run sqrt(x)` fails loudly rather than folding to a wrong value.
 
-Two categories are **not** intrinsics. `string` and `Vector` are
+Two categories are **not** intrinsics. `string` and `@Vector` are
 language primitives, resolved by name by the type system like `int` / `bool` /
 `f64`. And a handful of keywords (`type_eq`, `has_impl`, `is_struct`,
 `is_comptime`) are recognized bare, declared nowhere. `has_impl(P, T)`
@@ -5929,7 +5933,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `variant_value($E: Type, idx: i64) -> i64` — the `idx`-th variant's integer value: its explicit value / explicit tag when declared (custom values, flags, tagged-union tags), else its ordinal. Works on enums AND tagged unions. A runtime `Type` reads the `__sx_member_value_ptrs` tables (same master-index pattern as the name/type/offset families, same `memberValue` source as the static fold).
 - `variant_index($E: Type, val: E) -> i64` — a value's sequential variant ordinal (the inverse of `variant_value`; explicit values reverse-map, an unmatched tag answers itself — the identity seed). With a **runtime** `Type` the value travels as an `any` view: `variant_index(t, av)` reads the tag word through the view (a signed backing sign-extends; a layout-struct union loads its narrow tag slot, not the wider header) and scans the value table — a typed second argument is impossible there and is a compile error.
 - `is_flags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `#flags`)
-- `vector_lanes($T: Type) -> i64` — a vector's lane count (`vector_lanes(Vector(3, f32))` is `3`). The one vector length the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so `size_of / element size` over-counts (3 lanes read as 4). A static non-vector argument is a compile error (`.len` / `struct_field_count` are the right spellings elsewhere); a runtime `Type` reads the `__sx_vector_lanes` table, where a non-vector tag answers 0 (kind discrimination is `type_info`'s job, like the count tables).
+- `vector_lanes($T: Type) -> i64` — a vector's lane count (`vector_lanes(@Vector(3, f32))` is `3`). The one vector length the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so `size_of / element size` over-counts (3 lanes read as 4). A static non-vector argument is a compile error (`.len` / `struct_field_count` are the right spellings elsewhere); a runtime `Type` reads the `__sx_vector_lanes` table, where a non-vector tag answers 0 (kind discrimination is `type_info`'s job, like the count tables).
 - `type_eq($A: Type, $B: Type) -> bool` — structural TypeId equality (`type_eq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if type_eq(...)` is comptime-decidable
 - `is_unsigned($T: Type) -> bool` — `true` if `T` is an unsigned integer (`u8`/`u16`/`u32`/`u64`/`usize`); used by `{}` formatting to print unsigned integers as unsigned decimal
 
@@ -5941,7 +5945,7 @@ An `any` is accepted because it can hold either a value or a `Type`. `type_name`
 - Conversions are spelled `xx expr` (target from context) or postfix `expr.(T)` (explicit target) — see §Postfix Cast. There is no `cast(Type, expr)` builtin; runtime-typed data travels as `any` and comes back through the assertion forms.
 
 ### Vectors
-- `Vector($N: int, $T: Type) -> Type` — returns an LLVM vector type of `N` elements of type `T`
+- `@Vector($N: int, $T: Type) -> Type` — returns an LLVM vector type of `N` elements of type `T`
 
 ---
 

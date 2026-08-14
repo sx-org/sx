@@ -1,6 +1,6 @@
 // Zero is a context-dependent count. An array dimension and a generic
 // value-param count both ACCEPT zero — `[0]T` is a valid empty (zero-length)
-// array, and `Box(0)` is a length-0 instantiation. (A `Vector` lane count
+// array, and `Box(0)` is a length-0 instantiation. (A `@Vector` lane count
 // rejects zero — see 1505.) This pins the zero-accepting half of the
 // context-dependent count rule documented in specs.md (Array Types).
 #import "modules/std.sx";
