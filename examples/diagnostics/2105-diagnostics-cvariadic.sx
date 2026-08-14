@@ -54,6 +54,8 @@ Wraps :: struct {
     lent: [2]*@VaList;
 }
 
+VaPair :: Tuple(@VaList, i64);
+
 wrapped_global: [1]@VaList;
 wrapped_borrows: []*@VaList;
 
@@ -155,7 +157,7 @@ main :: () -> i32 {
     sum_ints(1, pair);           // the same refusal on a named typed tail
 
     printf("%d %d %d\n", size_of(@VaList), align_of(@VaList), struct_field_count(@VaList));
-    printf("%d %d %d\n", size_of([1]@VaList), align_of(?@VaList), struct_field_count(Tuple(@VaList, i64)));
+    printf("%d %d %d\n", size_of([1]@VaList), align_of(?@VaList), struct_field_count(VaPair));
     made := @VaList{};
     printf("%d\n", reads(1, 2) + no_tail() + ends_a_borrow(*made));
     printf("%d\n", boundary_actuals(1, 2) + walks_a_borrowed_list(1, made));

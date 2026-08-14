@@ -58,14 +58,16 @@ and `T { … }` a keyword label takes the backtick raw escape
 expression, so `.{ if x > 1 then 10 else 20, 2 }` is an if-expression element.
 Value-binding positions (locals, params, function names) reject keywords.
 
-**`Tuple(` and `Closure(` are reserved in expression head position.** The
-type constructors `Tuple(...)` and `Closure(...) -> R` parse as TYPE
-expressions wherever the exact token pair `Tuple`+`(` / `Closure`+`(`
-opens a primary expression (this is what makes `NT :: Tuple(a: i64)` and
-`CB :: Closure(i32) -> i32` aliases work). Declaring a function or value
-named `Tuple`/`Closure` is permitted, but CALLING it in head position is
-hijacked by the type parse; use the backtick escape (`` `Closure(5) ``)
-to call such a value. Prefer different names.
+**`Tuple(` and `Closure(` build a type in type position only.** The type
+constructors `Tuple(...)` and `Closure(...) -> R` are read wherever the grammar
+demands a type — an annotation, a parameter, a field, a return, a type argument
+— and directly after `::`, where the exact token pair `Tuple`+`(` /
+`Closure`+`(` opens a type alias (`NT :: Tuple(a: i64)`,
+`CB :: Closure(i32) -> i32`). Everywhere else `Tuple` and `Closure` are
+ordinary identifiers: a function named `Closure` is called as `Closure(5)`
+with no escape, and `Tuple(1, 2)` in a value position is a call to whatever
+`Tuple` names there. A tuple type reaches a type-demanding builtin
+(`size_of(T)`, `type_info(T)`) as an alias.
 
 Every reserved spelling except `inline` bare-names member slots — the
 identifier-classified spellings (`i1`..`i64`, `u1`..`u64`, `bool`, `string`,
@@ -2458,9 +2460,11 @@ single : Tuple(i64) = .{42};                   // 1-tuple value
 empty  : Tuple() = .{};                        // empty tuple value
 zeroed : Tuple(i32, i32) = ---;                // zero-initialized tuple
 
-// Explicitly typed value (like `Point{...}`):
-p := Tuple(i64, i64){40, 2};
-n := Tuple(x: i64, y: i64){x = 10, y = 20};
+// Explicitly typed value (like `Point{...}`), through a tuple alias:
+PT :: Tuple(i64, i64);
+NT :: Tuple(x: i64, y: i64);
+p := PT{40, 2};
+n := NT{x = 10, y = 20};
 ```
 
 A named tuple value uses `=` for its fields (`.{x = a, y = b}`); a named tuple
@@ -2475,11 +2479,14 @@ Tuple(x: i64, y: i64)  // named tuple type
 Tuple()             // empty tuple type
 Tuple(..F(Ts))      // pack-spread tuple type (see Variadic Heterogeneous Type Packs)
 ```
-`Tuple(...)` is strictly a **type** in every position — including `size_of(Tuple(...))`
-and `type_info(...)` arguments. A tuple **value** comes only from a `.{ ... }`
-literal against a tuple-typed target (`t : Tuple(A, B) = .{a, b}`) or the typed
-prefix (`Tuple(A, B){a, b}`); a bare `Tuple(1, 2)` (non-type elements) is
-rejected as a tuple type with non-type elements.
+`Tuple(...)` is a **type-position** spelling: an annotation, a parameter, a
+field, a return, a type argument, or a `::` alias. A type-demanding builtin
+(`size_of`, `type_info`) takes an alias — `T :: Tuple(A, B); size_of(T)` — since
+its argument sits in expression position, where `Tuple` is an ordinary name. A
+tuple **value** comes only from a `.{ ... }` literal against a tuple-typed
+target (`t : Tuple(A, B) = .{a, b}`) or the typed prefix on an alias
+(`T{a, b}`); a tuple type with non-type elements (`Tuple(i32, 1)`) is rejected
+where the type is demanded.
 
 Bare parentheses are grouping and never a tuple:
 ```sx
@@ -2550,15 +2557,16 @@ Tuples are represented as anonymous LLVM struct types (same layout as named stru
 
 **Equality and inequality** — element-wise comparison, both sides must have the same field count:
 ```sx
-a : Tuple(i64, i64) = .{1, 2};
-b : Tuple(i64, i64) = .{1, 3};
+P2 :: Tuple(i64, i64);
+a : P2 = .{1, 2};
+b : P2 = .{1, 3};
 a == a   // true
 a != b   // true
 ```
 
 **Concatenation** (`+`) — creates a new tuple with fields from both sides:
 ```sx
-c := a + Tuple(i64, i64){3, 4};   // c : Tuple(i64, i64, i64, i64)
+c := a + P2{3, 4};   // c : Tuple(i64, i64, i64, i64)
 c.0;                       // 1
 c.3;                       // 4
 ```
@@ -2573,7 +2581,7 @@ r.5;                 // 2
 **Lexicographic comparison** (`<`, `<=`, `>`, `>=`) — compares element-by-element left to right:
 ```sx
 a < b                            // true  (first fields equal, 2 < 3)
-Tuple(i64, i64){2, 0} > Tuple(i64, i64){1, 9}   // true  (2 > 1, rest ignored)
+P2{2, 0} > P2{1, 9}              // true  (2 > 1, rest ignored)
 a <= a                           // true  (all equal, <= allows tie)
 ```
 
