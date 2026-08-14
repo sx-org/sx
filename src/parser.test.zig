@@ -238,7 +238,6 @@ test "parser: .(a, b) is rejected" {
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-// A `.( … )` initializer after a tuple type is rejected too.
 test "parser: Tuple(A, B).( ... ) is rejected" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
