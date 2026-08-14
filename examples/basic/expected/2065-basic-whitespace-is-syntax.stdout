@@ -1,10 +1,7 @@
-box=8 alias=5 zero=0
-call=42 index=20 ufcs=12
+call=42 42
+index=20 20
 packindex=i64
-total=60
-cleanup Bad
-half=-1
-tag=104 boxed=9
-infix=7 tight=7 mul=30 tightmul=30
-spread=7
-neg=-4 deref=4
+box=7 alias=5
+neg=-5 deref=5 dec=8
+byref=110 120 130
+kind=one many

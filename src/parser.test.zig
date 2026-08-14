@@ -513,10 +513,8 @@ test "parser: private inside top-level inline if" {
 
 // ---- Whitespace is syntax (specs §1) ----
 //
-// The corpus pins the DIAGNOSTICS (examples/diagnostics/2057–2064); these pin
-// the two readings the corpus cannot show — a spaced bracket is fatal on one
-// line, while across a line it merely stops binding, which is the shape ASI
-// then builds on.
+// A `(` applies, a `[` indexes, and a prefix `-` / `--` / `*` binds its operand
+// across any gap — space and line break alike.
 
 fn parseErrMsg(alloc: std.mem.Allocator, src: [:0]const u8) ![]const u8 {
     var p = try Parser.init(alloc, src);
@@ -524,76 +522,61 @@ fn parseErrMsg(alloc: std.mem.Allocator, src: [:0]const u8) ![]const u8 {
     return p.err_msg orelse return error.MissingMessage;
 }
 
-test "parser: a postfix `(` binds only when glued" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var ok = try Parser.init(alloc, "f :: () -> i64 { g(1) }");
-    const root = try ok.parse();
+fn parseOne(alloc: std.mem.Allocator, src: [:0]const u8) !*Node {
+    var p = try Parser.init(alloc, src);
+    const root = try p.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
-    try std.testing.expect(body.data.block.stmts[0].data == .call);
-
-    // Same line: the space is the error, and the report names it.
-    const spaced = try parseErrMsg(alloc, "f :: () -> i64 { g (1) }");
-    try std.testing.expect(std.mem.indexOf(u8, spaced, "a space before `(`") != null);
-
-    // Across a line the `(` does not bind either, and what the statement is
-    // missing is its terminator.
-    const split = try parseErrMsg(alloc, "f :: () -> i64 { g\n(1) }");
-    try std.testing.expect(std.mem.indexOf(u8, split, "expected ';'") != null);
+    try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
+    return body.data.block.stmts[0];
 }
 
-test "parser: a postfix `[` binds only when glued" {
+test "parser: a postfix `(` applies arguments across any gap" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-
-    var ok = try Parser.init(alloc, "f :: () -> i64 { xs[0] }");
-    const root = try ok.parse();
-    const body = root.data.root.decls[0].data.fn_decl.body;
-    try std.testing.expect(body.data.block.stmts[0].data == .index_expr);
-
-    const spaced = try parseErrMsg(alloc, "f :: () -> i64 { xs [0] }");
-    try std.testing.expect(std.mem.indexOf(u8, spaced, "a space before `[`") != null);
-}
-
-// A type application never crosses a statement boundary, so ANY gap there is
-// the spacing mistake — including one written across a line.
-test "parser: a type's arguments bind only when glued" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var ok = try Parser.init(alloc, "f :: (b: Box(i64)) { }");
-    _ = try ok.parse();
 
     for ([_][:0]const u8{
+        "f :: () -> i64 { g(1) }",
+        "f :: () -> i64 { g (1) }",
+        "f :: () -> i64 { g\n(1) }",
+    }) |src| {
+        try std.testing.expect((try parseOne(alloc, src)).data == .call);
+    }
+}
+
+test "parser: a postfix `[` indexes across any gap" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for ([_][:0]const u8{
+        "f :: () -> i64 { xs[0] }",
+        "f :: () -> i64 { xs [0] }",
+        "f :: () -> i64 { xs\n[0] }",
+    }) |src| {
+        try std.testing.expect((try parseOne(alloc, src)).data == .index_expr);
+    }
+}
+
+test "parser: a type's arguments apply across any gap" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for ([_][:0]const u8{
+        "f :: (b: Box(i64)) { }",
         "f :: (b: Box (i64)) { }",
         "f :: (b: Box\n(i64)) { }",
         "f :: (c: Closure (i64) -> i64) { }",
         "f :: (b: $B/@BuildBlock (Drawable)) { }",
         "V :: @OpenVariant (View) { }",
         "impl Into (Block) for Row { }",
+        "BI :: Box (i64);",
+        "f :: (p: * `i2 (i64)) { }",
     }) |src| {
-        const msg = try parseErrMsg(alloc, src);
-        try std.testing.expect(std.mem.indexOf(u8, msg, "a space between a type and its arguments") != null);
+        var p = try Parser.init(alloc, src);
+        _ = try p.parse();
     }
-}
-
-// `BI :: Box;` alone is a valid alias to the un-applied generic, so nothing
-// downstream flags the spelling — the glue check has to fire at the `(` for
-// the report to name the space.
-test "parser: the spaced alias orphan reports the spacing" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var ok = try Parser.init(alloc, "BI :: Box;");
-    _ = try ok.parse();
-
-    const msg = try parseErrMsg(alloc, "BI :: Box (i64);");
-    try std.testing.expect(std.mem.indexOf(u8, msg, "write `Box(i64)`") != null);
 }
 
 test "parser: `-` is infix wherever a left operand is complete" {
@@ -630,56 +613,36 @@ test "parser: `-` is infix wherever a left operand is complete" {
     try std.testing.expect(split_body.data.block.stmts[1].data.unary_op.op == .negate);
 }
 
-test "parser: a prefix `-` / `*` binds only when glued" {
+test "parser: a prefix `-` / `--` / `*` binds across a space" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var ok = try Parser.init(alloc, "f :: () -> i64 { x := -5; y := *n; 0 }");
-    _ = try ok.parse();
-
     for ([_][:0]const u8{
-        "f :: () -> i64 { x := - 5; 0 }",
-        "f :: () -> i64 { y := * n; 0 }",
+        "f :: () -> i64 { x := -5; y := *n; z := --n; 0 }",
+        "f :: () -> i64 { x := - 5; y := * n; z := -- n; 0 }",
+        "f :: (p: *i64) { }",
         "f :: (p: * i64) { }",
+        "f :: (p: *`i2) { }",
+        "f :: (p: * `i2) { }",
     }) |src| {
-        const msg = try parseErrMsg(alloc, src);
-        try std.testing.expect(std.mem.indexOf(u8, msg, "a prefix operator binds only when glued") != null);
+        var p = try Parser.init(alloc, src);
+        _ = try p.parse();
     }
 }
 
-// A raw identifier's span excludes its backtick; the whitespace rules read the
-// source as typed, so `` *`i2 `` is glued and `` `i2(i64) `` is an application.
-test "parser: the glue rules see a raw identifier's backtick" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var ok = try Parser.init(alloc, "f :: (p: *`i2(i64)) { }");
-    _ = try ok.parse();
-
-    const msg = try parseErrMsg(alloc, "f :: (p: * `i2(i64)) { }");
-    try std.testing.expect(std.mem.indexOf(u8, msg, "a prefix operator binds only when glued") != null);
-}
-
 // A pack index is an index like any other, in an expression as in a type.
-test "parser: a pack index binds only when glued" {
+test "parser: a pack index binds across a space" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var ok = try Parser.init(alloc, "f :: (..$args) -> string { g($args[0]) }");
-    const root = try ok.parse();
-    const body = root.data.root.decls[0].data.fn_decl.body;
-    try std.testing.expect(body.data.block.stmts[0].data.call.args[0].data == .pack_index_type_expr);
-
-    const spaced = try parseErrMsg(alloc, "f :: (..$args) -> string { g($args [0]) }");
-    try std.testing.expect(std.mem.indexOf(u8, spaced, "write `$args[0]`") != null);
-
-    // Across a line the `[` stops binding, leaving the whole pack — no spacing
-    // complaint, and the ordinary path reports what follows.
-    const split = try parseErrMsg(alloc, "f :: (..$args) -> string { g($args\n[0]) }");
-    try std.testing.expect(std.mem.indexOf(u8, split, "a space before `[`") == null);
+    for ([_][:0]const u8{
+        "f :: (..$args) -> string { g($args[0]) }",
+        "f :: (..$args) -> string { g($args [0]) }",
+    }) |src| {
+        try std.testing.expect((try parseOne(alloc, src)).data.call.args[0].data == .pack_index_type_expr);
+    }
 }
 
 // ---- Statement termination (specs §1: Whitespace is Syntax) ----
@@ -1195,11 +1158,11 @@ test "parser: an assignment operator below a target continues it" {
 
 // ---- The binding layer ----
 //
-// `(`, `[`, `{`, and `!` attach to what precedes them only on that expression's
-// own line — the same rule the glue forms and the trailing block follow. It is
-// geometry, not completability: the same brace is refused inside an argument
-// list exactly as it is at statement level. The dot-led postfixes are the other
-// camp: `.`, `?.`, and `catch` chain across a break.
+// `{` and `!` attach to what precedes them only on that expression's own line
+// — the same rule the trailing block follows. It is geometry, not
+// completability: the same brace is refused inside an argument list exactly as
+// it is at statement level. The dot-led postfixes are the other camp: `.`,
+// `?.`, and `catch` chain across a break.
 
 // `!` is postfix force-unwrap and prefix `not`, so which one a leading `!`
 // spells is decided by the line it sits on.
@@ -1573,9 +1536,9 @@ test "parser: an arm's statements take their `;`" {
     _ = try parseErrMsg(alloc, "f :: (v: i64) -> i64 { match v { case 1: 10 case 2: 20 } }");
 }
 
-// `else` glued to a `:` heads the default arm; every other `else` chains the
-// `if` above it, across a line break included.
-test "parser: a glued `:` separates a default arm from a chaining `else`" {
+// `else` followed by a `:` heads the default arm; every other `else` chains
+// the `if` above it, across a line break included.
+test "parser: a `:` separates a default arm from a chaining `else`" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1637,6 +1600,22 @@ test "parser: a glued `:` separates a default arm from a chaining `else`" {
         \\}
     );
     try std.testing.expect(chain.data.block.stmts[0].data.if_expr.else_branch != null);
+
+    // The gap before the `:` says nothing — `else :` heads the default arm too.
+    const spaced = try parseBody(alloc,
+        \\f :: (v: i64) -> i64 {
+        \\    n := 0;
+        \\    match v {
+        \\        case 1: n = 1;
+        \\        else :
+        \\            n = 3;
+        \\    }
+        \\    n
+        \\}
+    );
+    const spaced_match = spaced.data.block.stmts[1].data.match_expr;
+    try std.testing.expectEqual(@as(usize, 2), spaced_match.arms.len);
+    try std.testing.expect(spaced_match.arms[1].pattern == null);
 }
 
 test "parser: an `@` function declaration is its signature, with an intrinsic body" {

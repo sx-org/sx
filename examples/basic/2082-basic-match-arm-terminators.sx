@@ -1,8 +1,8 @@
 // Whitespace is syntax (specs §1), inside a `match` arm. An arm body is an
 // ordinary statement list, so every statement in it takes its `;` — `case` and
-// `else:` are statement heads, not terminators. `else:` — a `:` glued to the
-// `else` — heads the default arm, while every other `else` chains the `if`
-// above it.
+// `else:` are statement heads, not terminators. `else:` — an `else` followed by
+// a `:` — heads the default arm, while every other `else` chains the `if` above
+// it.
 //
 // The positions that end an arm's statement without a `;` are the ones that end
 // any statement: the arm's last statement sits before the match's `}`, a
@@ -59,10 +59,10 @@ shade :: (c: Color) -> i64 {
     n
 }
 
-// `}` NEWLINE `else` chains the `if` — the glued `:` is what makes the default
-// arm's `else` a different token. Both spellings meet here: the first arm's
-// `if` takes the chaining `else`, the second arm's `if` takes none and the
-// `else:` under it opens the default arm.
+// `}` NEWLINE `else` chains the `if` — the following `:` is what makes the
+// default arm's `else` a different token. Both spellings meet here: the first
+// arm's `if` takes the chaining `else`, the second arm's `if` takes none and
+// the `else:` under it opens the default arm.
 tone :: (c: Color) -> i64 {
     n := 0;
     match c {

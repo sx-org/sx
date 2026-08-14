@@ -63,16 +63,16 @@ Third-party attributions for stdlib-derived code are recorded in
 
 ### Whitespace is syntax
 
-Three rules decide how six glyphs read — `(`, `[`, `-`, `*`, `{`, and `!` each
-carry two meanings, and the gap around them picks one. A line break is not one
-of those gaps: it is ordinary space, and `;` ends a statement.
+Two glyphs read by the gap around them — `{` and `!` each carry two meanings,
+and the line they sit on picks one. A line break is otherwise ordinary space,
+and `;` ends a statement.
 
 ```sx
-foo(2)      Box(i64)      xs[0]     // `(` applies, `[` indexes — only when GLUED
-foo (2)     Box (i64)     xs [0]    // error, each naming the space and the fix
+foo(2)      Box(i64)      xs[0]     // `(` applies, `[` indexes
+foo (2)     Box (i64)     xs [0]    // the same three, spaced
 
-a - b       a-b                     // infix: matching gaps on both sides
-a -b                                // `a`, then a prefix `-b`
+a - b       a-b           a -b      // infix: the left operand is complete
+g();        -b                      // the `;` cut it — a prefix `-b`
 
 n := add(1, 2);                     // `;` is the terminator
 total := (hi << 16)
@@ -80,16 +80,15 @@ total := (hi << 16)
                                     // expression
 ```
 
-A `(` or `[` binds to what precedes it only when nothing separates them — in
-expressions and in every type position alike. A `(` that opens something new
-(grouping, parameters, a declaration form) is free:
-`add :: (a: i64) -> i64`, `n := (a + b) * c`. `-` and
-`*` also have prefix readings, so they are infix only when spaced the same on
-both sides, and a prefix `-` / `*` must be glued to its operand. The third rule
-governs what binds to an expression from behind — the trailing-block `{`
-(below), a named aggregate's `{`, and the force-unwrap `!` — each of which
-binds only on the expression's own line, since across a break the brace is a
-scope block and the `!` is the prefix `not`.
+A `(` applies arguments and a `[` indexes however much space stands before it —
+in expressions and in every type position alike — and a `(` that opens something
+new (grouping, parameters, a declaration form) is free the same way:
+`add :: (a: i64) -> i64`, `n := (a + b) * c`. `-` and `*` also have prefix
+readings, and position alone decides: after a completed left operand the glyph
+is infix, whatever the gaps. What binds to an expression from behind is where
+the line matters — the trailing-block `{` (below), a named aggregate's `{`, and
+the force-unwrap `!` each bind only on the expression's own line, since across a
+break the brace is a scope block and the `!` is the prefix `not`.
 
 A statement that IS a block ends at its `}` instead of a `;`, and so does a
 declaration whose initializer is one; the last expression before a `}` may drop
@@ -339,9 +338,8 @@ each(items) { |item| text(item.name); }        // parameters in the header
 
 The `{` must sit on the same line as the `)`; one block per call; the header
 binds exactly the parameters the closure declares; after the block's `}` a dot
-continues the chain (`vstack(8.0) { … }.padded()`). The call's own `(` still
-obeys the glue rule — `vstack (8.0) { … }` is a spacing error. A capture-free
-block promotes to a null-env thunk — zero allocation.
+continues the chain (`vstack(8.0) { … }.padded()`). A capture-free block
+promotes to a null-env thunk — zero allocation.
 
 ### Structs
 

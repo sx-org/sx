@@ -319,39 +319,33 @@ ordinary comparisons. Native codegen and the comptime interpreter agree on this.
 
 ### Whitespace is Syntax
 
-Six glyphs — `(`, `[`, `-`, `*`, `{`, `!` — read differently depending on the
-whitespace around them, under three rules. Each rule exists because its glyphs
-carry two meanings and the gap is what tells them apart. A line break is not one
-of those gaps: it is ordinary space, and `;` is what ends a statement.
+Two glyphs — `{` and `!` — read differently depending on the whitespace around
+them: each carries two meanings and the line that separates them is what tells
+the readings apart. Everywhere else whitespace is free. `;` is what ends a
+statement, and a line break is ordinary space.
 
-**Glue — `(` and `[` bind only when glued.** A `(` applies arguments, and a
-`[` indexes, only when *nothing at all* separates it from what precedes it:
+**Free — `(`, `[`, and a prefix `-` / `--` / `*` take any spacing.** A `(`
+applies arguments and a `[` indexes however much space stands between it and
+what precedes it, and a prefix operator binds its operand across a gap the same
+way:
 
 ```sx
-foo(2)          // a call
-Box(i64)        // a type application
-xs[0]           // an index
-
-foo (2)         // error: a space before `(` — a call binds only when the `(`
-                //        is glued to its callee: write `foo(2)`
-v : Box (i64)   // error: a space between a type and its arguments — write `Box(i64)`
-xs [0]          // error: a space before `[` — an index binds only when the `[`
-                //        is glued to what it indexes: write `xs[0]`
+foo(2)      foo (2)      // both a call
+Box(i64)    Box (i64)    // both a type application
+xs[0]       xs [0]       // both an index
+-b          - b          // both a negation
+*p          * p          // both an address-of
 ```
 
-The rule is one rule, applied everywhere the bracket continues something to its
-left: expression calls and indexing, every type position that applies arguments
-(annotation, return type, parameter type, struct field type, type alias,
-constant annotation, `.(T)` cast target, type argument to a builtin, match-arm
-type pattern, an `impl`'s protocol arguments), and the fixed forms whose
-argument list the grammar mandates —
-`Closure(i64) -> i64`, `@Init(P)` / `@BuildBlock(P)` (including in a bound,
-`$B/@BuildBlock(Drawable)`), `@OpenVariant(View)`, `@OpenSet(.{ … })`. A space
-before such a `(` is always fatal.
-
-A bracket that opens something *new* is unaffected — grouping (`(a + b)`),
-parameter and capture lists, array and slice types (`[3]i64`, `[]u8`), and the
-`(…)` of a declaration form all take whatever spacing reads best:
+The same holds in every type position that applies arguments (annotation, return
+type, parameter type, struct field type, type alias, constant annotation, `.(T)`
+cast target, type argument to a builtin, match-arm type pattern, an `impl`'s
+protocol arguments) and in the fixed forms whose argument list the grammar
+mandates — `Closure(i64) -> i64`, `@Init(P)` / `@BuildBlock(P)` (including in a
+bound, `$B/@BuildBlock(Drawable)`), `@OpenVariant(View)`, `@OpenSet(.{ … })`. A
+bracket that opens something *new* is free in the same way — grouping
+(`(a + b)`), parameter and capture lists, array and slice types (`[3]i64`,
+`[]u8`), and the `(…)` of a declaration form:
 
 ```sx
 add    :: (a: i64, b: i64) -> i64 => a + b;   // fn declaration
@@ -363,7 +357,7 @@ v := risky() catch |e| -1;                    // catch binding
 onfail |e| { … }                              // onfail binding
 ```
 
-**Spacing — `-` and `*` are infix wherever a left operand is complete.** Both
+**Position — `-` and `*` are infix wherever a left operand is complete.** Both
 glyphs also have a prefix reading (negation, address-of), and position decides
 between the two: after a completed operand the glyph is infix, whatever the gaps
 around it are, and a slot with no left operand takes the prefix reading. A line
@@ -381,24 +375,18 @@ g();
 -b          // the `;` cut the operand — a prefix `-b`
 ```
 
-A prefix `-` / `*` binds only when glued to its operand, which is what makes
-`-b` and `*p` unambiguous. The gap is read as written, so a raw identifier's
-backtick counts: `` -`x `` is glued and `` - `x `` is not. `--` is a lexeme of
-its own with one reading, the prefix pre-decrement, and the same glue rule:
-`--b` decrements `b` and yields the new value, while `a--b`, `a --b` and `-- b`
-have no reading at all.
+`--` is a lexeme of its own with one reading, the prefix pre-decrement: `--b`
+and `-- b` both decrement `b` and yield the new value, while `a--b` and `a --b`
+have no reading at all — the operand `a` is complete and `--` is no infix
+operator.
 
-**Postfix — `(`, `[`, `{`, and `!` bind only on their expression's own line.**
-The third rule governs what attaches to an expression from behind, and it
-splits the postfix tokens in two. These four are same-line only: `(` and `[`
-already are, since the glue rule above admits no gap at all, and the `{` and
-the `!` answer the question the same way. The `{` after a call opens a trailing
-block only on the same line as the `)`, and a same-line empty `{}` is the one
-brace the gap says nothing about — the callee names its reading; both are
-specified with the form itself — see [Trailing Blocks](#trailing-blocks). A
-named aggregate's `{` and a postfix `!` join them because each has a second
-reading waiting on the other side of a break — a scope block, and the prefix
-`not`:
+**Postfix — `{` and `!` bind only on their expression's own line.** The `{`
+after a call opens a trailing block only on the same line as the `)`, and a
+same-line empty `{}` is the one brace the gap says nothing about — the callee
+names its reading; both are specified with the form itself — see
+[Trailing Blocks](#trailing-blocks). A named aggregate's `{` and a postfix `!`
+join them because each has a second reading waiting on the other side of a
+break — a scope block, and the prefix `not`:
 
 ```sx
 p := Pair{ a = 1, b = 2 };    // same line — the aggregate
@@ -476,8 +464,8 @@ match c {
 }
 ```
 
-`else` reads two ways and a glued `:` is what tells them apart: `else:` heads
-the default arm, while every other `else` — before a block, an `if`, or an
+`else` reads two ways and a following `:` is what tells them apart: `else:`
+heads the default arm, while every other `else` — before a block, an `if`, or an
 expression — chains the `if` above it.
 
 A statement whose last token is a `}` that closes a block form takes no
@@ -5044,7 +5032,7 @@ Matches `subject` against each `case`. Patterns can be:
 - **Integer/bool literals**: `42`, `true` — matches a specific value.
 - **Type categories**: `struct`, `enum`, `union` — matches all types in that category (used with `type_of` values).
 
-`break` exits a case arm without producing a value. The optional `else:` arm matches when no `case` pattern matches — its `:` is glued to the `else`, which is what separates it from an `else` that chains an `if`.
+`break` exits a case arm without producing a value. The optional `else:` arm matches when no `case` pattern matches — its `:` is what separates it from an `else` that chains an `if`.
 ```sx
 match z {
   case .variant1: break;
@@ -5557,8 +5545,7 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
 - **Same line**: the `{` must sit on the same line as the call's `)`. A `{`
   on the next line is an ordinary scope block statement, never a trailing
   block. (This is the `{` half of
-  [Whitespace is Syntax](#whitespace-is-syntax); the call's own `(` obeys the
-  glue rule there.)
+  [Whitespace is Syntax](#whitespace-is-syntax).)
 - **Empty block**: a same-line empty `{}` (comment-only bodies included) after
   a call with arguments carries no body shape, and the gap before it carries no
   signal — `List(Move){}` and `List(Move) {}` are one form, `run(2){}` and
@@ -6988,15 +6975,12 @@ while_expr      = 'while' expr block
 for_expr        = 'for' [for_capture (',' for_capture)* 'in'] for_iter (',' for_iter)* (block | '=>' stmt)
 for_iter        = expr [range_op [expr]]
 range_op        = '..' | '..=' | '..<' | '<..' | '<..=' | '<..<' | '=..' | '=..=' | '=..<'
-for_capture     = ['*'] IDENT [':' type]   // the '*' is GLUED to its name (§1 Whitespace is Syntax);
-                                           // the type is the ELEMENT type
+for_capture     = ['*'] IDENT [':' type]   // the type is the ELEMENT type
 binary          = catch_expr (binop catch_expr)*    // binop includes `or` (fallback / chain)
 catch_expr      = unary ('catch' ('|' IDENT '|')? (block | match_expr | unary))?
 unary           = ('-' | '--' | '*' | '!' | '~' | 'xx' | 'try') unary | postfix
-                  // right-recursive, so prefixes stack (`xx try f()`, `!!ok`);
-                  // a prefix '-' / '--' / '*' must be GLUED to its operand (§1 Whitespace is Syntax)
+                  // right-recursive, so prefixes stack (`xx try f()`, `!!ok`)
 postfix         = primary ('(' args? ')' | '[' expr ']' | '.' IDENT | '.{' field_init_list '}')*
-                  // a postfix '(' / '[' must be GLUED to what precedes it (§1 Whitespace is Syntax)
 primary         = INT | HEX_INT | OCT_INT | BIN_INT | FLOAT | STRING | BOOL | IDENT | '---'
                 | '.' IDENT | '.' '{' field_init_list '}'
                 | '(' expr ')' | block | '#run' expr    // bare parens = grouping ONLY
@@ -7004,7 +6988,7 @@ field_init_list = field_init (',' field_init)* ','?
 field_init      = IDENT '=' expr | IDENT | '..' expr | expr
 if_expr         = 'if' expr 'then' expr ('else' expr)?
                 | 'if' expr block ('else' block)?
-                  // the 'else' of an if is any 'else' NOT glued to a ':' —
+                  // the 'else' of an if is any 'else' NOT followed by a ':' —
                   // one token of lookahead separates it from an else_arm head
 match_expr      = 'match' expr '{' case_arm* else_arm? '}'
                   // the subject is a header expression: the `{` that closes it
@@ -7014,7 +6998,7 @@ arm_capture     = '|' IDENT '|'         // payload binding — a LONE identifier
 arm_body        = 'break' end
                 | '=>' expr end         // the last arm's expr may drop `end`
                 | stmt*                 // every form ends as a statement does
-else_arm        = 'else' ':' stmt*      // the ':' is GLUED to the 'else'
+else_arm        = 'else' ':' stmt*
 pattern         = '.' IDENT | INT | BOOL | IDENT
 closure         = '|' params? '|' ('->' type)? (expr | block)
 args            = expr (',' expr)* ','?
