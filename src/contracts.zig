@@ -19,8 +19,8 @@
 //!     declaration anywhere, so declaring the name is an error wherever it
 //!     appears. `@Init` and `@BuildBlock` are constraints, so both are
 //!     `bound_only`: they are written as a generic bound on the parameter
-//!     (`$I/@Init(T)`, `$B/@BuildBlock(P)`), never as its type. `@Vector` is a
-//!     type constructor: it is written wherever a type is.
+//!     (`$I/@Init(T)`, `$B/@BuildBlock(P)`), never as its type. `@Vector` and
+//!     `@Array` are type constructors: each is written wherever a type is.
 
 const std = @import("std");
 const imports = @import("imports.zig");
@@ -116,6 +116,11 @@ pub const entries = [_]Contract{
         .kind = .compiler_formed,
         .spelling = "@Vector(N, T)",
     },
+    .{
+        .name = "@Array",
+        .kind = .compiler_formed,
+        .spelling = "@Array(N, T)",
+    },
 };
 
 /// The bound whose type argument the compiler INFERS from the argument an
@@ -128,6 +133,15 @@ pub const build_block_bound = "@BuildBlock";
 
 /// The SIMD type constructor: `@Vector(N, T)` is N lanes of T.
 pub const vector_head = "@Vector";
+
+/// The named array type constructor: `@Array(N, T)` is `[N]T`.
+pub const array_head = "@Array";
+
+/// True for a compiler-formed head that CONSTRUCTS a type from a count and an
+/// element type. Both take the count at argument 0.
+pub fn isTypeConstructor(name: []const u8) bool {
+    return std.mem.eql(u8, name, vector_head) or std.mem.eql(u8, name, array_head);
+}
 
 /// The two open-set DECLARATION heads. A third class of `@` name: neither a
 /// stdlib-declared contract nor a formed type, but a declaration form —

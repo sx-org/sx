@@ -1059,16 +1059,16 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     if (callee_name.len > 0) {
                         // Generic-struct alias head (`ABox :: Box(i64)` /
                         // `a.Box(i64)`): route layout selection through the single
-                        // choke-point (CP-1); the `@Vector` / type-fn branches
-                        // stay as the non-generic fall-through.
+                        // choke-point (CP-1); the type-constructor / type-fn
+                        // branches stay as the non-generic fall-through.
                         switch (self.selectGenericStructCallee(call_data.callee, call_data.callee.span)) {
                             .template => |t| self.registerGenericStructAlias(cd.name, &t, call_data.args),
                             .poisoned => self.putTypeAlias(self.current_source_file, cd.name, .unresolved),
                             .not_generic => {
-                                if (std.mem.eql(u8, callee_name, contracts.vector_head)) {
+                                if (contracts.isTypeConstructor(callee_name)) {
                                     // The builtin constructor has no declaration
                                     // for `instantiateTypeFunction` to read, so
-                                    // the vector layout comes from
+                                    // the layout comes from
                                     // `resolveTypeCallWithBindings`.
                                     const result_ty = self.resolveTypeCallWithBindings(call_data);
                                     if (result_ty != .void) {

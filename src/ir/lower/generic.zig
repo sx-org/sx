@@ -1987,6 +1987,12 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
         const elem = self.resolveTypeWithBindings(cl.args[1]);
         return self.module.types.vectorOf(elem, length);
     }
+    // Built-in: @Array(N, T)
+    if (std.mem.eql(u8, callee_name, contracts.array_head) and cl.args.len == 2) {
+        const length = self.resolveArrayLen(cl.args[0]) orelse return .unresolved;
+        const elem = self.resolveTypeWithBindings(cl.args[1]);
+        return self.module.types.arrayOf(elem, length);
+    }
     // Generic-struct head: route through the single layout choke-point (CP-1).
     // Bare → the single bare-VISIBLE author (own / 1-hop flat), source-keyed;
     // qualified `ns.Box(..)` → ns's OWN template (or a missing-member diagnostic);
@@ -2070,6 +2076,15 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
             const length = self.resolveVectorLane(pt.args[0]) orelse return .unresolved;
             const elem = self.resolveTypeWithBindings(pt.args[1]);
             return table.vectorOf(elem, length);
+        }
+    }
+
+    // @Array(N, T) — the named form of `[N]T`.
+    if (std.mem.eql(u8, base_name, contracts.array_head)) {
+        if (pt.args.len == 2) {
+            const length = self.resolveArrayLen(pt.args[0]) orelse return .unresolved;
+            const elem = self.resolveTypeWithBindings(pt.args[1]);
+            return table.arrayOf(elem, length);
         }
     }
 

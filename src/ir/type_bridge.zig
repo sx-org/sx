@@ -419,6 +419,15 @@ fn resolveParameterizedType(pt: *const ast.ParameterizedTypeExpr, table: *TypeTa
             return table.vectorOf(elem, length);
         }
     }
+    // @Array(N, T) is the named form of `[N]T`
+    if (std.mem.eql(u8, base_name, contracts.array_head)) {
+        if (pt.args.len == 2) {
+            const si = StatelessInner{ .table = table, .alias_map = alias_map, .consts = consts };
+            const length = si.resolveArrayLen(pt.args[0]) orelse return .unresolved;
+            const elem = resolveAstType(pt.args[1], table, alias_map, consts);
+            return table.arrayOf(elem, length);
+        }
+    }
     // Generic struct instantiation — register as named type
     const name_id = table.internString(pt.name);
     return table.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });
