@@ -249,7 +249,7 @@ GLSL;
 
 > Note: `enum` is used for both payload-less and payload-bearing sum types (tagged unions). `union` is reserved for C-style untagged unions (memory overlays).
 
-> Note: `raise`, `try`, `catch`, `onfail`, and `error` are the error-handling keywords. `or` is reused as the failable-fallback / chain operator. See [§12 Error Handling](#12-error-handling).
+> Note: `raise`, `try`, `catch`, `onfail`, and `error` are the error-handling keywords. `??` supplies a failable's default, alongside its optional one. See [§12 Error Handling](#12-error-handling).
 
 > Note: `private` is the module-scope declaration visibility modifier — see
 > [§9 Module-Scope Visibility](#9-modules--imports). `` `private `` (backtick
@@ -277,6 +277,7 @@ GLSL;
 | `>>`     | right shift (arithmetic for signed, logical for unsigned) |
 | `and`    | logical AND (short-circuit) |
 | `or`     | logical OR (short-circuit)  |
+| `??`     | default: optional payload or failable success |
 | `in`     | membership test (tuples)    |
 | `+=`     | add-assign       |
 | `-=`     | sub-assign       |
@@ -2923,7 +2924,7 @@ x: ?i32 = 42;
 val := x!;             // val : i32 = 42
 ```
 
-#### Null Coalescing (`??`)
+#### Default (`??`)
 Returns the payload if present, otherwise evaluates the right-hand side:
 ```sx
 x: ?i32 = 42;
@@ -2931,6 +2932,8 @@ y: ?i32 = null;
 a := x ?? 0;           // 42
 b := y ?? 99;          // 99
 ```
+The same operator defaults a failable LHS — see
+[§12 Error Handling](#12-error-handling).
 
 #### Safe Unwrap (`if val := expr`)
 Binds the payload to a variable if present:
@@ -3772,7 +3775,7 @@ On an **`any` receiver** the assertion has three temperaments:
 - **`.(T)` consumed via the error channel = graceful**: the assertion is
   failable `(T, !CastError)`; `try av.(i64)` propagates (the global
   `mismatch` tag is absorbed by an inferred `!` caller or any named set
-  containing a `mismatch` tag), `av.(i64) or 0` falls back,
+  containing a `mismatch` tag), `av.(i64) ?? 0` falls back,
   `av.(i64) catch |e| { … }` binds the tag. Only a DIRECT assertion operand
   is consumed — an assertion nested in a call argument stays unconsumed.
 - **`.(T)` unconsumed = panic on mismatch**: `v := av.(i64);` yields the
@@ -4679,7 +4682,7 @@ Because a box holds the member, **no `any` holds a set value**, and each asserti
 form answers from its own contract. `av.(View)` states that a box holds one, which
 nothing can make true, so it is refused where it is written — through a type
 parameter instantiated at a set, through a `?any` chain, and in the consumed forms
-(`try av.(View)`, `av.(View) or …`), which are that same assertion with a failure
+(`try av.(View)`, `av.(View) ?? …`), which are that same assertion with a failure
 channel. `av.(?View)` is a question, not a statement, so it stays total and
 answers `null` for every box, as does the chained `o?.(?View)`: generic code that
 probes keeps working when it is instantiated at a set. An **optional** of a set is
@@ -4937,20 +4940,21 @@ Everything in `sx` is expression-oriented where possible.
 
 | Prec | Operators | Notes |
 |------|-----------|-------|
-| 9 (highest) | `*`, `/`, `%` | multiplication, division, modulo |
-| 8 | `+`, `-` | addition, subtraction |
-| 7 | `<<`, `>>` | shifts |
-| 6 | `<`, `<=`, `>`, `>=`, `==`, `!=` | comparisons (chainable) |
-| 5 | `&` | bitwise AND |
-| 4 | `^` | bitwise XOR |
-| 3 | `\|` | bitwise OR |
-| 2 | `and` | logical AND (short-circuit) |
-| 1 (lowest) | `or` | logical OR (short-circuit) / failable fallback (§12) |
+| 10 (highest) | `*`, `/`, `%` | multiplication, division, modulo |
+| 9 | `+`, `-` | addition, subtraction |
+| 8 | `<<`, `>>` | shifts |
+| 7 | `<`, `<=`, `>`, `>=`, `==`, `!=` | comparisons (chainable) |
+| 6 | `&` | bitwise AND |
+| 5 | `^` | bitwise XOR |
+| 4 | `\|` | bitwise OR |
+| 3 | `and` | logical AND (short-circuit) |
+| 2 | `or` | logical OR (short-circuit) |
+| 1 (lowest) | `??` | default: optional payload (§2) / failable success (§12); right-associative |
 
 `try` is a unary prefix in the same tier as `xx` / `*` / `-` / `!` / `~`
-(tighter than every binary operator, including `or`); `catch` is a postfix
-attached to a failable expression. So `try foo() or try boo()` parses as
-`(try foo()) or (try boo())`. See [§12 Error Handling](#12-error-handling).
+(tighter than every binary operator, including `??`); `catch` is a postfix
+attached to a failable expression. So `try foo() ?? try boo()` parses as
+`(try foo()) ?? (try boo())`. See [§12 Error Handling](#12-error-handling).
 
 ### Arithmetic
 Standard infix: `+`, `-`, `*`, `/` with usual precedence (`*`/`/` before `+`/`-`).
@@ -6630,14 +6634,14 @@ own function boundary: `raise` inside a closure terminates the *closure*.
 Expression form. `try X` requires `X` to be failable; on `X`'s failure it
 routes control to the nearest enclosing fallback target:
 
-- inside an `or` chain → the next `or` operand;
+- inside a `??` chain → the next `??` operand;
 - otherwise → the function's error return (propagation, like Zig's `try`).
 
 ```sx
 v       := try parse_digit(s);          // propagate on failure
 v2, n   := try parse(s);                // multi-value
 try must_init();                        // statement form, discard values
-v3      := try foo() or try bar();      // chain: foo fails → try bar
+v3      := try foo() ?? try bar();      // chain: foo fails → try bar
 return try transform(try parse(s));     // nests in any value position
 ```
 
@@ -6683,7 +6687,7 @@ v := parse(s) catch |e| match e {       // dispatch on the tag
   else:           raise e;
 };
 
-v := (try foo() or try boo()) catch |e| { return 0; };  // catch over an `or` chain
+v := (try foo() ?? try boo()) catch |e| { return 0; };  // catch over a `??` chain
 ```
 
 **Body type rule.** The body (block-as-expression) must produce the failable's
@@ -6706,10 +6710,10 @@ x := must_init() catch |e| { 0 };              // ERROR: nothing to bind
 Give the callee a value channel (`-> (T, !E)`) where the handled expression
 must produce a result.
 
-### `or` (fallback / chain)
+### `??` (default / chain)
 
-Expression form (the same operator as optional-unwrap). LHS must be failable;
-the RHS shape decides the result:
+Expression form — the operator that defaults an optional (§2 Optional Types)
+also defaults a failable. On a failable LHS the RHS shape decides the result:
 
 - **plain value of the success type** — terminate; the chain becomes
   non-failable; on LHS failure the result is the RHS value (LHS tag discarded);
@@ -6718,34 +6722,38 @@ the RHS shape decides the result:
 - **bare failable** — allowed only when its error path hits a marker
   downstream (see the path-marker rule).
 
-`or` is **left-associative**, evaluated left-to-right with short-circuit.
+`??` is **right-associative**; operands are attempted left-to-right with
+short-circuit.
 
 ```sx
-v := parse_digit(s) or 0;                        // value terminator → non-failable
-v := try foo() or try boo();                     // chain, propagate if both fail
-v := foo() or boo() or 0;                        // bare operands, 0 absorbs all
-v, n := parse_pair(s) or .{0, 0};                // tuple terminator (multi-value)
+v := parse_digit(s) ?? 0;                        // value terminator → non-failable
+v := try foo() ?? try boo();                     // chain, propagate if both fail
+v := foo() ?? boo() ?? 0;                        // bare operands, 0 absorbs all
+v, n := parse_pair(s) ?? .{0, 0};                // tuple terminator (multi-value)
 ```
 
 A **void** failable (`-> !`) rejects a plain-value RHS (no success type to
-fall back to); `must_init() or must_other()` (chain) and `must_init() catch {}`
+fall back to); `must_init() ?? must_other()` (chain) and `must_init() catch {}`
 (absorb) are the legal forms.
+
+`or` / `and` are logical operators over booleans; a failable operand is a type
+error there (`parse(s) or 0` names no bool).
 
 ### Path-marker rule
 
 A failable expression `X` may appear **bare** (no `try`) iff its error path
 passes through at least one explicit marker before reaching the function
-boundary. The markers are: a `try` keyword, a `catch` handler, an `or` value
+boundary. The markers are: a `try` keyword, a `catch` handler, a `??` value
 terminator, or a destructure binding (`v, err := X`). Otherwise `try` (or one
 of the other markers directly on `X`) is required.
 
 ```sx
-a := parse(s) or 0;          // OK — terminator on the path
+a := parse(s) ?? 0;          // OK — terminator on the path
 a := parse(s) catch |e| {...}; // OK — catch marks
 v, err := failable();        // OK — destructure marks
-a := try foo() or try boo(); // OK — each try marks its own exit
+a := try foo() ?? try boo(); // OK — each try marks its own exit
 
-a := foo() or boo();         // ERROR — no marker on the way to the function
+a := foo() ?? boo();         // ERROR — no marker on the way to the function
 a := foo();                  // ERROR — bare, no marker downstream
 ```
 
@@ -6830,7 +6838,7 @@ On block-error exit both kinds run (newest-first); on block-success exit only
 **Restrictions.** `raise` / `try` / `return` / `break` / `continue` are
 rejected inside an `onfail` (and a `defer`) body — a cleanup body has no
 control-transfer target. A failable call in cleanup must be absorbed locally
-(`close(h) catch {};` or `flush(buf) or 0`). `onfail` outside a failable
+(`close(h) catch {};` or `flush(buf) ?? 0`). `onfail` outside a failable
 function, or at top level, is rejected.
 
 ### Closures with `!`
@@ -6946,7 +6954,8 @@ for_expr        = 'for' [for_capture (',' for_capture)* 'in'] for_iter (',' for_
 for_iter        = expr [range_op [expr]]
 range_op        = '..' | '..=' | '..<' | '<..' | '<..=' | '<..<' | '=..' | '=..=' | '=..<'
 for_capture     = ['*'] IDENT [':' type]   // the type is the ELEMENT type
-binary          = catch_expr (binop catch_expr)*    // binop includes `or` (fallback / chain)
+binary          = binop_expr ('??' binary)?         // `??` is right-associative
+binop_expr      = catch_expr (binop catch_expr)*
 catch_expr      = unary ('catch' ('|' IDENT '|')? (block | match_expr | unary))?
 unary           = ('-' | '--' | '*' | '!' | '~' | 'xx' | 'try') unary | postfix
                   // right-recursive, so prefixes stack (`xx try f()`, `!!ok`)

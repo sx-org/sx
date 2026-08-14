@@ -1,9 +1,9 @@
-// Failable `or` value-terminator. `lhs or value` where `lhs`
+// Failable `??` value-terminator. `lhs ?? value` where `lhs`
 // is a value-carrying failable (`-> (T, !E)`): on success the result is the
 // LHS value; on failure the LHS error is discarded and the result is the
 // terminator value. The whole expression is non-failable (type T). The chain
-// form (`try a or try b`) needs fallback-target routing; 1028 covers it.
-// Rejections: `examples/232-failable-or-reject.sx`.
+// form (`try a ?? try b`) needs fallback-target routing; 1028 covers it.
+// Rejections: `examples/errors/1015-errors-failable-default-reject.sx`.
 
 #import "modules/std.sx";
 
@@ -16,10 +16,10 @@ parse :: (n: i32) -> (i32, !E) {
 }
 
 main :: () -> i32 {
-    a := parse(5) or 0;        // success → 10
-    b := parse(-1) or 99;      // Bad     → 99 (terminator)
-    c := parse(0) or 7;        // Empty   → 7  (terminator)
+    a := parse(5) ?? 0;        // success → 10
+    b := parse(-1) ?? 99;      // Bad     → 99 (terminator)
+    c := parse(0) ?? 7;        // Empty   → 7  (terminator)
     r := a + b + c;            // 10 + 99 + 7 = 116
-    print("or result: {}\n", r);
+    print("?? result: {}\n", r);
     return r;
 }

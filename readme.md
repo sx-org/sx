@@ -482,7 +482,7 @@ immune to context drift).
 Every protocol value knows its concrete type (a `type_id` word stamped at
 erasure): `type_of(shape)` answers `Circle`, the checked downcast
 `shape.(Circle)` has the same three temperaments as `any` assertions
-(panic / `or`·`catch` / soft `.(?T)`), and the type switch takes protocol
+(panic / `??`·`catch` / soft `.(?T)`), and the type switch takes protocol
 subjects directly — `match shape { case Circle: |c| {…} else: {…} }`.
 
 Erasability is **per-method**: a method whose signature mentions `Self`
@@ -1031,7 +1031,7 @@ main :: () {
             b := context.io.async(|| -> (i64, !) { try context.io.sleep(10); 20  });
             c := context.io.async(|| -> (i64, !) { try context.io.sleep(20); 3   });
 
-            sum := (a.await() or 0) + (b.await() or 0) + (c.await() or 0);  // 123
+            sum := (a.await() ?? 0) + (b.await() ?? 0) + (c.await() ?? 0);  // 123
             print("sum: {}\n", sum);
         });
         ps.run();   // drive the scheduler until all fibers finish

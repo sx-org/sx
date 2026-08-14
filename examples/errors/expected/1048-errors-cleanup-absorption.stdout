@@ -1,5 +1,5 @@
 [error]
-onfail: x=7 (or)
+onfail: x=7 (??)
 onfail: caught (catch)
 defer: always
 [ok]

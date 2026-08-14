@@ -58,8 +58,8 @@ main :: () -> i64 {
             });
 
             // Await both — suspends the coordinator fiber until each completes.
-            va := a.await() or { -1 };
-            vb := b.await() or { -1 };
+            va := a.await() ?? { -1 };
+            vb := b.await() ?? { -1 };
             rec(pl, va);
             rec(pl, vb);
 
@@ -67,7 +67,7 @@ main :: () -> i64 {
             // off the sticky flag, the `or` default (-99) is taken.
             c := context.io.async(|| -> (i64, !) 7);
             c.cancel();
-            rec(pl, c.await() or { -99 });
+            rec(pl, c.await() ?? { -99 });
         });
 
         ps.run();

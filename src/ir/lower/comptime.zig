@@ -454,11 +454,11 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
     // shape. `resolveType(null)` returns `.i64` — good for primitive
     // helpers, silently wrong for anything else.
     const expr_ty = self.inferExprType(expr);
-    // A failable `#run` (bare, no `catch`/`or`): the comptime function
+    // A failable `#run` (bare, no `catch`/`??`): the comptime function
     // returns the full failable tuple so the #run site can inspect the
     // error slot, but the GLOBAL is typed as the success value. On a
     // comptime error the global never materializes — emit halts with a
-    // diagnostic + trace. A handled `#run … catch/or …` already
+    // diagnostic + trace. A handled `#run … catch/?? …` already
     // strips the error channel, so it lands here as non-failable.
     const is_failable = self.errorChannelOf(expr_ty) != null;
     const func_ret: TypeId = if (is_failable)

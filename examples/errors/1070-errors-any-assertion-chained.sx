@@ -4,7 +4,7 @@
 // the CONVERSION regime (never fails); a `?any` receiver maps the assertion:
 //     try o?.(T)  → (?T, !CastError): null → null, match → value,
 //                   present mismatch → raises `mismatch`
-//     o?.(T) or d → same failable through `or`
+//     o?.(T) ?? d → same failable through `??`
 //     o?.(T)      → unconsumed: panics only on a present mismatch
 //                   (pinned separately, exits 1)
 //     o?.(?T)     → soft: chain-null and mismatch-null CONFLATE
@@ -29,11 +29,11 @@ use :: () -> ! {
     print("t1 null: {}\n", t1 == null);
     t2 := try bm?.(i64);
     print("t2: {}\n", t2 ?? -1);
-    o1 := bn?.(i64) or null;
+    o1 := bn?.(i64) ?? null;
     print("o1 null: {}\n", o1 == null);
-    o2 := bm?.(i64) or null;
+    o2 := bm?.(i64) ?? null;
     print("o2: {}\n", o2 ?? -1);
-    o3 := bx?.(i64) or null;
+    o3 := bx?.(i64) ?? null;
     print("o3 null: {}\n", o3 == null);
     nil : ?i64 = null;
     c1 := bx?.(i64) catch |e| { print("tag: {}\n", e); nil };

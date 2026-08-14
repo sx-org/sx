@@ -1,4 +1,4 @@
-// Failable `or` chains. `lhs or rhs` with failable operands
+// Failable `??` chains. `lhs ?? rhs` with failable operands
 // is a left-to-right, short-circuit chain: each failing attempt routes to the
 // next operand; the chain resolves when an operand succeeds (or a value
 // terminator absorbs). `try` marks an operand whose failure is visible routing
@@ -27,13 +27,13 @@ main :: () -> (i32, !E) {
     onfail print("onfail fired (BUG)\n");    // must NOT fire — every chain below absorbs
 
     r : i32 = 0;
-    r = r + (try fa(0) or try fa(7));               // a fails → b succeeds → 7
-    r = r + (try fa(0) or try fa(0) or try fa(3));   // first two fail → third → +3  = 10
-    r = r + (fa(0) or fa(0) or 96);                  // bare chain + value terminator → +96 = 106
-    r = r + ((try fa(0) or try fa(0)) catch |e| 5);    // both fail → catch handler → +5  = 111
-    r = r + ((try fa(0) or try fa(9)) catch |e| 0);    // second succeeds → catch skipped → +9 = 120
+    r = r + (try fa(0) ?? try fa(7));               // a fails → b succeeds → 7
+    r = r + (try fa(0) ?? try fa(0) ?? try fa(3));   // first two fail → third → +3  = 10
+    r = r + (fa(0) ?? fa(0) ?? 96);                  // bare chain + value terminator → +96 = 106
+    r = r + ((try fa(0) ?? try fa(0)) catch |e| 5);    // both fail → catch handler → +5  = 111
+    r = r + ((try fa(0) ?? try fa(9)) catch |e| 0);    // second succeeds → catch skipped → +9 = 120
 
-    try fv(0) or try fv(1);                          // void chain: first fails → second succeeds
+    try fv(0) ?? try fv(1);                          // void chain: first fails → second succeeds
 
     return r;                                         // success → exit 120; onfail skipped
 }

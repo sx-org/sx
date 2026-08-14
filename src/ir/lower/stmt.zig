@@ -3963,7 +3963,7 @@ pub fn lowerDestructureDecl(self: *Lowering, dd: *const ast.DestructureDecl) voi
     // the error slot (always the LAST tuple field) cannot be dropped. It is
     // dropped when the destructure omits it (fewer names than fields, so the
     // trailing error slot is never reached) or binds it to `_`. The `try` /
-    // `catch` / `or value` consumer forms all strip the error channel (their
+    // `catch` / `?? value` consumer forms all strip the error channel (their
     // result type is non-failable), so this fires only on a BARE failable
     // destructure — exactly the case that would let an error vanish silently.
     if (self.errorChannelOf(ty) != null) {

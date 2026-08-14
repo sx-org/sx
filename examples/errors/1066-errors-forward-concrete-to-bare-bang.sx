@@ -143,11 +143,11 @@ main :: () -> i32 {
     if pe != error.Boom { return 18; }
     print("pair = {}, Boom-as-value\n", pv);
 
-    // try / or interop
+    // try / ?? interop
     t, et := use_try(4);
     if et { return 12; }
-    o := fwd(-1) or 90;
-    print("try = {}, or = {}\n", t, o);
+    o := fwd(-1) ?? 90;
+    print("try = {}, ?? = {}\n", t, o);
 
     return xx v;   // 5
 }

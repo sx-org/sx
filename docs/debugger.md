@@ -146,14 +146,14 @@ Push (one frame each):
 - `raise EXPR` — at the raise site.
 - `try X` — on X's failure path, wherever that failure routes next.
 - a bare failable in its legal positions (LHS of `catch`, LHS of an
-  `or value` terminator, RHS of a destructure) — at the failure point.
+  `?? value` terminator, RHS of a destructure) — at the failure point.
 
 Clear (every absorbing site — the error stops here):
 
 - `catch |e| { ... }` runs (cleared so the handler still sees the chain;
   the buffer is empty after the handler exits).
-- an attempt succeeds inside an `or` chain.
-- an `or value` terminator absorbs the failure.
+- an attempt succeeds inside a `??` chain.
+- a `?? value` terminator absorbs the failure.
 - a destructure binds the error slot (the user now owns the error).
 
 So at format time the buffer holds exactly the frames of failures that
@@ -282,7 +282,7 @@ traces and DWARF can never disagree:
 **Producer (compile time)**
 
 1. `lower.zig` reaches a failure site — `lowerRaise`, `lowerTry`'s
-   propagation branch, `lowerFailableOr`, or `lowerDestructureDecl` — and
+   propagation branch, `lowerFailableCoalesce`, or `lowerDestructureDecl` — and
    (when `tracesEnabled()`) emits the niladic `.trace_frame` op via
    `placeholderTraceFrame()`, whose result feeds a separate `sx_trace_push`
    call via `emitTracePush()`. Absorbing sites emit `emitTraceClear()` →

@@ -66,7 +66,7 @@ pub fn emitTracePush(self: *Lowering, frame: Ref) void {
     _ = self.builder.emit(.{ .call = .{ .callee = fids.push, .args = args } }, .void);
 }
 
-/// Emit a trace-buffer clear at an absorbing site (`catch` / `or value` /
+/// Emit a trace-buffer clear at an absorbing site (`catch` / `?? value` /
 /// destructure). No-op when traces are disabled.
 pub fn emitTraceClear(self: *Lowering) void {
     if (!self.tracesEnabled()) return;
@@ -604,7 +604,7 @@ pub fn diagRaiseNotFailable(self: *Lowering, span: ast.Span) void {
 /// True if `node`'s value is failable — a `try` (the result is its
 /// operand's success value, but the expression itself routes an error) or
 /// any expression whose type carries an error channel (a bare failable
-/// call). Used to detect failable `or` chains.
+/// call). Used to detect failable `??` chains.
 pub fn exprIsFailable(self: *Lowering, node: *const Node) bool {
     if (node.data == .try_expr) return true;
     return self.errorChannelOf(self.inferExprType(node)) != null;
@@ -840,12 +840,12 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
         ce_rewritten.operand = @constCast(dsg);
         break :blk &ce_rewritten;
     } else ce_in;
-    // A failable `or` chain operand (`(try a or try b) catch |e| …`) routes
+    // A failable `??` chain operand (`(try a ?? try b) catch |e| …`) routes
     // its total failure to the catch handler — not the function — via the
     // chain-fail target. A chain's value type is non-failable
     // `T`, so it wouldn't pass the `errorChannelOf` check below.
-    if (ce.operand.data == .binary_op and ce.operand.data.binary_op.op == .or_op and
-        self.orIsFailableChain(&ce.operand.data.binary_op))
+    if (ce.operand.data == .null_coalesce and
+        self.coalesceIsFailable(&ce.operand.data.null_coalesce))
     {
         return self.lowerCatchOverChain(ce, span);
     }
@@ -907,25 +907,29 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
     return self.builder.blockParam(merge_bb, 0, succ_ty);
 }
 
-/// `(failable or-chain) catch [e] BODY`. The chain's operands
+/// `(failable ??-chain) catch [e] BODY`. The chain's operands
 /// route per the chain rules; its TOTAL failure (the final operand failing)
 /// is redirected to the catch handler via `chain_fail_target` rather than
 /// propagating to the function. `e` binds the final error tag; the handler's
 /// value (or divergence) joins the chain's success value at the merge.
 pub fn lowerCatchOverChain(self: *Lowering, ce: *const ast.CatchExpr, span: ast.Span) Ref {
-    const chain = &ce.operand.data.binary_op;
+    const chain = &ce.operand.data.null_coalesce;
 
-    // The error tag reaching the handler is the final operand's (left-assoc
-    // chain → the top-level rhs). A value-terminator last operand means the
-    // chain can't fail — nothing for `catch` to absorb.
-    const last = unwrapTryNode(chain.rhs);
+    var operands = std.ArrayList(*const Node).empty;
+    defer operands.deinit(self.alloc);
+    self.flattenCoalesceChain(chain, &operands);
+
+    // The error tag reaching the handler is the final operand's. A
+    // value-terminator last operand means the chain can't fail — nothing for
+    // `catch` to absorb.
+    const last = unwrapTryNode(operands.items[operands.items.len - 1]);
     const last_ty = self.inferExprType(last);
     const err_set = self.errorChannelOf(last_ty) orelse {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "`catch` here is redundant — the `or` chain already absorbs every failure via its value terminator", .{});
+        if (self.diagnostics) |d| d.addFmt(.err, span, "`catch` here is redundant — the `??` chain already absorbs every failure via its value terminator", .{});
         return self.builder.constInt(0, .void);
     };
 
-    const succ_ty = self.orChainSuccessType(chain);
+    const succ_ty = self.coalesceChainSuccessType(chain);
     const has_value = succ_ty != .void;
 
     const handle_bb = self.freshBlockWithParams("catch.handle", &.{err_set});
@@ -1023,7 +1027,7 @@ pub fn runCatchBody(self: *Lowering, ce: *const ast.CatchExpr, err_val: Ref, err
 /// be ⊆ the caller's named set. An inferred caller (`!`) absorbs everything
 /// via the whole-program SCC — no check. A bare-`!` callee carries
 /// no tags on its placeholder TypeId, so check its SCC-converged set.
-/// Shared by `try` propagation and a failable `or` chain's final operand.
+/// Shared by `try` propagation and a failable `??` chain's final operand.
 pub fn checkEscapeWidening(self: *Lowering, callee_node: *const Node, callee_set: TypeId, caller_set: TypeId, span: ast.Span) void {
     if (self.isInferredErrorSet(caller_set)) return;
     if (!self.isInferredErrorSet(callee_set)) {
@@ -1048,20 +1052,20 @@ pub fn checkEscapeWidening(self: *Lowering, callee_node: *const Node, callee_set
     }
 }
 
-/// Structural test: is this `or` a *failable* construct (value-terminator or
-/// chain), rather than a boolean / optional-unwrap `or`? True when either
+/// Structural test: does this `??` default a FAILABLE left operand (a value
+/// terminator or a chain), rather than an optional? True when the left
 /// operand is failable-like — a `try`, an error-channel-typed expression, or
-/// itself a nested failable `or` chain. Kept separate from `inferExprType`:
+/// itself a nested failable `??` chain. Kept separate from `inferExprType`:
 /// a `try`-chain's *value* type is its success type `T` (non-failable), so
 /// the chain-ness is structural, not type-derived.
-pub fn orIsFailableChain(self: *Lowering, bop: *const ast.BinaryOp) bool {
-    return self.operandIsFailableLike(bop.lhs) or self.operandIsFailableLike(bop.rhs);
+pub fn coalesceIsFailable(self: *Lowering, nc: *const ast.NullCoalesce) bool {
+    return self.operandIsFailableLike(nc.lhs);
 }
 
 pub fn operandIsFailableLike(self: *Lowering, node: *const Node) bool {
     if (node.data == .try_expr) return true;
-    if (node.data == .binary_op and node.data.binary_op.op == .or_op) {
-        return self.orIsFailableChain(&node.data.binary_op);
+    if (node.data == .null_coalesce) {
+        return self.coalesceIsFailable(&node.data.null_coalesce);
     }
     // A postfix assertion on a type-erased receiver is failable BY SHAPE
     // (its inferred type is the asserted T; the failable form exists only
@@ -1125,7 +1129,7 @@ pub fn isErasedAssertNode(self: *Lowering, node: *const Node) bool {
 }
 
 /// Rewrite a DIRECT assertion operand of a graceful consumer (`try` /
-/// failable-`or` operand / `catch`) into the failable runtime call
+/// failable-`??` operand / `catch`) into the failable runtime call
 /// `__sx_cast_assert(av, T)` (std/fmt.sx) so the ordinary error-channel
 /// machinery consumes it. Looks through a `try` marker. Returns null for
 /// every other shape — including assertions NESTED inside the operand
@@ -1180,60 +1184,61 @@ pub fn desugarErasedAssert(self: *Lowering, node: *const Node) ?*const Node {
     return call;
 }
 
-/// The success (value) type of a failable `or` chain: descend to the
+/// The success (value) type of a failable `??` chain: descend to the
 /// leftmost operand, unwrap any `try`, and take its failable success type
 /// (`void` for a pure-`-> !` chain). All operands share this type.
-pub fn orChainSuccessType(self: *Lowering, bop: *const ast.BinaryOp) TypeId {
-    var lhs = bop.lhs;
-    while (lhs.data == .binary_op and lhs.data.binary_op.op == .or_op and
-        self.orIsFailableChain(&lhs.data.binary_op))
-    {
-        lhs = lhs.data.binary_op.lhs;
+pub fn coalesceChainSuccessType(self: *Lowering, nc: *const ast.NullCoalesce) TypeId {
+    var lhs = nc.lhs;
+    while (lhs.data == .null_coalesce and self.coalesceIsFailable(&lhs.data.null_coalesce)) {
+        lhs = lhs.data.null_coalesce.lhs;
     }
     const ft = self.inferExprType(unwrapTryNode(lhs));
     const fset = self.errorChannelOf(ft) orelse return .unresolved;
     return if (ft == fset) .void else self.failableSuccessType(ft);
 }
 
-/// `try X` → `X` (the underlying failable); any other node unchanged. In an
-/// `or` chain the `try` marker's routing IS the chain, so the chain lowers
+/// `try X` → `X` (the underlying failable); any other node unchanged. In a
+/// `??` chain the `try` marker's routing IS the chain, so the chain lowers
 /// the underlying failable directly rather than re-entering `lowerTry`.
 pub fn unwrapTryNode(node: *const Node) *const Node {
     return if (node.data == .try_expr) node.data.try_expr.operand else node;
 }
 
-/// Flatten a left-associative failable `or` chain into its operands,
-/// left-to-right. `a or b or c` parses as `(a or b) or c`; this collects
-/// `[a, b, c]`. Walks the left spine only while it stays a failable
-/// `or` chain (a parenthesized non-chain `or` on the left stops the walk).
-pub fn flattenOrChain(self: *Lowering, bop: *const ast.BinaryOp, list: *std.ArrayList(*const Node)) void {
-    if (bop.lhs.data == .binary_op and bop.lhs.data.binary_op.op == .or_op and
-        self.orIsFailableChain(&bop.lhs.data.binary_op))
-    {
-        self.flattenOrChain(&bop.lhs.data.binary_op, list);
-    } else {
-        // Chain operands that are direct assertions (`av.(T) or d`)
-        // desugar to the failable runtime call here, so every consumer
-        // of the flattened list sees an ordinary failable.
-        list.append(self.alloc, self.desugarErasedAssert(bop.lhs) orelse bop.lhs) catch unreachable;
-    }
-    list.append(self.alloc, self.desugarErasedAssert(bop.rhs) orelse bop.rhs) catch unreachable;
+/// Flatten a failable `??` chain into its operands, left-to-right. `??` is
+/// right-associative, so `a ?? b ?? c` nests as `a ?? (b ?? c)`; both spines
+/// are walked, so an explicitly parenthesized `(a ?? b) ?? c` collects the
+/// same `[a, b, c]`. A nested `??` that is not itself failable stops the walk
+/// and stands as one operand.
+pub fn flattenCoalesceChain(self: *Lowering, nc: *const ast.NullCoalesce, list: *std.ArrayList(*const Node)) void {
+    flattenCoalesceOperand(self, nc.lhs, list);
+    flattenCoalesceOperand(self, nc.rhs, list);
 }
 
-/// Lower a failable `or`: a value-terminator (`lhs or value`) or
-/// a chain (`try a or try b or …`, possibly with a trailing value
+fn flattenCoalesceOperand(self: *Lowering, node: *const Node, list: *std.ArrayList(*const Node)) void {
+    if (node.data == .null_coalesce and self.coalesceIsFailable(&node.data.null_coalesce)) {
+        self.flattenCoalesceChain(&node.data.null_coalesce, list);
+        return;
+    }
+    // Chain operands that are direct assertions (`av.(T) ?? d`)
+    // desugar to the failable runtime call here, so every consumer
+    // of the flattened list sees an ordinary failable.
+    list.append(self.alloc, self.desugarErasedAssert(node) orelse node) catch unreachable;
+}
+
+/// Lower a failable `??`: a value-terminator (`lhs ?? value`) or
+/// a chain (`try a ?? try b ?? …`, possibly with a trailing value
 /// terminator). Left-to-right, short-circuit: each failable operand's
 /// failure routes to the next operand; the final operand either absorbs
 /// (value terminator) or propagates to the enclosing function. Each failed
 /// attempt pushes a trace frame; an absorbing resolution (any operand
 /// succeeding, or the value terminator) clears the buffer; total failure
 /// preserves the frames for the caller.
-pub fn lowerFailableOr(self: *Lowering, bop: *const ast.BinaryOp) Ref {
-    const span = bop.lhs.span;
+pub fn lowerFailableCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
+    const span = nc.lhs.span;
 
     var operands = std.ArrayList(*const Node).empty;
     defer operands.deinit(self.alloc);
-    self.flattenOrChain(bop, &operands);
+    self.flattenCoalesceChain(nc, &operands);
     const last_idx = operands.items.len - 1;
     const last_is_value = !self.operandIsFailableLike(operands.items[last_idx]);
 
@@ -1247,7 +1252,7 @@ pub fn lowerFailableOr(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // Success type from the first operand (a failable; unwrap any `try`).
     const first_ty = self.inferExprType(unwrapTryNode(operands.items[0]));
     const first_set = self.errorChannelOf(first_ty) orelse {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "the left operand of a failable `or` must be failable; got '{s}'", .{self.formatTypeName(first_ty)});
+        if (self.diagnostics) |d| d.addFmt(.err, span, "the left operand of a failable `??` must be failable; got '{s}'", .{self.formatTypeName(first_ty)});
         return self.builder.constInt(0, .void);
     };
     const has_value = first_ty != first_set;
@@ -1256,7 +1261,7 @@ pub fn lowerFailableOr(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // Pure-failable LHS (`-> !`) with a value terminator: nothing to fall
     // back to.
     if (!has_value and last_is_value) {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "`or value` requires a value-carrying failable (`-> (T, !)`) — a `-> !` has no success value to fall back to; use `catch` to absorb the error", .{});
+        if (self.diagnostics) |d| d.addFmt(.err, span, "`?? value` requires a value-carrying failable (`-> (T, !)`) — a `-> !` has no success value to fall back to; use `catch` to absorb the error", .{});
         return self.builder.constInt(0, .void);
     }
 
@@ -1268,7 +1273,7 @@ pub fn lowerFailableOr(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const cret = self.effectiveReturnType();
         const cset = if (cret) |r| self.errorChannelOf(r) else null;
         if (cset == null) {
-            if (self.diagnostics) |d| d.addFmt(.err, span, "a failable `or` chain propagates on total failure, so it is only valid inside a failable function — add a value terminator (`… or value`) or wrap with `catch`", .{});
+            if (self.diagnostics) |d| d.addFmt(.err, span, "a failable `??` chain propagates on total failure, so it is only valid inside a failable function — add a value terminator (`… ?? value`) or wrap with `catch`", .{});
             return self.builder.constInt(0, .void);
         }
         caller_ret = cret.?;
@@ -1300,7 +1305,7 @@ pub fn lowerFailableOr(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const underlying = unwrapTryNode(operand);
         const op_ty = self.inferExprType(underlying);
         const op_set = self.errorChannelOf(op_ty) orelse {
-            if (self.diagnostics) |d| d.addFmt(.err, operand.span, "operand of a failable `or` chain must be failable; got '{s}'", .{self.formatTypeName(op_ty)});
+            if (self.diagnostics) |d| d.addFmt(.err, operand.span, "operand of a failable `??` chain must be failable; got '{s}'", .{self.formatTypeName(op_ty)});
             return self.builder.constInt(0, .void);
         };
         const op_value_carrying = op_ty != op_set;

@@ -2821,6 +2821,12 @@ pub fn lowerForceUnwrap(self: *Lowering, fu: *const ast.ForceUnwrap) Ref {
 }
 
 pub fn lowerNullCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
+    // A failable left operand (value-terminator or chain) routes to the
+    // error-handling lowering, not the optional unwrap below. Detected
+    // structurally (a `try`-chain's value type is non-failable `T`, so a
+    // type-only `exprIsFailable` would miss nested chains).
+    if (self.coalesceIsFailable(nc)) return self.lowerFailableCoalesce(nc);
+
     const lhs = self.lowerExpr(nc.lhs);
     const lhs_ty = self.inferExprType(nc.lhs);
 
@@ -4361,13 +4367,6 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     }
     // Short-circuit: `a or b` → if a then true else b
     if (bop.op == .or_op) {
-        // A failable `or` (value-terminator or chain) routes to the error-
-        // handling lowering, not the optional/boolean unwrap below. Detected
-        // structurally (a `try`-chain's value type is non-failable `T`, so a
-        // type-only `exprIsFailable(lhs)` would miss nested chains).
-        if (self.orIsFailableChain(bop)) {
-            return self.lowerFailableOr(bop);
-        }
         const lhs = self.lowerBoolCondition(bop.lhs);
         const rhs_bb = self.freshBlock("or.rhs");
         const merge_bb = self.freshBlockWithParams("or.merge", &.{.bool});

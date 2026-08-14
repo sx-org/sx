@@ -5,7 +5,7 @@
 // generalizes from the single-value shape: a destructure binds every slot
 // INCLUDING the error (dropping it is the spec'd discard error — bind it and
 // inspect); `try` binds the value-tuple on success and propagates `{undef..., tag}`
-// on failure; `catch` / `or` absorb the failure and merge the value-tuple or the
+// on failure; `catch` / `??` absorb the failure and merge the value-tuple or the
 // handler/terminator value. Single-value `-> (T, !E)` is examples/228-231.
 
 #import "modules/std.sx";
@@ -40,9 +40,9 @@ classify :: (n: i32) -> i32 {
     return v + b;
 }
 
-// Multi-value `or (tuple)` value-terminator (absorbs the failure).
+// Multi-value `?? (tuple)` value-terminator (absorbs the failure).
 ortest :: (n: i32) -> i32 {
-    v, b := parse(n) or .{7, 8};
+    v, b := parse(n) ?? .{7, 8};
     return v + b;
 }
 
@@ -67,7 +67,7 @@ main :: () -> i32 {
     r = r + safe(-1);                // Bad → catch → (40, 50) → 90
     r = r + classify(-1);            // Bad → match-body → (1, 1) → 2
     r = r + classify(0);             // Empty → match-body → (2, 2) → 4
-    r = r + ortest(0);               // Empty → or → (7, 8) → 15
+    r = r + ortest(0);               // Empty → ?? → (7, 8) → 15
 
     print("multi-value result: {}\n", r);  // 16+4+18+5+16+90+2+4+15 = 170
     return r;

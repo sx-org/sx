@@ -38,15 +38,6 @@ pub const ExprTyper = struct {
             .char_literal => .i64,
             .null_literal => .void,
             .binary_op => |bop| switch (bop.op) {
-                .or_op => blk: {
-                    // A failable `or` (value-terminator or chain) yields the
-                    // chain's success type (the error is absorbed/propagated);
-                    // a non-failable `or` is boolean / optional-unwrap → bool.
-                    // Detected structurally — a `try`-chain's operands type as
-                    // non-failable `T`, so a type-only check would miss it.
-                    if (self.l.orIsFailableChain(&bop)) break :blk self.l.orChainSuccessType(&bop);
-                    break :blk .bool;
-                },
                 .eq, .neq, .lt, .lte, .gt, .gte => blk: {
                     const lhs_ty = self.l.inferExprType(bop.lhs);
                     if (!lhs_ty.isBuiltin()) {
@@ -57,7 +48,7 @@ pub const ExprTyper = struct {
                     }
                     break :blk .bool;
                 },
-                .and_op, .in_op => .bool,
+                .and_op, .or_op, .in_op => .bool,
                 // Arithmetic / bitwise / shift ops: infer the PROMOTED result
                 // of (lhs, rhs), not the LHS alone — `Lowering.arithResultType`
                 // is the same rule `lowerBinaryOp` applies, so `M + 0.5` types
@@ -699,6 +690,11 @@ pub const ExprTyper = struct {
             },
             .chained_comparison => .bool,
             .null_coalesce => |nc| blk: {
+                // A failable `??` (value-terminator or chain) yields the
+                // chain's success type (the error is absorbed/propagated).
+                // Detected structurally — a `try`-chain's operands type as
+                // non-failable `T`, so a type-only check would miss it.
+                if (self.l.coalesceIsFailable(&nc)) break :blk self.l.coalesceChainSuccessType(&nc);
                 // `opt ?? default` — result is the inner type when lhs is
                 // optional (the unwrap path's value), else falls back to
                 // the rhs's type. Without this arm pack-fn callers
