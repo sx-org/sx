@@ -1158,11 +1158,10 @@ test "parser: an assignment operator below a target continues it" {
 
 // ---- The binding layer ----
 //
-// `{` and `!` attach to what precedes them only on that expression's own line
-// — the same rule the trailing block follows. It is geometry, not
-// completability: the same brace is refused inside an argument list exactly as
-// it is at statement level. The dot-led postfixes are the other camp: `.`,
-// `?.`, and `catch` chain across a break.
+// `!` attaches to what precedes it only on that expression's own line, because
+// across a break it is the prefix `not`. Every other postfix — `{`, `.`, `?.`,
+// `catch` — carries one reading and binds wherever the statement is still open,
+// so only a `;` cuts it off.
 
 // `!` is postfix force-unwrap and prefix `not`, so which one a leading `!`
 // spells is decided by the line it sits on.
@@ -1191,9 +1190,9 @@ test "parser: a postfix `!` binds only on its own line" {
     try std.testing.expect(same.data.block.stmts[0].data == .force_unwrap);
 }
 
-// A named aggregate's `{` binds only on the same line as its head. Across
-// a break the head is an expression of its own and the brace is a scope block,
-// whatever the head was: a type name, a type application, or a value call.
+// The `;` is what makes the head a statement of its own and the brace group
+// after it a scope block, whatever the head was: a type name, a type
+// application, or a value call. Without it the brace juxtaposes.
 test "parser: `;` cuts a statement off from the brace group after it" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1267,12 +1266,12 @@ test "parser: `;` cuts a statement off from the brace group after it" {
     try std.testing.expect(!jx.has_header);
 }
 
-// ---- Must-continue locks ----
+// ---- Declaration headers across a line break ----
 //
-// An optional slot inside a construct that still owes a mandatory `{`, `(` or
-// name is not a place the construct can end, so a line break in front of it is
-// ordinary whitespace. Each of these has an identifier-shaped slot — the shape
-// most easily mistaken for a statement head.
+// A line break inside a declaration header is ordinary whitespace, so an
+// optional slot written on its own line still belongs to the header above it.
+// Each slot below is identifier-shaped — the shape that most resembles a
+// declaration of its own.
 
 // Enum `flags` and the backing type.
 test "parser: an enum header reads through a line break" {
@@ -1297,7 +1296,7 @@ test "parser: an enum header reads through a line break" {
     try std.testing.expect(same_ed.backing_type != null);
 }
 
-// A `ufcs` alias target is mandatory, so the break cannot end the alias.
+// A `ufcs` alias names its target after the keyword.
 test "parser: a ufcs alias target reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
