@@ -1,4 +1,4 @@
-// Writing a `Vector` lane — `v.x = …` (and `.y`/`.z`/`.w`, plus the colour
+// Writing a `@Vector` lane — `v.x = …` (and `.y`/`.z`/`.w`, plus the colour
 // aliases `.r`/`.g`/`.b`/`.a`) — stores through a pointer to that lane and
 // reads back the written value. Covers a `.[…]`-init write, a `= ---`
 // (undefined) init write, writes to every lane of a 4-lane vector, the colour
@@ -14,7 +14,7 @@
 
 main :: () {
     // `.[…]`-init, then write each lane of a 4-lane vector.
-    v : Vector(4, f32) = .[0.0, 0.0, 0.0, 0.0];
+    v : @Vector(4, f32) = .[0.0, 0.0, 0.0, 0.0];
     v.x = 1.0;
     v.y = 2.0;
     v.z = 3.0;
@@ -25,7 +25,7 @@ main :: () {
     print("w={}\n", v.w);
 
     // `= ---` (undefined) init, then write every lane.
-    u : Vector(4, f32) = ---;
+    u : @Vector(4, f32) = ---;
     u.x = 10.0;
     u.y = 20.0;
     u.z = 30.0;
@@ -33,7 +33,7 @@ main :: () {
     print("u={} {} {} {}\n", u.x, u.y, u.z, u.w);
 
     // Colour aliases on a 3-lane vector.
-    col : Vector(3, f32) = .[0.0, 0.0, 0.0];
+    col : @Vector(3, f32) = .[0.0, 0.0, 0.0];
     col.r = 0.5;
     col.g = 0.25;
     col.b = 0.125;

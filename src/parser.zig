@@ -923,67 +923,12 @@ pub const Parser = struct {
                 return self.parseClosureTypeBody(start);
             }
 
-            // Parameterized type: Vector(N, T) or later generic struct instantiation
+            // Parameterized head: a generic struct, a parameterized protocol,
+            // or a type-returning function.
             if (self.tokens.tag(self.tok) == .l_paren) {
-                self.advance(); // skip '('
-                var args = std.ArrayList(*Node).empty;
-                while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
-                    if (args.items.len > 0) {
-                        try self.expect(.comma);
-                    }
-                    // Pack-spread type arg: `Combined($R, ..sources.T)`.
-                    if (self.tokens.tag(self.tok) == .dot_dot) {
-                        const sp_start = self.tokens.start(self.tok);
-                        self.advance(); // skip '..'
-                        const operand = try self.parseTypeExpr();
-                        try args.append(self.allocator, try self.createNode(sp_start, .{ .spread_expr = .{ .operand = operand } }));
-                        continue;
-                    }
-                    // An arg is either a TYPE (`f32`, `*T`, `[]u8`, `List(T)`) or a
-                    // compile-time integer expression in a value position — a
-                    // `Vector` lane count or a generic `$N: u32` arg: `Vector(N, f32)`,
-                    // `Vector(M + 1, f32)`. Parse the primary as a literal / type,
-                    // then continue as a const-int expression iff an arithmetic
-                    // operator follows. A complete type arg is always followed by
-                    // `,` / `)`, so `parseBinaryRhs` is a no-op for plain types and
-                    // the continuation is unambiguous; `Prec.additive` bounds it to
-                    // `+ - * / %`. The shared evaluator folds the expression; a
-                    // non-const value position is diagnosed during lowering.
-                    var arg: *Node = undefined;
-                    if (self.tokens.tag(self.tok) == .int_literal) {
-                        const arg_start = self.tokens.start(self.tok);
-                        const text = self.tokens.slice(self.tok);
-                        // Parse the full u64 range and store the bit pattern,
-                        // matching the main int-literal path.
-                        const value: i64 = @bitCast(self.parseIntLiteralText(text) orelse {
-                            return self.fail("invalid integer literal in type argument");
-                        });
-                        self.advance();
-                        arg = try self.createNode(arg_start, .{ .int_literal = .{ .value = value } });
-                    } else if (self.tokens.tag(self.tok) == .char_literal) {
-                        // A char literal in a value position (`Buf('A')`) is a
-                        // compile-time integer code point — decode it the same
-                        // way the primary-expression path does and emit a
-                        // `char_literal` node (keeps the `c…` value mangle in
-                        // generics.zig distinct from the integer instantiation).
-                        const arg_start = self.tokens.start(self.tok);
-                        const raw = self.tokens.slice(self.tok);
-                        const inner = raw[1 .. raw.len - 1];
-                        const value = unescape.decodeCharLiteral(inner) catch |err| {
-                            return self.fail(unescape.charLiteralReason(err));
-                        };
-                        self.advance();
-                        arg = try self.createNode(arg_start, .{ .char_literal = .{ .value = value, .raw = inner } });
-                    } else {
-                        arg = try self.parseTypeExpr();
-                    }
-                    arg = try self.parseBinaryRhs(arg, Prec.additive, .bit_or);
-                    try args.append(self.allocator, arg);
-                }
-                try self.expect(.r_paren);
                 return try self.createNode(start, .{ .parameterized_type_expr = .{
                     .name = name,
-                    .args = try args.toOwnedSlice(self.allocator),
+                    .args = try self.parseTypeArgList(),
                     .is_raw = atom_is_raw,
                 } });
             }
@@ -1090,11 +1035,74 @@ pub const Parser = struct {
     /// The compiler-provided default-parameter value (spec: `@caller`).
     pub const caller_site_name = "@caller";
 
-    /// True for the `@` names the compiler FORMS at a parameter annotation —
-    /// `contracts` is the single registry for both `@` classes, so the formed
-    /// set and the declared set cannot drift apart.
+    /// True for the `@` names the compiler FORMS — `contracts` is the single
+    /// registry for both `@` classes, so the formed set and the declared set
+    /// cannot drift apart.
     fn isCompilerFormedTypeName(name: []const u8) bool {
         return contracts.isCompilerFormed(name);
+    }
+
+    /// The parenthesized argument list a parameterized type head takes:
+    /// `@Vector(N, T)`, `List(T)`, `Combined($R, ..sources.T)`. `current` must
+    /// be at the opening `(`.
+    fn parseTypeArgList(self: *Parser) anyerror![]const *Node {
+        self.advance(); // skip '('
+        var args = std.ArrayList(*Node).empty;
+        while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
+            if (args.items.len > 0) {
+                try self.expect(.comma);
+            }
+            // Pack-spread type arg: `Combined($R, ..sources.T)`.
+            if (self.tokens.tag(self.tok) == .dot_dot) {
+                const sp_start = self.tokens.start(self.tok);
+                self.advance(); // skip '..'
+                const operand = try self.parseTypeExpr();
+                try args.append(self.allocator, try self.createNode(sp_start, .{ .spread_expr = .{ .operand = operand } }));
+                continue;
+            }
+            // An arg is either a TYPE (`f32`, `*T`, `[]u8`, `List(T)`) or a
+            // compile-time integer expression in a value position — a
+            // `@Vector` lane count or a generic `$N: u32` arg: `@Vector(N, f32)`,
+            // `@Vector(M + 1, f32)`. Parse the primary as a literal / type,
+            // then continue as a const-int expression iff an arithmetic
+            // operator follows. A complete type arg is always followed by
+            // `,` / `)`, so `parseBinaryRhs` is a no-op for plain types and
+            // the continuation is unambiguous; `Prec.additive` bounds it to
+            // `+ - * / %`. The shared evaluator folds the expression; a
+            // non-const value position is diagnosed during lowering.
+            var arg: *Node = undefined;
+            if (self.tokens.tag(self.tok) == .int_literal) {
+                const arg_start = self.tokens.start(self.tok);
+                const text = self.tokens.slice(self.tok);
+                // Parse the full u64 range and store the bit pattern,
+                // matching the main int-literal path.
+                const value: i64 = @bitCast(self.parseIntLiteralText(text) orelse {
+                    return self.fail("invalid integer literal in type argument");
+                });
+                self.advance();
+                arg = try self.createNode(arg_start, .{ .int_literal = .{ .value = value } });
+            } else if (self.tokens.tag(self.tok) == .char_literal) {
+                // A char literal in a value position (`Buf('A')`) is a
+                // compile-time integer code point — decode it the same
+                // way the primary-expression path does and emit a
+                // `char_literal` node (keeps the `c…` value mangle in
+                // generics.zig distinct from the integer instantiation).
+                const arg_start = self.tokens.start(self.tok);
+                const raw = self.tokens.slice(self.tok);
+                const inner = raw[1 .. raw.len - 1];
+                const value = unescape.decodeCharLiteral(inner) catch |err| {
+                    return self.fail(unescape.charLiteralReason(err));
+                };
+                self.advance();
+                arg = try self.createNode(arg_start, .{ .char_literal = .{ .value = value, .raw = inner } });
+            } else {
+                arg = try self.parseTypeExpr();
+            }
+            arg = try self.parseBinaryRhs(arg, Prec.additive, .bit_or);
+            try args.append(self.allocator, arg);
+        }
+        try self.expect(.r_paren);
+        return try args.toOwnedSlice(self.allocator);
     }
 
     fn parseCompilerFormedType(self: *Parser, start: u32) anyerror!*Node {
@@ -1122,14 +1130,9 @@ pub const Parser = struct {
                 .{ name, spelling },
             ));
         }
-        self.advance(); // skip '('
-        const target = try self.parseTypeExpr();
-        var args = std.ArrayList(*Node).empty;
-        try args.append(self.allocator, target);
-        try self.expect(.r_paren);
         return try self.createNode(start, .{ .parameterized_type_expr = .{
             .name = name,
-            .args = try args.toOwnedSlice(self.allocator),
+            .args = try self.parseTypeArgList(),
         } });
     }
 
@@ -3750,13 +3753,14 @@ pub const Parser = struct {
 
     fn parsePrimary(self: *Parser, pipe: PipeRole) anyerror!*Node {
         const start = self.tokens.start(self.tok);
-        // `@Init` is a type the compiler forms, never a value a program builds:
-        // there is no `@Init(T){ … }` literal and no `@Init` expression. A
-        // declared `@` contract is an ordinary type, so it names values and
-        // takes an aggregate literal (`@SourceSite{ … }`) like any other.
+        // `@Init` names a constraint, never a value a program builds: there is
+        // no `@Init(T){ … }` literal and no `@Init` expression. Every other `@`
+        // name is an ordinary type reference here — a declared contract takes
+        // an aggregate literal (`@SourceSite{ … }`), and `@Vector(N, T)` is the
+        // type an expression such as `vector_lanes(@Vector(3, f32))` names.
         if (self.tokens.tag(self.tok) == .at_identifier) {
             const at_name = self.tokens.slice(self.tok);
-            if (isCompilerFormedTypeName(at_name)) {
+            if (contracts.isBoundOnly(at_name)) {
                 return self.failFmt(
                     "'{s}' is a compiler-formed type — it has no literal form and cannot be named in an expression",
                     .{at_name},
@@ -4853,7 +4857,7 @@ pub const Parser = struct {
                 self.tokens.tag(self.tok) == .comma or self.tokens.tag(self.tok) == .int_literal or
                 // Arithmetic operators appear in a const-expression dimension /
                 // lane / value-param in a return type: `-> [N + 1]f32`,
-                // `-> Vector(N + 1, f32)`. They must be skipped while scanning
+                // `-> @Vector(N + 1, f32)`. They must be skipped while scanning
                 // for the body brace, else the decl is misread as a bodyless
                 // function-type alias and the `{` body errors as "expected ';'".
                 // (`.star` doubles as the pointer sigil and is already listed.)

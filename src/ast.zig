@@ -814,12 +814,12 @@ pub const ArrayLiteral = struct {
 };
 
 pub const ParameterizedTypeExpr = struct {
-    name: []const u8, // e.g. "Vector", or later generic struct names
+    name: []const u8, // e.g. "@Vector", or later generic struct names
     args: []const *Node, // e.g. [int_literal(3), type_expr("f32")]
     /// True when the base name was a backtick raw identifier in type position
     /// (`` `i2(i64) ``). Such a reference is the LITERAL name `i2` used as a
     /// parameterized type — resolution skips the builtin parameterized
-    /// classifier (e.g. the `Vector` intrinsic) and instantiates a
+    /// classifier (e.g. the `@Vector` intrinsic) and instantiates a
     /// `` `i2 ``-declared generic template.
     is_raw: bool = false,
 };

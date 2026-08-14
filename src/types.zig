@@ -168,10 +168,10 @@ pub const Type = union(enum) {
                 return null;
             },
             '*' => if (name.len >= 2) .{ .pointer_type = .{ .pointee_name = name[1..], .is_raw = false } } else null,
-            'V' => {
-                // Vector(N,T)
-                if (name.len >= 10 and std.mem.startsWith(u8, name, "Vector(") and name[name.len - 1] == ')') {
-                    const inner = name[7 .. name.len - 1];
+            '@' => {
+                // @Vector(N,T)
+                if (name.len >= 11 and std.mem.startsWith(u8, name, "@Vector(") and name[name.len - 1] == ')') {
+                    const inner = name[8 .. name.len - 1];
                     if (std.mem.indexOfScalar(u8, inner, ',')) |comma| {
                         const length = std.fmt.parseInt(u32, inner[0..comma], 10) catch return null;
                         const elem_name = inner[comma + 1 ..];
@@ -312,7 +312,7 @@ pub const Type = union(enum) {
                 if (info.length) |n| return fmtAlloc(allocator, "[{d}]{s}", .{ n, info.element_name });
                 return fmtAlloc(allocator, "[_]{s}", .{info.element_name});
             },
-            .vector_type => |info| return fmtAlloc(allocator, "Vector({d},{s})", .{ info.length, info.element_name }),
+            .vector_type => |info| return fmtAlloc(allocator, "@Vector({d},{s})", .{ info.length, info.element_name }),
             .function_type => |info| {
                 var buf = std.ArrayList(u8).empty;
                 try buf.append(allocator, '(');

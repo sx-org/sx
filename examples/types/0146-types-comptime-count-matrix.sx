@@ -1,5 +1,5 @@
 // The comptime-int COUNT surface is uniform: every count consumer — array
-// dimension (direct `[N]T` and via type alias), `Vector` lane, generic
+// dimension (direct `[N]T` and via type alias), `@Vector` lane, generic
 // value-param (struct AND type-fn binder), and `inline for 0..N` — folds the
 // SAME leaf forms to the SAME value through one shared evaluator
 // (`program_index.evalConstIntExpr` / `moduleConstInt`). The leaf forms
@@ -43,10 +43,10 @@ main :: () {
     af : ArrF = ---;             print("dim.alias.float: len={}\n", af.len);
     az : ArrS = ---;             print("dim.alias.typed: len={}\n", az.len);
 
-    // Vector lane — expression const (3) and integral float (4)
-    v3 : Vector(N, f32) = .[1.0, 2.0, 3.0];
+    // `@Vector` lane — expression const (3) and integral float (4)
+    v3 : @Vector(N, f32) = .[1.0, 2.0, 3.0];
     print("lane.expr3: {} {} {}\n", v3.x, v3.y, v3.z);
-    v4 : Vector(F, f32) = .[1.0, 2.0, 3.0, 4.0];
+    v4 : @Vector(F, f32) = .[1.0, 2.0, 3.0, 4.0];
     print("lane.float4: {}\n", v4.w);
 
     // generic value-param — struct binder: expr const, aliased u32, aliased i8

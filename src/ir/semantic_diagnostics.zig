@@ -650,7 +650,7 @@ pub const UnknownTypeChecker = struct {
         // through rather than skipping the whole decl. Skipping silently let a
         // genuinely-undeclared field type (`bad: MissingType`) fall through the
         // type leaf's empty-struct stub and compile. A value-param
-        // position (a `Vector` lane count, a `$N: u32` arg) is still skipped
+        // position (a `@Vector` lane count, a `$N: u32` arg) is still skipped
         // inside `checkTypeNodeForUnknown` / `isValueParamPosition`.
         for (sd.field_types) |ft| self.checkTypeNodeForUnknown(ft, declared, sd.type_params, &.{}, true);
     }
@@ -979,10 +979,10 @@ pub const UnknownTypeChecker = struct {
     }
 
     /// True when arg `i` of a parameterized type `base(...)` is a VALUE
-    /// parameter (a compile-time integer such as a `Vector` lane count or a
+    /// parameter (a compile-time integer such as a `@Vector` lane count or a
     /// generic `$N: u32` arg), not a type. Such a position must be skipped by
-    /// the unknown-type walk: a module-const arg (`Vector(N, f32)`) is a value,
-    /// not a type name. `Vector`'s arg 0 is always its lane count; a generic
+    /// the unknown-type walk: a module-const arg (`@Vector(N, f32)`) is a value,
+    /// not a type name. `@Vector`'s arg 0 is always its lane count; a generic
     /// struct template's value-param positions come from its declared params; a
     /// type-RETURNING function (`Make :: ($K: u32, $T: Type) -> Type`) classifies
     /// each param from its constraint, mirroring `instantiateTypeFunction` — so
@@ -996,7 +996,7 @@ pub const UnknownTypeChecker = struct {
     }
 
     fn isValueParamPosition(self: UnknownTypeChecker, base: []const u8, i: usize) bool {
-        if (std.mem.eql(u8, base, "Vector")) return i == 0;
+        if (std.mem.eql(u8, base, contracts.vector_head)) return i == 0;
         if (self.index.struct_template_map.get(base)) |tmpl| {
             if (i < tmpl.type_params.len) return !tmpl.type_params[i].is_type_param;
         }
@@ -1060,10 +1060,10 @@ pub const UnknownTypeChecker = struct {
                 for (ct.param_types) |pt| self.checkTypeNodeForUnknown(pt, declared, in_scope, type_vals, struct_field);
                 if (ct.return_type) |rt| self.checkTypeNodeForUnknown(rt, declared, in_scope, type_vals, struct_field);
             },
-            // Builtin constructors (Vector) and generic templates resolve the
+            // Builtin constructors (`@Vector`) and generic templates resolve the
             // base name specially; check only the TYPE args. A value-param
-            // position (a `Vector` lane count, or a generic `$N: u32` arg) holds
-            // a compile-time integer — `Vector(N, f32)` / `Vec(N, f32)` with `N`
+            // position (a `@Vector` lane count, or a generic `$N: u32` arg) holds
+            // a compile-time integer — `@Vector(N, f32)` / `Vec(N, f32)` with `N`
             // a module const — not a type name, so it must not be walked as one
             // (it would falsely report "unknown type 'N'"). The lowering
             // resolvers fold the value and emit the precise diagnostic if it

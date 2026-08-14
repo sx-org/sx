@@ -1,23 +1,23 @@
 #import "modules/std.sx";
 math :: #import "modules/math";
 
-dot :: (a: Vector(3,f32), b: Vector(3,f32)) -> f32 {
+dot :: (a: @Vector(3,f32), b: @Vector(3,f32)) -> f32 {
     a.x*b.x + a.y*b.y + a.z*b.z
 }
 
-cross :: (a: Vector(3,f32), b: Vector(3,f32)) -> Vector(3,f32) {
+cross :: (a: @Vector(3,f32), b: @Vector(3,f32)) -> @Vector(3,f32) {
     .[a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x]
 }
 
-length :: (v: Vector(3,f32)) -> f32 {
+length :: (v: @Vector(3,f32)) -> f32 {
     math.sqrt(dot(v, v))
 }
 
-normalize :: (v: Vector(3,f32)) -> Vector(3,f32) {
+normalize :: (v: @Vector(3,f32)) -> @Vector(3,f32) {
     v / length(v)
 }
 
-vec3 :: (x:f32, y:f32, z:f32) -> Vector(3,f32) {
+vec3 :: (x:f32, y:f32, z:f32) -> @Vector(3,f32) {
     .[x, y, z]
 }
 

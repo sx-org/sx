@@ -480,7 +480,7 @@ pub fn isFloatValuedExpr(node: *const Node, ctx: anytype) bool {
     };
 }
 
-/// A namespace-qualified const written in TYPE-argument position (`Vector(m.N,
+/// A namespace-qualified const written in TYPE-argument position (`@Vector(m.N,
 /// f32)`, a generic value-param `Vec(m.N, …)`) reaches the const folders as a
 /// SINGLE dotted name — a `type_expr` / `identifier` whose `name` is `"m.N"` —
 /// not the `field_access` node the EXPRESSION position (`[m.N]T`) produces.
@@ -503,7 +503,7 @@ fn qualifiedDottedIsFloat(name: []const u8, ctx: anytype) bool {
 
 /// Evaluate a constant integer expression to its value. THE single
 /// integer-expression folder for the compiler — array dimensions (`[N]T`,
-/// `[M + 1]T`), Vector lane counts (`Vector(N, f32)`), generic value-param
+/// `[M + 1]T`), `@Vector` lane counts (`@Vector(N, f32)`), generic value-param
 /// args (`Vec(N, f32)`), and `inline for 0..M` bounds all route here so they
 /// cannot disagree on what a given expression evaluates to (the
 /// two-resolver class of bug). Folds integer `+ - * / %` and unary negate over
@@ -728,7 +728,7 @@ pub fn evalConstFloatExpr(node: *const Node, ctx: anytype) ?f64 {
 
 /// The outcome of folding a compile-time COUNT expression to an `i64` under the
 /// unified float→int narrowing rule. THE single int-or-
-/// integral-float count fold: `foldDimU32` (array dim / Vector lane / u32 value-
+/// integral-float count fold: `foldDimU32` (array dim / `@Vector` lane / u32 value-
 /// param) and the non-`u32` value-param gate both route through `foldCountI64`,
 /// so no count site can disagree on which floats fold (the unify-or-
 /// diverge rule extended to floats).
@@ -758,7 +758,7 @@ pub fn foldCountI64(node: *const Node, ctx: anytype) CountFold {
 }
 
 /// The outcome of folding a comptime count and narrowing it to a `u32`
-/// (array dimension / Vector lane / value-param count). `foldDimU32` is the
+/// (array dimension / `@Vector` lane / value-param count). `foldDimU32` is the
 /// SINGLE place a folded integer becomes a `u32`, so the i64→u32 narrowing is
 /// range-checked exactly once and no call site does a bare `@intCast` that could
 /// panic the compiler on a valid-but-oversized fold (a literal `5_000_000_000`
@@ -780,7 +780,7 @@ pub const DimU32 = union(enum) {
 
 /// Fold `node` to a `u32` count through `foldCountI64` (the unified int-or-
 /// integral-float fold), then range-check against `[min, maxInt(u32)]`. THE single
-/// fold-to-u32 for every array dimension, Vector lane, and value-param count —
+/// fold-to-u32 for every array dimension, `@Vector` lane, and value-param count —
 /// routing all of them here guarantees the narrowing is checked once and can never
 /// abort the compiler. The fold itself stays in `i64`; only this one
 /// conversion is the `u32` gate.

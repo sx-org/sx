@@ -3,8 +3,8 @@
 
 Vec :: struct($N: u32, $T:Type) {
     // <N x T> (LLVM Vector)
-    // Vector is a Builtin Type
-    data: Vector(N,T);
+    // `@Vector` is a builtin type
+    data: @Vector(N,T);
 }
 
 Complex :: ($T:Type) -> Type {
@@ -17,7 +17,7 @@ Complex :: ($T:Type) -> Type {
 
 Vec3 :: Vec(3, f32);
 
-vec3 :: (x:f32, y:f32, z:f32) -> Vector(3,f32) {
+vec3 :: (x:f32, y:f32, z:f32) -> @Vector(3,f32) {
     .[x, y, z]
 }
 

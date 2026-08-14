@@ -7,6 +7,7 @@ const mod_mod = @import("../module.zig");
 const type_bridge = @import("../type_bridge.zig");
 const program_index_mod = @import("../program_index.zig");
 const unescape = @import("../../unescape.zig");
+const contracts = @import("../../contracts.zig");
 const errors = @import("../../errors.zig");
 const TypeResolver = @import("../type_resolver.zig").TypeResolver;
 const CallResolver = @import("../calls.zig").CallResolver;
@@ -1436,7 +1437,7 @@ pub fn lowerOptionalChainIndex(self: *Lowering, ie: *const ast.IndexExpr, child:
 }
 
 /// Field access on a known type (shared by regular field access and optional chaining)
-/// Map a Vector swizzle component (`.x`/`.y`/`.z`/`.w` or the colour
+/// Map a vector swizzle component (`.x`/`.y`/`.z`/`.w` or the colour
 /// aliases `.r`/`.g`/`.b`/`.a`) to its lane index. Returns null for any
 /// other field name so the read path (`lowerFieldAccessOnType`) and the
 /// write path (`lowerAssignment`) share one resolver and reject a
@@ -2065,7 +2066,7 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
     var from_target = false;
     var is_vector = false;
 
-    // First, check explicit type annotation on the literal (e.g. Vector(3,f32).[1,2,3]).
+    // First, check explicit type annotation on the literal (e.g. `@Vector(3,f32).[1,2,3]`).
     // The prefix slot names the AGGREGATE type; a prefix that resolves to
     // anything else (scalar `i16.[…]`, struct `Point.[…]`) would read as an
     // element-type prefix — a second meaning this spelling does not carry.
@@ -2163,8 +2164,8 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
     return self.builder.structInit(elems.items, result_ty);
 }
 
-/// Resolve the type annotation on an array literal (e.g. Vector(3,f32).[...]).
-/// Handles call nodes (Vector(3,f32)), parameterized_type_expr, and identifier/type_expr.
+/// Resolve the type annotation on an array literal (e.g. `@Vector(3,f32).[...]`).
+/// Handles call nodes (`@Vector(3,f32)`), parameterized_type_expr, and identifier/type_expr.
 /// `*<operand>` where the operand denotes a TYPE resolves to the pointer
 /// type's Type value (`*i64` → the TypeId of `*i64`). Returns null when the
 /// operand is a value — the caller falls through to ordinary address-of.
@@ -2206,13 +2207,13 @@ fn addrOfTypeOperand(self: *Lowering, node: *const Node) ?TypeId {
 pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
     switch (te.data) {
         .call => |cl| {
-            // Vector(3, f32) or Module.Vector(3, f32)
+            // `@Vector(3, f32).[…]`
             const callee_name = switch (cl.callee.data) {
                 .identifier => |id| id.name,
                 .field_access => |fa| fa.field,
                 else => return .unresolved,
             };
-            if (std.mem.eql(u8, callee_name, "Vector")) {
+            if (std.mem.eql(u8, callee_name, contracts.vector_head)) {
                 if (cl.args.len == 2) {
                     const length = self.resolveVectorLane(cl.args[0]) orelse return .unresolved;
                     const elem = self.resolveTypeWithBindings(cl.args[1]);
@@ -2432,7 +2433,7 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     }
     const elem_ty = self.getElementType(obj_ty);
     // Final guard: the object is not an indexable shape here. `getElementType`
-    // recognizes `[N]T` array, `[]T` slice, `[*]T` many-pointer, `Vector` and
+    // recognizes `[N]T` array, `[]T` slice, `[*]T` many-pointer, `@Vector` and
     // `string`; `ptrToArrayElem`/`ptrToSliceElem` handled `*[N]T` and `*[]T`
     // above. An `.unresolved` element means the base is a single pointer `*T`
     // or a struct — non-indexable by design. Emitting an `index_get` with

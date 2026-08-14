@@ -1564,7 +1564,7 @@ pub const Lowering = struct {
     /// exactly like a plain `K :: 3` const — e.g. a `($T) -> Type` builder that
     /// loops `inline for 0..field_count(T)` to assemble a variant list (the
     /// `race` result synthesis). (Reaches the self-ctx fold paths — array dim,
-    /// inline-for bound; a Vector LANE in a plain type annotation resolves through
+    /// inline-for bound; a `@Vector` LANE in a plain type annotation resolves through
     /// the stateless type-bridge ctx, which stubs this to null.) Resolves the type
     /// arg through the same `resolveTypeArg` + accessors the value path uses, so
     /// the folded constant always matches the call's runtime value. Returns null
@@ -1970,12 +1970,12 @@ pub const Lowering = struct {
         return .{ .l = self };
     }
 
-    /// Resolve a `Vector(N, T)` lane count to a positive compile-time integer
+    /// Resolve a `@Vector(N, T)` lane count to a positive compile-time integer
     /// through the shared `program_index.foldDimU32` folder (min 1) — so a literal
-    /// (`Vector(4, f32)`), a module/generic const (`Vector(N, f32)`), and a const
-    /// expression (`Vector(M + 1, f32)`) all resolve identically, and the i64→u32
+    /// (`@Vector(4, f32)`), a module/generic const (`@Vector(N, f32)`), and a const
+    /// expression (`@Vector(M + 1, f32)`) all resolve identically, and the i64→u32
     /// narrowing is range-checked (an oversized lane diagnoses instead of
-    /// panicking). A non-const lane (`Vector(get(), f32)`) or a
+    /// panicking). A non-const lane (`@Vector(get(), f32)`) or a
     /// non-positive one emits a clean diagnostic and returns null; the caller
     /// yields `.unresolved` rather than fabricating a `<0 x float>` lane count
     /// that crashes LLVM verification.
@@ -1984,17 +1984,17 @@ pub const Lowering = struct {
             .ok => |n| return n,
             .too_large => |v| {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, lane_node.span, "Vector lane count {} does not fit in u32", .{v});
+                    d.addFmt(.err, lane_node.span, "@Vector lane count {} does not fit in u32", .{v});
                 return null;
             },
             .non_integral_float => |v| {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, lane_node.span, "Vector lane count must be an integer, but '{d}' is a non-integral float", .{v});
+                    d.addFmt(.err, lane_node.span, "@Vector lane count must be an integer, but '{d}' is a non-integral float", .{v});
                 return null;
             },
             .not_const, .below_min => {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, lane_node.span, "Vector lane count must be a positive compile-time integer constant", .{});
+                    d.addFmt(.err, lane_node.span, "@Vector lane count must be a positive compile-time integer constant", .{});
                 return null;
             },
         }

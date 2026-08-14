@@ -1482,7 +1482,7 @@ pub const TypeTable = struct {
     }
 
     /// Like `typeName` but produces structural names for compound
-    /// types (`*T`, `[]T`, `[N]T`, `?T`, `Vector(N,T)`, function and
+    /// types (`*T`, `[]T`, `[N]T`, `?T`, `@Vector(N,T)`, function and
     /// tuple types) instead of returning `"?"`. Compound names are
     /// freshly allocated via `alloc`; builtin and named user types
     /// return borrowed slices.
@@ -1514,7 +1514,7 @@ pub const TypeTable = struct {
             },
             .vector => |v| blk: {
                 const inner = self.formatTypeName(alloc, v.element);
-                break :blk std.fmt.allocPrint(alloc, "Vector({d},{s})", .{ v.length, inner }) catch "Vector(?)";
+                break :blk std.fmt.allocPrint(alloc, "@Vector({d},{s})", .{ v.length, inner }) catch "@Vector(?)";
             },
             .optional => |o| blk: {
                 const inner = self.formatTypeName(alloc, o.child);

@@ -3,7 +3,7 @@
 // (`Context`, `Allocator`, `Into`, `@SourceSite`). Consumers never import
 // this file directly — std.sx re-exports every name here.
 //
-// `string` and `Vector` are NOT declared here: they are language primitives
+// `string` and `@Vector` are NOT declared here: they are language primitives
 // that the type system resolves by name program-wide (`type_resolver` and
 // `type_bridge` respectively), exactly like `int` / `bool` / `f64`. They need
 // no declaration and cannot be re-bound.
@@ -62,7 +62,7 @@ is_unsigned :: ($T: Type) -> bool intrinsic;
 variant_value :: ($T: Type, idx: i64) -> i64 intrinsic;
 variant_index :: ($T: Type, val: T) -> i64 intrinsic;
 error_name :: (e: $T) -> string intrinsic;
-// A vector's lane COUNT (`vector_lanes(Vector(3,f32))` -> 3). The one length
+// A vector's lane COUNT (`vector_lanes(@Vector(3,f32))` -> 3). The one length
 // the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so
 // size/elem_size over-counts (3 lanes read as 4). Accepts a runtime Type
 // (lane-table read); any non-vector tag answers 0 at runtime — kind

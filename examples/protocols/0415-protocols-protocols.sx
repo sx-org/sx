@@ -82,7 +82,7 @@ early_return :: (x: i32) -> i32 {
     x
 }
 
-vec3 :: (x: f32, y: f32, z: f32) -> Vector(3, f32) {
+vec3 :: (x: f32, y: f32, z: f32) -> @Vector(3, f32) {
     .[x, y, z]
 }
 
