@@ -1,10 +1,8 @@
-// Whitespace is syntax (specs §1), the binding layer: `{` and `!` attach to
-// what precedes them only on that expression's own line. A trailing block's `{`
-// already did; a named aggregate's `{` and a force-unwrap `!` join it, because
-// each has a second reading waiting on the other side of the break — a scope
-// block, and the prefix `not`. The dot-led postfixes are the other camp: `.`,
-// `?.`, and `catch` carry no second reading, so each chains across a break
-// instead.
+// Whitespace is syntax (specs §1), the binding layer: a postfix `!` attaches to
+// what precedes it only on that expression's own line, because a `!` across the
+// break is the prefix `not`. Every other postfix carries one reading — a `{`
+// juxtaposes and `.` / `?.` / `catch` chain — so each binds wherever the
+// statement is still open and only a `;` cuts it off.
 #import "modules/std.sx";
 
 Pair :: struct { a: i64; b: i64 }
@@ -14,14 +12,13 @@ Box :: struct($T: Type) { v: T }
 mk :: () -> i64 { 1 }
 
 main :: () -> i32 {
-    // Same line, so both braces bind: an aggregate and a type application's
-    // aggregate.
+    // A head that names a type constructs: a name, and a type application.
     p := Pair{ a = 1, b = 2 };
     b := Box(i64){ v = 3 };
     print("p={} {} b={}\n", p.a, p.b, b.v);
 
-    // Across the break the head is an expression of its own and the brace is a
-    // scope block — whatever the head was.
+    // The `;` makes each head a statement of its own, so the brace group under
+    // it is a scope block — whatever the head was.
     Pair;
     { print("after a type name\n") }
 

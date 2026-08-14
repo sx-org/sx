@@ -4369,7 +4369,7 @@ collect() {
     for row in rows { Label{ text = row } }          // publishes, once per row
     { Label{ text = "in bare braces" }; }            // publishes; the `;` only separates
     Label{ text = "at the top level" }               // publishes
-}
+};
 ```
 
 Three shapes mark the rule's edges. A void trailing expression has no child to
@@ -5510,16 +5510,16 @@ definitional — every other rule (duplicates, defaults, evaluation order)
 follows from it; the block is not a special argument kind:
 
 ```sx
-vstack(8.0) { text("a"); text("b"); }
+vstack(8.0) { text("a"); text("b"); };
 // ≡
 vstack(8.0, content = || { text("a"); text("b"); });
 
-each(items) { |x| print("{}\n", x); }
+each(items) { |x| print("{}\n", x); };
 // ≡
 each(items, |x| { print("{}\n", x); });
 
-scaffold(top_bar = toolbar) { chat_list(); }   // named slots + trailing block
-scaffold() { chat_list(); }                    // defaults skipped, block binds `content`
+scaffold(top_bar = toolbar) { chat_list(); };  // named slots + trailing block
+scaffold() { chat_list(); };                   // defaults skipped, block binds `content`
 ```
 
 - **Binding**: the block binds the last declared parameter, which must be a

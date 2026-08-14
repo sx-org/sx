@@ -328,14 +328,16 @@ vstack :: (spacing: f32, content: Closure()) -> View { … }
 vstack(8.0) {
     text("hello");
     text("world");
-}
+};
 
-scaffold(top_bar = toolbar) { chat_list(); }   // named slots + block
+scaffold(top_bar = toolbar) { chat_list(); };  // named slots + block
 
-each(items) { |item| text(item.name); }        // parameters in the header
+each(items) { |item| text(item.name); };       // parameters in the header
 ```
 
-The `{` must sit on the same line as the `)`; one block per call; the header
+The `{` is a second expression standing next to the call, so it binds wherever
+the statement is still open — a line break between them changes nothing and the
+`;` after the `}` is what ends the statement. One block per call; the header
 binds exactly the parameters the closure declares; after the block's `}` a dot
 continues the chain (`vstack(8.0) { … }.padded()`). A capture-free block
 promotes to a null-env thunk — zero allocation.
