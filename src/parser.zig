@@ -40,7 +40,7 @@ pub const Parser = struct {
     /// `while cond { … }`, `match F(args) { case … }`, `push expr { … }`) and
     /// a SPACED `(` before `{` or `=>` ends a `for` header. A group opened
     /// after the header began holds its contents one deeper, where the
-    /// reservation no longer applies and `expr { … }` juxtaposes as usual.
+    /// reservation does not apply and `expr { … }` juxtaposes as usual.
     /// Saved and restored around each header expression, so a header nested in
     /// another gets its own.
     header: ?Header = null,
