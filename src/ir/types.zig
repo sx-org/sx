@@ -1005,6 +1005,35 @@ pub const TypeTable = struct {
         };
     }
 
+    /// Bit width of an integer type, including interned `uN`/`iN`. Null when
+    /// `ty` is not an integer. `usize`/`isize` use the target pointer width.
+    pub fn integerBitWidth(self: *const TypeTable, ty: TypeId) ?u32 {
+        return switch (ty) {
+            .i8, .u8 => 8,
+            .i16, .u16 => 16,
+            .i32, .u32 => 32,
+            .i64, .u64 => 64,
+            .isize, .usize => @as(u32, self.pointer_size) * 8,
+            else => if (ty.isBuiltin()) null else switch (self.get(ty)) {
+                .signed => |w| w,
+                .unsigned => |w| w,
+                else => null,
+            },
+        };
+    }
+
+    /// True when count `n` is representable in `len_ty`. Signed `Len` uses
+    /// the signed maximum (`2^(w-1)-1`), not the storage width.
+    pub fn lenFitsWord(self: *const TypeTable, len_ty: TypeId, n: u64) bool {
+        if (len_ty == .i64) return true;
+        const bits = self.integerBitWidth(len_ty) orelse return true;
+        const max: u64 = if (self.isUnsignedInt(len_ty))
+            (if (bits >= 64) std.math.maxInt(u64) else (@as(u64, 1) << @intCast(bits)) - 1)
+        else
+            (if (bits >= 64) @as(u64, std.math.maxInt(i64)) else (@as(u64, 1) << @intCast(bits - 1)) - 1);
+        return n <= max;
+    }
+
     /// Byte offset and width of a fat pointer's length word, for a raw
     /// `{ptr, Len}` read/write that bypasses the struct layout walk.
     pub fn fatLenField(self: *const TypeTable, len_type: TypeId) struct { offset: usize, size: usize } {

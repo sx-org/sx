@@ -3366,10 +3366,14 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
 
     /// Build a `{ptr, Len}` fat pointer (slice/string value) in comptime memory and
     /// return its address. `ptr` is `pointer_size` bytes at offset 0; `fat_ty`
-    /// places and sizes the length word within the 16-byte header.
+    /// places and sizes the length word within the 16-byte header. A length
+    /// that does not fit `fat_ty`'s length word is an error.
     fn makeSlice(self: *Vm, table: *const types.TypeTable, fat_ty: TypeId, data: Addr, len: u64) Error!Addr {
+        const len_ty = table.lenTypeOf(fat_ty);
+        if (!table.lenFitsWord(len_ty, len))
+            return self.failFmt("comptime VM: slice length {d} does not fit the destination length word", .{len});
         const fp = self.machine.allocBytes(16, 8);
-        const lf = table.fatLenField(table.lenTypeOf(fat_ty));
+        const lf = table.fatLenField(len_ty);
         try self.machine.writeWord(fp, table.pointer_size, data);
         try self.machine.writeWord(fp + lf.offset, lf.size, len);
         return fp;

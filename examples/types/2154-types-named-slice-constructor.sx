@@ -32,6 +32,9 @@ main :: () -> i32 {
     print("len={} lenty={} b0={} b3={}\n", b.len, type_name(type_of(b.len)), b[0], b[3]);
     print("ptr0={} total={}\n", b.ptr[0], total(a));
 
+    wide : []u8 = b;
+    print("wide={} wty={}\n", wide.len, type_name(type_of(wide)));
+
     h := head(b);
     print("sub={} h0={} h1={}\n", type_name(type_of(h)), h[0], h[1]);
 

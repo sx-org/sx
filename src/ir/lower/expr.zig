@@ -2547,12 +2547,34 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     }
     const elem_ty = self.getElementType(obj_ty);
     // A subslice keeps its base's length word: `@Slice(T, Len)[a..b]` is again
-    // `@Slice(T, Len)`, as `string[a..b]` stays `string`.
-    const len_ty = self.module.types.lenTypeOf(obj_ty);
+    // `@Slice(T, Len)`, as `string[a..b]` stays `string`. A typed destination
+    // that is a slice of the same element (`b : @Slice(u8, u32) = a[0..]`)
+    // forms that `Len` directly.
+    const base_len_ty = self.module.types.lenTypeOf(obj_ty);
+    const len_ty = blk: {
+        if (self.target_type) |tgt| {
+            if (!tgt.isBuiltin() and self.module.types.get(tgt) == .slice) {
+                const ts = self.module.types.get(tgt).slice;
+                const same_elem = ts.element == elem_ty or (elem_ty == .void and ts.element == .u8);
+                if (same_elem) break :blk ts.len_type;
+            }
+        }
+        break :blk base_len_ty;
+    };
     const slice_ty = if (elem_ty != .void)
         self.module.types.sliceOfLen(elem_ty, len_ty)
     else
         self.module.types.sliceOfLen(.u8, len_ty);
+    if (self.foldedInt(lo)) |lo_v| {
+        if (self.foldedInt(hi)) |hi_v| {
+            const n: u64 = if (hi_v >= lo_v) @intCast(hi_v - lo_v) else 0;
+            if (self.refuseLenWord(n, slice_ty)) return self.builder.constUndef(slice_ty);
+        } else if (self.refuseImplicitLenNarrow(obj_ty, slice_ty)) {
+            return self.builder.constUndef(slice_ty);
+        }
+    } else if (self.refuseImplicitLenNarrow(obj_ty, slice_ty)) {
+        return self.builder.constUndef(slice_ty);
+    }
     // Slicing an ARRAY must produce a zero-copy VIEW into the array's backing
     // storage (specs.md §Subslicing: "the result points into the original
     // backing storage — no memory allocation"). Lowering the array as a VALUE

@@ -2683,8 +2683,10 @@ Bytes :: @Slice(u8, u32);      // {ptr, u32}; `.len` is a u32
 Plain :: @Slice(i32, i64);     // the same type as []i32
 ```
 Indexing, `.len`, `.ptr`, subslicing and array→slice coercion read the same on
-every `Len`; a subslice keeps its base's length word. An array whose count
-overflows the destination's length word does not coerce into it.
+every `Len`; a subslice keeps its base's length word. A length that does not
+fit the destination's `Len` is refused at every header formation. Widening
+the length word (`@Slice(T, u32)` → `[]T`) is implicit; implicit narrowing of
+a non-constant length is not.
 
 ### Subslicing
 Arrays, slices, and strings support subslice syntax to create zero-copy views:

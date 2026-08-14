@@ -438,6 +438,25 @@ test "isUnsignedInt: user-defined arbitrary-width ints" {
     try std.testing.expect(!table.isUnsignedInt(ptr_ty));
 }
 
+test "lenFitsWord: width-derived range for builtin and interned ints" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    try std.testing.expect(table.lenFitsWord(.i64, 300));
+    try std.testing.expect(table.lenFitsWord(.u32, 300));
+    try std.testing.expect(table.lenFitsWord(.u8, 255));
+    try std.testing.expect(!table.lenFitsWord(.u8, 300));
+    try std.testing.expect(!table.lenFitsWord(.i8, 200));
+
+    const u4_ty = table.intern(.{ .unsigned = 4 });
+    const i24_ty = table.intern(.{ .signed = 24 });
+    try std.testing.expect(table.lenFitsWord(u4_ty, 15));
+    try std.testing.expect(!table.lenFitsWord(u4_ty, 20));
+    try std.testing.expect(table.lenFitsWord(i24_ty, 8_388_607));
+    try std.testing.expect(!table.lenFitsWord(i24_ty, 8_388_608));
+}
+
 // ── Nominal identity + key-safe mutation ────────────────────────────────
 
 test "forward-decl field fill preserves intern key" {

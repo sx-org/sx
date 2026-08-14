@@ -2,6 +2,7 @@ same=true name=[]i32
 distinct=false bytes=@Slice(u8,u32)
 len=4 lenty=u32 b0=1 b3=4
 ptr0=1 total=10
+wide=4 wty=[]u8
 sub=@Slice(u8,u32) h0=1 h1=2
 field=3 size=16
 string=2 slice=[]u8

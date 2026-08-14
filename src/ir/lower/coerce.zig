@@ -655,20 +655,111 @@ pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) R
     return self.builder.boxAnyAt(slot, box_ty);
 }
 
+fn lenWordMax(self: *Lowering, len_ty: TypeId) ?u64 {
+    if (len_ty == .i64) return std.math.maxInt(i64);
+    const bits = self.typeBitsEx(len_ty);
+    if (bits == 0) return null;
+    if (self.module.types.isUnsignedInt(len_ty)) {
+        if (bits >= 64) return std.math.maxInt(u64);
+        return (@as(u64, 1) << @intCast(bits)) - 1;
+    }
+    if (bits >= 64) return std.math.maxInt(i64);
+    return (@as(u64, 1) << @intCast(bits - 1)) - 1;
+}
+
+/// True when every count `src_len_ty` can hold also fits `dst_len_ty`.
+fn lenWordContains(self: *Lowering, dst_len_ty: TypeId, src_len_ty: TypeId) bool {
+    const src_max = lenWordMax(self, src_len_ty) orelse return true;
+    const dst_max = lenWordMax(self, dst_len_ty) orelse return true;
+    return dst_max >= src_max;
+}
+
+/// Folded integer behind `ref`: a `const_int`, or add/sub/widen of those.
+pub fn foldedInt(self: *Lowering, ref: Ref) ?i64 {
+    const op = self.builder.getRefOp(ref) orelse return null;
+    return switch (op) {
+        .const_int => |v| v,
+        .add => |b| blk: {
+            const l = self.foldedInt(b.lhs) orelse return null;
+            const r = self.foldedInt(b.rhs) orelse return null;
+            break :blk l +% r;
+        },
+        .sub => |b| blk: {
+            const l = self.foldedInt(b.lhs) orelse return null;
+            const r = self.foldedInt(b.rhs) orelse return null;
+            break :blk l -% r;
+        },
+        .widen => |c| self.foldedInt(c.operand),
+        .length => |u| blk: {
+            const oty = self.builder.getRefType(u.operand);
+            if (oty.isBuiltin() or self.module.types.get(oty) != .array) return null;
+            break :blk @intCast(self.module.types.get(oty).array.length);
+        },
+        else => null,
+    };
+}
+
+/// Folded element count of an already-lowered slice value, when the IR
+/// still carries it as a constant (`subslice` hi-lo or `array_to_slice`).
+fn foldedSliceLen(self: *Lowering, val: Ref) ?u64 {
+    const op = self.builder.getRefOp(val) orelse return null;
+    switch (op) {
+        .subslice => |ss| {
+            const lo = self.foldedInt(ss.lo) orelse return null;
+            const hi = self.foldedInt(ss.hi) orelse return null;
+            if (hi < lo) return 0;
+            return @intCast(hi - lo);
+        },
+        .array_to_slice => |u| {
+            const aty = self.builder.getRefType(u.operand);
+            if (aty.isBuiltin() or self.module.types.get(aty) != .array) return null;
+            return self.module.types.get(aty).array.length;
+        },
+        else => return null,
+    }
+}
+
+fn diagnoseLenWord(self: *Lowering, n: u64, dst_ty: TypeId, kind: []const u8) void {
+    const d = self.diagnostics orelse return;
+    const cs = self.builder.current_span;
+    const len_ty = self.module.types.lenTypeOf(dst_ty);
+    d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "{s} {} does not fit the {s} length word of '{s}'", .{
+        kind, n, self.formatTypeName(len_ty), self.formatTypeName(dst_ty),
+    });
+}
+
+pub fn refuseImplicitLenNarrow(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    const src_len = self.module.types.lenTypeOf(src_ty);
+    const dst_len = self.module.types.lenTypeOf(dst_ty);
+    if (lenWordContains(self, dst_len, src_len)) return false;
+    if (self.diagnostics) |d| {
+        const cs = self.builder.current_span;
+        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot implicitly convert '{s}' to '{s}': a non-constant length does not fit a narrower length word", .{
+            self.formatTypeName(src_ty), self.formatTypeName(dst_ty),
+        });
+    }
+    return true;
+}
+
+pub fn refuseLenWord(self: *Lowering, n: u64, dst_ty: TypeId) bool {
+    const len_ty = self.module.types.lenTypeOf(dst_ty);
+    if (len_ty == .i64) return false;
+    const max = lenWordMax(self, len_ty) orelse return false;
+    if (n <= max) return false;
+    diagnoseLenWord(self, n, dst_ty, "length");
+    return true;
+}
+
 /// Refuse `[N]T → @Slice(T, Len)` when `N` overflows the destination's length
 /// word: the header would carry a truncated length and every read through the
 /// slice would stop short.
 pub fn refuseArrayLenWord(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    const n: u64 = self.module.types.get(src_ty).array.length;
     const len_ty = self.module.types.lenTypeOf(dst_ty);
     if (len_ty == .i64) return false;
-    const n = self.module.types.get(src_ty).array.length;
-    const len_name = self.formatTypeName(len_ty);
-    const range = program_index_mod.intTypeRange(len_name) orelse return false;
-    if (n <= range.max) return false;
-    if (self.diagnostics) |d| {
-        const cs = self.builder.current_span;
-        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "array length {} does not fit the {s} length word of '{s}'", .{ n, len_name, self.formatTypeName(dst_ty) });
-    }
+    const max = lenWordMax(self, len_ty) orelse return false;
+    if (n <= max) return false;
+    diagnoseLenWord(self, n, dst_ty, "array length");
     return true;
 }
 
@@ -691,6 +782,7 @@ pub fn refuseArrayLenWord(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool 
 /// rejected like 0225.
 pub fn arrayToSliceView(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) ?Ref {
     if (src_ty.isBuiltin() or self.module.types.get(src_ty) != .array) return null;
+    if (self.refuseArrayLenWord(src_ty, dst_ty)) return self.builder.constUndef(dst_ty);
     const addr = self.refStorageAddress(val) orelse return null;
     const info = self.module.types.get(src_ty).array;
     const elem_ty = info.element;
@@ -1957,7 +2049,6 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         .narrow => return self.builder.emit(.{ .narrow = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .widen => return self.builder.emit(.{ .widen = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .array_to_slice => {
-            if (self.refuseArrayLenWord(src_ty, dst_ty)) return self.builder.constUndef(dst_ty);
             // Implicit array→slice coercion (`fill(arr)` where `fill :: (s:
             // []T)`). The explicit `arr[0..N]` syntax aliases the array's
             // storage; this implicit path MUST match, or passing
@@ -1977,9 +2068,15 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             return self.builder.emit(.{ .array_to_slice = .{ .operand = val } }, dst_ty);
         },
         // `@Slice(T,A) → @Slice(T,B)`: same view, a length word of a different
-        // width. Rebuild the header from the source's `.ptr` and `.len` — the
-        // subslice op fits the length to the destination's `Len`.
+        // width. Rebuild the header from the source's `.ptr` and `.len`. A
+        // folded source length that does not fit `B` is refused; implicit
+        // narrowing of a non-constant length is refused; widening is implicit.
         .slice_len_convert => {
+            if (foldedSliceLen(self, val)) |n| {
+                if (self.refuseLenWord(n, dst_ty)) return self.builder.constUndef(dst_ty);
+            } else if (mode == .implicit and self.refuseImplicitLenNarrow(src_ty, dst_ty)) {
+                return self.builder.constUndef(dst_ty);
+            }
             const elem_ty = self.module.types.get(dst_ty).slice.element;
             const mp_ty = self.module.types.manyPtrTo(elem_ty);
             const data = self.builder.emit(.{ .data_ptr = .{ .operand = val } }, mp_ty);
