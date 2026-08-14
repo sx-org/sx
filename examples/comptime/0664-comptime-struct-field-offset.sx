@@ -6,6 +6,7 @@
 meta :: #import "modules/std/meta.sx";
 
 Padded :: struct { a: u8; b: i64; c: u16; }
+PaddedT :: Tuple(u8, i64);
 
 parity :: () -> bool {
     ti := type_info(Padded);
@@ -16,6 +17,6 @@ PARITY :: #run parity();
 
 main :: () {
     print("{} {} {}\n", struct_field_offset(Padded, 0), struct_field_offset(Padded, 1), struct_field_offset(Padded, 2));
-    print("tuple: {} {}\n", struct_field_offset(Tuple(u8, i64), 0), struct_field_offset(Tuple(u8, i64), 1));
+    print("tuple: {} {}\n", struct_field_offset(PaddedT, 0), struct_field_offset(PaddedT, 1));
     print("parity={}\n", PARITY);
 }

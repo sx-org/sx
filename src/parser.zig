@@ -434,8 +434,13 @@ pub const Parser = struct {
             return try self.createNode(start_pos, .{ .fn_decl = .{ .name = name, .params = &.{}, .return_type = null, .body = body, .name_span = name_span, .is_raw = name_is_raw } });
         }
 
-        // Otherwise it's a constant expression
-        const value = try self.parseExpr();
+        // A type-constructor head after `::` opens a type ALIAS
+        // (`NT :: Tuple(a: i64);`, `CB :: Closure(i32) -> i32;`), so the RHS
+        // parses with the type grammar; anything else is a constant expression.
+        const value = if (self.atTypeConstructorHead())
+            try self.parseTypeExpr()
+        else
+            try self.parseExpr();
 
         // name :: type_expr intrinsic; — intrinsic with type annotation. The
         // declaration is already whole without the tail, so the tail binds only
@@ -908,21 +913,12 @@ pub const Parser = struct {
                 }
             }
 
-            // Tuple type: `Tuple(A, B)` / `Tuple(T)` / `Tuple()` /
-            //   named `Tuple(x: A, y: B)` / pack `Tuple(..Ts)` / `Tuple(..F(Ts))`.
-            //   Magic contextual id — only a `Tuple` IMMEDIATELY followed by `(`
-            //   builds a tuple type; a bare `Tuple` stays an ordinary identifier
-            //   (mirrors `Closure`). Lowers to the SAME `tuple_type_expr` the
-            //   inline `(A, B)` / `(x: A, y: B)` / `(..Ts)` forms produce.
-            //   Unlike `Closure`, a trailing `->` is REJECTED (no return type).
+            // Only a `Tuple` / `Closure` IMMEDIATELY followed by `(` builds the
+            // type; a bare one is an ordinary name.
             if (std.mem.eql(u8, name, "Tuple") and self.tokens.tag(self.tok) == .l_paren) {
                 return self.parseTupleTypeBody(start);
             }
 
-            // Closure type: Closure(params...) -> R
-            //   Variadic-pack trailing form: `Closure(Prefix..., ..$pack) -> R`
-            //   binds `pack` to a heterogeneous comptime type list at impl
-            //   match time.
             if (std.mem.eql(u8, name, "Closure") and self.tokens.tag(self.tok) == .l_paren) {
                 return self.parseClosureTypeBody(start);
             }
@@ -3413,13 +3409,7 @@ pub const Parser = struct {
                 if (self.tokens.tag(self.tok) != .dot) break;
             } else if (self.tokens.tag(self.tok) == .dot) {
                 self.advance();
-                if (self.tokens.tag(self.tok) == .l_paren and expr.data == .tuple_type_expr) {
-                    // The one aggregate literal is `.{ … }`; typed construction
-                    // is `Tuple(A, B){ v1, v2 }`. `.(` on a tuple-TYPE receiver
-                    // can only be a tuple literal, so it takes the dedicated
-                    // message instead of parsing as a cast.
-                    return self.fail("'.( )' was removed — the aggregate literal is '.{ … }' (typed tuple construction: 'Tuple(A, B){ v1, v2 }')");
-                } else if (self.tokens.tag(self.tok) == .l_paren) {
+                if (self.tokens.tag(self.tok) == .l_paren) {
                     // Postfix cast `expr.(T)`. One type, plus
                     // an optional ALLOCATOR expression for the owning
                     // erasure `expr.(P, alloc)` (protocol targets only —
@@ -3886,30 +3876,6 @@ pub const Parser = struct {
             .identifier => {
                 const name = self.tokens.slice(self.tok);
                 const is_raw = self.tokens.flagsOf(self.tok).is_raw;
-                // `Tuple(...)` in expression position is a tuple TYPE node —
-                // identical to the one the type parser produces — NOT a value.
-                // It is first-class in `size_of` / `type_info` / generic type
-                // args (a non-type element like `Tuple(i32, 1)` is rejected at
-                // the type-demanding site), can stand alone as a `Type` value,
-                // and a postfix `.( ... )` (handled in `parsePostfix`)
-                // constructs a typed tuple VALUE of that type — exactly like
-                // `Name{ ... }` for structs. A bare `Tuple` not followed by `(`
-                // (or a backtick-raw `` `Tuple ``) stays an ordinary identifier.
-                if (!is_raw and std.mem.eql(u8, name, "Tuple") and self.peekNext() == .l_paren) {
-                    self.advance(); // skip `Tuple`; `current` is now `(`
-                    return self.parseTupleTypeBody(start);
-                }
-                // `Closure(...) -> R` in expression position is a closure TYPE
-                // node — identical to the one the type parser produces — so a
-                // const-decl RHS alias `CB :: Closure(i32) -> i32;` parses (the
-                // `-> R` tail is consumed here, not left dangling as after a
-                // bare `Closure(i32)` call). Mirrors the `Tuple(` case above; a
-                // bare `Closure` not followed by `(` (or a backtick-raw
-                // `` `Closure ``) stays an ordinary identifier.
-                if (!is_raw and std.mem.eql(u8, name, "Closure") and self.peekNext() == .l_paren) {
-                    self.advance(); // skip `Closure`; `current` is now `(`
-                    return self.parseClosureTypeBody(start);
-                }
                 // A backtick raw identifier (`` `i2 ``) is NEVER type-classified —
                 // it is always a value identifier, bypassing the reserved-type-name
                 // rule. Only a bare spelling is checked for a type name
@@ -3975,20 +3941,20 @@ pub const Parser = struct {
                 // `.{ … }` with a `Tuple(…)` annotation, so a named element, an
                 // empty group, a leading spread, or a top-level comma is an error.
                 if (self.tokens.tag(self.tok) == .identifier and self.peekNext() == .colon) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)");
                 }
                 if (self.tokens.tag(self.tok) == .r_paren) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)");
                 }
                 if (self.tokens.tag(self.tok) == .dot_dot) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)");
                 }
 
                 const first = try self.parseExpr();
 
                 // A top-level comma is an error — tuples need the annotated form.
                 if (self.tokens.tag(self.tok) == .comma) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)");
                 }
 
                 // No comma → grouping
@@ -4568,17 +4534,18 @@ pub const Parser = struct {
         }
     }
 
-    /// Parse a `Tuple(...)` tuple-TYPE body. On entry `current` is the `(`
-    /// immediately after the `Tuple` contextual id (the caller has already
-    /// consumed `Tuple`). Used in BOTH type position (the type parser) and
-    /// expression position (`parsePrimary`'s `.identifier` arm) — `Tuple(...)`
-    /// always denotes a TYPE, never a value. A postfix `.( ... )` after the
-    /// returned `tuple_type_expr` constructs a typed tuple VALUE (handled in
-    /// Closure type body: parses `(params...) -> R` after a `Closure` head.
-    /// `current` must be at the opening `(`. Shared by the type-expr grammar
-    /// (annotation / field / return position) and expression position (a
-    /// `Closure(...)` const-decl RHS type alias), so the alias `CB :: Closure(i32)
-    /// -> i32;` parses identically to the annotation `f : Closure(i32) -> i32`.
+    /// The exact token pair `Tuple`+`(` / `Closure`+`(` that opens a type
+    /// constructor. A backtick-raw spelling is an ordinary identifier.
+    fn atTypeConstructorHead(self: *Parser) bool {
+        if (self.tokens.tag(self.tok) != .identifier) return false;
+        if (self.tokens.flagsOf(self.tok).is_raw) return false;
+        if (self.peekNext() != .l_paren) return false;
+        const name = self.tokens.slice(self.tok);
+        return std.mem.eql(u8, name, "Tuple") or std.mem.eql(u8, name, "Closure");
+    }
+
+    /// Closure type body: `(params...) -> R` after a `Closure` head; `current`
+    /// must be at the opening `(`.
     ///   Variadic-pack trailing form: `Closure(Prefix..., ..$pack) -> R` binds
     ///   `pack` to a heterogeneous comptime type list at impl match time.
     fn parseClosureTypeBody(self: *Parser, start: u32) anyerror!*Node {
@@ -4647,11 +4614,11 @@ pub const Parser = struct {
         } });
     }
 
-    /// `parsePostfix`, mirroring `Name{ ... }` typed struct literals).
-    ///   `Tuple(A, B)` / `Tuple(T)` / `Tuple()` / named `Tuple(x: A, y: B)` /
-    ///   pack `Tuple(..Ts)` / `Tuple(..F(Ts))`. Lowers to the SAME
-    ///   `tuple_type_expr` the inline `(A, B)` / `(x: A, y: B)` / `(..Ts)`
-    ///   forms produce. Unlike `Closure`, a trailing `->` is REJECTED.
+    /// Tuple type body after a `Tuple` head; `current` must be at the opening
+    /// `(`. `Tuple(A, B)` / `Tuple(T)` / `Tuple()` / named `Tuple(x: A, y: B)` /
+    /// pack `Tuple(..Ts)` / `Tuple(..F(Ts))` lower to the SAME `tuple_type_expr`
+    /// the inline `(A, B)` / `(x: A, y: B)` / `(..Ts)` forms produce. Unlike
+    /// `Closure`, a trailing `->` is REJECTED.
     fn parseTupleTypeBody(self: *Parser, start: u32) anyerror!*Node {
         self.advance(); // skip '('
         var field_types = std.ArrayList(*Node).empty;
@@ -7674,8 +7641,8 @@ fn expectParseErrorAt(src: [:0]const u8, msg: []const u8, offset: u32) !void {
 test "unterminated paren in grouping position fails as tuple" {
     // isFunctionTypeExprAtLParen sees no closer and declines; the grouping
     // parse then runs into EOF.
-    try expectParseErrorAt("x := (a, b\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 7);
-    try expectParseErrorAt("x := ((a, b)\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 8);
+    try expectParseErrorAt("x := (a, b\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)", 7);
+    try expectParseErrorAt("x := ((a, b)\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)", 8);
 }
 
 test "crossed delimiters report missing closer at the unexpected token" {
@@ -7687,7 +7654,7 @@ test "crossed delimiters report missing closer at the unexpected token" {
 test "function-type path without closer fails as tuple" {
     // tagAfterParenGroup finds no `)` before EOF, so the `->` never counts as
     // a function type and the tuple refusal fires.
-    try expectParseErrorAt("F :: (i32, i32 -> i32;", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 9);
+    try expectParseErrorAt("F :: (i32, i32 -> i32;", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)", 9);
 }
 
 test "return-type inline struct without closer reports missing brace" {
@@ -7701,7 +7668,7 @@ test "unterminated aggregate reports missing brace" {
 }
 
 test "param list missing closer fails as tuple" {
-    try expectParseErrorAt("f :: (a: i32 { 1 }", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 6);
+    try expectParseErrorAt("f :: (a: i32 { 1 }", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)", 6);
 }
 
 test "peekTag saturates at the eof row for any runtime offset" {

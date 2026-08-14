@@ -238,9 +238,8 @@ test "parser: .(a, b) is rejected" {
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-// The typed-prefix form `Tuple(A, B).( … )` is rejected too — typed tuple
-// construction is `Tuple(A, B){ … }`.
-test "parser: Tuple(A, B).( ... ) is rejected after the cutover" {
+// A `.( … )` initializer after a tuple type is rejected too.
+test "parser: Tuple(A, B).( ... ) is rejected" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), "f :: () { x := Tuple(i64, i64).(1, 2); }");
