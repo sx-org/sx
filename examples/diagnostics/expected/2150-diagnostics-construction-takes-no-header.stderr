@@ -1,0 +1,15 @@
+error: 'Label' names a type, and a construction takes no parameter header
+  --> examples/diagnostics/2150-diagnostics-construction-takes-no-header.sx:10:10
+   |
+10 |     l := Label { |x| 1; };
+   |          ^^^^^^^^^^^^^^^^
+
+help: a `|…|` header belongs to a block that becomes a closure; parenthesize a closure ELEMENT — `T{ (|x| x), }`
+
+error: 'Box' names a type, and a construction takes no parameter header
+  --> examples/diagnostics/2150-diagnostics-construction-takes-no-header.sx:11:10
+   |
+11 |     b := Box(i64) { |x| 1 };
+   |          ^^^^^^^^^^^^^^^^^^
+
+help: a `|…|` header belongs to a block that becomes a closure; parenthesize a closure ELEMENT — `T{ (|x| x), }`

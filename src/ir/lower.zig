@@ -56,7 +56,7 @@ const lower_expr = @import("lower/expr.zig");
 const lower_closure = @import("lower/closure.zig");
 const lower_init_plan = @import("lower/init_plan.zig");
 const lower_build_block = @import("lower/build_block.zig");
-const lower_empty_brace = @import("lower/empty_brace.zig");
+const lower_juxtaposition = @import("lower/juxtaposition.zig");
 const lower_open_set = @import("lower/open_set.zig");
 const lower_bound = @import("lower/bound.zig");
 
@@ -431,7 +431,7 @@ pub const Lowering = struct {
     main_file: ?[]const u8 = null, // path of the main file; imported functions are declared extern
     /// Source-site index over the program's declarations, built once (see
     /// `src/source_site.zig`). `@caller` reads a call's site from it.
-    site_index: ?*const source_site.SiteIndex = null,
+    site_index: ?*source_site.SiteIndex = null,
     /// The library roots import resolution searched. `contracts` needs them to
     /// tell a canonical `@` declaration from a same-named file elsewhere.
     stdlib_paths: []const []const u8 = &.{},
@@ -2015,6 +2015,12 @@ pub const Lowering = struct {
         };
         return switch (node.data) {
             .call => |*c| self.callResolver().resultType(c),
+            // Settling is the shared routine's other caller: a type question
+            // asked before the node lowers answers off the settled reading.
+            .juxtaposition => blk: {
+                self.settleJuxtaposition(node);
+                break :blk self.inferExprType(node);
+            },
             else => self.exprTyper().inferType(node),
         };
     }
@@ -3296,7 +3302,9 @@ pub const Lowering = struct {
     pub const funcWantsImplicitCtx = lower_decl.funcWantsImplicitCtx;
     pub const fnPtrTypeWantsCtx = lower_decl.fnPtrTypeWantsCtx;
     pub const scanDecls = lower_decl.scanDecls;
-    pub const normalizeEmptyBraceCalls = lower_empty_brace.normalizeEmptyBraceCalls;
+    pub const settleJuxtaposition = lower_juxtaposition.settle;
+    pub const settleModuleJuxtapositions = lower_juxtaposition.settleModuleFront;
+    pub const settleStatementJuxtapositions = lower_juxtaposition.settleStatement;
     pub const expandModuleDrivers = lower_expand.expandModuleDrivers;
     pub const registerConstAliases = lower_decl.registerConstAliases;
     pub const registerLiteralModuleConsts = lower_decl.registerLiteralModuleConsts;
@@ -3669,7 +3677,6 @@ pub const Lowering = struct {
     pub const lowerStructLiteral = lower_expr.lowerStructLiteral;
     pub const synthesizeAnonStruct = lower_expr.synthesizeAnonStruct;
     pub const lowerInitBlock = lower_expr.lowerInitBlock;
-    pub const lowerPostScopeBlock = lower_expr.lowerPostScopeBlock;
     pub const getStructFields = lower_expr.getStructFields;
     pub const getAccessorFor = lower_expr.getAccessorFor;
     pub const getSetterFor = lower_expr.getSetterFor;

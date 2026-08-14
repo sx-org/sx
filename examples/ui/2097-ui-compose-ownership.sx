@@ -14,16 +14,16 @@
 // text), CommittedUiSnapshot (scene, hit list, focus list), UiRoot (all of
 // those plus its two frame arenas), FrameLoop (the builder closure's
 // environment). FocusRouter holds nothing, so it takes no allocator.
-#import "modules/std.sx"
-#import "modules/std/mem.sx"
-#import "modules/ui/compose.sx"
-#import "modules/ui/input.sx"
-ui :: #import "modules/ui/types.sx"
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/input.sx";
+ui :: #import "modules/ui/types.sx";
 
-at :: (x: f32, y: f32) -> Point => .{ x = x, y = y }
-down :: (x: f32, y: f32) -> InputEvent => .pointer_down(.{ pointer = .{ value = 1 }, position = at(x, y) })
-up :: (x: f32, y: f32) -> InputEvent => .pointer_up(.{ pointer = .{ value = 1 }, position = at(x, y) })
-key :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k })
+at :: (x: f32, y: f32) -> Point => .{ x = x, y = y };
+down :: (x: f32, y: f32) -> InputEvent => .pointer_down(.{ pointer = .{ value = 1 }, position = at(x, y) });
+up :: (x: f32, y: f32) -> InputEvent => .pointer_up(.{ pointer = .{ value = 1 }, position = at(x, y) });
+key :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k });
 
 Cursor :: struct {
     row: i64 = 0
@@ -37,180 +37,180 @@ main :: () -> i32 {
     // what it never made, so both ledgers reading zero is the contract. The
     // reporting stays outside the `away` region: formatting allocates through
     // the ambient allocator, and these counts are the carriers' alone.
-    home := TrackingAllocator.init(context.allocator)
-    away := TrackingAllocator.init(context.allocator)
+    home := TrackingAllocator.init(context.allocator);
+    away := TrackingAllocator.init(context.allocator);
     // A tree is a frame's memory rather than a carrier's, so trees build here.
-    scratch := Arena.init(context.allocator, 4096)
+    scratch := Arena.init(context.allocator, 4096);
 
     // Identity: five sites tally past the first buffer the list takes.
-    sites := 0
-    distinct := false
-    marks := Identity.init(home)
+    sites := 0;
+    distinct := false;
+    marks := Identity.init(home);
     push .{ compose_ui = *marks, allocator = away } {
-        marks.begin_build()
-        a := element_id()
-        b := element_id()
-        c := element_id()
-        d := element_id()
-        e := element_id()
-        sites = marks.counts.len
-        distinct = a.value != b.value and b.value != c.value and c.value != d.value and d.value != e.value
+        marks.begin_build();
+        a := element_id();
+        b := element_id();
+        c := element_id();
+        d := element_id();
+        e := element_id();
+        sites = marks.counts.len;
+        distinct = a.value != b.value and b.value != c.value and c.value != d.value and d.value != e.value;
         marks.deinit()
     }
     print("identity sites {} distinct {} home {} away {}\n",
-        sites, distinct, home.leak_count(), away.leak_count())
+        sites, distinct, home.leak_count(), away.leak_count());
 
     // StateStore: one entry block per claim, and the list over them.
-    entries := 0
-    counted := 0
-    row := 0
-    tally := Identity.init(home)
-    store := StateStore.init(home)
+    entries := 0;
+    counted := 0;
+    row := 0;
+    tally := Identity.init(home);
+    store := StateStore.init(home);
     push .{ compose_ui = *tally, compose_state = *store, allocator = away } {
-        tally.begin_build()
-        store.begin_build()
-        n := use_state(i64, 1)
-        n.set(n.get() + 41)
-        seat := use_state(Cursor, .{ row = 2, col = 3 })
-        store.commit_build()
-        entries = store.entries.len
-        counted = n.get()
-        row = seat.get().row
-        store.teardown()
+        tally.begin_build();
+        store.begin_build();
+        n := use_state(i64, 1);
+        n.set(n.get() + 41);
+        seat := use_state(Cursor, .{ row = 2, col = 3 });
+        store.commit_build();
+        entries = store.entries.len;
+        counted = n.get();
+        row = seat.get().row;
+        store.teardown();
         tally.deinit()
     }
     print("state entries {} value {} row {} home {} away {}\n",
-        entries, counted, row, home.leak_count(), away.leak_count())
+        entries, counted, row, home.leak_count(), away.leak_count());
 
     // Router: the sequence a down captures against the committed frame.
-    regions := 0
-    captured := false
-    pointers := Identity.init(home)
-    taps := Router.init(home)
-    live := CommittedUiSnapshot.init(home)
+    regions := 0;
+    captured := false;
+    pointers := Identity.init(home);
+    taps := Router.init(home);
+    live := CommittedUiSnapshot.init(home);
     push .{ compose_ui = *pointers, compose_input = *taps, allocator = away } {
-        pointers.begin_build()
+        pointers.begin_build();
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
-            }
+            };
             project(*tree, Size{ width = 60.0, height = 20.0 }, *live)
         }
-        taps.observe(*live)
-        held := down(30.0, 10.0)
-        taps.dispatch(*held)
-        regions = live.hit_list.len
-        captured = taps.pressed(live.hit_list.items[0].id)
-        taps.deinit()
-        live.deinit()
+        taps.observe(*live);
+        held := down(30.0, 10.0);
+        taps.dispatch(*held);
+        regions = live.hit_list.len;
+        captured = taps.pressed(live.hit_list.items[0].id);
+        taps.deinit();
+        live.deinit();
         pointers.deinit()
     }
     print("router regions {} captured {} home {} away {}\n",
-        regions, captured, home.leak_count(), away.leak_count())
+        regions, captured, home.leak_count(), away.leak_count());
 
     // CommittedUiSnapshot: the fill runs while `away` is ambient and the
     // release while neither tracker is, and the three buffers still come from
     // and go back to the allocator the snapshot names. FocusRouter rides the
     // same frame: it holds nothing, so routing a key through it moves no
     // memory.
-    filled := 0
-    returned := 0
-    spent := 0
-    struck := 0
-    labels := Identity.init(home)
-    shot := CommittedUiSnapshot.init(home)
+    filled := 0;
+    returned := 0;
+    spent := 0;
+    struck := 0;
+    labels := Identity.init(home);
+    shot := CommittedUiSnapshot.init(home);
     push .{ compose_ui = *labels } {
-        labels.begin_build()
-        hit := *struck
+        labels.begin_build();
+        hit := *struck;
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
-                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {});
                 focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, |ev: *KeyEvent| {
-                    hit.* += 1
+                    hit.* += 1;
                 })
-            }
-            made := home.alloc_count
+            };
+            made := home.alloc_count;
             push .{ allocator = away } {
                 project(*tree, Size{ width = 60.0, height = 40.0 }, *shot)
             }
-            filled = home.alloc_count - made
+            filled = home.alloc_count - made;
 
-            keys := FocusRouter.init()
-            keys.observe(*shot)
-            still := home.alloc_count + away.alloc_count
-            keys.request_focus(.{ value = shot.focus_list.items[0].id })
-            stroke := key(.enter)
-            keys.dispatch(*stroke)
-            spent = home.alloc_count + away.alloc_count - still
+            keys := FocusRouter.init();
+            keys.observe(*shot);
+            still := home.alloc_count + away.alloc_count;
+            keys.request_focus(.{ value = shot.focus_list.items[0].id });
+            stroke := key(.enter);
+            keys.dispatch(*stroke);
+            spent = home.alloc_count + away.alloc_count - still;
         }
     }
-    gave := home.dealloc_count
-    shot.deinit()
-    returned = home.dealloc_count - gave
-    labels.deinit()
+    gave := home.dealloc_count;
+    shot.deinit();
+    returned = home.dealloc_count - gave;
+    labels.deinit();
     print("snapshot filled {} returned {} home {} away {}\n",
-        filled, returned, home.leak_count(), away.leak_count())
-    print("focus struck {} spent {}\n", struck, spent)
+        filled, returned, home.leak_count(), away.leak_count());
+    print("focus struck {} spent {}\n", struck, spent);
 
     // A `discard` is where a snapshot's allocator moves: it lets the buffers go
     // first, so the fills after it come from the arena it names.
-    stamps := Identity.init(home)
-    first := Arena.init(home, 2048)
-    second := Arena.init(home, 2048)
-    moved := CommittedUiSnapshot.init(first)
-    untouched := true
+    stamps := Identity.init(home);
+    first := Arena.init(home, 2048);
+    second := Arena.init(home, 2048);
+    moved := CommittedUiSnapshot.init(first);
+    untouched := true;
     push .{ compose_ui = *stamps } {
-        stamps.begin_build()
+        stamps.begin_build();
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
-            }
-            project(*tree, Size{ width = 60.0, height = 20.0 }, *moved)
-            untouched = second.end_index == 0
-            moved.discard(second)
+            };
+            project(*tree, Size{ width = 60.0, height = 20.0 }, *moved);
+            untouched = second.end_index == 0;
+            moved.discard(second);
             project(*tree, Size{ width = 60.0, height = 20.0 }, *moved)
         }
     }
-    hits := moved.hit_list.len
-    retargeted := second.end_index > 0
-    moved.deinit()
-    first.deinit()
-    second.deinit()
-    stamps.deinit()
+    hits := moved.hit_list.len;
+    retargeted := second.end_index > 0;
+    moved.deinit();
+    first.deinit();
+    second.deinit();
+    stamps.deinit();
     print("retarget before {} after {} hits {} home {} away {}\n",
-        untouched, retargeted, hits, home.leak_count(), away.leak_count())
+        untouched, retargeted, hits, home.leak_count(), away.leak_count());
 
     // UiRoot and FrameLoop: the root's carriers and arenas are the root
     // allocator's, and the builder environment is the allocator's that wrote
     // the literal — here the ambient one, which is the other tracker.
-    built := 0
-    taken := 0
+    built := 0;
+    taken := 0;
     push .{ allocator = away } {
-        app := UiRoot.init(Size{ width = 60.0, height = 40.0 }, home)
-        builds := *built
-        seen := *taken
+        app := UiRoot.init(Size{ width = 60.0, height = 40.0 }, home);
+        builds := *built;
+        seen := *taken;
         spin := FrameLoop.init(*app, || -> View {
-            builds.* += 1
-            n := use_state(i64, 0)
-            n.set(n.get() + 1)
+            builds.* += 1;
+            n := use_state(i64, 0);
+            n.set(n.get() + 1);
             v : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {
-                    seen.* += 1
+                    seen.* += 1;
                 })
-            }
+            };
             v
-        }, away)
-        spin.frame()
-        app.queue.push(down(30.0, 10.0))
-        app.queue.push(up(30.0, 10.0))
-        app.queue.push(.text(.{ text = "typed" }))
-        spin.run(2)
-        app.deinit()
+        }, away);
+        spin.frame();
+        app.queue.push(down(30.0, 10.0));
+        app.queue.push(up(30.0, 10.0));
+        app.queue.push(.text(.{ text = "typed" }));
+        spin.run(2);
+        app.deinit();
         spin.deinit()
     }
     print("root built {} taps {} home {} away {}\n",
-        built, taken, home.leak_count(), away.leak_count())
+        built, taken, home.leak_count(), away.leak_count());
 
-    scratch.deinit()
+    scratch.deinit();
     0
 }

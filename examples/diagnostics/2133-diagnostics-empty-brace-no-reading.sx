@@ -1,7 +1,6 @@
-// An empty `{}` after a call with arguments is the callee's to read (specs:
-// Trailing Blocks — Empty block). `tally` names no parameterized type, and its
-// last parameter takes no block, so neither reading exists — one error names
-// both intents.
+// An empty `{}` after a call names no type to construct (specs: Trailing
+// Blocks), so it is the trailing block — and `tally`'s last parameter takes no
+// block, which is what the report names.
 
 tally :: (n: i32) -> i32 {
     return n;

@@ -10,15 +10,15 @@
 // A tap is what this router recognizes. A point whose policy is `.fail` is
 // transparent there, so the probe continues down the paint-ordered stack; any
 // other non-`.tap` policy takes the point without taps.
-#import "modules/std.sx"
-#import "modules/std/core.sx"
-#import "modules/std/mem.sx"
-#import "modules/ui/types.sx"
-#import "modules/ui/render.sx"
-#import "modules/ui/input.sx"
-#import "modules/ui/compose/view.sx"
-#import "modules/ui/compose/identity.sx"
-#import "modules/ui/compose/frame.sx"
+#import "modules/std.sx";
+#import "modules/std/core.sx";
+#import "modules/std/mem.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/compose/view.sx";
+#import "modules/ui/compose/identity.sx";
+#import "modules/ui/compose/frame.sx";
 
 // A component wrapped in its own hit region. The child is stored inline at its
 // own type, so an interactive element is one value and the calls into it stay
@@ -40,7 +40,7 @@ Tappable :: @OpenVariant(View) ($V: Type) {
     // The region is declared BEFORE the child draws, so a child's own regions
     // land later in paint order and win the points they cover.
     render :: (self: *Tappable(V), rc: *RenderContext, frame: Frame) {
-        rc.hit_region(self.id.value, frame, self.policy, self.on_tap)
+        rc.hit_region(self.id.value, frame, self.policy, self.on_tap);
         self.child.render(rc, frame)
     }
 }
@@ -72,17 +72,17 @@ Router :: struct {
     sequences: List(PointerSequence) = .{}
     gpa: Allocator
 
-    init :: (gpa: Allocator) -> Router => .{ gpa = gpa }
+    init :: (gpa: Allocator) -> Router => .{ gpa = gpa };
 
     // Point the router at the frame that just committed. A sequence whose
     // element stopped declaring a region is cancelled — there is nothing left
     // for its up to tap.
     observe :: (self: *Router, snap: *CommittedUiSnapshot) {
-        self.snap = snap
-        i := 0
+        self.snap = snap;
+        i := 0;
         while i < self.sequences.len {
             if Router.declares(snap, self.sequences.items[i].element) {
-                i += 1
+                i += 1;
             } else {
                 self.sequences.swap_remove(i)
             }
@@ -99,20 +99,20 @@ Router :: struct {
     // The top region at a point: the LAST containing one in paint order whose
     // policy does not fail there.
     hit_top :: (self: *Router, p: Point) -> ?HitTarget {
-        if self.snap == null then return null
-        i := self.snap.hit_list.len - 1
+        if self.snap == null then return null;
+        i := self.snap.hit_list.len - 1;
         while i >= 0 {
-            r := *self.snap.hit_list.items[i]
+            r := *self.snap.hit_list.items[i];
             if r.frame.contains(p) {
-                allowed : HitPolicy = .tap
+                allowed : HitPolicy = .tap;
                 if pf := r.policy {
-                    allowed = pf(p)
+                    allowed = pf(p);
                 }
                 if allowed != .fail {
-                    return HitTarget{ id = r.id, policy = allowed }
+                    return HitTarget{ id = r.id, policy = allowed };
                 }
             }
-            i -= 1
+            i -= 1;
         }
         null
     }
@@ -120,7 +120,7 @@ Router :: struct {
     // Whether `id` is the region a point lands on.
     covers :: (self: *Router, p: Point, id: u64) -> bool {
         if t := self.hit_top(p) {
-            return t.id == id
+            return t.id == id;
         }
         false
     }
@@ -140,7 +140,7 @@ Router :: struct {
     }
 
     drop :: (self: *Router, pointer: PointerId) {
-        i := self.find(pointer)
+        i := self.find(pointer);
         if i >= 0 {
             self.sequences.swap_remove(i)
         }
@@ -153,18 +153,18 @@ Router :: struct {
                 if h := r.on_tap {
                     h()
                 }
-                return
+                return;
             }
         }
     }
 
     dispatch :: (self: *Router, ev: *InputEvent) {
-        if self.snap == null then return
+        if self.snap == null then return;
         match ev.* {
             case .pointer_down: |p| {
                 if t := self.hit_top(p.position) {
-                    if t.policy != .tap then return
-                    self.drop(p.pointer)
+                    if t.policy != .tap then return;
+                    self.drop(p.pointer);
                     self.sequences.append(.{
                         pointer = p.pointer,
                         element = t.id,
@@ -174,15 +174,15 @@ Router :: struct {
                 }
             }
             case .pointer_move: |p| {
-                i := self.find(p.pointer)
-                if i < 0 then return
-                self.sequences.items[i].inside = self.covers(p.position, self.sequences.items[i].element)
+                i := self.find(p.pointer);
+                if i < 0 then return;
+                self.sequences.items[i].inside = self.covers(p.position, self.sequences.items[i].element);
             }
             case .pointer_up: |p| {
-                i := self.find(p.pointer)
-                if i < 0 then return
-                s := self.sequences.items[i]
-                self.sequences.swap_remove(i)
+                i := self.find(p.pointer);
+                if i < 0 then return;
+                s := self.sequences.items[i];
+                self.sequences.swap_remove(i);
                 if s.inside and self.covers(p.position, s.element) {
                     self.fire(s.element)
                 }
@@ -199,11 +199,11 @@ Router :: struct {
     }
 }
 
-#context_extend compose_input: *Router = null
+#context_extend compose_input: *Router = null;
 
 // The press state a build reads to style an element by what the pointer is
 // doing to it. With no router in context nothing is pressed.
 is_pressed :: (id: ElementId) -> bool {
-    if context.compose_input == null then return false
+    if context.compose_input == null then return false;
     context.compose_input.pressed(id.value)
 }

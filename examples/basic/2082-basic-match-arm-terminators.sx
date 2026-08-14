@@ -1,0 +1,135 @@
+// Whitespace is syntax (specs §1), inside a `match` arm. An arm body is an
+// ordinary statement list, so every statement in it takes its `;` — `case` and
+// `else:` are statement heads, not terminators. `else:` — an `else` followed by
+// a `:` — heads the default arm, while every other `else` chains the `if` above
+// it.
+//
+// The positions that end an arm's statement without a `;` are the ones that end
+// any statement: the arm's last statement sits before the match's `}`, a
+// statement that IS a block ends at its own `}`, and so does a declaration
+// whose initializer is a block form.
+#import "modules/std.sx";
+
+Color :: enum {
+    Red
+    Green
+    Blue
+}
+
+Shape :: enum {
+    rect: i64
+    dot
+}
+
+// Three statements per arm, each ended by its `;`.
+trace :: (c: Color) -> i64 {
+    n := 0;
+    match c {
+        case .Red:
+            n = n + 1;
+            n = n + 10;
+            n = n + 100;
+        case .Green:
+            n = n + 2;
+            n = n + 20;
+        else:
+            n = n + 3;
+            n = n + 30;
+    }
+    n
+}
+
+// An arm closing on a statement which IS a block writes no `;`: the `if` and
+// the bare scope each end at their own `}`.
+shade :: (c: Color) -> i64 {
+    n := 0;
+    match c {
+        case .Red:
+            n = 1;
+            if n == 1 {
+                n = n + 6;
+            }
+        case .Green: {
+            n = 2;
+            n = n + 60;
+        }
+        else:
+            n = 3;
+    }
+    n
+}
+
+// `}` NEWLINE `else` chains the `if` — the following `:` is what makes the
+// default arm's `else` a different token. Both spellings meet here: the first
+// arm's `if` takes the chaining `else`, the second arm's `if` takes none and
+// the `else:` under it opens the default arm.
+tone :: (c: Color) -> i64 {
+    n := 0;
+    match c {
+        case .Red:
+            if n == 0 {
+                n = 1;
+            }
+            else {
+                n = 2;
+            }
+        case .Green:
+            hot := if n == 0 { 10 } else { 20 }
+            if hot == 10 {
+                n = hot;
+            }
+        else:
+            n = 3;
+    }
+    n
+}
+
+// An arm's last expression is the arm's value, with or without the `;`. The
+// last arm's is the one that may omit it — the match's `}` follows it.
+classify :: (n: i64) -> i64 {
+    match n {
+        case 0: 100;
+        case 1: { x := 5; x * 2 };
+        else:   7
+    }
+}
+
+classify_semi :: (n: i64) -> i64 {
+    match n {
+        case 0: 100;
+        case 1: { x := 5; x * 2 };
+        else:   7;
+    }
+}
+
+// `break` ends where a `break` statement anywhere ends.
+first :: (c: Color) -> string {
+    out := "none";
+    match c {
+        case .Red:
+            out = "red";
+        case .Green:
+            break;
+        else:
+            out = "other";
+    }
+    out
+}
+
+main :: () -> i32 {
+    print("{} {} {}\n", trace(Color.Red), trace(Color.Green), trace(Color.Blue));
+    print("{} {} {}\n", shade(Color.Red), shade(Color.Green), shade(Color.Blue));
+    print("{} {} {}\n", tone(Color.Red), tone(Color.Green), tone(Color.Blue));
+    print("{} {} {}\n", classify(0), classify(1), classify(2));
+    print("{} {} {}\n", classify_semi(0), classify_semi(1), classify_semi(2));
+    print("{} {} {}\n", first(Color.Red), first(Color.Green), first(Color.Blue));
+
+    // `|e| expr` takes its `;` like any other arm statement.
+    s := Shape.rect(4);
+    match s {
+        case .rect: |size| print("rect {}\n", size);
+        case .dot:
+            print("dot\n");
+    }
+    0
+}

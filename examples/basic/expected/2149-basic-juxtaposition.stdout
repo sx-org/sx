@@ -1,0 +1,9 @@
+fused 12 12
+begin
+scope
+aggregate zzz 1
+after if 1
+a
+b
+c
+continues 3 4 10

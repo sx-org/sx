@@ -1,5 +1,0 @@
-error: a space before `(` — a call binds only when the `(` is glued to its callee: write `double(21)`
-  --> examples/diagnostics/2057-diagnostics-glue-spaced-call.sx:10:16
-   |
-10 |     a := double (21);
-   |                ^^

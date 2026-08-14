@@ -1,5 +1,0 @@
-error: cannot use a trailing block here — 'Box' has no known declaration (closure and function-pointer values bind their arguments explicitly)
-  --> examples/diagnostics/2094-diagnostics-lone-positional-element-needs-its-comma.sx:14:19
-   |
-14 |     print("{}\n", Box(i64){ pair(1, 2) }.v);
-   |                   ^^^

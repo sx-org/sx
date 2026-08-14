@@ -1,10 +1,10 @@
-error: the empty '{}' after 'tally(…)' has no reading — 'tally' names no parameterized type, and its last parameter 'n' is 'i32', which is neither a `Closure` nor a `@BuildBlock(P)`
-  --> examples/diagnostics/2133-diagnostics-empty-brace-no-reading.sx:11:12
+error: 'tally' cannot take a trailing block — its last parameter 'n' is 'i32', which is neither a `Closure` nor a `@BuildBlock(P)`
+  --> examples/diagnostics/2133-diagnostics-empty-brace-no-reading.sx:10:21
    |
-11 |     return tally(2) {};
-   |            ^^^^^^^^^^^
+10 |     return tally(2) {};
+   |                     ^^
 
-help: name a parameterized type to construct one, or declare 'n' as `Closure()` / `@BuildBlock(P)` to take the block
+help: declare 'n' as `Closure()` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block
    |
-11 |     return tally(2) {};
-   |            ^^^^^^^^^^^
+10 |     return tally(2) {};
+   |                     ^^

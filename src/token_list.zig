@@ -36,6 +36,10 @@ pub const TokenList = struct {
     starts: []const u32, // == Token.loc.start, bit-for-bit
     ends: []const u32, // == Token.loc.end
     flags: []const Flags,
+    /// Unclosed `(` / `[` / `{` strictly before the row. An opener and its
+    /// matching closer both carry the depth OUTSIDE the group, so a group's
+    /// contents sit exactly one deeper than the delimiters that hold them.
+    depths: []const u32,
     trivia_index: []const u32, // len == tags.len + 1
     comments: []const Comment,
 
@@ -80,6 +84,10 @@ pub const TokenList = struct {
         return tl.flags[@intFromEnum(i)];
     }
 
+    pub fn depth(tl: TokenList, i: Index) u32 {
+        return tl.depths[@intFromEnum(i)];
+    }
+
     /// Where the token was WRITTEN: a raw identifier's `start` excludes its
     /// leading backtick, but the whitespace rules read the source as typed.
     pub fn writtenStart(tl: TokenList, i: Index) u32 {
@@ -119,16 +127,16 @@ pub const TokenList = struct {
     /// never closes. Only `open`/`close` tags count — other delimiters pass
     /// through unmatched.
     pub fn scanBalanced(tl: TokenList, opener: Index, open: Tag, close: Tag) ?Index {
-        var depth: u32 = 1;
+        var level: u32 = 1;
         var i: usize = @intFromEnum(opener);
         while (true) {
             i += 1;
             if (i >= tl.tags.len or tl.tags[i] == .eof) return null;
             if (tl.tags[i] == open) {
-                depth += 1;
+                level += 1;
             } else if (tl.tags[i] == close) {
-                depth -= 1;
-                if (depth == 0) return @enumFromInt(@as(u32, @intCast(i)));
+                level -= 1;
+                if (level == 0) return @enumFromInt(@as(u32, @intCast(i)));
             }
         }
     }
@@ -163,6 +171,7 @@ pub const TokenList = struct {
         allocator.free(tl.starts);
         allocator.free(tl.ends);
         allocator.free(tl.flags);
+        allocator.free(tl.depths);
         allocator.free(tl.trivia_index);
         allocator.free(tl.comments);
         tl.* = undefined;
@@ -206,6 +215,7 @@ const balanced = TokenList{
     .starts = &.{ 0, 2, 4, 6, 8, 10, 12, 13 },
     .ends = &.{ 1, 3, 5, 7, 9, 11, 13, 13 },
     .flags = &(.{Flags{}} ** 8),
+    .depths = &.{ 0, 1, 1, 2, 1, 1, 0, 0 },
     .trivia_index = &(.{0} ** 9),
     .comments = &.{},
 };
@@ -225,6 +235,7 @@ test "a group without a matching closer returns null" {
         .starts = &.{ 0, 2, 4, 5 },
         .ends = &.{ 1, 3, 5, 5 },
         .flags = &(.{Flags{}} ** 4),
+        .depths = &.{ 0, 1, 1, 2 },
         .trivia_index = &(.{0} ** 5),
         .comments = &.{},
     };
@@ -236,6 +247,7 @@ test "a group without a matching closer returns null" {
         .starts = &.{ 0, 2, 3 },
         .ends = &.{ 1, 3, 3 },
         .flags = &(.{Flags{}} ** 3),
+        .depths = &.{ 0, 1, 1 },
         .trivia_index = &(.{0} ** 4),
         .comments = &.{},
     };
@@ -250,6 +262,7 @@ test "a balanced scan ignores the other delimiter kinds" {
         .starts = &.{ 0, 2, 4, 6, 7 },
         .ends = &.{ 1, 3, 5, 7, 7 },
         .flags = &(.{Flags{}} ** 5),
+        .depths = &.{ 0, 1, 1, 0, 0 },
         .trivia_index = &(.{0} ** 6),
         .comments = &.{},
     };
@@ -265,6 +278,7 @@ test "exact-start lookup distinguishes raw names, heredoc interiors and the eof 
         .starts = &.{ 0, 2, 4 },
         .ends = &.{ 1, 4, 4 },
         .flags = &.{ .{}, .{ .is_raw = true }, .{} },
+        .depths = &(.{0} ** 3),
         .trivia_index = &(.{0} ** 4),
         .comments = &.{},
     };
@@ -280,6 +294,7 @@ test "exact-start lookup distinguishes raw names, heredoc interiors and the eof 
         .starts = &.{ 12, 23, 24 },
         .ends = &.{ 20, 24, 24 },
         .flags = &(.{Flags{}} ** 3),
+        .depths = &(.{0} ** 3),
         .trivia_index = &(.{0} ** 4),
         .comments = &.{},
     };

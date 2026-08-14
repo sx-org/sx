@@ -11,7 +11,7 @@ run_trailing :: () {
         each(xs) { |x|
             print("trail {}\n", x);
             return;
-        }
+        };
         print("after-trail\n");
     }
     print("body-trail\n");

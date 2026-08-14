@@ -1215,11 +1215,11 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
             false;
         self.protocolResolver().registerImplBlock(&decl.data.impl_block, is_imported, decl);
     }
-    // Pass 1c: settle every `F(args){}` on its callee. Every type and function
-    // this list declares is registered by now, and no global initializer has
-    // been folded and no body lowered yet — so each undecided brace is already
-    // the aggregate or the trailing block wherever it is read.
-    self.normalizeEmptyBraceCalls(decls);
+    // Pass 1c: settle every juxtaposition a top-level initializer holds. Every
+    // type and function this list declares is registered by now, and no global
+    // initializer has been folded — so each brace group is already the
+    // aggregate or the trailing block wherever a registration pass reads it.
+    self.settleModuleJuxtapositions(decls);
     // Pass 1c': untyped aggregate-valued module constants (`WHITE :: Color{ … }`,
     // `SLOT :: p.Slot(i64){}`). Their type is inferred from the value node,
     // which the brace front above has just settled.

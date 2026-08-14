@@ -1,8 +1,8 @@
-// An empty `{}` after a call with arguments has no body shape, and the gap
-// before it carries no signal (specs: Trailing Blocks — Empty block). The
-// callee decides: a generic type head constructs, a `Closure()` last parameter
-// takes the block. Both spellings reach the same reading, and names — the
-// callee's case, an argument's — decide nothing.
+// A brace group after a call is settled by TYPES (specs: Trailing Blocks): a
+// generic type head constructs, a `Closure()` last parameter takes the block.
+// Body shape, the gap before the `{`, and names — the callee's case, an
+// argument's — decide nothing. A function-local head is settled the same way,
+// where its own scope is in hand.
 #import "modules/std.sx";
 
 pair :: struct { a: i64; b: i64; }
@@ -28,8 +28,16 @@ main :: () -> i64 {
     print("{} {} {} {} {}\n", b.v.a, v.xs.len, ms.len, xs.len, ys.len);
 
     n := 2;
-    run(n) { print("run\n"); }
-    Group(n) {}                   // spaced: an empty trailing block
-    run(n){}                      // tight: the same block
+    run(n) { print("run\n"); };
+    Group(n) {};                  // spaced: an empty trailing block
+    run(n){};                     // tight: the same block
+
+    // A function-LOCAL type constructs the same way.
+    LocalBox :: struct ($T: Type) { v: T = ---; }
+    Pt :: struct { x: i64; }
+    lb := LocalBox(i64){};
+    lp := Pt { x = 7 };
+    lb.v = 8;
+    print("local {} {}\n", lb.v, lp.x);
     return 0;
 }

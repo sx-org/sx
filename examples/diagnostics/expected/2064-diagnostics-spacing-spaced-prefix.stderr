@@ -1,5 +1,0 @@
-error: a space after the prefix `-` — a prefix operator binds only when glued to its operand
-  --> examples/diagnostics/2064-diagnostics-spacing-spaced-prefix.sx:8:10
-   |
- 8 |     x := - 5;
-   |          ^^

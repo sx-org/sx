@@ -5,33 +5,33 @@
 // the SAME ids, and two call sites never share one. The occurrence is what
 // separates the siblings a single site emits, and it restarts at every
 // `begin_build`.
-#import "modules/std.sx"
-#import "modules/ui/compose.sx"
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
 
 // One site, reached as many times as its callers ask.
-cell :: () -> ElementId => element_id()
+cell :: () -> ElementId => element_id();
 
 // `element_id` records where it is WRITTEN, so this reaches `cell`'s one site
 // rather than opening its own.
-row :: () -> ElementId => cell()
+row :: () -> ElementId => cell();
 
 // Two sites inside one declaration.
 pair :: () -> (a: ElementId, b: ElementId) {
-    x := element_id()
-    y := element_id()
-    return a = x, b = y
+    x := element_id();
+    y := element_id();
+    return a = x, b = y;
 }
 
 build :: (out: *List(u64)) {
-    context.compose_ui.begin_build()
+    context.compose_ui.begin_build();
     for i in 0..3 { out.append(cell().value) }
-    a, b := pair()
-    out.append(a.value)
+    a, b := pair();
+    out.append(a.value);
     out.append(b.value)
 }
 
 same :: (a: *List(u64), b: *List(u64)) -> bool {
-    if a.len != b.len then return false
+    if a.len != b.len then return false;
     for v, i in a.items, 0.. {
         if v != b.items[i] then return false
     }
@@ -48,34 +48,34 @@ distinct :: (ids: *List(u64)) -> bool {
 }
 
 main :: () -> i32 {
-    ui := Identity.init(context.allocator)
+    ui := Identity.init(context.allocator);
     push .{ compose_ui = *ui } {
-        first := List(u64){}
-        second := List(u64){}
-        build(*first)
-        build(*second)
+        first := List(u64){};
+        second := List(u64){};
+        build(*first);
+        build(*second);
 
-        print("count {}\n", first.len)
-        print("stable {}\n", same(*first, *second))
-        print("distinct {}\n", distinct(*first))
+        print("count {}\n", first.len);
+        print("stable {}\n", same(*first, *second));
+        print("distinct {}\n", distinct(*first));
 
         // A fourth reach of `cell`'s site — through another declaration —
         // continues that site's run instead of starting one of its own.
-        ui.begin_build()
-        run := List(u64){}
+        ui.begin_build();
+        run := List(u64){};
         for i in 0..3 { run.append(cell().value) }
-        fourth := row()
+        fourth := row();
         print("shared site {} {} {}\n",
             run.items[0] == first.items[0],
             run.items[1] == first.items[1],
-            run.items[2] == first.items[2])
-        print("continues {} {}\n", fourth.value != run.items[0], fourth.value != run.items[2])
+            run.items[2] == first.items[2]);
+        print("continues {} {}\n", fourth.value != run.items[0], fourth.value != run.items[2]);
 
         // The tally is per site, so `pair`'s two sites are unmoved by how many
         // times `cell` ran.
-        c, d := pair()
+        c, d := pair();
         print("independent {} {}\n", c.value == first.items[3], d.value == first.items[4])
     }
-    ui.deinit()
+    ui.deinit();
     0
 }

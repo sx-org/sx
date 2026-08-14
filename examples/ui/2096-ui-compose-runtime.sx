@@ -12,180 +12,180 @@
 // outlives the frames is the root's and the loop's, and their teardowns hand
 // every byte of it back. A snapshot a caller projects into itself is that
 // caller's instead, reused across projects and released once.
-#import "modules/std.sx"
-#import "modules/std/mem.sx"
-#import "modules/ui/compose.sx"
-ui :: #import "modules/ui/types.sx"
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/ui/compose.sx";
+ui :: #import "modules/ui/types.sx";
 
-at :: (x: f32, y: f32) -> Point => .{ x = x, y = y }
-down :: (x: f32, y: f32) -> InputEvent => .pointer_down(.{ pointer = .{ value = 1 }, position = at(x, y) })
-up :: (x: f32, y: f32) -> InputEvent => .pointer_up(.{ pointer = .{ value = 1 }, position = at(x, y) })
-key :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k })
+at :: (x: f32, y: f32) -> Point => .{ x = x, y = y };
+down :: (x: f32, y: f32) -> InputEvent => .pointer_down(.{ pointer = .{ value = 1 }, position = at(x, y) });
+up :: (x: f32, y: f32) -> InputEvent => .pointer_up(.{ pointer = .{ value = 1 }, position = at(x, y) });
+key :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k });
 
 main :: () -> i32 {
-    root := UiRoot.init(Size{ width = 100.0, height = 40.0 }, context.allocator, .{ value = 7 })
-    app := *root
+    root := UiRoot.init(Size{ width = 100.0, height = 40.0 }, context.allocator, .{ value = 7 });
+    app := *root;
 
     loop := FrameLoop.init(*root, || -> View {
         // Three entries this root keeps. The handlers below write into two of
         // them long after the build that claimed them returned.
-        frame := use_state(i64, 0)
-        taps := use_state(i64, 0)
-        keys := use_state(i64, 0)
-        frame.set(frame.get() + 1)
+        frame := use_state(i64, 0);
+        taps := use_state(i64, 0);
+        keys := use_state(i64, 0);
+        frame.set(frame.get() + 1);
 
-        pressed := false
-        focused := false
+        pressed := false;
+        focused := false;
         if app.snapshot.hit_list.len > 0 {
-            pressed = is_pressed(.{ value = app.snapshot.hit_list.items[0].id })
+            pressed = is_pressed(.{ value = app.snapshot.hit_list.items[0].id });
         }
         if app.snapshot.focus_list.len > 0 {
-            focused = is_focused(.{ value = app.snapshot.focus_list.items[0].id })
+            focused = is_focused(.{ value = app.snapshot.focus_list.items[0].id });
         }
         print("build {} taps {} keys {} pressed {} focused {}\n",
-            frame.get(), taps.get(), keys.get(), pressed, focused)
+            frame.get(), taps.get(), keys.get(), pressed, focused);
 
         v : View = vstack(0.0) {
             tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {
                 taps.set(taps.get() + 1)
-            })
+            });
             focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, |e: *KeyEvent| {
                 keys.set(keys.get() + 1)
             })
-        }
+        };
         v
-    }, context.allocator)
+    }, context.allocator);
 
     // Nothing is queued, so the first frame only builds and commits.
-    loop.frame()
+    loop.frame();
     print("committed root {} rev {} hits {} focus {} nodes {}\n",
         root.snapshot.root.value, root.snapshot.revision,
         root.snapshot.hit_list.len, root.snapshot.focus_list.len,
-        root.snapshot.scene.nodes.len)
+        root.snapshot.scene.nodes.len);
 
     // The down captures the region against the committed frame, and the build
     // that follows it in the SAME frame reads the press.
-    root.queue.push(down(50.0, 10.0))
-    loop.frame()
+    root.queue.push(down(50.0, 10.0));
+    loop.frame();
 
     // The up over that same region taps, so the next build reads the count its
     // handler raised.
-    root.queue.push(up(50.0, 10.0))
-    loop.frame()
+    root.queue.push(up(50.0, 10.0));
+    loop.frame();
 
     // Keys go where the focus points, on the same terms.
-    root.focus.focus_next()
-    root.queue.push(key(.enter))
-    root.queue.push(key(.space))
-    loop.frame()
+    root.focus.focus_next();
+    root.queue.push(key(.enter));
+    root.queue.push(key(.space));
+    loop.frame();
 
     // Quiet frames change nothing but the revision.
-    loop.run(2)
-    print("frames {} rev {}\n", loop.frames, root.snapshot.revision)
+    loop.run(2);
+    print("frames {} rev {}\n", loop.frames, root.snapshot.revision);
 
-    root.deinit()
-    loop.deinit()
+    root.deinit();
+    loop.deinit();
 
     // A second root under a tracker. The first frames settle the arenas and the
     // root's own lists at one frame's high-water mark; from there any number of
     // further frames — each rebuilding a tree, each taking a tap through a
     // capturing handler — spends nothing, and the teardown leaves nothing.
-    steady := 0
-    ran := 0
-    taps_seen := 0
-    tracker := TrackingAllocator.init(context.allocator)
+    steady := 0;
+    ran := 0;
+    taps_seen := 0;
+    tracker := TrackingAllocator.init(context.allocator);
     push .{ allocator = tracker } {
-        quiet := UiRoot.init(Size{ width = 100.0, height = 40.0 }, tracker)
-        seen := 0
-        counter := *seen
+        quiet := UiRoot.init(Size{ width = 100.0, height = 40.0 }, tracker);
+        seen := 0;
+        counter := *seen;
         spin := FrameLoop.init(*quiet, || -> View {
-            n := use_state(i64, 0)
-            n.set(n.get() + 1)
+            n := use_state(i64, 0);
+            n.set(n.get() + 1);
             v : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {
-                    counter.* += 1
-                })
+                    counter.* += 1;
+                });
                 focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 })
-            }
+            };
             v
-        }, context.allocator)
+        }, context.allocator);
 
         for 0..4 {
-            quiet.queue.push(down(50.0, 10.0))
-            quiet.queue.push(up(50.0, 10.0))
+            quiet.queue.push(down(50.0, 10.0));
+            quiet.queue.push(up(50.0, 10.0));
             spin.frame()
         }
-        warm := tracker.alloc_count
+        warm := tracker.alloc_count;
         for 0..64 {
-            quiet.queue.push(down(50.0, 10.0))
-            quiet.queue.push(up(50.0, 10.0))
+            quiet.queue.push(down(50.0, 10.0));
+            quiet.queue.push(up(50.0, 10.0));
             spin.frame()
         }
-        steady = tracker.alloc_count - warm
-        ran = spin.frames
-        taps_seen = seen
+        steady = tracker.alloc_count - warm;
+        ran = spin.frames;
+        taps_seen = seen;
 
-        quiet.deinit()
+        quiet.deinit();
         spin.deinit()
     }
     print("frames {} taps {} steady_allocs {} outstanding {}\n",
-        ran, taps_seen, steady, tracker.leak_count())
+        ran, taps_seen, steady, tracker.leak_count());
 
     // A builder written under one allocator, handed to a loop made under
     // another. The loop is told which allocator the closure's environment came
     // from, so the teardown lands there: the owner ends level and the allocator
     // ambient at `init` never sees the free.
-    built := 0
-    owner := TrackingAllocator.init(context.allocator)
-    elsewhere := TrackingAllocator.init(context.allocator)
+    built := 0;
+    owner := TrackingAllocator.init(context.allocator);
+    elsewhere := TrackingAllocator.init(context.allocator);
     push .{ allocator = owner } {
-        far := UiRoot.init(Size{ width = 100.0, height = 40.0 }, owner)
-        counted := *built
+        far := UiRoot.init(Size{ width = 100.0, height = 40.0 }, owner);
+        counted := *built;
         build := || -> View {
-            counted.* += 1
+            counted.* += 1;
             v : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
-            }
+            };
             v
-        }
+        };
         push .{ allocator = elsewhere } {
-            far_loop := FrameLoop.init(*far, build, owner)
-            far_loop.run(2)
+            far_loop := FrameLoop.init(*far, build, owner);
+            far_loop.run(2);
             far_loop.deinit()
         }
         far.deinit()
     }
     print("far_built {} owner_outstanding {} elsewhere_outstanding {}\n",
-        built, owner.leak_count(), elsewhere.leak_count())
+        built, owner.leak_count(), elsewhere.leak_count());
 
     // The same question asked of a snapshot outside any loop. A caller that
     // projects one tree over and over reuses the three lists it filled the
     // first time, so every project after that spends nothing, and the one
     // deinit gives all three buffers back.
-    settled := 0
-    returned := 0
-    solo := TrackingAllocator.init(context.allocator)
+    settled := 0;
+    returned := 0;
+    solo := TrackingAllocator.init(context.allocator);
     push .{ allocator = solo } {
-        marks := Identity.init(solo)
+        marks := Identity.init(solo);
         push .{ compose_ui = *marks } {
-            marks.begin_build()
+            marks.begin_build();
             tree : View = vstack(0.0) {
-                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {});
                 focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 })
-            }
-            snap := CommittedUiSnapshot.init(solo)
-            project(*tree, Size{ width = 100.0, height = 40.0 }, *snap)
-            warm := solo.alloc_count
+            };
+            snap := CommittedUiSnapshot.init(solo);
+            project(*tree, Size{ width = 100.0, height = 40.0 }, *snap);
+            warm := solo.alloc_count;
             for 0..32 {
                 project(*tree, Size{ width = 100.0, height = 40.0 }, *snap)
             }
-            settled = solo.alloc_count - warm
-            freed := solo.dealloc_count
-            snap.deinit()
-            returned = solo.dealloc_count - freed
+            settled = solo.alloc_count - warm;
+            freed := solo.dealloc_count;
+            snap.deinit();
+            returned = solo.dealloc_count - freed;
         }
         marks.deinit()
     }
-    print("settled_allocs {} snapshot_freed {}\n", settled, returned)
+    print("settled_allocs {} snapshot_freed {}\n", settled, returned);
     0
 }

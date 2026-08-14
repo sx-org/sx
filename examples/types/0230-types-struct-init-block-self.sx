@@ -1,6 +1,7 @@
 // Struct self-trailing: after a named aggregate, `.{ stmts }` binds `self`, and
-// a `|name|` header binds that name instead — a `*T` either way.
-// Bare `T{ fields } { stmts }` is a plain post-scope (no binding) — legal, untaught.
+// a `|name|` header binds that name instead — a `*T` either way. A brace group
+// with no leading dot does not stack: the `;` ends the construction and the
+// group after it is a scope of its own.
 
 #import "modules/std.sx";
 
@@ -29,11 +30,13 @@ main :: () -> i64 {
     p := Button{ label = "p", n = 1 }.{ |btn| bump(btn); };
     print("{} {}\n", p.label, p.n); // p 2
 
-    // Bare second brace group — plain scope after construction, no binding.
+    // A brace group does not stack on a juxtaposition: the `;` ends the
+    // construction and the group after it is a plain scope.
     outer : i64 = 0;
-    c := Button{ label = "a" } {
+    c := Button{ label = "a" };
+    {
         outer = 7;
-    };
+    }
     print("{} {}\n", c.label, outer); // a 7
 
     return 0;

@@ -21,22 +21,22 @@
 // taken in turn, because the frame that committed is still being routed against
 // while the next one builds: what a frame allocates lives until the frame after
 // next takes its arena back. Frames therefore run at a fixed memory ceiling.
-#import "modules/std.sx"
-#import "modules/std/core.sx"
-#import "modules/std/mem.sx"
-#import "modules/ui/types.sx"
-#import "modules/ui/render.sx"
-#import "modules/ui/input.sx"
-#import "modules/ui/compose/view.sx"
-#import "modules/ui/compose/identity.sx"
-#import "modules/ui/compose/state.sx"
-#import "modules/ui/compose/frame.sx"
-#import "modules/ui/compose/input.sx"
-#import "modules/ui/compose/focus.sx"
+#import "modules/std.sx";
+#import "modules/std/core.sx";
+#import "modules/std/mem.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/compose/view.sx";
+#import "modules/ui/compose/identity.sx";
+#import "modules/ui/compose/state.sx";
+#import "modules/ui/compose/frame.sx";
+#import "modules/ui/compose/input.sx";
+#import "modules/ui/compose/focus.sx";
 
 // What a frame arena starts with. A reset keeps the largest chunk, so the pair
 // settles at the high-water mark of one frame and allocates nothing after.
-FRAME_ARENA_BYTES :: 8192
+FRAME_ARENA_BYTES :: 8192;
 
 UiRoot :: struct {
     id: UiRootId = .{ value = 0 }
@@ -68,7 +68,7 @@ UiRoot :: struct {
     // The queue is this root's own, so every event in it reaches both routers.
     pump :: (self: *UiRoot) {
         self.queue.drain(|e: *InputEvent| {
-            self.taps.dispatch(e)
+            self.taps.dispatch(e);
             self.focus.dispatch(e)
         })
     }
@@ -78,10 +78,10 @@ UiRoot :: struct {
     // came from the arena the frame before this one built in, so they go
     // instead of being refilled and this frame's arena takes over the fill.
     commit :: (self: *UiRoot, tree: *View) {
-        self.snapshot.discard(self.arenas[self.parity])
-        project(tree, self.viewport, *self.snapshot)
-        self.snapshot.root = self.id
-        self.taps.observe(*self.snapshot)
+        self.snapshot.discard(self.arenas[self.parity]);
+        project(tree, self.viewport, *self.snapshot);
+        self.snapshot.root = self.id;
+        self.taps.observe(*self.snapshot);
         self.focus.observe(*self.snapshot)
     }
 
@@ -89,12 +89,12 @@ UiRoot :: struct {
     // snapshot holds a frame arena, whose free is a no-op, so the arena
     // releases are what reclaim its lists.
     deinit :: (self: *UiRoot) {
-        self.queue.deinit()
-        self.taps.deinit()
-        self.store.teardown()
-        self.identity.deinit()
-        self.snapshot.deinit()
-        self.arenas[0].deinit()
+        self.queue.deinit();
+        self.taps.deinit();
+        self.store.teardown();
+        self.identity.deinit();
+        self.snapshot.deinit();
+        self.arenas[0].deinit();
         self.arenas[1].deinit()
     }
 }
@@ -111,19 +111,19 @@ FrameLoop :: struct {
     // one ambient where the literal is written, which need not be the one
     // ambient here. The free is paired with it.
     init :: (root: *UiRoot, build: Closure() -> View, build_allocator: Allocator) -> FrameLoop =>
-        .{ root = root, build = build, build_allocator = build_allocator }
+        .{ root = root, build = build, build_allocator = build_allocator };
 
     deinit :: (self: *FrameLoop) {
         free(self.build, self.build_allocator)
     }
 
     frame :: (self: *FrameLoop) {
-        r := self.root
+        r := self.root;
         // The frame takes the arena the committed snapshot does NOT hold, so
         // the reset falls on memory two frames old — dead since the frame
         // before this one committed over it.
-        r.parity = 1 - r.parity
-        r.arenas[r.parity].reset()
+        r.parity = 1 - r.parity;
+        r.arenas[r.parity].reset();
         push .{
             allocator = r.arenas[r.parity],
             compose_ui = *r.identity,
@@ -131,14 +131,14 @@ FrameLoop :: struct {
             compose_input = *r.taps,
             compose_focus = *r.focus,
         } {
-            r.pump()
-            r.identity.begin_build()
-            r.store.begin_build()
-            tree := self.build()
-            r.store.commit_build()
+            r.pump();
+            r.identity.begin_build();
+            r.store.begin_build();
+            tree := self.build();
+            r.store.commit_build();
             r.commit(*tree)
         }
-        self.frames += 1
+        self.frames += 1;
     }
 
     run :: (self: *FrameLoop, n: i64) {

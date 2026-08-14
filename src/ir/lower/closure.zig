@@ -852,6 +852,18 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         .trailing_block => |tb| {
             self.collectCaptures(tb.lambda, param_names, captures);
         },
+        // `expr { … }` before settling: the block's own header names shadow, so
+        // it captures exactly as the closure it may yet become.
+        .juxtaposition => |jx| {
+            self.collectCaptures(jx.expr, param_names, captures);
+            var block_params = std.StringHashMap(void).init(self.alloc);
+            defer block_params.deinit();
+            var it = param_names.iterator();
+            while (it.next()) |e| block_params.put(e.key_ptr.*, {}) catch {};
+            for (jx.params) |p| block_params.put(p.name, {}) catch {};
+            self.collectCaptures(jx.block, &block_params, captures);
+            if (jx.init_block) |ib| self.collectCaptures(ib, param_names, captures);
+        },
         .asm_expr => |ae| {
             self.collectCaptures(ae.template, param_names, captures);
             for (ae.operands) |op| {

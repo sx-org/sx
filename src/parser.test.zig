@@ -513,10 +513,8 @@ test "parser: private inside top-level inline if" {
 
 // ---- Whitespace is syntax (specs §1) ----
 //
-// The corpus pins the DIAGNOSTICS (examples/diagnostics/2057–2064); these pin
-// the two readings the corpus cannot show — a spaced bracket is fatal on one
-// line, while across a line it merely stops binding, which is the shape ASI
-// then builds on.
+// A `(` applies, a `[` indexes, and a prefix `-` / `--` / `*` binds its operand
+// across any gap — space and line break alike.
 
 fn parseErrMsg(alloc: std.mem.Allocator, src: [:0]const u8) ![]const u8 {
     var p = try Parser.init(alloc, src);
@@ -524,79 +522,61 @@ fn parseErrMsg(alloc: std.mem.Allocator, src: [:0]const u8) ![]const u8 {
     return p.err_msg orelse return error.MissingMessage;
 }
 
-test "parser: a postfix `(` binds only when glued" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var ok = try Parser.init(alloc, "f :: () -> i64 { g(1) }");
-    const root = try ok.parse();
+fn parseOne(alloc: std.mem.Allocator, src: [:0]const u8) !*Node {
+    var p = try Parser.init(alloc, src);
+    const root = try p.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
-    try std.testing.expect(body.data.block.stmts[0].data == .call);
-
-    // Same line: the space is the error, and the report names it.
-    const spaced = try parseErrMsg(alloc, "f :: () -> i64 { g (1) }");
-    try std.testing.expect(std.mem.indexOf(u8, spaced, "a space before `(`") != null);
-
-    // Across a line the `(` does not bind, so the newline ends the statement
-    // and the `(` opens the next one.
-    var split = try Parser.init(alloc, "f :: () -> i64 { g\n(1) }");
-    const split_body = (try split.parse()).data.root.decls[0].data.fn_decl.body;
-    try std.testing.expectEqual(@as(usize, 2), split_body.data.block.stmts.len);
-    try std.testing.expect(split_body.data.block.stmts[0].data == .identifier);
-    try std.testing.expect(split_body.data.block.stmts[1].data == .int_literal);
+    try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
+    return body.data.block.stmts[0];
 }
 
-test "parser: a postfix `[` binds only when glued" {
+test "parser: a postfix `(` applies arguments across any gap" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-
-    var ok = try Parser.init(alloc, "f :: () -> i64 { xs[0] }");
-    const root = try ok.parse();
-    const body = root.data.root.decls[0].data.fn_decl.body;
-    try std.testing.expect(body.data.block.stmts[0].data == .index_expr);
-
-    const spaced = try parseErrMsg(alloc, "f :: () -> i64 { xs [0] }");
-    try std.testing.expect(std.mem.indexOf(u8, spaced, "a space before `[`") != null);
-}
-
-// A type application never crosses a statement boundary, so ANY gap there is
-// the spacing mistake — including one written across a line.
-test "parser: a type's arguments bind only when glued" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var ok = try Parser.init(alloc, "f :: (b: Box(i64)) { }");
-    _ = try ok.parse();
 
     for ([_][:0]const u8{
+        "f :: () -> i64 { g(1) }",
+        "f :: () -> i64 { g (1) }",
+        "f :: () -> i64 { g\n(1) }",
+    }) |src| {
+        try std.testing.expect((try parseOne(alloc, src)).data == .call);
+    }
+}
+
+test "parser: a postfix `[` indexes across any gap" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for ([_][:0]const u8{
+        "f :: () -> i64 { xs[0] }",
+        "f :: () -> i64 { xs [0] }",
+        "f :: () -> i64 { xs\n[0] }",
+    }) |src| {
+        try std.testing.expect((try parseOne(alloc, src)).data == .index_expr);
+    }
+}
+
+test "parser: a type's arguments apply across any gap" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for ([_][:0]const u8{
+        "f :: (b: Box(i64)) { }",
         "f :: (b: Box (i64)) { }",
         "f :: (b: Box\n(i64)) { }",
         "f :: (c: Closure (i64) -> i64) { }",
         "f :: (b: $B/@BuildBlock (Drawable)) { }",
         "V :: @OpenVariant (View) { }",
         "impl Into (Block) for Row { }",
+        "BI :: Box (i64);",
+        "f :: (p: * `i2 (i64)) { }",
     }) |src| {
-        const msg = try parseErrMsg(alloc, src);
-        try std.testing.expect(std.mem.indexOf(u8, msg, "a space between a type and its arguments") != null);
+        var p = try Parser.init(alloc, src);
+        _ = try p.parse();
     }
-}
-
-// `BI :: Box;` alone is a valid alias to the un-applied generic, so nothing
-// downstream flags the spelling — the glue check has to fire at the `(` for
-// the report to name the space.
-test "parser: the spaced alias orphan reports the spacing" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var ok = try Parser.init(alloc, "BI :: Box;");
-    _ = try ok.parse();
-
-    const msg = try parseErrMsg(alloc, "BI :: Box (i64);");
-    try std.testing.expect(std.mem.indexOf(u8, msg, "write `Box(i64)`") != null);
 }
 
 test "parser: `-` is infix wherever a left operand is complete" {
@@ -604,8 +584,9 @@ test "parser: `-` is infix wherever a left operand is complete" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // On one line every spacing reads as subtraction; across a break, so does
-    // every shape but an operator glued to the operand below it.
+    // Every spacing reads as subtraction, on one line or across a break — the
+    // line break is ordinary space and a completed left operand is what makes
+    // `-` infix.
     for ([_][:0]const u8{
         "f :: () -> i64 { a - b }",
         "f :: () -> i64 { a-b }",
@@ -613,84 +594,63 @@ test "parser: `-` is infix wherever a left operand is complete" {
         "f :: () -> i64 { a- b }",
         "f :: () -> i64 { a\n    - b }",
         "f :: () -> i64 { a-\nb }",
+        "f :: () -> i64 { a\n-b }",
+        "f :: () -> i64 { a\n-`b }",
     }) |src| {
         var p = try Parser.init(alloc, src);
         const root = try p.parse();
         const body = root.data.root.decls[0].data.fn_decl.body;
+        try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
         try std.testing.expect(body.data.block.stmts[0].data == .binary_op);
     }
 
-    // Glued at the head of the next line: the newline ends the statement and
-    // `-b` is the next one.
-    var split = try Parser.init(alloc, "f :: () -> i64 { g()\n-b }");
+    // The `;` is what separates the two statements, so `-b` negates only when
+    // one is written.
+    var split = try Parser.init(alloc, "f :: () -> i64 { g();\n-b }");
     const split_body = (try split.parse()).data.root.decls[0].data.fn_decl.body;
     try std.testing.expectEqual(@as(usize, 2), split_body.data.block.stmts.len);
     try std.testing.expect(split_body.data.block.stmts[0].data == .call);
     try std.testing.expect(split_body.data.block.stmts[1].data.unary_op.op == .negate);
-
-    // The gap is read as written, so a raw identifier's backtick is part of it.
-    var raw = try Parser.init(alloc, "f :: () -> i64 { g()\n-`b }");
-    const raw_body = (try raw.parse()).data.root.decls[0].data.fn_decl.body;
-    try std.testing.expectEqual(@as(usize, 2), raw_body.data.block.stmts.len);
 }
 
-test "parser: a prefix `-` / `*` binds only when glued" {
+test "parser: a prefix `-` / `--` / `*` binds across a space" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var ok = try Parser.init(alloc, "f :: () -> i64 { x := -5; y := *n; 0 }");
-    _ = try ok.parse();
-
     for ([_][:0]const u8{
-        "f :: () -> i64 { x := - 5; 0 }",
-        "f :: () -> i64 { y := * n; 0 }",
+        "f :: () -> i64 { x := -5; y := *n; z := --n; 0 }",
+        "f :: () -> i64 { x := - 5; y := * n; z := -- n; 0 }",
+        "f :: (p: *i64) { }",
         "f :: (p: * i64) { }",
+        "f :: (p: *`i2) { }",
+        "f :: (p: * `i2) { }",
     }) |src| {
-        const msg = try parseErrMsg(alloc, src);
-        try std.testing.expect(std.mem.indexOf(u8, msg, "a prefix operator binds only when glued") != null);
+        var p = try Parser.init(alloc, src);
+        _ = try p.parse();
     }
 }
 
-// A raw identifier's span excludes its backtick; the whitespace rules read the
-// source as typed, so `` *`i2 `` is glued and `` `i2(i64) `` is an application.
-test "parser: the glue rules see a raw identifier's backtick" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var ok = try Parser.init(alloc, "f :: (p: *`i2(i64)) { }");
-    _ = try ok.parse();
-
-    const msg = try parseErrMsg(alloc, "f :: (p: * `i2(i64)) { }");
-    try std.testing.expect(std.mem.indexOf(u8, msg, "a prefix operator binds only when glued") != null);
-}
-
 // A pack index is an index like any other, in an expression as in a type.
-test "parser: a pack index binds only when glued" {
+test "parser: a pack index binds across a space" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var ok = try Parser.init(alloc, "f :: (..$args) -> string { g($args[0]) }");
-    const root = try ok.parse();
-    const body = root.data.root.decls[0].data.fn_decl.body;
-    try std.testing.expect(body.data.block.stmts[0].data.call.args[0].data == .pack_index_type_expr);
-
-    const spaced = try parseErrMsg(alloc, "f :: (..$args) -> string { g($args [0]) }");
-    try std.testing.expect(std.mem.indexOf(u8, spaced, "write `$args[0]`") != null);
-
-    // Across a line the `[` stops binding, leaving the whole pack — no spacing
-    // complaint, and the ordinary path reports what follows.
-    const split = try parseErrMsg(alloc, "f :: (..$args) -> string { g($args\n[0]) }");
-    try std.testing.expect(std.mem.indexOf(u8, split, "a space before `[`") == null);
+    for ([_][:0]const u8{
+        "f :: (..$args) -> string { g($args[0]) }",
+        "f :: (..$args) -> string { g($args [0]) }",
+    }) |src| {
+        try std.testing.expect((try parseOne(alloc, src)).data.call.args[0].data == .pack_index_type_expr);
+    }
 }
 
 // ---- Statement termination (specs §1: Whitespace is Syntax) ----
 //
-// A newline ends a statement wherever a `;` would. These pin what the newline
-// terminates, what it must NOT, and which token in front of it keeps the
-// statement running.
+// `;` ends a statement; a line break is ordinary space. These pin the
+// positions that end a statement on their own — the `}` that closes the
+// enclosing block, a block-form initializer's own `}`, the end of the file —
+// and the report everywhere else.
 
 fn parseBody(alloc: std.mem.Allocator, src: [:0]const u8) !*Node {
     var p = try Parser.init(alloc, src);
@@ -698,21 +658,21 @@ fn parseBody(alloc: std.mem.Allocator, src: [:0]const u8) !*Node {
     return root.data.root.decls[0].data.fn_decl.body;
 }
 
-test "parser: a newline ends a statement" {
+test "parser: a `;` ends a statement" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     const body = try parseBody(alloc,
         \\f :: () -> i64 {
-        \\    a := 1
-        \\    b : i64 = 2
-        \\    c :: 3
-        \\    g(a)
-        \\    a = b + c
+        \\    a := 1;
+        \\    b : i64 = 2;
+        \\    c :: 3;
+        \\    g(a);
+        \\    a = b + c;
         \\    if a == b { g(0) }
-        \\    defer g(1)
-        \\    return a
+        \\    defer g(1);
+        \\    return a;
         \\}
     );
     const stmts = body.data.block.stmts;
@@ -727,18 +687,41 @@ test "parser: a newline ends a statement" {
     try std.testing.expect(stmts[7].data == .return_stmt);
 }
 
-// The declaration forms a file is made of terminate on a newline too.
-test "parser: a newline ends a top-level declaration" {
+// A line break is space, so a mid-block statement that omits its `;` runs into
+// the one below and the report names the terminator.
+test "parser: a mid-block statement without its `;` is refused" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for ([_][:0]const u8{
+        "f :: () -> i64 { a := 1\n g(a); 0 }",
+        "f :: () -> i64 { g(a)\n defer h(); 0 }",
+        "f :: () -> i64 { return 1\n 0 }",
+    }) |src| {
+        const msg = try parseErrMsg(alloc, src);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
+    }
+
+    // A `name : T` with no initializer is complete, so the report names the
+    // terminator alongside the tails the declaration could still take.
+    const typed = try parseErrMsg(alloc, "f :: () -> void { slot : i64\n g(slot); }");
+    try std.testing.expect(std.mem.indexOf(u8, typed, "expected ':', '=', ';', or 'extern'") != null);
+}
+
+// The declaration forms a file is made of take the same `;`; the last one ends
+// at the end of the file.
+test "parser: a `;` ends a top-level declaration" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     var p = try Parser.init(alloc,
-        \\#import "modules/std.sx"
-        \\TAU :: 6
-        \\seed : i64 = 1
-        \\puts :: (s: *u8) -> i32 extern
-        \\add :: (a: i64, b: i64) -> i64 => a + b
+        \\#import "modules/std.sx";
+        \\TAU :: 6;
+        \\seed : i64 = 1;
+        \\puts :: (s: *u8) -> i32 extern;
+        \\add :: (a: i64, b: i64) -> i64 => a + b;
         \\main :: () -> i32 { 0 }
     );
     const decls = (try p.parse()).data.root.decls;
@@ -750,9 +733,9 @@ test "parser: a newline ends a top-level declaration" {
     try std.testing.expect(decls[4].data.fn_decl.is_arrow);
 }
 
-// The tail before `}` reads the same in all three spellings: `;` is a
-// separator, so writing one, omitting one, or letting a line break stand in
-// leaves the same block value.
+// The tail before `}` reads the same written either way: `;` is a separator,
+// so a tail that carries one and a tail that omits it leave the same block
+// value.
 test "parser: the tail before `}` is the block's value however it is written" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -786,11 +769,11 @@ test "parser: a nested tail never reclassifies the statement that encloses it" {
         // A `::` binding to a block expression with a `;`-ended tail.
         "f :: () -> i32 {\nv :: { 1; }\n}",
         // An assignment whose RHS branches both end in `;`.
-        "f :: () -> i32 {\nz = if c { 1; } else { 2; }\n}",
+        "f :: () -> i32 {\nz = if c { 1; } else { 2; };\n}",
         // A match arm ending in a `;`-ended expression.
-        "f :: () -> i32 {\nz = match s { case 0: 1; else: 2; }\n}",
+        "f :: () -> i32 {\nz = match s { case 0: 1; else: 2; };\n}",
         // A `for` arrow body — one statement parsed in place, not a block.
-        "f :: () -> i32 {\ndefer for xs => g(x);\n}",
+        "f :: () -> i32 {\ndefer { for xs => g(x); }\n}",
         // A `defer` whose braced body ends in a `;`-ended expression.
         "f :: () -> i32 {\ndefer { 1; }\n}",
     }) |src| {
@@ -812,8 +795,9 @@ test "parser: an isolated nested body keeps its own tail" {
     try std.testing.expect(inner.data.block.produces_value);
 }
 
-// A token that cannot start a statement continues the one above it.
-test "parser: a continuation token holds the statement open" {
+// An unterminated statement reads on through the line break, so an operator
+// below it is its own continuation.
+test "parser: a statement without its `;` reads on across the break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -821,10 +805,10 @@ test "parser: a continuation token holds the statement open" {
     const body = try parseBody(alloc,
         \\f :: () -> i64 {
         \\    v := (a << 16)
-        \\        | b
+        \\        | b;
         \\    w := a
         \\        and b
-        \\        or c
+        \\        or c;
         \\    v + w
         \\}
     );
@@ -833,12 +817,12 @@ test "parser: a continuation token holds the statement open" {
     try std.testing.expectEqual(ast.BinaryOp.Op.bit_or, stmts[0].data.var_decl.value.?.data.binary_op.op);
     try std.testing.expectEqual(ast.BinaryOp.Op.or_op, stmts[1].data.var_decl.value.?.data.binary_op.op);
 
-    // A continuation token that cannot in fact continue is still not a new
-    // statement — the terminator it denied is what gets reported.
+    // A token that cannot continue the expression it lands under is the
+    // missing terminator, reported as such.
     for ([_][:0]const u8{
-        "f :: () -> i64 { x := a\n, b\n0 }",
-        "f :: () -> i64 { x := a\n=> b\n0 }",
-        "f :: () -> i64 { x := a\n:: b\n0 }",
+        "f :: () -> i64 { x := a\n, b;\n0 }",
+        "f :: () -> i64 { x := a\n=> b;\n0 }",
+        "f :: () -> i64 { x := a\n:: b;\n0 }",
     }) |src| {
         const msg = try parseErrMsg(alloc, src);
         try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
@@ -896,18 +880,18 @@ test "parser: a bare scope block statement does not chain" {
     try std.testing.expect(chained.data.block.stmts[0].data.call.callee.data == .field_access);
 }
 
-// The value-less forms take the newline terminator too: a `return` with no
-// value, and a `name : type` declaration with no initializer.
-test "parser: a newline terminates the value-less forms" {
+// The value-less forms take the same `;`: a `return` with no value, and a
+// `name : type` declaration with no initializer.
+test "parser: a `;` terminates the value-less forms" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     const body = try parseBody(alloc,
         \\f :: () -> void {
-        \\    slot : i64
-        \\    g(slot)
-        \\    return
+        \\    slot : i64;
+        \\    g(slot);
+        \\    return;
         \\}
     );
     const stmts = body.data.block.stmts;
@@ -916,12 +900,12 @@ test "parser: a newline terminates the value-less forms" {
     try std.testing.expect(stmts[1].data == .call);
     try std.testing.expect(stmts[2].data.return_stmt.value == null);
 
-    // A `return` in expression position asks the same question, so the line
-    // below an early `then return` is the next statement and not its value.
+    // A `return` in expression position asks the same question, so the
+    // statement after an early `then return;` is not the value it returns.
     const early = try parseBody(alloc,
         \\f :: (c: bool) -> void {
-        \\    if c then return
-        \\    g()
+        \\    if c then return;
+        \\    g();
         \\}
     );
     const early_stmts = early.data.block.stmts;
@@ -929,10 +913,10 @@ test "parser: a newline terminates the value-less forms" {
     try std.testing.expect(early_stmts[0].data.if_expr.then_branch.data.return_stmt.value == null);
     try std.testing.expect(early_stmts[1].data == .call);
 
-    // A value on the same line still belongs to the `return`.
+    // A value before the `;` still belongs to the `return`.
     const valued = try parseBody(alloc,
         \\f :: (c: bool) -> i64 {
-        \\    if c then return 7
+        \\    if c then return 7;
         \\    9
         \\}
     );
@@ -941,14 +925,14 @@ test "parser: a newline terminates the value-less forms" {
     try std.testing.expect(valued_stmts[0].data.if_expr.then_branch.data.return_stmt.value.?.data == .int_literal);
 }
 
-// The last token of a file is followed by a line break like any other, so the
-// final declaration needs no terminator either.
-test "parser: a newline ends the last declaration in a file" {
+// Nothing follows the last declaration of a file for it to run into, so the
+// end of the file ends it.
+test "parser: the end of the file ends the last declaration" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var p = try Parser.init(alloc, "TAU :: 6\nseed : i64\n");
+    var p = try Parser.init(alloc, "TAU :: 6;\nseed : i64\n");
     const decls = (try p.parse()).data.root.decls;
     try std.testing.expectEqual(@as(usize, 2), decls.len);
     try std.testing.expect(decls[0].data == .const_decl);
@@ -957,22 +941,19 @@ test "parser: a newline ends the last declaration in a file" {
 
 // ---- Linkage tails ----
 //
-// `[LIB] ["csym"]` after `extern` / `export` is two optional bare names, so
-// where the tail sits decides nothing on its own — what decides is whether the
-// construct that owns it may END inside it. An `extern` import is whole the
-// moment its keyword is read, so each empty slot is a place the declaration can
-// stop; an `export` definition and an `extern` struct still owe a body, so
-// nothing there can end and the tail reads straight through a line break.
+// `[LIB] ["csym"]` after `extern` / `export` is two optional bare names, and the
+// declaration's `;` is what closes the tail. A line break inside it is ordinary
+// whitespace, so both slots read on through one.
 
-// A function `extern` tail may end, so it binds only on its own line.
-test "parser: a terminable extern tail binds only on its own line" {
+// An empty tail is closed by the declaration's own `;`.
+test "parser: an extern tail is closed by its `;`" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     var p = try Parser.init(alloc,
-        \\puts :: (s: *u8) -> i32 extern
-        \\LIMIT :: 9
+        \\puts :: (s: *u8) -> i32 extern;
+        \\LIMIT :: 9;
     );
     const decls = (try p.parse()).data.root.decls;
     try std.testing.expectEqual(@as(usize, 2), decls.len);
@@ -980,32 +961,29 @@ test "parser: a terminable extern tail binds only on its own line" {
     try std.testing.expect(decls[0].data.fn_decl.extern_name == null);
     try std.testing.expect(decls[1].data == .const_decl);
 
-    // The symbol slot is a second, independent boundary: with the library
-    // bound, the string below still does not enter the tail — it is left to the
-    // next declaration, where a bare string literal is not one. Were the second
-    // check missing, this would parse.
-    const orphan = try parseErrMsg(alloc,
-        \\puts :: (s: *u8) -> i32 extern C
-        \\"detached"
+    // Without the `;` the declaration below runs into the tail, and the report
+    // names the terminator.
+    const merged = try parseErrMsg(alloc,
+        \\puts :: (s: *u8) -> i32 extern
+        \\LIMIT :: 9;
     );
-    try std.testing.expect(std.mem.indexOf(u8, orphan, "expected identifier at top level") != null);
+    try std.testing.expect(std.mem.indexOf(u8, merged, "expected ';'") != null);
 
-    // On its own line the tail still binds.
-    var same = try Parser.init(alloc, "puts :: (s: *u8) -> i32 extern C \"puts\"\n");
+    var same = try Parser.init(alloc, "puts :: (s: *u8) -> i32 extern C \"puts\";\n");
     const bound = (try same.parse()).data.root.decls[0].data.fn_decl;
     try std.testing.expectEqualStrings("C", bound.extern_lib.?);
     try std.testing.expectEqualStrings("puts", bound.extern_name.?);
 }
 
-// The data-global `extern` tail is terminable for the same reason.
-test "parser: a terminable extern data tail binds only on its own line" {
+// The data-global `extern` tail is closed the same way.
+test "parser: an extern data tail is closed by its `;`" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     var p = try Parser.init(alloc,
-        \\errno_loc : *i32 extern
-        \\LIMIT :: 9
+        \\errno_loc : *i32 extern;
+        \\LIMIT :: 9;
     );
     const decls = (try p.parse()).data.root.decls;
     try std.testing.expectEqual(@as(usize, 2), decls.len);
@@ -1014,20 +992,13 @@ test "parser: a terminable extern data tail binds only on its own line" {
     try std.testing.expect(decls[0].data.var_decl.extern_name == null);
     try std.testing.expect(decls[1].data == .const_decl);
 
-    const orphan = try parseErrMsg(alloc,
-        \\errno_loc : *i32 extern libc
-        \\"detached"
-    );
-    try std.testing.expect(std.mem.indexOf(u8, orphan, "expected identifier at top level") != null);
-
-    var same = try Parser.init(alloc, "errno_loc : *i32 extern libc \"__error\"\n");
+    var same = try Parser.init(alloc, "errno_loc : *i32 extern libc \"__error\";\n");
     const bound = (try same.parse()).data.root.decls[0].data.var_decl;
     try std.testing.expectEqualStrings("libc", bound.extern_lib.?);
     try std.testing.expectEqualStrings("__error", bound.extern_name.?);
 }
 
-// An `export` still owes a body, so nothing in its tail can end and the break
-// is ordinary whitespace.
+// Both slots read on through a line break.
 test "parser: an export tail reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1081,10 +1052,9 @@ test "parser: a struct linkage tail reads through a line break" {
     try std.testing.expectEqual(@as(usize, 1), same_sd.field_names.len);
 }
 
-// A complete `name : T` (or `name :: value`) asks
-// whether it ended BEFORE dispatching on the token below, so which reading wins
-// is the suppression property rather than arm order. All three tails name a
-// token that cannot open a statement, so all three read through the break.
+// A `name : T` (or `name :: value`) is a whole declaration without a tail, so
+// it asks whether it ended before dispatching on the token below. A tail reads
+// on through a line break like any other unterminated statement.
 test "parser: a complete binding asks whether it ended before its tail" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1130,11 +1100,11 @@ test "parser: a complete binding asks whether it ended before its tail" {
     try std.testing.expect(intr_decls[0].data.const_decl.value.data == .intrinsic_expr);
     try std.testing.expect(intr_decls[0].data.const_decl.type_annotation != null);
 
-    // The same-line controls, and the ordinary next statement the reorder must
-    // still recognize: a bare `name : T` followed by an unrelated declaration.
+    // The ordinary next statement the reorder must still recognize: a bare
+    // `name : T` closed by its `;`, followed by an unrelated declaration.
     var plain = try Parser.init(alloc,
-        \\slot : i64
-        \\LIMIT :: 9
+        \\slot : i64;
+        \\LIMIT :: 9;
     );
     const plain_decls = (try plain.parse()).data.root.decls;
     try std.testing.expectEqual(@as(usize, 2), plain_decls.len);
@@ -1143,22 +1113,14 @@ test "parser: a complete binding asks whether it ended before its tail" {
     try std.testing.expect(plain_decls[1].data == .const_decl);
 }
 
-// The suppression list is the enumeration of a property, not a
-// whitelist: a binary operator below a complete statement continues it whether
-// or not it is a member, because the Pratt loop consumes it before any
-// terminator query runs.
+// A binary operator below an unterminated expression continues it — the Pratt
+// loop consumes it before any terminator query runs.
 test "parser: a binary operator below a statement continues it" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // Members.
-    inline for (.{ "+", "==", "!=", "<=", ">=", "<<", ">>", "|", "??" }) |op| {
-        const body = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    " ++ op ++ " 2\n}");
-        try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
-    }
-    // Nonmembers. Same verdict, reached by the same path.
-    inline for (.{ "<", ">", "/", "%", "&", "^" }) |op| {
+    inline for (.{ "+", "==", "!=", "<=", ">=", "<<", ">>", "|", "??", "<", ">", "/", "%", "&", "^" }) |op| {
         const body = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    " ++ op ++ " 2\n}");
         try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
     }
@@ -1169,8 +1131,7 @@ test "parser: a binary operator below a statement continues it" {
     }
 }
 
-// The assignment operators are the same story: `=` is a member and the
-// compound spellings are not, and both continue because the assignment dispatch
+// The assignment operators continue the same way — the assignment dispatch
 // consumes them directly.
 test "parser: an assignment operator below a target continues it" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -1179,30 +1140,28 @@ test "parser: an assignment operator below a target continues it" {
 
     inline for (.{ "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=" }) |op| {
         // Bare-name target (the identifier fast path).
-        const bare = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    a\n    " ++ op ++ " 2\n    a\n}");
+        const bare = try parseBody(alloc, "f :: () -> i64 {\n    a := 1;\n    a\n    " ++ op ++ " 2;\n    a\n}");
         try std.testing.expectEqual(@as(usize, 3), bare.data.block.stmts.len);
         // Field target (the general expression-target path).
-        const field = try parseBody(alloc, "f :: (p: Point) -> i64 {\n    p.x\n    " ++ op ++ " 2\n    0\n}");
+        const field = try parseBody(alloc, "f :: (p: Point) -> i64 {\n    p.x\n    " ++ op ++ " 2;\n    0\n}");
         try std.testing.expectEqual(@as(usize, 2), field.data.block.stmts.len);
         // Same-line control.
-        const same = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    a " ++ op ++ " 2\n    a\n}");
+        const same = try parseBody(alloc, "f :: () -> i64 {\n    a := 1;\n    a " ++ op ++ " 2;\n    a\n}");
         try std.testing.expectEqual(@as(usize, 3), same.data.block.stmts.len);
     }
 
-    // `::` and `,` below a bare name also continue — a declaration head and a
-    // multi-assignment target list.
-    const decl = try parseBody(alloc, "f :: () -> i64 {\n    N\n    :: 3\n    N\n}");
+    // `::` below a bare name continues it too — a declaration head.
+    const decl = try parseBody(alloc, "f :: () -> i64 {\n    N\n    :: 3;\n    N\n}");
     try std.testing.expectEqual(@as(usize, 2), decl.data.block.stmts.len);
     try std.testing.expect(decl.data.block.stmts[0].data == .const_decl);
 }
 
 // ---- The binding layer ----
 //
-// `(`, `[`, `{`, and `!` attach to what precedes them only on that expression's
-// own line — the same rule the glue forms and the trailing block follow. It is
-// geometry, not completability: the same brace is refused inside an argument
-// list exactly as it is at statement level. The dot-led postfixes are the other
-// camp: `.`, `?.`, and `catch` chain across a break.
+// `!` attaches to what precedes it only on that expression's own line, because
+// across a break it is the prefix `not`. Every other postfix — `{`, `.`, `?.`,
+// `catch` — carries one reading and binds wherever the statement is still open,
+// so only a `;` cuts it off.
 
 // `!` is postfix force-unwrap and prefix `not`, so which one a leading `!`
 // spells is decided by the line it sits on.
@@ -1213,8 +1172,8 @@ test "parser: a postfix `!` binds only on its own line" {
 
     const split = try parseBody(alloc,
         \\f :: (a: bool) -> i64 {
-        \\    a
-        \\    !a
+        \\    a;
+        \\    !a;
         \\    0
         \\}
     );
@@ -1231,17 +1190,17 @@ test "parser: a postfix `!` binds only on its own line" {
     try std.testing.expect(same.data.block.stmts[0].data == .force_unwrap);
 }
 
-// A named aggregate's `{` binds only on the same line as its head. Across
-// a break the head is an expression of its own and the brace is a scope block,
-// whatever the head was: a type name, a type application, or a value call.
-test "parser: a named aggregate `{` binds only on its head's line" {
+// The `;` is what makes the head a statement of its own and the brace group
+// after it a scope block, whatever the head was: a type name, a type
+// application, or a value call. Without it the brace juxtaposes.
+test "parser: `;` cuts a statement off from the brace group after it" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     const type_name = try parseBody(alloc,
         \\f :: () -> i64 {
-        \\    Pair
+        \\    Pair;
         \\    { g() }
         \\    0
         \\}
@@ -1250,11 +1209,9 @@ test "parser: a named aggregate `{` binds only on its head's line" {
     try std.testing.expect(type_name.data.block.stmts[0].data == .identifier);
     try std.testing.expect(type_name.data.block.stmts[1].data == .block);
 
-    // The `mk()` fall-through: the next-line brace already failed the trailing
-    // block's same-line test, and it is not stolen as an aggregate either.
     const value_call = try parseBody(alloc,
         \\f :: () -> i64 {
-        \\    mk()
+        \\    mk();
         \\    { g() }
         \\    0
         \\}
@@ -1265,7 +1222,7 @@ test "parser: a named aggregate `{` binds only on its head's line" {
 
     const type_app = try parseBody(alloc,
         \\f :: () -> i64 {
-        \\    Box(i64)
+        \\    Box(i64);
         \\    { g() }
         \\    0
         \\}
@@ -1274,37 +1231,47 @@ test "parser: a named aggregate `{` binds only on its head's line" {
     try std.testing.expect(type_app.data.block.stmts[0].data == .call);
     try std.testing.expect(type_app.data.block.stmts[1].data == .block);
 
-    // Same-line controls: the aggregate and the trailing block both still bind.
+    // Without the `;` the statement is still open, so the brace juxtaposes
+    // across the break.
+    const wrapped = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    Box(i64)
+        \\    { g() }
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 1), wrapped.data.block.stmts.len);
+    try std.testing.expect(wrapped.data.block.stmts[0].data == .juxtaposition);
+
     const aggregate = try parseBody(alloc,
         \\f :: () -> i64 {
         \\    Pair{ a = 1, b = 2 }
         \\}
     );
-    try std.testing.expect(aggregate.data.block.stmts[0].data == .struct_literal);
+    try std.testing.expect(aggregate.data.block.stmts[0].data == .juxtaposition);
 
     const applied = try parseBody(alloc,
         \\f :: () -> i64 {
         \\    Box(i64){ v = 1 }
         \\}
     );
-    try std.testing.expect(applied.data.block.stmts[0].data == .struct_literal);
+    try std.testing.expect(applied.data.block.stmts[0].data == .juxtaposition);
 
     const trailing = try parseBody(alloc,
         \\f :: () -> i64 {
         \\    vstack(8) { g() }
         \\}
     );
-    const call = trailing.data.block.stmts[0].data.call;
-    try std.testing.expect(call.args[call.args.len - 1].data == .trailing_block);
-    try std.testing.expect(!call.args[call.args.len - 1].data.trailing_block.has_header);
+    const jx = trailing.data.block.stmts[0].data.juxtaposition;
+    try std.testing.expect(jx.expr.data == .call);
+    try std.testing.expect(!jx.has_header);
 }
 
-// ---- Must-continue locks ----
+// ---- Declaration headers across a line break ----
 //
-// An optional slot inside a construct that still owes a mandatory `{`, `(` or
-// name is not a place the construct can end, so a line break in front of it is
-// ordinary whitespace. Each of these has an identifier-shaped slot — the shape
-// most easily mistaken for a statement head.
+// A line break inside a declaration header is ordinary whitespace, so an
+// optional slot written on its own line still belongs to the header above it.
+// Each slot below is identifier-shaped — the shape that most resembles a
+// declaration of its own.
 
 // Enum `flags` and the backing type.
 test "parser: an enum header reads through a line break" {
@@ -1329,7 +1296,7 @@ test "parser: an enum header reads through a line break" {
     try std.testing.expect(same_ed.backing_type != null);
 }
 
-// A `ufcs` alias target is mandatory, so the break cannot end the alias.
+// A `ufcs` alias names its target after the keyword.
 test "parser: a ufcs alias target reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1420,8 +1387,8 @@ test "parser: a function header reads through a line break" {
     try std.testing.expectEqual(@as(usize, 1), fd.body.data.block.stmts.len);
 }
 
-// `#context_extend`'s default is optional, and `=` cannot open a
-// statement, so a split default still binds.
+// `#context_extend`'s default is optional; the `;` is what ends the
+// declaration, so a split default still binds.
 test "parser: a #context_extend default reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1440,8 +1407,8 @@ test "parser: a #context_extend default reads through a line break" {
 
     // Absent default, and the declaration below is its own.
     var bare = try Parser.init(alloc,
-        \\#context_extend depth: i64
-        \\LIMIT :: 9
+        \\#context_extend depth: i64;
+        \\LIMIT :: 9;
     );
     const bare_decls = (try bare.parse()).data.root.decls;
     try std.testing.expectEqual(@as(usize, 2), bare_decls.len);
@@ -1487,16 +1454,15 @@ test "parser: values inside fixed delimiters read through a line break" {
         \\    p := Point{
         \\        x = 1,
         \\        y = 2,
-        \\    }
+        \\    };
         \\    p.x
         \\}
     );
     try std.testing.expectEqual(@as(usize, 2), agg.data.block.stmts.len);
-    try std.testing.expect(agg.data.block.stmts[0].data.var_decl.value.?.data == .struct_literal);
+    try std.testing.expect(agg.data.block.stmts[0].data.var_decl.value.?.data == .juxtaposition);
 }
 
-// The suppressed postfixes still chain across a break, on the paths that
-// own them.
+// The dot-led postfixes chain across a break, on the paths that own them.
 test "parser: `?.` and `catch` continue across a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1520,8 +1486,7 @@ test "parser: `?.` and `catch` continue across a line break" {
     try std.testing.expect(failable.data.block.stmts[0].data == .catch_expr);
 }
 
-// A fixed form's own list keeps its literal separator: a newline is NOT a
-// terminator inside one.
+// A fixed form's own list keeps its literal separator.
 test "parser: a fixed form's list still demands its `;`" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1548,9 +1513,9 @@ test "parser: a fixed form's list still demands its `;`" {
     );
 }
 
-// `case` heads an arm, and an arm is a statement, so the break before the next
-// arm head ends the statement above it — in every arm body form.
-test "parser: an arm ends at the break before the next `case`" {
+// An arm body is an ordinary statement list, so every statement in it takes
+// its `;` — the `case` below is a statement head, not a terminator.
+test "parser: an arm's statements take their `;`" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1559,10 +1524,10 @@ test "parser: an arm ends at the break before the next `case`" {
         \\f :: (v: i64) -> i64 {
         \\    match v {
         \\        case 1:
-        \\            g()
-        \\            10
-        \\        case 2: break
-        \\        case 3: |e| e
+        \\            g();
+        \\            10;
+        \\        case 2: break;
+        \\        case 3: |e| e;
         \\        else:
         \\            0
         \\    }
@@ -1574,13 +1539,13 @@ test "parser: an arm ends at the break before the next `case`" {
     try std.testing.expect(match.arms[1].is_break);
     try std.testing.expect(match.arms[3].pattern == null);
 
-    // On ONE line nothing implies the terminator, so the separator is written.
+    // A statement that runs into the next `case` is missing its `;`.
     _ = try parseErrMsg(alloc, "f :: (v: i64) -> i64 { match v { case 1: 10 case 2: 20 } }");
 }
 
-// `else` glued to a `:` heads the default arm; every other `else` chains the
-// `if` above it, across a line break included.
-test "parser: a glued `:` separates a default arm from a chaining `else`" {
+// `else` followed by a `:` heads the default arm; every other `else` chains
+// the `if` above it, across a line break included.
+test "parser: a `:` separates a default arm from a chaining `else`" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1589,14 +1554,14 @@ test "parser: a glued `:` separates a default arm from a chaining `else`" {
     // default arm, not that `if`'s branch.
     const body = try parseBody(alloc,
         \\f :: (v: i64) -> i64 {
-        \\    n := 0
+        \\    n := 0;
         \\    match v {
         \\        case 1:
         \\            if n == 0 {
-        \\                n = 1
+        \\                n = 1;
         \\            }
         \\        else:
-        \\            n = 3
+        \\            n = 3;
         \\    }
         \\    n
         \\}
@@ -1610,17 +1575,17 @@ test "parser: a glued `:` separates a default arm from a chaining `else`" {
     // the default arm after it.
     const chained_arm = try parseBody(alloc,
         \\f :: (v: i64) -> i64 {
-        \\    n := 0
+        \\    n := 0;
         \\    match v {
         \\        case 1:
         \\            if n == 0 {
-        \\                n = 1
+        \\                n = 1;
         \\            }
         \\            else {
-        \\                n = 2
+        \\                n = 2;
         \\            }
         \\        else:
-        \\            n = 3
+        \\            n = 3;
         \\    }
         \\    n
         \\}
@@ -1642,6 +1607,22 @@ test "parser: a glued `:` separates a default arm from a chaining `else`" {
         \\}
     );
     try std.testing.expect(chain.data.block.stmts[0].data.if_expr.else_branch != null);
+
+    // The gap before the `:` says nothing — `else :` heads the default arm too.
+    const spaced = try parseBody(alloc,
+        \\f :: (v: i64) -> i64 {
+        \\    n := 0;
+        \\    match v {
+        \\        case 1: n = 1;
+        \\        else :
+        \\            n = 3;
+        \\    }
+        \\    n
+        \\}
+    );
+    const spaced_match = spaced.data.block.stmts[1].data.match_expr;
+    try std.testing.expectEqual(@as(usize, 2), spaced_match.arms.len);
+    try std.testing.expect(spaced_match.arms[1].pattern == null);
 }
 
 test "parser: an `@` function declaration is its signature, with an intrinsic body" {

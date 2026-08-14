@@ -798,10 +798,10 @@ pub const Analyzer = struct {
             .spread_expr => .void_type,
             .named_arg => |na| return self.inferExprType(na.value),
             .trailing_block => .void_type,
-            // `F(args){}` reads as the parameterized aggregate when the head
-            // names a type, and as a trailing block (void) otherwise — the
-            // editor's half of the rule the lowering front settles.
-            .empty_brace_call => |ebc| self.parameterizedStructType(ebc.call.data.call) orelse .void_type,
+            // `expr { … }` reads as the aggregate when the head names a type,
+            // and as a trailing block (void) otherwise — the editor's half of
+            // the rule the lowering front settles.
+            .juxtaposition => |jx| self.juxtapositionType(jx),
             .break_expr => .void_type,
             .continue_expr => .void_type,
             .enum_literal => .{ .enum_type = "" },
@@ -847,6 +847,40 @@ pub const Analyzer = struct {
             },
             else => .void_type,
         };
+    }
+
+    /// The type `expr { … }` carries: the constructed type when the head
+    /// names a type, void when the block fuses onto a call.
+    fn juxtapositionType(self: *Analyzer, jx: ast.Juxtaposition) Type {
+        return switch (jx.expr.data) {
+            .call => |c| self.parameterizedStructType(c) orelse .void_type,
+            .identifier => |id| self.namedStructType(id.name),
+            .field_access => |fa| self.namedStructType(fa.field),
+            .enum_literal => |el| .{ .enum_type = el.name },
+            .parameterized_type_expr => self.inferExprType(jx.expr),
+            .type_expr => |te| self.namedStructType(te.name),
+            .tuple_type_expr => |tt| self.tupleTypeFromExpr(tt),
+            else => .void_type,
+        };
+    }
+
+    fn namedStructType(self: *Analyzer, name: []const u8) Type {
+        if (self.struct_types.contains(name)) return .{ .struct_type = name };
+        if (self.type_aliases.get(name)) |target| {
+            if (self.struct_types.contains(target)) return .{ .struct_type = target };
+        }
+        return .void_type;
+    }
+
+    fn tupleTypeFromExpr(self: *Analyzer, tt: ast.TupleTypeExpr) Type {
+        var field_types = std.ArrayList(Type).empty;
+        for (tt.field_types) |ft| {
+            field_types.append(self.allocator, self.resolveTypeNode(ft)) catch return .void_type;
+        }
+        return .{ .tuple_type = .{
+            .field_names = tt.field_names,
+            .field_types = field_types.toOwnedSlice(self.allocator) catch return .void_type,
+        } };
     }
 
     /// The struct a parameterized aggregate head names — the generic instance
@@ -1273,9 +1307,21 @@ pub const Analyzer = struct {
             .spread_expr => |se| try self.analyzeNode(se.operand),
             .named_arg => |na| try self.analyzeNode(na.value),
             .trailing_block => |tb| try self.analyzeNode(tb.lambda),
-            .empty_brace_call => |ebc| {
-                try self.analyzeNode(ebc.call);
-                try self.analyzeNode(ebc.block);
+            .juxtaposition => |jx| {
+                try self.analyzeNode(jx.expr);
+                // On the aggregate reading, a `name = …` item names a FIELD of
+                // the head's type — indexed as a member ref so go-to-definition
+                // works from it, exactly as for a `.{ … }` literal's names.
+                const owner = self.inferExprType(node).toName() orelse "";
+                for (jx.block.data.block.stmts) |item| {
+                    if (owner.len != 0 and item.data == .assignment) {
+                        const a = item.data.assignment;
+                        if (a.op == .assign and a.target.data == .identifier)
+                            self.recordMemberRef(a.target.data.identifier.name, owner, false);
+                    }
+                    try self.analyzeNode(item);
+                }
+                if (jx.init_block) |ib| try self.analyzeNode(ib);
             },
             .break_expr, .continue_expr => {},
             .assignment => |asgn| {
@@ -1821,9 +1867,12 @@ pub fn findNodeAtOffset(node: *Node, offset: u32) ?*Node {
         .trailing_block => |tb| {
             if (findNodeAtOffset(tb.lambda, offset)) |found| return found;
         },
-        .empty_brace_call => |ebc| {
-            if (findNodeAtOffset(ebc.call, offset)) |found| return found;
-            if (findNodeAtOffset(ebc.block, offset)) |found| return found;
+        .juxtaposition => |jx| {
+            if (findNodeAtOffset(jx.expr, offset)) |found| return found;
+            if (findNodeAtOffset(jx.block, offset)) |found| return found;
+            if (jx.init_block) |ib| {
+                if (findNodeAtOffset(ib, offset)) |found| return found;
+            }
         },
         .break_expr, .continue_expr => {},
         .caller_site => {},

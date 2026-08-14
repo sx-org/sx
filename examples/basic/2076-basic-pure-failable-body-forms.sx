@@ -93,15 +93,15 @@ run_locals :: () -> i32 {
         if b { fails() } else { tick("local-mixed") }
     }
 
-    local_value() catch { print("NOT REACHED local-value\n"); }
-    local_wide() catch { print("NOT REACHED local-wide\n"); }
-    local_string() catch { print("NOT REACHED local-string\n"); }
-    local_compound() catch { print("NOT REACHED local-compound\n"); }
-    local_void() catch { print("NOT REACHED local-void\n"); }
-    local_mixed(false) catch { print("NOT REACHED local-mixed\n"); }
-    local_error() catch { print("caught local-error\n"); }
-    local_prefix() catch { print("caught local-prefix\n"); }
-    local_mixed(true) catch { print("caught local-mixed\n"); }
+    local_value() catch { print("NOT REACHED local-value\n"); };
+    local_wide() catch { print("NOT REACHED local-wide\n"); };
+    local_string() catch { print("NOT REACHED local-string\n"); };
+    local_compound() catch { print("NOT REACHED local-compound\n"); };
+    local_void() catch { print("NOT REACHED local-void\n"); };
+    local_mixed(false) catch { print("NOT REACHED local-mixed\n"); };
+    local_error() catch { print("caught local-error\n"); };
+    local_prefix() catch { print("caught local-prefix\n"); };
+    local_mixed(true) catch { print("caught local-mixed\n"); };
     0
 }
 
@@ -109,22 +109,22 @@ run_locals :: () -> i32 {
 // function's named-return slots: its own body is its own boundary.
 named_return_host :: () -> (x: i32, y: i32) {
     inner := || -> !Failed tick("inside-named-return");
-    inner() catch { print("NOT REACHED inner\n"); }
+    inner() catch { print("NOT REACHED inner\n"); };
     x = 3;
     y = 4;
 }
 
 main :: () -> i32 {
     // Generic instances.
-    gen_value(11) catch { print("NOT REACHED gen-i32\n"); }
-    gen_value("s") catch { print("NOT REACHED gen-string\n"); }
-    gen_mixed(12, false) catch { print("NOT REACHED gen-mixed\n"); }
-    gen_error(13) catch { print("caught gen-error\n"); }
-    gen_mixed(14, true) catch { print("caught gen-mixed\n"); }
+    gen_value(11) catch { print("NOT REACHED gen-i32\n"); };
+    gen_value("s") catch { print("NOT REACHED gen-string\n"); };
+    gen_mixed(12, false) catch { print("NOT REACHED gen-mixed\n"); };
+    gen_error(13) catch { print("caught gen-error\n"); };
+    gen_mixed(14, true) catch { print("caught gen-mixed\n"); };
 
     // Pack-fn monomorphs.
-    pack_value("a", 1, "two") catch { print("NOT REACHED pack\n"); }
-    pack_error("b", 3) catch { print("caught pack-error\n"); }
+    pack_value("a", 1, "two") catch { print("NOT REACHED pack\n"); };
+    pack_error("b", 3) catch { print("caught pack-error\n"); };
 
     // Nested local functions.
     r := run_locals();
@@ -136,12 +136,12 @@ main :: () -> i32 {
     arrow_void := || -> !Failed nothing("arrow");
     arrow_error := || -> !Failed error.Nope;
     arrow_forward := || -> !Failed fails();
-    arrow_value() catch { print("NOT REACHED arrow-value\n"); }
-    arrow_wide() catch { print("NOT REACHED arrow-wide\n"); }
-    arrow_string() catch { print("NOT REACHED arrow-string\n"); }
-    arrow_void() catch { print("NOT REACHED arrow-void\n"); }
-    arrow_error() catch { print("caught arrow-error\n"); }
-    arrow_forward() catch { print("caught arrow-forward\n"); }
+    arrow_value() catch { print("NOT REACHED arrow-value\n"); };
+    arrow_wide() catch { print("NOT REACHED arrow-wide\n"); };
+    arrow_string() catch { print("NOT REACHED arrow-string\n"); };
+    arrow_void() catch { print("NOT REACHED arrow-void\n"); };
+    arrow_error() catch { print("caught arrow-error\n"); };
+    arrow_forward() catch { print("caught arrow-forward\n"); };
 
     // Closure BLOCK bodies.
     block_value := || -> !Failed { tick("block") };
@@ -159,19 +159,19 @@ main :: () -> i32 {
         defer print("block defer error\n");
         fails()
     };
-    block_value() catch { print("NOT REACHED block-value\n"); }
-    block_wide() catch { print("NOT REACHED block-wide\n"); }
-    block_compound() catch { print("NOT REACHED block-compound\n"); }
-    block_prefix() catch { print("NOT REACHED block-prefix\n"); }
-    block_defer() catch { print("NOT REACHED block-defer\n"); }
-    block_error() catch { print("caught block-error\n"); }
+    block_value() catch { print("NOT REACHED block-value\n"); };
+    block_wide() catch { print("NOT REACHED block-wide\n"); };
+    block_compound() catch { print("NOT REACHED block-compound\n"); };
+    block_prefix() catch { print("NOT REACHED block-prefix\n"); };
+    block_defer() catch { print("NOT REACHED block-defer\n"); };
+    block_error() catch { print("caught block-error\n"); };
 
     // Mixed control flow inside a closure, both arm orders.
     clo_mixed := |b: bool| -> !Failed {
         if b { fails() } else { tick("clo-mixed") }
     };
-    clo_mixed(false) catch { print("NOT REACHED clo-mixed\n"); }
-    clo_mixed(true) catch { print("caught clo-mixed\n"); }
+    clo_mixed(false) catch { print("NOT REACHED clo-mixed\n"); };
+    clo_mixed(true) catch { print("caught clo-mixed\n"); };
 
     x, y := named_return_host();
     print("named={} {}\n", x, y);
