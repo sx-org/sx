@@ -6,11 +6,7 @@
 //
 // Both fold through the single shared const-int evaluator
 // (`program_index.evalConstIntExpr`) — the same one the array-dimension path
-// uses — so a named-const / const-expr lane is identical to a literal lane. A
-// hand-rolled `else => 0` switch in the stateful vector lane resolvers instead
-// lowers a module-const lane (`@Vector(N, f32)`) as a 0-lane `<0 x float>` that
-// dies in LLVM verification ("huge alignment values are unsupported"), and
-// rejects a const-expr lane (`@Vector(M + 1, f32)`) at parse.
+// uses — so a named-const / const-expr lane is identical to a literal lane.
 #import "modules/std.sx";
 
 N :: 3;
