@@ -3,11 +3,11 @@
 // methods — impl definitions included, so a keyword-named protocol
 // method is implementable without ceremony — and enum/tagged-union
 // variants (std/meta.sx's TypeInfo is the canonical case). Access rides
-// every member position: literal init, dot access, optional chaining,
-// enum literals and case patterns. In a struct literal a keyword field
-// takes only the `name = value` form, so a positional if-expression
-// element still parses as an expression. Companion to 0158 (the
-// reserved TYPE-spelling exemption).
+// dot position bare: field access, optional chaining, enum literals and
+// case patterns. A LITERAL field label is an identifier, so a keyword
+// label takes the backtick raw escape and a bare keyword there heads a
+// positional expression. Companion to 0158 (the reserved TYPE-spelling
+// exemption).
 #import "modules/std.sx";
 
 P :: protocol vtable {
@@ -35,7 +35,7 @@ impl P for R {
 Esc :: struct { `inline: i64 = 5; }
 
 // Keyword-named VARIANTS: payload-carrying and tagless, declared bare;
-// enum literals and case patterns were always dot-disambiguated.
+// enum literals and case patterns are dot-disambiguated.
 Kind :: enum {
     struct: i64;
     enum;
@@ -46,7 +46,7 @@ Kind :: enum {
 Pair :: struct { a, b: i64; }
 
 main :: () {
-    q := Q{ if = 10, while = 1.5, for = 2.5, f32 = 9.5 };
+    q := Q{ `if = 10, `while = 1.5, `for = 2.5, `f32 = 9.5 };
     q.push(5);
     print("q {} {} {} {} {} {}\n", q.return(), q.match(), q.while, q.for, q.f32, Q.case);
 
@@ -54,13 +54,13 @@ main :: () {
     p : P = r.(P, context.allocator);
     print("impl {}\n", p.push(3));
 
-    o : ?Q = Q{ if = 4 };
+    o : ?Q = Q{ `if = 4 };
     print("chain {}\n", o?.if);
 
     e := Esc{};
     print("esc {}\n", e.inline);
 
-    // The keyword-field literal path never eats a positional expression:
+    // A bare keyword in a literal is a positional expression head.
     x := 3;
     pr := Pair{ if x > 1 then 10 else 20, 2 };
     print("pos {} {}\n", pr.a, pr.b);

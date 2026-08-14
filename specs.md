@@ -43,21 +43,20 @@ Every keyword except `inline` — `if`, `push`, `while`, `for`, `case`, `return`
 `f32`, `f64`, `try`, `defer`, … — may bare-name a struct **field**, a struct
 **method or constant**, a protocol **method**, and an enum/tagged-union
 **variant** (`enum { struct: StructInfo; bool; }` — std/meta.sx's `TypeInfo`
-is the canonical case), and is reachable through every member position:
-literal init (`.{ push = 1, if = 2 }`), field access (`q.push(…)`, `q.for`),
-enum literals and case patterns (`.enum`, `case .struct:`), and optional
-chaining (`o?.if`). Declaration position
+is the canonical case), and is reached bare after a dot: field access
+(`q.push(…)`, `q.for`), enum literals and case patterns (`.enum`,
+`case .struct:`), and optional chaining (`o?.if`). Declaration position
 is unambiguous — struct, protocol, and `impl` bodies hold only declarations —
 and access is dot-disambiguated. Unlike the type-spelling rule above, keyword
 names are bare-legal in `impl` method **definitions** as well: a keyword-named
 protocol method must be implementable without ceremony, and a keyword has no
 builtin to shadow. The one exception is **`inline`**, which stays
 backtick-only (`` `inline ``); a bare `inline` in member position rejects with
-a targeted escape-hint. In a struct literal, a keyword field name takes only
-the `name = value` form — without the `=`, the token reads as a positional
-expression head, so `.{ if x > 1 then 10 else 20, 2 }` stays an if-expression
-element. Value-binding positions (locals, params, function names) reject
-keywords.
+a targeted escape-hint. A **literal field label** is an identifier: in `.{ … }`
+and `T { … }` a keyword label takes the backtick raw escape
+(`` .{ `push = 1, `if = 2 } ``), and a bare keyword there heads a positional
+expression, so `.{ if x > 1 then 10 else 20, 2 }` is an if-expression element.
+Value-binding positions (locals, params, function names) reject keywords.
 
 **`Tuple(` and `Closure(` are reserved in expression head position.** The
 type constructors `Tuple(...)` and `Closure(...) -> R` parse as TYPE
@@ -6968,11 +6967,15 @@ self_block      = '.' '{' ('|' IDENT '|')? stmt* '}'   // writes into the value
 brace_group     = '{' ('|' params? '|')? brace_item* '}'
 brace_item      = IDENT '=' expr (';' | ',' | &'}')    // a field init or a store
                 | stmt                                 // `,` ends an item here too
+                  // the label is an IDENT — a keyword label is backticked
+                  // (`` `push = 7 ``), bare it heads the stmt alternative
 primary         = INT | HEX_INT | OCT_INT | BIN_INT | FLOAT | STRING | BOOL | IDENT | '---'
                 | '.' IDENT | '.' '{' field_init_list '}'
                 | '(' expr ')' | block | '#run' expr    // bare parens = grouping ONLY
 field_init_list = field_init (',' field_init)* ','?
 field_init      = IDENT '=' expr | IDENT | '..' expr | expr
+                  // the label is an IDENT — a keyword label is backticked
+                  // (`` `if = 2 ``), bare it heads the expr alternative
 if_expr         = 'if' expr 'then' expr ('else' expr)?
                 | 'if' expr block ('else' block)?
                   // the 'else' of an if is any 'else' NOT followed by a ':' —
