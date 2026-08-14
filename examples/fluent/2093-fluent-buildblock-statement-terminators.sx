@@ -63,21 +63,21 @@ main :: () -> i32 {
     // One statement, two arguments, ended by the body's `}`.
     one := column() {
         leaf(1, 2)
-    }
+    };
     show("one", one);
 
     // Two statements: the first takes its `;`, the body's `}` ends the second.
     two := column() {
         leaf(3, 4);
         leaf(5)
-    }
+    };
     show("two", two);
 
     // An aggregate argument ahead of a second argument.
     mixed := column() {
         badge(Leaf{ n = 6, tag = 1 }, 2);
         leaf(7)
-    }
+    };
     show("mixed", mixed);
 
     // Nested containers: a multi-argument container call whose trailing block is
@@ -86,9 +86,9 @@ main :: () -> i32 {
         stack(8, 5) {
             leaf(1, 1);
             badge(Leaf{ n = 2, tag = 2 }, 3)
-        }
+        };
         leaf(9, 9)
-    }
+    };
     show("nested", nested);
     0
 }

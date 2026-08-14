@@ -85,15 +85,14 @@ in expressions and in every type position alike — and a `(` that opens somethi
 new (grouping, parameters, a declaration form) is free the same way:
 `add :: (a: i64) -> i64`, `n := (a + b) * c`. `-` and `*` also have prefix
 readings, and position alone decides: after a completed left operand the glyph
-is infix, whatever the gaps. What binds to an expression from behind is where
-the line matters — the trailing-block `{` (below), a named aggregate's `{`, and
-the force-unwrap `!` each bind only on the expression's own line, since across a
-break the brace is a scope block and the `!` is the prefix `not`.
+is infix, whatever the gaps. The force-unwrap `!` is the one glyph the line
+still matters to: it binds only on its expression's own line, since across a
+break `!` is the prefix `not`.
 
 A statement that IS a block ends at its `}` instead of a `;`, and so does a
 declaration whose initializer is one; the last expression before a `}` may drop
 it too. Statements break and expressions chain: a block statement ends at its
-`}`, while a trailing-block call keeps its postfix chain across the line.
+`}`, while a call ending in a block keeps its postfix chain across the line.
 
 Ending a statement is all `;` does — it is a pure separator. A block's value is
 its last statement whenever that statement is an expression, and that value

@@ -630,6 +630,9 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
     const saved_span = self.builder.current_span;
     defer self.builder.current_span = saved_span;
     if (node.span.start != 0 or node.span.end != 0) self.builder.current_span = .{ .start = node.span.start, .end = node.span.end };
+    // Settle this statement's juxtapositions first: every local type declared
+    // above it is registered by now, and the arms below read the settled shape.
+    self.settleStatementJuxtapositions(node);
     switch (node.data) {
         .var_decl => |vd| self.lowerVarDecl(&vd),
         .const_decl => |cd| self.lowerConstDecl(&cd),

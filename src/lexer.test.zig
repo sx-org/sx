@@ -525,3 +525,17 @@ test "lex under OOM returns error.OutOfMemory and leaks nothing" {
         }
     }
 }
+
+test "a delimiter carries the depth OUTSIDE its group; contents sit one deeper" {
+    var tl = try lexT("f(a[b]{c})");
+    defer deinitT(&tl);
+    //              f  (  a  [  b  ]  {  c  }  )  eof
+    try std.testing.expectEqualSlices(u32, &.{ 0, 0, 1, 1, 2, 1, 1, 2, 1, 0, 0 }, tl.depths);
+}
+
+test "an unbalanced closer saturates rather than underflowing" {
+    var tl = try lexT("}}a{");
+    defer deinitT(&tl);
+    //              }  }  a  {  eof
+    try std.testing.expectEqualSlices(u32, &.{ 0, 0, 0, 0, 1 }, tl.depths);
+}

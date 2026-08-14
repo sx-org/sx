@@ -471,10 +471,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         }
 
         const result = self.builder.structInit(fields.items, ty);
-        if (sl.init_block) |ib| {
-            if (sl.init_block_self) |binder| return self.lowerInitBlock(result, ty, ib, binder);
-            return self.lowerPostScopeBlock(result, ib);
-        }
+        if (sl.init_block) |ib| return self.lowerInitBlock(result, ty, ib, sl.init_block_self.?);
         return result;
     }
 
@@ -556,19 +553,10 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
 
     const result = self.builder.structInit(fields.items, ty);
 
-    // Lower following block if present
-    if (sl.init_block) |ib| {
-        if (sl.init_block_self) |binder| return self.lowerInitBlock(result, ty, ib, binder);
-        return self.lowerPostScopeBlock(result, ib);
-    }
+    // The self-trailing block writes into the value just built.
+    if (sl.init_block) |ib| return self.lowerInitBlock(result, ty, ib, sl.init_block_self.?);
 
     return result;
-}
-
-/// Bare `T{…}{ stmts }`: run `stmts` in the enclosing scope (no `self`), yield T.
-pub fn lowerPostScopeBlock(self: *Lowering, struct_val: Ref, ib: *const Node) Ref {
-    self.lowerBlock(ib);
-    return struct_val;
 }
 
 /// Lower `T{…}.{ stmts }`: store struct value to alloca, bind `binder` to a
@@ -3585,6 +3573,12 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         .ffi_intrinsic_call => |fic| self.lowerFfiIntrinsicCall(&fic),
         .field_access => |fa| self.lowerFieldAccess(&fa, node.span),
         .struct_literal => |sl| self.lowerStructLiteral(&sl, node.span),
+        // `expr { … }` settles here, where the local scope holds the types a
+        // function-local declaration registered.
+        .juxtaposition => blk: {
+            self.settleJuxtaposition(node);
+            break :blk self.lowerExpr(node);
+        },
         .array_literal => |al| self.lowerArrayLiteral(&al),
         .index_expr => |ie| self.lowerIndexExpr(&ie),
         .slice_expr => |se| self.lowerSliceExpr(&se),

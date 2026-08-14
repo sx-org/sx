@@ -50,7 +50,7 @@ toolbar :: () { text("toolbar"); }
 
 home_screen :: () -> View {
     vstack(0.0) {
-        hstack(8.0) { text("Chats"); spacer(); }
+        hstack(8.0) { text("Chats"); spacer(); };
         button("New chat") { print("tapped\n"); };
     }
 }

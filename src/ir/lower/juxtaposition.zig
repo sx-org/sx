@@ -1,107 +1,175 @@
-//! The `F(args){}` front. A same-line empty brace body after an
-//! argument-carrying call fits both the parameterized aggregate and the
-//! trailing block, so the parser parks it in an `empty_brace_call` and this
-//! pass rewrites each one into the reading its callee names — once, before any
-//! constant folding or body lowering reads the node.
+//! The juxtaposition front. `expr { … }` is two adjacent expressions; the
+//! aggregate reading (`Label { text = "x" }`, `List(Move){}`) and the
+//! trailing-block reading (`vstack(12.0) { … }`) share that spelling, so types
+//! settle it. One routine, two callers: expression lowering, with the local
+//! scope in hand, and the module front over top-level initializers, which the
+//! registration passes read structurally before any body lowers.
+
+const std = @import("std");
 
 const ast = @import("../../ast.zig");
 const Node = ast.Node;
 
 const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
-const lower_call = @import("call.zig");
 const lower_generic = @import("generic.zig");
 
-/// Resolve every `empty_brace_call` under `decls`.
-pub fn normalizeEmptyBraceCalls(self: *Lowering, decls: []const *const Node) void {
+/// Settle every juxtaposition a top-level initializer can hold. Statement
+/// bodies stay untouched: their local types are registered as their statements
+/// lower, and that is where they settle.
+pub fn settleModuleFront(self: *Lowering, decls: []const *const Node) void {
     for (decls) |decl| walkIn(self, decl);
 }
 
-/// A head that names a generic type constructor or a `-> Type` function
-/// constructs; otherwise the block trails where the callee's last parameter
-/// takes one. A callee with no declaration here has no constructor reading
-/// either, so its block trails and the binder reports what it finds.
-fn resolve(self: *Lowering, node: *const Node) void {
-    const ebc = node.data.empty_brace_call;
-    const target = @constCast(node);
-    if (lower_generic.isGenericTypeConstructorCallNode(self, ebc.call) or
-        lower_generic.isTypeReturningCallNode(self, ebc.call))
-    {
-        target.data = .{ .struct_literal = .{
-            .struct_name = null,
-            .type_expr = ebc.call,
-            .field_inits = &.{},
-        } };
-        return;
-    }
-    const c = &ebc.call.data.call;
-    switch (lower_call.calleeTrailingBlockFit(self, c)) {
-        .unknown, .binds => target.data = trailingCall(self, node, ebc),
-        // Reported, the block drops — keeping it would stack the binder's own
-        // refusal on the one just emitted. Unreported (a scan with diagnostics
-        // off), it stays a trailing block, which the binder refuses there.
-        .refuses => |param| target.data = if (diagnoseNeither(self, node, c, param))
-            ebc.call.data
-        else
-            trailingCall(self, node, ebc),
-    }
+/// Settle every juxtaposition in ONE statement's own expressions, before the
+/// statement lowers. Every reading of a settled node — the target-type seeding
+/// that an assignment's RHS shape decides, the `push` field merge, constant
+/// folding — then sees the aggregate or the call, never the undecided pair.
+pub fn settleStatement(self: *Lowering, node: *const Node) void {
+    walk(self, node);
 }
 
-/// The call with the empty body appended as its trailing-block argument — the
-/// shape `f(args) { … }` parses directly.
-fn trailingCall(self: *Lowering, node: *const Node, ebc: ast.EmptyBraceCall) Node.Data {
-    const c = ebc.call.data.call;
+/// Rewrite one juxtaposition into the reading its head's type names.
+pub fn settle(self: *Lowering, node: *const Node) void {
+    const jx = node.data.juxtaposition;
+    const target = @constCast(node);
+    target.data = if (constructs(self, jx.expr))
+        aggregate(self, node, jx)
+    else
+        fuse(self, node, jx);
+}
+
+/// Whether the head names a type to construct. A call head is one only when it
+/// applies a generic type constructor or a `-> Type` function; every other
+/// designator shape (bare name, qualified name, type application, variant key)
+/// is a type position and reports its own unknown-type diagnostic when the name
+/// resolves to nothing.
+fn constructs(self: *Lowering, head: *const Node) bool {
+    return switch (head.data) {
+        .call => |c| namesTemplate(self, c.callee) or
+            lower_generic.isGenericTypeConstructorCallNode(self, head) or
+            lower_generic.isTypeReturningCallNode(self, head),
+        .identifier, .field_access, .enum_literal, .parameterized_type_expr, .type_expr, .tuple_type_expr => true,
+        else => false,
+    };
+}
+
+/// Ask the generic-head selector whether `callee` names a struct template —
+/// through the alias chain a `BoxAlias :: Box;` head travels. A probe, so the
+/// selector's visibility and ambiguity diagnostics stay with the real head
+/// site: a poisoned head still constructs, and reports there.
+fn namesTemplate(self: *Lowering, callee: *const Node) bool {
+    const saved = self.diagnostics;
+    self.diagnostics = null;
+    defer self.diagnostics = saved;
+    return switch (lower_generic.selectGenericStructCallee(self, callee, null)) {
+        .template, .poisoned => true,
+        .not_generic => false,
+    };
+}
+
+/// The name a construction head is WRITTEN with, over the shapes `constructs`
+/// accepts. The head of `Box(i64){ … }` is `Box`, of `p.Slot(i64){ … }` is
+/// `Slot`.
+fn constructionHeadName(head: *const Node) []const u8 {
+    return switch (head.data) {
+        .identifier => |id| id.name,
+        .field_access => |fa| fa.field,
+        .enum_literal => |el| el.name,
+        .type_expr => |te| te.name,
+        .parameterized_type_expr => |pte| pte.name,
+        .call => |c| constructionHeadName(c.callee),
+        .tuple_type_expr => "Tuple",
+        else => "this head",
+    };
+}
+
+/// The aggregate reading: the brace group's items are field inits. `name =`
+/// names a field, a bare identifier is the shorthand for `name = name`, and
+/// anything else is positional.
+fn aggregate(self: *Lowering, node: *const Node, jx: ast.Juxtaposition) Node.Data {
+    if (jx.has_header) {
+        if (self.diagnostics) |d| {
+            const id = d.addFmtId(.err, node.span, "'{s}' names a type, and a construction takes no parameter header", .{constructionHeadName(jx.expr)});
+            d.addHelp(id, null, "a `|…|` header belongs to a block that becomes a closure; parenthesize a closure ELEMENT — `T{ (|x| x), }`", null);
+        }
+    }
+    const stmts = jx.block.data.block.stmts;
+    const inits = self.alloc.alloc(ast.StructFieldInit, stmts.len) catch unreachable;
+    for (stmts, inits) |stmt, *init| {
+        init.* = switch (stmt.data) {
+            .assignment => |a| if (a.op == .assign and a.target.data == .identifier)
+                .{ .name = a.target.data.identifier.name, .value = a.value }
+            else
+                .{ .name = null, .value = stmt },
+            .identifier => |id| .{ .name = id.name, .value = stmt, .was_shorthand = true },
+            else => .{ .name = null, .value = stmt },
+        };
+    }
+    return .{ .struct_literal = .{
+        .struct_name = if (jx.expr.data == .identifier) jx.expr.data.identifier.name else null,
+        .type_expr = if (jx.expr.data == .identifier) null else jx.expr,
+        .field_inits = inits,
+        .init_block = jx.init_block,
+        .init_block_self = jx.init_block_self,
+    } };
+}
+
+/// The trailing-block reading: the block becomes a closure literal appended to
+/// the head call's arguments, where the mapping pass binds it to the callee's
+/// last declared parameter.
+fn fuse(self: *Lowering, node: *const Node, jx: ast.Juxtaposition) Node.Data {
+    if (jx.expr.data != .call) {
+        diagnoseNoBlock(self, node);
+        return jx.expr.data;
+    }
+    if (jx.init_block != null) {
+        if (self.diagnostics) |d| {
+            const id = d.addId(.err, "a self-trailing '.{ … }' writes into a constructed value; this block fuses onto a call", node.span);
+            d.addHelp(id, null, "construct the value first, then attach the block to it", null);
+        }
+        return jx.expr.data;
+    }
+    return trailingCall(self, node, jx);
+}
+
+/// The call with the block appended as its trailing-block argument.
+fn trailingCall(self: *Lowering, node: *const Node, jx: ast.Juxtaposition) Node.Data {
+    const c = jx.expr.data.call;
     const lambda = self.alloc.create(Node) catch unreachable;
-    lambda.* = .{ .span = ebc.block.span, .source_file = node.source_file, .data = .{ .lambda = .{
-        .params = &.{},
+    lambda.* = .{ .span = jx.block.span, .source_file = node.source_file, .data = .{ .lambda = .{
+        .params = jx.params,
         .return_type = null,
-        .body = ebc.block,
+        .body = jx.block,
+        .type_params = jx.type_params,
     } } };
+    if (self.site_index) |idx| idx.adopt(lambda, jx.block);
     const marker = self.alloc.create(Node) catch unreachable;
-    marker.* = .{ .span = ebc.block.span, .source_file = node.source_file, .data = .{ .trailing_block = .{ .lambda = lambda } } };
+    marker.* = .{ .span = jx.block.span, .source_file = node.source_file, .data = .{ .trailing_block = .{
+        .lambda = lambda,
+        .has_header = jx.has_header,
+    } } };
     const args = self.alloc.alloc(*Node, c.args.len + 1) catch unreachable;
     @memcpy(args[0..c.args.len], c.args);
     args[c.args.len] = marker;
     return .{ .call = .{ .callee = c.callee, .args = args } };
 }
 
-/// Report that neither reading exists, naming both intents. False when this
-/// scan carries no diagnostics.
-fn diagnoseNeither(
-    self: *Lowering,
-    node: *const Node,
-    c: *const ast.Call,
-    param: ?lower_call.RefusedBlockParam,
-) bool {
-    const d = self.diagnostics orelse return false;
-    const callee_name: []const u8 = switch (c.callee.data) {
-        .identifier => |id| id.name,
-        .field_access => |fa| fa.field,
-        .enum_literal => |el| el.name,
-        else => "callee",
-    };
-    if (param) |p| {
-        const id = d.addFmtId(.err, node.span, "the empty '{{}}' after '{s}(…)' has no reading — '{s}' names no parameterized type, and its last parameter '{s}' is '{s}', which is neither a `Closure` nor a `@BuildBlock(P)`", .{
-            callee_name,
-            callee_name,
-            p.name,
-            self.formatTypeName(p.ty),
-        });
-        d.addHelpFmt(id, node.span, null, "name a parameterized type to construct one, or declare '{s}' as `Closure()` / `@BuildBlock(P)` to take the block", .{p.name});
-    } else {
-        const id = d.addFmtId(.err, node.span, "the empty '{{}}' after '{s}(…)' has no reading — '{s}' names no parameterized type and declares no parameter to take a trailing block", .{ callee_name, callee_name });
-        d.addHelp(id, null, "name a parameterized type to construct one, or declare a `Closure()` / `@BuildBlock(P)` parameter to take the block", null);
-    }
-    return true;
+/// A head that is neither a type designator nor a call takes no block at all.
+fn diagnoseNoBlock(self: *Lowering, node: *const Node) void {
+    const d = self.diagnostics orelse return;
+    const id = d.addId(.err, "this expression does not take a block", node.span);
+    d.addHelp(id, null, "a block follows a type to construct it, or a call whose last parameter is a `Closure()` / `@BuildBlock(P)`", null);
 }
 
-/// Pre-order walk over every AST position an expression can occupy. The switch
-/// is exhaustive on purpose: a new node kind must say where its children are
-/// rather than silently hiding an undecided brace beneath it.
+/// Pre-order walk over every AST position a MODULE-LEVEL initializer can
+/// occupy. The switch is exhaustive on purpose: a new node kind must say where
+/// its children are rather than silently hiding an unsettled brace beneath it.
+/// A function body is not one of those positions — it stops here.
 fn walk(self: *Lowering, node: *const Node) void {
     switch (node.data) {
-        .empty_brace_call => {
-            resolve(self, node);
+        .juxtaposition => {
+            settle(self, node);
             walk(self, node);
         },
         .root => |r| for (r.decls) |d| walkIn(self, d),
@@ -112,12 +180,10 @@ fn walk(self: *Lowering, node: *const Node) void {
         .fn_decl => |fd| {
             walkParams(self, fd.params);
             if (fd.return_type) |rt| walk(self, rt);
-            walk(self, fd.body);
         },
         .lambda => |l| {
             walkParams(self, l.params);
             if (l.return_type) |rt| walk(self, rt);
-            walk(self, l.body);
         },
         .struct_decl => |sd| {
             for (sd.field_types) |t| walk(self, t);
@@ -139,11 +205,12 @@ fn walk(self: *Lowering, node: *const Node) void {
             .method => |md| {
                 for (md.params) |p| walk(self, p);
                 if (md.return_type) |rt| walk(self, rt);
-                if (md.body) |b| walk(self, b);
             },
             .field, .extends, .implements => {},
         },
-        .block => |b| for (b.stmts) |s| walk(self, s),
+        // A nested statement list settles statement by statement as it lowers,
+        // where the locals declared above each one are already registered.
+        .block => {},
         .call => |c| {
             walk(self, c.callee);
             for (c.args) |a| walk(self, a);
@@ -346,7 +413,6 @@ fn walkProtocolMethods(self: *Lowering, methods: []const ast.ProtocolMethodDecl)
     for (methods) |m| {
         for (m.params) |p| walk(self, p);
         if (m.return_type) |rt| walk(self, rt);
-        if (m.default_body) |b| walk(self, b);
     }
 }
 

@@ -380,26 +380,25 @@ and `-- b` both decrement `b` and yield the new value, while `a--b` and `a --b`
 have no reading at all — the operand `a` is complete and `--` is no infix
 operator.
 
-**Postfix — `{` and `!` bind only on their expression's own line.** The `{`
-after a call opens a trailing block only on the same line as the `)`, and a
-same-line empty `{}` is the one brace the gap says nothing about — the callee
-names its reading; both are specified with the form itself — see
-[Trailing Blocks](#trailing-blocks). A named aggregate's `{` and a postfix `!`
-join them because each has a second reading waiting on the other side of a
-break — a scope block, and the prefix `not`:
+**Postfix — `!` binds only on its expression's own line.** A postfix `!` has a
+second reading waiting on the other side of a break — the prefix `not`:
 
 ```sx
-p := Pair{ a = 1, b = 2 };    // same line — the aggregate
-Pair;
-{ setup() }                   // across the break — an expression and a block
-
 print("{}\n", maybe!);        // same line — force unwrap
 ready;
 !ready;                       // across the break — the prefix `not`
 ```
 
-This is geometry, not completability: the brace is refused across a break
-inside an argument list exactly as it is at statement level.
+A `{` is not in that camp. It juxtaposes with the expression before it wherever
+that statement is still open, across a break included; the `;` is what cuts:
+
+```sx
+p := Pair
+{ a = 1, b = 2 };             // still open — the aggregate
+
+Pair;
+{ setup() }                   // the `;` cut — an expression and a block
+```
 
 The dot-led postfixes are the other camp. `.`, `?.`, and `catch` have no second
 reading for a break to pick up, so each reads on down the page, and a leading
@@ -470,14 +469,15 @@ expression — chains the `if` above it.
 
 A statement whose last token is a `}` that closes a block form takes no
 terminator: a statement that IS a block (`if`, `while`, `for`, `match`, a
-`push` body, a bare scope), a call ending in a trailing block, and a declaration
-whose INITIALIZER is one of those.
+`push` body, a bare scope), and a declaration whose INITIALIZER is one of those.
+A statement ending in a juxtaposition — `expr { … }` — takes its `;` after the
+`}` like any other expression statement.
 
 ```sx
 kind := if c { "hot" } else { "cold" }   // block-form initializer — no `;`
 row  := vstack(8.0) {
     body();
-}                                        // trailing block — no `;`
+};                                       // a juxtaposition takes the `;`
 n    := compute(3);                      // any other initializer takes the `;`
 ```
 
@@ -885,11 +885,11 @@ Named aggregates place `{` directly after the type designator: `Point{ x = 1 }`,
 is a hard error with a fix-it to the compact spelling. Contextual `.{…}` keeps
 its leading-dot form.
 
-After a completed aggregate, a following block may appear in two forms:
+A block after a completed aggregate is **dot-led**: it stores the value, binds
+a pointer to it, runs the block, and yields the (possibly mutated) value. The
+same form writes into a contextual `.{ … }` literal.
 
 ```sx
-// Taught: self-trailing — stores the value, binds a pointer to it, runs the
-// block, yields the (possibly mutated) value.
 b := Button{ label = "Play" }.{
     self.label = "Go";
 };
@@ -900,14 +900,13 @@ b1 := Button{ label = "Play" }.{ |btn|
     btn.label = "Go";
 };
 
-// Legal, not taught: bare second brace group — construct T, then a plain
-// scope in the enclosing environment (no binding). The value is still T.
-b2 := Button{ label = "Play" } {
+// A bare second brace group is a scope of its own — the `;` ends the
+// construction.
+b2 := Button{ label = "Play" };
+{
     print("built\n");
-};
+}
 ```
-
-Call trailing blocks stay bare after `)` (`f(args) { … }`) and are unrelated.
 
 `push` context expressions may be named aggregates; the body brace is the push
 scope (not a second competing trailing form):
@@ -5537,51 +5536,44 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
   zero-param. An empty `| |` is a header with zero parameters. The header's
   arity must match the parameter's `Closure(…)`, and a build block takes no
   header — it is replayed against a sink, never called.
-- **Header decides the group**: where a `{` could open either a parameterized
-  named aggregate or a trailing block (`List(T){…}` vs `run(2) { … }`), a `|`
-  right after the `{` settles it as the block, ahead of any body shape. A
-  positional aggregate element that is a closure is parenthesized there:
-  `Box(Closure(i64)){ (|x| x), }`.
-- **Same line**: the `{` must sit on the same line as the call's `)`. A `{`
-  on the next line is an ordinary scope block statement, never a trailing
-  block. (This is the `{` half of
-  [Whitespace is Syntax](#whitespace-is-syntax).)
-- **Empty block**: a same-line empty `{}` (comment-only bodies included) after
-  a call with arguments carries no body shape, and the gap before it carries no
-  signal — `List(Move){}` and `List(Move) {}` are one form, `run(2){}` and
-  `run(2) {}` are another. **The callee decides**: a head that names a generic
-  type or a `-> Type` function constructs it (`List(Move){}`, `Sink(View){}`,
-  `Box(pair){}`, `Buf(16){}`, `List(i64) {}`, `Vec(3, f32) {}`), and otherwise
-  the block trails where the callee's last parameter takes one (`run(2) {}`,
-  `Group(n){}`, `render(*screen) {}`). A callee that is neither — its last
-  parameter is no `Closure` / `@BuildBlock(P)` — takes one error naming both
-  intents. A head that names no declaration at all — a closure value, a
-  function pointer — carries only the trailing reading, and the binder reports
-  what it finds there. Zero-arg `f() {}` always trails, with or without a gap
-  (`T{}` is the empty non-parameterized aggregate), and bodies with
-  statements/`;`/control keywords always trail.
-- **Body shape**: a non-empty same-line body is a parameterized named aggregate
-  only where it writes an aggregate marker at its OWN top level — a `,` between
-  elements or a `name =` field init. Groups nest, so a `,`, `=` or `;` inside a
-  paren, bracket or brace group is that group's: `vstack(8) { tappable(hit,
-  on_tap) }` is a trailing block, and a lone positional element takes the
-  separator comma to say otherwise — `Box(i64){ pair(1, 2), }`.
-- **Header position**: inside an `if`/`while`/`for` header the form is
-  disabled — `{` terminates the condition and opens the statement body;
-  bind the closure explicitly there.
+- **Juxtaposition**: `expr { … }` is two adjacent expressions, and one node
+  carries both readings until **types** settle it. A head that names a type —
+  a bare or qualified name, a type application, a generic type constructor, a
+  `-> Type` function — constructs (`Label { text = "x" }`, `List(Move){}`,
+  `Buf(16){}`, `p.Slot(i64){}`); every other call fuses its block onto the last
+  declared parameter (`vstack(8.0) { … }`, `run(2) {}`, `render(*screen) {}`).
+  Body shape, the gap before the `{`, and a line break between them decide
+  nothing. Anything else takes no block at all.
+- **Header on a construction**: a construction takes no `|…|` header — that
+  header belongs to a block that becomes a closure. A positional aggregate
+  element that is a closure is parenthesized: `Box(Closure(i64)){ (|x| x), }`.
+- **Does not stack**: a juxtaposition is not itself a head, so
+  `T { fields } { stmts }` is not one form. Written with the `;` it is the
+  construction and then an ordinary scope; written without, the report names
+  the missing terminator.
+- **Header position**: a statement header — `if`, `while`, `for`, `match`,
+  `push` — reserves the brace group written at its own `{` `(` `[` depth, so
+  there `{` terminates the header and opens the statement body; bind the
+  closure explicitly. Inside a group opened after the header began, the form
+  is ordinary: `push .{ b = Box(i64){ 1 } } { … }`,
+  `for x in .[ Label { text = "a" } ] { … }`.
 - **Named aggregates in headers**: a named aggregate that ends a header
   expression must be parenthesized so the statement body keeps its `{`:
-  `if (Button{ label = "x" }.ready) { … }`. Push is different — named aggregates
-  are legal in the context expr and the following brace is the push body:
-  `push Context{ io = my_io } { … }`. Idiomatic: `push .{ … } { … }`.
+  `if (Button{ label = "x" }.ready) { … }`. A tail written on the header spine
+  is at the header's own depth and takes the same parentheses — after `try`,
+  `catch |e|`, `#run`, or a bare closure body:
+  `if (mk() catch |e| Pt { x = 0 }).x == 1 { … }`. Push is different — named
+  aggregates are legal in the context expr and the following brace is the push
+  body: `push Context{ io = my_io } { … }`. Idiomatic: `push .{ … } { … }`.
 - **`return` is local**: a `return` inside the block returns from the
   closure, never from the enclosing function (no non-local return).
 - **Chain continuation**: after the block's closing `}`, **dot-led** postfix
   continues the chain — member access, UFCS call, and `.(T)` cast all apply to
   the call's result: `f(x) { … }.modifier()`, `emit.column(4) { … }.emit();`.
-  The `.` may sit on the next line. Only `.` continues — every other token
-  ends the chain. A chained call may take its own trailing block, each block
-  re-applying this rule: `f() { … }.map() { … }`.
+  The `.` may sit on the next line. Only `.` continues the postfix chain; infix
+  reads on past the `}` like after any other value (`f() { … } + x` is an add).
+  A chained call may take its own block, each one re-applying this rule:
+  `f() { … }.map() { … }`.
 - **Duplicate with a named argument**: a trailing block binds the last
   parameter, so also naming that parameter is the duplicate-binding error
   ("parameter 'content' is bound both by a named argument and by the
@@ -6980,7 +6972,15 @@ binary          = catch_expr (binop catch_expr)*    // binop includes `or` (fall
 catch_expr      = unary ('catch' ('|' IDENT '|')? (block | match_expr | unary))?
 unary           = ('-' | '--' | '*' | '!' | '~' | 'xx' | 'try') unary | postfix
                   // right-recursive, so prefixes stack (`xx try f()`, `!!ok`)
-postfix         = primary ('(' args? ')' | '[' expr ']' | '.' IDENT | '.{' field_init_list '}')*
+postfix         = primary ('(' args? ')' | '[' expr ']' | '.' IDENT)* juxt? self_block?
+juxt            = brace_group       // `expr { … }` — two adjacent expressions;
+                  // types settle construction vs trailing block. An if / match /
+                  // for / while value, a block, a `.{ … }` primary, and a
+                  // juxtaposition itself never take one, and it does not stack
+self_block      = '.' '{' ('|' IDENT '|')? stmt* '}'   // writes into the value
+brace_group     = '{' ('|' params? '|')? brace_item* '}'
+brace_item      = IDENT '=' expr (';' | ',' | &'}')    // a field init or a store
+                | stmt                                 // `,` ends an item here too
 primary         = INT | HEX_INT | OCT_INT | BIN_INT | FLOAT | STRING | BOOL | IDENT | '---'
                 | '.' IDENT | '.' '{' field_init_list '}'
                 | '(' expr ')' | block | '#run' expr    // bare parens = grouping ONLY

@@ -442,9 +442,10 @@ pub const UnknownTypeChecker = struct {
             .spread_expr => |se| self.checkBindingNames(se.operand),
             .named_arg => |na| self.checkBindingNames(na.value),
             .trailing_block => |tb| self.checkBindingNames(tb.lambda),
-            .empty_brace_call => |ebc| {
-                self.checkBindingNames(ebc.call);
-                self.checkBindingNames(ebc.block);
+            .juxtaposition => |jx| {
+                self.checkBindingNames(jx.expr);
+                self.checkBindingNames(jx.block);
+                if (jx.init_block) |ib| self.checkBindingNames(ib);
             },
             .asm_expr => |ae| {
                 self.checkBindingNames(ae.template);
@@ -636,6 +637,7 @@ pub const UnknownTypeChecker = struct {
             .spread_expr => |se| self.harvestScopeDecls(se.operand, out),
             .named_arg => |na| self.harvestScopeDecls(na.value, out),
             .trailing_block => |tb| self.harvestScopeDecls(tb.lambda, out),
+            .juxtaposition => |jx| self.harvestScopeDecls(jx.expr, out),
             .lambda => |lm| self.harvestScopeDecls(lm.body, out),
             .fn_decl => |fd| self.harvestScopeDecls(fd.body, out),
             else => {},
@@ -719,6 +721,26 @@ pub const UnknownTypeChecker = struct {
         for (params) |p| if (p.default_expr) |default| self.walkBodyTypes(default, declared, in_scope, type_vals);
         if (return_type) |rt| self.checkTypeNodeForUnknown(rt, declared, in_scope.items, type_vals.items, false);
         self.walkBodyTypes(body, declared, in_scope, type_vals);
+    }
+
+    /// A juxtaposition whose head is a bare name always constructs, so that
+    /// name is a type reference and takes the same unknown-type check a named
+    /// struct-literal head does. Any other head may still fuse onto a call, so
+    /// it walks as an ordinary expression.
+    fn walkJuxtapositionTypes(
+        self: UnknownTypeChecker,
+        node: *const Node,
+        jx: ast.Juxtaposition,
+        declared: *std.StringHashMap(void),
+        in_scope: *std.ArrayList(ast.StructTypeParam),
+        type_vals: *std.ArrayList([]const u8),
+    ) void {
+        if (jx.expr.data == .identifier)
+            self.reportIfUnknownType(jx.expr.data.identifier.name, node.span, declared, in_scope.items, type_vals.items, false)
+        else
+            self.walkBodyTypes(jx.expr, declared, in_scope, type_vals);
+        self.walkBodyTypes(jx.block, declared, in_scope, type_vals);
+        if (jx.init_block) |ib| self.walkBodyTypes(ib, declared, in_scope, type_vals);
     }
 
     /// Walk a scope body checking type annotations on local var / const
@@ -904,6 +926,7 @@ pub const UnknownTypeChecker = struct {
             .spread_expr => |se| self.walkBodyTypes(se.operand, declared, in_scope, type_vals),
             .named_arg => |na| self.walkBodyTypes(na.value, declared, in_scope, type_vals),
             .trailing_block => |tb| self.walkBodyTypes(tb.lambda, declared, in_scope, type_vals),
+            .juxtaposition => |jx| self.walkJuxtapositionTypes(node, jx, declared, in_scope, type_vals),
             .lambda => |lm| self.checkScope(lm.type_params, lm.params, lm.return_type, lm.body, declared, in_scope, type_vals),
             .fn_decl => |fd| self.checkScope(fd.type_params, fd.params, fd.return_type, fd.body, declared, in_scope, type_vals),
             else => {},

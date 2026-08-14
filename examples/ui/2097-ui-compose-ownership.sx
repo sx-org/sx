@@ -93,7 +93,7 @@ main :: () -> i32 {
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
-            }
+            };
             project(*tree, Size{ width = 60.0, height = 20.0 }, *live)
         }
         taps.observe(*live);
@@ -128,7 +128,7 @@ main :: () -> i32 {
                 focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, |ev: *KeyEvent| {
                     hit.* += 1;
                 })
-            }
+            };
             made := home.alloc_count;
             push .{ allocator = away } {
                 project(*tree, Size{ width = 60.0, height = 40.0 }, *shot)
@@ -164,7 +164,7 @@ main :: () -> i32 {
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
-            }
+            };
             project(*tree, Size{ width = 60.0, height = 20.0 }, *moved);
             untouched = second.end_index == 0;
             moved.discard(second);
@@ -197,7 +197,7 @@ main :: () -> i32 {
                 tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {
                     seen.* += 1;
                 })
-            }
+            };
             v
         }, away);
         spin.frame();

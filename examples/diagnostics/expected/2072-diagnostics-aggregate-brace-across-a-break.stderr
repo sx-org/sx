@@ -1,5 +1,0 @@
-error: expected ';'
-  --> examples/diagnostics/2072-diagnostics-aggregate-brace-across-a-break.sx:11:5
-   |
-11 |     { a = 1, b = 2 };
-   |     ^
