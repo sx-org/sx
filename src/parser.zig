@@ -2253,12 +2253,10 @@ pub const Parser = struct {
                 continue;
             }
 
-            // Named field: a member name followed by '='. A keyword name takes
-            // ONLY this path — otherwise it backtracks to a positional
-            // expression (`.{ if x then 1 else 2 }`); shorthand stays
-            // identifier-only (a keyword can never name a local to forward).
-            if (self.isMemberDeclName()) {
-                const was_identifier = self.tokens.tag(self.tok) == .identifier;
+            // Named field: an IDENTIFIER followed by '='. A keyword label takes
+            // the backtick raw escape (`` .{ `if = 2 } ``); bare, the keyword
+            // heads a positional expression (`.{ if x then 1 else 2 }`).
+            if (self.tokens.tag(self.tok) == .identifier) {
                 const saved = self.tok;
                 const fname = self.tokens.slice(self.tok);
                 const ident_start = self.tokens.start(self.tok);
@@ -2270,7 +2268,7 @@ pub const Parser = struct {
                     const value = try self.parseExpr();
                     try field_inits.append(self.allocator, .{ .name = fname, .value = value });
                     continue;
-                } else if (was_identifier and (self.tokens.tag(self.tok) == .comma or self.tokens.tag(self.tok) == .r_brace)) {
+                } else if (self.tokens.tag(self.tok) == .comma or self.tokens.tag(self.tok) == .r_brace) {
                     // Shorthand: just an identifier (name = identifier with same name)
                     const ident_node = try self.createNode(ident_start, .{ .identifier = .{ .name = fname } });
                     try field_inits.append(self.allocator, .{ .name = fname, .value = ident_node, .was_shorthand = true });
@@ -2753,10 +2751,11 @@ pub const Parser = struct {
     }
 
     /// One item of a juxtaposition's brace group. `name = value` binds here so
-    /// that it ends on the group's separators — and so a keyword may NAME a
-    /// field (`Pair(i64){ push = 7 }`) instead of heading a statement.
+    /// that it ends on the group's separators. The label is an IDENTIFIER: a
+    /// keyword one takes the backtick raw escape (`` Pair(i64){ `push = 7 } ``),
+    /// bare it heads a statement.
     fn parseBraceItem(self: *Parser) anyerror!*Node {
-        if (self.isMemberDeclName() and self.peekNext() == .equal) {
+        if (self.tokens.tag(self.tok) == .identifier and self.peekNext() == .equal) {
             const start = self.tokens.start(self.tok);
             const name = self.tokens.slice(self.tok);
             const target = try self.createNode(start, .{ .identifier = .{ .name = name } });
@@ -5378,13 +5377,10 @@ pub const Parser = struct {
 
     /// The markers a brace group carries at its OWN top level — what tells a
     /// construction body (field inits, element commas) from a `push` body.
-    /// `push` stays apart from the other statement heads because it can also
-    /// name a field (`Pair(i64){ push = 7 }`).
     const BraceShape = struct {
         saw_token: bool = false,
         semi: bool = false,
         stmt_kw: bool = false,
-        push_kw: bool = false,
         comma: bool = false,
         field_eq: bool = false,
         colon_eq: bool = false,
@@ -5429,13 +5425,11 @@ pub const Parser = struct {
                 .kw_match,
                 .kw_for,
                 .kw_while,
+                .kw_push,
                 => shape.stmt_kw = shape.stmt_kw or top,
-                .kw_push => {
-                    shape.push_kw = shape.push_kw or top;
-                    names = top;
-                },
+                // A field label is an identifier; a bare keyword heads a statement.
                 .identifier => names = top,
-                else => names = top and t.isKeyword(),
+                else => {},
             }
             prev_was_name = names;
         }
@@ -5448,7 +5442,7 @@ pub const Parser = struct {
         if (self.tokens.tag(self.tok) != .l_brace) return false;
         const shape = self.scanBraceShape();
         if (!shape.saw_token) return true; // empty `{}` is aggregate-shaped
-        if (shape.semi or shape.stmt_kw or shape.push_kw or shape.colon_eq) return false;
+        if (shape.semi or shape.stmt_kw or shape.colon_eq) return false;
         return shape.field_eq or shape.comma;
     }
 
@@ -5709,8 +5703,8 @@ pub const Parser = struct {
     }
 
     /// A token usable as a MEMBER name in declaration position (struct
-    /// field/method/const, protocol method, impl method, literal field):
-    /// identifiers, and every keyword except `inline` — declaration
+    /// field/method/const, protocol method, impl method): identifiers,
+    /// and every keyword except `inline` — declaration
     /// position holds only declarations, access is dot-disambiguated.
     fn isMemberDeclName(self: *Parser) bool {
         if (self.tokens.tag(self.tok) == .identifier) return true;
@@ -6997,6 +6991,33 @@ test "parse Type{ fields } as a juxtaposition" {
     try std.testing.expect(r_init.data == .struct_literal);
     try std.testing.expect(r_init.data.struct_literal.struct_name == null);
     try std.testing.expect(r_init.data.struct_literal.type_expr == null);
+}
+
+test "a backticked keyword labels a literal field" {
+    const source =
+        \\main :: () {
+        \\  a := .{ `if = 2 };
+        \\  b := Pair{ `push = 7 };
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmts = root.data.root.decls[0].data.fn_decl.body.data.block.stmts;
+    const a_init = stmts[0].data.var_decl.value.?;
+    try std.testing.expect(a_init.data == .struct_literal);
+    try std.testing.expectEqualStrings("if", a_init.data.struct_literal.field_inits[0].name.?);
+    const b_init = stmts[1].data.var_decl.value.?;
+    try std.testing.expect(b_init.data == .juxtaposition);
+    const item = b_init.data.juxtaposition.block.data.block.stmts[0];
+    try std.testing.expect(item.data == .assignment);
+    try std.testing.expectEqualStrings("push", item.data.assignment.target.data.identifier.name);
+}
+
+test "a bare keyword does not label a literal field" {
+    try expectParseErrorAt("main :: () { a := .{ if = 2 }; }", "unexpected token in expression", 24);
+    try expectParseErrorAt("main :: () { b := Pair{ push = 7 }; }", "unexpected token in expression", 29);
 }
 
 test "parse an empty brace after an argument call as a juxtaposition" {

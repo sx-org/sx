@@ -1,0 +1,7 @@
+// A literal field label is an identifier: a keyword one takes the backtick
+// raw escape (`.{ `if = 2 }`). Bare, `if` heads an if-expression, whose
+// condition the `=` cannot start.
+
+main :: () {
+    v := .{ if = 2 };
+}

@@ -1,0 +1,5 @@
+error: unexpected token in expression
+  --> examples/diagnostics/2151-diagnostics-keyword-literal-label.sx:6:16
+   |
+ 6 |     v := .{ if = 2 };
+   |                ^
