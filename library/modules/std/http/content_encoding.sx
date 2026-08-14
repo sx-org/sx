@@ -505,7 +505,7 @@ EncodedProducer :: struct {
     init :: (encoding: Encoding, level: i64, source: Producer, source_ctx: usize, alloc: Allocator) -> (EncodedProducer, !Error) {
         input := alloc.alloc_bytes(SOURCE_PIECE);
         if input == null { raise error.AllocationFailed; }
-        encoder := Encoder.init(encoding, level, alloc) catch (e) {
+        encoder := Encoder.init(encoding, level, alloc) catch |e| {
             alloc.dealloc_bytes(input);
             raise e;
         };

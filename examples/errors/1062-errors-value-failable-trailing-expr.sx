@@ -23,19 +23,19 @@ fval :: (n: i64) -> (i64, !E) {
 }
 
 main :: () -> i32 {
-    x := val() catch (e) { print("PHANTOM val\n"); return 1; };
+    x := val() catch |e| { print("PHANTOM val\n"); return 1; };
     print("x={}\n", x);
 
-    s := sval() catch (e) { print("PHANTOM sval\n"); return 1; };
+    s := sval() catch |e| { print("PHANTOM sval\n"); return 1; };
     print("s={}\n", s);
 
-    t := mval() catch (e) { print("PHANTOM mval\n"); return 1; };
+    t := mval() catch |e| { print("PHANTOM mval\n"); return 1; };
     print("t=({},{})\n", t.0, t.1);
 
-    ok := fval(10) catch (e) { print("PHANTOM fval-ok\n"); return 1; };
+    ok := fval(10) catch |e| { print("PHANTOM fval-ok\n"); return 1; };
     print("ok={}\n", ok);
 
-    fval(-1) catch (e) { print("real error caught\n"); return 0; };
+    fval(-1) catch |e| { print("real error caught\n"); return 0; };
     print("UNEXPECTED no error\n");
     return 1;
 }

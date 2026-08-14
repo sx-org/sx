@@ -26,13 +26,13 @@ inc :: (n: i32) -> (i32, i32, !E) {
 
 // Multi-value `catch`, bare-expression tuple fallback (absorbs the failure).
 safe :: (n: i32) -> i32 {
-    v, b := parse(n) catch (e) .{40, 50};
+    v, b := parse(n) catch |e| .{40, 50};
     return v + b;
 }
 
 // Multi-value `catch` match-body — per-tag dispatch, each arm a value-tuple.
 classify :: (n: i32) -> i32 {
-    v, b := parse(n) catch (e) match e {
+    v, b := parse(n) catch |e| match e {
         case .Bad:   .{1, 1};
         case .Empty: .{2, 2};
         else:        .{9, 9};

@@ -3040,9 +3040,7 @@ pub const Parser = struct {
             return try self.createNode(start, .{ .raise_stmt = .{ .tag = tag_expr } });
         }
 
-        // Onfail statement: onfail { body } | onfail (e) { body } | onfail <expr>;
-        // A binding is present only when an identifier is immediately followed
-        // by `{`; otherwise the text after `onfail` is the (no-binding) body.
+        // Onfail statement: `onfail { body }`, `onfail |e| { body }`, `onfail <expr>;`.
         if (self.tokens.tag(self.tok) == .kw_onfail) {
             const start = self.tokens.start(self.tok);
             self.advance();
@@ -3050,20 +3048,18 @@ pub const Parser = struct {
             var binding_span: ?ast.Span = null;
             var binding_is_raw = false;
             if (self.tokens.tag(self.tok) == .identifier and self.peekNext() == .l_brace) {
-                return self.fail("the onfail error binding needs parens: `onfail (e) { ... }`");
+                return self.fail("the onfail error binding needs pipes: `onfail |e| { ... }`");
             }
-            // `(e)` followed by `{` is the binding form; any other paren
-            // group is an ordinary expression cleanup (`onfail (f());`).
-            if (self.tokens.tag(self.tok) == .l_paren and self.tagAfterParenGroup() == .l_brace) {
+            if (self.tokens.tag(self.tok) == .pipe) {
                 self.advance();
                 if (self.tokens.tag(self.tok) != .identifier) {
-                    return self.fail("expected an error binding name in `onfail (e)`");
+                    return self.fail("expected an error binding name in `onfail |e|`");
                 }
                 binding = self.tokens.slice(self.tok);
                 binding_span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
                 binding_is_raw = self.tokens.flagsOf(self.tok).is_raw;
                 self.advance();
-                try self.expect(.r_paren);
+                try self.expect(.pipe);
             }
             const saved_onfail = self.in_onfail_body;
             self.in_onfail_body = true;
@@ -3251,7 +3247,7 @@ pub const Parser = struct {
             // looking THROUGH a `try` prefix / `catch` postfix / `or` fallback
             // and leaving the wrapper intact:
             //   a |> try f(x)            → try f(a, x)
-            //   a |> f(x) catch (e) {...}  → f(a, x) catch (e) {...}
+            //   a |> f(x) catch |e| {...}  → f(a, x) catch |e| {...}
             //   a |> f(x) or default     → f(a, x) or default   (only f gets a)
             if (self.tokens.tag(self.tok) == .pipe_arrow and Prec.pipe >= min_prec) {
                 self.advance();
@@ -3701,28 +3697,28 @@ pub const Parser = struct {
                 self.advance();
                 expr = try self.createNode(expr.span.start, .{ .force_unwrap = .{ .operand = expr } });
             } else if (self.tokens.tag(self.tok) == .kw_catch) {
-                // `X catch [(binding)] BODY` — postfix failure handler.
+                // `X catch [|binding|] BODY` — postfix failure handler.
                 // Three shapes, disambiguated by peeking after `catch`:
                 //   catch { block }            — no binding (braces required)
-                //   catch (e) { block }        — binding + block body
-                //   catch (e) EXPR             — binding + bare-expression body
+                //   catch |e| { block }        — binding + block body
+                //   catch |e| EXPR             — binding + bare-expression body
                 self.advance(); // consume 'catch'
                 var binding: ?[]const u8 = null;
                 var binding_span: ?ast.Span = null;
                 var binding_is_raw = false;
                 if (self.tokens.tag(self.tok) == .identifier) {
-                    return self.fail("the catch error binding needs parens: `catch (e) { ... }`");
+                    return self.fail("the catch error binding needs pipes: `catch |e| { ... }`");
                 }
-                if (self.tokens.tag(self.tok) == .l_paren) {
+                if (self.tokens.tag(self.tok) == .pipe) {
                     self.advance();
                     if (self.tokens.tag(self.tok) != .identifier) {
-                        return self.fail("expected an error binding name in `catch (e)`");
+                        return self.fail("expected an error binding name in `catch |e|`");
                     }
                     binding = self.tokens.slice(self.tok);
                     binding_span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
                     binding_is_raw = self.tokens.flagsOf(self.tok).is_raw;
                     self.advance();
-                    try self.expect(.r_paren);
+                    try self.expect(.pipe);
                 }
                 const body: *Node = if (self.tokens.tag(self.tok) == .l_brace)
                     try self.parseBlock()
@@ -6602,7 +6598,7 @@ test "an inline `if` is a pipe-parameter default" {
 test "a `catch` body is a pipe-parameter default" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const lam = try pipeLambda(arena.allocator(), "|x: i64 = f() catch (e) 0| x");
+    const lam = try pipeLambda(arena.allocator(), "|x: i64 = f() catch |e| 0| x");
     const caught = lam.params[0].default_expr.?.data.catch_expr;
     try std.testing.expectEqual(@as(i64, 0), caught.body.data.int_literal.value);
     try std.testing.expectEqualStrings("x", lam.body.data.identifier.name);
@@ -7123,7 +7119,7 @@ test "catch no binding, braced body" {
 test "catch with binding, block body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := foo() catch (e) { bar(); }; }");
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := foo() catch |e| { bar(); }; }");
     try std.testing.expect(v.data == .catch_expr);
     try std.testing.expectEqualStrings("e", v.data.catch_expr.binding.?);
     try std.testing.expect(v.data.catch_expr.body.data == .block);
@@ -7132,7 +7128,7 @@ test "catch with binding, block body" {
 test "catch with binding, bare-expression body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := foo() catch (e) bar(); }");
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := foo() catch |e| bar(); }");
     try std.testing.expect(v.data == .catch_expr);
     try std.testing.expectEqualStrings("e", v.data.catch_expr.binding.?);
     try std.testing.expect(v.data.catch_expr.body.data == .call);
@@ -7141,7 +7137,7 @@ test "catch with binding, bare-expression body" {
 test "catch body is a match over the binding" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := foo() catch (e) match e { case .Empty: 0; else: 1; }; }");
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := foo() catch |e| match e { case .Empty: 0; else: 1; }; }");
     try std.testing.expect(v.data == .catch_expr);
     try std.testing.expect(v.data.catch_expr.body.data == .match_expr);
     try std.testing.expectEqual(@as(usize, 2), v.data.catch_expr.body.data.match_expr.arms.len);
@@ -7153,7 +7149,7 @@ test "catch body is a match over the binding" {
 test "catch over a parenthesized or-chain" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := (try foo() or try boo()) catch (e) { }; }");
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := (try foo() or try boo()) catch |e| { }; }");
     try std.testing.expect(v.data == .catch_expr);
     try std.testing.expect(v.data.catch_expr.operand.data == .binary_op);
     try std.testing.expect(v.data.catch_expr.operand.data.binary_op.op == .or_op);
@@ -7233,7 +7229,7 @@ test "break rejected inside a defer body (transitive through a loop)" {
 test "continue rejected inside an onfail body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "f :: () { onfail (e) { continue; } }");
+    var parser = try Parser.init(arena.allocator(), "f :: () { onfail |e| { continue; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
@@ -7257,7 +7253,7 @@ test "control-flow legal after the cleanup body (flag restored)" {
 test "onfail with binding and block body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const s = try e02FirstStmt(arena.allocator(), "f :: () { onfail (e) { close(h); } }");
+    const s = try e02FirstStmt(arena.allocator(), "f :: () { onfail |e| { close(h); } }");
     try std.testing.expect(s.data == .onfail_stmt);
     try std.testing.expectEqualStrings("e", s.data.onfail_stmt.binding.?);
     try std.testing.expect(s.data.onfail_stmt.body.data == .block);
@@ -7289,10 +7285,10 @@ test "consumer-aware pipe: x |> try f() inserts x into the head call" {
     try std.testing.expectEqualStrings("x", call.data.call.args[0].data.identifier.name);
 }
 
-test "consumer-aware pipe: x |> f() catch (e) { } preserves the catch" {
+test "consumer-aware pipe: x |> f() catch |e| { } preserves the catch" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := x |> g() catch (e) { }; }");
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := x |> g() catch |e| { }; }");
     try std.testing.expect(v.data == .catch_expr);
     try std.testing.expectEqualStrings("e", v.data.catch_expr.binding.?);
     try std.testing.expect(v.data.catch_expr.operand.data == .call);
@@ -7329,19 +7325,19 @@ test "round-trip print: try / or precedence / raise / catch / onfail" {
     try e02ExpectPrints(a, try e02FirstValue(a, "f :: () { v := try foo() or try boo(); }"), "try foo() or try boo()");
     try e02ExpectPrints(a, try e02FirstStmt(a, "f :: () { raise error.BadDigit; }"), "raise error.BadDigit");
     try e02ExpectPrints(a, try e02FirstStmt(a, "f :: () { raise e; }"), "raise e");
-    try e02ExpectPrints(a, try e02FirstValue(a, "f :: () { v := foo() catch (e) bar(); }"), "foo() catch (e) bar()");
-    try e02ExpectPrints(a, try e02FirstValue(a, "f :: () { v := foo() catch (e) { bar(); }; }"), "foo() catch (e) { bar(); }");
+    try e02ExpectPrints(a, try e02FirstValue(a, "f :: () { v := foo() catch |e| bar(); }"), "foo() catch |e| bar()");
+    try e02ExpectPrints(a, try e02FirstValue(a, "f :: () { v := foo() catch |e| { bar(); }; }"), "foo() catch |e| { bar(); }");
     try e02ExpectPrints(a, try e02FirstValue(a, "f :: () { v := foo() catch { bar(); }; }"), "foo() catch { bar(); }");
     try e02ExpectPrints(a, try e02FirstStmt(a, "f :: () { onfail close(h); }"), "onfail close(h)");
-    try e02ExpectPrints(a, try e02FirstStmt(a, "f :: () { onfail (e) { close(h); } }"), "onfail (e) { close(h); }");
+    try e02ExpectPrints(a, try e02FirstStmt(a, "f :: () { onfail |e| { close(h); } }"), "onfail |e| { close(h); }");
 }
 
 test "round-trip print: a match over the catch binding" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
-    const v = try e02FirstValue(a, "f :: () { v := foo() catch (e) match e { case .Empty: 0; else: 1; }; }");
-    try e02ExpectPrints(a, v, "foo() catch (e) match e { case .Empty: 0; else: 1; }");
+    const v = try e02FirstValue(a, "f :: () { v := foo() catch |e| match e { case .Empty: 0; else: 1; }; }");
+    try e02ExpectPrints(a, v, "foo() catch |e| match e { case .Empty: 0; else: 1; }");
 }
 
 test "try in statement position (propagate, discard value)" {
@@ -7374,9 +7370,9 @@ test "or value-terminator: parse(s) or 0" {
 test "full failable function parses end-to-end (every failable form)" {
     const source =
         \\parse :: (s: string) -> (i32, !ParseErr) {
-        \\    onfail (e) { cleanup(s); }
+        \\    onfail |e| { cleanup(s); }
         \\    v := try inner(s) or 0;
-        \\    w := other(s) catch (e2) { return 0; };
+        \\    w := other(s) catch |e2| { return 0; };
         \\    if bad(s) { raise error.BadDigit; }
         \\    return v;
         \\}

@@ -1,0 +1,13 @@
+// The catch error binding sits in pipes — `catch |e| {}`; a bare binding
+// is rejected with a fixit. `onfail |e| {}` follows the same rule.
+
+#import "modules/std.sx";
+
+E :: error { Bad };
+
+f :: () -> (i64, !E) { raise error.Bad; }
+
+main :: () {
+    v := f() catch e { 0 };
+    print("{}\n", v);
+}

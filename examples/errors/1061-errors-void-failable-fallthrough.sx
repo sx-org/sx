@@ -16,6 +16,6 @@
 noop :: () -> ! { }                 // success by fall-through, no `return;`
 
 main :: () -> ! {
-    noop() catch (e) { print("phantom: {}\n", e); };   // must NOT fire
+    noop() catch |e| { print("phantom: {}\n", e); };   // must NOT fire
     print("ok\n");                                     // main falls through → exit 0
 }

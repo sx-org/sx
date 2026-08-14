@@ -20,13 +20,13 @@ gfail :: ($T: Type, v: T, bad: bool) -> (T, !E) {
 }
 
 main :: () -> i32 {
-    a := gen(i64, 42) catch (e) { print("PHANTOM i64\n"); return 1; };
+    a := gen(i64, 42) catch |e| { print("PHANTOM i64\n"); return 1; };
     print("i64: {}\n", a);
 
-    s := gen(string, "hello") catch (e) { print("PHANTOM string\n"); return 1; };
+    s := gen(string, "hello") catch |e| { print("PHANTOM string\n"); return 1; };
     print("string: {}\n", s);
 
-    p := gen(Point, Point{ x = 3, y = 4 }) catch (e) { print("PHANTOM struct\n"); return 1; };
+    p := gen(Point, Point{ x = 3, y = 4 }) catch |e| { print("PHANTOM struct\n"); return 1; };
     print("struct: ({},{})\n", p.x, p.y);
 
     // `or`-form on success must yield the real value, not the fallback.
@@ -34,7 +34,7 @@ main :: () -> i32 {
     print("or: {}\n", o);
 
     // A generic that raises still propagates to the caller's catch.
-    gfail(i64, 0, true) catch (e) {
+    gfail(i64, 0, true) catch |e| {
         print("raise caught\n");
         return 0;
     };

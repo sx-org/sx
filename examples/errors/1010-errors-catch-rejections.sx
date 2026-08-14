@@ -8,6 +8,6 @@
 plain :: () -> i32 { return 0; }
 
 main :: () -> i32 {
-    plain() catch (e) { return 1; };   // error: operand has type i32 (not failable)
+    plain() catch |e| { return 1; };   // error: operand has type i32 (not failable)
     return 0;
 }

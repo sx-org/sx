@@ -1,0 +1,5 @@
+error: the catch error binding needs pipes: `catch |e| { ... }`
+  --> examples/diagnostics/1157-diagnostics-catch-binding-needs-pipes.sx:11:20
+   |
+11 |     v := f() catch e { 0 };
+   |                    ^

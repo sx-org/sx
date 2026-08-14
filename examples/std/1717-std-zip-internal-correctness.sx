@@ -102,7 +102,7 @@ test_validation_modes :: (alloc: Allocator) -> bool {
     entry, payload_at := reader.payload_info(0) catch { alloc.dealloc_bytes(archive.ptr); return false; };
     archive.ptr[payload_at] ^= 1;
     full_failed := false;
-    reader.validate_entry(0, false, false, alloc) catch (e) { full_failed = e == error.ChecksumMismatch; };
+    reader.validate_entry(0, false, false, alloc) catch |e| { full_failed = e == error.ChecksumMismatch; };
     headers_ok := true;
     reader.validate_entry(0, true, false, alloc) catch { headers_ok = false; };
     skipped_ok := true;
@@ -181,7 +181,7 @@ test_source_contract :: (alloc: Allocator) -> bool {
     early_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     early := zip.ZipStreamWriter.init(.{ ctx = xx *early_sink, write = sink_write }, alloc);
     store_failed := false;
-    early.add_source("short-store", early_source, .{ method = .store, time_mode = .none }) catch (e) {
+    early.add_source("short-store", early_source, .{ method = .store, time_mode = .none }) catch |e| {
         store_failed = e == error.Io;
     };
     early.deinit();
@@ -194,7 +194,7 @@ test_source_contract :: (alloc: Allocator) -> bool {
     deflate_failed := false;
     deflate_writer.add_source("short-deflate", deflate_source, .{
         method = .deflate, auto_store_small = false, time_mode = .none,
-    }) catch (e) { deflate_failed = e == error.Io; };
+    }) catch |e| { deflate_failed = e == error.Io; };
     deflate_writer.deinit();
     deflate_sink.out.deinit();
     exact_ok and store_failed and deflate_failed
@@ -256,7 +256,7 @@ test_extra_validation :: (alloc: Allocator) -> bool {
     memory_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     memory := zip.ZipStreamWriter.init(.{ ctx = xx *memory_sink, write = sink_write }, alloc);
     malformed_failed := false;
-    memory.add_options("bad", "x", .{ method = .store, extra = malformed[..], time_mode = .none }) catch (e) {
+    memory.add_options("bad", "x", .{ method = .store, extra = malformed[..], time_mode = .none }) catch |e| {
         malformed_failed = e == error.InvalidOptions;
     };
     memory_untouched := memory_sink.out.bytes.len == 0 and memory.entries.len == 0;
@@ -267,7 +267,7 @@ test_extra_validation :: (alloc: Allocator) -> bool {
     reserved_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     reserved_writer := zip.ZipStreamWriter.init(.{ ctx = xx *reserved_sink, write = sink_write }, alloc);
     reserved_failed := false;
-    reserved_writer.add_options("bad", "x", .{ method = .store, extra = reserved[..], time_mode = .none }) catch (e) {
+    reserved_writer.add_options("bad", "x", .{ method = .store, extra = reserved[..], time_mode = .none }) catch |e| {
         reserved_failed = e == error.InvalidOptions;
     };
     reserved_untouched := reserved_sink.out.bytes.len == 0 and reserved_writer.entries.len == 0;
@@ -289,7 +289,7 @@ test_extra_validation :: (alloc: Allocator) -> bool {
         central_extra = large[..],
         separate_central_extra = true,
         time_mode = .none,
-    }) catch (e) { combined_failed = e == error.TooLarge; };
+    }) catch |e| { combined_failed = e == error.TooLarge; };
     combined_untouched := large_sink.out.bytes.len == 0 and large_writer.entries.len == 0;
     large_writer.deinit();
     large_sink.out.deinit();
@@ -319,7 +319,7 @@ test_safe_paths :: (alloc: Allocator) -> bool {
 }
 
 metadata_limit_rejected :: (source: zip.ZipReadSource, limit: i64, alloc: Allocator) -> bool {
-    owned := zip.open_zip_source(source, false, alloc, limit) catch (e) {
+    owned := zip.open_zip_source(source, false, alloc, limit) catch |e| {
         return e == error.OutputLimit;
     };
     owned.deinit();
@@ -353,7 +353,7 @@ test_timestamps :: (alloc: Allocator) -> bool {
         method = .store,
         time_mode = .specified,
         modified_unix_seconds = 0,
-    }) catch (e) { specified_failed = e == error.InvalidOptions; };
+    }) catch |e| { specified_failed = e == error.InvalidOptions; };
     specified_untouched := specified_sink.out.bytes.len == 0;
     specified.deinit();
     specified_sink.out.deinit();
@@ -365,7 +365,7 @@ test_timestamps :: (alloc: Allocator) -> bool {
     from_file_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     from_file := zip.ZipStreamWriter.init(.{ ctx = xx *from_file_sink, write = sink_write }, alloc);
     file_failed := false;
-    from_file.add_file("old", path, .{ method = .store }) catch (e) { file_failed = e == error.InvalidOptions; };
+    from_file.add_file("old", path, .{ method = .store }) catch |e| { file_failed = e == error.InvalidOptions; };
     from_file.deinit();
     from_file_sink.out.deinit();
     fs.delete_file(path);

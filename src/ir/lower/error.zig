@@ -840,7 +840,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
         ce_rewritten.operand = @constCast(dsg);
         break :blk &ce_rewritten;
     } else ce_in;
-    // A failable `or` chain operand (`(try a or try b) catch e …`) routes
+    // A failable `or` chain operand (`(try a or try b) catch |e| …`) routes
     // its total failure to the catch handler — not the function — via the
     // chain-fail target. A chain's value type is non-failable
     // `T`, so it wouldn't pass the `errorChannelOf` check below.

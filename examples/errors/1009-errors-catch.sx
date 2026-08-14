@@ -19,7 +19,7 @@ must :: (n: i32) -> !E {
 
 // Diverging body — returns from `classify` on error.
 classify :: (n: i32) -> i32 {
-    must(n) catch (e) {
+    must(n) catch |e| {
         if e == error.Bad   { return 1; }
         if e == error.Empty { return 2; }
         return 9;
@@ -29,7 +29,7 @@ classify :: (n: i32) -> i32 {
 
 // Bare-expression body: a `match` over the binding.
 mclassify :: (n: i32) -> i32 {
-    must(n) catch (e) match e {
+    must(n) catch |e| match e {
         case .Bad:   return 11;
         case .Empty: return 22;
         else:        return 99;
@@ -40,7 +40,7 @@ mclassify :: (n: i32) -> i32 {
 // Selective handle + re-raise (failable enclosing fn; `raise e` is the
 // variable form). Swallows Bad → success; re-raises everything else.
 handle_some :: (n: i32) -> !E {
-    must(n) catch (e) {
+    must(n) catch |e| {
         if e == error.Bad { return; }       // swallow → success
         raise e;                            // re-raise the rest
     };
@@ -49,7 +49,7 @@ handle_some :: (n: i32) -> !E {
 
 main :: () -> i32 {
     r : i32 = 0;
-    must(-1) catch (e) { if e == error.Bad { r = r + 1; } };  // Bad → +1
+    must(-1) catch |e| { if e == error.Bad { r = r + 1; } };  // Bad → +1
     must(5)  catch { r = r + 100; };                         // success → body skipped
     r = r + classify(0);                                     // Empty → 2
     r = r + classify(8);                                     // success → 0

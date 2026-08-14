@@ -1513,7 +1513,7 @@ test "parser: `?.` and `catch` continue across a line break" {
     const failable = try parseBody(alloc,
         \\f :: () -> i64 {
         \\    g()
-        \\        catch (e) 0
+        \\        catch |e| 0
         \\}
     );
     try std.testing.expectEqual(@as(usize, 1), failable.data.block.stmts.len);

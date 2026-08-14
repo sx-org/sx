@@ -20,7 +20,7 @@ mid :: () -> !TErr {
 }
 
 probe :: () {
-    mid() catch (e) {
+    mid() catch |e| {
         print("comptime caught {}\n", e);
         trace.print_current();
     };

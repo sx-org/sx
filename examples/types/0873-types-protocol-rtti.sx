@@ -43,9 +43,9 @@ main :: () {
     // graceful: or-fallback and catch, mismatch and match
     fallback := s.(Rect) or Rect{ w = 9, h = 9 };
     print("or w={}\n", fallback.w);
-    caught := s.(Rect) catch (e) { print("catch: {}\n", e); Rect{ w = 1, h = 1 } };
+    caught := s.(Rect) catch |e| { print("catch: {}\n", e); Rect{ w = 1, h = 1 } };
     print("caught w={}\n", caught.w);
-    ok := t.(Rect) catch (e) { _ = e; Rect{ w = 0, h = 0 } };
+    ok := t.(Rect) catch |e| { _ = e; Rect{ w = 0, h = 0 } };
     print("ok w={}\n", ok.w);
 
     // the type switch on a protocol subject

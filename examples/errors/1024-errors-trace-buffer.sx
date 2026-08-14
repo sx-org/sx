@@ -28,13 +28,13 @@ main :: () -> i32 {
     // cleared when the handler completes (a non-diverging exit), not on entry.
     // So inside the handler the frames are still visible (here: the `raise` in
     // `fail` + the `try fail` propagation in `propagate` = 2 frames)...
-    propagate(-1) catch (e) {
+    propagate(-1) catch |e| {
         print("in catch: len={}\n", sx_trace_len());   // 2 (handler sees the chain)
     };
     print("after catch: len={}\n", sx_trace_len());     // 0 (absorbed at handler exit)
 
     // A success leaves the buffer empty (nothing pushed).
-    propagate(1) catch (e) {};
+    propagate(1) catch |e| {};
     print("after success: len={}\n", sx_trace_len());   // 0
     return 0;
 }

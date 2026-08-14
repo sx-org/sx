@@ -23,7 +23,7 @@ clamp :: (x: i64) -> i64 { if x > 10 { return 10; } return x; }
 
 main :: () -> i32 {
     print("const_one={}\n", const_one());            // 1
-    print("raised={}\n", always_raise(5) catch (e) 0); // 0
+    print("raised={}\n", always_raise(5) catch |e| 0); // 0
     print("clamp_hi={}\n", clamp(42));               // 10
     print("clamp_lo={}\n", clamp(7));                // 7
 

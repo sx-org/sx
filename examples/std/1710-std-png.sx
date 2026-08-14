@@ -41,7 +41,7 @@ bytes_equal :: (left: string, right: string) -> bool {
 }
 
 check_image :: (image: png.Image, expected: string, alloc: Allocator) -> bool {
-    encoded := png.encode(image, .{ level = 6 }, alloc) catch (e) { return false; };
+    encoded := png.encode(image, .{ level = 6 }, alloc) catch |e| { return false; };
     matches := bytes_equal(encoded, expected);
     alloc.dealloc_bytes(encoded.ptr);
     matches

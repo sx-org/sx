@@ -38,9 +38,9 @@ main :: () -> i32 {
     if good == error.Fault { r = r + 4; }   // false (success = no error)
     print("check r={}\n", r);               // -> 1
 
-    a := parse(21) catch (e) -1;            // success -> 42
+    a := parse(21) catch |e| -1;            // success -> 42
     which : i32 = 0;
-    b := parse(0) catch (e) { which = describe(e); -1 };
+    b := parse(0) catch |e| { which = describe(e); -1 };
     print("parse a={} b={} which={}\n", a, b, which);  // -> 42 -1 2
     return 0;
 }

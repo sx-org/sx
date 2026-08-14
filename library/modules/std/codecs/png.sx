@@ -104,7 +104,7 @@ encode :: (image: Image, options: EncodeOptions = .{}, alloc: Allocator = contex
         filtered_len,
         options.level,
         alloc,
-    ) catch (e) {
+    ) catch |e| {
         if e == error.AllocationFailed { raise error.AllocationFailed; }
         if e == error.TooLarge { raise error.TooLarge; }
         raise error.CompressionFailed;
@@ -118,7 +118,7 @@ encode :: (image: Image, options: EncodeOptions = .{}, alloc: Allocator = contex
 // palette, 16-bit, and Adam7 images reject with UnsupportedFormat.
 // `Image.pixels` is owned by `alloc`, tightly packed, top-down.
 decode :: (data: string, alloc: Allocator = context.allocator) -> (Image, !Error) {
-    d := png_decode_bytes(data, alloc) catch (e) {
+    d := png_decode_bytes(data, alloc) catch |e| {
         if e == error.InvalidSignature { raise error.InvalidSignature; }
         if e == error.TruncatedData { raise error.TruncatedData; }
         if e == error.ChecksumMismatch { raise error.ChecksumMismatch; }

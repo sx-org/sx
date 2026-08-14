@@ -13,7 +13,7 @@ run :: () {
     defer {
         v, e := probe();                              // destructure decl
         if !e { print("defer: v={}\n", v); }          // value live under the guard
-        failing() catch (x) print("defer: caught\n");   // catch-statement absorbs
+        failing() catch |x| print("defer: caught\n");   // catch-statement absorbs
     }
     print("body\n");
 }

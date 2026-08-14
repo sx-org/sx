@@ -9,7 +9,7 @@
 
 E :: error { Neg }
 
-take :: (cb: Closure(i32) -> (i32, !E), x: i32) -> i32 { return cb(x) catch (e) -1; }
+take :: (cb: Closure(i32) -> (i32, !E), x: i32) -> i32 { return cb(x) catch |e| -1; }
 
 main :: () -> i32 {
     // `-> i32` (non-failable) but the body raises → lambda-specific hint:

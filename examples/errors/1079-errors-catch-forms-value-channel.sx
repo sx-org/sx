@@ -16,15 +16,15 @@ parse :: (n: i32) -> (i32, !E) {
 main :: () -> i32 {
     r : i32 = 0;
 
-    must(-1) catch (e) { if e == error.Bad { r = r + 1; } };
+    must(-1) catch |e| { if e == error.Bad { r = r + 1; } };
     must(3)  catch     { r = r + 100; };
 
-    parse(-1) catch (e) { r = r + 2; 0 };
-    parse(4)  catch (e) { r = r + 100; 0 };
+    parse(-1) catch |e| { r = r + 2; 0 };
+    parse(4)  catch |e| { r = r + 100; 0 };
 
-    v := parse(4) catch (e) 0;
+    v := parse(4) catch |e| 0;
     r = r + v;
-    w := parse(0) catch (e) match e {
+    w := parse(0) catch |e| match e {
         case .Empty: 4;
         else:        100
     };

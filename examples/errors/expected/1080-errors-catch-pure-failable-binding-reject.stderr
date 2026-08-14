@@ -1,12 +1,12 @@
 error: 'a' has nothing to bind — `catch` on a pure failable ('!E') produces no value
   --> examples/errors/1080-errors-catch-pure-failable-binding-reject.sx:11:10
    |
-11 |     a := must(-1) catch (e) { };
+11 |     a := must(-1) catch |e| { };
    |          ^^^^^^^^^^^^^^^^^^^^^^
 
-help: handle it as a statement (`f() catch (e) { ... };`), or give the callee a value channel (`-> (T, !E)`)
+help: handle it as a statement (`f() catch |e| { ... };`), or give the callee a value channel (`-> (T, !E)`)
    |
-11 |     a := must(-1) catch (e) { };
+11 |     a := must(-1) catch |e| { };
    |          ^^^^^^^^^^^^^^^^^^^^^^
 
 error: 'b' has nothing to bind — `catch` on a pure failable ('!E') produces no value
@@ -15,7 +15,7 @@ error: 'b' has nothing to bind — `catch` on a pure failable ('!E') produces no
 12 |     b := must(-1) catch { };
    |          ^^^^^^^^^^^^^^^^^^
 
-help: handle it as a statement (`f() catch (e) { ... };`), or give the callee a value channel (`-> (T, !E)`)
+help: handle it as a statement (`f() catch |e| { ... };`), or give the callee a value channel (`-> (T, !E)`)
    |
 12 |     b := must(-1) catch { };
    |          ^^^^^^^^^^^^^^^^^^
@@ -23,18 +23,18 @@ help: handle it as a statement (`f() catch (e) { ... };`), or give the callee a 
 error: 'c' has nothing to bind — `catch` on a pure failable ('!E') produces no value
   --> examples/errors/1080-errors-catch-pure-failable-binding-reject.sx:13:10
    |
-13 |     c := must(-1) catch (e) e;
+13 |     c := must(-1) catch |e| e;
    |          ^^^^^^^^^^^^^^^^^^^^
 
-help: handle it as a statement (`f() catch (e) { ... };`), or give the callee a value channel (`-> (T, !E)`)
+help: handle it as a statement (`f() catch |e| { ... };`), or give the callee a value channel (`-> (T, !E)`)
    |
-13 |     c := must(-1) catch (e) e;
+13 |     c := must(-1) catch |e| e;
    |          ^^^^^^^^^^^^^^^^^^^^
 
 error: 'd' has nothing to bind — `catch` on a pure failable ('!E') produces no value
   --> examples/errors/1080-errors-catch-pure-failable-binding-reject.sx:14:10
    |
-14 |     d := must(-1) catch (e) match e {
+14 |     d := must(-1) catch |e| match e {
    |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 15 |         case .Bad:   0;
    | ^^^^^^^^^^^^^^^^^^^^^^^
@@ -43,9 +43,9 @@ error: 'd' has nothing to bind — `catch` on a pure failable ('!E') produces no
 17 |     };
    | ^^^^^
 
-help: handle it as a statement (`f() catch (e) { ... };`), or give the callee a value channel (`-> (T, !E)`)
+help: handle it as a statement (`f() catch |e| { ... };`), or give the callee a value channel (`-> (T, !E)`)
    |
-14 |     d := must(-1) catch (e) match e {
+14 |     d := must(-1) catch |e| match e {
    |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 15 |         case .Bad:   0;
    | ^^^^^^^^^^^^^^^^^^^^^^^
@@ -57,44 +57,44 @@ help: handle it as a statement (`f() catch (e) { ... };`), or give the callee a 
 error: 'f' has nothing to bind — `catch` on a pure failable ('!E') produces no value
   --> examples/errors/1080-errors-catch-pure-failable-binding-reject.sx:18:15
    |
-18 |     f : i32 = must(-1) catch (e) 0;
+18 |     f : i32 = must(-1) catch |e| 0;
    |               ^^^^^^^^^^^^^^^^^^^^
 
-help: handle it as a statement (`f() catch (e) { ... };`), or give the callee a value channel (`-> (T, !E)`)
+help: handle it as a statement (`f() catch |e| { ... };`), or give the callee a value channel (`-> (T, !E)`)
    |
-18 |     f : i32 = must(-1) catch (e) 0;
+18 |     f : i32 = must(-1) catch |e| 0;
    |               ^^^^^^^^^^^^^^^^^^^^
 
 error: 'g' cannot be declared 'void' — a variable holds a value
   --> examples/errors/1080-errors-catch-pure-failable-binding-reject.sx:19:9
    |
-19 |     g : void = must(-1) catch (e) e;
+19 |     g : void = must(-1) catch |e| e;
    |         ^^^^
 
 error: 'h' has nothing to bind — `catch` on a pure failable ('!E') produces no value
   --> examples/errors/1080-errors-catch-pure-failable-binding-reject.sx:20:10
    |
-20 |     h :: must(-1) catch (e) { };
+20 |     h :: must(-1) catch |e| { };
    |          ^^^^^^^^^^^^^^^^^^^^^^
 
-help: handle it as a statement (`f() catch (e) { ... };`), or give the callee a value channel (`-> (T, !E)`)
+help: handle it as a statement (`f() catch |e| { ... };`), or give the callee a value channel (`-> (T, !E)`)
    |
-20 |     h :: must(-1) catch (e) { };
+20 |     h :: must(-1) catch |e| { };
    |          ^^^^^^^^^^^^^^^^^^^^^^
 
 error: 'i' has nothing to bind — `catch` on a pure failable ('!E') produces no value
   --> examples/errors/1080-errors-catch-pure-failable-binding-reject.sx:21:15
    |
-21 |     i : i32 : must(-1) catch (e) 0;
+21 |     i : i32 : must(-1) catch |e| 0;
    |               ^^^^^^^^^^^^^^^^^^^^
 
-help: handle it as a statement (`f() catch (e) { ... };`), or give the callee a value channel (`-> (T, !E)`)
+help: handle it as a statement (`f() catch |e| { ... };`), or give the callee a value channel (`-> (T, !E)`)
    |
-21 |     i : i32 : must(-1) catch (e) 0;
+21 |     i : i32 : must(-1) catch |e| 0;
    |               ^^^^^^^^^^^^^^^^^^^^
 
 error: 'j' cannot be declared 'void' — a constant binds a value
   --> examples/errors/1080-errors-catch-pure-failable-binding-reject.sx:22:9
    |
-22 |     j : void : must(-1) catch (e) e;
+22 |     j : void : must(-1) catch |e| e;
    |         ^^^^

@@ -238,7 +238,7 @@ pub const Binding = struct {
         range_index,
         /// Match-arm payload / optional-match binding.
         match_payload,
-        /// `catch (e)` / `onfail e` error binding.
+        /// `catch |e|` / `onfail |e|` error binding.
         catch_err,
         /// `inline for x in xs` pack-element alias (`pack_elem` is also set).
         pack_elem_alias,
