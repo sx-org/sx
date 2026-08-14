@@ -209,7 +209,7 @@ pub const FnDecl = struct {
     /// `name :: ufcs (params) { body }` — the fn opted into dot-call
     /// dispatch (`recv.name(args)`). Dot-calls on free functions are
     /// OPT-IN: only `is_ufcs` fns and `ufcs` aliases dispatch; a plain
-    /// fn is callable directly or via `|>` only.
+    /// fn is callable only by direct call.
     is_ufcs: bool = false,
     /// `name :: (self: *T) -> R #get => expr;` — a no-paren property accessor.
     /// Invoked via field syntax (`obj.name`) when no real field matches, rather

@@ -414,8 +414,8 @@ load :: (path: string) -> (Data, !) {
 ### Fallible pipeline
 
 ```sx
-// `|>` threads a value through stages; mark each fallible stage
-n := try parse(s) |> try validate() |> try normalize();
+// every fallible stage is marked at its own call site
+n := try normalize(try validate(try parse(s)));
 ```
 
 ### Validate-and-collect

@@ -1,5 +1,5 @@
 create: 7 42
-pipe-create: 1
+local-dot-create: 1
 dot-create: 2
 alloc: 10 40 len=4
 clone: 10 (orig 99)

@@ -350,10 +350,6 @@
           "match": "->|=>"
         },
         {
-          "name": "keyword.operator.pipeline.sx",
-          "match": "\\|>"
-        },
-        {
           "name": "keyword.operator.range.sx",
           "match": "(?:[=<])?\\.\\.(?:[=<])?"
         },

@@ -278,7 +278,6 @@ GLSL;
 | `and`    | logical AND (short-circuit) |
 | `or`     | logical OR (short-circuit)  |
 | `in`     | membership test (tuples)    |
-| `\|>`    | pipe (function application) |
 | `+=`     | add-assign       |
 | `-=`     | sub-assign       |
 | `*=`     | mul-assign       |
@@ -1008,7 +1007,7 @@ p := Point{x = 3, y = 4 };
 print("{}\n", p.sum());  // 7
 ```
 
-Methods receive the struct (typically as a pointer) as their first parameter. Dot-call syntax `obj.method(args)` resolves struct methods — it is **not** UFCS for arbitrary free functions. The pipe operator `|>` remains the universal UFCS mechanism.
+Methods receive the struct (typically as a pointer) as their first parameter. Dot-call syntax `obj.method(args)` resolves struct methods — it is **not** UFCS for arbitrary free functions. A free function becomes dot-callable only by opting in with `ufcs`.
 
 ### Protocols
 
@@ -5601,11 +5600,11 @@ create3 :: ufcs create;               // ufcs alias — dot-callable
 
 f : i32 = 4;
 f.create();    // error: 'create' is not a ufcs function (help: call it
-               //   directly, pipe it, or declare it `create :: ufcs (...)`)
+               //   directly, or declare it `create :: ufcs (...)`)
 f.create2();   // works — calls create2(f)
 f.create3();   // works — calls create(f) through the alias
 create2(f);    // a ufcs fn is still an ordinary fn: direct calls work
-f |> create(); // the pipe works on ANY fn (parse-time desugar, no opt-in)
+create(f);     // a plain fn is callable only this way
 ```
 
 When `object.func(args)` names an opted-in function and `func` is not a
@@ -5628,7 +5627,6 @@ first_of :: ufcs (xs: []$T) -> T { xs[0] }
 
 xs.first_of();       // dot — binds $T from the receiver
 first_of(xs);        // direct
-xs |> first_of();    // pipe — desugars to first_of(xs)
 ```
 
 #### UFCS Aliases
@@ -5643,26 +5641,6 @@ alloc(myArena, 42);       // also works as a direct call
 ```
 
 This avoids the naming redundancy of `myArena.arena_alloc(42)`.
-
-### Pipe Operator
-
-The pipe operator `|>` inserts the left-hand side as the first argument of the right-hand side call. It is desugared at parse time.
-
-```sx
-a |> f(b, c)        // → f(a, b, c)
-a |> f              // → f(a)
-a |> f(b) |> g(c)   // → g(f(a, b), c)
-```
-
-The pipe is left-associative with the lowest precedence of all binary operators, so expressions like `x + 1 |> f(2)` are parsed as `f(x + 1, 2)`.
-
-This is especially useful with namespaced imports:
-```sx
-pkg :: #import "modules/math";
-
-3 |> pkg.add(4)                    // → pkg.add(3, 4) → 7
-3 |> pkg.add(4) |> pkg.mul(2)     // → pkg.mul(pkg.add(3, 4), 2) → 14
-```
 
 ### Field Access
 ```sx

@@ -214,9 +214,9 @@ main :: () {
         print("S9: {} {}\n", v.x, v.y);
     }
 
-    // S10: Static method + piped result
+    // S10: Static method result as the receiver of a method call
     {
-        v := Vec2.create(2.0, 3.0) |> Vec2.scale(2.0);
+        v := Vec2.create(2.0, 3.0).scale(2.0);
         print("S10: {} {}\n", v.x, v.y);
     }
 

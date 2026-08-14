@@ -401,10 +401,6 @@ pub const Lexer = struct {
                     self.index += 1;
                     return self.makeToken(.pipe_equal, start, self.index);
                 }
-                if (self.peek() == '>') {
-                    self.index += 1;
-                    return self.makeToken(.pipe_arrow, start, self.index);
-                }
                 return self.makeToken(.pipe, start, self.index);
             },
             '^' => {

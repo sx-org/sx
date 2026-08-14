@@ -6,19 +6,19 @@ pkg :: #import "tests/fixtures/testpkg";
 
 Point :: struct { x, y: i32; }
 
-point_sum :: (p: Point) -> i32 { p.x + p.y }
+point_sum :: ufcs (p: Point) -> i32 { p.x + p.y }
 
 // #run compile-time constants
 
 main :: () {
 
     // ========================================================
-    // 20. PIPE UFCS RETURN TYPE INFERENCE
+    // 20. UFCS RETURN TYPE INFERENCE
     // ========================================================
     print("=== 20. UFCS Return Type ===\n");
     {
         p := Point{ 3, 4};
         print("direct: {}\n", point_sum(p));
-        print("ufcs: {}\n", p |> point_sum());
+        print("ufcs: {}\n", p.point_sum());
     }
 }

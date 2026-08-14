@@ -1,9 +1,8 @@
 // Typed allocation helpers over the Allocator protocol (std/mem.sx):
 // create/destroy (one T), alloc/free (slices), clone, resize, and the
 // bytes-level mem_realloc. Declared `ufcs` — the dot spelling
-// (`context.allocator.create(Session)`), the pipe spelling, and the
-// direct call all hit the same generic machinery. Contents are
-// UNINITIALISED by design
+// (`context.allocator.create(Session)`) and the direct call both hit the
+// same generic machinery. Contents are UNINITIALISED by design
 // (Zig-aligned): assign before reading. TrackingAllocator balances to
 // zero across every pair.
 
@@ -23,11 +22,11 @@ main :: () {
     print("create: {} {}\n", s.id, s.score);
     destroy(a, s);
 
-    // create — fluent pipe spelling
-    p := a |> create(Session);
+    // create — dot spelling on a local Allocator
+    p := a.create(Session);
     p.id = 1;
-    print("pipe-create: {}\n", p.id);
-    a |> destroy(p);
+    print("local-dot-create: {}\n", p.id);
+    a.destroy(p);
 
     // create — canonical dot spelling on context.allocator
     q := context.allocator.create(Session);
@@ -36,7 +35,7 @@ main :: () {
     context.allocator.destroy(q);
 
     // alloc / free — typed slice
-    xs := a |> alloc(i64, 4);
+    xs := a.alloc(i64, 4);
     xs[0] = 10; xs[1] = 20; xs[2] = 30; xs[3] = 40;
     print("alloc: {} {} len={}\n", xs[0], xs[3], xs.len);
 
@@ -47,13 +46,13 @@ main :: () {
     ys.free(a);
 
     // resize — grow (copies, old backing freed)
-    zs := xs |> resize(a, 6);
+    zs := xs.resize(a, 6);
     zs[5] = 60;
     print("resize: {} {} len={}\n", zs[1], zs[5], zs.len);
     // resize — shrink
-    ws := zs |> resize(a, 2);
+    ws := zs.resize(a, 2);
     print("shrink: {} {} len={}\n", ws[0], ws[1], ws.len);
-    ws |> free(a);
+    ws.free(a);
 
     // mem_realloc — bytes level
     raw := a.alloc_bytes(8);
