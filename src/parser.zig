@@ -602,7 +602,6 @@ pub const Parser = struct {
             // A type-argument list is what a compiler-formed type takes; a
             // declared contract is a plain type name.
             if (self.tokens.tag(self.tok) == .l_paren) {
-                try self.requireTypeArgGlue(start);
                 return self.failAt(self.tokens.token(at_idx).loc, try self.unknownCompilerFormedTypeMsg(at_name));
             }
             return try self.createNode(start, .{ .type_expr = .{ .name = at_name } });
@@ -631,9 +630,7 @@ pub const Parser = struct {
 
         // Pointer type: *T
         if (self.tokens.tag(self.tok) == .star) {
-            const op_loc = self.tokens.token(self.tok).loc;
             self.advance(); // skip '*'
-            try self.requirePrefixGlue(op_loc);
             const pointee_type = try self.parseTypeExpr();
             return try self.createNode(start, .{ .pointer_type_expr = .{ .pointee_type = pointee_type } });
         }
@@ -687,7 +684,6 @@ pub const Parser = struct {
             self.advance();
             // Pack-index access: $<pack_name>[<int_literal>]
             if (self.tokens.tag(self.tok) == .l_bracket) {
-                if (!self.tokens.flagsOf(self.tok).glued_left) return self.failSpacedForm(start, .index);
                 self.advance(); // skip '['
                 if (self.tokens.tag(self.tok) != .int_literal) {
                     return self.fail("expected integer literal in pack index");
@@ -919,14 +915,6 @@ pub const Parser = struct {
                 }
             }
 
-            // Glue rule (specs: Whitespace is Syntax). One check covers every
-            // type position that applies arguments — annotations, return and
-            // param types, field types, aliases, cast targets, builtin type
-            // args, match-arm type patterns — and the `Tuple` / `Closure`
-            // fixed forms below. A type application never spans a statement
-            // boundary, so ANY gap here is the spacing mistake.
-            if (self.tokens.tag(self.tok) == .l_paren) try self.requireTypeArgGlue(start);
-
             // Tuple type: `Tuple(A, B)` / `Tuple(T)` / `Tuple()` /
             //   named `Tuple(x: A, y: B)` / pack `Tuple(..Ts)` / `Tuple(..F(Ts))`.
             //   Magic contextual id — only a `Tuple` IMMEDIATELY followed by `(`
@@ -1076,9 +1064,6 @@ pub const Parser = struct {
         if (self.tokens.tag(self.tok) != .l_paren) {
             return try self.createNode(start, .{ .type_expr = .{ .name = head } });
         }
-        // Glue rule: a bound's arguments bind like any other type application
-        // (`$B/@BuildBlock(Drawable)`).
-        try self.requireTypeArgGlue(start);
         const l_paren_loc = self.tokens.token(self.tok).loc;
         self.advance(); // skip '('
         var args = std.ArrayList(*Node).empty;
@@ -1148,9 +1133,6 @@ pub const Parser = struct {
                 .{ name, spelling },
             ));
         }
-        // Glue rule: the argument list is mandated by the form, so it binds on
-        // the same terms as any other type application (`@BuildBlock(P)`).
-        try self.requireTypeArgGlue(start);
         self.advance(); // skip '('
         const target = try self.parseTypeExpr();
         var args = std.ArrayList(*Node).empty;
@@ -1536,10 +1518,7 @@ pub const Parser = struct {
 
     /// `V :: @OpenVariant(P) [($T: Type)] { fields + the set's methods }`.
     fn parseOpenVariantDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
-        const head_start = self.tokens.start(self.tok);
         self.advance(); // skip '@OpenVariant'
-        // Glue rule: the set argument binds like any other type application.
-        if (self.tokens.tag(self.tok) == .l_paren) try self.requireTypeArgGlue(head_start);
         try self.expect(.l_paren);
         const set_idx = self.tok;
         if (self.tokens.tag(self.tok) != .identifier) {
@@ -1567,10 +1546,7 @@ pub const Parser = struct {
 
     /// `P :: @OpenSet(.{ max = …, align = … }) { required methods }`.
     fn parseOpenSetDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
-        const head_start = self.tokens.start(self.tok);
         self.advance(); // skip '@OpenSet'
-        // Glue rule: the options argument binds like any other type application.
-        if (self.tokens.tag(self.tok) == .l_paren) try self.requireTypeArgGlue(head_start);
         try self.expect(.l_paren);
         const opt_start = self.tokens.start(self.tok);
         const options = try self.parseExpr();
@@ -2150,17 +2126,12 @@ pub const Parser = struct {
         if (self.tokens.tag(self.tok) != .identifier and self.tokens.tag(self.tok) != .at_identifier) {
             return self.fail("expected protocol name after 'impl'");
         }
-        const protocol_head_start = self.tokens.start(self.tok);
         const protocol_name = self.tokens.slice(self.tok);
         self.advance();
 
         // Optional protocol type args: impl Into(Block) for ...
         var protocol_type_args = std.ArrayList(*Node).empty;
         if (self.tokens.tag(self.tok) == .l_paren) {
-            // Glue rule: these are the protocol's ARGUMENTS, so they bind like
-            // any other type application (the target's `($T)` below is a
-            // parameter list and stays free).
-            try self.requireTypeArgGlue(protocol_head_start);
             self.advance(); // skip '('
             while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                 if (protocol_type_args.items.len > 0) {
@@ -3325,17 +3296,13 @@ pub const Parser = struct {
     fn parseUnary(self: *Parser, pipe: PipeRole) anyerror!*Node {
         if (self.tokens.tag(self.tok) == .minus_minus) {
             const start = self.tokens.start(self.tok);
-            const op_loc = self.tokens.token(self.tok).loc;
             self.advance();
-            try self.requirePrefixGlue(op_loc);
             const operand = try self.parseUnary(pipe);
             return try self.createNode(start, .{ .unary_op = .{ .op = .pre_decrement, .operand = operand } });
         }
         if (self.tokens.tag(self.tok) == .minus) {
             const start = self.tokens.start(self.tok);
-            const op_loc = self.tokens.token(self.tok).loc;
             self.advance();
-            try self.requirePrefixGlue(op_loc);
             const operand = try self.parseUnary(pipe);
             return try self.createNode(start, .{ .unary_op = .{ .op = .negate, .operand = operand } });
         }
@@ -3364,9 +3331,7 @@ pub const Parser = struct {
         // Type-arg positions keep working); on a value it is address-of.
         if (self.tokens.tag(self.tok) == .star) {
             const start = self.tokens.start(self.tok);
-            const op_loc = self.tokens.token(self.tok).loc;
             self.advance();
-            try self.requirePrefixGlue(op_loc);
             const operand = try self.parseUnary(pipe);
             return try self.createNode(start, .{ .unary_op = .{ .op = .address_of, .operand = operand } });
         }
@@ -3391,14 +3356,6 @@ pub const Parser = struct {
 
         while (true) {
             if (self.tokens.tag(self.tok) == .l_paren and !self.spacedGroupEndsHeader()) {
-                // Glue rule (specs: Whitespace is Syntax): the `(` is a call
-                // only when glued to the callee. On the same line that space
-                // is fatal; across a line the `(` does not bind and the caller
-                // reports the terminator the statement is missing.
-                if (!self.tokens.flagsOf(self.tok).glued_left) {
-                    if (!self.tokens.flagsOf(self.tok).newline_left) return self.failSpacedForm(expr.span.start, .call);
-                    break;
-                }
                 // Call. Argument expressions are an ordinary nested context —
                 // a `(` group inside them never closes a for header.
                 self.advance();
@@ -3613,12 +3570,6 @@ pub const Parser = struct {
                     return self.fail("expected field name after '?.'");
                 }
             } else if (self.tokens.tag(self.tok) == .l_bracket) {
-                // Glue rule (specs: Whitespace is Syntax) — same reading as the
-                // call `(` above.
-                if (!self.tokens.flagsOf(self.tok).glued_left) {
-                    if (!self.tokens.flagsOf(self.tok).newline_left) return self.failSpacedForm(expr.span.start, .index);
-                    break;
-                }
                 // Index or slice access: expr[expr] or expr[start..end]
                 self.advance();
                 // Inside `[...]`, calls parse normally even within a for header.
@@ -3892,16 +3843,6 @@ pub const Parser = struct {
             const pname = self.tokens.slice(self.tok);
             self.advance();
             if (self.tokens.tag(self.tok) == .l_bracket) {
-                // Glue rule (specs: Whitespace is Syntax): the `[` indexes the
-                // pack only when glued to it. Same-line, that space is fatal;
-                // across a line the `[` stops binding and the whole pack is
-                // the expression.
-                if (!self.tokens.flagsOf(self.tok).glued_left) {
-                    if (!self.tokens.flagsOf(self.tok).newline_left) return self.failSpacedForm(start, .index);
-                    return try self.createNode(start, .{ .comptime_pack_ref = .{
-                        .pack_name = pname,
-                    } });
-                }
                 self.advance(); // skip '['
                 if (self.tokens.tag(self.tok) != .int_literal) {
                     return self.fail("expected integer literal in pack index");
@@ -4000,7 +3941,6 @@ pub const Parser = struct {
                 // (or a backtick-raw `` `Tuple ``) stays an ordinary identifier.
                 if (!is_raw and std.mem.eql(u8, name, "Tuple") and self.peekNext() == .l_paren) {
                     self.advance(); // skip `Tuple`; `current` is now `(`
-                    try self.requireTypeArgGlue(start);
                     return self.parseTupleTypeBody(start);
                 }
                 // `Closure(...) -> R` in expression position is a closure TYPE
@@ -4012,7 +3952,6 @@ pub const Parser = struct {
                 // `` `Closure ``) stays an ordinary identifier.
                 if (!is_raw and std.mem.eql(u8, name, "Closure") and self.peekNext() == .l_paren) {
                     self.advance(); // skip `Closure`; `current` is now `(`
-                    try self.requireTypeArgGlue(start);
                     return self.parseClosureTypeBody(start);
                 }
                 // A backtick raw identifier (`` `i2 ``) is NEVER type-classified —
@@ -4450,10 +4389,8 @@ pub const Parser = struct {
             while (true) {
                 var cap = ast.ForCapture{ .name = "" };
                 if (self.tokens.tag(self.tok) == .star) {
-                    const op_loc = self.tokens.token(self.tok).loc;
                     cap.by_ref = true;
                     self.advance();
-                    try self.requirePrefixGlue(op_loc);
                 }
                 cap.name = self.tokens.slice(self.tok);
                 cap.span = .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
@@ -5796,59 +5733,6 @@ pub const Parser = struct {
         self.tok = self.tokens.next(self.tok);
     }
 
-    // ---- Whitespace is syntax (specs §1: Whitespace is Syntax) ----
-
-    /// The written form with the offending gap closed — `foo (2)` → `foo(2)` —
-    /// for the spacing diagnostics. Null when the bracket group is unbalanced,
-    /// spans a line, or is too long to quote back usefully.
-    fn gluedSpelling(self: *Parser, head_start: u32) ?[]const u8 {
-        const open = self.tokens.tag(self.tok);
-        const close: Tag = if (open == .l_paren) .r_paren else .r_bracket;
-        const close_idx = self.tokens.scanBalanced(self.tok, open, close) orelse return null;
-        const end = self.tokens.end(close_idx);
-        // A raw head's span starts after its backtick; quote it back as written.
-        const source = self.tokens.source;
-        const head_written = if (head_start > 0 and source[head_start - 1] == '`') head_start - 1 else head_start;
-        const head = source[head_written..self.tokens.end(self.tokens.prev(self.tok))];
-        const args = source[self.tokens.start(self.tok)..end];
-        if (head.len + args.len > 48) return null;
-        if (std.mem.indexOfScalar(u8, head, '\n') != null) return null;
-        if (std.mem.indexOfScalar(u8, args, '\n') != null) return null;
-        return std.fmt.allocPrint(self.allocator, "{s}{s}", .{ head, args }) catch null;
-    }
-
-    /// Which production the un-glued bracket was trying to continue.
-    const SpacedForm = enum { call, index, type_args };
-
-    /// The glue-rule diagnostic: name the space, and quote the glued spelling
-    /// that fixes it. Spans the gap plus the bracket, so the caret sits under
-    /// what has to go.
-    fn failSpacedForm(self: *Parser, head_start: u32, form: SpacedForm) error{ParseError} {
-        const loc: Token.Loc = .{ .start = self.tokens.end(self.tokens.prev(self.tok)), .end = self.tokens.end(self.tok) };
-        const fix = self.gluedSpelling(head_start);
-        const msg = switch (form) {
-            .call => if (fix) |f|
-                std.fmt.allocPrint(self.allocator, "a space before `(` — a call binds only when the `(` is glued to its callee: write `{s}`", .{f}) catch return error.ParseError
-            else
-                "a space before `(` — a call binds only when the `(` is glued to its callee",
-            .index => if (fix) |f|
-                std.fmt.allocPrint(self.allocator, "a space before `[` — an index binds only when the `[` is glued to what it indexes: write `{s}`", .{f}) catch return error.ParseError
-            else
-                "a space before `[` — an index binds only when the `[` is glued to what it indexes",
-            .type_args => if (fix) |f|
-                std.fmt.allocPrint(self.allocator, "a space between a type and its arguments — write `{s}`", .{f}) catch return error.ParseError
-            else
-                "a space between a type and its arguments — the argument list binds only when glued to the type name",
-        };
-        return self.failAt(loc, msg);
-    }
-
-    /// The glue rule in a TYPE position: an argument list never crosses a
-    /// statement boundary, so any gap at all is the spacing mistake.
-    fn requireTypeArgGlue(self: *Parser, head_start: u32) !void {
-        if (!self.tokens.flagsOf(self.tok).glued_left) return self.failSpacedForm(head_start, .type_args);
-    }
-
     /// The terminator of a statement or of a declaration written in statement
     /// or top-level position: the written `;`, or the end of the file — there is
     /// no next statement for the last one to run into.
@@ -5861,13 +5745,12 @@ pub const Parser = struct {
         try self.expect(.semicolon);
     }
 
-    /// `else` with a GLUED `:` heads a `match`'s default arm; every other
+    /// `else` followed by `:` heads a `match`'s default arm; every other
     /// `else` chains the enclosing `if`. One token of lookahead is the whole
     /// disambiguation.
     fn atMatchDefaultArm(self: *const Parser) bool {
         if (self.tokens.tag(self.tok) != .kw_else) return false;
-        const n = self.tokens.next(self.tok);
-        return self.tokens.tag(n) == .colon and self.tokens.flagsOf(n).glued_left;
+        return self.tokens.tag(self.tokens.next(self.tok)) == .colon;
     }
 
     /// True at an `else` that chains the enclosing `if` — every `else` but a
@@ -5882,21 +5765,6 @@ pub const Parser = struct {
     /// every optional slot that a completed declaration would not have.
     fn atStatementEnd(self: *const Parser) bool {
         return self.tokens.tag(self.tok) == .semicolon or self.tokens.tag(self.tok) == .eof;
-    }
-
-    /// The spacing rule for a prefix `-` / `--` / `*`: it binds only when glued
-    /// to its operand, so a spaced prefix has no reading left.
-    fn requirePrefixGlue(self: *Parser, op: Token.Loc) !void {
-        if (self.tokens.flagsOf(self.tok).glued_left) return;
-        const text = self.tokens.source[op.start..op.end];
-        return self.failAt(
-            Token.Loc{ .start = op.start, .end = self.tokens.writtenStart(self.tok) },
-            std.fmt.allocPrint(
-                self.allocator,
-                "a space after the prefix `{s}` — a prefix operator binds only when glued to its operand",
-                .{text},
-            ) catch return error.ParseError,
-        );
     }
 
     fn expect(self: *Parser, tag: Tag) !void {
@@ -7731,13 +7599,6 @@ test "return-type inline struct without closer reports missing brace" {
 
 test "unterminated aggregate reports missing brace" {
     try expectParseErrorAt("x := Plan{ a = 1", "expected '}'", 16);
-}
-
-test "spaced call reports glue diagnostic with fix only when balanced" {
-    // gluedSpelling finds no balanced group before EOF-of-statement, so the
-    // diagnostic carries no `write …` fix; the balanced spelling gets one.
-    try expectParseErrorAt("f :: () { g (1; }", "a space before `(` — a call binds only when the `(` is glued to its callee", 11);
-    try expectParseErrorAt("f :: () { g (1) }", "a space before `(` — a call binds only when the `(` is glued to its callee: write `g(1)`", 11);
 }
 
 test "param list missing closer fails as tuple" {

@@ -1,5 +1,0 @@
-error: a space before `[` — an index binds only when the `[` is glued to what it indexes: write `$args[0]`
-  --> examples/diagnostics/2066-diagnostics-glue-spaced-pack-index.sx:6:47
-   |
- 6 | show :: (..$args) -> string => type_name($args [0]);
-   |                                               ^^

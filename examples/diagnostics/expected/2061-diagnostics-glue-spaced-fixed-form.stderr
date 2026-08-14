@@ -1,5 +1,0 @@
-error: a space between a type and its arguments — write `Closure(i64)`
-  --> examples/diagnostics/2061-diagnostics-glue-spaced-fixed-form.sx:8:21
-   |
- 8 | apply :: (f: Closure (i64) -> i64, n: i64) -> i64 => f(n);
-   |                     ^^

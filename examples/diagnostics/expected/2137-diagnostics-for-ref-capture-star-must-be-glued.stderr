@@ -1,5 +1,0 @@
-error: a space after the prefix `*` — a prefix operator binds only when glued to its operand
-  --> examples/diagnostics/2137-diagnostics-for-ref-capture-star-must-be-glued.sx:6:9
-   |
- 6 |     for * x in xs { }
-   |         ^^

@@ -1,10 +1,10 @@
 // Whitespace is syntax (specs §1), the spacing rule across a line break. A
 // line break is ordinary space, so a completed left operand makes `-` and `*`
-// infix whatever the spacing around them — line-leading, trailing, glued, or
+// infix whatever the spacing around them — line-leading, trailing, tight, or
 // spaced. `;` is what cuts the expression, so a prefix `-b` needs one above it.
 //
-// The gap is read as WRITTEN, so a raw identifier's backtick counts as part of
-// it: `-`x is glued and `- `x is not.
+// A raw identifier is an ordinary operand, backtick and all: `` base -`x ``
+// subtracts `` `x ``.
 #import "modules/std.sx";
 #import "modules/fluent.sx";
 
@@ -45,11 +45,11 @@ main :: () -> i32 {
     spaced := base
         - fee;
 
-    // trailing and glued to the break: one expression
+    // trailing, tight to the break: one expression
     trailing := base-
         fee;
 
-    // line-leading and glued: still one expression, so `value` is the difference
+    // line-leading and tight: still one expression, so `value` is the difference
     value := base
 -fee;
 

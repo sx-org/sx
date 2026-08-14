@@ -1,7 +1,0 @@
-// `for * x in xs` — a prefix `*` binds only when glued to its operand.
-
-#import "modules/std.sx";
-main :: () {
-    xs : [1]i64 = .[1];
-    for * x in xs { }
-}
