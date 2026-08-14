@@ -158,7 +158,7 @@ main :: () -> i32 {
     print("{} {} {}\n", first(Color.Red), first(Color.Green), first(Color.Blue))
     print("{} {} {}\n", first_semi(Color.Red), first_semi(Color.Green), first_semi(Color.Blue))
 
-    // `(e) => expr` ends at the break before the next arm head.
+    // `|e| expr` ends at the break before the next arm head.
     s := Shape.rect(4)
     match s {
         case .rect: |size| print("rect {}\n", size)

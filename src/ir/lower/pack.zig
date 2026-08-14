@@ -1096,7 +1096,7 @@ pub fn lowerPackFnCallNamed(
             if (ri >= call_node.args.len) break;
             if (!p.is_comptime) {
                 // Contextually type the arg from the param (so a lambda arg
-                // `(x) => …` takes its param types from a `Closure(...)` param).
+                // `|x| …` takes its param types from a `Closure(...)` param).
                 // The param type is resolved under the pack fn's OWN source
                 // a fixed-prefix type bare-visible only in the defining
                 // module must resolve there, not the caller's. The arg itself

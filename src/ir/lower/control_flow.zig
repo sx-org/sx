@@ -1407,7 +1407,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     var arm_tag_values = std.ArrayList([]const u64).empty;
     defer arm_tag_values.deinit(self.alloc);
     // Type switch: the CONCRETE type an arm names (null for category arms /
-    // the default) — the capture phase binds `(v)` as this type; and the
+    // the default) — the capture phase binds `|v|` as this type; and the
     // first-wins claim set — a tag belongs to the first arm that names it,
     // and an arm left with no tags is a LOUD unreachable-arm error (the
     // overlap `case int:` / `case i64:` would otherwise resolve silently
@@ -1775,7 +1775,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 if (payload_ty == .unresolved) {
                     // Non-bindable subject: only a tagged-union (enum with
                     // payloads) variant can supply a case payload binding
-                    // `(v)`. Reject everything else — payload-less enum,
+                    // `|v|`. Reject everything else — payload-less enum,
                     // unknown tagged-union variant, integer/bool subjects —
                     // with a diagnostic instead of letting the binding's type
                     // leak out as .unresolved and panic at LLVM emission.

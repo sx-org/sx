@@ -1,9 +1,9 @@
 // The `closure` category in RUNTIME type dispatch: an `any` boxes a
 // closure (the tag round-trips), so the type switch's `case closure:`
 // claims every closure type's tag as one set — symmetric with the static
-// `inline if T ==` fold, where the category selects `free`'s closure
+// `inline match T` fold, where the category selects `free`'s closure
 // arm. The same category classifies in the type-category match on a
-// runtime `Type` value. Category arms are tag SETS and bind no `(v)`.
+// runtime `Type` value. Category arms are tag SETS and bind no `|v|`.
 #import "modules/std.sx";
 
 describe :: (av: any) -> string {
