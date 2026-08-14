@@ -2744,8 +2744,11 @@ pub const Parser = struct {
         // this `{` — statements inside any braced block juxtapose again (a
         // `push` body, a lambda body inside a while condition).
         const saved_njx_blk = self.no_juxtaposition;
+        const saved_push_blk = self.in_push_context;
         self.no_juxtaposition = false;
+        self.in_push_context = false;
         defer self.no_juxtaposition = saved_njx_blk;
+        defer self.in_push_context = saved_push_blk;
         const saved_commas = self.comma_separates_items;
         self.comma_separates_items = commas;
         defer self.comma_separates_items = saved_commas;
@@ -3432,16 +3435,19 @@ pub const Parser = struct {
                 const saved_njx_args = self.no_juxtaposition;
                 const saved_if_args = self.in_if_condition;
                 const saved_match_args = self.in_match_subject;
+                const saved_push_args = self.in_push_context;
                 self.in_for_header = false;
                 self.no_juxtaposition = false;
                 self.in_match_subject = false;
                 // Arguments may contain `Type{…}` / `string{…}` even when the
                 // call sits in an if/while header (`if f(Point{…}) {`).
                 self.in_if_condition = false;
+                self.in_push_context = false;
                 defer self.in_for_header = saved_hdr_args;
                 defer self.no_juxtaposition = saved_njx_args;
                 defer self.in_if_condition = saved_if_args;
                 defer self.in_match_subject = saved_match_args;
+                defer self.in_push_context = saved_push_args;
                 var args = std.ArrayList(*Node).empty;
                 while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
                     if (args.items.len > 0) {
@@ -3508,7 +3514,7 @@ pub const Parser = struct {
                     // aggregate, binding the value pointer to the header name or
                     // to `self`. It attaches to a juxtaposition (settling copies
                     // it onto the aggregate) or to a `.{ … }` primary.
-                    // Separator-dot `Type.{…}` on a type designator is removed.
+                    // Separator-dot `Type.{…}` on a type designator is a hard error.
                     if (expr.data == .juxtaposition or expr.data == .struct_literal) {
                         const attached = switch (expr.data) {
                             .juxtaposition => |jx| jx.init_block != null,
@@ -3602,8 +3608,11 @@ pub const Parser = struct {
                 self.advance();
                 // Inside `[...]`, calls parse normally even within a for header.
                 const saved_hdr_idx = self.in_for_header;
+                const saved_push_idx = self.in_push_context;
                 self.in_for_header = false;
+                self.in_push_context = false;
                 defer self.in_for_header = saved_hdr_idx;
+                defer self.in_push_context = saved_push_idx;
                 if (rangeTokenInfo(self.tokens.tag(self.tok))) |rt| {
                     // Prefix form: [..end] / [..=end] / [..] — implicit 0 start
                     // (a start marker applies to it: [<..end] begins at 1).
@@ -4049,15 +4058,18 @@ pub const Parser = struct {
                 const saved_if_grp = self.in_if_condition;
                 const saved_njx_grp = self.no_juxtaposition;
                 const saved_match_grp = self.in_match_subject;
+                const saved_push_grp = self.in_push_context;
                 self.in_for_header = false;
                 self.in_if_condition = false;
                 self.no_juxtaposition = false;
                 self.in_match_subject = false;
+                self.in_push_context = false;
                 defer {
                     self.in_for_header = saved_hdr_grp;
                     self.in_if_condition = saved_if_grp;
                     self.no_juxtaposition = saved_njx_grp;
                     self.in_match_subject = saved_match_grp;
+                    self.in_push_context = saved_push_grp;
                 }
 
                 // Bare `(...)` is GROUPING ONLY. Tuple VALUES are written
@@ -7522,6 +7534,62 @@ test "parse push over a value keeps the brace as the body" {
     try std.testing.expect(stmts[1].data.push_stmt.context_expr.data == .field_access);
     try std.testing.expect(stmts[2].data.push_stmt.context_expr.data == .struct_literal);
     for (stmts) |s| try std.testing.expectEqual(@as(usize, 1), s.data.push_stmt.body.data.block.stmts.len);
+}
+
+test "parse a juxtaposition inside a push context field value" {
+    const source =
+        \\main :: () {
+        \\  push Ctx { n = Box(i64){ 1 } } { }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    try std.testing.expect(stmt.data == .push_stmt);
+    const ctx = stmt.data.push_stmt.context_expr;
+    try std.testing.expect(ctx.data == .juxtaposition);
+    const item = ctx.data.juxtaposition.block.data.block.stmts[0];
+    try std.testing.expect(item.data == .assignment);
+    try std.testing.expect(item.data.assignment.value.data == .juxtaposition);
+    try std.testing.expect(item.data.assignment.value.data.juxtaposition.expr.data == .call);
+}
+
+test "parse a juxtaposition inside a grouped push context" {
+    const source =
+        \\main :: () {
+        \\  push (vstack(8) { x(); }) { }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    try std.testing.expect(stmt.data == .push_stmt);
+    const ctx = stmt.data.push_stmt.context_expr;
+    try std.testing.expect(ctx.data == .juxtaposition);
+    try std.testing.expect(ctx.data.juxtaposition.expr.data == .call);
+}
+
+test "parse a juxtaposition inside a push context call argument" {
+    const source =
+        \\main :: () {
+        \\  push wrap(vstack(8) { x(); }) { y(); }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmt = root.data.root.decls[0].data.fn_decl.body.data.block.stmts[0];
+    try std.testing.expect(stmt.data == .push_stmt);
+    const ctx = stmt.data.push_stmt.context_expr;
+    try std.testing.expect(ctx.data == .call);
+    try std.testing.expectEqual(@as(usize, 1), ctx.data.call.args.len);
+    try std.testing.expect(ctx.data.call.args[0].data == .juxtaposition);
+    try std.testing.expectEqual(@as(usize, 1), stmt.data.push_stmt.body.data.block.stmts.len);
 }
 
 test "parse if cond { body } is not Type{}" {

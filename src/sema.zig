@@ -849,18 +849,42 @@ pub const Analyzer = struct {
         };
     }
 
-    /// The struct a parameterized aggregate head names — the generic instance
-    /// for a template, the struct itself otherwise.
-    /// The type `expr { … }` carries: the head's own struct type when the head
-    /// names one, void when the block fuses onto a call.
+    /// The type `expr { … }` carries: the constructed type when the head
+    /// names a type, void when the block fuses onto a call.
     fn juxtapositionType(self: *Analyzer, jx: ast.Juxtaposition) Type {
         return switch (jx.expr.data) {
             .call => |c| self.parameterizedStructType(c) orelse .void_type,
-            .identifier => |id| if (self.struct_types.contains(id.name)) .{ .struct_type = id.name } else .void_type,
+            .identifier => |id| self.namedStructType(id.name),
+            .field_access => |fa| self.namedStructType(fa.field),
+            .enum_literal => |el| .{ .enum_type = el.name },
+            .parameterized_type_expr => self.inferExprType(jx.expr),
+            .type_expr => |te| self.namedStructType(te.name),
+            .tuple_type_expr => |tt| self.tupleTypeFromExpr(tt),
             else => .void_type,
         };
     }
 
+    fn namedStructType(self: *Analyzer, name: []const u8) Type {
+        if (self.struct_types.contains(name)) return .{ .struct_type = name };
+        if (self.type_aliases.get(name)) |target| {
+            if (self.struct_types.contains(target)) return .{ .struct_type = target };
+        }
+        return .void_type;
+    }
+
+    fn tupleTypeFromExpr(self: *Analyzer, tt: ast.TupleTypeExpr) Type {
+        var field_types = std.ArrayList(Type).empty;
+        for (tt.field_types) |ft| {
+            field_types.append(self.allocator, self.resolveTypeNode(ft)) catch return .void_type;
+        }
+        return .{ .tuple_type = .{
+            .field_names = tt.field_names,
+            .field_types = field_types.toOwnedSlice(self.allocator) catch return .void_type,
+        } };
+    }
+
+    /// The struct a parameterized aggregate head names — the generic instance
+    /// for a template, the struct itself otherwise.
     fn parameterizedStructType(self: *Analyzer, c: ast.Call) ?Type {
         const callee = self.resolveCalleeName(c) orelse return null;
         if (self.instantiateGeneric(callee, c.args)) |inst| return inst;
