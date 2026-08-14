@@ -704,7 +704,10 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
         },
         .slice => |s| blk: {
             const inner = self.formatTypeName(s.element);
-            break :blk std.fmt.allocPrint(self.alloc, "[]{s}", .{inner}) catch "slice";
+            if (s.len_type == .i64)
+                break :blk std.fmt.allocPrint(self.alloc, "[]{s}", .{inner}) catch "slice";
+            const len_name = self.formatTypeName(s.len_type);
+            break :blk std.fmt.allocPrint(self.alloc, "@Slice({s},{s})", .{ inner, len_name }) catch "slice";
         },
         .array => |a| blk: {
             const inner = self.formatTypeName(a.element);
@@ -1993,6 +1996,12 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
         const elem = self.resolveTypeWithBindings(cl.args[1]);
         return self.module.types.arrayOf(elem, length);
     }
+    // Built-in: @Slice(T, Len)
+    if (std.mem.eql(u8, callee_name, contracts.slice_head) and cl.args.len == 2) {
+        const elem = self.resolveTypeWithBindings(cl.args[0]);
+        const len_ty = self.resolveSliceLenType(cl.args[1]) orelse return .unresolved;
+        return self.module.types.sliceOfLen(elem, len_ty);
+    }
     // Generic-struct head: route through the single layout choke-point (CP-1).
     // Bare → the single bare-VISIBLE author (own / 1-hop flat), source-keyed;
     // qualified `ns.Box(..)` → ns's OWN template (or a missing-member diagnostic);
@@ -2085,6 +2094,15 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
             const length = self.resolveArrayLen(pt.args[0]) orelse return .unresolved;
             const elem = self.resolveTypeWithBindings(pt.args[1]);
             return table.arrayOf(elem, length);
+        }
+    }
+
+    // @Slice(T, Len) — a fat pointer whose length word is `Len`.
+    if (std.mem.eql(u8, base_name, contracts.slice_head)) {
+        if (pt.args.len == 2) {
+            const elem = self.resolveTypeWithBindings(pt.args[0]);
+            const len_ty = self.resolveSliceLenType(pt.args[1]) orelse return .unresolved;
+            return table.sliceOfLen(elem, len_ty);
         }
     }
 

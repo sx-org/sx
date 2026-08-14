@@ -1,0 +1,45 @@
+// `@Slice(T, Len)` is a fat pointer `{ptr, Len}`. `@Slice(T, i64)` is `[]T`;
+// any other `Len` is a distinct type whose `.len` is that `Len`. Indexing,
+// `.len`, `.ptr`, subslicing and array→slice coercion read the same on both.
+
+#import "modules/std.sx";
+
+Named :: @Slice(i32, i64);
+Punct :: []i32;
+
+Bytes :: @Slice(u8, u32);
+
+Holder :: struct { data: Bytes; }
+
+total :: (b: Bytes) -> i64 {
+    t : i64 = 0;
+    for x in b { t = t + xx x; }
+    t
+}
+
+head :: (b: Bytes) -> Bytes { b[0..2] }
+
+COMPTIME_SUM :: #run total(@Array(3, u8).[7, 8, 9]);
+
+main :: () -> i32 {
+    print("same={} name={}\n", type_eq(Named, Punct), type_name(Named));
+    print("distinct={} bytes={}\n", type_eq(Bytes, []u8), type_name(Bytes));
+
+    a : [4]u8 = ---;
+    a[0] = 1; a[1] = 2; a[2] = 3; a[3] = 4;
+
+    b : Bytes = a[0..];
+    print("len={} lenty={} b0={} b3={}\n", b.len, type_name(type_of(b.len)), b[0], b[3]);
+    print("ptr0={} total={}\n", b.ptr[0], total(a));
+
+    h := head(b);
+    print("sub={} h0={} h1={}\n", type_name(type_of(h)), h[0], h[1]);
+
+    hold : Holder = Holder{ data = b };
+    print("field={} size={}\n", hold.data[2], size_of(Holder));
+
+    s : string = "ab";
+    print("string={} slice={}\n", s.len, type_name(type_of(a[0..])));
+    print("comptime={}\n", COMPTIME_SUM);
+    0
+}

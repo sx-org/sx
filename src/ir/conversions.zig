@@ -49,6 +49,7 @@ pub const CoercionResolver = struct {
         widen, // same kind, dst wider
         narrow, // same kind, dst narrower
         array_to_slice, // [N]T → []T (materialize backing storage + header)
+        slice_len_convert, // @Slice(T,A) → @Slice(T,B) (rebuild the header on B's length word)
         many_to_slice_reject, // [*]T → []T (no length — needs ptr[0..len]; diagnostic)
         string_to_cstring, // literal-only implicit; other strings need to_cstring
         cstring_to_string_reject, // explicit from_cstring required (diagnostic)
@@ -125,6 +126,12 @@ pub const CoercionResolver = struct {
             // the user supplies the length via `ptr[0..len]`.
             if (si == .many_pointer and di == .slice) {
                 return .many_to_slice_reject;
+            }
+            // Two slices over the same element differing only in the width of
+            // their length word: the fat pointer is rebuilt on the destination's
+            // `Len`, the view unchanged.
+            if (si == .slice and di == .slice and si.slice.element == di.slice.element) {
+                return .slice_len_convert;
             }
         }
 

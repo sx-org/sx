@@ -1,0 +1,11 @@
+error: @Slice length type must be an integer type, got 'bool'
+  --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:6:19
+   |
+ 6 | Bad :: @Slice(u8, bool);
+   |                   ^^^^
+
+error: array length 300 does not fit the u8 length word of '@Slice(u8,u8)'
+  --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:15:8
+   |
+15 |     xx take(big)
+   |        ^^^^^^^^^

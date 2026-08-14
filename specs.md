@@ -122,12 +122,13 @@ choose between: `@SourceSite` and `@VaList` are spelled bare wherever they are
 written.
 
 Separately, a few `@` names are **compiler-formed** — `@Init(T)`,
-`@BuildBlock(P)`, `@Vector(N, T)` and `@Array(N, T)`. The compiler forms the
-type, so there is no stdlib declaration to read and declaring the name is an
-error. `@Init` and `@BuildBlock` are constraints, written only as a bound on the
-parameter (`value: $I/@Init(T)`, `content: $B/@BuildBlock(P)`) and never as its
-type — see [`@Init(T)`](#initt) and [`@BuildBlock(P)`](#buildblockp).
-`@Vector(N, T)` (§Vector Types) and `@Array(N, T)` (§Array Types) are type
+`@BuildBlock(P)`, `@Vector(N, T)`, `@Array(N, T)` and `@Slice(T, Len)`. The
+compiler forms the type, so there is no stdlib declaration to read and declaring
+the name is an error. `@Init` and `@BuildBlock` are constraints, written only as
+a bound on the parameter (`value: $I/@Init(T)`, `content: $B/@BuildBlock(P)`)
+and never as its type — see [`@Init(T)`](#initt) and
+[`@BuildBlock(P)`](#buildblockp). `@Vector(N, T)` (§Vector Types),
+`@Array(N, T)` (§Array Types) and `@Slice(T, Len)` (§Slice Types) are type
 constructors, written wherever a type is.
 
 #### Backtick raw-identifier escape
@@ -2672,6 +2673,18 @@ items.ptr          // raw pointer
 ```
 
 Slices support generic type parameters: `[]$T` introduces type parameter `T` inferred from the element type of the argument (array or slice).
+
+`@Slice(T, Len)` names the same shape with the length word spelled out: `Len`
+is an integer type and the fat pointer is `{ptr, Len}`. `@Slice(T, i64)` and
+`[]T` are one type; any other `Len` is a distinct type with its own ABI, and
+`.len` reads as that `Len`.
+```sx
+Bytes :: @Slice(u8, u32);      // {ptr, u32}; `.len` is a u32
+Plain :: @Slice(i32, i64);     // the same type as []i32
+```
+Indexing, `.len`, `.ptr`, subslicing and array→slice coercion read the same on
+every `Len`; a subslice keeps its base's length word. An array whose count
+overflows the destination's length word does not coerce into it.
 
 ### Subslicing
 Arrays, slices, and strings support subslice syntax to create zero-copy views:
@@ -5850,8 +5863,8 @@ lowered, yet `atomic_load` evaluates under `#run` and `sqrt` does not: the
 evaluator interprets the atomic ops, but has no arm for the math call `sqrt`
 lowers to. A `#run sqrt(x)` fails loudly rather than folding to a wrong value.
 
-Two categories are **not** intrinsics. `string`, `@Vector` and `@Array` are
-language primitives, resolved by name by the type system like `int` / `bool` /
+Two categories are **not** intrinsics. `string`, `@Vector`, `@Array` and
+`@Slice` are language primitives, resolved by name by the type system like `int` / `bool` /
 `f64`. And a handful of keywords (`type_eq`, `has_impl`, `is_struct`,
 `is_comptime`) are recognized bare, declared nowhere. `has_impl(P, T)`
 is the type-level spelling of the conformance PROBE and follows the
@@ -5951,6 +5964,9 @@ An `any` is accepted because it can hold either a value or a `Type`. `type_name`
 
 ### Arrays
 - `@Array($N: int, $T: Type) -> Type` — returns the fixed array type `[N]T`
+
+### Slices
+- `@Slice($T: Type, $Len: Type) -> Type` — returns the fat-pointer type `{ptr, Len}`; `@Slice(T, i64)` is `[]T`
 
 ---
 

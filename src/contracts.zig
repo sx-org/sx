@@ -19,8 +19,9 @@
 //!     declaration anywhere, so declaring the name is an error wherever it
 //!     appears. `@Init` and `@BuildBlock` are constraints, so both are
 //!     `bound_only`: they are written as a generic bound on the parameter
-//!     (`$I/@Init(T)`, `$B/@BuildBlock(P)`), never as its type. `@Vector` and
-//!     `@Array` are type constructors: each is written wherever a type is.
+//!     (`$I/@Init(T)`, `$B/@BuildBlock(P)`), never as its type. `@Vector`,
+//!     `@Array` and `@Slice` are type constructors: each is written wherever a
+//!     type is.
 
 const std = @import("std");
 const imports = @import("imports.zig");
@@ -121,6 +122,11 @@ pub const entries = [_]Contract{
         .kind = .compiler_formed,
         .spelling = "@Array(N, T)",
     },
+    .{
+        .name = "@Slice",
+        .kind = .compiler_formed,
+        .spelling = "@Slice(T, Len)",
+    },
 };
 
 /// The bound whose type argument the compiler INFERS from the argument an
@@ -137,9 +143,20 @@ pub const vector_head = "@Vector";
 /// The named array type constructor: `@Array(N, T)` is `[N]T`.
 pub const array_head = "@Array";
 
-/// True for a compiler-formed head that CONSTRUCTS a type from a count and an
-/// element type. Both take the count at argument 0.
+/// The slice type constructor: `@Slice(T, Len)` is a fat pointer `{ptr, Len}`.
+/// `@Slice(T, i64)` is `[]T`.
+pub const slice_head = "@Slice";
+
+/// True for a compiler-formed head that CONSTRUCTS a type from its arguments.
 pub fn isTypeConstructor(name: []const u8) bool {
+    return std.mem.eql(u8, name, vector_head) or
+        std.mem.eql(u8, name, array_head) or
+        std.mem.eql(u8, name, slice_head);
+}
+
+/// True for a type constructor whose argument 0 is a compile-time count rather
+/// than a type. `@Slice` takes types in both positions.
+pub fn takesCount(name: []const u8) bool {
     return std.mem.eql(u8, name, vector_head) or std.mem.eql(u8, name, array_head);
 }
 

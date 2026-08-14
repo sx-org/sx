@@ -1,0 +1,16 @@
+// A `@Slice` length word is an integer type, and an array whose count
+// overflows that word does not coerce into the slice.
+
+#import "modules/std.sx";
+
+Bad :: @Slice(u8, bool);
+
+Tiny :: @Slice(u8, u8);
+
+take :: (b: Tiny) -> u8 { b.len }
+
+main :: () -> i32 {
+    x : Bad = ---;
+    big : [300]u8 = ---;
+    xx take(big)
+}

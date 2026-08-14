@@ -708,7 +708,7 @@ pub fn listView(self: *Lowering, value: Ref, ty: TypeId) ?struct { data: Ref, da
             return .{
                 .data = self.builder.emit(.{ .data_ptr = .{ .operand = slice_val } }, mp_ty),
                 .data_ty = mp_ty,
-                .len = self.builder.emit(.{ .length = .{ .operand = slice_val } }, .i64),
+                .len = self.emitLengthI64(slice_val, f.ty),
             };
         }
     }
@@ -851,7 +851,7 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
                 data_ty = lv.data_ty;
                 len = lv.len;
             } else if (i == 0) {
-                len = self.builder.emit(.{ .length = .{ .operand = data } }, .i64);
+                len = self.emitLengthI64(data, data_ty);
             }
 
             const elem_ty = self.getElementType(data_ty);

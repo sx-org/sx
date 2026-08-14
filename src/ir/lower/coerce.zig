@@ -655,6 +655,23 @@ pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) R
     return self.builder.boxAnyAt(slot, box_ty);
 }
 
+/// Refuse `[N]T → @Slice(T, Len)` when `N` overflows the destination's length
+/// word: the header would carry a truncated length and every read through the
+/// slice would stop short.
+pub fn refuseArrayLenWord(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    const len_ty = self.module.types.lenTypeOf(dst_ty);
+    if (len_ty == .i64) return false;
+    const n = self.module.types.get(src_ty).array.length;
+    const len_name = self.formatTypeName(len_ty);
+    const range = program_index_mod.intTypeRange(len_name) orelse return false;
+    if (n <= range.max) return false;
+    if (self.diagnostics) |d| {
+        const cs = self.builder.current_span;
+        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "array length {} does not fit the {s} length word of '{s}'", .{ n, len_name, self.formatTypeName(dst_ty) });
+    }
+    return true;
+}
+
 /// Coerce an already-lowered ARRAY value `val` (of array type `src_ty`) into a
 /// slice `dst_ty` as a ZERO-COPY VIEW when the array is addressable, mirroring
 /// the explicit-subslice path. An ADDRESSABLE array (local, global, struct
@@ -672,12 +689,12 @@ pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) R
 /// call's duration, so the copying `array_to_slice` op is SOUND; for a STORED
 /// slice (`s : []T = makeArr()`) the copy would be a dangling view and must be
 /// rejected like 0225.
-pub fn arrayToSliceView(self: *Lowering, val: Ref, src_ty: TypeId) ?Ref {
+pub fn arrayToSliceView(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) ?Ref {
     if (src_ty.isBuiltin() or self.module.types.get(src_ty) != .array) return null;
     const addr = self.refStorageAddress(val) orelse return null;
     const info = self.module.types.get(src_ty).array;
     const elem_ty = info.element;
-    const slice_ty = self.module.types.sliceOf(elem_ty);
+    const slice_ty = self.module.types.sliceOfLen(elem_ty, self.module.types.lenTypeOf(dst_ty));
     const lo = self.builder.constInt(0, .i64);
     const hi = self.builder.constInt(@intCast(info.length), .i64);
     return self.builder.emit(.{ .subslice = .{
@@ -1940,12 +1957,13 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         .narrow => return self.builder.emit(.{ .narrow = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .widen => return self.builder.emit(.{ .widen = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .array_to_slice => {
+            if (self.refuseArrayLenWord(src_ty, dst_ty)) return self.builder.constUndef(dst_ty);
             // Implicit array→slice coercion (`fill(arr)` where `fill :: (s:
             // []T)`). The explicit `arr[0..N]` syntax aliases the array's
             // storage; this implicit path MUST match, or passing
             // `arr` vs `arr[0..]` silently differs. For an
             // ADDRESSABLE array, build a zero-copy VIEW over its storage.
-            if (self.arrayToSliceView(val, src_ty)) |view| return view;
+            if (self.arrayToSliceView(val, src_ty, dst_ty)) |view| return view;
             // NON-addressable rvalue array (`fill(makeArr())`): keep the
             // COPYING `array_to_slice` op (alloca+store). This is the general
             // coercion arm, reached for CALL ARGUMENTS — the temporary lives
@@ -1957,6 +1975,21 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             // a SUBSLICE of a temporary, which aliases the temp directly
             // (dangling) and IS rejected. Recorded in specs.md §Subslicing.
             return self.builder.emit(.{ .array_to_slice = .{ .operand = val } }, dst_ty);
+        },
+        // `@Slice(T,A) → @Slice(T,B)`: same view, a length word of a different
+        // width. Rebuild the header from the source's `.ptr` and `.len` — the
+        // subslice op fits the length to the destination's `Len`.
+        .slice_len_convert => {
+            const elem_ty = self.module.types.get(dst_ty).slice.element;
+            const mp_ty = self.module.types.manyPtrTo(elem_ty);
+            const data = self.builder.emit(.{ .data_ptr = .{ .operand = val } }, mp_ty);
+            const len = self.emitLengthI64(val, src_ty);
+            return self.builder.emit(.{ .subslice = .{
+                .base = data,
+                .lo = self.builder.constInt(0, .i64),
+                .hi = len,
+                .base_ty = mp_ty,
+            } }, dst_ty);
         },
         // `[*]T → []T`: a many-pointer has no length, so it can't form a slice
         // header implicitly. Diagnose and tell the user to slice with a length.

@@ -82,7 +82,11 @@ pub const TypeLowering = struct {
             .cstring => self.e.cached_ptr,
             .pointer, .many_pointer, .function => self.e.cached_ptr,
             .closure => self.e.getClosureStructType(),
-            .slice => self.e.getStringStructType(), // same {ptr, i64} layout
+            .slice => |s| blk: {
+                if (s.len_type == .i64) break :blk self.e.getStringStructType();
+                var field_types = [_]c.LLVMTypeRef{ self.e.cached_ptr, self.toLLVMType(s.len_type) };
+                break :blk c.LLVMStructTypeInContext(self.e.context, &field_types, 2, 0);
+            },
             .optional => |opt| {
                 // ?*T / ?fn → bare pointer (null = none)
                 const child_info = self.e.ir_mod.types.get(opt.child);

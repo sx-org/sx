@@ -883,7 +883,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                     if (!ref_ty.isBuiltin()) {
                         const ref_info = self.module.types.get(ref_ty);
                         if (ref_info == .array) {
-                            ref = self.arrayToSliceView(ref, ref_ty) orelse
+                            ref = self.arrayToSliceView(ref, ref_ty, ty) orelse
                                 self.builder.emit(.{ .array_to_slice = .{ .operand = ref } }, ty);
                         }
                     }
@@ -2344,7 +2344,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                         if (std.mem.eql(u8, fa.field, "ptr")) {
                             self.target_type = self.module.types.manyPtrTo(self.getElementType(obj_ty));
                         } else if (std.mem.eql(u8, fa.field, "len")) {
-                            self.target_type = .i64;
+                            self.target_type = self.module.types.lenTypeOf(obj_ty);
                         }
                     }
                 }
@@ -2555,8 +2555,9 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             } else false);
 
             if (is_special_container and std.mem.eql(u8, fa.field, "len")) {
-                const gep = self.builder.structGepTyped(obj_ptr, 1, .i64, obj_ty);
-                self.storeOrCompound(gep, val, asgn.op, .i64);
+                const len_ty = self.module.types.lenTypeOf(obj_ty);
+                const gep = self.builder.structGepTyped(obj_ptr, 1, len_ty, obj_ty);
+                self.storeOrCompound(gep, val, asgn.op, len_ty);
             } else if (is_special_container and std.mem.eql(u8, fa.field, "ptr")) {
                 const elem_ty = self.getElementType(obj_ty);
                 const field_ty = self.module.types.manyPtrTo(elem_ty);

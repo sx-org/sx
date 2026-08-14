@@ -168,6 +168,9 @@ pub const TypeInfo = union(enum) {
 
     pub const SliceInfo = struct {
         element: TypeId,
+        /// The integer type of the length word. `[]T` is `len_type == .i64`;
+        /// any other `Len` is a distinct type with its own `{ptr, Len}` ABI.
+        len_type: TypeId = .i64,
     };
 
     pub const PointerInfo = struct {
@@ -988,6 +991,29 @@ pub const TypeTable = struct {
         return self.intern(.{ .slice = .{ .element = element } });
     }
 
+    pub fn sliceOfLen(self: *TypeTable, element: TypeId, len_type: TypeId) TypeId {
+        return self.intern(.{ .slice = .{ .element = element, .len_type = len_type } });
+    }
+
+    /// The type of a fat pointer's length word: a slice's declared `Len`,
+    /// `i64` for `string` and every other container whose `.len` is a count.
+    pub fn lenTypeOf(self: *const TypeTable, ty: TypeId) TypeId {
+        if (ty.isBuiltin()) return .i64;
+        return switch (self.get(ty)) {
+            .slice => |s| s.len_type,
+            else => .i64,
+        };
+    }
+
+    /// Byte offset and width of a fat pointer's length word, for a raw
+    /// `{ptr, Len}` read/write that bypasses the struct layout walk.
+    pub fn fatLenField(self: *const TypeTable, len_type: TypeId) struct { offset: usize, size: usize } {
+        const size = self.typeSizeBytes(len_type);
+        const alignment = self.typeAlignBytes(len_type);
+        const offset = (self.pointer_size + alignment - 1) & ~(alignment - 1);
+        return .{ .offset = offset, .size = size };
+    }
+
     pub fn arrayOf(self: *TypeTable, element: TypeId, length: u32) TypeId {
         return self.intern(.{ .array = .{ .element = element, .length = length } });
     }
@@ -1180,7 +1206,7 @@ pub const TypeTable = struct {
                 // Discriminated form: payload + has_value flag (8-aligned).
                 break :blk self.sizeOf(opt.child) + 8;
             },
-            .slice => 16, // {ptr, len}
+            .slice => 16, // {ptr, len} — both words round up to 8 in this model
             .array => |arr| arr.length * self.sizeOf(arr.element),
             .vector => |vec| vec.length * self.sizeOf(vec.element),
             .any => 16, // {type_tag, data_ptr}
@@ -1241,6 +1267,20 @@ pub const TypeTable = struct {
         return 8;
     }
 
+    /// True iff `ty` is an integer — a builtin width, `usize`/`isize`, or a
+    /// user-defined arbitrary-width int. `bool` is not one.
+    pub fn isIntegerType(self: *const TypeTable, ty: TypeId) bool {
+        switch (ty) {
+            .i8, .i16, .i32, .i64, .u8, .u16, .u32, .u64, .usize, .isize => return true,
+            else => {},
+        }
+        if (ty.isBuiltin()) return false;
+        return switch (self.get(ty)) {
+            .signed, .unsigned => true,
+            else => false,
+        };
+    }
+
     /// True iff `ty` is an unsigned integer — a builtin (u8/u16/u32/u64/usize)
     /// or a user-defined arbitrary-width unsigned int. Canonical signedness
     /// query for reflection (`type_is_unsigned`) and the `{}` formatter so a
@@ -1272,7 +1312,12 @@ pub const TypeTable = struct {
         const info = self.get(ty);
         return switch (info) {
             .pointer, .many_pointer, .function => ptr_size,
-            .slice => 16, // {ptr, i64} — same layout as string
+            .slice => |s| blk: {
+                const la = self.typeAlignBytes(s.len_type);
+                const end = self.fatLenField(s.len_type).offset + self.typeSizeBytes(s.len_type);
+                const a = @max(ptr_size, la);
+                break :blk (end + a - 1) & ~(a - 1);
+            },
             .closure => 2 * ptr_size, // {fn_ptr, env_ptr}
             .optional => |o| blk: {
                 const child_info = self.get(o.child);
@@ -1380,7 +1425,7 @@ pub const TypeTable = struct {
         const info = self.get(ty);
         return switch (info) {
             .pointer, .many_pointer, .function => ptr_align,
-            .slice => 8, // i64 drives alignment
+            .slice => |s| @max(ptr_align, self.typeAlignBytes(s.len_type)),
             .closure => ptr_align, // {ptr, ptr}
             .optional => |o| blk: {
                 const child_info = self.get(o.child);
@@ -1506,7 +1551,10 @@ pub const TypeTable = struct {
             },
             .slice => |s| blk: {
                 const inner = self.formatTypeName(alloc, s.element);
-                break :blk std.fmt.allocPrint(alloc, "[]{s}", .{inner}) catch "[]?";
+                if (s.len_type == .i64)
+                    break :blk std.fmt.allocPrint(alloc, "[]{s}", .{inner}) catch "[]?";
+                const len_name = self.formatTypeName(alloc, s.len_type);
+                break :blk std.fmt.allocPrint(alloc, "@Slice({s},{s})", .{ inner, len_name }) catch "@Slice(?)";
             },
             .array => |a| blk: {
                 const inner = self.formatTypeName(alloc, a.element);
@@ -1622,7 +1670,10 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
         .f32, .f64, .void, .bool, .string, .cstring, .any, .type_value, .noreturn, .usize, .isize, .unresolved => {},
         .pointer => |p| h.update(std.mem.asBytes(&p.pointee)),
         .many_pointer => |p| h.update(std.mem.asBytes(&p.element)),
-        .slice => |s| h.update(std.mem.asBytes(&s.element)),
+        .slice => |s| {
+            h.update(std.mem.asBytes(&s.element));
+            h.update(std.mem.asBytes(&s.len_type));
+        },
         .array => |a| {
             h.update(std.mem.asBytes(&a.element));
             h.update(std.mem.asBytes(&a.length));
@@ -1700,7 +1751,7 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
         .f32, .f64, .void, .bool, .string, .cstring, .any, .type_value, .noreturn, .usize, .isize, .unresolved => true,
         .pointer => |p| p.pointee == b.pointer.pointee,
         .many_pointer => |p| p.element == b.many_pointer.element,
-        .slice => |s| s.element == b.slice.element,
+        .slice => |s| s.element == b.slice.element and s.len_type == b.slice.len_type,
         .array => |ar| ar.element == b.array.element and ar.length == b.array.length,
         .vector => |v| v.element == b.vector.element and v.length == b.vector.length,
         .optional => |o| o.child == b.optional.child,

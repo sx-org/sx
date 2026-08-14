@@ -2497,6 +2497,19 @@ pub const Ops = struct {
         }
     }
 
+    /// Fit an `i64` length into the length word of the fat pointer `slice_ty`
+    /// declares — `{ptr, i64}` for `[]T` / `string`, `{ptr, Len}` for a
+    /// `@Slice(T, Len)`.
+    fn fitLenWord(self: Ops, slice_ty: TypeId, len: c.LLVMValueRef) c.LLVMValueRef {
+        const want = self.e.toLLVMType(self.e.ir_mod.types.lenTypeOf(slice_ty));
+        const have = c.LLVMTypeOf(len);
+        if (have == want) return len;
+        const wbits = c.LLVMGetIntTypeWidth(want);
+        const hbits = c.LLVMGetIntTypeWidth(have);
+        if (wbits < hbits) return c.LLVMBuildTrunc(self.e.builder, len, want, "ss.len.tr");
+        return c.LLVMBuildSExt(self.e.builder, len, want, "ss.len.ext");
+    }
+
     pub fn emitSubslice(self: Ops, instruction: *const Inst, ss: Subslice) void {
         const base = self.e.resolveRef(ss.base);
         var lo = self.e.resolveRef(ss.lo);
@@ -2524,11 +2537,7 @@ pub const Ops = struct {
             const data = c.LLVMBuildExtractValue(self.e.builder, base, 0, "ss.data");
             var lo_indices = [_]c.LLVMValueRef{lo};
             const new_ptr = c.LLVMBuildGEP2(self.e.builder, elem_ty, data, &lo_indices, 1, "ss.ptr");
-            var new_len = c.LLVMBuildSub(self.e.builder, hi, lo, "ss.len");
-            // Ensure length is i64 for slice struct {ptr, i64}
-            if (c.LLVMTypeOf(new_len) != self.e.cached_i64) {
-                new_len = c.LLVMBuildSExt(self.e.builder, new_len, self.e.cached_i64, "ss.ext");
-            }
+            const new_len = self.fitLenWord(instruction.ty, c.LLVMBuildSub(self.e.builder, hi, lo, "ss.len"));
             var result = c.LLVMGetUndef(slice_ty);
             result = c.LLVMBuildInsertValue(self.e.builder, result, new_ptr, 0, "ss.wptr");
             result = c.LLVMBuildInsertValue(self.e.builder, result, new_len, 1, "ss.wlen");
@@ -2539,11 +2548,7 @@ pub const Ops = struct {
             _ = c.LLVMBuildStore(self.e.builder, base, tmp);
             var indices = [_]c.LLVMValueRef{ c.LLVMConstInt(self.e.cached_i64, 0, 0), lo };
             const new_ptr = c.LLVMBuildGEP2(self.e.builder, base_ty, tmp, &indices, 2, "ss.ptr");
-            var new_len = c.LLVMBuildSub(self.e.builder, hi, lo, "ss.len");
-            // Ensure length is i64 for slice struct {ptr, i64}
-            if (c.LLVMTypeOf(new_len) != self.e.cached_i64) {
-                new_len = c.LLVMBuildSExt(self.e.builder, new_len, self.e.cached_i64, "ss.ext");
-            }
+            const new_len = self.fitLenWord(instruction.ty, c.LLVMBuildSub(self.e.builder, hi, lo, "ss.len"));
             var result = c.LLVMGetUndef(slice_ty);
             result = c.LLVMBuildInsertValue(self.e.builder, result, new_ptr, 0, "ss.wptr");
             result = c.LLVMBuildInsertValue(self.e.builder, result, new_len, 1, "ss.wlen");
@@ -2555,10 +2560,7 @@ pub const Ops = struct {
             // unbounded pointer.
             var lo_indices = [_]c.LLVMValueRef{lo};
             const new_ptr = c.LLVMBuildGEP2(self.e.builder, elem_ty, base, &lo_indices, 1, "ss.ptr");
-            var new_len = c.LLVMBuildSub(self.e.builder, hi, lo, "ss.len");
-            if (c.LLVMTypeOf(new_len) != self.e.cached_i64) {
-                new_len = c.LLVMBuildSExt(self.e.builder, new_len, self.e.cached_i64, "ss.ext");
-            }
+            const new_len = self.fitLenWord(instruction.ty, c.LLVMBuildSub(self.e.builder, hi, lo, "ss.len"));
             var result = c.LLVMGetUndef(slice_ty);
             result = c.LLVMBuildInsertValue(self.e.builder, result, new_ptr, 0, "ss.wptr");
             result = c.LLVMBuildInsertValue(self.e.builder, result, new_len, 1, "ss.wlen");
@@ -2581,7 +2583,8 @@ pub const Ops = struct {
             const slice_ty = self.e.toLLVMType(instruction.ty);
             var result = c.LLVMGetUndef(slice_ty);
             result = c.LLVMBuildInsertValue(self.e.builder, result, elem_ptr, 0, "a2s.wptr");
-            const len_val = c.LLVMConstInt(self.e.cached_i64, len, 0);
+            const len_word_ty = self.e.toLLVMType(self.e.ir_mod.types.lenTypeOf(instruction.ty));
+            const len_val = c.LLVMConstInt(len_word_ty, len, 0);
             result = c.LLVMBuildInsertValue(self.e.builder, result, len_val, 1, "a2s.wlen");
             self.e.mapRef(result);
         } else {

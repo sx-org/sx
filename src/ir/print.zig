@@ -497,8 +497,16 @@ fn writeType(id: TypeId, tt: *const TypeTable, writer: Writer) !void {
             try writeType(p.element, tt, writer);
         },
         .slice => |s| {
-            try writer.writeAll("[]");
-            try writeType(s.element, tt, writer);
+            if (s.len_type == .i64) {
+                try writer.writeAll("[]");
+                try writeType(s.element, tt, writer);
+            } else {
+                try writer.writeAll("@Slice(");
+                try writeType(s.element, tt, writer);
+                try writer.writeAll(", ");
+                try writeType(s.len_type, tt, writer);
+                try writer.writeByte(')');
+            }
         },
         .array => |a| {
             try writer.print("[{d}]", .{a.length});
