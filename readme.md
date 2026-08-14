@@ -63,9 +63,9 @@ Third-party attributions for stdlib-derived code are recorded in
 
 ### Whitespace is syntax
 
-Two glyphs read by the gap around them — `{` and `!` each carry two meanings,
-and the line they sit on picks one. A line break is otherwise ordinary space,
-and `;` ends a statement.
+`{` juxtaposes with the expression before it wherever that statement is open.
+`!` is postfix force-unwrap on its own line and prefix `not` across a break.
+A line break is otherwise ordinary space, and `;` ends a statement.
 
 ```sx
 foo(2)      Box(i64)      xs[0]     // `(` applies, `[` indexes
@@ -85,9 +85,8 @@ in expressions and in every type position alike — and a `(` that opens somethi
 new (grouping, parameters, a declaration form) is free the same way:
 `add :: (a: i64) -> i64`, `n := (a + b) * c`. `-` and `*` also have prefix
 readings, and position alone decides: after a completed left operand the glyph
-is infix, whatever the gaps. The force-unwrap `!` is the one glyph the line
-still matters to: it binds only on its expression's own line, since across a
-break `!` is the prefix `not`.
+is infix, whatever the gaps. `!` is the one glyph the line decides: postfix
+force-unwrap on the same line, prefix `not` across a break.
 
 A statement that IS a block ends at its `}` instead of a `;`, and so does a
 declaration whose initializer is one; the last expression before a `}` may drop

@@ -319,9 +319,9 @@ ordinary comparisons. Native codegen and the comptime interpreter agree on this.
 
 ### Whitespace is Syntax
 
-Two glyphs — `{` and `!` — read differently depending on the whitespace around
-them: each carries two meanings and the line that separates them is what tells
-the readings apart. Everywhere else whitespace is free. `;` is what ends a
+`!` is postfix force-unwrap on its expression's own line and prefix `not`
+across a break. `{` juxtaposes with the expression before it wherever that
+statement is open. Everywhere else whitespace is free. `;` is what ends a
 statement, and a line break is ordinary space.
 
 **Free — `(`, `[`, and a prefix `-` / `--` / `*` take any spacing.** A `(`
