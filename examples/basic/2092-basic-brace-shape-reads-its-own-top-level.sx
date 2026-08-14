@@ -2,12 +2,11 @@
 // head reads as a trailing block or as a named aggregate, and the brace body's
 // OWN top level decides which. Groups nest — parens and brackets alike — so the
 // `,` between call arguments, the `=` naming one, and everything else inside a
-// nested group belongs to that group. A statement whose terminator is the line
-// break therefore stays one statement of a trailing block, however many
-// arguments, subscripts or postfix links it spans.
-#import "modules/std.sx"
+// nested group belongs to that group: a body statement stays one statement of a
+// trailing block, however many arguments, subscripts or postfix links it spans.
+#import "modules/std.sx";
 
-pair :: ufcs (a: i64, b: i64) -> i64 => a + b
+pair :: ufcs (a: i64, b: i64) -> i64 => a + b;
 
 show :: ufcs (xs: []i64) { for x in xs { print("{}", x) } }
 
@@ -16,13 +15,13 @@ Box :: struct ($T: Type) { v: T = 0; w: T = 0 }
 Holder :: struct { ctx: Context = .{} }
 
 run :: (label: string, body: Closure()) {
-    print("{}: ", label)
-    body()
+    print("{}: ", label);
+    body();
     print("\n")
 }
 
 main :: () -> i32 {
-    slots : [4]i64 = .[0, 0, 0, 0]
+    slots : [4]i64 = .[0, 0, 0, 0];
 
     // Two arguments and no `;`: the `,` is the argument list's.
     run("call") {
@@ -38,7 +37,7 @@ main :: () -> i32 {
     }
     // A subscript is a group too, and so is the call inside it.
     run("subscript") {
-        slots[pair(0, 1)] = 9
+        slots[pair(0, 1)] = 9;
         print("{}", slots[1])
     }
     // A bracketed literal's elements are the literal's.
@@ -54,7 +53,7 @@ main :: () -> i32 {
 
     // A `push` head takes the same decision — the brace is the push body unless
     // the body itself is field-shaped.
-    h := Holder{ ctx = context }
+    h := Holder{ ctx = context };
     push h.ctx {
         print("push: {}\n", pair(6, 7))
     }
@@ -62,9 +61,9 @@ main :: () -> i32 {
     // The markers that DO count are the ones the brace body writes itself: a
     // top-level `,` between elements or a top-level `name =`. A lone positional
     // element takes the separator comma to say so.
-    a := Box(i64){ 1, 2 }
-    b := Box(i64){ v = pair(1, 2) }
-    c := Box(i64){ pair(3, 4), }
-    print("box: {} {} {}\n", a.v, b.v, c.v)
+    a := Box(i64){ 1, 2 };
+    b := Box(i64){ v = pair(1, 2) };
+    c := Box(i64){ pair(3, 4), };
+    print("box: {} {} {}\n", a.v, b.v, c.v);
     0
 }

@@ -5,19 +5,19 @@
 // region taps, and the handler that runs is the one the CURRENT snapshot
 // carries. Between them the element reads as pressed, which is what a build
 // styles on.
-#import "modules/std.sx"
-#import "modules/ui/compose.sx"
-#import "modules/ui/input.sx"
-ui :: #import "modules/ui/types.sx"
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/input.sx";
+ui :: #import "modules/ui/types.sx";
 
-at :: (x: f32, y: f32) -> Point => .{ x = x, y = y }
+at :: (x: f32, y: f32) -> Point => .{ x = x, y = y };
 
-down :: (x: f32, y: f32) -> InputEvent => .pointer_down(.{ pointer = .{ value = 1 }, position = at(x, y) })
-move :: (x: f32, y: f32) -> InputEvent => .pointer_move(.{ pointer = .{ value = 1 }, position = at(x, y) })
-up :: (x: f32, y: f32) -> InputEvent => .pointer_up(.{ pointer = .{ value = 1 }, position = at(x, y) })
+down :: (x: f32, y: f32) -> InputEvent => .pointer_down(.{ pointer = .{ value = 1 }, position = at(x, y) });
+move :: (x: f32, y: f32) -> InputEvent => .pointer_move(.{ pointer = .{ value = 1 }, position = at(x, y) });
+up :: (x: f32, y: f32) -> InputEvent => .pointer_up(.{ pointer = .{ value = 1 }, position = at(x, y) });
 
 send :: (r: *Router, ev: InputEvent) {
-    e := ev
+    e := ev;
     r.dispatch(*e)
 }
 
@@ -27,87 +27,87 @@ Tally :: struct {
 }
 
 main :: () -> i32 {
-    identity := Identity.init(context.allocator)
-    router := Router.init(context.allocator)
-    tally := Tally{}
+    identity := Identity.init(context.allocator);
+    router := Router.init(context.allocator);
+    tally := Tally{};
 
     push .{ compose_ui = *identity, compose_input = *router } {
-        identity.begin_build()
+        identity.begin_build();
 
         // A handler captures by value, so what it carries to fire time is the
         // pointer, not the counters.
-        count := *tally
+        count := *tally;
 
         // Two rows, each its own hit region; the second carries a policy that
         // is transparent on its left half.
         root : View = vstack(0.0) {
             tappable(Rect{ fill = ui.COLOR_BLUE, height = 40.0 }, || {
-                count.top += 1
-            })
+                count.top += 1;
+            });
             tappable(Rect{ fill = ui.COLOR_GREEN, height = 40.0 },
                 || {
-                    count.bottom += 1
+                    count.bottom += 1;
                 },
                 |p: Point| -> HitPolicy if p.x < 50.0 then .fail else .tap)
         }
 
-        snap := CommittedUiSnapshot.init(context.allocator)
-        project(*root, Size{ width = 100.0, height = 80.0 }, *snap)
-        router.observe(*snap)
-        print("regions {} nodes {}\n", snap.hit_list.len, snap.scene.nodes.len)
+        snap := CommittedUiSnapshot.init(context.allocator);
+        project(*root, Size{ width = 100.0, height = 80.0 }, *snap);
+        router.observe(*snap);
+        print("regions {} nodes {}\n", snap.hit_list.len, snap.scene.nodes.len);
 
-        top_id := ElementId{ value = snap.hit_list.items[0].id }
+        top_id := ElementId{ value = snap.hit_list.items[0].id };
 
         // A tap on the top row.
-        send(*router, down(20.0, 10.0))
-        pressed_top := is_pressed(top_id)
-        send(*router, up(20.0, 10.0))
-        print("top {} pressed {} after {}\n", tally.top, pressed_top, is_pressed(top_id))
+        send(*router, down(20.0, 10.0));
+        pressed_top := is_pressed(top_id);
+        send(*router, up(20.0, 10.0));
+        print("top {} pressed {} after {}\n", tally.top, pressed_top, is_pressed(top_id));
 
         // The point stays captured across a move that leaves the region and
         // comes back; leaving drops the press, returning restores it.
-        send(*router, down(20.0, 10.0))
-        send(*router, move(20.0, 60.0))
-        left := is_pressed(top_id)
-        send(*router, move(20.0, 10.0))
-        back := is_pressed(top_id)
-        send(*router, up(20.0, 10.0))
-        print("wander {} {} taps {}\n", left, back, tally.top)
+        send(*router, down(20.0, 10.0));
+        send(*router, move(20.0, 60.0));
+        left := is_pressed(top_id);
+        send(*router, move(20.0, 10.0));
+        back := is_pressed(top_id);
+        send(*router, up(20.0, 10.0));
+        print("wander {} {} taps {}\n", left, back, tally.top);
 
         // An up taken outside the captured region is no tap.
-        send(*router, down(20.0, 10.0))
-        send(*router, up(20.0, 60.0))
-        print("released away {} {}\n", tally.top, tally.bottom)
+        send(*router, down(20.0, 10.0));
+        send(*router, up(20.0, 60.0));
+        print("released away {} {}\n", tally.top, tally.bottom);
 
         // The bottom row's policy fails its left half, so the point falls
         // through the stack and finds nothing under it.
-        send(*router, down(20.0, 60.0))
-        send(*router, up(20.0, 60.0))
-        print("transparent {}\n", tally.bottom)
+        send(*router, down(20.0, 60.0));
+        send(*router, up(20.0, 60.0));
+        print("transparent {}\n", tally.bottom);
 
         // Its right half takes taps.
-        send(*router, down(80.0, 60.0))
-        send(*router, up(80.0, 60.0))
-        print("opaque {}\n", tally.bottom)
+        send(*router, down(80.0, 60.0));
+        send(*router, up(80.0, 60.0));
+        print("opaque {}\n", tally.bottom);
 
         // A rebuild without the top row: the captured sequence has nothing
         // left to tap, so the up that follows fires nothing.
-        send(*router, down(20.0, 10.0))
-        identity.begin_build()
+        send(*router, down(20.0, 10.0));
+        identity.begin_build();
         rest : View = vstack(0.0) {
             Rect{ fill = ui.COLOR_GREEN, height = 40.0 }
         }
-        next := CommittedUiSnapshot.init(context.allocator)
-        project(*rest, Size{ width = 100.0, height = 80.0 }, *next)
-        router.observe(*next)
-        send(*router, up(20.0, 10.0))
-        print("vanished {} {}\n", tally.top, is_pressed(top_id))
+        next := CommittedUiSnapshot.init(context.allocator);
+        project(*rest, Size{ width = 100.0, height = 80.0 }, *next);
+        router.observe(*next);
+        send(*router, up(20.0, 10.0));
+        print("vanished {} {}\n", tally.top, is_pressed(top_id));
 
-        next.deinit()
+        next.deinit();
         snap.deinit()
     }
 
-    router.deinit()
-    identity.deinit()
+    router.deinit();
+    identity.deinit();
     0
 }

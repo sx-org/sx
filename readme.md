@@ -63,9 +63,9 @@ Third-party attributions for stdlib-derived code are recorded in
 
 ### Whitespace is syntax
 
-Four rules. Three decide how six glyphs read — `(`, `[`, `-`, `*`, `{`, and `!`
-each carry two meanings, and the gap around them picks one. The fourth is about
-the gap itself: a line break ends a statement, so `;` is optional.
+Three rules decide how six glyphs read — `(`, `[`, `-`, `*`, `{`, and `!` each
+carry two meanings, and the gap around them picks one. A line break is not one
+of those gaps: it is ordinary space, and `;` ends a statement.
 
 ```sx
 foo(2)      Box(i64)      xs[0]     // `(` applies, `[` indexes — only when GLUED
@@ -74,9 +74,10 @@ foo (2)     Box (i64)     xs [0]    // error, each naming the space and the fix
 a - b       a-b                     // infix: matching gaps on both sides
 a -b                                // `a`, then a prefix `-b`
 
-n := add(1, 2)                      // the line break is the terminator
+n := add(1, 2);                     // `;` is the terminator
 total := (hi << 16)
-    | lo                            // `|` can't start a statement — one expression
+    | lo;                           // unterminated above, so this is one
+                                    // expression
 ```
 
 A `(` or `[` binds to what precedes it only when nothing separates them — in
@@ -90,9 +91,9 @@ governs what binds to an expression from behind — the trailing-block `{`
 binds only on the expression's own line, since across a break the brace is a
 scope block and the `!` is the prefix `not`.
 
-A newline terminates a statement wherever a `;` would, and holds off when the
-token below cannot start one (`and`, `or`, `catch`, `|>`, an operator, a
-comma). Statements break and expressions chain: a block statement ends at its
+A statement that IS a block ends at its `}` instead of a `;`, and so does a
+declaration whose initializer is one; the last expression before a `}` may drop
+it too. Statements break and expressions chain: a block statement ends at its
 `}`, while a trailing-block call keeps its postfix chain across the line.
 
 Ending a statement is all `;` does — it is a pure separator. A block's value is

@@ -62,10 +62,10 @@ SxApp :: #jni_main #jni_class("co/swipelab/sxpurefailable/SxApp") {
 }
 
 main :: () -> i32 {
-    forward_same_set() catch { print("caught\n"); }
-    implicit_forward() catch { print("caught\n"); }
-    irreducible() catch { print("caught\n"); }
-    nonmember() catch { print("caught\n"); }
+    forward_same_set() catch { print("caught\n"); };
+    implicit_forward() catch { print("caught\n"); };
+    irreducible() catch { print("caught\n"); };
+    nonmember() catch { print("caught\n"); };
 
     // 3. Refused: a value-returning closure whose body produces no value.
     empty := || -> i32 { x := 1; };

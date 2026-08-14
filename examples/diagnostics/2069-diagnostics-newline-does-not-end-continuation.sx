@@ -1,7 +1,7 @@
-// Whitespace is syntax (specs §1), statement termination: a line break ends a
-// statement only when the token below can START one. A `,` cannot, so this is
-// not two statements — it is one statement missing its terminator, and the
-// report names the terminator rather than blaming the `,`.
+// Whitespace is syntax (specs §1), statement termination: a line break is
+// ordinary space, so the statement below reads on into the next line. This is
+// one statement missing its terminator, and the report names the terminator
+// rather than blaming the `,` it ran into.
 #import "modules/std.sx";
 
 main :: () -> i32 {

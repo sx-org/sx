@@ -1,12 +1,11 @@
 // Statement termination inside a `@BuildBlock(P)` body (specs §1, Whitespace is
 // Syntax). A build body holds ordinary statements, so each one ends at its `;`
-// or at the line break where the `;` would have gone. An argument list is closed
-// by its own `)` — so a published expression carrying two or more arguments,
-// its own or any down its postfix chain, needs no terminator, and neither does
-// a container whose trailing block holds more of them.
-#import "modules/std.sx"
-#import "modules/fluent.sx"
-#import "modules/std/list.sx"
+// — except the last, which the body's `}` ends. An argument list is closed by
+// its own `)`, so the arity of a published expression decides nothing about its
+// terminator.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+#import "modules/std/list.sx";
 
 View :: @OpenSet(.{ max = 128 }) {
     weight :: (self: *Self) -> i64;
@@ -24,10 +23,10 @@ Group :: @OpenVariant(View) {
     weight :: (self: *Group) -> i64 => self.gap * 1000 + self.total;
 }
 
-leaf :: (n: i64, tag: i64 = 0) -> Leaf => .{ n = n, tag = tag }
+leaf :: (n: i64, tag: i64 = 0) -> Leaf => .{ n = n, tag = tag };
 
 // An aggregate argument with a second argument behind it.
-badge :: (base: Leaf, bump: i64) -> Leaf => .{ n = base.n, tag = base.tag + bump }
+badge :: (base: Leaf, bump: i64) -> Leaf => .{ n = base.n, tag = base.tag + bump };
 
 Collect :: struct {
     seen: List(i64) = .{};
@@ -40,56 +39,56 @@ Collect :: struct {
 }
 
 column :: (content: $B/@BuildBlock(View)) -> List(i64) {
-    sink := Collect{}
-    content.run(*sink)
+    sink := Collect{};
+    content.run(*sink);
     sink.seen
 }
 
 // A container that forwards its own build block, so the bodies below nest.
 stack :: (gap: i64, seed: i64, content: $B/@BuildBlock(View)) -> Group {
-    sum := seed
+    sum := seed;
     for w in column(content) {
-        sum += w
+        sum += w;
     }
     .{ gap = gap, total = sum }
 }
 
 show :: (label: string, ws: List(i64)) {
-    print("{}:", label)
+    print("{}:", label);
     for w in ws { print(" {}", w) }
     print("\n")
 }
 
 main :: () -> i32 {
-    // One statement, two arguments, terminator implied by the line break.
+    // One statement, two arguments, ended by the body's `}`.
     one := column() {
         leaf(1, 2)
     }
-    show("one", one)
+    show("one", one);
 
-    // Two statements, each ended by its own line break.
+    // Two statements: the first takes its `;`, the body's `}` ends the second.
     two := column() {
-        leaf(3, 4)
+        leaf(3, 4);
         leaf(5)
     }
-    show("two", two)
+    show("two", two);
 
     // An aggregate argument ahead of a second argument.
     mixed := column() {
-        badge(Leaf{ n = 6, tag = 1 }, 2)
+        badge(Leaf{ n = 6, tag = 1 }, 2);
         leaf(7)
     }
-    show("mixed", mixed)
+    show("mixed", mixed);
 
     // Nested containers: a multi-argument container call whose trailing block is
-    // another build body, written without terminators throughout.
+    // another build body. Each body's last statement is ended by that `}`.
     nested := column() {
         stack(8, 5) {
-            leaf(1, 1)
+            leaf(1, 1);
             badge(Leaf{ n = 2, tag = 2 }, 3)
         }
         leaf(9, 9)
     }
-    show("nested", nested)
+    show("nested", nested);
     0
 }

@@ -29,7 +29,7 @@ main :: () -> i64 {
 
     n := 2;
     run(n) { print("run\n"); }
-    Group(n) {}                   // spaced: an empty trailing block
-    run(n){}                      // tight: the same block
+    Group(n) {};                  // spaced: an empty trailing block
+    run(n){};                     // tight: the same block
     return 0;
 }

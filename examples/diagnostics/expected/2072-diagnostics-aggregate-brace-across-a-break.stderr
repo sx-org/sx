@@ -1,5 +1,5 @@
 error: expected ';'
-  --> examples/diagnostics/2072-diagnostics-aggregate-brace-across-a-break.sx:12:12
+  --> examples/diagnostics/2072-diagnostics-aggregate-brace-across-a-break.sx:11:5
    |
-12 |     { a = 1, b = 2 };
-   |            ^
+11 |     { a = 1, b = 2 };
+   |     ^
