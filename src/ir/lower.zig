@@ -56,6 +56,7 @@ const lower_expr = @import("lower/expr.zig");
 const lower_closure = @import("lower/closure.zig");
 const lower_init_plan = @import("lower/init_plan.zig");
 const lower_build_block = @import("lower/build_block.zig");
+const lower_empty_brace = @import("lower/empty_brace.zig");
 const lower_open_set = @import("lower/open_set.zig");
 const lower_bound = @import("lower/bound.zig");
 
@@ -220,7 +221,7 @@ pub const SourceConstCtx = struct {
 pub const Binding = struct {
     /// Where a NON-ALLOCA binding came from. Drives the shape-specific
     /// "cannot assign" diagnostic: a for-loop
-    /// element can point at the `(*x)` by-ref spelling, while a range index /
+    /// element can point at the `*x` by-ref spelling, while a range index /
     /// match payload / catch binding has no container storage to write back
     /// into and gets copy-into-a-`:=`-local advice only; a function-local
     /// `::` const gets the constant-family message. `.other` covers synthetic
@@ -230,24 +231,24 @@ pub const Binding = struct {
         other,
         /// Function-local `x :: 5` (lowerConstDecl) — immutable constant.
         local_const,
-        /// `for xs (x)` by-value element — container-backed; `(*x)` exists.
+        /// `for x in xs` by-value element — container-backed; `*x` exists.
         for_element,
-        /// `for 0..N (i)` / paired range cursor (runtime or inline-for) —
+        /// `for i in 0..N` / paired range cursor (runtime or inline-for) —
         /// the position has no storage (`*` on a range capture is an error).
         range_index,
         /// Match-arm payload / optional-match binding.
         match_payload,
-        /// `catch (e)` / `onfail e` error binding.
+        /// `catch |e|` / `onfail |e|` error binding.
         catch_err,
-        /// `inline for xs (x)` pack-element alias (`pack_elem` is also set).
+        /// `inline for x in xs` pack-element alias (`pack_elem` is also set).
         pack_elem_alias,
     };
 
     ref: Ref,
     ty: TypeId,
     is_alloca: bool, // true if ref is a pointer that needs load
-    is_ref_capture: bool = false, // `for xs: (*x)` — `ref` is `*elem`; auto-deref in value positions
-    /// `inline for xs (x)` element capture: `x` is an AST ALIAS for the
+    is_ref_capture: bool = false, // `for *x in xs` — `ref` is `*elem`; auto-deref in value positions
+    /// `inline for x in xs` element capture: `x` is an AST ALIAS for the
     /// synthesized `xs[<i>]` of the current unroll iteration (`ref` is
     /// `.none`). Identifier consumers substitute this node, so the capture
     /// inherits the full pack-element semantics — concrete-arg substitution,
@@ -1315,7 +1316,7 @@ pub const Lowering = struct {
             return self.resolveTypeWithBindings(rt);
         }
         // No explicit annotation — the type is inferred from the body, which
-        // references the function's own parameters (`(x: i32) => x * 2`). Those
+        // references the function's own parameters (`|x: i32| x * 2`). Those
         // params aren't pushed into `self.scope` until body lowering, so bind
         // them into a temporary scope here; otherwise `inferExprType` can't
         // resolve `x`, the inference yields `.unresolved`, and that reaches LLVM
@@ -2159,7 +2160,7 @@ pub const Lowering = struct {
             const gop = self.diag_enclosing_seen.getOrPut(key) catch null;
             const first = if (gop) |g| !g.found_existing else true;
             if (first) {
-                diags.addFmt(.err, span, "a nested function cannot reference the enclosing local '{s}' — use a closure ('{s} := () => ...') to capture it", .{ name, name });
+                diags.addFmt(.err, span, "a nested function cannot reference the enclosing local '{s}' — use a closure ('{s} := || ...') to capture it", .{ name, name });
             }
         }
         return self.emitPlaceholder(name);
@@ -3295,6 +3296,7 @@ pub const Lowering = struct {
     pub const funcWantsImplicitCtx = lower_decl.funcWantsImplicitCtx;
     pub const fnPtrTypeWantsCtx = lower_decl.fnPtrTypeWantsCtx;
     pub const scanDecls = lower_decl.scanDecls;
+    pub const normalizeEmptyBraceCalls = lower_empty_brace.normalizeEmptyBraceCalls;
     pub const expandModuleDrivers = lower_expand.expandModuleDrivers;
     pub const registerConstAliases = lower_decl.registerConstAliases;
     pub const registerLiteralModuleConsts = lower_decl.registerLiteralModuleConsts;

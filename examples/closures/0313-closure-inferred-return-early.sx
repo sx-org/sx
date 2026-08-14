@@ -1,27 +1,26 @@
-// A block-body lambda (`(params) { ... }`) with an INFERRED return
+// A block-body closure (`|params| { ... }`) with an INFERRED return
 // type whose value is produced via early `return`s infers the return type
 // from the `return` operands.
 //
 // Closure return-type inference mirrors the function-decl path, scanning the
-// body's `return` statements, so `() { if c { return 11; } return 22; }`
+// body's `return` statements, so `|| { if c { return 11; } return 22; }`
 // infers `i64` rather than reading the trailing `return` as the block's
 // (void) value.
 //
-// Syntax note: a block body is the `(params) -> R? { ... }` form; the
-// bare `(params) => expr` lambda is arrow + EXPRESSION only (no block).
+// A block body is `|params| { ... }`; `|params| expr` is the expression form.
 #import "modules/std.sx";
 
 main :: () {
   // early returns only — inferred return, no optionals
-  f := () { if 1 > 0 { return 11; } return 22; };
+  f := || { if 1 > 0 { return 11; } return 22; };
   print("f: {}\n", f());
 
   // early return + trailing-expression block value
-  g := (n: i64) { if n > 0 { return 100; } 200 };
+  g := |n: i64| { if n > 0 { return 100; } 200 };
   print("g+: {}\n", g(1));
   print("g-: {}\n", g(-1));
 
   // inferred float return via early returns
-  h := (n: i64) { if n > 0 { return 3.5; } return 1.5; };
+  h := |n: i64| { if n > 0 { return 3.5; } return 1.5; };
   print("h: {}\n", h(1));
 }

@@ -61,7 +61,7 @@ pair_add :: (a: $T, b: $U) -> i64 {
 
 typed_sum :: (..args: []i32) -> i32 {
     result := 0;
-    for args (it) { result = result + it; }
+    for it in args { result = result + it; }
     result
 }
 
@@ -155,7 +155,7 @@ sm_pair :: (a: i32, b: i32) -> (i32, i32, !) {
 
 // `catch` block that diverges (logs the tag, then returns a fallback)
 sm_or_default :: (n: i32) -> i32 {
-    return sm_parse(n) catch (e) {
+    return sm_parse(n) catch |e| {
         print("  logged {}\n", e);
         return -1;
     };

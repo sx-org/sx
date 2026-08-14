@@ -1281,10 +1281,9 @@ fn loadImport(
     }
 }
 
-/// A module-scope declaration-expansion driver: `inline if` (including its
-/// `inline if X == { case … }` match spelling) or `inline for`. Lowering owns
-/// their evaluation — here they are opaque containers whose bodies keep their
-/// declarations until a branch is selected.
+/// A module-scope declaration-expansion driver: `inline if`, `inline match`,
+/// or `inline for`. Lowering owns their evaluation — here they are opaque
+/// containers whose bodies keep their declarations until a branch is selected.
 pub fn isModuleDriver(decl: *const Node) bool {
     return switch (decl.data) {
         .if_expr => |ie| ie.is_comptime,

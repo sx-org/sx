@@ -12,7 +12,7 @@ invoke_once :: (b: *Block) {
 
 main :: () -> i32 {
   x : i64 = 7;
-  invoke_once(xx () {
+  invoke_once(xx || {
     print("inline block, x = {}\n", x);
   });
   0

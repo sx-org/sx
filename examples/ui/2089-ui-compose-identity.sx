@@ -24,7 +24,7 @@ pair :: () -> (a: ElementId, b: ElementId) {
 
 build :: (out: *List(u64)) {
     context.compose_ui.begin_build()
-    for 0..3 (i) { out.append(cell().value) }
+    for i in 0..3 { out.append(cell().value) }
     a, b := pair()
     out.append(a.value)
     out.append(b.value)
@@ -32,15 +32,15 @@ build :: (out: *List(u64)) {
 
 same :: (a: *List(u64), b: *List(u64)) -> bool {
     if a.len != b.len then return false
-    for a.items, 0.. (v, i) {
+    for v, i in a.items, 0.. {
         if v != b.items[i] then return false
     }
     true
 }
 
 distinct :: (ids: *List(u64)) -> bool {
-    for ids.items, 0.. (v, i) {
-        for ids.items, 0.. (w, j) {
+    for v, i in ids.items, 0.. {
+        for w, j in ids.items, 0.. {
             if i != j and v == w then return false
         }
     }
@@ -63,7 +63,7 @@ main :: () -> i32 {
         // continues that site's run instead of starting one of its own.
         ui.begin_build()
         run := List(u64){}
-        for 0..3 (i) { run.append(cell().value) }
+        for i in 0..3 { run.append(cell().value) }
         fourth := row()
         print("shared site {} {} {}\n",
             run.items[0] == first.items[0],

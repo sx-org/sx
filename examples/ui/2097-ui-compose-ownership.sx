@@ -92,7 +92,7 @@ main :: () -> i32 {
         pointers.begin_build()
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
-                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, () {})
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
             }
             project(*tree, Size{ width = 60.0, height = 20.0 }, *live)
         }
@@ -124,8 +124,8 @@ main :: () -> i32 {
         hit := *struck
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
-                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, () {})
-                focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, (ev: *KeyEvent) {
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
+                focusable(Rect{ fill = ui.COLOR_GREEN, height = 20.0 }, |ev: *KeyEvent| {
                     hit.* += 1
                 })
             }
@@ -163,7 +163,7 @@ main :: () -> i32 {
         stamps.begin_build()
         push .{ allocator = scratch } {
             tree : View = vstack(0.0) {
-                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, () {})
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {})
             }
             project(*tree, Size{ width = 60.0, height = 20.0 }, *moved)
             untouched = second.end_index == 0
@@ -189,12 +189,12 @@ main :: () -> i32 {
         app := UiRoot.init(Size{ width = 60.0, height = 40.0 }, home)
         builds := *built
         seen := *taken
-        spin := FrameLoop.init(*app, () -> View {
+        spin := FrameLoop.init(*app, || -> View {
             builds.* += 1
             n := use_state(i64, 0)
             n.set(n.get() + 1)
             v : View = vstack(0.0) {
-                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, () {
+                tappable(Rect{ fill = ui.COLOR_BLUE, height = 20.0 }, || {
                     seen.* += 1
                 })
             }

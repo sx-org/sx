@@ -23,7 +23,7 @@ impl Into(Block) for Closure(..$args) -> $R {
 }
 
 main :: () -> i32 {
-    cl := (a: i32, b: bool) => true;
+    cl := |a: i32, b: bool| true;
     b : *Block = xx cl;
     print("pack impl match ok\n");
     return 0;

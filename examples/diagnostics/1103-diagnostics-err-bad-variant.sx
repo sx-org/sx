@@ -11,9 +11,9 @@ Shape :: enum {
 
 main :: () {
     s :Shape = .circle(3.14);
-    if s == {
-        case .circle: (r) { print("r={}\n", r); }
-        case .Bogus: (x) { print("bogus={}\n", x); }
+    match s {
+        case .circle: |r| { print("r={}\n", r); }
+        case .Bogus: |x| { print("bogus={}\n", x); }
         case .none: print("none\n");
         case .rect: print("rect\n");
     }

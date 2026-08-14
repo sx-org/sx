@@ -118,7 +118,7 @@ main :: () {
     // For loop basic
     farr : [4]i32 = .[10, 20, 30, 40];
     out("for:");
-    for farr (it) {
+    for it in farr {
         out(" ");
         out(int_to_string(it));
     }
@@ -126,14 +126,14 @@ main :: () {
 
     // For with print
     out("for-print:");
-    for farr (it) {
+    for it in farr {
         print(" {}", it);
     }
     out("\n");
 
     // For with index
     out("for-idx:");
-    for farr, 0.. (_, ix) {
+    for _, ix in farr, 0.. {
         out(" ");
         out(int_to_string(ix));
     }
@@ -141,14 +141,14 @@ main :: () {
 
     // For with print two args
     out("for-2arg:");
-    for farr, 0.. (it, ix) {
+    for it, ix in farr, 0.. {
         print(" {}@{}", it, ix);
     }
     out("\n");
 
     // For with break
     out("for-break:");
-    for farr (it) {
+    for it in farr {
         if it == 30 { break; }
         print(" {}", it);
     }
@@ -156,7 +156,7 @@ main :: () {
 
     // For with continue
     out("for-continue:");
-    for farr (it) {
+    for it in farr {
         if it == 20 { continue; }
         print(" {}", it);
     }
@@ -165,14 +165,14 @@ main :: () {
     // For on slice
     fsl : []i32 = .[10, 20, 30];
     out("for-slice:");
-    for fsl (it) {
+    for it in fsl {
         print(" {}", it);
     }
     out("\n");
 
     // For on slice with index
     out("for-slice-idx:");
-    for fsl, 0.. (it, ix) {
+    for it, ix in fsl, 0.. {
         print(" {}:{}", ix, it);
     }
     out("\n");
@@ -181,8 +181,8 @@ main :: () {
     nf_a : [2]i32 = .[0, 1];
     nf_b : [2]i32 = .[0, 1];
     out("for-nested:");
-    for nf_a (oa) {
-        for nf_b (ob) {
+    for oa in nf_a {
+        for ob in nf_b {
             print(" ({},{})", oa, ob);
         }
     }
@@ -191,7 +191,7 @@ main :: () {
     // For with break preserving index
     fbi : [5]i32 = .[10, 20, 30, 40, 50];
     fbi_idx := 0;
-    for fbi, 0.. (it, ix) {
+    for it, ix in fbi, 0.. {
         if it == 30 { fbi_idx = ix; break; }
     }
     print("for-break-idx: {}\n", fbi_idx);

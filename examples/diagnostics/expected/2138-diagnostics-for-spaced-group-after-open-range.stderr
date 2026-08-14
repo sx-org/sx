@@ -1,0 +1,5 @@
+error: the first iterable must have a bounded length (it drives the loop) — an open range 'a..' may only follow it
+  --> examples/diagnostics/2138-diagnostics-for-spaced-group-after-open-range.sx:7:18
+   |
+ 7 |     for i in 0.. (n) { _ = i; }
+   |                  ^

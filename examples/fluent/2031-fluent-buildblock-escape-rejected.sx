@@ -42,7 +42,7 @@ leak :: (content: $B/@BuildBlock(Drawable)) -> B {
 }
 
 capture :: (content: $B/@BuildBlock(Drawable)) {
-    later := () => { elsewhere(content.shape().static_expressions); };
+    later := || { elsewhere(content.shape().static_expressions); };
 }
 
 reach :: (content: $B/@BuildBlock(Drawable)) {

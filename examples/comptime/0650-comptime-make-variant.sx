@@ -2,7 +2,7 @@
 // metatype reflection triad: construct a value of a MINTED tagged-union by
 // VARIANT INDEX, when the variant is chosen at runtime and the union was
 // synthesized at comptime (so its labels can't be a literal `.label(…)`). This
-// is the shape the `race` result uses: an `inline for 0..N (i)` arm builds the
+// is the shape the `race` result uses: an `inline for i in 0..N` arm builds the
 // i-th variant of a synthesized result carrying the winner's value.
 //
 // Covers heterogeneous + COMPLEX payloads (multi-field struct, string fat
@@ -28,11 +28,11 @@ R :: make_enum("R", .[
 // each arm's payload type differs. The `return` inside the `inline if` inside the
 // `inline for` is the pattern make_variant exists to enable.
 pick :: (idx: i64, vv: Vec3, sv: string, bv: Big, nv: i64) -> R {
-    inline for 0..struct_field_count(R) (i) {
+    inline for i in 0..struct_field_count(R) {
         if idx == i {
             // Comptime match on the loop cursor `i` selects the arm whose payload
             // type matches variant `i` — cleaner than nested `inline if`/`else`.
-            inline if i == {
+            inline match i {
                 case 0: { return make_variant(R, i, vv); }
                 case 1: { return make_variant(R, i, sv); }
                 case 2: { return make_variant(R, i, bv); }
@@ -44,11 +44,11 @@ pick :: (idx: i64, vv: Vec3, sv: string, bv: Big, nv: i64) -> R {
 }
 
 show :: (r: R) {
-    if r == {
-        case .v:   (p) { print("v = {} {} {}\n", p.x, p.y, p.z); }
-        case .s:   (p) { print("s = {}\n", p); }
-        case .big: (p) { print("big = {} {} {} {} {}\n", p.a, p.b, p.c, p.d, p.tag); }
-        case .n:   (p) { print("n = {}\n", p); }
+    match r {
+        case .v:   |p| { print("v = {} {} {}\n", p.x, p.y, p.z); }
+        case .s:   |p| { print("s = {}\n", p); }
+        case .big: |p| { print("big = {} {} {} {} {}\n", p.a, p.b, p.c, p.d, p.tag); }
+        case .n:   |p| { print("n = {}\n", p); }
     }
 }
 

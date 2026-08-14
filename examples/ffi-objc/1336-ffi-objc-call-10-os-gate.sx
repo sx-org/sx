@@ -7,7 +7,7 @@
 //
 // On macOS the iOS arm is also stripped (the host is not iOS) so the
 // runtime test just prints "host stripped both", proving the
-// `inline if OS == { case }` form works around `#objc_call`
+// `inline match OS` form works around `#objc_call`
 // sites the same way it does elsewhere.
 
 #import "modules/std.sx";
@@ -19,7 +19,7 @@
 SxObjcOsGateStub :: #jni_main #jni_class("co/swipelab/sxobjcosgate/SxObjcOsGateStub") {}
 
 main :: () -> i32 {
-    inline if OS == {
+    inline match OS {
         case .ios: {
             // Stripped on macOS + Android. Compiled on iOS / ios-sim.
             #objc_call(void)(null, "init");

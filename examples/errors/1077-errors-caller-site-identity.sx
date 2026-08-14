@@ -32,7 +32,7 @@ main :: () -> i32 {
     loop_ordinals := 0;
     same := true;
     prev : u64 = 0;
-    for 0..3 (i) {
+    for i in 0..3 {
         ord := seen("loop");
         if i == 0 { prev = ord; } else if ord != prev { same = false; }
         loop_ordinals += 1;

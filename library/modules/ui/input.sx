@@ -127,8 +127,8 @@ InputQueue :: struct {
 
     push :: (self: *InputQueue, ev: InputEvent) {
         // Owned payloads: copy on entry, before any queue placement.
-        if ev == {
-            case .text: (t) {
+        match ev {
+            case .text: |t| {
                 self.events.append(.text(self.copy_text(t)), self.gpa);
                 return;
             }
@@ -136,10 +136,10 @@ InputQueue :: struct {
         }
         if self.events.len > 0 {
             last := *self.events.items[self.events.len - 1];
-            if ev == {
-                case .pointer_move: (p) {
-                    if last == {
-                        case .pointer_move: (lp) {
+            match ev {
+                case .pointer_move: |p| {
+                    match last {
+                        case .pointer_move: |lp| {
                             if lp.pointer.value == p.pointer.value and lp.header.root == p.header.root {
                                 self.events.items[self.events.len - 1] = ev;
                                 return;
@@ -147,9 +147,9 @@ InputQueue :: struct {
                         }
                     }
                 }
-                case .pointer_hover: (p) {
-                    if last == {
-                        case .pointer_hover: (lp) {
+                case .pointer_hover: |p| {
+                    match last {
+                        case .pointer_hover: |lp| {
                             if lp.pointer.value == p.pointer.value and lp.header.root == p.header.root {
                                 self.events.items[self.events.len - 1] = ev;
                                 return;
@@ -157,9 +157,9 @@ InputQueue :: struct {
                         }
                     }
                 }
-                case .scroll: (s) {
-                    if last == {
-                        case .scroll: (ls) {
+                case .scroll: |s| {
+                    match last {
+                        case .scroll: |ls| {
                             if ls.pointer.value == s.pointer.value and ls.header.root == s.header.root {
                                 merged := s;
                                 merged.delta = ls.delta.add(s.delta);
@@ -189,14 +189,14 @@ InputQueue :: struct {
     // Deliver every queued event in order — payloads are borrowed for
     // the call — then clear, releasing owned text.
     drain :: (self: *InputQueue, f: Closure(*InputEvent)) {
-        for self.events (*e) { f(e); }
+        for *e in self.events { f(e); }
         self.clear();
     }
 
     clear :: (self: *InputQueue) {
-        for self.events (e) {
-            if e == {
-                case .text: (t) { self.gpa.dealloc_bytes(xx t.text.ptr); true }
+        for e in self.events {
+            match e {
+                case .text: |t| { self.gpa.dealloc_bytes(xx t.text.ptr); true }
                 else: false
             } { }
         }

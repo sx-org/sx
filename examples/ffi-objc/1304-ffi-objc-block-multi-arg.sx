@@ -43,7 +43,7 @@ g_sum: i32 = 0;
 g_tag: *void = null;
 
 main :: () -> i32 {
-    cl := (n: i32, tag: *void) {
+    cl := |n: i32, tag: *void| {
         g_sum = n + 1;
         g_tag = tag;
     };

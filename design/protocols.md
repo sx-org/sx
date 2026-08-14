@@ -194,10 +194,10 @@ Serialize :: protocol tagged {
 
 SERIALIZABLE :: .[Point, Rect, Color, Widget];
 
-inline for SERIALIZABLE (T) {
+inline for T in SERIALIZABLE {
     impl Serialize for T {
         write :: (self: *T, out: *Buf) {
-            inline for 0..struct_field_count(T) (i) {
+            inline for i in 0..struct_field_count(T) {
                 write_field(out, struct_field_name(T, i),
                             struct_field_value(self.*, i));
             }
@@ -1444,6 +1444,7 @@ conformer identity.
 | scheduler quiesces with parked evaluations (self-feeding or mutual) | compile error — expansion deadlock, every parked evaluation and its awaited facts named (§7.9) |
 | comptime protocol value escaping into the image | declared-global referents relocate in place (mutable); comptime temporaries become writable anonymous image globals, deduped by object identity, nested handles recursing; OWNING erased values cannot escape — compile error (§7.9) |
 | type declared inside a top-level `inline for` body | flattens to module scope — duplicate across iterations diagnoses; parameterize the type (`Vec :: struct($N: u32)`) instead of re-declaring per iteration |
+| type annotation on an `inline for` type-list cursor | compile error — the cursor binds a type, not a value of one |
 | `inline for` conformance-list elements | concrete types only (a `Type` never tags a protocol, §8); `#run`-computed lists are legal but expansion-driving (§7.9 scheduling); duplicate elements and nested unrolls diagnose with cursor provenance ("T = Point, i = 1") |
 | conformer method name colliding with an existing member of the type | exact protocol signature: the existing method satisfies conformance (impl may omit; providing it duplicates). anything else (field, different signature): compile error at the impl |
 | default method calling an excluded method | legal — defaults compile per conformer against concrete `Self` (§2); exclusion binds only calls through erased values |

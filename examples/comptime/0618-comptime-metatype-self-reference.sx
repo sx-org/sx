@@ -22,8 +22,8 @@ List :: make_list();
 
 // Recursive traversal: `count` matches `n.*` (deref) into the same nominal type.
 count :: (n: *List) -> i64 {
-    if n.* == {
-        case .cons: (next) { return 1 + count(next); }
+    match n.* {
+        case .cons: |next| { return 1 + count(next); }
         case .nil:  { return 0; }
     }
     return 0;
@@ -35,9 +35,9 @@ main :: () -> i32 {
     c : List = .cons(*b);
 
     // Match the payload pointer directly (match auto-derefs).
-    if c == {
-        case .cons: (p) {
-            if p == {
+    match c {
+        case .cons: |p| {
+            match p {
                 case .cons: { print("c -> cons\n"); }
                 case .nil:  { print("c -> nil\n"); }
             }

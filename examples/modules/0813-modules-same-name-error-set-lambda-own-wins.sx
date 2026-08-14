@@ -20,8 +20,8 @@
 IoErr :: error { Disk }
 
 main :: () -> i32 {
-    fail_own := () -> !IoErr { raise error.Disk; };
-    fail_own() catch (e) {
+    fail_own := || -> !IoErr { raise error.Disk; };
+    fail_own() catch |e| {
         if e == error.Disk { print("own=Disk\n"); }
     };
     d := dep_err();

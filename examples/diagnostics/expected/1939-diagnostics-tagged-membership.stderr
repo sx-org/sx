@@ -19,5 +19,5 @@ error: 'Timer' does not implement 'View' — a tagged protocol's conformer set i
 warning: arm 'Timer' is dead — it does not implement 'View', whose conformer set is whole-program, so this arm never matches
   --> examples/diagnostics/1939-diagnostics-tagged-membership.sx:40:14
    |
-40 |         case Timer:  (y) { print("{}\n", y.deadline); }
+40 |         case Timer:  |y| { print("{}\n", y.deadline); }
    |              ^^^^^

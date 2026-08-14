@@ -14,7 +14,7 @@ ro :: (c: bool) -> ?i64 { return if c { 5 } else { null }; }
 
 // match: null arm + diverging arm must still yield `?i64` (none for `.A`).
 mf :: (e: E) -> i64 {
-    y : ?i64 = if e == { case .A: null; case .B: { return -5; } };
+    y : ?i64 = match e { case .A: null; case .B: { return -5; } };
     return if v := y { v } else { 100 };
 }
 
@@ -53,14 +53,14 @@ main :: () {
     ea := E.A;
 
     // all-null match arms under a `?i64` target → `none`, not a present `{0,true}`
-    i : ?i64 = if ea == { case .A: null; case .B: null; };
+    i : ?i64 = match ea { case .A: null; case .B: null; };
     print("i null={}\n", if v := i { false } else { true });   // true
 
     // null arm + concrete arm (control — already lifted): present / none
-    j : ?i64 = if ea == { case .A: 5; case .B: null; };
+    j : ?i64 = match ea { case .A: 5; case .B: null; };
     print("j val={}\n", if v := j { v } else { -1 });          // 5
     eb := E.B;
-    k : ?i64 = if eb == { case .A: 5; case .B: null; };
+    k : ?i64 = match eb { case .A: 5; case .B: null; };
     print("k null={}\n", if v := k { false } else { true });   // true
 
     // null arm + diverging arm composes (none for `.A`, so the 100 fallback)

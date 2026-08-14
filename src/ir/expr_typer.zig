@@ -418,7 +418,7 @@ pub const ExprTyper = struct {
             .identifier => |id| {
                 if (self.l.scope) |scope| {
                     if (scope.lookup(id.name)) |binding| {
-                        // `inline for xs (x)` element capture — type as the
+                        // `inline for x in xs` element capture — type as the
                         // synthesized `xs[<i>]` it aliases.
                         if (binding.pack_elem) |elem| return self.l.inferExprType(elem);
                         return binding.ty;

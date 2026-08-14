@@ -1,0 +1,5 @@
+error: capture 'x' is annotated 'i64' but the element type is 'f64'
+  --> examples/diagnostics/2143-diagnostics-inline-for-pack-element-type.sx:7:19
+   |
+ 7 |     inline for x: i64 in xs { print("{}\n", x); }
+   |                   ^^^

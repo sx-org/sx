@@ -71,7 +71,7 @@ Sink :: struct ($T: Type) {
 
 impl @BuildSink($T) for Sink($T) {
     expression :: (self: *Sink($T), value: $I/@Init($V/T)) {
-        inline if T == {
+        inline match T {
             case protocol: {
                 payload := context.allocator.create(V);
                 value.write(payload);

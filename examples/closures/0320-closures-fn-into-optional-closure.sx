@@ -2,7 +2,7 @@
 // thunk) composes with T → ?T wrapping in every position where each step
 // applies individually — call args, struct-literal fields, decl targets, and
 // returns. The point-free slot idiom (`opt_slot(toolbar)`,
-// `B{ on_tap = toolbar }`) behaves exactly like `opt_slot(() => toolbar())`.
+// `B{ on_tap = toolbar }`) behaves exactly like `opt_slot(|| toolbar())`.
 #import "modules/std.sx";
 
 toolbar :: () { print("toolbar\n"); }

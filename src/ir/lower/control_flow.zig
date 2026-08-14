@@ -687,7 +687,7 @@ pub fn lowerWhile(self: *Lowering, we: *const ast.WhileExpr) Ref {
 }
 
 /// View a `List(T)`-like struct as its backing `items` pointer + element type
-/// + live length, so `for list (x)` iterates the elements. Two shapes:
+/// + live length, so `for x in list` iterates the elements. Two shapes:
 ///   - `{ items: []T, cap }` — `items` is a `[]T` slice whose own `.ptr`/`.len`
 ///     ARE the backing pointer and live count.
 ///   - `{ items: [*]T, len, … }` — a many-pointer `items` paired with a sibling
@@ -749,7 +749,47 @@ const IterPrep = struct {
     storage: ?Ref = null, // array's own alloca when addressable (not deref'd)
 };
 
-/// `for it1, it2, ... (c1, c2, ...) { }` — parallel iteration. The first
+/// A written capture annotation names the ELEMENT type, whatever the capture
+/// binds: `*c: View` binds `*View`. It restates the type exactly — an
+/// annotation is not a conversion site.
+fn checkElementCaptureType(self: *Lowering, cap: ast.ForCapture, elem_ty: TypeId) bool {
+    const ta = cap.type_annotation orelse return true;
+    const want = self.resolveType(ta);
+    if (want == elem_ty) return true;
+    if (self.externalErrorsExist() or want == .unresolved) return false;
+    if (self.diagnostics) |d| {
+        d.addFmt(.err, ta.span, "capture '{s}' is annotated '{s}' but the element type is '{s}'", .{
+            cap.name, self.formatTypeName(want), self.formatTypeName(elem_ty),
+        });
+    }
+    return false;
+}
+
+/// The `xs[<index>]` node one unrolled pack iteration binds as its element.
+fn packElementNode(self: *Lowering, pack_name: []const u8, span: ast.Span, index: i64) ?*Node {
+    const id_node = self.alloc.create(Node) catch return null;
+    id_node.* = .{ .span = span, .data = .{ .identifier = .{ .name = pack_name } } };
+    const idx_node = self.alloc.create(Node) catch return null;
+    idx_node.* = .{ .span = span, .data = .{ .int_literal = .{ .value = index } } };
+    const elem_node = self.alloc.create(Node) catch return null;
+    elem_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = id_node, .index = idx_node } } };
+    return elem_node;
+}
+
+/// A range position binds the i64 cursor whatever its bounds are spelled as.
+fn checkRangeCaptureType(self: *Lowering, cap: ast.ForCapture) void {
+    const ta = cap.type_annotation orelse return;
+    const want = self.resolveType(ta);
+    if (want == .i64) return;
+    if (self.externalErrorsExist() or want == .unresolved) return;
+    if (self.diagnostics) |d| {
+        d.addFmt(.err, ta.span, "a range cursor is 'i64' — capture '{s}' is annotated '{s}'", .{
+            cap.name, self.formatTypeName(want),
+        });
+    }
+}
+
+/// `for c1, c2, ... in it1, it2, ... { }` — parallel iteration. The first
 /// iterable's length/bound drives the loop; the others follow by position.
 /// Consequences of first-iterable-wins: a non-first range's end is never
 /// lowered (its side effects do not run), and a shorter non-first collection
@@ -816,13 +856,11 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
 
             const elem_ty = self.getElementType(data_ty);
             if (elem_ty == .unresolved) {
-                // Not a collection. The common trip: `for f(n) { }` — the
-                // trailing parens are the CAPTURE, so the iterable is `f`.
                 if (self.diagnostics) |d| {
                     if (data_ty == .unresolved) {
-                        d.addFmt(.err, it.expr.span, "cannot iterate this expression — if the parens were call arguments, a call iterable also needs a capture (`for f(n) (x) {{ }}`) or parentheses (`for (f(n)) {{ }}`)", .{});
+                        d.addFmt(.err, it.expr.span, "cannot iterate this expression", .{});
                     } else {
-                        d.addFmt(.err, it.expr.span, "cannot iterate a value of type '{s}' — if the parens were call arguments, a call iterable also needs a capture (`for f(n) (x) {{ }}`) or parentheses (`for (f(n)) {{ }}`)", .{self.module.types.typeName(data_ty)});
+                        d.addFmt(.err, it.expr.span, "cannot iterate a value of type '{s}'", .{self.module.types.typeName(data_ty)});
                     }
                 }
                 return self.builder.constInt(0, .void);
@@ -868,9 +906,11 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
         const prep = preps.items[i];
         const cur = if (i == 0) cur0 else self.builder.load(prep.slot, .i64);
         if (prep.is_range) {
+            checkRangeCaptureType(self, cap);
             body_scope.put(cap.name, .{ .ref = cur, .ty = .i64, .is_alloca = false, .origin = .range_index });
             continue;
         }
+        _ = checkElementCaptureType(self, cap, prep.elem_ty);
         const bind_ty = if (cap.by_ref) self.module.types.ptrTo(prep.elem_ty) else prep.elem_ty;
         const elem = if (cap.by_ref) blk: {
             // A slice value carries its backing pointer, so GEP on it writes
@@ -940,10 +980,10 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
 /// substitution, typing, and the interface-only constraint check — and a
 /// type-list capture binds as a type param, legal in type position.
 ///
-///   inline for 0..xs.len (i) { xs[i].show(); }      // index form
-///   inline for xs (x) { x.show(); }                 // element form
-///   inline for xs, 0.. (x, i) { ... }               // element + index
-///   inline for TYPES (T) { v : T = ---; }           // type-list form
+///   inline for i in 0..xs.len { xs[i].show(); }      // index form
+///   inline for x in xs { x.show(); }                 // element form
+///   inline for x, i in xs, 0.. { ... }               // element + index
+///   inline for T in TYPES { v : T = ---; }           // type-list form
 pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     const IterClass = union(enum) {
         range: i64, // comptime start value
@@ -963,7 +1003,7 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
             if (it.start_exclusive) start += 1;
             if (idx == 0) {
                 const end_node = it.range_end orelse {
-                    if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: the first range must be bounded — `inline for 0..N (i) {{ }}`", .{});
+                    if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: the first range must be bounded — `inline for i in 0..N {{ }}`", .{});
                     return self.builder.constInt(0, .void);
                 };
                 var end = self.evalComptimeInt(end_node) orelse {
@@ -998,12 +1038,12 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
             }
             classes.append(self.alloc, .{ .type_list = list }) catch unreachable;
         } else {
-            if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: each iterable must be a comptime range, a pack, or a type list — `inline for 0..N (i) {{ }}` / `inline for xs (x) {{ }}` / `inline for TYPES (T) {{ }}`", .{});
+            if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: each iterable must be a comptime range, a pack, or a type list — `inline for i in 0..N {{ }}` / `inline for x in xs {{ }}` / `inline for T in TYPES {{ }}`", .{});
             return self.builder.constInt(0, .void);
         }
     }
 
-    // `(*x)` on a pack element: there is no storage to borrow — an element
+    // `*x` on a pack element: there is no storage to borrow — an element
     // is an AST-substituted call argument.
     for (fe.captures, 0..) |cap, ci| {
         if (cap.by_ref and ci < classes.items.len and classes.items[ci] == .pack) {
@@ -1015,6 +1055,26 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
             const sp = cap.span orelse fe.iterables[ci].expr.span;
             if (self.diagnostics) |d| d.addFmt(.err, sp, "a type cannot be captured by reference", .{});
             return self.builder.constInt(0, .void);
+        }
+    }
+
+    for (fe.captures, 0..) |cap, ci| {
+        const ta = cap.type_annotation orelse continue;
+        switch (classes.items[ci]) {
+            .range => checkRangeCaptureType(self, cap),
+            .pack => |pack_name| {
+                // A pack is heterogeneous: one annotation has to name every
+                // unrolled element's type. The first that disagrees answers.
+                var e: i64 = 0;
+                while (e < count) : (e += 1) {
+                    const elem = packElementNode(self, pack_name, fe.iterables[ci].expr.span, e) orelse break;
+                    if (!checkElementCaptureType(self, cap, self.inferExprType(elem))) break;
+                }
+            },
+            .type_list => {
+                if (self.diagnostics) |d| d.addFmt(.err, ta.span, "a type-list cursor binds a type, not a value — it takes no type annotation", .{});
+                return self.builder.constInt(0, .void);
+            },
         }
     }
 
@@ -1062,13 +1122,7 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
                     self.comptime_constants.put(cap.name, .{ .int_val = v }) catch {};
                 },
                 .pack => |pack_name| {
-                    const span = fe.iterables[ci].expr.span;
-                    const id_node = self.alloc.create(Node) catch break;
-                    id_node.* = .{ .span = span, .data = .{ .identifier = .{ .name = pack_name } } };
-                    const idx_node = self.alloc.create(Node) catch break;
-                    idx_node.* = .{ .span = span, .data = .{ .int_literal = .{ .value = i } } };
-                    const elem_node = self.alloc.create(Node) catch break;
-                    elem_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = id_node, .index = idx_node } } };
+                    const elem_node = packElementNode(self, pack_name, fe.iterables[ci].expr.span, i) orelse break;
                     const elem_ty = self.inferExprType(elem_node);
                     body_scope.put(cap.name, .{ .ref = Ref.none, .ty = elem_ty, .is_alloca = false, .pack_elem = elem_node, .origin = .pack_elem_alias });
                 },
@@ -1106,7 +1160,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         if (self.evalComptimeMatch(me)) |arm_body| {
             return lowerSelectedBranch(self, arm_body, demand);
         }
-        // `inline if T == { case <category|Type>: … }` over a BOUND generic
+        // `inline match T { case <category|Type>: … }` over a BOUND generic
         // type param: select the arm by T's kind at lower time, siblings
         // dropped whole (each kind arm only type-checks for its own kind).
         if (self.evalStaticTypeMatch(me)) |sel| {
@@ -1123,7 +1177,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     var is_type_match = isTypeCategoryMatch(me);
     var subject = self.lowerExpr(me.subject);
     var subject_ty = self.inferExprType(me.subject);
-    // A pointer subject (e.g. a `for xs: (*x)` element capture) matches
+    // A pointer subject (e.g. a `for *x in xs` element capture) matches
     // through the deref (specs §for, by-reference capture): deref to the
     // pointed-to tagged union/enum so tag/payload extraction works, and to
     // an integer/bool pointee so the value drives the switch directly.
@@ -1148,7 +1202,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         }
     }
     // TYPE SWITCH: an `any` subject dispatches on its runtime type TAG —
-    // `if av == { case i64: (v) {…} case Point: (p) {…} case struct: {…}
+    // `match av { case i64: |v| {…} case Point: |p| {…} case struct: {…}
     // else: {…} }`. Concrete arms (named, builtin, and composite types) may
     // bind the typed value; category arms are tag SETS and bind nothing; arms
     // overlap first-wins with a loud unreachable-arm diagnostic.
@@ -1187,9 +1241,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
         }
         break :blk false;
     };
-    // An error-set subject (`catch e == { case .X: ... }` / `if e == { ... }`):
-    // the value IS its u32 tag id, and `case .X` matches the global tag id
-    // of `X`. Used by the catch match-body form.
+    // An error-set subject (`match e { case .X: ... }`): the value IS its u32
+    // tag id, and `case .X` matches the global tag id of `X`.
     const is_error_set_match = blk: {
         if (!subject_ty.isBuiltin()) {
             break :blk self.module.types.get(subject_ty) == .error_set;
@@ -1354,7 +1407,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     var arm_tag_values = std.ArrayList([]const u64).empty;
     defer arm_tag_values.deinit(self.alloc);
     // Type switch: the CONCRETE type an arm names (null for category arms /
-    // the default) — the capture phase binds `(v)` as this type; and the
+    // the default) — the capture phase binds `|v|` as this type; and the
     // first-wins claim set — a tag belongs to the first arm that names it,
     // and an arm left with no tags is a LOUD unreachable-arm error (the
     // overlap `case int:` / `case i64:` would otherwise resolve silently
@@ -1722,7 +1775,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 if (payload_ty == .unresolved) {
                     // Non-bindable subject: only a tagged-union (enum with
                     // payloads) variant can supply a case payload binding
-                    // `(v)`. Reject everything else — payload-less enum,
+                    // `|v|`. Reject everything else — payload-less enum,
                     // unknown tagged-union variant, integer/bool subjects —
                     // with a diagnostic instead of letting the binding's type
                     // leak out as .unresolved and panic at LLVM emission.

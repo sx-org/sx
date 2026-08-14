@@ -81,8 +81,8 @@ total := (hi << 16)
 
 A `(` or `[` binds to what precedes it only when nothing separates them — in
 expressions and in every type position alike. A `(` that opens something new
-(grouping, parameters, a capture, a declaration form) is free:
-`add :: (a: i64) -> i64`, `for xs (x) { … }`, `risky() catch (e) -1`. `-` and
+(grouping, parameters, a declaration form) is free:
+`add :: (a: i64) -> i64`, `n := (a + b) * c`. `-` and
 `*` also have prefix readings, so they are infix only when spaced the same on
 both sides, and a prefix `-` / `*` must be glued to its operand. The third rule
 governs what binds to an expression from behind — the trailing-block `{`
@@ -118,7 +118,7 @@ double :: (n: i32) -> i32 { n * 2; }   // returns n * 2 — as does `{ n * 2 }`
 | `*T`, `[*]T` | Single / many pointer |
 | `?T` | Optional |
 | `struct`, `enum`, `union` | Composite types |
-| `Closure(args) -> ret` | Closure type |
+| `Closure(args) -> ret` | Closure type (`\|params\| body` is its literal) |
 
 A fixed array `[N]T` coerces to a slice `[]T` (its length is known); a `[*]T`
 many-pointer carries no length, so slice it explicitly with `ptr[0..len]`.
@@ -280,7 +280,7 @@ classify :: (n: i32) -> (doubled: i32, big: bool, !) {
     if n < 0 { raise error.Bad; }
     return doubled = n * 2, big = n > 10;
 }
-d, b := classify(7) catch (e) { … };   // error stripped by `catch`; d, b are the values
+d, b := classify(7) catch |e| { … };   // error stripped by `catch`; d, b are the values
 ```
 
 **Named returns as locals.** Named slots are in-scope assignable locals; assigning
@@ -318,8 +318,10 @@ public API: renaming a parameter breaks named call sites.
 
 ### Trailing blocks
 
-A block after a call binds the callee's **last** parameter as a zero-param
-closure — `f(args) { body }` is exactly `f(args, content = () => { body })`:
+A block after a call binds the callee's **last** parameter as a closure —
+`f(args) { body }` is exactly `f(args, content = || { body })`. The block's
+parameters are a `|…|` header right after the `{`, so
+`each(items) { |x| … }` is `each(items, |x| { … })`:
 
 ```sx
 vstack :: (spacing: f32, content: Closure()) -> View { … }
@@ -330,12 +332,15 @@ vstack(8.0) {
 }
 
 scaffold(top_bar = toolbar) { chat_list(); }   // named slots + block
+
+each(items) { |item| text(item.name); }        // parameters in the header
 ```
 
-The `{` must sit on the same line as the `)`; one block per call; after the
-block's `}` a dot continues the chain (`vstack(8.0) { … }.padded()`). The
-call's own `(` still obeys the glue rule — `vstack (8.0) { … }` is a spacing
-error. A capture-free block promotes to a null-env thunk — zero allocation.
+The `{` must sit on the same line as the `)`; one block per call; the header
+binds exactly the parameters the closure declares; after the block's `}` a dot
+continues the chain (`vstack(8.0) { … }.padded()`). The call's own `(` still
+obeys the glue rule — `vstack (8.0) { … }` is a spacing error. A capture-free
+block promotes to a null-env thunk — zero allocation.
 
 ### Structs
 
@@ -366,9 +371,9 @@ Shape :: enum {
 }
 
 area :: (s: Shape) -> f32 {
-    if s == {
-        case .circle: (r) => 3.14159 * r * r;
-        case .rect: (r) => r.w * r.h;
+    match s {
+        case .circle: |r| 3.14159 * r * r;
+        case .rect: |r| r.w * r.h;
         case .none: 0;
     }
 }
@@ -419,7 +424,7 @@ max :: (a: $T, b: T) -> T {
 
 List :: struct ($T: Type) {
     items: []T;          // a slice; items.len is the live count, so a List is
-    cap: i64;            // directly iterable: `for xs.items (e) { ... }`
+    cap: i64;            // directly iterable: `for e in xs.items { ... }`
 
     append :: (self: *List(T), item: T) { ... }
 
@@ -439,7 +444,7 @@ are_equal :: ($T: Type/Eq, a: T, b: T) -> bool { a.eq(b); }
 
 ```sx
 make_adder :: (n: i64) -> Closure(i64) -> i64 {
-    (x: i64) -> i64 => x + n
+    return |x: i64| -> i64 x + n;
 }
 
 add5 := make_adder(5);
@@ -479,7 +484,7 @@ Every protocol value knows its concrete type (a `type_id` word stamped at
 erasure): `type_of(shape)` answers `Circle`, the checked downcast
 `shape.(Circle)` has the same three temperaments as `any` assertions
 (panic / `or`·`catch` / soft `.(?T)`), and the type switch takes protocol
-subjects directly — `if shape == { case Circle: (c) {…} else: {…} }`.
+subjects directly — `match shape { case Circle: |c| {…} else: {…} }`.
 
 Erasability is **per-method**: a method whose signature mentions `Self`
 beyond the receiver (`eq :: (self: *Self, other: Self) -> bool`) can't be
@@ -550,8 +555,8 @@ Label :: @OpenVariant(View) {                 // a member joins by declaring it
 
 v: View = Label{ text = "hi" };               // formation: no allocator, no box
 v.render();                                   // dispatch on the tag word
-if v == {
-    case Label: (l) { print("{}\n", l.text); }
+match v {
+    case Label: |l| { print("{}\n", l.text); }
     else: { }                                 // a set is open — `else` is required
 }
 ```
@@ -565,20 +570,20 @@ bigger one grows it. `type_of(v)` answers the member, `v.(Label)` reads it back
 
 ```sx
 // On enums
-if shape == {
-    case .circle: (r) => print("radius: {}\n", r);
-    case .rect: (r) => print("{}x{}\n", r.w, r.h);
+match shape {
+    case .circle: |r| print("radius: {}\n", r);
+    case .rect: |r| print("{}x{}\n", r.w, r.h);
     case .none: print("nothing\n");
 }
 
 // On optionals
-if opt == {
-    case .some: (val) => use(val);
+match opt {
+    case .some: |val| use(val);
     case .none: fallback();
 }
 
 // On type categories (via any)
-if type_of(val) == {
+match type_of(val) {
     case int: print("integer\n");
     case string: print("string\n");
     case struct: print("struct\n");
@@ -586,9 +591,9 @@ if type_of(val) == {
 
 // Type switch — an `any` dispatches on its runtime type tag; concrete
 // arms (composites included) bind the typed value, category arms don't
-if av == {
-    case i64: (v) print("int {}\n", v);
-    case []u8: (b) print("{} bytes\n", b.len);
+match av {
+    case i64: |v| print("int {}\n", v);
+    case []u8: |b| print("{} bytes\n", b.len);
     case struct: print("some struct\n");
     else: print("{}\n", type_name(type_of(av)));
 }
@@ -604,11 +609,12 @@ if 0 <= x <= 100 { ... }
 while i < 10 { i += 1; }
 
 // For — collections, ranges, and parallel iteration
-for items (val) { print("{}\n", val); }
-for items, 0.. (val, idx) { print("[{}] = {}\n", idx, val); }
-for 1..=5, 0.. (a, b) { print("{}:{}\n", a, b); }   // a: 1..5, b follows
-for items (val) => total += val;                    // arrow body
-for 0<..<n (i) { }                                  // bound markers: 1 .. n-1
+for val in items { print("{}\n", val); }
+for val, idx in items, 0.. { print("[{}] = {}\n", idx, val); }
+for a, b in 1..=5, 0.. { print("{}:{}\n", a, b); }  // a: 1..5, b follows
+for val in items => total += val;                   // arrow body
+for i in 0<..<n { }                                 // bound markers: 1 .. n-1
+for val: Item in items { }                          // the element type, written out
 sub := items[1..=3];                                // slices take them too
 
 // Defer
@@ -828,12 +834,12 @@ none of them.
 describe :: (tp: Type) {
     print("{} (size {})\n", type_name(tp), size_of(tp));
     ti := type_info(tp);                       // kind-first dispatch
-    if ti == {
-        case .struct: (si) {
-            for si.fields (i, f) { print("  +{} {}\n", f.offset, f.name); }
+    match ti {
+        case .struct: |si| {
+            for i, f in si.fields { print("  +{} {}\n", f.offset, f.name); }
         }
-        case .enum: (ei) { print("  {} variants\n", ei.variants.len); }
-        case .int:  (ii) { print("  int, {} bits\n", ii.bits); }
+        case .enum: |ei| { print("  {} variants\n", ei.variants.len); }
+        case .int:  |ii| { print("  int, {} bits\n", ii.bits); }
         else: {}
     }
 }
@@ -859,8 +865,8 @@ copying a byte:
 
 ```sx
 print_any :: (av: any) {
-    if type_info(type_of(av)) == {
-        case .struct: (si) {
+    match type_info(type_of(av)) {
+        case .struct: |si| {
             print("{");
             i := 0;
             while i < si.fields.len {
@@ -871,7 +877,7 @@ print_any :: (av: any) {
             }
             print("}");
         }
-        case .array: (ai) {
+        case .array: |ai| {
             i := 0;
             while i < ai.len {
                 print_any(any_element(av, ai.elem, i)); // stride view
@@ -971,7 +977,7 @@ sum :: (n: i32, ..) -> i64 abi(.c) {
     @va_start(*ap);          // open a cursor over the arguments past `n`
     defer @va_end(*ap);      // every cursor opened is closed exactly once
     total: i64 = 0;
-    for 0..n (i) { total += xx @va_arg(i32, *ap); }
+    for i in 0..n { total += xx @va_arg(i32, *ap); }
     return total;
 }
 ```
@@ -1028,10 +1034,10 @@ main :: () {
     // Install the fiber scheduler as `context.io`; the coordinator runs as a
     // fiber so `await` has a fiber to park.
     push .{ io = xx s } {
-        ps.spawn(() => {
-            a := context.io.async(() -> (i64, !) => { try context.io.sleep(30); 100 });
-            b := context.io.async(() -> (i64, !) => { try context.io.sleep(10); 20  });
-            c := context.io.async(() -> (i64, !) => { try context.io.sleep(20); 3   });
+        ps.spawn(|| {
+            a := context.io.async(|| -> (i64, !) { try context.io.sleep(30); 100 });
+            b := context.io.async(|| -> (i64, !) { try context.io.sleep(10); 20  });
+            c := context.io.async(|| -> (i64, !) { try context.io.sleep(20); 3   });
 
             sum := (a.await() or 0) + (b.await() or 0) + (c.await() or 0);  // 123
             print("sum: {}\n", sum);

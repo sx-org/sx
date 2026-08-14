@@ -52,7 +52,7 @@ sum_ints :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @va_start(*ap);
     total: i64 = 0;
-    for 0..n (i) {
+    for i in 0..n {
         total += xx @va_arg(i32, *ap);
     }
     @va_end(*ap);
@@ -64,7 +64,7 @@ sum_doubles :: (n: i32, ..) -> f64 abi(.c) {
     @va_start(*ap);
     defer @va_end(*ap);
     total: f64 = 0;
-    for 0..n (i) {
+    for i in 0..n {
         total += @va_arg(f64, *ap);
     }
     return total;
@@ -81,7 +81,7 @@ total_text :: (n: i32, ..) -> i64 abi(.c) {
     @va_start(*ap);
     defer @va_end(*ap);
     total: i64 = 0;
-    for 0..n (i) {
+    for i in 0..n {
         total += take_text(*ap);
     }
     return total;
@@ -96,13 +96,13 @@ twice :: (n: i32, ..) -> i64 abi(.c) {
     @va_copy(*dup, *ap);
 
     first: i64 = 0;
-    for 0..n (i) {
+    for i in 0..n {
         first += xx @va_arg(i32, *ap);
     }
     @va_end(*ap);
 
     second: i64 = 0;
-    for 0..n (i) {
+    for i in 0..n {
         second += xx @va_arg(i32, *dup);
     }
     @va_end(*dup);

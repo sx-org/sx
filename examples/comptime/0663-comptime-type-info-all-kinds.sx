@@ -11,20 +11,20 @@ WithVec :: struct { v: Vector(3, f32); }
 
 describe :: ($T: Type) -> string {
     ti := type_info(T);
-    if ti == {
-        case .struct: (si) {
+    match ti {
+        case .struct: |si| {
             return format("struct fields={} f1.name={} f1.off={}", si.fields.len, si.fields[1].name, si.fields[1].offset);
         }
-        case .union: (ui) {
+        case .union: |ui| {
             return format("union arms={} a1.off={}", ui.arms.len, ui.arms[1].offset);
         }
-        case .int: (ii) { return format("int bits={} signed={}", ii.bits, ii.signed); }
-        case .float: (fi) { return format("float bits={}", fi.bits); }
-        case .array: (ai) { return format("array len={} elem={}", ai.len, type_name(ai.elem)); }
-        case .vector: (vi) { return format("vector lanes={} elem={}", vi.lanes, type_name(vi.elem)); }
-        case .slice: (sl) { return format("slice elem={}", type_name(sl.elem)); }
-        case .pointer: (pi) { return format("pointer pointee={}", type_name(pi.pointee)); }
-        case .optional: (oi) { return format("optional inner={}", type_name(oi.inner)); }
+        case .int: |ii| { return format("int bits={} signed={}", ii.bits, ii.signed); }
+        case .float: |fi| { return format("float bits={}", fi.bits); }
+        case .array: |ai| { return format("array len={} elem={}", ai.len, type_name(ai.elem)); }
+        case .vector: |vi| { return format("vector lanes={} elem={}", vi.lanes, type_name(vi.elem)); }
+        case .slice: |sl| { return format("slice elem={}", type_name(sl.elem)); }
+        case .pointer: |pi| { return format("pointer pointee={}", type_name(pi.pointee)); }
+        case .optional: |oi| { return format("optional inner={}", type_name(oi.inner)); }
         case .string: { return "string"; }
         case .bool: { return "bool"; }
         else: { return "other"; }

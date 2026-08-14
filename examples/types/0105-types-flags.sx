@@ -45,7 +45,7 @@ main :: () {
     // Pass flags to functions, match on them
     print("\nmatch on flags:\n");
     f :Perms = .execute;
-    if f == {
+    match f {
         case .read:    print("  read\n");
         case .write:   print("  write\n");
         case .execute: print("  execute\n");

@@ -14,6 +14,6 @@ parse :: (n: i32) -> (i32, !E) {
 }
 
 main :: () -> i32 {
-    x := parse(-1) catch (e) { print("oops\n") };   // error: body yields no value
+    x := parse(-1) catch |e| { print("oops\n") };   // error: body yields no value
     return x;
 }

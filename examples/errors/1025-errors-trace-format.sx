@@ -27,7 +27,7 @@ mid :: (n: i32) -> !E {
 }
 
 main :: () -> i32 {
-    mid(-1) catch (e) {
+    mid(-1) catch |e| {
         print("[stdout] caught {}\n", e);   // tag name via the always-linked table
         trace.print_current();               // [stderr] the 2-frame trace
     };

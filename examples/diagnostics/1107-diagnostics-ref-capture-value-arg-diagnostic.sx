@@ -1,4 +1,4 @@
-// A by-reference loop capture (`for xs (*m)`) binds `m` to a `*T`. Passing it
+// A by-reference loop capture (`for *m in xs`) binds `m` to a `*T`. Passing it
 // where a `T` value is expected is reported at the call site with a fix-it:
 // write `m.*`.
 
@@ -10,7 +10,7 @@ take :: (m: Move) -> i64 { return m.flag; }
 
 main :: () -> i32 {
     moves : [2]Move = .[ Move{ flag = 1 }, Move{ flag = 2 } ];
-    for moves (*m) {
+    for *m in moves {
         take(m);
     }
     return 0;

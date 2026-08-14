@@ -6,7 +6,7 @@
 ParseErr :: error { BadDigit, Overflow };
 
 only_opt :: (t: Type) -> string {
-    if t == {
+    match t {
         case optional: return "optional";
         else:          return "other";
     }
@@ -14,7 +14,7 @@ only_opt :: (t: Type) -> string {
 }
 
 only_err :: (t: Type) -> string {
-    if t == {
+    match t {
         case error_set: return "error_set";
         else:           return "other";
     }
@@ -22,7 +22,7 @@ only_err :: (t: Type) -> string {
 }
 
 mixed :: (t: Type) -> string {
-    if t == {
+    match t {
         case optional:  return "optional";
         case error_set: return "error_set";
         case void:      return "void";

@@ -9,10 +9,10 @@ IntCell :: struct { v: i64; }
 impl VL(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
 
 apply :: (mapper: Closure(i64, i64) -> i64, ..sources: VL) -> i64 {
-    return mapper(..sources.get);     // (a, b) => a + b  applied to (i0.get(), i1.get())
+    return mapper(..sources.get);     // |a, b| a + b  applied to (i0.get(), i1.get())
 }
 
 main :: () -> i32 {
-    print("{}\n", apply((a, b) => a + b, IntCell{ v = 40 }, IntCell{ v = 2 }));  // 42
+    print("{}\n", apply(|a, b| a + b, IntCell{ v = 40 }, IntCell{ v = 2 }));  // 42
     0
 }

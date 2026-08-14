@@ -1,4 +1,4 @@
-// A variant-style match (`if x == { case .variant: ... }`) on a plain UNTAGGED
+// A variant-style match (`match x { case .variant: ... }`) on a plain UNTAGGED
 // `union` subject is rejected up front — an untagged union has no discriminant, so
 // there is nothing to dispatch on (specs §Unions, Restrictions: "Pattern matching
 // is not supported on unions"). The gate is subject-level, so it fires with or
@@ -12,21 +12,21 @@ main :: () {
     s : Shape = .{ circle = 5 };
 
     // No payload binding.
-    r := if s == { case .circle: { 1 } case .rect: { 2 } };
+    r := match s { case .circle: { 1 } case .rect: { 2 } };
     print("{}\n", r);
 
     // Statement position, no binding.
-    if s == { case .circle: { print("c\n"); } case .rect: { print("r\n"); } }
+    match s { case .circle: { print("c\n"); } case .rect: { print("r\n"); } }
 
     // Pointer-to-untagged-union subject (never auto-derefs — same rejection).
     p := *s;
-    q := if p == { case .circle: { 1 } else: { 0 } };
+    q := match p { case .circle: { 1 } else: { 0 } };
     print("{}\n", q);
 
     // A TYPE-NAME pattern doesn't smuggle the union past the gate: the
     // type-category exemption is a property of the SUBJECT (a Type value),
     // never of the patterns — `case Shape:` over a union VALUE is the same
     // rejection.
-    t := if s == { case Shape: { 1 } else: { 0 } };
+    t := match s { case Shape: { 1 } else: { 0 } };
     print("{}\n", t);
 }

@@ -21,7 +21,7 @@ take_raw :: (r: ProtocolRaw) -> *void { r.ctx }
 main :: () {
     // closure -> ClosureRaw, both spellings
     n := 10;
-    cl := (x: i64) -> i64 { x + n };
+    cl := |x: i64| -> i64 { x + n };
     r1 : ClosureRaw = xx cl;
     r2 := cl.(ClosureRaw);
     print("closure: {} {}\n", r1.fn_ptr == r2.fn_ptr, r1.env == r2.env);

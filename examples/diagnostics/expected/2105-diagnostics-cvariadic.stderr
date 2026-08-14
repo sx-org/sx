@@ -259,19 +259,19 @@ error: '@VaList' is opaque — its storage is the target's and has no published 
 error: cannot capture a C-variadic cursor — it reads a tail the enclosing frame owns, which a closure may outlive
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:113:47
     |
-113 |     later := () -> i64 { return @va_arg(i64, *ap); }; // a closure may outlive the frame
+113 |     later := || -> i64 { return @va_arg(i64, *ap); }; // a closure may outlive the frame
     |                                               ^^
 
 error: cannot capture a C-variadic cursor — it reads a tail the enclosing frame owns, which a closure may outlive
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:115:35
     |
-115 |     kept := () -> i64 { return xx rows.len; }; // a wrapper carries the same tail
+115 |     kept := || -> i64 { return xx rows.len; }; // a wrapper carries the same tail
     |                                   ^^^^
 
 error: cannot read '[1]@VaList' — it holds a '@VaList', which has no value form
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:115:35
     |
-115 |     kept := () -> i64 { return xx rows.len; }; // a wrapper carries the same tail
+115 |     kept := || -> i64 { return xx rows.len; }; // a wrapper carries the same tail
     |                                   ^^^^
 
 error: '@va_start' needs a C-variadic tail to open — end this definition's parameter list in '..' (`(fixed, ..) -> R abi(.c)`)

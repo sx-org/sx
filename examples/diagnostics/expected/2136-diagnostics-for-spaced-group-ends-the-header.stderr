@@ -1,0 +1,5 @@
+error: expected '{'
+  --> examples/diagnostics/2136-diagnostics-for-spaced-group-ends-the-header.sx:8:12
+   |
+ 8 |     for xs (x) { }
+   |            ^

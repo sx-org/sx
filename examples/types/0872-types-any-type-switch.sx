@@ -1,6 +1,6 @@
 // The TYPE SWITCH: an `any` subject dispatches on its
 // runtime type TAG — never the payload. Arms name concrete types (named,
-// builtin, or COMPOSITE — `[]u8`, `?i64`), which may bind `(v)` as the
+// builtin, or COMPOSITE — `[]u8`, `?i64`), which may bind `|v|` as the
 // typed value (exactly what `v := av.(T)` produces, with the tag
 // pre-proven — no panic path); or CATEGORIES (`struct`, `enum`, `float`,
 // `int`, …), which are tag SETS and bind nothing (`xx av` width-dispatches
@@ -18,12 +18,12 @@ Color :: enum { red; green; blue; }
 
 describe :: (av: any) -> string {
     r := "?";
-    if av == {
-        case i64: (v) { r = format("int {}", v + 1); }
-        case Point: (p) { r = format("point ({},{})", p.x, p.y); }   // concrete beats `struct` below
-        case []u8: (b) { r = format("{} bytes", b.len); }
-        case ?i64: (o) { r = format("maybe {}", o ?? 0); }
-        case string: (s) { r = format("str '{}'", s); }
+    match av {
+        case i64: |v| { r = format("int {}", v + 1); }
+        case Point: |p| { r = format("point ({},{})", p.x, p.y); }   // concrete beats `struct` below
+        case []u8: |b| { r = format("{} bytes", b.len); }
+        case ?i64: |o| { r = format("maybe {}", o ?? 0); }
+        case string: |s| { r = format("str '{}'", s); }
         case struct: { r = "some struct"; }
         case enum: { r = "some enum"; }
         case float: { fv : f64 = xx av; r = format("float {}", fv); }
@@ -52,13 +52,13 @@ main :: () {
 
     // value position
     av : any = 21;
-    x := if av == { case i64: (v) { v * 2 } case f64: { 0 } else: { -1 } };
+    x := match av { case i64: |v| { v * 2 } case f64: { 0 } else: { -1 } };
     print("value: {}\n", x);
 
     // ?any composes through the optional match
     oav : ?any = xx p;
-    if oav == {
-        case .some: (inner) { print("some: {}\n", describe(inner)); }
+    match oav {
+        case .some: |inner| { print("some: {}\n", describe(inner)); }
         case .none: { print("none\n"); }
     }
 }

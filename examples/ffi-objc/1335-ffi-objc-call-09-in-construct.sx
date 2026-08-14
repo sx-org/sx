@@ -7,7 +7,7 @@
 // 2. Protocol impl method body           impl Hashable for Probe
 // 3. Closure value body                  closure that calls hash
 //
-// `inline if OS == { case }` gating across targets is covered by
+// `inline match OS` gating across targets is covered by
 // `tests/cross_compile.sh`.
 
 #import "modules/std.sx";
@@ -38,7 +38,7 @@ impl Hashable for Probe {
 // references it inside the `#objc_call` arg list. Locked in by
 // `examples/103-ffi-closure-capture.sx`.
 make_hasher :: (recv: *void) -> Closure(i32) -> i64 {
-    (dummy: i32) -> i64 => #objc_call(i64)(recv, "hash")
+    return |dummy: i32| -> i64 #objc_call(i64)(recv, "hash");
 }
 
 // ── 4. Generic function body — instantiated per call site ───────────

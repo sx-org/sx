@@ -13,11 +13,11 @@ main :: () -> i32 {
     if u8 := maybe() { }                 // if optional binding
     while i16 := maybe() { break; }      // while optional binding
     xs: [3]i64 = .{ 10, 20, 30 };
-    for xs (bool) { }                   // for capture name
-    for xs, 0.. (v, i32) { }                 // for index name
+    for bool in xs { }                   // for capture name
+    for v, i32 in xs, 0.. { }            // for index name
     opt: ?i64 = 5;
-    r := if opt == {                     // match-arm capture
-        case .some: (string) { 0 }
+    r := match opt {                     // match-arm capture
+        case .some: |string| { 0 }
         case .none: { 0 }
     };
     return 0;

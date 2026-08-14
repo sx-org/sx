@@ -34,10 +34,10 @@ BoardView :: @OpenVariant(View) {
 
 main :: () -> i32 {
     st := BoardViewState{};
-    for 0..81 (i) { st.cell_eids[i] = xx (i + 1); }
+    for i in 0..81 { st.cell_eids[i] = xx (i + 1); }
 
     cells := VStack{ children = collectViews() {
-        for 0..81 (i) {
+        for i in 0..81 {
             Label{ text = "c" };
         }
     } };

@@ -20,7 +20,7 @@
 #import "0795-modules-same-name-enum-ambiguous/b.sx";
 
 describe :: ($T: Type) -> i32 {
-    r := if T == {
+    r := match T {
         case Dir: 1;
         else: 0;
     }

@@ -1,4 +1,4 @@
-// A value-position match (`if subject == { case … }`) returning a small
+// A value-position match (`match subject { case … }`) returning a small
 // integer type works when arms mix positive and negated literals: every arm
 // value is lowered against the merge's result type, so the phi operands all
 // share one width.
@@ -6,14 +6,14 @@
 #import "modules/std.sx";
 
 sign :: (n: i32) -> i32 {
-    if n == {
+    match n {
         case 0:  0;
         else:    if n > 0 then 1 else -1;
     }
 }
 
 classify :: (n: i32) -> i32 {
-    if n == {
+    match n {
         case 0:  100;
         case 1:  10;
         else:    -1;

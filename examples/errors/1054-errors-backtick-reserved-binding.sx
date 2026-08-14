@@ -15,7 +15,7 @@ parse :: (n: i32) -> (i32, !E) {
 
 // `catch` tag binding spelled `i2`, referenced in the match body.
 classify :: (n: i32) -> i32 {
-    return parse(n) catch (`i2) == {
+    return parse(n) catch |`i2| match `i2 {
         case .Bad:   1;
         case .Empty: 2;
         else:        3
@@ -24,7 +24,7 @@ classify :: (n: i32) -> i32 {
 
 // `onfail` tag binding spelled `u8`, referenced in the cleanup body.
 cleanup :: (n: i32) -> !E {
-    onfail (`u8) { if `u8 == error.Bad { print("cleanup: bad\n"); } }
+    onfail |`u8| { if `u8 == error.Bad { print("cleanup: bad\n"); } }
     if n < 0 { raise error.Bad; }
     return;
 }

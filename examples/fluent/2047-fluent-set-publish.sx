@@ -85,7 +85,7 @@ main :: () -> i32 {
     };
 
     print("published {}\n", sink.n);
-    for sink.seen (s) { print("  {}\n", s); }
+    for s in sink.seen { print("  {}\n", s); }
     0
 }
 

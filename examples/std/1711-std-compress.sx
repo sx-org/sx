@@ -132,7 +132,7 @@ test_prefix_and_errors :: (alloc: Allocator) -> bool {
     if !raw_prefix_ok { return false; }
 
     raw_strict_failed := false;
-    raw_strict := deflate.decode(raw_trailing[..], 128, alloc) catch (e) {
+    raw_strict := deflate.decode(raw_trailing[..], 128, alloc) catch |e| {
         raw_strict_failed = e == error.InvalidData;
         ""
     };
@@ -143,7 +143,7 @@ test_prefix_and_errors :: (alloc: Allocator) -> bool {
 
     raw_output : [64]u8 = ---;
     raw_into_strict_failed := false;
-    raw_into_strict := deflate.decode_into(raw_trailing[..], raw_output[..], alloc) catch (e) {
+    raw_into_strict := deflate.decode_into(raw_trailing[..], raw_output[..], alloc) catch |e| {
         raw_into_strict_failed = e == error.InvalidData;
         ""
     };
@@ -160,7 +160,7 @@ test_prefix_and_errors :: (alloc: Allocator) -> bool {
     if !prefix_ok { return false; }
 
     strict_failed := false;
-    strict := zlib.decode(trailing[..], 128, alloc) catch (e) {
+    strict := zlib.decode(trailing[..], 128, alloc) catch |e| {
         strict_failed = e == error.InvalidData;
         ""
     };
@@ -170,7 +170,7 @@ test_prefix_and_errors :: (alloc: Allocator) -> bool {
     }
 
     invalid_level := false;
-    invalid := deflate.encode(PLAIN, .{ level = 11 }, alloc) catch (e) {
+    invalid := deflate.encode(PLAIN, .{ level = 11 }, alloc) catch |e| {
         invalid_level = e == error.InvalidOptions;
         ""
     };
@@ -181,7 +181,7 @@ test_prefix_and_errors :: (alloc: Allocator) -> bool {
 
     short_failed := false;
     short_storage : [4]u8 = ---;
-    ignored := gzip.decode_into(gzip_fixture(), short_storage[..], alloc) catch (e) {
+    ignored := gzip.decode_into(gzip_fixture(), short_storage[..], alloc) catch |e| {
         short_failed = e == error.OutputLimit;
         ""
     };

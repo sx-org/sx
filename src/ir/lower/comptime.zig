@@ -269,7 +269,7 @@ fn evalComptimeConditionDepth(self: *Lowering, node: *const Node, depth: u32) ?b
     }
 }
 
-/// Evaluate a compile-time match expression for `inline if ... == { case ... }`.
+/// Evaluate a compile-time match expression for `inline match ... { case ... }`.
 /// Returns the body of the matching arm, or null if the match can't be resolved.
 /// The selection an `inline` TYPE match folds to: a single arm body, or
 /// nothing (no arm matched and no `else:` — the runtime form's
@@ -279,7 +279,7 @@ pub const StaticTypeMatchSel = union(enum) {
     none_matched,
 };
 
-/// Fold an `inline if T == { case <category|Type>: … }` whose SUBJECT is a
+/// Fold an `inline match T { case <category|Type>: … }` whose SUBJECT is a
 /// statically-BOUND generic type param: classify the bound type against
 /// each arm at lower time and select the first match (else-arm fallback).
 /// The siblings are DROPPED WHOLE — each kind arm only type-checks for its

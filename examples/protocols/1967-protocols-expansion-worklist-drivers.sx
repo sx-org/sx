@@ -38,7 +38,7 @@ inline if HAS_PANEL { WIDTH :: 3; } else { WIDTH :: 0; }
 // Every iteration of an `inline for` contributes, so `Tally` stays open until
 // the whole unroll is drained; then the members it spliced are simply in.
 SHAPES :: .[Widget, Panel];
-inline for SHAPES (T) {
+inline for T in SHAPES {
     impl Tally for T { count :: (self: *T) -> i64 { self.n } }
 }
 inline if has_impl(Tally, Panel) { COUNTED :: 1; } else { COUNTED :: 0; }

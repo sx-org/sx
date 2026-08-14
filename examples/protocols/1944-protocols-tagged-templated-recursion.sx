@@ -59,8 +59,8 @@ main :: () {
     // The type switch is the opening construct — arms name concrete
     // conformers of the subject's own instantiation.
     p : Series(f32) = Pulse{ v = 5.0 };
-    if p == {
-        case Pulse: (x) { print("pulse {}\n", x.v); }
+    match p {
+        case Pulse: |x| { print("pulse {}\n", x.v); }
     }
     print("{}\n", type_of(p) == Pulse);
 }

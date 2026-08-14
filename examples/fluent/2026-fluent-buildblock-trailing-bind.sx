@@ -45,7 +45,7 @@ column :: (title: string, content: $B/@BuildBlock(Drawable)) -> i32 {
 
 // Closure acceptor: the SAME trailing-block syntax, ordinary closure semantics.
 repeat :: (times: i32, body: Closure()) {
-    for 0..times (i) { body(); }
+    for i in 0..times { body(); }
 }
 
 main :: () -> i32 {

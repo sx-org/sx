@@ -150,7 +150,7 @@ Push (one frame each):
 
 Clear (every absorbing site — the error stops here):
 
-- `catch e { ... }` runs (cleared so the handler still sees the chain;
+- `catch |e| { ... }` runs (cleared so the handler still sees the chain;
   the buffer is empty after the handler exits).
 - an attempt succeeds inside an `or` chain.
 - an `or value` terminator absorbs the failure.

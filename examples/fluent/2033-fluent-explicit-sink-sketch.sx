@@ -60,14 +60,14 @@ main :: () -> i32 {
     rows := .["one", "two"];
 
     capture(*roots) {
-        for rows (row) {
+        for row in rows {
             Text{ body = row };
         }
         Spacer{ size = 8 };
     };
 
     // The block is long gone; the captured tree is the caller's.
-    for roots.items.items (item) { print("root {}\n", item.label()); }
+    for item in roots.items.items { print("root {}\n", item.label()); }
     print("roots {}\n", roots.items.len);
     roots.items.deinit();
     arena.deinit();

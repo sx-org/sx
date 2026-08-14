@@ -116,7 +116,7 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 //         ap: @VaList = ---;
 //         @va_start(*ap);
 //         total: i64 = 0;
-//         for 0..n (i) { total += xx @va_arg(i32, *ap); }
+//         for i in 0..n { total += xx @va_arg(i32, *ap); }
 //         @va_end(*ap);
 //         return total;
 //     }

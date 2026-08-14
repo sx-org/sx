@@ -1206,7 +1206,7 @@ pub fn refuseProtocolAssertTargetOnAny(self: *Lowering, type_node: *const Node, 
     if (!self.program_index.protocol_decl_map.contains(tname) and
         !self.program_index.protocol_ast_map.contains(tname)) return false;
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "an 'any' value's type tag is always a concrete type — it never holds an erased '{s}', so this assertion can never succeed; assert the concrete type instead ('av.(T)') or switch on the tag ('if av == {{ case T: … }}')", .{tname});
+        d.addFmt(.err, span, "an 'any' value's type tag is always a concrete type — it never holds an erased '{s}', so this assertion can never succeed; assert the concrete type instead ('av.(T)') or switch on the tag ('match av {{ case T: … }}')", .{tname});
     }
     return true;
 }

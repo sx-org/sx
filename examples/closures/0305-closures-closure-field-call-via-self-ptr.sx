@@ -31,7 +31,7 @@ ticks : i32 = 0;
 
 main :: () -> i32 {
     h : Holder = .{};
-    h.set(() { ticks += 1; });
+    h.set(|| { ticks += 1; });
 
     h.call_direct();
     h.call_hoisted();

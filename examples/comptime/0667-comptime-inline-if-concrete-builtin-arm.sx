@@ -1,5 +1,5 @@
 // A CONCRETE builtin arm (`case i64:`, `case u8:`, `case f32:`) matches in
-// an `inline if T ==` static type dispatch: the static fold resolves the
+// an `inline match T` static type dispatch: the static fold resolves the
 // primitive spelling exactly like the runtime type switch, which is what makes
 // these arms reachable rather than falling to `else:` (`case string:` matches
 // by doubling as a category name). Both the inline-constraint form and the
@@ -8,7 +8,7 @@
 
 by_inline :: (v: $K) -> i64 {
     n := 0;
-    inline if K == {
+    inline match K {
         case i64: { n = 1; }
         case u8: { n = 2; }
         case f32: { n = 3; }
@@ -20,7 +20,7 @@ by_inline :: (v: $K) -> i64 {
 
 by_type :: ($T: Type) -> i64 {
     n := 0;
-    inline if T == {
+    inline match T {
         case i64: { n = 1; }
         case u8: { n = 2; }
         case f32: { n = 3; }

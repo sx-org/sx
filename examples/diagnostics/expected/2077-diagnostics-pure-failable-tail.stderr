@@ -19,7 +19,7 @@ error: error tag 'error.Missing' is not in error set 'Named'
 error: function returns 'i32' but its body produces no value — end it with a trailing expression or an explicit `return`
   --> examples/diagnostics/2077-diagnostics-pure-failable-tail.sx:71:26
    |
-71 |     empty := () -> i32 { x := 1; };
+71 |     empty := || -> i32 { x := 1; };
    |                          ^^^^^^^
 
 error: native JNI method 'SxApp.onCreate' is failable — a Java method has no error channel to carry its result; return the value and signal failure in-band instead

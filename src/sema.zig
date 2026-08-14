@@ -798,6 +798,10 @@ pub const Analyzer = struct {
             .spread_expr => .void_type,
             .named_arg => |na| return self.inferExprType(na.value),
             .trailing_block => .void_type,
+            // `F(args){}` reads as the parameterized aggregate when the head
+            // names a type, and as a trailing block (void) otherwise — the
+            // editor's half of the rule the lowering front settles.
+            .empty_brace_call => |ebc| self.parameterizedStructType(ebc.call.data.call) orelse .void_type,
             .break_expr => .void_type,
             .continue_expr => .void_type,
             .enum_literal => .{ .enum_type = "" },
@@ -808,12 +812,10 @@ pub const Analyzer = struct {
                         if (self.struct_types.contains(target)) return .{ .struct_type = target };
                     }
                 } else if (sl.type_expr) |te| {
-                    // Handle parameterized struct: List(i32){} parses as call node
+                    // A parameterized head (`List(i32){ … }`) carries its type
+                    // application as a call node.
                     if (te.data == .call) {
-                        if (self.resolveCalleeName(te.data.call)) |callee| {
-                            if (self.instantiateGeneric(callee, te.data.call.args)) |inst| return inst;
-                            if (self.struct_types.contains(callee)) return .{ .struct_type = callee };
-                        }
+                        if (self.parameterizedStructType(te.data.call)) |ty| return ty;
                     }
                     return self.inferExprType(te);
                 }
@@ -845,6 +847,15 @@ pub const Analyzer = struct {
             },
             else => .void_type,
         };
+    }
+
+    /// The struct a parameterized aggregate head names — the generic instance
+    /// for a template, the struct itself otherwise.
+    fn parameterizedStructType(self: *Analyzer, c: ast.Call) ?Type {
+        const callee = self.resolveCalleeName(c) orelse return null;
+        if (self.instantiateGeneric(callee, c.args)) |inst| return inst;
+        if (self.struct_types.contains(callee)) return .{ .struct_type = callee };
+        return null;
     }
 
     /// Resolve the callee name from a call node (handles identifiers and field_access).
@@ -1143,7 +1154,7 @@ pub const Analyzer = struct {
                     try self.analyzeNode(arg);
                 }
                 // Mirror lower.zig: passing a `*T` where a `T` value is expected
-                // (a `for xs: (*m)` capture, a `*T` parameter, any pointer local).
+                // (a `for *m in xs` capture, a `*T` parameter, any pointer local).
                 // Restricted to direct (identifier) calls so args align 1:1 with
                 // the declared params — UFCS/method calls drop the receiver.
                 if (call.callee.data == .identifier) {
@@ -1262,6 +1273,10 @@ pub const Analyzer = struct {
             .spread_expr => |se| try self.analyzeNode(se.operand),
             .named_arg => |na| try self.analyzeNode(na.value),
             .trailing_block => |tb| try self.analyzeNode(tb.lambda),
+            .empty_brace_call => |ebc| {
+                try self.analyzeNode(ebc.call);
+                try self.analyzeNode(ebc.block);
+            },
             .break_expr, .continue_expr => {},
             .assignment => |asgn| {
                 try self.analyzeNode(asgn.target);
@@ -1806,6 +1821,10 @@ pub fn findNodeAtOffset(node: *Node, offset: u32) ?*Node {
         .trailing_block => |tb| {
             if (findNodeAtOffset(tb.lambda, offset)) |found| return found;
         },
+        .empty_brace_call => |ebc| {
+            if (findNodeAtOffset(ebc.call, offset)) |found| return found;
+            if (findNodeAtOffset(ebc.block, offset)) |found| return found;
+        },
         .break_expr, .continue_expr => {},
         .caller_site => {},
         .error_directive => {},
@@ -2229,7 +2248,8 @@ test "sema: var_decl infers struct type from parameterized struct literal" {
 test "sema: var_decl infers struct type from parameterized call literal" {
     const parser_mod = @import("parser.zig");
 
-    // List(i32){} — parser produces struct_literal with type_expr = call node
+    // `List(i32){}` reaches the editor as the undecided carrier: a head that
+    // names a struct constructs, so the binding takes that type.
     const source = "List :: struct { len: i64; } main :: () { list := List(i32){}; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -2426,9 +2446,9 @@ test "sema: for-loop captures resolve element, by-ref pointer, and range cursor"
         "List :: struct ($T: Type) { items: [*]T = null; len: i64 = 0; }" ++
         "Game :: struct { legal: List(Move);" ++
         "  scan :: (self: *Game) {" ++
-        "    for self.legal (m) { a := m.flag; }" ++
-        "    for self.legal (*p) { b := p.flag; }" ++
-        "    for 0..10 (i) { c := i; }" ++
+        "    for m in self.legal { a := m.flag; }" ++
+        "    for *p in self.legal { b := p.flag; }" ++
+        "    for i in 0..10 { c := i; }" ++
         "  } }";
     var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();

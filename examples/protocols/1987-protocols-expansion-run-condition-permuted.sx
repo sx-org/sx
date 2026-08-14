@@ -20,7 +20,7 @@ inline if WIDE {
 }
 
 SHAPES :: .[Cell];
-inline for SHAPES (T) {
+inline for T in SHAPES {
     impl Show for T { fmt :: (self: *T) -> i64 { self.n } }
 }
 

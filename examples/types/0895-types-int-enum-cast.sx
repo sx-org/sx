@@ -24,7 +24,7 @@ zone_of :: (n: i64) -> ?Zone {
 }
 
 name_of :: (z: Zone) -> string {
-    if z == {
+    match z {
         case .floating: "floating";
         case .fill: "fill";
         case .center: "center";
@@ -47,7 +47,7 @@ main :: () {
 
     // The cast result flows on: argument, match subject, comparison.
     print("arg: {}\n", name_of(i.(Zone)));
-    print("match: {}\n", if i.(Zone) == {
+    print("match: {}\n", match i.(Zone) {
         case .floating: 0;
         case .fill: 1;
         case .center: 2;

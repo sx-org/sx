@@ -19,7 +19,7 @@
 // `now_ms` returns a real monotonic clock. Fully deterministic/testable.
 //
 // Worker form: a nullary failable `Closure() -> ($R, !)`, written as a lambda
-// at the call site (`() -> (i64, !) => compute(a, b)`). A named fn does not
+// at the call site (`|| -> (i64, !) compute(a, b)`). A named fn does not
 // coerce to a closure, so it is not a worker.
 #import "modules/std/core.sx";
 #import "modules/std/atomic.sx";
@@ -161,7 +161,7 @@ sx_run_boxed_closure :: (arg: *void) {
 
 // `async(io, worker)` — submit a NULLARY `worker: Closure() -> ($R, !)` and get
 // a `*Future($R)` handle. Inputs are captured at the CALL SITE in the lambda
-// (`context.io.async(() -> (i64, !) => compute(a, b))`).
+// (`context.io.async(|| -> (i64, !) compute(a, b))`).
 //
 // The Future (and the completion-closure `ThunkBox`) are HEAP-allocated (not
 // returned by value): under the fiber impl the worker fills the Future AFTER
@@ -222,7 +222,7 @@ async :: ufcs (io: Io, worker: Closure() -> ($R, !)) -> *Future($R) {
     // captured by-value into `run`'s env below, otherwise unreachable). `null` for
     // a capture-free worker.
     b.worker_env = worker.env;
-    b.run = () {
+    b.run = || {
         f.value = worker() catch {
             if f.canceled.load(.acquire) { f.state = .canceled; }
             else { f.state = .failed; }

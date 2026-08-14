@@ -1355,7 +1355,7 @@ pub const Vm = struct {
             // Extract a tagged union's active payload — the bytes at `tag_size`,
             // read as the variant's payload type. Mirrors the `enum_init` write
             // layout (`{ tag@0, [N x i8] payload@tag_size }`). The match-arm
-            // capture binding (`case .v: (x)`) uses this.
+            // capture binding (`case .v: |x|`) uses this.
             .enum_payload => |fa| {
                 const oty = (try self.refTy(ref_types, fa.base));
                 const base = frame.get(fa.base.index());

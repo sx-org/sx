@@ -1,13 +1,13 @@
 error: a switch over 'View' needs an 'else:' arm: the set is open, so a member beyond these arms may reach it
-  --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:61:8
+  --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:61:11
    |
-61 |     if v == {
-   |        ^
+61 |     match v {
+   |           ^
 
 help: name the members this code handles and let 'else:' answer for the rest — a set's members are declared anywhere in the program
    |
-61 |     if v == {
-   |        ^
+61 |     match v {
+   |           ^
 
 error: a 'View' value is never 'Plain': it is not a member of it
   --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:68:14
@@ -65,10 +65,10 @@ help: name the member as the target instead, or open the box with a type switch 
    |              ^^^^
 
 error: a switch over 'View' needs an 'else:' arm: the set is open, so a member beyond these arms may reach it
-  --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:51:8
+  --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:51:11
    |
-51 |     if v == {
-   |        ^
+51 |     match v {
+   |           ^
 
 note: instantiated from here
   --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:88:19
@@ -78,8 +78,8 @@ note: instantiated from here
 
 help: name the members this code handles and let 'else:' answer for the rest — a set's members are declared anywhere in the program
    |
-51 |     if v == {
-   |        ^
+51 |     match v {
+   |           ^
 
 error: free expects a protocol value, a closure, or a slice
   --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:91:5

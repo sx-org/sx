@@ -472,7 +472,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
 
         const result = self.builder.structInit(fields.items, ty);
         if (sl.init_block) |ib| {
-            if (sl.init_block_binds_self) return self.lowerInitBlock(result, ty, ib);
+            if (sl.init_block_self) |binder| return self.lowerInitBlock(result, ty, ib, binder);
             return self.lowerPostScopeBlock(result, ib);
         }
         return result;
@@ -558,7 +558,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
 
     // Lower following block if present
     if (sl.init_block) |ib| {
-        if (sl.init_block_binds_self) return self.lowerInitBlock(result, ty, ib);
+        if (sl.init_block_self) |binder| return self.lowerInitBlock(result, ty, ib, binder);
         return self.lowerPostScopeBlock(result, ib);
     }
 
@@ -571,21 +571,22 @@ pub fn lowerPostScopeBlock(self: *Lowering, struct_val: Ref, ib: *const Node) Re
     return struct_val;
 }
 
-/// Lower `T{…}.{ stmts }`: store struct value to alloca, bind `self`, execute block, reload.
-pub fn lowerInitBlock(self: *Lowering, struct_val: Ref, ty: TypeId, ib: *const Node) Ref {
+/// Lower `T{…}.{ stmts }`: store struct value to alloca, bind `binder` to a
+/// pointer to it, execute block, reload.
+pub fn lowerInitBlock(self: *Lowering, struct_val: Ref, ty: TypeId, ib: *const Node, binder: []const u8) Ref {
     // Store struct value to a temporary alloca
     const ptr_ty = self.module.types.ptrTo(ty);
     const slot = self.builder.alloca(ty);
     self.builder.store(slot, struct_val);
 
-    // Create a nested scope with `self` bound to the alloca pointer
+    // Create a nested scope with the binder bound to the alloca pointer
     var init_scope = Scope.init(self.alloc, self.scope);
     defer init_scope.deinit();
     const saved_scope = self.scope;
     self.scope = &init_scope;
 
-    // `self` is the pointer to the struct (not an alloca itself — it IS the pointer value)
-    init_scope.put("self", .{ .ref = slot, .ty = ptr_ty, .is_alloca = false });
+    // The binder IS the pointer value, not an alloca holding one.
+    init_scope.put(binder, .{ .ref = slot, .ty = ptr_ty, .is_alloca = false });
 
     // Lower the init block body
     self.lowerBlock(ib);
@@ -708,7 +709,7 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
             }
         } else {
             // Method expects a value `T` but the receiver is a `*T` (e.g. a
-            // `for xs: (*x)` by-ref capture) — deref to pass the value.
+            // `for *x in xs` by-ref capture) — deref to pass the value.
             if (!obj_ty.isBuiltin()) {
                 const oi = self.module.types.get(obj_ty);
                 if (oi == .pointer and oi.pointer.pointee == first_param_ty) {
@@ -833,7 +834,7 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
 }
 
 pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.Span) Ref {
-    // `inline for xs (x)` element capture as the receiver: re-enter with the
+    // `inline for x in xs` element capture as the receiver: re-enter with the
     // synthesized `xs[<i>]` as the object, so every pack-element rule below
     // (interface-only constraint check, projection, substitution) sees the
     // canonical `xs[i].<field>` shape.
@@ -3088,7 +3089,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 const sb = scope.lookupBoundary(id.name);
                 if (sb.crossed_fn_boundary) break :blk self.diagEnclosingLocalRef(id.name, node.span);
                 if (sb.binding) |binding| {
-                    // `inline for xs (x)` element capture — lower the
+                    // `inline for x in xs` element capture — lower the
                     // synthesized `xs[<i>]` it aliases.
                     if (binding.pack_elem) |elem| break :blk self.lowerExpr(elem);
                     // Flow narrowing: a name proven present by a
@@ -4279,7 +4280,7 @@ pub fn lowerAsmExpr(self: *Lowering, ae: *const ast.AsmExpr, span: ast.Span) Ref
     } }, result_ty);
 }
 
-/// If `node` names a `for xs: (*x)` by-ref capture (an `*elem`), returns
+/// If `node` names a `for *x in xs` by-ref capture (an `*elem`), returns
 /// the element (pointee) type so a value-position use can auto-deref it.
 pub fn refCapturePointee(self: *Lowering, node: *const Node) ?TypeId {
     if (node.data != .identifier) return null;
@@ -4476,7 +4477,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         }
     }
     var lhs = self.lowerExpr(bop.lhs);
-    // A `for xs: (*x)` capture is a pointer; in a value position (here, an
+    // A `for *x in xs` capture is a pointer; in a value position (here, an
     // operand) it auto-derefs to the element.
     const lhs_ref_pointee = self.refCapturePointee(bop.lhs);
     if (lhs_ref_pointee) |p| lhs = self.builder.load(lhs, p);

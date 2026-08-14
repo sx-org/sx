@@ -13,7 +13,7 @@
 g_s: string = "";
 
 main :: () -> i32 {
-    cl := (s: string) { g_s = s; };
+    cl := |s: string| { g_s = s; };
     b : Block = xx cl;
     invoke_fn : (*Block, string) -> void abi(.c) = xx b.invoke;
     invoke_fn(*b, "hello");

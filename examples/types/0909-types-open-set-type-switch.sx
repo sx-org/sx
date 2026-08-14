@@ -42,9 +42,9 @@ Padded :: @OpenVariant(View) ($T: Type) {
 }
 
 describe :: (v: View) -> string {
-    if v == {
-        case Label: (l) { return l.text; }
-        case Panel: (p) { return p.title; }
+    match v {
+        case Label: |l| { return l.text; }
+        case Panel: |p| { return p.title; }
         else: { return "some other member"; }
     }
     return "unreached";
@@ -57,7 +57,7 @@ CT_ANSWER :: #run early_switch();
 
 early_switch :: () -> string {
     v: View = Padded(i64){ inner = 7 };
-    if v == {
+    match v {
         case Label: { return "label"; }
         case Padded(i64): { return "padded at comptime"; }
         else: { return "other"; }
@@ -69,16 +69,16 @@ main :: () -> i32 {
     v: View = Label{ text = "label", n = 1 };
 
     // The capture is the member's own value, with its own fields.
-    if v == {
-        case Label: (l) { print("label {} n {}\n", l.text, l.n); }
-        case Panel: (p) { print("panel {} rows {}\n", p.title, p.rows); }
+    match v {
+        case Label: |l| { print("label {} n {}\n", l.text, l.n); }
+        case Panel: |p| { print("panel {} rows {}\n", p.title, p.rows); }
         else: { print("other\n"); }
     }
 
     // The capture is a copy: dispatch writes through the slot it was called on,
     // and what the arm holds is unmoved by it.
-    if v == {
-        case Label: (l) {
+    match v {
+        case Label: |l| {
             print("slot bumped to {}\n", v.bump(10));
             print("capture still {}\n", l.n);
         }
@@ -93,7 +93,7 @@ main :: () -> i32 {
     print("described {}\n", describe(v));
 
     // An arm naming a generic member's instantiation.
-    if v == {
+    match v {
         case Padded(i64): { print("an instantiation arm\n"); }
         else: { print("other\n"); }
     }

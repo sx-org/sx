@@ -232,7 +232,7 @@ UIRenderer :: struct {
         i := 0;
         while i < tree.nodes.len {
             node := tree.nodes.items[i];
-            if node.type == {
+            match node.type {
                 case .rect: {
                     self.push_quad(node.frame, node.fill_color, COLOR_TRANSPARENT, 0.0, 0.0);
                 }

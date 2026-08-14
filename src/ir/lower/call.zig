@@ -1251,7 +1251,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         self.force_block_value = saved_fbv;
         self.target_type = saved_target;
         // Passing a `*T` where a `T` value is expected — a by-reference loop
-        // capture (`for xs: (*m)`), a `*T` parameter, or any pointer local —
+        // capture (`for *m in xs`), a `*T` parameter, or any pointer local —
         // otherwise slips through to LLVM as an opaque "call parameter type
         // does not match function signature" verifier error. Flag it at the
         // call site with a `.*` fix-it.
@@ -4738,6 +4738,68 @@ fn namedCalleeDecl(
     }
 }
 
+/// The closure a trailing block fills at a parameter of type `pty` — the
+/// closure itself, or the child of an optional closure slot. `.unresolved`
+/// when the parameter holds no closure.
+fn trailingClosureType(self: *Lowering, pty: TypeId) TypeId {
+    if (pty.isBuiltin()) return .unresolved;
+    const info = self.module.types.get(pty);
+    if (info == .closure) return pty;
+    if (info == .optional and !info.optional.child.isBuiltin() and
+        self.module.types.get(info.optional.child) == .closure)
+    {
+        return info.optional.child;
+    }
+    return .unresolved;
+}
+
+/// How a callee's last declared parameter answers a trailing block.
+pub const TrailingBlockFit = union(enum) {
+    /// The callee names no declaration here — a closure value, a function
+    /// pointer, a builtin, a protocol method.
+    unknown,
+    /// The last declared parameter takes the block.
+    binds,
+    /// It does not; the parameter that would have taken it, null when the
+    /// callee declares no parameter at all.
+    refuses: ?RefusedBlockParam,
+};
+
+pub const RefusedBlockParam = struct { name: []const u8, ty: TypeId };
+
+/// Ask `c`'s callee whether a trailing block binds there, through the same
+/// declaration selection and the same last-parameter classification
+/// `mapNamedArgs` binds by.
+pub fn calleeTrailingBlockFit(self: *Lowering, c: *const ast.Call) TrailingBlockFit {
+    // The author selection `lowerCall` makes before it maps arguments: a bare
+    // name resolves through the source-aware flat-author selector, a namespace
+    // path through the qualified-member one.
+    var qualified_verdict = self.callResolver().classifyQualifiedCall(c);
+    var bare_verdict: Lowering.BareCallee = switch (qualified_verdict) {
+        .never_qualified, .value_receiver => self.callResolver().selectedFreeAuthor(c),
+        else => .none,
+    };
+    const bare_author: ?*SelectedFunc = switch (bare_verdict) {
+        .func => |*sf| sf,
+        else => null,
+    };
+    const qualified_author: ?*SelectedFunc = switch (qualified_verdict) {
+        .func => |*sf| sf,
+        else => null,
+    };
+    const declines = bare_verdict == .ambiguous or bare_verdict == .not_callable;
+    const callee = namedCalleeDecl(self, c, bare_author orelse qualified_author, qualified_author != null, declines) orelse return .unknown;
+    const fd = callee.fd;
+    if (fd.params.len == callee.receiver_params) return .{ .refuses = null };
+    const last = fd.params.len - 1;
+    const p = fd.params[last];
+    const pty = self.resolveDeclParamType(fd, last);
+    if (p.is_variadic or p.is_pack) return .{ .refuses = .{ .name = p.name, .ty = pty } };
+    if (self.blockProtocolOf(pty) != null) return .binds;
+    if (trailingClosureType(self, pty) != .unresolved) return .binds;
+    return .{ .refuses = .{ .name = p.name, .ty = pty } };
+}
+
 /// Strip `named_arg` wrappers in place of a failed mapping: downstream
 /// lowering sees each value as a plain positional node (the build aborts on
 /// the mapping diagnostic before codegen; this only prevents an
@@ -4909,10 +4971,11 @@ pub fn mapNamedArgs(
             },
             .trailing_block => |tb| {
                 // Trailing block binds the callee's LAST declared parameter
-                // (specs: Trailing Blocks): a non-variadic zero-param
-                // Closure (an optional closure slot wraps like any named
-                // closure argument), rejected as a duplicate against a named
-                // or positional binding of the same parameter.
+                // (specs: Trailing Blocks): a non-variadic Closure whose
+                // parameters the block's header spells (an optional closure
+                // slot wraps like any named closure argument), rejected as a
+                // duplicate against a named or positional binding of the same
+                // parameter.
                 if (nparams == off) {
                     errored = true;
                     if (self.diagnostics) |d|
@@ -4928,15 +4991,22 @@ pub fn mapNamedArgs(
                     continue;
                 }
                 const pty = self.resolveDeclParamType(fd, last);
+                const block_params = tb.lambda.data.lambda.params;
                 // Dual bind (spec §7.1): a `$B/@BuildBlock(P)` last parameter
                 // makes the SAME source block a build block instead of a
-                // closure. The block is zero-param by construction, and
-                // formation owns the lambda, so there is no closure shape to
-                // check here. Asked through the shared classifier: the binder may
-                // already be bound to an implementor at this call (a block
-                // forwarded from the caller), and that is still a block
-                // parameter.
+                // closure. A build block is replayed against a sink, not
+                // called, so it takes no header. Asked through the shared
+                // classifier: the binder may already be bound to an
+                // implementor at this call (a block forwarded from the
+                // caller), and that is still a block parameter.
                 if (self.blockProtocolOf(pty) != null) {
+                    // The refused header still binds: an unbound block
+                    // parameter reports a second time as a missing one.
+                    if (tb.has_header) {
+                        errored = true;
+                        if (self.diagnostics) |d|
+                            d.addFmt(.err, a.span, "'{s}' takes a build block for '{s}' — a build block has no parameter header", .{ callee_name, p.name });
+                    }
                     if (last < pos) {
                         errored = true;
                         if (self.diagnostics) |d|
@@ -4952,18 +5022,7 @@ pub fn mapNamedArgs(
                     slots[last] = tb.lambda;
                     continue;
                 }
-                const closure_ty: TypeId = blk: {
-                    if (!pty.isBuiltin()) {
-                        const info = self.module.types.get(pty);
-                        if (info == .closure) break :blk pty;
-                        if (info == .optional and !info.optional.child.isBuiltin() and
-                            self.module.types.get(info.optional.child) == .closure)
-                        {
-                            break :blk info.optional.child;
-                        }
-                    }
-                    break :blk .unresolved;
-                };
+                const closure_ty = trailingClosureType(self, pty);
                 if (closure_ty == .unresolved) {
                     errored = true;
                     if (self.diagnostics) |d| {
@@ -4972,10 +5031,11 @@ pub fn mapNamedArgs(
                     }
                     continue;
                 }
-                if (self.module.types.get(closure_ty).closure.params.len != 0) {
+                const want = self.module.types.get(closure_ty).closure.params.len;
+                if (want != block_params.len) {
                     errored = true;
                     if (self.diagnostics) |d|
-                        d.addFmt(.err, a.span, "'{s}' expects a parameterized closure for '{s}' — a trailing block is zero-param; pass the closure explicitly", .{ callee_name, p.name });
+                        d.addFmt(.err, a.span, "'{s}' takes {d} parameter{s} in the block for '{s}' — its header binds {d}", .{ callee_name, want, if (want == 1) @as([]const u8, "") else "s", p.name, block_params.len });
                     continue;
                 }
                 if (last < pos) {
@@ -5594,7 +5654,7 @@ pub fn resolveCallParamTypes(
     }
     if (c.callee.data != .identifier) return &.{};
     const bare_name = c.callee.data.identifier.name;
-    // Closure / fn-pointer VALUE bound in scope (`g := () => ...; g(args)`):
+    // Closure / fn-pointer VALUE bound in scope (`g := || …; g(args)`):
     // type each arg against the callee value's declared parameter types so a
     // `?T` param wraps the argument — without this the args lower
     // with no target type and reach `call_closure` unconverted (a concrete arg

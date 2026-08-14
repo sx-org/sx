@@ -1,0 +1,11 @@
+// A capture annotation is the element type and must name it exactly — it is
+// not a conversion site, and `*` does not belong in it.
+
+#import "modules/std.sx";
+
+View :: struct { w: i64; }
+
+main :: () {
+    children : [2]View = .[View{ w = 1 }, View{ w = 2 }];
+    for *c: *View in children { _ = c; }
+}

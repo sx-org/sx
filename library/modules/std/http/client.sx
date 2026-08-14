@@ -602,7 +602,7 @@ EncodedChunkPhase :: enum {
 // are relative to this span/output window; `done` means the content coding
 // reached its terminal checksum/trailer.
 feed_content_decoder :: (decoder: *Decoder, input: string, output: string) -> (i64, i64, bool, !ClientErr) {
-    progress := decoder.read(input, output) catch (e) {
+    progress := decoder.read(input, output) catch |e| {
         if e == error.OutputLimit { raise error.TooLarge; }
         raise error.Recv;
     };
@@ -610,7 +610,7 @@ feed_content_decoder :: (decoder: *Decoder, input: string, output: string) -> (i
 }
 
 finish_content_decoder :: (decoder: *Decoder, output: string) -> (i64, bool, !ClientErr) {
-    progress := decoder.finish(output) catch (e) {
+    progress := decoder.finish(output) catch |e| {
         if e == error.OutputLimit { raise error.TooLarge; }
         raise error.Recv;
     };
@@ -656,7 +656,7 @@ recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
                       initial: string, content_len: i64, chunked: bool,
                       encoding: Encoding) -> (i64, !ClientErr) {
     output_cap := cap - head_end;
-    decoder := Decoder.init(encoding, output_cap, context.allocator) catch (e) {
+    decoder := Decoder.init(encoding, output_cap, context.allocator) catch |e| {
         if e == error.AllocationFailed { raise error.Allocation; }
         raise error.Recv;
     };

@@ -23,7 +23,7 @@ main :: () -> i32 {
     };
 
     print("collected {}\n", kids.len);
-    for kids (*k) { print("  {}\n", k.tag()); }
+    for *k in kids { print("  {}\n", k.tag()); }
     0
 }
 

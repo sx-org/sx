@@ -70,7 +70,7 @@ main :: () {
     // A loop reuses nothing across iterations that the caller can observe:
     // each iteration reads its own result before the next call.
     total := 0.0;
-    for 1..4 (i) {
+    for i in 1..4 {
         step := w.resized(xx i);
         total = total + step.area();
     }

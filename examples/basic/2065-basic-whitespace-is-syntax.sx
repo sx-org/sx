@@ -7,12 +7,13 @@
 //           `-` / `*` must be glued to its operand.
 //
 // A `(` that OPENS something instead of continuing something is untouched by
-// the glue rule, and the eight declaration forms below all spell theirs with a
-// space to prove it: fn, ufcs fn, struct type params, protocol type params,
-// generic open-set member, for capture, catch binding, onfail binding.
+// the glue rule, and the declaration forms below all spell theirs with a space
+// to prove it: fn, ufcs fn, struct type params, protocol type params, generic
+// open-set member. The capture forms — for capture, catch binding, onfail
+// binding — carry no `(` at all.
 #import "modules/std.sx";
 
-// --- the eight whitespace-free declaration forms ---
+// --- the whitespace-free declaration and capture forms ---
 
 // 1. function declaration
 double :: (n: i64) -> i64 => n * 2;
@@ -37,7 +38,7 @@ Padded :: @OpenVariant(View) ($T: Type) {
 // 8. onfail binding (its own frame — `onfail` needs a failable function)
 Fail :: error { Bad }
 parse_even :: (n: i64) -> (i64, !Fail) {
-    onfail (e) { print("cleanup {}\n", e); }
+    onfail |e| { print("cleanup {}\n", e); }
     if n % 2 != 0 { raise error.Bad; }
     return n / 2;
 }
@@ -71,11 +72,11 @@ main :: () -> i32 {
 
     // 6. for capture
     total := 0;
-    for xs (x) { total = total + x; }
+    for x in xs { total = total + x; }
     print("total={}\n", total);
 
     // 7. catch binding (and, inside `parse_even`, the onfail binding)
-    half := parse_even(9) catch (e) -1;
+    half := parse_even(9) catch |e| -1;
     print("half={}\n", half);
 
     // the open-set member and the parameterized protocol

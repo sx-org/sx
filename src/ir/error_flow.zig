@@ -274,7 +274,7 @@ pub const ErrorFlow = struct {
             },
             .onfail_stmt => |os| {
                 self.checkCleanupBody(os.body, "onfail");
-                // `onfail (name) { … }` — the error binding is a fresh
+                // `onfail |name| { … }` — the error binding is a fresh
                 // declaration scoped to the cleanup body.
                 var body_proven = self.provenClone(proven.*);
                 const mark = ctx.shadow_undo.items.len;
@@ -412,7 +412,7 @@ pub const ErrorFlow = struct {
             .catch_expr => |ce| {
                 self.flowExpr(ce.operand, ctx, proven);
                 if (ce.binding) |bn| {
-                    // `x catch (name) { … }` — the error binding is a fresh
+                    // `x catch |name| { … }` — the error binding is a fresh
                     // declaration scoped to the handler body.
                     var body_proven = self.provenClone(proven);
                     const mark = ctx.shadow_undo.items.len;

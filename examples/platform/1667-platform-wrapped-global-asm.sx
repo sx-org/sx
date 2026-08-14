@@ -9,7 +9,7 @@
 // symbols, linux does not). Built+run via `aot` (a module-asm symbol lives in
 // the final linked binary, not the JIT host); aarch64-pinned via `target:
 // macos`, so ir-only on a non-matching host.
-inline if OS == {
+inline match OS {
     case .linux: asm {
         #string ASM
 .global wrapped_add

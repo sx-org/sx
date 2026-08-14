@@ -42,7 +42,7 @@ main :: () {
     // type_of + category matching
     tv := 42;
     ttype := type_of(tv);
-    if ttype == {
+    match ttype {
         case int: print("typeof: int\n");
         case float: print("typeof: float\n");
         else: print("typeof: other\n");
@@ -50,35 +50,35 @@ main :: () {
 
     // type_of — float
     tf := 3.14;
-    if type_of(tf) == {
+    match type_of(tf) {
         case float: print("typeof-float: float\n");
         else: print("typeof-float: other\n");
     }
 
     // type_of — string
     ts := "hello";
-    if type_of(ts) == {
+    match type_of(ts) {
         case string: print("typeof-string: string\n");
         else: print("typeof-string: other\n");
     }
 
     // type_of — bool
     tb := true;
-    if type_of(tb) == {
+    match type_of(tb) {
         case bool: print("typeof-bool: bool\n");
         else: print("typeof-bool: other\n");
     }
 
     // type_of — struct
     tst := Point{ 1, 2 };
-    if type_of(tst) == {
+    match type_of(tst) {
         case struct: print("typeof-struct: struct\n");
         else: print("typeof-struct: other\n");
     }
 
     // type_of — enum
     ten : Color = .red;
-    if type_of(ten) == {
+    match type_of(ten) {
         case enum: print("typeof-enum: enum\n");
         else: print("typeof-enum: other\n");
     }

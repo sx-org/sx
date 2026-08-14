@@ -6,7 +6,7 @@
 #import "modules/std.sx";
 
 conc :: (t: Type) -> string {
-    if t == {
+    match t {
         case i64: return "i64";
         case int: return "int";
         else:     return "other";
@@ -15,7 +15,7 @@ conc :: (t: Type) -> string {
 }
 
 comp :: (t: Type) -> string {
-    if t == {
+    match t {
         case ?i64:     return "?i64";
         case []u8:     return "[]u8";
         case string:   return "string";

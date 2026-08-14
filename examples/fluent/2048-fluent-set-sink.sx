@@ -52,7 +52,7 @@ main :: () -> i32 {
     };
 
     print("collected {}\n", sink.children.len);
-    for sink.children (v) { print("  {}\n", v.render()); }
+    for v in sink.children { print("  {}\n", v.render()); }
 
     // The elements are ordinary set values: they answer for the member they carry.
     first := sink.children.items[0];

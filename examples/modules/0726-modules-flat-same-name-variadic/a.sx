@@ -4,7 +4,7 @@
 combine :: (x: i64, y: i64) -> i64 { return x + y; }
 pick :: (..xs: []i64) -> i64 {
     result := 0;
-    for xs (it) { result = result + it; }
+    for it in xs { result = result + it; }
     result
 }
 from_a_combine :: () -> i64 { return combine(10, 20); }

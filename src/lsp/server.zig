@@ -711,10 +711,10 @@ pub const Server = struct {
         }
 
         const keywords = [_][]const u8{
-            "if",    "else",  "then",  "return",   "defer",
-            "case",  "break", "enum",  "struct",   "true",
-            "false", "xx",    "while", "continue", "and",
-            "or",    "union",
+            "if",    "else",  "then",  "return", "defer",
+            "match", "case",  "break", "enum",   "struct",
+            "true",  "false", "xx",    "while",  "continue",
+            "and",   "or",    "union",
         };
 
         const builtins = [_]struct { label: []const u8, detail: []const u8 }{
@@ -821,7 +821,7 @@ pub const Server = struct {
     }
 
     fn collectMatchEnumCompletions(self: *Server, items: *std.ArrayList(lsp.CompletionItem), doc: *const Document, cursor_offset: u32) !void {
-        // Text-based approach: scan backward from cursor to find enclosing "SUBJECT == {"
+        // Text-based approach: scan backward from cursor to find enclosing "match SUBJECT {"
         // This works even when the file has parse errors (user is mid-typing)
         const subject_name = findMatchSubjectText(doc.source, cursor_offset) orelse return;
 
@@ -859,13 +859,13 @@ pub const Server = struct {
     }
 
     /// Scan backward through source text to find the subject of an enclosing match expression.
-    /// Looks for the pattern: SUBJECT == { ... case .
+    /// Looks for the pattern: match SUBJECT { ... case .
     /// Returns the subject text (e.g. "event", "e.key") or null.
     fn findMatchSubjectText(source: []const u8, cursor_offset: u32) ?[]const u8 {
         var pos: u32 = cursor_offset;
         var brace_depth: u32 = 0;
 
-        // Walk backward, tracking brace depth, looking for "== {"
+        // Walk backward, tracking brace depth, looking for "match SUBJECT {"
         while (pos > 2) {
             pos -= 1;
             const ch = source[pos];
@@ -875,19 +875,20 @@ pub const Server = struct {
                 if (brace_depth > 0) {
                     brace_depth -= 1;
                 } else {
-                    // Found an unmatched '{' — check if preceded by "=="
-                    var scan = pos;
-                    while (scan > 0 and std.ascii.isWhitespace(source[scan - 1])) scan -= 1;
-                    if (scan >= 2 and source[scan - 1] == '=' and source[scan - 2] == '=') {
-                        // Found "== {" — extract the subject before "=="
-                        var end = scan - 2;
-                        while (end > 0 and std.ascii.isWhitespace(source[end - 1])) end -= 1;
-                        if (end == 0) return null;
-                        var start = end;
-                        while (start > 0 and (isIdentChar(source[start - 1]) or source[start - 1] == '.')) {
-                            start -= 1;
+                    // Found an unmatched '{' — read the subject before it
+                    var end = pos;
+                    while (end > 0 and std.ascii.isWhitespace(source[end - 1])) end -= 1;
+                    var start = end;
+                    while (start > 0 and (isIdentChar(source[start - 1]) or source[start - 1] == '.')) {
+                        start -= 1;
+                    }
+                    if (start < end) {
+                        // The subject counts only when `match` heads it
+                        var kw_end = start;
+                        while (kw_end > 0 and std.ascii.isWhitespace(source[kw_end - 1])) kw_end -= 1;
+                        if (kw_end >= 5 and std.mem.eql(u8, source[kw_end - 5 .. kw_end], "match")) {
+                            return source[start..end];
                         }
-                        if (start < end) return source[start..end];
                     }
                     // Not a match expr — but keep scanning (might be a nested block)
                 }
@@ -896,12 +897,12 @@ pub const Server = struct {
         return null;
     }
 
-    /// Resolve a capture variable's struct type by scanning backward for `case .VARIANT: (name)`
+    /// Resolve a capture variable's struct type by scanning backward for `case .VARIANT: |name|`
     /// and looking up the variant's payload type in the enum declaration.
     fn collectCaptureCompletions(self: *Server, items: *std.ArrayList(lsp.CompletionItem), doc: *const Document, cursor_offset: u32, var_name: []const u8) !void {
         const sema = doc.sema orelse doc.last_good_sema orelse return;
 
-        // Scan backward from cursor to find: case .VARIANT: (var_name)
+        // Scan backward from cursor to find: case .VARIANT: |var_name|
         const variant_name = findCaptureVariant(doc.source, cursor_offset, var_name) orelse return;
 
         // Find the enclosing match subject
@@ -944,37 +945,31 @@ pub const Server = struct {
         }
     }
 
-    /// Scan backward from cursor to find `case .VARIANT: (var_name)` and return VARIANT.
+    /// Scan backward from cursor to find `case .VARIANT: |var_name|` and return VARIANT.
     fn findCaptureVariant(source: []const u8, cursor_offset: u32, var_name: []const u8) ?[]const u8 {
-        // Look backward for pattern: case .VARIANT: (var_name)
-        // We search for "(var_name)" first, then look for "case .VARIANT:" before it
+        // Look backward for pattern: case .VARIANT: |var_name|
+        // We search for "|var_name|" first, then look for "case .VARIANT:" before it
         var pos: u32 = cursor_offset;
-        while (pos > var_name.len + 10) { // need room for "case .X: (name)"
+        while (pos > var_name.len + 10) { // need room for "case .X: |name|"
             pos -= 1;
-            // Look for the closing ) of a capture
-            if (source[pos] != ')') continue;
+            // Look for the closing | of a capture
+            if (source[pos] != '|') continue;
             // Check if the capture name matches
             if (pos < var_name.len + 1) continue;
             const name_end = pos;
             const name_start = pos - @as(u32, @intCast(var_name.len));
             if (!std.mem.eql(u8, source[name_start..name_end], var_name)) continue;
-            // Check for ( before the name
-            if (name_start < 1 or source[name_start - 1] != '(') continue;
+            // Check for the opening | before the name
+            if (name_start < 1 or source[name_start - 1] != '|') continue;
 
-            // Now scan backward from '(' to find ": " then ".VARIANT" then "case "
+            // Now scan backward from '|' to find ':' then ".VARIANT"
             var scan = name_start - 1;
             // Skip whitespace
             while (scan > 0 and std.ascii.isWhitespace(source[scan - 1])) scan -= 1;
             // Expect ':'
             if (scan < 1 or source[scan - 1] != ':') continue;
             scan -= 1;
-            // Now extract the variant name: scan backward for ".VARIANT"
-            // Skip whitespace before ':'
-            // The variant is an enum literal like .key_down
-            // Actually the ':' comes right after the variant value (explicit) or variant name
-            // Pattern: case .VARIANT: (name) OR case .VARIANT :: 0x300: PayloadType;... nah
-            // In the match arm: case .key_down: (e) {
-            // So before ':' we have the enum literal .key_down
+            // Before the ':' sits the arm's enum literal (`.key_down`)
             while (scan > 0 and std.ascii.isWhitespace(source[scan - 1])) scan -= 1;
             // Extract identifier (variant name)
             const vend = scan;
@@ -1413,6 +1408,7 @@ pub const Server = struct {
             },
             .for_expr => |fe| {
                 for (fe.captures) |cap| {
+                    if (cap.type_annotation != null) continue;
                     if (!std.mem.eql(u8, cap.name, "_")) {
                         addForCaptureHint(allocator, cap.name, node.span, symbols, source, hints);
                     }
@@ -1563,7 +1559,7 @@ pub const Server = struct {
         }
     }
 
-    /// Hint for a `for` loop capture (`for xs: (m)` → `m: T`). The capture has
+    /// Hint for a `for` loop capture (`for m in xs` → `m: T`). The capture has
     /// no `:=`/`::`, so the label carries its own colon and lands right after
     /// the capture name, whose slice points into `source`.
     fn addForCaptureHint(
@@ -3244,19 +3240,19 @@ pub const Server = struct {
 };
 
 test "findMatchSubjectText: simple identifier" {
-    const source = "if event == {\n    case .";
+    const source = "match event {\n    case .";
     const result = Server.findMatchSubjectText(source, @intCast(source.len));
     try std.testing.expectEqualStrings("event", result.?);
 }
 
 test "findMatchSubjectText: field access" {
-    const source = "if e.key == {\n    case .";
+    const source = "match e.key {\n    case .";
     const result = Server.findMatchSubjectText(source, @intCast(source.len));
     try std.testing.expectEqualStrings("e.key", result.?);
 }
 
 test "findMatchSubjectText: nested braces" {
-    const source = "if event == {\n    case .quit: { do_something(); }\n    case .";
+    const source = "match event {\n    case .quit: { do_something(); }\n    case .";
     const result = Server.findMatchSubjectText(source, @intCast(source.len));
     try std.testing.expectEqualStrings("event", result.?);
 }
@@ -3268,13 +3264,13 @@ test "findMatchSubjectText: no match context" {
 }
 
 test "findCaptureVariant: simple capture" {
-    const source = "case .key_down: (e) {\n    e.";
+    const source = "case .key_down: |e| {\n    e.";
     const result = Server.findCaptureVariant(source, @intCast(source.len), "e");
     try std.testing.expectEqualStrings("key_down", result.?);
 }
 
 test "findCaptureVariant: different name" {
-    const source = "case .mouse_motion: (evt) {\n    evt.";
+    const source = "case .mouse_motion: |evt| {\n    evt.";
     const result = Server.findCaptureVariant(source, @intCast(source.len), "evt");
     try std.testing.expectEqualStrings("mouse_motion", result.?);
 }
@@ -3537,7 +3533,7 @@ test "analyzeDocument: for-loop capture variables are registered" {
     const src: [:0]const u8 =
         \\main :: () {
         \\    arr : [3]i32 = ---;
-        \\    for arr, 0.. (it, ix) {
+        \\    for it, ix in arr, 0.. {
         \\        x := it + ix;
         \\    }
         \\}
@@ -3563,7 +3559,7 @@ test "analyzeDocument: for-loop with underscore capture" {
     const src: [:0]const u8 =
         \\main :: () {
         \\    arr : [3]i32 = ---;
-        \\    for arr, 0.. (_, ix) {
+        \\    for _, ix in arr, 0.. {
         \\        x := ix;
         \\    }
         \\}
@@ -3588,7 +3584,7 @@ test "analyzeDocument: for-loop value-only capture" {
     const src: [:0]const u8 =
         \\main :: () {
         \\    arr : [3]i32 = ---;
-        \\    for arr (val) {
+        \\    for val in arr {
         \\        x := val;
         \\    }
         \\}
@@ -3703,7 +3699,7 @@ test "lsp/inlayHint: a for-loop capture in a struct method shows its element typ
         \\Game :: struct {
         \\    legal: List(Move);
         \\    scan :: (self: *Game) {
-        \\        for self.legal (m) { x := m.flag; }
+        \\        for m in self.legal { x := m.flag; }
         \\    }
         \\}
     ;
@@ -3721,6 +3717,69 @@ test "lsp/inlayHint: a for-loop capture in a struct method shows its element typ
         if (std.mem.indexOf(u8, h.label, "Move") != null) found_move = true;
     }
     try std.testing.expect(found_move);
+}
+
+test "lsp/inlayHint: a for-loop capture that writes its type gets no hint" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const lib_src: [:0]const u8 =
+        \\Move :: struct { flag: i64; }
+        \\List :: struct ($T: Type) { items: [*]T = null; len: i64 = 0; }
+    ;
+    const lib_doc = try store.openOrUpdate("lib.sx", lib_src, 1);
+    try store.analyzeDocument(lib_doc);
+
+    const main_src: [:0]const u8 =
+        \\#import "lib.sx";
+        \\Game :: struct {
+        \\    legal: List(Move);
+        \\    scan :: (self: *Game) {
+        \\        for m: Move in self.legal { x := m.flag; }
+        \\    }
+        \\}
+    ;
+    const main_doc = try store.openOrUpdate("main.sx", main_src, 1);
+    try store.analyzeDocument(main_doc);
+
+    const sema = main_doc.sema orelse return error.NoSema;
+    const root = main_doc.root orelse return error.NoRoot;
+
+    const Walk = struct {
+        fn hasAnnotatedCapture(node: *const sx.ast.Node, name: []const u8) bool {
+            switch (node.data) {
+                .root => |r| {
+                    for (r.decls) |d| if (hasAnnotatedCapture(d, name)) return true;
+                },
+                .block => |b| {
+                    for (b.stmts) |s| if (hasAnnotatedCapture(s, name)) return true;
+                },
+                .fn_decl => |fd| return hasAnnotatedCapture(fd.body, name),
+                .const_decl => |cd| return hasAnnotatedCapture(cd.value, name),
+                .struct_decl => |sd| {
+                    for (sd.methods) |m| if (hasAnnotatedCapture(m, name)) return true;
+                },
+                .for_expr => |fe| {
+                    for (fe.captures) |cap| {
+                        if (std.mem.eql(u8, cap.name, name) and cap.type_annotation != null) return true;
+                    }
+                    return hasAnnotatedCapture(fe.body, name);
+                },
+                else => {},
+            }
+            return false;
+        }
+    };
+    try std.testing.expect(Walk.hasAnnotatedCapture(root, "m"));
+
+    var hints = std.ArrayList(lsp.InlayHint).empty;
+    Server.collectInlayHints(alloc, root, sema.symbols, sema.fn_signatures, main_doc.source, &hints);
+
+    for (hints.items) |h| {
+        try std.testing.expect(std.mem.indexOf(u8, h.label, "Move") == null);
+    }
 }
 
 test "lsp/workspace: loadWorkspaceFiles analyses .sx files that were never opened" {

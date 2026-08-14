@@ -6,6 +6,6 @@
 
 main :: () {
     s := 0;
-    inline for 0..4.5 (i) { s += i; }
+    inline for i in 0..4.5 { s += i; }
     print("unreachable: {}\n", s);
 }

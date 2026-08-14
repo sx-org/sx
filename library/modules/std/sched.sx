@@ -58,7 +58,7 @@ PROT_RW   :: 3;          // PROT_READ | PROT_WRITE
 // unsupported target matches no case → MAP_AP undefined → a loud compile error
 // on use rather than a silent wrong flag. (The fiber runtime is aarch64-only
 // anyway — the swap_context asm — so only these two platforms are wired.)
-inline if OS == {
+inline match OS {
     case .linux: MAP_AP :: 0x22;      // linux MAP_PRIVATE (0x2) | MAP_ANON (0x20)
     case .macos: MAP_AP :: 0x1002;    // macOS MAP_PRIVATE (0x2) | MAP_ANON (0x1000)
 }
@@ -383,7 +383,7 @@ Scheduler :: struct {
         // kqueue on darwin, epoll on linux. `self.kq` holds whichever — it is
         // just "the readiness queue fd".
         if self.kq < 0 {
-            inline if OS == {
+            inline match OS {
                 case .linux: self.kq = ep.ep_create();
                 case .macos: self.kq = kqb.kqueue();
             }
@@ -397,7 +397,7 @@ Scheduler :: struct {
         // darwin EV_ONESHOT auto-removes the registration on fire; epoll's
         // EPOLLONESHOT only DISABLES it, so the linux paths additionally
         // EPOLL_CTL_DEL on fire (run) and on early-wake (cancel_io_waiter_for).
-        inline if OS == {
+        inline match OS {
             case .linux: {
                 if !ep.ep_ctl(self.kq, ep.EPOLL_CTL_ADD, fd, ep.EPOLLIN | ep.EPOLLONESHOT) {
                     print("sched: epoll_ctl() failed to register fd {} for read readiness\n", fd);
@@ -472,7 +472,7 @@ Scheduler :: struct {
                 // BLOCK on the readiness queue until ≥1 fd fires (timeout -1 =
                 // forever), then for each fired event match the fd back to its
                 // io-waiter, evict the record, and wake the fiber.
-                inline if OS == {
+                inline match OS {
                     case .linux: {
                         evbuf : [MAXEV]ep.EpollEvent = ---;
                         n := ep.ep_wait(self.kq, .{ ptr = *evbuf[0], len = MAXEV }, MAXEV, -1);
@@ -624,7 +624,7 @@ impl Io for Scheduler {
             print("sched: spawn_raw called with a null entry function\n");
             c.abort();
         }
-        f := self.spawn(() {
+        f := self.spawn(|| {
             entry_fn : (*void) -> void = xx entry;
             entry_fn(arg);
         });
@@ -1007,7 +1007,7 @@ cancel_io_waiter_for :: (self: *Scheduler, f: *Fiber) {
             // harmlessly (a never-fired one-shot the drain ignores); epoll's
             // EPOLLONESHOT registration stays enabled — it could fire later with
             // no waiter, and blocks a re-arm of the same fd — so remove it.
-            inline if OS == {
+            inline match OS {
                 case .linux: {
                     fd := self.io_waiters.items[i].fd;
                     remove_io_waiter(self, i);
@@ -1064,10 +1064,10 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 // meta.sx imports only std.sx — pulling it into the io.sx prelude part-file would
 // cycle.
 //
-//     fa := context.io.async(() -> (A, !) => read_a(conn));   // *Future(A)
-//     fb := context.io.async(() -> (B, !) => read_b(conn));   // *Future(B)
+//     fa := context.io.async(|| -> (A, !) read_a(conn));   // *Future(A)
+//     fb := context.io.async(|| -> (B, !) read_b(conn));   // *Future(B)
 //     winner := context.io.race(.{a = fa, b = fb});           // enum { a: A; b: B }
-//     if winner == { case .a: (v) {…}  case .b: (v) {…} }     // losers cancelled
+//     match winner { case .a: |v| {…}  case .b: |v| {…} }     // losers cancelled
 
 // Synthesize the race RESULT type for a named tuple `$T` of `*Future(..)` handles.
 // `*Future(R)` projects to its result `R` via `struct_field_type(pointee_type(struct_field_type(T, i)), 0)`:
@@ -1078,7 +1078,7 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 // all name the SAME union.
 RaceResult :: ($T: Type) -> Type {
     vs : [struct_field_count(T)]EnumVariant = ---;
-    inline for 0..struct_field_count(T) (i) {
+    inline for i in 0..struct_field_count(T) {
         vs[i] = EnumVariant{
             name    = struct_field_name(T, i),                          // tuple label → variant name
             payload = struct_field_type(pointee_type(struct_field_type(T, i)), 0),  // *Future(R) -> Future(R) -> R
@@ -1111,13 +1111,13 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     // hazard `wake` guards). A spurious wake with nothing ready re-registers + re-parks.
     winner_idx : i64 = -1;
     while winner_idx < 0 {
-        inline for 0..struct_field_count(T) (i) {
+        inline for i in 0..struct_field_count(T) {
             if winner_idx < 0 and futures[i].state == .ready { winner_idx = i; }
         }
         if winner_idx >= 0 { break; }
         me := io.current_park();
         any_pending := false;
-        inline for 0..struct_field_count(T) (i) {
+        inline for i in 0..struct_field_count(T) {
             if futures[i].state == .pending { futures[i].park.handle = me.handle; any_pending = true; }
         }
         // No `.ready` winner and nothing still `.pending` → every racer settled
@@ -1134,7 +1134,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
         // never raises here; the `catch {}` just discards the `!` for the type.
         pk : ParkToken = .{ handle = null };
         io.suspend_raw(*pk) catch {};
-        inline for 0..struct_field_count(T) (i) {
+        inline for i in 0..struct_field_count(T) {
             if futures[i].park.handle == me.handle { futures[i].park.handle = null; }
         }
     }
@@ -1144,7 +1144,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     // unrolled arm constructs `RaceResult(T)`'s i-th variant directly. `i` is the
     // comptime cursor; the runtime `if i == winner_idx` selects the one arm.
     result : RaceResult(T) = ---;
-    inline for 0..struct_field_count(T) (i) {
+    inline for i in 0..struct_field_count(T) {
         if i == winner_idx {
             result = make_variant(RaceResult(T), i, futures[i].value);
         }
@@ -1156,7 +1156,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
     // `race` returns now. Only `.pending` losers are cancelled: a loser that
     // already settled (`.ready`/`.failed`) is done — cancelling it would do
     // nothing useful and would stomp its real outcome label to `.canceled`.
-    inline for 0..struct_field_count(T) (i) {
+    inline for i in 0..struct_field_count(T) {
         if i != winner_idx and futures[i].state == .pending { futures[i].cancel(); }
     }
 

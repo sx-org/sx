@@ -178,8 +178,8 @@ M :: union { `i1: i32; }          // union tag
 `u16 :: enum { A; B; }            // type-declaration name
 `u8, rest := pair();              // destructure name
 if `i16 := maybe() { }            // optional binding
-for xs, 0.. (`bool, `u16) { }     // for captures
-x catch (`i2) { }                   // catch tag binding
+for `bool, `u16 in xs, 0.. { }    // for captures
+x catch |`i2| { }                   // catch tag binding
 ```
 
 In the **member-name positions** among these — struct field, union tag, and
@@ -310,10 +310,11 @@ ordinary comparisons. Native codegen and the comptime interpreter agree on this.
 | `,`    | separator (trailing commas allowed)   |
 | `.`    | field access / enum literal prefix   |
 | `->`   | return type annotation               |
-| `=>`   | lambda arrow                         |
+| `=>`   | expression body of a function declaration |
 | `$`    | generic type parameter introduction   |
 | `---`  | undefined value                      |
 | `()`   | grouping / params                    |
+| `\|…\|` | closure literal parameters           |
 | `{}`   | blocks / bodies                      |
 
 ### Whitespace is Syntax
@@ -358,9 +359,8 @@ scaled :: ufcs (v: i64) -> i64 => v * 2;      // ufcs declaration
 Pair   :: struct ($T: Type) { a: $T; b: $T; } // struct type params
 Show   :: protocol (T) { render :: (self: *Self) -> T; }
 Padded :: @OpenVariant(View) ($T: Type) { … } // generic open-set member
-for xs (x) { … }                              // for capture
-v := risky() catch (e) -1;                    // catch binding
-onfail (e) { … }                              // onfail binding
+v := risky() catch |e| -1;                    // catch binding
+onfail |e| { … }                              // onfail binding
 ```
 
 **Spacing — `-` and `*` are infix wherever a left operand is complete.** Both
@@ -393,8 +393,8 @@ The third rule governs what attaches to an expression from behind, and it
 splits the postfix tokens in two. These four are same-line only: `(` and `[`
 already are, since the glue rule above admits no gap at all, and the `{` and
 the `!` answer the question the same way. The `{` after a call opens a trailing
-block only on the same line as the `)`, and a same-line empty `{}` reads as a
-parameterized aggregate when written tight against the `)`; both readings are
+block only on the same line as the `)`, and a same-line empty `{}` is the one
+brace the gap says nothing about — the callee names its reading; both are
 specified with the form itself — see [Trailing Blocks](#trailing-blocks). A
 named aggregate's `{` and a postfix `!` join them because each has a second
 reading waiting on the other side of a break — a scope block, and the prefix
@@ -462,10 +462,10 @@ form's own list — a runtime class's members and the entries of
 not one of those. `case` heads an arm, and an arm is a statement in the only
 position where `case` is legal, so the break before the next `case` ends the
 statement above it exactly as any other break does. That holds for every arm
-body: a statement list, `case .x: break`, and `case .x: (e) => expr` alike.
+body: a statement list, `case .x: break`, and `case .x: |e| expr` alike.
 
 ```sx
-if c == {
+match c {
     case .a:
         setup()
         report()      // the next `case` starts an arm — the break ends this
@@ -794,7 +794,7 @@ Mutating a sub-field of the *active* variant's payload in place is allowed
 
 #### Pattern Matching
 ```sx
-if s == {
+match s {
     case .circle: print("circle\n");
     case .rect: print("rect\n");
     case .none: print("none\n");
@@ -804,14 +804,15 @@ if s == {
 #### Payload Capture
 Match arms can capture the variant's payload into a local variable:
 ```sx
-if s == {
-    case .circle: (radius) { print("radius: {}\n", radius); }
-    case .rect: (size) => print("size: {}\n", size);
+match s {
+    case .circle: |radius| { print("radius: {}\n", radius); }
+    case .rect: |size| print("size: {}\n", size);
 }
 ```
-The `(name)` after the colon binds the payload. Two forms:
-- Block: `case .variant: (name) { body }`
-- Short: `case .variant: (name) => expr;`
+The `|name|` after the colon binds the payload; an arm with no payload
+carries no pipes (`case .none: 0`). The body that follows is a block
+(`case .variant: |name| { body }`) or an expression
+(`case .variant: |name| expr;`).
 
 #### Enum Interpolation
 Payload-less enums print as `.variant`. Enums with payloads print as `.variant(value)` or `<TypeName tag=N>`:
@@ -864,7 +865,7 @@ would otherwise silently let a later store clobber an earlier one. An empty
 (`.{ 3.14 }`) is rejected as ambiguous.
 
 #### Restrictions
-- Pattern matching (`if x == { case ... }`) is not supported on unions.
+- Pattern matching (`match x { case ... }`) is not supported on unions.
 - Unions cannot be printed directly via `print("{}", union_val)` — access individual fields instead.
 
 ### Struct Types
@@ -924,14 +925,20 @@ its leading-dot form.
 After a completed aggregate, a following block may appear in two forms:
 
 ```sx
-// Taught: self-trailing — stores the value, binds `self` to a pointer to it,
-// runs the block, yields the (possibly mutated) value.
+// Taught: self-trailing — stores the value, binds a pointer to it, runs the
+// block, yields the (possibly mutated) value.
 b := Button{ label = "Play" }.{
     self.label = "Go";
 };
 
+// A `|name|` header names that pointer instead of `self`; it binds exactly
+// one name, and `*T` is its type.
+b1 := Button{ label = "Play" }.{ |btn|
+    btn.label = "Go";
+};
+
 // Legal, not taught: bare second brace group — construct T, then a plain
-// scope in the enclosing environment (no `self`). The value is still T.
+// scope in the enclosing environment (no binding). The value is still T.
 b2 := Button{ label = "Play" } {
     print("built\n");
 };
@@ -1240,10 +1247,10 @@ Serialize :: protocol tagged {
 
 SERIALIZABLE :: .[Point, Rect, Color, Widget];
 
-inline for SERIALIZABLE (T) {
+inline for T in SERIALIZABLE {
     impl Serialize for T {
         write :: (self: *T, out: *Buf) {
-            inline for 0..struct_field_count(T) (i) {
+            inline for i in 0..struct_field_count(T) {
                 write_field(out, struct_field_name(T, i),
                             struct_field_value(self.*, i));
             }
@@ -2522,8 +2529,8 @@ Bare parentheses are grouping and never a tuple:
 [1](Closure(i64,i64) -> i64)  // grouping → array of one closure
 ```
 Grouping lets a closure/optional/function type be parenthesized for readability.
-Function types `(A, B) -> R`, parameter lists, lambdas, and `match` bindings keep
-using bare parens — they are unaffected by the tuple grammar.
+Function types `(A, B) -> R`, parameter lists and `match` bindings keep using
+bare parens — they are unaffected by the tuple grammar.
 
 #### Field Access
 ```sx
@@ -2985,8 +2992,8 @@ while val := get_next() {
 #### Pattern Matching
 Optionals support `.some` and `.none` virtual enum variants:
 ```sx
-result := if opt == {
-    case .some: (val) { val * 2; }
+result := match opt {
+    case .some: |val| { val * 2; }
     case .none: { 0; }
 };
 ```
@@ -3404,7 +3411,7 @@ sum :: (n: i32, ..) -> i64 abi(.c) {
     @va_start(*ap);
     defer @va_end(*ap);
     total: i64 = 0;
-    for 0..n (i) { total += xx @va_arg(i32, *ap); }
+    for i in 0..n { total += xx @va_arg(i32, *ap); }
     return total;
 }
 ```
@@ -3452,7 +3459,7 @@ vmprintf :: (fmt: cstring, ap: @VaList) -> ?cstring extern;
 
 sx_vsum :: (n: i32, ap: @VaList) -> i64 export {
     total: i64 = 0;
-    for 0..n (i) { total += xx @va_arg(i32, *ap); }
+    for i in 0..n { total += xx @va_arg(i32, *ap); }
     return total;
 }
 ```
@@ -3541,9 +3548,9 @@ may do, regardless of the concrete arg types at any particular call site.
 |---|---|---|
 | Length | `xs.len` | comptime int (field-style, not `len(xs)`) |
 | Index | `xs[i]` | i-th element; `i` must be comptime |
-| Comptime unroll (index) | `inline for 0..xs.len (i) { ... }` | unrolled loop; cursor `i` is a comptime constant per iteration; not `#for` |
-| Comptime unroll (element) | `inline for xs (x) { ... }` | unrolled loop; `x` is the concrete i-th element, viewed through the constraint protocol (≡ `xs[i]`) |
-| Comptime unroll (element + index) | `inline for xs, 0.. (x, i) { ... }` | multi-iterable parity with the runtime `for`: position 0 drives the count, a trailing open range pairs the cursor |
+| Comptime unroll (index) | `inline for i in 0..xs.len { ... }` | unrolled loop; cursor `i` is a comptime constant per iteration; not `#for` |
+| Comptime unroll (element) | `inline for x in xs { ... }` | unrolled loop; `x` is the concrete i-th element, viewed through the constraint protocol (≡ `xs[i]`) |
+| Comptime unroll (element + index) | `inline for x, i in xs, 0.. { ... }` | multi-iterable parity with the runtime `for`: position 0 drives the count, a trailing open range pairs the cursor |
 | Projection | `xs.field` | see "Pack projection" |
 | Spread → call args | `..xs` / `..xs.field` | expands to N positional args |
 | Spread → aggregate value | `.{..xs}` / `.{..xs.field}` | materializes the pack (anonymous positional struct; a tuple against a `Tuple(…)` target) |
@@ -3596,8 +3603,8 @@ suggestion:
   variadic `..xs: []P` (a runtime slice) instead of a pack `..xs: P`;
 - returning it (`return xs;`) → return a materialized `.{..xs}` (and make the return
   type that tuple);
-- iterating it (`for xs (x)`, `xs[runtime_i]`) → `inline for xs (x)` (or
-  `inline for 0..xs.len (i)` for the index) for a comptime unroll, or take
+- iterating it (`for x in xs`, `xs[runtime_i]`) → `inline for x in xs` (or
+  `inline for i in 0..xs.len` for the index) for a comptime unroll, or take
   `..xs: []P` for a runtime loop.
 
 The recurring runtime escape hatch is the **slice-of-protocol variadic**
@@ -3636,15 +3643,15 @@ map :: (mapper: Closure(..sources.T) -> $R, ..sources: ValueListenable)
   c.own_allocator = context.allocator;
   c.mapper        = mapper;
   c.sources       = .{..sources};           // pack-to-tuple materialization
-  inline for 0..sources.len (i) {           // comptime unroll over the pack
-    sources[i].addListener((_) => c.recompute());
+  inline for i in 0..sources.len {          // comptime unroll over the pack
+    sources[i].addListener(|_| c.recompute());
   }
   c.value = mapper(..sources.value);        // pack spread + projection in a call
   return xx c;                              // needs impl ValueListenable for Combined
 }
 
 isReady : ValueListenable(bool) = map(
-  (va, vb, vc) => va and vb > 10 and vc == "cool",
+  |va, vb, vc| va and vb > 10 and vc == "cool",
   a, b, c);                                 // a,b,c : ValueListenable(bool/i32/string)
 ```
 
@@ -3805,7 +3812,7 @@ On an **`any` receiver** the assertion has three temperaments:
   failable `(T, !CastError)`; `try av.(i64)` propagates (the global
   `mismatch` tag is absorbed by an inferred `!` caller or any named set
   containing a `mismatch` tag), `av.(i64) or 0` falls back,
-  `av.(i64) catch (e) { … }` binds the tag. Only a DIRECT assertion operand
+  `av.(i64) catch |e| { … }` binds the tag. Only a DIRECT assertion operand
   is consumed — an assertion nested in a call argument stays unconsumed.
 - **`.(T)` unconsumed = panic on mismatch**: `v := av.(i64);` yields the
   value on a tag match and otherwise prints `type assertion failed at
@@ -4123,8 +4130,8 @@ a closure body reads like a named one, and so do a generic instance, a nested
 local function and an inlined comptime callee:
 
 ```sx
-report := () -> !ParseErr => measure();   // discarded, then the success exit
-raise_it := () -> !ParseErr => error.BadDigit;
+report := || -> !ParseErr measure();   // discarded, then the success exit
+raise_it := || -> !ParseErr error.BadDigit;
 ```
 
 It is also decided per live path: where the tail is an `if` or a `match`, each
@@ -4158,7 +4165,7 @@ separates it from the next `case`:
 
 ```sx
 classify :: (n: i32) -> i32 {
-  if n == {
+  match n {
     case 0: 100             // arm value is 100
     case 1: { x := 5; x*2 } // braced block → value 10
     else:   7
@@ -4342,7 +4349,7 @@ collect :: (content: $B/@BuildBlock(View)) -> List(View) {
 
 rows := collect() {
     Label{ text = "Status" };
-    for items (item) { Row{ value = item }; }
+    for item in items { Row{ value = item }; }
 };
 ```
 
@@ -4397,7 +4404,7 @@ or without a `;`:
 ```sx
 collect() {
     if show { Label{ text = "in a branch" } }        // publishes
-    for rows (row) { Label{ text = row } }           // publishes, once per row
+    for row in rows { Label{ text = row } }          // publishes, once per row
     { Label{ text = "in bare braces" }; }            // publishes; the `;` only separates
     Label{ text = "at the top level" }               // publishes
 }
@@ -4754,9 +4761,9 @@ required** — a set is open, so a member declared elsewhere in the program carr
 tag no arm here names, and the arms are never the whole of it.
 
 ```sx
-if v == {
-    case Label: (l) { print("{}\n", l.text); }
-    case Panel: (p) { print("{}\n", p.title); }
+match v {
+    case Label: |l| { print("{}\n", l.text); }
+    case Panel: |p| { print("{}\n", p.title); }
     else: { … }                  // a member beyond these arms may reach it
 }
 ```
@@ -5051,7 +5058,7 @@ y := x + if false {
 
 ### Pattern Matching
 ```sx
-if subject == {
+match subject {
   case pattern: body
   case pattern: body
   else: body          // optional default arm
@@ -5064,7 +5071,7 @@ Matches `subject` against each `case`. Patterns can be:
 
 `break` exits a case arm without producing a value. The optional `else:` arm matches when no `case` pattern matches — its `:` is glued to the `else`, which is what separates it from an `else` that chains an `if`.
 ```sx
-if z == {
+match z {
   case .variant1: break
   case .variant2:
     print("z: {z}")
@@ -5077,7 +5084,7 @@ if z == {
 When switching on a `Type` value (from `type_of`), category keywords match all registered types of that category:
 ```sx
 type := type_of(val);
-if type == {
+match type {
     case int: {
         if is_unsigned(type) { result = uint_to_string(xx val); }
         else { result = int_to_string(xx val); }
@@ -5090,7 +5097,7 @@ Available categories: `int`, `float`, `bool`, `string`, `void`, `struct`, `enum`
 
 > Note: `case enum:` matches payload-less enums AND tagged enums (enums
 > with payloads); `case union:` matches C-style untagged unions AND
-> tagged enums — the same split as the static `inline if T ==`
+> tagged enums — the same split as the static `inline match T`
 > classifier, arm for arm. Arms claim tags **first-wins with the loud
 > unreachable-arm error**, exactly like the type switch: overlapping
 > categories resolve by order, a specific type — user-named
@@ -5109,11 +5116,11 @@ TAG — never the payload (Go's `switch v := x.(type)` / Odin's
 `switch v in x` parity):
 
 ```sx
-if av == {
-    case i64: (v)   { print("int {}\n", v + 1); }      // v: i64 — the typed value
-    case Point: (p) { plot(p); }                       // named types
-    case []u8: (b)  { print("{} bytes\n", b.len); }    // composite types are real tags
-    case ?i64: (o)  { print("{}\n", o ?? 0); }         // tags are EXACT — no flattening
+match av {
+    case i64: |v|   { print("int {}\n", v + 1); }      // v: i64 — the typed value
+    case Point: |p| { plot(p); }                       // named types
+    case []u8: |b|  { print("{} bytes\n", b.len); }    // composite types are real tags
+    case ?i64: |o|  { print("{}\n", o ?? 0); }         // tags are EXACT — no flattening
     case struct:    { walk_fields(av); }               // categories: tag SETS, no binding
     case int:       { print("{}\n", xx av); }          // xx width-dispatches over the set
     else:           { print("{}\n", type_name(type_of(av))); }   // av stays `any`
@@ -5122,12 +5129,12 @@ if av == {
 
 - **Concrete arms** name one type — named, builtin, or a composite type
   expression — resolved by the same resolver every type position uses
-  (aliases are transparent). An optional `(v)` capture binds exactly what
+  (aliases are transparent). An optional `|v|` capture binds exactly what
   `v := av.(T)` produces, with the tag pre-proven by the switch: no panic
   path. Works in value position.
 - **Category arms** (`int`, `float`, `struct`, `enum`, `union`, `slice`,
   `array`, `pointer`, `vector`, `optional`, `error_set`, `closure`,
-  `type`) are tag SETS and cannot bind `(v)` — a kind names many types;
+  `type`) are tag SETS and cannot bind `|v|` — a kind names many types;
   read the value through the reflection views, or `xx av` in the
   `int`/`float` arms (per-tag width dispatch). `string`/`bool`/`void`
   are single types and take the concrete path, so their arms CAN bind.
@@ -5144,15 +5151,15 @@ if av == {
   tag names, and its arms name members with an `else:` arm REQUIRED
   (see Open Sets) — same arms, same captures, over the concrete value
   behind the subject. A `?any` composes through the optional match
-  (`case .some: (av) { … }`).
+  (`case .some: |av| { … }`).
 - Division of labor: the type switch dispatches on CONCRETE types and
   binds typed values; kind-only dispatch also exists as the category match
-  on `type_of(av)` and as the static `inline if T == { … }` fold in
+  on `type_of(av)` and as the static `inline match T { … }` fold in
   generic bodies.
 
 #### Inline Type Match (static pruning)
 
-`inline if T == { case <category|Type>: … else: … }` over a **bound generic
+`inline match T { case <category|Type>: … else: … }` over a **bound generic
 type param** selects its arm at lower time — the siblings are dropped
 whole, exactly like `inline if` branch elimination. Each kind arm may
 therefore use kind-specific operations that would not type-check for other
@@ -5160,7 +5167,7 @@ kinds (`x.len` in a slice arm, `x.(ProtocolRaw)` in a protocol arm):
 
 ```sx
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
-    inline if T == {
+    inline match T {
         case protocol: a.dealloc_bytes(x.(ProtocolRaw).ctx);
         case closure:  { env := x.(ClosureRaw).env; if env != null { a.dealloc_bytes(env); } }
         case slice:    a.dealloc_bytes(xx x.ptr);
@@ -5202,30 +5209,31 @@ while i < 10 {
 ### For Loop
 
 ```sx
-for it1, it2, ... (c1, c2, ...) { }   // parallel iteration, one capture per iterable
-for it1, it2, ... (c1, c2, ...) => stmt;   // arrow body — a single statement
+for c1, c2, ... in it1, it2, ... { }        // parallel iteration, one capture per iterable
+for c1, c2, ... in it1, it2, ... => stmt;   // arrow body — a single statement
 ```
 
-A `for` header is a comma-separated list of **iterables** followed by an
-optional **capture group** and the body. Each iterable is a collection
-(array, slice, string, `List(T)`-like struct) or a range:
+A `for` header is an optional comma-separated list of **captures**, `in`, and
+a comma-separated list of **iterables**, then the body. Each iterable is a
+collection (array, slice, string, `List(T)`-like struct) or a range:
 
 ```sx
-for xs (x) { }                      // collection, element capture
-for 0..n (i) { }                    // range, `end` exclusive; cursor i (i64)
-for 1..=5 (a) { }                   // `..=` — end inclusive: 1 2 3 4 5
+for x in xs { }                     // collection, element capture
+for i in 0..n { }                   // range, `end` exclusive; cursor i (i64)
+for a in 1..=5 { }                  // `..=` — end inclusive: 1 2 3 4 5
 for 0..5 { }                        // no captures — body runs 5 times
 for xs { }                          // no captures — body runs xs.len times
-for xs, 0.. (x, i) { }              // THE index idiom: open range follows along
-for xs, ys (x, y) { }               // parallel (zip) iteration
-for 1..=5, 0.. (a, b) { }           // a: 1..5, b: 0..4 (end inferred)
-for a4, b4, 100.. (p, q, k) { }     // any number of positions
-for xs (x) => sum += x;             // arrow body
-inline for 0..n (i) { }             // comptime unroll; first range bounded
-inline for xs, 0.. (x, i) { }       // comptime unroll over a PACK: x = the
+for x, i in xs, 0.. { }             // THE index idiom: open range follows along
+for x, y in xs, ys { }              // parallel (zip) iteration
+for a, b in 1..=5, 0.. { }          // a: 1..5, b: 0..4 (end inferred)
+for p, q, k in a4, b4, 100.. { }    // any number of positions
+for x in xs => sum += x;            // arrow body
+for x in f(n) { }                   // a call iterable is an ordinary call
+inline for i in 0..n { }            // comptime unroll; first range bounded
+inline for x, i in xs, 0.. { }      // comptime unroll over a PACK: x = the
                                     // concrete i-th element (see "Variadic
                                     // Heterogeneous Type Packs")
-inline for TYPES (T) { }            // comptime unroll over a `[N]Type` list:
+inline for T in TYPES { }           // comptime unroll over a `[N]Type` list:
                                     // T is a comptime Type, legal in type
                                     // position (see "Protocols" §3)
 ```
@@ -5235,12 +5243,12 @@ inclusive, `<` exclusive — with defaults start-inclusive, end-exclusive
 (`a..b` ≡ `a=..<b`; `a..=b` is the short end-inclusive spelling):
 
 ```sx
-for 0<..<5 (i) { }    // 1 2 3 4      — both ends exclusive
-for 0=..=5 (i) { }    // 0 1 2 3 4 5  — both ends inclusive
-for 0<..=5 (i) { }    // 1 2 3 4 5
-for 0=..<5 (i) { }    // 0 1 2 3 4    — explicit spelling of `0..5`
-for 0..<5  (i) { }    // 0 1 2 3 4    — explicit spelling of `0..5`
-for xs, 2<.. (x, i) { }  // open range with an exclusive start: i = 3, 4, …
+for i in 0<..<5 { }       // 1 2 3 4      — both ends exclusive
+for i in 0=..=5 { }       // 0 1 2 3 4 5  — both ends inclusive
+for i in 0<..=5 { }       // 1 2 3 4 5
+for i in 0=..<5 { }       // 0 1 2 3 4    — explicit spelling of `0..5`
+for i in 0..<5 { }        // 0 1 2 3 4    — explicit spelling of `0..5`
+for x, i in xs, 2<.. { }  // open range with an exclusive start: i = 3, 4, …
 ```
 
 A marker after the dots (`..=` / `..<`) makes the end expression mandatory;
@@ -5257,57 +5265,78 @@ its own cursor; consequences:
 - a non-first collection shorter than the first is read **past its length**
   on mismatch — the first iterable is the authoritative one.
 
-**Captures are positional**: the group binds one name per iterable, in
+**Captures are positional**: they bind one name per iterable, in
 order — range positions bind the cursor value (i64), collection positions
-bind the element. An empty group is omitted entirely (no parens). Capture
-names shadow outer bindings, like any inner declaration. Use `_` to discard
-a position. An index alongside the elements is written `for xs, 0.. (x, i)`.
+bind the element. With nothing to bind, both the captures and `in` are
+omitted. Capture names shadow outer bindings, like any inner declaration.
+Use `_` to discard a position. An index alongside the elements is written
+`for x, i in xs, 0..`.
 
-**The capture/call rule.** In a for header, the parenthesized group
-immediately before `{` or `=>` is the capture; every earlier top-level paren
-group is ordinary call syntax. So `for zip(a, b) (x, y) { }` calls
-`zip(a, b)` and captures `(x, y)`, while `for f(n) { }` reads `(n)` as the
-capture — making the iterable `f` itself, which errors ("cannot iterate")
-with a hint. A call iterable therefore always needs a capture group; to
-iterate a call result without one, parenthesize (`for (f(n)) { }`) or bind
-it to a local first. A leading paren group is a normal grouped expression
-(`for (a ++ b) (x)` iterates the grouped value).
+**A capture may write its type**, `for x: T in xs`. `T` is the ELEMENT
+type — what the position yields — and `*` is orthogonal to it:
+
+```sx
+for c: View in children { }      // c : View
+for *c: View in children { }     // c : *View — the element type is still View
+for x, i: i64 in xs, 0.. { }     // a range cursor is i64
+for x: struct { a: i64 } in items { }  // a brace group belongs to the type
+```
+
+The type is an ordinary `type`, so a brace group in it (`struct { a: i64 }`,
+`Pair(struct { a: i64 }, i64)`) belongs to the annotation, not the body.
+The annotation restates the type; it never converts. It must name the
+element type exactly — a range cursor is `i64` whatever its bounds are
+spelled as, and an `inline for` over a pack checks the annotation against
+every unrolled element. An `inline for` cursor over a type list binds a
+type rather than a value, so it takes no annotation, at module scope as in
+a function body.
+
+**The iterables are ordinary expressions.** Nothing in the header is
+reserved for captures, so a call iterable is written as it is anywhere else
+(`for x in f(n) { }`, `for x, y in zip(a, b) { }`) — no parenthesizing and
+no intermediate binding.
+
+A spaced `(` group at the header's top level, immediately followed by `{`
+or `=>`, is neither a call nor a range end — the header has already
+closed. `for xs (x) { }` is a `for` whose body is missing; in
+`for i in 0.. (n) { }` the range stays open, and an open range cannot be
+the first iterable.
 
 **By-value captures are immutable.** This rule is not
 specific to for-loop element captures — it holds for *every* by-value
 capture binding: the for-loop element and the paired range index
-(`for xs, 0.. (x, i)` — both `x` and `i`), a match-arm payload capture
-(`case .circle: (r)`), a `catch` / `onfail` error binding
-(`f() catch (e)`), and an `inline for` pack-element alias
-(`inline for xs (x)`). A capture is a read-only alias into storage the
+(`for x, i in xs, 0..` — both `x` and `i`), a match-arm payload capture
+(`case .circle: |r|`), a `catch` / `onfail` error binding
+(`f() catch |e|`), and an `inline for` pack-element alias
+(`inline for x in xs`). A capture is a read-only alias into storage the
 loop/match/error machinery owns, not a fresh mutable local; assigning to
 it bare (`x = v`, `i = 99`, `r = 5.0`, `e = error.Bad`) is a compile
 error rather than a silent no-op. To mutate, copy the capture into a
 `:=` local (`v := x; v += 100;`) — the copy is yours to change and
 cannot accidentally look like it writes back. To write *through* into
-the container, use a for-loop **by-reference** capture (`for xs (*x)`,
+the container, use a for-loop **by-reference** capture (`for *x in xs`,
 below) and store via the pointer (`x.* = v`); range positions and
 match/catch payloads have no container storage to write back into, so
 they are copy-into-a-local only. The diagnostic is shape-aware: only the
-for-loop element form suggests `(*x)`; the storage-less shapes get the
+for-loop element form suggests `*x`; the storage-less shapes get the
 copy-into-a-`:=`-local advice alone. A **function-local `::` constant**
 (`c :: 5`) is enforced by the same mechanism — assigning to it is a
 compile error with the constant-family message, mirroring module-level
 `::` consts. (Rationale: mutating a per-iteration
 copy that vanishes at the next iteration is almost always a bug — the
-author meant `(*x)`. This also matches the copy-semantics chosen for the
+author meant `*x`. This also matches the copy-semantics chosen for the
 `xx`-erasure materialization, where a by-value capture is
 likewise snapshotted into a fresh temp rather than written back.)
 
 **By-reference capture (`*elem`)** binds the element to a *pointer* into the collection (`*T`) instead of a value — no per-element copy. It GEPs straight into the array/slice backing, so:
 - Passing it onward is zero-copy — `f(elem)` where `f` takes `*T` hands over the pointer, not a copy.
 - Writes through it land in the original: `elem.* = v` (or `elem.field = v`).
-- In a value position the pointer auto-derefs to the element: `elem + 1` reads the value, and `if elem == { … }` matches the pointee (a pointer subject matches through the deref). Where a `*T` is expected, the pointer is passed as-is.
+- In a value position the pointer auto-derefs to the element: `elem + 1` reads the value, and `match elem { … }` matches the pointee (a pointer subject matches through the deref). Where a `*T` is expected, the pointer is passed as-is.
 - Range positions have no storage — `*` on a range capture is a compile error.
 
 ```sx
 events := plat.poll_events();        // []Event
-for events (*ev) {                   // ev : *Event — no copy
+for *ev in events {                  // ev : *Event — no copy
     pipeline.dispatch_event(ev);     // passes the pointer
 }
 ```
@@ -5315,28 +5344,57 @@ for events (*ev) {                   // ev : *Event — no copy
 The `inline` variant requires a single bounded range with comptime-known
 bounds and unrolls the body once per value, binding the cursor as a
 compile-time constant (so it can index a pack:
-`inline for 0..xs.len (i) { xs[i].m() }`).
+`inline for i in 0..xs.len { xs[i].m() }`).
 
 `break;` exits the loop. `continue;` skips to the next iteration. Both run
 the iteration's pending `defer`s first (see Defer).
 ```sx
 arr : [5]i32 = .[1, 2, 3, 4, 5];
-for arr, 0.. (val, ix) {
+for val, ix in arr, 0.. {
     if ix == 2 { continue; }
     print("{}\n", val);
 }
 ```
 
-### Lambda
+### Closure Literal
 ```sx
-(params) => expr
-(params) -> return_type => expr
+|params| expr
+|params| { body }
+|params| -> return_type expr
 ```
-Anonymous function. Produces a function value. Supports the same parameter features as named functions: `$` generic type params, `..` variadic params, and optional return type annotation.
+Anonymous function. Produces a `Closure` value. `|` opens a closure literal
+only where a primary starts; after a completed operand it is bitwise OR. `||`
+is two `|` tokens around an empty parameter list. A parameter default is an
+ordinary expression except that the first `|` on that default's own value spine
+closes the parameter list. The value spine is the default's operator spine
+together with the trailing expression of an inline `if`, a `catch |e| expr`, a
+nested `|params| expr` body, `#run`, and `return`. Inside `(…)`, `[…]`, `{…}`,
+or an `if` / `while` / `for` / `match` header, `|` is bitwise OR — so a
+bitwise-OR default is parenthesized (`|x: i64 = (a | b)|`), while
+`|x: i64 = mask(a | b)|` and `|x: i64 = if a | b { 1 } else { 0 }|` need
+nothing. Parameters take the same
+forms a named function's do — `$` generic type params, `..` variadic params —
+and the return type annotation is optional. A closure literal may not open an
+expression statement: bind it, pass it, or `return` it. In a value position — a
+block tail, an `if` branch, a `match` arm — it is parenthesized.
+
+Two brace forms carry the same `|…|` spelling as a **header** right after their
+`{`: a call's [trailing block](#trailing-blocks), whose header is its parameter
+list, and a [self-trailing](#struct-literals) `.{ … }`, whose header names the
+value pointer. No other `{` takes a header — there a `|` opens a statement and
+is refused.
+
 ```sx
-SOME_FUNC :: () => 42;                    // () -> i32
-double :: (x: $T) -> T => x + x;         // generic lambda with return type
+n := 5;
+inc := |x: i32| x + n;                        // Closure(i32) -> i32
+pump := || { print("tick\n"); };               // Closure()
+scaled := |x: i64, k: i64| -> i64 x * k + n;  // annotated return
+add : Closure(i64, i64) -> i64 = |a, b| a + b;  // params typed from the target
 ```
+
+With a return type annotation the body follows the type directly, so a bare
+body that opens with `.` continues the type's qualified path (`-> Pol .a`
+reads the type `Pol.a`): write such a body as a block (`-> Pol { .a }`).
 
 ### Closures
 
@@ -5350,19 +5408,19 @@ Closure(param_types)          // void return: Closure(i64) -> void
 Closure(..Ts) -> R            // pack-expanded params (see Variadic Heterogeneous Type Packs)
 ```
 
-#### Creating Closures — lambda literals
-A lambda literal IS the closure value — there is no wrapping
+#### Creating Closures — closure literals
+A closure literal IS the closure value — there is no wrapping
 intrinsic, and `closure` is an ordinary identifier, not a keyword.
 ```sx
 offset := 50;
-f := (x: i32) -> i32 => x + offset;   // expression body
-g := (x: i32) -> i32 {                 // block body
+f := |x: i32| -> i32 x + offset;   // expression body
+g := |x: i32| -> i32 {             // block body
     if x < 0 { return 0; }
     return x + offset;
 };
 ```
 
-A lambda literal:
+A closure literal:
 1. Analyzes its body for free variables (variables from outer scope)
 2. Allocates an env struct on the heap containing captured values
 3. Generates a trampoline function with signature `(env: *void, params...) -> R`
@@ -5371,7 +5429,7 @@ A lambda literal:
 **Capture semantics**: capture by value (snapshot at creation time). Mutating the original variable after creating the closure does not affect the captured value.
 ```sx
 n := 10;
-f := (x: i64) -> i64 => x + n;
+f := |x: i64| -> i64 x + n;
 n = 999;
 print("{}\n", f(5));  // 15, not 1004
 ```
@@ -5395,7 +5453,7 @@ apply(double, 10);  // double auto-promoted to Closure
 Functions can return closures, enabling the factory pattern:
 ```sx
 make_adder :: (n: i32) -> Closure(i32) -> i32 {
-    return (x: i32) -> i32 => x + n;
+    return |x: i32| -> i32 x + n;
 }
 add5 := make_adder(5);
 print("{}\n", add5(100));  // 105
@@ -5417,7 +5475,7 @@ if handler := btn.on_click {
 #### Memory
 Closure env is allocated via `context.allocator`. The compiler auto-initializes `context` with a default GPA (malloc/free wrapper) at the start of `main()`. Use `push Context` to override with a custom allocator. Auto-promoted closures have a null env and require no allocation.
 ```sx
-f := (x: i64) -> i64 => x + 10;   // env allocated via default GPA
+f := |x: i64| -> i64 x + 10;   // env allocated via default GPA
 print("{}\n", f(5));
 ```
 
@@ -5484,15 +5542,19 @@ breaking changes.
 ```sx
 callee(args) { body }
 ```
-A block after a call's closing `)` passes the block as a **zero-param closure
-literal bound to the callee's last declared parameter**. The equivalence is
+A block after a call's closing `)` passes the block as a **closure literal
+bound to the callee's last declared parameter**. The equivalence is
 definitional — every other rule (duplicates, defaults, evaluation order)
 follows from it; the block is not a special argument kind:
 
 ```sx
 vstack(8.0) { text("a"); text("b"); }
 // ≡
-vstack(8.0, content = () => { text("a"); text("b"); });
+vstack(8.0, content = || { text("a"); text("b"); });
+
+each(items) { |x| print("{}\n", x); }
+// ≡
+each(items, |x| { print("{}\n", x); });
 
 scaffold(top_bar = toolbar) { chat_list(); }   // named slots + trailing block
 scaffold() { chat_list(); }                    // defaults skipped, block binds `content`
@@ -5506,28 +5568,36 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
   '..xs' is variadic").
 - **One block**: at most one trailing block per call. Other closure
   arguments are named args or ordinary positional slots.
-- **Zero-param only**: the block is a `Closure()` literal; a parameterized
-  closure argument is spelled explicitly (`f(x, (a) => { … })`).
+- **Header**: a `|params|` header directly after the `{` declares the closure's
+  parameters, spelled exactly as a `|…|` closure literal spells them
+  (annotations and defaults included). Without a header the closure is
+  zero-param. An empty `| |` is a header with zero parameters. The header's
+  arity must match the parameter's `Closure(…)`, and a build block takes no
+  header — it is replayed against a sink, never called.
+- **Header decides the group**: where a `{` could open either a parameterized
+  named aggregate or a trailing block (`List(T){…}` vs `run(2) { … }`), a `|`
+  right after the `{` settles it as the block, ahead of any body shape. A
+  positional aggregate element that is a closure is parenthesized there:
+  `Box(Closure(i64)){ (|x| x), }`.
 - **Same line**: the `{` must sit on the same line as the call's `)`. A `{`
   on the next line is an ordinary scope block statement, never a trailing
-  block. (This and the empty-block spelling below are the `{` half of
+  block. (This is the `{` half of
   [Whitespace is Syntax](#whitespace-is-syntax); the call's own `(` obeys the
   glue rule there.)
-- **Empty block**: a same-line empty `{}` (comment-only bodies included) carries
-  no body shape, so the **brace spelling** decides. Written **tight** against
-  the `)` it is a parameterized named aggregate — `List(Move){}`,
-  `Sink(View){}`, `Box(pair){}`, `List(*Node){}`, `Buf(16){}`. Written with a
-  **space** it is a trailing block — `run(2) {}`, `Group(n) {}`,
-  `run(Limit) {}`, `render(*screen) {}` — unless at least one argument is
-  **unambiguously type syntax** (builtin scalar type nodes, compound forms
-  `[]u8`/`?T`/`[N]T`/`[*]T`, function types, or a nested type app carrying one),
-  which nothing but a type application can mean: `List(i64) {}`,
-  `Vec(3, f32) {}`, `Holder(Vec(3, f32)) {}`. Names never decide — neither the
-  callee's case nor an argument's, so a lowercase type (`pair`), a PascalCase
-  const (`Limit`), and `*x` (address-of, not `*T`) all take the spelling they
-  are written with. Zero-arg `f() {}` is always trailing, tight or not (`T{}`
-  is the empty non-parameterized aggregate). Bodies with statements/`;`/control
-  keywords are always trailing whatever the spelling.
+- **Empty block**: a same-line empty `{}` (comment-only bodies included) after
+  a call with arguments carries no body shape, and the gap before it carries no
+  signal — `List(Move){}` and `List(Move) {}` are one form, `run(2){}` and
+  `run(2) {}` are another. **The callee decides**: a head that names a generic
+  type or a `-> Type` function constructs it (`List(Move){}`, `Sink(View){}`,
+  `Box(pair){}`, `Buf(16){}`, `List(i64) {}`, `Vec(3, f32) {}`), and otherwise
+  the block trails where the callee's last parameter takes one (`run(2) {}`,
+  `Group(n){}`, `render(*screen) {}`). A callee that is neither — its last
+  parameter is no `Closure` / `@BuildBlock(P)` — takes one error naming both
+  intents. A head that names no declaration at all — a closure value, a
+  function pointer — carries only the trailing reading, and the binder reports
+  what it finds there. Zero-arg `f() {}` always trails, with or without a gap
+  (`T{}` is the empty non-parameterized aggregate), and bodies with
+  statements/`;`/control keywords always trail.
 - **Body shape**: a non-empty same-line body is a parameterized named aggregate
   only where it writes an aggregate marker at its OWN top level — a `,` between
   elements or a `name =` field init. Groups nest, so a `,`, `=` or `;` inside a
@@ -5905,7 +5975,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `type_of(val: $T) -> Type` — returns the runtime type tag of a value
 - `type_name($T: Type) -> string` — returns the name of type `T` as a string (e.g., `"Point"`)
 - `struct_field_count($T: Type) -> i64` — the number of fields of a struct/tuple (or arms of an untagged union). Scalars and other fieldless types fold to 0 (a leaf, so generic walkers can gate on it). An enum argument is a compile error naming `variant_count`; arrays/vectors are rejected — their lengths/lanes read as `.len` on the value.
-- The whole field family — `struct_field_name` / `struct_field_type` / `struct_field_offset` / `variant_name` / `variant_type` — also accepts a **runtime `Type` value**: reads go through lazily-emitted master-index tables (`__sx_member_name_ptrs` / `__sx_member_type_ptrs` / `__sx_field_offset_ptrs`, `[N x ptr]` keyed by the tag → per-type arrays), emitted only when a dynamic call site exists. At runtime the kind gates do not apply, and an index ≥ the member count is **undefined behavior** (in-bounds GEP — the caller gates on the counts, exactly like the static per-type arrays). Offsets answer per kind: struct/tuple members give their field offset; a tagged union gives its PAYLOAD offset (the header size — the same for every variant); an untagged union's arms all give 0. `struct_field_value(av, i)` / `variant_payload(av, i)` on an **`any` receiver** compose these tables directly: the result is the view `{struct_field_type(tag, i), av.data + struct_field_offset(tag, i)}` — reads go through the view, so nested access chains by repeated calls with no copies, and a wrong-kind tag or out-of-range index is the same UB as the raw table reads. Arbitrary-width int fields read through an any-receiver view carry their TRUE (non-builtin) tag — dispatch consumers (`x.(struct_field_type(T,i))`) monomorphize exactly; the `{}` formatter's builtin-width int arm does not match such a tag and prints `<?>`. `type_info(tp)` likewise accepts a runtime `Type`: it loads the type's constant record from `__sx_type_infos` (one record per type, bytes matching the `TypeInfo` layout; requires `modules/std/meta.sx` in scope, which the compile-time form already does) — kind-first dispatch (`if type_info(tp) == { case .struct: (si) { … } }`) works identically on compile-time and runtime `Type`s.
+- The whole field family — `struct_field_name` / `struct_field_type` / `struct_field_offset` / `variant_name` / `variant_type` — also accepts a **runtime `Type` value**: reads go through lazily-emitted master-index tables (`__sx_member_name_ptrs` / `__sx_member_type_ptrs` / `__sx_field_offset_ptrs`, `[N x ptr]` keyed by the tag → per-type arrays), emitted only when a dynamic call site exists. At runtime the kind gates do not apply, and an index ≥ the member count is **undefined behavior** (in-bounds GEP — the caller gates on the counts, exactly like the static per-type arrays). Offsets answer per kind: struct/tuple members give their field offset; a tagged union gives its PAYLOAD offset (the header size — the same for every variant); an untagged union's arms all give 0. `struct_field_value(av, i)` / `variant_payload(av, i)` on an **`any` receiver** compose these tables directly: the result is the view `{struct_field_type(tag, i), av.data + struct_field_offset(tag, i)}` — reads go through the view, so nested access chains by repeated calls with no copies, and a wrong-kind tag or out-of-range index is the same UB as the raw table reads. Arbitrary-width int fields read through an any-receiver view carry their TRUE (non-builtin) tag — dispatch consumers (`x.(struct_field_type(T,i))`) monomorphize exactly; the `{}` formatter's builtin-width int arm does not match such a tag and prints `<?>`. `type_info(tp)` likewise accepts a runtime `Type`: it loads the type's constant record from `__sx_type_infos` (one record per type, bytes matching the `TypeInfo` layout; requires `modules/std/meta.sx` in scope, which the compile-time form already does) — kind-first dispatch (`match type_info(tp) { case .struct: |si| { … } }`) works identically on compile-time and runtime `Type`s.
 - `struct_field_name($T: Type, idx: i64) -> string` — the name of the `idx`-th field of a struct/tuple (positional tuple elements have no name → `""`). Kind-gated like `struct_field_count`.
 - `struct_field_type($T: Type, idx: i64) -> Type` — the `idx`-th field's type. Kind-gated; also resolves in type position.
 - `struct_field_value(s: $T, idx: i64) -> any` — the `idx`-th field of a struct/tuple VALUE as an `any` VIEW: `{field type tag, pointer to the field inside `s`}` — an interior pointer, not a copy. For an addressable receiver the view borrows the struct's own storage (mutations of the struct stay visible through a live view); an rvalue receiver spills to a frame temp first. The view is valid only while the receiver's storage lives. Arrays/vectors/slices are rejected — index natively (`v[i]`, typed). Enum values are rejected — use `variant_payload`.
@@ -5966,20 +6036,20 @@ level where code goes dead:
   ARCH` without a silent fallback:
 
 ```sx
-inline if OS == {
+inline match OS {
     case .macos: errno_location :: () -> *i32 extern libc "__error";
     case .linux: errno_location :: () -> *i32 extern libc "__errno_location";
     else:        #error("errno_location: unsupported target — add its libc symbol.");
 }
 ```
 
-- Monomorphization prunes non-taken `inline if T ==` arms per instance —
+- Monomorphization prunes non-taken `inline match T` arms per instance —
   the same discipline rejects an unsupported TYPE in generic code, firing
   only for the instantiations that actually select the arm:
 
 ```sx
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
-    inline if T == {
+    inline match T {
         case protocol: { ... }
         case closure:  { ... }
         case slice:    a.dealloc_bytes(xx x.ptr);
@@ -6611,7 +6681,7 @@ Statement form. Terminates the immediately enclosing failable function (like
 ```sx
 if bad raise error.BadDigit;   // literal tag
 
-v := foo() catch (e) {
+v := foo() catch |e| {
   if e == error.Specific return default;
   raise e;                     // variable tag — re-raise
 };
@@ -6646,40 +6716,42 @@ tag — use `catch` for that.
 
 ### `catch`
 
-Expression form. Handles the error inline. The binding is **parenthesized**
-(`catch (e)`) — like a for-loop capture — and is **optional**. Four shapes,
-disambiguated by the token after `catch`:
+Expression form. Handles the error inline. The binding sits in **pipes**
+(`catch |e|`) — like a match-arm payload capture — and is **optional**. Three
+shapes, disambiguated by the token after `catch`:
 
 | Form | Binding | Body |
 |---|---|---|
 | `catch { ... }` | none (tag ignored) | block — braces required |
-| `catch (e) { ... }` | `e` | block |
-| `catch (e) EXPR` | `e` | bare expression (no braces) |
-| `catch (e) == { case ... }` | `e` | match over `e` (sugar for `{ if e == { ... } }`) |
+| `catch \|e\| { ... }` | `e` | block |
+| `catch \|e\| EXPR` | `e` | bare expression (no braces) |
 
-An unparenthesized binding (`catch e { }`) is a parse error with a hint to
-parenthesize it.
+Dispatching on the tag is the bare-expression shape with a `match` over the
+binding: `catch |e| match e { case ... }`.
+
+A bare binding (`catch e { }`) is a parse error with a hint to write the
+pipes.
 
 ```sx
-v := parse_digit(s) catch (e) {
+v := parse_digit(s) catch |e| {
   log.warn("bad input: {}", e);
   return default;                       // noreturn body
 };
 
-v := parse_digit(s) catch (e) compute_fallback(e);   // value-producing body
+v := parse_digit(s) catch |e| compute_fallback(e);   // value-producing body
 
-v, n := parse(s) catch (e) {
+v, n := parse(s) catch |e| {
   log.warn("parse failed: {}", e);
   .{0, 0}                               // tuple body for a multi-value failable
 };
 
-v := parse(s) catch (e) == {           // match-body form
+v := parse(s) catch |e| match e {       // dispatch on the tag
   case .Empty:    0;
   case .BadDigit: -1;
   else:           raise e;
 };
 
-v := (try foo() or try boo()) catch (e) { return 0; };  // catch over an `or` chain
+v := (try foo() or try boo()) catch |e| { return 0; };  // catch over an `or` chain
 ```
 
 **Body type rule.** The body (block-as-expression) must produce the failable's
@@ -6695,8 +6767,8 @@ initialize `:=`, a typed mutable declaration (`name: T =`), or a body-local
 constant declaration (`name ::` or `name: T :`).
 
 ```sx
-must_init() catch (e) { log.warn("{}", e); };  // OK — statement
-x := must_init() catch (e) { 0 };              // ERROR: nothing to bind
+must_init() catch |e| { log.warn("{}", e); };  // OK — statement
+x := must_init() catch |e| { 0 };              // ERROR: nothing to bind
 ```
 
 Give the callee a value channel (`-> (T, !E)`) where the handled expression
@@ -6737,7 +6809,7 @@ of the other markers directly on `X`) is required.
 
 ```sx
 a := parse(s) or 0;          // OK — terminator on the path
-a := parse(s) catch (e) {...}; // OK — catch marks
+a := parse(s) catch |e| {...}; // OK — catch marks
 v, err := failable();        // OK — destructure marks
 a := try foo() or try boo(); // OK — each try marks its own exit
 
@@ -6791,7 +6863,7 @@ Dropping the error slot is a compile error:
 v, _ := failable();   // ERROR: the error slot cannot be dropped — handle it
 ```
 
-Value slots may be discarded (`_, n := parse(s) catch (e) { return; }`). The
+Value slots may be discarded (`_, n := parse(s) catch |e| { return; }`). The
 statement form `try foo();` is the explicit "propagate, use no value." On a
 value-carrying failable, the value slot is live only where the compiler can
 prove the error slot is null (path-sensitive flow-check).
@@ -6814,7 +6886,7 @@ make_handle :: () -> (Handle, !) {
 
 open :: (path: string) -> (Handle, !) {
   h := try sys_open(path);
-  onfail (e) { log.warn("init failed for {}: {}", path, e); sys_close(h); }
+  onfail |e| { log.warn("init failed for {}: {}", path, e); sys_close(h); }
   ...
 }
 ```
@@ -6833,8 +6905,8 @@ function, or at top level, is rejected.
 
 - **Explicit annotation required.** A closure literal's value type is inferred
   as today, but if its body raises or `try`-escapes, the `!` channel is **not**
-  inferred — declare it (`(x: i32) -> (i32, !) { ... }`). This keeps
-  adding a `raise` from silently changing a lambda's type.
+  inferred — declare it (`|x: i32| -> (i32, !) { ... }`). This keeps
+  adding a `raise` from silently changing a closure's type.
 - **Program-wide union per shape.** All `Closure(<sig>) -> (T, !)` occurrences
   with the same signature share one inferred-set node; the SCC pass unions
   every closure flowing into any matching slot.
@@ -6932,21 +7004,22 @@ return_stmt     = 'return' expr? end
 break_stmt      = 'break' end
 continue_stmt   = 'continue' end
 raise_stmt      = 'raise' expr end
-onfail_stmt     = 'onfail' ('(' IDENT ')')? (block | expr end)
+onfail_stmt     = 'onfail' ('|' IDENT '|')? (block | expr end)
 defer_stmt      = 'defer' expr end
 insert_stmt     = '#insert' expr end
 push_stmt       = 'push' expr block
 assignment      = lvalue ('=' | '+=' | '-=' | '*=' | '/=') expr
 multi_assign    = lvalue (',' lvalue)+ '=' expr (',' expr)+
 lvalue          = IDENT | postfix '.' IDENT
-expr            = if_expr | match_expr | while_expr | for_expr | lambda | binary
+expr            = if_expr | match_expr | while_expr | for_expr | closure | binary
 while_expr      = 'while' expr block
-for_expr        = 'for' for_iter (',' for_iter)* [for_capture] (block | '=>' stmt)
+for_expr        = 'for' [for_capture (',' for_capture)* 'in'] for_iter (',' for_iter)* (block | '=>' stmt)
 for_iter        = expr [range_op [expr]]
 range_op        = '..' | '..=' | '..<' | '<..' | '<..=' | '<..<' | '=..' | '=..=' | '=..<'
-for_capture     = '(' ['*'] IDENT (',' ['*'] IDENT)* ')'
+for_capture     = ['*'] IDENT [':' type]   // the '*' is GLUED to its name (§1 Whitespace is Syntax);
+                                           // the type is the ELEMENT type
 binary          = catch_expr (binop catch_expr)*    // binop includes `or` (fallback / chain)
-catch_expr      = unary ('catch' ('(' IDENT ')')? (block | '==' '{' case_arm* else_arm? '}' | unary))?
+catch_expr      = unary ('catch' ('|' IDENT '|')? (block | match_expr | unary))?
 unary           = ('-' | '--' | '*' | '!' | '~' | 'xx' | 'try') unary | postfix
                   // right-recursive, so prefixes stack (`xx try f()`, `!!ok`);
                   // a prefix '-' / '--' / '*' must be GLUED to its operand (§1 Whitespace is Syntax)
@@ -6961,15 +7034,17 @@ if_expr         = 'if' expr 'then' expr ('else' expr)?
                 | 'if' expr block ('else' block)?
                   // the 'else' of an if is any 'else' NOT glued to a ':' —
                   // one token of lookahead separates it from an else_arm head
-match_expr      = 'if' expr '==' '{' case_arm* else_arm? '}'
+match_expr      = 'match' expr '{' case_arm* else_arm? '}'
+                  // the subject is a header expression: the `{` that closes it
+                  // opens the arm list, so a named aggregate there is parenthesized
 case_arm        = 'case' pattern ':' arm_capture? arm_body
-arm_capture     = '(' IDENT ')'         // payload binding — a LONE identifier
+arm_capture     = '|' IDENT '|'         // payload binding — a LONE identifier
 arm_body        = 'break' end
                 | '=>' expr end         // the last arm's expr may drop `end`
                 | stmt*                 // every form ends as a statement does
 else_arm        = 'else' ':' stmt*      // the ':' is GLUED to the 'else'
 pattern         = '.' IDENT | INT | BOOL | IDENT
-lambda          = '(' params? ')' ('->' type)? '=>' expr
+closure         = '|' params? '|' ('->' type)? (expr | block)
 args            = expr (',' expr)* ','?
 type            = '$' IDENT | 'i32' | 'f32' | 'f64' | 'bool' | 'string'
                 | 'any' | 'Type' | '..' type | '[' expr ']' type | IDENT
@@ -6995,8 +7070,8 @@ tuple_type_elem = IDENT ':' type | '..' type | type
   may **not** reference an enclosing function's local, parameter, or local `::`
   const — a static fn has no captured frame to read it from, and doing so is a
   compile error ("a nested function cannot reference the enclosing local 'x' —
-  use a closure ('x := () => …') to capture it"). Capturing enclosing locals is
-  the CLOSURE's job — spell it `x := () => …` (`:=` + `=>`), which captures by
+  use a closure ('x := || …') to capture it"). Capturing enclosing locals is
+  the CLOSURE's job — spell it `x := || …` (`:=` + a `|…|` literal), which captures by
   pointer. (Enclosing local consts are rejected too rather than comptime-folded:
   a static nested fn's frame cannot carry them, and the closure spelling captures
   them uniformly.)

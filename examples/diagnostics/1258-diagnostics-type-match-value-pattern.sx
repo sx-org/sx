@@ -5,7 +5,7 @@
 
 main :: () {
     t := type_of(5);
-    if t == {
+    match t {
         case int: print("int\n");
         case 5:   print("five\n");
     }

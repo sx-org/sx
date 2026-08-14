@@ -442,6 +442,10 @@ pub const UnknownTypeChecker = struct {
             .spread_expr => |se| self.checkBindingNames(se.operand),
             .named_arg => |na| self.checkBindingNames(na.value),
             .trailing_block => |tb| self.checkBindingNames(tb.lambda),
+            .empty_brace_call => |ebc| {
+                self.checkBindingNames(ebc.call);
+                self.checkBindingNames(ebc.block);
+            },
             .asm_expr => |ae| {
                 self.checkBindingNames(ae.template);
                 for (ae.operands) |op| self.checkBindingNames(op.payload);
@@ -761,6 +765,11 @@ pub const UnknownTypeChecker = struct {
                     self.walkBodyTypes(it.expr, declared, in_scope, type_vals);
                     if (it.range_end) |re| self.walkBodyTypes(re, declared, in_scope, type_vals);
                 }
+                for (fe.captures) |cap| {
+                    if (cap.type_annotation) |ta| {
+                        self.checkTypeNodeForUnknown(ta, declared, in_scope.items, type_vals.items, false);
+                    }
+                }
                 // An `inline for` over a comptime type list binds its cursor as
                 // a type param for the body — the same standing as a `$T: Type`.
                 const save_s = in_scope.items.len;
@@ -779,7 +788,7 @@ pub const UnknownTypeChecker = struct {
             },
             .match_expr => |me| {
                 self.walkBodyTypes(me.subject, declared, in_scope, type_vals);
-                // Comptime match (`inline if x == { case … }`): only the
+                // Comptime match (`inline match x { case … }`): only the
                 // matching arm is lowered — mirror lowerMatch.
                 if (me.is_comptime) {
                     if (self.lowering) |l| {

@@ -90,7 +90,7 @@ Router :: struct {
     }
 
     declares :: (snap: *CommittedUiSnapshot, id: u64) -> bool {
-        for snap.hit_list (r) {
+        for r in snap.hit_list {
             if r.id == id then return true
         }
         false
@@ -126,14 +126,14 @@ Router :: struct {
     }
 
     pressed :: (self: *Router, id: u64) -> bool {
-        for self.sequences (s) {
+        for s in self.sequences {
             if s.element == id and s.inside then return true
         }
         false
     }
 
     find :: (self: *Router, pointer: PointerId) -> i64 {
-        for self.sequences, 0.. (s, i) {
+        for s, i in self.sequences, 0.. {
             if s.pointer.value == pointer.value then return i
         }
         -1
@@ -148,7 +148,7 @@ Router :: struct {
 
     // Runs the handler the CURRENT snapshot carries for `id`.
     fire :: (self: *Router, id: u64) {
-        for self.snap.hit_list (r) {
+        for r in self.snap.hit_list {
             if r.id == id {
                 if h := r.on_tap {
                     h()
@@ -160,8 +160,8 @@ Router :: struct {
 
     dispatch :: (self: *Router, ev: *InputEvent) {
         if self.snap == null then return
-        if ev.* == {
-            case .pointer_down: (p) {
+        match ev.* {
+            case .pointer_down: |p| {
                 if t := self.hit_top(p.position) {
                     if t.policy != .tap then return
                     self.drop(p.pointer)
@@ -173,12 +173,12 @@ Router :: struct {
                     }, self.gpa)
                 }
             }
-            case .pointer_move: (p) {
+            case .pointer_move: |p| {
                 i := self.find(p.pointer)
                 if i < 0 then return
                 self.sequences.items[i].inside = self.covers(p.position, self.sequences.items[i].element)
             }
-            case .pointer_up: (p) {
+            case .pointer_up: |p| {
                 i := self.find(p.pointer)
                 if i < 0 then return
                 s := self.sequences.items[i]
@@ -187,7 +187,7 @@ Router :: struct {
                     self.fire(s.element)
                 }
             }
-            case .pointer_cancel: (p) {
+            case .pointer_cancel: |p| {
                 self.drop(p.pointer)
             }
             else: {}

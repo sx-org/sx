@@ -19,12 +19,12 @@ by_arrow :: () -> View => Widget{ n = 3 }.(View);
 // A lambda is its own function: the same escape refuses for the same
 // reason.
 by_lambda_arrow :: () {
-    f : Closure() -> View = () => Widget{ n = 5 }.(View);
+    f : Closure() -> View = || Widget{ n = 5 }.(View);
     _ = f;
 }
 
 by_lambda_tail :: () {
-    f : Closure() -> View = () {
+    f : Closure() -> View = || {
         Widget{ n = 6 }.(View)
     };
     _ = f;

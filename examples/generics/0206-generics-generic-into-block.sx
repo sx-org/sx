@@ -15,7 +15,7 @@ g_a: i64 = 0;
 g_b: i64 = 0;
 
 main :: () -> i32 {
-    cl := (a: i64, b: i64) { g_a = a; g_b = b; };
+    cl := |a: i64, b: i64| { g_a = a; g_b = b; };
     blk : Block = xx cl;
 
     invoke_fn : (*Block, i64, i64) -> void abi(.c) = xx blk.invoke;

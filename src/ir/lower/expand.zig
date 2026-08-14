@@ -1,5 +1,5 @@
-//! Module-scope declaration expansion: `inline if`, its `inline if X == { … }`
-//! match spelling, and `inline for`.
+//! Module-scope declaration expansion: `inline if`, `inline match`, and
+//! `inline for`.
 //!
 //! Import resolution leaves these drivers OPAQUE — a branch's declarations,
 //! including the modules a branch-local `#import` names, stay inside the node.
@@ -1202,16 +1202,23 @@ const Group = struct {
         const mint = g.claimRegistration(decl);
         const diags = if (mint) self.diagnostics else null;
         if (fe.captures.len == 0 or fe.captures[0].name.len == 0) {
-            if (diags) |d| d.addFmt(.err, decl.span, "a module-scope `inline for` needs a cursor — `inline for LIST (T) {{ … }}`", .{});
+            if (diags) |d| d.addFmt(.err, decl.span, "a module-scope `inline for` needs a cursor — `inline for T in LIST {{ … }}`", .{});
             return true;
         }
         if (fe.captures[0].by_ref) {
             if (diags) |d| d.addFmt(.err, decl.span, "a type-list cursor cannot be captured by reference", .{});
             return true;
         }
+        // Both cursors here are substituted spellings — a type name and an
+        // index literal — not bindings that hold a value of some type.
+        for (fe.captures) |cap| {
+            const ta = cap.type_annotation orelse continue;
+            if (diags) |d| d.addFmt(.err, ta.span, "a module-scope `inline for` cursor takes no type annotation", .{});
+            return true;
+        }
         const list_iterable = fe.iterables[0];
         if (list_iterable.is_range) {
-            if (diags) |d| d.addFmt(.err, list_iterable.expr.span, "a module-scope `inline for` iterates a comptime type list — `inline for .[A, B] (T) {{ … }}`", .{});
+            if (diags) |d| d.addFmt(.err, list_iterable.expr.span, "a module-scope `inline for` iterates a comptime type list — `inline for T in .[A, B] {{ … }}`", .{});
             return true;
         }
         const literal = list orelse {

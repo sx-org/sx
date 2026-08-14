@@ -34,14 +34,14 @@ main :: () -> i32 {
 
     // for capture + index names
     xs: [3]i64 = .{ 10, 20, 30 };
-    for xs, 0.. (`bool, `u16) {
+    for `bool, `u16 in xs, 0.. {
         print("for   = {} @ {}\n", `bool, `u16);
     }
 
     // match-arm capture
     opt: ?i64 = 5;
-    m := if opt == {
-        case .some: (`string) { `string * 2 }
+    m := match opt {
+        case .some: |`string| { `string * 2 }
         case .none: { 0 }
     };
     print("match = {}\n", m);

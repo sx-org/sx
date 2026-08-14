@@ -8,11 +8,11 @@
 main :: () {
     // Not canceled → await yields the value. The worker is FAILABLE
     // (`Closure() -> ($R, !)`) — the unified worker shape.
-    ok := context.io.async(() -> (i64, !) => 7);
+    ok := context.io.async(|| -> (i64, !) 7);
     print("ok: {}\n", ok.await() or { -1 });
 
     // Canceled → await raises .Canceled → the `or` default is taken.
-    c := context.io.async(() -> (i64, !) => 7);
+    c := context.io.async(|| -> (i64, !) 7);
     c.cancel();
     print("canceled: {}\n", c.await() or { -99 });
 }

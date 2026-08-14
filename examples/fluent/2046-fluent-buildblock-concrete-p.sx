@@ -37,7 +37,7 @@ collect :: (content: $B/@BuildBlock(i64)) -> i64 {
     sink := Total{};
     content.run(*sink);
     print("  published {} values\n", sink.n);
-    for sink.seen (v) {
+    for v in sink.seen {
         print("    {}\n", v);
     }
     sink.sum

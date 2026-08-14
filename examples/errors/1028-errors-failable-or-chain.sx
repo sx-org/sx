@@ -30,8 +30,8 @@ main :: () -> (i32, !E) {
     r = r + (try fa(0) or try fa(7));               // a fails → b succeeds → 7
     r = r + (try fa(0) or try fa(0) or try fa(3));   // first two fail → third → +3  = 10
     r = r + (fa(0) or fa(0) or 96);                  // bare chain + value terminator → +96 = 106
-    r = r + ((try fa(0) or try fa(0)) catch (e) 5);    // both fail → catch handler → +5  = 111
-    r = r + ((try fa(0) or try fa(9)) catch (e) 0);    // second succeeds → catch skipped → +9 = 120
+    r = r + ((try fa(0) or try fa(0)) catch |e| 5);    // both fail → catch handler → +5  = 111
+    r = r + ((try fa(0) or try fa(9)) catch |e| 0);    // second succeeds → catch skipped → +9 = 120
 
     try fv(0) or try fv(1);                          // void chain: first fails → second succeeds
 

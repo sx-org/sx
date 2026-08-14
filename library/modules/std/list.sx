@@ -4,7 +4,7 @@
 c :: #import "modules/std/c.sx";
 
 // `items` is a `[]T` slice whose `.len` IS the live element count, so a `List`
-// is directly iterable: `for xs.items (e) { ... }`. `cap` is the allocated
+// is directly iterable: `for e in xs.items { ... }`. `cap` is the allocated
 // capacity (`>= items.len`); the buffer spans `cap` elements, the slice spans
 // the live `items.len`. The `len` `#get` accessor exposes the live count as
 // `xs.len` (read), delegating to `items.len`; writes use `xs.items.len`.

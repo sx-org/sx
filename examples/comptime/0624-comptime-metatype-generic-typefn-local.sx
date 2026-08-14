@@ -18,10 +18,10 @@ make_status :: ($T: Type) -> Type {
 Status :: make_status(f64);
 
 show :: (s: Status) {
-    if s == {
-        case .ok:      (v) { print("ok={}\n", v); }
+    match s {
+        case .ok:      |v| { print("ok={}\n", v); }
         case .pending:     { print("pending\n"); }
-        case .failed:  (e) { print("failed code={}\n", e); }
+        case .failed:  |e| { print("failed code={}\n", e); }
     }
 }
 

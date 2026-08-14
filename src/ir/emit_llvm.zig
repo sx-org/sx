@@ -929,7 +929,7 @@ pub const LLVMEmitter = struct {
                 std.debug.print("  {s} at {s}:{d}:{d}\n", .{ fname, file, line, col });
             }
         }
-        std.debug.print("help: handle it at the `#run` site — `#run <expr> catch (e) {{ ... }}` or `#run <expr> or <default>`\n", .{});
+        std.debug.print("help: handle it at the `#run` site — `#run <expr> catch |e| {{ ... }}` or `#run <expr> or <default>`\n", .{});
     }
 
     /// Run comptime side-effect functions (e.g., `#run main();` at top level).

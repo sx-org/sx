@@ -1017,7 +1017,7 @@ fn rejectVoidInitializer(
         if (d.errorCount() != errs_before) return false;
         if (val.data == .catch_expr) {
             const id = d.addFmtId(.err, val.span, "'{s}' has nothing to bind — `catch` on a pure failable ('!E') produces no value", .{name});
-            d.addHelpFmt(id, val.span, null, "handle it as a statement (`f() catch (e) {{ ... }};`), or give the callee a value channel (`-> (T, !E)`)", .{});
+            d.addHelpFmt(id, val.span, null, "handle it as a statement (`f() catch |e| {{ ... }};`), or give the callee a value channel (`-> (T, !E)`)", .{});
         } else {
             const id = d.addFmtId(.err, val.span, "'{s}' cannot bind 'void' — this expression produces no value", .{name});
             d.addHelpFmt(id, val.span, null, "call it as a statement instead of binding its result", .{});
@@ -1587,11 +1587,11 @@ pub fn diagDecrementNonInteger(self: *Lowering, ty: TypeId, span: ast.Span) Ref 
 /// must not be dropped silently. The binding's `origin` picks the message:
 /// - by-ref capture       → write through it (`x.* = ...`)
 /// - local `::` const     → constant-family message (a const is not a capture)
-/// - for-loop element     → `(*x)` write-back hint (container storage exists)
+/// - for-loop element     → `*x` write-back hint (container storage exists)
 /// - range index / match payload / catch binding / pack alias
 ///                        → copy-into-a-`:=`-local only (per specs.md
 ///                          §loops/captures these have no container storage
-///                          to write back into — a `(*x)` hint would be a lie)
+///                          to write back into — a `*x` hint would be a lie)
 /// - `.other`             → generic non-storable-binding message
 /// A `.unresolved`-typed binding is an error PLACEHOLDER from an earlier
 /// diagnostic (e.g. `y := xs` where `xs` is a pack — diagPackAsValue already
@@ -1605,7 +1605,7 @@ fn diagNonstoreBindingAssign(self: *Lowering, span: ast.Span, name: []const u8, 
     }
     switch (b.origin) {
         .local_const => d.addFmt(.err, span, "cannot assign to constant '{s}' — a '::' declaration is immutable; use ':=' to declare a mutable local", .{name}),
-        .for_element => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — it is a by-value copy of the element; capture by reference with '(*{s})' and write '{s}.* = ...' to modify the container, or copy it into a `:=` local to mutate", .{ name, name, name }),
+        .for_element => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — it is a by-value copy of the element; capture by reference with '*{s}' and write '{s}.* = ...' to modify the container, or copy it into a `:=` local to mutate", .{ name, name, name }),
         .range_index => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — a range/index position has no storage to write back into; copy it into a `:=` local to mutate", .{name}),
         .match_payload => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate", .{name}),
         .catch_err => d.addFmt(.err, span, "cannot assign to immutable capture '{s}' — a catch/onfail error binding is read-only; copy it into a `:=` local to mutate", .{name}),
@@ -2422,7 +2422,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             if (!handled) {
                 if (nonstore_binding) |b| {
                     // A scope binding SHADOWS any same-named global — without
-                    // this arm, `for xs (*g) { g = 77; }` with a module global
+                    // this arm, `for *g in xs { g = 77; }` with a module global
                     // `g` fell through to resolveGlobalRef and silently wrote
                     // the GLOBAL instead of addressing the capture. Reads
                     // resolve the capture; writes must never
@@ -3450,7 +3450,7 @@ pub fn lowerCleanupBody(self: *Lowering, body: *const Node) void {
 /// Emit cleanups from `base`..current in reverse order on an ERROR exit
 /// (raise / try-propagation): BOTH `defer` and `onfail` entries run,
 /// interleaved in reverse declaration order. `err_tag` is the in-flight
-/// error tag, bound to each `onfail e`'s binding. Does not truncate — the
+/// error tag, bound to each `onfail |e|`'s binding. Does not truncate — the
 /// terminating `ret` + the unwinding block-scope `emitBlockDefers` (which
 /// then see the terminator and skip) leave the stack consistent.
 pub fn emitErrorCleanup(self: *Lowering, base: usize, err_tag: Ref) void {

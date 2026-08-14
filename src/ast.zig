@@ -95,6 +95,7 @@ pub const Node = struct {
         spread_expr: SpreadExpr,
         named_arg: NamedArg,
         trailing_block: TrailingBlock,
+        empty_brace_call: EmptyBraceCall,
         break_expr: void,
         continue_expr: void,
         undef_literal: void,
@@ -145,7 +146,7 @@ pub const Root = struct {
 };
 
 /// ABI / calling-convention annotation written as the postfix `abi(.x)` form on a
-/// function declaration, function-type literal, or lambda.
+/// function declaration or function-type literal.
 /// - `.default` — no annotation: the ordinary sx-internal convention (implicit
 ///   context, sx ABI). There is no surface spelling for `.default`; it is the
 ///   value when `abi(...)` is absent.
@@ -458,10 +459,10 @@ pub const MatchArm = struct {
     pattern: ?*Node, // null = else (default) arm
     body: *Node,
     is_break: bool,
-    capture: ?[]const u8 = null, // payload binding name: case .variant: (name) { ... }
+    capture: ?[]const u8 = null, // payload binding name: case .variant: |name| { ... }
     capture_span: ?Span = null, // span of `capture` (set iff `capture` is)
     /// True when the capture was a backtick raw identifier
-    /// (`` case .v: (`i2) ``) — exempt from the reserved-type-name check.
+    /// (`` case .v: |`i2| ``) — exempt from the reserved-type-name check.
     capture_is_raw: bool = false,
 };
 
@@ -658,11 +659,12 @@ pub const StructLiteral = struct {
     struct_name: ?[]const u8, // null for anonymous `.{ ... }`
     type_expr: ?*Node = null, // for GenericType(args){ ... }
     field_inits: []const StructFieldInit,
-    /// Optional block after the aggregate. With `init_block_binds_self`
-    /// (`T{…}.{…}`), `self` is bound to the value. Bare `T{…}{…}` is a plain
-    /// scope after construction — no `self`.
+    /// Optional block after the aggregate. Self-trailing `T{…}.{…}` binds a
+    /// pointer to the value under `init_block_self` — the `|s|` header's name,
+    /// or `self`. Bare `T{…}{…}` is a plain scope after construction, binding
+    /// nothing.
     init_block: ?*Node = null,
-    init_block_binds_self: bool = false,
+    init_block_self: ?[]const u8 = null,
 };
 
 pub const Lambda = struct {
@@ -670,7 +672,6 @@ pub const Lambda = struct {
     return_type: ?*Node,
     body: *Node,
     type_params: []const StructTypeParam = &.{},
-    abi: ABI = .default,
 };
 
 pub const TypeExpr = struct {
@@ -725,29 +726,26 @@ pub const TryExpr = struct {
     operand: *Node,
 };
 
-/// `X catch [e] BODY` — inline failure handler (postfix). The binding is a
-/// bare name (no parens) and optional. Body is a block, a bare expression,
-/// or — when `is_match_body` — a `match_expr` from the `== { case ... }`
-/// sugar (whose subject is the binding).
+/// `X catch [|e|] BODY` — inline failure handler (postfix). The binding is
+/// optional. Body is a block or a bare expression.
 pub const CatchExpr = struct {
     operand: *Node,
     binding: ?[]const u8 = null,
     binding_span: ?Span = null, // span of `binding` (set iff `binding` is)
     /// True when the binding was a backtick raw identifier
-    /// (`` x catch `i2 { … } ``) — exempt from the reserved-type-name check.
+    /// (`` x catch |`i2| { … } ``) — exempt from the reserved-type-name check.
     binding_is_raw: bool = false,
     body: *Node,
-    is_match_body: bool = false,
 };
 
-/// `onfail [e] BODY` — cleanup run on error-exit of the enclosing block.
-/// Binding optional (bare name). Body is a block (`onfail [e] { ... }`) or
+/// `onfail [|e|] BODY` — cleanup run on error-exit of the enclosing block.
+/// The binding is optional. Body is a block (`onfail [|e|] { ... }`) or
 /// a bare expression (`onfail EXPR;`).
 pub const OnFailStmt = struct {
     binding: ?[]const u8 = null,
     binding_span: ?Span = null, // span of `binding` (set iff `binding` is)
     /// True when the binding was a backtick raw identifier
-    /// (`` onfail `i2 { … } ``) — exempt from the reserved-type-name check.
+    /// (`` onfail |`i2| { … } ``) — exempt from the reserved-type-name check.
     binding_is_raw: bool = false,
     body: *Node,
 };
@@ -763,7 +761,7 @@ pub const ComptimeExpr = struct {
 
 /// `#error "message"` — a compile-time diagnostic. When it survives the
 /// comptime-conditional flatten pass into live decls (e.g. the taken arm of an
-/// `inline if OS == { ... }` is an unsupported-target `else`), the flatten pass
+/// `inline match OS { ... }` is an unsupported-target `else`), the flatten pass
 /// emits `message` as an error and drops the node. In a non-taken arm it is
 /// pruned before it can fire.
 pub const ErrorDirective = struct {
@@ -921,21 +919,23 @@ pub const ForIterable = struct {
     end_inclusive: bool = false,
 };
 
-/// One capture of a `for` header: `(x)`, `(*x)`, `(x, y, ...)`.
+/// One capture of a `for` header: `x`, `*x`, `x: T`, `*x: T`.
 pub const ForCapture = struct {
     name: []const u8,
     span: ?Span = null,
-    /// True when the name was a backtick raw identifier (`` for xs (`i2) ``)
+    /// True when the name was a backtick raw identifier (`` for `i2 in xs ``)
     /// — exempt from the reserved-type-name check.
     is_raw: bool = false,
-    /// `(*x)` — bind a pointer into the collection (no per-element copy).
+    /// `*x` — bind a pointer into the collection (no per-element copy).
     by_ref: bool = false,
+    /// `x: T` — the ELEMENT type, independent of `by_ref`: `*x: T` binds `*T`.
+    type_annotation: ?*Node = null,
 };
 
-/// `for it1, it2, ... (c1, c2, ...) { }` — parallel iteration. The FIRST
+/// `for c1, c2, ... in it1, it2, ... { }` — parallel iteration. The FIRST
 /// iterable's length drives the loop (first-iterable-wins); the others are
 /// indexed along it, and a non-first range's end is not consulted. The
-/// capture group is positional: empty (no bindings) or one capture per
+/// captures are positional: empty (no bindings) or one capture per
 /// iterable. The body is a block or an `=> expr;` arrow body.
 pub const ForExpr = struct {
     iterables: []ForIterable,
@@ -958,11 +958,23 @@ pub const NamedArg = struct {
 };
 
 /// `f(args) { body }` trailing block (specs: Trailing Blocks). `lambda` is
-/// the zero-param closure literal the parser built from the block. Exists
+/// the closure literal the parser built from the block. Exists
 /// only as the LAST element of `Call.args`; the mapping pass binds it to the
 /// callee's last declared parameter, which is where its checks live.
 pub const TrailingBlock = struct {
     lambda: *Node,
+    /// True when the source wrote `|…|` after `{`, including empty `| |`.
+    has_header: bool = false,
+};
+
+/// `F(args){}` / `F(args) {}` — an argument-carrying call followed by a
+/// same-line empty brace body. The parameterized-aggregate and the
+/// trailing-block readings both fit that spelling, so the callee settles it:
+/// the lowering front rewrites this node into a `struct_literal` over `call`,
+/// or into `call` with `block` appended as a `trailing_block` argument.
+pub const EmptyBraceCall = struct {
+    call: *Node,
+    block: *Node,
 };
 
 pub const NamespaceDecl = struct {

@@ -40,11 +40,11 @@ main :: () -> i64 {
     // scheduler is installed as `context.io`, so the unified async layer
     // (`context.io.async`/`await`/`sleep`/`now_ms`) reaches it inside the workers.
     push .{ io = xx s } {
-        ps.spawn(() {
+        ps.spawn(|| {
             // Launch three async workers; each sleeps, logs its completion, returns.
-            a := context.io.async(() -> (i64, !) { try context.io.sleep(30); rec(pl, 1, context.io.now_ms()); 100 });
-            b := context.io.async(() -> (i64, !) { try context.io.sleep(10); rec(pl, 2, context.io.now_ms()); 20 });
-            c := context.io.async(() -> (i64, !) { try context.io.sleep(20); rec(pl, 3, context.io.now_ms()); 3 });
+            a := context.io.async(|| -> (i64, !) { try context.io.sleep(30); rec(pl, 1, context.io.now_ms()); 100 });
+            b := context.io.async(|| -> (i64, !) { try context.io.sleep(10); rec(pl, 2, context.io.now_ms()); 20 });
+            c := context.io.async(|| -> (i64, !) { try context.io.sleep(20); rec(pl, 3, context.io.now_ms()); 3 });
 
             // Await in SPAWN order; results come back correct regardless.
             va := a.await() or { -1 };

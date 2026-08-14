@@ -14,7 +14,7 @@ Point :: struct { x, y: i64; }
 Size2 :: struct { w, h: i64; }
 
 only_union :: (t: Type) -> string {
-    if t == {
+    match t {
         case union: return "union";
         else:       return "other";
     }
@@ -22,7 +22,7 @@ only_union :: (t: Type) -> string {
 }
 
 both :: (t: Type) -> string {
-    if t == {
+    match t {
         case union: return "union-first";
         case enum:  return "enum";
         else:       return "other";
@@ -31,7 +31,7 @@ both :: (t: Type) -> string {
 }
 
 pick :: (t: Type) -> string {
-    if t == {
+    match t {
         case Point:  return "Point";
         case struct: return "struct";
         else:        return "other";
@@ -41,7 +41,7 @@ pick :: (t: Type) -> string {
 
 // the static classifier agrees arm for arm
 kind :: (x: $T) -> string {
-    inline if T == {
+    inline match T {
         case union: return "union";
         else:       return "other";
     }

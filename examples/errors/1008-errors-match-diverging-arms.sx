@@ -1,4 +1,4 @@
-// A match (`if subject == { case ... }`) whose arms ALL diverge (each
+// A match (`match subject { case ... }`) whose arms ALL diverge (each
 // `return`s) produces no merge phi at all, and a mixed match (some arms
 // diverge, some yield values) materializes the merge only from the
 // value-producing arms — so no phi operand or fallback `const` is ever
@@ -8,7 +8,7 @@
 
 // All arms diverge — the match is `noreturn`, no merge phi.
 classify :: (n: i32) -> i32 {
-    if n == {
+    match n {
         case 0: return 10;
         case 1: return 20;
         else:   return 90;
@@ -18,7 +18,7 @@ classify :: (n: i32) -> i32 {
 
 // Mixed: value arms + a diverging arm.
 pick :: (n: i32) -> i32 {
-    v := if n == {
+    v := match n {
         case 0: 1;
         case 1: return 100;         // diverging arm — no fallback const after its `ret`
         else:   3;

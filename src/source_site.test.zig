@@ -252,7 +252,7 @@ test "an anonymous closure folds into the nearest named declaration" {
     const a = arena.allocator();
     const decls = try parse(a,
         \\outer :: () {
-        \\    f := () => { inside(); };
+        \\    f := || { inside(); };
         \\    { nested_block(); }
         \\    direct();
         \\}
@@ -385,7 +385,7 @@ test "a loop body is one lexical site" {
     defer arena.deinit();
     const a = arena.allocator();
     const decls = try parse(a,
-        \\spin :: () { for 0..10 (i) { tick(); } }
+        \\spin :: () { for i in 0..10 { tick(); } }
     );
     var idx = try site.build(a, decls, .{ .main_file = "app/main.sx" });
     defer idx.deinit();

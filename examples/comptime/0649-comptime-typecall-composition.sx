@@ -19,7 +19,7 @@ Box :: struct ($R: Type) { value: R; }
 // variant name = tuple label, payload = the box's value type (`*Box(A)` -> `A`).
 ResultOf :: ($T: Type) -> Type {
     vs : [struct_field_count(T)]EnumVariant = ---;
-    inline for 0..struct_field_count(T) (i) {
+    inline for i in 0..struct_field_count(T) {
         vs[i] = EnumVariant{
             name    = struct_field_name(T, i),                          // folded to a const string
             payload = struct_field_type(pointee_type(struct_field_type(T, i)), 0),  // *Box(A) -> Box(A) -> A
@@ -31,10 +31,10 @@ ResultOf :: ($T: Type) -> Type {
 R :: ResultOf(Tuple(a: *Box(i64), b: *Box(bool), c: *Box(f64)));
 
 use :: (r: R) {
-    if r == {
-        case .a: (v) { print("a (i64)  = {}\n", v); }
-        case .b: (v) { print("b (bool) = {}\n", v); }
-        case .c: (v) { print("c (f64)  = {}\n", v); }
+    match r {
+        case .a: |v| { print("a (i64)  = {}\n", v); }
+        case .b: |v| { print("b (bool) = {}\n", v); }
+        case .c: |v| { print("c (f64)  = {}\n", v); }
     }
 }
 

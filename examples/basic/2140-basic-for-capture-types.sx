@@ -1,0 +1,35 @@
+// A for capture may write its type. The annotation is the ELEMENT type — what
+// one position yields — and `*` is orthogonal to it: `*c: View` binds `*View`.
+// A range cursor is `i64`; an `inline for` over a pack checks the annotation
+// against every unrolled element.
+
+#import "modules/std.sx";
+
+View :: struct { w: i64; }
+Pair :: struct($A: Type, $B: Type) { a: A; b: B; }
+
+total :: (..xs: $T) -> i64 {
+    sum := 0;
+    inline for x: i64 in xs { sum += x; }
+    sum
+}
+
+main :: () {
+    children : [3]View = .[View{ w = 1 }, View{ w = 2 }, View{ w = 3 }];
+    for *c: View in children { c.w = c.w * 10; }
+    for c: View, i: i64 in children, 0.. { print("{} {}\n", i, c.w); }
+
+    rows : [2][]u8 = .["ab", "cde"];
+    for r: []u8 in rows { print("{}\n", r.len); }
+
+    // A type argument list carries its own commas — they do not separate
+    // captures.
+    ps : [2]Pair(i64, i64) = .[Pair(i64, i64){ a = 1, b = 2 }, Pair(i64, i64){ a = 3, b = 4 }];
+    for p: Pair(i64, i64) in ps { print("{}\n", p.a + p.b); }
+
+    print("{}\n", total(1, 2, 3));
+
+    // A type-list cursor takes no annotation; the index riding beside it is a
+    // range position like any other.
+    inline for T, i: i64 in .[i32, f64], 0.. { print("{} {}\n", i, size_of(T)); }
+}

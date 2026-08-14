@@ -118,7 +118,7 @@ main :: () -> i32 {
     }
 
     print("emitted {}\n", out.len);
-    for out (v) { print("  {}\n", v.render()); }
+    for v in out { print("  {}\n", v.render()); }
     print("added sum={} n={}\n", total.sum, total.n);
     print("shown {} kept {}\n", s.last, k.last);
     0

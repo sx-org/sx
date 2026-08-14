@@ -15,7 +15,7 @@ Shape :: enum {
 main :: () {
     // Plain enum, qualified construction.
     c := Color.green;
-    if c == {
+    match c {
         case .red:   { print("red\n"); }
         case .green: { print("green\n"); }
         case .blue:  { print("blue\n"); }
@@ -23,13 +23,13 @@ main :: () {
 
     // Tagged union: payloadless variant qualified, payload variant via call.
     d := Shape.dot;
-    if d == {
-        case .circle: (r) { print("circle {}\n", r); }
+    match d {
+        case .circle: |r| { print("circle {}\n", r); }
         case .dot:        { print("dot\n"); }
     }
     s := Shape.circle(2.0);
-    if s == {
-        case .circle: (r) { print("circle {}\n", r); }
+    match s {
+        case .circle: |r| { print("circle {}\n", r); }
         case .dot:        { print("dot\n"); }
     }
 }

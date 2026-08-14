@@ -28,7 +28,7 @@ main :: () {
     H.a.destroy(p);
 
     xs := A.alloc(i64, 3);
-    for 0..3 (i) { xs[i] = i * 2; }
+    for i in 0..3 { xs[i] = i * 2; }
     print("{} {} {}\n", xs[0], xs[1], xs[2]);
     xs.free(A);
 }

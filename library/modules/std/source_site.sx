@@ -51,7 +51,7 @@ SourceSiteHasher :: struct {
     }
 
     write_u64_le :: (self: *SourceSiteHasher, value: u64) {
-        inline for 0..8 (index) {
+        inline for index in 0..8 {
             self.write_byte((value >> (index * 8).(u64)).(u8));
         }
     }

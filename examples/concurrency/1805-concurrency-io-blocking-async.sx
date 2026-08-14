@@ -5,7 +5,7 @@
 // `context.io.now_ms()` reads the clock through the same capability.
 //
 // Worker form: a nullary failable lambda capturing any inputs at the CALL SITE
-// (`() -> (i64, !) => compute(a, b)`) — the colorblind shape that also works when
+// (`|| -> (i64, !) compute(a, b)`) — the colorblind shape that also works when
 // the worker is deferred onto a fiber (a captured variadic pack can't cross the
 // fiber boundary).
 #import "modules/std.sx";
@@ -14,15 +14,15 @@ main :: () {
     // Inputs captured at the call site. The worker is FAILABLE
     // (`Closure() -> ($R, !)`) — the unified worker shape; a body that never
     // raises is a degenerate failable that always succeeds.
-    s := context.io.async(() -> (i64, !) => 40 + 2);
+    s := context.io.async(|| -> (i64, !) 40 + 2);
     print("sum: {}\n", s.await() or { -1 });
 
-    d := context.io.async(() -> (i64, !) => 21 * 2);
+    d := context.io.async(|| -> (i64, !) 21 * 2);
     print("double: {}\n", d.await() or { -1 });
 
     // A worker that closes over a local.
     base := 42;
-    n := context.io.async(() -> (i64, !) => base);
+    n := context.io.async(|| -> (i64, !) base);
     print("nullary: {}\n", n.await() or { -1 });
 
     // The Io capability also carries a clock.

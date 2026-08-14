@@ -17,19 +17,19 @@ error: 'i16' is a reserved type name and cannot be used as an identifier
    |           ^^^
 
 error: 'bool' is a reserved type name and cannot be used as an identifier
-  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:16:13
+  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:16:9
    |
-16 |     for xs (bool) { }                   // for capture name
-   |             ^^^^
+16 |     for bool in xs { }                   // for capture name
+   |         ^^^^
 
 error: 'i32' is a reserved type name and cannot be used as an identifier
-  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:17:21
+  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:17:12
    |
-17 |     for xs, 0.. (v, i32) { }                 // for index name
-   |                     ^^^
+17 |     for v, i32 in xs, 0.. { }            // for index name
+   |            ^^^
 
 error: 'string' is a reserved type name and cannot be used as an identifier
   --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:20:22
    |
-20 |         case .some: (string) { 0 }
+20 |         case .some: |string| { 0 }
    |                      ^^^^^^

@@ -192,7 +192,7 @@ ALIGN_BOTTOM_TRAILING :: Alignment{ h = .trailing, v = .bottom };
 
 // Compute x offset for a child of child_width inside container_width
 align_h :: (alignment: HAlignment, child_width: f32, container_width: f32) -> f32 {
-    if alignment == {
+    match alignment {
         case .leading: 0.0;
         case .center: { (container_width - child_width) * 0.5 }
         case .trailing: container_width - child_width;
@@ -201,7 +201,7 @@ align_h :: (alignment: HAlignment, child_width: f32, container_width: f32) -> f3
 
 // Compute y offset for a child of child_height inside container_height
 align_v :: (alignment: VAlignment, child_height: f32, container_height: f32) -> f32 {
-    if alignment == {
+    match alignment {
         case .top: 0.0;
         case .center: { (container_height - child_height) * 0.5 }
         case .bottom: container_height - child_height;

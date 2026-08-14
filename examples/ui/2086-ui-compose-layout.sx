@@ -13,7 +13,7 @@ ui :: #import "modules/ui/types.sx";
 
 // The frames a scene draws, read back off the tree.
 frames :: (tree: *RenderTree) {
-    for tree.nodes (n) {
+    for n in tree.nodes {
         if n.type != .text { continue; }
         print("  '{}' at {},{} {}x{}\n", n.text,
             n.frame.origin.x.(i64), n.frame.origin.y.(i64),

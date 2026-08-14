@@ -5,7 +5,7 @@
 // it. The last arm's last statement is ended by the match's `}`.
 //
 // Every arm body ends this way: a statement LIST, `case .x: break`, and
-// `case .x: (e) => expr` alike. A written `;` stays legal in each — it is a
+// `case .x: |e| expr` alike. A written `;` stays legal in each — it is a
 // separator. A statement that IS a block, and a declaration whose INITIALIZER
 // is block-form, end at that `}` and take nothing after it.
 #import "modules/std.sx"
@@ -25,7 +25,7 @@ Shape :: enum {
 // `case` / `else` / `}` that follows it.
 trace :: (c: Color) -> i64 {
     n := 0
-    if c == {
+    match c {
         case .Red:
             n = n + 1
             n = n + 10
@@ -44,7 +44,7 @@ trace :: (c: Color) -> i64 {
 // changes nothing.
 trace_semi :: (c: Color) -> i64 {
     n := 0
-    if c == {
+    match c {
         case .Red:
             n = n + 1;
             n = n + 10;
@@ -63,7 +63,7 @@ trace_semi :: (c: Color) -> i64 {
 // the bare scope each end at their own `}`.
 shade :: (c: Color) -> i64 {
     n := 0
-    if c == {
+    match c {
         case .Red:
             n = 1
             if n == 1 {
@@ -85,7 +85,7 @@ shade :: (c: Color) -> i64 {
 // `else:` under it opens the default arm.
 tone :: (c: Color) -> i64 {
     n := 0
-    if c == {
+    match c {
         case .Red:
             if n == 0 {
                 n = 1
@@ -106,7 +106,7 @@ tone :: (c: Color) -> i64 {
 
 // An arm's last expression is the arm's value, with or without the `;`.
 classify :: (n: i64) -> i64 {
-    if n == {
+    match n {
         case 0: 100
         case 1: { x := 5; x * 2 }
         else:   7
@@ -114,7 +114,7 @@ classify :: (n: i64) -> i64 {
 }
 
 classify_semi :: (n: i64) -> i64 {
-    if n == {
+    match n {
         case 0: 100;
         case 1: { x := 5; x * 2 };
         else:   7;
@@ -124,7 +124,7 @@ classify_semi :: (n: i64) -> i64 {
 // `break` ends where a `break` statement anywhere ends.
 first :: (c: Color) -> string {
     out := "none"
-    if c == {
+    match c {
         case .Red:
             out = "red"
         case .Green:
@@ -137,7 +137,7 @@ first :: (c: Color) -> string {
 
 first_semi :: (c: Color) -> string {
     out := "none"
-    if c == {
+    match c {
         case .Red:
             out = "red";
         case .Green:
@@ -158,15 +158,15 @@ main :: () -> i32 {
     print("{} {} {}\n", first(Color.Red), first(Color.Green), first(Color.Blue))
     print("{} {} {}\n", first_semi(Color.Red), first_semi(Color.Green), first_semi(Color.Blue))
 
-    // `(e) => expr` ends at the break before the next arm head.
+    // `|e| expr` ends at the break before the next arm head.
     s := Shape.rect(4)
-    if s == {
-        case .rect: (size) => print("rect {}\n", size)
+    match s {
+        case .rect: |size| print("rect {}\n", size)
         case .dot:
             print("dot\n")
     }
-    if s == {
-        case .rect: (size) => print("rect {}\n", size);
+    match s {
+        case .rect: |size| print("rect {}\n", size);
         case .dot:
             print("dot\n")
     }

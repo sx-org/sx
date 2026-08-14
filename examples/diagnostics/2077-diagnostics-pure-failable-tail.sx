@@ -68,7 +68,7 @@ main :: () -> i32 {
     nonmember() catch { print("caught\n"); }
 
     // 3. Refused: a value-returning closure whose body produces no value.
-    empty := () -> i32 { x := 1; };
+    empty := || -> i32 { x := 1; };
     print("{}\n", empty());
     0
 }

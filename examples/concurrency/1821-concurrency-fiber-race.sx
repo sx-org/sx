@@ -30,19 +30,19 @@ main :: () -> i64 {
 
     // The coordinator runs as a fiber so `race` has a `current` to park.
     push .{ io = xx s } {
-        ps.spawn(() {
+        ps.spawn(|| {
             // Three async workers, DIFFERENT result types and sleep durations.
-            a := context.io.async(() -> (i64,  !) { try context.io.sleep(10); rec(pl, 1, context.io.now_ms()); 111 });
-            b := context.io.async(() -> (bool, !) { try context.io.sleep(20); rec(pl, 2, context.io.now_ms()); true });
-            c := context.io.async(() -> (f64,  !) { try context.io.sleep(30); rec(pl, 3, context.io.now_ms()); 2.5 });
+            a := context.io.async(|| -> (i64,  !) { try context.io.sleep(10); rec(pl, 1, context.io.now_ms()); 111 });
+            b := context.io.async(|| -> (bool, !) { try context.io.sleep(20); rec(pl, 2, context.io.now_ms()); true });
+            c := context.io.async(|| -> (f64,  !) { try context.io.sleep(30); rec(pl, 3, context.io.now_ms()); 2.5 });
 
             // Race them. `a` (sleep 10) wins; `b` and `c` are cancelled — their
             // post-sleep work never runs (true cancellation).
             winner := context.io.race(.{a = a, b = b, c = c});
-            if winner == {
-                case .a: (v) { print("winner: a (i64)  = {}\n", v); }
-                case .b: (v) { print("winner: b (bool) = {}\n", v); }
-                case .c: (v) { print("winner: c (f64)  = {}\n", v); }
+            match winner {
+                case .a: |v| { print("winner: a (i64)  = {}\n", v); }
+                case .b: |v| { print("winner: b (bool) = {}\n", v); }
+                case .c: |v| { print("winner: c (f64)  = {}\n", v); }
             }
 
             // The losers were cancelled; their work was stopped at the suspend.

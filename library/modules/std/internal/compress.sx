@@ -2959,7 +2959,7 @@ Inflater :: struct {
                     self.phase = .stored_length;
                 } else if kind == 1 {
                     if !self.fixed_trees_ready {
-                        fixed_trees_into(*self.lit_tree, *self.dist_tree) catch (e) {
+                        fixed_trees_into(*self.lit_tree, *self.dist_tree) catch |e| {
                             self.remember_failure(consumed, produced); raise e;
                         };
                         self.fixed_trees_ready = true;
@@ -3065,7 +3065,7 @@ Inflater :: struct {
                     self.dynamic_at += 1;
                     continue;
                 }
-                build_huffman_into(*self.code_tree, string{ ptr = *self.code_lengths[0], len = 19 }, false) catch (e) {
+                build_huffman_into(*self.code_tree, string{ ptr = *self.code_lengths[0], len = 19 }, false) catch |e| {
                     self.remember_failure(consumed, produced); raise e;
                 };
                 self.dynamic_at = 0;
@@ -3077,12 +3077,12 @@ Inflater :: struct {
             if self.phase == .dynamic_lengths {
                 total := self.hlit + self.hdist;
                 if self.dynamic_at == total {
-                    self.finish_dynamic_trees() catch (e) {
+                    self.finish_dynamic_trees() catch |e| {
                         self.remember_failure(consumed, produced); raise e;
                     };
                     continue;
                 }
-                symbol, available := self.decode(input, *consumed, *self.code_tree) catch (e) {
+                symbol, available := self.decode(input, *consumed, *self.code_tree) catch |e| {
                     self.remember_failure(consumed, produced); raise e;
                 };
                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
@@ -3301,7 +3301,7 @@ Inflater :: struct {
                         }
 
                         if symbol < 0 {
-                            symbol = self.decode_direct(input, *consumed, *self.lit_tree) catch (e) {
+                            symbol = self.decode_direct(input, *consumed, *self.lit_tree) catch |e| {
                                 self.remember_failure(consumed, produced); raise e;
                             };
                         }
@@ -3326,7 +3326,7 @@ Inflater :: struct {
                             if !has_extra { self.remember_failure(consumed, produced); raise error.UnexpectedEnd; }
                             length += extra;
                         }
-                        dist_symbol := self.decode_direct(input, *consumed, *self.dist_tree) catch (e) {
+                        dist_symbol := self.decode_direct(input, *consumed, *self.dist_tree) catch |e| {
                             self.remember_failure(consumed, produced); raise e;
                         };
                         if dist_symbol > 29 { self.remember_failure(consumed, produced); raise error.InvalidData; }
@@ -3358,7 +3358,7 @@ Inflater :: struct {
                     }
                     if self.phase != .symbol { continue; }
                 }
-                symbol, available := self.decode(input, *consumed, *self.lit_tree) catch (e) {
+                symbol, available := self.decode(input, *consumed, *self.lit_tree) catch |e| {
                     self.remember_failure(consumed, produced); raise e;
                 };
                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
@@ -3391,7 +3391,7 @@ Inflater :: struct {
                 continue;
             }
             if self.phase == .distance_symbol {
-                symbol, available := self.decode(input, *consumed, *self.dist_tree) catch (e) {
+                symbol, available := self.decode(input, *consumed, *self.dist_tree) catch |e| {
                     self.remember_failure(consumed, produced); raise e;
                 };
                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
@@ -3563,7 +3563,7 @@ ZlibInflater :: struct {
                 if consumed < input.len { body_input = input[consumed..]; }
                 body_output : string = .{ ptr = null, len = 0 };
                 if produced < output.len { body_output = output[produced..]; }
-                progress := self.raw.step(body_input, body_output) catch (e) {
+                progress := self.raw.step(body_input, body_output) catch |e| {
                     self.last_consumed = consumed + self.raw.last_consumed;
                     self.last_produced = produced + self.raw.last_produced;
                     raise e;
@@ -3664,13 +3664,13 @@ private TinflDecompressor :: struct {
         failed := false;
         failure : TinflStatus = .failed;
         if (self.flags & TINFL_FLAG_PARSE_ZLIB_HEADER) != 0 {
-            progress = self.framed.step(input, output) catch (e) {
+            progress = self.framed.step(input, output) catch |e| {
                 failed = true;
                 if e == error.ChecksumMismatch { failure = .adler_mismatch; }
                 Progress{ consumed = self.framed.last_consumed, produced = self.framed.last_produced, status = .need_input }
             };
         } else {
-            progress = self.framed.raw.step(input, output) catch (e) {
+            progress = self.framed.raw.step(input, output) catch |e| {
                 failed = true;
                 Progress{ consumed = self.framed.raw.last_consumed, produced = self.framed.raw.last_produced, status = .need_input }
             };
@@ -4177,7 +4177,7 @@ decompress_into_with_consumed :: (data: string, output: string, alloc: Allocator
         if input_at < data.len { input = data[input_at..]; }
         destination : string = .{ ptr = null, len = 0 };
         if output_at < output.len { destination = output[output_at..]; }
-        progress := state.step(input, destination) catch (e) {
+        progress := state.step(input, destination) catch |e| {
             state.deinit();
             raise e;
         };

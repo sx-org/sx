@@ -39,7 +39,7 @@ main :: () {
     // the larger shape: a match-expression value plus an enum-payload string
     // == combined under `and`/`or`.
     v : Json = .str("v");
-    kind := if v == {
+    kind := match v {
         case .str: 1;
         case .int_: 2;
         case .null_: 3;

@@ -37,8 +37,8 @@ main :: () {
     a : Series(f32) = Buffer(f32){ n = 7 };
 
     // The arm names the alias and matches the instantiation's value.
-    if a == {
-        case BufF: (x) { print("arm {}\n", x.n); }
+    match a {
+        case BufF: |x| { print("arm {}\n", x.n); }
     }
     //stdout: arm 7
 

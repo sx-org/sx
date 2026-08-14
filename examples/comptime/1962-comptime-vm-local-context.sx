@@ -13,7 +13,7 @@ sum_list :: () -> i64 {
     xs.append(2);
     xs.append(3);
     t := 0;
-    for xs.items (x) { t = t + x; }
+    for x in xs.items { t = t + x; }
     return t;
 }
 
@@ -29,7 +29,7 @@ arena_sum :: () -> i64 {
         xs : List(i64) = .{};
         xs.append(11);
         xs.append(31);
-        for xs.items (x) { t = t + x; }
+        for x in xs.items { t = t + x; }
     }
     a.deinit();
     return t;

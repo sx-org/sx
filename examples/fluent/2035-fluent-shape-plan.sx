@@ -87,7 +87,7 @@ main :: () -> i32 {
     // A runtime loop is one dynamic region.
     items := .["x", "y", "z"];
     b := panel() {
-        for items (t) {
+        for t in items {
             Label{ text = t };
         }
         Dot{ n = 1 };

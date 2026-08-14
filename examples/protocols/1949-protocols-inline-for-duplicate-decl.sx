@@ -9,7 +9,7 @@ Rect  :: struct { w: i64; h: i64; }
 
 SHAPES :: .[Point, Rect];
 
-inline for SHAPES (T) {
+inline for T in SHAPES {
     Wrapper :: struct { inner: T; }
 }
 

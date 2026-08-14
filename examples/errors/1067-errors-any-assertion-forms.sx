@@ -2,7 +2,7 @@
 // with ONE spelling and two temperaments.
 // CONSUMED via the error channel = graceful: `try av.(T)` propagates
 // (the caller's set absorbs the global `mismatch` tag), `av.(T) or d`
-// falls back, `av.(T) catch (e) { … }` binds the tag. UNCONSUMED with a
+// falls back, `av.(T) catch |e| { … }` binds the tag. UNCONSUMED with a
 // MATCHING tag just yields the value (the panic temperament only fires
 // on mismatch — pinned separately). Assertions nested in call arguments
 // are NOT consumed by an outer try — they stay in the panic form.
@@ -19,14 +19,14 @@ use :: () -> ! {
     print("or miss: {}\n", w);
     x := bv.(bool) or false;
     print("or hit: {}\n", x);
-    y := av.(f64) catch (e) { print("catch: {}\n", e); 0.5 };
+    y := av.(f64) catch |e| { print("catch: {}\n", e); 0.5 };
     print("caught: {}\n", y);
     z := try bv.(string);          // mismatch — propagates to main's catch
     print("unreached: {}\n", z);
 }
 
 main :: () {
-    use() catch (e) { print("outer: {}\n", e); };
+    use() catch |e| { print("outer: {}\n", e); };
     // Unconsumed + matching: plain value, no panic.
     av : any = 7;
     u := av.(i64);

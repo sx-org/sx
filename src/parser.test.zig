@@ -788,7 +788,7 @@ test "parser: a nested tail never reclassifies the statement that encloses it" {
         // An assignment whose RHS branches both end in `;`.
         "f :: () -> i32 {\nz = if c { 1; } else { 2; }\n}",
         // A match arm ending in a `;`-ended expression.
-        "f :: () -> i32 {\nz = if s == { case 0: 1; else: 2; }\n}",
+        "f :: () -> i32 {\nz = match s { case 0: 1; else: 2; }\n}",
         // A `for` arrow body — one statement parsed in place, not a block.
         "f :: () -> i32 {\ndefer for xs => g(x);\n}",
         // A `defer` whose braced body ends in a `;`-ended expression.
@@ -1296,6 +1296,7 @@ test "parser: a named aggregate `{` binds only on its head's line" {
     );
     const call = trailing.data.block.stmts[0].data.call;
     try std.testing.expect(call.args[call.args.len - 1].data == .trailing_block);
+    try std.testing.expect(!call.args[call.args.len - 1].data.trailing_block.has_header);
 }
 
 // ---- Must-continue locks ----
@@ -1512,7 +1513,7 @@ test "parser: `?.` and `catch` continue across a line break" {
     const failable = try parseBody(alloc,
         \\f :: () -> i64 {
         \\    g()
-        \\        catch (e) 0
+        \\        catch |e| 0
         \\}
     );
     try std.testing.expectEqual(@as(usize, 1), failable.data.block.stmts.len);
@@ -1556,12 +1557,12 @@ test "parser: an arm ends at the break before the next `case`" {
 
     const body = try parseBody(alloc,
         \\f :: (v: i64) -> i64 {
-        \\    if v == {
+        \\    match v {
         \\        case 1:
         \\            g()
         \\            10
         \\        case 2: break
-        \\        case 3: (e) => e
+        \\        case 3: |e| e
         \\        else:
         \\            0
         \\    }
@@ -1574,7 +1575,7 @@ test "parser: an arm ends at the break before the next `case`" {
     try std.testing.expect(match.arms[3].pattern == null);
 
     // On ONE line nothing implies the terminator, so the separator is written.
-    _ = try parseErrMsg(alloc, "f :: (v: i64) -> i64 { if v == { case 1: 10 case 2: 20 } }");
+    _ = try parseErrMsg(alloc, "f :: (v: i64) -> i64 { match v { case 1: 10 case 2: 20 } }");
 }
 
 // `else` glued to a `:` heads the default arm; every other `else` chains the
@@ -1589,7 +1590,7 @@ test "parser: a glued `:` separates a default arm from a chaining `else`" {
     const body = try parseBody(alloc,
         \\f :: (v: i64) -> i64 {
         \\    n := 0
-        \\    if v == {
+        \\    match v {
         \\        case 1:
         \\            if n == 0 {
         \\                n = 1
@@ -1610,7 +1611,7 @@ test "parser: a glued `:` separates a default arm from a chaining `else`" {
     const chained_arm = try parseBody(alloc,
         \\f :: (v: i64) -> i64 {
         \\    n := 0
-        \\    if v == {
+        \\    match v {
         \\        case 1:
         \\            if n == 0 {
         \\                n = 1
@@ -2011,4 +2012,26 @@ test "'#using' leaves the declaration's name starts in step with its names" {
     const sd = root.data.root.decls[1].data.struct_decl;
     try std.testing.expectEqual(@as(usize, 1), sd.using_entries.len);
     try expectNameStarts(src, sd.field_names, sd.field_name_starts);
+}
+
+test "parser: a for-capture type may contain a brace group" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const body = try parseBody(alloc,
+        \\f :: () {
+        \\    for x: struct { a: i64 } in items { }
+        \\    for p: Pair(struct { a: i64 }, i64) in ps { }
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 2), body.data.block.stmts.len);
+    const first = body.data.block.stmts[0].data.for_expr;
+    try std.testing.expectEqual(@as(usize, 1), first.captures.len);
+    try std.testing.expect(first.captures[0].type_annotation != null);
+    try std.testing.expect(first.captures[0].type_annotation.?.data == .struct_decl);
+    const second = body.data.block.stmts[1].data.for_expr;
+    try std.testing.expectEqual(@as(usize, 1), second.captures.len);
+    try std.testing.expect(second.captures[0].type_annotation != null);
+    try std.testing.expect(second.captures[0].type_annotation.?.data == .parameterized_type_expr);
 }

@@ -47,9 +47,9 @@ form_opt_View :: ufcs (value: $I/@Init(?View)) {
 form_any :: ufcs (value: $I/@Init(any)) {
     slot: any = ---;
     value.write(*slot);
-    if slot == {
-        case Label: (l) { print("any Label {}\n", l.text); }
-        case Button: (b) { print("any Button {}\n", b.text); }
+    match slot {
+        case Label: |l| { print("any Label {}\n", l.text); }
+        case Button: |b| { print("any Button {}\n", b.text); }
         else: { print("any other\n"); }
     }
 }

@@ -13,7 +13,7 @@ inline if has_impl(View, Widget) {
 HAS_PANEL :: #run has_impl(View, Panel);
 inline if HAS_PANEL { WIDTH :: 3; } else { WIDTH :: 0; }
 
-inline for SHAPES (T) {
+inline for T in SHAPES {
     impl Tally for T { count :: (self: *T) -> i64 { self.n } }
 }
 inline if has_impl(Tally, Panel) { COUNTED :: 1; } else { COUNTED :: 0; }

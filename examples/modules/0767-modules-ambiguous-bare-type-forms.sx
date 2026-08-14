@@ -20,7 +20,7 @@
 #import "0767-modules-ambiguous-bare-type-forms/b.sx";
 
 describe :: ($T: Type) -> i32 {
-    r := if T == {
+    r := match T {
         case Thing: 1;
         else: 0;
     }
