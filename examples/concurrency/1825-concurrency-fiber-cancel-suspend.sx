@@ -36,7 +36,7 @@ main :: () -> i64 {
             });
             ps.yield_now();                  // let the worker run & park in sleep
             w.cancel();                      // cancel while parked → wakes + raises
-            r := w.await() or { -99 };       // await raises Canceled → -99
+            r := w.await() ?? { -99 };       // await raises Canceled → -99
             rec(pl, r);
         });
         ps.run();

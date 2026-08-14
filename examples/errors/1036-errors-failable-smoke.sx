@@ -47,7 +47,7 @@ sm_acquire :: (fail: bool) -> (i32, !) {
 
 // or-chain: try a, fall to try b; propagate if both fail
 sm_first :: (a: i32, b: i32) -> (i32, !) {
-    v := try sm_parse(a) or try sm_parse(b);
+    v := try sm_parse(a) ?? try sm_parse(b);
     return v;
 }
 
@@ -96,8 +96,8 @@ main :: () {
     print("or-default ok: {}\n", sm_or_default(5));
     print("or-default err: {}\n", sm_or_default(-5));
 
-    // or — value terminator (bare LHS; non-failable result)
-    ov := sm_parse(0) or 55;
+    // ?? — value terminator (bare LHS; non-failable result)
+    ov := sm_parse(0) ?? 55;
     print("or-value: {}\n", ov);
 
     // or-chain via helper (first ok wins; propagation absorbed by destructure)

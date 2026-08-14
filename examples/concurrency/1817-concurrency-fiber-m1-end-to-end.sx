@@ -47,9 +47,9 @@ main :: () -> i64 {
             c := context.io.async(|| -> (i64, !) { try context.io.sleep(20); rec(pl, 3, context.io.now_ms()); 3 });
 
             // Await in SPAWN order; results come back correct regardless.
-            va := a.await() or { -1 };
-            vb := b.await() or { -1 };
-            vc := c.await() or { -1 };
+            va := a.await() ?? { -1 };
+            vb := b.await() ?? { -1 };
+            vc := c.await() ?? { -1 };
             sum := va + vb + vc;
 
             rec(pl, 9, sum);   // sentinel row: id=9 carries the sum in `at`

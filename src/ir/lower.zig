@@ -643,7 +643,7 @@ pub const Lowering = struct {
     trace_push_fid: ?FuncId = null, // extern `sx_trace_push` (from library/vendors/sx_trace_runtime/sx_trace.c)
     trace_clear_fid: ?FuncId = null, // extern `sx_trace_clear`
     needs_trace_runtime: bool = false, // set when lowering emits a trace push/clear; signals Compilation to auto-link sx_trace.c
-    chain_fail_target: ?ChainFailTarget = null, // when set, a failable `or` chain routes its TOTAL failure here (an absorbing consumer like `catch`) instead of propagating to the function
+    chain_fail_target: ?ChainFailTarget = null, // when set, a failable `??` chain routes its TOTAL failure here (an absorbing consumer like `catch`) instead of propagating to the function
     current_runtime_class: ?*const ast.RuntimeClassDecl = null, // set while lowering a `#jni_main` (or any sx-defined `#jni_class`) bodied method — `super.method(args)` dispatch resolves the parent class against this fcd's `#extends`
     current_runtime_method: ?ast.RuntimeMethodDecl = null, // the specific method whose body is being lowered; `super.<same_name>(...)` reuses its signature
     current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@va_start` reads its `..` tail from it
@@ -998,7 +998,7 @@ pub const Lowering = struct {
         },
     };
 
-    /// Where a failable `or` chain's TOTAL failure routes when the
+    /// Where a failable `??` chain's TOTAL failure routes when the
     /// chain is the operand of an absorbing consumer (`catch`). `bb` is a block
     /// with a single parameter typed `set` (the error tag); the chain branches
     /// there with its final error instead of propagating to the function.
@@ -3112,14 +3112,14 @@ pub const Lowering = struct {
     pub const finishCatchHandler = lower_error.finishCatchHandler;
     pub const runCatchBody = lower_error.runCatchBody;
     pub const checkEscapeWidening = lower_error.checkEscapeWidening;
-    pub const orIsFailableChain = lower_error.orIsFailableChain;
+    pub const coalesceIsFailable = lower_error.coalesceIsFailable;
     pub const operandIsFailableLike = lower_error.operandIsFailableLike;
     pub const isErasedAssertNode = lower_error.isErasedAssertNode;
     pub const desugarErasedAssert = lower_error.desugarErasedAssert;
-    pub const orChainSuccessType = lower_error.orChainSuccessType;
+    pub const coalesceChainSuccessType = lower_error.coalesceChainSuccessType;
     pub const unwrapTryNode = lower_error.unwrapTryNode;
-    pub const flattenOrChain = lower_error.flattenOrChain;
-    pub const lowerFailableOr = lower_error.lowerFailableOr;
+    pub const flattenCoalesceChain = lower_error.flattenCoalesceChain;
+    pub const lowerFailableCoalesce = lower_error.lowerFailableCoalesce;
     pub const callTargetName = lower_error.callTargetName;
     pub const astIsPureBareInferred = lower_error.astIsPureBareInferred;
     pub const astPureNamedSet = lower_error.astPureNamedSet;

@@ -1,0 +1,19 @@
+// Failable `??` rejection: the value-terminator form
+// (`lhs ?? value`) requires a value-carrying failable LHS — a pure failable
+// (`-> !`) has no success value to fall back to, so `?? value` is rejected
+// (use `catch` to absorb the error). The positive cases live in
+// `examples/errors/1014-errors-failable-default.sx`.
+
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+must :: (n: i32) -> !E {
+    if n < 0 { raise error.Bad; }
+    return;
+}
+
+main :: () -> i32 {
+    x := must(-1) ?? 0;        // error: `-> !` has no success value to fall back to
+    return 0;
+}

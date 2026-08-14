@@ -6684,25 +6684,24 @@ test "optional-chained cast parses: x?.(i64)" {
     try e02ExpectPrints(arena.allocator(), v, "x?.(i64)");
 }
 
-test "try binds tighter than or: try foo() or try boo()" {
+test "try binds tighter than ??: try foo() ?? try boo()" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := try foo() or try boo(); }");
-    try std.testing.expect(v.data == .binary_op);
-    try std.testing.expect(v.data.binary_op.op == .or_op);
-    try std.testing.expect(v.data.binary_op.lhs.data == .try_expr);
-    try std.testing.expect(v.data.binary_op.rhs.data == .try_expr);
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := try foo() ?? try boo(); }");
+    try std.testing.expect(v.data == .null_coalesce);
+    try std.testing.expect(v.data.null_coalesce.lhs.data == .try_expr);
+    try std.testing.expect(v.data.null_coalesce.rhs.data == .try_expr);
 }
 
-test "or is left-associative: a or b or c => (a or b) or c" {
+test "?? is right-associative: a ?? b ?? c => a ?? (b ?? c)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := try a() or try b() or try c(); }");
-    try std.testing.expect(v.data == .binary_op and v.data.binary_op.op == .or_op);
-    // LHS is the nested (a or b); RHS is the final operand.
-    try std.testing.expect(v.data.binary_op.lhs.data == .binary_op);
-    try std.testing.expect(v.data.binary_op.lhs.data.binary_op.op == .or_op);
-    try std.testing.expect(v.data.binary_op.rhs.data == .try_expr);
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := try a() ?? try b() ?? try c(); }");
+    try std.testing.expect(v.data == .null_coalesce);
+    // LHS is the first operand; RHS is the nested (b ?? c).
+    try std.testing.expect(v.data.null_coalesce.lhs.data == .try_expr);
+    try std.testing.expect(v.data.null_coalesce.rhs.data == .null_coalesce);
+    try std.testing.expect(v.data.null_coalesce.rhs.data.null_coalesce.lhs.data == .try_expr);
 }
 
 test "try prefix stacks under xx: xx try foo()" {
@@ -6752,13 +6751,12 @@ test "catch body is a match over the binding" {
     try std.testing.expectEqualStrings("e", v.data.catch_expr.body.data.match_expr.subject.data.identifier.name);
 }
 
-test "catch over a parenthesized or-chain" {
+test "catch over a parenthesized ??-chain" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := (try foo() or try boo()) catch |e| { }; }");
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := (try foo() ?? try boo()) catch |e| { }; }");
     try std.testing.expect(v.data == .catch_expr);
-    try std.testing.expect(v.data.catch_expr.operand.data == .binary_op);
-    try std.testing.expect(v.data.catch_expr.operand.data.binary_op.op == .or_op);
+    try std.testing.expect(v.data.catch_expr.operand.data == .null_coalesce);
 }
 
 test "catch without binding and unbraced body is rejected" {
@@ -6917,30 +6915,29 @@ test "try in statement position (propagate, discard value)" {
     try std.testing.expect(s.data.try_expr.operand.data == .call);
 }
 
-test "try over a parenthesized or-chain: try (foo() or boo())" {
+test "try over a parenthesized ??-chain: try (foo() ?? boo())" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := try (foo() or boo()); }");
-    // Distinct from `try foo() or try boo()`: here `try` wraps the whole chain.
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := try (foo() ?? boo()); }");
+    // Distinct from `try foo() ?? try boo()`: here `try` wraps the whole chain.
     try std.testing.expect(v.data == .try_expr);
-    try std.testing.expect(v.data.try_expr.operand.data == .binary_op);
-    try std.testing.expect(v.data.try_expr.operand.data.binary_op.op == .or_op);
+    try std.testing.expect(v.data.try_expr.operand.data == .null_coalesce);
 }
 
-test "or value-terminator: parse(s) or 0" {
+test "?? value-terminator: parse(s) ?? 0" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := parse(s) or 0; }");
-    try std.testing.expect(v.data == .binary_op and v.data.binary_op.op == .or_op);
-    try std.testing.expect(v.data.binary_op.lhs.data == .call);
-    try std.testing.expect(v.data.binary_op.rhs.data == .int_literal);
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := parse(s) ?? 0; }");
+    try std.testing.expect(v.data == .null_coalesce);
+    try std.testing.expect(v.data.null_coalesce.lhs.data == .call);
+    try std.testing.expect(v.data.null_coalesce.rhs.data == .int_literal);
 }
 
 test "full failable function parses end-to-end (every failable form)" {
     const source =
         \\parse :: (s: string) -> (i32, !ParseErr) {
         \\    onfail |e| { cleanup(s); }
-        \\    v := try inner(s) or 0;
+        \\    v := try inner(s) ?? 0;
         \\    w := other(s) catch |e2| { return 0; };
         \\    if bad(s) { raise error.BadDigit; }
         \\    return v;
@@ -6963,7 +6960,7 @@ test "full failable function parses end-to-end (every failable form)" {
     const stmts = decl.data.fn_decl.body.data.block.stmts;
     try std.testing.expectEqual(@as(usize, 5), stmts.len);
     try std.testing.expect(stmts[0].data == .onfail_stmt);
-    try std.testing.expect(stmts[1].data == .var_decl and stmts[1].data.var_decl.value.?.data == .binary_op);
+    try std.testing.expect(stmts[1].data == .var_decl and stmts[1].data.var_decl.value.?.data == .null_coalesce);
     try std.testing.expect(stmts[2].data == .var_decl and stmts[2].data.var_decl.value.?.data == .catch_expr);
     try std.testing.expect(stmts[3].data == .if_expr);
     try std.testing.expect(stmts[4].data == .return_stmt);

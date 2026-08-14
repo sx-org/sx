@@ -1,0 +1,19 @@
+// `or` / `and` are logical operators over booleans. A failable operand names
+// no bool, so it is a condition-type error: the default that terminates a
+// failable is `??` (examples/errors/1014-errors-failable-default.sx).
+
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+parse :: (n: i32) -> (i32, !E) {
+    if n < 0 { raise error.Bad; }
+    return n;
+}
+
+main :: () -> i32 {
+    x := parse(-1) or 0;               // error: failable LHS is not a bool
+    y := parse(-1) and true;           // error: failable LHS is not a bool
+    print("unreached: {} {}\n", x, y);
+    return 0;
+}

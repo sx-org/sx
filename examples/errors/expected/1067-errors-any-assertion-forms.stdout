@@ -1,9 +1,9 @@
 try: 42
-or miss: 1.250000
-or hit: true
+?? miss: 1.250000
+?? hit: true
 catch: mismatch
 caught: 0.500000
 outer: mismatch
 plain: 7
 struct: 3 4
-struct-or: 9
+struct-??: 9
