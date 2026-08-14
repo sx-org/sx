@@ -2,7 +2,7 @@
 //   1. an arm whose every tag an earlier arm claims is unreachable (the
 //      order hazard: a category before its concrete member, or a duplicate
 //      concrete arm);
-//   2. a category arm cannot bind `(v)` — a kind names many types;
+//   2. a category arm cannot bind `|v|` — a kind names many types;
 //   3. value patterns don't apply to an `any` subject (the payload is
 //      never the scrutinee — matching it is the silently-wrong dispatch).
 // (Protocol values as SUBJECTS type-switch since the RTTI type_id word —

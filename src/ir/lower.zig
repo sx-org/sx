@@ -1316,7 +1316,7 @@ pub const Lowering = struct {
             return self.resolveTypeWithBindings(rt);
         }
         // No explicit annotation — the type is inferred from the body, which
-        // references the function's own parameters (`(x: i32) => x * 2`). Those
+        // references the function's own parameters (`|x: i32| x * 2`). Those
         // params aren't pushed into `self.scope` until body lowering, so bind
         // them into a temporary scope here; otherwise `inferExprType` can't
         // resolve `x`, the inference yields `.unresolved`, and that reaches LLVM

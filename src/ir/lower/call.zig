@@ -5654,7 +5654,7 @@ pub fn resolveCallParamTypes(
     }
     if (c.callee.data != .identifier) return &.{};
     const bare_name = c.callee.data.identifier.name;
-    // Closure / fn-pointer VALUE bound in scope (`g := () => ...; g(args)`):
+    // Closure / fn-pointer VALUE bound in scope (`g := || …; g(args)`):
     // type each arg against the callee value's declared parameter types so a
     // `?T` param wraps the argument — without this the args lower
     // with no target type and reach `call_closure` unconverted (a concrete arg

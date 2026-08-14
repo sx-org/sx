@@ -5097,7 +5097,7 @@ Available categories: `int`, `float`, `bool`, `string`, `void`, `struct`, `enum`
 
 > Note: `case enum:` matches payload-less enums AND tagged enums (enums
 > with payloads); `case union:` matches C-style untagged unions AND
-> tagged enums — the same split as the static `inline if T ==`
+> tagged enums — the same split as the static `inline match T`
 > classifier, arm for arm. Arms claim tags **first-wins with the loud
 > unreachable-arm error**, exactly like the type switch: overlapping
 > categories resolve by order, a specific type — user-named
@@ -5129,12 +5129,12 @@ match av {
 
 - **Concrete arms** name one type — named, builtin, or a composite type
   expression — resolved by the same resolver every type position uses
-  (aliases are transparent). An optional `(v)` capture binds exactly what
+  (aliases are transparent). An optional `|v|` capture binds exactly what
   `v := av.(T)` produces, with the tag pre-proven by the switch: no panic
   path. Works in value position.
 - **Category arms** (`int`, `float`, `struct`, `enum`, `union`, `slice`,
   `array`, `pointer`, `vector`, `optional`, `error_set`, `closure`,
-  `type`) are tag SETS and cannot bind `(v)` — a kind names many types;
+  `type`) are tag SETS and cannot bind `|v|` — a kind names many types;
   read the value through the reflection views, or `xx av` in the
   `int`/`float` arms (per-tag width dispatch). `string`/`bool`/`void`
   are single types and take the concrete path, so their arms CAN bind.
@@ -6043,7 +6043,7 @@ inline match OS {
 }
 ```
 
-- Monomorphization prunes non-taken `inline if T ==` arms per instance —
+- Monomorphization prunes non-taken `inline match T` arms per instance —
   the same discipline rejects an unsupported TYPE in generic code, firing
   only for the instantiations that actually select the arm:
 
@@ -7019,7 +7019,7 @@ range_op        = '..' | '..=' | '..<' | '<..' | '<..=' | '<..<' | '=..' | '=..=
 for_capture     = ['*'] IDENT [':' type]   // the '*' is GLUED to its name (§1 Whitespace is Syntax);
                                            // the type is the ELEMENT type
 binary          = catch_expr (binop catch_expr)*    // binop includes `or` (fallback / chain)
-catch_expr      = unary ('catch' ('|' IDENT '|')? (block | '==' '{' case_arm* else_arm? '}' | unary))?
+catch_expr      = unary ('catch' ('|' IDENT '|')? (block | match_expr | unary))?
 unary           = ('-' | '--' | '*' | '!' | '~' | 'xx' | 'try') unary | postfix
                   // right-recursive, so prefixes stack (`xx try f()`, `!!ok`);
                   // a prefix '-' / '--' / '*' must be GLUED to its operand (§1 Whitespace is Syntax)
@@ -7034,9 +7034,11 @@ if_expr         = 'if' expr 'then' expr ('else' expr)?
                 | 'if' expr block ('else' block)?
                   // the 'else' of an if is any 'else' NOT glued to a ':' —
                   // one token of lookahead separates it from an else_arm head
-match_expr      = 'if' expr '==' '{' case_arm* else_arm? '}'
+match_expr      = 'match' expr '{' case_arm* else_arm? '}'
+                  // the subject is a header expression: the `{` that closes it
+                  // opens the arm list, so a named aggregate there is parenthesized
 case_arm        = 'case' pattern ':' arm_capture? arm_body
-arm_capture     = '(' IDENT ')'         // payload binding — a LONE identifier
+arm_capture     = '|' IDENT '|'         // payload binding — a LONE identifier
 arm_body        = 'break' end
                 | '=>' expr end         // the last arm's expr may drop `end`
                 | stmt*                 // every form ends as a statement does
