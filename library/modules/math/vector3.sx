@@ -1,0 +1,61 @@
+Vec3 :: struct {
+    x, y, z: f32;
+
+    zero :: () -> Vec3 { Vec3{ x = 0.0, y = 0.0, z = 0.0 } }
+
+    add :: (self: Vec3, b: Vec3) -> Vec3 {
+        Vec3{ x = self.x + b.x, y = self.y + b.y, z = self.z + b.z }
+    }
+
+    sub :: (self: Vec3, b: Vec3) -> Vec3 {
+        Vec3{ x = self.x - b.x, y = self.y - b.y, z = self.z - b.z }
+    }
+
+    scale :: (self: Vec3, s: f32) -> Vec3 {
+        Vec3{ x = self.x * s, y = self.y * s, z = self.z * s }
+    }
+
+    dot :: (self: Vec3, b: Vec3) -> f32 {
+        self.x * b.x + self.y * b.y + self.z * b.z
+    }
+
+    cross :: (self: Vec3, b: Vec3) -> Vec3 {
+        Vec3{
+            x = self.y * b.z - self.z * b.y,
+            y = self.z * b.x - self.x * b.z,
+            z = self.x * b.y - self.y * b.x,
+        }
+    }
+
+    length :: (self: Vec3) -> f32 {
+        sqrt(self.x * self.x + self.y * self.y + self.z * self.z)
+    }
+
+    normalize :: (self: Vec3) -> Vec3 {
+        len := self.length();
+        if len > 0.0 {
+            return Vec3{ x = self.x / len, y = self.y / len, z = self.z / len };
+        }
+        Vec3.zero()
+    }
+
+    lerp :: (self: Vec3, b: Vec3, t: f32) -> Vec3 {
+        Vec3{
+            x = self.x + (b.x - self.x) * t,
+            y = self.y + (b.y - self.y) * t,
+            z = self.z + (b.z - self.z) * t,
+        }
+    }
+
+    distance :: (self: Vec3, b: Vec3) -> f32 {
+        self.sub(b).length()
+    }
+
+    negate :: (self: Vec3) -> Vec3 {
+        Vec3{ x = 0.0 - self.x, y = 0.0 - self.y, z = 0.0 - self.z }
+    }
+
+    equals :: (self: Vec3, b: Vec3) -> bool {
+        self.x == b.x and self.y == b.y and self.z == b.z
+    }
+}

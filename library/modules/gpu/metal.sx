@@ -35,6 +35,7 @@ MTLCreateSystemDefaultDevice :: () -> *MTLDevice extern;
 MTL_PIXEL_FORMAT_BGRA8_UNORM :u64: 80;
 MTL_PIXEL_FORMAT_RGBA8_UNORM :u64: 70;
 MTL_PIXEL_FORMAT_R8_UNORM    :u64: 10;
+MTL_PIXEL_FORMAT_DEPTH32_FLOAT :u64: 252;
 
 // MTLLoadAction / MTLStoreAction.
 MTL_LOAD_ACTION_CLEAR  :u64: 2;
@@ -54,6 +55,14 @@ MTL_TEXTURE_USAGE_RENDER_TARGET :u64: 0x4;
 
 // MTLPrimitiveType.
 MTL_PRIMITIVE_TYPE_TRIANGLE :u64: 3;
+
+// MTLIndexType. draw_indexed is u32-indexed.
+MTL_INDEX_TYPE_UINT32 :u64: 1;
+
+// MTLCompareFunction — the subset DepthMode maps onto.
+MTL_COMPARE_FUNCTION_LESS   :u64: 1;
+MTL_COMPARE_FUNCTION_LEQUAL :u64: 3;
+MTL_COMPARE_FUNCTION_ALWAYS :u64: 7;
 
 // MTLBlendFactor — the subset used for normal alpha blending.
 MTL_BLEND_FACTOR_SRC_ALPHA       :u64: 4;
@@ -98,6 +107,18 @@ MTLRenderPipelineState :: #objc_class("MTLRenderPipelineState") extern {
     #extends NSObject;
 }
 
+MTLDepthStencilState :: #objc_class("MTLDepthStencilState") extern {
+    #extends NSObject;
+}
+
+MTLDepthStencilDescriptor :: #objc_class("MTLDepthStencilDescriptor") extern {
+    #extends NSObject;
+    alloc :: () -> *MTLDepthStencilDescriptor;
+    init :: (self: *Self) -> *MTLDepthStencilDescriptor;
+    setDepthCompareFunction :: (self: *Self, fn: u64);
+    setDepthWriteEnabled :: (self: *Self, on: BOOL);
+}
+
 MTLLibrary :: #objc_class("MTLLibrary") extern {
     #extends NSObject;
     // MTLFunction is only handed straight back to the pipeline
@@ -132,6 +153,7 @@ MTLRenderPipelineDescriptor :: #objc_class("MTLRenderPipelineDescriptor") extern
     setVertexFunction :: (self: *Self, f: *void);
     setFragmentFunction :: (self: *Self, f: *void);
     colorAttachments :: (self: *Self) -> *MTLRenderPipelineColorAttachmentArray;
+    setDepthAttachmentPixelFormat :: (self: *Self, fmt: u64);
 }
 
 MTLRenderPassColorAttachment :: #objc_class("MTLRenderPassColorAttachmentDescriptor") extern {
@@ -145,9 +167,17 @@ MTLRenderPassColorAttachmentArray :: #objc_class("MTLRenderPassColorAttachmentDe
     objectAtIndexedSubscript :: (self: *Self, i: u64) -> *MTLRenderPassColorAttachment;
 }
 
+MTLRenderPassDepthAttachment :: #objc_class("MTLRenderPassDepthAttachmentDescriptor") extern {
+    setTexture :: (self: *Self, tex: *MTLTexture);
+    setLoadAction :: (self: *Self, action: u64);
+    setStoreAction :: (self: *Self, action: u64);
+    setClearDepth :: (self: *Self, depth: f64);
+}
+
 MTLRenderPassDescriptor :: #objc_class("MTLRenderPassDescriptor") extern {
     renderPassDescriptor :: () -> *MTLRenderPassDescriptor;
     colorAttachments :: (self: *Self) -> *MTLRenderPassColorAttachmentArray;
+    depthAttachment :: (self: *Self) -> *MTLRenderPassDepthAttachment;
 }
 
 MTLRenderCommandEncoder :: #objc_class("MTLRenderCommandEncoder") extern {
@@ -157,7 +187,9 @@ MTLRenderCommandEncoder :: #objc_class("MTLRenderCommandEncoder") extern {
     setFragmentTexture_atIndex :: (self: *Self, tex: *MTLTexture, index: u64);
     setVertexBytes_length_atIndex :: (self: *Self, bytes: *void, length: u64, index: u64);
     setScissorRect :: (self: *Self, rect: MTLScissorRect);
+    setDepthStencilState :: (self: *Self, state: *MTLDepthStencilState);
     drawPrimitives_vertexStart_vertexCount :: (self: *Self, prim: u64, start: u64, count: u64);
+    drawIndexedPrimitives_indexCount_indexType_indexBuffer_indexBufferOffset :: (self: *Self, prim: u64, count: u64, index_type: u64, buf: *MTLBuffer, offset: u64);
 }
 
 MTLBlitCommandEncoder :: #objc_class("MTLBlitCommandEncoder") extern {
@@ -192,6 +224,7 @@ MTLDevice :: #objc_class("MTLDevice") extern {
     newTextureWithDescriptor :: (self: *Self, desc: *MTLTextureDescriptor) -> *MTLTexture;
     newLibraryWithSource_options_error :: (self: *Self, src: *NSString, options: *void, err: **void) -> *MTLLibrary;
     newRenderPipelineStateWithDescriptor_error :: (self: *Self, desc: *MTLRenderPipelineDescriptor, err: **void) -> *MTLRenderPipelineState;
+    newDepthStencilStateWithDescriptor :: (self: *Self, desc: *MTLDepthStencilDescriptor) -> *MTLDepthStencilState;
 }
 
 // Pixel sub-format storage for textures. Tracks the bytes-per-pixel for the
@@ -223,9 +256,22 @@ MetalGPU :: struct {
     cmd_buffer: *MTLCommandBuffer = null;
     encoder:    *MTLRenderCommandEncoder = null;
 
+    // Every render pass carries a depth attachment and every pipeline
+    // declares MTL_PIXEL_FORMAT_DEPTH32_FLOAT: Metal rejects a draw whose
+    // pipeline depth format disagrees with the pass, so the two cannot be
+    // decided per-frame from the mode.
+    depth_tex: *MTLTexture = null;
+    depth_w:   i32 = 0;
+    depth_h:   i32 = 0;
+    depth_mode: DepthMode = .disabled;
+    depth_states: [3]*MTLDepthStencilState = .[null, null, null];
+
+    bound_index: *MTLBuffer = null;
+
     // Resource tables. Handles are 1-based indices (0 = invalid).
     shaders:  List(*MTLRenderPipelineState) = .{};
     buffers:  List(*MTLBuffer)              = .{};
+    indices:  List(*MTLBuffer)              = .{};
     textures: List(TextureSlot)             = .{};
 
     // Captured at init() so resource creation always grows the cache lists
@@ -241,11 +287,67 @@ MetalGPU :: struct {
         self.buffers.items[handle - 1]
     }
 
+    lookup_index :: (self: *MetalGPU, handle: u32) -> *MTLBuffer {
+        if handle == 0 { return null; }
+        h64 : i64 = xx handle;
+        if h64 > self.indices.len { return null; }
+        self.indices.items[handle - 1]
+    }
+
     lookup_shader :: (self: *MetalGPU, handle: u32) -> *MTLRenderPipelineState {
         if handle == 0 { return null; }
         h64 : i64 = xx handle;
         if h64 > self.shaders.len { return null; }
         self.shaders.items[handle - 1]
+    }
+
+    depth_state :: (self: *MetalGPU, mode: DepthMode) -> *MTLDepthStencilState {
+        idx : i64 = 0;
+        if mode == .less { idx = 1; }
+        else if mode == .lequal { idx = 2; }
+
+        cached := self.depth_states[idx];
+        if cached != null { return cached; }
+        if self.device == null { return null; }
+
+        desc := MTLDepthStencilDescriptor.alloc().init();
+        if mode == .disabled {
+            desc.setDepthCompareFunction(MTL_COMPARE_FUNCTION_ALWAYS);
+            desc.setDepthWriteEnabled(0);
+        } else if mode == .less {
+            desc.setDepthCompareFunction(MTL_COMPARE_FUNCTION_LESS);
+            desc.setDepthWriteEnabled(1);
+        } else {
+            desc.setDepthCompareFunction(MTL_COMPARE_FUNCTION_LEQUAL);
+            desc.setDepthWriteEnabled(1);
+        }
+
+        st := self.device.newDepthStencilStateWithDescriptor(desc);
+        desc.release();
+        self.depth_states[idx] = st;
+        st
+    }
+
+    ensure_depth_texture :: (self: *MetalGPU) -> *MTLTexture {
+        if self.device == null { return null; }
+        if self.depth_tex != null and self.depth_w == self.pixel_w and self.depth_h == self.pixel_h {
+            return self.depth_tex;
+        }
+        if self.depth_tex != null {
+            self.depth_tex.release();
+            self.depth_tex = null;
+        }
+
+        desc := MTLTextureDescriptor.texture2DDescriptorWithPixelFormat_width_height_mipmapped(
+            MTL_PIXEL_FORMAT_DEPTH32_FLOAT, xx self.pixel_w, xx self.pixel_h, 0);
+        if desc == null { return null; }
+        desc.setUsage(MTL_TEXTURE_USAGE_RENDER_TARGET);
+        desc.setStorageMode(MTL_STORAGE_MODE_PRIVATE);
+
+        self.depth_tex = self.device.newTextureWithDescriptor(desc);
+        self.depth_w = self.pixel_w;
+        self.depth_h = self.pixel_h;
+        self.depth_tex
     }
 
     // Offscreen (windowless) init: no CAMetalLayer, no WindowServer. The
@@ -398,11 +500,22 @@ impl GPU for MetalGPU {
             alpha = xx clear.a,
         });
 
+        depth := self.ensure_depth_texture();
+        if depth == null { self.drawable = null; return false; }
+        d := pass.depthAttachment();
+        d.setTexture(depth);
+        d.setLoadAction(MTL_LOAD_ACTION_CLEAR);
+        d.setStoreAction(MTL_STORE_ACTION_STORE);
+        d.setClearDepth(1.0);
+
         self.cmd_buffer = self.queue.commandBuffer();             // autoreleased
         if self.cmd_buffer == null { self.drawable = null; return false; }
 
         self.encoder = self.cmd_buffer.renderCommandEncoderWithDescriptor(pass);  // autoreleased
         if self.encoder == null { self.cmd_buffer = null; self.drawable = null; return false; }
+
+        st := self.depth_state(self.depth_mode);
+        if st != null { self.encoder.setDepthStencilState(st); }
 
         true
     }
@@ -473,6 +586,8 @@ impl GPU for MetalGPU {
         att0.setSourceAlphaBlendFactor(MTL_BLEND_FACTOR_SRC_ALPHA);
         att0.setDestinationAlphaBlendFactor(MTL_BLEND_FACTOR_ONE_MINUS_SRC_A);
 
+        desc.setDepthAttachmentPixelFormat(MTL_PIXEL_FORMAT_DEPTH32_FLOAT);
+
         err2 : *void = null;
         state := self.device.newRenderPipelineStateWithDescriptor_error(desc, *err2);
         if state == null {
@@ -496,6 +611,28 @@ impl GPU for MetalGPU {
 
         self.buffers.append(buf, self.parent_allocator);
         xx self.buffers.len
+    }
+
+    create_index_buffer :: (self: *MetalGPU, size_bytes: i64) -> IndexHandle {
+        if self.device == null { return 0; }
+        if size_bytes <= 0 { return 0; }
+
+        buf := self.device.newBufferWithLength_options(xx size_bytes, 0);
+        if buf == null { return 0; }
+
+        self.indices.append(buf, self.parent_allocator);
+        xx self.indices.len
+    }
+
+    update_index_buffer :: (self: *MetalGPU, buf: IndexHandle, data: *void, size_bytes: i64) {
+        mbuf := self.lookup_index(buf);
+        if mbuf == null { return; }
+        if data == null { return; }
+        if size_bytes <= 0 { return; }
+
+        dst := mbuf.contents();
+        if dst == null { return; }
+        c.memcpy(dst, data, size_bytes);
     }
 
     update_buffer :: (self: *MetalGPU, buf: BufferHandle, data: *void, size_bytes: i64) {
@@ -609,6 +746,17 @@ impl GPU for MetalGPU {
         self.buffers.items[buf - 1] = null;
     }
 
+    destroy_index_buffer :: (self: *MetalGPU, buf: IndexHandle) {
+        if buf == 0 { return; }
+        h64 : i64 = xx buf;
+        if h64 > self.indices.len { return; }
+        obj := self.indices.items[buf - 1];
+        if obj == null { return; }
+        if self.bound_index == obj { self.bound_index = null; }
+        obj.release();
+        self.indices.items[buf - 1] = null;
+    }
+
     destroy_texture :: (self: *MetalGPU, tex: TextureHandle) {
         if tex == 0 { return; }
         h64 : i64 = xx tex;
@@ -636,6 +784,10 @@ impl GPU for MetalGPU {
         mbuf := self.lookup_buffer(buf);
         if mbuf == null { return; }
         self.encoder.setVertexBuffer_offset_atIndex(mbuf, 0, 0);
+    }
+
+    set_index_buffer :: (self: *MetalGPU, buf: IndexHandle) {
+        self.bound_index = self.lookup_index(buf);
     }
 
     set_texture :: (self: *MetalGPU, slot: u32, tex: TextureHandle) {
@@ -667,10 +819,29 @@ impl GPU for MetalGPU {
         self.encoder.setScissorRect(.{ x = 0, y = 0, width = xx self.pixel_w, height = xx self.pixel_h });
     }
 
+    set_depth_mode :: (self: *MetalGPU, mode: DepthMode) {
+        self.depth_mode = mode;
+        if self.encoder == null { return; }
+        st := self.depth_state(mode);
+        if st == null { return; }
+        self.encoder.setDepthStencilState(st);
+    }
+
     draw_triangles :: (self: *MetalGPU, vertex_offset: i32, vertex_count: i32) {
         if self.encoder == null { return; }
         if vertex_count <= 0 { return; }
         self.encoder.drawPrimitives_vertexStart_vertexCount(
             MTL_PRIMITIVE_TYPE_TRIANGLE, xx vertex_offset, xx vertex_count);
+    }
+
+    draw_indexed :: (self: *MetalGPU, index_offset: i32, index_count: i32) {
+        if self.encoder == null { return; }
+        if self.bound_index == null { return; }
+        if index_count <= 0 { return; }
+        if index_offset < 0 { return; }
+        byte_offset : u64 = xx (index_offset * 4);
+        self.encoder.drawIndexedPrimitives_indexCount_indexType_indexBuffer_indexBufferOffset(
+            MTL_PRIMITIVE_TYPE_TRIANGLE, xx index_count, MTL_INDEX_TYPE_UINT32,
+            self.bound_index, byte_offset);
     }
 }
