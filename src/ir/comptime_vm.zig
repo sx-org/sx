@@ -3012,7 +3012,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     //
     // A comptime result carries pointers into the runtime image, and an address
     // in comptime memory means nothing there. Each one resolves per its
-    // referent (specs.md §7.9): a DECLARED global relocates in place — nothing
+    // referent (specs.md §6.9): a DECLARED global relocates in place — nothing
     // is copied, the image keeps the global's declared initializer, and the
     // referent stays as mutable as it was written — while a comptime TEMPORARY
     // materializes as an anonymous image global, one per VM object, so two
@@ -3181,7 +3181,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     }
 
     /// A `?P` over a protocol value is the protocol's own 16 bytes: the handle
-    /// with a null ctx IS the absent sentinel (specs.md §7.6), so there is no
+    /// with a null ctx IS the absent sentinel (specs.md §6.6), so there is no
     /// flag byte to write and the value passes through wrap/unwrap unchanged.
     fn optChildIsProtocol(table: *const types.TypeTable, child: TypeId) bool {
         if (child.isBuiltin()) return false;

@@ -1,4 +1,4 @@
-// The other side of the VM-local Context (specs.md §7.9): comptime code
+// The other side of the VM-local Context (specs.md §6.9): comptime code
 // cannot mutate globals. The VM reads a global into a VM-local copy and never
 // writes back, so a store to one has nowhere to land and the evaluation is
 // refused — the compile-time world stays sealed off from the image's data.

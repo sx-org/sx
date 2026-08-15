@@ -1,4 +1,4 @@
-// A protocol-typed Context default is a BORROW (specs.md §7.6): the initializer
+// A protocol-typed Context default is a BORROW (specs.md §6.6): the initializer
 // must name a global instance to borrow. A struct literal has no address, so the
 // declaration refuses it — `vtable #identity` and `inline #identity` alike.
 #import "modules/std.sx";

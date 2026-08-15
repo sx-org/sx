@@ -1,4 +1,4 @@
-// The soft probe (specs.md §7.9). A protocol target under `?` on a CONCRETE
+// The soft probe (specs.md §6.9). A protocol target under `?` on a CONCRETE
 // receiver asks conformance instead of converting: a non-conformer answers
 // `null` where the plain erasure is a compile error. `has_impl(P, T)` is the
 // same question spelled at type level, and each row below answers the same

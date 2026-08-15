@@ -455,7 +455,7 @@ pub fn refuseValuelessProtocol(self: *Lowering, ty: TypeId, span: ast.Span, what
 }
 
 /// The escape rules for a comptime result that lands in the runtime image
-/// (specs.md §7.9), applied to the type it escapes AS.
+/// (specs.md §6.9), applied to the type it escapes AS.
 ///
 /// An escape is a VALUE USE of every tagged instantiation it carries: which
 /// conformer comes out is decided by the evaluation, so the whole set is

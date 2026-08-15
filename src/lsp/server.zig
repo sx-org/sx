@@ -725,7 +725,7 @@ pub const Server = struct {
             .{ .label = "is_unsigned", .detail = "(T | tp: Type) -> bool" },
             .{ .label = "is_flags", .detail = "(T | tp: Type) -> bool" },
             .{ .label = "is_identity", .detail = "($T: Type) -> bool — is T an #identity protocol (compile-time only)" },
-            .{ .label = "protocol_kind", .detail = "($T: Type) -> ProtocolKind — constraint / vtable / `inline / tagged (compile-time only)" },
+            .{ .label = "protocol_kind", .detail = "($T: Type) -> ProtocolKind — constraint / vtable / `inline (compile-time only)" },
             .{ .label = "is_struct", .detail = "($T: Type) -> bool" },
             .{ .label = "pointee_type", .detail = "($P: Type) -> Type — *X -> X" },
             .{ .label = "struct_field_count", .detail = "(T | tp: Type) -> i64 — struct/tuple fields" },

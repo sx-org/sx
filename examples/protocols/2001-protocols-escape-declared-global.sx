@@ -1,5 +1,5 @@
 // A comptime protocol value that escapes into the image resolves per its
-// referent (specs.md §7.9). A referent that IS a declared global relocates to
+// referent (specs.md §6.9). A referent that IS a declared global relocates to
 // that global's symbol: nothing is copied, the image keeps the global's own
 // initializer — so compile-time mutations of it vanish — and the referent stays
 // exactly as mutable at runtime as it was written.

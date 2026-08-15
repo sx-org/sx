@@ -469,7 +469,7 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
         expr_ty;
     const global_ty: TypeId = if (is_failable) self.failableSuccessType(expr_ty) else func_ret;
     // The result crosses into the runtime image, which is what makes this an
-    // escape site (specs.md §7.9).
+    // escape site (specs.md §6.9).
     self.checkComptimeEscape(global_ty, expr.span);
     const func_id = self.createComptimeFunction(name, .ordinary, expr, func_ret);
 

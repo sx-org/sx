@@ -1,5 +1,5 @@
 // An interior pointer INTO a declared global's compile-time state refuses to
-// escape (specs.md §7.9). The global relocates as a whole — the image holds its
+// escape (specs.md §6.9). The global relocates as a whole — the image holds its
 // declared initializer, not the VM's copy of it — so an address partway into
 // that copy names nothing the image has.
 #import "modules/std.sx";
