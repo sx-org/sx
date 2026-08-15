@@ -5,22 +5,13 @@
 // callee reads it back through a typed pointer.
 #import "modules/std.sx";
 
-Inline :: protocol inline #identity {
-    take :: (self: *Self, ptr: *void);
-}
-
-Vtable :: protocol vtable #identity {
+Take :: protocol vtable #identity {
     take :: (self: *Self, ptr: *void);
 }
 
 Sink :: struct { seen: usize = 0; }
-impl Inline for Sink {
+impl Take for Sink {
     take :: (self: *Sink, ptr: *void) { self.seen = xx ptr; }
-}
-
-Relay :: struct { seen: usize = 0; }
-impl Vtable for Relay {
-    take :: (self: *Relay, ptr: *void) { self.seen = xx ptr; }
 }
 
 plain :: (ptr: *void) -> usize { return xx ptr; }
@@ -29,9 +20,7 @@ main :: () {
     a := context.allocator;
 
     s : Sink = .{};
-    inl : Inline = xx s;
-    r : Relay = .{};
-    vt : Vtable = xx r;
+    t : Take = xx s;
 
     many : [*]u8 = xx a.alloc_bytes(8);
     truth : usize = xx many;
@@ -41,25 +30,20 @@ main :: () {
 
     print("plain {}\n", plain(xx cs) == truth);
 
-    inl.take(xx many);
-    print("inline many {}\n", s.seen == truth);
-    inl.take(one);
-    print("inline single {}\n", s.seen == truth);
-    inl.take(raw);
-    print("inline void {}\n", s.seen == truth);
-    inl.take(xx cs);
-    print("inline cstring {}\n", s.seen == truth);
-
-    vt.take(xx many);
-    print("vtable many {}\n", r.seen == truth);
-    vt.take(xx cs);
-    print("vtable cstring {}\n", r.seen == truth);
+    t.take(xx many);
+    print("many {}\n", s.seen == truth);
+    t.take(one);
+    print("single {}\n", s.seen == truth);
+    t.take(raw);
+    print("void {}\n", s.seen == truth);
+    t.take(xx cs);
+    print("cstring {}\n", s.seen == truth);
 
     // A non-pointer argument still crosses as the address of its slot.
     n : i64 = 42;
-    inl.take(n);
+    t.take(n);
     slot : *i64 = xx s.seen;
-    print("inline scalar {}\n", slot.* == 42);
+    print("scalar {}\n", slot.* == 42);
 
     a.dealloc_bytes(raw);
 }

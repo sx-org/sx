@@ -1,197 +1,109 @@
 error: 'Boxed' cannot form an initializer for 'Round': a protocol value is a handle to its conformer, not the conformer
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:63:16
+  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:60:16
    |
-63 |     form_Round(b);
+60 |     form_Round(b);
    |                ^
 
 help: read the conformer out with a downcast first: '.(Round)' panics on another type, '.(?Round)' answers null
    |
-63 |     form_Round(b);
+60 |     form_Round(b);
    |                ^
 
 error: 'Boxed' cannot form an initializer for 'Round': a protocol value is a handle to its conformer, not the conformer
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:64:5
+  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:61:5
    |
-64 |     b.form_Round();
+61 |     b.form_Round();
    |     ^
 
 help: read the conformer out with a downcast first: '.(Round)' panics on another type, '.(?Round)' answers null
    |
-64 |     b.form_Round();
+61 |     b.form_Round();
    |     ^
 
 error: 'Boxed' cannot form an initializer for 'View': it is not a member of the set
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:65:15
+  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:62:15
    |
-65 |     form_View(b);
+62 |     form_View(b);
    |               ^
 
 help: a type joins by declaring itself into the set: 'Boxed :: @OpenVariant(View) { … }'
    |
-65 |     form_View(b);
+62 |     form_View(b);
    |               ^
 
 error: 'Boxed' cannot form an initializer for 'View': it is not a member of the set
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:66:5
+  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:63:5
    |
-66 |     b.form_View();
+63 |     b.form_View();
    |     ^
 
 help: a type joins by declaring itself into the set: 'Boxed :: @OpenVariant(View) { … }'
    |
-66 |     b.form_View();
+63 |     b.form_View();
    |     ^
 
 error: 'Boxed' cannot form an initializer for '?Round': a protocol value is a handle to its conformer, not the conformer
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:67:20
+  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:64:20
    |
-67 |     form_opt_Round(b);
+64 |     form_opt_Round(b);
    |                    ^
 
 help: read the conformer out with a downcast first: '.(Round)' panics on another type, '.(?Round)' answers null
    |
-67 |     form_opt_Round(b);
+64 |     form_opt_Round(b);
    |                    ^
 
 error: 'Boxed' cannot form an initializer for '?Round': a protocol value is a handle to its conformer, not the conformer
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:68:5
+  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:65:5
    |
-68 |     b.form_opt_Round();
+65 |     b.form_opt_Round();
    |     ^
 
 help: read the conformer out with a downcast first: '.(Round)' panics on another type, '.(?Round)' answers null
    |
-68 |     b.form_opt_Round();
+65 |     b.form_opt_Round();
    |     ^
 
 error: 'Boxed' cannot form an initializer for '?View': it is not a member of the set
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:69:19
+  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:66:19
    |
-69 |     form_opt_View(b);
+66 |     form_opt_View(b);
    |                   ^
 
 help: a type joins by declaring itself into the set: 'Boxed :: @OpenVariant(View) { … }'
    |
-69 |     form_opt_View(b);
+66 |     form_opt_View(b);
    |                   ^
 
 error: 'Boxed' cannot form an initializer for '?View': it is not a member of the set
+  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:67:5
+   |
+67 |     b.form_opt_View();
+   |     ^
+
+help: a type joins by declaring itself into the set: 'Boxed :: @OpenVariant(View) { … }'
+   |
+67 |     b.form_opt_View();
+   |     ^
+
+error: 'Boxed' cannot form an initializer for 'Wide': a protocol value is a handle to its conformer, not the conformer
+  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:69:15
+   |
+69 |     form_Wide(x);
+   |               ^
+
+help: read the conformer out with a downcast first: '.(Wide)' panics on another type, '.(?Wide)' answers null
+   |
+69 |     form_Wide(x);
+   |               ^
+
+error: 'Boxed' cannot form an initializer for 'Wide': a protocol value is a handle to its conformer, not the conformer
   --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:70:5
    |
-70 |     b.form_opt_View();
-   |     ^
-
-help: a type joins by declaring itself into the set: 'Boxed :: @OpenVariant(View) { … }'
-   |
-70 |     b.form_opt_View();
-   |     ^
-
-error: 'Wired' cannot form an initializer for 'Round': a protocol value is a handle to its conformer, not the conformer
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:72:16
-   |
-72 |     form_Round(w);
-   |                ^
-
-help: read the conformer out with a downcast first: '.(Round)' panics on another type, '.(?Round)' answers null
-   |
-72 |     form_Round(w);
-   |                ^
-
-error: 'Wired' cannot form an initializer for 'Round': a protocol value is a handle to its conformer, not the conformer
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:73:5
-   |
-73 |     w.form_Round();
-   |     ^
-
-help: read the conformer out with a downcast first: '.(Round)' panics on another type, '.(?Round)' answers null
-   |
-73 |     w.form_Round();
-   |     ^
-
-error: 'Wired' cannot form an initializer for 'View': it is not a member of the set
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:74:15
-   |
-74 |     form_View(w);
-   |               ^
-
-help: a type joins by declaring itself into the set: 'Wired :: @OpenVariant(View) { … }'
-   |
-74 |     form_View(w);
-   |               ^
-
-error: 'Wired' cannot form an initializer for 'View': it is not a member of the set
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:75:5
-   |
-75 |     w.form_View();
-   |     ^
-
-help: a type joins by declaring itself into the set: 'Wired :: @OpenVariant(View) { … }'
-   |
-75 |     w.form_View();
-   |     ^
-
-error: 'Wired' cannot form an initializer for '?Round': a protocol value is a handle to its conformer, not the conformer
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:76:20
-   |
-76 |     form_opt_Round(w);
-   |                    ^
-
-help: read the conformer out with a downcast first: '.(Round)' panics on another type, '.(?Round)' answers null
-   |
-76 |     form_opt_Round(w);
-   |                    ^
-
-error: 'Wired' cannot form an initializer for '?Round': a protocol value is a handle to its conformer, not the conformer
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:77:5
-   |
-77 |     w.form_opt_Round();
-   |     ^
-
-help: read the conformer out with a downcast first: '.(Round)' panics on another type, '.(?Round)' answers null
-   |
-77 |     w.form_opt_Round();
-   |     ^
-
-error: 'Wired' cannot form an initializer for '?View': it is not a member of the set
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:78:19
-   |
-78 |     form_opt_View(w);
-   |                   ^
-
-help: a type joins by declaring itself into the set: 'Wired :: @OpenVariant(View) { … }'
-   |
-78 |     form_opt_View(w);
-   |                   ^
-
-error: 'Wired' cannot form an initializer for '?View': it is not a member of the set
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:79:5
-   |
-79 |     w.form_opt_View();
-   |     ^
-
-help: a type joins by declaring itself into the set: 'Wired :: @OpenVariant(View) { … }'
-   |
-79 |     w.form_opt_View();
-   |     ^
-
-error: 'Boxed' cannot form an initializer for 'Wide': a protocol value is a handle to its conformer, not the conformer
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:81:15
-   |
-81 |     form_Wide(x);
-   |               ^
-
-help: read the conformer out with a downcast first: '.(Wide)' panics on another type, '.(?Wide)' answers null
-   |
-81 |     form_Wide(x);
-   |               ^
-
-error: 'Boxed' cannot form an initializer for 'Wide': a protocol value is a handle to its conformer, not the conformer
-  --> examples/fluent/2107-fluent-init-from-protocol-refused.sx:82:5
-   |
-82 |     x.form_Wide();
+70 |     x.form_Wide();
    |     ^
 
 help: read the conformer out with a downcast first: '.(Wide)' panics on another type, '.(?Wide)' answers null
    |
-82 |     x.form_Wide();
+70 |     x.form_Wide();
    |     ^

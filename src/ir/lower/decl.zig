@@ -1721,10 +1721,10 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
         // global narrows only when integral.
         .unary_op => blk: {
             const u = v.data.unary_op;
-            // `xx <global>` at an `inline`-protocol-typed global folds to the
-            // inline protocol constant (identity erasure of the global's
-            // stable storage). Non-protocol `xx` falls through
-            // to the ordinary const-expr fold below.
+            // `xx <global>` at a protocol-typed global folds to the protocol
+            // constant (identity erasure of the global's stable storage).
+            // Non-protocol `xx` falls through to the ordinary const-expr fold
+            // below.
             if (u.op == .xx) {
                 if (self.protocolErasureConst(u.operand, var_ty)) |cv| break :blk cv;
             }
@@ -1766,7 +1766,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
         .array_literal => |al| self.constArrayLiteral(al.elements, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
         .struct_literal => |sl| self.constStructLiteral(&sl, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
         .identifier => |id| blk: {
-            // A bare identifier at an `inline`-PROTOCOL-typed global is an
+            // A bare identifier at a PROTOCOL-typed global is an
             // identity erasure of the named global — the declared type states
             // the conversion, no `xx` needed. Same fold as the explicit
             // `xx <global>` in the unary arm.

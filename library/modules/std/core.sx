@@ -56,7 +56,7 @@ is_identity :: ($T: Type) -> bool intrinsic;
 // The kind slot of a protocol declaration. COMPILE-TIME only, for the same
 // reason `is_identity` is: a runtime `Type` value never tags a protocol.
 // A non-protocol argument is a compile error, not a silent answer.
-ProtocolKind :: enum { constraint; vtable; `inline; }
+ProtocolKind :: enum { constraint; vtable; }
 protocol_kind :: ($T: Type) -> ProtocolKind intrinsic;
 is_unsigned :: ($T: Type) -> bool intrinsic;
 variant_value :: ($T: Type, idx: i64) -> i64 intrinsic;
@@ -220,18 +220,14 @@ raw_pointer_to        :: (t: Type) -> Type intrinsic;
 // `#identity`: an allocator IS its state object — protocol values only
 // ever borrow a named allocator (`xx gpa`, `gpa.(Allocator)`); rvalue
 // erasure and `free` of the protocol value refuse at compile time.
-// `inline`: the handle carries its own dispatch words, so an allocation
-// through a protocol value is one indirect call whatever the program's
-// allocator population is. Nothing in the compiler is keyed to the kind,
-// so switching it is this one line.
-Allocator :: protocol inline #identity {
+Allocator :: protocol vtable #identity {
     alloc_bytes :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
 
 // --- Io capability protocol (impls live in std/io.sx) ---
 //
-// `Io` is threaded on `Context` exactly like `Allocator`: an `inline`-kind
+// `Io` is threaded on `Context` exactly like `Allocator`: a `vtable`-kind
 // protocol whose default impl (the stateless `CBlockingIo` in std/io.sx)
 // is installed in the process-wide `__sx_default_context`. Async runtime
 // is sx LIBRARY code — the compiler provides only the primitives (inline
@@ -271,7 +267,7 @@ ParkToken :: struct {
 
 // `#identity` — like `Allocator`: the runtime object is unique state,
 // borrowed into the protocol value, never owned by it.
-Io :: protocol inline #identity {
+Io :: protocol vtable #identity {
     spawn_raw :: (self: *Self, entry: *void, arg: *void, opts: SpawnOpts) -> *void;
     // `park` is IN/OUT: a suspending impl records the parked execution context
     // (e.g. the awaiter's fiber) into `park.handle` before parking, so a later
@@ -369,9 +365,8 @@ StringRaw :: struct {
     len: i64;
 }
 
-// A protocol value's raw view: the `{ctx, type_id}` prefix BOTH protocol
-// layouts share (`vtable` `{ctx, __type_id, vtable}` and `inline`
-// `{ctx, __type_id, fn_ptrs…}`) — byte-identical to an `any`
+// A protocol value's raw view: the `{ctx, type_id}` prefix of a `vtable`
+// value `{ctx, __type_id, vtable}` — byte-identical to an `any`
 // `{data, type_id}`. `ctx` is the concrete data (the heap COPY for an
 // owning `xx <rvalue>` erasure, the borrowed storage otherwise); `type_id`
 // is the erased value's concrete type. Retrieval is a MODELED conversion

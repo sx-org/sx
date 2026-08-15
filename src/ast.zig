@@ -1114,18 +1114,16 @@ pub const ProtocolMethodDecl = struct {
 };
 
 /// The kind slot of a protocol head — `protocol [(params)] kind [attrs]`.
-/// Ordered by cost: `constraint` emits nothing; the rest opt into dynamic
+/// Ordered by cost: `constraint` emits nothing; `vtable` opts into dynamic
 /// dispatch. Absent in source ⇒ `constraint`.
 pub const ProtocolKind = enum {
     constraint,
     vtable,
-    @"inline",
 
     pub fn spelling(self: ProtocolKind) []const u8 {
         return switch (self) {
             .constraint => "constraint",
             .vtable => "vtable",
-            .@"inline" => "inline",
         };
     }
 };

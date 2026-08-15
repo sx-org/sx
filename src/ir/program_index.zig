@@ -137,9 +137,9 @@ pub const ProtocolDeclInfo = struct {
     ownership: ProtocolOwnership = .value_own,
     methods: []const ProtocolMethodInfo,
 
-    /// True for the two kinds whose values are erased ({ctx, type_id, …}).
+    /// True for the kind whose values are erased ({ctx, type_id, vtable}).
     pub fn isErased(self: ProtocolDeclInfo) bool {
-        return self.kind == .vtable or self.kind == .@"inline";
+        return self.kind == .vtable;
     }
 };
 

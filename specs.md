@@ -1023,15 +1023,13 @@ runtime value with dynamic dispatch.
 
 ```
 protocol-decl := Name '::' 'protocol' [ '(' params ')' ] [ kind ] [ attrs ] '{' body '}'
-kind          := 'constraint' | 'vtable' | 'inline'                 (absent ⇒ constraint)
-attrs         := '#identity'*                                       (erased kinds)
+kind          := 'constraint' | 'vtable'                            (absent ⇒ constraint)
+attrs         := '#identity'*                                       (erased kind)
 ```
 
-Two of the kind words — `constraint` and `vtable` — are
-contextual: ordinary identifiers everywhere else, read as kinds
-only in this position. `inline` is the language's existing keyword,
-serving here as a kind. Exactly one kind may appear. Each attribute
-may appear at most once.
+Both kind words are contextual: ordinary identifiers everywhere
+else, read as kinds only in this position. Exactly one kind may
+appear. Each attribute may appear at most once.
 
 #### 1. The kind ladder
 
@@ -1039,13 +1037,12 @@ may appear at most once.
 |---|---|---|---|---|
 | `constraint` (default) | none | monomorphized per use site | per call site | — |
 | `vtable` | erased, 3 words | vtable pointer | open world | value/own or `#identity` |
-| `inline` | erased, 2 + N words | fn-ptrs in the value | open world | value/own or `#identity` |
 
 The ladder is ordered by cost. The default is the kind that emits
 nothing; a program opts *into* paying for dynamic dispatch by
-naming an erased kind. Every kind supports the full
+naming the erased kind. Both kinds support the full
 constraint-position vocabulary (`$T/P` bounds, UFCS fall-through,
-default methods); the kinds differ only in what a protocol-typed
+default methods); they differ only in what a protocol-typed
 **value** is and costs.
 
 ```sx
@@ -1053,11 +1050,11 @@ Into      :: protocol(Target: Type) constraint {
     convert :: (self: *Self) -> Target;
 }
 Show      :: protocol vtable   { fmt :: (self: *Self) -> string; }
-Hasher    :: protocol inline {                 // few methods, call-heavy
+Hasher    :: protocol vtable {
     put :: (self: *Self, bytes: []u8);
     sum :: (self: *Self) -> u64;
 }
-Allocator :: protocol inline #identity {        // unique stateful conformers
+Allocator :: protocol vtable #identity {        // unique stateful conformers
     alloc_bytes   :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
@@ -1294,16 +1291,12 @@ each bound instantiation compiles them against the concrete `Self`.
 - `protocol_kind(P) == .constraint` (§7) lets a generic body reject
   or specialize kinds via `inline if`.
 
-#### 5. Erased protocols — `vtable` and `inline`
-
-The two erased kinds share every rule in this section; they differ
-only in value layout and call sequence.
+#### 5. Erased protocols — `vtable`
 
 ##### 5.1 Value layout
 
 ```
 vtable:   { ctx: *void, __type_id: Type, __vtable: *Vtable }     3 words
-inline:   { ctx: *void, __type_id: Type, fn_1, …, fn_N }         2 + N words
 
             ┌──────────┬────────────┬───────────┐
 Show value  │ ctx *────┼─►concrete  │ vtable *──┼─► global constant,
@@ -1324,10 +1317,7 @@ distinct impls of the same pair in visibility-disjoint modules (§3)
 each get their own. Within any one import scope exactly one impl is
 visible, so every erasure site selects one vtable deterministically.
 They emit on first erasure and are shared by every value erased
-through that impl; they are never allocated or freed at runtime. `inline` trades value size for
-zero indirection: the fn-ptr words are copied into every value.
-Choose `inline` for few-method, call-heavy protocols (hashers,
-writers); `vtable` keeps many-method values small.
+through that impl; they are never allocated or freed at runtime.
 
 ##### 5.2 Ownership classes
 
@@ -1438,7 +1428,7 @@ deep state must not be shared belong behind `#identity` or a view.
 call arguments, struct-literal fields alike:
 
 ```sx
-Rng :: protocol inline #identity { next :: (self: *Self) -> u64; }
+Rng :: protocol vtable #identity { next :: (self: *Self) -> u64; }
 Xorshift :: struct { state: u64; }
 impl Rng for Xorshift {
     next :: (self: *Xorshift) -> u64 {
@@ -1463,7 +1453,7 @@ The two-argument form `.(Rng, alloc)` refuses on an identity target
 
 `free` is one ordinary function, kind-dispatched at compile time via
 an inline type match. Its protocol arm reads the backing through
-`x.(ProtocolRaw)` — one body for both erased layouts:
+`x.(ProtocolRaw)`:
 
 - `free(p)` releases through `context.allocator` **as current at the
   free**. If a different allocator was pushed since the erasure, the
@@ -1479,8 +1469,8 @@ an inline type match. Its protocol arm reads the backing through
 
 A pointer-to-protocol is the borrowed view of erased state, under
 the ordinary pointer doctrine (unchecked; valid while the pointee
-lives). Protocol methods dispatch through `*P` directly, in both
-layouts. Views build implicitly at `*P` positions:
+lives). Protocol methods dispatch through `*P` directly. Views build
+implicitly at `*P` positions:
 
 - a concrete lvalue builds the view in place — a hidden `P` value
   (borrowing ctx = the lvalue's own address) materializes as a
@@ -1513,7 +1503,7 @@ pv : *Sizable = Widget{value = 1 };  // error: rvalue — nothing durable to bor
 Erased dispatch requires a signature expressible with `Self`
 unknown. A method whose signature mentions `Self` anywhere beyond
 the receiver — at any depth, in parameters or return — has **no
-vtable/inline slot**:
+vtable slot**:
 
 | position | `Self` allowed? |
 |---|---|
@@ -1577,8 +1567,7 @@ ProtocolRaw :: struct { ctx: *void; type_id: Type; }
 
 `p.(ProtocolRaw)` (and `xx p` at a `ProtocolRaw` target) builds the
 pair **field-wise per the operand's layout — never a bit
-reinterpret**: a prefix copy on both erased layouts. Reflection
-consumers stay kind-agnostic.
+reinterpret**: a prefix copy of the erased value.
 
 ##### 6.3 The `any` bridge
 
@@ -1825,7 +1814,7 @@ the runtime image resolves per the referent:
 
 #### 7. Reflection
 
-- `protocol_kind(P) -> {constraint, vtable, inline}` —
+- `protocol_kind(P) -> {constraint, vtable}` —
   compile-time only; folds in `inline if`.
 - `is_identity(P)` — true for `#identity` protocols; false for
   every other type. Compile-time only.
@@ -1845,9 +1834,9 @@ impl's declaring module is part of the symbol). Canonical identity
 is structural on the argument tuple after alias resolution — no
 display-name truncation participates in any symbol or cache key.
 
-**Emission points.** Vtables and inline fn-ptr sets emit on first
-erasure of a pair. Marker/empty vtables are emitted like any other
-(a protocol always erases on the erased kinds).
+**Emission points.** Vtables emit on first erasure of a pair.
+Marker/empty vtables are emitted like any other (a protocol always
+erases on the erased kind).
 
 Coherence (§3) is diagnosed before codegen, so every conformance
 diagnostic is an ordinary compile error, never a link error.
@@ -1856,14 +1845,12 @@ diagnostic is an ordinary compile error, never a link error.
 
 ```
 vtable:  load p.vtable → load slot k → indirect call(ctx, args…)
-inline:  load p.fn_k               → indirect call(ctx, args…)
 ```
 
 **`free`.** One function, compile-time kind-dispatched by an inline
-type match: a protocol arm (ctx via `ProtocolRaw`, one body for both
-erased layouts, gated on the ownership class — `#identity` refuses),
-a closure arm, a slice arm; every other argument kind is a compile
-error.
+type match: a protocol arm (ctx via `ProtocolRaw`, gated on the
+ownership class — `#identity` refuses), a closure arm, a slice arm;
+every other argument kind is a compile error.
 
 **The standard `Allocator` is stdlib-owned.** Its declaration —
 kind, attributes, method set — belongs to `std/core.sx`, not to the
@@ -3246,13 +3233,11 @@ float); `0..(5)` stays a range.
 retrieved through this same engine — `c.(ClosureRaw)`, `name.(SliceRaw)`,
 `p.(ProtocolRaw)` (or the `xx` spelling), `av.(AnyRaw)` (postfix ONLY —
 see below). The protocol case is a MODELED conversion built field-wise, not
-a bit reinterpret: `{ctx, __type_id}` is the prefix **both** protocol
-layouts share (`vtable` `{ctx, __type_id, vtable}` and `inline`
-`{ctx, __type_id, fn_ptrs…}`), so the view is correct for either and the
-result is a real value usable in any position (argument, return, store).
-`ProtocolRaw` mirrors exactly that shared prefix — byte-identical to an
-`any` `{data, type_id}`; an `inline`-kind value is wider, which is why the
-build is field-wise and never a reinterpret. A protocol receiver with any
+a bit reinterpret: `{ctx, __type_id}` is the leading prefix of a protocol
+value `{ctx, __type_id, vtable}`, so the result is a real value usable in
+any position (argument, return, store). `ProtocolRaw` mirrors exactly that
+prefix — byte-identical to an `any` `{data, type_id}`; the protocol value
+is wider, which is why the build is field-wise and never a reinterpret. A protocol receiver with any
 other concrete target is the checked DOWNCAST (see the assertion
 temperaments — the receiver reads as its `{ctx, type_id}` prefix view);
 the recovery targets — a pointer type (`p.(*T)`, the typed ctx read; `T`
@@ -4643,8 +4628,8 @@ Arms select in order (a specific type name may precede its category);
 match lowers to nothing (the runtime form's skip-to-merge, statically). A
 `#error(…)` arm fires only when SELECTED — the un-selected case is
 the OS-match discipline. The static classifier mirrors the runtime tag
-switch arm for arm, **plus the `protocol` category** (`vtable` and
-`inline` protocol values alike), which exists ONLY here: a protocol value
+switch arm for arm, **plus the `protocol` category**, which exists
+ONLY here: a protocol value
 carries no runtime type tag, so a runtime `case protocol:` is a pointed
 compile error rather than a silently dead arm. Inline branches lower in
 statement position (like `inline if OS`), so value-producing arms use

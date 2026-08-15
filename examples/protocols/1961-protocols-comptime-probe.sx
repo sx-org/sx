@@ -20,7 +20,7 @@ Loose :: struct { n: i64; }
 // Nothing implements `Nobody` anywhere in the program.
 Nobody :: protocol vtable #identity { ping :: (self: *Self) -> i64; }
 
-Show :: protocol inline #identity { text :: (self: *Self) -> i64; }
+Show :: protocol vtable #identity { text :: (self: *Self) -> i64; }
 impl Show for Loose { text :: (self: *Loose) -> i64 { self.n } }
 
 in_set :: () -> bool {

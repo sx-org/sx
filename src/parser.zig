@@ -1684,21 +1684,17 @@ pub const Parser = struct {
 
         // The kind slot, after the parameter list and before the attributes.
         // `constraint` / `vtable` are CONTEXTUAL here — ordinary identifiers
-        // everywhere else; `inline` is the language keyword doing double
-        // duty. Absent ⇒ constraint. Nothing but a kind word or `{` may
-        // stand here, so an identifier is unambiguously a kind.
+        // everywhere else. Absent ⇒ constraint. Nothing but a kind word or
+        // `{` may stand here, so an identifier is unambiguously a kind.
         var kind: ast.ProtocolKind = .constraint;
-        if (self.tokens.tag(self.tok) == .kw_inline) {
-            kind = .@"inline";
-            self.advance();
-        } else if (self.tokens.tag(self.tok) == .identifier and !self.tokens.flagsOf(self.tok).is_raw) {
+        if (self.tokens.tag(self.tok) == .identifier and !self.tokens.flagsOf(self.tok).is_raw) {
             const word = self.tokens.slice(self.tok);
             if (std.mem.eql(u8, word, "constraint")) {
                 kind = .constraint;
             } else if (std.mem.eql(u8, word, "vtable")) {
                 kind = .vtable;
             } else {
-                return self.fail("expected a protocol kind ('constraint', 'vtable', 'inline') or '{' after the protocol head");
+                return self.fail("expected a protocol kind ('constraint', 'vtable') or '{' after the protocol head");
             }
             self.advance();
         }

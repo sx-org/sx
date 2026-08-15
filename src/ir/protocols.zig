@@ -537,24 +537,11 @@ pub const ProtocolResolver = struct {
             .ty = .type_value,
         }) catch unreachable;
 
-        if (pd.kind == .@"inline") {
-            // One fn-ptr field per DISPATCHABLE protocol method (Era-2:
-            // a method whose signature mentions `Self` past the receiver
-            // has no slot — it is only callable through a generic bound).
-            for (pd.methods) |method| {
-                if (program_index_mod.protocolMethodSelfOccurrence(method) != null) continue;
-                fields.append(self.l.alloc, .{
-                    .name = table.internString(method.name),
-                    .ty = void_ptr_ty, // fn ptrs are opaque pointers
-                }) catch unreachable;
-            }
-        } else {
-            // Vtable pointer
-            fields.append(self.l.alloc, .{
-                .name = table.internString("__vtable"),
-                .ty = void_ptr_ty,
-            }) catch unreachable;
-        }
+        // Vtable pointer
+        fields.append(self.l.alloc, .{
+            .name = table.internString("__vtable"),
+            .ty = void_ptr_ty,
+        }) catch unreachable;
 
         const struct_info: types.TypeInfo = .{ .@"struct" = .{ .name = name_id, .fields = fields.items, .is_protocol = true } };
         const decl_key: *const anyopaque = @ptrCast(pd);
@@ -630,24 +617,21 @@ pub const ProtocolResolver = struct {
         if (!self.l.program_index.protocol_ast_map.contains(identity_name))
             self.l.program_index.protocol_ast_map.put(identity_name, pd) catch {};
 
-        // For vtable protocols, create the vtable struct type — one slot per
-        // DISPATCHABLE method (Era-2), same filter as the `inline`-kind field list.
-        if (pd.kind != .@"inline") {
-            var vtable_fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
-            for (pd.methods) |method| {
-                if (program_index_mod.protocolMethodSelfOccurrence(method) != null) continue;
-                vtable_fields.append(self.l.alloc, .{
-                    .name = table.internString(method.name),
-                    .ty = void_ptr_ty,
-                }) catch unreachable;
-            }
-            const vtable_name = std.fmt.allocPrint(self.l.alloc, "__{s}__Vtable", .{identity_name}) catch @panic("out of memory while naming a protocol vtable");
-            const vtable_name_id = table.internString(vtable_name);
-            const vtable_info: types.TypeInfo = .{ .@"struct" = .{ .name = vtable_name_id, .fields = vtable_fields.items } };
-            const vtable_ty = table.intern(vtable_info);
-            self.l.protocol_vtable_type_map.put(identity_name, vtable_ty) catch {};
-            self.l.protocol_vtable_type_by_type.put(protocol_ty, vtable_ty) catch @panic("out of memory");
+        // The vtable struct type — one slot per DISPATCHABLE method (Era-2).
+        var vtable_fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
+        for (pd.methods) |method| {
+            if (program_index_mod.protocolMethodSelfOccurrence(method) != null) continue;
+            vtable_fields.append(self.l.alloc, .{
+                .name = table.internString(method.name),
+                .ty = void_ptr_ty,
+            }) catch unreachable;
         }
+        const vtable_name = std.fmt.allocPrint(self.l.alloc, "__{s}__Vtable", .{identity_name}) catch @panic("out of memory while naming a protocol vtable");
+        const vtable_name_id = table.internString(vtable_name);
+        const vtable_info: types.TypeInfo = .{ .@"struct" = .{ .name = vtable_name_id, .fields = vtable_fields.items } };
+        const vtable_ty = table.intern(vtable_info);
+        self.l.protocol_vtable_type_map.put(identity_name, vtable_ty) catch {};
+        self.l.protocol_vtable_type_by_type.put(protocol_ty, vtable_ty) catch @panic("out of memory");
     }
 
     /// Import-scoped coherence (§3): one module declaring two impls of a

@@ -2,35 +2,31 @@
 //
 // A probe is the question, not the conversion: at finality every miss is an
 // answer rather than a failure, and the answer is `null`. That holds for a
-// concrete type with no visible impl of a protocol, at either erased kind, and
-// it holds for the FINAL-EMPTY protocol too — one nothing implements anywhere
-// answers `null` rather than erroring, which is what lets
-// conformance-conditional expansion bootstrap.
+// concrete type with no visible impl of a protocol, and it holds for the
+// FINAL-EMPTY protocol too — one nothing implements anywhere answers `null`
+// rather than erroring, which is what lets conformance-conditional expansion
+// bootstrap.
 //
-// The hard spellings of the same three misses are the ordinary diagnostics —
+// The hard spellings of the same two misses are the ordinary diagnostics —
 // see 1980.
 #import "modules/std.sx";
 
 Mark :: protocol vtable { tag :: (self: *Self) -> i64; }
 Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
-Flat :: protocol inline { wide :: (self: *Self) -> i64; }
 
 Widget :: struct { n: i64; }
 Loose :: struct { n: i64; }
 
 impl Show for Widget { fmt :: (self: *Widget) -> i64 { self.n * 2 } }
-impl Flat for Widget { wide :: (self: *Widget) -> i64 { self.n * 3 } }
 
 main :: () {
     w := Widget{ n = 5 };
     l := Loose{ n = 1 };
 
-    // vtable, no visible impl for this concrete type.
+    // No visible impl for this concrete type.
     unshown := l.(?Show);
-    // inline, the same miss off the wider value.
-    unflat := l.(?Flat);
     // Final-EMPTY — nothing implements `Mark` in this program.
     empty := w.(?Mark);
 
-    print("{} {} {} {}\n", unshown != null, unflat != null, empty != null, has_impl(Show, Widget));
+    print("{} {} {}\n", unshown != null, empty != null, has_impl(Show, Widget));
 }

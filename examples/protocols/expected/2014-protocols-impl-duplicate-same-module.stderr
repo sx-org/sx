@@ -1,35 +1,23 @@
 error: duplicate impl 'Show' for source 'Point' in examples/protocols/2014-protocols-impl-duplicate-same-module.sx
-  --> examples/protocols/2014-protocols-impl-duplicate-same-module.sx:14:1
+  --> examples/protocols/2014-protocols-impl-duplicate-same-module.sx:13:1
    |
-14 | impl Show for Point { show :: (self: *Point) -> i64 { self.v } }
+13 | impl Show for Point { show :: (self: *Point) -> i64 { self.v } }
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: also implemented here
-  --> examples/protocols/2014-protocols-impl-duplicate-same-module.sx:15:1
+  --> examples/protocols/2014-protocols-impl-duplicate-same-module.sx:14:1
    |
-15 | impl Show for Point { show :: (self: *Point) -> i64 { self.v * 2 } }
+14 | impl Show for Point { show :: (self: *Point) -> i64 { self.v * 2 } }
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: duplicate impl 'Draw' for source 'Point' in examples/protocols/2014-protocols-impl-duplicate-same-module.sx
+  --> examples/protocols/2014-protocols-impl-duplicate-same-module.sx:16:1
+   |
+16 | impl Draw for Point { draw :: (self: *Point) -> i64 { self.v } }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: also implemented here
   --> examples/protocols/2014-protocols-impl-duplicate-same-module.sx:17:1
    |
-17 | impl Draw for Point { draw :: (self: *Point) -> i64 { self.v } }
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-note: also implemented here
-  --> examples/protocols/2014-protocols-impl-duplicate-same-module.sx:18:1
-   |
-18 | impl Draw for Point { draw :: (self: *Point) -> i64 { self.v * 3 } }
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-error: duplicate impl 'Size' for source 'Point' in examples/protocols/2014-protocols-impl-duplicate-same-module.sx
-  --> examples/protocols/2014-protocols-impl-duplicate-same-module.sx:20:1
-   |
-20 | impl Size for Point { size :: (self: *Point) -> i64 { self.v } }
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-note: also implemented here
-  --> examples/protocols/2014-protocols-impl-duplicate-same-module.sx:21:1
-   |
-21 | impl Size for Point { size :: (self: *Point) -> i64 { self.v * 4 } }
+17 | impl Draw for Point { draw :: (self: *Point) -> i64 { self.v * 3 } }
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

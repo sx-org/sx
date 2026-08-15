@@ -119,11 +119,11 @@ fn implFactWaits(self: *Lowering, proto_ty: ?TypeId, proto_name: []const u8, ty:
 }
 
 /// Does `proto_ty` carry a VALUE that stamps the impl it was erased with —
-/// the two kinds whose conversion facts depend on multiplicity?
+/// the kind whose conversion facts depend on multiplicity?
 fn erasedKind(self: *Lowering, proto_ty: ?TypeId) bool {
     const pty = proto_ty orelse return false;
     const kind = protocolKindOf(self, pty) orelse return false;
-    return kind == .vtable or kind == .@"inline";
+    return kind == .vtable;
 }
 
 /// The protocol a `has_impl`-shaped spelling names, whatever its kind.
@@ -133,10 +133,6 @@ fn protocolTypeOf(self: *Lowering, proto_node: *const Node) ?TypeId {
     return p.ty;
 }
 
-/// Register a protocol declaration as a struct type in the IR type table.
-/// Inline protocols: { ctx: *void, method1: *void, method2: *void, ... }
-/// Non-inline protocols: { ctx: *void, __vtable: *void }
-/// Also stores protocol info for dispatch and vtable struct type for vtable protocols.
 /// Register a protocol declaration. Thin delegation to the canonical owner
 /// (`ProtocolResolver`, `protocols.zig`); kept on `Lowering` as a `pub`
 /// entry point because the scan pass + several unit tests reach it here.
@@ -169,8 +165,7 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
         if (info == .@"struct" and info.@"struct".is_protocol) return existing;
     }
 
-    // Value struct: {ctx, __type_id, __vtable} (or ctx, __type_id + fn-ptrs
-    // for an inline protocol) — the type_id word mirrors
+    // Value struct: {ctx, __type_id, __vtable} — the type_id word mirrors
     // registerProtocolDecl's layout.
     var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
     fields.append(self.alloc, .{ .name = table.internString("ctx"), .ty = void_ptr_ty }) catch unreachable;
@@ -178,15 +173,7 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
         .name = table.internString("__type_id"),
         .ty = .type_value,
     }) catch unreachable;
-    if (pd.kind == .@"inline") {
-        // Dispatchable methods only (Era-2) — mirrors registerProtocolDecl.
-        for (pd.methods) |m| {
-            if (program_index_mod.protocolMethodSelfOccurrence(m) != null) continue;
-            fields.append(self.alloc, .{ .name = table.internString(m.name), .ty = void_ptr_ty }) catch unreachable;
-        }
-    } else {
-        fields.append(self.alloc, .{ .name = table.internString("__vtable"), .ty = void_ptr_ty }) catch unreachable;
-    }
+    fields.append(self.alloc, .{ .name = table.internString("__vtable"), .ty = void_ptr_ty }) catch unreachable;
     const struct_info: types.TypeInfo = .{ .@"struct" = .{ .name = name_id, .fields = fields.items, .is_protocol = true } };
     const id = if (table.findByName(name_id)) |existing| existing else table.intern(struct_info);
     table.updatePreservingKey(id, struct_info);
@@ -259,17 +246,15 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
     // method-arg resolution on this instance can recover it.
     self.struct_instance_bindings.put(owned, tb) catch {};
 
-    if (pd.kind != .@"inline") {
-        var vtable_fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
-        for (pd.methods) |m| {
-            if (program_index_mod.protocolMethodSelfOccurrence(m) != null) continue;
-            vtable_fields.append(self.alloc, .{ .name = table.internString(m.name), .ty = void_ptr_ty }) catch unreachable;
-        }
-        const vtable_name = std.fmt.allocPrint(self.alloc, "__{s}__Vtable", .{mangled}) catch @panic("out of memory");
-        const vtable_ty = table.intern(.{ .@"struct" = .{ .name = table.internString(vtable_name), .fields = vtable_fields.items } });
-        self.protocol_vtable_type_map.put(owned, vtable_ty) catch {};
-        self.protocol_vtable_type_by_type.put(id, vtable_ty) catch @panic("out of memory");
+    var vtable_fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
+    for (pd.methods) |m| {
+        if (program_index_mod.protocolMethodSelfOccurrence(m) != null) continue;
+        vtable_fields.append(self.alloc, .{ .name = table.internString(m.name), .ty = void_ptr_ty }) catch unreachable;
     }
+    const vtable_name = std.fmt.allocPrint(self.alloc, "__{s}__Vtable", .{mangled}) catch @panic("out of memory");
+    const vtable_ty = table.intern(.{ .@"struct" = .{ .name = table.internString(vtable_name), .fields = vtable_fields.items } });
+    self.protocol_vtable_type_map.put(owned, vtable_ty) catch {};
+    self.protocol_vtable_type_by_type.put(id, vtable_ty) catch @panic("out of memory");
     return id;
 }
 
@@ -501,8 +486,8 @@ pub fn getOrCreateThunks(self: *Lowering, proto_ty: TypeId, concrete_type_name: 
 
     // EMISSION: materialize one thunk per DISPATCHABLE method (stays in
     // Lowering). Excluded methods (Era-2: `Self` past the receiver) have no
-    // slot anywhere — the thunk list must align with the filtered
-    // vtable / `inline` field lists built at protocol registration.
+    // slot anywhere — the thunk list must align with the filtered vtable
+    // field list built at protocol registration.
     for (methods) |method| {
         if (!method.dispatchable) continue;
         const thunk_id = self.createProtocolThunk(proto_ty, pd.name, concrete_type_name, concrete_ty, method);
@@ -545,12 +530,12 @@ pub fn getOrCreateVtableGlobal(
     return gid;
 }
 
-/// Fold `<global>` / `xx <global>` at a non-constraint protocol-typed static
-/// initializer into that kind's constant: `{ ctx, __type_id, thunk fn-refs… }`
-/// for `inline`, `{ ctx, __type_id, &vtable }` for `vtable`. Only an IDENTIFIER
-/// naming a registered top-level global qualifies: the erasure BORROWS the
-/// global's stable storage (identity semantics), so ctx is the global's address
-/// — ALWAYS, stateless impls included: there is no null-receiver shortcut,
+/// Fold `<global>` / `xx <global>` at a `vtable` protocol-typed static
+/// initializer into the constant `{ ctx, __type_id, &vtable }`. Only an
+/// IDENTIFIER naming a registered top-level global qualifies: the erasure
+/// BORROWS the global's stable storage (identity semantics), so ctx is the
+/// global's address — ALWAYS, stateless impls included: there is no
+/// null-receiver shortcut,
 /// because a null ctx is the `?Protocol` "absent" sentinel and must never
 /// appear in a live protocol value. Null result = not this shape / not
 /// resolvable; the caller falls through to its non-const diagnostic.
@@ -572,18 +557,11 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
     const thunks = self.getOrCreateThunks(proto_ty, concrete_name, g.ty);
     const want = dispatchableCount(pd.methods);
     if (want == 0 or thunks.len != want) return null;
-    if (pd.kind == .vtable) {
-        const vt = getOrCreateVtableGlobal(self, proto_ty, pd.name, concrete_name, g.ty, thunks) orelse return null;
-        const fields = self.alloc.alloc(inst_mod.ConstantValue, 3) catch return null;
-        fields[0] = .{ .global_ref = g.id };
-        fields[1] = .{ .int = @intCast(g.ty.index()) };
-        fields[2] = .{ .global_ref = vt };
-        return .{ .aggregate = fields };
-    }
-    const fields = self.alloc.alloc(inst_mod.ConstantValue, want + 2) catch return null;
+    const vt = getOrCreateVtableGlobal(self, proto_ty, pd.name, concrete_name, g.ty, thunks) orelse return null;
+    const fields = self.alloc.alloc(inst_mod.ConstantValue, 3) catch return null;
     fields[0] = .{ .global_ref = g.id };
     fields[1] = .{ .int = @intCast(g.ty.index()) };
-    for (thunks, 0..) |fid, i| fields[i + 2] = .{ .func_ref = fid };
+    fields[2] = .{ .global_ref = vt };
     return .{ .aggregate = fields };
 }
 
@@ -1351,7 +1329,7 @@ pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: T
 }
 
 /// Number of Era-2 dispatchable methods — the slot count of the protocol's
-/// vtable / `inline` fn-ptr fields and of its thunk list.
+/// vtable fn-ptr fields and of its thunk list.
 pub fn dispatchableCount(methods: []const ProtocolMethodInfo) usize {
     var n: usize = 0;
     for (methods) |m| {
@@ -1360,9 +1338,8 @@ pub fn dispatchableCount(methods: []const ProtocolMethodInfo) usize {
     return n;
 }
 
-/// Build a protocol value over `concrete_ptr` as its ctx.
-/// For inline protocols: struct_init { ctx, thunk1, thunk2, ... }
-/// For vtable protocols: struct_init { ctx, vtable_ptr } where vtable is stack-allocated
+/// Build a protocol value over `concrete_ptr` as its ctx:
+/// struct_init { ctx, __type_id, &vtable }.
 /// The pointer is used directly — the caller owns the pointee's lifetime;
 /// any owning heap copy is made BEFORE this call (`lowerOwningErasure`).
 pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []const u8, concrete_type_name: []const u8, proto_ty: TypeId, concrete_ty: TypeId) Ref {
@@ -1383,7 +1360,7 @@ pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []cons
     const thunks = self.getOrCreateThunks(proto_ty, concrete_type_name, concrete_ty);
     if (thunks.len != dispatchableCount(pd.methods)) return concrete_ptr;
 
-    return buildErasedValue(self, concrete_ptr, proto_name, concrete_type_name, proto_ty, concrete_ty, thunks, pd);
+    return buildErasedValue(self, concrete_ptr, proto_name, concrete_type_name, proto_ty, concrete_ty, thunks);
 }
 
 /// The soft probe `x.(?P)` on a CONCRETE receiver (§7.9): under `?`, a
@@ -1457,50 +1434,34 @@ pub fn refuseNonConformer(self: *Lowering, proto_ty: TypeId, concrete_type_name:
     return false;
 }
 
-fn buildErasedValue(self: *Lowering, ctx_ptr: Ref, proto_name: []const u8, concrete_type_name: []const u8, proto_ty: TypeId, concrete_ty: TypeId, thunks: []const FuncId, pd: ProtocolDeclInfo) Ref {
-    const void_ptr_ty = self.module.types.ptrTo(.void);
-
-    // RTTI: the concrete type's id, stamped at erasure (slot 1 of both
-    // layouts). This is what the downcast / protocol type switch read.
+fn buildErasedValue(self: *Lowering, ctx_ptr: Ref, proto_name: []const u8, concrete_type_name: []const u8, proto_ty: TypeId, concrete_ty: TypeId, thunks: []const FuncId) Ref {
+    // RTTI: the concrete type's id, stamped at erasure (slot 1). This is what
+    // the downcast / protocol type switch read.
     const type_id_ref = self.builder.constType(concrete_ty);
 
-    if (pd.kind == .@"inline") {
-        // Inline: { ctx, __type_id, fn1, fn2, ... }
-        var field_vals = std.ArrayList(Ref).empty;
-        defer field_vals.deinit(self.alloc);
-        field_vals.append(self.alloc, ctx_ptr) catch unreachable;
-        field_vals.append(self.alloc, type_id_ref) catch unreachable;
-        for (thunks) |thunk_id| {
-            const fn_ref = self.builder.emit(.{ .func_ref = thunk_id }, void_ptr_ty);
-            field_vals.append(self.alloc, fn_ref) catch unreachable;
-        }
-        const owned = self.alloc.dupe(Ref, field_vals.items) catch unreachable;
-        return self.builder.emit(.{ .struct_init = .{ .fields = owned } }, proto_ty);
-    } else {
-        const vtable_ty = self.protocol_vtable_type_by_type.get(proto_ty) orelse return ctx_ptr;
-        const vtable_global_id = getOrCreateVtableGlobal(self, proto_ty, proto_name, concrete_type_name, concrete_ty, thunks) orelse return ctx_ptr;
+    const vtable_ty = self.protocol_vtable_type_by_type.get(proto_ty) orelse return ctx_ptr;
+    const vtable_global_id = getOrCreateVtableGlobal(self, proto_ty, proto_name, concrete_type_name, concrete_ty, thunks) orelse return ctx_ptr;
 
-        // Reference the vtable global's address
-        const vtable_ptr_ty = self.module.types.ptrTo(vtable_ty);
-        const vtable_addr = self.builder.emit(.{ .global_addr = vtable_global_id }, vtable_ptr_ty);
+    // Reference the vtable global's address
+    const vtable_ptr_ty = self.module.types.ptrTo(vtable_ty);
+    const vtable_addr = self.builder.emit(.{ .global_addr = vtable_global_id }, vtable_ptr_ty);
 
-        // Build protocol struct: { ctx, __type_id, &vtable }
-        var proto_fields = std.ArrayList(Ref).empty;
-        defer proto_fields.deinit(self.alloc);
-        proto_fields.append(self.alloc, ctx_ptr) catch unreachable;
-        proto_fields.append(self.alloc, type_id_ref) catch unreachable;
-        proto_fields.append(self.alloc, vtable_addr) catch unreachable;
-        const proto_owned = self.alloc.dupe(Ref, proto_fields.items) catch unreachable;
-        return self.builder.emit(.{ .struct_init = .{ .fields = proto_owned } }, proto_ty);
-    }
+    // Build protocol struct: { ctx, __type_id, &vtable }
+    var proto_fields = std.ArrayList(Ref).empty;
+    defer proto_fields.deinit(self.alloc);
+    proto_fields.append(self.alloc, ctx_ptr) catch unreachable;
+    proto_fields.append(self.alloc, type_id_ref) catch unreachable;
+    proto_fields.append(self.alloc, vtable_addr) catch unreachable;
+    const proto_owned = self.alloc.dupe(Ref, proto_fields.items) catch unreachable;
+    return self.builder.emit(.{ .struct_init = .{ .fields = proto_owned } }, proto_ty);
 }
 
 /// Emit protocol method dispatch for a protocol-typed receiver.
 /// Returns the call result ref.
 pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: ProtocolDeclInfo, method_name: []const u8, args: []const Ref, span: ast.Span) Ref {
-    // Find the method and its slot among the DISPATCHABLE methods only —
-    // vtable / `inline` layouts carry no slot for an excluded method (Era-2),
-    // so the slot index counts dispatchable predecessors, not decl order.
+    // Find the method and its slot among the DISPATCHABLE methods only — the
+    // vtable carries no slot for an excluded method (Era-2), so the slot index
+    // counts dispatchable predecessors, not decl order.
     var method_info: ?ProtocolMethodInfo = null;
     var midx: usize = 0;
     for (proto_info.methods) |m| {
@@ -1544,17 +1505,11 @@ pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: Protocol
     const void_ptr = self.module.types.ptrTo(.void);
     const ctx = self.builder.structGet(receiver, 0, void_ptr);
 
-    // Extract fn_ptr
-    const fn_ptr = if (proto_info.kind == .@"inline") blk: {
-        // Inline: fn_ptr at field 2+method_idx ({ctx, __type_id, fns…})
-        break :blk self.builder.structGet(receiver, @intCast(2 + midx), void_ptr);
-    } else blk: {
-        // Vtable: load vtable struct, extract fn_ptr at method_idx
-        const vtable_ptr = self.builder.structGet(receiver, 2, void_ptr);
-        const vtable_ty = self.protocol_vtable_type_map.get(proto_info.name) orelse return self.emitError("vtable", null);
-        const vtable = self.builder.emit(.{ .deref = .{ .operand = vtable_ptr } }, vtable_ty);
-        break :blk self.builder.structGet(vtable, @intCast(midx), void_ptr);
-    };
+    // Extract fn_ptr: load the vtable struct, take the slot at method_idx
+    const vtable_ptr = self.builder.structGet(receiver, 2, void_ptr);
+    const vtable_ty = self.protocol_vtable_type_map.get(proto_info.name) orelse return self.emitError("vtable", null);
+    const vtable = self.builder.emit(.{ .deref = .{ .operand = vtable_ptr } }, vtable_ty);
+    const fn_ptr = self.builder.structGet(vtable, @intCast(midx), void_ptr);
 
     // Build call args: [__sx_ctx]? + receiver_ctx + user args.
     // Protocol thunks are sx-side, so they carry the implicit __sx_ctx
