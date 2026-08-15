@@ -31,6 +31,27 @@ MeshVertex :: struct {
     uv:       [2]f32;
 }
 
+// Vertex layout of the skinned 3D draw path, 64 bytes. Byte offsets
+// 0 / 12 / 24 / 32 / 48 are the attribute slots backends bind. Joint
+// indices are f32 so every attribute binds through the float path.
+SkinnedVertex :: struct {
+    position: [3]f32;
+    normal:   [3]f32;
+    uv:       [2]f32;
+    joints:   [4]f32;
+    weights:  [4]f32;
+}
+
+// Row-major affine bone transform, 48 bytes. The last row is implicit
+// (0, 0, 0, 1) and is not stored.
+BoneMatrix :: struct {
+    rows: [3][4]f32;
+}
+
+// Bones a single skinned draw may bind: 80 × 3 rows = 240 vectors,
+// 3840 bytes.
+GPU_MAX_BONES :: 80;
+
 // Depth test applied by `draw_indexed`. `disabled` also stops depth
 // writes, so a 2D pass leaves the depth buffer untouched.
 DepthMode :: enum {
