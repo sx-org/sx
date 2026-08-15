@@ -78,8 +78,8 @@ any kind, matching the concrete call.
 
 **`Self`.** A contextual keyword naming the conforming type. It may
 appear at any depth in later parameters and returns (`Self`, `*Self`,
-`?Self`, `[]Self`, `Buffer(Self)`); what that does to dispatch depends
-is §5.6.
+`?Self`, `[]Self`, `Buffer(Self)`); what that does to dispatch is
+§5.6.
 
 **Keyword member names.** Every reserved word except `inline` is a
 legal *bare* method name — including the keyword-classified type
