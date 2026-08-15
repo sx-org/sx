@@ -1,8 +1,8 @@
-// The protocol KIND slot: `protocol [(params)] constraint|vtable|inline|tagged
+// The protocol KIND slot: `protocol [(params)] constraint|vtable|inline
 // [attrs]`. An empty slot means `constraint` — the kind that emits nothing.
-// `constraint` / `vtable` / `tagged` are CONTEXTUAL words: kinds only in that
-// slot, ordinary identifiers everywhere else; `inline` is the language keyword
-// serving as a kind. `protocol_kind(P)` reports all four and folds in
+// `constraint` / `vtable` are CONTEXTUAL words: kinds only in that slot,
+// ordinary identifiers everywhere else; `inline` is the language keyword
+// serving as a kind. `protocol_kind(P)` reports all three and folds in
 // `inline if`; `is_identity(P)` still reports the ownership class.
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
@@ -20,12 +20,9 @@ Show :: protocol vtable { fmt :: (self: *Self) -> string; }
 Hasher :: protocol inline { sum :: (self: *Self) -> u64; }
 Rng :: protocol inline #identity { next :: (self: *Self) -> u64; }
 Slot :: protocol(T: Type) vtable #identity { get :: (self: *Self) -> T; }
-View :: protocol tagged { area :: (self: *Self) -> i64; }
-Series :: protocol(T: Type) tagged { at :: (self: *Self, i: i64) -> T; }
 
 Point :: struct { x: i64; }
 impl Show for Point { fmt :: (self: *Point) -> string { "pt" } }
-impl View for Point { area :: (self: *Point) -> i64 { self.x } }
 impl Slot(i64) for Point { get :: (self: *Point) -> i64 { self.x } }
 
 Xorshift :: struct { state: u64; }
@@ -34,14 +31,13 @@ impl Rng for Xorshift { next :: (self: *Xorshift) -> u64 { self.state + 1 } }
 kind_name :: ($P: Type) -> string {
     inline if protocol_kind(P) == .constraint { return "constraint"; }
     inline if protocol_kind(P) == .vtable { return "vtable"; }
-    inline if protocol_kind(P) == .`inline { return "inline"; }
-    "tagged"
+    "inline"
 }
 
 smaller :: (a: $T/Ord, b: T) -> T { if a.less(b) { a } else { b } }
 
 main :: () {
-    print("{} {} {} {}\n", kind_name(Ord), kind_name(Show), kind_name(Hasher), kind_name(View));
+    print("{} {} {}\n", kind_name(Ord), kind_name(Show), kind_name(Hasher));
     print("{} {} {}\n", is_identity(Ord), is_identity(Show), is_identity(Rng));
 
     // A constraint protocol still bounds generics — that is its whole job.
@@ -65,6 +61,5 @@ main :: () {
     // The kind words stay ordinary identifiers outside the slot.
     constraint := 1;
     vtable := 2;
-    tagged := 3;
-    print("{}\n", constraint + vtable + tagged);
+    print("{}\n", constraint + vtable);
 }

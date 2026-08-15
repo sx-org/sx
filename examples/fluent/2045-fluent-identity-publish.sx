@@ -7,7 +7,7 @@
 // same block still arrives as its own type, which is what lets a sink see the
 // leaf's size and methods.
 //
-// Identity is observable: a tagged handle carries the address of its payload, so
+// Identity is observable: the handle carries the address of its payload, so
 // mutating the payload after publishing shows through the handle the sink kept —
 // it copied the handle, not the value behind it. The payload is allocator-owned,
 // which is what a handle a sink RETAINS requires: a handle borrowing a
@@ -15,7 +15,7 @@
 #import "modules/std.sx";
 #import "modules/fluent.sx";
 
-Drawable :: protocol tagged {
+Drawable :: protocol vtable #identity {
     draw :: (self: *Self) -> string;
 }
 

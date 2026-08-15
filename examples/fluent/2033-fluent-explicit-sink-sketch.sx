@@ -13,7 +13,7 @@
 #import "modules/std/mem.sx";
 #import "modules/fluent.sx";
 
-View :: protocol tagged {
+View :: protocol vtable #identity {
     label :: (self: *Self) -> string;
 }
 

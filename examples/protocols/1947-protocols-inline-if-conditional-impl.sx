@@ -4,7 +4,7 @@
 // whichever branch is live, and coherence is never in question.
 #import "modules/std.sx";
 
-View :: protocol tagged {
+View :: protocol vtable {
     area :: (self: *Self) -> i64;
 }
 
@@ -34,7 +34,7 @@ inline if POINTER_SIZE == 8 {
 main :: () {
     w := Widget{ n = 4 };
     n := Native{ n = 4 };
-    v : View = w;
-    u : View = n;
+    v : *View = w;
+    u : *View = n;
     print("{} {}\n", v.area(), u.area());
 }

@@ -5,11 +5,11 @@
 // exactly as mutable at runtime as it was written.
 //
 // The escape is also a VALUE USE of the instantiation: `View` is named nowhere
-// else in runtime code, and its tag table and dispatch routine exist anyway
-// because the escaped handle carries one of its conformers.
+// else in runtime code, and its dispatch machinery exists anyway because the
+// escaped handle carries one of its conformers.
 #import "modules/std.sx";
 
-View :: protocol tagged {
+View :: protocol vtable #identity {
     area :: (self: *Self) -> i64;
 }
 
@@ -36,9 +36,9 @@ pick_native :: () -> View {
 }
 
 // An instantiation whose ONLY value use in runtime code is the escape itself:
-// nothing dispatches through `Slot`, and its tag table exists — the RTTI read
+// nothing dispatches through `Slot`, and its type record exists — the RTTI read
 // below answers through it — because the escaped handle carries a conformer.
-Slot :: protocol tagged { id :: (self: *Self) -> i64; }
+Slot :: protocol vtable #identity { id :: (self: *Self) -> i64; }
 Anchor :: struct { k: i64; }
 impl Slot for Anchor { id :: (self: *Anchor) -> i64 { self.k } }
 g_anchor := Anchor{ k = 9 };

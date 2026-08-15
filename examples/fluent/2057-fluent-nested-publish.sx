@@ -10,7 +10,7 @@
 #import "modules/std.sx";
 #import "modules/fluent.sx";
 
-Drawable :: protocol tagged {
+Drawable :: protocol vtable {
     draw :: (self: *Self) -> string;
 }
 
