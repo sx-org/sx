@@ -45,6 +45,7 @@ Gles3ShaderSlot :: struct {
     program: u32 = 0;
     proj_loc: i32 = 0 - 1;
     tex_loc:  i32 = 0 - 1;
+    tint_loc: i32 = 0 - 1;
 }
 
 Gles3Gpu :: struct {
@@ -147,6 +148,7 @@ impl GPU for Gles3Gpu {
             program = prog,
             proj_loc = glGetUniformLocation(prog, "uProj".ptr),
             tex_loc  = glGetUniformLocation(prog, "uTex".ptr),
+            tint_loc = glGetUniformLocation(prog, "uTint".ptr),
         };
         self.shaders.append(slot, self.parent_allocator);
         xx self.shaders.len
@@ -351,19 +353,23 @@ impl GPU for Gles3Gpu {
         }
     }
 
-    // For slot 1 + 64 bytes the renderer is uploading the 4x4 projection
-    // matrix into `uniform mat4 uProj`. Look up via the current shader's
-    // cached uniform location.
+    // Slot 1 + 64 bytes is the 4x4 projection matrix into `uniform mat4
+    // uProj`; slot 2 + 16 bytes is the mesh tint into `uniform vec4 uTint`.
+    // Look up via the current shader's cached uniform locations.
     set_vertex_constants :: (self: *Gles3Gpu, slot: u32, data: *void, size_bytes: i64) {
         inline if OS != .android { return; }
-        if slot != 1 { return; }
-        if size_bytes != 64 { return; }
         if self.current_shader == 0 { return; }
         cs64 : i64 = xx self.current_shader;
         if cs64 > self.shaders.len { return; }
-        loc := self.shaders.items[self.current_shader - 1].proj_loc;
-        if loc < 0 { return; }
-        glUniformMatrix4fv(loc, 1, 0, xx data);
+        shader := *self.shaders.items[self.current_shader - 1];
+
+        if slot == 1 and size_bytes == 64 {
+            if shader.proj_loc < 0 { return; }
+            glUniformMatrix4fv(shader.proj_loc, 1, 0, xx data);
+        } else if slot == 2 and size_bytes == 16 {
+            if shader.tint_loc < 0 { return; }
+            glUniform4fv(shader.tint_loc, 1, xx data);
+        }
     }
 
     set_scissor :: (self: *Gles3Gpu, x: i32, y: i32, w: i32, h: i32) {

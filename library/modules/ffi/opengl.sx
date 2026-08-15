@@ -56,6 +56,7 @@ glEnableVertexAttribArray : (u32) -> void abi(.c) = ---;
 glGetUniformLocation     : (u32, [*]u8) -> i32 abi(.c) = ---;
 glUniformMatrix4fv       : (i32, i32, u8, [*]f32) -> void abi(.c) = ---;
 glUniform3f              : (i32, f32, f32, f32) -> void abi(.c) = ---;
+glUniform4fv             : (i32, i32, [*]f32) -> void abi(.c) = ---;
 glDepthFunc              : (u32) -> void abi(.c) = ---;
 glUniform1f              : (i32, f32) -> void abi(.c) = ---;
 GL_LESS                  :u32: 0x0201;
@@ -140,6 +141,7 @@ load_gl :: (get_proc: (cstring) -> *void abi(.c)) {
     glGetUniformLocation  = xx get_proc("glGetUniformLocation");
     glUniformMatrix4fv    = xx get_proc("glUniformMatrix4fv");
     glUniform3f           = xx get_proc("glUniform3f");
+    glUniform4fv          = xx get_proc("glUniform4fv");
     glDepthFunc           = xx get_proc("glDepthFunc");
     glUniform1f           = xx get_proc("glUniform1f");
     glScissor             = xx get_proc("glScissor");
