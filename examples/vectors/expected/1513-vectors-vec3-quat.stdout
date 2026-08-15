@@ -1,0 +1,15 @@
+dot: 0.000000
+cross: 0.000000 0.000000 1.000000
+length: 5.000000
+normalize: 0.600000 0.800000
+lerp: 0.500000 0.500000
+add: 1.414213
+sub: 1.414213
+scale: 3.000000
+rotate dot y: 0.999999
+rotate length: 0.999999
+half turn dot x: -0.999999
+identity dot: 25.000000
+mat4 col0: 0.000000 0.999999
+mat4 col1: -0.999999 0.000000
+mat4 m22: 1.000000

@@ -90,6 +90,9 @@ glUniform1i              : (i32, i32) -> void abi(.c) = ---;
 glPixelStorei            : (u32, i32) -> void abi(.c) = ---;
 glTexSubImage2D          : (u32, i32, i32, i32, i32, i32, u32, u32, *void) -> void abi(.c) = ---;
 glDeleteTextures         : (i32, *u32) -> void abi(.c) = ---;
+glDeleteBuffers          : (i32, *u32) -> void abi(.c) = ---;
+glDrawElements           : (u32, i32, u32, *void) -> void abi(.c) = ---;
+glDepthMask              : (u8) -> void abi(.c) = ---;
 
 glGenFramebuffers              : (i32, *u32) -> void abi(.c) = ---;
 glGenRenderbuffers             : (i32, *u32) -> void abi(.c) = ---;
@@ -152,6 +155,9 @@ load_gl :: (get_proc: (cstring) -> *void abi(.c)) {
     glPixelStorei         = xx get_proc("glPixelStorei");
     glTexSubImage2D       = xx get_proc("glTexSubImage2D");
     glDeleteTextures      = xx get_proc("glDeleteTextures");
+    glDeleteBuffers       = xx get_proc("glDeleteBuffers");
+    glDrawElements        = xx get_proc("glDrawElements");
+    glDepthMask           = xx get_proc("glDepthMask");
 
     glGenFramebuffers            = xx get_proc("glGenFramebuffers");
     glGenRenderbuffers           = xx get_proc("glGenRenderbuffers");

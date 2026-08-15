@@ -1,0 +1,70 @@
+#import "modules/math/vector3.sx";
+#import "modules/math/matrix44.sx";
+
+Quat :: struct {
+    x, y, z, w: f32;
+
+    identity :: () -> Quat { Quat{ x = 0.0, y = 0.0, z = 0.0, w = 1.0 } }
+
+    from_axis_angle :: (axis: Vec3, angle: f32) -> Quat {
+        n := axis.normalize();
+        half := angle * 0.5;
+        s := sin(half);
+        Quat{ x = n.x * s, y = n.y * s, z = n.z * s, w = cos(half) }
+    }
+
+    mul :: (self: Quat, b: Quat) -> Quat {
+        Quat{
+            x = self.w * b.x + self.x * b.w + self.y * b.z - self.z * b.y,
+            y = self.w * b.y - self.x * b.z + self.y * b.w + self.z * b.x,
+            z = self.w * b.z + self.x * b.y - self.y * b.x + self.z * b.w,
+            w = self.w * b.w - self.x * b.x - self.y * b.y - self.z * b.z,
+        }
+    }
+
+    length :: (self: Quat) -> f32 {
+        sqrt(self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w)
+    }
+
+    normalize :: (self: Quat) -> Quat {
+        len := self.length();
+        if len > 0.0 {
+            return Quat{ x = self.x / len, y = self.y / len, z = self.z / len, w = self.w / len };
+        }
+        Quat.identity()
+    }
+
+    conjugate :: (self: Quat) -> Quat {
+        Quat{ x = 0.0 - self.x, y = 0.0 - self.y, z = 0.0 - self.z, w = self.w }
+    }
+
+    rotate :: (self: Quat, v: Vec3) -> Vec3 {
+        u := Vec3{ x = self.x, y = self.y, z = self.z };
+        t := u.cross(v).add(v.scale(self.w));
+        v.add(u.cross(t).scale(2.0))
+    }
+
+    to_mat4 :: (self: Quat) -> Mat4 {
+        x2 := self.x * self.x;
+        y2 := self.y * self.y;
+        z2 := self.z * self.z;
+        xy := self.x * self.y;
+        xz := self.x * self.z;
+        yz := self.y * self.z;
+        wx := self.w * self.x;
+        wy := self.w * self.y;
+        wz := self.w * self.z;
+
+        m := Mat4.identity();
+        m.data[0]  = 1.0 - 2.0 * (y2 + z2);
+        m.data[1]  = 2.0 * (xy + wz);
+        m.data[2]  = 2.0 * (xz - wy);
+        m.data[4]  = 2.0 * (xy - wz);
+        m.data[5]  = 1.0 - 2.0 * (x2 + z2);
+        m.data[6]  = 2.0 * (yz + wx);
+        m.data[8]  = 2.0 * (xz + wy);
+        m.data[9]  = 2.0 * (yz - wx);
+        m.data[10] = 1.0 - 2.0 * (x2 + y2);
+        m
+    }
+}
