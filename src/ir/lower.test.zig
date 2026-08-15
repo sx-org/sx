@@ -1144,6 +1144,36 @@ test "lower: vectorLaneIndex maps swizzle components, colour aliases, rejects no
     try std.testing.expectEqual(@as(?u32, null), Lowering.vectorLaneIndex(""));
 }
 
+test "lower: parseSwizzle accepts multi-letter shuffles and rejects mixed sets" {
+    const xy = Lowering.parseSwizzle("xy");
+    try std.testing.expect(xy == .ok);
+    try std.testing.expectEqual(@as(u8, 2), xy.ok.len);
+    try std.testing.expectEqual(@as(u8, 0), xy.ok.lanes[0]);
+    try std.testing.expectEqual(@as(u8, 1), xy.ok.lanes[1]);
+    try std.testing.expect(!xy.ok.hasDuplicate());
+
+    const yx = Lowering.parseSwizzle("yx");
+    try std.testing.expect(yx == .ok);
+    try std.testing.expectEqual(@as(u8, 1), yx.ok.lanes[0]);
+    try std.testing.expectEqual(@as(u8, 0), yx.ok.lanes[1]);
+
+    const rgba = Lowering.parseSwizzle("rgba");
+    try std.testing.expect(rgba == .ok);
+    try std.testing.expectEqual(@as(u8, 4), rgba.ok.len);
+    try std.testing.expectEqual(@as(u8, 3), rgba.ok.lanes[3]);
+
+    const xx = Lowering.parseSwizzle("xx");
+    try std.testing.expect(xx == .ok);
+    try std.testing.expect(xx.ok.hasDuplicate());
+    try std.testing.expectEqual(@as(u32, 0), xx.ok.maxLane());
+
+    try std.testing.expect(Lowering.parseSwizzle("xr") == .mixed);
+    try std.testing.expect(Lowering.parseSwizzle("xyq") == .bad_letter);
+    try std.testing.expect(Lowering.parseSwizzle("len") == .none);
+    try std.testing.expect(Lowering.parseSwizzle("") == .none);
+    try std.testing.expect(Lowering.parseSwizzle("xxxxxxxxxxxxxxxxx") == .too_long);
+}
+
 test "lower: assigning to a missing struct field emits field-not-found, no panic" {
     // Arena keeps the leak checker quiet — DiagnosticList.addFmt allocates
     // messages it never frees in deinit (mixed ownership with borrowed literals).

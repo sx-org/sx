@@ -1,0 +1,23 @@
+error: cannot mix position and colour letters in swizzle 'xr'
+  --> examples/diagnostics/1512-diagnostics-swizzle.sx:7:9
+   |
+ 7 |     _ = v.xr;
+   |         ^^^^
+
+error: swizzle 'xyzw' reads lane 3 of '@Vector(3,f32)', which has 3 elements
+  --> examples/diagnostics/1512-diagnostics-swizzle.sx:8:9
+   |
+ 8 |     _ = v.xyzw;
+   |         ^^^^^^
+
+error: cannot store to swizzle 'xx': a letter is repeated
+  --> examples/diagnostics/1512-diagnostics-swizzle.sx:9:5
+   |
+ 9 |     v.xx = .[0.0, 0.0];
+   |     ^^^^
+
+error: cannot take the address of swizzle 'xy'
+  --> examples/diagnostics/1512-diagnostics-swizzle.sx:10:10
+   |
+10 |     _ = *v.xy;
+   |          ^^^^

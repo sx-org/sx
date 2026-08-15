@@ -12,6 +12,7 @@ const Ref = inst_mod.Ref;
 const Module = mod_mod.Module;
 
 const lower = @import("../lower.zig");
+const lower_expr = @import("expr.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const Binding = lower.Binding;
@@ -2211,7 +2212,7 @@ fn tryLowerPropertyAssignment(self: *Lowering, asgn: *const ast.Assignment) bool
 /// (`resolveCallParamTypes` can't override target_type per-arg).
 fn rhsNeedsTargetType(value: *const ast.Node) bool {
     return switch (value.data) {
-        .enum_literal, .struct_literal, .tuple_literal, .if_expr, .match_expr, .block, .unary_op, .binary_op, .null_literal, .undef_literal => true,
+        .enum_literal, .struct_literal, .tuple_literal, .array_literal, .if_expr, .match_expr, .block, .unary_op, .binary_op, .null_literal, .undef_literal => true,
         .call => |vc| vc.callee.data == .enum_literal,
         else => false,
     };
@@ -2564,6 +2565,8 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 const field_ty = self.module.types.manyPtrTo(elem_ty);
                 const gep = self.builder.structGepTyped(obj_ptr, 0, self.module.types.ptrTo(field_ty), obj_ty);
                 self.storeOrCompound(gep, val, asgn.op, field_ty);
+            } else if (self.storeSwizzle(obj_ptr, obj_ty, fa.field, val, asgn.op, asgn.target.span, asgn.value.span, asgn.value)) {
+                // Multi-letter shuffle store (and diagnosed swizzle errors).
             } else if (self.fieldLvaluePtr(obj_ptr, obj_ty, fa.field)) |fl| {
                 // Resolve the target field (struct / union direct / promoted
                 // anonymous-struct member / tuple element / vector lane) via
@@ -2831,6 +2834,67 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
     }
 }
 
+fn swizzleLanePtr(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, recv: lower_expr.SwizzleRecv, lane: u8, elem_ty: TypeId) Ref {
+    return switch (recv) {
+        .vector, .array => self.builder.structGepTyped(obj_ptr, lane, self.module.types.ptrTo(elem_ty), obj_ty),
+        .slice => blk: {
+            const slice = self.builder.load(obj_ptr, obj_ty);
+            const idx = self.builder.constInt(lane, .i64);
+            break :blk self.builder.emit(.{ .index_gep = .{ .lhs = slice, .rhs = idx } }, self.module.types.ptrTo(elem_ty));
+        },
+    };
+}
+
+/// Store through a multi-letter swizzle (`v.xy = u`). Returns true when the
+/// field is a swizzle on a vector/array/slice — including when the store is
+/// diagnosed and rejected — so the caller does not emit field-not-found.
+pub fn storeSwizzle(
+    self: *Lowering,
+    obj_ptr: Ref,
+    obj_ty: TypeId,
+    field: []const u8,
+    val: Ref,
+    op: ast.Assignment.Op,
+    target_span: ast.Span,
+    value_span: ast.Span,
+    value_node: *const Node,
+) bool {
+    const recv = self.swizzleRecvOf(obj_ty) orelse return false;
+    switch (lower_expr.parseSwizzle(field)) {
+        .none => return false,
+        .ok => |sw| {
+            if (sw.len == 1) return false;
+            if (self.swizzleStaticLen(obj_ty)) |width| {
+                if (sw.maxLane() >= width) {
+                    self.diagnoseSwizzleOob(field, sw, obj_ty, width, target_span);
+                    return true;
+                }
+            }
+            if (sw.hasDuplicate()) {
+                if (self.diagnostics) |d|
+                    d.addFmt(.err, target_span, "cannot store to swizzle '{s}': a letter is repeated", .{field});
+                return true;
+            }
+            const elem_ty = self.getElementType(obj_ty);
+            const result_ty = self.swizzleResultType(recv, elem_ty, sw);
+            const src_ty = self.builder.getRefType(val);
+            if (op == .assign and !self.checkAssignable(src_ty, result_ty, value_span, "assign", field, value_node))
+                return true;
+            const coerced = self.coerceToType(val, src_ty, result_ty);
+            for (sw.lanes[0..sw.len], 0..) |lane, i| {
+                const dest = swizzleLanePtr(self, obj_ptr, obj_ty, recv, lane, elem_ty);
+                const piece = self.builder.structGet(coerced, @intCast(i), elem_ty);
+                self.storeOrCompound(dest, piece, op, elem_ty);
+            }
+            return true;
+        },
+        else => |p| {
+            self.diagnoseSwizzleParse(field, p, target_span);
+            return true;
+        },
+    }
+}
+
 const FieldLvalue = struct { ptr: Ref, ty: TypeId };
 
 /// Pure description of which slot `obj.field` resolves to — the GEP path plus
@@ -2857,6 +2921,15 @@ const FieldResolution = union(enum) {
     /// Tuple element / vector lane / plain struct field: a single
     /// struct_gep(index) into the aggregate.
     indexed: struct { index: u32, ty: TypeId },
+    /// Letter-swizzle on a vector, array, or slice. `result_ty` is the
+    /// scalar element when `len == 1`, otherwise `@Vector(N, T)` or `[N]T`.
+    swizzle: struct {
+        lanes: [16]u8,
+        len: u8,
+        elem_ty: TypeId,
+        result_ty: TypeId,
+        recv: lower_expr.SwizzleRecv,
+    },
 
     /// The field's value type — what the caller coerces the rhs to / sets as
     /// the RHS target type. Identical regardless of the GEP path taken.
@@ -2865,6 +2938,7 @@ const FieldResolution = union(enum) {
             .union_direct => |u| u.ty,
             .union_promoted => |u| u.ty,
             .indexed => |s| s.ty,
+            .swizzle => |s| s.result_ty,
         };
     }
 };
@@ -2930,12 +3004,23 @@ pub fn fieldLvalueResolve(self: *Lowering, obj_ty: TypeId, field: []const u8) ?F
         return null;
     }
 
-    // Vector lane: `.x`/`.y`/`.z`/`.w` (or colour aliases `.r`/`.g`/`.b`/`.a`)
-    // → lane 0/1/2/3 via the same vectorLaneIndex the read path uses. A
-    // non-lane field on a vector is a genuine miss (caller diagnoses).
-    if (type_info == .vector) {
-        const vidx = Lowering.vectorLaneIndex(field) orelse return null;
-        return .{ .indexed = .{ .index = vidx, .ty = type_info.vector.element } };
+    // Letter-swizzle on a vector, array, or slice. Out-of-range letters
+    // still resolve (the store/read path diagnoses the bound) so the
+    // RHS target type matches the shuffle shape.
+    if (self.swizzleRecvOf(obj_ty)) |recv| {
+        switch (lower_expr.parseSwizzle(field)) {
+            .ok => |sw| {
+                const elem_ty = self.getElementType(obj_ty);
+                return .{ .swizzle = .{
+                    .lanes = sw.lanes,
+                    .len = sw.len,
+                    .elem_ty = elem_ty,
+                    .result_ty = self.swizzleResultType(recv, elem_ty, sw),
+                    .recv = recv,
+                } };
+            },
+            else => {},
+        }
     }
 
     // Plain struct field.
@@ -2984,6 +3069,21 @@ pub fn fieldLvaluePtr(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, field: []co
             const ptr = self.builder.structGepTyped(obj_ptr, s.index, self.module.types.ptrTo(s.ty), obj_ty);
             return .{ .ptr = ptr, .ty = s.ty };
         },
+        .swizzle => |s| {
+            // A multi-letter shuffle has no single address. A one-letter
+            // shuffle is a scalar lane/element pointer.
+            if (s.len != 1) return null;
+            const lane: u32 = s.lanes[0];
+            const ptr = switch (s.recv) {
+                .vector, .array => self.builder.structGepTyped(obj_ptr, lane, self.module.types.ptrTo(s.elem_ty), obj_ty),
+                .slice => blk: {
+                    const slice = self.builder.load(obj_ptr, obj_ty);
+                    const idx = self.builder.constInt(lane, .i64);
+                    break :blk self.builder.emit(.{ .index_gep = .{ .lhs = slice, .rhs = idx } }, self.module.types.ptrTo(s.elem_ty));
+                },
+            };
+            return .{ .ptr = ptr, .ty = s.elem_ty };
+        },
     }
 }
 
@@ -3025,7 +3125,7 @@ pub fn lowerUnionLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Type
             .union_promoted => |u| .{ .promoted = true, .index = u.variant_index },
             // A union name never resolves to `.indexed`, but be safe rather
             // than silently mis-store.
-            .indexed => {
+            .indexed, .swizzle => {
                 _ = self.emitFieldError(ty, fname, span);
                 return self.zeroValue(ty);
             },
@@ -3212,6 +3312,22 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
             // emitFieldError) instead of silently GEPing field 0 as .i64;
             // that bogus pointer reaches LLVM emission as ptrTo(.unresolved)
             // and panics.
+            if (self.swizzleRecvOf(obj_ty)) |_| {
+                switch (lower_expr.parseSwizzle(fa.field)) {
+                    .ok => |sw| {
+                        if (sw.len > 1) {
+                            if (self.diagnostics) |d|
+                                d.addFmt(.err, node.span, "cannot take the address of swizzle '{s}'", .{fa.field});
+                            return self.emitPlaceholder(fa.field);
+                        }
+                    },
+                    .none => {},
+                    else => |p| {
+                        self.diagnoseSwizzleParse(fa.field, p, node.span);
+                        return self.emitPlaceholder(fa.field);
+                    },
+                }
+            }
             if (self.fieldLvaluePtr(obj_ptr, obj_ty, fa.field)) |r| return r.ptr;
             return self.emitFieldError(obj_ty, fa.field, node.span);
         },

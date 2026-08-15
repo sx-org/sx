@@ -290,10 +290,17 @@ pub const ExprTyper = struct {
                             }
                         }
                     }
-                    // Check vector element access (.x/.y/.z/.w)
-                    if (info == .vector) {
-                        const elem = info.vector.element;
-                        return if (is_opt_chain) self.l.optionalOfFlattened(elem) else elem;
+                    // Letter-swizzle on a vector, array, or slice. One letter
+                    // is the element; two or more is `@Vector(N, T)` or `[N]T`.
+                    if (self.l.swizzleRecvOf(obj_ty)) |recv| {
+                        switch (Lowering.parseSwizzle(fa.field)) {
+                            .ok => |sw| {
+                                const elem = self.l.getElementType(obj_ty);
+                                const rt = self.l.swizzleResultType(recv, elem, sw);
+                                return if (is_opt_chain) self.l.optionalOfFlattened(rt) else rt;
+                            },
+                            else => {},
+                        }
                     }
                     // Tuple field access: numeric `t.0` or named `t.x`.
                     if (info == .tuple) {

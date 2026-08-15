@@ -1,0 +1,23 @@
+// Multi-letter shuffle on `@Vector`: read, replicate, colour set, store,
+// and compound store. One letter stays a scalar.
+#import "modules/std.sx";
+
+main :: () {
+    v : @Vector(4, f32) = .[1.0, 2.0, 3.0, 4.0];
+    xy := v.xy;
+    yx := v.yx;
+    print("xy={} {}\n", xy.x, xy.y);
+    print("yx={} {}\n", yx.x, yx.y);
+    print("zw={} {}\n", v.zw.x, v.zw.y);
+    dup := v.xx;
+    print("xx={} {}\n", dup.x, dup.y);
+
+    col : @Vector(4, f32) = .[0.5, 0.25, 0.125, 1.0];
+    print("rg={} {}\n", col.rg.x, col.rg.y);
+    print("ba={} {}\n", col.ba.x, col.ba.y);
+
+    v.xy = .[9.0, 8.0];
+    print("after={} {} {} {}\n", v.x, v.y, v.z, v.w);
+    v.wz += .[1.0, 2.0];
+    print("cmp={} {} {} {}\n", v.x, v.y, v.z, v.w);
+}

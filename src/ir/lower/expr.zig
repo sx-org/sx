@@ -1437,17 +1437,159 @@ pub fn lowerOptionalChainIndex(self: *Lowering, ie: *const ast.IndexExpr, child:
 }
 
 /// Field access on a known type (shared by regular field access and optional chaining)
-/// Map a vector swizzle component (`.x`/`.y`/`.z`/`.w` or the colour
-/// aliases `.r`/`.g`/`.b`/`.a`) to its lane index. Returns null for any
-/// other field name so the read path (`lowerFieldAccessOnType`) and the
-/// write path (`lowerAssignment`) share one resolver and reject a
-/// non-lane field identically.
+/// A letter-swizzle (`.x`/`.xy`/`.rgba`, …). Position letters (`xyzw`) and
+/// colour letters (`rgba`) are two sets; a name uses one set. Each letter
+/// names a lane 0..3. One letter is a scalar; two or more build a
+/// `@Vector(N, T)` from a vector receiver and an `[N]T` from an array or
+/// slice.
+pub const SwizzleSet = enum { xyzw, rgba };
+
+pub const Swizzle = struct {
+    lanes: [16]u8 = [_]u8{0} ** 16,
+    len: u8 = 0,
+    set: SwizzleSet = .xyzw,
+
+    pub fn maxLane(self: Swizzle) u32 {
+        var m: u8 = 0;
+        for (self.lanes[0..self.len]) |lane| {
+            if (lane > m) m = lane;
+        }
+        return m;
+    }
+
+    pub fn hasDuplicate(self: Swizzle) bool {
+        var seen: u8 = 0;
+        for (self.lanes[0..self.len]) |lane| {
+            const bit: u8 = @as(u8, 1) << @intCast(lane);
+            if (seen & bit != 0) return true;
+            seen |= bit;
+        }
+        return false;
+    }
+};
+
+pub const SwizzleParse = union(enum) {
+    /// First character is not a swizzle letter — not a shuffle name.
+    none,
+    ok: Swizzle,
+    mixed,
+    bad_letter,
+    too_long,
+};
+
+pub const SwizzleRecv = enum { vector, array, slice };
+
+/// Parse a field name as a letter-swizzle. A name that does not start with
+/// a swizzle letter is `.none` so struct fields and `.len`/`.ptr` stay
+/// ordinary. A name that starts as a swizzle and then mixes sets, uses a
+/// non-letter, or exceeds 16 letters is a swizzle error (not a miss).
+pub fn parseSwizzle(field: []const u8) SwizzleParse {
+    if (field.len == 0) return .none;
+    const first = swizzleLetter(field[0]) orelse return .none;
+    if (field.len > 16) return .too_long;
+    var sw = Swizzle{ .len = @intCast(field.len), .set = first.set };
+    sw.lanes[0] = first.lane;
+    for (field[1..], 1..) |c, i| {
+        const next = swizzleLetter(c) orelse return .bad_letter;
+        if (next.set != sw.set) return .mixed;
+        sw.lanes[i] = next.lane;
+    }
+    return .{ .ok = sw };
+}
+
+const SwizzleLetter = struct { lane: u8, set: SwizzleSet };
+
+fn swizzleLetter(c: u8) ?SwizzleLetter {
+    return switch (c) {
+        'x' => .{ .lane = 0, .set = .xyzw },
+        'y' => .{ .lane = 1, .set = .xyzw },
+        'z' => .{ .lane = 2, .set = .xyzw },
+        'w' => .{ .lane = 3, .set = .xyzw },
+        'r' => .{ .lane = 0, .set = .rgba },
+        'g' => .{ .lane = 1, .set = .rgba },
+        'b' => .{ .lane = 2, .set = .rgba },
+        'a' => .{ .lane = 3, .set = .rgba },
+        else => null,
+    };
+}
+
+/// Single-letter form of `parseSwizzle`: `.x`/`.y`/`.z`/`.w` or `.r`/`.g`/`.b`/`.a`
+/// → lane 0..3. Multi-letter names and non-lane fields return null.
 pub fn vectorLaneIndex(field: []const u8) ?u32 {
-    if (std.mem.eql(u8, field, "x") or std.mem.eql(u8, field, "r")) return 0;
-    if (std.mem.eql(u8, field, "y") or std.mem.eql(u8, field, "g")) return 1;
-    if (std.mem.eql(u8, field, "z") or std.mem.eql(u8, field, "b")) return 2;
-    if (std.mem.eql(u8, field, "w") or std.mem.eql(u8, field, "a")) return 3;
-    return null;
+    return switch (parseSwizzle(field)) {
+        .ok => |sw| if (sw.len == 1) sw.lanes[0] else null,
+        else => null,
+    };
+}
+
+pub fn swizzleRecvOf(self: *Lowering, ty: TypeId) ?SwizzleRecv {
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .vector => .vector,
+        .array => .array,
+        .slice => .slice,
+        else => null,
+    };
+}
+
+pub fn swizzleStaticLen(self: *Lowering, ty: TypeId) ?u32 {
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .vector => |v| v.length,
+        .array => |a| a.length,
+        else => null,
+    };
+}
+
+pub fn swizzleResultType(self: *Lowering, recv: SwizzleRecv, elem: TypeId, sw: Swizzle) TypeId {
+    if (sw.len == 1) return elem;
+    return switch (recv) {
+        .vector => self.module.types.vectorOf(elem, sw.len),
+        .array, .slice => self.module.types.arrayOf(elem, sw.len),
+    };
+}
+
+pub fn diagnoseSwizzleParse(self: *Lowering, field: []const u8, parsed: SwizzleParse, span: ast.Span) void {
+    const d = self.diagnostics orelse return;
+    switch (parsed) {
+        .mixed => d.addFmt(.err, span, "cannot mix position and colour letters in swizzle '{s}'", .{field}),
+        .bad_letter => d.addFmt(.err, span, "invalid swizzle '{s}'", .{field}),
+        .too_long => d.addFmt(.err, span, "swizzle '{s}' is longer than 16 letters", .{field}),
+        .none, .ok => {},
+    }
+}
+
+pub fn diagnoseSwizzleOob(self: *Lowering, field: []const u8, sw: Swizzle, obj_ty: TypeId, width: u32, span: ast.Span) void {
+    if (self.diagnostics) |d| {
+        d.addFmt(.err, span, "swizzle '{s}' reads lane {d} of '{s}', which has {d} element{s}", .{
+            field,
+            sw.maxLane(),
+            self.formatTypeName(obj_ty),
+            width,
+            if (width == 1) "" else "s",
+        });
+    }
+}
+
+fn extractSwizzleLane(self: *Lowering, obj: Ref, _: TypeId, recv: SwizzleRecv, lane: u8, elem_ty: TypeId) Ref {
+    return switch (recv) {
+        .vector, .array => self.builder.structGet(obj, lane, elem_ty),
+        .slice => blk: {
+            const idx = self.builder.constInt(lane, .i64);
+            break :blk self.builder.emit(.{ .index_get = .{ .lhs = obj, .rhs = idx } }, elem_ty);
+        },
+    };
+}
+
+pub fn lowerSwizzleRead(self: *Lowering, obj: Ref, obj_ty: TypeId, recv: SwizzleRecv, sw: Swizzle) Ref {
+    const elem_ty = self.getElementType(obj_ty);
+    if (sw.len == 1) return extractSwizzleLane(self, obj, obj_ty, recv, sw.lanes[0], elem_ty);
+    var elems: [16]Ref = undefined;
+    for (sw.lanes[0..sw.len], 0..) |lane, i| {
+        elems[i] = extractSwizzleLane(self, obj, obj_ty, recv, lane, elem_ty);
+    }
+    const result_ty = self.swizzleResultType(recv, elem_ty, sw);
+    return self.builder.structInit(elems[0..sw.len], result_ty);
 }
 
 /// A `#get` property accessor for `obj_ty.field`, or null. A `#get` method is a
@@ -1610,16 +1752,24 @@ pub fn lowerFieldAccessOnType(self: *Lowering, obj: Ref, obj_ty: TypeId, field: 
         }
     }
 
-    // Vector lane access: .x/.y/.z/.w (or colour aliases .r/.g/.b/.a) →
-    // lane 0/1/2/3. Shares lane-index resolution with the write path
-    // (lowerAssignment) via vectorLaneIndex; a non-lane field falls
-    // through to the field-not-found error below.
-    if (!obj_ty.isBuiltin()) {
-        const vinfo = self.module.types.get(obj_ty);
-        if (vinfo == .vector) {
-            if (Lowering.vectorLaneIndex(field)) |vidx| {
-                return self.builder.structGet(obj, vidx, vinfo.vector.element);
-            }
+    // Letter-swizzle on a vector, array, or slice. Shares parseSwizzle
+    // with the write path. A non-swizzle name falls through.
+    if (self.swizzleRecvOf(obj_ty)) |recv| {
+        switch (parseSwizzle(field)) {
+            .none => {},
+            .ok => |sw| {
+                if (self.swizzleStaticLen(obj_ty)) |width| {
+                    if (sw.maxLane() >= width) {
+                        self.diagnoseSwizzleOob(field, sw, obj_ty, width, span);
+                        return self.emitPlaceholder(field);
+                    }
+                }
+                return self.lowerSwizzleRead(obj, obj_ty, recv, sw);
+            },
+            else => |p| {
+                self.diagnoseSwizzleParse(field, p, span);
+                return self.emitPlaceholder(field);
+            },
         }
     }
 

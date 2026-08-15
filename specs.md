@@ -2577,17 +2577,21 @@ scaled := v * 2.0;  // [2.0, 6.0, 4.0]
 neg := -v;           // [-1.0, -3.0, -2.0]
 ```
 
-**Element access**: `.x`, `.y`, `.z`, `.w` (aliases `.r`, `.g`, `.b`, `.a`) extract single components.
+**Element access**: `.x`, `.y`, `.z`, `.w` (aliases `.r`, `.g`, `.b`, `.a`) extract single components. A string of those letters is a shuffle: one letter is a scalar; two or more letters on a `@Vector` yield `@Vector(N, T)` in letter order. Position letters (`xyzw`) and colour letters (`rgba`) are two sets — a name uses one set (`v.xy`, `v.rgba`; not `v.xr`). Letters may repeat on a read (`v.xx`). A letter past the receiver's length is a compile error.
 ```sx
 v.x     // first element
 v.z     // third element
+v.xy    // @Vector(2, T) { v.x, v.y }
+v.yx    // @Vector(2, T) { v.y, v.x }
 ```
 
-**Element assignment**: the same lane names are assignable l-values; plain and
-compound assignment write a single component in place.
+The same shuffle names work on `[N]T` and `[]T`. One letter is the element; two or more yield `[N]T` in letter order. Letters name the first four elements (`x`/`r` is `[0]`, `w`/`a` is `[3]`). A slice shuffle does not check length at compile time.
+
+**Element assignment**: the same names are assignable l-values. A one-letter write stores a scalar. A multi-letter write stores a `@Vector(N, T)` or `[N]T` of matching shape; each letter on the left must be unique (`v.xy = u` is fine, `v.xx = u` is not). Compound assignment applies per element. Address-of is only a one-letter shuffle (`*v.x`); `*v.xy` is an error.
 ```sx
 v.x = 1.0;    // write the first lane
 v.y += 2.0;   // compound assignment to a lane
+v.xy = .[3.0, 4.0];
 ```
 
 **Index access**: `v[i]` extracts by index.

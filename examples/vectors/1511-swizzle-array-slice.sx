@@ -1,0 +1,17 @@
+// The same shuffle names on `[N]T` and `[]T`. One letter is the element;
+// two or more yield `[N]T`.
+#import "modules/std.sx";
+
+main :: () {
+    a : [4]i64 = .[10, 20, 30, 40];
+    xy := a.xy;
+    print("axy={} {}\n", xy[0], xy[1]);
+    print("ayx={} {}\n", a.yx[0], a.yx[1]);
+    a.zw = .[70, 80];
+    print("a={} {} {} {}\n", a[0], a[1], a[2], a[3]);
+
+    s : []i64 = a[0..4];
+    print("sxy={} {}\n", s.xy[0], s.xy[1]);
+    s.yx = .[1, 2];
+    print("s={} {} {} {}\n", s[0], s[1], s[2], s[3]);
+}

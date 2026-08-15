@@ -2238,7 +2238,19 @@ pub const Lowering = struct {
                 };
             },
             .deref_expr => return true,
-            .field_access => |fa| return self.exprHasAddressableStorage(fa.object),
+            .field_access => |fa| {
+                // A multi-letter shuffle is a temporary value, not a slot.
+                var obj_ty = self.inferExprType(fa.object);
+                if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .pointer)
+                    obj_ty = self.module.types.get(obj_ty).pointer.pointee;
+                if (self.swizzleRecvOf(obj_ty)) |_| {
+                    switch (parseSwizzle(fa.field)) {
+                        .ok => |sw| if (sw.len > 1) return false,
+                        else => {},
+                    }
+                }
+                return self.exprHasAddressableStorage(fa.object);
+            },
             .index_expr => |ie| return self.packArgNodeAt(&ie) == null and self.exprHasAddressableStorage(ie.object),
             else => return false,
         }
@@ -3213,6 +3225,7 @@ pub const Lowering = struct {
     pub const lowerAssignment = lower_stmt.lowerAssignment;
     pub const fieldLvalueResolve = lower_stmt.fieldLvalueResolve;
     pub const fieldLvaluePtr = lower_stmt.fieldLvaluePtr;
+    pub const storeSwizzle = lower_stmt.storeSwizzle;
     pub const lowerUnionLiteral = lower_stmt.lowerUnionLiteral;
     pub const diagTaggedUnionVariantWrite = lower_stmt.diagTaggedUnionVariantWrite;
     pub const lowerExprAsPtr = lower_stmt.lowerExprAsPtr;
@@ -3671,6 +3684,13 @@ pub const Lowering = struct {
     pub const lowerOptionalChain = lower_expr.lowerOptionalChain;
     pub const lowerOptionalChainIndex = lower_expr.lowerOptionalChainIndex;
     pub const vectorLaneIndex = lower_expr.vectorLaneIndex;
+    pub const parseSwizzle = lower_expr.parseSwizzle;
+    pub const swizzleRecvOf = lower_expr.swizzleRecvOf;
+    pub const swizzleStaticLen = lower_expr.swizzleStaticLen;
+    pub const swizzleResultType = lower_expr.swizzleResultType;
+    pub const diagnoseSwizzleParse = lower_expr.diagnoseSwizzleParse;
+    pub const diagnoseSwizzleOob = lower_expr.diagnoseSwizzleOob;
+    pub const lowerSwizzleRead = lower_expr.lowerSwizzleRead;
     pub const lowerFieldAccessOnType = lower_expr.lowerFieldAccessOnType;
     pub const lowerEnumLiteral = lower_expr.lowerEnumLiteral;
     pub const lowerErrorTagLiteral = lower_expr.lowerErrorTagLiteral;
