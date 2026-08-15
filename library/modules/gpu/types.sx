@@ -52,8 +52,9 @@ BoneMatrix :: struct {
 // 3840 bytes.
 GPU_MAX_BONES :: 80;
 
-// Depth test applied by `draw_indexed`. `disabled` also stops depth
-// writes, so a 2D pass leaves the depth buffer untouched.
+// Depth test applied by `draw_indexed` and `draw_skinned`. `disabled`
+// also stops depth writes, so a 2D pass leaves the depth buffer
+// untouched.
 DepthMode :: enum {
     disabled;
     less;
