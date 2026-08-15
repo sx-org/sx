@@ -63,6 +63,15 @@ GPU :: protocol vtable #identity {
     // alongside the color clear.
     set_depth_mode :: (self: *Self, mode: DepthMode);
 
+    // Copy `count` BoneMatrix out of `data` into the backend's palette;
+    // every later draw_skinned pushes that copy. Sticky like
+    // set_depth_mode: the palette holds across shader changes and over
+    // frame boundaries. A null pointer, or a count outside
+    // [0, GPU_MAX_BONES], leaves the palette unchanged. The palette
+    // occupies vertex-constant slot 8, so set_vertex_constants must not
+    // use that slot.
+    set_bone_palette :: (self: *Self, data: *void, count: i32);
+
     // Vertices are the 2D renderer layout (64 bytes), not MeshVertex.
     draw_triangles :: (self: *Self, vertex_offset: i32, vertex_count: i32);
 
@@ -70,4 +79,11 @@ GPU :: protocol vtable #identity {
     // MeshVertex-stride vertices from the bound vertex buffer.
     // index_offset counts indices, not bytes.
     draw_indexed :: (self: *Self, index_offset: i32, index_count: i32);
+
+    // Triangles over the bound index buffer, u32 indices, sourcing
+    // SkinnedVertex-stride vertices from the bound vertex buffer and
+    // skinning them in the vertex stage against the current bone
+    // palette. index_offset counts indices, not bytes. An empty palette
+    // issues no draw.
+    draw_skinned :: (self: *Self, index_offset: i32, index_count: i32);
 }

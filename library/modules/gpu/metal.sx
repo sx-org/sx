@@ -268,6 +268,10 @@ MetalGPU :: struct {
 
     bound_index: *MTLBuffer = null;
 
+    // Only the first `bone_count` matrices carry a live transform.
+    bone_palette: [GPU_MAX_BONES]BoneMatrix = ---;
+    bone_count: i32 = 0;
+
     // Resource tables. Handles are 1-based indices (0 = invalid).
     shaders:  List(*MTLRenderPipelineState) = .{};
     buffers:  List(*MTLBuffer)              = .{};
@@ -827,6 +831,22 @@ impl GPU for MetalGPU {
         self.encoder.setDepthStencilState(st);
     }
 
+    // The skinned shader takes the palette as
+    // `constant float4* bones [[buffer(8)]]`, and declares SkinnedVertex
+    // with packed members (packed_float3 position, packed_float3 normal,
+    // packed_float2 uv, packed_float4 joints, packed_float4 weights) so
+    // MSL's layout matches the 64-byte interleave. Bone `i` is the three
+    // rows `bones[i*3+0..2]` of a row-major affine transform, applied by
+    // dotting each row against `float4(position, 1.0)`.
+    set_bone_palette :: (self: *MetalGPU, data: *void, count: i32) {
+        if data == null { return; }
+        if count < 0 { return; }
+        if count > GPU_MAX_BONES { return; }
+        n : i64 = xx count;
+        c.memcpy(xx *self.bone_palette[0], data, n * size_of(BoneMatrix));
+        self.bone_count = count;
+    }
+
     draw_triangles :: (self: *MetalGPU, vertex_offset: i32, vertex_count: i32) {
         if self.encoder == null { return; }
         if vertex_count <= 0 { return; }
@@ -839,6 +859,23 @@ impl GPU for MetalGPU {
         if self.bound_index == null { return; }
         if index_count <= 0 { return; }
         if index_offset < 0 { return; }
+        byte_offset : u64 = xx (index_offset * 4);
+        self.encoder.drawIndexedPrimitives_indexCount_indexType_indexBuffer_indexBufferOffset(
+            MTL_PRIMITIVE_TYPE_TRIANGLE, xx index_count, MTL_INDEX_TYPE_UINT32,
+            self.bound_index, byte_offset);
+    }
+
+    draw_skinned :: (self: *MetalGPU, index_offset: i32, index_count: i32) {
+        if self.encoder == null { return; }
+        if self.bound_index == null { return; }
+        if index_count <= 0 { return; }
+        if index_offset < 0 { return; }
+        if self.bone_count <= 0 { return; }
+
+        n : i64 = xx self.bone_count;
+        self.encoder.setVertexBytes_length_atIndex(
+            xx *self.bone_palette[0], xx (n * size_of(BoneMatrix)), 8);
+
         byte_offset : u64 = xx (index_offset * 4);
         self.encoder.drawIndexedPrimitives_indexCount_indexType_indexBuffer_indexBufferOffset(
             MTL_PRIMITIVE_TYPE_TRIANGLE, xx index_count, MTL_INDEX_TYPE_UINT32,
