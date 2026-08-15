@@ -1,9 +1,9 @@
 #import "modules/std.sx";
 #import "modules/math";
 
-// --- Lerpable protocol (inline — static dispatch, no vtable) ---
+// --- Lerpable protocol (constraint — static dispatch, no runtime value) ---
 
-Lerpable :: protocol inline {
+Lerpable :: protocol constraint {
     lerp :: (self: *Self, b: Self, t: f32) -> Self;
 }
 

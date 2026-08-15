@@ -8,5 +8,3 @@ vtable value 2
 vtable ptr 2
 vtable ptr miss null
 vtable borrowed 14
-inline ptr 2
-inline ptr miss null

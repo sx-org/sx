@@ -1356,15 +1356,15 @@ test "parser: a protocol kind word reads through a line break" {
     const alloc = arena.allocator();
 
     var p = try Parser.init(alloc,
-        \\Lerpable :: protocol
-        \\    inline
-        \\    { lerp :: (self: *Self, t: f32) -> Self; }
+        \\Show :: protocol
+        \\    vtable
+        \\    { fmt :: (self: *Self) -> string; }
     );
     const pd = (try p.parse()).data.root.decls[0].data.protocol_decl;
-    try std.testing.expectEqual(ast.ProtocolKind.@"inline", pd.kind);
+    try std.testing.expectEqual(ast.ProtocolKind.vtable, pd.kind);
 
-    var same = try Parser.init(alloc, "Lerpable :: protocol inline { lerp :: (self: *Self, t: f32) -> Self; }\n");
-    try std.testing.expectEqual(ast.ProtocolKind.@"inline", (try same.parse()).data.root.decls[0].data.protocol_decl.kind);
+    var same = try Parser.init(alloc, "Show :: protocol vtable { fmt :: (self: *Self) -> string; }\n");
+    try std.testing.expectEqual(ast.ProtocolKind.vtable, (try same.parse()).data.root.decls[0].data.protocol_decl.kind);
 }
 
 // A function header's optional slots all sit in front of a mandatory body.

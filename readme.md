@@ -492,11 +492,11 @@ pointing at the generic-bound spelling (`$T/Eq`), where it stays
 fully usable.
 
 A protocol head names its **kind** after the parameter list —
-`constraint` (the default, when the slot is empty), `vtable`, `inline`.
+`constraint` (the default, when the slot is empty) or `vtable`.
 A `constraint` protocol has no runtime values at all: it bounds
 generics and costs nothing, and every erasure or storable position
-refuses. `inline` protocols store function pointers directly (no vtable
-indirection). `protocol_kind(P)` reports the kind and folds in
+refuses. A `vtable` protocol erases into a value that dispatches
+dynamically. `protocol_kind(P)` reports the kind and folds in
 `inline if`.
 
 `#identity` marks the borrow-only ownership class —
@@ -505,7 +505,7 @@ allocator, an Io runtime): rvalue erasure and `free` of the value refuse
 at compile time, and `is_identity(T)` reflects the class. The std
 `Allocator` and `Io` are both:
 ```sx
-Allocator :: protocol inline #identity {
+Allocator :: protocol vtable #identity {
     alloc_bytes :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }

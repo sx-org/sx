@@ -130,9 +130,8 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
             // type name is not node-inferable) — fall through to the generic
             // ladder below, whose value arm erases via a self-contained copy.
         },
-        // Protocol → pointer: recover the typed ctx pointer (field 0).
-        // The protocol value is `{ ctx, fn1, fn2, ... }` (inline) or
-        // `{ ctx, vtable_ptr }` — either way, ctx lives at field 0.
+        // Protocol → pointer: recover the typed ctx pointer (field 0) of the
+        // `{ ctx, __type_id, vtable_ptr }` value.
         .protocol_to_pointer => {
             // A pointer-to-PROTOCOL target is a type lie, not a recovery:
             // ctx addresses the CONCRETE value, so `s.(*Sizable)` would

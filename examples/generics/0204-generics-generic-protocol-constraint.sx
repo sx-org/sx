@@ -1,10 +1,10 @@
 // Generic struct `Animated($T: Lerpable)` monomorphized with a struct type — the
-// `inline`-kind protocol constraint participates in method dispatch via `self.from.lerp(...)`.
+// `constraint`-kind protocol participates in method dispatch via `self.from.lerp(...)`.
 
 #import "modules/std.sx";
 #import "modules/math";
 
-Lerpable :: protocol inline {
+Lerpable :: protocol constraint {
     lerp :: (self: *Self, b: Self, t: f32) -> Self;
 }
 

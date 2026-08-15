@@ -1,4 +1,4 @@
-// The hard half of the same three misses (§7.9): at finality a HARD
+// The hard half of the same two misses (§7.9): at finality a HARD
 // operation — a dispatch, an unconsumed conversion, an erasure — takes the
 // ordinary diagnostic at the operation's own site, where the soft probe of
 // 1979 answers `null`.
@@ -6,24 +6,20 @@
 
 Mark :: protocol vtable { tag :: (self: *Self) -> i64; }
 Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
-Flat :: protocol inline { wide :: (self: *Self) -> i64; }
 
 Widget :: struct { n: i64; }
 Loose :: struct { n: i64; }
 
 impl Show for Widget { fmt :: (self: *Widget) -> i64 { self.n * 2 } }
-impl Flat for Widget { wide :: (self: *Widget) -> i64 { self.n * 3 } }
 
 main :: () {
     w := Widget{ n = 5 };
     l := Loose{ n = 1 };
 
-    // vtable, no visible impl for this concrete type.
+    // No visible impl for this concrete type.
     unshown := l.(Show, context.allocator);
-    // inline, the same miss off the wider value.
-    unflat := l.(Flat, context.allocator);
     // Final-empty — nothing implements `Mark` in this program.
     empty := w.(Mark, context.allocator);
 
-    print("{} {} {}\n", unshown.fmt(), unflat.wide(), empty.tag());
+    print("{} {}\n", unshown.fmt(), empty.tag());
 }

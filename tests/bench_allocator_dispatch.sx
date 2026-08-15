@@ -6,12 +6,8 @@
 // Thirteen lanes over the same bump-allocation workload, so the protocol's
 // share of the cost is the difference between them.
 //
-// It measures the declaration std SHIPS — `Allocator :: protocol inline
-// #identity` (std/core.sx). The alternative is a ONE-LINE stdlib edit and
-// no compiler change at all, which is what makes it measurable here:
-// respell that line `protocol vtable #identity`, rebuild the compiler,
-// rebuild this file, and every lane below reports the same workload under
-// the other representation.
+// It measures the declaration std SHIPS — `Allocator :: protocol vtable
+// #identity` (std/core.sx).
 //
 // The first four lanes hold ONE conformer live per run — the predictable
 // regime, where a dispatch has a single arm to select and the branch
@@ -60,8 +56,7 @@
 //             overridden field's own store.
 //
 // 61 trials per lane, reported as median with the quartile spread, so a
-// representation-to-representation comparison has a noise bound to be read
-// against. Each lane
+// lane-to-lane comparison has a noise bound to be read against. Each lane
 // TIMES ITSELF and `main` only collects: thirteen hot loops inlined into one
 // driver blow past the inliner's budget, and the lane that stops being
 // devirtualized is then an artifact of the harness, not of the language.

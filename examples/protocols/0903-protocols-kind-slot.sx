@@ -1,9 +1,8 @@
-// The protocol KIND slot: `protocol [(params)] constraint|vtable|inline
-// [attrs]`. An empty slot means `constraint` — the kind that emits nothing.
+// The protocol KIND slot: `protocol [(params)] constraint|vtable [attrs]`.
+// An empty slot means `constraint` — the kind that emits nothing.
 // `constraint` / `vtable` are CONTEXTUAL words: kinds only in that slot,
-// ordinary identifiers everywhere else; `inline` is the language keyword
-// serving as a kind. `protocol_kind(P)` reports all three and folds in
-// `inline if`; `is_identity(P)` still reports the ownership class.
+// ordinary identifiers everywhere else. `protocol_kind(P)` reports both and
+// folds in `inline if`; `is_identity(P)` reports the ownership class.
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 
@@ -17,8 +16,7 @@ Into2 :: protocol(Target: Type) constraint {   // parameterized + explicit kind
 }
 
 Show :: protocol vtable { fmt :: (self: *Self) -> string; }
-Hasher :: protocol inline { sum :: (self: *Self) -> u64; }
-Rng :: protocol inline #identity { next :: (self: *Self) -> u64; }
+Rng :: protocol vtable #identity { next :: (self: *Self) -> u64; }
 Slot :: protocol(T: Type) vtable #identity { get :: (self: *Self) -> T; }
 
 Point :: struct { x: i64; }
@@ -30,14 +28,13 @@ impl Rng for Xorshift { next :: (self: *Xorshift) -> u64 { self.state + 1 } }
 
 kind_name :: ($P: Type) -> string {
     inline if protocol_kind(P) == .constraint { return "constraint"; }
-    inline if protocol_kind(P) == .vtable { return "vtable"; }
-    "inline"
+    "vtable"
 }
 
 smaller :: (a: $T/Ord, b: T) -> T { if a.less(b) { a } else { b } }
 
 main :: () {
-    print("{} {} {}\n", kind_name(Ord), kind_name(Show), kind_name(Hasher));
+    print("{} {}\n", kind_name(Ord), kind_name(Show));
     print("{} {} {}\n", is_identity(Ord), is_identity(Show), is_identity(Rng));
 
     // A constraint protocol still bounds generics — that is its whole job.

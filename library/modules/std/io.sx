@@ -37,9 +37,7 @@ IoErr :: error { Canceled, Failed }
 //
 // Zero-sized struct (mirror of CAllocator). Used as the default
 // `context.io` at program start (see `__sx_default_context` in codegen).
-// The thunks never dereference `self`, so the protocol value's ctx field
-// is `null` — which is what keeps the static-constant default context an
-// inline vtable with a null receiver.
+// The thunks never dereference `self`.
 
 CBlockingIo :: struct {}
 

@@ -8,7 +8,7 @@
 Size :: struct { w: i32; h: i32; }
 
 // `self: *Self` receiver; one no-arg method and one with extra args.
-Measurable :: protocol inline {
+Measurable :: protocol vtable {
     measure :: (self: *Self) -> Size;
     scaled  :: (self: *Self, factor: i32) -> Size;
 }
