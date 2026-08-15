@@ -3206,11 +3206,10 @@ pointee for a `*Concrete` receiver, a CLONE for a same-protocol `P`
 value, and a PROMOTION for a `*P` view. The one-argument `expr.(P)`
 refuses on every owning shape — an owning erasure names its
 allocator. `#identity` targets keep the borrow (`gpa.(Allocator)`)
-and refuse the allocator form. A TAGGED target is the implicit borrow
-coercion made explicit (never required; no allocator form). A CONSTRAINT
-target refuses (no runtime values). A soft protocol target on a concrete
-receiver is the conformance PROBE; a protocol-to-protocol conversion is
-RE-ERASURE — both defined in Protocols.
+and refuse the allocator form. A CONSTRAINT target refuses (no runtime
+values). A soft protocol target on a concrete receiver is the
+conformance PROBE; a protocol-to-protocol conversion is RE-ERASURE —
+both defined in Protocols.
 
 ```sx
 b := a.(i8);            // narrow (truncates)
@@ -3298,13 +3297,11 @@ pointing at `?.(T)` / unwrap-first, and `x?.(T)` on a non-optional receiver
 is likewise refused. Unchecked unboxing stays `xx`.
 A **protocol-value** receiver's checked downcast (`p.(Square)`) is live:
 an ERASED value carries its concrete `type_id` word and reads as its
-`{ctx, type_id}` prefix view; a TAGGED value's check is one immediate
-compare against the target's constant tag — no table load — and a
-downcast to a type outside the conformer set is a COMPILE error, not a
-runtime false (see Protocols, static diagnostics). The same three
-temperaments apply (`try p.(Square)` / unconsumed panic /
-`p.(?Square)` soft). See the protocol-receiver paragraph above for the
-recovery targets that bypass the downcast.
+`{ctx, type_id}` prefix view, and the check is a compare against that
+word — a target the receiver's protocol has no conformer for simply
+never matches. The same three temperaments apply (`try p.(Square)` /
+unconsumed panic / `p.(?Square)` soft). See the protocol-receiver
+paragraph above for the recovery targets that bypass the downcast.
 
 ---
 
