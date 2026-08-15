@@ -87,7 +87,7 @@ deliver :: ufcs (value: $I/@Init(i64)) -> string {
 send :: ufcs deliver;
 
 // A protocol value dispatches to its conformer.
-Shape :: protocol tagged { name :: (self: *Self) -> string; }
+Shape :: protocol vtable { name :: (self: *Self) -> string; }
 Round :: struct { s: string = "round"; }
 impl Shape for Round { name :: (self: *Round) -> string => self.s; }
 
@@ -138,7 +138,7 @@ main :: () -> i32 {
     c := Crate{ v = 2 };
     pc := *c;
     r := Round{};
-    h : Shape = *r;
+    h : *Shape = *r;
     print("impl {} own {} through a pointer {} protocol {}\n", b.draw(), c.stow(), pc.stow(), h.name());
     0
 }

@@ -2,12 +2,13 @@
 // (§7.3), never of the protocol handle. Every binding position funnels
 // through the one coercion seam, so the declaration target, an assignment,
 // a call argument, a field init, a container element and a return all agree
-// with the explicit `xx p : any` — on each kind that has runtime values.
+// with the explicit `xx p : any` — on every erased kind and both ownership
+// classes.
 #import "modules/std.sx";
 
 Sized :: protocol vtable { size :: (self: *Self) -> i64; }
 Boxed :: protocol inline { size :: (self: *Self) -> i64; }
-Noted :: protocol tagged { size :: (self: *Self) -> i64; }
+Noted :: protocol vtable #identity { size :: (self: *Self) -> i64; }
 
 Cube :: struct { side: i64; }
 impl Sized for Cube { size :: (self: *Cube) -> i64 { self.side } }
@@ -22,7 +23,7 @@ returned :: (s: Sized) -> any { s }
 main :: () {
     c := Cube{ side = 4 };
 
-    // Each kind's handle, boxed by a plain declaration.
+    // Each handle, boxed by a plain declaration.
     v := c.(Sized, context.allocator);
     i := c.(Boxed, context.allocator);
     n : Noted = c;
@@ -51,7 +52,7 @@ main :: () {
     print("ret {}\n", named(returned(v)));
 
     // The type word is the concrete receiver's, so the downcast opens the
-    // box at the conformer type — through every kind's handle.
+    // box at the conformer type — through every handle.
     print("down {} {} {}\n", av.(Cube).side, iv.(Cube).side, nv.(Cube).side);
 
     // A value boxed DIRECTLY and the same value boxed VIA a protocol handle

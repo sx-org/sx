@@ -1,12 +1,12 @@
 // Expansion-generated impls are ordinary impls of the expanded program: two
-// expansions landing on one `(protocol, type)` pair are the ordinary tagged
-// coherence error, and it names both unrolled sites.
+// expansions landing on one `(protocol, type)` pair are the ordinary coherence
+// error, and it names both unrolled sites.
 #import "modules/std.sx";
 
 Point :: struct { x: i64; y: i64; }
 Rect  :: struct { w: i64; h: i64; }
 
-Show :: protocol tagged { show :: (self: *Self) -> i64; }
+Show :: protocol vtable { show :: (self: *Self) -> i64; }
 
 inline for T in .[Point, Rect] {
     impl Show for T { show :: (self: *T) -> i64 { 1 } }
@@ -18,6 +18,6 @@ inline for T in .[Rect] {
 
 main :: () {
     r := Rect{ w = 1, h = 2 };
-    s : Show = r;
+    s : *Show = r;
     print("{}\n", s.show());
 }

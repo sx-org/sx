@@ -1,4 +1,4 @@
-error: duplicate impl of tagged protocol 'Show' for 'Rect' — a tagged conformer set is whole-program, so its coherence is global: exactly one impl of a pair may exist, whatever the import visibility
+error: duplicate impl 'Show' for source 'Rect' in examples/protocols/1953-protocols-inline-for-coherence-provenance.sx
   --> examples/protocols/1953-protocols-inline-for-coherence-provenance.sx:12:5
    |
 12 |     impl Show for T { show :: (self: *T) -> i64 { 1 } }

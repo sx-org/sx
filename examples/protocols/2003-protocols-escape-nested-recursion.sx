@@ -6,7 +6,7 @@
 // and its impl's vtable to the symbol it was erased with.
 #import "modules/std.sx";
 
-View :: protocol tagged {
+View :: protocol vtable #identity {
     area :: (self: *Self) -> i64;
 }
 
