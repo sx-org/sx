@@ -13,6 +13,7 @@ const lower_tagged = @import("tagged.zig");
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
 const FuncId = inst_mod.FuncId;
+const GlobalId = inst_mod.GlobalId;
 const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
@@ -526,9 +527,41 @@ pub fn getOrCreateThunks(self: *Lowering, proto_ty: TypeId, concrete_type_name: 
     return owned;
 }
 
-/// Fold `<global>` / `xx <global>` at a BORROW-kind protocol-typed static
+/// Get or create the vtable global for a (protocol, concrete_type) pair: one
+/// constant of thunk function pointers, shared by every erasure of that pair —
+/// the runtime `struct_init` form and the static fold alike. Null = the
+/// protocol registered no vtable type (not a vtable kind).
+pub fn getOrCreateVtableGlobal(
+    self: *Lowering,
+    proto_ty: TypeId,
+    proto_name: []const u8,
+    concrete_type_name: []const u8,
+    concrete_ty: TypeId,
+    thunks: []const FuncId,
+) ?GlobalId {
+    const vtable_ty = self.protocol_vtable_type_by_type.get(proto_ty) orelse return null;
+    const identity_ty: ?TypeId = if (self.protocol_ast_by_type.contains(proto_ty)) proto_ty else null;
+    const key = self.protocolResolver().protocolConcreteKey(identity_ty, proto_name, concrete_ty);
+    if (self.protocol_vtable_global_map.get(key)) |gid| return gid;
+
+    const concrete_dispatch_name = protocolConcreteDispatchName(self, concrete_type_name, concrete_ty);
+    const protocol_dispatch_name = protocolRuntimeDispatchName(self, proto_name, proto_ty);
+    const global_name = std.fmt.allocPrint(self.alloc, "__{s}__{s}__vtable", .{ protocol_dispatch_name, concrete_dispatch_name }) catch @panic("out of memory");
+    const global_name_id = self.module.types.strings.intern(self.alloc, global_name);
+    const gid = self.module.addGlobal(.{
+        .name = global_name_id,
+        .ty = vtable_ty,
+        .init_val = .{ .vtable = self.alloc.dupe(FuncId, thunks) catch @panic("out of memory") },
+        .is_const = true,
+    });
+    self.protocol_vtable_global_map.put(key, gid) catch @panic("out of memory");
+    return gid;
+}
+
+/// Fold `<global>` / `xx <global>` at a non-constraint protocol-typed static
 /// initializer into that kind's constant: `{ ctx, __type_id, thunk fn-refs… }`
-/// for `inline`, `{ ctx, __tag }` for `tagged`. Only an IDENTIFIER naming a
+/// for `inline`, `{ ctx, __type_id, &vtable }` for `vtable`, `{ ctx, __tag }`
+/// for `tagged`. Only an IDENTIFIER naming a
 /// registered top-level global qualifies: the erasure BORROWS the global's
 /// stable storage (identity semantics), so ctx is the global's address —
 /// ALWAYS, stateless impls included: there is no null-receiver shortcut,
@@ -543,11 +576,7 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
     const proto_ti = tbl.get(proto_ty);
     if (proto_ti != .@"struct" or !proto_ti.@"struct".is_protocol) return null;
     const pd = self.getProtocolInfo(proto_ty) orelse return null;
-    // Vtable-kind protocols carry a vtable pointer, not inline fn slots — a
-    // static form for those is a separate step. (The two capability protocols
-    // reaching here, `Allocator` and `Io`, are `inline`; a tagged one folds
-    // through the same path.)
-    if (pd.kind != .@"inline" and pd.kind != .tagged) return null;
+    if (pd.kind == .constraint) return null;
     if (operand.data != .identifier) return null;
     const gname = operand.data.identifier.name;
     const g: program_index_mod.GlobalInfo = switch (self.selectGlobalAuthor(gname)) {
@@ -566,6 +595,14 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
     const thunks = self.getOrCreateThunks(proto_ty, concrete_name, g.ty);
     const want = dispatchableCount(pd.methods);
     if (want == 0 or thunks.len != want) return null;
+    if (pd.kind == .vtable) {
+        const vt = getOrCreateVtableGlobal(self, proto_ty, pd.name, concrete_name, g.ty, thunks) orelse return null;
+        const fields = self.alloc.alloc(inst_mod.ConstantValue, 3) catch return null;
+        fields[0] = .{ .global_ref = g.id };
+        fields[1] = .{ .int = @intCast(g.ty.index()) };
+        fields[2] = .{ .global_ref = vt };
+        return .{ .aggregate = fields };
+    }
     const fields = self.alloc.alloc(inst_mod.ConstantValue, want + 2) catch return null;
     fields[0] = .{ .global_ref = g.id };
     fields[1] = .{ .int = @intCast(g.ty.index()) };
@@ -594,7 +631,7 @@ pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Nod
     const proto_ti = self.module.types.get(proto_ty);
     if (proto_ti != .@"struct" or !proto_ti.@"struct".is_protocol) return .not_applicable;
     const pd = self.getProtocolInfo(proto_ty) orelse return .not_applicable;
-    if (pd.kind != .@"inline" and pd.kind != .tagged) return .not_applicable;
+    if (pd.kind == .constraint) return .not_applicable;
 
     const named: ?*const Node = switch (v.data) {
         .identifier => v,
@@ -1500,30 +1537,8 @@ fn buildErasedValue(self: *Lowering, ctx_ptr: Ref, proto_name: []const u8, concr
         const owned = self.alloc.dupe(Ref, field_vals.items) catch unreachable;
         return self.builder.emit(.{ .struct_init = .{ .fields = owned } }, proto_ty);
     } else {
-        // Vtable: { ctx, vtable_ptr }
-        // Vtable is a global constant (same function pointers for every instance
-        // of the same Protocol+ConcreteType pair). Cached per pair.
         const vtable_ty = self.protocol_vtable_type_by_type.get(proto_ty) orelse return ctx_ptr;
-
-        const identity_ty: ?TypeId = if (self.protocol_ast_by_type.contains(proto_ty)) proto_ty else null;
-        const key = self.protocolResolver().protocolConcreteKey(identity_ty, proto_name, concrete_ty);
-
-        const vtable_global_id = self.protocol_vtable_global_map.get(key) orelse blk: {
-            // Create vtable global with function pointer initializer
-            const concrete_dispatch_name = protocolConcreteDispatchName(self, concrete_type_name, concrete_ty);
-            const protocol_dispatch_name = protocolRuntimeDispatchName(self, proto_name, proto_ty);
-            const global_name = std.fmt.allocPrint(self.alloc, "__{s}__{s}__vtable", .{ protocol_dispatch_name, concrete_dispatch_name }) catch unreachable;
-            const global_name_id = self.module.types.strings.intern(self.alloc, global_name);
-            const thunk_ids = self.alloc.dupe(FuncId, thunks) catch unreachable;
-            const gid = self.module.addGlobal(.{
-                .name = global_name_id,
-                .ty = vtable_ty,
-                .init_val = .{ .vtable = thunk_ids },
-                .is_const = true,
-            });
-            self.protocol_vtable_global_map.put(key, gid) catch @panic("out of memory");
-            break :blk gid;
-        };
+        const vtable_global_id = getOrCreateVtableGlobal(self, proto_ty, proto_name, concrete_type_name, concrete_ty, thunks) orelse return ctx_ptr;
 
         // Reference the vtable global's address
         const vtable_ptr_ty = self.module.types.ptrTo(vtable_ty);
