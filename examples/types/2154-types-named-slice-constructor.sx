@@ -1,6 +1,8 @@
 // `@Slice(T, Len)` is a fat pointer `{ptr, Len}`. `@Slice(T, i64)` is `[]T`;
 // any other `Len` is a distinct type whose `.len` is that `Len`. Indexing,
-// `.len`, `.ptr`, subslicing and array→slice coercion read the same on both.
+// `.len`, `.ptr`, subslicing and array→slice coercion read the same on both,
+// and a boxed `any` reads the count through the same length word the typed
+// reader uses.
 
 #import "modules/std.sx";
 
@@ -8,6 +10,9 @@ Named :: @Slice(i32, i64);
 Punct :: []i32;
 
 Bytes :: @Slice(u8, u32);
+Tiny  :: @Slice(u8, u8);
+Nib   :: @Slice(u8, u4);
+Words :: @Slice(i32, i16);
 
 Holder :: struct { data: Bytes; }
 
@@ -19,7 +24,37 @@ total :: (b: Bytes) -> i64 {
 
 head :: (b: Bytes) -> Bytes { b[0..2] }
 
+four :: () -> [4]u8 {
+    a : [4]u8 = ---;
+    a[0] = 1; a[1] = 2; a[2] = 3; a[3] = 4;
+    a
+}
+
+boxed :: () -> void {
+    a := four();
+    b : Bytes = a[0..];
+    t : Tiny = a[0..];
+    n : Nib = a[0..];
+    print("boxed b={} t={} n={}\n", b, t, n);
+
+    w : [2]i32 = ---; w[0] = 1000; w[1] = 2000;
+    si : Words = w[0..];
+    hold : Holder = Holder{ data = b };
+    print("boxed si={} hold={} empty={}\n", si, hold, b[0..0]);
+
+    wide : []u8 = a[0..];
+    print("boxed wide={} str={}\n", wide, "ab");
+}
+
+// A narrow slice minted inside a GENERIC body reads the same through `any`.
+show :: ($L: Type, a: *[4]u8) -> void {
+    s : @Slice(u8, L) = a.*[0..];
+    print("generic {} {}\n", type_name(type_of(s)), s);
+}
+
 COMPTIME_SUM :: #run total(@Array(3, u8).[7, 8, 9]);
+
+#run boxed();
 
 main :: () -> i32 {
     print("same={} name={}\n", type_eq(Named, Punct), type_name(Named));
@@ -44,5 +79,11 @@ main :: () -> i32 {
     s : string = "ab";
     print("string={} slice={}\n", s.len, type_name(type_of(a[0..])));
     print("comptime={}\n", COMPTIME_SUM);
+
+    boxed();
+    n : Nib = a[0..];
+    print("nib={} niblen={}\n", n, n.len);
+    a2 := four();
+    show(u16, *a2);
     0
 }

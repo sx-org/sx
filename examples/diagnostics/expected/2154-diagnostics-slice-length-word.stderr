@@ -34,8 +34,26 @@ error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit
 29 |     t.len = 300;
    |             ^^^
 
-error: cannot implicitly convert '[]u8' to '@Slice(u8,u8)': a non-constant length does not fit a narrower length word
-  --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:32:5
+error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit `xx` / `.(T)` to truncate
+  --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:30:14
    |
-32 |     tiny : Tiny = plain;
+30 |     t.len += 300;
+   |              ^^^
+
+error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit `xx` / `.(T)` to truncate
+  --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:31:14
+   |
+31 |     t.len -= 300;
+   |              ^^^
+
+error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit `xx` / `.(T)` to truncate
+  --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:32:13
+   |
+32 |     t.len = 200 + 100;
+   |             ^^^^^^^^^
+
+error: cannot implicitly convert '[]u8' to '@Slice(u8,u8)': a non-constant length does not fit a narrower length word
+  --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:35:5
+   |
+35 |     tiny : Tiny = plain;
    |     ^^^^^^^^^^^^^^^^^^^^

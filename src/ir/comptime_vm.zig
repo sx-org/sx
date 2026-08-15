@@ -2553,7 +2553,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             },
             // Runtime-Type scalar reflection: the tag resolves the same
             // way type_name's does; answers come straight from the type table.
-            .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_variant_tag_width => {
+            .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_variant_tag_width, .rt_slice_len_info => {
                 const table = try self.requireTable();
                 if (bi.args.len < 1) return self.failMsg("comptime reflection: missing argument");
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
@@ -2592,6 +2592,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                         break :blk 0;
                     },
                     .rt_variant_tag_width => @as(Reg, @bitCast(table.variantTagWidth(tid))),
+                    .rt_slice_len_info => @as(Reg, @bitCast(table.sliceLenInfo(tid))),
                     else => unreachable,
                 };
             },
@@ -3369,22 +3370,24 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// places and sizes the length word within the 16-byte header. A length
     /// that does not fit `fat_ty`'s length word is an error.
     fn makeSlice(self: *Vm, table: *const types.TypeTable, fat_ty: TypeId, data: Addr, len: u64) Error!Addr {
-        const len_ty = table.lenTypeOf(fat_ty);
-        if (!table.lenFitsWord(len_ty, len))
+        if (!table.lenFitsWord(table.lenTypeOf(fat_ty), len))
             return self.failFmt("comptime VM: slice length {d} does not fit the destination length word", .{len});
+        const lw = table.lenWordOf(fat_ty).?;
         const fp = self.machine.allocBytes(16, 8);
-        const lf = table.fatLenField(len_ty);
         try self.machine.writeWord(fp, table.pointer_size, data);
-        try self.machine.writeWord(fp + lf.offset, lf.size, len);
+        try self.machine.writeWord(fp + lw.offset, lw.byteWidth(), len);
         return fp;
     }
 
     /// Read the `.len` field of a fat-pointer value at `base`. `fat_ty` places
     /// and sizes the length word: `string` and `[]T` carry an `i64`, a
-    /// `@Slice(T, Len)` carries a `Len`.
+    /// `@Slice(T, Len)` carries a `Len`. A sub-byte `Len` occupies only its
+    /// low bits of the byte it shares with padding.
     fn sliceLen(self: *Vm, table: *const types.TypeTable, fat_ty: TypeId, base: Addr) Error!u64 {
-        const lf = table.fatLenField(table.lenTypeOf(fat_ty));
-        return self.machine.readWord(base + lf.offset, lf.size);
+        const lw = table.lenWordOf(fat_ty).?;
+        const raw = try self.machine.readWord(base + lw.offset, lw.byteWidth());
+        if (lw.bits >= 64) return raw;
+        return raw & ((@as(u64, 1) << @intCast(lw.bits)) - 1);
     }
 
     /// Read the `.ptr` field (`pointer_size` @ offset 0) of a fat-pointer at `base`.

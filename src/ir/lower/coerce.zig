@@ -655,25 +655,6 @@ pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) R
     return self.builder.boxAnyAt(slot, box_ty);
 }
 
-fn lenWordMax(self: *Lowering, len_ty: TypeId) ?u64 {
-    if (len_ty == .i64) return std.math.maxInt(i64);
-    const bits = self.typeBitsEx(len_ty);
-    if (bits == 0) return null;
-    if (self.module.types.isUnsignedInt(len_ty)) {
-        if (bits >= 64) return std.math.maxInt(u64);
-        return (@as(u64, 1) << @intCast(bits)) - 1;
-    }
-    if (bits >= 64) return std.math.maxInt(i64);
-    return (@as(u64, 1) << @intCast(bits - 1)) - 1;
-}
-
-/// True when every count `src_len_ty` can hold also fits `dst_len_ty`.
-fn lenWordContains(self: *Lowering, dst_len_ty: TypeId, src_len_ty: TypeId) bool {
-    const src_max = lenWordMax(self, src_len_ty) orelse return true;
-    const dst_max = lenWordMax(self, dst_len_ty) orelse return true;
-    return dst_max >= src_max;
-}
-
 /// Folded integer behind `ref`: a `const_int`, or add/sub/widen of those.
 pub fn foldedInt(self: *Lowering, ref: Ref) ?i64 {
     const op = self.builder.getRefOp(ref) orelse return null;
@@ -731,7 +712,7 @@ fn diagnoseLenWord(self: *Lowering, n: u64, dst_ty: TypeId, kind: []const u8) vo
 pub fn refuseImplicitLenNarrow(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
     const src_len = self.module.types.lenTypeOf(src_ty);
     const dst_len = self.module.types.lenTypeOf(dst_ty);
-    if (lenWordContains(self, dst_len, src_len)) return false;
+    if (self.module.types.lenWordContains(dst_len, src_len)) return false;
     if (self.diagnostics) |d| {
         const cs = self.builder.current_span;
         d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot implicitly convert '{s}' to '{s}': a non-constant length does not fit a narrower length word", .{
@@ -742,10 +723,7 @@ pub fn refuseImplicitLenNarrow(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) 
 }
 
 pub fn refuseLenWord(self: *Lowering, n: u64, dst_ty: TypeId) bool {
-    const len_ty = self.module.types.lenTypeOf(dst_ty);
-    if (len_ty == .i64) return false;
-    const max = lenWordMax(self, len_ty) orelse return false;
-    if (n <= max) return false;
+    if (self.module.types.lenFitsWord(self.module.types.lenTypeOf(dst_ty), n)) return false;
     diagnoseLenWord(self, n, dst_ty, "length");
     return true;
 }
@@ -755,10 +733,7 @@ pub fn refuseLenWord(self: *Lowering, n: u64, dst_ty: TypeId) bool {
 /// slice would stop short.
 pub fn refuseArrayLenWord(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
     const n: u64 = self.module.types.get(src_ty).array.length;
-    const len_ty = self.module.types.lenTypeOf(dst_ty);
-    if (len_ty == .i64) return false;
-    const max = lenWordMax(self, len_ty) orelse return false;
-    if (n <= max) return false;
+    if (self.module.types.lenFitsWord(self.module.types.lenTypeOf(dst_ty), n)) return false;
     diagnoseLenWord(self, n, dst_ty, "array length");
     return true;
 }

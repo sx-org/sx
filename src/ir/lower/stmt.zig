@@ -2376,7 +2376,9 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
     // — and the compound / index / field target forms — otherwise stored 0.
     const saved_fbv = self.force_block_value;
     self.force_block_value = true;
+    const errors_before_rhs = if (self.diagnostics) |d| d.errorCount() else 0;
     const val = self.lowerExpr(asgn.value);
+    const rhs_diagnosed = if (self.diagnostics) |d| d.errorCount() > errors_before_rhs else false;
     self.force_block_value = saved_fbv;
     self.target_type = old_target;
 
@@ -2556,8 +2558,21 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
 
             if (is_special_container and std.mem.eql(u8, fa.field, "len")) {
                 const len_ty = self.module.types.lenTypeOf(obj_ty);
-                if (asgn.op == .assign and asgn.value.data == .int_literal) {
-                    self.checkIntLiteralMagnitudeFits(asgn.value.data.int_literal.value, len_ty, asgn.value.span);
+                // A constant count must fit the length word whatever built it
+                // — a literal, a folded arithmetic RHS, or the operand of a
+                // compound `+=` / `-=`. A RHS that already diagnosed says it
+                // once.
+                if (!rhs_diagnosed) {
+                    if (self.foldedInt(val)) |n| {
+                        if (n < 0) {
+                            if (self.diagnostics) |d|
+                                d.addFmt(.err, asgn.value.span, "negative length {} does not fit the {s} length word of '{s}'", .{
+                                    n, self.formatTypeName(len_ty), self.formatTypeName(obj_ty),
+                                });
+                        } else {
+                            self.checkIntLiteralMagnitudeFits(n, len_ty, asgn.value.span);
+                        }
+                    }
                 }
                 const gep = self.builder.structGepTyped(obj_ptr, 1, len_ty, obj_ty);
                 self.storeOrCompound(gep, val, asgn.op, len_ty);

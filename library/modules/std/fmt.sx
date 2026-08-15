@@ -425,16 +425,23 @@ any_to_string :: (val: any) -> string {
             }
             result = concat(r, "]");
         }
-        // A slice value is a {ptr, len} header — read it through the view
-        // as the string layout (same two words), then walk the elements as
-        // views assembled over the buffer (the element type row of a
-        // runtime slice tag answers).
+        // A slice value is a {ptr, Len} header — assemble the pointer word
+        // from the low `size_of(*void)` bytes and the count through the
+        // length-word row (`Len` is any integer type, of any width, at a
+        // type-dependent offset), then walk the elements as views over the
+        // buffer (the element type row of a runtime slice tag answers).
         case slice: {
             et := struct_field_type(type, 0);
             esz := size_of(et);
-            hdr : *string = xx raw_any_data(val);
-            base : i64 = xx hdr.ptr;
-            n := hdr.len;
+            hb : [*]u8 = xx raw_any_data(val);
+            base := 0;
+            pi := 0;
+            while pi < size_of(*void) {
+                pb : i64 = xx hb[pi];
+                base = base | (pb << (8 * pi));
+                pi += 1;
+            }
+            n := __sx_any_len_word(type, val);
             r := "[";
             si := 0;
             while si < n {
@@ -658,6 +665,33 @@ __sx_any_tag_word :: (t: Type, av: any) -> i64 {
         if w < 8 {
             shift := 64 - 8 * w;
             v = (v << shift) >> shift;
+        }
+    }
+    v
+}
+
+// The count the fat pointer `av` views carries: little-endian byte assembly
+// of the length word `__sx_slice_len_info(t)` places, narrowed to its BIT
+// width. A sub-byte `Len` (`@Slice(T, u4)`) shares its byte with padding, so
+// the mask must come from the bit width, not the bytes loaded; a signed `Len`
+// sign-extends from its own top bit.
+__sx_any_len_word :: (t: Type, av: any) -> i64 {
+    row := __sx_slice_len_info(t);
+    bits := row & 0xFF;
+    off := (row >> 16) & 0xFFFF;
+    w := (bits + 7) / 8;
+    p : [*]u8 = xx raw_any_data(av);
+    v := 0;
+    i := 0;
+    while i < w {
+        b : i64 = xx p[off + i];
+        v = v | (b << (8 * i));
+        i += 1;
+    }
+    if bits < 64 {
+        v = v & ((1 << bits) - 1);
+        if row & 0x100 {
+            if v & (1 << (bits - 1)) { v = v - (1 << bits); }
         }
     }
     v

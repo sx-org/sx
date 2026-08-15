@@ -27,6 +27,9 @@ main :: () -> i32 {
     ok : [4]u8 = ---;
     t : Tiny = ok;
     t.len = 300;
+    t.len += 300;
+    t.len -= 300;
+    t.len = 200 + 100;
 
     plain : []u8 = big[0..];
     tiny : Tiny = plain;

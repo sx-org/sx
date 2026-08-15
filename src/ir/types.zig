@@ -1022,16 +1022,26 @@ pub const TypeTable = struct {
         };
     }
 
-    /// True when count `n` is representable in `len_ty`. Signed `Len` uses
-    /// the signed maximum (`2^(w-1)-1`), not the storage width.
+    /// The largest count a length word of type `len_ty` can carry. Signed
+    /// `Len` stops at the signed maximum (`2^(w-1)-1`), not the storage
+    /// width. Null when `len_ty` is not an integer type.
+    pub fn lenWordMax(self: *const TypeTable, len_ty: TypeId) ?u64 {
+        const bits = self.integerBitWidth(len_ty) orelse return null;
+        if (self.isUnsignedInt(len_ty))
+            return if (bits >= 64) std.math.maxInt(u64) else (@as(u64, 1) << @intCast(bits)) - 1;
+        return if (bits >= 64) @as(u64, std.math.maxInt(i64)) else (@as(u64, 1) << @intCast(bits - 1)) - 1;
+    }
+
+    /// True when count `n` is representable in `len_ty`.
     pub fn lenFitsWord(self: *const TypeTable, len_ty: TypeId, n: u64) bool {
-        if (len_ty == .i64) return true;
-        const bits = self.integerBitWidth(len_ty) orelse return true;
-        const max: u64 = if (self.isUnsignedInt(len_ty))
-            (if (bits >= 64) std.math.maxInt(u64) else (@as(u64, 1) << @intCast(bits)) - 1)
-        else
-            (if (bits >= 64) @as(u64, std.math.maxInt(i64)) else (@as(u64, 1) << @intCast(bits - 1)) - 1);
-        return n <= max;
+        return n <= (self.lenWordMax(len_ty) orelse return true);
+    }
+
+    /// True when every count `src` can hold also fits `dst`.
+    pub fn lenWordContains(self: *const TypeTable, dst: TypeId, src: TypeId) bool {
+        const src_max = self.lenWordMax(src) orelse return true;
+        const dst_max = self.lenWordMax(dst) orelse return true;
+        return dst_max >= src_max;
     }
 
     /// Byte offset and width of a fat pointer's length word, for a raw
@@ -1041,6 +1051,46 @@ pub const TypeTable = struct {
         const alignment = self.typeAlignBytes(len_type);
         const offset = (self.pointer_size + alignment - 1) & ~(alignment - 1);
         return .{ .offset = offset, .size = size };
+    }
+
+    /// A fat pointer's length word: the bit width, signedness and header
+    /// byte offset of its count.
+    pub const LenWord = struct {
+        bits: u32,
+        signed: bool,
+        offset: usize,
+
+        /// The byte span a raw read/write of the count must cover.
+        pub fn byteWidth(self: LenWord) usize {
+            return (self.bits + 7) / 8;
+        }
+    };
+
+    /// The length word of `id`, or null when `id` carries no fat pointer.
+    /// The kind decides — `lenTypeOf` answers `i64` for every kind, so it
+    /// cannot.
+    pub fn lenWordOf(self: *const TypeTable, id: TypeId) ?LenWord {
+        if (id != .string) {
+            if (id.isBuiltin() or id.index() >= self.infos.items.len) return null;
+            if (self.get(id) != .slice) return null;
+        }
+        const len_ty = self.lenTypeOf(id);
+        return .{
+            .bits = self.integerBitWidth(len_ty) orelse 64,
+            .signed = !self.isUnsignedInt(len_ty),
+            .offset = self.fatLenField(len_ty).offset,
+        };
+    }
+
+    /// `lenWordOf` packed into one row: bits 0..7 the count's BIT width,
+    /// bit 8 its signedness, bits 16..31 its byte offset in the header.
+    /// 0 for a kind that carries no fat pointer. Feeds the
+    /// `__sx_slice_len_infos` runtime table and its static fold.
+    pub fn sliceLenInfo(self: *const TypeTable, id: TypeId) i64 {
+        const lw = self.lenWordOf(id) orelse return 0;
+        return @as(i64, lw.bits) |
+            (@as(i64, @intFromBool(lw.signed)) << 8) |
+            (@as(i64, @intCast(lw.offset)) << 16);
     }
 
     pub fn arrayOf(self: *TypeTable, element: TypeId, length: u32) TypeId {
