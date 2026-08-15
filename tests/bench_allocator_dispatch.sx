@@ -7,13 +7,12 @@
 // share of the cost is the difference between them.
 //
 // It measures the declaration std SHIPS — `Allocator :: protocol inline
-// #identity` (std/core.sx). The two alternatives are each a ONE-LINE
-// stdlib edit and no compiler change at all, which is what makes them
-// measurable here: respell that line `protocol tagged #identity` or
-// `protocol tagged #identity #expand`, rebuild the compiler, rebuild this
-// file, and every lane below reports the same workload under the other
-// representation. The recorded three-way result — and why `inline` ships —
-// is design/protocols.md §6.3a, "the Allocator trade".
+// #identity` (std/core.sx). The alternative is a ONE-LINE stdlib edit and
+// no compiler change at all, which is what makes it measurable here:
+// respell that line `protocol tagged #identity`, rebuild the compiler,
+// rebuild this file, and every lane below reports the same workload under
+// the other representation. The recorded result — and why `inline` ships —
+// is design/protocols.md §6.3, "the Allocator trade".
 //
 // The first four lanes hold ONE conformer live per run — the predictable
 // regime, where a dispatch has a single arm to select and the branch

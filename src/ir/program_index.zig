@@ -71,9 +71,6 @@ pub const ProtocolMethodInfo = struct {
     // `ret_type`, where `Self` is the opaque `*void`.
     dispatch_param_types: []const TypeId = &.{},
     dispatch_ret_type: TypeId = .void,
-    // `#expand` reaches this method — written on it, or on the protocol header.
-    // Its dispatch routine expands at every call site (§6.3a).
-    expand: bool = false,
 };
 
 /// Where a protocol method's signature mentions `Self` outside the receiver:

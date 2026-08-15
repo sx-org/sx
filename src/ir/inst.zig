@@ -811,12 +811,6 @@ pub const Function = struct {
     /// real field matches.
     is_set: bool = false,
 
-    /// The body must be inlined into every caller — a guarantee, not a
-    /// preference. Carried by the dispatch routine of an `#expand` tagged
-    /// method, whose contract is that the switch stands at the call site
-    /// (specs §6.3a); emit_llvm lowers it to LLVM's `alwaysinline`.
-    always_inline: bool = false,
-
     pub const Param = struct {
         name: StringId,
         ty: TypeId,

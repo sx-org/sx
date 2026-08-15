@@ -8,9 +8,7 @@ runtime value with dynamic dispatch.
 ```
 protocol-decl := Name '::' 'protocol' [ '(' params ')' ] [ kind ] [ attrs ] '{' body '}'
 kind          := 'constraint' | 'vtable' | 'inline' | 'tagged'     (absent ⇒ constraint)
-attrs         := ( '#identity' | '#expand' )*                       (order free)
-                  '#identity' — erased and tagged kinds
-                  '#expand'   — tagged kind only (§6.3a)
+attrs         := '#identity'*                                       (erased and tagged kinds)
 ```
 
 Three of the kind words — `constraint`, `vtable`, `tagged` — are
@@ -683,105 +681,47 @@ materializations land in the caller's frame. That expansion is
 set-dependent codegen — §9's fingerprint-keyed caching consequence
 applies to the containing function.
 
-### 6.3a `#expand` — the switch at the call site
-
-```
-attrs  := ( '#identity' | '#expand' )*                        (protocol header)
-method := Name '::' '(' params ')' [ '->' type ] [ '#expand' ] ( ';' | body )
-```
-
-`#expand` says **where a dispatch switch stands**, and nothing else.
-On the header it reaches every method of the protocol; on a method it
-reaches that method alone. It is a `tagged` attribute: `#expand` on
-any other kind is a compile error, on the header and on a method
-alike, because no other kind generates a switch to place. A
-method-level `#expand` under a header-level one is also an error —
-the header already said it, and which of the two is the leftover is
-not the compiler's guess to make.
-
-```sx
-Slab :: protocol tagged #identity #expand {        // every method
-    take :: (self: *Self, size: i64) -> *void;
-    drop :: (self: *Self, ptr: *void);
-}
-Gauge :: protocol tagged {
-    hot  :: (self: *Self, n: i64) -> i64 #expand;  // this method only
-    cold :: (self: *Self, n: i64) -> i64;          // outlined, as usual
-}
-```
-
-An `#expand` method's switch expands **at each call site** instead of
-standing behind the outlined `__sx_tags_<P>_<m>` routine. The arms,
-the totality, the tag order, and the computed result are the outlined
-routine's exactly — what changes is that each caller holds its own
-copy of the switch, so the caller's own facts fold it: a site whose
-receiver is a statically known conformer keeps one arm and drops the
-switch entirely, and every site in a one-conformer program folds to a
-direct call. The cost paid for that is code size — one switch per
-call site rather than one per program.
-
-The consequence is the `-> Self` consequence class (§6.3): an expanded
-call site is **set-dependent codegen**, so §9's fingerprint-keyed
-caching covers the containing function. Un-annotated tagged dispatch
-is untouched: its callers see one symbol call and stay
-set-independent.
-
-`#expand` is not observable. No builtin reports it, `protocol_kind`
-and `is_identity` are unaffected (§8), and the two spellings of a
-protocol compute the same values — a program cannot branch on where
-its switches live.
-
-*Implementation note.* The routine is still generated, once; the
-expansion is forced inlining of it, emitted as LLVM's `alwaysinline`.
-The contract is a guarantee, not the cost-model preference an inlining
-hint would express. Whether an un-annotated routine happens to be
-inlined anyway is the backend's ordinary business and no part of this
-design.
-
 #### The `Allocator` trade — the measured record
 
-The standard `Allocator` was carried through all three
+The standard `Allocator` was carried through both value
 representations and measured, because it is the one protocol every
 program dispatches on a hot path. `tests/bench_allocator_dispatch.sx`
 holds the harness: one bump-allocation workload, 61 trials per lane,
 medians, quartile spread as the noise bound. Per-allocation cost in
 picoseconds, arm64, `--opt 3`:
 
-| lane | `inline #identity` | `tagged` | `tagged #expand` |
-|---|---|---|---|
-| direct (concrete receiver — the floor) | 1074 | 1055 | 1070 |
-| borrow (conformer known at the site) | 1049 | 2076 | **912** |
-| ctx (`push`ed handle, one conformer) | 2064 | 2079 | **905** |
-| rotate20 (20 conformers, predictable) | 2423 | 2478 | **1845** |
-| inter2 (2 conformers, unpredictable) | **5463** | 6524 | 5719 |
-| inter20 (20 conformers, unpredictable) | **7986** | 10094 | 9461 |
+| lane | `inline #identity` | `tagged` |
+|---|---|---|
+| direct (concrete receiver — the floor) | 1074 | 1055 |
+| borrow (conformer known at the site) | **1049** | 2076 |
+| ctx (`push`ed handle, one conformer) | 2064 | 2079 |
+| rotate20 (20 conformers, predictable) | **2423** | 2478 |
+| inter2 (2 conformers, unpredictable) | **5463** | 6524 |
+| inter20 (20 conformers, unpredictable) | **7986** | 10094 |
 
 The unpredictable lanes draw their receiver from a heap index array
 filled at runtime by an xorshift stream: unfoldable by the compiler,
 unlearnable by the branch predictor.
 
-Three things the numbers say. **`#expand` earns the predictable
-regime outright** — it takes tagged dispatch from 2.0x the concrete
-receiver's cost down to the concrete receiver's cost, and beats
-`inline` even at 20 conformers walked in rotation, because a switch
-whose selection the predictor learns costs less than an indirect call
-it must still fetch through. **The cost is prediction failure, not
-switch width** — rotate20 (20 arms, predictable) is 1845, while inter2
-(2 arms, unpredictable) is 5719: a mispredicted switch pays for the
-whole arm it guessed wrong, where an indirect call pays one fetch. The
-25-member set lowers to a compressed jump table, not a compare tree,
-so width itself is nearly free. **And `#expand` costs text** — the
-13-dispatch-site benchmark takes +45% `__text` over the outlined
-routine (14320 vs 9844 bytes); the 7-dispatch-site version, 0.3%. One switch per call site is
-the price.
+Two things the numbers say. **The outlined routine never wins a lane
+where a dispatch actually happens** — it is level with `inline` where
+the receiver is a `push`ed handle, and behind it everywhere else;
+borrow is the widest gap, because an `inline` handle carries its own
+dispatch words and the site's known conformer folds through them,
+while the outlined routine costs a call whatever the site knows.
+**The cost is prediction failure, not switch width** — rotate20 (20
+arms, predictable) is 2478, while inter2 (2 arms, unpredictable) is
+6524: a mispredicted switch pays for the whole arm it guessed wrong,
+where an indirect call pays one fetch. The 25-member set lowers to a
+compressed jump table, not a compare tree, so width itself is nearly
+free.
 
 An allocator's conformer population is exactly what a library cannot
 predict: a program with one arena and a program interleaving twenty
 both link against this declaration. So std ships `inline #identity`,
-which is flat across both regimes, and `tagged #expand` stands as the
-proven alternative — the decoupling invariant (§9) makes it one
-stdlib line for a program that knows its allocators are predictable,
-with no compiler change of any kind.
+which is flat across both regimes — and the decoupling invariant (§9)
+makes the other representation one stdlib line, with no compiler
+change of any kind.
 
 ### 6.4 Dispatchability on tagged values
 
@@ -1304,8 +1244,6 @@ the runtime image resolves per the referent:
 - `is_identity(P)` — true for `#identity` protocols of either value
   representation (erased or tagged); false for every other type.
   Compile-time only.
-- `#expand` has no reflection form. It places switches; it changes no
-  value, type, or result, so nothing observes it (§6.3a).
 - A runtime `Type` value always tags a concrete type, never a bare
   protocol type. Composites *containing* protocol types (`*Show`,
   `[]View`) are concrete types and get tags like any other
@@ -1341,17 +1279,12 @@ renumbers tags and regenerates the link-stage tables and routines
 without recompiling them. Downcasts always emit as symbol compares
 — never constant-folded caller-side — so ordinary callers stay
 set-independent; single-conformer folding happens inside the
-link-stage outlined routine only. The exceptions are the functions
-that carry a switch of their own: one containing a call-site-inlined
-`Self`-switch (§6.3, one arm and one temp slot per member), and one
-calling an `#expand` method (§6.3a, one arm per member). Their
-object-cache keys include the membership fingerprint of exactly the
-protocols they expand a switch over — those whose `Self`-returning
-methods they dispatch, plus those whose `#expand` methods they call —
-and adding a conformer recompiles those functions and relinks the
-rest. The second exception is conditional on the annotation, not on
-the kind: a tagged protocol with no `#expand` method puts its
-membership in no cache key at all.
+link-stage outlined routine only. The exception is a function that
+carries a switch of its own: one containing a call-site-inlined
+`Self`-switch (§6.3, one arm and one temp slot per member). Its
+object-cache key includes the membership fingerprint of exactly the
+protocols whose `Self`-returning methods it dispatches, and adding a
+conformer recompiles those functions and relinks the rest.
 
 The fixpoint precedes codegen, so every membership diagnostic —
 empty-set errors, out-of-set downcasts, coherence (§3, §6.8) — is
@@ -1369,9 +1302,6 @@ tagged:  call __sx_tags_P_m(v, args…)      — outlined switch on v.tag
 tagged, bare-Self-returning method:
          the switch expands INLINE at the call site; each arm
          materializes its concrete result in the caller's frame
-tagged, #expand method:
-         the same switch, expanded INLINE at the call site, where the
-         caller's own facts fold it (§6.3a)
 ```
 
 **`free`.** One function, compile-time kind-dispatched by an inline
@@ -1386,8 +1316,8 @@ compiler. The compiler-driven heap paths (an owning erasure's copy,
 the implicit-context allocation, the Obj-C `+alloc`/`-dealloc` IMPs)
 find the allocator by NAME on the assembled `Context` and go through
 the ordinary protocol dispatch for whatever kind they find there, so
-respelling `Allocator` — a different kind, `#expand` added or removed
-— is a library edit that requires no compiler change.
+respelling `Allocator` with a different kind is a library edit that
+requires no compiler change.
 
 **The collection pass.** Tagged membership runs as an SCC fixpoint
 over the whole monomorphized program (the same machinery family as
@@ -1422,10 +1352,6 @@ conformer identity.
 | returning a tagged borrow of a callee local | legal, unchecked, dangles — the slice-of-local doctrine |
 | rvalue at `P` (`#identity`, erased or tagged) | compile error — identity objects need a name |
 | `#identity` on `tagged` | legal — contributes exactly the naming discipline (rvalue erasure refuses); borrow and `free` refusal are structural to the kind |
-| `#expand` on a non-tagged kind (header or method) | compile error at the attribute — no other kind generates a switch to place |
-| method `#expand` under a header `#expand` | compile error — the header already reaches every method; which spelling is the leftover is not the compiler's guess |
-| `#expand` on a single-conformer tagged protocol | legal and redundant in effect: the routine already folds to a direct call, and expanding it moves that call to the site |
-| `#expand` under comptime execution | invisible — the VM devirtualizes by the carried concrete type either way (§7.9); the annotation only places the runtime switch |
 | `free` on: view / identity / tagged / constraint-typed anything | compile error in each case (distinct wordings; constraint has no values at all) |
 | `p.(ProtocolRaw)` | field-wise build per layout; tagged inserts one table load |
 | `p.(Q)`, different protocol | direct re-erasure conversion (§7.4); temperaments apply; result ownership per `Q`'s kind; `#identity` targets refuse at compile time; erased targets resolve through the unique-impl table — a duplicated pair converts as non-conforming |

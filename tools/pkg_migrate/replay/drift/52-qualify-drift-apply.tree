@@ -71,7 +71,7 @@ XML;
     return s;
 }
 ===== testdata/lexical/drift/directive-drift.sx
-#identity #expand #context_extend #ns.builtin
+#identity #ns.expand #context_extend #ns.builtin
 ===== testdata/lexical/drift/map.txt
 identity=ns
 expand=ns
