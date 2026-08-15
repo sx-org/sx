@@ -438,6 +438,73 @@ test "isUnsignedInt: user-defined arbitrary-width ints" {
     try std.testing.expect(!table.isUnsignedInt(ptr_ty));
 }
 
+test "lenFitsWord: width-derived range for builtin and interned ints" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    try std.testing.expect(table.lenFitsWord(.i64, 300));
+    try std.testing.expect(table.lenFitsWord(.u32, 300));
+    try std.testing.expect(table.lenFitsWord(.u8, 255));
+    try std.testing.expect(!table.lenFitsWord(.u8, 300));
+    try std.testing.expect(!table.lenFitsWord(.i8, 200));
+
+    const u4_ty = table.intern(.{ .unsigned = 4 });
+    const i24_ty = table.intern(.{ .signed = 24 });
+    try std.testing.expect(table.lenFitsWord(u4_ty, 15));
+    try std.testing.expect(!table.lenFitsWord(u4_ty, 20));
+    try std.testing.expect(table.lenFitsWord(i24_ty, 8_388_607));
+    try std.testing.expect(!table.lenFitsWord(i24_ty, 8_388_608));
+
+    try std.testing.expectEqual(@as(?u64, 15), table.lenWordMax(u4_ty));
+    try std.testing.expectEqual(@as(?u64, 8_388_607), table.lenWordMax(i24_ty));
+    try std.testing.expectEqual(@as(?u64, 255), table.lenWordMax(.u8));
+    try std.testing.expectEqual(@as(?u64, 127), table.lenWordMax(.i8));
+    try std.testing.expectEqual(@as(?u64, null), table.lenWordMax(.bool));
+
+    try std.testing.expect(table.lenWordContains(.i64, u4_ty));
+    try std.testing.expect(!table.lenWordContains(u4_ty, .u8));
+    try std.testing.expect(table.lenWordContains(i24_ty, .u8));
+}
+
+test "sliceLenInfo: packed length-word row per fat-pointer type" {
+    const alloc = std.testing.allocator;
+    var table = TypeTable.init(alloc);
+    defer table.deinit();
+
+    const u4_ty = table.intern(.{ .unsigned = 4 });
+    const nib = table.sliceOfLen(.u8, u4_ty);
+    const bytes = table.sliceOfLen(.u8, .u32);
+    const words = table.sliceOfLen(.i32, .i16);
+    const punct = table.sliceOf(.u8);
+
+    const row = struct {
+        fn pack(bits: i64, signed: bool, offset: i64) i64 {
+            return bits | (@as(i64, @intFromBool(signed)) << 8) | (offset << 16);
+        }
+    }.pack;
+
+    try std.testing.expectEqual(row(4, false, 8), table.sliceLenInfo(nib));
+    try std.testing.expectEqual(row(32, false, 8), table.sliceLenInfo(bytes));
+    try std.testing.expectEqual(row(16, true, 8), table.sliceLenInfo(words));
+    try std.testing.expectEqual(row(64, true, 8), table.sliceLenInfo(punct));
+    try std.testing.expectEqual(row(64, true, 8), table.sliceLenInfo(.string));
+
+    // A kind that carries no fat pointer answers 0 — `lenTypeOf` cannot
+    // discriminate it (it answers i64 for every kind).
+    try std.testing.expectEqual(@as(i64, 0), table.sliceLenInfo(.i32));
+    try std.testing.expectEqual(@as(i64, 0), table.sliceLenInfo(table.ptrTo(.u8)));
+
+    // A 32-bit target moves the narrow words up against the shorter pointer;
+    // an `i64` count still aligns to 8.
+    table.pointer_size = 4;
+    try std.testing.expectEqual(row(4, false, 4), table.sliceLenInfo(nib));
+    try std.testing.expectEqual(row(32, false, 4), table.sliceLenInfo(bytes));
+    try std.testing.expectEqual(row(16, true, 4), table.sliceLenInfo(words));
+    try std.testing.expectEqual(row(64, true, 8), table.sliceLenInfo(punct));
+    try std.testing.expectEqual(row(64, true, 8), table.sliceLenInfo(.string));
+}
+
 // ── Nominal identity + key-safe mutation ────────────────────────────────
 
 test "forward-decl field fill preserves intern key" {

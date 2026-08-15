@@ -760,7 +760,7 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
         else => false,
     });
     if (is_special_container) {
-        if (std.mem.eql(u8, field, "len")) return .i64;
+        if (std.mem.eql(u8, field, "len")) return self.module.types.lenTypeOf(ty);
         if (std.mem.eql(u8, field, "ptr")) {
             const elem_ty = self.getElementType(ty);
             return self.module.types.manyPtrTo(elem_ty);
@@ -1168,7 +1168,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
 
         if (is_special) {
             if (std.mem.eql(u8, fa.field, "len")) {
-                return self.builder.emit(.{ .length = .{ .operand = obj } }, .i64);
+                return self.builder.emit(.{ .length = .{ .operand = obj } }, self.module.types.lenTypeOf(obj_ty));
             }
             {
                 const elem_ty = self.getElementType(obj_ty);
@@ -2228,6 +2228,14 @@ pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
                     return self.module.types.arrayOf(elem, length);
                 }
             }
+            // `@Slice(u8, u32).[…]`
+            if (std.mem.eql(u8, callee_name, contracts.slice_head)) {
+                if (cl.args.len == 2) {
+                    const elem = self.resolveTypeWithBindings(cl.args[0]);
+                    const len_ty = self.resolveSliceLenType(cl.args[1]) orelse return .unresolved;
+                    return self.module.types.sliceOfLen(elem, len_ty);
+                }
+            }
             // Generic-struct typed-literal head (`Box(i64).[...]`): route
             // through the single layout choke-point (CP-1). A qualified head
             // `a.Box(i64).[...]` selects a's OWN template via the namespace edge
@@ -2531,14 +2539,42 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
         if (self.diagnostics) |d|
             d.addFmt(.err, se.object.span, "slicing a many-pointer `[*]T` requires an explicit upper bound (`mp[lo..hi]`) — it has no length", .{});
         break :blk self.builder.constInt(0, .i64);
-    } else self.builder.emit(.{ .length = .{ .operand = obj } }, .i64);
+    } else self.emitLengthI64(obj, obj_ty);
     if (se.end_inclusive) hi = self.builder.add(hi, self.builder.constInt(1, .i64), .i64);
     // Subslice of string stays string (same {ptr, i64} layout, correct type category)
     if (obj_ty == .string) {
         return self.builder.emit(.{ .subslice = .{ .base = obj, .lo = lo, .hi = hi, .base_ty = obj_ty } }, .string);
     }
     const elem_ty = self.getElementType(obj_ty);
-    const slice_ty = if (elem_ty != .void) self.module.types.sliceOf(elem_ty) else self.module.types.sliceOf(.u8);
+    // A subslice keeps its base's length word: `@Slice(T, Len)[a..b]` is again
+    // `@Slice(T, Len)`, as `string[a..b]` stays `string`. A typed destination
+    // that is a slice of the same element (`b : @Slice(u8, u32) = a[0..]`)
+    // forms that `Len` directly.
+    const base_len_ty = self.module.types.lenTypeOf(obj_ty);
+    const len_ty = blk: {
+        if (self.target_type) |tgt| {
+            if (!tgt.isBuiltin() and self.module.types.get(tgt) == .slice) {
+                const ts = self.module.types.get(tgt).slice;
+                const same_elem = ts.element == elem_ty or (elem_ty == .void and ts.element == .u8);
+                if (same_elem) break :blk ts.len_type;
+            }
+        }
+        break :blk base_len_ty;
+    };
+    const slice_ty = if (elem_ty != .void)
+        self.module.types.sliceOfLen(elem_ty, len_ty)
+    else
+        self.module.types.sliceOfLen(.u8, len_ty);
+    if (self.foldedInt(lo)) |lo_v| {
+        if (self.foldedInt(hi)) |hi_v| {
+            const n: u64 = if (hi_v >= lo_v) @intCast(hi_v - lo_v) else 0;
+            if (self.refuseLenWord(n, slice_ty)) return self.builder.constUndef(slice_ty);
+        } else if (self.refuseImplicitLenNarrow(obj_ty, slice_ty)) {
+            return self.builder.constUndef(slice_ty);
+        }
+    } else if (self.refuseImplicitLenNarrow(obj_ty, slice_ty)) {
+        return self.builder.constUndef(slice_ty);
+    }
     // Slicing an ARRAY must produce a zero-copy VIEW into the array's backing
     // storage (specs.md §Subslicing: "the result points into the original
     // backing storage — no memory allocation"). Lowering the array as a VALUE

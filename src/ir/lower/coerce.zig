@@ -655,6 +655,89 @@ pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) R
     return self.builder.boxAnyAt(slot, box_ty);
 }
 
+/// Folded integer behind `ref`: a `const_int`, or add/sub/widen of those.
+pub fn foldedInt(self: *Lowering, ref: Ref) ?i64 {
+    const op = self.builder.getRefOp(ref) orelse return null;
+    return switch (op) {
+        .const_int => |v| v,
+        .add => |b| blk: {
+            const l = self.foldedInt(b.lhs) orelse return null;
+            const r = self.foldedInt(b.rhs) orelse return null;
+            break :blk l +% r;
+        },
+        .sub => |b| blk: {
+            const l = self.foldedInt(b.lhs) orelse return null;
+            const r = self.foldedInt(b.rhs) orelse return null;
+            break :blk l -% r;
+        },
+        .widen => |c| self.foldedInt(c.operand),
+        .length => |u| blk: {
+            const oty = self.builder.getRefType(u.operand);
+            if (oty.isBuiltin() or self.module.types.get(oty) != .array) return null;
+            break :blk @intCast(self.module.types.get(oty).array.length);
+        },
+        else => null,
+    };
+}
+
+/// Folded element count of an already-lowered slice value, when the IR
+/// still carries it as a constant (`subslice` hi-lo or `array_to_slice`).
+fn foldedSliceLen(self: *Lowering, val: Ref) ?u64 {
+    const op = self.builder.getRefOp(val) orelse return null;
+    switch (op) {
+        .subslice => |ss| {
+            const lo = self.foldedInt(ss.lo) orelse return null;
+            const hi = self.foldedInt(ss.hi) orelse return null;
+            if (hi < lo) return 0;
+            return @intCast(hi - lo);
+        },
+        .array_to_slice => |u| {
+            const aty = self.builder.getRefType(u.operand);
+            if (aty.isBuiltin() or self.module.types.get(aty) != .array) return null;
+            return self.module.types.get(aty).array.length;
+        },
+        else => return null,
+    }
+}
+
+fn diagnoseLenWord(self: *Lowering, n: u64, dst_ty: TypeId, kind: []const u8) void {
+    const d = self.diagnostics orelse return;
+    const cs = self.builder.current_span;
+    const len_ty = self.module.types.lenTypeOf(dst_ty);
+    d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "{s} {} does not fit the {s} length word of '{s}'", .{
+        kind, n, self.formatTypeName(len_ty), self.formatTypeName(dst_ty),
+    });
+}
+
+pub fn refuseImplicitLenNarrow(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    const src_len = self.module.types.lenTypeOf(src_ty);
+    const dst_len = self.module.types.lenTypeOf(dst_ty);
+    if (self.module.types.lenWordContains(dst_len, src_len)) return false;
+    if (self.diagnostics) |d| {
+        const cs = self.builder.current_span;
+        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot implicitly convert '{s}' to '{s}': a non-constant length does not fit a narrower length word", .{
+            self.formatTypeName(src_ty), self.formatTypeName(dst_ty),
+        });
+    }
+    return true;
+}
+
+pub fn refuseLenWord(self: *Lowering, n: u64, dst_ty: TypeId) bool {
+    if (self.module.types.lenFitsWord(self.module.types.lenTypeOf(dst_ty), n)) return false;
+    diagnoseLenWord(self, n, dst_ty, "length");
+    return true;
+}
+
+/// Refuse `[N]T → @Slice(T, Len)` when `N` overflows the destination's length
+/// word: the header would carry a truncated length and every read through the
+/// slice would stop short.
+pub fn refuseArrayLenWord(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    const n: u64 = self.module.types.get(src_ty).array.length;
+    if (self.module.types.lenFitsWord(self.module.types.lenTypeOf(dst_ty), n)) return false;
+    diagnoseLenWord(self, n, dst_ty, "array length");
+    return true;
+}
+
 /// Coerce an already-lowered ARRAY value `val` (of array type `src_ty`) into a
 /// slice `dst_ty` as a ZERO-COPY VIEW when the array is addressable, mirroring
 /// the explicit-subslice path. An ADDRESSABLE array (local, global, struct
@@ -672,12 +755,13 @@ pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) R
 /// call's duration, so the copying `array_to_slice` op is SOUND; for a STORED
 /// slice (`s : []T = makeArr()`) the copy would be a dangling view and must be
 /// rejected like 0225.
-pub fn arrayToSliceView(self: *Lowering, val: Ref, src_ty: TypeId) ?Ref {
+pub fn arrayToSliceView(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) ?Ref {
     if (src_ty.isBuiltin() or self.module.types.get(src_ty) != .array) return null;
+    if (self.refuseArrayLenWord(src_ty, dst_ty)) return self.builder.constUndef(dst_ty);
     const addr = self.refStorageAddress(val) orelse return null;
     const info = self.module.types.get(src_ty).array;
     const elem_ty = info.element;
-    const slice_ty = self.module.types.sliceOf(elem_ty);
+    const slice_ty = self.module.types.sliceOfLen(elem_ty, self.module.types.lenTypeOf(dst_ty));
     const lo = self.builder.constInt(0, .i64);
     const hi = self.builder.constInt(@intCast(info.length), .i64);
     return self.builder.emit(.{ .subslice = .{
@@ -1945,7 +2029,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             // storage; this implicit path MUST match, or passing
             // `arr` vs `arr[0..]` silently differs. For an
             // ADDRESSABLE array, build a zero-copy VIEW over its storage.
-            if (self.arrayToSliceView(val, src_ty)) |view| return view;
+            if (self.arrayToSliceView(val, src_ty, dst_ty)) |view| return view;
             // NON-addressable rvalue array (`fill(makeArr())`): keep the
             // COPYING `array_to_slice` op (alloca+store). This is the general
             // coercion arm, reached for CALL ARGUMENTS — the temporary lives
@@ -1957,6 +2041,27 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             // a SUBSLICE of a temporary, which aliases the temp directly
             // (dangling) and IS rejected. Recorded in specs.md §Subslicing.
             return self.builder.emit(.{ .array_to_slice = .{ .operand = val } }, dst_ty);
+        },
+        // `@Slice(T,A) → @Slice(T,B)`: same view, a length word of a different
+        // width. Rebuild the header from the source's `.ptr` and `.len`. A
+        // folded source length that does not fit `B` is refused; implicit
+        // narrowing of a non-constant length is refused; widening is implicit.
+        .slice_len_convert => {
+            if (foldedSliceLen(self, val)) |n| {
+                if (self.refuseLenWord(n, dst_ty)) return self.builder.constUndef(dst_ty);
+            } else if (mode == .implicit and self.refuseImplicitLenNarrow(src_ty, dst_ty)) {
+                return self.builder.constUndef(dst_ty);
+            }
+            const elem_ty = self.module.types.get(dst_ty).slice.element;
+            const mp_ty = self.module.types.manyPtrTo(elem_ty);
+            const data = self.builder.emit(.{ .data_ptr = .{ .operand = val } }, mp_ty);
+            const len = self.emitLengthI64(val, src_ty);
+            return self.builder.emit(.{ .subslice = .{
+                .base = data,
+                .lo = self.builder.constInt(0, .i64),
+                .hi = len,
+                .base_ty = mp_ty,
+            } }, dst_ty);
         },
         // `[*]T → []T`: a many-pointer has no length, so it can't form a slice
         // header implicitly. Diagnose and tell the user to slice with a length.

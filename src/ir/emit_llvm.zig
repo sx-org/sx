@@ -225,6 +225,8 @@ pub const LLVMEmitter = struct {
     vector_lanes_array_len: u32 = 0,
     variant_tag_width_array: ?c.LLVMValueRef = null,
     variant_tag_width_array_len: u32 = 0,
+    slice_len_info_array: ?c.LLVMValueRef = null,
+    slice_len_info_array_len: u32 = 0,
     // Field-family master-index tables: [N x ptr] → per-type arrays.
     member_name_ptrs: ?c.LLVMValueRef = null,
     member_name_ptrs_len: u32 = 0,
@@ -1329,6 +1331,16 @@ pub const LLVMEmitter = struct {
                 return self.failGlobalInit(llvm_ty);
             };
 
+            // A narrow `Len` makes the header `{ptr, Len}`, not the shared
+            // `{ptr, i64}` string layout.
+            const len_ty = self.ir_mod.types.lenTypeOf(ty);
+            if (len_ty != .i64) {
+                var flds = [_]c.LLVMValueRef{
+                    self.emitConstBytesGlobal(bytes),
+                    c.LLVMConstInt(self.toLLVMType(len_ty), bytes.len, 0),
+                };
+                return c.LLVMConstStructInContext(self.context, &flds, 2, 0);
+            }
             return self.emitConstStringGlobal(bytes);
         }
 
@@ -2867,9 +2879,8 @@ pub const LLVMEmitter = struct {
 
     // ── String constant emission ────────────────────────────────────
 
-    /// Build a constant string { ptr, i64 } value without using the builder
-    /// (safe to call during global initialization, before any function body is emitted).
-    fn emitConstStringGlobal(self: *LLVMEmitter, str: []const u8) c.LLVMValueRef {
+    /// The private NUL-terminated byte array a fat-pointer constant points at.
+    fn emitConstBytesGlobal(self: *LLVMEmitter, str: []const u8) c.LLVMValueRef {
         const str_z = self.alloc.dupeZ(u8, str) catch unreachable;
         defer self.alloc.free(str_z);
         const len: c_uint = @intCast(str.len + 1); // include null terminator
@@ -2880,9 +2891,13 @@ pub const LLVMEmitter = struct {
         c.LLVMSetGlobalConstant(str_global_val, 1);
         c.LLVMSetLinkage(str_global_val, c.LLVMPrivateLinkage);
         c.LLVMSetUnnamedAddress(str_global_val, c.LLVMGlobalUnnamedAddr);
-        // Build constant { ptr, i64 } aggregate
-        const len_val = c.LLVMConstInt(self.cached_i64, str.len, 0);
-        var fields = [_]c.LLVMValueRef{ str_global_val, len_val };
+        return str_global_val;
+    }
+
+    /// Build a constant string { ptr, i64 } value without using the builder
+    /// (safe to call during global initialization, before any function body is emitted).
+    fn emitConstStringGlobal(self: *LLVMEmitter, str: []const u8) c.LLVMValueRef {
+        var fields = [_]c.LLVMValueRef{ self.emitConstBytesGlobal(str), c.LLVMConstInt(self.cached_i64, str.len, 0) };
         return c.LLVMConstStructInContext(self.context, &fields, 2, 0);
     }
 

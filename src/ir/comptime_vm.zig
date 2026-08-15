@@ -1181,11 +1181,11 @@ pub const Vm = struct {
             .length => |u| {
                 const table = try self.requireTable();
                 const oty = (try self.refTy(ref_types, u.operand));
-                if (oty == .string) return .{ .value = try self.sliceLen(frame.get(u.operand.index())) };
+                if (oty == .string) return .{ .value = try self.sliceLen(table, .string, frame.get(u.operand.index())) };
                 if (!oty.isBuiltin()) {
                     switch (table.get(oty)) {
                         .array => |a| return .{ .value = a.length },
-                        .slice => return .{ .value = try self.sliceLen(frame.get(u.operand.index())) },
+                        .slice => return .{ .value = try self.sliceLen(table, oty, frame.get(u.operand.index())) },
                         else => {},
                     }
                 }
@@ -1199,7 +1199,7 @@ pub const Vm = struct {
                 const text = table.getString(sid);
                 const data = self.machine.allocBytes(text.len + 1, 1); // +1: NUL (zero-init)
                 if (text.len > 0) @memcpy(try self.machine.bytes(data, text.len), text);
-                return .{ .value = try self.makeSlice(table, data, text.len) };
+                return .{ .value = try self.makeSlice(table, .string, data, text.len) };
             },
             .data_ptr => |u| {
                 const table = try self.requireTable();
@@ -1217,7 +1217,7 @@ pub const Vm = struct {
                     self.detail = "comptime VM: array_to_slice on a non-array operand";
                     return error.Unsupported;
                 }
-                return .{ .value = try self.makeSlice(table, frame.get(u.operand.index()), table.get(aty).array.length) };
+                return .{ .value = try self.makeSlice(table, ins.ty, frame.get(u.operand.index()), table.get(aty).array.length) };
             },
             .subslice => |s| {
                 const table = try self.requireTable();
@@ -1250,14 +1250,16 @@ pub const Vm = struct {
                     return error.Unsupported;
                 }
                 const esz: u64 = @intCast(table.typeSizeBytes(elem));
-                return .{ .value = try self.makeSlice(table, data +% lo *% esz, hi - lo) };
+                return .{ .value = try self.makeSlice(table, ins.ty, data +% lo *% esz, hi - lo) };
             },
             .str_eq, .str_ne => |b| {
                 const table = try self.requireTable();
                 const lb = frame.get(b.lhs.index());
                 const rb = frame.get(b.rhs.index());
-                const ls = try self.machine.bytes(try self.sliceData(table, lb), @intCast(try self.sliceLen(lb)));
-                const rs = try self.machine.bytes(try self.sliceData(table, rb), @intCast(try self.sliceLen(rb)));
+                const lty = try self.refTy(ref_types, b.lhs);
+                const rty = try self.refTy(ref_types, b.rhs);
+                const ls = try self.machine.bytes(try self.sliceData(table, lb), @intCast(try self.sliceLen(table, lty, lb)));
+                const rs = try self.machine.bytes(try self.sliceData(table, rb), @intCast(try self.sliceLen(table, rty, rb)));
                 const eq = std.mem.eql(u8, ls, rs);
                 return .{ .value = @intFromBool(if (std.meta.activeTag(ins.op) == .str_eq) eq else !eq) };
             },
@@ -1963,7 +1965,7 @@ pub const Vm = struct {
                 // NUL-terminated `char*`); any other aggregate bails.
                 if (aty != .string and (aty.isBuiltin() or table.get(aty) != .slice))
                     return self.failMsg("comptime extern call: non-string/slice aggregate arg not marshaled on the VM");
-                const n: usize = @intCast(try self.sliceLen(reg));
+                const n: usize = @intCast(try self.sliceLen(table, aty, reg));
                 const data = try self.sliceData(table, reg);
                 const buf = self.machine.allocBytes(n + 1, 1); // zeroed → NUL at [n]
                 if (n > 0) @memcpy(try self.machine.bytes(buf, n), try self.machine.bytes(data, n));
@@ -2072,7 +2074,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         if (intr == .raw_intern) {
             if (args.len != 1) return self.failMsg("comptime intern: expected one string arg");
             const s = frame.get(args[0].index()); // string fat-pointer Addr
-            const text = try self.machine.bytes(try self.sliceData(table, s), @intCast(try self.sliceLen(s)));
+            const text = try self.machine.bytes(try self.sliceData(table, s), @intCast(try self.sliceLen(table, .string, s)));
             // The string pool is genuinely mutable; the VM holds the table `const`
             // (it never mutates TYPE layout — interning a string is pool-only, so it
             // can't invalidate the cached type sizes the VM relies on).
@@ -2150,7 +2152,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         if (intr == .raw_declare_type) {
             if (args.len != 1) return self.failMsg("comptime declare_type: expected (name)");
             const s = frame.get(args[0].index()); // string fat-pointer Addr
-            const text = try self.machine.bytes(try self.sliceData(table, s), @intCast(try self.sliceLen(s)));
+            const text = try self.machine.bytes(try self.sliceData(table, s), @intCast(try self.sliceLen(table, .string, s)));
             return @as(Reg, (self.declareNominal(table, text)).index());
         }
         if (intr == .raw_pointer_to) {
@@ -2476,14 +2478,14 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         const name_off = fieldOffset(table, member_ty, 0);
         const ty_off = fieldOffset(table, member_ty, 1);
         const name_fty = mfields[0].ty; // string
-        const len = try self.sliceLen(slice_word);
+        const len = try self.sliceLen(table, slice_ty, slice_word);
         const base = try self.sliceData(table, slice_word);
         const stride: Addr = @intCast(table.typeSizeBytes(member_ty));
         const tbl = @constCast(table);
         for (0..@intCast(len)) |i| {
             const elem = base + @as(Addr, @intCast(i)) * stride;
             const name_fp = try self.readField(table, elem + name_off, name_fty); // string fat-pointer Addr
-            const mname = try self.machine.bytes(try self.sliceData(table, name_fp), @intCast(try self.sliceLen(name_fp)));
+            const mname = try self.machine.bytes(try self.sliceData(table, name_fp), @intCast(try self.sliceLen(table, name_fty, name_fp)));
             const mty: TypeId = @enumFromInt(@as(u32, @intCast(try self.readField(table, elem + ty_off, .type_value))));
             out.append(self.gpa, .{ .name = tbl.internString(mname), .ty = mty }) catch return self.failMsg("comptime define/register: out of memory");
         }
@@ -2551,7 +2553,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             },
             // Runtime-Type scalar reflection: the tag resolves the same
             // way type_name's does; answers come straight from the type table.
-            .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_variant_tag_width => {
+            .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_variant_tag_width, .rt_slice_len_info => {
                 const table = try self.requireTable();
                 if (bi.args.len < 1) return self.failMsg("comptime reflection: missing argument");
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
@@ -2590,6 +2592,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                         break :blk 0;
                     },
                     .rt_variant_tag_width => @as(Reg, @bitCast(table.variantTagWidth(tid))),
+                    .rt_slice_len_info => @as(Reg, @bitCast(table.sliceLenInfo(tid))),
                     else => unreachable,
                 };
             },
@@ -2887,7 +2890,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             }
         }
 
-        const slice = try self.makeSlice(table, data, @intCast(count));
+        const slice = try self.makeSlice(table, slice_field_ty, data, @intCast(count));
         const pinfo = try self.allocZeroed(table, payload_ty);
         try self.writeField(table, pinfo + fieldOffset(table, payload_ty, 0), slice_field_ty, slice);
         return pinfo;
@@ -2926,7 +2929,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             },
             .aggregate => {
                 if (ty == .string) {
-                    const src = try self.machine.bytes(try self.sliceData(table, reg), @intCast(try self.sliceLen(reg)));
+                    const src = try self.machine.bytes(try self.sliceData(table, reg), @intCast(try self.sliceLen(table, .string, reg)));
                     return .{ .string = alloc.dupe(u8, src) catch return self.failMsg("reg→value: out of memory (string)") };
                 }
                 const info = table.get(ty);
@@ -3359,22 +3362,32 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     fn makeStringValue(self: *Vm, table: *const types.TypeTable, text: []const u8) Error!Reg {
         const data = self.machine.allocBytes(text.len + 1, 1); // +1: NUL (zero-init)
         if (text.len > 0) @memcpy(try self.machine.bytes(data, text.len), text);
-        return try self.makeSlice(table, data, text.len);
+        return try self.makeSlice(table, .string, data, text.len);
     }
 
-    /// Build a `{ptr, len}` fat pointer (slice/string value) in comptime memory and
-    /// return its address. `ptr` is `pointer_size` bytes at offset 0; `len` is an
-    /// i64 at offset 8 (the layout `typeSizeBytes` uses for slice/string: 16B).
-    fn makeSlice(self: *Vm, table: *const types.TypeTable, data: Addr, len: u64) Error!Addr {
+    /// Build a `{ptr, Len}` fat pointer (slice/string value) in comptime memory and
+    /// return its address. `ptr` is `pointer_size` bytes at offset 0; `fat_ty`
+    /// places and sizes the length word within the 16-byte header. A length
+    /// that does not fit `fat_ty`'s length word is an error.
+    fn makeSlice(self: *Vm, table: *const types.TypeTable, fat_ty: TypeId, data: Addr, len: u64) Error!Addr {
+        if (!table.lenFitsWord(table.lenTypeOf(fat_ty), len))
+            return self.failFmt("comptime VM: slice length {d} does not fit the destination length word", .{len});
+        const lw = table.lenWordOf(fat_ty).?;
         const fp = self.machine.allocBytes(16, 8);
         try self.machine.writeWord(fp, table.pointer_size, data);
-        try self.machine.writeWord(fp + 8, 8, len);
+        try self.machine.writeWord(fp + lw.offset, lw.byteWidth(), len);
         return fp;
     }
 
-    /// Read the `.len` field (i64 @ offset 8) of a fat-pointer value at `base`.
-    fn sliceLen(self: *Vm, base: Addr) Error!u64 {
-        return self.machine.readWord(base + 8, 8);
+    /// Read the `.len` field of a fat-pointer value at `base`. `fat_ty` places
+    /// and sizes the length word: `string` and `[]T` carry an `i64`, a
+    /// `@Slice(T, Len)` carries a `Len`. A sub-byte `Len` occupies only its
+    /// low bits of the byte it shares with padding.
+    fn sliceLen(self: *Vm, table: *const types.TypeTable, fat_ty: TypeId, base: Addr) Error!u64 {
+        const lw = table.lenWordOf(fat_ty).?;
+        const raw = try self.machine.readWord(base + lw.offset, lw.byteWidth());
+        if (lw.bits >= 64) return raw;
+        return raw & ((@as(u64, 1) << @intCast(lw.bits)) - 1);
     }
 
     /// Read the `.ptr` field (`pointer_size` @ offset 0) of a fat-pointer at `base`.
@@ -3421,7 +3434,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// `[]const u8`. The bytes are a VIEW into comptime memory (Addr is a real host
     /// pointer over a stable arena), valid for the duration of the call.
     fn readStringArg(self: *Vm, table: *const types.TypeTable, val: Reg) Error![]const u8 {
-        const len: usize = @intCast(try self.sliceLen(val));
+        const len: usize = @intCast(try self.sliceLen(table, .string, val));
         if (len == 0) return "";
         return try self.machine.bytes(try self.sliceData(table, val), len);
     }

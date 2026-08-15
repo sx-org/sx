@@ -1552,6 +1552,18 @@ pub const Lowering = struct {
         return null;
     }
 
+    /// Resolve the `Len` argument of `@Slice(T, Len)`: the length word's type.
+    /// Only an integer type carries a length, so anything else is a hard error
+    /// and yields the `.unresolved` sentinel.
+    pub fn resolveSliceLenType(self: *Lowering, len_node: *const Node) ?TypeId {
+        const ty = self.resolveTypeWithBindings(len_node);
+        if (ty == .unresolved) return null;
+        if (self.module.types.isIntegerType(ty)) return ty;
+        if (self.diagnostics) |d|
+            d.addFmt(.err, len_node.span, "@Slice length type must be an integer type, got '{s}'", .{self.formatTypeName(ty)});
+        return null;
+    }
+
     /// Leaf-name lookup for the shared dimension evaluator: a name bound to a
     /// compile-time integer across the three const tables.
     pub fn lookupDimName(self: *Lowering, name: []const u8) ?i64 {
@@ -2274,6 +2286,16 @@ pub const Lowering = struct {
             .many_pointer => |p| p.element,
             else => .unresolved,
         };
+    }
+
+    /// The length of a container as an `i64` — a fat pointer's length word
+    /// widened out of its declared `Len`, so the index/range machinery works in
+    /// one integer width whatever the slice's ABI.
+    pub fn emitLengthI64(self: *Lowering, obj: Ref, obj_ty: TypeId) Ref {
+        const len_ty = self.module.types.lenTypeOf(obj_ty);
+        const len = self.builder.emit(.{ .length = .{ .operand = obj } }, len_ty);
+        if (len_ty == .i64) return len;
+        return self.builder.emit(.{ .widen = .{ .operand = len, .from = len_ty, .to = .i64 } }, .i64);
     }
 
     /// The element type when `ty` is a POINTER TO AN ARRAY (`*[N]T` → T),
@@ -3470,6 +3492,10 @@ pub const Lowering = struct {
     pub const isLvalueExpr = lower_coerce.isLvalueExpr;
     pub const refStorageAddress = lower_coerce.refStorageAddress;
     pub const arrayToSliceView = lower_coerce.arrayToSliceView;
+    pub const refuseArrayLenWord = lower_coerce.refuseArrayLenWord;
+    pub const refuseLenWord = lower_coerce.refuseLenWord;
+    pub const refuseImplicitLenNarrow = lower_coerce.refuseImplicitLenNarrow;
+    pub const foldedInt = lower_coerce.foldedInt;
     pub const isByValueBindingIdent = lower_coerce.isByValueBindingIdent;
     pub const coerceOrErase = lower_coerce.coerceOrErase;
     pub const buildProtocolErasure = lower_coerce.buildProtocolErasure;

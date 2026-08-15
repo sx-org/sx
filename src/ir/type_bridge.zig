@@ -428,6 +428,15 @@ fn resolveParameterizedType(pt: *const ast.ParameterizedTypeExpr, table: *TypeTa
             return table.arrayOf(elem, length);
         }
     }
+    // @Slice(T, Len) is a fat pointer `{ptr, Len}`; `@Slice(T, i64)` is `[]T`
+    if (std.mem.eql(u8, base_name, contracts.slice_head)) {
+        if (pt.args.len == 2) {
+            const elem = resolveAstType(pt.args[0], table, alias_map, consts);
+            const len_ty = resolveAstType(pt.args[1], table, alias_map, consts);
+            if (!table.isIntegerType(len_ty)) return .unresolved;
+            return table.sliceOfLen(elem, len_ty);
+        }
+    }
     // Generic struct instantiation — register as named type
     const name_id = table.internString(pt.name);
     return table.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });

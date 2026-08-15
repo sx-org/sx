@@ -618,6 +618,10 @@ pub const BuiltinId = enum(u16) {
     // The tag-word byte width a runtime variant read loads (sign-encoded:
     // negative = sign-extend). Internal — serves fmt's `__sx_any_tag_word`.
     rt_variant_tag_width,
+    // The packed length-word row (bit width / signedness / header offset) a
+    // runtime fat-pointer read needs. Internal — serves fmt's
+    // `__sx_any_len_word`.
+    rt_slice_len_info,
     rt_type_eq,
     // Field-family runtime paths: master-index [N x ptr] tables →
     // per-type arrays (names reuse the per-type name arrays; type tags,

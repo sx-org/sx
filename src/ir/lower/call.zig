@@ -2736,6 +2736,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
+        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
@@ -2985,6 +2986,7 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
+        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
@@ -3261,6 +3263,7 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
+        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
@@ -3456,6 +3459,7 @@ fn isReflectionCall(name: []const u8) bool {
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
+        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
@@ -4286,6 +4290,18 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         }
         const ty = self.resolveTypeArg(c.args[0]);
         return self.builder.constInt(self.module.types.variantTagWidth(ty), .i64);
+    }
+    if (std.mem.eql(u8, name, "__sx_slice_len_info")) {
+        // INTERNAL: the packed length-word row (fmt's runtime fat-pointer
+        // read). Static arg folds; runtime Type reads the row table.
+        if (c.args.len < 1) return self.builder.constInt(0, .i64);
+        if (!self.isStaticTypeArg(c.args[0])) {
+            const arg_ref = self.lowerExpr(c.args[0]);
+            const args_owned = self.alloc.dupe(Ref, &.{arg_ref}) catch return self.builder.constInt(0, .i64);
+            return self.builder.callBuiltin(.rt_slice_len_info, args_owned, .i64);
+        }
+        const ty = self.resolveTypeArg(c.args[0]);
+        return self.builder.constInt(self.module.types.sliceLenInfo(ty), .i64);
     }
     return null;
 }

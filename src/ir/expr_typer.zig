@@ -256,7 +256,10 @@ pub const ExprTyper = struct {
                     else => false,
                 });
                 if (is_special_container) {
-                    if (std.mem.eql(u8, fa.field, "len")) return if (is_opt_chain) self.l.module.types.optionalOf(.i64) else .i64;
+                    if (std.mem.eql(u8, fa.field, "len")) {
+                        const len_ty = self.l.module.types.lenTypeOf(obj_ty);
+                        return if (is_opt_chain) self.l.module.types.optionalOf(len_ty) else len_ty;
+                    }
                     if (std.mem.eql(u8, fa.field, "ptr")) {
                         // .ptr on slice/string → [*]element_type
                         const elem_ty = self.l.getElementType(obj_ty);

@@ -1,0 +1,36 @@
+// A `@Slice` length word is an integer type. A length that does not fit
+// that word does not form the slice.
+
+#import "modules/std.sx";
+
+Bad :: @Slice(u8, bool);
+
+Tiny :: @Slice(u8, u8);
+
+Nib :: @Slice(u8, u4);
+
+take :: (b: Tiny) -> u8 { b.len }
+
+take_nib :: (b: Nib) -> u8 { b.len }
+
+main :: () -> i32 {
+    x : Bad = ---;
+    big : [300]u8 = ---;
+    xx take(big);
+
+    s : Tiny = big;
+    s2 : Tiny = big[0..];
+
+    mid : [20]u8 = ---;
+    xx take_nib(mid);
+
+    ok : [4]u8 = ---;
+    t : Tiny = ok;
+    t.len = 300;
+    t.len += 300;
+    t.len -= 300;
+    t.len = 200 + 100;
+
+    plain : []u8 = big[0..];
+    tiny : Tiny = plain;
+}

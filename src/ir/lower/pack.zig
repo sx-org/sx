@@ -445,7 +445,7 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
                 // copying `array_to_slice` op: this is a call ARGUMENT, so the
                 // temp lives for the call's duration — a copy is SOUND.
                 const slice_val = switch (arr_info.?) {
-                    .array => self.arrayToSliceView(arr_val, arr_ty) orelse
+                    .array => self.arrayToSliceView(arr_val, arr_ty, slice_ty) orelse
                         self.builder.emit(.{ .array_to_slice = .{ .operand = arr_val } }, slice_ty),
                     else => arr_val,
                 };
