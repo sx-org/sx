@@ -1,16 +1,16 @@
 error: expansion deadlock — nothing can run: every compile-time unit still waiting needs a fact only another waiting unit could publish, so the expansion depends negatively on a set it feeds
-  --> examples/diagnostics/1970-diagnostics-expansion-deadlock-self-feed.sx:18:11
+  --> examples/diagnostics/1970-diagnostics-expansion-deadlock-self-feed.sx:17:11
    |
-18 | inline if !has_impl(Serialize, GPA) {
+17 | inline if !has_impl(Serialize, GPA) {
    |           ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-note: this `inline if` awaits 'Serialize' membership of 'GPA' to be final
-  --> examples/diagnostics/1970-diagnostics-expansion-deadlock-self-feed.sx:18:11
+note: this `inline if` awaits 'Serialize' impls to be final before 'GPA' is judged a non-conformer
+  --> examples/diagnostics/1970-diagnostics-expansion-deadlock-self-feed.sx:17:11
    |
-18 | inline if !has_impl(Serialize, GPA) {
+17 | inline if !has_impl(Serialize, GPA) {
    |           ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: decide the declaration outside the set it queries — a question whose answer changes what it asks about has no single answer
    |
-18 | inline if !has_impl(Serialize, GPA) {
+17 | inline if !has_impl(Serialize, GPA) {
    |           ^^^^^^^^^^^^^^^^^^^^^^^^^

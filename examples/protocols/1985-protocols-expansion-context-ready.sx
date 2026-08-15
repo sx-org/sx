@@ -15,7 +15,7 @@
 // instead of printing which default is really in the Context.
 #import "modules/std.sx";
 
-Show :: protocol tagged { fmt :: (self: *Self) -> i64; }
+Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
 
 Deep :: struct { n: i64; }
 Flat :: struct { n: i64; }
@@ -45,6 +45,6 @@ inline if POINTER_SIZE == 8 {
 
 main :: () {
     d := Deep{ n = 4 };
-    v : Show = d;
+    v : *Show = d;
     print("{} {} {}\n", MODE, context.depth, v.fmt());
 }

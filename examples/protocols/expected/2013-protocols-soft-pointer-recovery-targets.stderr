@@ -1,17 +1,11 @@
-error: 'Timer' does not implement 'Shape' — a tagged protocol's conformer set is whole-program, so this downcast can never match; implement it, or name a conformer
-  --> examples/protocols/2013-protocols-soft-pointer-recovery-targets.sx:23:16
-   |
-23 |     if p := t.(?*Timer) { print("{}\n", p.t); }
-   |                ^^^^^^^
-
 error: the ctx recovery yields a pointer to the CONCRETE value, so its target must be the concrete pointee type ('p.(?*YourConcrete)'); to point at the protocol value itself, take its address with prefix '*'
-  --> examples/protocols/2013-protocols-soft-pointer-recovery-targets.sx:24:16
+  --> examples/protocols/2013-protocols-soft-pointer-recovery-targets.sx:16:16
    |
-24 |     if p := t.(?*Shape) { print("{}\n", p.area()); }
+16 |     if p := b.(?*Boxed) { print("{}\n", p.area()); }
    |                ^^^^^^^
 
 error: the soft ctx recovery tests the pointee type, and 'void' names no concrete type — name the conformer ('p.(?*YourConcrete)'), or take the unchecked raw ctx with 'p.(*void)'
-  --> examples/protocols/2013-protocols-soft-pointer-recovery-targets.sx:25:16
+  --> examples/protocols/2013-protocols-soft-pointer-recovery-targets.sx:17:16
    |
-25 |     if p := b.(?*void) { print("raw\n"); }
+17 |     if p := b.(?*void) { print("raw\n"); }
    |                ^^^^^^

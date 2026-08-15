@@ -1,4 +1,4 @@
-// A vtable protocol types a Context field like an `inline` or tagged one does
+// A vtable protocol types a Context field like an `inline` one does
 // (specs.md §7.6): the default folds to the identity erasure of a NAMED global
 // instance — a borrow of that global's storage, never null — and the dispatch
 // word is the pair's shared vtable symbol, so the constant is

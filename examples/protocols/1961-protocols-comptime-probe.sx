@@ -1,27 +1,25 @@
 // The soft probe (specs.md §7.9). A protocol target under `?` on a CONCRETE
 // receiver asks conformance instead of converting: a non-conformer answers
 // `null` where the plain erasure is a compile error. `has_impl(P, T)` is the
-// same question spelled at type level.
+// same question spelled at type level, and each row below answers the same
+// either side of the phase line.
 //
-// Answers are per kind. On `tagged` the question is whole-program membership,
-// and an ordinary `#run` runs after the conformer fixpoint — so a probe there
-// reads the FINAL set, including members a blanket impl admitted from code
-// lowered after the `#run`.
+// The answer is site-local impl visibility — the static fact that decides
+// whether the site could erase at all — so a protocol nothing implements
+// anywhere answers `null` rather than the value-consuming "nothing implements
+// it" error.
 #import "modules/std.sx";
 
-Series :: protocol(T: Type) tagged { count :: (self: *Self) -> i64; }
+Series :: protocol(T: Type) vtable #identity { count :: (self: *Self) -> i64; }
 Buffer :: struct($T: Type) { items: []$T; }
 impl Series($T) for Buffer($T) { count :: (self: *Buffer) -> i64 { self.items.len } }
 
 // Implements nothing at all.
 Loose :: struct { n: i64; }
 
-// A tagged protocol with an EMPTY conformer set: the probe answers null
-// rather than the value-consuming "nothing implements it" error.
-Nobody :: protocol tagged { ping :: (self: *Self) -> i64; }
+// Nothing implements `Nobody` anywhere in the program.
+Nobody :: protocol vtable #identity { ping :: (self: *Self) -> i64; }
 
-// The erased kinds answer site-local impl visibility, the static fact that
-// decides whether the site could erase at all.
 Show :: protocol inline #identity { text :: (self: *Self) -> i64; }
 impl Show for Loose { text :: (self: *Loose) -> i64 { self.n } }
 

@@ -1,8 +1,8 @@
-tagged hard 2
-tagged value 2
-tagged ptr 2
-tagged ptr miss null
-tagged borrowed 9
+ident hard 2
+ident value 2
+ident ptr 2
+ident ptr miss null
+ident borrowed 9
 vtable hard 2
 vtable value 2
 vtable ptr 2
