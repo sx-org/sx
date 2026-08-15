@@ -4,19 +4,19 @@ error: expansion deadlock — nothing can run: every compile-time unit still wai
 18 | inline if !has_impl(Draw, Widget) {
    |           ^^^^^^^^^^^^^^^^^^^^^^^
 
-note: this `inline if` awaits 'Draw' membership of 'Widget' to be final
+note: this `inline if` awaits 'Draw' impls to be final before 'Widget' is judged a non-conformer
   --> examples/diagnostics/1972-diagnostics-expansion-deadlock-multi-expansion.sx:18:11
    |
 18 | inline if !has_impl(Draw, Widget) {
    |           ^^^^^^^^^^^^^^^^^^^^^^^
 
-note: this `inline if` awaits 'Tally' membership of 'Panel' to be final
+note: this `inline if` awaits 'Tally' impls to be final before 'Panel' is judged a non-conformer
   --> examples/diagnostics/1972-diagnostics-expansion-deadlock-multi-expansion.sx:22:11
    |
 22 | inline if !has_impl(Tally, Panel) {
    |           ^^^^^^^^^^^^^^^^^^^^^^^
 
-note: this `inline if` awaits 'Name' membership of 'Badge' to be final
+note: this `inline if` awaits 'Name' impls to be final before 'Badge' is judged a non-conformer
   --> examples/diagnostics/1972-diagnostics-expansion-deadlock-multi-expansion.sx:26:11
    |
 26 | inline if !has_impl(Name, Badge) {

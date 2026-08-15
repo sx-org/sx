@@ -1,23 +1,17 @@
-error: 'Loose' does not implement protocol 'View': no `impl View for Loose` provides method 'area' (protocol erasure is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy a protocol)
-  --> examples/diagnostics/1980-diagnostics-hard-miss-at-finality.sx:22:22
-   |
-22 |     outside : View = l;
-   |                      ^
-
-error: no impl of 'Mark' exists in this program — a tagged protocol's conformer set is whole-program, and nothing implements this one, so no value of it can exist
-  --> examples/diagnostics/1980-diagnostics-hard-miss-at-finality.sx:24:20
-   |
-24 |     empty : Mark = w;
-   |                    ^
-
 error: 'Loose' does not implement protocol 'Show': no `impl Show for Loose` provides method 'fmt' (protocol erasure is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy a protocol)
-  --> examples/diagnostics/1980-diagnostics-hard-miss-at-finality.sx:26:16
+  --> examples/diagnostics/1980-diagnostics-hard-miss-at-finality.sx:22:16
    |
-26 |     unshown := l.(Show, context.allocator);
+22 |     unshown := l.(Show, context.allocator);
    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: no impl of 'Mark' exists in this program — a tagged protocol's conformer set is whole-program, and nothing implements this one, so no value of it can exist
-  --> examples/diagnostics/1980-diagnostics-hard-miss-at-finality.sx:28:41
+error: 'Loose' does not implement protocol 'Flat': no `impl Flat for Loose` provides method 'wide' (protocol erasure is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy a protocol)
+  --> examples/diagnostics/1980-diagnostics-hard-miss-at-finality.sx:24:15
    |
-28 |     print("{} {} {}\n", outside.area(), empty.tag(), unshown.fmt());
-   |                                         ^^^^^^^^^
+24 |     unflat := l.(Flat, context.allocator);
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: 'Widget' does not implement protocol 'Mark': no `impl Mark for Widget` provides method 'tag' (protocol erasure is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy a protocol)
+  --> examples/diagnostics/1980-diagnostics-hard-miss-at-finality.sx:26:14
+   |
+26 |     empty := w.(Mark, context.allocator);
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,11 +1,10 @@
 // Blanket-impl shapes that are refused where they are written, because nothing
-// could ever select them, plus the one carrier covered twice.
+// could ever select them.
 //
-// A generic carrier whose binder the head never mentions is exempt for a TAGGED
-// family, which collects members by whole-program membership — that is the
-// spelling examples/protocols/1943 ships. A protocol-argument binder with no
-// carrier instantiation to bind it from is refused for every kind, tagged
-// included: there is nothing to bind it from in either machinery.
+// A blanket impl is selected by matching the carrier's instantiation against
+// the head, so every binder must reach the other side: a protocol-argument
+// binder needs a carrier instantiation to bind it from, and a generic carrier
+// needs a binder among the protocol arguments to be reached through.
 #import "modules/std.sx";
 
 Series :: protocol(T: Type) constraint {
@@ -16,10 +15,6 @@ Buffer :: struct($T: Type) { n: i64; }
 Map2 :: struct($K: Type, $V: Type) { n: i64; }
 Plain :: struct { n: i64 = 0; }
 
-Tag :: protocol(T: Type) tagged {
-    get :: (self: *Self) -> i64;
-}
-
 // A binder in the protocol arguments with no carrier instantiation to bind it.
 impl Series($U) for Plain {
     count :: (self: *Plain) -> i64 { self.n }
@@ -28,11 +23,6 @@ impl Series($U) for Plain {
 // A generic carrier whose binder the protocol arguments never mention.
 impl Series(i64) for Buffer($T) {
     count :: (self: *Buffer) -> i64 { 1 }
-}
-
-// Tagged is exempt only for the generic-carrier shape, not for this one.
-impl Tag($U) for Plain {
-    get :: (self: *Plain) -> i64 { self.n }
 }
 
 // A binder the carrier never spells has no position to resolve through.

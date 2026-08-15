@@ -9,7 +9,7 @@
 // Context-ready open.
 #import "modules/std.sx";
 
-Show :: protocol tagged { fmt :: (self: *Self) -> i64; }
+Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
 
 Cell :: struct { n: i64; }
 
@@ -34,6 +34,6 @@ budget :: () -> i64 {
 
 main :: () {
     c := Cell{ n = 1 };
-    v : Show = c;
+    v : *Show = c;
     print("{} {}\n", LANES, v.fmt());
 }

@@ -1,6 +1,0 @@
-// Shared family + conformer for the per-instantiation coherence example.
-#import "modules/std.sx";
-
-Series :: protocol(T: Type) tagged { at :: (self: *Self, i: i64) -> T; }
-
-Sine :: struct { freq: f32; }
