@@ -3181,6 +3181,12 @@ d : u8 = #run xx resolve(5); // i32 → u8 at compile time
 
 Using `xx` outside a typed context (where the target type is known) is a compile error.
 
+In a comparison the target is the OTHER operand's type: `a == xx b` converts `b`
+to `a`'s type, reading exactly as the hoisted `t : <type of a> = xx b; a == t`.
+A comparison yields `bool`, and that `bool` is the value the surrounding context
+expects — it is never the target of an operand, so the comparison reads the same
+inferred, as an `if` condition, and in a `bool` declaration, argument or return.
+
 When an explicit cast pair has **no modeled conversion** (and no user `Into`
 applies), the cast is a raw bit-reinterpretation. Between two same-shaped
 types (scalar↔scalar, aggregate↔aggregate — e.g. `string` ↔ `SliceRaw`) the

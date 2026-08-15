@@ -1,0 +1,10 @@
+inferred : true
+if       : true
+typed    : true
+argument : true
+return   : true
+hoisted  : true
+lhs cast : true
+truncate : true true
+float    : true
+chained  : true
