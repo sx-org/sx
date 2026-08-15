@@ -1,5 +1,5 @@
-// A `Vector` lane count that folds to a valid compile-time integer but exceeds a
-// `u32` (`Vector(5_000_000_000, f32)`) is a hard error — a clean sx diagnostic
+// A `@Vector` lane count that folds to a valid compile-time integer but exceeds a
+// `u32` (`@Vector(5_000_000_000, f32)`) is a hard error — a clean sx diagnostic
 // with a non-zero exit, NOT a compiler panic.
 //
 // The lane folds to a valid i64 (5e9), so narrowing it with an unchecked
@@ -10,6 +10,6 @@
 #import "modules/std.sx";
 
 main :: () {
-    v : Vector(5000000000, f32) = ---;
+    v : @Vector(5000000000, f32) = ---;
     print("unreachable: {}\n", v.x);
 }

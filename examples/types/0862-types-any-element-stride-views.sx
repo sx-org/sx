@@ -19,7 +19,7 @@ main :: () -> i64 {
 
     // SIMD vector lanes: contiguous, stride = lane size (the vector's
     // ALIGNMENT is bigger; the lanes are packed).
-    vel := Vector(3, f32).[1.0, 3.0, 2.0];
+    vel := @Vector(3, f32).[1.0, 3.0, 2.0];
     vv : any = vel;
     print("{} {} {}\n", any_element(vv, f32, 0), any_element(vv, f32, 1), any_element(vv, f32, 2));
 

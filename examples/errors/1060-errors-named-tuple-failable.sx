@@ -13,9 +13,9 @@ two :: (n: i64) -> (x: i64, y: i64, !E) {
 }
 
 main :: () {
-    ok := two(5) or .{x = 0, y = 0};
+    ok := two(5) ?? .{x = 0, y = 0};
     print("{} {}\n", ok.x, ok.y);
 
-    bad := two(-1) or .{x = 0, y = 0};
+    bad := two(-1) ?? .{x = 0, y = 0};
     print("{} {}\n", bad.x, bad.y);
 }

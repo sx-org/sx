@@ -15,15 +15,15 @@ main :: () {
     // (`Closure() -> ($R, !)`) — the unified worker shape; a body that never
     // raises is a degenerate failable that always succeeds.
     s := context.io.async(|| -> (i64, !) 40 + 2);
-    print("sum: {}\n", s.await() or { -1 });
+    print("sum: {}\n", s.await() ?? { -1 });
 
     d := context.io.async(|| -> (i64, !) 21 * 2);
-    print("double: {}\n", d.await() or { -1 });
+    print("double: {}\n", d.await() ?? { -1 });
 
     // A worker that closes over a local.
     base := 42;
     n := context.io.async(|| -> (i64, !) base);
-    print("nullary: {}\n", n.await() or { -1 });
+    print("nullary: {}\n", n.await() ?? { -1 });
 
     // The Io capability also carries a clock.
     if context.io.now_ms() >= 0 { print("clock ok\n"); }

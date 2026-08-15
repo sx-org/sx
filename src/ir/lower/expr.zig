@@ -7,6 +7,7 @@ const mod_mod = @import("../module.zig");
 const type_bridge = @import("../type_bridge.zig");
 const program_index_mod = @import("../program_index.zig");
 const unescape = @import("../../unescape.zig");
+const contracts = @import("../../contracts.zig");
 const errors = @import("../../errors.zig");
 const TypeResolver = @import("../type_resolver.zig").TypeResolver;
 const CallResolver = @import("../calls.zig").CallResolver;
@@ -759,7 +760,7 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
         else => false,
     });
     if (is_special_container) {
-        if (std.mem.eql(u8, field, "len")) return .i64;
+        if (std.mem.eql(u8, field, "len")) return self.module.types.lenTypeOf(ty);
         if (std.mem.eql(u8, field, "ptr")) {
             const elem_ty = self.getElementType(ty);
             return self.module.types.manyPtrTo(elem_ty);
@@ -1167,7 +1168,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
 
         if (is_special) {
             if (std.mem.eql(u8, fa.field, "len")) {
-                return self.builder.emit(.{ .length = .{ .operand = obj } }, .i64);
+                return self.builder.emit(.{ .length = .{ .operand = obj } }, self.module.types.lenTypeOf(obj_ty));
             }
             {
                 const elem_ty = self.getElementType(obj_ty);
@@ -1436,7 +1437,7 @@ pub fn lowerOptionalChainIndex(self: *Lowering, ie: *const ast.IndexExpr, child:
 }
 
 /// Field access on a known type (shared by regular field access and optional chaining)
-/// Map a Vector swizzle component (`.x`/`.y`/`.z`/`.w` or the colour
+/// Map a vector swizzle component (`.x`/`.y`/`.z`/`.w` or the colour
 /// aliases `.r`/`.g`/`.b`/`.a`) to its lane index. Returns null for any
 /// other field name so the read path (`lowerFieldAccessOnType`) and the
 /// write path (`lowerAssignment`) share one resolver and reject a
@@ -2065,7 +2066,7 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
     var from_target = false;
     var is_vector = false;
 
-    // First, check explicit type annotation on the literal (e.g. Vector(3,f32).[1,2,3]).
+    // First, check explicit type annotation on the literal (e.g. `@Vector(3,f32).[1,2,3]`).
     // The prefix slot names the AGGREGATE type; a prefix that resolves to
     // anything else (scalar `i16.[…]`, struct `Point.[…]`) would read as an
     // element-type prefix — a second meaning this spelling does not carry.
@@ -2163,8 +2164,8 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
     return self.builder.structInit(elems.items, result_ty);
 }
 
-/// Resolve the type annotation on an array literal (e.g. Vector(3,f32).[...]).
-/// Handles call nodes (Vector(3,f32)), parameterized_type_expr, and identifier/type_expr.
+/// Resolve the type annotation on an array literal (e.g. `@Vector(3,f32).[...]`).
+/// Handles call nodes (`@Vector(3,f32)`), parameterized_type_expr, and identifier/type_expr.
 /// `*<operand>` where the operand denotes a TYPE resolves to the pointer
 /// type's Type value (`*i64` → the TypeId of `*i64`). Returns null when the
 /// operand is a value — the caller falls through to ordinary address-of.
@@ -2206,17 +2207,33 @@ fn addrOfTypeOperand(self: *Lowering, node: *const Node) ?TypeId {
 pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
     switch (te.data) {
         .call => |cl| {
-            // Vector(3, f32) or Module.Vector(3, f32)
+            // `@Vector(3, f32).[…]`
             const callee_name = switch (cl.callee.data) {
                 .identifier => |id| id.name,
                 .field_access => |fa| fa.field,
                 else => return .unresolved,
             };
-            if (std.mem.eql(u8, callee_name, "Vector")) {
+            if (std.mem.eql(u8, callee_name, contracts.vector_head)) {
                 if (cl.args.len == 2) {
                     const length = self.resolveVectorLane(cl.args[0]) orelse return .unresolved;
                     const elem = self.resolveTypeWithBindings(cl.args[1]);
                     return self.module.types.vectorOf(elem, length);
+                }
+            }
+            // `@Array(3, i32).[…]`
+            if (std.mem.eql(u8, callee_name, contracts.array_head)) {
+                if (cl.args.len == 2) {
+                    const length = self.resolveArrayLen(cl.args[0]) orelse return .unresolved;
+                    const elem = self.resolveTypeWithBindings(cl.args[1]);
+                    return self.module.types.arrayOf(elem, length);
+                }
+            }
+            // `@Slice(u8, u32).[…]`
+            if (std.mem.eql(u8, callee_name, contracts.slice_head)) {
+                if (cl.args.len == 2) {
+                    const elem = self.resolveTypeWithBindings(cl.args[0]);
+                    const len_ty = self.resolveSliceLenType(cl.args[1]) orelse return .unresolved;
+                    return self.module.types.sliceOfLen(elem, len_ty);
                 }
             }
             // Generic-struct typed-literal head (`Box(i64).[...]`): route
@@ -2432,7 +2449,7 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     }
     const elem_ty = self.getElementType(obj_ty);
     // Final guard: the object is not an indexable shape here. `getElementType`
-    // recognizes `[N]T` array, `[]T` slice, `[*]T` many-pointer, `Vector` and
+    // recognizes `[N]T` array, `[]T` slice, `[*]T` many-pointer, `@Vector` and
     // `string`; `ptrToArrayElem`/`ptrToSliceElem` handled `*[N]T` and `*[]T`
     // above. An `.unresolved` element means the base is a single pointer `*T`
     // or a struct — non-indexable by design. Emitting an `index_get` with
@@ -2522,14 +2539,42 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
         if (self.diagnostics) |d|
             d.addFmt(.err, se.object.span, "slicing a many-pointer `[*]T` requires an explicit upper bound (`mp[lo..hi]`) — it has no length", .{});
         break :blk self.builder.constInt(0, .i64);
-    } else self.builder.emit(.{ .length = .{ .operand = obj } }, .i64);
+    } else self.emitLengthI64(obj, obj_ty);
     if (se.end_inclusive) hi = self.builder.add(hi, self.builder.constInt(1, .i64), .i64);
     // Subslice of string stays string (same {ptr, i64} layout, correct type category)
     if (obj_ty == .string) {
         return self.builder.emit(.{ .subslice = .{ .base = obj, .lo = lo, .hi = hi, .base_ty = obj_ty } }, .string);
     }
     const elem_ty = self.getElementType(obj_ty);
-    const slice_ty = if (elem_ty != .void) self.module.types.sliceOf(elem_ty) else self.module.types.sliceOf(.u8);
+    // A subslice keeps its base's length word: `@Slice(T, Len)[a..b]` is again
+    // `@Slice(T, Len)`, as `string[a..b]` stays `string`. A typed destination
+    // that is a slice of the same element (`b : @Slice(u8, u32) = a[0..]`)
+    // forms that `Len` directly.
+    const base_len_ty = self.module.types.lenTypeOf(obj_ty);
+    const len_ty = blk: {
+        if (self.target_type) |tgt| {
+            if (!tgt.isBuiltin() and self.module.types.get(tgt) == .slice) {
+                const ts = self.module.types.get(tgt).slice;
+                const same_elem = ts.element == elem_ty or (elem_ty == .void and ts.element == .u8);
+                if (same_elem) break :blk ts.len_type;
+            }
+        }
+        break :blk base_len_ty;
+    };
+    const slice_ty = if (elem_ty != .void)
+        self.module.types.sliceOfLen(elem_ty, len_ty)
+    else
+        self.module.types.sliceOfLen(.u8, len_ty);
+    if (self.foldedInt(lo)) |lo_v| {
+        if (self.foldedInt(hi)) |hi_v| {
+            const n: u64 = if (hi_v >= lo_v) @intCast(hi_v - lo_v) else 0;
+            if (self.refuseLenWord(n, slice_ty)) return self.builder.constUndef(slice_ty);
+        } else if (self.refuseImplicitLenNarrow(obj_ty, slice_ty)) {
+            return self.builder.constUndef(slice_ty);
+        }
+    } else if (self.refuseImplicitLenNarrow(obj_ty, slice_ty)) {
+        return self.builder.constUndef(slice_ty);
+    }
     // Slicing an ARRAY must produce a zero-copy VIEW into the array's backing
     // storage (specs.md §Subslicing: "the result points into the original
     // backing storage — no memory allocation"). Lowering the array as a VALUE
@@ -2821,6 +2866,12 @@ pub fn lowerForceUnwrap(self: *Lowering, fu: *const ast.ForceUnwrap) Ref {
 }
 
 pub fn lowerNullCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
+    // A failable left operand (value-terminator or chain) routes to the
+    // error-handling lowering, not the optional unwrap below. Detected
+    // structurally (a `try`-chain's value type is non-failable `T`, so a
+    // type-only `exprIsFailable` would miss nested chains).
+    if (self.coalesceIsFailable(nc)) return self.lowerFailableCoalesce(nc);
+
     const lhs = self.lowerExpr(nc.lhs);
     const lhs_ty = self.inferExprType(nc.lhs);
 
@@ -3779,25 +3830,15 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 if (recv_erased) delegate: {
                     const full_dst = self.resolveTypeArg(pc.type_expr);
                     if (full_dst == .unresolved) break :delegate; // diagnosed below
-                    // Tagged membership is whole-program and known here, so a
-                    // downcast to a non-conformer can never match: it is a
-                    // compile error, not a runtime false (spec §6.8).
-                    if (self.refuseOutOfSetDowncast(recv_ty, full_dst, pc.type_expr.span))
-                        break :blk self.builder.constUndef(full_dst);
                     // `p.(?*T)` is the SOFT ctx recovery: a checked `p.(*T)`,
-                    // not a downcast to the POINTER type. Neither the any-view
-                    // helpers (whose type word is the concrete `T`) nor the tag
-                    // compare (whose set holds `T`) can answer for `*T`.
-                    if (self.lowerSoftPointerRecovery(&pc, recv_ty, full_dst)) |answer|
+                    // not a downcast to the POINTER type. The any-view helpers,
+                    // whose type word is the concrete `T`, cannot answer for
+                    // `*T`.
+                    if (self.lowerSoftPointerRecovery(&pc, full_dst)) |answer|
                         break :blk answer;
                     switch (self.coercionResolver().classifyXX(recv_ty, full_dst)) {
                         .protocol_to_pointer, .protocol_to_raw, .protocol_to_any, .no_op, .erase_protocol, .erase_protocol_wrap => {},
                         else => {
-                            // Tagged receiver: the check is one immediate
-                            // compare against the constant tag (§6.8) — the
-                            // any-view helpers only serve the cold panic arm.
-                            if (self.isTagged(recv_ty) and self.scope != null)
-                                break :blk self.lowerTaggedDowncast(&pc, node, recv_ty, full_dst);
                             const xx_node = self.alloc.create(Node) catch unreachable;
                             xx_node.* = Node{ .data = .{ .unary_op = .{ .op = .xx, .operand = pc.operand } }, .span = pc.operand.span, .source_file = pc.operand.source_file };
                             if (pc.type_expr.data == .optional_type_expr) {
@@ -4361,13 +4402,6 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     }
     // Short-circuit: `a or b` → if a then true else b
     if (bop.op == .or_op) {
-        // A failable `or` (value-terminator or chain) routes to the error-
-        // handling lowering, not the optional/boolean unwrap below. Detected
-        // structurally (a `try`-chain's value type is non-failable `T`, so a
-        // type-only `exprIsFailable(lhs)` would miss nested chains).
-        if (self.orIsFailableChain(bop)) {
-            return self.lowerFailableOr(bop);
-        }
         const lhs = self.lowerBoolCondition(bop.lhs);
         const rhs_bb = self.freshBlock("or.rhs");
         const merge_bb = self.freshBlockWithParams("or.merge", &.{.bool});

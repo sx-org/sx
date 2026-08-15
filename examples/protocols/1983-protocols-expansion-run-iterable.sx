@@ -8,7 +8,7 @@
 // would be, with the same coherence and provenance.
 #import "modules/std.sx";
 
-Show :: protocol tagged { fmt :: (self: *Self) -> i64; }
+Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
 
 Dot :: struct { n: i64; }
 Bar :: struct { n: i64; }
@@ -24,7 +24,7 @@ inline for T in #run pick_list() {
 main :: () {
     d := Dot{ n = 2 };
     b := Bar{ n = 5 };
-    v : Show = d;
-    w : Show = b;
+    v : *Show = d;
+    w : *Show = b;
     print("{} {}\n", v.fmt(), w.fmt());
 }

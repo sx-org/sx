@@ -17,7 +17,7 @@ const Lowering = lower.Lowering;
 //    the fall-through). Error-set `==`/tag-compares do NOT prove absence.
 //
 //  • Cleanup absorption: a bare failable call in a `defer`/`onfail`
-//    body (with no `catch` / `or value`) is rejected — its error has nowhere
+//    body (with no `catch` / `?? value`) is rejected — its error has nowhere
 //    to propagate (the block is already exiting). See `checkCleanupBody`.
 //
 // This is the diagnostic-only Pass 1e. A `*Lowering` facade (like
@@ -485,7 +485,7 @@ pub const ErrorFlow = struct {
 
     /// A `defer`/`onfail` body runs while the block is already exiting, so
     /// a bare failable call has nowhere to send its error. Reject any failable
-    /// expression-statement that isn't absorbed locally by `catch` / `or value`
+    /// expression-statement that isn't absorbed locally by `catch` / `?? value`
     /// / a destructure binding. (Parser already bans `try`/`raise`/`return`/
     /// `break`/`continue` here, so the only escape route left for a failable is
     /// local absorption.) The check is transitive through nested blocks, `if`,
@@ -523,7 +523,7 @@ pub const ErrorFlow = struct {
     }
 
     /// Reject `expr` if it is a bare (un-absorbed) failable in cleanup position.
-    /// `catch` / `or value` strip the error channel (so `exprIsFailable` is
+    /// `catch` / `?? value` strip the error channel (so `exprIsFailable` is
     /// false for them); only a still-failable expression has an unhandled error.
     fn cleanupReject(self: ErrorFlow, expr: *const Node, kind: []const u8) void {
         if (expr.data == .catch_expr) {
@@ -532,6 +532,6 @@ pub const ErrorFlow = struct {
             return;
         }
         if (!self.l.exprIsFailable(expr)) return;
-        if (self.l.diagnostics) |d| d.addFmt(.err, expr.span, "a bare failable call in a `{s}` body has nowhere to send its error — the block is already exiting; absorb it locally with `catch` or `or <value>`", .{kind});
+        if (self.l.diagnostics) |d| d.addFmt(.err, expr.span, "a bare failable call in a `{s}` body has nowhere to send its error — the block is already exiting; absorb it locally with `catch` or `?? <value>`", .{kind});
     }
 };

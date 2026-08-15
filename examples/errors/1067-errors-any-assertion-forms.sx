@@ -1,7 +1,7 @@
 // Checked assertions: `av.(T)` on an `any` receiver is failable `(T, !)`
 // with ONE spelling and two temperaments.
 // CONSUMED via the error channel = graceful: `try av.(T)` propagates
-// (the caller's set absorbs the global `mismatch` tag), `av.(T) or d`
+// (the caller's set absorbs the global `mismatch` tag), `av.(T) ?? d`
 // falls back, `av.(T) catch |e| { … }` binds the tag. UNCONSUMED with a
 // MATCHING tag just yields the value (the panic temperament only fires
 // on mismatch — pinned separately). Assertions nested in call arguments
@@ -15,10 +15,10 @@ use :: () -> ! {
     v := try av.(i64);
     print("try: {}\n", v);
     bv : any = true;
-    w := bv.(f32) or 1.25;
-    print("or miss: {}\n", w);
-    x := bv.(bool) or false;
-    print("or hit: {}\n", x);
+    w := bv.(f32) ?? 1.25;
+    print("?? miss: {}\n", w);
+    x := bv.(bool) ?? false;
+    print("?? hit: {}\n", x);
     y := av.(f64) catch |e| { print("catch: {}\n", e); 0.5 };
     print("caught: {}\n", y);
     z := try bv.(string);          // mismatch — propagates to main's catch
@@ -36,6 +36,6 @@ main :: () {
     pv : any = p;
     q := pv.(Point);
     print("struct: {} {}\n", q.x, q.y);
-    r := pv.(i64) or 9;
-    print("struct-or: {}\n", r);
+    r := pv.(i64) ?? 9;
+    print("struct-??: {}\n", r);
 }

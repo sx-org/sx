@@ -1,7 +1,7 @@
 // Generic value-carrying failable functions (`($T) -> (T, !E)`) whose body ends in
 // a trailing success EXPRESSION (no explicit `return`) set the success
 // error slot to 0 — the caller's `catch` must NOT fire and the value must be
-// intact across instantiations (i64 / string / struct), and `or` must yield the
+// intact across instantiations (i64 / string / struct), and `??` must yield the
 // real value not the fallback. `lowerGenericInstance` takes the same
 // value-failable success routing as the non-generic body.
 #import "modules/std.sx";
@@ -29,9 +29,9 @@ main :: () -> i32 {
     p := gen(Point, Point{ x = 3, y = 4 }) catch |e| { print("PHANTOM struct\n"); return 1; };
     print("struct: ({},{})\n", p.x, p.y);
 
-    // `or`-form on success must yield the real value, not the fallback.
-    o := gen(i64, 7) or 999;
-    print("or: {}\n", o);
+    // `??`-form on success must yield the real value, not the fallback.
+    o := gen(i64, 7) ?? 999;
+    print("??: {}\n", o);
 
     // A generic that raises still propagates to the caller's catch.
     gfail(i64, 0, true) catch |e| {

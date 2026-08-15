@@ -1,0 +1,5 @@
+error: expected a protocol kind ('constraint', 'vtable') or '{' after the protocol head
+  --> examples/diagnostics/2158-diagnostics-protocol-parameterized-tagged-kind-removed.sx:5:29
+   |
+ 5 | Series :: protocol(T: Type) tagged {
+   |                             ^^^^^^

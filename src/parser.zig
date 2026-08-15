@@ -434,8 +434,13 @@ pub const Parser = struct {
             return try self.createNode(start_pos, .{ .fn_decl = .{ .name = name, .params = &.{}, .return_type = null, .body = body, .name_span = name_span, .is_raw = name_is_raw } });
         }
 
-        // Otherwise it's a constant expression
-        const value = try self.parseExpr();
+        // A type-constructor head after `::` opens a type ALIAS
+        // (`NT :: Tuple(a: i64);`, `CB :: Closure(i32) -> i32;`), so the RHS
+        // parses with the type grammar; anything else is a constant expression.
+        const value = if (self.atTypeConstructorHead())
+            try self.parseTypeExpr()
+        else
+            try self.parseExpr();
 
         // name :: type_expr intrinsic; — intrinsic with type annotation. The
         // declaration is already whole without the tail, so the tail binds only
@@ -908,86 +913,22 @@ pub const Parser = struct {
                 }
             }
 
-            // Tuple type: `Tuple(A, B)` / `Tuple(T)` / `Tuple()` /
-            //   named `Tuple(x: A, y: B)` / pack `Tuple(..Ts)` / `Tuple(..F(Ts))`.
-            //   Magic contextual id — only a `Tuple` IMMEDIATELY followed by `(`
-            //   builds a tuple type; a bare `Tuple` stays an ordinary identifier
-            //   (mirrors `Closure`). Lowers to the SAME `tuple_type_expr` the
-            //   inline `(A, B)` / `(x: A, y: B)` / `(..Ts)` forms produce.
-            //   Unlike `Closure`, a trailing `->` is REJECTED (no return type).
+            // Only a `Tuple` / `Closure` IMMEDIATELY followed by `(` builds the
+            // type; a bare one is an ordinary name.
             if (std.mem.eql(u8, name, "Tuple") and self.tokens.tag(self.tok) == .l_paren) {
                 return self.parseTupleTypeBody(start);
             }
 
-            // Closure type: Closure(params...) -> R
-            //   Variadic-pack trailing form: `Closure(Prefix..., ..$pack) -> R`
-            //   binds `pack` to a heterogeneous comptime type list at impl
-            //   match time.
             if (std.mem.eql(u8, name, "Closure") and self.tokens.tag(self.tok) == .l_paren) {
                 return self.parseClosureTypeBody(start);
             }
 
-            // Parameterized type: Vector(N, T) or later generic struct instantiation
+            // Parameterized head: a generic struct, a parameterized protocol,
+            // or a type-returning function.
             if (self.tokens.tag(self.tok) == .l_paren) {
-                self.advance(); // skip '('
-                var args = std.ArrayList(*Node).empty;
-                while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
-                    if (args.items.len > 0) {
-                        try self.expect(.comma);
-                    }
-                    // Pack-spread type arg: `Combined($R, ..sources.T)`.
-                    if (self.tokens.tag(self.tok) == .dot_dot) {
-                        const sp_start = self.tokens.start(self.tok);
-                        self.advance(); // skip '..'
-                        const operand = try self.parseTypeExpr();
-                        try args.append(self.allocator, try self.createNode(sp_start, .{ .spread_expr = .{ .operand = operand } }));
-                        continue;
-                    }
-                    // An arg is either a TYPE (`f32`, `*T`, `[]u8`, `List(T)`) or a
-                    // compile-time integer expression in a value position — a
-                    // `Vector` lane count or a generic `$N: u32` arg: `Vector(N, f32)`,
-                    // `Vector(M + 1, f32)`. Parse the primary as a literal / type,
-                    // then continue as a const-int expression iff an arithmetic
-                    // operator follows. A complete type arg is always followed by
-                    // `,` / `)`, so `parseBinaryRhs` is a no-op for plain types and
-                    // the continuation is unambiguous; `Prec.additive` bounds it to
-                    // `+ - * / %`. The shared evaluator folds the expression; a
-                    // non-const value position is diagnosed during lowering.
-                    var arg: *Node = undefined;
-                    if (self.tokens.tag(self.tok) == .int_literal) {
-                        const arg_start = self.tokens.start(self.tok);
-                        const text = self.tokens.slice(self.tok);
-                        // Parse the full u64 range and store the bit pattern,
-                        // matching the main int-literal path.
-                        const value: i64 = @bitCast(self.parseIntLiteralText(text) orelse {
-                            return self.fail("invalid integer literal in type argument");
-                        });
-                        self.advance();
-                        arg = try self.createNode(arg_start, .{ .int_literal = .{ .value = value } });
-                    } else if (self.tokens.tag(self.tok) == .char_literal) {
-                        // A char literal in a value position (`Buf('A')`) is a
-                        // compile-time integer code point — decode it the same
-                        // way the primary-expression path does and emit a
-                        // `char_literal` node (keeps the `c…` value mangle in
-                        // generics.zig distinct from the integer instantiation).
-                        const arg_start = self.tokens.start(self.tok);
-                        const raw = self.tokens.slice(self.tok);
-                        const inner = raw[1 .. raw.len - 1];
-                        const value = unescape.decodeCharLiteral(inner) catch |err| {
-                            return self.fail(unescape.charLiteralReason(err));
-                        };
-                        self.advance();
-                        arg = try self.createNode(arg_start, .{ .char_literal = .{ .value = value, .raw = inner } });
-                    } else {
-                        arg = try self.parseTypeExpr();
-                    }
-                    arg = try self.parseBinaryRhs(arg, Prec.additive, .bit_or);
-                    try args.append(self.allocator, arg);
-                }
-                try self.expect(.r_paren);
                 return try self.createNode(start, .{ .parameterized_type_expr = .{
                     .name = name,
-                    .args = try args.toOwnedSlice(self.allocator),
+                    .args = try self.parseTypeArgList(),
                     .is_raw = atom_is_raw,
                 } });
             }
@@ -1094,11 +1035,74 @@ pub const Parser = struct {
     /// The compiler-provided default-parameter value (spec: `@caller`).
     pub const caller_site_name = "@caller";
 
-    /// True for the `@` names the compiler FORMS at a parameter annotation —
-    /// `contracts` is the single registry for both `@` classes, so the formed
-    /// set and the declared set cannot drift apart.
+    /// True for the `@` names the compiler FORMS — `contracts` is the single
+    /// registry for both `@` classes, so the formed set and the declared set
+    /// cannot drift apart.
     fn isCompilerFormedTypeName(name: []const u8) bool {
         return contracts.isCompilerFormed(name);
+    }
+
+    /// The parenthesized argument list a parameterized type head takes:
+    /// `@Vector(N, T)`, `List(T)`, `Combined($R, ..sources.T)`. `current` must
+    /// be at the opening `(`.
+    fn parseTypeArgList(self: *Parser) anyerror![]const *Node {
+        self.advance(); // skip '('
+        var args = std.ArrayList(*Node).empty;
+        while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
+            if (args.items.len > 0) {
+                try self.expect(.comma);
+            }
+            // Pack-spread type arg: `Combined($R, ..sources.T)`.
+            if (self.tokens.tag(self.tok) == .dot_dot) {
+                const sp_start = self.tokens.start(self.tok);
+                self.advance(); // skip '..'
+                const operand = try self.parseTypeExpr();
+                try args.append(self.allocator, try self.createNode(sp_start, .{ .spread_expr = .{ .operand = operand } }));
+                continue;
+            }
+            // An arg is either a TYPE (`f32`, `*T`, `[]u8`, `List(T)`) or a
+            // compile-time integer expression in a value position — a
+            // `@Vector` lane count or a generic `$N: u32` arg: `@Vector(N, f32)`,
+            // `@Vector(M + 1, f32)`. Parse the primary as a literal / type,
+            // then continue as a const-int expression iff an arithmetic
+            // operator follows. A complete type arg is always followed by
+            // `,` / `)`, so `parseBinaryRhs` is a no-op for plain types and
+            // the continuation is unambiguous; `Prec.additive` bounds it to
+            // `+ - * / %`. The shared evaluator folds the expression; a
+            // non-const value position is diagnosed during lowering.
+            var arg: *Node = undefined;
+            if (self.tokens.tag(self.tok) == .int_literal) {
+                const arg_start = self.tokens.start(self.tok);
+                const text = self.tokens.slice(self.tok);
+                // Parse the full u64 range and store the bit pattern,
+                // matching the main int-literal path.
+                const value: i64 = @bitCast(self.parseIntLiteralText(text) orelse {
+                    return self.fail("invalid integer literal in type argument");
+                });
+                self.advance();
+                arg = try self.createNode(arg_start, .{ .int_literal = .{ .value = value } });
+            } else if (self.tokens.tag(self.tok) == .char_literal) {
+                // A char literal in a value position (`Buf('A')`) is a
+                // compile-time integer code point — decode it the same
+                // way the primary-expression path does and emit a
+                // `char_literal` node (keeps the `c…` value mangle in
+                // generics.zig distinct from the integer instantiation).
+                const arg_start = self.tokens.start(self.tok);
+                const raw = self.tokens.slice(self.tok);
+                const inner = raw[1 .. raw.len - 1];
+                const value = unescape.decodeCharLiteral(inner) catch |err| {
+                    return self.fail(unescape.charLiteralReason(err));
+                };
+                self.advance();
+                arg = try self.createNode(arg_start, .{ .char_literal = .{ .value = value, .raw = inner } });
+            } else {
+                arg = try self.parseTypeExpr();
+            }
+            arg = try self.parseBinaryRhs(arg, Prec.additive, .bit_or);
+            try args.append(self.allocator, arg);
+        }
+        try self.expect(.r_paren);
+        return try args.toOwnedSlice(self.allocator);
     }
 
     fn parseCompilerFormedType(self: *Parser, start: u32) anyerror!*Node {
@@ -1126,14 +1130,9 @@ pub const Parser = struct {
                 .{ name, spelling },
             ));
         }
-        self.advance(); // skip '('
-        const target = try self.parseTypeExpr();
-        var args = std.ArrayList(*Node).empty;
-        try args.append(self.allocator, target);
-        try self.expect(.r_paren);
         return try self.createNode(start, .{ .parameterized_type_expr = .{
             .name = name,
-            .args = try args.toOwnedSlice(self.allocator),
+            .args = try self.parseTypeArgList(),
         } });
     }
 
@@ -1548,7 +1547,7 @@ pub const Parser = struct {
         try self.expect(.l_brace);
 
         var methods = std.ArrayList(ast.ProtocolMethodDecl).empty;
-        try self.parseRequiredMethods(&methods, .{ .owner = name, .kind_spelling = "@OpenSet" });
+        try self.parseRequiredMethods(&methods);
         try self.expect(.r_brace);
 
         return try self.createNode(start_pos, .{ .open_set_decl = .{
@@ -1563,19 +1562,7 @@ pub const Parser = struct {
     /// The shared `{ name :: (params) -> T; … }` member list of a protocol and of
     /// an open set: both declare REQUIRED methods, with `Self` denoting the
     /// implementing type, and both monomorphize them per member.
-    /// What the enclosing declaration allows its methods to carry.
-    const RequiredMethodsCtx = struct {
-        /// The declaration's name, for diagnostics.
-        owner: []const u8,
-        /// `#expand` is a tagged-protocol attribute; every other owner refuses it.
-        expand_allowed: bool = false,
-        /// The owner already carries `#expand` on its header.
-        header_expand: bool = false,
-        /// How the owner's kind is spelled in the refusal.
-        kind_spelling: []const u8 = "",
-    };
-
-    fn parseRequiredMethods(self: *Parser, methods: *std.ArrayList(ast.ProtocolMethodDecl), ctx: RequiredMethodsCtx) anyerror!void {
+    fn parseRequiredMethods(self: *Parser, methods: *std.ArrayList(ast.ProtocolMethodDecl)) anyerror!void {
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             // Method: name :: (params) -> type;  or  name :: (params) -> type { body }
             if (!self.isMemberDeclName()) {
@@ -1638,21 +1625,6 @@ pub const Parser = struct {
                 return_type = try self.parseFnReturnType();
             }
 
-            // Per-method `#expand`, in the same trailing attribute slot `#get` /
-            // `#set` occupy on an ordinary method.
-            var method_expand = false;
-            while (self.tokens.tag(self.tok) == .hash_expand) {
-                if (method_expand) return self.failFmt("duplicate #expand on method '{s}'", .{method_name});
-                if (!ctx.expand_allowed) {
-                    return self.failFmt("#expand is a tagged-protocol attribute — only a tagged protocol dispatches through a generated switch, and '{s}' is declared '{s}'", .{ ctx.owner, ctx.kind_spelling });
-                }
-                if (ctx.header_expand) {
-                    return self.failFmt("'{s}' already carries #expand on its header, so every method's dispatch already expands at the call site — remove one", .{ctx.owner});
-                }
-                method_expand = true;
-                self.advance();
-            }
-
             // Optional body (default method) or semicolon
             var default_body: ?*Node = null;
             if (self.tokens.tag(self.tok) == .l_brace) {
@@ -1680,7 +1652,6 @@ pub const Parser = struct {
                 .param_name_is_raw = all_param_name_is_raw[1..],
                 .return_type = return_type,
                 .default_body = default_body,
-                .is_expand = method_expand,
             });
         }
     }
@@ -1712,46 +1683,29 @@ pub const Parser = struct {
         }
 
         // The kind slot, after the parameter list and before the attributes.
-        // `constraint` / `vtable` / `tagged` are CONTEXTUAL here — ordinary
-        // identifiers everywhere else; `inline` is the language keyword doing
-        // double duty. Absent ⇒ constraint. Nothing but a kind word or `{`
-        // may stand here, so an identifier is unambiguously a kind.
+        // `constraint` / `vtable` are CONTEXTUAL here — ordinary identifiers
+        // everywhere else. Absent ⇒ constraint. Nothing but a kind word or
+        // `{` may stand here, so an identifier is unambiguously a kind.
         var kind: ast.ProtocolKind = .constraint;
-        if (self.tokens.tag(self.tok) == .kw_inline) {
-            kind = .@"inline";
-            self.advance();
-        } else if (self.tokens.tag(self.tok) == .identifier and !self.tokens.flagsOf(self.tok).is_raw) {
+        if (self.tokens.tag(self.tok) == .identifier and !self.tokens.flagsOf(self.tok).is_raw) {
             const word = self.tokens.slice(self.tok);
             if (std.mem.eql(u8, word, "constraint")) {
                 kind = .constraint;
             } else if (std.mem.eql(u8, word, "vtable")) {
                 kind = .vtable;
-            } else if (std.mem.eql(u8, word, "tagged")) {
-                kind = .tagged;
             } else {
-                return self.fail("expected a protocol kind ('constraint', 'vtable', 'inline', 'tagged') or '{' after the protocol head");
+                return self.fail("expected a protocol kind ('constraint', 'vtable') or '{' after the protocol head");
             }
             self.advance();
         }
 
-        // Protocol attributes: #identity (ownership class), #expand (call-site
-        // dispatch expansion). Order between them is free.
         var is_identity = false;
-        var is_expand = false;
-        while (self.tokens.tag(self.tok) == .hash_identity or self.tokens.tag(self.tok) == .hash_expand) {
-            if (self.tokens.tag(self.tok) == .hash_identity) {
-                if (is_identity) return self.fail("duplicate #identity on protocol");
-                if (kind == .constraint) {
-                    return self.fail("#identity is meaningless on a constraint protocol — there are no runtime values to classify");
-                }
-                is_identity = true;
-            } else {
-                if (is_expand) return self.fail("duplicate #expand on protocol");
-                if (kind != .tagged) {
-                    return self.failFmt("#expand is a tagged-protocol attribute — only a tagged protocol dispatches through a generated switch, and kind '{s}' does not", .{kind.spelling()});
-                }
-                is_expand = true;
+        while (self.tokens.tag(self.tok) == .hash_identity) {
+            if (is_identity) return self.fail("duplicate #identity on protocol");
+            if (kind == .constraint) {
+                return self.fail("#identity is meaningless on a constraint protocol — there are no runtime values to classify");
             }
+            is_identity = true;
             self.advance();
         }
 
@@ -1767,12 +1721,7 @@ pub const Parser = struct {
 
         var methods = std.ArrayList(ast.ProtocolMethodDecl).empty;
 
-        try self.parseRequiredMethods(&methods, .{
-            .owner = name,
-            .expand_allowed = kind == .tagged,
-            .header_expand = is_expand,
-            .kind_spelling = kind.spelling(),
-        });
+        try self.parseRequiredMethods(&methods);
 
         try self.expect(.r_brace);
 
@@ -1781,7 +1730,6 @@ pub const Parser = struct {
             .methods = try methods.toOwnedSlice(self.allocator),
             .kind = kind,
             .is_identity = is_identity,
-            .is_expand = is_expand,
             .type_params = try type_params.toOwnedSlice(self.allocator),
             .is_raw = name_is_raw,
         } });
@@ -2253,12 +2201,10 @@ pub const Parser = struct {
                 continue;
             }
 
-            // Named field: a member name followed by '='. A keyword name takes
-            // ONLY this path — otherwise it backtracks to a positional
-            // expression (`.{ if x then 1 else 2 }`); shorthand stays
-            // identifier-only (a keyword can never name a local to forward).
-            if (self.isMemberDeclName()) {
-                const was_identifier = self.tokens.tag(self.tok) == .identifier;
+            // Named field: an IDENTIFIER followed by '='. A keyword label takes
+            // the backtick raw escape (`` .{ `if = 2 } ``); bare, the keyword
+            // heads a positional expression (`.{ if x then 1 else 2 }`).
+            if (self.tokens.tag(self.tok) == .identifier) {
                 const saved = self.tok;
                 const fname = self.tokens.slice(self.tok);
                 const ident_start = self.tokens.start(self.tok);
@@ -2270,7 +2216,7 @@ pub const Parser = struct {
                     const value = try self.parseExpr();
                     try field_inits.append(self.allocator, .{ .name = fname, .value = value });
                     continue;
-                } else if (was_identifier and (self.tokens.tag(self.tok) == .comma or self.tokens.tag(self.tok) == .r_brace)) {
+                } else if (self.tokens.tag(self.tok) == .comma or self.tokens.tag(self.tok) == .r_brace) {
                     // Shorthand: just an identifier (name = identifier with same name)
                     const ident_node = try self.createNode(ident_start, .{ .identifier = .{ .name = fname } });
                     try field_inits.append(self.allocator, .{ .name = fname, .value = ident_node, .was_shorthand = true });
@@ -2753,10 +2699,11 @@ pub const Parser = struct {
     }
 
     /// One item of a juxtaposition's brace group. `name = value` binds here so
-    /// that it ends on the group's separators — and so a keyword may NAME a
-    /// field (`Pair(i64){ push = 7 }`) instead of heading a statement.
+    /// that it ends on the group's separators. The label is an IDENTIFIER: a
+    /// keyword one takes the backtick raw escape (`` Pair(i64){ `push = 7 } ``),
+    /// bare it heads a statement.
     fn parseBraceItem(self: *Parser) anyerror!*Node {
-        if (self.isMemberDeclName() and self.peekNext() == .equal) {
+        if (self.tokens.tag(self.tok) == .identifier and self.peekNext() == .equal) {
             const start = self.tokens.start(self.tok);
             const name = self.tokens.slice(self.tok);
             const target = try self.createNode(start, .{ .identifier = .{ .name = name } });
@@ -3265,49 +3212,6 @@ pub const Parser = struct {
         while (true) {
             if (pipe == .closer and self.tokens.tag(self.tok) == .pipe) break;
 
-            // Pipe operator: desugar a |> f(args) → f(a, args), a |> f → f(a).
-            // Consumer-aware: the piped LHS goes into the RHS's HEAD call,
-            // looking THROUGH a `try` prefix / `catch` postfix / `or` fallback
-            // and leaving the wrapper intact:
-            //   a |> try f(x)            → try f(a, x)
-            //   a |> f(x) catch |e| {...}  → f(a, x) catch |e| {...}
-            //   a |> f(x) or default     → f(a, x) or default   (only f gets a)
-            if (self.tokens.tag(self.tok) == .pipe_arrow and Prec.pipe >= min_prec) {
-                self.advance();
-                const rhs = try self.parseBinary(Prec.pipe + 1, pipe);
-                // Walk through error-handling wrappers to the head call node.
-                var head = rhs;
-                const head_call: ?*Node = while (true) {
-                    switch (head.data) {
-                        .call => break head,
-                        .try_expr => head = head.data.try_expr.operand,
-                        .catch_expr => head = head.data.catch_expr.operand,
-                        .binary_op => |bo| {
-                            if (bo.op == .or_op) head = bo.lhs else break null;
-                        },
-                        else => break null,
-                    }
-                };
-                if (head_call) |cn| {
-                    // a |> ...f(args)... → ...f(a, args)... (wrapper preserved;
-                    // mutating the head call in place updates the wrapper).
-                    var new_args = std.ArrayList(*Node).empty;
-                    try new_args.append(self.allocator, lhs);
-                    for (cn.data.call.args) |arg| try new_args.append(self.allocator, arg);
-                    cn.data.call.args = try new_args.toOwnedSlice(self.allocator);
-                    lhs = rhs;
-                } else {
-                    // a |> f → f(a)
-                    const args = try self.allocator.alloc(*Node, 1);
-                    args[0] = lhs;
-                    lhs = try self.createNode(lhs.span.start, .{ .call = .{
-                        .callee = rhs,
-                        .args = args,
-                    } });
-                }
-                continue;
-            }
-
             // Null coalescing: expr ?? default
             if (self.tokens.tag(self.tok) == .question_question and Prec.null_coalesce >= min_prec) {
                 self.advance();
@@ -3457,13 +3361,7 @@ pub const Parser = struct {
                 if (self.tokens.tag(self.tok) != .dot) break;
             } else if (self.tokens.tag(self.tok) == .dot) {
                 self.advance();
-                if (self.tokens.tag(self.tok) == .l_paren and expr.data == .tuple_type_expr) {
-                    // The one aggregate literal is `.{ … }`; typed construction
-                    // is `Tuple(A, B){ v1, v2 }`. `.(` on a tuple-TYPE receiver
-                    // can only be a tuple literal, so it takes the dedicated
-                    // message instead of parsing as a cast.
-                    return self.fail("'.( )' was removed — the aggregate literal is '.{ … }' (typed tuple construction: 'Tuple(A, B){ v1, v2 }')");
-                } else if (self.tokens.tag(self.tok) == .l_paren) {
+                if (self.tokens.tag(self.tok) == .l_paren) {
                     // Postfix cast `expr.(T)`. One type, plus
                     // an optional ALLOCATOR expression for the owning
                     // erasure `expr.(P, alloc)` (protocol targets only —
@@ -3804,13 +3702,14 @@ pub const Parser = struct {
 
     fn parsePrimary(self: *Parser, pipe: PipeRole) anyerror!*Node {
         const start = self.tokens.start(self.tok);
-        // `@Init` is a type the compiler forms, never a value a program builds:
-        // there is no `@Init(T){ … }` literal and no `@Init` expression. A
-        // declared `@` contract is an ordinary type, so it names values and
-        // takes an aggregate literal (`@SourceSite{ … }`) like any other.
+        // `@Init` names a constraint, never a value a program builds: there is
+        // no `@Init(T){ … }` literal and no `@Init` expression. Every other `@`
+        // name is an ordinary type reference here — a declared contract takes
+        // an aggregate literal (`@SourceSite{ … }`), and `@Vector(N, T)` is the
+        // type an expression such as `vector_lanes(@Vector(3, f32))` names.
         if (self.tokens.tag(self.tok) == .at_identifier) {
             const at_name = self.tokens.slice(self.tok);
-            if (isCompilerFormedTypeName(at_name)) {
+            if (contracts.isBoundOnly(at_name)) {
                 return self.failFmt(
                     "'{s}' is a compiler-formed type — it has no literal form and cannot be named in an expression",
                     .{at_name},
@@ -3930,30 +3829,6 @@ pub const Parser = struct {
             .identifier => {
                 const name = self.tokens.slice(self.tok);
                 const is_raw = self.tokens.flagsOf(self.tok).is_raw;
-                // `Tuple(...)` in expression position is a tuple TYPE node —
-                // identical to the one the type parser produces — NOT a value.
-                // It is first-class in `size_of` / `type_info` / generic type
-                // args (a non-type element like `Tuple(i32, 1)` is rejected at
-                // the type-demanding site), can stand alone as a `Type` value,
-                // and a postfix `.( ... )` (handled in `parsePostfix`)
-                // constructs a typed tuple VALUE of that type — exactly like
-                // `Name{ ... }` for structs. A bare `Tuple` not followed by `(`
-                // (or a backtick-raw `` `Tuple ``) stays an ordinary identifier.
-                if (!is_raw and std.mem.eql(u8, name, "Tuple") and self.peekNext() == .l_paren) {
-                    self.advance(); // skip `Tuple`; `current` is now `(`
-                    return self.parseTupleTypeBody(start);
-                }
-                // `Closure(...) -> R` in expression position is a closure TYPE
-                // node — identical to the one the type parser produces — so a
-                // const-decl RHS alias `CB :: Closure(i32) -> i32;` parses (the
-                // `-> R` tail is consumed here, not left dangling as after a
-                // bare `Closure(i32)` call). Mirrors the `Tuple(` case above; a
-                // bare `Closure` not followed by `(` (or a backtick-raw
-                // `` `Closure ``) stays an ordinary identifier.
-                if (!is_raw and std.mem.eql(u8, name, "Closure") and self.peekNext() == .l_paren) {
-                    self.advance(); // skip `Closure`; `current` is now `(`
-                    return self.parseClosureTypeBody(start);
-                }
                 // A backtick raw identifier (`` `i2 ``) is NEVER type-classified —
                 // it is always a value identifier, bypassing the reserved-type-name
                 // rule. Only a bare spelling is checked for a type name
@@ -4019,20 +3894,20 @@ pub const Parser = struct {
                 // `.{ … }` with a `Tuple(…)` annotation, so a named element, an
                 // empty group, a leading spread, or a top-level comma is an error.
                 if (self.tokens.tag(self.tok) == .identifier and self.peekNext() == .colon) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)");
                 }
                 if (self.tokens.tag(self.tok) == .r_paren) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)");
                 }
                 if (self.tokens.tag(self.tok) == .dot_dot) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)");
                 }
 
                 const first = try self.parseExpr();
 
                 // A top-level comma is an error — tuples need the annotated form.
                 if (self.tokens.tag(self.tok) == .comma) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)");
                 }
 
                 // No comma → grouping
@@ -4612,17 +4487,18 @@ pub const Parser = struct {
         }
     }
 
-    /// Parse a `Tuple(...)` tuple-TYPE body. On entry `current` is the `(`
-    /// immediately after the `Tuple` contextual id (the caller has already
-    /// consumed `Tuple`). Used in BOTH type position (the type parser) and
-    /// expression position (`parsePrimary`'s `.identifier` arm) — `Tuple(...)`
-    /// always denotes a TYPE, never a value. A postfix `.( ... )` after the
-    /// returned `tuple_type_expr` constructs a typed tuple VALUE (handled in
-    /// Closure type body: parses `(params...) -> R` after a `Closure` head.
-    /// `current` must be at the opening `(`. Shared by the type-expr grammar
-    /// (annotation / field / return position) and expression position (a
-    /// `Closure(...)` const-decl RHS type alias), so the alias `CB :: Closure(i32)
-    /// -> i32;` parses identically to the annotation `f : Closure(i32) -> i32`.
+    /// The exact token pair `Tuple`+`(` / `Closure`+`(` that opens a type
+    /// constructor. A backtick-raw spelling is an ordinary identifier.
+    fn atTypeConstructorHead(self: *Parser) bool {
+        if (self.tokens.tag(self.tok) != .identifier) return false;
+        if (self.tokens.flagsOf(self.tok).is_raw) return false;
+        if (self.peekNext() != .l_paren) return false;
+        const name = self.tokens.slice(self.tok);
+        return std.mem.eql(u8, name, "Tuple") or std.mem.eql(u8, name, "Closure");
+    }
+
+    /// Closure type body: `(params...) -> R` after a `Closure` head; `current`
+    /// must be at the opening `(`.
     ///   Variadic-pack trailing form: `Closure(Prefix..., ..$pack) -> R` binds
     ///   `pack` to a heterogeneous comptime type list at impl match time.
     fn parseClosureTypeBody(self: *Parser, start: u32) anyerror!*Node {
@@ -4691,11 +4567,11 @@ pub const Parser = struct {
         } });
     }
 
-    /// `parsePostfix`, mirroring `Name{ ... }` typed struct literals).
-    ///   `Tuple(A, B)` / `Tuple(T)` / `Tuple()` / named `Tuple(x: A, y: B)` /
-    ///   pack `Tuple(..Ts)` / `Tuple(..F(Ts))`. Lowers to the SAME
-    ///   `tuple_type_expr` the inline `(A, B)` / `(x: A, y: B)` / `(..Ts)`
-    ///   forms produce. Unlike `Closure`, a trailing `->` is REJECTED.
+    /// Tuple type body after a `Tuple` head; `current` must be at the opening
+    /// `(`. `Tuple(A, B)` / `Tuple(T)` / `Tuple()` / named `Tuple(x: A, y: B)` /
+    /// pack `Tuple(..Ts)` / `Tuple(..F(Ts))` lower to the SAME `tuple_type_expr`
+    /// the inline `(A, B)` / `(x: A, y: B)` / `(..Ts)` forms produce. Unlike
+    /// `Closure`, a trailing `->` is REJECTED.
     fn parseTupleTypeBody(self: *Parser, start: u32) anyerror!*Node {
         self.advance(); // skip '('
         var field_types = std.ArrayList(*Node).empty;
@@ -4930,7 +4806,7 @@ pub const Parser = struct {
                 self.tokens.tag(self.tok) == .comma or self.tokens.tag(self.tok) == .int_literal or
                 // Arithmetic operators appear in a const-expression dimension /
                 // lane / value-param in a return type: `-> [N + 1]f32`,
-                // `-> Vector(N + 1, f32)`. They must be skipped while scanning
+                // `-> @Vector(N + 1, f32)`. They must be skipped while scanning
                 // for the body brace, else the decl is misread as a bodyless
                 // function-type alias and the `{` body errors as "expected ';'".
                 // (`.star` doubles as the pointer sigil and is already listed.)
@@ -5104,7 +4980,6 @@ pub const Parser = struct {
             .percent,
             .ampersand,
             .pipe,
-            .pipe_arrow,
             .caret,
             .question,
             .question_question,
@@ -5132,7 +5007,6 @@ pub const Parser = struct {
             .hash_define,
             .hash_flags,
             .hash_identity,
-            .hash_expand,
             .hash_objc_call,
             .hash_jni_call,
             .hash_jni_static_call,
@@ -5227,17 +5101,16 @@ pub const Parser = struct {
 
     const Prec = struct {
         const none: u8 = 0;
-        const pipe: u8 = 1; // |>
-        const null_coalesce: u8 = 2; // ??
-        const logical_or: u8 = 3; // or
-        const logical_and: u8 = 4; // and
-        const bit_or: u8 = 5; // |
-        const bit_xor: u8 = 6; // ^
-        const bit_and: u8 = 7; // &
-        const comparison: u8 = 8; // == != < <= > >= in
-        const shift: u8 = 9; // << >>
-        const additive: u8 = 10; // + -
-        const multiplicative: u8 = 11; // * / %
+        const null_coalesce: u8 = 1; // ??
+        const logical_or: u8 = 2; // or
+        const logical_and: u8 = 3; // and
+        const bit_or: u8 = 4; // |
+        const bit_xor: u8 = 5; // ^
+        const bit_and: u8 = 6; // &
+        const comparison: u8 = 7; // == != < <= > >= in
+        const shift: u8 = 8; // << >>
+        const additive: u8 = 9; // + -
+        const multiplicative: u8 = 10; // * / %
     };
 
     const BinaryInfo = struct { prec: u8, op: ast.BinaryOp.Op, comparison: bool };
@@ -5336,7 +5209,6 @@ pub const Parser = struct {
             .percent_equal,
             .ampersand_equal,
             .pipe_equal,
-            .pipe_arrow,
             .caret_equal,
             .question,
             .question_question,
@@ -5364,7 +5236,6 @@ pub const Parser = struct {
             .hash_define,
             .hash_flags,
             .hash_identity,
-            .hash_expand,
             .hash_objc_call,
             .hash_jni_call,
             .hash_jni_static_call,
@@ -5424,13 +5295,10 @@ pub const Parser = struct {
 
     /// The markers a brace group carries at its OWN top level — what tells a
     /// construction body (field inits, element commas) from a `push` body.
-    /// `push` stays apart from the other statement heads because it can also
-    /// name a field (`Pair(i64){ push = 7 }`).
     const BraceShape = struct {
         saw_token: bool = false,
         semi: bool = false,
         stmt_kw: bool = false,
-        push_kw: bool = false,
         comma: bool = false,
         field_eq: bool = false,
         colon_eq: bool = false,
@@ -5475,13 +5343,11 @@ pub const Parser = struct {
                 .kw_match,
                 .kw_for,
                 .kw_while,
+                .kw_push,
                 => shape.stmt_kw = shape.stmt_kw or top,
-                .kw_push => {
-                    shape.push_kw = shape.push_kw or top;
-                    names = top;
-                },
+                // A field label is an identifier; a bare keyword heads a statement.
                 .identifier => names = top,
-                else => names = top and t.isKeyword(),
+                else => {},
             }
             prev_was_name = names;
         }
@@ -5494,7 +5360,7 @@ pub const Parser = struct {
         if (self.tokens.tag(self.tok) != .l_brace) return false;
         const shape = self.scanBraceShape();
         if (!shape.saw_token) return true; // empty `{}` is aggregate-shaped
-        if (shape.semi or shape.stmt_kw or shape.push_kw or shape.colon_eq) return false;
+        if (shape.semi or shape.stmt_kw or shape.colon_eq) return false;
         return shape.field_eq or shape.comma;
     }
 
@@ -5755,8 +5621,8 @@ pub const Parser = struct {
     }
 
     /// A token usable as a MEMBER name in declaration position (struct
-    /// field/method/const, protocol method, impl method, literal field):
-    /// identifiers, and every keyword except `inline` — declaration
+    /// field/method/const, protocol method, impl method): identifiers,
+    /// and every keyword except `inline` — declaration
     /// position holds only declarations, access is dot-disambiguated.
     fn isMemberDeclName(self: *Parser) bool {
         if (self.tokens.tag(self.tok) == .identifier) return true;
@@ -6217,11 +6083,6 @@ test "a pipe-parameter default descends the whole precedence spine" {
 
     const coalesce_lam = try pipeLambda(arena.allocator(), "|x: i64 = a ?? b| x");
     try std.testing.expect(coalesce_lam.params[0].default_expr.?.data == .null_coalesce);
-
-    const pipe_lam = try pipeLambda(arena.allocator(), "|x: i64 = a |> f| x");
-    const piped = pipe_lam.params[0].default_expr.?.data.call;
-    try std.testing.expectEqualStrings("f", piped.callee.data.identifier.name);
-    try std.testing.expectEqualStrings("a", piped.args[0].data.identifier.name);
 }
 
 test "the first `|` on a pipe-parameter default's own spine closes the list" {
@@ -6735,25 +6596,24 @@ test "optional-chained cast parses: x?.(i64)" {
     try e02ExpectPrints(arena.allocator(), v, "x?.(i64)");
 }
 
-test "try binds tighter than or: try foo() or try boo()" {
+test "try binds tighter than ??: try foo() ?? try boo()" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := try foo() or try boo(); }");
-    try std.testing.expect(v.data == .binary_op);
-    try std.testing.expect(v.data.binary_op.op == .or_op);
-    try std.testing.expect(v.data.binary_op.lhs.data == .try_expr);
-    try std.testing.expect(v.data.binary_op.rhs.data == .try_expr);
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := try foo() ?? try boo(); }");
+    try std.testing.expect(v.data == .null_coalesce);
+    try std.testing.expect(v.data.null_coalesce.lhs.data == .try_expr);
+    try std.testing.expect(v.data.null_coalesce.rhs.data == .try_expr);
 }
 
-test "or is left-associative: a or b or c => (a or b) or c" {
+test "?? is right-associative: a ?? b ?? c => a ?? (b ?? c)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := try a() or try b() or try c(); }");
-    try std.testing.expect(v.data == .binary_op and v.data.binary_op.op == .or_op);
-    // LHS is the nested (a or b); RHS is the final operand.
-    try std.testing.expect(v.data.binary_op.lhs.data == .binary_op);
-    try std.testing.expect(v.data.binary_op.lhs.data.binary_op.op == .or_op);
-    try std.testing.expect(v.data.binary_op.rhs.data == .try_expr);
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := try a() ?? try b() ?? try c(); }");
+    try std.testing.expect(v.data == .null_coalesce);
+    // LHS is the first operand; RHS is the nested (b ?? c).
+    try std.testing.expect(v.data.null_coalesce.lhs.data == .try_expr);
+    try std.testing.expect(v.data.null_coalesce.rhs.data == .null_coalesce);
+    try std.testing.expect(v.data.null_coalesce.rhs.data.null_coalesce.lhs.data == .try_expr);
 }
 
 test "try prefix stacks under xx: xx try foo()" {
@@ -6803,13 +6663,12 @@ test "catch body is a match over the binding" {
     try std.testing.expectEqualStrings("e", v.data.catch_expr.body.data.match_expr.subject.data.identifier.name);
 }
 
-test "catch over a parenthesized or-chain" {
+test "catch over a parenthesized ??-chain" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := (try foo() or try boo()) catch |e| { }; }");
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := (try foo() ?? try boo()) catch |e| { }; }");
     try std.testing.expect(v.data == .catch_expr);
-    try std.testing.expect(v.data.catch_expr.operand.data == .binary_op);
-    try std.testing.expect(v.data.catch_expr.operand.data.binary_op.op == .or_op);
+    try std.testing.expect(v.data.catch_expr.operand.data == .null_coalesce);
 }
 
 test "catch without binding and unbraced body is rejected" {
@@ -6930,48 +6789,11 @@ test "onfail no-binding block vs bare-expression body" {
     try std.testing.expect(expr_body.data.onfail_stmt.body.data == .call);
 }
 
-test "consumer-aware pipe: x |> try f() inserts x into the head call" {
+test "`|>` is not an operator" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := x |> try f(); }");
-    try std.testing.expect(v.data == .try_expr);
-    const call = v.data.try_expr.operand;
-    try std.testing.expect(call.data == .call);
-    try std.testing.expectEqual(@as(usize, 1), call.data.call.args.len);
-    try std.testing.expect(call.data.call.args[0].data == .identifier);
-    try std.testing.expectEqualStrings("x", call.data.call.args[0].data.identifier.name);
-}
-
-test "consumer-aware pipe: x |> f() catch |e| { } preserves the catch" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := x |> g() catch |e| { }; }");
-    try std.testing.expect(v.data == .catch_expr);
-    try std.testing.expectEqualStrings("e", v.data.catch_expr.binding.?);
-    try std.testing.expect(v.data.catch_expr.operand.data == .call);
-    try std.testing.expectEqual(@as(usize, 1), v.data.catch_expr.operand.data.call.args.len);
-}
-
-test "consumer-aware pipe: x |> f() or d feeds only the head call" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := x |> g() or d; }");
-    try std.testing.expect(v.data == .binary_op and v.data.binary_op.op == .or_op);
-    // LHS (head call g) receives x; RHS fallback `d` is untouched.
-    try std.testing.expect(v.data.binary_op.lhs.data == .call);
-    try std.testing.expectEqual(@as(usize, 1), v.data.binary_op.lhs.data.call.args.len);
-    try std.testing.expect(v.data.binary_op.rhs.data == .identifier);
-    try std.testing.expectEqualStrings("d", v.data.binary_op.rhs.data.identifier.name);
-}
-
-test "plain pipe still works: x |> f(a) => f(x, a)" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := x |> g(a); }");
-    try std.testing.expect(v.data == .call);
-    try std.testing.expectEqual(@as(usize, 2), v.data.call.args.len);
-    try std.testing.expectEqualStrings("x", v.data.call.args[0].data.identifier.name);
-    try std.testing.expectEqualStrings("a", v.data.call.args[1].data.identifier.name);
+    try std.testing.expectError(error.ParseError, e02FirstValue(arena.allocator(), "f :: () { v := x |> g(a); }"));
+    try std.testing.expectError(error.ParseError, e02FirstValue(arena.allocator(), "f :: () { v := x |> g; }"));
 }
 
 test "round-trip print: try / or precedence / raise / catch / onfail" {
@@ -7005,30 +6827,29 @@ test "try in statement position (propagate, discard value)" {
     try std.testing.expect(s.data.try_expr.operand.data == .call);
 }
 
-test "try over a parenthesized or-chain: try (foo() or boo())" {
+test "try over a parenthesized ??-chain: try (foo() ?? boo())" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := try (foo() or boo()); }");
-    // Distinct from `try foo() or try boo()`: here `try` wraps the whole chain.
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := try (foo() ?? boo()); }");
+    // Distinct from `try foo() ?? try boo()`: here `try` wraps the whole chain.
     try std.testing.expect(v.data == .try_expr);
-    try std.testing.expect(v.data.try_expr.operand.data == .binary_op);
-    try std.testing.expect(v.data.try_expr.operand.data.binary_op.op == .or_op);
+    try std.testing.expect(v.data.try_expr.operand.data == .null_coalesce);
 }
 
-test "or value-terminator: parse(s) or 0" {
+test "?? value-terminator: parse(s) ?? 0" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const v = try e02FirstValue(arena.allocator(), "f :: () { v := parse(s) or 0; }");
-    try std.testing.expect(v.data == .binary_op and v.data.binary_op.op == .or_op);
-    try std.testing.expect(v.data.binary_op.lhs.data == .call);
-    try std.testing.expect(v.data.binary_op.rhs.data == .int_literal);
+    const v = try e02FirstValue(arena.allocator(), "f :: () { v := parse(s) ?? 0; }");
+    try std.testing.expect(v.data == .null_coalesce);
+    try std.testing.expect(v.data.null_coalesce.lhs.data == .call);
+    try std.testing.expect(v.data.null_coalesce.rhs.data == .int_literal);
 }
 
 test "full failable function parses end-to-end (every failable form)" {
     const source =
         \\parse :: (s: string) -> (i32, !ParseErr) {
         \\    onfail |e| { cleanup(s); }
-        \\    v := try inner(s) or 0;
+        \\    v := try inner(s) ?? 0;
         \\    w := other(s) catch |e2| { return 0; };
         \\    if bad(s) { raise error.BadDigit; }
         \\    return v;
@@ -7051,7 +6872,7 @@ test "full failable function parses end-to-end (every failable form)" {
     const stmts = decl.data.fn_decl.body.data.block.stmts;
     try std.testing.expectEqual(@as(usize, 5), stmts.len);
     try std.testing.expect(stmts[0].data == .onfail_stmt);
-    try std.testing.expect(stmts[1].data == .var_decl and stmts[1].data.var_decl.value.?.data == .binary_op);
+    try std.testing.expect(stmts[1].data == .var_decl and stmts[1].data.var_decl.value.?.data == .null_coalesce);
     try std.testing.expect(stmts[2].data == .var_decl and stmts[2].data.var_decl.value.?.data == .catch_expr);
     try std.testing.expect(stmts[3].data == .if_expr);
     try std.testing.expect(stmts[4].data == .return_stmt);
@@ -7088,6 +6909,33 @@ test "parse Type{ fields } as a juxtaposition" {
     try std.testing.expect(r_init.data == .struct_literal);
     try std.testing.expect(r_init.data.struct_literal.struct_name == null);
     try std.testing.expect(r_init.data.struct_literal.type_expr == null);
+}
+
+test "a backticked keyword labels a literal field" {
+    const source =
+        \\main :: () {
+        \\  a := .{ `if = 2 };
+        \\  b := Pair{ `push = 7 };
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const stmts = root.data.root.decls[0].data.fn_decl.body.data.block.stmts;
+    const a_init = stmts[0].data.var_decl.value.?;
+    try std.testing.expect(a_init.data == .struct_literal);
+    try std.testing.expectEqualStrings("if", a_init.data.struct_literal.field_inits[0].name.?);
+    const b_init = stmts[1].data.var_decl.value.?;
+    try std.testing.expect(b_init.data == .juxtaposition);
+    const item = b_init.data.juxtaposition.block.data.block.stmts[0];
+    try std.testing.expect(item.data == .assignment);
+    try std.testing.expectEqualStrings("push", item.data.assignment.target.data.identifier.name);
+}
+
+test "a bare keyword does not label a literal field" {
+    try expectParseErrorAt("main :: () { a := .{ if = 2 }; }", "unexpected token in expression", 24);
+    try expectParseErrorAt("main :: () { b := Pair{ push = 7 }; }", "unexpected token in expression", 29);
 }
 
 test "parse an empty brace after an argument call as a juxtaposition" {
@@ -7744,8 +7592,8 @@ fn expectParseErrorAt(src: [:0]const u8, msg: []const u8, offset: u32) !void {
 test "unterminated paren in grouping position fails as tuple" {
     // isFunctionTypeExprAtLParen sees no closer and declines; the grouping
     // parse then runs into EOF.
-    try expectParseErrorAt("x := (a, b\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 7);
-    try expectParseErrorAt("x := ((a, b)\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 8);
+    try expectParseErrorAt("x := (a, b\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)", 7);
+    try expectParseErrorAt("x := ((a, b)\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)", 8);
 }
 
 test "crossed delimiters report missing closer at the unexpected token" {
@@ -7757,7 +7605,7 @@ test "crossed delimiters report missing closer at the unexpected token" {
 test "function-type path without closer fails as tuple" {
     // tagAfterParenGroup finds no `)` before EOF, so the `->` never counts as
     // a function type and the tuple refusal fires.
-    try expectParseErrorAt("F :: (i32, i32 -> i32;", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 9);
+    try expectParseErrorAt("F :: (i32, i32 -> i32;", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)", 9);
 }
 
 test "return-type inline struct without closer reports missing brace" {
@@ -7771,7 +7619,7 @@ test "unterminated aggregate reports missing brace" {
 }
 
 test "param list missing closer fails as tuple" {
-    try expectParseErrorAt("f :: (a: i32 { 1 }", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)", 6);
+    try expectParseErrorAt("f :: (a: i32 { 1 }", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)", 6);
 }
 
 test "peekTag saturates at the eof row for any runtime offset" {

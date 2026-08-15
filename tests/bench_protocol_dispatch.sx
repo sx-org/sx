@@ -1,0 +1,160 @@
+// Owning-vs-borrowing erasure canary. Runnable on demand:
+//
+//     ./zig-out/bin/sx build --opt 3 -o .sx-tmp/bench-protocol \
+//         tests/bench_protocol_dispatch.sx && .sx-tmp/bench-protocol
+//
+// Two dispatch models over one shared array of concrete conformers:
+//   vtable/own  — `protocol vtable`, value/own erasure.
+//   vtable/id   — `protocol vtable #identity`, borrowing erasure.
+//
+// Two phases, measured separately:
+//   BUILD — fill an array of protocol values from the conformers. The
+//           value/own vtable value heap-copies its receiver through
+//           `context.allocator` (and is freed per sample); the identity value
+//           writes a 3-word borrow in place (`free` refuses on it — there is
+//           no backing).
+//   WALK  — sum a dispatched method over the array, repeatedly. Both models
+//           load the table and call indirect.
+//
+// NOT a corpus example: it runs for seconds.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+N       : i64 : 20000;
+WALKS   : i64 : 200;
+SAMPLES : i64 : 5;
+
+Vtab   :: protocol vtable { area :: (self: *Self) -> i64; }
+VtabId :: protocol vtable #identity { area :: (self: *Self) -> i64; }
+
+Sq  :: struct { s: i64; }
+Rc  :: struct { w: i64; h: i64; }
+Tri :: struct { b: i64; h: i64; }
+
+impl Vtab   for Sq  { area :: (self: *Sq) -> i64 { self.s * self.s } }
+impl Vtab   for Rc  { area :: (self: *Rc) -> i64 { self.w * self.h } }
+impl Vtab   for Tri { area :: (self: *Tri) -> i64 { self.b * self.h / 2 } }
+impl VtabId for Sq  { area :: (self: *Sq) -> i64 { self.s * self.s } }
+impl VtabId for Rc  { area :: (self: *Rc) -> i64 { self.w * self.h } }
+impl VtabId for Tri { area :: (self: *Tri) -> i64 { self.b * self.h / 2 } }
+
+mono_ns :: () -> i64 {
+    ts : time.Timespec = .{};
+    c.clock_gettime(time.CLOCK_MONOTONIC, *ts);
+    ts.sec * 1000000000 + ts.nsec
+}
+
+median :: (xs: []i64) -> i64 {
+    i := 1;
+    while i < xs.len {
+        k := xs[i];
+        j := i - 1;
+        while j >= 0 and xs[j] > k { xs[j + 1] = xs[j]; j = j - 1; }
+        xs[j + 1] = k;
+        i = i + 1;
+    }
+    xs[xs.len / 2]
+}
+
+report :: (label: string, build_ns: i64, walk_ns: i64) {
+    print("{}\tbuild {} ns\twalk {} ns\n", label, build_ns, walk_ns);
+}
+
+ratio :: (label: string, build_ns: i64, walk_ns: i64, base_build: i64, base_walk: i64) {
+    print("{}\tbuild x{}.{}\twalk x{}.{}\n", label,
+          build_ns / base_build, (build_ns * 10 / base_build) % 10,
+          walk_ns / base_walk, (walk_ns * 10 / base_walk) % 10);
+}
+
+main :: () {
+    sqs  := context.allocator.alloc(Sq, N);
+    rcs  := context.allocator.alloc(Rc, N);
+    tris := context.allocator.alloc(Tri, N);
+    i := 0;
+    while i < N {
+        sqs[i]  = .{ s = i % 17 };
+        rcs[i]  = .{ w = i % 13, h = 3 };
+        tris[i] = .{ b = i % 11, h = 4 };
+        i = i + 1;
+    }
+
+    vv := context.allocator.alloc(Vtab, N);
+    iv := context.allocator.alloc(VtabId, N);
+
+    vb := context.allocator.alloc(i64, SAMPLES);
+    vw := context.allocator.alloc(i64, SAMPLES);
+    ib := context.allocator.alloc(i64, SAMPLES);
+    iw := context.allocator.alloc(i64, SAMPLES);
+
+    vsink := 0;
+    isink := 0;
+    s := 0;
+    while s < SAMPLES {
+        // ── vtable/own: build (owning erasure, one heap copy each) ──
+        t0 := mono_ns();
+        i = 0;
+        while i < N {
+            m := i % 3;
+            if m == 0 { vv[i] = sqs[i].(Vtab, context.allocator); }
+            else if m == 1 { vv[i] = rcs[i].(Vtab, context.allocator); }
+            else { vv[i] = tris[i].(Vtab, context.allocator); }
+            i = i + 1;
+        }
+        t1 := mono_ns();
+
+        // ── vtable/own: walk (table load + indirect call) ──
+        k := 0;
+        while k < WALKS {
+            i = 0;
+            while i < N { vsink = vsink + vv[i].area(); i = i + 1; }
+            k = k + 1;
+        }
+        t2 := mono_ns();
+
+        i = 0;
+        while i < N { free(vv[i]); i = i + 1; }
+
+        // ── vtable/id: build (identity erasure, borrows in place) ──
+        t3 := mono_ns();
+        i = 0;
+        while i < N {
+            m := i % 3;
+            if m == 0 { iv[i] = sqs[i]; }
+            else if m == 1 { iv[i] = rcs[i]; }
+            else { iv[i] = tris[i]; }
+            i = i + 1;
+        }
+        t4 := mono_ns();
+
+        // ── vtable/id: walk (table load + indirect call) ──
+        k = 0;
+        while k < WALKS {
+            i = 0;
+            while i < N { isink = isink + iv[i].area(); i = i + 1; }
+            k = k + 1;
+        }
+        t5 := mono_ns();
+
+        vb[s] = t1 - t0;
+        vw[s] = t2 - t1;
+        ib[s] = t4 - t3;
+        iw[s] = t5 - t4;
+        s = s + 1;
+    }
+
+    vbm := median(vb);
+    vwm := median(vw);
+    ibm := median(ib);
+    iwm := median(iw);
+    report("vtable/own", vbm, vwm);
+    report("vtable/id ", ibm, iwm);
+    ratio("id/own    ", ibm, iwm, vbm, vwm);
+    // Same conformers, same walks: a checksum divergence means one model
+    // dispatched a wrong body.
+    if vsink != isink {
+        print("CHECKSUM MISMATCH vtable/own {} vtable/id {}\n", vsink, isink);
+        c.exit(1);
+    }
+    print("checksum {} (both models agree)\n", vsink % 1000);
+}

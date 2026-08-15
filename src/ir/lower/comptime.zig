@@ -18,7 +18,7 @@ const FuncId = inst_mod.FuncId;
 const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
-const lower_tagged = @import("tagged.zig");
+const lower_open_set = @import("open_set.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const ConstFoldFrame = lower.ConstFoldFrame;
@@ -431,7 +431,7 @@ pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node
 
 /// Evaluate an `inline for` range bound to a comptime integer. Delegates to
 /// the shared `program_index.evalConstIntExpr` — the SAME integer folder the
-/// array dimension / Vector lane / value-param count paths build on — so a
+/// array dimension / `@Vector` lane / value-param count paths build on — so a
 /// literal, a comptime constant (cursor), a module/generic const
 /// (`inline for 0..M`), a `<pack>.len` leaf, a DIRECT integral float
 /// (`0..-2.0` → -2), and any constant-foldable expression over those
@@ -454,11 +454,11 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
     // shape. `resolveType(null)` returns `.i64` — good for primitive
     // helpers, silently wrong for anything else.
     const expr_ty = self.inferExprType(expr);
-    // A failable `#run` (bare, no `catch`/`or`): the comptime function
+    // A failable `#run` (bare, no `catch`/`??`): the comptime function
     // returns the full failable tuple so the #run site can inspect the
     // error slot, but the GLOBAL is typed as the success value. On a
     // comptime error the global never materializes — emit halts with a
-    // diagnostic + trace. A handled `#run … catch/or …` already
+    // diagnostic + trace. A handled `#run … catch/?? …` already
     // strips the error channel, so it lands here as non-failable.
     const is_failable = self.errorChannelOf(expr_ty) != null;
     const func_ret: TypeId = if (is_failable)
@@ -469,7 +469,7 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
         expr_ty;
     const global_ty: TypeId = if (is_failable) self.failableSuccessType(expr_ty) else func_ret;
     // The result crosses into the runtime image, which is what makes this an
-    // escape site (specs.md §7.9).
+    // escape site (specs.md §6.9).
     self.checkComptimeEscape(global_ty, expr.span);
     const func_id = self.createComptimeFunction(name, .ordinary, expr, func_ret);
 
@@ -681,7 +681,7 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
     // mutation, so a failed mint never leaves a partial type.
     const evaluation = comptime_vm.tryEval(self.alloc, self.module, func_id, null, null, self.factScheduler());
     if (evaluation.state == .parked) {
-        self.expansion.parkEvaluation(evaluation, "this compile-time type construction", lower_tagged.describeFact(self, evaluation.state.parked), span);
+        self.expansion.parkEvaluation(evaluation, "this compile-time type construction", lower_open_set.describeFact(self, evaluation.state.parked), span);
         return null;
     }
     defer evaluation.destroy();
@@ -892,7 +892,7 @@ pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {
     const ct_func_id = self.createComptimeFunction("__insert", .expansion, expr, .string);
     const evaluation = comptime_vm.tryEval(self.alloc, self.module, ct_func_id, null, null, self.factScheduler());
     if (evaluation.state == .parked) {
-        self.expansion.parkEvaluation(evaluation, "this `#insert`", lower_tagged.describeFact(self, evaluation.state.parked), expr.span);
+        self.expansion.parkEvaluation(evaluation, "this `#insert`", lower_open_set.describeFact(self, evaluation.state.parked), expr.span);
         return null;
     }
     defer evaluation.destroy();
@@ -1680,10 +1680,10 @@ pub fn enumHasVariant(self: *Lowering, variants: []const types.StringId, variant
 /// Which comptime phase a wrapper body belongs to (§7.9's phase law).
 pub const ComptimePhase = enum {
     /// Evaluated DURING lowering, so its result can still add declarations:
-    /// a type-fn body, an `#insert`. Nothing it observes about a conformer
-    /// set is final.
+    /// a type-fn body, an `#insert`. Nothing it observes about an open set is
+    /// final.
     expansion,
-    /// Evaluated after the conformer fixpoint — a `#run` constant, a `#run`
+    /// Evaluated after the convergence fixpoint — a `#run` constant, a `#run`
     /// side effect, a body-local `#run`. Sees the final sets.
     ordinary,
 };

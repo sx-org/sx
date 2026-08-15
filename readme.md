@@ -482,7 +482,7 @@ immune to context drift).
 Every protocol value knows its concrete type (a `type_id` word stamped at
 erasure): `type_of(shape)` answers `Circle`, the checked downcast
 `shape.(Circle)` has the same three temperaments as `any` assertions
-(panic / `or`·`catch` / soft `.(?T)`), and the type switch takes protocol
+(panic / `??`·`catch` / soft `.(?T)`), and the type switch takes protocol
 subjects directly — `match shape { case Circle: |c| {…} else: {…} }`.
 
 Erasability is **per-method**: a method whose signature mentions `Self`
@@ -492,31 +492,12 @@ pointing at the generic-bound spelling (`$T/Eq`), where it stays
 fully usable.
 
 A protocol head names its **kind** after the parameter list —
-`constraint` (the default, when the slot is empty), `vtable`, `inline`,
-`tagged`. A `constraint` protocol has no runtime values at all: it bounds
+`constraint` (the default, when the slot is empty) or `vtable`.
+A `constraint` protocol has no runtime values at all: it bounds
 generics and costs nothing, and every erasure or storable position
-refuses. `inline` protocols store function pointers directly (no vtable
-indirection). `protocol_kind(P)` reports the kind and folds in
+refuses. A `vtable` protocol erases into a value that dispatches
+dynamically. `protocol_kind(P)` reports the kind and folds in
 `inline if`.
-
-A `tagged` protocol exploits whole-program compilation: the compiler
-collects the complete conformer set and a value is a 16-byte BORROW
-`{ctx, tag}` into it. Erasure is implicit everywhere and allocation-free
-(an rvalue borrows a frame-scoped temp; at a `return` that refuses —
-nothing durable to borrow), there is no owning form, so no `free` and no
-`.(P, alloc)`, and dispatch is one generated switch per method that folds
-to a direct call when the set has a single member. Because membership is
-whole-program the compiler decides it statically: erasing into a protocol
-nothing implements, or downcasting to a non-conformer, is a compile error
-rather than a runtime miss.
-
-```sx
-View :: protocol tagged { area :: (self: *Self) -> i64; }
-impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
-
-render :: (v: View) -> i64 { v.area() }   // 16 bytes, borrowed, no alloc
-render(my_widget);
-```
 
 `#identity` marks the borrow-only ownership class —
 values of an identity protocol only ever borrow a *named* object (an
@@ -524,17 +505,10 @@ allocator, an Io runtime): rvalue erasure and `free` of the value refuse
 at compile time, and `is_identity(T)` reflects the class. The std
 `Allocator` and `Io` are both:
 ```sx
-Allocator :: protocol inline #identity {
+Allocator :: protocol vtable #identity {
     alloc_bytes :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
-```
-
-`#expand` is the tagged-only attribute: it puts the dispatch switch at the
-call site instead of behind one outlined routine, so a caller that knows its
-conformer keeps a single arm and pays nothing for the protocol.
-```sx
-Gauge :: protocol tagged #expand { read :: (self: *Self) -> i64; }
 ```
 
 ### Open Sets
@@ -622,13 +596,6 @@ defer close(f);
 
 // Multi-target assignment (atomic swap)
 a, b = b, a;
-```
-
-### Pipe Operator
-
-```sx
-result := data |> parse() |> transform() |> serialize();
-// equivalent to: serialize(transform(parse(data)))
 ```
 
 ### Compile-Time Execution
@@ -1038,7 +1005,7 @@ main :: () {
             b := context.io.async(|| -> (i64, !) { try context.io.sleep(10); 20  });
             c := context.io.async(|| -> (i64, !) { try context.io.sleep(20); 3   });
 
-            sum := (a.await() or 0) + (b.await() or 0) + (c.await() or 0);  // 123
+            sum := (a.await() ?? 0) + (b.await() ?? 0) + (c.await() ?? 0);  // 123
             print("sum: {}\n", sum);
         });
         ps.run();   // drive the scheduler until all fibers finish

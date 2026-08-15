@@ -1,29 +1,25 @@
-// The hard half of the same three misses (§7.9): at finality a HARD
+// The hard half of the same two misses (§7.9): at finality a HARD
 // operation — a dispatch, an unconsumed conversion, an erasure — takes the
 // ordinary diagnostic at the operation's own site, where the soft probe of
 // 1979 answers `null`.
 #import "modules/std.sx";
 
-Mark :: protocol tagged { tag :: (self: *Self) -> i64; }
-View :: protocol tagged { area :: (self: *Self) -> i64; }
+Mark :: protocol vtable { tag :: (self: *Self) -> i64; }
 Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
 
 Widget :: struct { n: i64; }
 Loose :: struct { n: i64; }
 
-impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
 impl Show for Widget { fmt :: (self: *Widget) -> i64 { self.n * 2 } }
 
 main :: () {
     w := Widget{ n = 5 };
     l := Loose{ n = 1 };
 
-    // Tagged, non-member of a non-empty set.
-    outside : View = l;
-    // Tagged, final-EMPTY set.
-    empty : Mark = w;
-    // Erased, no visible impl for this concrete type.
+    // No visible impl for this concrete type.
     unshown := l.(Show, context.allocator);
+    // Final-empty — nothing implements `Mark` in this program.
+    empty := w.(Mark, context.allocator);
 
-    print("{} {} {}\n", outside.area(), empty.tag(), unshown.fmt());
+    print("{} {}\n", unshown.fmt(), empty.tag());
 }

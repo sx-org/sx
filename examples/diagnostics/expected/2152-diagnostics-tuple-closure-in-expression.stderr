@@ -1,0 +1,11 @@
+error: unresolved 'Tuple' (in examples/diagnostics/2152-diagnostics-tuple-closure-in-expression.sx fn main)
+  --> examples/diagnostics/2152-diagnostics-tuple-closure-in-expression.sx:7:10
+   |
+ 7 |     x := Tuple(1, 2);
+   |          ^^^^^
+
+error: unresolved 'Closure' (in examples/diagnostics/2152-diagnostics-tuple-closure-in-expression.sx fn main)
+  --> examples/diagnostics/2152-diagnostics-tuple-closure-in-expression.sx:8:10
+   |
+ 8 |     y := Closure(5);
+   |          ^^^^^^^

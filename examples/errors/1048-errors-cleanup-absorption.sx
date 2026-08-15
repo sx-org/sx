@@ -1,7 +1,7 @@
 // Failable calls in cleanup bodies must be absorbed locally. A
 // `defer` / `onfail` body runs while the block is already exiting, so a failable
 // it calls has nowhere to propagate — it must be handled in place with `catch`
-// or an `or <value>` terminator. This file shows the accepted forms; the bare
+// or a `?? <value>` terminator. This file shows the accepted forms; the bare
 // (un-absorbed) form is rejected in 1049.
 
 #import "modules/std.sx";
@@ -14,7 +14,7 @@ recover :: () -> (i32, !E) { raise error.Bad; }
 work :: (n: i32) -> !E {
     defer  print("defer: always\n");                                 // plain cleanup
     onfail { failing() catch |e| print("onfail: caught (catch)\n"); }  // catch absorbs
-    onfail { x := recover() or 7; print("onfail: x={} (or)\n", x); } // or-value absorbs
+    onfail { x := recover() ?? 7; print("onfail: x={} (??)\n", x); } // ??-value absorbs
     if n < 0 { raise error.Bad; }
     return;
 }

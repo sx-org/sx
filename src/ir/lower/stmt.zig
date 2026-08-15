@@ -170,12 +170,6 @@ fn lowerTail(self: *Lowering, tail: *const Node, demand: TailDemand) BodyTail {
             // statement it yields no value; a value-returning function's missing
             // tail value is caught by the missing-value diagnostic instead.
             self.force_block_value = !isNoElseValuelessIf(tail);
-            const saved_in_return = self.in_return_expr;
-            // A function's returned value is in RETURN position — the same §6.2
-            // refusals as an explicit `return <expr>;`. Nested statements clear
-            // `in_return_expr` in `lowerStmt`, so only the value chain is armed.
-            if (demand == .return_value) self.in_return_expr = true;
-            defer self.in_return_expr = saved_in_return;
             const v = self.tryLowerAsExpr(tail) orelse return .no_value;
             if (expressionDiverged(self, v)) return .terminated;
             return .{ .value = v };
@@ -620,11 +614,6 @@ pub fn tryLowerAsExpr(self: *Lowering, node: *const Node) ?Ref {
 }
 
 pub fn lowerStmt(self: *Lowering, node: *const Node) void {
-    // Statement context is never return-position for §6.2: a binding like
-    // `v := Widget{}.(View)` inside a returned block/if arm must stay legal.
-    const saved_in_return = self.in_return_expr;
-    self.in_return_expr = false;
-    defer self.in_return_expr = saved_in_return;
     // Stamp this statement's span onto its instructions; see
     // `lowerExpr`.
     const saved_span = self.builder.current_span;
@@ -883,7 +872,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                     if (!ref_ty.isBuiltin()) {
                         const ref_info = self.module.types.get(ref_ty);
                         if (ref_info == .array) {
-                            ref = self.arrayToSliceView(ref, ref_ty) orelse
+                            ref = self.arrayToSliceView(ref, ref_ty, ty) orelse
                                 self.builder.emit(.{ .array_to_slice = .{ .operand = ref } }, ty);
                         }
                     }
@@ -1334,12 +1323,6 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
         // a = …` ignoring names).
         if (self.effectiveReturnType()) |slots_ty| self.validateMultiReturn(val, slots_ty);
     }
-    // Erasing an rvalue into a tagged value borrows a frame temp, which at a
-    // `return` would outlive its frame — the flag is what the erasure path
-    // reads to refuse (spec §6.2).
-    const old_in_return = self.in_return_expr;
-    self.in_return_expr = true;
-    defer self.in_return_expr = old_in_return;
     // Set target_type to function return type so null_literal etc. get the right type.
     // When inlining a comptime body, the *inlined* fn's declared return type wins
     // over the caller's — otherwise `return 42` inside a `-> i64` body lowered into
@@ -2344,7 +2327,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                         if (std.mem.eql(u8, fa.field, "ptr")) {
                             self.target_type = self.module.types.manyPtrTo(self.getElementType(obj_ty));
                         } else if (std.mem.eql(u8, fa.field, "len")) {
-                            self.target_type = .i64;
+                            self.target_type = self.module.types.lenTypeOf(obj_ty);
                         }
                     }
                 }
@@ -2376,7 +2359,9 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
     // — and the compound / index / field target forms — otherwise stored 0.
     const saved_fbv = self.force_block_value;
     self.force_block_value = true;
+    const errors_before_rhs = if (self.diagnostics) |d| d.errorCount() else 0;
     const val = self.lowerExpr(asgn.value);
+    const rhs_diagnosed = if (self.diagnostics) |d| d.errorCount() > errors_before_rhs else false;
     self.force_block_value = saved_fbv;
     self.target_type = old_target;
 
@@ -2555,8 +2540,25 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             } else false);
 
             if (is_special_container and std.mem.eql(u8, fa.field, "len")) {
-                const gep = self.builder.structGepTyped(obj_ptr, 1, .i64, obj_ty);
-                self.storeOrCompound(gep, val, asgn.op, .i64);
+                const len_ty = self.module.types.lenTypeOf(obj_ty);
+                // A constant count must fit the length word whatever built it
+                // — a literal, a folded arithmetic RHS, or the operand of a
+                // compound `+=` / `-=`. A RHS that already diagnosed says it
+                // once.
+                if (!rhs_diagnosed) {
+                    if (self.foldedInt(val)) |n| {
+                        if (n < 0) {
+                            if (self.diagnostics) |d|
+                                d.addFmt(.err, asgn.value.span, "negative length {} does not fit the {s} length word of '{s}'", .{
+                                    n, self.formatTypeName(len_ty), self.formatTypeName(obj_ty),
+                                });
+                        } else {
+                            self.checkIntLiteralMagnitudeFits(n, len_ty, asgn.value.span);
+                        }
+                    }
+                }
+                const gep = self.builder.structGepTyped(obj_ptr, 1, len_ty, obj_ty);
+                self.storeOrCompound(gep, val, asgn.op, len_ty);
             } else if (is_special_container and std.mem.eql(u8, fa.field, "ptr")) {
                 const elem_ty = self.getElementType(obj_ty);
                 const field_ty = self.module.types.manyPtrTo(elem_ty);
@@ -3963,7 +3965,7 @@ pub fn lowerDestructureDecl(self: *Lowering, dd: *const ast.DestructureDecl) voi
     // the error slot (always the LAST tuple field) cannot be dropped. It is
     // dropped when the destructure omits it (fewer names than fields, so the
     // trailing error slot is never reached) or binds it to `_`. The `try` /
-    // `catch` / `or value` consumer forms all strip the error channel (their
+    // `catch` / `?? value` consumer forms all strip the error channel (their
     // result type is non-failable), so this fires only on a BARE failable
     // destructure — exactly the case that would let an error vanish silently.
     if (self.errorChannelOf(ty) != null) {

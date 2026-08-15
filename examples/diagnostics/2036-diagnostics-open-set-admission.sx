@@ -20,7 +20,7 @@ Board :: @OpenVariant(View) {
 
 // Needs more alignment than the set's payload has.
 Loud :: @OpenVariant(View) {
-    lanes: Vector(4, f64) = .{};
+    lanes: @Vector(4, f64) = .{};
     render :: (self: *Loud) -> string => "loud";
 }
 

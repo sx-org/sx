@@ -148,9 +148,6 @@ fn printInst(instruction: *const Inst, ref_idx: u32, tt: *const TypeTable, write
         .trace_frame => try writer.writeAll("trace_frame : "),
         .trace_resolve => |u| try writer.print("trace_resolve %{d} : ", .{u.operand.index()}),
         .const_type => |tid| try writer.print("const type({s}) : ", .{tt.typeName(tid)}),
-        .tagged_tag_of => |t| try writer.print("tag_of({s}, {s}) : ", .{ tt.typeName(t.proto), tt.typeName(t.concrete) }),
-        .tagged_conforms => |t| try writer.print("conforms({s}, {s}) : ", .{ tt.typeName(t.proto), tt.typeName(t.concrete) }),
-        .tagged_type_id => |t| try writer.print("tagged_type_id %{d}, @{d} : ", .{ t.tag.index(), t.table.index() }),
         .open_set_tag_of => |t| try writer.print("set_tag_of({s}, {s}) : ", .{ tt.typeName(t.set), tt.typeName(t.member) }),
         .open_set_type_id => |t| try writer.print("set_type_id({s}) %{d}, @{d} : ", .{ tt.typeName(t.set), t.tag.index(), t.table.index() }),
         .open_set_layout => |q| try writer.print("{s}({s}) : ", .{
@@ -497,8 +494,16 @@ fn writeType(id: TypeId, tt: *const TypeTable, writer: Writer) !void {
             try writeType(p.element, tt, writer);
         },
         .slice => |s| {
-            try writer.writeAll("[]");
-            try writeType(s.element, tt, writer);
+            if (s.len_type == .i64) {
+                try writer.writeAll("[]");
+                try writeType(s.element, tt, writer);
+            } else {
+                try writer.writeAll("@Slice(");
+                try writeType(s.element, tt, writer);
+                try writer.writeAll(", ");
+                try writeType(s.len_type, tt, writer);
+                try writer.writeByte(')');
+            }
         },
         .array => |a| {
             try writer.print("[{d}]", .{a.length});
@@ -509,7 +514,7 @@ fn writeType(id: TypeId, tt: *const TypeTable, writer: Writer) !void {
             try writeType(o.child, tt, writer);
         },
         .vector => |v| {
-            try writer.print("Vector({d}, ", .{v.length});
+            try writer.print("@Vector({d}, ", .{v.length});
             try writeType(v.element, tt, writer);
             try writer.writeByte(')');
         },
@@ -568,7 +573,6 @@ fn writeConstant(val: ConstantValue, writer: Writer) !void {
         .vtable => try writer.writeAll("vtable{...}"),
         .func_ref => |fid| try writer.print("func_ref(#{d})", .{fid.index()}),
         .global_ref => |gid| try writer.print("global_ref(#{d})", .{gid.index()}),
-        .tagged_tag => try writer.writeAll("tagged_tag(...)"),
     }
 }
 

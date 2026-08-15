@@ -117,23 +117,6 @@ pub const Op = union(enum) {
     /// surfacing a "Type value reached runtime" diagnostic instead of
     /// silently lowering to a stale int.
     const_type: TypeId,
-    /// The conformer word of `concrete` inside tagged protocol `proto`'s
-    /// whole-program conformer set. It stays a PAIR in the IR: codegen
-    /// resolves it to the dense tag the converged fixpoint assigned, while the
-    /// comptime VM answers with the conformer's own type — a tag is a
-    /// link-stage artifact and does not exist during compilation (§7.9).
-    tagged_tag_of: TagOf,
-    /// Whether `concrete` is in tagged protocol `proto`'s conformer set. Like
-    /// `tagged_tag_of`, the answer only exists once the collection fixpoint
-    /// converges, so probe sites emit this and the numbering pass rewrites
-    /// every occurrence into a `const_bool` against the FINAL set.
-    tagged_conforms: TagOf,
-    /// The concrete `Type` word behind a tagged value, from its tag word.
-    /// At runtime that is one indexed load through the protocol's
-    /// `tag → type_id` table; on the comptime VM a tagged value carries its
-    /// concrete type directly (§7.9 — tags are link-stage artifacts), so the
-    /// operand IS the answer. One op, so both worlds read RTTI the same way.
-    tagged_type_id: TaggedTypeId,
     /// The size or alignment of a type an OPEN SET's layout decides — the set
     /// itself, or anything holding one by value. An open set's layout follows
     /// the members declared anywhere in the program, so neither number exists
@@ -141,10 +124,10 @@ pub const Op = union(enum) {
     /// it against the frozen layout, so one program has ONE answer wherever it
     /// is asked (spec: Open Sets — when the layout is final).
     open_set_layout: SetLayoutOf,
-    /// The tag word `member` carries inside open set `set`. Like
-    /// `tagged_tag_of` it stays a PAIR in the IR: the dense numbering is
-    /// assigned when the sets freeze, so no site can spell the number, and each
-    /// world resolves the pair against the published numbering.
+    /// The tag word `member` carries inside open set `set`. It stays a PAIR in
+    /// the IR: the dense numbering is assigned when the sets freeze, so no site
+    /// can spell the number, and each world resolves the pair against the
+    /// published numbering.
     open_set_tag_of: SetMemberOf,
     /// The `Type` of the member an open set value carries, from its tag word:
     /// one indexed load through the set's `tag → member Type` table. The SET
@@ -333,16 +316,6 @@ pub const Op = union(enum) {
 };
 
 // ── Operand structs ─────────────────────────────────────────────────────
-
-pub const TagOf = struct {
-    proto: TypeId,
-    concrete: TypeId,
-};
-
-pub const TaggedTypeId = struct {
-    tag: Ref,
-    table: GlobalId,
-};
 
 /// One member inside one open set — a pair the freeze's numbering answers.
 pub const SetMemberOf = struct {
@@ -618,6 +591,10 @@ pub const BuiltinId = enum(u16) {
     // The tag-word byte width a runtime variant read loads (sign-encoded:
     // negative = sign-extend). Internal — serves fmt's `__sx_any_tag_word`.
     rt_variant_tag_width,
+    // The packed length-word row (bit width / signedness / header offset) a
+    // runtime fat-pointer read needs. Internal — serves fmt's
+    // `__sx_any_len_word`.
+    rt_slice_len_info,
     rt_type_eq,
     // Field-family runtime paths: master-index [N x ptr] tables →
     // per-type arrays (names reuse the per-type name arrays; type tags,
@@ -807,12 +784,6 @@ pub const Function = struct {
     /// real field matches.
     is_set: bool = false,
 
-    /// The body must be inlined into every caller — a guarantee, not a
-    /// preference. Carried by the dispatch routine of an `#expand` tagged
-    /// method, whose contract is that the switch stands at the call site
-    /// (specs §6.3a); emit_llvm lowers it to LLVM's `alwaysinline`.
-    always_inline: bool = false,
-
     pub const Param = struct {
         name: StringId,
         ty: TypeId,
@@ -885,15 +856,4 @@ pub const ConstantValue = union(enum) {
     func_ref: FuncId,
     /// Relocatable address of another IR global (e.g. `p : *T = @g`).
     global_ref: GlobalId,
-    /// The tag word of a static tagged-protocol borrow. The dense number does
-    /// not exist until the collection fixpoint converges, so the pair is
-    /// carried and each world resolves it the way it resolves `tagged_tag_of`:
-    /// codegen to the published tag, the comptime VM to the conformer's own
-    /// type.
-    tagged_tag: TaggedTag,
-};
-
-pub const TaggedTag = struct {
-    proto: TypeId,
-    concrete: TypeId,
 };

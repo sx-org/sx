@@ -1,0 +1,67 @@
+// Expansion-driving comptime carries protocol values (specs.md §6.9). A body
+// evaluated DURING lowering — a `-> Type` builder, an `#insert` — erases a
+// conformer, dispatches through the protocol, and reads the answer. The impl
+// bodies it needs are lowered on demand, against the impls visible at that
+// point.
+//
+// Publication is monotone rather than once-and-for-all: a conformer declared
+// after an earlier evaluation already dispatched is reached by the next one.
+#import "modules/std.sx";
+
+View :: protocol vtable { area :: (self: *Self) -> i64; }
+
+// Lowering `Widget.area` writes a body that erases into ANOTHER protocol, so
+// the on-demand lowering reaches `Label`'s impls too.
+Label :: protocol vtable { text :: (self: *Self) -> i64; }
+Name :: struct { id: i64; }
+impl Label for Name { text :: (self: *Name) -> i64 { self.id } }
+
+Widget :: struct { n: i64; }
+impl View for Widget {
+    area :: (self: *Widget) -> i64 {
+        nm := Name{ id = 2 };
+        l : *Label = nm;
+        return self.n * l.text();
+    }
+}
+
+// A `-> Type` body mints a type, so it is evaluated at lowering time — here,
+// while `View` has one conformer.
+pick :: () -> Type {
+    w := Widget{ n = 4 };
+    v : *View = w;
+    if v.area() == 8 { return i64; }
+    return f64;
+}
+Chosen :: pick();
+
+// Declared after that evaluation ran, and a conformer of the same protocol.
+Panel :: struct { m: i64; }
+impl View for Panel { area :: (self: *Panel) -> i64 { self.m + 100 } }
+
+weigh :: () -> Type {
+    p := Panel{ m = 5 };
+    v : *View = p;
+    if v.area() == 105 { return i64; }
+    return f64;
+}
+Weighed :: weigh();
+
+// An `#insert`'s result becomes declarations, so it is evaluated there too.
+gen :: () -> string {
+    w := Widget{ n = 3 };
+    v : *View = w;
+    if v.area() == 6 { return "side := 7;"; }
+    return "side := 0;";
+}
+
+main :: () {
+    #insert gen();
+    c : Chosen = 3;
+    g : Weighed = 4;
+    w := Widget{ n = 6 };
+    v : *View = w;
+    p := Panel{ m = 1 };
+    pv : *View = p;
+    print("{} {} {} {} {}\n", c, g, side, v.area(), pv.area());
+}

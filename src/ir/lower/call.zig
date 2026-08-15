@@ -1993,7 +1993,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // protocol value as its first param).
             if (self.getProtocolInfo(obj_ty)) |proto_info| {
                 if (protocolHasMethod(proto_info, fa.field)) {
-                    return self.emitProtocolDispatch(obj, proto_info, fa.field, args.items, obj_ty, c.callee.span);
+                    return self.emitProtocolDispatch(obj, proto_info, fa.field, args.items, c.callee.span);
                 }
             }
 
@@ -2006,7 +2006,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     if (self.getProtocolInfo(oi.pointer.pointee)) |proto_info| {
                         if (protocolHasMethod(proto_info, fa.field)) {
                             const pv = self.builder.load(obj, oi.pointer.pointee);
-                            return self.emitProtocolDispatch(pv, proto_info, fa.field, args.items, oi.pointer.pointee, c.callee.span);
+                            return self.emitProtocolDispatch(pv, proto_info, fa.field, args.items, c.callee.span);
                         }
                     }
                 }
@@ -2025,7 +2025,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const pay_ty = opt_info.optional.child;
                     if (self.getProtocolInfo(pay_ty)) |proto_info| {
                         if (protocolHasMethod(proto_info, fa.field)) {
-                            return self.emitProtocolDispatch(obj, proto_info, fa.field, args.items, pay_ty, c.callee.span);
+                            return self.emitProtocolDispatch(obj, proto_info, fa.field, args.items, c.callee.span);
                         }
                     }
                     // `?*P` (optional VIEW): the optional of a
@@ -2039,7 +2039,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             if (self.getProtocolInfo(pay_info.pointer.pointee)) |proto_info| {
                                 if (protocolHasMethod(proto_info, fa.field)) {
                                     const pv = self.builder.load(obj, pay_info.pointer.pointee);
-                                    return self.emitProtocolDispatch(pv, proto_info, fa.field, args.items, pay_info.pointer.pointee, c.callee.span);
+                                    return self.emitProtocolDispatch(pv, proto_info, fa.field, args.items, c.callee.span);
                                 }
                             }
                         }
@@ -2244,7 +2244,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // Free-function dot-call (`recv.fn(args)` → `fn(recv, args)`)
             // is OPT-IN: only a fn declared `name :: ufcs (...) {...}` or a
             // `name :: ufcs target;` alias dispatches. A plain fn is
-            // callable directly or via `|>` only — a dot-call on one gets a
+            // callable only by direct call — a dot-call on one gets a
             // tailored diagnostic rather than silently becoming a method.
             //
             // A free-function UFCS target with a
@@ -2406,7 +2406,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             if (ufcs_fd != null or self.resolveFuncByName(fa.field) != null) {
                 if (self.diagnostics) |d| {
                     const id = d.addFmtId(.err, c.callee.span, "'{s}' is not a ufcs function — a plain function does not dispatch via dot-call", .{fa.field});
-                    d.addHelpFmt(id, c.callee.span, null, "call it directly (`{s}(receiver, ...)`), pipe it (`receiver |> {s}(...)`), or declare it `{s} :: ufcs (...) {{ ... }}`", .{ fa.field, fa.field, fa.field });
+                    d.addHelpFmt(id, c.callee.span, null, "call it directly (`{s}(receiver, ...)`) or declare it `{s} :: ufcs (...) {{ ... }}`", .{ fa.field, fa.field });
                 }
                 return Ref.none;
             }
@@ -2624,7 +2624,6 @@ pub fn allocViaContext(self: *Lowering, size_ref: Ref) Ref {
         pd,
         "alloc_bytes",
         &.{size_ref},
-        af.ty,
         .{ .start = cs.start, .end = cs.end },
     );
     if (dispatched == Ref.none) return self.emitPlaceholder("allocator-dispatch");
@@ -2736,6 +2735,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
+        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
@@ -2985,6 +2985,7 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
+        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
@@ -3261,6 +3262,7 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
+        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
@@ -3456,6 +3458,7 @@ fn isReflectionCall(name: []const u8) bool {
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
+        .__sx_slice_len_info,
         .any_element,
         .raw_any_data,
         .raw_make_any,
@@ -4086,10 +4089,9 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             return self.openSetMemberTypeId(arg_ty, slot);
         } else if (self.getProtocolInfo(arg_ty) != null) {
             // A PROTOCOL value answers its CONCRETE type — the type_id
-            // word at slot 1, same position as an any's;
-            // a tagged value synthesizes it through its tag table.
+            // word at slot 1, same position as an any's.
             const val = self.lowerExpr(c.args[0]);
-            return self.protocolTypeIdWord(arg_ty, val);
+            return self.protocolTypeIdWord(val);
         } else {
             return self.builder.constType(arg_ty);
         }
@@ -4286,6 +4288,18 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         }
         const ty = self.resolveTypeArg(c.args[0]);
         return self.builder.constInt(self.module.types.variantTagWidth(ty), .i64);
+    }
+    if (std.mem.eql(u8, name, "__sx_slice_len_info")) {
+        // INTERNAL: the packed length-word row (fmt's runtime fat-pointer
+        // read). Static arg folds; runtime Type reads the row table.
+        if (c.args.len < 1) return self.builder.constInt(0, .i64);
+        if (!self.isStaticTypeArg(c.args[0])) {
+            const arg_ref = self.lowerExpr(c.args[0]);
+            const args_owned = self.alloc.dupe(Ref, &.{arg_ref}) catch return self.builder.constInt(0, .i64);
+            return self.builder.callBuiltin(.rt_slice_len_info, args_owned, .i64);
+        }
+        const ty = self.resolveTypeArg(c.args[0]);
+        return self.builder.constInt(self.module.types.sliceLenInfo(ty), .i64);
     }
     return null;
 }
@@ -5446,7 +5460,7 @@ pub fn resolveCallParamTypes(
         };
         if (self.getProtocolInfo(proto_recv)) |proto_info| {
             for (proto_info.methods) |m| {
-                if (std.mem.eql(u8, m.name, fa.field)) return m.dispatch_param_types;
+                if (std.mem.eql(u8, m.name, fa.field)) return m.param_types;
             }
         }
         // `*Protocol` receiver (borrowed view): same lookup through the
@@ -5456,7 +5470,7 @@ pub fn resolveCallParamTypes(
             if (oi == .pointer) {
                 if (self.getProtocolInfo(oi.pointer.pointee)) |proto_info| {
                     for (proto_info.methods) |m| {
-                        if (std.mem.eql(u8, m.name, fa.field)) return m.dispatch_param_types;
+                        if (std.mem.eql(u8, m.name, fa.field)) return m.param_types;
                     }
                 }
             }
@@ -5468,7 +5482,7 @@ pub fn resolveCallParamTypes(
             if (opt_info == .optional) {
                 if (self.getProtocolInfo(opt_info.optional.child)) |proto_info| {
                     for (proto_info.methods) |m| {
-                        if (std.mem.eql(u8, m.name, fa.field)) return m.dispatch_param_types;
+                        if (std.mem.eql(u8, m.name, fa.field)) return m.param_types;
                     }
                 }
             }

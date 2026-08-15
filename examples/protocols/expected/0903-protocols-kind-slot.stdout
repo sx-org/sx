@@ -1,7 +1,7 @@
-constraint vtable inline tagged
+constraint vtable
 false false true
 3
 5
 pt
 42
-6
+3

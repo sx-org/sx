@@ -1,5 +1,5 @@
-// The layout is spelled in the kind slot (`protocol inline`). `#inline` is not
-// recognized anywhere; it fails through the ordinary lexer path, with no hint arm.
+// `#inline` is not a protocol attribute. It is recognized nowhere; it fails
+// through the ordinary parse path, with no hint arm.
 #import "modules/std.sx";
 
 Hasher :: protocol #inline {

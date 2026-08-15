@@ -38,7 +38,7 @@ add :: (a: i32, b: i32) -> i32 { a + b }
 
 mul :: (a: i32, b: i32) -> i32 { a * b }
 
-vec3 :: (x: f32, y: f32, z: f32) -> Vector(3, f32) {
+vec3 :: (x: f32, y: f32, z: f32) -> @Vector(3, f32) {
     .[x, y, z]
 }
 

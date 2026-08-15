@@ -37,8 +37,8 @@ error: 'Loud' cannot be a member of 'View': it needs 32-byte alignment, and the 
    |
 22 | Loud :: @OpenVariant(View) {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-23 |     lanes: Vector(4, f64) = .{};
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+23 |     lanes: @Vector(4, f64) = .{};
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 24 |     render :: (self: *Loud) -> string => "loud";
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 25 | }
@@ -48,8 +48,8 @@ help: raise 'align' on the 'View' declaration — every storage path for it must
    |
 22 | Loud :: @OpenVariant(View) {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-23 |     lanes: Vector(4, f64) = .{};
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+23 |     lanes: @Vector(4, f64) = .{};
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 24 |     render :: (self: *Loud) -> string => "loud";
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 25 | }

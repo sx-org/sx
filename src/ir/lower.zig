@@ -44,7 +44,6 @@ const lower_worklist = @import("lower/worklist.zig");
 const lower_context_ext = @import("lower/context_ext.zig");
 const lower_nominal = @import("lower/nominal.zig");
 const lower_protocol = @import("lower/protocol.zig");
-const lower_tagged = @import("lower/tagged.zig");
 const lower_coerce = @import("lower/coerce.zig");
 const lower_ffi = @import("lower/ffi.zig");
 const lower_objc_class = @import("lower/objc_class.zig");
@@ -590,7 +589,7 @@ pub const Lowering = struct {
     /// import-scoped coherence (§3) can refuse a second impl of the pair in the
     /// module that already declared one. Cross-module overlaps stay legal here
     /// and are decided at a use site that sees both.
-    protocol_impl_sites: std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_tagged.ImplSite)),
+    protocol_impl_sites: std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_protocol.ImplSite)),
     /// Exact receiver type recorded when a nullary-protocol impl method is
     /// declared. Synthesized default methods are authored in the protocol's
     /// module, where re-resolving their synthetic `self: *Target` annotation
@@ -643,7 +642,7 @@ pub const Lowering = struct {
     trace_push_fid: ?FuncId = null, // extern `sx_trace_push` (from library/vendors/sx_trace_runtime/sx_trace.c)
     trace_clear_fid: ?FuncId = null, // extern `sx_trace_clear`
     needs_trace_runtime: bool = false, // set when lowering emits a trace push/clear; signals Compilation to auto-link sx_trace.c
-    chain_fail_target: ?ChainFailTarget = null, // when set, a failable `or` chain routes its TOTAL failure here (an absorbing consumer like `catch`) instead of propagating to the function
+    chain_fail_target: ?ChainFailTarget = null, // when set, a failable `??` chain routes its TOTAL failure here (an absorbing consumer like `catch`) instead of propagating to the function
     current_runtime_class: ?*const ast.RuntimeClassDecl = null, // set while lowering a `#jni_main` (or any sx-defined `#jni_class`) bodied method — `super.method(args)` dispatch resolves the parent class against this fcd's `#extends`
     current_runtime_method: ?ast.RuntimeMethodDecl = null, // the specific method whose body is being lowered; `super.<same_name>(...)` reuses its signature
     current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@va_start` reads its `..` tail from it
@@ -770,42 +769,16 @@ pub const Lowering = struct {
     protocol_vtable_type_map: std.StringHashMap(TypeId), // protocol name → vtable struct TypeId
     protocol_vtable_type_by_type: std.AutoHashMap(TypeId, TypeId),
     protocol_vtable_global_map: std.AutoHashMap(ProtocolConcreteKey, inst_mod.GlobalId),
-    /// Whole-program `tagged` membership (lower/tagged.zig). `tagged_reached`
-    /// holds the value-used instantiations, `tagged_members` their conformer
-    /// sets, `tagged_tags` the numbering the collection fixpoint produces.
-    tagged_reached: std.AutoHashMap(TypeId, void),
-    tagged_members: std.AutoHashMap(TypeId, std.ArrayList(TypeId)),
-    tagged_tags: std.AutoHashMap(lower_tagged.PairKey, i64),
-    tagged_arms: std.AutoHashMap(lower_tagged.ArmKey, FuncId),
-    tagged_dispatch_fns: std.AutoHashMap(lower_tagged.MethodKey, FuncId),
-    tagged_type_id_tables: std.AutoHashMap(TypeId, inst_mod.GlobalId),
-    tagged_pending: std.ArrayList(lower_tagged.PendingRoutine),
-    /// Every declared impl site of a tagged `(protocol, conformer)` pair.
-    /// Tagged coherence is GLOBAL — a duplicate is an error regardless of
-    /// import visibility — but only for a REACHED instantiation, so the check
-    /// runs with the collection fixpoint rather than at registration.
-    tagged_impl_sites: std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)),
     /// The one worklist every expansion driver registers on and is drained by
     /// (lower/worklist.zig). Its unretired contributions are what finality —
     /// `setFinal`, a namespace's member surface — reads before publishing.
     expansion: lower_worklist.Worklist,
-    /// Tagged protocols an impl on a TEMPLATE target (`impl P for Box($T)`)
-    /// can still admit conformers into: one member per generic instance the
-    /// program spells, so such a set is never closed before publication.
-    tagged_template_impls: std.AutoHashMap(TypeId, void),
-    /// Dispatch routines whose arms are being materialized right now. An arm's
-    /// impl body can dispatch through the routine that is materializing it.
-    tagged_publishing: std.AutoHashMap(FuncId, void),
     /// Which comptime phase the wrapper body being lowered belongs to, or null
     /// outside every comptime body (§7.9's phase law). An EXPANSION-driving
     /// body runs during lowering, so it reads the sets as they stand and can
     /// carry no answer to finality. An ORDINARY `#run` runs after convergence
     /// and sees the final sets.
     comptime_phase: ?lower_comptime.ComptimePhase = null,
-    /// True while the operand of a `return` is being lowered. Erasing an
-    /// RVALUE into a tagged value there has nothing durable to borrow — the
-    /// frame is about to die (spec §6.2).
-    in_return_expr: bool = false,
     param_impl_map: std.StringHashMap(std.ArrayList(ParamImplEntry)), // "Proto\x00<arg_mangled>\x00<src_mangled>" → impl entries (parameterised protocols only; the list lets overlap detection see cross-module duplicates)
     /// One materialized instantiation of a parameterized protocol family, by
     /// its protocol TypeId. The base identity name plus the canonical argument
@@ -939,8 +912,8 @@ pub const Lowering = struct {
         span: ast.Span,
         /// The declaration itself. A blanket impl's head and source spell
         /// binders whose resolved TypeIds say nothing about which position
-        /// each binder occupies, so conformer collection unifies against the
-        /// written shapes.
+        /// each binder occupies, so matching unifies against the written
+        /// shapes.
         block: *const ast.ImplBlock,
     };
 
@@ -998,7 +971,7 @@ pub const Lowering = struct {
         },
     };
 
-    /// Where a failable `or` chain's TOTAL failure routes when the
+    /// Where a failable `??` chain's TOTAL failure routes when the
     /// chain is the operand of an absorbing consumer (`catch`). `bb` is a block
     /// with a single parameter typed `set` (the error tag); the chain branches
     /// there with its final error instead of propagating to the function.
@@ -1223,7 +1196,7 @@ pub const Lowering = struct {
             .plain_struct_authors = std.AutoHashMap(TypeId, PlainStructAuthor).init(module.alloc),
             .protocol_impl_methods = std.AutoHashMap(ProtocolImplMethodKey, ProtocolImplMethod).init(module.alloc),
             .protocol_impl_decls = std.AutoHashMap(ProtocolConcreteKey, void).init(module.alloc),
-            .protocol_impl_sites = std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_tagged.ImplSite)).init(module.alloc),
+            .protocol_impl_sites = std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_protocol.ImplSite)).init(module.alloc),
             .protocol_impl_receiver_types = std.AutoHashMap(*const ast.FnDecl, TypeId).init(module.alloc),
             .protocol_default_dispatch = null,
             .registered_protocol_impls = std.AutoHashMap(*const ast.ImplBlock, void).init(module.alloc),
@@ -1253,17 +1226,7 @@ pub const Lowering = struct {
             .protocol_vtable_type_map = std.StringHashMap(TypeId).init(module.alloc),
             .protocol_vtable_type_by_type = std.AutoHashMap(TypeId, TypeId).init(module.alloc),
             .protocol_vtable_global_map = std.AutoHashMap(ProtocolConcreteKey, inst_mod.GlobalId).init(module.alloc),
-            .tagged_reached = std.AutoHashMap(TypeId, void).init(module.alloc),
-            .tagged_members = std.AutoHashMap(TypeId, std.ArrayList(TypeId)).init(module.alloc),
-            .tagged_tags = std.AutoHashMap(lower_tagged.PairKey, i64).init(module.alloc),
-            .tagged_arms = std.AutoHashMap(lower_tagged.ArmKey, FuncId).init(module.alloc),
-            .tagged_dispatch_fns = std.AutoHashMap(lower_tagged.MethodKey, FuncId).init(module.alloc),
-            .tagged_type_id_tables = std.AutoHashMap(TypeId, inst_mod.GlobalId).init(module.alloc),
-            .tagged_pending = std.ArrayList(lower_tagged.PendingRoutine).empty,
-            .tagged_impl_sites = std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)).init(module.alloc),
             .expansion = lower_worklist.Worklist.init(module.alloc),
-            .tagged_template_impls = std.AutoHashMap(TypeId, void).init(module.alloc),
-            .tagged_publishing = std.AutoHashMap(FuncId, void).init(module.alloc),
             .param_impl_map = std.StringHashMap(std.ArrayList(ParamImplEntry)).init(module.alloc),
             .param_protocol_instances = std.AutoHashMap(TypeId, ParamProtocolInstance).init(module.alloc),
             .param_impl_pack_map = std.StringHashMap(std.ArrayList(PackParamImplEntry)).init(module.alloc),
@@ -1285,6 +1248,15 @@ pub const Lowering = struct {
             .shape_inferred_sets = std.StringHashMap([]const u32).init(module.alloc),
             .program_index = ProgramIndex.init(module.alloc),
         };
+    }
+
+    /// A freshly allocated AST node for compiler-synthesized source (a dispatch
+    /// call, an `@Init` recipe body). Lives on the lowering arena, so it
+    /// outlives every deferred lowering that may still read it.
+    pub fn synthNode(self: *Lowering, data: ast.Node.Data, span: ast.Span, src: ?[]const u8) *Node {
+        const n = self.alloc.create(Node) catch @panic("out of memory");
+        n.* = .{ .data = data, .span = span, .source_file = src };
+        return n;
     }
 
     // ── Layout delegators ───────────────────────────────────────────
@@ -1552,6 +1524,18 @@ pub const Lowering = struct {
         return null;
     }
 
+    /// Resolve the `Len` argument of `@Slice(T, Len)`: the length word's type.
+    /// Only an integer type carries a length, so anything else is a hard error
+    /// and yields the `.unresolved` sentinel.
+    pub fn resolveSliceLenType(self: *Lowering, len_node: *const Node) ?TypeId {
+        const ty = self.resolveTypeWithBindings(len_node);
+        if (ty == .unresolved) return null;
+        if (self.module.types.isIntegerType(ty)) return ty;
+        if (self.diagnostics) |d|
+            d.addFmt(.err, len_node.span, "@Slice length type must be an integer type, got '{s}'", .{self.formatTypeName(ty)});
+        return null;
+    }
+
     /// Leaf-name lookup for the shared dimension evaluator: a name bound to a
     /// compile-time integer across the three const tables.
     pub fn lookupDimName(self: *Lowering, name: []const u8) ?i64 {
@@ -1564,7 +1548,7 @@ pub const Lowering = struct {
     /// exactly like a plain `K :: 3` const — e.g. a `($T) -> Type` builder that
     /// loops `inline for 0..field_count(T)` to assemble a variant list (the
     /// `race` result synthesis). (Reaches the self-ctx fold paths — array dim,
-    /// inline-for bound; a Vector LANE in a plain type annotation resolves through
+    /// inline-for bound; a `@Vector` LANE in a plain type annotation resolves through
     /// the stateless type-bridge ctx, which stubs this to null.) Resolves the type
     /// arg through the same `resolveTypeArg` + accessors the value path uses, so
     /// the folded constant always matches the call's runtime value. Returns null
@@ -1970,12 +1954,12 @@ pub const Lowering = struct {
         return .{ .l = self };
     }
 
-    /// Resolve a `Vector(N, T)` lane count to a positive compile-time integer
+    /// Resolve a `@Vector(N, T)` lane count to a positive compile-time integer
     /// through the shared `program_index.foldDimU32` folder (min 1) — so a literal
-    /// (`Vector(4, f32)`), a module/generic const (`Vector(N, f32)`), and a const
-    /// expression (`Vector(M + 1, f32)`) all resolve identically, and the i64→u32
+    /// (`@Vector(4, f32)`), a module/generic const (`@Vector(N, f32)`), and a const
+    /// expression (`@Vector(M + 1, f32)`) all resolve identically, and the i64→u32
     /// narrowing is range-checked (an oversized lane diagnoses instead of
-    /// panicking). A non-const lane (`Vector(get(), f32)`) or a
+    /// panicking). A non-const lane (`@Vector(get(), f32)`) or a
     /// non-positive one emits a clean diagnostic and returns null; the caller
     /// yields `.unresolved` rather than fabricating a `<0 x float>` lane count
     /// that crashes LLVM verification.
@@ -1984,17 +1968,17 @@ pub const Lowering = struct {
             .ok => |n| return n,
             .too_large => |v| {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, lane_node.span, "Vector lane count {} does not fit in u32", .{v});
+                    d.addFmt(.err, lane_node.span, "@Vector lane count {} does not fit in u32", .{v});
                 return null;
             },
             .non_integral_float => |v| {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, lane_node.span, "Vector lane count must be an integer, but '{d}' is a non-integral float", .{v});
+                    d.addFmt(.err, lane_node.span, "@Vector lane count must be an integer, but '{d}' is a non-integral float", .{v});
                 return null;
             },
             .not_const, .below_min => {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, lane_node.span, "Vector lane count must be a positive compile-time integer constant", .{});
+                    d.addFmt(.err, lane_node.span, "@Vector lane count must be a positive compile-time integer constant", .{});
                 return null;
             },
         }
@@ -2274,6 +2258,16 @@ pub const Lowering = struct {
             .many_pointer => |p| p.element,
             else => .unresolved,
         };
+    }
+
+    /// The length of a container as an `i64` — a fat pointer's length word
+    /// widened out of its declared `Len`, so the index/range machinery works in
+    /// one integer width whatever the slice's ABI.
+    pub fn emitLengthI64(self: *Lowering, obj: Ref, obj_ty: TypeId) Ref {
+        const len_ty = self.module.types.lenTypeOf(obj_ty);
+        const len = self.builder.emit(.{ .length = .{ .operand = obj } }, len_ty);
+        if (len_ty == .i64) return len;
+        return self.builder.emit(.{ .widen = .{ .operand = len, .from = len_ty, .to = .i64 } }, .i64);
     }
 
     /// The element type when `ty` is a POINTER TO AN ARRAY (`*[N]T` → T),
@@ -3112,14 +3106,14 @@ pub const Lowering = struct {
     pub const finishCatchHandler = lower_error.finishCatchHandler;
     pub const runCatchBody = lower_error.runCatchBody;
     pub const checkEscapeWidening = lower_error.checkEscapeWidening;
-    pub const orIsFailableChain = lower_error.orIsFailableChain;
+    pub const coalesceIsFailable = lower_error.coalesceIsFailable;
     pub const operandIsFailableLike = lower_error.operandIsFailableLike;
     pub const isErasedAssertNode = lower_error.isErasedAssertNode;
     pub const desugarErasedAssert = lower_error.desugarErasedAssert;
-    pub const orChainSuccessType = lower_error.orChainSuccessType;
+    pub const coalesceChainSuccessType = lower_error.coalesceChainSuccessType;
     pub const unwrapTryNode = lower_error.unwrapTryNode;
-    pub const flattenOrChain = lower_error.flattenOrChain;
-    pub const lowerFailableOr = lower_error.lowerFailableOr;
+    pub const flattenCoalesceChain = lower_error.flattenCoalesceChain;
+    pub const lowerFailableCoalesce = lower_error.lowerFailableCoalesce;
     pub const callTargetName = lower_error.callTargetName;
     pub const astIsPureBareInferred = lower_error.astIsPureBareInferred;
     pub const astPureNamedSet = lower_error.astPureNamedSet;
@@ -3431,33 +3425,14 @@ pub const Lowering = struct {
     pub const protocolKindOf = lower_protocol.protocolKindOf;
     pub const checkComptimeEscape = lower_protocol.checkComptimeEscape;
 
-    // ── tagged protocols (lower/tagged.zig) ──
-    pub const isTagged = lower_tagged.isTagged;
-    pub const taggedIn = lower_tagged.taggedIn;
-    pub const reachTagged = lower_tagged.reachTagged;
-    pub const seedTagged = lower_tagged.seedTagged;
-    pub const refuseEmptyTaggedSet = lower_tagged.refuseEmptySet;
-    pub const refuseNonMemberTagged = lower_tagged.refuseNonMember;
-    pub const buildTaggedValue = lower_tagged.buildTaggedValue;
-    pub const protocolTypeIdWord = lower_tagged.protocolTypeIdWord;
-    pub const emitTaggedDispatch = lower_tagged.emitTaggedDispatch;
-    pub const convergeTaggedSets = lower_tagged.convergeTaggedSets;
-    pub const taggedConformsNow = lower_tagged.taggedConformsNow;
-    pub const refuseUnstableMembership = lower_tagged.refuseUnstableMembership;
-    pub const noteTemplateTaggedImpl = lower_tagged.noteTemplateImpl;
     pub const lowerProtocolProbe = lower_protocol.lowerProtocolProbe;
-    pub const recordTaggedImplSite = lower_tagged.recordImplSite;
-    pub const refuseOutOfSetDowncast = lower_tagged.refuseOutOfSetDowncast;
-    pub const lowerTaggedDowncast = lower_tagged.lowerTaggedDowncast;
-    pub const lowerSoftPointerRecovery = lower_tagged.lowerSoftPointerRecovery;
-    pub const warnDeadTypeSwitchArm = lower_tagged.warnDeadTypeSwitchArm;
+    pub const protocolTypeIdWord = lower_protocol.protocolTypeIdWord;
+    pub const lowerSoftPointerRecovery = lower_protocol.lowerSoftPointerRecovery;
     pub const allocViaAllocatorValue = lower_protocol.allocViaAllocatorValue;
     pub const firstUnimplementedProtocolMethod = lower_protocol.firstUnimplementedProtocolMethod;
     pub const resolveConcreteTypeName = lower_protocol.resolveConcreteTypeName;
     pub const checkBoundBindings = lower_bound.checkBindings;
     pub const computeHasImpl = lower_protocol.computeHasImpl;
-    pub const taggedMembershipOf = lower_protocol.taggedMembershipOf;
-    pub const factScheduler = lower_tagged.factScheduler;
 
     // --- lower/coerce.zig (lower_coerce) ---
     pub const lowerXX = lower_coerce.lowerXX;
@@ -3470,6 +3445,10 @@ pub const Lowering = struct {
     pub const isLvalueExpr = lower_coerce.isLvalueExpr;
     pub const refStorageAddress = lower_coerce.refStorageAddress;
     pub const arrayToSliceView = lower_coerce.arrayToSliceView;
+    pub const refuseArrayLenWord = lower_coerce.refuseArrayLenWord;
+    pub const refuseLenWord = lower_coerce.refuseLenWord;
+    pub const refuseImplicitLenNarrow = lower_coerce.refuseImplicitLenNarrow;
+    pub const foldedInt = lower_coerce.foldedInt;
     pub const isByValueBindingIdent = lower_coerce.isByValueBindingIdent;
     pub const coerceOrErase = lower_coerce.coerceOrErase;
     pub const buildProtocolErasure = lower_coerce.buildProtocolErasure;
@@ -3742,7 +3721,6 @@ pub const Lowering = struct {
     pub const computeEnvSize = lower_closure.computeEnvSize;
 
     // --- lower/init_plan.zig (`@Init(T)`) ---
-    pub const synthNode = lower_tagged.synthNode;
     pub const initTargetOf = lower_init_plan.initTargetOf;
     pub const initBinderType = lower_init_plan.binderType;
     pub const formInitPlan = lower_init_plan.formInitPlan;
@@ -3764,6 +3742,8 @@ pub const Lowering = struct {
     pub const openSetLayoutDependsOnSet = lower_open_set.layoutDependsOnSet;
     pub const openSetLayoutFinal = lower_open_set.layoutFinal;
     pub const freezeOpenSets = lower_open_set.freezeSets;
+    pub const convergeOpenSets = lower_open_set.converge;
+    pub const factScheduler = lower_open_set.factScheduler;
     pub const refuseUnfrozenLayout = lower_open_set.refuseUnfrozenLayout;
     pub const openSetDeclaresMembership = lower_open_set.declaresMembership;
     pub const openSetOfMember = lower_open_set.setOfMember;

@@ -16,7 +16,7 @@ LE  :: lib.LE;
 
 main :: () -> i32 {
     b : Box(i64) = .{ v = 42 };
-    r := b.get() or { -1 };   // value-failable channel preserved → r=42
+    r := b.get() ?? { -1 };   // value-failable channel preserved → r=42
     print("r={}\n", r);
     return 0;
 }

@@ -1,0 +1,20 @@
+// `@Vector(N, T)` is the SIMD type, and `Vector` is an ordinary identifier a
+// program may bind — here a struct and a local — in the same file whose
+// signatures spell the constructor.
+
+#import "modules/std.sx";
+
+Vector :: struct { tag: string; }
+
+scale :: (v: @Vector(3, f32), k: f32) -> @Vector(3, f32) { v * k }
+
+main :: () -> i32 {
+    a : @Vector(3, f32) = .[1.0, 2.0, 3.0];
+    b := scale(a, 2.0) + a;
+    print("x={} y={} [2]={}\n", b.x, b.y, b[2]);
+
+    named := Vector{ tag = "plain" };
+    Vector := vector_lanes(@Vector(3, f32));
+    print("tag={} lanes={}\n", named.tag, Vector);
+    0
+}

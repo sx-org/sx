@@ -9,6 +9,7 @@ const TypeTable = ir_types.TypeTable;
 const StringId = ir_types.StringId;
 const type_resolver = @import("type_resolver.zig");
 const program_index_mod = @import("program_index.zig");
+const contracts = @import("../contracts.zig");
 const ModuleConstInfo = program_index_mod.ModuleConstInfo;
 
 /// The single-source type-alias table (`ProgramIndex.type_alias_map`), threaded
@@ -392,7 +393,7 @@ pub fn isTypeShapedAstNode(node: *const Node, table: *TypeTable) bool {
 }
 
 /// Comptime builtins whose call result IS a `Type` (so a call to one is
-/// type-shaped). The type-CONSTRUCTOR builtins `Vector`/generic-struct heads are
+/// type-shaped). The type-CONSTRUCTOR builtins `@Vector`/generic-struct heads are
 /// already covered by `.parameterized_type_expr`; this names the type-QUERY /
 /// projection builtins that parse as a plain `.call`.
 pub fn isTypeReturningBuiltinName(name: []const u8) bool {
@@ -403,10 +404,10 @@ pub fn isTypeReturningBuiltinName(name: []const u8) bool {
 }
 
 fn resolveParameterizedType(pt: *const ast.ParameterizedTypeExpr, table: *TypeTable, alias_map: AliasMap, consts: ConstMap) TypeId {
-    // Strip module prefix (e.g. "std.Vector" → "Vector")
+    // Strip module prefix (e.g. "std.Box" → "Box")
     const base_name = if (std.mem.lastIndexOfScalar(u8, pt.name, '.')) |dot| pt.name[dot + 1 ..] else pt.name;
-    // Vector(N, T) is a built-in parameterized type
-    if (std.mem.eql(u8, base_name, "Vector")) {
+    // @Vector(N, T) is a built-in parameterized type
+    if (std.mem.eql(u8, base_name, contracts.vector_head)) {
         if (pt.args.len == 2) {
             // The lane count is a literal or a named module-const integer — the
             // same dimension forms a fixed array accepts. An unresolvable count
@@ -416,6 +417,24 @@ fn resolveParameterizedType(pt: *const ast.ParameterizedTypeExpr, table: *TypeTa
             const length = si.resolveArrayLen(pt.args[0]) orelse return .unresolved;
             const elem = resolveAstType(pt.args[1], table, alias_map, consts);
             return table.vectorOf(elem, length);
+        }
+    }
+    // @Array(N, T) is the named form of `[N]T`
+    if (std.mem.eql(u8, base_name, contracts.array_head)) {
+        if (pt.args.len == 2) {
+            const si = StatelessInner{ .table = table, .alias_map = alias_map, .consts = consts };
+            const length = si.resolveArrayLen(pt.args[0]) orelse return .unresolved;
+            const elem = resolveAstType(pt.args[1], table, alias_map, consts);
+            return table.arrayOf(elem, length);
+        }
+    }
+    // @Slice(T, Len) is a fat pointer `{ptr, Len}`; `@Slice(T, i64)` is `[]T`
+    if (std.mem.eql(u8, base_name, contracts.slice_head)) {
+        if (pt.args.len == 2) {
+            const elem = resolveAstType(pt.args[0], table, alias_map, consts);
+            const len_ty = resolveAstType(pt.args[1], table, alias_map, consts);
+            if (!table.isIntegerType(len_ty)) return .unresolved;
+            return table.sliceOfLen(elem, len_ty);
         }
     }
     // Generic struct instantiation — register as named type

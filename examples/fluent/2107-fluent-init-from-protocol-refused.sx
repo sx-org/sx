@@ -1,22 +1,18 @@
 // Ordinary modeled conversions compose from a protocol-typed source. At an
 // unmodeled concrete leaf, the source is a handle to its conformer, not the
-// conformer's value, so every protocol kind is refused in both the argument and
+// conformer's value, so a protocol source is refused in both the argument and
 // dot-receiver spellings. A concrete leaf names the downcast that reads the
 // conformer out; a set destination answers in the terms it decides by,
 // membership.
 #import "modules/std.sx";
 
-Named :: protocol tagged { name :: (self: *Self) -> string; }
 Boxed :: protocol vtable { name :: (self: *Self) -> string; }
-Wired :: protocol inline { name :: (self: *Self) -> string; }
 
 Round :: struct { s: string = "round"; }
-impl Named for Round { name :: (self: *Round) -> string => self.s; }
 impl Boxed for Round { name :: (self: *Round) -> string => self.s; }
-impl Wired for Round { name :: (self: *Round) -> string => self.s; }
 
-// A conformer laid out at the handle's own two words: the refusal reads the
-// static protocol type, not the layout.
+// A multi-word conformer: the refusal reads the static protocol type, not the
+// layout.
 Wide :: struct { a: i64 = 0; b: i64 = 0; }
 impl Boxed for Wide { name :: (self: *Wide) -> string => "wide"; }
 
@@ -58,19 +54,8 @@ form_Wide :: ufcs (value: $I/@Init(Wide)) {
 }
 
 main :: () -> i32 {
-    n : Named = Round{ s = "tagged" };
     b := Round{ s = "vtable" }.(Boxed, context.allocator);
-    w := Round{ s = "inline" }.(Wired, context.allocator);
     x := Wide{ a = 1, b = 2 }.(Boxed, context.allocator);
-
-    form_Round(n);
-    n.form_Round();
-    form_View(n);
-    n.form_View();
-    form_opt_Round(n);
-    n.form_opt_Round();
-    form_opt_View(n);
-    n.form_opt_View();
 
     form_Round(b);
     b.form_Round();
@@ -80,15 +65,6 @@ main :: () -> i32 {
     b.form_opt_Round();
     form_opt_View(b);
     b.form_opt_View();
-
-    form_Round(w);
-    w.form_Round();
-    form_View(w);
-    w.form_View();
-    form_opt_Round(w);
-    w.form_opt_Round();
-    form_opt_View(w);
-    w.form_opt_View();
 
     form_Wide(x);
     x.form_Wide();

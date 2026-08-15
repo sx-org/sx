@@ -212,8 +212,8 @@ pub var last_bail_was_bridge: bool = false;
 // ── Fact-await seam ─────────────────────────────────────────────────────────
 //
 // A comptime evaluation can reach a question whose answer is not yet FINAL. The
-// one such question is "which conformer arm implements this symbolic dispatch",
-// since a conformance admitted later still grows the routine's member set.
+// one such question is "what is this open set's layout", since a member declared
+// later still grows the set.
 // Instead of failing on the spot, the evaluation awaits that fact: it parks, the driver
 // asks the evaluation's own scheduler, and the same continuation resumes with
 // the answer. A scheduler that cannot answer YET leaves the evaluation parked
@@ -221,22 +221,12 @@ pub var last_bail_was_bridge: bool = false;
 // With no scheduler every await answers `.unavailable` on the spot and the
 // evaluation refuses through its ordinary staged path.
 
-/// The fact a parked evaluation is waiting on.
+/// The fact a parked evaluation is waiting on: an open set's layout, read
+/// before the program's sets froze — a member declared later would change the
+/// answer.
 pub const FactRequest = struct {
-    kind: Kind,
-    /// `.conformer_arm`: the outlined dispatch routine whose conformer set is
-    /// not final. `.set_layout`: the routine the reading evaluation is in.
-    routine: FuncId,
-    /// `.conformer_arm`: the concrete type the receiver carries — the member the
-    /// routine lacks. `.set_layout`: the type whose measurement waits.
-    concrete: TypeId,
-
-    pub const Kind = enum {
-        conformer_arm,
-        /// An open set's layout, which an evaluation reads before the program's
-        /// sets froze: a member declared later would change the answer.
-        set_layout,
-    };
+    /// The type whose measurement waits.
+    measured: TypeId,
 };
 
 /// The answer to an awaited fact. `.published` means it is now recorded in the
@@ -679,10 +669,6 @@ pub const Vm = struct {
             .float => |v| try self.writeField(table, addr, ty, @bitCast(v)),
             .func_ref => |fid| try self.writeField(table, addr, ty, funcRefWord(fid)),
             .global_ref => |gid| try self.writeField(table, addr, ty, try self.evalGlobalAddress(gid)),
-            // The VM's tag word is the conformer's own type, exactly what
-            // `tagged_tag_of` answers here — the dense number is a link-time
-            // artifact (§7.9).
-            .tagged_tag => |t| try self.writeField(table, addr, ty, @as(Reg, t.concrete.index())),
             .null_val, .zeroinit, .undef => {}, // destination already zeroed
             .aggregate => |fields| {
                 if (ty.isBuiltin()) return self.failMsg("comptime VM: const aggregate at a builtin type");
@@ -894,22 +880,6 @@ pub const Vm = struct {
             // (the `.type_value` representation). `regToValue` maps it back to a
             // `.type_tag` Value.
             .const_type => |tid| return .{ .value = @as(Reg, tid.index()) },
-            // A comptime tagged value is SYMBOLIC: its second word is the
-            // conformer's own `TypeId`, never the dense tag (§7.9 — tags are
-            // assigned at whole-program link, after every evaluation).
-            .tagged_tag_of => |t| return .{ .value = @as(Reg, t.concrete.index()) },
-            // Which makes the concrete `Type` word the word itself: no table
-            // load, because the tag space the table is indexed by does not
-            // exist here.
-            .tagged_type_id => |t| return .{ .value = frame.get(t.tag.index()) },
-            // The probe's negative half: utterable only against a final set, so
-            // it is answered from the converged numbering — being numbered IS
-            // being in the set.
-            .tagged_conforms => |t| {
-                const module = self.module orelse return self.failMsg("comptime VM: a conformance probe needs a module");
-                if (!module.tagged_sets_final) return self.failMsg("comptime VM: a tagged conformance probe ran before the collection fixpoint converged");
-                return .{ .value = @intFromBool(module.tagged_tags.contains(.{ .proto = t.proto, .concrete = t.concrete })) };
-            },
             // An open set's layout: the members declared anywhere in the
             // program decide it, so the number is readable only once the sets
             // froze. Before that the evaluation AWAITS the freeze rather than
@@ -917,18 +887,17 @@ pub const Vm = struct {
             .open_set_layout => |q| {
                 const module = self.module orelse return self.failMsg("comptime VM: an open set's layout needs a module");
                 if (settledSetLayout(module, q)) |v| return .{ .value = @bitCast(v) };
-                const here = if (self.call_stack.items.len > 0) self.call_stack.items[self.call_stack.items.len - 1] else @as(FuncId, @enumFromInt(0));
-                _ = self.awaitFact(.{ .kind = .set_layout, .routine = here, .concrete = q.measured });
+                _ = self.awaitFact(.{ .measured = q.measured });
                 if (settledSetLayout(module, q)) |v| return .{ .value = @bitCast(v) };
                 return self.failFmt("comptime VM: the layout of '{s}' is not final — an open set's members are declared anywhere in the program, so its size exists only once they all are", .{module.types.typeName(q.measured)});
             },
             // A member's tag: the dense numbering is assigned at the freeze, and
-            // a late member RENUMBERS the space, so unlike a conformer's type
-            // word there is nothing symbolic to answer with beforehand.
+            // a late member RENUMBERS the space, so there is nothing symbolic to
+            // answer with beforehand.
             .open_set_tag_of => |t| {
                 const module = self.module orelse return self.failMsg("comptime VM: an open set's tag needs a module");
                 if (!module.open_sets_final)
-                    _ = self.awaitFact(.{ .kind = .set_layout, .routine = if (self.call_stack.items.len > 0) self.call_stack.items[self.call_stack.items.len - 1] else @as(FuncId, @enumFromInt(0)), .concrete = t.set });
+                    _ = self.awaitFact(.{ .measured = t.set });
                 if (!module.open_sets_final)
                     return self.failFmt("comptime VM: the tags of '{s}' are not numbered yet — an open set's tag space is assigned when the sets freeze, and a member admitted later renumbers it", .{module.types.typeName(t.set)});
                 const tag = module.open_set_tags.get(.{ .set = t.set, .member = t.member }) orelse
@@ -941,7 +910,7 @@ pub const Vm = struct {
             .open_set_type_id => |t| {
                 const module = self.module orelse return self.failMsg("comptime VM: an open set's member type needs a module");
                 if (!module.open_sets_final)
-                    _ = self.awaitFact(.{ .kind = .set_layout, .routine = if (self.call_stack.items.len > 0) self.call_stack.items[self.call_stack.items.len - 1] else @as(FuncId, @enumFromInt(0)), .concrete = t.set });
+                    _ = self.awaitFact(.{ .measured = t.set });
                 if (!module.open_sets_final)
                     return self.failFmt("comptime VM: the members of '{s}' are not numbered yet — an open set's tag space is assigned when the sets freeze, and a member admitted later renumbers it", .{module.types.typeName(t.set)});
                 const tag: i64 = @bitCast(frame.get(t.tag.index()));
@@ -1181,11 +1150,11 @@ pub const Vm = struct {
             .length => |u| {
                 const table = try self.requireTable();
                 const oty = (try self.refTy(ref_types, u.operand));
-                if (oty == .string) return .{ .value = try self.sliceLen(frame.get(u.operand.index())) };
+                if (oty == .string) return .{ .value = try self.sliceLen(table, .string, frame.get(u.operand.index())) };
                 if (!oty.isBuiltin()) {
                     switch (table.get(oty)) {
                         .array => |a| return .{ .value = a.length },
-                        .slice => return .{ .value = try self.sliceLen(frame.get(u.operand.index())) },
+                        .slice => return .{ .value = try self.sliceLen(table, oty, frame.get(u.operand.index())) },
                         else => {},
                     }
                 }
@@ -1199,7 +1168,7 @@ pub const Vm = struct {
                 const text = table.getString(sid);
                 const data = self.machine.allocBytes(text.len + 1, 1); // +1: NUL (zero-init)
                 if (text.len > 0) @memcpy(try self.machine.bytes(data, text.len), text);
-                return .{ .value = try self.makeSlice(table, data, text.len) };
+                return .{ .value = try self.makeSlice(table, .string, data, text.len) };
             },
             .data_ptr => |u| {
                 const table = try self.requireTable();
@@ -1217,7 +1186,7 @@ pub const Vm = struct {
                     self.detail = "comptime VM: array_to_slice on a non-array operand";
                     return error.Unsupported;
                 }
-                return .{ .value = try self.makeSlice(table, frame.get(u.operand.index()), table.get(aty).array.length) };
+                return .{ .value = try self.makeSlice(table, ins.ty, frame.get(u.operand.index()), table.get(aty).array.length) };
             },
             .subslice => |s| {
                 const table = try self.requireTable();
@@ -1250,14 +1219,16 @@ pub const Vm = struct {
                     return error.Unsupported;
                 }
                 const esz: u64 = @intCast(table.typeSizeBytes(elem));
-                return .{ .value = try self.makeSlice(table, data +% lo *% esz, hi - lo) };
+                return .{ .value = try self.makeSlice(table, ins.ty, data +% lo *% esz, hi - lo) };
             },
             .str_eq, .str_ne => |b| {
                 const table = try self.requireTable();
                 const lb = frame.get(b.lhs.index());
                 const rb = frame.get(b.rhs.index());
-                const ls = try self.machine.bytes(try self.sliceData(table, lb), @intCast(try self.sliceLen(lb)));
-                const rs = try self.machine.bytes(try self.sliceData(table, rb), @intCast(try self.sliceLen(rb)));
+                const lty = try self.refTy(ref_types, b.lhs);
+                const rty = try self.refTy(ref_types, b.rhs);
+                const ls = try self.machine.bytes(try self.sliceData(table, lb), @intCast(try self.sliceLen(table, lty, lb)));
+                const rs = try self.machine.bytes(try self.sliceData(table, rb), @intCast(try self.sliceLen(table, rty, rb)));
                 const eq = std.mem.eql(u8, ls, rs);
                 return .{ .value = @intFromBool(if (std.meta.activeTag(ins.op) == .str_eq) eq else !eq) };
             },
@@ -1749,10 +1720,6 @@ pub const Vm = struct {
         const argbuf = self.gpa.alloc(Reg, args.len) catch @panic("comptime VM: out of memory (call args)");
         defer self.gpa.free(argbuf);
         for (args, 0..) |a, i| argbuf[i] = frame.get(a.index());
-        // A tagged dispatch routine resolves against the receiver's carried
-        // concrete type, published on demand — before its body exists, which is
-        // written only at whole-program emission.
-        if (try self.devirtualize(module, fid, argbuf)) |r| return r;
         if (callee.is_extern or callee.blocks.items.len == 0) {
             const name = module.types.getString(callee.name);
             // A curated set of libc MEMORY builtins is modeled natively on comptime
@@ -1821,57 +1788,6 @@ pub const Vm = struct {
         self.pending_fact = null;
         self.parked_task = null;
         comptime_async.unpark(task);
-    }
-
-    /// A call to an outlined tagged dispatch routine, resolved against the
-    /// receiver's CARRIED concrete type instead of the routine's tag switch
-    /// (§7.9): the value's second word is a `TypeId` here, so the switch would
-    /// find no arm. Selecting the arm and calling it directly IS the
-    /// devirtualization — the same answer the switch gives at runtime.
-    /// Null when `fid` is not a dispatch routine.
-    fn devirtualize(self: *Vm, module: *const Module, fid: FuncId, args: []Reg) Error!?Reg {
-        if (dispatchEntry(module, fid) == null) return null;
-        const callee = module.getFunction(fid);
-        const value_slot: usize = if (callee.has_implicit_ctx) 1 else 0;
-        if (value_slot >= args.len) return self.failMsg("comptime VM: tagged dispatch routine called without its receiver");
-        const value = args[value_slot];
-        const concrete = TypeId.fromIndex(@intCast(try self.machine.readWord(value + 8, 8)));
-        const arm = dispatchArm(module, fid, concrete) orelse missing: {
-            // The conformer set is not final while the program is still being
-            // lowered, so a member the routine lacks now can still be admitted.
-            // Await that fact; publishing REPLACES the routine's entry, so the
-            // arm is looked up again on the resumed side.
-            if (self.awaitFact(.{ .kind = .conformer_arm, .routine = fid, .concrete = concrete }) == .published) {
-                if (dispatchArm(module, fid, concrete)) |a| break :missing a;
-            }
-            return self.failFmt("comptime VM: no '{s}' conformer arm for the value's concrete type", .{module.types.getString(callee.name)});
-        };
-        // The arm takes the receiver's ctx pointer where the routine took the
-        // whole value; every other argument passes through.
-        args[value_slot] = try self.machine.readWord(value, 8);
-        self.call_stack.append(self.gpa, arm) catch @panic("comptime VM: out of memory (call stack)");
-        defer _ = self.call_stack.pop();
-        return try self.run(module.getFunction(arm), args);
-    }
-
-    /// The dispatch record for routine `fid`, or null when `fid` is an ordinary
-    /// function. Looked up by id rather than held across a park: publishing a
-    /// conformance rewrites the record in place and can move the list.
-    fn dispatchEntry(module: *const Module, fid: FuncId) ?*const Module.TaggedDispatchEntry {
-        for (module.tagged_dispatch.items) |*e| {
-            if (e.routine == fid) return e;
-        }
-        return null;
-    }
-
-    /// The arm of routine `fid` implementing `concrete`, or null while no
-    /// admitted conformance carries that type.
-    fn dispatchArm(module: *const Module, fid: FuncId, concrete: TypeId) ?FuncId {
-        const entry = dispatchEntry(module, fid) orelse return null;
-        for (entry.members, entry.arms) |m, a| {
-            if (m == concrete) return a;
-        }
-        return null;
     }
 
     /// Call a real extern (libc / host) function via dlsym + the `host_ffi`
@@ -1963,7 +1879,7 @@ pub const Vm = struct {
                 // NUL-terminated `char*`); any other aggregate bails.
                 if (aty != .string and (aty.isBuiltin() or table.get(aty) != .slice))
                     return self.failMsg("comptime extern call: non-string/slice aggregate arg not marshaled on the VM");
-                const n: usize = @intCast(try self.sliceLen(reg));
+                const n: usize = @intCast(try self.sliceLen(table, aty, reg));
                 const data = try self.sliceData(table, reg);
                 const buf = self.machine.allocBytes(n + 1, 1); // zeroed → NUL at [n]
                 if (n > 0) @memcpy(try self.machine.bytes(buf, n), try self.machine.bytes(data, n));
@@ -2072,7 +1988,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         if (intr == .raw_intern) {
             if (args.len != 1) return self.failMsg("comptime intern: expected one string arg");
             const s = frame.get(args[0].index()); // string fat-pointer Addr
-            const text = try self.machine.bytes(try self.sliceData(table, s), @intCast(try self.sliceLen(s)));
+            const text = try self.machine.bytes(try self.sliceData(table, s), @intCast(try self.sliceLen(table, .string, s)));
             // The string pool is genuinely mutable; the VM holds the table `const`
             // (it never mutates TYPE layout — interning a string is pool-only, so it
             // can't invalidate the cached type sizes the VM relies on).
@@ -2150,7 +2066,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         if (intr == .raw_declare_type) {
             if (args.len != 1) return self.failMsg("comptime declare_type: expected (name)");
             const s = frame.get(args[0].index()); // string fat-pointer Addr
-            const text = try self.machine.bytes(try self.sliceData(table, s), @intCast(try self.sliceLen(s)));
+            const text = try self.machine.bytes(try self.sliceData(table, s), @intCast(try self.sliceLen(table, .string, s)));
             return @as(Reg, (self.declareNominal(table, text)).index());
         }
         if (intr == .raw_pointer_to) {
@@ -2476,14 +2392,14 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         const name_off = fieldOffset(table, member_ty, 0);
         const ty_off = fieldOffset(table, member_ty, 1);
         const name_fty = mfields[0].ty; // string
-        const len = try self.sliceLen(slice_word);
+        const len = try self.sliceLen(table, slice_ty, slice_word);
         const base = try self.sliceData(table, slice_word);
         const stride: Addr = @intCast(table.typeSizeBytes(member_ty));
         const tbl = @constCast(table);
         for (0..@intCast(len)) |i| {
             const elem = base + @as(Addr, @intCast(i)) * stride;
             const name_fp = try self.readField(table, elem + name_off, name_fty); // string fat-pointer Addr
-            const mname = try self.machine.bytes(try self.sliceData(table, name_fp), @intCast(try self.sliceLen(name_fp)));
+            const mname = try self.machine.bytes(try self.sliceData(table, name_fp), @intCast(try self.sliceLen(table, name_fty, name_fp)));
             const mty: TypeId = @enumFromInt(@as(u32, @intCast(try self.readField(table, elem + ty_off, .type_value))));
             out.append(self.gpa, .{ .name = tbl.internString(mname), .ty = mty }) catch return self.failMsg("comptime define/register: out of memory");
         }
@@ -2551,7 +2467,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             },
             // Runtime-Type scalar reflection: the tag resolves the same
             // way type_name's does; answers come straight from the type table.
-            .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_variant_tag_width => {
+            .rt_size_of, .rt_align_of, .rt_struct_field_count, .rt_variant_count, .rt_is_flags, .rt_vector_lanes, .rt_variant_tag_width, .rt_slice_len_info => {
                 const table = try self.requireTable();
                 if (bi.args.len < 1) return self.failMsg("comptime reflection: missing argument");
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
@@ -2590,6 +2506,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                         break :blk 0;
                     },
                     .rt_variant_tag_width => @as(Reg, @bitCast(table.variantTagWidth(tid))),
+                    .rt_slice_len_info => @as(Reg, @bitCast(table.sliceLenInfo(tid))),
                     else => unreachable,
                 };
             },
@@ -2887,7 +2804,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             }
         }
 
-        const slice = try self.makeSlice(table, data, @intCast(count));
+        const slice = try self.makeSlice(table, slice_field_ty, data, @intCast(count));
         const pinfo = try self.allocZeroed(table, payload_ty);
         try self.writeField(table, pinfo + fieldOffset(table, payload_ty, 0), slice_field_ty, slice);
         return pinfo;
@@ -2926,7 +2843,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             },
             .aggregate => {
                 if (ty == .string) {
-                    const src = try self.machine.bytes(try self.sliceData(table, reg), @intCast(try self.sliceLen(reg)));
+                    const src = try self.machine.bytes(try self.sliceData(table, reg), @intCast(try self.sliceLen(table, .string, reg)));
                     return .{ .string = alloc.dupe(u8, src) catch return self.failMsg("reg→value: out of memory (string)") };
                 }
                 const info = table.get(ty);
@@ -3009,7 +2926,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     //
     // A comptime result carries pointers into the runtime image, and an address
     // in comptime memory means nothing there. Each one resolves per its
-    // referent (specs.md §7.9): a DECLARED global relocates in place — nothing
+    // referent (specs.md §6.9): a DECLARED global relocates in place — nothing
     // is copied, the image keeps the global's declared initializer, and the
     // referent stays as mutable as it was written — while a comptime TEMPORARY
     // materializes as an anonymous image global, one per VM object, so two
@@ -3058,11 +2975,10 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     }
 
     /// The escape of a protocol handle. Its referent materializes by the
-    /// CONCRETE type the handle carries, and its numeric word resolves: a
-    /// tagged handle to the dense tag the converged numbering assigned, an
-    /// erased one to the stamped type id plus the vtable / fn-ptr symbols of
-    /// the impl it was erased with. A null ctx is the absent `?P` sentinel and
-    /// carries no referent at all.
+    /// CONCRETE type the handle carries, and its numeric word resolves to the
+    /// stamped type id plus the vtable / fn-ptr symbols of the impl it was
+    /// erased with. A null ctx is the absent `?P` sentinel and carries no
+    /// referent at all.
     fn escapeProtocolValue(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, reg: Reg, ty: TypeId) Error!Value {
         const fields = table.get(ty).@"struct".fields;
         if (fields.len < 2) return self.failMsg("escape: a protocol value carries at least its {ctx, tag} words");
@@ -3074,16 +2990,6 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         }
         const carried = TypeId.fromIndex(@intCast(try self.machine.readWord(reg + fieldOffset(table, ty, 1), 8)));
         out[0] = try self.escapePointer(alloc, table, ctx, carried);
-
-        if (std.mem.eql(u8, table.getString(fields[1].name), "__tag")) {
-            const module = self.module orelse return self.failMsg("escape: a tagged value needs a module to resolve its tag");
-            if (!module.tagged_sets_final)
-                return self.failMsg("escape: a tagged value cannot leave an evaluation that runs before the conformer sets converge");
-            const tag = module.tagged_tags.get(.{ .proto = ty, .concrete = carried }) orelse
-                return self.failFmt("escape: '{s}' is not in the final conformer set of '{s}'", .{ table.typeName(carried), table.typeName(ty) });
-            out[1] = .{ .int = tag };
-            return .{ .aggregate = out };
-        }
 
         out[1] = .{ .type_tag = carried };
         for (fields[2..], 2..) |f, i| {
@@ -3178,7 +3084,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     }
 
     /// A `?P` over a protocol value is the protocol's own 16 bytes: the handle
-    /// with a null ctx IS the absent sentinel (specs.md §7.6), so there is no
+    /// with a null ctx IS the absent sentinel (specs.md §6.6), so there is no
     /// flag byte to write and the value passes through wrap/unwrap unchanged.
     fn optChildIsProtocol(table: *const types.TypeTable, child: TypeId) bool {
         if (child.isBuiltin()) return false;
@@ -3359,22 +3265,32 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     fn makeStringValue(self: *Vm, table: *const types.TypeTable, text: []const u8) Error!Reg {
         const data = self.machine.allocBytes(text.len + 1, 1); // +1: NUL (zero-init)
         if (text.len > 0) @memcpy(try self.machine.bytes(data, text.len), text);
-        return try self.makeSlice(table, data, text.len);
+        return try self.makeSlice(table, .string, data, text.len);
     }
 
-    /// Build a `{ptr, len}` fat pointer (slice/string value) in comptime memory and
-    /// return its address. `ptr` is `pointer_size` bytes at offset 0; `len` is an
-    /// i64 at offset 8 (the layout `typeSizeBytes` uses for slice/string: 16B).
-    fn makeSlice(self: *Vm, table: *const types.TypeTable, data: Addr, len: u64) Error!Addr {
+    /// Build a `{ptr, Len}` fat pointer (slice/string value) in comptime memory and
+    /// return its address. `ptr` is `pointer_size` bytes at offset 0; `fat_ty`
+    /// places and sizes the length word within the 16-byte header. A length
+    /// that does not fit `fat_ty`'s length word is an error.
+    fn makeSlice(self: *Vm, table: *const types.TypeTable, fat_ty: TypeId, data: Addr, len: u64) Error!Addr {
+        if (!table.lenFitsWord(table.lenTypeOf(fat_ty), len))
+            return self.failFmt("comptime VM: slice length {d} does not fit the destination length word", .{len});
+        const lw = table.lenWordOf(fat_ty).?;
         const fp = self.machine.allocBytes(16, 8);
         try self.machine.writeWord(fp, table.pointer_size, data);
-        try self.machine.writeWord(fp + 8, 8, len);
+        try self.machine.writeWord(fp + lw.offset, lw.byteWidth(), len);
         return fp;
     }
 
-    /// Read the `.len` field (i64 @ offset 8) of a fat-pointer value at `base`.
-    fn sliceLen(self: *Vm, base: Addr) Error!u64 {
-        return self.machine.readWord(base + 8, 8);
+    /// Read the `.len` field of a fat-pointer value at `base`. `fat_ty` places
+    /// and sizes the length word: `string` and `[]T` carry an `i64`, a
+    /// `@Slice(T, Len)` carries a `Len`. A sub-byte `Len` occupies only its
+    /// low bits of the byte it shares with padding.
+    fn sliceLen(self: *Vm, table: *const types.TypeTable, fat_ty: TypeId, base: Addr) Error!u64 {
+        const lw = table.lenWordOf(fat_ty).?;
+        const raw = try self.machine.readWord(base + lw.offset, lw.byteWidth());
+        if (lw.bits >= 64) return raw;
+        return raw & ((@as(u64, 1) << @intCast(lw.bits)) - 1);
     }
 
     /// Read the `.ptr` field (`pointer_size` @ offset 0) of a fat-pointer at `base`.
@@ -3421,7 +3337,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// `[]const u8`. The bytes are a VIEW into comptime memory (Addr is a real host
     /// pointer over a stable arena), valid for the duration of the call.
     fn readStringArg(self: *Vm, table: *const types.TypeTable, val: Reg) Error![]const u8 {
-        const len: usize = @intCast(try self.sliceLen(val));
+        const len: usize = @intCast(try self.sliceLen(table, .string, val));
         if (len == 0) return "";
         return try self.machine.bytes(try self.sliceData(table, val), len);
     }

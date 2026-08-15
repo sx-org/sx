@@ -68,7 +68,7 @@ Packet :: struct {
     name:    string;                              // string leaf
     kind:    i16;                                 // signed sized int  → -2
     count:   u16;                                 // unsigned sized int → 65535
-    vel:     Vector(3, f32);                      // SIMD vector → lane walk
+    vel:     @Vector(3, f32);                     // SIMD vector → lane walk
     samples: [4]i16;                              // array → element walk
     payload: Payload;                             // untagged union → <union>
 }

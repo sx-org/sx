@@ -2,14 +2,14 @@
 //!
 //! Three driver classes register here and nowhere else: the conditions and
 //! iterables of module-scope `inline if` / `inline for`, the `#run`s those
-//! conditions reach, and the comptime the conformer fixpoint reaches by
-//! monomorphizing an admitted impl. Each is REGISTERED before it runs and
+//! conditions reach, and the comptime the convergence fixpoint reaches by
+//! monomorphizing an admitted member. Each is REGISTERED before it runs and
 //! RETIRED when it is decided, so the program's declaration space has an
 //! answer to "can anything still add to this?" at every instant.
 //!
 //! A driver that has not been decided may still contribute declarations, and
-//! which ones is judged SYNTACTICALLY and conservatively (specs.md §7.9): an
-//! unexpanded body mentioning `impl P for …` contributes to `P`'s sets, and
+//! which ones is judged SYNTACTICALLY and conservatively (specs.md §6.9): an
+//! unexpanded body mentioning `impl P for …` contributes an impl of `P`, and
 //! every declaration name it spells is a name the module scope may still gain,
 //! and every `#context_extend` it spells is a field the program Context may
 //! still gain. Every branch and every iteration counts — the whole node is
@@ -21,11 +21,11 @@
 //! module is read out of the cache it was contained in and nothing is merged:
 //! only selecting the branch makes it an edge.
 //!
-//! Contributions are what finality reads. `setFinal` cannot publish a negative
-//! about a protocol some unexpanded body still mentions, and a namespace's
+//! Contributions are what finality reads. A negative about a protocol some
+//! unexpanded body still mentions cannot be published, and a namespace's
 //! member surface publishes only once no driver can still declare into it.
-//! Positives are untouched: membership only grows, so a pair that IS in a set
-//! is readable the moment it lands.
+//! Positives are untouched: an impl that IS visible is readable the moment it
+//! lands.
 //!
 //! A unit that needs a fact none of that can answer yet PARKS here rather than
 //! failing: a driver whose condition asked, or a whole evaluation suspended at
@@ -48,8 +48,8 @@ pub const Kind = enum {
     module_driver,
     /// A `#run` a driver's condition reached.
     run,
-    /// One round of the conformer fixpoint: admitting declared impls and
-    /// materializing the arms whose monomorphization reaches further comptime.
+    /// One round of the convergence fixpoint: materializing the arms whose
+    /// monomorphization reaches further comptime.
     monomorphization,
 };
 
@@ -191,9 +191,9 @@ pub const Worklist = struct {
         }) catch {};
     }
 
-    /// Register a round of the conformer fixpoint. Admitting a member or
-    /// materializing an arm re-registers, so the drain runs exactly as long as
-    /// monomorphization keeps reaching new ground.
+    /// Register a round of the convergence fixpoint. Materializing an arm
+    /// re-registers, so the drain runs exactly as long as monomorphization
+    /// keeps reaching new ground.
     pub fn pushRound(w: *Worklist) void {
         w.note(.monomorphization);
         w.rounds += 1;
@@ -262,7 +262,7 @@ pub const Worklist = struct {
         w.parked.clearRetainingCapacity();
     }
 
-    /// Can an undecided driver still admit a conformer into `name`'s sets?
+    /// Can an undecided driver still write an `impl` of `name`?
     pub fn mayImpl(w: *const Worklist, name: []const u8) bool {
         return (w.open_impls.get(name) orelse 0) > 0;
     }

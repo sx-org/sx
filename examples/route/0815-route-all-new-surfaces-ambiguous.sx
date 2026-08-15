@@ -10,7 +10,7 @@
 //   - wrapper-alias element            `BoxPtr :: *Box`         (engine wrapper aliasing)
 //   - union body-builder child          `WrapU :: union { b: Box }` (registerUnionDecl)
 //   - enum body-builder child           `WrapE :: enum { V: Box }`  (registerEnumDecl)
-//   - tuple-type element                `size_of(Tuple(Box, i32))`
+//   - tuple-type element                `BoxPair :: Tuple(Box, i32)`
 //   - inline-anonymous body child       `x : union { b: Box }`      (inline-anon engine arm)
 //
 // Every surface emits the loud "type 'Box' is ambiguous", and the build exits 1.
@@ -25,8 +25,10 @@ WrapU :: union { b: Box; n: i32; }
 
 WrapE :: enum { V: Box; }
 
+BoxPair :: Tuple(Box, i32);
+
 main :: () -> i32 {
-    sz := size_of(Tuple(Box, i32));
+    sz := size_of(BoxPair);
     x : union { b: Box; n: i32 } = ---;
     0
 }

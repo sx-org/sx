@@ -11,11 +11,11 @@
 
 #import "modules/std.sx";
 
-V3   :: struct { pre: u16; v: Vector(3, f32); post: i16; }
-V2   :: struct { pre: u8; v: Vector(2, f32); }
-V4d  :: struct { pre: u8; v: Vector(4, f64); }
-V8   :: struct { pre: u8; v: Vector(8, u8); }
-V16i :: struct { pre: u8; v: Vector(16, i32); }
+V3   :: struct { pre: u16; v: @Vector(3, f32); post: i16; }
+V2   :: struct { pre: u8; v: @Vector(2, f32); }
+V4d  :: struct { pre: u8; v: @Vector(4, f64); }
+V8   :: struct { pre: u8; v: @Vector(8, u8); }
+V16i :: struct { pre: u8; v: @Vector(16, i32); }
 
 check :: (name: string, base: i64, field: i64, walk: i64, sz: i64) {
     print("{}: v@{} walk={} size={} {}\n", name, field - base, walk, sz,

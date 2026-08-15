@@ -17,7 +17,7 @@
 #import "modules/std.sx";
 #import "modules/fluent.sx";
 
-Drawable :: protocol tagged {
+Drawable :: protocol vtable #identity {
     draw :: (self: *Self) -> string;
 }
 

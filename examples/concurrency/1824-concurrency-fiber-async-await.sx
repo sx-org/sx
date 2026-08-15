@@ -28,8 +28,8 @@ main :: () -> i64 {
             a := context.io.async(|| -> (i64, !) { rec(pl, 10); 100 }); // worker A — deferred
             b := context.io.async(|| -> (i64, !) { rec(pl, 20); 23 });  // worker B — deferred
             rec(pl, 2);                                              // both spawned, neither has run
-            va := a.await() or { -1 };                              // park; A runs, wakes us
-            vb := b.await() or { -1 };
+            va := a.await() ?? { -1 };                              // park; A runs, wakes us
+            vb := b.await() ?? { -1 };
             rec(pl, va + vb);                                       // 123
         });
         ps.run();

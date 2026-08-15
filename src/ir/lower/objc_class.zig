@@ -851,7 +851,7 @@ fn dispatchAllocator(
     defer self.current_ctx_ref = saved;
     self.current_ctx_ref = ctx_addr;
     const cs = self.builder.current_span;
-    const out = self.emitProtocolDispatch(allocator, pd, method, args, alloc_ty, .{ .start = cs.start, .end = cs.end });
+    const out = self.emitProtocolDispatch(allocator, pd, method, args, .{ .start = cs.start, .end = cs.end });
     return if (out == Ref.none) null else out;
 }
 
@@ -885,7 +885,7 @@ pub fn emitObjcDefinedAllocAndInit(
 
     // (2) Dispatch through Context.allocator at ctx_addr (resolved BY NAME
     //     against the assembled layout):
-    //       state = allocator.alloc(size)  (via inline-protocol fn-ptr)
+    //       state = allocator.alloc(size)  (via protocol dispatch)
     const ctx_ty = self.module.types.findByName(self.module.types.internString("Context")) orelse {
         if (self.diagnostics) |d| {
             d.addFmt(.err, ast.Span{ .start = 0, .end = 0 }, "emitObjcDefinedAllocAndInit: Context type not found in module for class '{s}' (compiler bug)", .{fcd.name});
@@ -1039,7 +1039,7 @@ pub fn emitObjcDefinedClassStaticImp(self: *Lowering, fcd: *const ast.RuntimeCla
 /// Body:
 ///   %state     = object_getIvar(self, load @__<Cls>_state_ivar)
 ///   %allocator = load struct_gep(state, 0)          ← __sx_allocator
-///   allocator.dealloc(state)                         ← via inline-protocol fn-ptr
+///   allocator.dealloc(state)                         ← via protocol dispatch
 ///   object_setIvar(self, ivar, null)
 ///   [super dealloc]   // objc_msgSendSuper2(&super, sel_dealloc)
 ///   ret void
@@ -1155,7 +1155,7 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
 
     // (3) Free state through the captured allocator:
     //       allocator = load struct_gep(state, 0)   ← __sx_allocator field
-    //       allocator.dealloc(state)                 ← inline-protocol fn-ptr at field 2
+    //       allocator.dealloc(state)                 ← via protocol dispatch
     // `push Context{ allocator = arena }` round-trips: arena.alloc on
     // construction, arena.dealloc here.
     if (self.module.types.findByName(self.module.types.internString("Context")) == null) {

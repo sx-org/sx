@@ -1,17 +1,16 @@
-// The simplest expansion deadlock: a driver that depends NEGATIVELY on a set
-// it feeds.
+// The simplest expansion deadlock: a driver that depends on impls it feeds.
 //
-// A positive is readable the moment it exists, so `has_impl` answers `true` on
-// the spot. A negative is utterable only once the queried set is final, and
-// this set is not: the very branch the answer would select declares an impl
-// into it. The driver therefore parks against `Serialize`'s finality — and it
-// is the only thing that could ever publish that finality. Runnable work is
-// exhausted with the bookmark still down, and a state admitting more than one
-// consistent outcome is genuinely ambiguous, so sx refuses rather than
-// electing a fixpoint (specs.md §7.9).
+// An erased protocol reads impl multiplicity, which a later impl can move in
+// either direction, so `has_impl` is utterable only once nothing can still write
+// one — and here the very branch the answer would select declares an impl of
+// the queried protocol. The driver therefore parks against `Serialize`'s impls
+// being final — and it is the only thing that could ever publish that. Runnable
+// work is exhausted with the bookmark still down, and a state admitting more
+// than one consistent outcome is genuinely ambiguous, so sx refuses rather than
+// electing a fixpoint (specs.md §6.9).
 #import "modules/std.sx";
 
-Serialize :: protocol tagged { write :: (self: *Self) -> i64; }
+Serialize :: protocol vtable { write :: (self: *Self) -> i64; }
 
 GPA :: struct { n: i64; }
 

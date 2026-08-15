@@ -6,7 +6,7 @@
 // storage afterwards, and dispatch goes through the stored handle.
 #import "modules/std.sx";
 
-Shape :: protocol tagged {
+Shape :: protocol vtable #identity {
     area :: (self: *Self) -> i64;
 }
 
@@ -32,14 +32,14 @@ impl Tally for Counter {
 main :: () {
     a := context.allocator;
 
-    // tagged: create storage, store a handle into it, dispatch through it.
+    // A borrowing handle: create storage, store one in it, dispatch through it.
     b := Box{ w = 4, h = 5 };
     sp := a.create(Shape);
     sp.* = b;
     print("{}\n", sp.area());
     a.destroy(sp);
 
-    // vtable (erased): same shape, one indirection more at dispatch.
+    // An owning handle: the same shape, and the copy it owns is freed by hand.
     c := Counter{ total = 10 };
     kp := a.create(Tally);
     kp.* = c.(Tally, context.allocator);
@@ -50,9 +50,10 @@ main :: () {
 
     // The slice path stays working, and a handle copied out of a slice element
     // into created storage dispatches identically from there.
+    d := Disc{ r = 3 };
     xs := a.alloc(Shape, 2);
     xs[0] = b;
-    xs[1] = Disc{ r = 3 };
+    xs[1] = d;
     sp2 := a.create(Shape);
     sp2.* = xs[1];
     print("{} {} {}\n", xs[0].area(), xs[1].area(), sp2.area());

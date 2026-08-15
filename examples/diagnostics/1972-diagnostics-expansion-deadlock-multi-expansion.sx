@@ -1,5 +1,5 @@
 // The wait runs through SEVERAL expansions: three drivers in a cycle, each
-// asking about a set the next one feeds.
+// asking about a protocol the next one feeds.
 //
 // No pair of them is deadlocked on its own — the cycle only closes once the
 // third driver's contribution is traced back to the first. Quiescence is still
@@ -7,9 +7,9 @@
 // driver, and the fact each awaits, named together.
 #import "modules/std.sx";
 
-Draw :: protocol tagged { draw :: (self: *Self) -> i64; }
-Tally :: protocol tagged { count :: (self: *Self) -> i64; }
-Name :: protocol tagged { label :: (self: *Self) -> i64; }
+Draw :: protocol vtable { draw :: (self: *Self) -> i64; }
+Tally :: protocol vtable { count :: (self: *Self) -> i64; }
+Name :: protocol vtable { label :: (self: *Self) -> i64; }
 
 Widget :: struct { n: i64; }
 Panel :: struct { n: i64; }

@@ -1,0 +1,10 @@
+// In expression position `Tuple` and `Closure` are ordinary identifiers: with
+// nothing by that name in scope, each call is an unresolved name, not a type.
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    x := Tuple(1, 2);
+    y := Closure(5);
+    0
+}

@@ -142,15 +142,15 @@ function can fail out.
 
 ---
 
-## Fallbacks and chains with `or`
+## Defaults and chains with `??`
 
-`or` provides a value when a failable call fails, or chains to another
+`??` provides a value when a failable call fails, or chains to another
 attempt.
 
 ### Fall back to a default value
 
 ```sx
-port := parse_port(s) or 8080;     // if parsing fails, port = 8080
+port := parse_port(s) ?? 8080;     // if parsing fails, port = 8080
 ```
 
 The error is absorbed; `port` is a plain `i32`.
@@ -158,7 +158,7 @@ The error is absorbed; `port` is a plain `i32`.
 ### Chain attempts — first success wins
 
 ```sx
-v := try fetch_local(key) or try fetch_remote(key);
+v := try fetch_local(key) ?? try fetch_remote(key);
 // try local; if it fails, try remote; if both fail, propagate
 ```
 
@@ -166,12 +166,12 @@ Each attempt is a `try`; if all fail, the last error propagates (and the
 trace records every attempt). Mix in a terminator to never fail:
 
 ```sx
-v := try fetch_local(key) or try fetch_remote(key) or default_value;
+v := try fetch_local(key) ?? try fetch_remote(key) ?? default_value;
 // try both; fall back to default if both fail — never propagates
 ```
 
-> `or` is the same operator sx uses for optional fallback. It binds
-> looser than `try`, and chains left-to-right.
+> `??` is the same operator sx uses for an optional's default. It binds
+> looser than `try`, and attempts operands left-to-right.
 
 ---
 
@@ -414,8 +414,8 @@ load :: (path: string) -> (Data, !) {
 ### Fallible pipeline
 
 ```sx
-// `|>` threads a value through stages; mark each fallible stage
-n := try parse(s) |> try validate() |> try normalize();
+// every fallible stage is marked at its own call site
+n := try normalize(try validate(try parse(s)));
 ```
 
 ### Validate-and-collect
@@ -437,14 +437,14 @@ parse_config :: (src: string) -> (Config, !ParseErr) {
 
 - **Add `!` when a function can fail.** Use a named set for public
   contracts, bare `!` for internal helpers.
-- **`raise` to fail, `try` to propagate, `catch` to handle, `or` to
+- **`raise` to fail, `try` to propagate, `catch` to handle, `??` to
   fall back.**
-- **Every failable call needs a marker** (`try` / `catch` / `or` /
+- **Every failable call needs a marker** (`try` / `catch` / `??` /
   destructure). If you forget, the compiler tells you exactly where.
 - **`defer` always runs; `onfail` runs only on error.** Reach for
   `onfail` when success transfers ownership.
 - **Cleanup can't propagate** — absorb failable cleanup with `catch` /
-  `or`.
+  `??`.
 - **Tags are identities, not data** — log for context; compare tags to
   tags, never to raw integers.
 - **Traces are free in release** (compiled out) and automatic in debug.

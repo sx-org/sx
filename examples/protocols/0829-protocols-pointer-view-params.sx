@@ -4,7 +4,7 @@
 //     address — mutations through the view reach the original);
 //   - a pointer-to-concrete arg views its pointee;
 //   - `@p` on an owned protocol value lends a plain pointer to it;
-//   - protocol methods dispatch through `*P` (`vtable` AND `inline` layouts).
+//   - protocol methods dispatch through `*P`, mutating the original.
 // The rvalue case is pinned as a refusal in diagnostics/1251.
 #import "modules/std.sx";
 
@@ -15,7 +15,7 @@ impl Sizable for Widget {
     grow :: (self: *Widget, by: i64) { self.value += by; }
 }
 
-Fast :: protocol inline { tick :: (self: *Self) -> i64; }
+Fast :: protocol vtable { tick :: (self: *Self) -> i64; }
 Clock :: struct { n: i64; }
 impl Fast for Clock { tick :: (self: *Clock) -> i64 { self.n += 1; self.n } }
 
@@ -44,9 +44,9 @@ main :: () {
     s := w.(Sizable, context.allocator);
     print("owned-view: {}\n", measure(*s));
 
-    // `inline` layout dispatches through *P too, mutating the original
+    // a mutating method through *P writes back into the original
     c := Clock{ n = 0 };
-    print("inline: {} {}\n", tickit(c), c.n);
+    print("mutating: {} {}\n", tickit(c), c.n);
 
     // decl-position view
     pv : *Sizable = w;

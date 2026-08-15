@@ -209,7 +209,7 @@ pub const FnDecl = struct {
     /// `name :: ufcs (params) { body }` — the fn opted into dot-call
     /// dispatch (`recv.name(args)`). Dot-calls on free functions are
     /// OPT-IN: only `is_ufcs` fns and `ufcs` aliases dispatch; a plain
-    /// fn is callable directly or via `|>` only.
+    /// fn is callable only by direct call.
     is_ufcs: bool = false,
     /// `name :: (self: *T) -> R #get => expr;` — a no-paren property accessor.
     /// Invoked via field syntax (`obj.name`) when no real field matches, rather
@@ -814,12 +814,12 @@ pub const ArrayLiteral = struct {
 };
 
 pub const ParameterizedTypeExpr = struct {
-    name: []const u8, // e.g. "Vector", or later generic struct names
+    name: []const u8, // e.g. "@Vector", or later generic struct names
     args: []const *Node, // e.g. [int_literal(3), type_expr("f32")]
     /// True when the base name was a backtick raw identifier in type position
     /// (`` `i2(i64) ``). Such a reference is the LITERAL name `i2` used as a
     /// parameterized type — resolution skips the builtin parameterized
-    /// classifier (e.g. the `Vector` intrinsic) and instantiates a
+    /// classifier (e.g. the `@Vector` intrinsic) and instantiates a
     /// `` `i2 ``-declared generic template.
     is_raw: bool = false,
 };
@@ -1111,27 +1111,19 @@ pub const ProtocolMethodDecl = struct {
     param_name_is_raw: []const bool = &.{},
     return_type: ?*Node, // null = void return
     default_body: ?*Node, // null = required method, non-null = default implementation
-    /// `#expand` on this method alone — its tagged dispatch switch expands at
-    /// each call site instead of going through the outlined routine. A
-    /// header-level `#expand` sets it on every method.
-    is_expand: bool = false,
 };
 
 /// The kind slot of a protocol head — `protocol [(params)] kind [attrs]`.
-/// Ordered by cost: `constraint` emits nothing; the rest opt into dynamic
+/// Ordered by cost: `constraint` emits nothing; `vtable` opts into dynamic
 /// dispatch. Absent in source ⇒ `constraint`.
 pub const ProtocolKind = enum {
     constraint,
     vtable,
-    @"inline",
-    tagged,
 
     pub fn spelling(self: ProtocolKind) []const u8 {
         return switch (self) {
             .constraint => "constraint",
             .vtable => "vtable",
-            .@"inline" => "inline",
-            .tagged => "tagged",
         };
     }
 };
@@ -1141,7 +1133,6 @@ pub const ProtocolDecl = struct {
     methods: []const ProtocolMethodDecl,
     kind: ProtocolKind = .constraint,
     is_identity: bool = false, // #identity — borrow-only ownership class (values never own their ctx)
-    is_expand: bool = false, // #expand on the header — every method's dispatch expands at the call site
     type_params: []const StructTypeParam = &.{}, // for `protocol(Target: Type) { ... }`
     /// True when the declared NAME was a backtick raw identifier — exempt from
     /// the reserved-type-name decl check.

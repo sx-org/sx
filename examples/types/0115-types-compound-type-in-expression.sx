@@ -1,7 +1,8 @@
 // Compound type literals in expression position — `size_of` /
-// `align_of` accept pointer (`*T`), optional (`?T`), array (`[N]T`),
-// function (`(A) -> B`), and tuple (`Tuple(A, B)`) types directly. Also
-// const-decl RHS aliases through the same forms (`Ptr :: *u8;` etc).
+// `align_of` accept pointer (`*T`), optional (`?T`), array (`[N]T`), and
+// function (`(A) -> B`) types directly. Also const-decl RHS aliases through
+// the same forms (`Ptr :: *u8;` etc), which is how a tuple type reaches the
+// site: `Tuple(...)` is a type-position spelling, so `size_of` takes the alias.
 // Same shape as the existing `size_of(i32)` baseline path.
 
 #import "modules/std.sx";
@@ -11,6 +12,7 @@ Ptr   :: *u8;
 Maybe :: ?u8;
 Arr   :: [3]u8;
 Cb    :: (i32) -> i32;
+Pair  :: Tuple(i32, i32);
 
 main :: () -> i32 {
   // Direct: parser fix for *T, ?T  + existing [N]T path.
@@ -22,13 +24,11 @@ main :: () -> i32 {
   // Function-type literal in expression position.
   print("size_of((i32)->i32) = {}\n", size_of((i32) -> i32));
 
-  // Tuple type at the type-demanding site.
-  print("size_of((i32, i32)) = {}\n", size_of(Tuple(i32, i32)));
-
   // Aliases.
   print("size_of(Ptr)        = {}\n", size_of(Ptr));
   print("size_of(Maybe)      = {}\n", size_of(Maybe));
   print("size_of(Arr)        = {}\n", size_of(Arr));
   print("size_of(Cb)         = {}\n", size_of(Cb));
+  print("size_of(Pair)       = {}\n", size_of(Pair));
   0
 }

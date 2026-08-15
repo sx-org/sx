@@ -238,9 +238,7 @@ test "parser: .(a, b) is rejected" {
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-// The typed-prefix form `Tuple(A, B).( … )` is rejected too — typed tuple
-// construction is `Tuple(A, B){ … }`.
-test "parser: Tuple(A, B).( ... ) is rejected after the cutover" {
+test "parser: Tuple(A, B).( ... ) is rejected" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), "f :: () { x := Tuple(i64, i64).(1, 2); }");
@@ -1358,15 +1356,15 @@ test "parser: a protocol kind word reads through a line break" {
     const alloc = arena.allocator();
 
     var p = try Parser.init(alloc,
-        \\Lerpable :: protocol
-        \\    inline
-        \\    { lerp :: (self: *Self, t: f32) -> Self; }
+        \\Show :: protocol
+        \\    vtable
+        \\    { fmt :: (self: *Self) -> string; }
     );
     const pd = (try p.parse()).data.root.decls[0].data.protocol_decl;
-    try std.testing.expectEqual(ast.ProtocolKind.@"inline", pd.kind);
+    try std.testing.expectEqual(ast.ProtocolKind.vtable, pd.kind);
 
-    var same = try Parser.init(alloc, "Lerpable :: protocol inline { lerp :: (self: *Self, t: f32) -> Self; }\n");
-    try std.testing.expectEqual(ast.ProtocolKind.@"inline", (try same.parse()).data.root.decls[0].data.protocol_decl.kind);
+    var same = try Parser.init(alloc, "Show :: protocol vtable { fmt :: (self: *Self) -> string; }\n");
+    try std.testing.expectEqual(ast.ProtocolKind.vtable, (try same.parse()).data.root.decls[0].data.protocol_decl.kind);
 }
 
 // A function header's optional slots all sit in front of a mandatory body.

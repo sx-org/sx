@@ -130,9 +130,8 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
             // type name is not node-inferable) — fall through to the generic
             // ladder below, whose value arm erases via a self-contained copy.
         },
-        // Protocol → pointer: recover the typed ctx pointer (field 0).
-        // The protocol value is `{ ctx, fn1, fn2, ... }` (inline) or
-        // `{ ctx, vtable_ptr }` — either way, ctx lives at field 0.
+        // Protocol → pointer: recover the typed ctx pointer (field 0) of the
+        // `{ ctx, __type_id, vtable_ptr }` value.
         .protocol_to_pointer => {
             // A pointer-to-PROTOCOL target is a type lie, not a recovery:
             // ctx addresses the CONCRETE value, so `s.(*Sizable)` would
@@ -162,13 +161,13 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         .protocol_to_raw => {
             const void_ptr_ty = self.module.types.ptrTo(.void);
             const ctx_ref = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 0 } }, void_ptr_ty);
-            const tid_ref = self.protocolTypeIdWord(src_ty, operand);
+            const tid_ref = self.protocolTypeIdWord(operand);
             var fields = [2]Ref{ ctx_ref, tid_ref };
             return self.builder.structInit(&fields, dst_ty);
         },
         // Protocol → any: the concrete view (the downcast / protocol type
         // switch base).
-        .protocol_to_any => return protocolToAnyView(self, operand, src_ty),
+        .protocol_to_any => return protocolToAnyView(self, operand),
         .coerce => {},
     }
 
@@ -446,8 +445,7 @@ pub fn tryUserConversion(self: *Lowering, operand: Ref, operand_node: *const Nod
 /// True for expression shapes that name an addressable storage location
 /// (variables, fields, array elements, dereferenced pointers). Used by
 /// `xx <struct-typed expr>` to decide between the borrow arms (lvalue →
-/// take the address) and the rvalue arms (value/own → the demand error,
-/// tagged → borrow a frame temp).
+/// take the address) and the rvalue arms (value/own → the demand error).
 pub fn isLvalueExpr(self: *Lowering, node: *const Node) bool {
     return switch (node.data) {
         .identifier, .deref_expr => true,
@@ -572,12 +570,10 @@ pub fn refStorageAddress(self: *Lowering, ref: Ref) ?Ref {
 
 /// The `any` view of a protocol value (§7.3): its `{ctx, __type_id}` prefix
 /// IS an any `{data, type_id}`, so the view names the CONCRETE receiver.
-/// `protocolTypeIdWord` supplies the word for every kind — the stamped slot
-/// on the erased kinds, the tag table on tagged.
-pub fn protocolToAnyView(self: *Lowering, operand: Ref, src_ty: TypeId) Ref {
+pub fn protocolToAnyView(self: *Lowering, operand: Ref) Ref {
     const void_ptr_ty = self.module.types.ptrTo(.void);
     const ctx_ref = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 0 } }, void_ptr_ty);
-    const tid_ref = self.protocolTypeIdWord(src_ty, operand);
+    const tid_ref = self.protocolTypeIdWord(operand);
     return self.builder.makeAny(tid_ref, ctx_ref);
 }
 
@@ -599,7 +595,7 @@ pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) R
     // position — declaration target, assignment, call argument, field
     // init, container element, return — funnels through here, so they all
     // agree with the explicit `xx p : any` conversion.
-    if (self.getProtocolInfo(src_ty) != null) return protocolToAnyView(self, val, src_ty);
+    if (self.getProtocolInfo(src_ty) != null) return protocolToAnyView(self, val);
     // An open set is never boxed as the set: the view is of the MEMBER it
     // carries — the member's address inside the slot, and the member's own type
     // (spec: Open Sets — what a set value answers about itself). Every boxing
@@ -655,6 +651,89 @@ pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) R
     return self.builder.boxAnyAt(slot, box_ty);
 }
 
+/// Folded integer behind `ref`: a `const_int`, or add/sub/widen of those.
+pub fn foldedInt(self: *Lowering, ref: Ref) ?i64 {
+    const op = self.builder.getRefOp(ref) orelse return null;
+    return switch (op) {
+        .const_int => |v| v,
+        .add => |b| blk: {
+            const l = self.foldedInt(b.lhs) orelse return null;
+            const r = self.foldedInt(b.rhs) orelse return null;
+            break :blk l +% r;
+        },
+        .sub => |b| blk: {
+            const l = self.foldedInt(b.lhs) orelse return null;
+            const r = self.foldedInt(b.rhs) orelse return null;
+            break :blk l -% r;
+        },
+        .widen => |c| self.foldedInt(c.operand),
+        .length => |u| blk: {
+            const oty = self.builder.getRefType(u.operand);
+            if (oty.isBuiltin() or self.module.types.get(oty) != .array) return null;
+            break :blk @intCast(self.module.types.get(oty).array.length);
+        },
+        else => null,
+    };
+}
+
+/// Folded element count of an already-lowered slice value, when the IR
+/// still carries it as a constant (`subslice` hi-lo or `array_to_slice`).
+fn foldedSliceLen(self: *Lowering, val: Ref) ?u64 {
+    const op = self.builder.getRefOp(val) orelse return null;
+    switch (op) {
+        .subslice => |ss| {
+            const lo = self.foldedInt(ss.lo) orelse return null;
+            const hi = self.foldedInt(ss.hi) orelse return null;
+            if (hi < lo) return 0;
+            return @intCast(hi - lo);
+        },
+        .array_to_slice => |u| {
+            const aty = self.builder.getRefType(u.operand);
+            if (aty.isBuiltin() or self.module.types.get(aty) != .array) return null;
+            return self.module.types.get(aty).array.length;
+        },
+        else => return null,
+    }
+}
+
+fn diagnoseLenWord(self: *Lowering, n: u64, dst_ty: TypeId, kind: []const u8) void {
+    const d = self.diagnostics orelse return;
+    const cs = self.builder.current_span;
+    const len_ty = self.module.types.lenTypeOf(dst_ty);
+    d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "{s} {} does not fit the {s} length word of '{s}'", .{
+        kind, n, self.formatTypeName(len_ty), self.formatTypeName(dst_ty),
+    });
+}
+
+pub fn refuseImplicitLenNarrow(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    const src_len = self.module.types.lenTypeOf(src_ty);
+    const dst_len = self.module.types.lenTypeOf(dst_ty);
+    if (self.module.types.lenWordContains(dst_len, src_len)) return false;
+    if (self.diagnostics) |d| {
+        const cs = self.builder.current_span;
+        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot implicitly convert '{s}' to '{s}': a non-constant length does not fit a narrower length word", .{
+            self.formatTypeName(src_ty), self.formatTypeName(dst_ty),
+        });
+    }
+    return true;
+}
+
+pub fn refuseLenWord(self: *Lowering, n: u64, dst_ty: TypeId) bool {
+    if (self.module.types.lenFitsWord(self.module.types.lenTypeOf(dst_ty), n)) return false;
+    diagnoseLenWord(self, n, dst_ty, "length");
+    return true;
+}
+
+/// Refuse `[N]T → @Slice(T, Len)` when `N` overflows the destination's length
+/// word: the header would carry a truncated length and every read through the
+/// slice would stop short.
+pub fn refuseArrayLenWord(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    const n: u64 = self.module.types.get(src_ty).array.length;
+    if (self.module.types.lenFitsWord(self.module.types.lenTypeOf(dst_ty), n)) return false;
+    diagnoseLenWord(self, n, dst_ty, "array length");
+    return true;
+}
+
 /// Coerce an already-lowered ARRAY value `val` (of array type `src_ty`) into a
 /// slice `dst_ty` as a ZERO-COPY VIEW when the array is addressable, mirroring
 /// the explicit-subslice path. An ADDRESSABLE array (local, global, struct
@@ -672,12 +751,13 @@ pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) R
 /// call's duration, so the copying `array_to_slice` op is SOUND; for a STORED
 /// slice (`s : []T = makeArr()`) the copy would be a dangling view and must be
 /// rejected like 0225.
-pub fn arrayToSliceView(self: *Lowering, val: Ref, src_ty: TypeId) ?Ref {
+pub fn arrayToSliceView(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) ?Ref {
     if (src_ty.isBuiltin() or self.module.types.get(src_ty) != .array) return null;
+    if (self.refuseArrayLenWord(src_ty, dst_ty)) return self.builder.constUndef(dst_ty);
     const addr = self.refStorageAddress(val) orelse return null;
     const info = self.module.types.get(src_ty).array;
     const elem_ty = info.element;
-    const slice_ty = self.module.types.sliceOf(elem_ty);
+    const slice_ty = self.module.types.sliceOfLen(elem_ty, self.module.types.lenTypeOf(dst_ty));
     const lo = self.builder.constInt(0, .i64);
     const hi = self.builder.constInt(@intCast(info.length), .i64);
     return self.builder.emit(.{ .subslice = .{
@@ -705,12 +785,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
     // an implicit erasure never allocates, so EVERY shape at a value/own
     // target is the DEMAND error. (The owning spelling is the postfix
     // `.(P, alloc)` — lowerOwningErasure.)
-    const dst_identity = self.protocolIsIdentity(dst_ty);
-    // A tagged value is a borrow in every spelling, so it takes the identity
-    // arms below; it differs only at an rvalue, which materializes a
-    // frame-scoped temp instead of refusing (spec §6.2).
-    const dst_tagged = self.isTagged(dst_ty);
-    const dst_borrows = dst_identity or dst_tagged;
+    const dst_borrows = self.protocolIsIdentity(dst_ty);
 
     if (!src_ty.isBuiltin()) {
         const src_info = self.module.types.get(src_ty);
@@ -730,8 +805,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
             //   - rvalue (struct literal, call result, etc.): value/own
             //     DEMANDS too — an implicit erasure never allocates, so
             //     the owning copy exists only under postfix `.(P, alloc)`;
-            //     tagged borrows a frame temp; identity refuses — no
-            //     name.
+            //     identity refuses — no name.
             concrete_type_name = self.module.types.getString(src_info.@"struct".name);
             concrete_ty = src_ty;
             if (self.isLvalueExpr(operand_node)) {
@@ -802,18 +876,6 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
         // class forbids — refuse instead.
         if (is_rvalue and self.refuseIdentityRvalueErasure(dst_ty, operand_node.span)) {
             return self.builder.emit(.{ .placeholder = self.module.types.internString("identity-erasure") }, dst_ty);
-        }
-        if (dst_tagged) {
-            // At `return` the frame is about to die, so there is nothing to
-            // borrow the temp from — the one place tagged rvalue erasure is
-            // refused outright.
-            if (is_rvalue and self.in_return_expr) {
-                if (self.diagnostics) |d| d.addFmt(.err, operand_node.span, "cannot erase an rvalue into tagged protocol '{s}' at a 'return' — the frame that would hold the temporary is about to die, so there is nothing durable to borrow beyond this frame; bind it, or place it in storage the caller owns", .{proto_name});
-                return self.builder.emit(.{ .placeholder = self.module.types.internString("tagged-return-erasure") }, dst_ty);
-            }
-            if (self.refuseNonConformer(dst_ty, ctn, concrete_ty, operand_node.span))
-                return self.builder.emit(.{ .placeholder = self.module.types.internString("tagged-erasure") }, dst_ty);
-            return self.buildTaggedValue(concrete_ptr, dst_ty, concrete_ty);
         }
         return self.buildProtocolValue(concrete_ptr, proto_name, ctn, dst_ty, concrete_ty);
     }
@@ -902,15 +964,6 @@ pub fn viewOfConcreteAddr(self: *Lowering, concrete_addr: Ref, concrete_ty: Type
     // protocol handle (an ordinary copyable value, §5.3a).
     if (concrete_ty == .void) return null;
     const ctn = self.resolveConcreteTypeName(concrete_ty) orelse return null;
-    // A tagged value is already a borrow, so no view-building exists for it:
-    // the `*P` handle points at a 16-byte value the caller must name.
-    if (proto_info.kind == .tagged) {
-        if (self.diagnostics) |d| {
-            const cs = self.builder.current_span;
-            d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot build a '*{s}' view over '{s}' — a tagged protocol value is already a borrow, so no view is built for it; pass '{s}' itself, or take the address of a named '{s}' value", .{ proto_info.name, ctn, proto_info.name, proto_info.name });
-        }
-        return self.builder.constUndef(view_ptr_ty);
-    }
     const pv = self.buildProtocolValue(concrete_addr, proto_info.name, ctn, proto_ty, concrete_ty);
     const slot = self.builder.alloca(proto_ty);
     self.builder.store(slot, pv);
@@ -1818,11 +1871,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         .erase_protocol => {
             const proto_name = self.module.types.getString(self.module.types.get(dst_ty).@"struct".name);
             const ctn = self.resolveConcreteTypeName(src_ty).?;
-            // Both borrow-shaped classes take the same arms here; they part
-            // ways only at a genuine rvalue.
-            const node_less_tagged = self.isTagged(dst_ty);
-            const node_less_identity = self.protocolIsIdentity(dst_ty);
-            const node_less_borrows = node_less_identity or node_less_tagged;
+            const node_less_borrows = self.protocolIsIdentity(dst_ty);
             // If src is a pointer, use directly; otherwise alloca+store + heap-copy
             var concrete_ptr = val;
             var concrete_ty = src_ty;
@@ -1844,8 +1893,6 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 // instruction whether the value is a READ of named storage:
                 //   - identity target: storage → borrow it; genuine rvalue
                 //     → refusal (identity objects need a name).
-                //   - tagged target: storage → borrow it; genuine rvalue →
-                //     borrow a frame temp.
                 //   - value/own target: the DEMAND error for every shape —
                 //     an implicit erasure never allocates, so the owning
                 //     copy exists only under postfix `.(P, alloc)`.
@@ -1853,13 +1900,6 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                     if (self.refStorageAddress(val)) |addr| {
                         concrete_ptr = addr;
                         is_rvalue = false;
-                    } else if (node_less_tagged and !node_less_identity) {
-                        // A genuine rvalue at a tagged position borrows a
-                        // frame-scoped temp — the `any`-box placement rule.
-                        const slot = self.builder.alloca(src_ty);
-                        self.builder.store(slot, val);
-                        concrete_ptr = slot;
-                        is_rvalue = true;
                     } else if (self.refuseIdentityRvalueErasure(dst_ty, null)) {
                         return self.builder.emit(.{ .placeholder = self.module.types.internString("identity-erasure") }, dst_ty);
                     } else {
@@ -1873,18 +1913,6 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                         return self.demandOwnedErasure(dst_ty, proto_name, null, .lvalue);
                     return self.demandOwnedErasure(dst_ty, proto_name, null, .rvalue);
                 }
-            }
-            if (node_less_tagged) {
-                if (is_rvalue and self.in_return_expr) {
-                    if (self.diagnostics) |d| {
-                        const cs = self.builder.current_span;
-                        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot erase an rvalue into tagged protocol '{s}' at a 'return' — the frame that would hold the temporary is about to die, so there is nothing durable to borrow beyond this frame; bind it, or place it in storage the caller owns", .{proto_name});
-                    }
-                    return self.builder.emit(.{ .placeholder = self.module.types.internString("tagged-return-erasure") }, dst_ty);
-                }
-                if (self.refuseNonConformer(dst_ty, ctn, concrete_ty, null))
-                    return self.builder.emit(.{ .placeholder = self.module.types.internString("tagged-erasure") }, dst_ty);
-                return self.buildTaggedValue(concrete_ptr, dst_ty, concrete_ty);
             }
             return self.buildProtocolValue(concrete_ptr, proto_name, ctn, dst_ty, concrete_ty);
         },
@@ -1945,7 +1973,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             // storage; this implicit path MUST match, or passing
             // `arr` vs `arr[0..]` silently differs. For an
             // ADDRESSABLE array, build a zero-copy VIEW over its storage.
-            if (self.arrayToSliceView(val, src_ty)) |view| return view;
+            if (self.arrayToSliceView(val, src_ty, dst_ty)) |view| return view;
             // NON-addressable rvalue array (`fill(makeArr())`): keep the
             // COPYING `array_to_slice` op (alloca+store). This is the general
             // coercion arm, reached for CALL ARGUMENTS — the temporary lives
@@ -1957,6 +1985,27 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             // a SUBSLICE of a temporary, which aliases the temp directly
             // (dangling) and IS rejected. Recorded in specs.md §Subslicing.
             return self.builder.emit(.{ .array_to_slice = .{ .operand = val } }, dst_ty);
+        },
+        // `@Slice(T,A) → @Slice(T,B)`: same view, a length word of a different
+        // width. Rebuild the header from the source's `.ptr` and `.len`. A
+        // folded source length that does not fit `B` is refused; implicit
+        // narrowing of a non-constant length is refused; widening is implicit.
+        .slice_len_convert => {
+            if (foldedSliceLen(self, val)) |n| {
+                if (self.refuseLenWord(n, dst_ty)) return self.builder.constUndef(dst_ty);
+            } else if (mode == .implicit and self.refuseImplicitLenNarrow(src_ty, dst_ty)) {
+                return self.builder.constUndef(dst_ty);
+            }
+            const elem_ty = self.module.types.get(dst_ty).slice.element;
+            const mp_ty = self.module.types.manyPtrTo(elem_ty);
+            const data = self.builder.emit(.{ .data_ptr = .{ .operand = val } }, mp_ty);
+            const len = self.emitLengthI64(val, src_ty);
+            return self.builder.emit(.{ .subslice = .{
+                .base = data,
+                .lo = self.builder.constInt(0, .i64),
+                .hi = len,
+                .base_ty = mp_ty,
+            } }, dst_ty);
         },
         // `[*]T → []T`: a many-pointer has no length, so it can't form a slice
         // header implicitly. Diagnose and tell the user to slice with a length.

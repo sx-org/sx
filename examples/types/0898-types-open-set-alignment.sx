@@ -19,7 +19,7 @@ Wide :: @OpenSet(.{ max = 64, align = 16 }) {
 }
 
 Vec2 :: @OpenVariant(Wide) {
-    v: Vector(2, f64) = .{};
+    v: @Vector(2, f64) = .{};
     lanes :: (self: *Vec2) -> f64 => 2.0;
 }
 

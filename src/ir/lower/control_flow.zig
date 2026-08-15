@@ -708,7 +708,7 @@ pub fn listView(self: *Lowering, value: Ref, ty: TypeId) ?struct { data: Ref, da
             return .{
                 .data = self.builder.emit(.{ .data_ptr = .{ .operand = slice_val } }, mp_ty),
                 .data_ty = mp_ty,
-                .len = self.builder.emit(.{ .length = .{ .operand = slice_val } }, .i64),
+                .len = self.emitLengthI64(slice_val, f.ty),
             };
         }
     }
@@ -851,7 +851,7 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
                 data_ty = lv.data_ty;
                 len = lv.len;
             } else if (i == 0) {
-                len = self.builder.emit(.{ .length = .{ .operand = data } }, .i64);
+                len = self.emitLengthI64(data, data_ty);
             }
 
             const elem_ty = self.getElementType(data_ty);
@@ -1209,15 +1209,10 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // A PROTOCOL subject type-switches through its {ctx, type_id} prefix
     // view — the scrutinee/captures are exactly the any switch's, over the
     // concrete value the protocol erases.
-    // Non-null when the subject was a protocol value: the type switch then
-    // opens the CONCRETE receiver, and a tagged subject additionally knows
-    // its whole-program conformer set, so an arm outside it is dead.
-    var protocol_subject_ty: ?TypeId = null;
     if (self.getProtocolInfo(subject_ty) != null) {
         const void_ptr_ty = self.module.types.ptrTo(.void);
         const ctx_ref = self.builder.structGet(subject, 0, void_ptr_ty);
-        const tid_ref = self.protocolTypeIdWord(subject_ty, subject);
-        protocol_subject_ty = subject_ty;
+        const tid_ref = self.protocolTypeIdWord(subject);
         subject = self.builder.makeAny(tid_ref, ctx_ref);
         subject_ty = .any;
     }
@@ -1456,7 +1451,6 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 }
                 const ty = self.resolveTypeArg(pat);
                 if (ty == .unresolved) break :blk_rt &.{}; // resolveTypeArg diagnosed
-                if (protocol_subject_ty) |pst| self.warnDeadTypeSwitchArm(pst, ty, pat.span);
                 if (set_subject_ty) |sst| {
                     // Membership decides what a set value can be, so an arm
                     // naming anything else names nothing this subject reaches.

@@ -1,11 +1,11 @@
 // A member that joins during the CONVERGENCE FIXPOINT is dispatched like any
 // other (spec: Open Sets — dispatch).
 //
-// A tagged conformer's impl body is monomorphized when its arm is materialized,
-// after every ordinary body is lowered. A generic member instantiated there joins
-// the set at that point — later than any reading of the program's text suggests —
-// and the routine that dispatches the set was declared long before, by a call site
-// in an ordinary body.
+// A member's implementation of a dispatched method is lowered when its arm is
+// materialized, after every ordinary body is lowered. A generic member
+// instantiated there joins the set at that point — later than any reading of the
+// program's text suggests — and the routine that dispatches the set was declared
+// long before, by the call site in `main`.
 //
 // The routine's switch is written at the freeze, so it covers that member too: the
 // arms are materialized inside the same fixpoint, and lowering one is itself a
@@ -18,7 +18,12 @@ Set :: @OpenSet(.{ max = 256, align = 8 }) {
 
 Label :: @OpenVariant(Set) {
     n: i64 = 0;
-    tell :: (self: *Label) -> i64 => self.n;
+    // Lowered when this arm is materialized: `Padded(Big)` becomes a member of
+    // `Set` HERE, and the same body dispatches on it.
+    tell :: (self: *Label) -> i64 {
+        v: Set = Padded(Big){ n = 5 };
+        return v.tell() + self.n;
+    }
 }
 
 Padded :: @OpenVariant(Set) ($T: Type) {
@@ -32,38 +37,17 @@ Big :: struct {
     e: i64 = 0; f: i64 = 0; g: i64 = 0; h: i64 = 0;
 }
 
-Shape :: protocol tagged {
-    area :: (self: *Self) -> i64;
-}
-
-Boxy :: struct {
-    k: i64 = 0;
-}
-
-impl Shape for Boxy {
-    // Lowered when this arm is materialized: `Padded(Big)` becomes a member of
-    // `Set` HERE, and the same body dispatches on it.
-    area :: (self: *Boxy) -> i64 {
-        v: Set = Padded(Big){ n = 5 };
-        return v.tell() + self.k;
-    }
-}
-
 main :: () -> i32 {
-    // This call site declares the routine, at a point where `Padded(Big)` is not a
-    // member yet.
-    e: Set = Label{ n = 7 };
-    print("early {}\n", e.tell());
-    b := Boxy{ k = 1 };
-    s: Shape = b;
-    print("late {}\n", s.area());
+    // This call site declares the routine, at a point where `Padded(Big)` is not
+    // a member yet.
+    e: Set = Label{ n = 1 };
+    print("late {}\n", e.tell());
     // One layout for the whole program: 8 tag + the 72-byte member.
     print("size {}\n", size_of(Set));
     0
 }
 
 // ** stdout **
-// early 7
 // late 106
 // size 80
 //

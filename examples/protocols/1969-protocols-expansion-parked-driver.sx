@@ -1,27 +1,29 @@
-// A driver's question about a set another driver can still grow — answered by
+// A driver's question about impls another driver can still write — answered by
 // PARKING, not by refusing.
 //
 // Contribution is judged syntactically over the WHOLE unexpanded node: both
-// branches of an `inline if`, every iteration of an `inline for`. While such a
-// driver is undecided the sets it mentions cannot publish a negative, so a
-// question asked here has no answer YET. The asking driver parks against the
-// fact — the queried set becoming final — and the drain moves on. Deciding the
-// contributor retires exactly its contributions, which fires the fact, and the
-// parked driver resumes and folds against the set as it now stands.
+// branches of an `inline if`, every iteration of an `inline for`. An erased
+// protocol reads impl multiplicity, which a later impl can move in either
+// direction, so while such a driver is undecided neither polarity is publishable
+// and a question asked here has no answer YET. The asking driver parks against
+// the fact — the queried protocol's impls becoming final — and the drain moves
+// on. Deciding the contributor retires exactly its contributions, which fires the
+// fact, and the parked driver resumes and folds against the impls as they now
+// stand.
 //
 // Nothing is speculative and nothing re-runs: the condition is evaluated once,
 // after its answer stopped being able to change.
 #import "modules/std.sx";
 
-View :: protocol tagged { area :: (self: *Self) -> i64; }
-Tally :: protocol tagged { count :: (self: *Self) -> i64; }
+View :: protocol vtable { area :: (self: *Self) -> i64; }
+Tally :: protocol vtable { count :: (self: *Self) -> i64; }
 
 Widget :: struct { n: i64; }
 Panel :: struct { n: i64; }
 
 // The `inline if` below can still write `impl View for Widget` — in its taken
 // branch or its untaken one, which is not decided yet either way. So this
-// question parks, and resumes once that driver is decided: `Widget` is in.
+// question parks, and resumes once that driver is decided: `Widget` conforms.
 inline if has_impl(View, Widget) { FIRST :: 1; } else { FIRST :: 0; }
 
 inline if POINTER_SIZE == 8 {
@@ -42,7 +44,7 @@ inline for T in SHAPES {
 main :: () {
     w := Widget{ n = 4 };
     p := Panel{ n = 5 };
-    v : View = w;
-    t : Tally = p;
+    v : *View = w;
+    t : *Tally = p;
     print("{} {} {} {}\n", FIRST, SECOND, v.area(), t.count());
 }

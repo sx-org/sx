@@ -21,6 +21,11 @@ FwdB :: i64;
 // stateful resolver the inline annotation form uses).
 TL :: Tuple(a: List(i64), b: string);
 
+// The same two shapes spelled with their elements written directly — layout
+// equality against these pins the deferred and stateful element resolutions.
+FwdDirect :: Tuple(a: i64, c: bool);
+TLDirect  :: Tuple(a: List(i64), b: string);
+
 // Forward tuple-in-tuple chain: Inner is itself a tuple alias declared later.
 Outer :: Tuple(a: Inner, c: bool);
 Inner :: Tuple(d: i64);
@@ -59,17 +64,17 @@ main :: () -> i32 {
     print("y.a={} fcNT2={}\n", y.a, struct_field_count(NT2));
 
     // Forward element alias: FwdB (declared after FwdT) is i64, not a stub —
-    // the alias layout matches the inline spelling exactly.
+    // the alias layout matches the direct spelling exactly.
     f : FwdT = .{a = 5, c = true};
-    print("f.a={} fcFwd={} fwd_so_eq={}\n", f.a, struct_field_count(FwdT), size_of(FwdT) == size_of(Tuple(a: i64, c: bool)));
+    print("f.a={} fcFwd={} fwd_so_eq={}\n", f.a, struct_field_count(FwdT), size_of(FwdT) == size_of(FwdDirect));
 
     // Generic-instantiation element: field access through the instantiated
-    // List works and size_of matches the inline spelling (no stub layout).
+    // List works and size_of matches the direct spelling (no stub layout).
     t : TL = ---;
     t.a = .{};
     t.a.append(4);
     t.b = "hi";
-    print("t.a0={} t.b={} fcTL={} tl_so_eq={}\n", t.a.items[0], t.b, struct_field_count(TL), size_of(TL) == size_of(Tuple(a: List(i64), b: string)));
+    print("t.a0={} t.b={} fcTL={} tl_so_eq={}\n", t.a.items[0], t.b, struct_field_count(TL), size_of(TL) == size_of(TLDirect));
 
     // Forward tuple-in-tuple chain.
     n : Outer = .{a = .{d = 3}, c = true};

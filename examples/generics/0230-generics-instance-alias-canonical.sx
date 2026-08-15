@@ -6,7 +6,7 @@
 // Distinct instantiations stay distinct.
 #import "modules/std.sx";
 
-Series :: protocol(T: Type) tagged { count :: (self: *Self) -> i64; }
+Series :: protocol(T: Type) vtable { count :: (self: *Self) -> i64; }
 
 Buffer :: struct($T: Type) { n: i64; }
 impl Series($T) for Buffer($T) { count :: (self: *Buffer) -> i64 { self.n } }
@@ -34,7 +34,7 @@ main :: () {
     print("{} {}\n", type_eq(Buffer(f32), Buffer(i64)), type_eq(BufF, BufI));
     //stdout: false false
 
-    a : Series(f32) = Buffer(f32){ n = 7 };
+    a := Buffer(f32){ n = 7 }.(Series(f32), context.allocator);
 
     // The arm names the alias and matches the instantiation's value.
     match a {

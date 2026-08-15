@@ -1,0 +1,5 @@
+same=true name=[5]i32
+len=5 b0=3 b4=9
+field=11 44
+sum=6
+tag=plain

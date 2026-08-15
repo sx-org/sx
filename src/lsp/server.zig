@@ -725,7 +725,7 @@ pub const Server = struct {
             .{ .label = "is_unsigned", .detail = "(T | tp: Type) -> bool" },
             .{ .label = "is_flags", .detail = "(T | tp: Type) -> bool" },
             .{ .label = "is_identity", .detail = "($T: Type) -> bool — is T an #identity protocol (compile-time only)" },
-            .{ .label = "protocol_kind", .detail = "($T: Type) -> ProtocolKind — constraint / vtable / `inline / tagged (compile-time only)" },
+            .{ .label = "protocol_kind", .detail = "($T: Type) -> ProtocolKind — constraint / vtable (compile-time only)" },
             .{ .label = "is_struct", .detail = "($T: Type) -> bool" },
             .{ .label = "pointee_type", .detail = "($P: Type) -> Type — *X -> X" },
             .{ .label = "struct_field_count", .detail = "(T | tp: Type) -> i64 — struct/tuple fields" },
@@ -3497,30 +3497,6 @@ test "analyzeDocument: namespaced import fn_signatures have prefix" {
     const sema = main_doc.sema orelse return error.SkipZigTest;
     // fn_signatures should contain "pkg.add"
     try std.testing.expect(sema.fn_signatures.contains("pkg.add"));
-}
-
-test "analyzeDocument: pipe operator desugars to call" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
-
-    const lib_src: [:0]const u8 = "add :: (a: i32, b: i32) -> i32 { a + b; }";
-    const lib_doc = try store.openOrUpdate("lib.sx", lib_src, 1);
-    try store.analyzeDocument(lib_doc);
-
-    // Pipe operator should parse and analyze without errors
-    const main_src: [:0]const u8 =
-        \\pkg :: #import "lib.sx";
-        \\main :: () -> i32 { 3 |> pkg.add(4); }
-    ;
-    const main_doc = try store.openOrUpdate("main.sx", main_src, 1);
-    try store.analyzeDocument(main_doc);
-
-    const sema = main_doc.sema orelse return error.SkipZigTest;
-    // Should parse successfully with no sema errors for "add"
-    try std.testing.expect(Server.findSymbolByName(sema.symbols, "main") != null);
 }
 
 test "analyzeDocument: for-loop capture variables are registered" {

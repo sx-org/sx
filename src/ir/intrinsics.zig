@@ -18,7 +18,7 @@
 //! "every entry has a handler, every `intrinsic` declaration has an entry" holds
 //! with no exemption list:
 //!
-//!   * Language primitives (`string`, `Vector`) — resolved by name by the type
+//!   * Language primitives (`string`, `@Vector`) — resolved by name by the type
 //!     system (`type_resolver` / `type_bridge`) like `int` / `bool` / `f64`.
 //!     They are declared nowhere and are not call-dispatched.
 //!   * Keywords (`cast`, `type_eq`, `has_impl`, `is_struct`, `is_comptime`,
@@ -73,6 +73,7 @@ pub const Id = enum(u16) {
     error_name,
     vector_lanes,
     @"__sx_variant_tag_width",
+    @"__sx_slice_len_info",
     any_element,
     raw_any_data,
     raw_make_any,
@@ -222,6 +223,7 @@ pub const entries = [_]Entry{
     .{ .id = .error_name, .module = core, .name = "error_name", .mode = .lower, .arity = 1, .ret = .string },
     .{ .id = .vector_lanes, .module = core, .name = "vector_lanes", .mode = .lower, .arity = 1, .ret = .i64 },
     .{ .id = .@"__sx_variant_tag_width", .module = core, .name = "__sx_variant_tag_width", .mode = .lower, .arity = 1, .ret = .i64 },
+    .{ .id = .@"__sx_slice_len_info", .module = core, .name = "__sx_slice_len_info", .mode = .lower, .arity = 1, .ret = .i64 },
     .{ .id = .any_element, .module = core, .name = "any_element", .mode = .lower, .arity = 3, .ret = .any },
     .{ .id = .raw_any_data, .module = core, .name = "raw_any_data", .mode = .lower, .arity = 1 },
     .{ .id = .raw_make_any, .module = core, .name = "raw_make_any", .mode = .lower, .arity = 2, .ret = .any },

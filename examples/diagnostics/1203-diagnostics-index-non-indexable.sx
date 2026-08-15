@@ -1,6 +1,6 @@
 // Indexing a value whose type is not an indexable shape — a single-element pointer
 // `*T`, a pointer-to-slice `*[]T`, or a plain struct — is a located type error at
-// lowering. Indexable shapes are `[N]T` / `[]T` / `[*]T` / `string` / `Vector` /
+// lowering. Indexable shapes are `[N]T` / `[]T` / `[*]T` / `string` / `@Vector` /
 // `*[N]T` and the optional-chain forms.
 //
 // A COMPTIME-constant index into a struct value (`s[0]`) is the field itself

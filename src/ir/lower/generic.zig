@@ -241,7 +241,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
 ///   - pack_index_type_expr (`$pack[<lit>]`)
 ///   - compound type literals (pointer, array, slice, optional,
 ///     many_pointer, function_type_expr)
-///   - parameterised type-constructor `call` (Vector, List, etc.)
+///   - parameterised type-constructor `call` (`@Vector`, List, etc.)
 ///   - tuple_literal as a tuple TYPE
 ///
 /// Dynamic shapes (index_expr, field_access, runtime locals,
@@ -308,7 +308,7 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
             // where the two-step form read "Point"), and
             // `struct_field_type(tp, i)` / `variant_type(tp, i)` /
             // `pointee_type(tp)` with a runtime `tp` produce runtime Types.
-            // Everything else (Vector(N,T)-style type constructors) is static.
+            // Everything else (`@Vector(N,T)`-style type constructors) is static.
             if (cl.callee.data == .identifier) {
                 const cn = cl.callee.data.identifier.name;
                 if (std.mem.eql(u8, cn, "type_of") and cl.args.len == 1) {
@@ -704,7 +704,10 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
         },
         .slice => |s| blk: {
             const inner = self.formatTypeName(s.element);
-            break :blk std.fmt.allocPrint(self.alloc, "[]{s}", .{inner}) catch "slice";
+            if (s.len_type == .i64)
+                break :blk std.fmt.allocPrint(self.alloc, "[]{s}", .{inner}) catch "slice";
+            const len_name = self.formatTypeName(s.len_type);
+            break :blk std.fmt.allocPrint(self.alloc, "@Slice({s},{s})", .{ inner, len_name }) catch "slice";
         },
         .array => |a| blk: {
             const inner = self.formatTypeName(a.element);
@@ -718,7 +721,7 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
         },
         .vector => |v| blk: {
             const inner = self.formatTypeName(v.element);
-            break :blk std.fmt.allocPrint(self.alloc, "Vector({d},{s})", .{ v.length, inner }) catch "vector";
+            break :blk std.fmt.allocPrint(self.alloc, "@Vector({d},{s})", .{ v.length, inner }) catch "vector";
         },
         .tuple => |t| blk: {
             var buf = std.ArrayList(u8).empty;
@@ -1444,7 +1447,7 @@ pub fn isPlainFreeFn(fd: *const ast.FnDecl) bool {
 /// `type_name` is the param's declared constraint type (`"u32"`, null if
 /// unknown). A `u32` count routes through the shared
 /// `program_index.foldDimU32` — the SAME fold-and-narrow gate an array dim /
-/// Vector lane uses — so the documented "single u32 gate for value-param
+/// `@Vector` lane uses — so the documented "single u32 gate for value-param
 /// counts" holds; any other integer type range-checks against
 /// `program_index.intTypeRange`; an unrecognised type folds without bounding.
 pub fn resolveValueParamArg(self: *Lowering, arg_node: *const Node, param_name: []const u8, type_name: ?[]const u8) ?i64 {
@@ -1889,7 +1892,7 @@ pub fn visibleTypeFnHead(self: *Lowering, name: []const u8) ?*const ast.FnDecl {
     return mapped;
 }
 
-/// Resolve a .call node that represents a type constructor (e.g., List(T), Vector(N, T)).
+/// Resolve a .call node that represents a type constructor (e.g., List(T), @Vector(N, T)).
 /// The `idx`-th member type of `t` for `field_type($T, i)`: a struct field,
 /// a tagged-union variant payload (`.void` for a tagless variant), a tuple
 /// element, a `union` field, the element type of an array/vector (index
@@ -1981,11 +1984,23 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
             },
         };
     }
-    // Built-in: Vector(N, T)
-    if (std.mem.eql(u8, callee_name, "Vector") and cl.args.len == 2) {
+    // Built-in: @Vector(N, T)
+    if (std.mem.eql(u8, callee_name, contracts.vector_head) and cl.args.len == 2) {
         const length = self.resolveVectorLane(cl.args[0]) orelse return .unresolved;
         const elem = self.resolveTypeWithBindings(cl.args[1]);
         return self.module.types.vectorOf(elem, length);
+    }
+    // Built-in: @Array(N, T)
+    if (std.mem.eql(u8, callee_name, contracts.array_head) and cl.args.len == 2) {
+        const length = self.resolveArrayLen(cl.args[0]) orelse return .unresolved;
+        const elem = self.resolveTypeWithBindings(cl.args[1]);
+        return self.module.types.arrayOf(elem, length);
+    }
+    // Built-in: @Slice(T, Len)
+    if (std.mem.eql(u8, callee_name, contracts.slice_head) and cl.args.len == 2) {
+        const elem = self.resolveTypeWithBindings(cl.args[0]);
+        const len_ty = self.resolveSliceLenType(cl.args[1]) orelse return .unresolved;
+        return self.module.types.sliceOfLen(elem, len_ty);
     }
     // Generic-struct head: route through the single layout choke-point (CP-1).
     // Bare → the single bare-VISIBLE author (own / 1-hop flat), source-keyed;
@@ -2030,7 +2045,7 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
     // Try as a named type
     const name_id = self.module.types.internString(callee_name);
     if (self.module.types.findByName(name_id)) |t| return t;
-    // The callee names no known type constructor — not Vector, not a generic
+    // The callee names no known type constructor — not `@Vector`, not a generic
     // struct template (or alias), not a type-returning function, not a named
     // type. A silent `.unresolved` here reaches LLVM emission as a panic;
     // diagnose and poison (the parameterized sibling below already does).
@@ -2040,7 +2055,7 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
 }
 
 /// Resolve a parameterized type expr, substituting bindings for type/value params.
-/// Handles both built-in types (Vector) and user-defined generic structs.
+/// Handles both built-in types (`@Vector`) and user-defined generic structs.
 /// `span` locates the reference for the unresolved-base diagnostic.
 pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.ParameterizedTypeExpr, span: ?ast.Span) TypeId {
     const base_name = if (std.mem.lastIndexOfScalar(u8, pt.name, '.')) |dot| pt.name[dot + 1 ..] else pt.name;
@@ -2064,14 +2079,30 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
         return self.resolveTypeCallWithBindings(&syn);
     }
 
-    // Vector(N, T) — built-in parameterized type. A backtick raw base
-    // (`` `Vector(…) ``) is the LITERAL user type named `Vector`, so it
-    // skips this intrinsic and resolves through the template map.
-    if (!pt.is_raw and std.mem.eql(u8, base_name, "Vector")) {
+    // @Vector(N, T) — built-in parameterized type.
+    if (std.mem.eql(u8, base_name, contracts.vector_head)) {
         if (pt.args.len == 2) {
             const length = self.resolveVectorLane(pt.args[0]) orelse return .unresolved;
             const elem = self.resolveTypeWithBindings(pt.args[1]);
             return table.vectorOf(elem, length);
+        }
+    }
+
+    // @Array(N, T) — the named form of `[N]T`.
+    if (std.mem.eql(u8, base_name, contracts.array_head)) {
+        if (pt.args.len == 2) {
+            const length = self.resolveArrayLen(pt.args[0]) orelse return .unresolved;
+            const elem = self.resolveTypeWithBindings(pt.args[1]);
+            return table.arrayOf(elem, length);
+        }
+    }
+
+    // @Slice(T, Len) — a fat pointer whose length word is `Len`.
+    if (std.mem.eql(u8, base_name, contracts.slice_head)) {
+        if (pt.args.len == 2) {
+            const elem = self.resolveTypeWithBindings(pt.args[0]);
+            const len_ty = self.resolveSliceLenType(pt.args[1]) orelse return .unresolved;
+            return table.sliceOfLen(elem, len_ty);
         }
     }
 
@@ -2120,7 +2151,7 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
         }
     }
 
-    // The base names no known type constructor — not Vector, not a generic
+    // The base names no known type constructor — not `@Vector`, not a generic
     // struct template, not a parameterized protocol, not a type-returning
     // function. A silent 0-field stub here would mis-size every downstream
     // `b.field` / `b.len`; emit the diagnostic and poison with `.unresolved`
@@ -2131,7 +2162,7 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
 }
 
 /// Instantiate a generic struct template with concrete args.
-/// E.g., Vec(3, f32) → struct Vec__3_f32 { data: Vector(3, f32) }
+/// E.g., Vec(3, f32) → struct Vec__3_f32 { data: @Vector(3, f32) }
 /// A generic-struct instance method selected via the STAMPED authoring decl:
 /// the `fn_decl` to monomorphize, the instance's stored type bindings, and the
 /// instance (mangled / alias) name the monomorphized function is keyed under.
@@ -2684,7 +2715,7 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     }
 
     // General case: the body returns a TYPE EXPRESSION that is not an inline
-    // struct/union/enum — `return [K]T`, `Vector(K, T)`, `*T`, an alias, etc.
+    // struct/union/enum — `return [K]T`, `@Vector(K, T)`, `*T`, an alias, etc.
     // Resolve it with the value/type bindings active (so `[K]T` folds K to a
     // compile-time integer). The result is interned structurally, so
     // `Make(N, i64)`, `Make(3, i64)`, and `Make(M + 1, i64)` all yield the
@@ -2720,7 +2751,7 @@ pub fn findReturnTypeExpr(body: *const Node) ?*const Node {
 ///     caught here as a fast-path before the `fn_ast_map` lookup below); or
 ///   - a call to a NON-generic, bodied, `Type`-returning sx fn (a constructor
 ///     helper that itself ends in `define` / `register_type`).
-/// Excludes generic / static type constructors (`Vector(N,T)`, `Make($T)`,
+/// Excludes generic / static type constructors (`@Vector(N,T)`, `Make($T)`,
 /// `return [K]T`, `return T`), which the static `resolveTypeWithBindings` path
 /// handles.
 pub fn returnExprMintsType(self: *Lowering, ret: *const Node) bool {

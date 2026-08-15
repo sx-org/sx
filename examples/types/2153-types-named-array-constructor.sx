@@ -1,0 +1,40 @@
+// `@Array(N, T)` is `[N]T` on every type-resolution path: a `::` alias, an
+// annotation, a struct field (stateless registration), a signature, and a
+// typed array literal. `Array` is an ordinary identifier a program may bind.
+
+#import "modules/std.sx";
+
+N :: 4;
+
+Array :: struct { tag: string; }
+
+Named :: @Array(5, i32);
+Punct :: [5]i32;
+
+Holder :: struct { xs: @Array(N, i64); }
+
+sum :: (row: @Array(3, i32)) -> i32 {
+    row[0] + row[1] + row[2]
+}
+
+main :: () -> i32 {
+    print("same={} name={}\n", type_eq(Named, Punct), type_name(Named));
+
+    a : @Array(5, i32) = ---;
+    a[0] = 3;
+    a[4] = 9;
+    b : Punct = a;
+    print("len={} b0={} b4={}\n", b.len, b[0], b[4]);
+
+    h : Holder = ---;
+    h.xs[0] = 11;
+    h.xs[3] = 44;
+    print("field={} {}\n", h.xs[0], h.xs[3]);
+
+    row := @Array(3, i32).[1, 2, 3];
+    print("sum={}\n", sum(row));
+
+    named := Array{ tag = "plain" };
+    print("tag={}\n", named.tag);
+    0
+}

@@ -6,7 +6,7 @@
 // comes back out is an ordinary `View`, and dispatch on it reads the tag the write
 // left behind.
 //
-// The same sink at a `tagged` protocol keeps allocating the payload it hands a
+// The same sink at an erased protocol keeps allocating the payload it hands a
 // handle to — a handle borrows storage it does not own, and the sink's own
 // frame is gone by the time the list is read. One sink, two storage stories,
 // decided by whether `T` can carry the value itself.

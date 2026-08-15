@@ -3,7 +3,7 @@
 // (`Context`, `Allocator`, `Into`, `@SourceSite`). Consumers never import
 // this file directly — std.sx re-exports every name here.
 //
-// `string` and `Vector` are NOT declared here: they are language primitives
+// `string` and `@Vector` are NOT declared here: they are language primitives
 // that the type system resolves by name program-wide (`type_resolver` and
 // `type_bridge` respectively), exactly like `int` / `bool` / `f64`. They need
 // no declaration and cannot be re-bound.
@@ -56,13 +56,13 @@ is_identity :: ($T: Type) -> bool intrinsic;
 // The kind slot of a protocol declaration. COMPILE-TIME only, for the same
 // reason `is_identity` is: a runtime `Type` value never tags a protocol.
 // A non-protocol argument is a compile error, not a silent answer.
-ProtocolKind :: enum { constraint; vtable; `inline; tagged; }
+ProtocolKind :: enum { constraint; vtable; }
 protocol_kind :: ($T: Type) -> ProtocolKind intrinsic;
 is_unsigned :: ($T: Type) -> bool intrinsic;
 variant_value :: ($T: Type, idx: i64) -> i64 intrinsic;
 variant_index :: ($T: Type, val: T) -> i64 intrinsic;
 error_name :: (e: $T) -> string intrinsic;
-// A vector's lane COUNT (`vector_lanes(Vector(3,f32))` -> 3). The one length
+// A vector's lane COUNT (`vector_lanes(@Vector(3,f32))` -> 3). The one length
 // the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so
 // size/elem_size over-counts (3 lanes read as 4). Accepts a runtime Type
 // (lane-table read); any non-vector tag answers 0 at runtime — kind
@@ -75,6 +75,11 @@ vector_lanes :: ($T: Type) -> i64 intrinsic;
 // bytes at offset 0 (a backing-type union's header can be wider than the
 // tag). 0 for non-variant kinds.
 __sx_variant_tag_width :: ($T: Type) -> i64 intrinsic;
+// INTERNAL (fmt's runtime fat-pointer read): T's length word packed into one
+// row — bits 0..7 its BIT width, bit 8 its signedness, bits 16..31 its byte
+// offset in the `{ptr, Len}` header. 0 for a kind that carries no fat
+// pointer. Accepts a runtime Type (row-table read).
+__sx_slice_len_info :: ($T: Type) -> i64 intrinsic;
 // Element view into an array/vector held by an `any`: pure stride math —
 // `{ elem,  raw_any_data(av) + idx * size_of(elem) }`. The walker's array
 // and vector arms re-aim ONE view per index; `elem` may be a runtime Type.
@@ -215,20 +220,14 @@ raw_pointer_to        :: (t: Type) -> Type intrinsic;
 // `#identity`: an allocator IS its state object — protocol values only
 // ever borrow a named allocator (`xx gpa`, `gpa.(Allocator)`); rvalue
 // erasure and `free` of the protocol value refuse at compile time.
-// `inline`: the handle carries its own dispatch words, so an allocation
-// through a protocol value is one indirect call whatever the program's
-// allocator population is. `tagged #expand` is the measured alternative
-// (design/protocols.md §6.3a, "the Allocator trade"): it wins wherever
-// the receiver is predictable and loses where it is not, and switching
-// is this one line — nothing in the compiler is keyed to the kind.
-Allocator :: protocol inline #identity {
+Allocator :: protocol vtable #identity {
     alloc_bytes :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
 
 // --- Io capability protocol (impls live in std/io.sx) ---
 //
-// `Io` is threaded on `Context` exactly like `Allocator`: an `inline`-kind
+// `Io` is threaded on `Context` exactly like `Allocator`: a `vtable`-kind
 // protocol whose default impl (the stateless `CBlockingIo` in std/io.sx)
 // is installed in the process-wide `__sx_default_context`. Async runtime
 // is sx LIBRARY code — the compiler provides only the primitives (inline
@@ -268,7 +267,7 @@ ParkToken :: struct {
 
 // `#identity` — like `Allocator`: the runtime object is unique state,
 // borrowed into the protocol value, never owned by it.
-Io :: protocol inline #identity {
+Io :: protocol vtable #identity {
     spawn_raw :: (self: *Self, entry: *void, arg: *void, opts: SpawnOpts) -> *void;
     // `park` is IN/OUT: a suspending impl records the parked execution context
     // (e.g. the awaiter's fiber) into `park.handle` before parking, so a later
@@ -366,9 +365,8 @@ StringRaw :: struct {
     len: i64;
 }
 
-// A protocol value's raw view: the `{ctx, type_id}` prefix BOTH protocol
-// layouts share (`vtable` `{ctx, __type_id, vtable}` and `inline`
-// `{ctx, __type_id, fn_ptrs…}`) — byte-identical to an `any`
+// A protocol value's raw view: the `{ctx, type_id}` prefix of a `vtable`
+// value `{ctx, __type_id, vtable}` — byte-identical to an `any`
 // `{data, type_id}`. `ctx` is the concrete data (the heap COPY for an
 // owning `xx <rvalue>` erasure, the borrowed storage otherwise); `type_id`
 // is the erased value's concrete type. Retrieval is a MODELED conversion

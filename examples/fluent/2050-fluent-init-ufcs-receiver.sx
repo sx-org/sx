@@ -63,8 +63,8 @@ show :: ufcs (value: $I/@Init($V/Drawable)) {
     context.allocator.destroy(d);
 }
 
-// --- An open target at a tagged protocol: the sink funds the payload ---
-Shape :: protocol tagged { name :: (self: *Self) -> string; }
+// --- An open target at a protocol: the sink funds the payload ---
+Shape :: protocol vtable { name :: (self: *Self) -> string; }
 Round :: struct { s: string = "round"; }
 impl Shape for Round { name :: (self: *Round) -> string => self.s; }
 
@@ -74,7 +74,7 @@ Kept :: struct { last: string = ""; }
 keep :: ufcs (value: $I/@Init($V/Shape)) {
     payload := context.allocator.create(V);
     value.write(payload);
-    handle : Shape = payload;
+    handle : *Shape = payload;
     context.kept.last = handle.name();
 }
 

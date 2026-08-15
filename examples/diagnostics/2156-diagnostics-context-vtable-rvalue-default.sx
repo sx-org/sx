@@ -1,0 +1,21 @@
+// A protocol-typed Context default is a BORROW (specs.md §6.6) at every borrow
+// kind, `vtable #identity` included: it must name a global instance to borrow.
+// An rvalue — a struct literal, a call — has no address, so the declaration
+// refuses it.
+#import "modules/std.sx";
+
+Sink :: protocol vtable #identity { emit :: (self: *Self, n: i64) -> i64; }
+Chirp :: protocol vtable #identity { chirp :: (self: *Self) -> i64; }
+
+Doubler :: struct { k: i64; }
+impl Sink for Doubler { emit :: (self: *Doubler, n: i64) -> i64 { n * self.k } }
+impl Chirp for Doubler { chirp :: (self: *Doubler) -> i64 { self.k } }
+
+made :: () -> Doubler { .{ k = 4 } }
+
+#context_extend sink: Sink = Doubler{ k = 3 };
+#context_extend note: Chirp = made();
+
+main :: () {
+    print("{} {}\n", context.sink.emit(5), context.note.chirp());
+}

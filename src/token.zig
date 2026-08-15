@@ -98,7 +98,6 @@ pub const Tag = enum(u8) {
     ampersand_equal, // &=
     pipe, // |
     pipe_equal, // |=
-    pipe_arrow, // |>
     caret, // ^
     caret_equal, // ^=
     question, // ?
@@ -135,7 +134,6 @@ pub const Tag = enum(u8) {
     hash_define, // #define (inside #import c { ... })
     hash_flags, // #flags (inside #import c { ... })
     hash_identity, // #identity (protocol ownership-class marker: borrow-only values)
-    hash_expand, // #expand (tagged dispatch expands at the call site)
     hash_objc_call, // #objc_call(T)(recv, "sel:", args...)
     hash_jni_call, // #jni_call(T)(env, target, "name", "(Sig)R", args...)
     hash_jni_static_call, // #jni_static_call(T)(class, "name", "(Sig)R", args...)
@@ -203,7 +201,6 @@ pub const Tag = enum(u8) {
             .ampersand_equal => "&=",
             .pipe => "|",
             .pipe_equal => "|=",
-            .pipe_arrow => "|>",
             .caret => "^",
             .caret_equal => "^=",
             .question => "?",
@@ -308,7 +305,6 @@ pub const Tag = enum(u8) {
             .hash_define,
             .hash_flags,
             .hash_identity,
-            .hash_expand,
             .hash_objc_call,
             .hash_jni_call,
             .hash_jni_static_call,
@@ -352,7 +348,6 @@ pub const Tag = enum(u8) {
             .ampersand_equal,
             .pipe,
             .pipe_equal,
-            .pipe_arrow,
             .caret,
             .caret_equal,
             .question,
@@ -487,7 +482,6 @@ pub const Tag = enum(u8) {
             .ampersand_equal,
             .pipe,
             .pipe_equal,
-            .pipe_arrow,
             .caret,
             .caret_equal,
             .question,
@@ -518,7 +512,6 @@ pub const Tag = enum(u8) {
             .hash_define,
             .hash_flags,
             .hash_identity,
-            .hash_expand,
             .hash_objc_call,
             .hash_jni_call,
             .hash_jni_static_call,
