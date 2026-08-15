@@ -1,0 +1,43 @@
+#import "modules/std.sx";
+#import "modules/math";
+
+main :: () -> i32 {
+    a := Vec3{ x = 1.0, y = 0.0, z = 0.0 };
+    b := Vec3{ x = 0.0, y = 1.0, z = 0.0 };
+
+    print("dot: {}\n", a.dot(b));
+
+    cr := a.cross(b);
+    print("cross: {} {} {}\n", cr.x, cr.y, cr.z);
+
+    v := Vec3{ x = 3.0, y = 4.0, z = 0.0 };
+    print("length: {}\n", v.length());
+
+    n := v.normalize();
+    print("normalize: {} {}\n", n.x, n.y);
+
+    m := a.lerp(b, 0.5);
+    print("lerp: {} {}\n", m.x, m.y);
+
+    print("add: {}\n", a.add(b).length());
+    print("sub: {}\n", a.sub(b).length());
+    print("scale: {}\n", a.scale(3.0).length());
+
+    q := Quat.from_axis_angle(Vec3{ x = 0.0, y = 0.0, z = 1.0 }, PI * 0.5);
+    r := q.rotate(a);
+    print("rotate dot y: {}\n", r.dot(b));
+    print("rotate length: {}\n", r.length());
+
+    // Two 90 degree turns about z compose into a half turn.
+    h := q.mul(q);
+    r2 := h.rotate(a);
+    print("half turn dot x: {}\n", r2.dot(a));
+
+    print("identity dot: {}\n", Quat.identity().rotate(v).dot(v));
+
+    mm := q.to_mat4();
+    print("mat4 col0: {} {}\n", mm.data[0], mm.data[1]);
+    print("mat4 col1: {} {}\n", mm.data[4], mm.data[5]);
+    print("mat4 m22: {}\n", mm.data[10]);
+    0
+}

@@ -1,10 +1,10 @@
 #import "modules/std.sx";
 
-// Opaque GPU resource handles. Backends decide what the integer means
-// (GL: object name; Metal: 1-based index into a backend-owned table of
-// retained MTL* objects). Zero is reserved for "no handle".
+// Opaque GPU resource handles. Each backend decides what the integer
+// means. Zero is reserved for "no handle".
 ShaderHandle  :: u32;
 BufferHandle  :: u32;
+IndexHandle   :: u32;
 TextureHandle :: u32;
 
 ClearColor :: struct {
@@ -21,4 +21,20 @@ ClearColor :: struct {
 TextureFormat :: enum {
     rgba8;
     r8;
+}
+
+// Vertex layout of the 3D draw path (`draw_indexed`), 32 bytes. Byte
+// offsets 0 / 12 / 24 are the attribute slots backends bind.
+MeshVertex :: struct {
+    position: [3]f32;
+    normal:   [3]f32;
+    uv:       [2]f32;
+}
+
+// Depth test applied by `draw_indexed`. `disabled` also stops depth
+// writes, so a 2D pass leaves the depth buffer untouched.
+DepthMode :: enum {
+    disabled;
+    less;
+    lequal;
 }
