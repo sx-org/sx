@@ -1547,41 +1547,37 @@ test "comptime_vm: arena allocations are aligned, non-null, and stable across gr
     try std.testing.expectEqual(@as(u64, 0xCAFEBABE), try m.readWord(a, 8));
 }
 
-/// Answers the parked evaluation's fact by admitting the missing conformer the
-/// same way lowering does: the routine's dispatch entry is REPLACED with the
-/// wider member set. `defer_first` models the owner that cannot answer on the
-/// spot — the evaluation stays parked and comes back to its owner instead.
-const ConformerPublisher = struct {
-    alloc: std.mem.Allocator,
+/// Answers the parked evaluation's fact by publishing the awaited measurement
+/// the same way lowering does. `defer_first` models the owner that cannot answer
+/// on the spot — the evaluation stays parked and comes back to its owner
+/// instead.
+const LayoutPublisher = struct {
     module: *Module,
-    routine: FuncId,
-    members: [2]TypeId,
-    arms: [2]FuncId,
+    measured: TypeId,
+    size: i64,
     defer_first: bool = false,
     requests: u32 = 0,
-    seen_routine: ?FuncId = null,
-    seen_concrete: ?TypeId = null,
+    seen_measured: ?TypeId = null,
 
-    fn scheduler(self: *ConformerPublisher) vm.FactScheduler {
+    fn scheduler(self: *LayoutPublisher) vm.FactScheduler {
         return .{ .ctx = self, .resolve = resolve };
     }
 
     fn resolve(ctx: ?*anyopaque, request: vm.FactRequest) vm.FactAnswer {
-        const self: *ConformerPublisher = @ptrCast(@alignCast(ctx.?));
+        const self: *LayoutPublisher = @ptrCast(@alignCast(ctx.?));
         self.requests += 1;
-        self.seen_routine = request.routine;
-        self.seen_concrete = request.concrete;
+        self.seen_measured = request.measured;
         if (self.defer_first) return .later;
         return .{ .now = self.publish() };
     }
 
-    fn publish(self: *ConformerPublisher) vm.FactResolution {
-        for (self.module.tagged_dispatch.items) |*e| {
-            if (e.routine != self.routine) continue;
-            e.* = .{ .routine = self.routine, .members = &self.members, .arms = &self.arms };
-            return .published;
-        }
-        return .unavailable;
+    fn publish(self: *LayoutPublisher) vm.FactResolution {
+        self.module.open_set_layouts.put(self.measured, .{ .size = self.size, .alignment = 8 }) catch return .unavailable;
+        return .published;
+    }
+
+    fn retract(self: *LayoutPublisher) void {
+        _ = self.module.open_set_layouts.remove(self.measured);
     }
 };
 
@@ -1590,38 +1586,17 @@ test "comptime_vm: an evaluation parks inside a nested invocation and resumes th
     var module = Module.init(alloc);
     defer module.deinit();
 
-    const rfields = [_]types.TypeInfo.StructInfo.Field{
-        .{ .name = module.types.internString("ctx"), .ty = .i64 },
-        .{ .name = module.types.internString("concrete"), .ty = .i64 },
-    };
-    const recv_ty = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("Recv"), .fields = &rfields } });
-    const recv_ptr = module.types.intern(.{ .pointer = .{ .pointee = recv_ty } });
+    const set_ty = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("Set"), .fields = &.{} } });
     const i64_ptr = module.types.intern(.{ .pointer = .{ .pointee = .i64 } });
 
-    const routine_id = FuncId.fromIndex(2);
-    const nested_id = FuncId.fromIndex(3);
+    // fn leaf() = size_of(Set) — the read that waits for the sets to freeze.
+    var lb = Fb.init(alloc, &.{}, .i64);
+    const lbb = lb.block(&.{});
+    const measured = lb.add(lbb, inst(.{ .open_set_layout = .{ .measured = set_ty, .query = .size } }, .i64));
+    _ = lb.add(lbb, inst(.{ .ret = .{ .operand = ref(measured) } }, .void));
+    const leaf_id = module.addFunction(lb.func);
 
-    // fn arm(ctx) = 7   — the conformer admitted while the evaluation is parked.
-    const arm_params = [_]Function.Param{param(.i64)};
-    var ab = Fb.init(alloc, &arm_params, .i64);
-    const abb = ab.block(&.{});
-    const seven = ab.add(abb, inst(.{ .const_int = 7 }, .i64));
-    _ = ab.add(abb, inst(.{ .ret = .{ .operand = ref(seven) } }, .void));
-    const arm_id = module.addFunction(ab.func);
-
-    // fn other(ctx) = 99  — the conformer the routine already carries.
-    var ob = Fb.init(alloc, &arm_params, .i64);
-    const obb = ob.block(&.{});
-    const c99 = ob.add(obb, inst(.{ .const_int = 99 }, .i64));
-    _ = ob.add(obb, inst(.{ .ret = .{ .operand = ref(c99) } }, .void));
-    const other_id = module.addFunction(ob.func);
-
-    // The outlined dispatch routine is bodyless — `devirtualize` answers it.
-    const routine_params = [_]Function.Param{param(recv_ptr)};
-    const rb = Fb.init(alloc, &routine_params, .i64);
-    try std.testing.expectEqual(routine_id, module.addFunction(rb.func));
-
-    // fn nested() { cell += 1; r = routine(recv{0, i64}); return load(cell)*100 + r }
+    // fn nested() { cell += 1; r = leaf(); return load(cell)*100 + r }
     // The increment runs BEFORE the park and the reload AFTER it, so re-running
     // the parked instruction would show up as a doubled counter.
     var nb = Fb.init(alloc, &.{}, .i64);
@@ -1631,23 +1606,16 @@ test "comptime_vm: an evaluation parks inside a nested invocation and resumes th
     const one = nb.add(nbb, inst(.{ .const_int = 1 }, .i64));
     const bumped = nb.add(nbb, inst(.{ .add = .{ .lhs = ref(before), .rhs = ref(one) } }, .i64));
     _ = nb.add(nbb, inst(.{ .store = .{ .ptr = ref(cell), .val = ref(bumped), .val_ty = .i64 } }, .void));
-    const recv = nb.add(nbb, inst(.{ .alloca = recv_ty }, recv_ptr));
-    const g_ctx = nb.add(nbb, inst(.{ .struct_gep = .{ .base = ref(recv), .field_index = 0, .base_type = recv_ty } }, i64_ptr));
-    const zero = nb.add(nbb, inst(.{ .const_int = 0 }, .i64));
-    _ = nb.add(nbb, inst(.{ .store = .{ .ptr = ref(g_ctx), .val = ref(zero), .val_ty = .i64 } }, .void));
-    const g_concrete = nb.add(nbb, inst(.{ .struct_gep = .{ .base = ref(recv), .field_index = 1, .base_type = recv_ty } }, i64_ptr));
-    const tid = nb.add(nbb, inst(.{ .const_int = @as(i64, TypeId.i64.index()) }, .i64));
-    _ = nb.add(nbb, inst(.{ .store = .{ .ptr = ref(g_concrete), .val = ref(tid), .val_ty = .i64 } }, .void));
-    const dispatch_args = [_]Ref{ref(recv)};
-    const dispatched = nb.add(nbb, inst(.{ .call = .{ .callee = routine_id, .args = &dispatch_args } }, .i64));
+    const leaf_args = [_]Ref{};
+    const measured_here = nb.add(nbb, inst(.{ .call = .{ .callee = leaf_id, .args = &leaf_args } }, .i64));
     const after = nb.add(nbb, inst(.{ .load = .{ .operand = ref(cell) } }, .i64));
     const hundred = nb.add(nbb, inst(.{ .const_int = 100 }, .i64));
     const scaled = nb.add(nbb, inst(.{ .mul = .{ .lhs = ref(after), .rhs = ref(hundred) } }, .i64));
-    const total = nb.add(nbb, inst(.{ .add = .{ .lhs = ref(scaled), .rhs = ref(dispatched) } }, .i64));
+    const total = nb.add(nbb, inst(.{ .add = .{ .lhs = ref(scaled), .rhs = ref(measured_here) } }, .i64));
     _ = nb.add(nbb, inst(.{ .ret = .{ .operand = ref(total) } }, .void));
-    try std.testing.expectEqual(nested_id, module.addFunction(nb.func));
+    const nested_id = module.addFunction(nb.func);
 
-    // fn outer() = nested() + 1000 — the park happens one invocation deeper.
+    // fn outer() = nested() + 1000 — the park happens two invocations deeper.
     var fb = Fb.init(alloc, &.{}, .i64);
     const b0 = fb.block(&.{});
     const nested_args = [_]Ref{};
@@ -1657,19 +1625,13 @@ test "comptime_vm: an evaluation parks inside a nested invocation and resumes th
     _ = fb.add(b0, inst(.{ .ret = .{ .operand = ref(outer_sum) } }, .void));
     const outer_id = module.addFunction(fb.func);
 
-    // The routine is registered with the conformers known so far; `.i64` is not
-    // among them yet.
-    const initial_members = [_]TypeId{.f64};
-    const initial_arms = [_]FuncId{other_id};
-    try module.tagged_dispatch.append(alloc, .{ .routine = routine_id, .members = &initial_members, .arms = &initial_arms });
-
-    // With no scheduler the evaluation never parks: the missing arm fails through
-    // the ordinary staged path.
+    // With no scheduler the evaluation never parks: the unsettled measurement
+    // fails through the ordinary staged path.
     const unscheduled = vm.tryEval(alloc, &module, outer_id, null, null, null);
     defer unscheduled.destroy();
     try std.testing.expect(unscheduled.completed() == null);
     const bail = vm.last_bail_reason.?;
-    try std.testing.expect(std.mem.indexOf(u8, bail, "conformer arm") != null);
+    try std.testing.expect(std.mem.indexOf(u8, bail, "is not final") != null);
     // `failFmt` renders into the caller's allocator and hands the text to a host
     // that is about to stop the build, so nothing frees it there.
     alloc.free(bail);
@@ -1677,19 +1639,16 @@ test "comptime_vm: an evaluation parks inside a nested invocation and resumes th
     // An owner that cannot answer on the spot gets the evaluation BACK, parked:
     // its VM, task, heap, and VM-local Context outlive the call that started it,
     // and the fact it awaits is the one the awaiting instruction asked.
-    var deferring = ConformerPublisher{
-        .alloc = alloc,
+    var deferring = LayoutPublisher{
         .module = &module,
-        .routine = routine_id,
-        .members = .{ .f64, .i64 },
-        .arms = .{ other_id, arm_id },
+        .measured = set_ty,
+        .size = 7,
         .defer_first = true,
     };
     const owned = vm.tryEval(alloc, &module, outer_id, null, null, deferring.scheduler());
     defer owned.destroy();
     try std.testing.expect(owned.state == .parked);
-    try std.testing.expectEqual(routine_id, owned.state.parked.routine);
-    try std.testing.expectEqual(TypeId.i64, owned.state.parked.concrete);
+    try std.testing.expectEqual(set_ty, owned.state.parked.measured);
 
     // The owner publishes the fact itself and resumes the SAME evaluation. It
     // lands at the awaiting instruction — the counter below it was incremented
@@ -1701,25 +1660,22 @@ test "comptime_vm: an evaluation parks inside a nested invocation and resumes th
     try std.testing.expectEqual(@as(u32, 1), deferring.requests);
 
     // Same answer with a scheduler that resolves the fact in place.
-    module.tagged_dispatch.items[0] = .{ .routine = routine_id, .members = &initial_members, .arms = &initial_arms };
-    var publisher = ConformerPublisher{
-        .alloc = alloc,
+    deferring.retract();
+    var publisher = LayoutPublisher{
         .module = &module,
-        .routine = routine_id,
-        .members = .{ .f64, .i64 },
-        .arms = .{ other_id, arm_id },
+        .measured = set_ty,
+        .size = 7,
     };
     const scheduled = vm.tryEval(alloc, &module, outer_id, null, null, publisher.scheduler());
     defer scheduled.destroy();
     const result = scheduled.completed() orelse return error.VmShouldHaveHandledIt;
 
     // 1000 (outer) + 100 (the counter, incremented exactly ONCE across the park)
-    // + 7 (the arm admitted while parked). A re-executed pre-park instruction
+    // + 7 (the size published while parked). A re-executed pre-park instruction
     // would read 200 here; a lost `outer` frame would drop the 1000.
     try std.testing.expectEqual(@as(i64, 1107), result.int);
     try std.testing.expectEqual(@as(u32, 1), publisher.requests);
-    try std.testing.expectEqual(routine_id, publisher.seen_routine.?);
-    try std.testing.expectEqual(TypeId.i64, publisher.seen_concrete.?);
+    try std.testing.expectEqual(set_ty, publisher.seen_measured.?);
 }
 
 test "comptime_vm: Frame register file round-trips (no stack reclaim)" {

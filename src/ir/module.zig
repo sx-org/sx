@@ -51,16 +51,6 @@ pub const Module = struct {
     /// (trampoline emission, +alloc/-dealloc synthesis) can re-walk
     /// `members` for fields / methods / `#extends` / `#implements`.
     objc_defined_class_cache: std.ArrayList(ObjcDefinedClassEntry),
-    /// The dense conformer tags, assigned when the whole-program collection
-    /// fixpoint converges. They live here because `tagged_tag_of` stays
-    /// SYMBOLIC in the IR: a numeric tag is an emission-time artifact and does
-    /// not exist during compile-time execution (§7.9), so only codegen
-    /// resolves one. Membership in this map IS membership in the final set.
-    tagged_tags: std.AutoHashMap(TaggedPair, i64),
-    /// True once the fixpoint has converged and published the numbering above.
-    /// Before that the map is simply empty, which reads the same as "nothing
-    /// conforms" — so every consumer of a final-set fact gates on this.
-    tagged_sets_final: bool = false,
     /// The dense member tags of every declared open set, assigned when the
     /// program's sets freeze. A set's own numbering space, so a member's tag is
     /// an index into ITS set and nothing else.
@@ -74,12 +64,6 @@ pub const Module = struct {
     /// type — which is what lets a compile-time evaluation read a set's size
     /// without waiting for the freeze it cannot reach.
     open_set_layouts: std.AutoHashMap(TypeId, SetLayout),
-    /// The outlined tagged dispatch routines, one entry per emitted routine.
-    /// Runtime dispatch switches on the dense tag inside the routine; the
-    /// comptime VM cannot, because a comptime tagged value carries its
-    /// concrete type instead of a tag (§7.9). The entry lets the VM select
-    /// the arm by that type — devirtualizing against the carried impl.
-    tagged_dispatch: std.ArrayList(TaggedDispatchEntry),
     /// Top-level `asm { … }` blocks, in source order.
     /// Each is verbatim assembly appended to the LLVM module via
     /// `LLVMAppendModuleInlineAsm` at emit time; multiple blocks concatenate.
@@ -97,20 +81,11 @@ pub const Module = struct {
     /// need `__sx_ctx` prepended to their LLVM args/types.
     has_implicit_ctx: bool = false,
 
-    pub const TaggedPair = struct { proto: TypeId, concrete: TypeId };
-
     /// One member of one open set — the key of the set's own tag space.
     pub const OpenSetMember = struct { set: TypeId, member: TypeId };
 
     /// A settled measurement of a type an open set's layout decides.
     pub const SetLayout = struct { size: i64, alignment: i64 };
-
-    /// `arms[i]` implements the routine for conformer `members[i]`.
-    pub const TaggedDispatchEntry = struct {
-        routine: FuncId,
-        members: []const TypeId,
-        arms: []const FuncId,
-    };
 
     pub const ObjcSelectorEntry = struct { sel: []const u8, slot: GlobalId };
     pub const ObjcClassEntry = struct { name: []const u8, slot: GlobalId };
@@ -148,10 +123,8 @@ pub const Module = struct {
             .objc_selector_cache = std.ArrayList(ObjcSelectorEntry).empty,
             .objc_class_cache = std.ArrayList(ObjcClassEntry).empty,
             .objc_defined_class_cache = std.ArrayList(ObjcDefinedClassEntry).empty,
-            .tagged_tags = std.AutoHashMap(TaggedPair, i64).init(alloc),
             .open_set_tags = std.AutoHashMap(OpenSetMember, i64).init(alloc),
             .open_set_layouts = std.AutoHashMap(TypeId, SetLayout).init(alloc),
-            .tagged_dispatch = std.ArrayList(TaggedDispatchEntry).empty,
             .global_asm = std.ArrayList([]const u8).empty,
             .alloc = alloc,
             .slice_arena = std.heap.ArenaAllocator.init(alloc),
@@ -168,8 +141,8 @@ pub const Module = struct {
         self.objc_selector_cache.deinit(self.alloc);
         self.objc_class_cache.deinit(self.alloc);
         self.objc_defined_class_cache.deinit(self.alloc);
-        self.tagged_tags.deinit();
-        self.tagged_dispatch.deinit(self.alloc);
+        self.open_set_tags.deinit();
+        self.open_set_layouts.deinit();
         self.global_asm.deinit(self.alloc);
         self.types.deinit();
         self.slice_arena.deinit();

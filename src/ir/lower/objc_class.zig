@@ -851,7 +851,7 @@ fn dispatchAllocator(
     defer self.current_ctx_ref = saved;
     self.current_ctx_ref = ctx_addr;
     const cs = self.builder.current_span;
-    const out = self.emitProtocolDispatch(allocator, pd, method, args, alloc_ty, .{ .start = cs.start, .end = cs.end });
+    const out = self.emitProtocolDispatch(allocator, pd, method, args, .{ .start = cs.start, .end = cs.end });
     return if (out == Ref.none) null else out;
 }
 

@@ -18,7 +18,7 @@ const FuncId = inst_mod.FuncId;
 const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
-const lower_tagged = @import("tagged.zig");
+const lower_open_set = @import("open_set.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const ConstFoldFrame = lower.ConstFoldFrame;
@@ -681,7 +681,7 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
     // mutation, so a failed mint never leaves a partial type.
     const evaluation = comptime_vm.tryEval(self.alloc, self.module, func_id, null, null, self.factScheduler());
     if (evaluation.state == .parked) {
-        self.expansion.parkEvaluation(evaluation, "this compile-time type construction", lower_tagged.describeFact(self, evaluation.state.parked), span);
+        self.expansion.parkEvaluation(evaluation, "this compile-time type construction", lower_open_set.describeFact(self, evaluation.state.parked), span);
         return null;
     }
     defer evaluation.destroy();
@@ -892,7 +892,7 @@ pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {
     const ct_func_id = self.createComptimeFunction("__insert", .expansion, expr, .string);
     const evaluation = comptime_vm.tryEval(self.alloc, self.module, ct_func_id, null, null, self.factScheduler());
     if (evaluation.state == .parked) {
-        self.expansion.parkEvaluation(evaluation, "this `#insert`", lower_tagged.describeFact(self, evaluation.state.parked), expr.span);
+        self.expansion.parkEvaluation(evaluation, "this `#insert`", lower_open_set.describeFact(self, evaluation.state.parked), expr.span);
         return null;
     }
     defer evaluation.destroy();
@@ -1680,10 +1680,10 @@ pub fn enumHasVariant(self: *Lowering, variants: []const types.StringId, variant
 /// Which comptime phase a wrapper body belongs to (§7.9's phase law).
 pub const ComptimePhase = enum {
     /// Evaluated DURING lowering, so its result can still add declarations:
-    /// a type-fn body, an `#insert`. Nothing it observes about a conformer
-    /// set is final.
+    /// a type-fn body, an `#insert`. Nothing it observes about an open set is
+    /// final.
     expansion,
-    /// Evaluated after the conformer fixpoint — a `#run` constant, a `#run`
+    /// Evaluated after the convergence fixpoint — a `#run` constant, a `#run`
     /// side effect, a body-local `#run`. Sees the final sets.
     ordinary,
 };

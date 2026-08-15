@@ -35,7 +35,7 @@ const comptime_vm = @import("../comptime_vm.zig");
 const comptime_value = @import("../comptime_value.zig");
 
 const lower = @import("../lower.zig");
-const lower_tagged = @import("tagged.zig");
+const lower_open_set = @import("open_set.zig");
 const Lowering = lower.Lowering;
 
 /// Expand every module-scope driver the program declares, returning the
@@ -467,26 +467,6 @@ const Expansion = struct {
         }) catch {};
     }
 
-    /// The one canonical membership read, asked by a driver condition. A
-    /// positive is readable the moment it exists — membership only grows. A
-    /// negative is utterable only against a set nothing can still grow, so an
-    /// open set parks the driver against the fact instead of answering
-    /// something the very next driver could contradict.
-    fn readMembership(ex: *Expansion, proto_node: *const Node, target: TypeId) ?bool {
-        const query = ex.self.taggedMembershipOf(proto_node, target) orelse return null;
-        return switch (query.state) {
-            .member => true,
-            .absent_final => false,
-            .absent_unstable => blk: {
-                ex.self.expansion.awaitFact(std.fmt.allocPrint(ex.self.alloc, "'{s}' membership of '{s}' to be final", .{
-                    ex.self.formatTypeName(query.proto),
-                    ex.self.formatTypeName(target),
-                }) catch "a tagged conformer set to be final");
-                break :blk null;
-            },
-        };
-    }
-
     /// The ground a comptime evaluation stands on, as a scheduled fact.
     ///
     /// An evaluation reads the DECIDED declaration space — what the program
@@ -495,11 +475,12 @@ const Expansion = struct {
     /// layout, so it cannot be read before it is settled: while any undecided
     /// driver could still write a `#context_extend`, the fact is not
     /// publishable and the asking driver parks against it exactly as it parks
-    /// against an open conformer set. Once nothing can contribute, the decided
-    /// space registers (incrementally — a declaration is scanned once), the
-    /// Context layout assembles, and the exact `__sx_default_context` is emitted. A
-    /// field type a taken group has not declared yet is the same wait: another
-    /// driver's group can still supply it.
+    /// against an open set whose layout is not final. Once nothing can
+    /// contribute, the decided space registers (incrementally — a declaration is
+    /// scanned once), the Context layout assembles, and the exact
+    /// `__sx_default_context` is emitted. A field type a taken group has not
+    /// declared yet is the same wait: another driver's group can still supply
+    /// it.
     fn contextReady(ex: *Expansion) bool {
         const self = ex.self;
         if (self.implicit_ctx_enabled and !self.expansion.contextFinal()) {
@@ -571,7 +552,7 @@ const Expansion = struct {
             .value => |v| return v,
             .unevaluable => return null,
             .parked => |e| {
-                self.expansion.awaitFact(lower_tagged.describeFact(self, e.state.parked));
+                self.expansion.awaitFact(lower_open_set.describeFact(self, e.state.parked));
                 return null;
             },
         };
@@ -589,7 +570,7 @@ const Expansion = struct {
         const evaluation = comptime_vm.tryEval(self.alloc, self.module, func_id, null, null, self.factScheduler());
         if (evaluation.state == .parked) {
             ex.runs.put(node, .{ .parked = evaluation }) catch {};
-            self.expansion.awaitFact(lower_tagged.describeFact(self, evaluation.state.parked));
+            self.expansion.awaitFact(lower_open_set.describeFact(self, evaluation.state.parked));
             return null;
         }
         return ex.settleRun(node, evaluation);
@@ -747,21 +728,11 @@ const Expansion = struct {
         ex.primeMembershipFacts(proto_name, c.args[1], src);
         const target = ex.self.resolveTypeArg(c.args[1]);
         if (target == .unresolved) return null;
-        if (ex.taggedProtocolNamed(proto_name)) return ex.readMembership(c.args[0], target);
-        // The other kinds ask site-local impl VISIBILITY. Impls are
+        // A protocol kind asks site-local impl VISIBILITY. Impls are
         // declarations, so what an undecided driver could still write is what
         // the read waits on — in the polarities that kind owes (§7.9).
         const visible = ex.self.computeHasImpl(c.args[0], target);
         return if (ex.self.expansion.awaited != null) null else visible;
-    }
-
-    fn taggedProtocolNamed(ex: *Expansion, name: []const u8) bool {
-        const resolver = ex.self.protocolResolver();
-        if (resolver.resolveProtocol(name, ex.self.current_source_file)) |p| {
-            if (p.ty) |pty| return ex.self.isTagged(pty);
-        }
-        if (resolver.resolveParamProtocolHead(name, null)) |pd| return pd.kind == .tagged;
-        return false;
     }
 
     /// Register what a membership question names: the protocol, the queried

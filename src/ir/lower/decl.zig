@@ -338,14 +338,12 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // then the user-declared params (with type-erased pointers since JNI
     // doesn't carry sx-side types across the binding).
     self.synthesizeJniMainStubs();
-    // Pass 5a: converge the whole-program `tagged` conformer sets, then number
-    // the tags and emit each reached protocol's tag table and outlined
-    // dispatch routines. Runs after every body is lowered — an impl body
+    // Pass 5a: converge the program's open sets, then freeze them — number
+    // every member, write each set's type-id table, and emit its dispatch
+    // bodies. Runs after every body is lowered — an arm's implementation
     // monomorphized here can still enlarge a set, so the pass is a fixpoint —
-    // and before codegen, which is where the relocated tags are consumed. The
-    // open sets freeze in the same fixpoint: their last member can arrive from
-    // the same monomorphization, and their layout is what codegen reads.
-    self.convergeTaggedSets();
+    // and before codegen, which reads the frozen layout.
+    self.convergeOpenSets();
     // Pass 6: any impl block STILL unregistered has an unresolvable head or
     // types — every registration opportunity has run. Silence here let a
     // dead impl degrade its consumers.

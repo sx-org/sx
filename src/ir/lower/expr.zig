@@ -3830,25 +3830,15 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 if (recv_erased) delegate: {
                     const full_dst = self.resolveTypeArg(pc.type_expr);
                     if (full_dst == .unresolved) break :delegate; // diagnosed below
-                    // Tagged membership is whole-program and known here, so a
-                    // downcast to a non-conformer can never match: it is a
-                    // compile error, not a runtime false (spec §6.8).
-                    if (self.refuseOutOfSetDowncast(recv_ty, full_dst, pc.type_expr.span))
-                        break :blk self.builder.constUndef(full_dst);
                     // `p.(?*T)` is the SOFT ctx recovery: a checked `p.(*T)`,
-                    // not a downcast to the POINTER type. Neither the any-view
-                    // helpers (whose type word is the concrete `T`) nor the tag
-                    // compare (whose set holds `T`) can answer for `*T`.
-                    if (self.lowerSoftPointerRecovery(&pc, recv_ty, full_dst)) |answer|
+                    // not a downcast to the POINTER type. The any-view helpers,
+                    // whose type word is the concrete `T`, cannot answer for
+                    // `*T`.
+                    if (self.lowerSoftPointerRecovery(&pc, full_dst)) |answer|
                         break :blk answer;
                     switch (self.coercionResolver().classifyXX(recv_ty, full_dst)) {
                         .protocol_to_pointer, .protocol_to_raw, .protocol_to_any, .no_op, .erase_protocol, .erase_protocol_wrap => {},
                         else => {
-                            // Tagged receiver: the check is one immediate
-                            // compare against the constant tag (§6.8) — the
-                            // any-view helpers only serve the cold panic arm.
-                            if (self.isTagged(recv_ty) and self.scope != null)
-                                break :blk self.lowerTaggedDowncast(&pc, node, recv_ty, full_dst);
                             const xx_node = self.alloc.create(Node) catch unreachable;
                             xx_node.* = Node{ .data = .{ .unary_op = .{ .op = .xx, .operand = pc.operand } }, .span = pc.operand.span, .source_file = pc.operand.source_file };
                             if (pc.type_expr.data == .optional_type_expr) {

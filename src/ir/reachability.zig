@@ -114,14 +114,13 @@ fn collectConstFuncs(cv: inst.ConstantValue, out: *std.ArrayList(FuncId), alloc:
         .func_ref => |id| try out.append(alloc, id),
         .aggregate => |elems| for (elems) |e| try collectConstFuncs(e, out, alloc),
         // Carry no function reference.
-        .int, .float, .boolean, .string, .null_val, .undef, .zeroinit, .global_ref, .tagged_tag => {},
+        .int, .float, .boolean, .string, .null_val, .undef, .zeroinit, .global_ref => {},
     }
 }
 
 /// Can a comptime result of type `ty` carry a function into the image? A
-/// function value does, and so do the fn-ptr words of an ERASED protocol handle
-/// (a tagged handle carries a tag instead, and dispatches through a routine the
-/// binary already has).
+/// function value does, and so do the fn-ptr words of an ERASED protocol
+/// handle.
 fn escapeCarriesFunction(m: *const Module, ty: types_mod.TypeId, seen: *std.ArrayList(types_mod.TypeId), alloc: std.mem.Allocator) !bool {
     if (ty.isBuiltin() or ty == .unresolved) return false;
     for (seen.items) |s| if (s == ty) return false;

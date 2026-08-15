@@ -44,7 +44,6 @@ const lower_worklist = @import("lower/worklist.zig");
 const lower_context_ext = @import("lower/context_ext.zig");
 const lower_nominal = @import("lower/nominal.zig");
 const lower_protocol = @import("lower/protocol.zig");
-const lower_tagged = @import("lower/tagged.zig");
 const lower_coerce = @import("lower/coerce.zig");
 const lower_ffi = @import("lower/ffi.zig");
 const lower_objc_class = @import("lower/objc_class.zig");
@@ -590,7 +589,7 @@ pub const Lowering = struct {
     /// import-scoped coherence (§3) can refuse a second impl of the pair in the
     /// module that already declared one. Cross-module overlaps stay legal here
     /// and are decided at a use site that sees both.
-    protocol_impl_sites: std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_tagged.ImplSite)),
+    protocol_impl_sites: std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_protocol.ImplSite)),
     /// Exact receiver type recorded when a nullary-protocol impl method is
     /// declared. Synthesized default methods are authored in the protocol's
     /// module, where re-resolving their synthetic `self: *Target` annotation
@@ -770,42 +769,16 @@ pub const Lowering = struct {
     protocol_vtable_type_map: std.StringHashMap(TypeId), // protocol name → vtable struct TypeId
     protocol_vtable_type_by_type: std.AutoHashMap(TypeId, TypeId),
     protocol_vtable_global_map: std.AutoHashMap(ProtocolConcreteKey, inst_mod.GlobalId),
-    /// Whole-program `tagged` membership (lower/tagged.zig). `tagged_reached`
-    /// holds the value-used instantiations, `tagged_members` their conformer
-    /// sets, `tagged_tags` the numbering the collection fixpoint produces.
-    tagged_reached: std.AutoHashMap(TypeId, void),
-    tagged_members: std.AutoHashMap(TypeId, std.ArrayList(TypeId)),
-    tagged_tags: std.AutoHashMap(lower_tagged.PairKey, i64),
-    tagged_arms: std.AutoHashMap(lower_tagged.ArmKey, FuncId),
-    tagged_dispatch_fns: std.AutoHashMap(lower_tagged.MethodKey, FuncId),
-    tagged_type_id_tables: std.AutoHashMap(TypeId, inst_mod.GlobalId),
-    tagged_pending: std.ArrayList(lower_tagged.PendingRoutine),
-    /// Every declared impl site of a tagged `(protocol, conformer)` pair.
-    /// Tagged coherence is GLOBAL — a duplicate is an error regardless of
-    /// import visibility — but only for a REACHED instantiation, so the check
-    /// runs with the collection fixpoint rather than at registration.
-    tagged_impl_sites: std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)),
     /// The one worklist every expansion driver registers on and is drained by
     /// (lower/worklist.zig). Its unretired contributions are what finality —
     /// `setFinal`, a namespace's member surface — reads before publishing.
     expansion: lower_worklist.Worklist,
-    /// Tagged protocols an impl on a TEMPLATE target (`impl P for Box($T)`)
-    /// can still admit conformers into: one member per generic instance the
-    /// program spells, so such a set is never closed before publication.
-    tagged_template_impls: std.AutoHashMap(TypeId, void),
-    /// Dispatch routines whose arms are being materialized right now. An arm's
-    /// impl body can dispatch through the routine that is materializing it.
-    tagged_publishing: std.AutoHashMap(FuncId, void),
     /// Which comptime phase the wrapper body being lowered belongs to, or null
     /// outside every comptime body (§7.9's phase law). An EXPANSION-driving
     /// body runs during lowering, so it reads the sets as they stand and can
     /// carry no answer to finality. An ORDINARY `#run` runs after convergence
     /// and sees the final sets.
     comptime_phase: ?lower_comptime.ComptimePhase = null,
-    /// True while the operand of a `return` is being lowered. Erasing an
-    /// RVALUE into a tagged value there has nothing durable to borrow — the
-    /// frame is about to die (spec §6.2).
-    in_return_expr: bool = false,
     param_impl_map: std.StringHashMap(std.ArrayList(ParamImplEntry)), // "Proto\x00<arg_mangled>\x00<src_mangled>" → impl entries (parameterised protocols only; the list lets overlap detection see cross-module duplicates)
     /// One materialized instantiation of a parameterized protocol family, by
     /// its protocol TypeId. The base identity name plus the canonical argument
@@ -939,8 +912,8 @@ pub const Lowering = struct {
         span: ast.Span,
         /// The declaration itself. A blanket impl's head and source spell
         /// binders whose resolved TypeIds say nothing about which position
-        /// each binder occupies, so conformer collection unifies against the
-        /// written shapes.
+        /// each binder occupies, so matching unifies against the written
+        /// shapes.
         block: *const ast.ImplBlock,
     };
 
@@ -1223,7 +1196,7 @@ pub const Lowering = struct {
             .plain_struct_authors = std.AutoHashMap(TypeId, PlainStructAuthor).init(module.alloc),
             .protocol_impl_methods = std.AutoHashMap(ProtocolImplMethodKey, ProtocolImplMethod).init(module.alloc),
             .protocol_impl_decls = std.AutoHashMap(ProtocolConcreteKey, void).init(module.alloc),
-            .protocol_impl_sites = std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_tagged.ImplSite)).init(module.alloc),
+            .protocol_impl_sites = std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_protocol.ImplSite)).init(module.alloc),
             .protocol_impl_receiver_types = std.AutoHashMap(*const ast.FnDecl, TypeId).init(module.alloc),
             .protocol_default_dispatch = null,
             .registered_protocol_impls = std.AutoHashMap(*const ast.ImplBlock, void).init(module.alloc),
@@ -1253,17 +1226,7 @@ pub const Lowering = struct {
             .protocol_vtable_type_map = std.StringHashMap(TypeId).init(module.alloc),
             .protocol_vtable_type_by_type = std.AutoHashMap(TypeId, TypeId).init(module.alloc),
             .protocol_vtable_global_map = std.AutoHashMap(ProtocolConcreteKey, inst_mod.GlobalId).init(module.alloc),
-            .tagged_reached = std.AutoHashMap(TypeId, void).init(module.alloc),
-            .tagged_members = std.AutoHashMap(TypeId, std.ArrayList(TypeId)).init(module.alloc),
-            .tagged_tags = std.AutoHashMap(lower_tagged.PairKey, i64).init(module.alloc),
-            .tagged_arms = std.AutoHashMap(lower_tagged.ArmKey, FuncId).init(module.alloc),
-            .tagged_dispatch_fns = std.AutoHashMap(lower_tagged.MethodKey, FuncId).init(module.alloc),
-            .tagged_type_id_tables = std.AutoHashMap(TypeId, inst_mod.GlobalId).init(module.alloc),
-            .tagged_pending = std.ArrayList(lower_tagged.PendingRoutine).empty,
-            .tagged_impl_sites = std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)).init(module.alloc),
             .expansion = lower_worklist.Worklist.init(module.alloc),
-            .tagged_template_impls = std.AutoHashMap(TypeId, void).init(module.alloc),
-            .tagged_publishing = std.AutoHashMap(FuncId, void).init(module.alloc),
             .param_impl_map = std.StringHashMap(std.ArrayList(ParamImplEntry)).init(module.alloc),
             .param_protocol_instances = std.AutoHashMap(TypeId, ParamProtocolInstance).init(module.alloc),
             .param_impl_pack_map = std.StringHashMap(std.ArrayList(PackParamImplEntry)).init(module.alloc),
@@ -1285,6 +1248,15 @@ pub const Lowering = struct {
             .shape_inferred_sets = std.StringHashMap([]const u32).init(module.alloc),
             .program_index = ProgramIndex.init(module.alloc),
         };
+    }
+
+    /// A freshly allocated AST node for compiler-synthesized source (a dispatch
+    /// call, an `@Init` recipe body). Lives on the lowering arena, so it
+    /// outlives every deferred lowering that may still read it.
+    pub fn synthNode(self: *Lowering, data: ast.Node.Data, span: ast.Span, src: ?[]const u8) *Node {
+        const n = self.alloc.create(Node) catch @panic("out of memory");
+        n.* = .{ .data = data, .span = span, .source_file = src };
+        return n;
     }
 
     // ── Layout delegators ───────────────────────────────────────────
@@ -3453,33 +3425,14 @@ pub const Lowering = struct {
     pub const protocolKindOf = lower_protocol.protocolKindOf;
     pub const checkComptimeEscape = lower_protocol.checkComptimeEscape;
 
-    // ── tagged protocols (lower/tagged.zig) ──
-    pub const isTagged = lower_tagged.isTagged;
-    pub const taggedIn = lower_tagged.taggedIn;
-    pub const reachTagged = lower_tagged.reachTagged;
-    pub const seedTagged = lower_tagged.seedTagged;
-    pub const refuseEmptyTaggedSet = lower_tagged.refuseEmptySet;
-    pub const refuseNonMemberTagged = lower_tagged.refuseNonMember;
-    pub const buildTaggedValue = lower_tagged.buildTaggedValue;
-    pub const protocolTypeIdWord = lower_tagged.protocolTypeIdWord;
-    pub const emitTaggedDispatch = lower_tagged.emitTaggedDispatch;
-    pub const convergeTaggedSets = lower_tagged.convergeTaggedSets;
-    pub const taggedConformsNow = lower_tagged.taggedConformsNow;
-    pub const refuseUnstableMembership = lower_tagged.refuseUnstableMembership;
-    pub const noteTemplateTaggedImpl = lower_tagged.noteTemplateImpl;
     pub const lowerProtocolProbe = lower_protocol.lowerProtocolProbe;
-    pub const recordTaggedImplSite = lower_tagged.recordImplSite;
-    pub const refuseOutOfSetDowncast = lower_tagged.refuseOutOfSetDowncast;
-    pub const lowerTaggedDowncast = lower_tagged.lowerTaggedDowncast;
-    pub const lowerSoftPointerRecovery = lower_tagged.lowerSoftPointerRecovery;
-    pub const warnDeadTypeSwitchArm = lower_tagged.warnDeadTypeSwitchArm;
+    pub const protocolTypeIdWord = lower_protocol.protocolTypeIdWord;
+    pub const lowerSoftPointerRecovery = lower_protocol.lowerSoftPointerRecovery;
     pub const allocViaAllocatorValue = lower_protocol.allocViaAllocatorValue;
     pub const firstUnimplementedProtocolMethod = lower_protocol.firstUnimplementedProtocolMethod;
     pub const resolveConcreteTypeName = lower_protocol.resolveConcreteTypeName;
     pub const checkBoundBindings = lower_bound.checkBindings;
     pub const computeHasImpl = lower_protocol.computeHasImpl;
-    pub const taggedMembershipOf = lower_protocol.taggedMembershipOf;
-    pub const factScheduler = lower_tagged.factScheduler;
 
     // --- lower/coerce.zig (lower_coerce) ---
     pub const lowerXX = lower_coerce.lowerXX;
@@ -3768,7 +3721,6 @@ pub const Lowering = struct {
     pub const computeEnvSize = lower_closure.computeEnvSize;
 
     // --- lower/init_plan.zig (`@Init(T)`) ---
-    pub const synthNode = lower_tagged.synthNode;
     pub const initTargetOf = lower_init_plan.initTargetOf;
     pub const initBinderType = lower_init_plan.binderType;
     pub const formInitPlan = lower_init_plan.formInitPlan;
@@ -3790,6 +3742,8 @@ pub const Lowering = struct {
     pub const openSetLayoutDependsOnSet = lower_open_set.layoutDependsOnSet;
     pub const openSetLayoutFinal = lower_open_set.layoutFinal;
     pub const freezeOpenSets = lower_open_set.freezeSets;
+    pub const convergeOpenSets = lower_open_set.converge;
+    pub const factScheduler = lower_open_set.factScheduler;
     pub const refuseUnfrozenLayout = lower_open_set.refuseUnfrozenLayout;
     pub const openSetDeclaresMembership = lower_open_set.declaresMembership;
     pub const openSetOfMember = lower_open_set.setOfMember;

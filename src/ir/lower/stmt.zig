@@ -170,12 +170,6 @@ fn lowerTail(self: *Lowering, tail: *const Node, demand: TailDemand) BodyTail {
             // statement it yields no value; a value-returning function's missing
             // tail value is caught by the missing-value diagnostic instead.
             self.force_block_value = !isNoElseValuelessIf(tail);
-            const saved_in_return = self.in_return_expr;
-            // A function's returned value is in RETURN position — the same §6.2
-            // refusals as an explicit `return <expr>;`. Nested statements clear
-            // `in_return_expr` in `lowerStmt`, so only the value chain is armed.
-            if (demand == .return_value) self.in_return_expr = true;
-            defer self.in_return_expr = saved_in_return;
             const v = self.tryLowerAsExpr(tail) orelse return .no_value;
             if (expressionDiverged(self, v)) return .terminated;
             return .{ .value = v };
@@ -620,11 +614,6 @@ pub fn tryLowerAsExpr(self: *Lowering, node: *const Node) ?Ref {
 }
 
 pub fn lowerStmt(self: *Lowering, node: *const Node) void {
-    // Statement context is never return-position for §6.2: a binding like
-    // `v := Widget{}.(View)` inside a returned block/if arm must stay legal.
-    const saved_in_return = self.in_return_expr;
-    self.in_return_expr = false;
-    defer self.in_return_expr = saved_in_return;
     // Stamp this statement's span onto its instructions; see
     // `lowerExpr`.
     const saved_span = self.builder.current_span;
@@ -1334,12 +1323,6 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
         // a = …` ignoring names).
         if (self.effectiveReturnType()) |slots_ty| self.validateMultiReturn(val, slots_ty);
     }
-    // Erasing an rvalue into a tagged value borrows a frame temp, which at a
-    // `return` would outlive its frame — the flag is what the erasure path
-    // reads to refuse (spec §6.2).
-    const old_in_return = self.in_return_expr;
-    self.in_return_expr = true;
-    defer self.in_return_expr = old_in_return;
     // Set target_type to function return type so null_literal etc. get the right type.
     // When inlining a comptime body, the *inlined* fn's declared return type wins
     // over the caller's — otherwise `return 42` inside a `-> i64` body lowered into

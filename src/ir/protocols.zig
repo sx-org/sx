@@ -527,23 +527,17 @@ pub const ProtocolResolver = struct {
         // the prefix through the any machinery. Dunder name: a protocol
         // METHOD named `type_id` must not collide (same reason as
         // `__vtable`); the public spelling is ProtocolRaw's `type_id`.
-        // A `tagged` value is {ctx, __tag} instead — 16 bytes, always: the
-        // dense conformer index replaces the stamped type id, and the
-        // concrete id is synthesized through the protocol's tag table.
         const void_ptr_ty = table.ptrTo(.void);
         fields.append(self.l.alloc, .{
             .name = table.internString("ctx"),
             .ty = void_ptr_ty,
         }) catch unreachable;
         fields.append(self.l.alloc, .{
-            .name = table.internString(if (pd.kind == .tagged) "__tag" else "__type_id"),
-            .ty = if (pd.kind == .tagged) .i64 else .type_value,
+            .name = table.internString("__type_id"),
+            .ty = .type_value,
         }) catch unreachable;
 
-        if (pd.kind == .tagged) {
-            // No third word: dispatch is an outlined switch on the tag,
-            // emitted at whole-program link.
-        } else if (pd.kind == .@"inline") {
+        if (pd.kind == .@"inline") {
             // One fn-ptr field per DISPATCHABLE protocol method (Era-2:
             // a method whose signature mentions `Self` past the receiver
             // has no slot — it is only callable through a generic bound).
@@ -609,18 +603,13 @@ pub const ProtocolResolver = struct {
                 if (!self.l.refuseCursorEscape(ret, rt.span, "declare a return of type")) _ = self.l.refuseCursorSignature(ret, rt.span);
             }
             const self_occ = program_index_mod.protocolMethodSelfOccurrence(method);
-            const shape = program_index_mod.protocolMethodSelfShape(self.l.alloc, method);
-            var info: ProtocolMethodInfo = .{
+            const info: ProtocolMethodInfo = .{
                 .name = method.name,
                 .param_types = self.l.alloc.dupe(TypeId, ptypes.items) catch unreachable,
                 .ret_type = ret,
                 .dispatchable = self_occ == null,
                 .self_param = if (self_occ) |occ| occ.param_name else null,
-                .self_params = shape.direct_params,
-                .returns_self = shape.direct_return,
-                .self_at_depth = shape.at_depth,
             };
-            program_index_mod.applyDispatchSignature(self.l.alloc, &info, pd.kind, protocol_ty);
             method_infos.append(self.l.alloc, info) catch unreachable;
         }
         const identity_name = self.protocolIdentityName(pd);
@@ -643,7 +632,7 @@ pub const ProtocolResolver = struct {
 
         // For vtable protocols, create the vtable struct type — one slot per
         // DISPATCHABLE method (Era-2), same filter as the `inline`-kind field list.
-        if (pd.kind != .@"inline" and pd.kind != .tagged) {
+        if (pd.kind != .@"inline") {
             var vtable_fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
             for (pd.methods) |method| {
                 if (program_index_mod.protocolMethodSelfOccurrence(method) != null) continue;
@@ -680,8 +669,8 @@ pub const ProtocolResolver = struct {
 
     /// Record one declared impl site of a concrete pair. Returns true when the
     /// site duplicates one the same module already declared — it is reported
-    /// and dropped, so the cross-module and tagged checks keep seeing at most
-    /// one site per module and a same-module pair yields one diagnostic.
+    /// and dropped, so the cross-module check keeps seeing at most one site per
+    /// module and a same-module pair yields one diagnostic.
     fn recordConcreteImplSite(
         self: ProtocolResolver,
         key: lower.ProtocolConcreteKey,
@@ -740,21 +729,11 @@ pub const ProtocolResolver = struct {
                 return;
             }
             const key = self.protocolConcreteKey(proto.ty, proto_name, cty);
-            // A tagged pair's coherence is whole-program and belongs to the
-            // conformer fixpoint (lower/tagged.zig), which sees the same-module
-            // pair too — reporting it here as well would name it twice.
-            const is_tagged = if (proto.ty) |pty| self.l.isTagged(pty) else false;
-            if (!is_tagged and self.recordConcreteImplSite(key, proto_name, cty, decl.span, source)) {
+            if (self.recordConcreteImplSite(key, proto_name, cty, decl.span, source)) {
                 self.l.registered_protocol_impls.put(ib, {}) catch @panic("out of memory");
                 return;
             }
             self.l.protocol_impl_decls.put(key, {}) catch @panic("out of memory");
-            if (proto.ty) |pty| self.l.recordTaggedImplSite(pty, cty, decl.span, source);
-        } else if (proto.ty) |pty| {
-            // A template target (`impl P for Box($T)`) names no one conformer:
-            // each generic instance the program spells joins the set, so a
-            // tagged set with such an impl stays open until publication.
-            self.l.noteTemplateTaggedImpl(pty);
         }
         // Collect explicitly implemented method names
         var impl_methods = std.StringHashMap(void).init(self.l.alloc);
@@ -873,15 +852,6 @@ fn registerGenericParamImpl(
     }
     if (!any_proto_binder and !any_target_binder) return;
 
-    // A TAGGED family collects members through whole-program membership rather
-    // than this keyed index, so a GENERIC CARRIER whose binder the head never
-    // mentions is ordinary there — `impl Series(f32) for Repeat($U)` is one
-    // member per instantiated `Repeat`. That exemption covers only that shape.
-    const is_tagged = if (self.resolveProtocol(proto_name, decl.source_file)) |rp|
-        rp.decl.kind == .tagged
-    else
-        false;
-
     // A binder in the protocol arguments with no carrier instantiation to bind it
     // from is unreachable under EITHER machinery: keyed lookup has no binding to
     // read, and membership would be an open-ended family rather than one member
@@ -893,7 +863,7 @@ fn registerGenericParamImpl(
         }
         return;
     }
-    if (!is_tagged and any_target_binder and !any_proto_binder) {
+    if (any_target_binder and !any_proto_binder) {
         if (self.l.diagnostics) |d| {
             const id = d.addFmtId(.err, decl.span, "'impl {s}' names a generic carrier but no binder among its type arguments", .{proto_name});
             d.addHelpFmt(id, decl.span, null, "spell the carrier's binder in the protocol arguments too ('impl {s}($T) for …($T)'), or give the carrier a concrete instantiation", .{proto_name});

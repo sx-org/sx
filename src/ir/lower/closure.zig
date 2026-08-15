@@ -317,12 +317,6 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     // lambda inside a lambda) restores the enclosing context.
     const saved_in_lambda = self.in_lambda_body;
     self.in_lambda_body = true;
-    // The body is a separate function: the enclosing function's return
-    // position says nothing about it, and letting the flag leak in would
-    // refuse a frame temp that is legal inside the lambda (spec §6.2).
-    const saved_in_return_lam = self.in_return_expr;
-    self.in_return_expr = false;
-    defer self.in_return_expr = saved_in_return_lam;
     // A lambda is its own function boundary: an enclosing `-> (x: A, y: B)`
     // function's named-return slots are not this body's to synthesize.
     const saved_nrn_lam = self.named_return_names;

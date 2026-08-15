@@ -1120,14 +1120,12 @@ pub const ProtocolKind = enum {
     constraint,
     vtable,
     @"inline",
-    tagged,
 
     pub fn spelling(self: ProtocolKind) []const u8 {
         return switch (self) {
             .constraint => "constraint",
             .vtable => "vtable",
             .@"inline" => "inline",
-            .tagged => "tagged",
         };
     }
 };
