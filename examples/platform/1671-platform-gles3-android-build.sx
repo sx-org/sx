@@ -1,9 +1,8 @@
 // GLES3 backend compile gate for the Android target. Erasing
 // `Gles3Gpu` to `GPU` pulls every impl method body into type-checking,
-// so an unresolved GL call anywhere in the backend fails this example.
+// so an unresolved GL call in any impl method fails this example.
 //
-// Compile-only: the `.so` targets aarch64-linux-android and cannot run
-// on the host.
+// Compile-only: the Android target cannot execute on the host.
 
 #import "modules/std.sx";
 #import "modules/build.sx";
