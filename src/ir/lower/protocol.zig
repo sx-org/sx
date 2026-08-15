@@ -558,7 +558,7 @@ pub fn getOrCreateVtableGlobal(
     return gid;
 }
 
-/// Fold `<global>` / `xx <global>` at a BORROW-kind protocol-typed static
+/// Fold `<global>` / `xx <global>` at a non-constraint protocol-typed static
 /// initializer into that kind's constant: `{ ctx, __type_id, thunk fn-refs… }`
 /// for `inline`, `{ ctx, __type_id, &vtable }` for `vtable`, `{ ctx, __tag }`
 /// for `tagged`. Only an IDENTIFIER naming a

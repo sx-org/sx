@@ -1,8 +1,8 @@
 // A protocol-typed Context default is a BORROW (specs.md §7.6) at every borrow
 // kind, `vtable #identity` included: it must name a global instance to borrow.
-// An rvalue — a struct literal, a call — has no address, and serializing one
-// field-wise against the handle's layout would build a value whose ctx word is
-// a payload byte: it compiles and traps at the first dispatch.
+// An rvalue — a struct literal, a call — has no address, so the declaration
+// refuses it with the same wording the `inline` and tagged rows already use
+// at this site.
 #import "modules/std.sx";
 
 Sink :: protocol vtable #identity { emit :: (self: *Self, n: i64) -> i64; }
