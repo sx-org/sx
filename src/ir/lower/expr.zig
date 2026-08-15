@@ -5423,16 +5423,39 @@ pub fn lowerChainedComparison(self: *Lowering, cc: *const ast.ChainedComparison)
         return self.builder.constBool(true);
     }
 
-    // The chain's value is `bool`; its operands take no contextual type from
-    // the ambient expected type, exactly as a single comparison's don't.
+    // The chain's value is `bool`; the ambient expected type describes THAT
+    // value, never the operands. An operand carrying no type of its own — an
+    // `xx` cast is the shape — takes its target from a neighboring operand.
     const ambient_tt = self.target_type;
     self.target_type = null;
+    defer self.target_type = ambient_tt;
     var refs = std.ArrayList(Ref).empty;
     defer refs.deinit(self.alloc);
-    for (cc.operands) |op| {
+    for (cc.operands, 0..) |op, i| {
+        if (self.inferExprType(op) == .unresolved) {
+            var peer: ?TypeId = null;
+            if (i > 0) {
+                const prev = self.inferExprType(cc.operands[i - 1]);
+                if (prev != .unresolved and prev != .void) peer = prev;
+            }
+            if (peer == null) {
+                for (cc.operands[i + 1 ..]) |later_op| {
+                    const later = self.inferExprType(later_op);
+                    if (later != .unresolved and later != .void) {
+                        peer = later;
+                        break;
+                    }
+                }
+            }
+            if (peer == null and i > 0) {
+                const prev_ty = self.builder.getRefType(refs.items[i - 1]);
+                if (prev_ty != .unresolved and prev_ty != .void) peer = prev_ty;
+            }
+            if (peer) |p| self.target_type = p;
+        }
         refs.append(self.alloc, self.lowerExpr(op)) catch unreachable;
+        self.target_type = null;
     }
-    self.target_type = ambient_tt;
 
     var result = self.emitCmp(refs.items[0], refs.items[1], cc.ops[0]);
 

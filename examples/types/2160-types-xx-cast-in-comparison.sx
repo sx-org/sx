@@ -43,9 +43,8 @@ main :: () -> i32 {
     n : i64 = 2;
     print("float    : {}\n", f > xx n);
 
-    // A chained comparison's operands take no type from the ambient `bool`.
-    lo : i32 = 1;
-    chained : bool = lo < a == xx b;
+    lo : i32 = -2;
+    chained : bool = lo < neg == xx wide;
     print("chained  : {}\n", chained);
     0
 }
