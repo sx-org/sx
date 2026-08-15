@@ -16,6 +16,12 @@
 //     matching the renderer.sx shader contract. Other slots are no-ops.
 //   - `set_texture(slot=0, tex)` binds texture unit 0 and sets
 //     `uniform sampler2D uTex` to 0. Other slots are no-ops.
+//   - The skinned shader takes the bone palette as
+//     `uniform vec4 uBones[240]`. Bone `i` is the three rows
+//     `uBones[i*3+0..2]` of a row-major affine transform, applied by
+//     dotting each row against `vec4(position, 1.0)`. 240 rows is
+//     `GPU_MAX_BONES * 3`; with the projection matrix's 4 vectors it
+//     stays under the 256 vertex uniform vectors GLES3 guarantees.
 //   - The shader sources passed to `create_shader(vsrc, fsrc)` must be
 //     a GLES vertex + fragment pair (NOT the Metal MSL combined source
 //     the Metal backend takes — caller branches on OS).
@@ -46,6 +52,7 @@ Gles3ShaderSlot :: struct {
     proj_loc: i32 = 0 - 1;
     tex_loc:  i32 = 0 - 1;
     tint_loc: i32 = 0 - 1;
+    bones_loc: i32 = 0 - 1;
 }
 
 Gles3Gpu :: struct {
@@ -58,12 +65,19 @@ Gles3Gpu :: struct {
     // MeshVertex layout for draw_indexed, kept apart from `vao` so the
     // two attribute configurations never overwrite each other.
     mesh_vao: u32 = 0;
+    // SkinnedVertex layout for draw_skinned, apart from both so the
+    // three attribute configurations never overwrite each other.
+    skin_vao: u32 = 0;
 
     current_shader: u32 = 0;
     current_vbo: u32 = 0;
     current_ibo: u32 = 0;
     depth_mode: DepthMode = .disabled;
     gl_loaded: bool = false;
+
+    // Only the first `bone_count` matrices carry a live transform.
+    bone_palette: [GPU_MAX_BONES]BoneMatrix = ---;
+    bone_count: i32 = 0;
 
     shaders:  List(Gles3ShaderSlot)  = .{};
     buffers:  List(u32)              = .{};
@@ -102,6 +116,7 @@ impl GPU for Gles3Gpu {
         // the renderer wants until it tells us via set_vertex_buffer.
         glGenVertexArrays(1, *self.vao);
         glGenVertexArrays(1, *self.mesh_vao);
+        glGenVertexArrays(1, *self.skin_vao);
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -149,6 +164,7 @@ impl GPU for Gles3Gpu {
             proj_loc = glGetUniformLocation(prog, "uProj".ptr),
             tex_loc  = glGetUniformLocation(prog, "uTex".ptr),
             tint_loc = glGetUniformLocation(prog, "uTint".ptr),
+            bones_loc = glGetUniformLocation(prog, "uBones".ptr),
         };
         self.shaders.append(slot, self.parent_allocator);
         xx self.shaders.len
@@ -389,6 +405,16 @@ impl GPU for Gles3Gpu {
         gles3_apply_depth_mode(self);
     }
 
+    set_bone_palette :: (self: *Gles3Gpu, data: *void, count: i32) {
+        inline if OS != .android { return; }
+        if data == null { return; }
+        if count < 0 { return; }
+        if count > GPU_MAX_BONES { return; }
+        n : i64 = xx count;
+        c.memcpy(xx *self.bone_palette[0], data, n * size_of(BoneMatrix));
+        self.bone_count = count;
+    }
+
     draw_triangles :: (self: *Gles3Gpu, vertex_offset: i32, vertex_count: i32) {
         inline if OS != .android { return; }
         if vertex_count <= 0 { return; }
@@ -417,6 +443,39 @@ impl GPU for Gles3Gpu {
         byte_offset : i64 = xx (index_offset * 4);
         glDrawElements(GL_TRIANGLES, index_count, GL_UNSIGNED_INT, xx byte_offset);
     }
+
+    draw_skinned :: (self: *Gles3Gpu, index_offset: i32, index_count: i32) {
+        inline if OS != .android { return; }
+        if index_count <= 0 { return; }
+        if index_offset < 0 { return; }
+        if self.bone_count <= 0 { return; }
+        if self.current_vbo == 0 { return; }
+        if self.current_ibo == 0 { return; }
+
+        glBindVertexArray(self.skin_vao);
+        glBindBuffer(GL_ARRAY_BUFFER, self.current_vbo);
+        // SkinnedVertex: position at 0, normal at 12, uv at 24, joints at
+        // 32, weights at 48, stride 64.
+        glVertexAttribPointer(0, 3, GL_FLOAT, 0, 64, xx 0);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(1, 3, GL_FLOAT, 0, 64, xx 12);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(2, 2, GL_FLOAT, 0, 64, xx 24);
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(3, 4, GL_FLOAT, 0, 64, xx 32);
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(4, 4, GL_FLOAT, 0, 64, xx 48);
+        glEnableVertexAttribArray(4);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.current_ibo);
+
+        bones_loc := gles3_bones_loc(self);
+        if bones_loc >= 0 {
+            glUniform4fv(bones_loc, 3 * self.bone_count, xx *self.bone_palette[0]);
+        }
+
+        byte_offset : i64 = xx (index_offset * 4);
+        glDrawElements(GL_TRIANGLES, index_count, GL_UNSIGNED_INT, xx byte_offset);
+    }
 }
 
 gles3_apply_depth_mode :: (self: *Gles3Gpu) {
@@ -433,6 +492,14 @@ gles3_apply_depth_mode :: (self: *Gles3Gpu) {
     } else {
         glDepthFunc(GL_LEQUAL);
     }
+}
+
+gles3_bones_loc :: (self: *Gles3Gpu) -> i32 {
+    inline if OS != .android { return 0 - 1; }
+    if self.current_shader == 0 { return 0 - 1; }
+    cs64 : i64 = xx self.current_shader;
+    if cs64 > self.shaders.len { return 0 - 1; }
+    self.shaders.items[self.current_shader - 1].bones_loc
 }
 
 gles3_lookup_buffer :: (self: *Gles3Gpu, handle: u32) -> u32 {
