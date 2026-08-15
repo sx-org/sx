@@ -212,8 +212,8 @@ pub var last_bail_was_bridge: bool = false;
 // ── Fact-await seam ─────────────────────────────────────────────────────────
 //
 // A comptime evaluation can reach a question whose answer is not yet FINAL. The
-// one such question is "which conformer arm implements this symbolic dispatch",
-// since a conformance admitted later still grows the routine's member set.
+// one such question is "what is this open set's layout", since a member declared
+// later still grows the set.
 // Instead of failing on the spot, the evaluation awaits that fact: it parks, the driver
 // asks the evaluation's own scheduler, and the same continuation resumes with
 // the answer. A scheduler that cannot answer YET leaves the evaluation parked
@@ -221,22 +221,12 @@ pub var last_bail_was_bridge: bool = false;
 // With no scheduler every await answers `.unavailable` on the spot and the
 // evaluation refuses through its ordinary staged path.
 
-/// The fact a parked evaluation is waiting on.
+/// The fact a parked evaluation is waiting on: an open set's layout, read
+/// before the program's sets froze — a member declared later would change the
+/// answer.
 pub const FactRequest = struct {
-    kind: Kind,
-    /// `.conformer_arm`: the outlined dispatch routine whose conformer set is
-    /// not final. `.set_layout`: the routine the reading evaluation is in.
-    routine: FuncId,
-    /// `.conformer_arm`: the concrete type the receiver carries — the member the
-    /// routine lacks. `.set_layout`: the type whose measurement waits.
-    concrete: TypeId,
-
-    pub const Kind = enum {
-        conformer_arm,
-        /// An open set's layout, which an evaluation reads before the program's
-        /// sets froze: a member declared later would change the answer.
-        set_layout,
-    };
+    /// The type whose measurement waits.
+    measured: TypeId,
 };
 
 /// The answer to an awaited fact. `.published` means it is now recorded in the
@@ -679,10 +669,6 @@ pub const Vm = struct {
             .float => |v| try self.writeField(table, addr, ty, @bitCast(v)),
             .func_ref => |fid| try self.writeField(table, addr, ty, funcRefWord(fid)),
             .global_ref => |gid| try self.writeField(table, addr, ty, try self.evalGlobalAddress(gid)),
-            // The VM's tag word is the conformer's own type, exactly what
-            // `tagged_tag_of` answers here — the dense number is a link-time
-            // artifact (§7.9).
-            .tagged_tag => |t| try self.writeField(table, addr, ty, @as(Reg, t.concrete.index())),
             .null_val, .zeroinit, .undef => {}, // destination already zeroed
             .aggregate => |fields| {
                 if (ty.isBuiltin()) return self.failMsg("comptime VM: const aggregate at a builtin type");
@@ -894,22 +880,6 @@ pub const Vm = struct {
             // (the `.type_value` representation). `regToValue` maps it back to a
             // `.type_tag` Value.
             .const_type => |tid| return .{ .value = @as(Reg, tid.index()) },
-            // A comptime tagged value is SYMBOLIC: its second word is the
-            // conformer's own `TypeId`, never the dense tag (§7.9 — tags are
-            // assigned at whole-program link, after every evaluation).
-            .tagged_tag_of => |t| return .{ .value = @as(Reg, t.concrete.index()) },
-            // Which makes the concrete `Type` word the word itself: no table
-            // load, because the tag space the table is indexed by does not
-            // exist here.
-            .tagged_type_id => |t| return .{ .value = frame.get(t.tag.index()) },
-            // The probe's negative half: utterable only against a final set, so
-            // it is answered from the converged numbering — being numbered IS
-            // being in the set.
-            .tagged_conforms => |t| {
-                const module = self.module orelse return self.failMsg("comptime VM: a conformance probe needs a module");
-                if (!module.tagged_sets_final) return self.failMsg("comptime VM: a tagged conformance probe ran before the collection fixpoint converged");
-                return .{ .value = @intFromBool(module.tagged_tags.contains(.{ .proto = t.proto, .concrete = t.concrete })) };
-            },
             // An open set's layout: the members declared anywhere in the
             // program decide it, so the number is readable only once the sets
             // froze. Before that the evaluation AWAITS the freeze rather than
@@ -917,18 +887,17 @@ pub const Vm = struct {
             .open_set_layout => |q| {
                 const module = self.module orelse return self.failMsg("comptime VM: an open set's layout needs a module");
                 if (settledSetLayout(module, q)) |v| return .{ .value = @bitCast(v) };
-                const here = if (self.call_stack.items.len > 0) self.call_stack.items[self.call_stack.items.len - 1] else @as(FuncId, @enumFromInt(0));
-                _ = self.awaitFact(.{ .kind = .set_layout, .routine = here, .concrete = q.measured });
+                _ = self.awaitFact(.{ .measured = q.measured });
                 if (settledSetLayout(module, q)) |v| return .{ .value = @bitCast(v) };
                 return self.failFmt("comptime VM: the layout of '{s}' is not final — an open set's members are declared anywhere in the program, so its size exists only once they all are", .{module.types.typeName(q.measured)});
             },
             // A member's tag: the dense numbering is assigned at the freeze, and
-            // a late member RENUMBERS the space, so unlike a conformer's type
-            // word there is nothing symbolic to answer with beforehand.
+            // a late member RENUMBERS the space, so there is nothing symbolic to
+            // answer with beforehand.
             .open_set_tag_of => |t| {
                 const module = self.module orelse return self.failMsg("comptime VM: an open set's tag needs a module");
                 if (!module.open_sets_final)
-                    _ = self.awaitFact(.{ .kind = .set_layout, .routine = if (self.call_stack.items.len > 0) self.call_stack.items[self.call_stack.items.len - 1] else @as(FuncId, @enumFromInt(0)), .concrete = t.set });
+                    _ = self.awaitFact(.{ .measured = t.set });
                 if (!module.open_sets_final)
                     return self.failFmt("comptime VM: the tags of '{s}' are not numbered yet — an open set's tag space is assigned when the sets freeze, and a member admitted later renumbers it", .{module.types.typeName(t.set)});
                 const tag = module.open_set_tags.get(.{ .set = t.set, .member = t.member }) orelse
@@ -941,7 +910,7 @@ pub const Vm = struct {
             .open_set_type_id => |t| {
                 const module = self.module orelse return self.failMsg("comptime VM: an open set's member type needs a module");
                 if (!module.open_sets_final)
-                    _ = self.awaitFact(.{ .kind = .set_layout, .routine = if (self.call_stack.items.len > 0) self.call_stack.items[self.call_stack.items.len - 1] else @as(FuncId, @enumFromInt(0)), .concrete = t.set });
+                    _ = self.awaitFact(.{ .measured = t.set });
                 if (!module.open_sets_final)
                     return self.failFmt("comptime VM: the members of '{s}' are not numbered yet — an open set's tag space is assigned when the sets freeze, and a member admitted later renumbers it", .{module.types.typeName(t.set)});
                 const tag: i64 = @bitCast(frame.get(t.tag.index()));
@@ -1751,10 +1720,6 @@ pub const Vm = struct {
         const argbuf = self.gpa.alloc(Reg, args.len) catch @panic("comptime VM: out of memory (call args)");
         defer self.gpa.free(argbuf);
         for (args, 0..) |a, i| argbuf[i] = frame.get(a.index());
-        // A tagged dispatch routine resolves against the receiver's carried
-        // concrete type, published on demand — before its body exists, which is
-        // written only at whole-program emission.
-        if (try self.devirtualize(module, fid, argbuf)) |r| return r;
         if (callee.is_extern or callee.blocks.items.len == 0) {
             const name = module.types.getString(callee.name);
             // A curated set of libc MEMORY builtins is modeled natively on comptime
@@ -1823,57 +1788,6 @@ pub const Vm = struct {
         self.pending_fact = null;
         self.parked_task = null;
         comptime_async.unpark(task);
-    }
-
-    /// A call to an outlined tagged dispatch routine, resolved against the
-    /// receiver's CARRIED concrete type instead of the routine's tag switch
-    /// (§7.9): the value's second word is a `TypeId` here, so the switch would
-    /// find no arm. Selecting the arm and calling it directly IS the
-    /// devirtualization — the same answer the switch gives at runtime.
-    /// Null when `fid` is not a dispatch routine.
-    fn devirtualize(self: *Vm, module: *const Module, fid: FuncId, args: []Reg) Error!?Reg {
-        if (dispatchEntry(module, fid) == null) return null;
-        const callee = module.getFunction(fid);
-        const value_slot: usize = if (callee.has_implicit_ctx) 1 else 0;
-        if (value_slot >= args.len) return self.failMsg("comptime VM: tagged dispatch routine called without its receiver");
-        const value = args[value_slot];
-        const concrete = TypeId.fromIndex(@intCast(try self.machine.readWord(value + 8, 8)));
-        const arm = dispatchArm(module, fid, concrete) orelse missing: {
-            // The conformer set is not final while the program is still being
-            // lowered, so a member the routine lacks now can still be admitted.
-            // Await that fact; publishing REPLACES the routine's entry, so the
-            // arm is looked up again on the resumed side.
-            if (self.awaitFact(.{ .kind = .conformer_arm, .routine = fid, .concrete = concrete }) == .published) {
-                if (dispatchArm(module, fid, concrete)) |a| break :missing a;
-            }
-            return self.failFmt("comptime VM: no '{s}' conformer arm for the value's concrete type", .{module.types.getString(callee.name)});
-        };
-        // The arm takes the receiver's ctx pointer where the routine took the
-        // whole value; every other argument passes through.
-        args[value_slot] = try self.machine.readWord(value, 8);
-        self.call_stack.append(self.gpa, arm) catch @panic("comptime VM: out of memory (call stack)");
-        defer _ = self.call_stack.pop();
-        return try self.run(module.getFunction(arm), args);
-    }
-
-    /// The dispatch record for routine `fid`, or null when `fid` is an ordinary
-    /// function. Looked up by id rather than held across a park: publishing a
-    /// conformance rewrites the record in place and can move the list.
-    fn dispatchEntry(module: *const Module, fid: FuncId) ?*const Module.TaggedDispatchEntry {
-        for (module.tagged_dispatch.items) |*e| {
-            if (e.routine == fid) return e;
-        }
-        return null;
-    }
-
-    /// The arm of routine `fid` implementing `concrete`, or null while no
-    /// admitted conformance carries that type.
-    fn dispatchArm(module: *const Module, fid: FuncId, concrete: TypeId) ?FuncId {
-        const entry = dispatchEntry(module, fid) orelse return null;
-        for (entry.members, entry.arms) |m, a| {
-            if (m == concrete) return a;
-        }
-        return null;
     }
 
     /// Call a real extern (libc / host) function via dlsym + the `host_ffi`
@@ -3061,11 +2975,10 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     }
 
     /// The escape of a protocol handle. Its referent materializes by the
-    /// CONCRETE type the handle carries, and its numeric word resolves: a
-    /// tagged handle to the dense tag the converged numbering assigned, an
-    /// erased one to the stamped type id plus the vtable / fn-ptr symbols of
-    /// the impl it was erased with. A null ctx is the absent `?P` sentinel and
-    /// carries no referent at all.
+    /// CONCRETE type the handle carries, and its numeric word resolves to the
+    /// stamped type id plus the vtable / fn-ptr symbols of the impl it was
+    /// erased with. A null ctx is the absent `?P` sentinel and carries no
+    /// referent at all.
     fn escapeProtocolValue(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, reg: Reg, ty: TypeId) Error!Value {
         const fields = table.get(ty).@"struct".fields;
         if (fields.len < 2) return self.failMsg("escape: a protocol value carries at least its {ctx, tag} words");
@@ -3077,16 +2990,6 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         }
         const carried = TypeId.fromIndex(@intCast(try self.machine.readWord(reg + fieldOffset(table, ty, 1), 8)));
         out[0] = try self.escapePointer(alloc, table, ctx, carried);
-
-        if (std.mem.eql(u8, table.getString(fields[1].name), "__tag")) {
-            const module = self.module orelse return self.failMsg("escape: a tagged value needs a module to resolve its tag");
-            if (!module.tagged_sets_final)
-                return self.failMsg("escape: a tagged value cannot leave an evaluation that runs before the conformer sets converge");
-            const tag = module.tagged_tags.get(.{ .proto = ty, .concrete = carried }) orelse
-                return self.failFmt("escape: '{s}' is not in the final conformer set of '{s}'", .{ table.typeName(carried), table.typeName(ty) });
-            out[1] = .{ .int = tag };
-            return .{ .aggregate = out };
-        }
 
         out[1] = .{ .type_tag = carried };
         for (fields[2..], 2..) |f, i| {

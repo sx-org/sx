@@ -981,7 +981,6 @@ pub const LLVMEmitter = struct {
                     switch (instruction.op) {
                         .global_get, .global_addr => |gid| used.put(gid.index(), {}) catch {},
                         .global_set => |gs| used.put(gs.global.index(), {}) catch {},
-                        .tagged_type_id => |t| used.put(t.table.index(), {}) catch {},
                         .open_set_type_id => |t| used.put(t.table.index(), {}) catch {},
                         else => {},
                     }
@@ -1076,7 +1075,6 @@ pub const LLVMEmitter = struct {
                     // Pass 1). Emit a placeholder and resolve in initVtableGlobals.
                     .func_ref => c.LLVMConstNull(llvm_ty),
                     .global_ref => c.LLVMConstNull(llvm_ty),
-                    .tagged_tag => |t| c.LLVMConstInt(llvm_ty, @intCast(self.taggedTagValue(t)), 0),
                 };
                 c.LLVMSetInitializer(llvm_global, init_val);
             } else {
@@ -1675,27 +1673,7 @@ pub const LLVMEmitter = struct {
         return result;
     }
 
-    /// The constant answer a condition already carries at whole-program
-    /// emission, or `null` when it is genuinely dynamic. The conformer sets
-    /// are final here, so a probe's `tagged_conforms` is a constant and one
-    /// arm of the branch it feeds is statically dead (§7.9).
-    pub fn constCondition(self: *LLVMEmitter, func: *const Function, cond: Ref) ?bool {
-        if (cond.isNone()) return null;
-        const idx = cond.index();
-        if (idx < func.params.len) return null;
-        for (func.blocks.items) |blk| {
-            if (idx >= blk.first_ref and idx < blk.first_ref + blk.insts.items.len) {
-                return switch (blk.insts.items[idx - blk.first_ref].op) {
-                    .tagged_conforms => |t| self.ir_mod.tagged_tags.contains(.{ .proto = t.proto, .concrete = t.concrete }),
-                    else => null,
-                };
-            }
-        }
-        return null;
-    }
-
-    /// The blocks reachable from the entry, where a folded `cond_br`
-    /// contributes only its live successor. Caller owns the slice.
+    /// The blocks reachable from the entry. Caller owns the slice.
     fn reachableBlocks(self: *LLVMEmitter, func: *const Function) []bool {
         const seen = self.alloc.alloc(bool, func.blocks.items.len) catch unreachable;
         @memset(seen, false);
@@ -1710,9 +1688,7 @@ pub const LLVMEmitter = struct {
             for (func.blocks.items[bi].insts.items) |instruction| {
                 switch (instruction.op) {
                     .br => |branch| self.markReachable(branch.target, seen, &stack),
-                    .cond_br => |cb| if (self.constCondition(func, cb.cond)) |taken| {
-                        self.markReachable(if (taken) cb.then_target else cb.else_target, seen, &stack);
-                    } else {
+                    .cond_br => |cb| {
                         self.markReachable(cb.then_target, seen, &stack);
                         self.markReachable(cb.else_target, seen, &stack);
                     },
@@ -1750,14 +1726,7 @@ pub const LLVMEmitter = struct {
                     .br => |branch| {
                         self.addPhiIncoming(branch.target, branch.args, src_bb);
                     },
-                    // A folded branch has one real edge, so the phi takes one
-                    // incoming from it — the dead arm is not a predecessor.
-                    .cond_br => |cb| if (self.constCondition(func, cb.cond)) |taken| {
-                        if (taken)
-                            self.addPhiIncoming(cb.then_target, cb.then_args, src_bb)
-                        else
-                            self.addPhiIncoming(cb.else_target, cb.else_args, src_bb);
-                    } else {
+                    .cond_br => |cb| {
                         self.addPhiIncoming(cb.then_target, cb.then_args, src_bb);
                         self.addPhiIncoming(cb.else_target, cb.else_args, src_bb);
                     },
@@ -1807,9 +1776,6 @@ pub const LLVMEmitter = struct {
             .const_null => self.ops().emitConstNull(instruction),
             .const_undef => self.ops().emitConstUndef(instruction),
             .const_type => |tid| self.ops().emitConstType(tid),
-            .tagged_tag_of => |t| self.ops().emitTaggedTagOf(t),
-            .tagged_conforms => |t| self.ops().emitTaggedConforms(t),
-            .tagged_type_id => |t| self.ops().emitTaggedTypeId(instruction, t),
             .open_set_layout => |q| self.ops().emitOpenSetLayout(q),
             .open_set_tag_of => |t| self.ops().emitOpenSetTagOf(t),
             .open_set_type_id => |t| self.ops().emitOpenSetTypeId(instruction, t),
@@ -2900,17 +2866,6 @@ pub const LLVMEmitter = struct {
     /// whole aggregate is re-emitted by `initVtableGlobals` after Pass 1 with
     /// `true`, where any still-unresolved func_ref is a loud diagnostic — never
     /// a silently-null function pointer.
-    /// The dense conformer tag a static tagged borrow carries, read from the
-    /// numbering the collection fixpoint published — the constant analogue of
-    /// `emitTaggedTagOf`.
-    fn taggedTagValue(self: *LLVMEmitter, t: ir_inst.TaggedTag) i64 {
-        return self.ir_mod.tagged_tags.get(.{ .proto = t.proto, .concrete = t.concrete }) orelse
-            std.debug.panic("taggedTagValue: '{s}' is not in the final conformer set of '{s}' — a pair that did not survive the numbering has no tag", .{
-                self.ir_mod.types.typeName(t.concrete),
-                self.ir_mod.types.typeName(t.proto),
-            });
-    }
-
     fn emitConstAggregate(self: *LLVMEmitter, agg: []const ir_inst.ConstantValue, llvm_ty: c.LLVMTypeRef, require_resolved: bool) c.LLVMValueRef {
         const kind = c.LLVMGetTypeKind(llvm_ty);
         const is_struct = kind == c.LLVMStructTypeKind;
@@ -2941,7 +2896,6 @@ pub const LLVMEmitter = struct {
                     break :blk c.LLVMConstNull(elem_ty);
                 },
                 .global_ref => |gid| self.global_map.get(gid.index()) orelse c.LLVMConstNull(elem_ty),
-                .tagged_tag => |t| c.LLVMConstInt(elem_ty, @intCast(self.taggedTagValue(t)), 0),
                 // A null pointer field and a zero-initialized field both emit as
                 // the all-zero constant of the leaf type.
                 .null_val, .zeroinit => c.LLVMConstNull(elem_ty),

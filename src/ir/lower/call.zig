@@ -1993,7 +1993,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // protocol value as its first param).
             if (self.getProtocolInfo(obj_ty)) |proto_info| {
                 if (protocolHasMethod(proto_info, fa.field)) {
-                    return self.emitProtocolDispatch(obj, proto_info, fa.field, args.items, obj_ty, c.callee.span);
+                    return self.emitProtocolDispatch(obj, proto_info, fa.field, args.items, c.callee.span);
                 }
             }
 
@@ -2006,7 +2006,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     if (self.getProtocolInfo(oi.pointer.pointee)) |proto_info| {
                         if (protocolHasMethod(proto_info, fa.field)) {
                             const pv = self.builder.load(obj, oi.pointer.pointee);
-                            return self.emitProtocolDispatch(pv, proto_info, fa.field, args.items, oi.pointer.pointee, c.callee.span);
+                            return self.emitProtocolDispatch(pv, proto_info, fa.field, args.items, c.callee.span);
                         }
                     }
                 }
@@ -2025,7 +2025,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const pay_ty = opt_info.optional.child;
                     if (self.getProtocolInfo(pay_ty)) |proto_info| {
                         if (protocolHasMethod(proto_info, fa.field)) {
-                            return self.emitProtocolDispatch(obj, proto_info, fa.field, args.items, pay_ty, c.callee.span);
+                            return self.emitProtocolDispatch(obj, proto_info, fa.field, args.items, c.callee.span);
                         }
                     }
                     // `?*P` (optional VIEW): the optional of a
@@ -2039,7 +2039,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             if (self.getProtocolInfo(pay_info.pointer.pointee)) |proto_info| {
                                 if (protocolHasMethod(proto_info, fa.field)) {
                                     const pv = self.builder.load(obj, pay_info.pointer.pointee);
-                                    return self.emitProtocolDispatch(pv, proto_info, fa.field, args.items, pay_info.pointer.pointee, c.callee.span);
+                                    return self.emitProtocolDispatch(pv, proto_info, fa.field, args.items, c.callee.span);
                                 }
                             }
                         }
@@ -2624,7 +2624,6 @@ pub fn allocViaContext(self: *Lowering, size_ref: Ref) Ref {
         pd,
         "alloc_bytes",
         &.{size_ref},
-        af.ty,
         .{ .start = cs.start, .end = cs.end },
     );
     if (dispatched == Ref.none) return self.emitPlaceholder("allocator-dispatch");
@@ -4090,10 +4089,9 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             return self.openSetMemberTypeId(arg_ty, slot);
         } else if (self.getProtocolInfo(arg_ty) != null) {
             // A PROTOCOL value answers its CONCRETE type — the type_id
-            // word at slot 1, same position as an any's;
-            // a tagged value synthesizes it through its tag table.
+            // word at slot 1, same position as an any's.
             const val = self.lowerExpr(c.args[0]);
-            return self.protocolTypeIdWord(arg_ty, val);
+            return self.protocolTypeIdWord(val);
         } else {
             return self.builder.constType(arg_ty);
         }
@@ -5462,7 +5460,7 @@ pub fn resolveCallParamTypes(
         };
         if (self.getProtocolInfo(proto_recv)) |proto_info| {
             for (proto_info.methods) |m| {
-                if (std.mem.eql(u8, m.name, fa.field)) return m.dispatch_param_types;
+                if (std.mem.eql(u8, m.name, fa.field)) return m.param_types;
             }
         }
         // `*Protocol` receiver (borrowed view): same lookup through the
@@ -5472,7 +5470,7 @@ pub fn resolveCallParamTypes(
             if (oi == .pointer) {
                 if (self.getProtocolInfo(oi.pointer.pointee)) |proto_info| {
                     for (proto_info.methods) |m| {
-                        if (std.mem.eql(u8, m.name, fa.field)) return m.dispatch_param_types;
+                        if (std.mem.eql(u8, m.name, fa.field)) return m.param_types;
                     }
                 }
             }
@@ -5484,7 +5482,7 @@ pub fn resolveCallParamTypes(
             if (opt_info == .optional) {
                 if (self.getProtocolInfo(opt_info.optional.child)) |proto_info| {
                     for (proto_info.methods) |m| {
-                        if (std.mem.eql(u8, m.name, fa.field)) return m.dispatch_param_types;
+                        if (std.mem.eql(u8, m.name, fa.field)) return m.param_types;
                     }
                 }
             }

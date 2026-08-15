@@ -33,7 +33,7 @@
 //! its own ceiling (`relayout` → `cascade`).
 //!
 //! Which is why a set's size is not a source literal. The last member can arrive
-//! at any point up to the FREEZE — the point the `tagged` conformer sets converge
+//! at any point up to the FREEZE — the point the convergence fixpoint settles
 //! at — so `size_of(P)` lowers to an `open_set_layout` op that each world resolves
 //! against the frozen layout, and one program has ONE answer wherever it asks. A
 //! position that must be folded EARLIER than the freeze — an array dimension, a
@@ -914,12 +914,62 @@ pub fn resolveLayoutFact(self: *Lowering, measured: TypeId) comptime_vm.FactAnsw
     return .{ .now = .published };
 }
 
+/// The bookmark scheduler a comptime evaluation under the expansion discipline
+/// runs with. Answering a fact is real work — settling the layout and
+/// publishing it — and all of it happens while the evaluation stays suspended
+/// at the instruction that asked.
+pub fn factScheduler(self: *Lowering) comptime_vm.FactScheduler {
+    return .{ .ctx = self, .resolve = resolveFact };
+}
+
+fn resolveFact(ctx: ?*anyopaque, request: comptime_vm.FactRequest) comptime_vm.FactAnswer {
+    const self: *Lowering = @ptrCast(@alignCast(ctx.?));
+    return resolveLayoutFact(self, request.measured);
+}
+
+/// The fact a parked evaluation awaits, rendered for the deadlock diagnostic.
+pub fn describeFact(self: *Lowering, request: comptime_vm.FactRequest) []const u8 {
+    return std.fmt.allocPrint(self.alloc, "the program's open sets to freeze, so the layout of '{s}' is final", .{
+        self.formatTypeName(request.measured),
+    }) catch "an open set's layout";
+}
+
+// ── The convergence fixpoint ────────────────────────────────────────────
+
+/// Run the member fixpoint and freeze the program's open sets. Called once,
+/// after all bodies are lowered.
+///
+/// The loop is a fixpoint because materializing a member's arm lowers its
+/// implementation of a dispatched method, and that lowering is itself a driver:
+/// it can instantiate a generic member, of this set or another, and the cascade
+/// can grow the sets that hold it. A round that moved an epoch is a round that
+/// changed something, so the loop runs until the layouts settle too.
+pub fn converge(self: *Lowering) void {
+    // The fixpoint drains off the one worklist: a round registers, is taken,
+    // and re-registers only when materializing changed something. The comptime
+    // an admitted member's monomorphization reaches is reached from inside a
+    // taken round.
+    self.expansion.pushRound();
+    while (self.expansion.takeRound()) {
+        const epoch = self.open_set_epoch;
+        var changed = materializeArms(self);
+        if (self.open_set_epoch != epoch) changed = true;
+        if (changed) self.expansion.pushRound();
+    }
+    // Every member that will ever be admitted is in: the sets freeze here, and
+    // the reads that awaited a layout are answerable from this point on.
+    freezeSets(self);
+    // The fixpoint is the last driver class to drain, so its quiescence is the
+    // worklist's: anything still parked here never had a fact coming.
+    self.expansion.reportDeadlock(self.diagnostics);
+}
+
 // ── The freeze ──────────────────────────────────────────────────────────
 
-/// Freeze the program's open sets, at the same point the `tagged` conformer sets
-/// converge: number every member densely inside its OWN set's tag space, write
-/// each set's `tag → member Type` table, and publish the layouts. From here an
-/// open set has a size, and it is the same one wherever the program asks.
+/// Freeze the program's open sets: number every member densely inside its OWN
+/// set's tag space, write each set's `tag → member Type` table, and publish the
+/// layouts. From here an open set has a size, and it is the same one wherever
+/// the program asks.
 pub fn freezeSets(self: *Lowering) void {
     for (setsByName(self)) |set| {
         numberMembers(self, set);
