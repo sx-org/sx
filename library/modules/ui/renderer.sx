@@ -47,6 +47,16 @@ UIRenderer :: struct {
     mtl_buf_offset: i64 = 0;
     mtl_buf_capacity: i64 = 0;
 
+    // 3D mesh pass. One mesh is resident at a time (set_mesh); render nodes
+    // address triangle ranges of it. Requires `gpu`.
+    mesh_shader: ShaderHandle = 0;
+    mesh_vbuf:   BufferHandle = 0;
+    mesh_ibuf:   IndexHandle = 0;
+    mesh_index_count: i32 = 0;
+    // Re-bound after every mesh range so the 2D batches that follow keep
+    // drawing through the UI pipeline.
+    ui_proj: Mat4 = .{};
+
     init :: (self: *UIRenderer) {
         // Allocate vertex scratch (CPU side) — same for both backends.
         buf_size := MAX_UI_VERTICES * UI_VERTEX_BYTES;
@@ -116,6 +126,40 @@ UIRenderer :: struct {
         }
     }
 
+    // Make `vertices` / `indices` the mesh that `.mesh` render nodes address,
+    // replacing any earlier one. Indices are absolute into `vertices`, so a
+    // node's range is `draw_indexed(index_first, index_count)` verbatim.
+    // False when there is no GPU backend to hold it.
+    set_mesh :: (self: *UIRenderer, vertices: []MeshVertex, indices: []u32) -> bool {
+        if self.gpu == null { return false; }
+        if vertices.len == 0 or indices.len == 0 { return false; }
+
+        if self.mesh_shader == 0 {
+            inline if OS == .android {
+                self.mesh_shader = self.gpu.create_shader(MESH_VERT_SRC_ES, MESH_FRAG_SRC_ES);
+            }
+            inline if OS == .ios or OS == .macos {
+                self.mesh_shader = self.gpu.create_shader(MESH_MSL_SRC, "");
+            }
+            if self.mesh_shader == 0 { return false; }
+        }
+
+        self.gpu.destroy_buffer(self.mesh_vbuf);
+        self.gpu.destroy_index_buffer(self.mesh_ibuf);
+        self.mesh_index_count = 0;
+
+        vbytes := vertices.len * size_of(MeshVertex);
+        ibytes := indices.len * 4;
+        self.mesh_vbuf = self.gpu.create_buffer(vbytes);
+        self.mesh_ibuf = self.gpu.create_index_buffer(ibytes);
+        if self.mesh_vbuf == 0 or self.mesh_ibuf == 0 { return false; }
+
+        self.gpu.update_buffer(self.mesh_vbuf, xx *vertices[0], vbytes);
+        self.gpu.update_index_buffer(self.mesh_ibuf, xx *indices[0], ibytes);
+        self.mesh_index_count = xx indices.len;
+        true
+    }
+
     begin :: (self: *UIRenderer, width: f32, height: f32, font_texture: u32) {
         self.screen_width = width;
         self.screen_height = height;
@@ -124,6 +168,7 @@ UIRenderer :: struct {
         self.draw_calls = 0;
 
         proj := Mat4.ortho(0.0, width, height, 0.0, -1.0, 1.0);
+        self.ui_proj = proj;
 
         if self.gpu != null {
             // Reset the per-frame ring offset; this frame's flushes start at 0.
@@ -254,6 +299,9 @@ UIRenderer :: struct {
                         self.bind_texture(font.texture_id);
                     }
                 }
+                case .mesh: {
+                    self.draw_mesh(node);
+                }
                 case .clip_push: {
                     self.flush();
                     dpi := self.dpi_scale;
@@ -334,6 +382,37 @@ UIRenderer :: struct {
 
         self.vertex_count = 0;
         self.draw_calls += 1;
+    }
+
+    draw_mesh :: (self: *UIRenderer, node: RenderNode) {
+        if self.gpu == null { return; }
+        if self.mesh_shader == 0 { return; }
+        if node.mesh_index_count <= 0 { return; }
+        if node.mesh_index_first < 0 { return; }
+        if node.mesh_index_first + node.mesh_index_count > self.mesh_index_count { return; }
+
+        // The pending 2D batch belongs under the mesh in paint order, and the
+        // pipeline swap below would otherwise draw it with the mesh shader.
+        self.flush();
+
+        col := node.fill_color;
+        tint : [4]f32 = .[col.rf(), col.gf(), col.bf(), col.af() * node.opacity];
+        mvp := node.mesh_transform;
+
+        self.gpu.set_depth_mode(.less);
+        self.gpu.set_shader(self.mesh_shader);
+        self.gpu.set_vertex_buffer(self.mesh_vbuf);
+        self.gpu.set_index_buffer(self.mesh_ibuf);
+        self.gpu.set_vertex_constants(1, xx *mvp.data[0], 64);
+        self.gpu.set_vertex_constants(2, xx *tint[0], 16);
+        self.gpu.draw_indexed(node.mesh_index_first, node.mesh_index_count);
+        self.draw_calls += 1;
+
+        self.gpu.set_depth_mode(.disabled);
+        self.gpu.set_shader(self.mtl_shader);
+        self.gpu.set_vertex_buffer(self.mtl_vbuf);
+        self.gpu.set_vertex_constants(1, xx *self.ui_proj.data[0], 64);
+        self.gpu.set_texture(0, self.current_texture);
     }
 
     render_text :: (self: *UIRenderer, node: RenderNode) {
@@ -672,5 +751,85 @@ fragment float4 fmain(VOut in [[stage_in]],
         // Plain rect: vertex color only
         return in.color;
     }
+}
+MSL;
+
+// --- Mesh shaders (3D pass) ---
+//
+// Vertex data is MeshVertex (position / normal / uv, 32 bytes). Slot 1 is
+// the model-to-clip matrix and slot 2 the tint, matching the constant slots
+// both GPU backends route. Lighting is a fixed two-lamp studio rig in mesh
+// space, so the tint alone distinguishes parts.
+
+MESH_VERT_SRC_ES :: #string GLSL
+#version 300 es
+precision mediump float;
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec2 aUV;
+
+uniform mat4 uProj;
+uniform vec4 uTint;
+
+out vec3 vNormal;
+out vec4 vColor;
+
+void main() {
+    gl_Position = uProj * vec4(aPos, 1.0);
+    vNormal = aNormal;
+    vColor = uTint;
+}
+GLSL;
+
+MESH_FRAG_SRC_ES :: #string GLSL
+#version 300 es
+precision mediump float;
+in vec3 vNormal;
+in vec4 vColor;
+
+out vec4 FragColor;
+
+void main() {
+    vec3 n = normalize(vNormal);
+    float key = max(dot(n, normalize(vec3(0.42, 0.55, 0.72))), 0.0);
+    float fill = max(dot(n, normalize(vec3(-0.65, 0.25, 0.45))), 0.0);
+    float lum = 0.30 + 0.60 * key + 0.20 * fill;
+    FragColor = vec4(vColor.rgb * lum, vColor.a);
+}
+GLSL;
+
+MESH_MSL_SRC :: #string MSL
+#include <metal_stdlib>
+using namespace metal;
+
+struct MeshVertex {
+    packed_float3 position;
+    packed_float3 normal;
+    packed_float2 uv;
+};
+
+struct VOut {
+    float4 position [[position]];
+    float3 normal;
+    float4 color;
+};
+
+vertex VOut vmain(uint vid [[vertex_id]],
+                  device const MeshVertex* verts [[buffer(0)]],
+                  constant float4x4& mvp [[buffer(1)]],
+                  constant float4& tint [[buffer(2)]]) {
+    VOut o;
+    o.position = mvp * float4(verts[vid].position, 1.0);
+    o.normal = float3(verts[vid].normal);
+    o.color = tint;
+    return o;
+}
+
+fragment float4 fmain(VOut in [[stage_in]]) {
+    float3 n = normalize(in.normal);
+    float key = max(dot(n, normalize(float3(0.42, 0.55, 0.72))), 0.0);
+    float fill = max(dot(n, normalize(float3(-0.65, 0.25, 0.45))), 0.0);
+    float lum = 0.30 + 0.60 * key + 0.20 * fill;
+    return float4(in.color.rgb * lum, in.color.a);
 }
 MSL;
