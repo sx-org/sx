@@ -1547,7 +1547,7 @@ pub const Parser = struct {
         try self.expect(.l_brace);
 
         var methods = std.ArrayList(ast.ProtocolMethodDecl).empty;
-        try self.parseRequiredMethods(&methods, .{ .owner = name, .kind_spelling = "@OpenSet" });
+        try self.parseRequiredMethods(&methods);
         try self.expect(.r_brace);
 
         return try self.createNode(start_pos, .{ .open_set_decl = .{
@@ -1562,19 +1562,7 @@ pub const Parser = struct {
     /// The shared `{ name :: (params) -> T; … }` member list of a protocol and of
     /// an open set: both declare REQUIRED methods, with `Self` denoting the
     /// implementing type, and both monomorphize them per member.
-    /// What the enclosing declaration allows its methods to carry.
-    const RequiredMethodsCtx = struct {
-        /// The declaration's name, for diagnostics.
-        owner: []const u8,
-        /// `#expand` is a tagged-protocol attribute; every other owner refuses it.
-        expand_allowed: bool = false,
-        /// The owner already carries `#expand` on its header.
-        header_expand: bool = false,
-        /// How the owner's kind is spelled in the refusal.
-        kind_spelling: []const u8 = "",
-    };
-
-    fn parseRequiredMethods(self: *Parser, methods: *std.ArrayList(ast.ProtocolMethodDecl), ctx: RequiredMethodsCtx) anyerror!void {
+    fn parseRequiredMethods(self: *Parser, methods: *std.ArrayList(ast.ProtocolMethodDecl)) anyerror!void {
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             // Method: name :: (params) -> type;  or  name :: (params) -> type { body }
             if (!self.isMemberDeclName()) {
@@ -1637,21 +1625,6 @@ pub const Parser = struct {
                 return_type = try self.parseFnReturnType();
             }
 
-            // Per-method `#expand`, in the same trailing attribute slot `#get` /
-            // `#set` occupy on an ordinary method.
-            var method_expand = false;
-            while (self.tokens.tag(self.tok) == .hash_expand) {
-                if (method_expand) return self.failFmt("duplicate #expand on method '{s}'", .{method_name});
-                if (!ctx.expand_allowed) {
-                    return self.failFmt("#expand is a tagged-protocol attribute — only a tagged protocol dispatches through a generated switch, and '{s}' is declared '{s}'", .{ ctx.owner, ctx.kind_spelling });
-                }
-                if (ctx.header_expand) {
-                    return self.failFmt("'{s}' already carries #expand on its header, so every method's dispatch already expands at the call site — remove one", .{ctx.owner});
-                }
-                method_expand = true;
-                self.advance();
-            }
-
             // Optional body (default method) or semicolon
             var default_body: ?*Node = null;
             if (self.tokens.tag(self.tok) == .l_brace) {
@@ -1679,7 +1652,6 @@ pub const Parser = struct {
                 .param_name_is_raw = all_param_name_is_raw[1..],
                 .return_type = return_type,
                 .default_body = default_body,
-                .is_expand = method_expand,
             });
         }
     }
@@ -1733,24 +1705,13 @@ pub const Parser = struct {
             self.advance();
         }
 
-        // Protocol attributes: #identity (ownership class), #expand (call-site
-        // dispatch expansion). Order between them is free.
         var is_identity = false;
-        var is_expand = false;
-        while (self.tokens.tag(self.tok) == .hash_identity or self.tokens.tag(self.tok) == .hash_expand) {
-            if (self.tokens.tag(self.tok) == .hash_identity) {
-                if (is_identity) return self.fail("duplicate #identity on protocol");
-                if (kind == .constraint) {
-                    return self.fail("#identity is meaningless on a constraint protocol — there are no runtime values to classify");
-                }
-                is_identity = true;
-            } else {
-                if (is_expand) return self.fail("duplicate #expand on protocol");
-                if (kind != .tagged) {
-                    return self.failFmt("#expand is a tagged-protocol attribute — only a tagged protocol dispatches through a generated switch, and kind '{s}' does not", .{kind.spelling()});
-                }
-                is_expand = true;
+        while (self.tokens.tag(self.tok) == .hash_identity) {
+            if (is_identity) return self.fail("duplicate #identity on protocol");
+            if (kind == .constraint) {
+                return self.fail("#identity is meaningless on a constraint protocol — there are no runtime values to classify");
             }
+            is_identity = true;
             self.advance();
         }
 
@@ -1766,12 +1727,7 @@ pub const Parser = struct {
 
         var methods = std.ArrayList(ast.ProtocolMethodDecl).empty;
 
-        try self.parseRequiredMethods(&methods, .{
-            .owner = name,
-            .expand_allowed = kind == .tagged,
-            .header_expand = is_expand,
-            .kind_spelling = kind.spelling(),
-        });
+        try self.parseRequiredMethods(&methods);
 
         try self.expect(.r_brace);
 
@@ -1780,7 +1736,6 @@ pub const Parser = struct {
             .methods = try methods.toOwnedSlice(self.allocator),
             .kind = kind,
             .is_identity = is_identity,
-            .is_expand = is_expand,
             .type_params = try type_params.toOwnedSlice(self.allocator),
             .is_raw = name_is_raw,
         } });
@@ -5058,7 +5013,6 @@ pub const Parser = struct {
             .hash_define,
             .hash_flags,
             .hash_identity,
-            .hash_expand,
             .hash_objc_call,
             .hash_jni_call,
             .hash_jni_static_call,
@@ -5288,7 +5242,6 @@ pub const Parser = struct {
             .hash_define,
             .hash_flags,
             .hash_identity,
-            .hash_expand,
             .hash_objc_call,
             .hash_jni_call,
             .hash_jni_static_call,

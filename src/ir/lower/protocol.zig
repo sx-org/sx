@@ -313,7 +313,6 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
             .self_params = shape.direct_params,
             .returns_self = shape.direct_return,
             .self_at_depth = shape.at_depth,
-            .expand = pd.is_expand or method.is_expand,
         };
         program_index_mod.applyDispatchSignature(self.alloc, &info, pd.kind, id);
         method_infos.append(self.alloc, info) catch unreachable;

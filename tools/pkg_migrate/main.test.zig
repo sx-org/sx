@@ -100,7 +100,8 @@ test "numbers terminate by the numeric grammar, exposing their identifier tail" 
 test "an unrecognized directive exposes its word; a real one is opaque" {
     try expectWords("#builtin\n", &.{"builtin"});
     try expectWords("#package #private\n", &.{ "package", "private" });
-    try expectWords("#identity #expand #context_extend\n", &.{});
+    try expectWords("#identity #context_extend\n", &.{});
+    try expectWords("#expand\n", &.{"expand"});
     try expectWords("#import \"p\";\n", &.{});
     try expectWords("#importing\n", &.{"importing"});
 }

@@ -1111,10 +1111,6 @@ pub const ProtocolMethodDecl = struct {
     param_name_is_raw: []const bool = &.{},
     return_type: ?*Node, // null = void return
     default_body: ?*Node, // null = required method, non-null = default implementation
-    /// `#expand` on this method alone — its tagged dispatch switch expands at
-    /// each call site instead of going through the outlined routine. A
-    /// header-level `#expand` sets it on every method.
-    is_expand: bool = false,
 };
 
 /// The kind slot of a protocol head — `protocol [(params)] kind [attrs]`.
@@ -1141,7 +1137,6 @@ pub const ProtocolDecl = struct {
     methods: []const ProtocolMethodDecl,
     kind: ProtocolKind = .constraint,
     is_identity: bool = false, // #identity — borrow-only ownership class (values never own their ctx)
-    is_expand: bool = false, // #expand on the header — every method's dispatch expands at the call site
     type_params: []const StructTypeParam = &.{}, // for `protocol(Target: Type) { ... }`
     /// True when the declared NAME was a backtick raw identifier — exempt from
     /// the reserved-type-name decl check.

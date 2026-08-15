@@ -177,7 +177,7 @@
       "patterns": [
         {
           "name": "keyword.other.directive.sx",
-          "match": "#(?:context_extend|jni_method_descriptor|jni_static_call|jni_interface|jni_class|jni_call|jni_env|jni_main|objc_call|objc_class|objc_protocol|swift_class|swift_struct|swift_protocol|import|insert|run|error|library|framework|using|include|source|define|flags|identity|expand|extends|implements|selector|property|get|set|string)(?![A-Za-z0-9_])"
+          "match": "#(?:context_extend|jni_method_descriptor|jni_static_call|jni_interface|jni_class|jni_call|jni_env|jni_main|objc_call|objc_class|objc_protocol|swift_class|swift_struct|swift_protocol|import|insert|run|error|library|framework|using|include|source|define|flags|identity|extends|implements|selector|property|get|set|string)(?![A-Za-z0-9_])"
         },
         {
           "name": "invalid.illegal.directive.sx",

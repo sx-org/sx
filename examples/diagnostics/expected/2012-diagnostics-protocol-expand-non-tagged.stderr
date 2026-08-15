@@ -1,5 +1,0 @@
-error: #expand is a tagged-protocol attribute — only a tagged protocol dispatches through a generated switch, and kind 'inline' does not
-  --> examples/diagnostics/2012-diagnostics-protocol-expand-non-tagged.sx:6:27
-   |
- 6 | Hasher :: protocol inline #expand {
-   |                           ^^^^^^^
