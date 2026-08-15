@@ -56,7 +56,7 @@ is_identity :: ($T: Type) -> bool intrinsic;
 // The kind slot of a protocol declaration. COMPILE-TIME only, for the same
 // reason `is_identity` is: a runtime `Type` value never tags a protocol.
 // A non-protocol argument is a compile error, not a silent answer.
-ProtocolKind :: enum { constraint; vtable; `inline; tagged; }
+ProtocolKind :: enum { constraint; vtable; `inline; }
 protocol_kind :: ($T: Type) -> ProtocolKind intrinsic;
 is_unsigned :: ($T: Type) -> bool intrinsic;
 variant_value :: ($T: Type, idx: i64) -> i64 intrinsic;
@@ -222,9 +222,8 @@ raw_pointer_to        :: (t: Type) -> Type intrinsic;
 // erasure and `free` of the protocol value refuse at compile time.
 // `inline`: the handle carries its own dispatch words, so an allocation
 // through a protocol value is one indirect call whatever the program's
-// allocator population is. `tagged` is the measured alternative
-// (design/protocols.md §6.3, "the Allocator trade"), and switching is
-// this one line — nothing in the compiler is keyed to the kind.
+// allocator population is. Nothing in the compiler is keyed to the kind,
+// so switching it is this one line.
 Allocator :: protocol inline #identity {
     alloc_bytes :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);

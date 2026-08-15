@@ -1,5 +1,5 @@
 // Materialization is type-directed, so an escape whose carried value cannot be
-// walked is refused (specs.md §7.9): a `*void` referent has no layout to read
+// walked is refused (specs.md §6.9): a `*void` referent has no layout to read
 // bytes by, and the build fails naming it instead of shipping an address into
 // compile-time memory.
 #import "modules/std.sx";

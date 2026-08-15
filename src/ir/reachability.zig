@@ -152,7 +152,7 @@ fn escapeCarriesFunction(m: *const Module, ty: types_mod.TypeId, seen: *std.Arra
 /// result escapes as data, and the escape relocates a carried function
 /// reference to that function's symbol — so a function whose address the
 /// evaluation takes is live in the binary even though only compile-time code
-/// names it (specs.md §7.9).
+/// names it (specs.md §6.9).
 fn collectEscapedFuncs(alloc: std.mem.Allocator, m: *const Module, out: *std.ArrayList(FuncId)) !void {
     const n = m.functions.items.len;
     const walked = try alloc.alloc(bool, n);

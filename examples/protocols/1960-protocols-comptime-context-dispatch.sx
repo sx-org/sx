@@ -1,5 +1,5 @@
 // A protocol-typed Context field holds a compile-time protocol value like any
-// other, and dispatches through it (specs.md §7.9). `context.allocator` is the
+// other, and dispatches through it (specs.md §6.9). `context.allocator` is the
 // standing example: a `push` installs a user impl, and the allocation the
 // stdlib performs inside the `#run` reaches THAT impl — the value carries the
 // impl selected at its erasure site.

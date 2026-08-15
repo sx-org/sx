@@ -1,4 +1,4 @@
-// Materialization is TYPE-DIRECTED (specs.md §7.9): the referent's bytes are
+// Materialization is TYPE-DIRECTED (specs.md §6.9): the referent's bytes are
 // walked by its concrete layout, so nested protocol handles recurse — their
 // referents materialize and both of their words resolve — interior pointers
 // recurse, and function references relocate to their symbols. An ERASED handle

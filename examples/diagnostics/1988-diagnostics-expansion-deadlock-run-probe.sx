@@ -10,7 +10,7 @@
 //
 // Runnable work is exhausted with the bookmark still down. A state admitting
 // more than one consistent outcome is genuinely ambiguous, so sx refuses
-// rather than electing a fixpoint (specs.md §7.9).
+// rather than electing a fixpoint (specs.md §6.9).
 #import "modules/std.sx";
 
 Serialize :: protocol vtable { write :: (self: *Self) -> i64; }

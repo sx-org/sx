@@ -1,4 +1,4 @@
-// Expansion-driving comptime carries protocol values (specs.md §7.9). A body
+// Expansion-driving comptime carries protocol values (specs.md §6.9). A body
 // evaluated DURING lowering — a `-> Type` builder, an `#insert` — erases a
 // conformer, dispatches through the protocol, and reads the answer. The impl
 // bodies it needs are lowered on demand, against the impls visible at that

@@ -8,7 +8,7 @@
 //! answer to "can anything still add to this?" at every instant.
 //!
 //! A driver that has not been decided may still contribute declarations, and
-//! which ones is judged SYNTACTICALLY and conservatively (specs.md §7.9): an
+//! which ones is judged SYNTACTICALLY and conservatively (specs.md §6.9): an
 //! unexpanded body mentioning `impl P for …` contributes to `P`'s sets, and
 //! every declaration name it spells is a name the module scope may still gain,
 //! and every `#context_extend` it spells is a field the program Context may

@@ -1,4 +1,4 @@
-// Compile-time protocol values are SYMBOLIC (specs.md §7.9): the VM carries
+// Compile-time protocol values are SYMBOLIC (specs.md §6.9): the VM carries
 // `{ctx, concrete type}`, never a dispatch address — those are assigned when
 // the image is laid out, a link-stage artifact. Dispatch resolves against the
 // carried concrete type, so a `#run` gets the same answers the compiled program

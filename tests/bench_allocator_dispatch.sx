@@ -9,10 +9,9 @@
 // It measures the declaration std SHIPS — `Allocator :: protocol inline
 // #identity` (std/core.sx). The alternative is a ONE-LINE stdlib edit and
 // no compiler change at all, which is what makes it measurable here:
-// respell that line `protocol tagged #identity`, rebuild the compiler,
+// respell that line `protocol vtable #identity`, rebuild the compiler,
 // rebuild this file, and every lane below reports the same workload under
-// the other representation. The recorded result — and why `inline` ships —
-// is design/protocols.md §6.3, "the Allocator trade".
+// the other representation.
 //
 // The first four lanes hold ONE conformer live per run — the predictable
 // regime, where a dispatch has a single arm to select and the branch

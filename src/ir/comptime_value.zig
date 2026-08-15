@@ -28,7 +28,7 @@ pub const Value = union(enum) {
     type_tag: TypeId,
     heap_ptr: HeapPtr, // pointer into heap-allocated memory
     /// A pointer word that resolves to a SYMBOL in the runtime image — the
-    /// escape of a comptime referent (specs.md §7.9).
+    /// escape of a comptime referent (specs.md §6.9).
     image_ref: ImageRef,
     /// Byte-granular raw pointer. Produced by `index_gep` on a string /
     /// `[*]u8` aggregate whose data field is itself a raw integer pointer
