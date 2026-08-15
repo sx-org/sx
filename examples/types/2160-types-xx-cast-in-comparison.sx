@@ -1,0 +1,50 @@
+// A comparison's value is `bool`, and the expected type of that bool never
+// reaches the operands: an `xx` cast inside a comparison takes its target from
+// the comparison's OTHER side. So `a == xx b` reads the same in an inferred
+// declaration, an `if` condition, a `bool` declaration, a `bool` argument and a
+// `bool` return — each agreeing with the hoisted `t : <peer> = xx b; a == t`.
+
+#import "modules/std.sx";
+
+take :: (cond: bool) -> bool => cond;
+ret :: (a: i32, b: i64) -> bool { a == xx b }
+
+main :: () -> i32 {
+    a : i32 = 5;
+    b : i64 = 5;
+
+    inferred := a == xx b;
+    print("inferred : {}\n", inferred);
+
+    if a == xx b { print("if       : true\n"); }
+    else         { print("if       : false\n"); }
+
+    typed : bool = a == xx b;
+    print("typed    : {}\n", typed);
+    print("argument : {}\n", take(a == xx b));
+    print("return   : {}\n", ret(a, b));
+
+    hoisted : i32 = xx b;
+    print("hoisted  : {}\n", a == hoisted);
+
+    // Either operand position takes the peer's type.
+    lhs_cast : bool = xx b == a;
+    print("lhs cast : {}\n", lhs_cast);
+
+    // The peer is the target, so the cast truncates to `i32` here — the
+    // full-width `i64` compare would read false.
+    wide : i64 = 4294967295;
+    neg : i32 = -1;
+    narrow : i32 = xx wide;
+    print("truncate : {} {}\n", neg == xx wide, neg == narrow);
+
+    // A float peer converts the integer operand.
+    f : f32 = 2.5;
+    n : i64 = 2;
+    print("float    : {}\n", f > xx n);
+
+    lo : i32 = -2;
+    chained : bool = lo < neg == xx wide;
+    print("chained  : {}\n", chained);
+    0
+}

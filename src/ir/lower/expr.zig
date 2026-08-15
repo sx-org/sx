@@ -4564,6 +4564,21 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         return self.builder.blockParam(merge_bb, 0, .bool);
     }
 
+    // A comparison's value is `bool`; the ambient expected type describes THAT
+    // value, never the operands. An operand carrying no type of its own — an
+    // `xx` cast is the shape — takes its target from its PEER instead, so
+    // `a == xx b` casts `b` to `a`'s type exactly as the hoisted
+    // `t : <type of a> = xx b; a == t` does.
+    const comparison = switch (bop.op) {
+        .eq, .neq, .lt, .lte, .gt, .gte => true,
+        else => false,
+    };
+    const ambient_tt = self.target_type;
+    if (comparison) self.target_type = null;
+    defer if (comparison) {
+        self.target_type = ambient_tt;
+    };
+
     // Type-literal comparison fold: when both sides are type-shaped
     // AST nodes (`i64`, `*u8`, `?T`, `[3]f64`, etc.) OR resolve to
     // a static TypeId at lower time (`type_of(x)` for any
@@ -4654,7 +4669,12 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             }
         }
     }
+    if (comparison and self.inferExprType(bop.lhs) == .unresolved) {
+        const peer_ty = self.inferExprType(bop.rhs);
+        if (peer_ty != .unresolved and peer_ty != .void) self.target_type = peer_ty;
+    }
     var lhs = self.lowerExpr(bop.lhs);
+    if (comparison) self.target_type = null;
     // A `for *x in xs` capture is a pointer; in a value position (here, an
     // operand) it auto-derefs to the element.
     const lhs_ref_pointee = self.refCapturePointee(bop.lhs);
@@ -4667,8 +4687,9 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const it = self.inferExprType(bop.lhs);
         break :blk if (it == .unresolved) self.builder.getRefType(lhs) else it;
     };
+    const rhs_untyped = comparison and self.inferExprType(bop.rhs) == .unresolved;
     const saved_tt = self.target_type;
-    if (lhs_ty != .void) {
+    if (lhs_ty != .void and lhs_ty != .unresolved) {
         if (!lhs_ty.isBuiltin()) {
             const lhs_info = self.module.types.get(lhs_ty);
             if (lhs_info == .@"enum" or lhs_info == .@"union" or lhs_info == .tagged_union) {
@@ -4678,8 +4699,10 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
                 // (numeric, enum shorthand, struct) lands on T directly —
                 // the mixed compare below needs the concrete side at T.
                 self.target_type = lhs_info.optional.child;
+            } else if (rhs_untyped) {
+                self.target_type = lhs_ty;
             }
-        } else if (lhs_ty == .f32 or lhs_ty == .f64) {
+        } else if (lhs_ty == .f32 or lhs_ty == .f64 or rhs_untyped) {
             self.target_type = lhs_ty;
         }
     }
@@ -4751,8 +4774,12 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // float RHS promotes to the float (`i64 * f32` → `f32`); vectors /
     // structs keep the LHS type. `inferExprType` reuses the same helper
     // so static typing agrees with the value produced here.
-    const rhs_inferred = rhs_ref_pointee orelse self.inferExprType(bop.rhs);
-    var ty = arithResultType(lhs_ty, rhs_inferred);
+    const rhs_ty = blk: {
+        if (rhs_ref_pointee) |p| break :blk p;
+        const it = self.inferExprType(bop.rhs);
+        break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
+    };
+    var ty = arithResultType(lhs_ty, rhs_ty);
 
     // Auto-unwrap optional operands for arithmetic/comparison — ONLY when the
     // operand is PROVEN present by flow narrowing (the operand-side
@@ -4771,7 +4798,6 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             lhs = self.builder.emit(.{ .optional_unwrap = .{ .operand = lhs } }, ty);
         }
     }
-    const rhs_ty = rhs_ref_pointee orelse self.inferExprType(bop.rhs);
     if (!rhs_ty.isBuiltin()) {
         const rhs_info = self.module.types.get(rhs_ty);
         if (rhs_info == .optional) {
@@ -4865,10 +4891,8 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         }
     }
 
-    // The RHS type the operand rules see: an un-inferable RHS takes its
-    // lowered type, a narrowed optional its payload.
+    // The RHS type the operand rules see: a narrowed optional shows its payload.
     const eff_rhs_ty = blk: {
-        if (rhs_ty == .unresolved) break :blk self.builder.getRefType(rhs);
         if (!rhs_ty.isBuiltin()) {
             const ri = self.module.types.get(rhs_ty);
             if (ri == .optional) break :blk ri.optional.child;
@@ -5399,10 +5423,38 @@ pub fn lowerChainedComparison(self: *Lowering, cc: *const ast.ChainedComparison)
         return self.builder.constBool(true);
     }
 
+    // The chain's value is `bool`; the ambient expected type describes THAT
+    // value, never the operands. An operand carrying no type of its own — an
+    // `xx` cast is the shape — takes its target from a neighboring operand.
+    const ambient_tt = self.target_type;
+    self.target_type = null;
+    defer self.target_type = ambient_tt;
     var refs = std.ArrayList(Ref).empty;
     defer refs.deinit(self.alloc);
-    for (cc.operands) |op| {
+    for (cc.operands, 0..) |op, i| {
+        if (self.inferExprType(op) == .unresolved) {
+            var peer: ?TypeId = null;
+            if (i > 0) {
+                const prev = self.inferExprType(cc.operands[i - 1]);
+                if (prev != .unresolved and prev != .void) peer = prev;
+            }
+            if (peer == null) {
+                for (cc.operands[i + 1 ..]) |later_op| {
+                    const later = self.inferExprType(later_op);
+                    if (later != .unresolved and later != .void) {
+                        peer = later;
+                        break;
+                    }
+                }
+            }
+            if (peer == null and i > 0) {
+                const prev_ty = self.builder.getRefType(refs.items[i - 1]);
+                if (prev_ty != .unresolved and prev_ty != .void) peer = prev_ty;
+            }
+            if (peer) |p| self.target_type = p;
+        }
         refs.append(self.alloc, self.lowerExpr(op)) catch unreachable;
+        self.target_type = null;
     }
 
     var result = self.emitCmp(refs.items[0], refs.items[1], cc.ops[0]);
