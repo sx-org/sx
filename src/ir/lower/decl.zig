@@ -3629,6 +3629,10 @@ pub fn isNameVisible(self: *Lowering, name: []const u8) bool {
     // do not import the declaring module. A compiler indirection is exempt
     // from the user-facing visibility gate, like UFCS rewrites.
     if (std.mem.startsWith(u8, name, "__sx_")) return true;
+    // A registered `@` contract resolves program-wide, exactly as its type
+    // counterparts do: the registry admits one canonical declaration of the
+    // name, so no second author exists for a visibility rule to choose between.
+    if (contracts.isAtName(name) and contracts.find(name) != null) return true;
     return self.isVisible(name, .user_bare_flat);
 }
 

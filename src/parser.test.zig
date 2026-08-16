@@ -1654,12 +1654,11 @@ test "parser: an `@` function declaration takes no `intrinsic` marker" {
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-test "parser: an `@` function declaration takes no body, ABI, or linkage" {
+test "parser: an `@` function declaration takes no arrow body, ABI, or linkage" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
     for ([_][:0]const u8{
-        "@f :: (n: i32) -> i32 { return n; }",
         "@f :: (n: i32) -> i32 => n;",
         "@f :: (n: i32) -> i32 abi(.c);",
         "@f :: (n: i32) -> i32 extern;",
@@ -1668,6 +1667,17 @@ test "parser: an `@` function declaration takes no body, ABI, or linkage" {
         var p = try Parser.init(alloc, src);
         try std.testing.expectError(error.ParseError, p.parse());
     }
+}
+
+test "parser: an `@` function declaration takes a block body" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "@f :: (n: i32) -> i32 { return n; }");
+    const root = try parser.parse();
+    const fd = root.data.root.decls[0].data.fn_decl;
+    try std.testing.expectEqualStrings("@f", fd.name);
+    try std.testing.expect(fd.body.data == .block);
+    try std.testing.expect(!fd.is_arrow);
 }
 
 test "parser: a plain bodyless signature is a function-type alias" {
