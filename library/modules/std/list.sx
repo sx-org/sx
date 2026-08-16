@@ -18,8 +18,13 @@ List :: struct ($T: Type) {
     len :: (self: *List(T)) -> i64 #get => self.items.len;
     // Write accessor: `xs.len = n` sets the live count (e.g. `xs.len = 0` to
     // clear without freeing). Mirrors the `#get` above; the buffer / `cap` are
-    // untouched, so `n` must be `<= cap`.
-    len :: (self: *List(T), v: i64) #set { self.items.len = v; }
+    // untouched, so `n` outside `0 ..= cap` panics. A `#set` signature is
+    // `(self, v)` — there is no site parameter to name the assignment, so the
+    // panic carries no location.
+    len :: (self: *List(T), v: i64) #set {
+        if v < 0 or v > self.cap { @panic("List len out of range", @SourceSite{}); }
+        self.items.len = v;
+    }
 
     // The one allocation path. Every failure `@panic`s before a field is
     // written, so a list that could not grow is unchanged and still owns its
@@ -58,7 +63,8 @@ List :: struct ($T: Type) {
 
     // O(1) unordered remove: the last element moves into slot `i`.
     // Order is NOT preserved — for order-keeping removal, shift manually.
-    swap_remove :: (list: *List(T), i: i64) {
+    swap_remove :: (list: *List(T), i: i64, site: @SourceSite = @caller) {
+        if i < 0 or i >= list.items.len { @panic("List swap_remove index out of range", site); }
         list.items.ptr[i] = list.items.ptr[list.items.len - 1];
         list.items.len -= 1;
     }
