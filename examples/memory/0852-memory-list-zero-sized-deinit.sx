@@ -1,0 +1,24 @@
+// `deinit` on a `List` of a zero-sized element frees nothing: the growth that
+// set `cap` never allocated, so there is no buffer to hand back. The list is
+// left detached and grows again from the same allocator, and a second `deinit`
+// is a no-op.
+#import "modules/std.sx";
+
+Nothing :: struct {}
+
+main :: () {
+    gpa := GPA.init();
+    xs : List(Nothing) = .{};
+
+    xs.append(.{}, gpa);
+    print("appended: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.alloc_count);
+
+    xs.deinit(gpa);
+    print("after deinit: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.alloc_count);
+
+    xs.deinit(gpa);
+    print("again: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.alloc_count);
+
+    xs.append(.{}, gpa);
+    print("regrown: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.alloc_count);
+}
