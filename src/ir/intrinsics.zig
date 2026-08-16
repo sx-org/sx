@@ -161,6 +161,7 @@ pub const Id = enum(u16) {
     // std/core.sx declares these two; the `@` is part of the name.
     @"@volatile_load",
     @"@volatile_store",
+    @"@printf",
     @"@va_start",
     @"@va_arg",
     @"@va_copy",
@@ -333,6 +334,13 @@ pub const entries = [_]Entry{
     // intrinsics.
     .{ .id = .@"@volatile_load", .module = core, .name = "@volatile_load", .mode = .lower, .arity = 2 },
     .{ .id = .@"@volatile_store", .module = core, .name = "@volatile_store", .mode = .lower, .arity = 3 },
+
+    // Expanded at lowering into calls to the emission primitives core.sx
+    // declares beside it — one per format segment, one per argument. The
+    // expansion is ordinary sx calls, so `#run` renders through the same
+    // primitives the runtime does. Arity 2 is the declaration's `($fmt, ..$args)`;
+    // the call site takes one argument per `{}`.
+    .{ .id = .@"@printf", .module = core, .name = "@printf", .mode = .lower, .arity = 2, .ret = .void },
 
     // Lowered to the four cursor IR ops. A cursor walks arguments a real call
     // frame delivered, so there is no VM arm: `#run` over one bails loudly

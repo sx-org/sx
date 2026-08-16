@@ -1,0 +1,18 @@
+// A `@printf` under `#run` renders in the compiler and writes the compiler's
+// stdout — the first line below is produced during compilation. The comptime VM
+// walks the same core.sx primitives the runtime does, so one call site spells
+// one rendering at both stages, with no allocator at either.
+#import "modules/std/core.sx";
+
+render :: (stage: string) -> i64 {
+    n: i64 = 4242;
+    wide: u32 = 4000000000;
+    @printf("{}: {} {} {} {} braces {{}}\n", stage, n, wide, true, 0.5);
+    0
+}
+
+READY :: #run render("comptime");
+
+main :: () {
+    render("runtime");
+}

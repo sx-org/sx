@@ -112,6 +112,93 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 @volatile_load  :: ($T: Type, address: *T) -> T;
 @volatile_store :: ($T: Type, address: *T, value: T);
 
+// Formatted write to fd 1, allocation-free. `$fmt` is a comptime string in the
+// same `{}` vocabulary `print` takes — `{}` consumes the next argument, `{{`
+// and `}}` write a brace — and the compiler expands the call into one write per
+// segment and per argument, in source order.
+//
+// An argument is a `string`, a `bool`, an integer or a float; any other type is
+// a compile error, because rendering it takes the allocating formatter
+// (`print`). No path through `@printf` reads `context.allocator`.
+@printf :: ($fmt: string, ..$args);
+
+// The primitives `@printf`'s expansion calls, one per argument kind. Each
+// renders into stack storage. The `__sx_` prefix is what lets the compiler
+// synthesize these calls in a module that imports nothing.
+__sx_printf_str :: (s: string) {
+    out(s);
+}
+
+__sx_printf_bool :: (b: bool) {
+    out(if b then "true" else "false");
+}
+
+// Digits land back-to-front in the buffer, so the write starts at `i`. Twenty
+// bytes hold the widest rendering either integer helper produces: i64's minimum
+// (nineteen digits and a sign) and u64's maximum (twenty digits).
+__sx_printf_i64 :: (n: i64) {
+    buf: [20]u8 = ---;
+    i := 20;
+    v := n;
+    if v == 0 {
+        i -= 1;
+        buf[i] = '0';
+    }
+    // The digits come straight out of `n` without negating it: `0 - n`
+    // overflows for i64's minimum. `%` truncates toward zero, so a negative
+    // `v` yields negative remainders; take each one's magnitude.
+    while v != 0 {
+        d := v % 10;
+        if d < 0 { d = 0 - d; }
+        i -= 1;
+        buf[i] = xx (d + '0');
+        v = v / 10;
+    }
+    if n < 0 {
+        i -= 1;
+        buf[i] = '-';
+    }
+    c.write(1, *buf[i], xx (20 - i));
+}
+
+__sx_printf_u64 :: (n: u64) {
+    buf: [20]u8 = ---;
+    i := 20;
+    v := n;
+    if v == 0 {
+        i -= 1;
+        buf[i] = '0';
+    }
+    while v != 0 {
+        i -= 1;
+        buf[i] = xx ((v % 10) + '0');
+        v = v / 10;
+    }
+    c.write(1, *buf[i], xx (20 - i));
+}
+
+// Six fractional digits, zero-padded — the rendering `float_to_string` gives
+// the same value.
+__sx_printf_f64 :: (f: f64) {
+    v := f;
+    if v < 0.0 {
+        out("-");
+        v = 0.0 - v;
+    }
+    whole := v.(i64);
+    frac := ((v - whole.(f64)) * 1000000.0).(i64);
+    __sx_printf_i64(whole);
+    out(".");
+    buf: [6]u8 = ---;
+    i := 6;
+    while i > 0 {
+        i -= 1;
+        buf[i] = xx ((frac % 10) + '0');
+        frac = frac / 10;
+    }
+    c.write(1, *buf[0], 6);
+}
+
 // The reader a definition whose parameter list ends in a bare `..` walks its
 // tail arguments with. `@VaList` is opaque: it has no fields, no size, and no
 // value form — a local declaration gives it storage, and the four operations
