@@ -122,6 +122,25 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 // (`print`). No path through `@printf` reads `context.allocator`.
 @printf :: ($fmt: string, ..$args);
 
+// Write `msg` and stop the program. `site` defaults to the call site, so the
+// message carries `file:line:` unless the caller passes a site with no line.
+// Allocation-free like `@printf`: it renders through the same primitives, so a
+// panic reaches its message with a broken or exhausted allocator behind it.
+//
+// A `#run` panic exits the COMPILER with code 1; a compiled panic raises
+// SIGABRT.
+@panic :: (msg: string, site: @SourceSite = @caller) -> noreturn {
+    if site.line == 0 {
+        @printf("{}\n", msg);
+    } else {
+        @printf("{}:{}: {}\n", site.file, site.line, msg);
+    }
+    if is_comptime() {
+        c.exit(1);
+    }
+    c.abort()
+}
+
 // The primitives `@printf`'s expansion calls, one per argument kind. Each
 // renders into stack storage. The `__sx_` prefix is what lets the compiler
 // synthesize these calls in a module that imports nothing.
