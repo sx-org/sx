@@ -92,13 +92,13 @@ pub const Ops = struct {
 
     pub fn emitIsComptime(self: Ops) void {
         // Compiled code is never the comptime interpreter → constant
-        // `false`. A `if is_comptime() { … }` branch becomes dead.
+        // `false`. A `if @is_comptime() { … }` branch becomes dead.
         self.e.mapRef(c.LLVMConstInt(self.e.cached_i1, 0, 0));
     }
 
     pub fn emitInterpPrintFrames(self: Ops) void {
         // No interpreter stack in compiled code; this only ever sits in
-        // a dead `is_comptime()` branch. Emit nothing.
+        // a dead `@is_comptime()` branch. Emit nothing.
         self.e.advanceRefCounter();
     }
 
