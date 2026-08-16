@@ -8,6 +8,10 @@ c :: #import "modules/std/c.sx";
 // capacity (`>= items.len`); the buffer spans `cap` elements, the slice spans
 // the live `items.len`. The `len` `#get` accessor exposes the live count as
 // `xs.len` (read), delegating to `items.len`; writes use `xs.items.len`.
+//
+// `grow_to` is the only path that allocates; every method that needs room
+// routes through it. Failures `@panic`: allocation failure, capacity overflow,
+// an index outside its method's range.
 List :: struct ($T: Type) {
     items: []T = .[];   // empty slice ({ptr, len=0}); `.[]` is the empty-slice
                         // literal — `.{}` would init the slice's underlying
@@ -26,10 +30,9 @@ List :: struct ($T: Type) {
         self.items.len = v;
     }
 
-    // The one allocation path. Every failure `@panic`s before a field is
-    // written, so a list that could not grow is unchanged and still owns its
-    // buffer. A zero-sized `T` has no buffer: `cap` grows, nothing is
-    // allocated.
+    // Every failure `@panic`s before a field is written, so a list that could
+    // not grow is unchanged and still owns its buffer. A zero-sized `T` has no
+    // buffer: `cap` grows, nothing is allocated.
     grow_to :: (list: *List(T), n: i64, alloc: Allocator, site: @SourceSite) {
         if list.cap >= n { return; }
         new_cap := if list.cap == 0 then 4 else list.cap;
