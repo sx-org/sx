@@ -1,0 +1,15 @@
+// `xs.len = n` accepts `0 ..= cap`; anything else aborts. A `#set` signature is
+// receiver + value, so there is no `site` parameter to name the assignment and
+// the message carries no `file:line:` prefix.
+//
+// aborts (exit 134) after the message — macOS-pinned.
+#import "modules/std.sx";
+
+main :: () {
+    xs : List(i64) = .{};
+    xs.append(1);
+    xs.append(2);
+    xs.len = 0;
+    print("cleared: len={} cap={}\n", xs.len, xs.cap);
+    xs.len = xs.cap + 1;
+}
