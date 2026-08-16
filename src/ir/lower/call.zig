@@ -1596,6 +1596,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         if (self.genericInstanceMethod(inst_name, fa.field)) |gm| {
                             if (self.ensureGenericInstanceMethodLowered(gm)) |fid| {
                                 const func = &self.module.functions.items[@intFromEnum(fid)];
+                                self.appendDefaultArgs(gm.fd, &args, c.callee);
                                 const final_args = self.prependCtxIfNeeded(func, args.items);
                                 self.coerceCallArgs(final_args, func.params);
                                 return self.builder.call(fid, final_args, func.ret);
