@@ -264,6 +264,20 @@ pub const CallResolver = struct {
             }
         } else if (c.callee.data == .field_access) {
             const cfa = c.callee.data.field_access;
+            // `Box(i64).make(args)` — an instantiation head is a TYPE
+            // receiver, so the member is a static method of that instance,
+            // typed under the instance's bindings. No namespace path can
+            // spell a `.call` head, so this precedes the qualified
+            // classification (which reads such a head as a value receiver).
+            if (self.l.genericStaticHeadMethod(cfa.object, cfa.field)) |gm| {
+                return .{
+                    .kind = .namespace_fn,
+                    .return_type = self.l.genericInstanceMethodReturnType(gm),
+                    .target = .{ .named = cfa.field },
+                    .prepends_ctx = self.l.implicit_ctx_enabled,
+                    .expands_defaults = defaultsFor(gm.fd, c.args.len),
+                };
+            }
             const qualified_call = self.classifyQualifiedCall(c);
 
             // Namespace-qualified free function. Resolve the COMPLETE path

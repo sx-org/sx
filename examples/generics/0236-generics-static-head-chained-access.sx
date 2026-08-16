@@ -1,0 +1,23 @@
+// A generic-struct STATIC-method call is an expression of the instance type:
+// `Box(i64).make(1).v` reads a field of the result and `.get()` calls a method
+// on it, with no intermediate binding.
+
+#import "modules/std.sx";
+
+Box :: struct ($T: Type) {
+    v: T;
+
+    make :: (x: T) -> Box(T) { .{v=x} }
+
+    get :: (self: *Box(T)) -> T { self.v }
+}
+
+main :: () {
+    print("{}\n", Box(i64).make(1).v);
+    print("{}\n", Box(i64).make(2).get());
+
+    b := Box(i64).make(3);
+    print("{}\n", b.v);
+
+    print("{} {}\n", List(i64).with_capacity(8).cap, List(i64).with_capacity(8).len);
+}

@@ -2220,6 +2220,27 @@ pub fn genericInstanceMethod(self: *Lowering, inst_name: []const u8, method: []c
     return null;
 }
 
+/// The generic-instance method a STATIC head selects (`Box(i64).make(..)`):
+/// instantiate the head's template, then read the instance's stamped author
+/// (CP-4). Null when the head is not a generic-struct instantiation or the
+/// author declares no such method. The head selection is probed with
+/// diagnostics off, so a poisoned head reports once — at the dispatch site.
+pub fn genericStaticHeadMethod(self: *Lowering, head: *const Node, method: []const u8) ?GenericStructMethod {
+    if (head.data != .call) return null;
+    const hc = head.data.call;
+    const tmpl = blk: {
+        const saved = self.diagnostics;
+        self.diagnostics = null;
+        defer self.diagnostics = saved;
+        break :blk switch (self.selectGenericStructCallee(hc.callee, null)) {
+            .template => |t| t,
+            .poisoned, .not_generic => return null,
+        };
+    };
+    const inst_ty = self.instantiateGenericStruct(&tmpl, hc.args);
+    return self.genericInstanceMethod(self.formatTypeName(inst_ty), method);
+}
+
 /// Monomorphize (once) the selected generic-instance method under
 /// `<inst_name>.<method>` and return its FuncId. The source-pin follows the
 /// selected `fd` for free: `monomorphizeFunction` pins to `fd.body.source_file`,
