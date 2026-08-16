@@ -1,0 +1,8 @@
+fresh: len=0 cap=4
+filled: [0, 10, 20, 30, 40] cap=8
+inserted: [99, 0, 10, 20, 30, 40, 77]
+removed 0: [99, 10, 20, 30, 40, 77]
+popped 77 then 40
+cleared: len=0 cap=8 pop=null
+reused: [5] cap=8
+deinit: len=0 cap=0 allocs=0

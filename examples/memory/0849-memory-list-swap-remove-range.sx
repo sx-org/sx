@@ -1,0 +1,12 @@
+// `swap_remove` accepts `0 ..< len`; anything else aborts. The message
+// carries the call site, which the `site` parameter picks up from `@caller`.
+//
+// aborts (exit 134) after the message — macOS-pinned.
+#import "modules/std.sx";
+
+main :: () {
+    xs : List(i64) = .{};
+    xs.append(1);
+    xs.append(2);
+    xs.swap_remove(2);
+}
