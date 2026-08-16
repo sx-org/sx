@@ -21,18 +21,38 @@ List :: struct ($T: Type) {
     // untouched, so `n` must be `<= cap`.
     len :: (self: *List(T), v: i64) #set { self.items.len = v; }
 
-    append :: (list: *List(T), item: T, alloc: Allocator = context.allocator) {
-        if list.items.len >= list.cap {
-            new_cap := if list.cap == 0 then 4 else list.cap * 2;
-            new_ptr : [*]T = xx alloc.alloc_bytes(new_cap * size_of(T));
-            if list.items.len > 0 {
-                c.memcpy(new_ptr, list.items.ptr, list.items.len * size_of(T));
-                alloc.dealloc_bytes(list.items.ptr);
-            }
-            list.items.ptr = new_ptr;   // keep the live len; only the buffer moves
-            list.cap = new_cap;
+    // The one allocation path. Every failure `@panic`s before a field is
+    // written, so a list that could not grow is unchanged and still owns its
+    // buffer. A zero-sized `T` has no buffer: `cap` grows, `items.ptr` stays
+    // null.
+    grow_to :: (list: *List(T), n: i64, alloc: Allocator, site: @SourceSite) {
+        if list.cap >= n { return; }
+        new_cap := if list.cap == 0 then 4 else list.cap;
+        while new_cap < n {
+            if new_cap > i64.max / 2 { @panic("List capacity overflow", site); }
+            new_cap = new_cap * 2;
         }
-        list.items.ptr[list.items.len] = item;   // write at the live index (within cap)
+        elem := size_of(T);
+        if elem == 0 {
+            list.cap = new_cap;
+            return;
+        }
+        if new_cap > i64.max / elem { @panic("List allocation size overflow", site); }
+        raw := alloc.alloc_bytes(new_cap * elem);
+        if raw == null { @panic("List allocation failed", site); }
+        if list.items.len > 0 {
+            c.memcpy(raw, list.items.ptr, list.items.len * elem);
+        }
+        if list.cap > 0 {
+            alloc.dealloc_bytes(list.items.ptr);
+        }
+        list.items.ptr = raw.([*]T);
+        list.cap = new_cap;
+    }
+
+    append :: (list: *List(T), item: T, alloc: Allocator = context.allocator, site: @SourceSite = @caller) {
+        list.grow_to(list.items.len + 1, alloc, site);
+        list.items.ptr[list.items.len] = item;
         list.items.len += 1;
     }
 
@@ -43,17 +63,8 @@ List :: struct ($T: Type) {
         list.items.len -= 1;
     }
 
-    ensure_capacity :: (list: *List(T), n: i64, alloc: Allocator = context.allocator) {
-        if list.cap >= n { return; }
-        new_cap := if list.cap == 0 then 4 else list.cap;
-        while new_cap < n { new_cap = new_cap * 2; }
-        new_ptr : [*]T = xx alloc.alloc_bytes(new_cap * size_of(T));
-        if list.items.len > 0 {
-            c.memcpy(new_ptr, list.items.ptr, list.items.len * size_of(T));
-            alloc.dealloc_bytes(list.items.ptr);
-        }
-        list.items.ptr = new_ptr;
-        list.cap = new_cap;
+    ensure_capacity :: (list: *List(T), n: i64, alloc: Allocator = context.allocator, site: @SourceSite = @caller) {
+        list.grow_to(n, alloc, site);
     }
 
     // Drop the reference to a backing that is ALREADY GONE (its arena
