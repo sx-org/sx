@@ -87,8 +87,11 @@ clone :: ufcs (src: []$T, a: Allocator) -> []T {
 // Reallocate a slice to `new_count` elements: fresh storage, contents
 // copied up to min(len, new_count), old backing freed. The returned
 // slice replaces the operand — the old slice is dangling after this.
-resize :: ufcs (slice: []$T, a: Allocator, new_count: i64) -> []T {
+// null when the allocation fails: nothing is copied or freed and the
+// operand stays live and owned by the caller.
+resize :: ufcs (slice: []$T, a: Allocator, new_count: i64) -> ?[]T {
     raw := a.alloc_bytes(new_count * size_of(T));
+    if raw == null { return null; }
     n := if slice.len < new_count then slice.len else new_count;
     c.memcpy(raw, xx slice.ptr, n * size_of(T));
     a.dealloc_bytes(xx slice.ptr);
@@ -101,9 +104,11 @@ resize :: ufcs (slice: []$T, a: Allocator, new_count: i64) -> []T {
 // Bytes-level realloc. 2-method era: alloc + copy(min(old,new)) +
 // dealloc — there is no in-place grow primitive to try yet, and
 // `align` beyond the heap's natural 8 is not honored until the
-// protocol carries alignment.
+// protocol carries alignment. null when the allocation fails: nothing
+// is copied or freed and `ptr` stays live and owned by the caller.
 mem_realloc :: ufcs (a: Allocator, ptr: *void, old: i64, new: i64, align: i64) -> *void {
     raw := a.alloc_bytes(new);
+    if raw == null { return null; }
     n := if old < new then old else new;
     c.memcpy(raw, ptr, n);
     a.dealloc_bytes(ptr);

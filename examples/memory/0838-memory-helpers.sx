@@ -45,12 +45,16 @@ main :: () {
     print("clone: {} (orig {})\n", ys[0], xs[0]);
     ys.free(a);
 
-    // resize — grow (copies, old backing freed)
-    zs := xs.resize(a, 6);
+    // resize — grow (copies, old backing freed); null when the allocation fails
+    grown := xs.resize(a, 6);
+    if grown == null { return; }
+    zs : []i64 = grown;
     zs[5] = 60;
     print("resize: {} {} len={}\n", zs[1], zs[5], zs.len);
     // resize — shrink
-    ws := zs.resize(a, 2);
+    shrunk := zs.resize(a, 2);
+    if shrunk == null { return; }
+    ws : []i64 = shrunk;
     print("shrink: {} {} len={}\n", ws[0], ws[1], ws.len);
     ws.free(a);
 
