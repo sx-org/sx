@@ -432,11 +432,12 @@ pub fn runBuildCallback(gpa: std.mem.Allocator, module: *const Module, func_id: 
 // ── Executor ────────────────────────────────────────────────────────────────
 //
 // Walks the SSA IR over comptime frames: each SSA result is a `Reg` word
-// (immediate scalar bits, or an `Addr`). Integer math is 64-bit wrapping/signed
-// (`+%`, `@divTrunc`, signed compares — a scalar `.int` is i64 regardless of the
-// declared width), float math is f64. Alloca/load/store, aggregate init and
-// projection, and calls execute over comptime memory; an op with no arm bails
-// loudly (`error.Unsupported` + `detail`), never silently.
+// (immediate scalar bits, or an `Addr`). Integer math is 64-bit wrapping (`+%`,
+// truncating `/` and `%` keyed on the result type's signedness, signed compares
+// — a scalar `.int` is i64 regardless of the declared width), float math is
+// f64. Alloca/load/store, aggregate init and projection, and calls execute over
+// comptime memory; an op with no arm bails loudly (`error.Unsupported` +
+// `detail`), never silently.
 
 pub const Error = error{ DivisionByZero, TypeError, Unsupported, OutOfBounds };
 
@@ -1586,8 +1587,10 @@ pub const Vm = struct {
         }
     }
 
-    /// 64-bit integer (wrapping/signed) or f64 arithmetic, keyed on the result
-    /// type.
+    /// 64-bit integer (wrapping) or f64 arithmetic, keyed on the result type.
+    /// `/` and `%` truncate toward zero and take their signedness from that
+    /// type, matching codegen's `sdiv`/`srem`, `udiv`/`urem` and `frem`;
+    /// `+ - *` wrap identically under either signedness.
     fn arith(tag: OpTag, ty: TypeId, l: Reg, r: Reg) Error!Reg {
         if (isFloat(ty)) {
             const lf: f64 = @bitCast(l);
@@ -1597,11 +1600,18 @@ pub const Vm = struct {
                 .sub => lf - rf,
                 .mul => lf * rf,
                 .div => if (rf == 0.0) return error.DivisionByZero else lf / rf,
-                .mod => @mod(lf, rf),
+                .mod => @rem(lf, rf),
                 else => unreachable,
             };
             return @bitCast(res);
         }
+        if (!isSignedInt(ty)) switch (tag) {
+            .div, .mod => {
+                if (r == 0) return error.DivisionByZero;
+                return if (tag == .div) l / r else l % r;
+            },
+            else => {},
+        };
         const li: i64 = @bitCast(l);
         const ri: i64 = @bitCast(r);
         const res: i64 = switch (tag) {
@@ -1609,7 +1619,7 @@ pub const Vm = struct {
             .sub => li -% ri,
             .mul => li *% ri,
             .div => if (ri == 0) return error.DivisionByZero else @divTrunc(li, ri),
-            .mod => if (ri == 0) return error.DivisionByZero else @mod(li, ri),
+            .mod => if (ri == 0) return error.DivisionByZero else @rem(li, ri),
             else => unreachable,
         };
         return @bitCast(res);
