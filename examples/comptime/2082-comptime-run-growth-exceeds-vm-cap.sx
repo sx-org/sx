@@ -1,0 +1,19 @@
+// The comptime VM services `malloc` from its own sandboxed memory and caps a
+// single allocation at 256 MiB. A `List(i64)` grown to `1 << 26` elements asks
+// for 512 MiB, so the VM bails and the module-scope `#run` initializing `BIG`
+// has no value to install — the bail reason IS the compile error. A body-local
+// `#run` that bails falls through to a runtime call instead.
+#import "modules/std.sx";
+
+grow :: () -> i64 {
+    xs : List(i64) = .{};
+    xs.ensure_capacity(1 << 26);
+    0
+}
+
+BIG :: #run grow();
+
+main :: () -> i32 {
+    print("{}\n", BIG);
+    0
+}

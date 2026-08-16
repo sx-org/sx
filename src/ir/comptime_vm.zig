@@ -1347,7 +1347,7 @@ pub const Vm = struct {
                 return .{ .value = try self.readField(table, base + tag_size, payload_ty) };
             },
 
-            // `is_comptime()` — always true on the comptime VM (folds to false in
+            // `@is_comptime()` — always true on the comptime VM (folds to false in
             // compiled code).
             .is_comptime => return .{ .value = @as(Reg, 1) },
 

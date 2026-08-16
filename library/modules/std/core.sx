@@ -112,6 +112,146 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 @volatile_load  :: ($T: Type, address: *T) -> T;
 @volatile_store :: ($T: Type, address: *T, value: T);
 
+// Formatted write to fd 1, allocation-free. `$fmt` is a comptime string in the
+// same `{}` vocabulary `print` takes — `{}` consumes the next argument, `{{`
+// and `}}` write a brace — and the compiler expands the call into one write per
+// segment and per argument, in source order.
+//
+// An argument is a `string`, a `bool`, an integer or a float; any other type is
+// a compile error, because rendering it takes the allocating formatter
+// (`print`). No path through `@printf` reads `context.allocator`.
+@printf :: ($fmt: string, ..$args);
+
+// Where the code is running: `true` under the comptime evaluator, `false` in
+// compiled code. The same lowered body serves both stages, so the answer is the
+// backend's rather than a fold.
+@is_comptime :: () -> bool;
+
+// Write `msg` and stop the program. `site` defaults to the call site, so the
+// message carries `file:line:` unless the caller passes a site with no line.
+// Allocation-free like `@printf`: it renders through the same primitives, so a
+// panic reaches its message with a broken or exhausted allocator behind it.
+//
+// A `#run` panic exits the COMPILER with code 1; a compiled panic raises
+// SIGABRT.
+@panic :: (msg: string, site: @SourceSite = @caller) -> noreturn {
+    if site.line == 0 {
+        @printf("{}\n", msg);
+    } else {
+        @printf("{}:{}: {}\n", site.file, site.line, msg);
+    }
+    if @is_comptime() {
+        c.exit(1);
+    }
+    c.abort()
+}
+
+// The primitives `@printf`'s expansion calls, one per argument kind. Each
+// renders into stack storage. The `__sx_` prefix is what lets the compiler
+// synthesize these calls in a module that imports nothing.
+__sx_printf_str :: (s: string) {
+    out(s);
+}
+
+__sx_printf_bool :: (b: bool) {
+    out(if b then "true" else "false");
+}
+
+// Digits land back-to-front in the buffer, so the write starts at `i`. Twenty
+// bytes hold the widest rendering either integer helper produces: i64's minimum
+// (nineteen digits and a sign) and u64's maximum (twenty digits).
+__sx_printf_i64 :: (n: i64) {
+    // i64.min's magnitude is not an i64; that value is the twenty-byte literal.
+    if n == i64.min {
+        out("-9223372036854775808");
+    } else {
+        buf: [20]u8 = ---;
+        i := 20;
+        if n == 0 {
+            i -= 1;
+            buf[i] = '0';
+        } else {
+            v := if n < 0 then 0 - n else n;
+            while v != 0 {
+                i -= 1;
+                buf[i] = xx ((v % 10) + '0');
+                v = v / 10;
+            }
+            if n < 0 {
+                i -= 1;
+                buf[i] = '-';
+            }
+        }
+        c.write(1, *buf[i], xx (20 - i));
+    }
+}
+
+// Four unsigned 16-bit limbs of `n`'s bits, most significant first, then long
+// division by 10. A negative i64 pattern is the two's-complement unsigned
+// value: each limb is folded into 0..65535. Each step's accumulator is at
+// most 9*65536+65535, so signed `/` and `%` stay inside i64.
+__sx_printf_u64 :: (n: u64) {
+    buf: [20]u8 = ---;
+    i := 20;
+    bits: i64 = xx n;
+    if bits == 0 {
+        i -= 1;
+        buf[i] = '0';
+    } else {
+        g0 := bits % 65536;
+        if g0 < 0 { g0 = g0 + 65536; }
+        r1 := (bits - g0) / 65536;
+        g1 := r1 % 65536;
+        if g1 < 0 { g1 = g1 + 65536; }
+        r2 := (r1 - g1) / 65536;
+        g2 := r2 % 65536;
+        if g2 < 0 { g2 = g2 + 65536; }
+        r3 := (r2 - g2) / 65536;
+        g3 := r3 % 65536;
+        if g3 < 0 { g3 = g3 + 65536; }
+        g: [4]i64 = ---;
+        g[0] = g3;
+        g[1] = g2;
+        g[2] = g1;
+        g[3] = g0;
+        while g[0] != 0 or g[1] != 0 or g[2] != 0 or g[3] != 0 {
+            rem := 0;
+            k := 0;
+            while k < 4 {
+                acc := rem * 65536 + g[k];
+                g[k] = acc / 10;
+                rem = acc % 10;
+                k += 1;
+            }
+            i -= 1;
+            buf[i] = xx (rem + '0');
+        }
+    }
+    c.write(1, *buf[i], xx (20 - i));
+}
+
+// Six fractional digits, zero-padded — the rendering `float_to_string` gives
+// the same value.
+__sx_printf_f64 :: (f: f64) {
+    v := f;
+    if v < 0.0 {
+        out("-");
+        v = 0.0 - v;
+    }
+    whole := v.(i64);
+    frac := ((v - whole.(f64)) * 1000000.0).(i64);
+    __sx_printf_i64(whole);
+    out(".");
+    buf: [6]u8 = ---;
+    i := 6;
+    while i > 0 {
+        i -= 1;
+        buf[i] = xx ((frac % 10) + '0');
+        frac = frac / 10;
+    }
+    c.write(1, *buf[0], 6);
+}
+
 // The reader a definition whose parameter list ends in a bare `..` walks its
 // tail arguments with. `@VaList` is opaque: it has no fields, no size, and no
 // value form — a local declaration gives it storage, and the four operations

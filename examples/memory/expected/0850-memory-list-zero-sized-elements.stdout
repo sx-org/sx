@@ -1,0 +1,4 @@
+appended: len=5 cap=8 allocs=0
+inserted: len=7 cap=8 allocs=0
+removed: len=5 cap=8 allocs=0
+drained: len=0 cap=8 allocs=0

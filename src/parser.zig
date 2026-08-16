@@ -2542,10 +2542,11 @@ pub const Parser = struct {
         return try type_params.toOwnedSlice(self.allocator);
     }
 
-    /// `@NAME :: (params) [-> R];` — a function whose implementation is the
-    /// compiler's. It carries no body, ABI, linkage, `ufcs`, or accessor
-    /// modifier, and its body node is the one the `intrinsic` keyword builds
-    /// for a plain name, so every downstream consumer reads one shape.
+    /// `@NAME :: (params) [-> R] { body }` or, where the implementation is the
+    /// compiler's, `@NAME :: (params) [-> R];`. A bodyless declaration takes
+    /// the body node the `intrinsic` keyword builds for a plain name, so every
+    /// downstream consumer reads one shape. Either form carries no ABI,
+    /// linkage, `ufcs`, or accessor modifier.
     fn parseAtFnDecl(self: *Parser, name: []const u8, name_span: ast.Span, start_pos: u32, name_is_raw: bool) anyerror!*Node {
         const list = try self.parseParams();
         if (list.is_c_variadic) {
@@ -2559,9 +2560,16 @@ pub const Parser = struct {
             return_type = try self.parseFnReturnType();
         }
 
-        const body_start = self.tokens.start(self.tok);
-        try self.expectStatementEnd();
-        const body = try self.createNode(body_start, .{ .intrinsic_expr = {} });
+        const body = if (self.tokens.tag(self.tok) == .l_brace) blk: {
+            const saved_module_expansion = self.in_module_expansion;
+            self.in_module_expansion = false;
+            defer self.in_module_expansion = saved_module_expansion;
+            break :blk try self.parseBlock();
+        } else blk: {
+            const body_start = self.tokens.start(self.tok);
+            try self.expectStatementEnd();
+            break :blk try self.createNode(body_start, .{ .intrinsic_expr = {} });
+        };
         const type_params = try self.collectTypeParams(params);
 
         return try self.createNode(start_pos, .{ .fn_decl = .{

@@ -111,10 +111,25 @@ the import can stand in for the canonical declaration:
 @SourceSite :: struct { … }   // ERROR: 'modules/std/core.sx' declares it
 ```
 
-A contract need not be a type: an `@` name also declares a function the compiler
-implements, written as its signature with no body. `@volatile_load` and
-`@volatile_store` (§Intrinsics, Memory) are such declarations, under the same
-(module, name) identity rule.
+A contract need not be a type: an `@` name also declares a function, under the
+same (module, name) identity rule. Most are a signature with no body, which the
+compiler implements — `@volatile_load` and `@volatile_store` (§Intrinsics,
+Memory), `@printf`, `@is_comptime` (§Compile-time Evaluation, `@is_comptime()`).
+`@panic` is ordinary sx: a body written in the owning module, over `@printf` and
+`@is_comptime`.
+
+`@printf($fmt: string, ..$args)` is an allocation-free formatted write to fd 1.
+`$fmt` is a comptime string in the same `{}` vocabulary `print` takes — `{}`
+consumes the next argument, `{{` and `}}` write a brace — and the compiler
+expands the call into one write per segment and per argument, in source order.
+An argument is a `string`, a `bool`, an integer or a float; any other type is a
+compile error, because rendering it takes the allocating formatter, `print`.
+
+`@panic(msg: string, site: @SourceSite = @caller) -> noreturn` writes
+`file:line: msg` and stops the program; a site with `line == 0` writes bare
+`msg`. A `#run` panic exits the COMPILER with code 1, a compiled panic raises
+SIGABRT. It renders through `@printf`, so it reaches its message with a broken
+or exhausted allocator behind it.
 
 A contract name resolves program-wide. The registry admits exactly one canonical
 declaration of it, so there is no second author for the import-visibility rule to
@@ -3650,10 +3665,12 @@ definition site. This is the mechanism that lets stdlib containers like
 `context.allocator` without requiring callers to thread one through:
 
 ```sx
-// In std.sx:
+// In modules/std/list.sx:
 List :: struct ($T: Type) {
-    append :: (list: *List(T), item: T, alloc: Allocator = context.allocator) {
-        // ... grows via `alloc.alloc(...)` ...
+    append :: (list: *List(T), item: T, alloc: Allocator = context.allocator,
+               site: @SourceSite = @caller) {
+        list.grow_to(list.items.len + 1, alloc, site);
+        // ... stores `item` ...
     }
 }
 
@@ -3661,6 +3678,10 @@ List :: struct ($T: Type) {
 list.append(42);                         // alloc = current context.allocator
 list.append(42, self.parent_allocator);  // alloc = the named long-lived owner
 ```
+
+The trailing `site: @SourceSite = @caller` rides the same mechanism: a growth
+that cannot allocate panics at the call site that asked for it, not inside
+`list.sx`.
 
 Defaults are only consulted for **trailing** missing positional args; once
 a position is provided, all earlier positions must also be provided. There
@@ -5328,11 +5349,10 @@ lowers to. A `#run sqrt(x)` fails loudly rather than folding to a wrong value.
 
 Two categories are **not** intrinsics. `string`, `@Vector`, `@Array` and
 `@Slice` are language primitives, resolved by name by the type system like `int` / `bool` /
-`f64`. And a handful of keywords (`type_eq`, `has_impl`, `is_struct`,
-`is_comptime`) are recognized bare, declared nowhere. `has_impl(P, T)`
-is the type-level spelling of the conformance PROBE and follows the
-probe's per-kind answers and scheduling discipline (see Protocols,
-compile-time execution).
+`f64`. And a handful of keywords (`type_eq`, `has_impl`, `is_struct`) are
+recognized bare, declared nowhere. `has_impl(P, T)` is the type-level spelling
+of the conformance PROBE and follows the probe's per-kind answers and
+scheduling discipline (see Protocols, compile-time execution).
 
 ### Staging: functions belong to no stage
 
@@ -5526,6 +5546,16 @@ response :: format("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body.len, 
 ```
 
 This works for any function, not just `format`. The mechanism is general: the VM compiles the function body (including `#insert` directives, variadic `..args: []any` args, and calls to other functions) and executes it entirely at compile time. If the VM encounters something it cannot evaluate (e.g., extern function calls, unsupported operations), it silently falls through to runtime codegen.
+
+### `@is_comptime()`
+
+`@is_comptime() -> bool` answers which machine is running the code: `true` under
+the comptime evaluator, `false` in compiled code. One lowered body serves both
+stages, so the answer is the backend's rather than a fold — in the binary the
+call folds to `false` and a `if @is_comptime() { … }` branch is dead. It carries
+the `@` sigil: a compiler-maintained contract (§Lexical Structure, The `@`
+namespace) declared by `modules/std/core.sx`, which uses it in `@panic` to exit
+the compiler where a compiled panic aborts.
 
 ### Build Configuration
 

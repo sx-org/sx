@@ -119,8 +119,12 @@ fn collectDecls(
         // A `(` past the `::` is what makes an `@` declaration a FUNCTION. An
         // `@` type contract opens with the `struct` or `protocol` keyword, so
         // it does not match and is not the intrinsic registry's to hold.
+        // Neither is an `@` function carrying a `{` body: its implementation is
+        // the sx source, not the compiler.
+        const tail = std.mem.trimStart(u8, stmt[colons + 2 ..], " \t\r\n");
         const at_fn = name[0] == '@' and
-            std.mem.startsWith(u8, std.mem.trimStart(u8, stmt[colons + 2 ..], " \t\r\n"), "(");
+            std.mem.startsWith(u8, tail, "(") and
+            std.mem.indexOfScalar(u8, tail, '{') == null;
         if (!marked and !at_fn) continue;
         try out.append(alloc, try alloc.dupe(u8, name));
     }
@@ -154,6 +158,21 @@ test "collectDecls takes an `@` function by its signature and leaves `@` type co
     try std.testing.expectEqual(@as(usize, 2), out.items.len);
     try std.testing.expectEqualStrings("@va_start", out.items[0]);
     try std.testing.expectEqualStrings("@va_arg", out.items[1]);
+}
+
+test "collectDecls leaves an `@` function whose body is sx" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var out = std.ArrayList([]const u8).empty;
+    try collectDecls(arena.allocator(),
+        \\@panic :: (msg: string) -> noreturn {
+        \\    out(msg);
+        \\    c.abort()
+        \\}
+        \\@va_end :: (list: *@VaList);
+    , &out);
+    try std.testing.expectEqual(@as(usize, 1), out.items.len);
+    try std.testing.expectEqualStrings("@va_end", out.items[0]);
 }
 
 var g_threaded: ?std.Io.Threaded = null;

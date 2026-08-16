@@ -1,0 +1,10 @@
+// `@panic` writes `<file>:<line>: <msg>` and raises SIGABRT. The line comes
+// from `site`, whose default is `@caller`. The message renders through
+// `@printf`, so it reaches the terminal with no allocator behind it.
+//
+// aborts (exit 134) after the message — aarch64-macOS-pinned.
+#import "modules/std/core.sx";
+
+main :: () {
+    @panic("index 7 out of range");
+}

@@ -675,6 +675,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // so lower them here (before generic arg lowering) like reflection calls.
         if (self.tryLowerAtomicIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
         if (self.tryLowerVolatileIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
+        if (self.tryLowerPrintfIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
         if (self.tryLowerCursorIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
     }
     // Qualified intrinsic spelling is legal too. Only dispatch a compiler
@@ -686,6 +687,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             if (self.tryLowerReflectionCall(sf.decl.name, c)) |ref| return ref;
             if (self.tryLowerAtomicIntrinsic(sf.decl.name, c)) |ref| return ref;
             if (self.tryLowerVolatileIntrinsic(sf.decl.name, c)) |ref| return ref;
+            if (self.tryLowerPrintfIntrinsic(sf.decl.name, c)) |ref| return ref;
             if (self.tryLowerCursorIntrinsic(sf.decl.name, c)) |ref| return ref;
         }
     }
@@ -1594,6 +1596,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         if (self.genericInstanceMethod(inst_name, fa.field)) |gm| {
                             if (self.ensureGenericInstanceMethodLowered(gm)) |fid| {
                                 const func = &self.module.functions.items[@intFromEnum(fid)];
+                                self.appendDefaultArgs(gm.fd, &args, c.callee);
                                 const final_args = self.prependCtxIfNeeded(func, args.items);
                                 self.coerceCallArgs(final_args, func.params);
                                 return self.builder.call(fid, final_args, func.ret);
@@ -2755,6 +2758,8 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .atomic_cmpxchg_weak,
         .@"@volatile_load",
         .@"@volatile_store",
+        .@"@printf",
+        .@"@is_comptime",
         .@"@va_start",
         .@"@va_arg",
         .@"@va_copy",
@@ -2996,6 +3001,8 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .floor,
         .@"@volatile_load",
         .@"@volatile_store",
+        .@"@printf",
+        .@"@is_comptime",
         .@"@va_start",
         .@"@va_arg",
         .@"@va_copy",
@@ -3235,6 +3242,8 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .@"@volatile_store",
         => true,
 
+        .@"@printf",
+        .@"@is_comptime",
         .@"@va_start",
         .@"@va_arg",
         .@"@va_copy",
@@ -3393,6 +3402,162 @@ pub fn tryLowerVolatileIntrinsic(self: *Lowering, name: []const u8, c: *const as
     return Ref.none; // store has a void result
 }
 
+/// The argument kinds `@printf` renders, each with the core.sx primitive that
+/// writes it and the type that primitive takes.
+const PrintfKind = enum {
+    str,
+    boolean,
+    signed,
+    unsigned,
+    float,
+
+    fn primitive(self: PrintfKind) []const u8 {
+        return switch (self) {
+            .str => "__sx_printf_str",
+            .boolean => "__sx_printf_bool",
+            .signed => "__sx_printf_i64",
+            .unsigned => "__sx_printf_u64",
+            .float => "__sx_printf_f64",
+        };
+    }
+
+    fn param(self: PrintfKind) TypeId {
+        return switch (self) {
+            .str => .string,
+            .boolean => .bool,
+            .signed => .i64,
+            .unsigned => .u64,
+            .float => .f64,
+        };
+    }
+};
+
+/// The kind that renders a value of `ty`, or null when nothing does.
+fn printfKind(self: *Lowering, ty: TypeId) ?PrintfKind {
+    switch (ty) {
+        .string => return .str,
+        .bool => return .boolean,
+        .i8, .i16, .i32, .i64, .isize => return .signed,
+        .u8, .u16, .u32, .u64, .usize => return .unsigned,
+        .f32, .f64 => return .float,
+        else => {},
+    }
+    if (ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ty)) {
+        .signed => .signed,
+        .unsigned => .unsigned,
+        .f32, .f64 => .float,
+        else => null,
+    };
+}
+
+/// Emit `<primitive>(<arg>)`, routed through the ordinary call path so the
+/// primitive is lowered on demand wherever the `@printf` sits.
+fn emitPrintfCall(self: *Lowering, primitive: []const u8, arg: *Node, span: ast.Span, src: ?[]const u8) void {
+    const callee = self.synthNode(.{ .identifier = .{ .name = primitive } }, span, src);
+    const args = self.alloc.dupe(*Node, &.{arg}) catch @panic("out of memory");
+    _ = self.lowerCall(&.{ .callee = callee, .args = args });
+}
+
+/// Write one literal run of the format string.
+fn emitPrintfSegment(self: *Lowering, text: []const u8, span: ast.Span, src: ?[]const u8) void {
+    if (text.len == 0) return;
+    const owned = self.alloc.dupe(u8, text) catch @panic("out of memory");
+    // `is_raw` keeps the bytes verbatim: the segment arrives here unescaped.
+    const lit = self.synthNode(.{ .string_literal = .{ .raw = owned, .is_raw = true } }, span, src);
+    emitPrintfCall(self, PrintfKind.str.primitive(), lit, span, src);
+}
+
+/// Write one `{}` argument. The value is lowered and bound to a synthetic
+/// local, so the conversion to the primitive's parameter type happens here.
+fn emitPrintfArg(self: *Lowering, arg: *const Node, span: ast.Span, src: ?[]const u8) void {
+    const raw = self.lowerExpr(@constCast(arg));
+    const arg_ty = self.builder.getRefType(raw);
+    const kind = printfKind(self, arg_ty) orelse {
+        if (self.diagnostics) |d| d.addFmt(.err, arg.span, "@printf renders a string, a bool, an integer or a float — '{s}' takes the allocating formatter, `print`", .{self.formatTypeName(arg_ty)});
+        return;
+    };
+    const val = self.coerceToType(raw, arg_ty, kind.param());
+
+    var buf: [48]u8 = undefined;
+    const nm = std.fmt.bufPrint(&buf, "$printf_{d}", .{self.block_counter}) catch "$printf";
+    self.block_counter += 1;
+    const owned = self.alloc.dupe(u8, nm) catch @panic("out of memory");
+    self.scope.?.put(owned, .{ .ref = val, .ty = kind.param(), .is_alloca = false });
+    const id_node = self.synthNode(.{ .identifier = .{ .name = owned } }, span, src);
+    emitPrintfCall(self, kind.primitive(), id_node, span, src);
+}
+
+/// Recognize `@printf($fmt, ..$args)` and expand it into the core.sx emission
+/// primitives: one call per literal segment and one per argument, in source
+/// order. The format vocabulary is `print`'s — `{}` takes the next argument,
+/// `{{` and `}}` write a brace.
+///
+/// Gated on the registry: the name reaches here only because
+/// `modules/std/core.sx` declares it, and `contracts` refuses the declaration
+/// in any other module.
+pub fn tryLowerPrintfIntrinsic(self: *Lowering, name: []const u8, c: *const ast.Call) ?Ref {
+    const id = intrinsics.findByName(name) orelse return null;
+    if (id != .@"@printf") return null;
+
+    const span = c.callee.span;
+    const src = self.current_source_file;
+    if (c.args.len == 0) {
+        if (self.diagnostics) |d| d.addFmt(.err, span, "@printf expects a format string", .{});
+        return Ref.none;
+    }
+    // The expansion calls into core.sx, so the name resolving program-wide is
+    // not enough — the module has to be in the program.
+    if (!self.program_index.fn_ast_map.contains(PrintfKind.str.primitive())) {
+        if (self.diagnostics) |d| d.addFmt(.err, span, "@printf writes through modules/std/core.sx; #import it", .{});
+        return Ref.none;
+    }
+    // The format steers the expansion, so it is read at lowering: a literal is
+    // the only spelling whose bytes are in hand here.
+    const fmt_node = c.args[0];
+    if (fmt_node.data != .string_literal) {
+        if (self.diagnostics) |d| d.addFmt(.err, fmt_node.span, "@printf's format must be a string literal", .{});
+        return Ref.none;
+    }
+    const lit = fmt_node.data.string_literal;
+    const fmt = if (lit.is_raw) lit.raw else unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
+
+    var seg: std.ArrayList(u8) = .empty;
+    defer seg.deinit(self.alloc);
+    var next_arg: usize = 1;
+    var i: usize = 0;
+    while (i < fmt.len) {
+        const pair: ?u8 = if (i + 1 < fmt.len) fmt[i + 1] else null;
+        if (fmt[i] == '{' and pair == '}') {
+            if (next_arg >= c.args.len) {
+                if (self.diagnostics) |d| d.addFmt(.err, span, "@printf's format has more '{{}}' placeholders than arguments", .{});
+                return Ref.none;
+            }
+            emitPrintfSegment(self, seg.items, span, src);
+            seg.clearRetainingCapacity();
+            emitPrintfArg(self, c.args[next_arg], span, src);
+            next_arg += 1;
+            i += 2;
+            continue;
+        }
+        if ((fmt[i] == '{' and pair == '{') or (fmt[i] == '}' and pair == '}')) {
+            seg.append(self.alloc, fmt[i]) catch @panic("out of memory");
+            i += 2;
+            continue;
+        }
+        seg.append(self.alloc, fmt[i]) catch @panic("out of memory");
+        i += 1;
+    }
+    emitPrintfSegment(self, seg.items, span, src);
+
+    if (next_arg != c.args.len) {
+        if (self.diagnostics) |d| d.addFmt(.err, c.args[next_arg].span, "@printf is passed {d} argument{s} the format has no '{{}}' for", .{
+            c.args.len - next_arg, if (c.args.len - next_arg == 1) @as([]const u8, "") else "s",
+        });
+    }
+    return Ref.none;
+}
+
 /// Strength rank of an atomic ordering, for the compare-exchange rule that the
 /// failure ordering may not be stronger than the success ordering.
 /// relaxed=0 < acquire=release=1 < acq_rel=2 < seq_cst=3.
@@ -3426,8 +3591,7 @@ fn rmwKindFromName(name: []const u8) ?inst_mod.RmwKind {
 fn isReflectionCall(name: []const u8) bool {
     const keywords = [_][]const u8{
         "type_eq",               "has_impl",
-        "is_struct",             "is_comptime",
-        "__interp_print_frames",
+        "is_struct",             "__interp_print_frames",
         "__trace_resolve_frame",
     };
     for (keywords) |k| {
@@ -3463,6 +3627,7 @@ fn isReflectionCall(name: []const u8) bool {
         .raw_any_data,
         .raw_make_any,
         .type_info,
+        .@"@is_comptime",
         => true,
 
         // Lowered elsewhere: math -> `call_builtin`, atomics -> atomic ops,
@@ -3486,6 +3651,7 @@ fn isReflectionCall(name: []const u8) bool {
         .atomic_cmpxchg_weak,
         .@"@volatile_load",
         .@"@volatile_store",
+        .@"@printf",
         .@"@va_start",
         .@"@va_arg",
         .@"@va_copy",
@@ -3901,7 +4067,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             .struct_type = ty,
         } }, .string);
     }
-    if (std.mem.eql(u8, name, "is_comptime")) {
+    if (std.mem.eql(u8, name, "@is_comptime")) {
         // True under the comptime interpreter, false in compiled code — the
         // op decides per backend (it can't fold here, since the same IR
         // serves both). Lets stdlib gate a comptime-only diagnostic branch.

@@ -1,0 +1,10 @@
+// A `@SourceSite` whose `line` is zero carries no location, so `@panic` writes
+// the bare message — no `file:line:` prefix. That is the site a caller passes
+// on when it has none to name.
+//
+// aborts (exit 134) after the message — aarch64-macOS-pinned.
+#import "modules/std/core.sx";
+
+main :: () {
+    @panic("no location for this one", @SourceSite{});
+}

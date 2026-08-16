@@ -3560,6 +3560,7 @@ pub const Lowering = struct {
     pub const tryLowerReflectionCall = lower_call.tryLowerReflectionCall;
     pub const tryLowerAtomicIntrinsic = lower_call.tryLowerAtomicIntrinsic;
     pub const tryLowerVolatileIntrinsic = lower_call.tryLowerVolatileIntrinsic;
+    pub const tryLowerPrintfIntrinsic = lower_call.tryLowerPrintfIntrinsic;
     pub const reflectionArgIsType = lower_call.reflectionArgIsType;
     pub const reflectionTypeArgGuard = lower_call.reflectionTypeArgGuard;
     pub const reflectionErrorSentinel = lower_call.reflectionErrorSentinel;
