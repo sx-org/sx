@@ -422,15 +422,16 @@ max :: (a: $T, b: T) -> T {
 }
 
 List :: struct ($T: Type) {
-    items: []T;          // a slice; items.len is the live count, so a List is
-    cap: i64;            // directly iterable: `for e in xs.items { ... }`
+    items: []T = .[];    // a slice; items.len is the live count, so a List is
+    cap: i64 = 0;        // directly iterable: `for e in xs.items { ... }`
 
-    append :: (self: *List(T), item: T) { ... }
+    append :: (list: *List(T), item: T, alloc: Allocator = context.allocator,
+               site: @SourceSite = @caller) { ... }
 
     // `#get` / `#set` property accessors: read/write via field syntax
     // (`xs.len`, `xs.len = n`) rather than method calls.
     len :: (self: *List(T)) -> i64 #get => self.items.len;
-    len :: (self: *List(T), v: i64) #set { self.items.len = v; }
+    len :: (self: *List(T), v: i64) #set { ... }
 }
 ```
 
@@ -719,8 +720,9 @@ Every program gets an implicit `context` with a default allocator:
 ```sx
 // No boilerplate needed — context is auto-initialized
 main :: () {
-    list := List(i64).create();   // uses context.allocator
-    list.append(42);
+    list : List(i64) = .{};
+    list.append(42);   // grows through context.allocator
+    list.deinit();     // frees through the same
 }
 
 // Override allocator for a scope
