@@ -657,7 +657,7 @@ pub const Analyzer = struct {
     pub fn inferExprType(self: *Analyzer, node: *const Node) Type {
         return switch (node.data) {
             .int_literal => Type.s(64),
-            .float_literal => .f32,
+            .float_literal => .f64,
             .bool_literal => .boolean,
             .string_literal => .string_type,
             .char_literal => Type.s(64),
@@ -741,7 +741,7 @@ pub const Analyzer = struct {
                     std.mem.eql(u8, base, "cos"))
                 {
                     if (call_node.args.len > 0) return self.inferExprType(call_node.args[0]);
-                    return .f32;
+                    return .f64;
                 }
                 return Type.unresolved;
             },

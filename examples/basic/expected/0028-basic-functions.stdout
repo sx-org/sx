@@ -7,7 +7,7 @@ early-ret: 5
 early-ret2: 99
 void-return: ok
 generic-i32: 42
-generic-f32: 1.500000
+generic-f64: 1.500000
 generic-bool: true
 generic-multi: 30
 lambda: 14

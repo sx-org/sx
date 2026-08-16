@@ -1,0 +1,37 @@
+// Float literals default to f64 regardless of context: an unannotated
+// `x := <float literal>` local stays f64 even inside a function whose return
+// type is a narrower float (the implicit-return target must not type the
+// body's declarations), and a generic `$T` inferred from a float literal
+// binds `T = f64`. Also covers destructure decls (`a, b := ...`), which
+// share the same rule.
+
+#import "modules/std.sx";
+
+f :: () -> f32 {
+    x := 1.5;
+    print("f.x: {}\n", type_name(type_of(x)));
+    0.0
+}
+
+g :: () -> f32 {
+    x := 0.0;
+    print("g.x: {}\n", type_name(type_of(x)));
+    0.0
+}
+
+id :: (v: $T) -> T { v }
+
+d_host :: () -> i32 {
+    a, b := .{1.5, 2.5};
+    print("a: {} b: {}\n", type_name(type_of(a)), type_name(type_of(b)));
+    0
+}
+
+main :: () {
+    f();
+    g();
+    print("id: {}\n", type_name(type_of(id(1.5))));
+    d_host();
+    x := 3.14;
+    print("main.x: {}\n", type_name(type_of(x)));
+}

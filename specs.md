@@ -212,7 +212,7 @@ hand-written sx code.
 | Kind      | Examples            | Type    |
 |-----------|---------------------|---------|
 | Integer   | `0`, `42`, `0xFF`, `0o755`, `0b1010` | `i64`   |
-| Float     | `0.3`, `0.9`        | `f32`   |
+| Float     | `0.3`, `0.9`        | `f64`   |
 | String    | `"Hello"`, `"z: {z}"` | `string` (may span multiple lines) |
 | Heredoc String | `#string END`...`END` | `string` |
 | Boolean   | `true`, `false`     | `bool`  |
@@ -2669,7 +2669,7 @@ sum :: (a: $T, b: T) -> T {
 - At call sites, type arguments are **inferred** from actual argument types:
   ```sx
   sum(40, 2)       // T = i32
-  sum(1.5, 2.5)    // T = f32
+  sum(1.5, 2.5)    // T = f64
   ```
 - Each unique set of concrete types produces a **separate specialized function** (monomorphization)
 - Multiple type parameters are supported: `(a: $T, b: $U) -> T`

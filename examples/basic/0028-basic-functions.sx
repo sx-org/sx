@@ -69,7 +69,7 @@ main :: () {
 
     // Generic — single param
     print("generic-i32: {}\n", identity(42));
-    print("generic-f32: {}\n", identity(1.5));
+    print("generic-f64: {}\n", identity(1.5));
     print("generic-bool: {}\n", identity(true));
 
     // Generic — multiple params

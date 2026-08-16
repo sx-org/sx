@@ -108,7 +108,7 @@ double :: (n: i32) -> i32 { n * 2; }   // returns n * 2 — as does `{ n * 2 }`
 | Type | Description |
 |------|-------------|
 | `i8`..`i64`, `u8`..`u64` | Signed/unsigned integers (default: `i64`) |
-| `f32`, `f64` | Floating point (default: `f32`) |
+| `f32`, `f64` | Floating point (default: `f64`) |
 | `bool` | `true` / `false` |
 | `string` | UTF-8 fat pointer `{ptr, len}` |
 | `[N]T` | Fixed-size array |
