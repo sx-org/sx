@@ -3624,6 +3624,7 @@ pub const Lowering = struct {
     pub const returnExprMintsType = lower_generic.returnExprMintsType;
     pub const genericInstanceMethod = lower_generic.genericInstanceMethod;
     pub const genericInstanceMethodReturnType = lower_generic.genericInstanceMethodReturnType;
+    pub const genericStaticHeadMethod = lower_generic.genericStaticHeadMethod;
     pub const ensureGenericInstanceMethodLowered = lower_generic.ensureGenericInstanceMethodLowered;
     pub const lowerComptimeGenericInstanceMethod = lower_generic.lowerComptimeGenericInstanceMethod;
     pub const assertInstanceMapsCoincide = lower_generic.assertInstanceMapsCoincide;
