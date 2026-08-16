@@ -1,7 +1,7 @@
 // `trace.print_interpreter_frames()`. At comptime (`#run`) it
 // dumps the interpreter's active sx call-frame chain (most recent call last) to
 // the build output; in compiled code it folds to nothing (no interpreter stack
-// — the only real caller is `process.exit`'s dead `is_comptime()` branch). The
+// — the only real caller is `process.exit`'s dead `@is_comptime()` branch). The
 // dump frame itself is omitted, and a frame prints its name without a source
 // location.
 

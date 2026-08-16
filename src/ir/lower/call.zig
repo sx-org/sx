@@ -2758,6 +2758,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@volatile_load",
         .@"@volatile_store",
         .@"@printf",
+        .@"@is_comptime",
         .@"@va_start",
         .@"@va_arg",
         .@"@va_copy",
@@ -3000,6 +3001,7 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@volatile_load",
         .@"@volatile_store",
         .@"@printf",
+        .@"@is_comptime",
         .@"@va_start",
         .@"@va_arg",
         .@"@va_copy",
@@ -3240,6 +3242,7 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         => true,
 
         .@"@printf",
+        .@"@is_comptime",
         .@"@va_start",
         .@"@va_arg",
         .@"@va_copy",
@@ -3587,8 +3590,7 @@ fn rmwKindFromName(name: []const u8) ?inst_mod.RmwKind {
 fn isReflectionCall(name: []const u8) bool {
     const keywords = [_][]const u8{
         "type_eq",               "has_impl",
-        "is_struct",             "is_comptime",
-        "__interp_print_frames",
+        "is_struct",             "__interp_print_frames",
         "__trace_resolve_frame",
     };
     for (keywords) |k| {
@@ -3624,6 +3626,7 @@ fn isReflectionCall(name: []const u8) bool {
         .raw_any_data,
         .raw_make_any,
         .type_info,
+        .@"@is_comptime",
         => true,
 
         // Lowered elsewhere: math -> `call_builtin`, atomics -> atomic ops,
@@ -4063,7 +4066,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             .struct_type = ty,
         } }, .string);
     }
-    if (std.mem.eql(u8, name, "is_comptime")) {
+    if (std.mem.eql(u8, name, "@is_comptime")) {
         // True under the comptime interpreter, false in compiled code — the
         // op decides per backend (it can't fold here, since the same IR
         // serves both). Lets stdlib gate a comptime-only diagnostic branch.
