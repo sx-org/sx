@@ -1,1 +1,1 @@
-[stdout] is_comptime runtime=2 comptime=1
+[stdout] @is_comptime runtime=2 comptime=1

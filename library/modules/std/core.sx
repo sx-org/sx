@@ -122,6 +122,11 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 // (`print`). No path through `@printf` reads `context.allocator`.
 @printf :: ($fmt: string, ..$args);
 
+// Where the code is running: `true` under the comptime evaluator, `false` in
+// compiled code. The same lowered body serves both stages, so the answer is the
+// backend's rather than a fold.
+@is_comptime :: () -> bool;
+
 // Write `msg` and stop the program. `site` defaults to the call site, so the
 // message carries `file:line:` unless the caller passes a site with no line.
 // Allocation-free like `@printf`: it renders through the same primitives, so a
@@ -135,7 +140,7 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
     } else {
         @printf("{}:{}: {}\n", site.file, site.line, msg);
     }
-    if is_comptime() {
+    if @is_comptime() {
         c.exit(1);
     }
     c.abort()

@@ -1,6 +1,6 @@
-// `log.sx` leveled logging + the `is_comptime()` builtin.
+// `log.sx` leveled logging + the `@is_comptime()` builtin.
 // `log{ warn,info,err,debug}` interpolate like `print` and write
-// `LEVEL: <msg>` to stderr. `is_comptime()` is `true` under `#run` (the
+// `LEVEL: <msg>` to stderr. `@is_comptime()` is `true` under `#run` (the
 // comptime interpreter) and folds to `false` in compiled code, so a gated
 // branch dead-codes out of the runtime binary.
 //
@@ -13,7 +13,7 @@
 log :: #import "modules/std/log.sx";
 
 probe :: () -> i32 {
-    if is_comptime() { return 1; }       // comptime interpreter path
+    if @is_comptime() { return 1; }      // comptime interpreter path
     return 2;                             // compiled-code path
 }
 
@@ -24,6 +24,6 @@ main :: () -> i32 {
     log.info("user {} connected", "alice");
     log.err("bad fd {}", 7);
     log.debug("trace x={}", 42);
-    print("[stdout] is_comptime runtime={} comptime={}\n", probe(), CT);
+    print("[stdout] @is_comptime runtime={} comptime={}\n", probe(), CT);
     return 0;
 }

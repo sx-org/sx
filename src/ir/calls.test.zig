@@ -85,7 +85,7 @@ test "calls: builtin and reflection result types, unknown fallthrough" {
         .{ .name = "variant_index", .want = .i64 },
         .{ .name = "struct_field_name", .want = .string },
         .{ .name = "error_name", .want = .string },
-        .{ .name = "is_comptime", .want = .bool },
+        .{ .name = "@is_comptime", .want = .bool },
         .{ .name = "is_flags", .want = .bool },
         .{ .name = "type_of", .want = .type_value },
         .{ .name = "struct_field_value", .want = .any },

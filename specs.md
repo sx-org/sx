@@ -5328,11 +5328,10 @@ lowers to. A `#run sqrt(x)` fails loudly rather than folding to a wrong value.
 
 Two categories are **not** intrinsics. `string`, `@Vector`, `@Array` and
 `@Slice` are language primitives, resolved by name by the type system like `int` / `bool` /
-`f64`. And a handful of keywords (`type_eq`, `has_impl`, `is_struct`,
-`is_comptime`) are recognized bare, declared nowhere. `has_impl(P, T)`
-is the type-level spelling of the conformance PROBE and follows the
-probe's per-kind answers and scheduling discipline (see Protocols,
-compile-time execution).
+`f64`. And a handful of keywords (`type_eq`, `has_impl`, `is_struct`) are
+recognized bare, declared nowhere. `has_impl(P, T)` is the type-level spelling
+of the conformance PROBE and follows the probe's per-kind answers and
+scheduling discipline (see Protocols, compile-time execution).
 
 ### Staging: functions belong to no stage
 
@@ -5526,6 +5525,16 @@ response :: format("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body.len, 
 ```
 
 This works for any function, not just `format`. The mechanism is general: the VM compiles the function body (including `#insert` directives, variadic `..args: []any` args, and calls to other functions) and executes it entirely at compile time. If the VM encounters something it cannot evaluate (e.g., extern function calls, unsupported operations), it silently falls through to runtime codegen.
+
+### `@is_comptime()`
+
+`@is_comptime() -> bool` answers which machine is running the code: `true` under
+the comptime evaluator, `false` in compiled code. One lowered body serves both
+stages, so the answer is the backend's rather than a fold — in the binary the
+call folds to `false` and a `if @is_comptime() { … }` branch is dead. It carries
+the `@` sigil: a compiler-maintained contract (§Lexical Structure, The `@`
+namespace) declared by `modules/std/core.sx`, which uses it in `@panic` to exit
+the compiler where a compiled panic aborts.
 
 ### Build Configuration
 
