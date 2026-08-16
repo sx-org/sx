@@ -28,8 +28,8 @@ List :: struct ($T: Type) {
 
     // The one allocation path. Every failure `@panic`s before a field is
     // written, so a list that could not grow is unchanged and still owns its
-    // buffer. A zero-sized `T` has no buffer: `cap` grows, `items.ptr` stays
-    // null.
+    // buffer. A zero-sized `T` has no buffer: `cap` grows, nothing is
+    // allocated.
     grow_to :: (list: *List(T), n: i64, alloc: Allocator, site: @SourceSite) {
         if list.cap >= n { return; }
         new_cap := if list.cap == 0 then 4 else list.cap;
@@ -128,11 +128,11 @@ List :: struct ($T: Type) {
     }
 
     deinit :: (list: *List(T), alloc: Allocator = context.allocator) {
-        // `cap > 0` is the ownership signal: a List holds an allocated buffer
-        // ONLY after a growth set `cap`. Guarding on `cap` (not `items.ptr`)
-        // makes deinit idempotent and safe on a never-grown / borrowed-items
-        // list — and `.[]` leaves a len-0 slice whose ptr need not be null.
-        if list.cap > 0 {
+        // Ownership is `size_of(T) > 0 and cap > 0`: a ZST growth sets `cap`
+        // without allocating, so `cap` alone does not mean there is a buffer.
+        // `items.ptr` is not the signal either — `.[]` leaves a len-0 slice
+        // whose ptr need not be null.
+        if size_of(T) > 0 and list.cap > 0 {
             alloc.dealloc_bytes(list.items.ptr);
         }
         list.detach();
