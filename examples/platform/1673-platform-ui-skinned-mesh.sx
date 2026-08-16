@@ -1,0 +1,113 @@
+// Skinned mesh through the UI renderer: UIRenderer.set_skinned_mesh /
+// set_bone_palette feeding `.skinned_mesh` render nodes, drawn windowless
+// over an offscreen MetalGPU and read back.
+//
+// The green range is authored left of center and weighted entirely to
+// bone 1, the red range right of center and weighted to bone 0. The same
+// tree is rendered twice: once with an all-identity palette, then with
+// bone 1 translating +0.6 in x. The center pixel is clear in the first
+// frame and green in the second, so it is covered only because the palette
+// reached the vertex stage; the bone-0 range stays where it was authored.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/math";
+#import "modules/gpu/types.sx";
+#import "modules/gpu/api.sx";
+#import "modules/gpu/metal.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/renderer.sx";
+
+W :i32: 64;
+H :i32: 64;
+
+// Coverage of a sampled pixel, named by which tinted range reaches it.
+sample :: (px: [*]u8, o: i64) -> string {
+    if px[o] < 16 and px[o + 1] < 16 { return "black"; }
+    if px[o + 1] > px[o] { return "green"; }
+    if px[o] > px[o + 1] { return "red"; }
+    "other"
+}
+
+main :: () -> i32 {
+    inline if OS != .macos {
+        print("ui skin identity center: black\n");
+        print("ui skin moved center: green\n");
+        print("ui skin bone0: red\n");
+        return 0;
+    }
+
+    gpu : MetalGPU = .{};
+    if !gpu.init_offscreen(W, H) { print("offscreen init failed\n"); return 1; }
+
+    renderer : UIRenderer = .{};
+    renderer.gpu = gpu.(GPU);
+    renderer.init();
+
+    verts : [6]SkinnedVertex = .[
+        .{ position = .[0.0 - 0.85, 0.0 - 0.25, 0.5], normal = .[0.0, 0.0, 1.0],
+           uv = .[0.0, 0.0], joints = .[1.0, 0.0, 0.0, 0.0], weights = .[1.0, 0.0, 0.0, 0.0] },
+        .{ position = .[0.0 - 0.35, 0.0 - 0.25, 0.5], normal = .[0.0, 0.0, 1.0],
+           uv = .[1.0, 0.0], joints = .[1.0, 0.0, 0.0, 0.0], weights = .[1.0, 0.0, 0.0, 0.0] },
+        .{ position = .[0.0 - 0.60, 0.25,       0.5], normal = .[0.0, 0.0, 1.0],
+           uv = .[0.5, 1.0], joints = .[1.0, 0.0, 0.0, 0.0], weights = .[1.0, 0.0, 0.0, 0.0] },
+
+        .{ position = .[0.35,       0.0 - 0.25, 0.5], normal = .[0.0, 0.0, 1.0],
+           uv = .[0.0, 0.0], joints = .[0.0, 0.0, 0.0, 0.0], weights = .[1.0, 0.0, 0.0, 0.0] },
+        .{ position = .[0.85,       0.0 - 0.25, 0.5], normal = .[0.0, 0.0, 1.0],
+           uv = .[1.0, 0.0], joints = .[0.0, 0.0, 0.0, 0.0], weights = .[1.0, 0.0, 0.0, 0.0] },
+        .{ position = .[0.60,       0.25,       0.5], normal = .[0.0, 0.0, 1.0],
+           uv = .[0.5, 1.0], joints = .[0.0, 0.0, 0.0, 0.0], weights = .[1.0, 0.0, 0.0, 0.0] },
+    ];
+    idx : [6]u32 = .[0, 1, 2, 3, 4, 5];
+    if !renderer.set_skinned_mesh(verts[..], idx[..]) { print("set_skinned_mesh failed\n"); return 1; }
+
+    // Positions are authored in clip space, so the node transform is identity.
+    tree := RenderTree.init();
+    ctx := RenderContext.init(*tree);
+    ctx.add_skinned_mesh(0, 3, Mat4.identity(), Color.rgb(0, 255, 0));
+    ctx.add_skinned_mesh(3, 3, Mat4.identity(), Color.rgb(255, 0, 0));
+
+    rest : [2]BoneMatrix = .[
+        .{ rows = .[ .[1.0, 0.0, 0.0, 0.0], .[0.0, 1.0, 0.0, 0.0], .[0.0, 0.0, 1.0, 0.0] ] },
+        .{ rows = .[ .[1.0, 0.0, 0.0, 0.0], .[0.0, 1.0, 0.0, 0.0], .[0.0, 0.0, 1.0, 0.0] ] },
+    ];
+    moved : [2]BoneMatrix = .[
+        .{ rows = .[ .[1.0, 0.0, 0.0, 0.0], .[0.0, 1.0, 0.0, 0.0], .[0.0, 0.0, 1.0, 0.0] ] },
+        .{ rows = .[ .[1.0, 0.0, 0.0, 0.6], .[0.0, 1.0, 0.0, 0.0], .[0.0, 0.0, 1.0, 0.0] ] },
+    ];
+
+    n : i64 = xx (W * H * 4);
+    px : [*]u8 = xx context.allocator.alloc_bytes(n);
+    center : i64 = xx (((H / 2) * W + (W / 2)) * 4);
+    // Column 51 of row 32 sits inside the bone-0 range as authored.
+    bone0 : i64 = xx (((H / 2) * W + 51) * 4);
+
+    renderer.set_bone_palette(rest[..]);
+    if !gpu.begin_frame(ClearColor.black()) { print("begin_frame failed\n"); return 1; }
+    renderer.begin(xx W, xx H, 0);
+    renderer.process(*tree);
+    renderer.flush();
+    gpu.end_frame(0.0);
+    if !gpu.read_offscreen(xx px) { print("readback failed\n"); return 1; }
+    rest_center := sample(px, center);
+
+    renderer.set_bone_palette(moved[..]);
+    if !gpu.begin_frame(ClearColor.black()) { print("begin_frame failed\n"); return 1; }
+    renderer.begin(xx W, xx H, 0);
+    renderer.process(*tree);
+    renderer.flush();
+    gpu.end_frame(0.0);
+    if !gpu.read_offscreen(xx px) { print("readback failed\n"); return 1; }
+    moved_center := sample(px, center);
+    moved_bone0 := sample(px, bone0);
+
+    print("ui skin identity center: {}\n", rest_center);
+    print("ui skin moved center: {}\n", moved_center);
+    print("ui skin bone0: {}\n", moved_bone0);
+
+    if rest_center != "black" { return 1; }
+    if moved_center != "green" { return 1; }
+    if moved_bone0 != "red" { return 1; }
+    0
+}
