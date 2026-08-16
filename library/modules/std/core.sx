@@ -137,42 +137,71 @@ __sx_printf_bool :: (b: bool) {
 // bytes hold the widest rendering either integer helper produces: i64's minimum
 // (nineteen digits and a sign) and u64's maximum (twenty digits).
 __sx_printf_i64 :: (n: i64) {
-    buf: [20]u8 = ---;
-    i := 20;
-    v := n;
-    if v == 0 {
-        i -= 1;
-        buf[i] = '0';
+    // i64.min's magnitude is not an i64; that value is the twenty-byte literal.
+    if n == i64.min {
+        out("-9223372036854775808");
+    } else {
+        buf: [20]u8 = ---;
+        i := 20;
+        if n == 0 {
+            i -= 1;
+            buf[i] = '0';
+        } else {
+            v := if n < 0 then 0 - n else n;
+            while v != 0 {
+                i -= 1;
+                buf[i] = xx ((v % 10) + '0');
+                v = v / 10;
+            }
+            if n < 0 {
+                i -= 1;
+                buf[i] = '-';
+            }
+        }
+        c.write(1, *buf[i], xx (20 - i));
     }
-    // The digits come straight out of `n` without negating it: `0 - n`
-    // overflows for i64's minimum. `%` truncates toward zero, so a negative
-    // `v` yields negative remainders; take each one's magnitude.
-    while v != 0 {
-        d := v % 10;
-        if d < 0 { d = 0 - d; }
-        i -= 1;
-        buf[i] = xx (d + '0');
-        v = v / 10;
-    }
-    if n < 0 {
-        i -= 1;
-        buf[i] = '-';
-    }
-    c.write(1, *buf[i], xx (20 - i));
 }
 
+// Four unsigned 16-bit limbs of `n`'s bits, most significant first, then long
+// division by 10. A negative i64 pattern is the two's-complement unsigned
+// value: each limb is folded into 0..65535. Each step's accumulator is at
+// most 9*65536+65535, so signed `/` and `%` stay inside i64.
 __sx_printf_u64 :: (n: u64) {
     buf: [20]u8 = ---;
     i := 20;
-    v := n;
-    if v == 0 {
+    bits: i64 = xx n;
+    if bits == 0 {
         i -= 1;
         buf[i] = '0';
-    }
-    while v != 0 {
-        i -= 1;
-        buf[i] = xx ((v % 10) + '0');
-        v = v / 10;
+    } else {
+        g0 := bits % 65536;
+        if g0 < 0 { g0 = g0 + 65536; }
+        r1 := (bits - g0) / 65536;
+        g1 := r1 % 65536;
+        if g1 < 0 { g1 = g1 + 65536; }
+        r2 := (r1 - g1) / 65536;
+        g2 := r2 % 65536;
+        if g2 < 0 { g2 = g2 + 65536; }
+        r3 := (r2 - g2) / 65536;
+        g3 := r3 % 65536;
+        if g3 < 0 { g3 = g3 + 65536; }
+        g: [4]i64 = ---;
+        g[0] = g3;
+        g[1] = g2;
+        g[2] = g1;
+        g[3] = g0;
+        while g[0] != 0 or g[1] != 0 or g[2] != 0 or g[3] != 0 {
+            rem := 0;
+            k := 0;
+            while k < 4 {
+                acc := rem * 65536 + g[k];
+                g[k] = acc / 10;
+                rem = acc % 10;
+                k += 1;
+            }
+            i -= 1;
+            buf[i] = xx (rem + '0');
+        }
     }
     c.write(1, *buf[i], xx (20 - i));
 }
