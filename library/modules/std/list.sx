@@ -55,6 +55,13 @@ List :: struct ($T: Type) {
         list.cap = new_cap;
     }
 
+    // `cap` follows `grow_to`'s doubling, so it can exceed `n`.
+    with_capacity :: (n: i64, alloc: Allocator = context.allocator, site: @SourceSite = @caller) -> List(T) {
+        list : List(T) = .{};
+        list.grow_to(n, alloc, site);
+        return list;
+    }
+
     append :: (list: *List(T), item: T, alloc: Allocator = context.allocator, site: @SourceSite = @caller) {
         list.grow_to(list.items.len + 1, alloc, site);
         list.items.ptr[list.items.len] = item;
