@@ -1,0 +1,46 @@
+name: toolchain
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/toolchain]
+
+concurrency:
+  group: sx-toolchain
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: docker
+    container:
+      image: node:22-bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - name: install docker cli
+        run: |
+          set -x
+          curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz \
+            | tar -xz --strip-components 1 -C /usr/local/bin docker/docker 2>&1 | tee -a /tmp/ci.log
+          docker version 2>&1 | tee -a /tmp/ci.log
+      - name: fetch recipe
+        run: git clone --depth 1 https://git.swipelab.com/sx/toolchain.git /tmp/recipe 2>&1 | tee -a /tmp/ci.log
+      - name: build
+        run: |
+          set -o pipefail
+          docker build -f /tmp/recipe/Dockerfile \
+            -t git.swipelab.com/sx/toolchain:latest \
+            -t git.swipelab.com/sx/toolchain:${GITHUB_SHA:0:10} \
+            . 2>&1 | tee -a /tmp/ci.log
+      - name: push
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+        run: |
+          set -o pipefail
+          echo "$REGISTRY_TOKEN" | docker login git.swipelab.com -u agra --password-stdin 2>&1 | tee -a /tmp/ci.log
+          docker push git.swipelab.com/sx/toolchain:latest 2>&1 | tee -a /tmp/ci.log
+          docker push git.swipelab.com/sx/toolchain:${GITHUB_SHA:0:10} 2>&1 | tee -a /tmp/ci.log
+      - name: upload log
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: ci-log
+          path: /tmp/ci.log
