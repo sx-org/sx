@@ -61,6 +61,9 @@ pub const Jni = struct {
     // runtime dispatches the right arg-shuffle for each.
     pub const CallObjectMethod: u32 = 34;
     pub const CallBooleanMethod: u32 = 37;
+    pub const CallByteMethod: u32 = 40;
+    pub const CallCharMethod: u32 = 43;
+    pub const CallShortMethod: u32 = 46;
     pub const CallIntMethod: u32 = 49;
     pub const CallLongMethod: u32 = 52;
     pub const CallFloatMethod: u32 = 55;
@@ -73,6 +76,9 @@ pub const Jni = struct {
     // `(JNIEnv*, jobject obj, jclass clazz, jmethodID, args...)`.
     pub const CallNonvirtualObjectMethod: u32 = 64;
     pub const CallNonvirtualBooleanMethod: u32 = 67;
+    pub const CallNonvirtualByteMethod: u32 = 70;
+    pub const CallNonvirtualCharMethod: u32 = 73;
+    pub const CallNonvirtualShortMethod: u32 = 76;
     pub const CallNonvirtualIntMethod: u32 = 79;
     pub const CallNonvirtualLongMethod: u32 = 82;
     pub const CallNonvirtualFloatMethod: u32 = 85;
@@ -85,11 +91,76 @@ pub const Jni = struct {
     pub const GetStaticMethodID: u32 = 113;
     pub const CallStaticObjectMethod: u32 = 114;
     pub const CallStaticBooleanMethod: u32 = 117;
+    pub const CallStaticByteMethod: u32 = 120;
+    pub const CallStaticCharMethod: u32 = 123;
+    pub const CallStaticShortMethod: u32 = 126;
     pub const CallStaticIntMethod: u32 = 129;
     pub const CallStaticLongMethod: u32 = 132;
     pub const CallStaticFloatMethod: u32 = 135;
     pub const CallStaticDoubleMethod: u32 = 138;
     pub const CallStaticVoidMethod: u32 = 141;
+
+    pub const CallKind = enum { instance, static, nonvirtual };
+
+    /// Vtable slot for `Call<T>Method` / `CallStatic<T>Method` /
+    /// `CallNonvirtual<T>Method`. `i8`/`u8` share `CallByteMethod` (JNI
+    /// `jbyte`); `i16` is `CallShortMethod` (`jshort`); `u16` is
+    /// `CallCharMethod` (`jchar`). Pointer returns use the Object slot.
+    pub fn callMethodSlot(ret_ty: TypeId, is_pointer_ret: bool, kind: CallKind) ?u32 {
+        if (is_pointer_ret) return switch (kind) {
+            .instance => CallObjectMethod,
+            .static => CallStaticObjectMethod,
+            .nonvirtual => CallNonvirtualObjectMethod,
+        };
+        return switch (ret_ty) {
+            .void => switch (kind) {
+                .instance => CallVoidMethod,
+                .static => CallStaticVoidMethod,
+                .nonvirtual => CallNonvirtualVoidMethod,
+            },
+            .bool => switch (kind) {
+                .instance => CallBooleanMethod,
+                .static => CallStaticBooleanMethod,
+                .nonvirtual => CallNonvirtualBooleanMethod,
+            },
+            .i8, .u8 => switch (kind) {
+                .instance => CallByteMethod,
+                .static => CallStaticByteMethod,
+                .nonvirtual => CallNonvirtualByteMethod,
+            },
+            .i16 => switch (kind) {
+                .instance => CallShortMethod,
+                .static => CallStaticShortMethod,
+                .nonvirtual => CallNonvirtualShortMethod,
+            },
+            .u16 => switch (kind) {
+                .instance => CallCharMethod,
+                .static => CallStaticCharMethod,
+                .nonvirtual => CallNonvirtualCharMethod,
+            },
+            .i32 => switch (kind) {
+                .instance => CallIntMethod,
+                .static => CallStaticIntMethod,
+                .nonvirtual => CallNonvirtualIntMethod,
+            },
+            .i64 => switch (kind) {
+                .instance => CallLongMethod,
+                .static => CallStaticLongMethod,
+                .nonvirtual => CallNonvirtualLongMethod,
+            },
+            .f32 => switch (kind) {
+                .instance => CallFloatMethod,
+                .static => CallStaticFloatMethod,
+                .nonvirtual => CallNonvirtualFloatMethod,
+            },
+            .f64 => switch (kind) {
+                .instance => CallDoubleMethod,
+                .static => CallStaticDoubleMethod,
+                .nonvirtual => CallNonvirtualDoubleMethod,
+            },
+            else => null,
+        };
+    }
 };
 
 // ── LLVMEmitter ─────────────────────────────────────────────────────────

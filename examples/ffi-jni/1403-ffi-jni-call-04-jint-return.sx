@@ -1,6 +1,4 @@
-// `#jni_call(i32)` (jint return).
-// The lowering for a non-void return drops to `LLVMGetUndef` — the
-// IR snapshot captures that placeholder.
+// `#jni_call(i32)` (jint return). CallIntMethod is vtable slot 49.
 //
 // Runtime: unreachable. Same `g_should_call` global pattern as
 // `ffi-jni-call-03` — keeps `read_int` alive so the IR snapshot has

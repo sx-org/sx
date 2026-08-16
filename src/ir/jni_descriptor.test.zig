@@ -378,14 +378,13 @@ test "isJniReturnTypeSupported accepts the dispatchable set + pointers only" {
     defer table.deinit();
     const t = &table;
 
-    // The Call<T>Method-dispatchable primitives.
-    inline for (.{ types.TypeId.void, types.TypeId.bool, types.TypeId.i32, types.TypeId.i64, types.TypeId.f32, types.TypeId.f64 }) |ty| {
+    // JNI scalar Call<T>Method returns.
+    inline for (.{ types.TypeId.void, types.TypeId.bool, types.TypeId.i8, types.TypeId.u8, types.TypeId.i16, types.TypeId.u16, types.TypeId.i32, types.TypeId.i64, types.TypeId.f32, types.TypeId.f64 }) |ty| {
         try std.testing.expect(desc.isJniReturnTypeSupported(t, ty));
     }
 
-    // Other primitive widths are NOT dispatchable (would hit emit_llvm's
-    // undef-producing `else` arm — the footgun this predicate guards).
-    inline for (.{ types.TypeId.i8, types.TypeId.i16, types.TypeId.u8, types.TypeId.u32, types.TypeId.u64 }) |ty| {
+    // Unsigned 32/64 have no JNI scalar call.
+    inline for (.{ types.TypeId.u32, types.TypeId.u64 }) |ty| {
         try std.testing.expect(!desc.isJniReturnTypeSupported(t, ty));
     }
 

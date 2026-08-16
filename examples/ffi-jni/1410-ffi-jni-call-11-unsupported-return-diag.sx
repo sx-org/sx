@@ -1,17 +1,10 @@
-// When a `#jni_call` method returns a type the
-// `Call<T>Method` switch in `emit_llvm.zig` can't dispatch
-// (anything outside void/bool/i32/i64/f32/f64/pointer), the
-// compiler emits a DIAGNOSTIC at lower time rather than
-// silently producing `LLVMGetUndef` at codegen time.
-//
-// Here a JNI method returns `i8` (jbyte, which the call-method switch does
-// not carry). The compile fails with a clear message naming the method +
-// return type.
+// A JNI method whose return type is not a JNI scalar — unsigned 32/64
+// or an aggregate — is a compile error at the call site.
 
 #import "modules/std.sx";
 
 Buf :: #jni_class("java/nio/ByteBuffer") extern {
-    get :: (self: *Self) -> i8;
+    get :: (self: *Self) -> u32;
 }
 
 g_should_call : bool = false;

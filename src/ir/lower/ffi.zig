@@ -101,9 +101,9 @@ pub fn getSelRegisterNameFid(self: *Lowering) FuncId {
 ///   %sel = call ptr @sel_registerName(<"sel:">)
 ///   %ret = call <ABI(T)> @objc_msgSend(recv, %sel, args...)
 /// Only the (void return, no extra args) form is wired.
-pub fn lowerFfiIntrinsicCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall) Ref {
+pub fn lowerFfiIntrinsicCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall, span: ast.Span) Ref {
     if (fic.kind == .jni_call or fic.kind == .jni_static_call) {
-        return self.lowerJniCall(fic);
+        return self.lowerJniCall(fic, span);
     }
 
     if (fic.args.len < 2) {
@@ -164,7 +164,7 @@ pub fn lowerFfiIntrinsicCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall) 
     } }, ret_ty);
 }
 
-pub fn lowerJniCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall) Ref {
+pub fn lowerJniCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall, span: ast.Span) Ref {
     // env is always implicit: lexical-direct from the enclosing `#jni_env(env)`
     // block (2.16b, cheap), else the thread-local slot the block populated
     // at runtime (2.16c, one TL load per call). Surface form is uniform:
@@ -177,6 +177,12 @@ pub fn lowerJniCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall) Ref {
     }
 
     const ret_ty = self.resolveType(fic.return_type);
+    if (!jni_descriptor.isJniReturnTypeSupported(&self.module.types, ret_ty)) {
+        if (self.diagnostics) |d| {
+            d.addFmt(.err, span, "JNI call returns '{s}', which has no Call<T>Method — JNI scalars are void/bool/i8/u8/i16/u16/i32/i64/f32/f64 and pointers", .{self.module.types.typeName(ret_ty)});
+        }
+        return Ref.none;
+    }
 
     const env_ref = if (self.jni_env_stack.items.len > self.jni_env_stack_base)
         self.jni_env_stack.items[self.jni_env_stack.items.len - 1]
@@ -298,6 +304,14 @@ pub fn lowerRuntimeMethodCall(
         registry.put(entry.key_ptr.*, entry.value_ptr.*.runtime_path) catch {};
     }
 
+    const ret_ty = if (method.return_type) |rt| self.resolveType(rt) else .void;
+    if (!jni_descriptor.isJniReturnTypeSupported(&self.module.types, ret_ty)) {
+        if (self.diagnostics) |d| {
+            d.addFmt(.err, span, "JNI method '{s}.{s}' returns '{s}', which has no Call<T>Method — JNI scalars are void/bool/i8/u8/i16/u16/i32/i64/f32/f64 and pointers", .{ fcd.name, method.name, self.module.types.typeName(ret_ty) });
+        }
+        return Ref.none;
+    }
+
     const desc_str = jni_descriptor.deriveMethod(self.alloc, .{
         .enclosing_path = fcd.runtime_path,
         .classes = &registry,
@@ -312,20 +326,6 @@ pub fn lowerRuntimeMethodCall(
     const name_ref = self.builder.constString(name_sid);
     const sig_sid = self.module.types.internString(desc_str);
     const sig_ref = self.builder.constString(sig_sid);
-
-    const ret_ty = if (method.return_type) |rt| self.resolveType(rt) else .void;
-
-    // Reject return types the JNI emit path can't dispatch — emit_llvm's
-    // Call<T>Method switch only covers void / bool / i32 / i64 / f32 / f64
-    // / pointer-returning. Anything else (i8 / i16 / u8 / u16 / aggregates)
-    // would silently lower to LLVMGetUndef and produce wrong arguments at
-    // the call site.
-    if (!jni_descriptor.isJniReturnTypeSupported(&self.module.types, ret_ty)) {
-        if (self.diagnostics) |d| {
-            d.addFmt(.err, span, "JNI method '{s}.{s}' returns '{s}', which isn't supported by the JNI call-method lowering yet — only void/bool/i32/i64/f32/f64 and pointers are wired up", .{ fcd.name, method.name, self.module.types.typeName(ret_ty) });
-        }
-        return Ref.none;
-    }
 
     const cache_key: inst_mod.CacheKey = .{
         .name_str = method_name,

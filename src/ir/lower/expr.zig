@@ -3771,7 +3771,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         .break_expr => self.lowerBreak(node.span),
         .continue_expr => self.lowerContinue(node.span),
         .call => |c| self.lowerCall(&c),
-        .ffi_intrinsic_call => |fic| self.lowerFfiIntrinsicCall(&fic),
+        .ffi_intrinsic_call => |fic| self.lowerFfiIntrinsicCall(&fic, node.span),
         .field_access => |fa| self.lowerFieldAccess(&fa, node.span),
         .struct_literal => |sl| self.lowerStructLiteral(&sl, node.span),
         // `expr { … }` settles here, where the local scope holds the types a

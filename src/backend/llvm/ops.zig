@@ -898,48 +898,15 @@ pub const Ops = struct {
             .pointer, .many_pointer => true,
             else => false,
         };
-        const call_method_offset: u32 = if (msg.is_static) blk: {
-            if (is_pointer_ret) break :blk emit.Jni.CallStaticObjectMethod;
-            break :blk switch (ret_ty_id) {
-                .void => emit.Jni.CallStaticVoidMethod,
-                .i32 => emit.Jni.CallStaticIntMethod,
-                .i64 => emit.Jni.CallStaticLongMethod,
-                .f32 => emit.Jni.CallStaticFloatMethod,
-                .f64 => emit.Jni.CallStaticDoubleMethod,
-                .bool => emit.Jni.CallStaticBooleanMethod,
-                else => {
-                    self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
-                    return;
-                },
-            };
-        } else if (msg.is_nonvirtual) blk: {
-            if (is_pointer_ret) break :blk emit.Jni.CallNonvirtualObjectMethod;
-            break :blk switch (ret_ty_id) {
-                .void => emit.Jni.CallNonvirtualVoidMethod,
-                .i32 => emit.Jni.CallNonvirtualIntMethod,
-                .i64 => emit.Jni.CallNonvirtualLongMethod,
-                .f32 => emit.Jni.CallNonvirtualFloatMethod,
-                .f64 => emit.Jni.CallNonvirtualDoubleMethod,
-                .bool => emit.Jni.CallNonvirtualBooleanMethod,
-                else => {
-                    self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
-                    return;
-                },
-            };
-        } else blk: {
-            if (is_pointer_ret) break :blk emit.Jni.CallObjectMethod;
-            break :blk switch (ret_ty_id) {
-                .void => emit.Jni.CallVoidMethod,
-                .i32 => emit.Jni.CallIntMethod,
-                .i64 => emit.Jni.CallLongMethod,
-                .f32 => emit.Jni.CallFloatMethod,
-                .f64 => emit.Jni.CallDoubleMethod,
-                .bool => emit.Jni.CallBooleanMethod,
-                else => {
-                    self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
-                    return;
-                },
-            };
+        const call_kind: emit.Jni.CallKind = if (msg.is_static)
+            .static
+        else if (msg.is_nonvirtual)
+            .nonvirtual
+        else
+            .instance;
+        const call_method_offset: u32 = emit.Jni.callMethodSlot(ret_ty_id, is_pointer_ret, call_kind) orelse {
+            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            return;
         };
         const get_mid_offset: u32 = if (msg.is_static) emit.Jni.GetStaticMethodID else emit.Jni.GetMethodID;
 

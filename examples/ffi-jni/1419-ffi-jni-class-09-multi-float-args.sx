@@ -1,8 +1,8 @@
-// `obj.method()` runtime-class dispatch with a `float` return type goes
-// through the `.f32` arm of the `Call<T>Method` switch in `emit_llvm.zig`,
-// including when several such calls are inlined as args to a single outer
-// call (`f(o.a(), o.b(), o.c())`) — the shape that carries an Android
-// `MotionEvent.getX()` + `getY()` pair into `sx_android_push_touch`.
+// `obj.method()` runtime-class dispatch with a `float` return type uses
+// CallFloatMethod, including when several such calls are inlined as args
+// to a single outer call (`f(o.a(), o.b(), o.c())`) — the shape that
+// carries an Android `MotionEvent.getX()` + `getY()` pair into
+// `sx_android_push_touch`.
 //
 // The bodies are gated behind a runtime-false flag so the JNI lookups never
 // execute (no JVM in the test runtime), while the codegen path still emits

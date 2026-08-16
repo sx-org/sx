@@ -1,8 +1,6 @@
 // `#jni_static_call` lowering.
-// For static dispatch the `target` arg IS already a `jclass`, so the
-// lowering skips `GetObjectClass` and uses `GetStaticMethodID` +
-// `CallStatic<Type>Method` instead. `is_static = true` drops
-// to `LLVMGetUndef`; the snapshot captures the placeholder.
+// The target is already a `jclass`, so the lowering skips `GetObjectClass`
+// and uses `GetStaticMethodID` + `CallStatic<Type>Method`.
 
 #import "modules/std.sx";
 

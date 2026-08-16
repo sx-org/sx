@@ -152,13 +152,12 @@ fn primitiveChar(name: []const u8) ?u8 {
     return null;
 }
 
-/// Whether emit_llvm's `jni_msg_send` lowering can dispatch a Call<T>Method
-/// for this return type. Anything outside this set falls into the `else`
-/// arm of the switches in `emit_llvm.zig` and would silently produce
-/// `LLVMGetUndef`. Pointer-typed returns route through `CallObjectMethod`.
+/// Whether `jni_msg_send` can dispatch a Call<T>Method for this return
+/// type. Pointer returns use `CallObjectMethod`. Unsigned 32/64 and
+/// aggregates have no JNI scalar call.
 pub fn isJniReturnTypeSupported(table: *const types.TypeTable, ret_ty: TypeId) bool {
     return switch (ret_ty) {
-        .void, .bool, .i32, .i64, .f32, .f64 => true,
+        .void, .bool, .i8, .u8, .i16, .u16, .i32, .i64, .f32, .f64 => true,
         else => blk: {
             if (ret_ty.isBuiltin()) break :blk false;
             const info = table.get(ret_ty);
