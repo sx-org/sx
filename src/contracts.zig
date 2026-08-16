@@ -14,7 +14,8 @@
 //!   - `.declared` — stdlib owns the canonical declaration, and the compiler
 //!     recognizes it by (module, name) identity plus, for a struct, its field
 //!     shape. `@SourceSite`, `@BuildSink`, `@BuildShape`, `@VaList`,
-//!     `@volatile_load`, `@volatile_store`, the `@va_*` cursor operations.
+//!     `@volatile_load`, `@volatile_store`, `@printf`, the `@va_*` cursor
+//!     operations.
 //!   - `.compiler_formed` — the compiler FORMS the type; there is no
 //!     declaration anywhere, so declaring the name is an error wherever it
 //!     appears. `@Init` and `@BuildBlock` are constraints, so both are
@@ -93,6 +94,7 @@ pub const entries = [_]Contract{
     // intrinsic registry's (src/ir/intrinsics.zig).
     .{ .name = "@volatile_load", .module = "modules/std/core.sx" },
     .{ .name = "@volatile_store", .module = "modules/std/core.sx" },
+    .{ .name = "@printf", .module = "modules/std/core.sx" },
     .{ .name = "@va_start", .module = "modules/std/core.sx" },
     .{ .name = "@va_arg", .module = "modules/std/core.sx" },
     .{ .name = "@va_copy", .module = "modules/std/core.sx" },

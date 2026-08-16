@@ -1,0 +1,42 @@
+// `@printf` renders into stack storage, so it writes with no allocator behind
+// it: every line below is produced inside a context whose allocator refuses
+// every request and counts the attempts. The final count is zero.
+#import "modules/std.sx";
+#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+
+Refusing :: struct {
+    calls: i64;
+}
+
+impl Allocator for Refusing {
+    alloc_bytes :: (self: *Refusing, size: i64) -> *void {
+        self.calls += 1;
+        return null;
+    }
+    dealloc_bytes :: (self: *Refusing, ptr: *void) {}
+}
+
+main :: () {
+    refusing := Refusing{ calls = 0 };
+    ctx := context;
+    ctx.allocator = refusing.(Allocator);
+
+    push ctx {
+        @printf("no placeholders\n");
+
+        low: i64 = -9223372036854775808;
+        @printf("signed {} {} {}\n", 0, -7, low);
+
+        high: u64 = 18446744073709551615;
+        wide: u32 = 4000000000;
+        narrow: u8 = 255;
+        @printf("unsigned {} {} {}\n", high, wide, narrow);
+
+        @printf("{} then {}\n", true, false);
+        @printf("{}{}{}\n", "back", "to", "back");
+        @printf("float {} {}\n", 1.5, -0.25);
+        @printf("braces {{}} around {}\n", 3);
+    }
+
+    @printf("allocator calls: {}\n", refusing.calls);
+}
