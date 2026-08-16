@@ -1,0 +1,27 @@
+// A `List` of a zero-sized element never reaches the allocator: `cap` still
+// follows the doubling schedule, but `grow_to` returns before allocating, and
+// `insert` / `remove` shift zero bytes. The GPA's counter stays at 0 — it is
+// passed positionally at each call rather than pushed onto the context.
+#import "modules/std.sx";
+
+Nothing :: struct {}
+
+main :: () {
+    gpa := GPA.init();
+    xs : List(Nothing) = .{};
+
+    i : i64 = 0;
+    while i < 5 { xs.append(.{}, gpa); i += 1; }
+    print("appended: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.alloc_count);
+
+    xs.insert(0, .{}, gpa);
+    xs.insert(xs.len, .{}, gpa);
+    print("inserted: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.alloc_count);
+
+    _ := xs.remove(3);
+    xs.swap_remove(0);
+    print("removed: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.alloc_count);
+
+    while xs.pop() != null {}
+    print("drained: len={} cap={} allocs={}\n", xs.len, xs.cap, gpa.alloc_count);
+}

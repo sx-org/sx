@@ -1,0 +1,20 @@
+// `append` allocates through `context.allocator`; a null return from that
+// allocator aborts inside `grow_to`, before any list field is written.
+//
+// aborts (exit 134) after the message — macOS-pinned.
+#import "modules/std.sx";
+
+FailingAllocator :: struct {}
+
+impl Allocator for FailingAllocator {
+    alloc_bytes :: (self: *FailingAllocator, size: i64) -> *void { null }
+    dealloc_bytes :: (self: *FailingAllocator, ptr: *void) {}
+}
+
+main :: () {
+    failing : FailingAllocator = .{};
+    xs : List(i64) = .{};
+    push .{ allocator = failing } {
+        xs.append(1);
+    }
+}
