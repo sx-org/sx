@@ -9,6 +9,7 @@ RenderNodeType :: enum {
     text;
     image;
     mesh;
+    skinned_mesh;
     clip_push;
     clip_pop;
     opacity_push;
@@ -35,8 +36,9 @@ RenderNode :: struct {
     uv_min: Point;
     uv_max: Point;
 
-    // Mesh: a triangle range of the renderer's current mesh, transformed by
-    // `mesh_transform` into clip space and tinted with `fill_color`.
+    // Mesh: a triangle range of the renderer's current mesh — rigid or
+    // skinned, per node type — transformed by `mesh_transform` into clip
+    // space and tinted with `fill_color`.
     mesh_index_first: i32;
     mesh_index_count: i32;
     mesh_transform: Mat4;
@@ -215,6 +217,23 @@ RenderContext :: struct {
     add_mesh :: (self: *RenderContext, index_first: i32, index_count: i32, transform: Mat4, tint: Color) {
         self.tree.add(.{
             type = .mesh,
+            mesh_index_first = index_first,
+            mesh_index_count = index_count,
+            mesh_transform = transform,
+            fill_color = tint,
+            opacity = self.opacity,
+            depth = self.depth,
+        });
+        self.depth += 1;
+    }
+
+    // Draw a triangle range of the skinned mesh the renderer holds
+    // (UIRenderer.set_skinned_mesh), skinned against the palette last given
+    // to UIRenderer.set_bone_palette. `transform` takes skinned positions to
+    // clip space; depth testing is on for the range and off again after it.
+    add_skinned_mesh :: (self: *RenderContext, index_first: i32, index_count: i32, transform: Mat4, tint: Color) {
+        self.tree.add(.{
+            type = .skinned_mesh,
             mesh_index_first = index_first,
             mesh_index_count = index_count,
             mesh_transform = transform,
