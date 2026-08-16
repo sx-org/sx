@@ -1,4 +1,4 @@
-// Class/static method declarations inside a `#jni_class` body. Instance vs
+// Class/static method declarations inside a `@JniClass` body. Instance vs
 // class method is determined by the first param's TYPE: `(self: *Self, ...)`
 // ⇒ instance, anything else (here, `(n: i32)`) ⇒ class method, dispatched via
 // `GetStaticMethodID` / `CallStatic*` at lowering. No explicit `static`
@@ -6,7 +6,7 @@
 
 #import "modules/std.sx";
 
-Math :: #jni_class("java/lang/Math") extern {
+Math :: @JniClass("java/lang/Math") extern {
     abs :: (n: i32) -> i32;  // no `self: *Self` → class method
 }
 

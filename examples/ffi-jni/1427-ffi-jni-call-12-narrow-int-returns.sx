@@ -1,41 +1,33 @@
 // Narrow JNI integer returns: i8/u8 → CallByteMethod (jbyte),
 // i16 → CallShortMethod (jshort), u16 → CallCharMethod (jchar).
-// The `#jni_class` method form uses the same slots.
+// The `@JniClass` method form uses the same slots.
 
 #import "modules/std.sx";
 
 g_should_call : bool = false;
 
 read_i8 :: (env: *void, target: *void) -> i8 {
-    #jni_env(env) {
-        #jni_call(i8)(target, "getByte", "()B")
-    }
+    @JniCall(i8, env, target, "getByte", "()B")
 }
 
 read_u8 :: (env: *void, target: *void) -> u8 {
-    #jni_env(env) {
-        #jni_call(u8)(target, "getUnsignedByte", "()B")
-    }
+    @JniCall(u8, env, target, "getUnsignedByte", "()B")
 }
 
 read_i16 :: (env: *void, target: *void) -> i16 {
-    #jni_env(env) {
-        #jni_call(i16)(target, "getShort", "()S")
-    }
+    @JniCall(i16, env, target, "getShort", "()S")
 }
 
 read_u16 :: (env: *void, target: *void) -> u16 {
-    #jni_env(env) {
-        #jni_call(u16)(target, "getChar", "()C")
-    }
+    @JniCall(u16, env, target, "getChar", "()C")
 }
 
-Buf :: #jni_class("java/nio/ByteBuffer") extern {
+Buf :: @JniClass("java/nio/ByteBuffer") extern {
     get :: (self: *Self) -> i8;
 }
 
 unused_dsl :: (env: *void, b: *Buf) {
-    #jni_env(env) {
+    push .{ jni = env } {
         _ := b.get();
     }
 }

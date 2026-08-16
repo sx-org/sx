@@ -54,19 +54,17 @@ CGRect :: struct {
 }
 
 // ── Foundation utility classes ─────────────────────────
-// Declarative `#objc_class` bindings replace the previous
-// `objc_getClass(...) + #objc_call(T)(...)` pattern. Each method's sx-
+// Declarative `@ObjcClass` bindings replace the previous
+// `objc_getClass(...) + @ObjcCall(T, ...)` pattern. Each method's sx-
 // side name maps to its Obj-C selector via the default mangling rule
 // (split on `_`; each piece becomes a keyword with `:`).
 
-NSValue :: #objc_class("NSValue") extern {
-    #extends NSObject;
+NSValue :: @ObjcClass("NSValue", extends = NSObject) extern {
     // CGRect unboxing — returns by value via the sret/HFA path.
     CGRectValue :: (self: *Self) -> CGRect;
 }
 
-NSNumber :: #objc_class("NSNumber") extern {
-    #extends NSObject;
+NSNumber :: @ObjcClass("NSNumber", extends = NSObject) extern {
     // Class method (no `self: *Self` first param → static dispatch).
     numberWithBool :: (b: i8) -> *NSNumber;
     // Instance value extractors.
@@ -74,50 +72,42 @@ NSNumber :: #objc_class("NSNumber") extern {
     unsignedLongValue  :: (self: *Self) -> u64;
 }
 
-NSDictionary :: #objc_class("NSDictionary") extern {
-    #extends NSObject;
+NSDictionary :: @ObjcClass("NSDictionary", extends = NSObject) extern {
     objectForKey :: (self: *Self, key: *NSString) -> *void;
 }
 
-NSMutableDictionary :: #objc_class("NSMutableDictionary") extern {
-    #extends NSDictionary;
+NSMutableDictionary :: @ObjcClass("NSMutableDictionary", extends = NSDictionary) extern {
     dictionary         :: () -> *NSMutableDictionary;
     setObject_forKey   :: (self: *Self, obj: *void, key: *void);
 }
 
-NSSet :: #objc_class("NSSet") extern {
-    #extends NSObject;
+NSSet :: @ObjcClass("NSSet", extends = NSObject) extern {
     anyObject :: (self: *Self) -> *void;
 }
 
 // ── Notifications + Bundle ──────────────────────────────
 
-NSNotification :: #objc_class("NSNotification") extern {
-    #extends NSObject;
+NSNotification :: @ObjcClass("NSNotification", extends = NSObject) extern {
     userInfo :: (self: *Self) -> *NSDictionary;
 }
 
-NSBundle :: #objc_class("NSBundle") extern {
-    #extends NSObject;
+NSBundle :: @ObjcClass("NSBundle", extends = NSObject) extern {
     mainBundle   :: () -> *NSBundle;
     resourcePath :: (self: *Self) -> *NSString;
 }
 
-NSNotificationCenter :: #objc_class("NSNotificationCenter") extern {
-    #extends NSObject;
+NSNotificationCenter :: @ObjcClass("NSNotificationCenter", extends = NSObject) extern {
     defaultCenter :: () -> *NSNotificationCenter;
     addObserver_selector_name_object :: (self: *Self, observer: *void, sel: *void, name: *NSString, obj: *void);
 }
 
 // ── RunLoop + display timing ────────────────────────────
 
-NSRunLoop :: #objc_class("NSRunLoop") extern {
-    #extends NSObject;
+NSRunLoop :: @ObjcClass("NSRunLoop", extends = NSObject) extern {
     currentRunLoop :: () -> *NSRunLoop;
 }
 
-CADisplayLink :: #objc_class("CADisplayLink") extern {
-    #extends NSObject;
+CADisplayLink :: @ObjcClass("CADisplayLink", extends = NSObject) extern {
     displayLinkWithTarget_selector :: (target: *void, sel: *void) -> *CADisplayLink;
     addToRunLoop_forMode :: (self: *Self, runloop: *NSRunLoop, mode: *NSString);
     targetTimestamp :: (self: *Self) -> f64;
@@ -130,8 +120,7 @@ CADisplayLink :: #objc_class("CADisplayLink") extern {
 // CALayer / CAEAGLLayer / CAMetalLayer live in modules/ffi/quartzcore.sx
 // (shared with gpu/metal.sx — one decl per runtime class).
 
-EAGLContext :: #objc_class("EAGLContext") extern {
-    #extends NSObject;
+EAGLContext :: @ObjcClass("EAGLContext", extends = NSObject) extern {
     alloc                            :: () -> *EAGLContext;
     initWithAPI                      :: (self: *Self, api: i32) -> *EAGLContext;
     setCurrentContext                :: (ctx: *EAGLContext);
@@ -141,8 +130,7 @@ EAGLContext :: #objc_class("EAGLContext") extern {
 
 // ── UIKit chrome ────────────────────────────────────────
 
-UIScreen :: #objc_class("UIScreen") extern {
-    #extends NSObject;
+UIScreen :: @ObjcClass("UIScreen", extends = NSObject) extern {
     mainScreen  :: () -> *UIScreen;
     nativeScale :: (self: *Self) -> f64;
     bounds      :: (self: *Self) -> CGRect;
@@ -152,14 +140,12 @@ UIScreen :: #objc_class("UIScreen") extern {
 // Most UIKit classes inherit from it; sx-defined classes that
 // participate in lifecycle callbacks (delegates, scene delegates)
 // extend it so the runtime picks up the responder-chain behavior.
-UIResponder :: #objc_class("UIResponder") extern {
-    #extends NSObject;
+UIResponder :: @ObjcClass("UIResponder", extends = NSObject) extern {
     becomeFirstResponder :: (self: *Self) -> i8;
     resignFirstResponder :: (self: *Self) -> i8;
 }
 
-UIView :: #objc_class("UIView") extern {
-    #extends UIResponder;
+UIView :: @ObjcClass("UIView", extends = UIResponder) extern {
     safeAreaInsets        :: (self: *Self) -> UIEdgeInsets;
     addSubview            :: (self: *Self, view: *void);
     layer                 :: (self: *Self) -> *CALayer;
@@ -167,8 +153,7 @@ UIView :: #objc_class("UIView") extern {
     bounds                :: (self: *Self) -> CGRect;
 }
 
-UIWindow :: #objc_class("UIWindow") extern {
-    #extends UIView;
+UIWindow :: @ObjcClass("UIWindow", extends = UIView) extern {
     alloc                  :: () -> *UIWindow;
     initWithWindowScene    :: (self: *Self, scene: *void) -> *UIWindow;
     setRootViewController  :: (self: *Self, vc: *void);
@@ -176,21 +161,18 @@ UIWindow :: #objc_class("UIWindow") extern {
     screen                 :: (self: *Self) -> *UIScreen;
 }
 
-UIViewController :: #objc_class("UIViewController") extern {
-    #extends UIResponder;
+UIViewController :: @ObjcClass("UIViewController", extends = UIResponder) extern {
     alloc   :: () -> *UIViewController;
     init    :: (self: *Self) -> *UIViewController;
     setView :: (self: *Self, view: *void);
 }
 
-UITextField :: #objc_class("UITextField") extern {
-    #extends UIResponder;
+UITextField :: @ObjcClass("UITextField", extends = UIResponder) extern {
     alloc :: () -> *UITextField;
     init  :: (self: *Self) -> *UITextField;
 }
 
-UITouch :: #objc_class("UITouch") extern {
-    #extends NSObject;
+UITouch :: @ObjcClass("UITouch", extends = NSObject) extern {
     locationInView :: (self: *Self, view: *void) -> CGPoint;
 }
 

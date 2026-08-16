@@ -1,5 +1,5 @@
 // Static call `Cls.class_method(args)`
-// on an `#objc_class` alias lowers to `objc_msg_send` against the class
+// on an `@ObjcClass` alias lowers to `objc_msg_send` against the class
 // object (loaded once per module via `objc_getClass` and cached). The
 // selector is derived by the same default mangling as the instance form
 // (`stringWithUTF8String_(s)` → "stringWithUTF8String:").
@@ -15,7 +15,7 @@
 #import "modules/std.sx";
 #import "modules/build.sx";
 
-NSObject :: #objc_class("NSObject") extern {
+NSObject :: @ObjcClass("NSObject") extern {
     // `+(Class)class` — niladic, name verbatim, selector = "class".
     // Returns the class object itself. No `self: *Self` first param ⇒
     // class method (sx parser keys on the param TYPE).

@@ -35,7 +35,7 @@
 
 // EGL bootstrap helper — used to populate opengl.sx's fn pointers once
 // the EGL context is current. We declare only the loader here; EGL
-// surface/context creation belongs in the consumer's `#jni_main`
+// surface/context creation belongs in the consumer's `main = true`
 // Activity (e.g. an `onCreate` body that calls `eglCreateContext`).
 eglGetProcAddress :: (name: cstring) -> *void abi(.c) extern;
 

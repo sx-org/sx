@@ -1,4 +1,4 @@
-// A `#selector("...")` override whose keyword count disagrees with the
+// A `@ObjcMethod(selector = "...")` override whose keyword count disagrees with the
 // call-site arity is a WARNING, not an error: the override IS the user's
 // chosen selector, so the build proceeds and the runtime dispatches. Both
 // override paths are covered — the static call (`lowerObjcStaticCall`) and
@@ -9,13 +9,13 @@
 #import "modules/std.sx";
 #import "modules/build.sx";
 
-NSObject :: #objc_class("NSObject") extern {
+NSObject :: @ObjcClass("NSObject") extern {
     // "description" takes no keyword, the call passes one argument.
-    gimme :: (x: i64) -> *void #selector("description");
+    gimme :: (x: i64) -> *void @ObjcMethod(selector = "description");
 }
 
-NSDictionary :: #objc_class("NSDictionary") extern {
-    lookup :: (self: *Self, key: *void) -> *void #selector("description");
+NSDictionary :: @ObjcClass("NSDictionary") extern {
+    lookup :: (self: *Self, key: *void) -> *void @ObjcMethod(selector = "description");
 }
 
 main :: () -> i32 {

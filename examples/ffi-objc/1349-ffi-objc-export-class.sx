@@ -1,6 +1,6 @@
-// Postfix `export` on an `#objc_class` aggregate, the
+// Postfix `export` on an `@ObjcClass` aggregate, the
 // explicit spelling for an sx-DEFINED runtime class (define + register). It is
-// the same lowering as a bare `#objc_class("X") { … }` with no `extern`;
+// the same lowering as a bare `@ObjcClass("X") { … }` with no `extern`;
 // `export` just makes the "I define this class" intent explicit (the dual of
 // `extern` for "I reference an existing class"). Mirrors 1339's defined class.
 
@@ -8,7 +8,7 @@
 #import "modules/build.sx";
 #import "modules/ffi/objc.sx";
 
-SxBar :: #objc_class("SxBar") export {
+SxBar :: @ObjcClass("SxBar") export {
     counter: i32;
 
     alloc :: () -> *SxBar;

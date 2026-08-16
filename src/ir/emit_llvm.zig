@@ -70,7 +70,7 @@ pub const Jni = struct {
     pub const CallDoubleMethod: u32 = 58;
     pub const CallVoidMethod: u32 = 61;
     // CallNonvirtual<T>Method (instance, super-dispatch variant). Used by
-    // `super.method(args)` from inside a `#jni_main` Activity method body:
+    // `super.method(args)` from inside a `main = true` Activity method body:
     // dispatch is bound to a specific class rather than going through the
     // vtable, so subclass overrides don't intercept the call. Signature:
     // `(JNIEnv*, jobject obj, jclass clazz, jmethodID, args...)`.
@@ -254,11 +254,11 @@ pub const LLVMEmitter = struct {
     any_struct_type: ?c.LLVMTypeRef,
     closure_struct_type: ?c.LLVMTypeRef,
     // The shared `@objc_msgSend` function value. Lazily declared on
-    // first `objc_msg_send` instruction; all `#objc_call` sites
+    // first `objc_msg_send` instruction; all `@ObjcCall` sites
     // dispatch through it with their own LLVMBuildCall2 function type
     // (opaque pointers — the function value is just a `ptr`).
     objc_msg_send_value: ?c.LLVMValueRef,
-    // `(name, sig)` → `{cls_slot, mid_slot}` cache for `#jni_call`
+    // `(name, sig)` → `{cls_slot, mid_slot}` cache for `@JniCall`
     // interning. Two call sites with the same literal
     // name + signature share one pair of static slots, populated
     // lazily on the first call.

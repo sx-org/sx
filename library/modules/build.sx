@@ -101,7 +101,7 @@ set_keystore_path :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
 manifest_path :: ufcs (self: BuildOptions) -> string intrinsic;
 keystore_path :: ufcs (self: BuildOptions) -> string intrinsic;
 
-// `#jni_main #jni_class("path") { ... }` decls collected during
+// `@JniClass("path") { ... }` decls collected during
 // lowering. The Android bundler walks `0..jni_main_count()` and
 // for each entry writes a `.java` file at
 // `<stage>/java/<runtime_path>.java`, compiles via javac + d8, and

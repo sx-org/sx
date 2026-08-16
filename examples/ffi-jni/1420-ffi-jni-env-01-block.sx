@@ -1,13 +1,12 @@
-// The `#jni_env(env) { body }` block-form intrinsic scopes a JNIEnv* over a
-// lexical block: the body runs as a normal block and the env arg is captured
-// for the enclosed `#jni_call` sites.
+// `push .{ jni = env }` installs the JNI handle on `context.jni` for the
+// block. DSL calls and helpers read that field.
 
 #import "modules/std.sx";
 
 main :: () -> i32 {
     synth_env : *void = null;
-    #jni_env(synth_env) {
-        print("inside #jni_env scope\n");
+    push .{ jni = synth_env } {
+        print("inside push .{ jni = env } scope\n");
     }
     0
 }

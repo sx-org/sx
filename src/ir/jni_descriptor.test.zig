@@ -174,7 +174,7 @@ test "cross-class *Foo with empty registry errors" {
     try std.testing.expectError(desc.DeriveError.UnknownClassAlias, result);
 }
 
-test "deriveMethod respects #jni_method_descriptor override verbatim" {
+test "deriveMethod respects @JniMethod override verbatim" {
     const a = std.testing.allocator;
     var arena = std.heap.ArenaAllocator.init(a);
     defer arena.deinit();

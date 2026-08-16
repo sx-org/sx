@@ -1,9 +1,9 @@
-// The `=>` expression-body form parses for `#objc_class` member methods,
+// The `=>` expression-body form parses for `@ObjcClass` member methods,
 // mirroring `parseFnDecl`'s arrow arm.
 
 #import "modules/std.sx";
 
-SxFoo :: #objc_class("SxFoo") {
+SxFoo :: @ObjcClass("SxFoo") {
     greet :: (self: *Self) -> i32 => 42;
 }
 

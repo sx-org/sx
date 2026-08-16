@@ -1,4 +1,4 @@
-// An instance-method body item inside a `#jni_class` declaration:
+// An instance-method body item inside a `@JniClass` declaration:
 // `name :: (self: *Self, args...) -> Ret;` — semicolon terminated, no body.
 // Parse-only.
 
@@ -6,7 +6,7 @@
 
 // `Self` here refers to the enclosing `View` type — resolved at
 // 2.x sema, not at parse time.
-View :: #jni_class("android/view/View") extern {
+View :: @JniClass("android/view/View") extern {
     getId :: (self: *Self) -> i32;
 }
 

@@ -1,9 +1,9 @@
-// The type-introducer `Foo :: #jni_class("java/path/Foo") extern {}` parses;
+// The type-introducer `Foo :: @JniClass("java/path/Foo") extern {}` parses;
 // an empty body is an opaque forward declaration. Parse-only.
 
 #import "modules/std.sx";
 
-Foo :: #jni_class("java/path/Foo") extern {}
+Foo :: @JniClass("java/path/Foo") extern {}
 
 main :: () -> i32 {
     print("parse-only ok\n");

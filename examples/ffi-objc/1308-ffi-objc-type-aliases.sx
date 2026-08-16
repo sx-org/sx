@@ -14,7 +14,7 @@
 #import "modules/ffi/objc.sx";
 
 // Runtime-class declaration using the aliases at param/return positions.
-NSObjectAlias :: #objc_class("NSObject") extern {
+NSObjectAlias :: @ObjcClass("NSObject") extern {
     alloc :: () -> *Self;
     init  :: (self: *Self) -> *Self;
     isKindOfClass :: (self: *Self, cls: Class) -> BOOL;

@@ -84,56 +84,49 @@ MTLSize   :: struct { width: u64; height: u64; depth: u64; }
 MTLRegion :: struct { origin: MTLOrigin; size: MTLSize; }
 MTLScissorRect :: struct { x: u64; y: u64; width: u64; height: u64; }
 
-// ── Metal object surfaces (#objc_class DSL) ──────────────────────────────
+// ── Metal object surfaces (@ObjcClass DSL) ──────────────────────────────
 // Only the methods this backend dispatches are declared. Instance
 // methods dispatch by selector alone — the bound runtime-class name is
 // never looked up for them — so protocol-typed Metal objects
 // (id<MTLDevice>, id<MTLTexture>, ...) bind by their protocol name
 // harmlessly. Statics exist only on the real descriptor classes.
-// `#extends NSObject` supplies retain/release for the destroy paths.
+// `extends = NSObject` supplies retain/release for the destroy paths.
 
-MTLBuffer :: #objc_class("MTLBuffer") extern {
-    #extends NSObject;
+MTLBuffer :: @ObjcClass("MTLBuffer", extends = NSObject) extern {
     contents :: (self: *Self) -> *void;
 }
 
-MTLTexture :: #objc_class("MTLTexture") extern {
-    #extends NSObject;
+MTLTexture :: @ObjcClass("MTLTexture", extends = NSObject) extern {
     replaceRegion_mipmapLevel_withBytes_bytesPerRow :: (self: *Self, region: MTLRegion, level: u64, bytes: *void, bytes_per_row: u64);
     getBytes_bytesPerRow_fromRegion_mipmapLevel :: (self: *Self, out: *void, bytes_per_row: u64, region: MTLRegion, level: u64);
 }
 
-MTLRenderPipelineState :: #objc_class("MTLRenderPipelineState") extern {
-    #extends NSObject;
+MTLRenderPipelineState :: @ObjcClass("MTLRenderPipelineState", extends = NSObject) extern {
 }
 
-MTLDepthStencilState :: #objc_class("MTLDepthStencilState") extern {
-    #extends NSObject;
+MTLDepthStencilState :: @ObjcClass("MTLDepthStencilState", extends = NSObject) extern {
 }
 
-MTLDepthStencilDescriptor :: #objc_class("MTLDepthStencilDescriptor") extern {
-    #extends NSObject;
+MTLDepthStencilDescriptor :: @ObjcClass("MTLDepthStencilDescriptor", extends = NSObject) extern {
     alloc :: () -> *MTLDepthStencilDescriptor;
     init :: (self: *Self) -> *MTLDepthStencilDescriptor;
     setDepthCompareFunction :: (self: *Self, fn: u64);
     setDepthWriteEnabled :: (self: *Self, on: BOOL);
 }
 
-MTLLibrary :: #objc_class("MTLLibrary") extern {
-    #extends NSObject;
+MTLLibrary :: @ObjcClass("MTLLibrary", extends = NSObject) extern {
     // MTLFunction is only handed straight back to the pipeline
     // descriptor — untyped is enough.
     newFunctionWithName :: (self: *Self, name: *NSString) -> *void;
 }
 
-MTLTextureDescriptor :: #objc_class("MTLTextureDescriptor") extern {
-    #extends NSObject;
+MTLTextureDescriptor :: @ObjcClass("MTLTextureDescriptor", extends = NSObject) extern {
     texture2DDescriptorWithPixelFormat_width_height_mipmapped :: (fmt: u64, w: u64, h: u64, mipmapped: BOOL) -> *MTLTextureDescriptor;
     setUsage :: (self: *Self, usage: u64);
     setStorageMode :: (self: *Self, mode: u64);
 }
 
-MTLRenderPipelineColorAttachment :: #objc_class("MTLRenderPipelineColorAttachmentDescriptor") extern {
+MTLRenderPipelineColorAttachment :: @ObjcClass("MTLRenderPipelineColorAttachmentDescriptor") extern {
     setPixelFormat :: (self: *Self, fmt: u64);
     setBlendingEnabled :: (self: *Self, on: BOOL);
     setSourceRGBBlendFactor :: (self: *Self, f: u64);
@@ -142,12 +135,11 @@ MTLRenderPipelineColorAttachment :: #objc_class("MTLRenderPipelineColorAttachmen
     setDestinationAlphaBlendFactor :: (self: *Self, f: u64);
 }
 
-MTLRenderPipelineColorAttachmentArray :: #objc_class("MTLRenderPipelineColorAttachmentDescriptorArray") extern {
+MTLRenderPipelineColorAttachmentArray :: @ObjcClass("MTLRenderPipelineColorAttachmentDescriptorArray") extern {
     objectAtIndexedSubscript :: (self: *Self, i: u64) -> *MTLRenderPipelineColorAttachment;
 }
 
-MTLRenderPipelineDescriptor :: #objc_class("MTLRenderPipelineDescriptor") extern {
-    #extends NSObject;
+MTLRenderPipelineDescriptor :: @ObjcClass("MTLRenderPipelineDescriptor", extends = NSObject) extern {
     alloc :: () -> *MTLRenderPipelineDescriptor;
     init :: (self: *Self) -> *MTLRenderPipelineDescriptor;
     setVertexFunction :: (self: *Self, f: *void);
@@ -156,31 +148,31 @@ MTLRenderPipelineDescriptor :: #objc_class("MTLRenderPipelineDescriptor") extern
     setDepthAttachmentPixelFormat :: (self: *Self, fmt: u64);
 }
 
-MTLRenderPassColorAttachment :: #objc_class("MTLRenderPassColorAttachmentDescriptor") extern {
+MTLRenderPassColorAttachment :: @ObjcClass("MTLRenderPassColorAttachmentDescriptor") extern {
     setTexture :: (self: *Self, tex: *MTLTexture);
     setLoadAction :: (self: *Self, action: u64);
     setStoreAction :: (self: *Self, action: u64);
     setClearColor :: (self: *Self, color: MTLClearColor);
 }
 
-MTLRenderPassColorAttachmentArray :: #objc_class("MTLRenderPassColorAttachmentDescriptorArray") extern {
+MTLRenderPassColorAttachmentArray :: @ObjcClass("MTLRenderPassColorAttachmentDescriptorArray") extern {
     objectAtIndexedSubscript :: (self: *Self, i: u64) -> *MTLRenderPassColorAttachment;
 }
 
-MTLRenderPassDepthAttachment :: #objc_class("MTLRenderPassDepthAttachmentDescriptor") extern {
+MTLRenderPassDepthAttachment :: @ObjcClass("MTLRenderPassDepthAttachmentDescriptor") extern {
     setTexture :: (self: *Self, tex: *MTLTexture);
     setLoadAction :: (self: *Self, action: u64);
     setStoreAction :: (self: *Self, action: u64);
     setClearDepth :: (self: *Self, depth: f64);
 }
 
-MTLRenderPassDescriptor :: #objc_class("MTLRenderPassDescriptor") extern {
+MTLRenderPassDescriptor :: @ObjcClass("MTLRenderPassDescriptor") extern {
     renderPassDescriptor :: () -> *MTLRenderPassDescriptor;
     colorAttachments :: (self: *Self) -> *MTLRenderPassColorAttachmentArray;
     depthAttachment :: (self: *Self) -> *MTLRenderPassDepthAttachment;
 }
 
-MTLRenderCommandEncoder :: #objc_class("MTLRenderCommandEncoder") extern {
+MTLRenderCommandEncoder :: @ObjcClass("MTLRenderCommandEncoder") extern {
     endEncoding :: (self: *Self);
     setRenderPipelineState :: (self: *Self, state: *MTLRenderPipelineState);
     setVertexBuffer_offset_atIndex :: (self: *Self, buf: *MTLBuffer, offset: u64, index: u64);
@@ -192,16 +184,16 @@ MTLRenderCommandEncoder :: #objc_class("MTLRenderCommandEncoder") extern {
     drawIndexedPrimitives_indexCount_indexType_indexBuffer_indexBufferOffset :: (self: *Self, prim: u64, count: u64, index_type: u64, buf: *MTLBuffer, offset: u64);
 }
 
-MTLBlitCommandEncoder :: #objc_class("MTLBlitCommandEncoder") extern {
+MTLBlitCommandEncoder :: @ObjcClass("MTLBlitCommandEncoder") extern {
     endEncoding :: (self: *Self);
     copyFromTexture_toTexture :: (self: *Self, src: *MTLTexture, dst: *MTLTexture);
 }
 
-CAMetalDrawable :: #objc_class("CAMetalDrawable") extern {
+CAMetalDrawable :: @ObjcClass("CAMetalDrawable") extern {
     texture :: (self: *Self) -> *MTLTexture;
 }
 
-MTLCommandBuffer :: #objc_class("MTLCommandBuffer") extern {
+MTLCommandBuffer :: @ObjcClass("MTLCommandBuffer") extern {
     renderCommandEncoderWithDescriptor :: (self: *Self, pass: *MTLRenderPassDescriptor) -> *MTLRenderCommandEncoder;
     blitCommandEncoder :: (self: *Self) -> *MTLBlitCommandEncoder;
     presentDrawable :: (self: *Self, drawable: *CAMetalDrawable);
@@ -210,7 +202,7 @@ MTLCommandBuffer :: #objc_class("MTLCommandBuffer") extern {
     waitUntilCompleted :: (self: *Self);
 }
 
-MTLCommandQueue :: #objc_class("MTLCommandQueue") extern {
+MTLCommandQueue :: @ObjcClass("MTLCommandQueue") extern {
     commandBuffer :: (self: *Self) -> *MTLCommandBuffer;
 }
 
@@ -218,7 +210,7 @@ MTLCommandQueue :: #objc_class("MTLCommandQueue") extern {
 // platform host — one decl per runtime class). Its Metal-typed ends
 // are untyped there; this module casts at the boundary.
 
-MTLDevice :: #objc_class("MTLDevice") extern {
+MTLDevice :: @ObjcClass("MTLDevice") extern {
     newCommandQueue :: (self: *Self) -> *MTLCommandQueue;
     newBufferWithLength_options :: (self: *Self, length: u64, options: u64) -> *MTLBuffer;
     newTextureWithDescriptor :: (self: *Self, desc: *MTLTextureDescriptor) -> *MTLTexture;

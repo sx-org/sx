@@ -1,4 +1,4 @@
-// Two `#jni_call` sites against the
+// Two `@JniCall` sites against the
 // same (class, method, sig) tuple. Each site emits its own
 // `GetObjectClass` + `GetMethodID` call — the method ID is not cached
 // across sites.
@@ -16,9 +16,9 @@
 g_should_call : bool = false;
 
 unused_jni :: (env: *void, target: *void) {
-    #jni_env(env) {
-        #jni_call(void)(target, "noop", "()V");
-        #jni_call(void)(target, "noop", "()V");
+    push .{ jni = env } {
+        @JniCall(void, env, target, "noop", "()V");
+        @JniCall(void, env, target, "noop", "()V");
     }
 }
 

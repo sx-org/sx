@@ -326,6 +326,7 @@ pub const TypeResolver = struct {
         if (!skip_builtin) {
             if (resolveBuiltinName(name, table)) |id| return id;
         }
+
         // Sentinel-terminated slice: [:0]u8 → string.
         if (name.len >= 5 and name[0] == '[' and name[1] == ':') {
             if (std.mem.indexOfScalar(u8, name, ']')) |close| {

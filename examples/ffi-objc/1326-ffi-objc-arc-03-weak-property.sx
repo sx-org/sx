@@ -1,4 +1,4 @@
-// `#property(weak)` on a sx-defined class.
+// `@ObjcProperty(weak)` on a sx-defined class.
 //
 // Weak contract:
 // - setter calls objc_storeWeak — does NOT retain.
@@ -17,15 +17,13 @@
 #import "modules/ffi/objc.sx";
 #import "modules/build.sx";
 
-SxWeakTarget :: #objc_class("SxWeakTarget") {
-    #extends NSObject;
+SxWeakTarget :: @ObjcClass("SxWeakTarget", extends = NSObject) {
     tag: i32;
     alloc :: () -> *SxWeakTarget;
 }
 
-SxWeakHolder :: #objc_class("SxWeakHolder") {
-    #extends NSObject;
-    target: *SxWeakTarget #property(weak);
+SxWeakHolder :: @ObjcClass("SxWeakHolder", extends = NSObject) {
+    target: @ObjcProperty(*SxWeakTarget, ownership = weak);
     alloc :: () -> *SxWeakHolder;
 }
 

@@ -1,5 +1,5 @@
-// `#jni_main` pipeline: the compiler renders a
-// `.java` source for a `#jni_main #jni_class("...")` declaration, runs
+// `main = true` pipeline: the compiler renders a
+// `.java` source for a `@JniClass("...")` declaration, runs
 // `javac` + `d8`, and bundles `classes.dex` into the APK.
 //
 // Build to inspect APK contents (requires Android SDK + JDK):
@@ -14,12 +14,12 @@
 // `*Bundle` resolves through the class registry to `android.os.Bundle`
 // in the emitted Java — needed for `onCreate`'s @Override to match
 // NativeActivity's superclass signature.
-Bundle :: #jni_class("android/os/Bundle") extern {}
+Bundle :: @JniClass("android/os/Bundle") extern {}
 
-// `#jni_main` flags this as the launchable Android Activity class. The
+// `main = true` flags this as the launchable Android Activity class. The
 // `onCreate` body is empty: this file pins the emitted `.java` shape, not
 // the native binding.
-SxApp :: #jni_main #jni_class("co/swipelab/sxjnimain/SxApp") {
+SxApp :: @JniClass("co/swipelab/sxjnimain/SxApp", main = true) {
     onCreate :: (self: *Self, b: *Bundle) {}
 }
 

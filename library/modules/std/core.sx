@@ -311,6 +311,10 @@ Io :: protocol vtable #identity {
 
 Context :: struct {}
 
+// The JNIEnv* the JVM hands a native method. `null` is the unchecked
+// sentinel. DSL dispatch and helpers read `context.jni`.
+#context_extend jni: *void = null;
+
 // User-space `xx` extension. `xx val : T` where the built-in conversion
 // ladder makes no progress falls through to an `impl Into(T) for Source`
 // lookup; the compiler monomorphises `convert` for the (Source, T) pair

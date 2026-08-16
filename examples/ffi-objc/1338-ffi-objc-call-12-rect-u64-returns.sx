@@ -1,4 +1,4 @@
-// `#objc_call(CGRect)` and `#objc_call(u64)` against
+// `@ObjcCall(CGRect)` and `@ObjcCall(u64)` against
 // `class_addMethod`-registered IMPs. CGRect is structurally a 4×f64 HFA
 // (the UIEdgeInsets shape from ffi-objc-call-07) and u64 is i64 at the
 // LLVM level (the `hash` return from ffi-objc-call-04); this pins both
@@ -43,10 +43,10 @@ main :: () -> i32 {
 
         instance := class_createInstance(my_cls, 0);
 
-        r := #objc_call(CGRect)(instance, "rect");
+        r := @ObjcCall(CGRect, instance, "rect");
         print("rect = ({}, {}, {}, {})\n", r.x, r.y, r.width, r.height);
 
-        u := #objc_call(u64)(instance, "uval");
+        u := @ObjcCall(u64, instance, "uval");
         print("uval = {}\n", u);
     }
     inline if OS != .macos {

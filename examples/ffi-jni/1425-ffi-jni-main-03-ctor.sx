@@ -1,4 +1,4 @@
-// `Alias.new(args)` constructor dispatch on a `extern #jni_class`
+// `Alias.new(args)` constructor dispatch on a `extern @JniClass`
 // The sx-side `static new :: (...) ->
 // *Self;` member lowers to JNI `FindClass + GetMethodID("<init>", sig)
 // + NewObject(env, clazz, mid, args...)`.
@@ -9,16 +9,16 @@
 #import "modules/std.sx";
 #import "modules/build.sx";
 
-Bundle  :: #jni_class("android/os/Bundle") extern {}
-JContext :: #jni_class("android/content/Context") extern {}
+Bundle :: @JniClass("android/os/Bundle") extern {}
+JContext :: @JniClass("android/content/Context") extern {}
 
-SurfaceView :: #jni_class("android/view/SurfaceView") extern {
+SurfaceView :: @JniClass("android/view/SurfaceView") extern {
     new :: (ctx: *JContext) -> *Self;  // no `self: *Self` → class method
 }
 
 g_held_view : *void = null;
 
-SxApp :: #jni_main #jni_class("co/swipelab/sxjnictor/SxApp") {
+SxApp :: @JniClass("co/swipelab/sxjnictor/SxApp", main = true) {
     onCreate :: (self: *Self, b: *Bundle) {
         super.onCreate(b);
         ctx : *JContext = xx self; // Activity IS a JContext (extends JContext).

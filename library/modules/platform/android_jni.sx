@@ -11,21 +11,21 @@
 // signatures (`getWindow :: (self: *Self) -> *Window`) still resolve
 // against the bare name within the namespace.
 
-WindowInsets :: #jni_class("android/view/WindowInsets") extern {
+WindowInsets :: @JniClass("android/view/WindowInsets") extern {
     getSystemWindowInsetTop    :: (self: *Self) -> i32;
     getSystemWindowInsetLeft   :: (self: *Self) -> i32;
     getSystemWindowInsetBottom :: (self: *Self) -> i32;
     getSystemWindowInsetRight  :: (self: *Self) -> i32;
 }
 
-View :: #jni_class("android/view/View") extern {
+View :: @JniClass("android/view/View") extern {
     getRootWindowInsets :: (self: *Self) -> *WindowInsets;
 }
 
-Window :: #jni_class("android/view/Window") extern {
+Window :: @JniClass("android/view/Window") extern {
     getDecorView :: (self: *Self) -> *View;
 }
 
-Activity :: #jni_class("android/app/Activity") extern {
+Activity :: @JniClass("android/app/Activity") extern {
     getWindow :: (self: *Self) -> *Window;
 }

@@ -171,7 +171,7 @@ pub const ObjcLowering = struct {
             .isize => try out.append(self.l.alloc, 'q'),
             .usize => try out.append(self.l.alloc, 'Q'),
             .pointer => |p| {
-                // Pointer to a runtime Obj-C class (or sx-defined #objc_class)
+                // Pointer to a runtime Obj-C class (or sx-defined @ObjcClass)
                 // encodes as `@`. Anything else falls to `^v` — generic
                 // pointer; the runtime treats it as opaque.
                 const pointee_info = self.l.module.types.get(p.pointee);
@@ -242,7 +242,7 @@ pub const ObjcLowering = struct {
     }
 
     /// Build (and cache) the hidden sx-state struct type for an sx-defined
-    /// `#objc_class`. The state struct is what the runtime's `__sx_state`
+    /// `@ObjcClass`. The state struct is what the runtime's `__sx_state`
     /// ivar points at — separate from the Obj-C object itself, which stays
     /// opaque. Layout:
     ///
@@ -259,7 +259,7 @@ pub const ObjcLowering = struct {
     /// resolves them by NAME, so the shift is invisible to callers.
     ///
     /// Runtime-class members other than `.field` are ignored here —
-    /// methods / `#extends` / `#implements` don't contribute to the
+    /// methods / `extends =` / `implements =` don't contribute to the
     /// state layout.
     pub fn objcDefinedStateStructType(self: ObjcLowering, fcd: *const ast.RuntimeClassDecl) TypeId {
         const state_name = std.fmt.allocPrint(self.l.alloc, "__{s}State", .{fcd.name}) catch unreachable;
@@ -316,7 +316,7 @@ pub const ObjcLowering = struct {
         return fcd.runtime == .objc_class or fcd.runtime == .objc_protocol;
     }
 
-    /// Resolve a `#property(...)` field's ARC kind. Loud at compile time
+    /// Resolve a `@ObjcProperty(...)` field's ARC kind. Loud at compile time
     /// for known footguns:
     ///   - unknown modifier name (typo) → diagnostic
     ///   - `weak` on a non-object field type → diagnostic
@@ -346,7 +346,7 @@ pub const ObjcLowering = struct {
             else {
                 if (self.l.diagnostics) |d| {
                     const span = ast.Span{ .start = 0, .end = 0 };
-                    d.addFmt(.err, span, "unknown #property modifier '{s}' on field '{s}' — expected one of: strong, weak, copy, assign, readonly, nonatomic, atomic, getter(\"...\"), setter(\"...\")", .{ mod, field.name });
+                    d.addFmt(.err, span, "unknown @ObjcProperty modifier '{s}' on field '{s}' — expected one of: strong, weak, copy, assign, readonly, nonatomic, atomic, getter(\"...\"), setter(\"...\")", .{ mod, field.name });
                 }
             }
         }
@@ -360,7 +360,7 @@ pub const ObjcLowering = struct {
         if (explicit_count > 1) {
             if (self.l.diagnostics) |d| {
                 const span = ast.Span{ .start = 0, .end = 0 };
-                d.addFmt(.err, span, "conflicting #property modifiers on field '{s}' — strong/weak/copy/assign are mutually exclusive", .{field.name});
+                d.addFmt(.err, span, "conflicting @ObjcProperty modifiers on field '{s}' — strong/weak/copy/assign are mutually exclusive", .{field.name});
             }
         }
 
@@ -385,7 +385,7 @@ pub const ObjcLowering = struct {
         if (has_weak and !is_object_ptr) {
             if (self.l.diagnostics) |d| {
                 const span = ast.Span{ .start = 0, .end = 0 };
-                d.addFmt(.err, span, "#property(weak) on field '{s}' requires a pointer-to-Obj-C-class type; got '{s}'", .{ field.name, self.l.module.types.typeName(field_ty) });
+                d.addFmt(.err, span, "@ObjcProperty(weak) on field '{s}' requires a pointer-to-Obj-C-class type; got '{s}'", .{ field.name, self.l.module.types.typeName(field_ty) });
             }
         }
 
@@ -393,7 +393,7 @@ pub const ObjcLowering = struct {
         if (has_copy and !is_object_ptr) {
             if (self.l.diagnostics) |d| {
                 const span = ast.Span{ .start = 0, .end = 0 };
-                d.addFmt(.err, span, "#property(copy) on field '{s}' requires a pointer-to-Obj-C-class type (typically NSString or NSArray)", .{field.name});
+                d.addFmt(.err, span, "@ObjcProperty(copy) on field '{s}' requires a pointer-to-Obj-C-class type (typically NSString or NSArray)", .{field.name});
             }
         }
 
@@ -404,7 +404,7 @@ pub const ObjcLowering = struct {
             if (pointee == .void and explicit_count == 0) {
                 if (self.l.diagnostics) |d| {
                     const span = ast.Span{ .start = 0, .end = 0 };
-                    d.addFmt(.err, span, "#property on field '{s}' of type '*void' is ambiguous — specify `#property(strong|weak|copy|assign)` explicitly (Obj-C object vs raw memory)", .{field.name});
+                    d.addFmt(.err, span, "@ObjcProperty on field '{s}' of type '*void' is ambiguous — specify `@ObjcProperty(strong|weak|copy|assign)` explicitly (Obj-C object vs raw memory)", .{field.name});
                 }
                 return .assign; // assume safe default to keep compilation going
             }

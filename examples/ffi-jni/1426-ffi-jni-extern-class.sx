@@ -1,10 +1,10 @@
-// Postfix `extern` on a `#jni_class` aggregate imports the class. Parse-only
+// Postfix `extern` on a `@JniClass` aggregate imports the class. Parse-only
 // on macOS (no JVM at runtime), mirroring 1412's runtime-class reference.
-//   View :: #jni_class("…") extern { … }   ==   View :: #jni_class(…) extern("…") { … }
+//   View :: @JniClass("…") extern { … }   ==   View :: @JniClass(…) extern("…") { … }
 
 #import "modules/std.sx";
 
-View :: #jni_class("android/view/View") extern {
+View :: @JniClass("android/view/View") extern {
     getId :: (self: *Self) -> i32;
 }
 

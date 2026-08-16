@@ -81,9 +81,9 @@ NSLog :: (fmt: *NSString) extern;
 // Root of every Obj-C class hierarchy. Apple's runtime supplies the IMPs;
 // sx declares the method surface so user code can write
 // `defer view.release();` and `view.retain()` directly instead of going
-// through `objc_msgSend` casts. `#extends`-aware dispatch finds these
-// methods automatically once a class roots its `#extends` chain at
-// NSObject (runtime classes in uikit.sx etc. add `#extends NSObject;` to
+// through `objc_msgSend` casts. `extends =`-aware dispatch finds these
+// methods automatically once a class roots its `extends =` chain at
+// NSObject (runtime classes in uikit.sx etc. add `extends = NSObject;` to
 // inherit the surface).
 //
 // `release` is NOT a reserved keyword in sx — modern clang ARC bans
@@ -91,7 +91,7 @@ NSLog :: (fmt: *NSString) extern;
 // sx isn't under clang ARC. Calling `view.release()` here is equivalent to
 // pre-ARC Obj-C source code: dispatches through the runtime, decrements the
 // refcount, fires `-dealloc` at zero.
-NSObject :: #objc_class("NSObject") extern {
+NSObject :: @ObjcClass("NSObject") extern {
     alloc       :: () -> *NSObject;
     init        :: (self: *Self) -> *NSObject;
     new         :: () -> *NSObject;       // shorthand for [[Cls alloc] init]
@@ -111,8 +111,7 @@ NSObject :: #objc_class("NSObject") extern {
 // whose lifetime is tied to the NSString (don't free it). The `Into` impl
 // lets a string literal flow into any `*NSString` slot via `xx`, e.g.
 // `dict.objectForKey(xx "SomeKey")`.
-NSString :: #objc_class("NSString") extern {
-    #extends NSObject;
+NSString :: @ObjcClass("NSString", extends = NSObject) extern {
     UTF8String :: (self: *Self) -> [*]u8;
 }
 

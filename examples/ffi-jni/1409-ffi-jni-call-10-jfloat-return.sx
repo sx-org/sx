@@ -1,4 +1,4 @@
-// `#jni_call(f32)` (jfloat return). CallFloatMethod is vtable slot 55.
+// `@JniCall(f32)` (jfloat return). CallFloatMethod is vtable slot 55.
 // `MotionEvent.getX()` / `getY()` return this shape into
 // `sx_android_push_touch`.
 
@@ -7,9 +7,7 @@
 g_should_call : bool = false;
 
 read_float :: (env: *void, target: *void) -> f32 {
-    #jni_env(env) {
-        #jni_call(f32)(target, "getValue", "()F")
-    }
+    @JniCall(f32, env, target, "getValue", "()F")
 }
 
 main :: () -> i32 {

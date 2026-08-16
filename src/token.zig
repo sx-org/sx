@@ -134,25 +134,8 @@ pub const Tag = enum(u8) {
     hash_define, // #define (inside #import c { ... })
     hash_flags, // #flags (inside #import c { ... })
     hash_identity, // #identity (protocol ownership-class marker: borrow-only values)
-    hash_objc_call, // #objc_call(T)(recv, "sel:", args...)
-    hash_jni_call, // #jni_call(T)(env, target, "name", "(Sig)R", args...)
-    hash_jni_static_call, // #jni_static_call(T)(class, "name", "(Sig)R", args...)
-    hash_jni_class, // Foo :: #jni_class("java/path/Foo") { ...body... }
-    hash_jni_interface, // Foo :: #jni_interface("java/path/IFoo") { ...body... }
-    hash_objc_class, // Foo :: #objc_class("ObjcName") { ...body... }
-    hash_objc_protocol, // Foo :: #objc_protocol("ObjcProto") { ...body... }
-    hash_swift_class, // Foo :: #swift_class("Module.Type") { ...body... }
-    hash_swift_struct, // Foo :: #swift_struct("Module.Type") { ...body... }
-    hash_swift_protocol, // Foo :: #swift_protocol("Module.Proto") { ...body... }
-    hash_extends, // `#extends Alias;` inside a runtime-class body
-    hash_implements, // `#implements Alias;` inside a runtime-class body
-    hash_jni_method_descriptor, // `#jni_method_descriptor("(Sig)Ret")` per-method JNI descriptor override
-    hash_selector, // `#selector("explicit:string")` per-method Obj-C selector override
-    hash_property, // `#property[(modifier, ...)]` field directive — synthesizes getter/setter dispatch
     hash_get, // `name :: (self) -> R #get => expr;` — a no-paren property accessor method (read via field syntax)
     hash_set, // `name :: (self, value) #set { ... }` — the write counterpart of #get (`obj.name = rhs` dispatches here)
-    hash_jni_env, // `#jni_env(env) { body }` block-form env-scoping intrinsic
-    hash_jni_main, // `#jni_main #jni_class(...) { ... }` — class is the launchable Android Activity
     hash_context_extend, // `#context_extend name: Type = default;` — top-level Context field declaration
     triple_minus, // ---
     minus_minus,
@@ -305,25 +288,8 @@ pub const Tag = enum(u8) {
             .hash_define,
             .hash_flags,
             .hash_identity,
-            .hash_objc_call,
-            .hash_jni_call,
-            .hash_jni_static_call,
-            .hash_jni_class,
-            .hash_jni_interface,
-            .hash_objc_class,
-            .hash_objc_protocol,
-            .hash_swift_class,
-            .hash_swift_struct,
-            .hash_swift_protocol,
-            .hash_extends,
-            .hash_implements,
-            .hash_jni_method_descriptor,
-            .hash_selector,
-            .hash_property,
             .hash_get,
             .hash_set,
-            .hash_jni_env,
-            .hash_jni_main,
             .hash_context_extend,
             => .directive,
             .plus,
@@ -512,25 +478,8 @@ pub const Tag = enum(u8) {
             .hash_define,
             .hash_flags,
             .hash_identity,
-            .hash_objc_call,
-            .hash_jni_call,
-            .hash_jni_static_call,
-            .hash_jni_class,
-            .hash_jni_interface,
-            .hash_objc_class,
-            .hash_objc_protocol,
-            .hash_swift_class,
-            .hash_swift_struct,
-            .hash_swift_protocol,
-            .hash_extends,
-            .hash_implements,
-            .hash_jni_method_descriptor,
-            .hash_selector,
-            .hash_property,
             .hash_get,
             .hash_set,
-            .hash_jni_env,
-            .hash_jni_main,
             .hash_context_extend,
             .triple_minus,
             .minus_minus,

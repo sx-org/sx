@@ -1,13 +1,13 @@
-// The `#objc_call` shape `#objc_call(ReturnT)(receiver, "selector:", args...)`
+// The `@ObjcCall` shape `@ObjcCall(ReturnT, receiver, "selector:", args...)`
 // parses — return type in the first parens, then a normal call. Parse-only.
 
 #import "modules/std.sx";
 
 main :: () -> i32 {
-    // `#objc_call(void)` with a null receiver — never executed; the
+    // `@ObjcCall(void)` with a null receiver — never executed; the
     // `inline if false` arm keeps the node in the AST.
     inline if false {
-        #objc_call(void)(null, "init");
+        @ObjcCall(void, null, "init");
     }
     print("parse-only ok\n");
     0

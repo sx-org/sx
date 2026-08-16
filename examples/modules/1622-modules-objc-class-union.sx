@@ -1,4 +1,4 @@
-// Two modules declaring the same-named extern #objc_class
+// Two modules declaring the same-named extern @ObjcClass
 // bound to the SAME runtime class merge into a union surface — each
 // module's member calls resolve, in whichever order the decls
 // register. (The gpu/metal.sx vs platform/uikit.sx CAMetalLayer race

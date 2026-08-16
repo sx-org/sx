@@ -1,4 +1,4 @@
-// #objc_class method dispatch with struct-by-value
+// @ObjcClass method dispatch with struct-by-value
 // arguments. Large non-HFA aggregates (48-byte MTLRegion shape) pass
 // by reference (caller copy + ptr — the same marshaling as the
 // abi(.c) fn-pointer idiom); float-pair HFAs (CGSize shape) stay
@@ -10,10 +10,10 @@
 ProbeRegion :: struct { a: u64; b: u64; c: u64; d: u64; e: u64; f: u64; }
 ProbeSize   :: struct { w: f64; h: f64; }
 
-SxStructProbe :: #objc_class("SxStructProbe") extern {
-    take_region :: (self: *Self, r: ProbeRegion) -> u64 #selector("takeRegion:");
-    take_size   :: (self: *Self, s: ProbeSize) -> f64 #selector("takeSize:");
-    take_mixed  :: (self: *Self, a: i64, r: ProbeRegion, b: i64) -> u64 #selector("takeMixed:region:tail:");
+SxStructProbe :: @ObjcClass("SxStructProbe") extern {
+    take_region :: (self: *Self, r: ProbeRegion) -> u64 @ObjcMethod(selector = "takeRegion:");
+    take_size   :: (self: *Self, s: ProbeSize) -> f64 @ObjcMethod(selector = "takeSize:");
+    take_mixed  :: (self: *Self, a: i64, r: ProbeRegion, b: i64) -> u64 @ObjcMethod(selector = "takeMixed:region:tail:");
 }
 
 region_imp :: (self: *void, _cmd: *void, r: ProbeRegion) -> u64 abi(.c) {

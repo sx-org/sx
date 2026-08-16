@@ -210,7 +210,7 @@ pub const ExprTyper = struct {
                         return self.l.module.types.ptrTo(.void);
                     }
                 }
-                // `obj.field` for an Obj-C `#property` field returns the field's type.
+                // `obj.field` for an Obj-C `@ObjcProperty` field returns the field's type.
                 if (self.l.lookupObjcPropertyOnPointer(fa.object, fa.field)) |prop| {
                     return self.l.resolveType(prop.field_type);
                 }

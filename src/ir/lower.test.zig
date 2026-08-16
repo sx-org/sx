@@ -421,14 +421,14 @@ test "lower: objcTypeEncodingFromSignature emits pointer shapes" {
     try std.testing.expectEqualStrings("v@:^v", e3);
 }
 
-// sx-defined #objc_class state struct construction.
+// sx-defined @ObjcClass state struct construction.
 test "lower: objcDefinedStateStructType collects user-declared fields" {
     const alloc = std.testing.allocator;
     var module = ir_mod.Module.init(alloc);
     defer module.deinit();
     var lowering = Lowering.init(&module);
 
-    // Synthesize a #objc_class("SxFoo") { counter: i32; ticks: i64; } AST.
+    // Synthesize a @ObjcClass("SxFoo") { counter: i32; ticks: i64; } AST.
     const span = ast.Span{ .start = 0, .end = 0 };
     const counter_type = try alloc.create(Node);
     defer alloc.destroy(counter_type);
@@ -494,7 +494,7 @@ test "lower: objcDefinedStateStructType skips non-field members" {
     defer module.deinit();
     var lowering = Lowering.init(&module);
 
-    // Mix in #extends and method members — only `.field` contributes.
+    // Mix in extends = and method members — only `.field` contributes.
     const span = ast.Span{ .start = 0, .end = 0 };
     const counter_type = try alloc.create(Node);
     defer alloc.destroy(counter_type);
@@ -714,7 +714,7 @@ test "lower: deriveObjcSelector — niladic / keyword / multi-keyword / override
     try std.testing.expectEqual(@as(usize, 2), multi.keyword_count);
     try std.testing.expectEqual(false, multi.is_override);
 
-    // `#selector(...)` override: used verbatim, keyword_count = #colons.
+    // `@ObjcMethod(...)` override: used verbatim, keyword_count = #colons.
     var m = objcMethod("init_with_frame_style");
     m.selector_override = "initWithFrame:style:";
     const overridden = lowering.objc().deriveObjcSelector(m, 2);

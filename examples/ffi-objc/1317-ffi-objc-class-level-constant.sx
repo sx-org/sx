@@ -1,4 +1,4 @@
-// class-level constants on a sx-defined `#objc_class`.
+// class-level constants on a sx-defined `@ObjcClass`.
 //
 // `name :: Type = expr;` inside the class block is sugar for
 // `name :: () -> Type => expr;` — a niladic class method with an
@@ -14,13 +14,13 @@
 #import "modules/build.sx";
 #import "modules/ffi/objc.sx";
 
-NSObject :: #objc_class("NSObject") extern {
+NSObject :: @ObjcClass("NSObject") extern {
     alloc :: () -> *NSObject;
     init  :: (self: *NSObject) -> *NSObject;
 }
 
 // Reframed as a class method internally; user writes the constant form.
-SxThing :: #objc_class("SxThing") {
+SxThing :: @ObjcClass("SxThing") {
     counter: i32;
 
     // Class-level constant.

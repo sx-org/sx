@@ -412,12 +412,10 @@ pub const Call = struct {
     args: []const *Node,
 };
 
-/// `#objc_call(T)(recv, "sel:", args...)`,
-/// `#jni_call(T)(env, target, "name", "(Sig)R", args...)`,
-/// `#jni_static_call(T)(class, "name", "(Sig)R", args...)`.
-/// The return-type T sits in the first parens; the actual call args
-/// follow in the second parens. Codegen branches on `kind` to pick
-/// the lowering (objc_msgSend / CallXxxMethod / CallStaticXxxMethod).
+/// `@ObjcCall(T, recv, "sel:", args...)`,
+/// `@JniCall(T, env, target, "name", "(Sig)R", args...)`,
+/// `@JniStaticCall(T, env, class, "name", "(Sig)R", args...)`.
+/// The return type is the first argument. Codegen branches on `kind`.
 pub const FfiIntrinsicKind = enum {
     objc_call,
     jni_call,
@@ -1165,21 +1163,21 @@ pub const RuntimeMethodDecl = struct {
     param_name_is_raw: []const bool = &.{},
     return_type: ?*Node, // null = void
     is_static: bool = false, // true for `static name :: ...`
-    jni_descriptor_override: ?[]const u8 = null, // `#jni_method_descriptor("(Sig)Ret")` — JNI runtime only
-    selector_override: ?[]const u8 = null, // `#selector("explicit:string")` — Obj-C runtime only
+    jni_descriptor_override: ?[]const u8 = null, // `@JniMethod("(Sig)Ret")` — JNI runtime only
+    selector_override: ?[]const u8 = null, // `@ObjcMethod("explicit:string")` — Obj-C runtime only
     body: ?*Node = null, // sx-side implementation (defined-class only). null = `;`-terminated decl referencing inherited / external method.
 };
 
 pub const RuntimeFieldDecl = struct {
     name: []const u8,
     field_type: *Node, // type_expr node
-    /// True iff the declaration carries a `#property[(...)]` directive
+    /// True iff the declaration carries a `@ObjcProperty[(...)]` directive
     /// For runtime classes, that means synthesize getter/setter
     /// dispatch through `objc_msgSend`; for sx-defined classes it adds
     /// runtime-introspectable property metadata + ARC-aware setter
     /// emission.
     is_property: bool = false,
-    /// Comma-separated modifier names from `#property(strong, weak, ...)`.
+    /// Comma-separated modifier names from `@ObjcProperty(strong, weak, ...)`.
     /// Stored verbatim; the semantic interpretation lives downstream.
     property_modifiers: []const []const u8 = &.{},
 };
@@ -1187,8 +1185,8 @@ pub const RuntimeFieldDecl = struct {
 pub const RuntimeClassMember = union(enum) {
     method: RuntimeMethodDecl,
     field: RuntimeFieldDecl, // JNI runtime only
-    extends: []const u8, // sx-side alias name (right of `#extends`)
-    implements: []const u8, // sx-side alias name (right of `#implements`)
+    extends: []const u8, // sx-side alias name (right of `extends =`)
+    implements: []const u8, // sx-side alias name (right of `implements =`)
 };
 
 pub const RuntimeClassDecl = struct {
@@ -1196,8 +1194,8 @@ pub const RuntimeClassDecl = struct {
     runtime_path: []const u8, // directive arg: "java/path/Foo" / "NSString" / "Foundation.URL"
     runtime: RuntimeKind,
     members: []const RuntimeClassMember = &.{},
-    is_extern: bool = false, // `#objc_class(…) extern` — class is provided by the runtime; we only reference it (vs `export`, which defines + registers a new sx class)
-    is_main: bool = false, // `#jni_main` / `#objc_main` — class is the launchable entry (Activity / UIApplicationDelegate / ...)
+    is_extern: bool = false, // `@ObjcClass(…) extern` — class is provided by the runtime; we only reference it (vs `export`, which defines + registers a new sx class)
+    is_main: bool = false, // `main = true` / `main = true` — class is the launchable entry (Activity / UIApplicationDelegate / ...)
     /// True when the sx-side alias NAME was a backtick raw identifier — exempt
     /// from the reserved-type-name decl check.
     is_raw: bool = false,

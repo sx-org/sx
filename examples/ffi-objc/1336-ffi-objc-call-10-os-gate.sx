@@ -1,4 +1,4 @@
-// `#objc_call` inside an
+// `@ObjcCall` inside an
 // `inline if OS == .ios { ... }` arm cross-compiles cleanly to
 // Android. The comptime gate strips the arm BEFORE the
 // `objc_msg_send` lowering runs, so no call to `@objc_msgSend` /
@@ -7,27 +7,27 @@
 //
 // On macOS the iOS arm is also stripped (the host is not iOS) so the
 // runtime test just prints "host stripped both", proving the
-// `inline match OS` form works around `#objc_call`
+// `inline match OS` form works around `@ObjcCall`
 // sites the same way it does elsewhere.
 
 #import "modules/std.sx";
 #import "modules/build.sx";
 
-// Empty stub class — Android cross-compile requires a `#jni_main`
+// Empty stub class — Android cross-compile requires a `main = true`
 // declaration to satisfy the entry-point check. This file is testing
-// `inline if OS` gating around `#objc_call`, not Activity wiring.
-SxObjcOsGateStub :: #jni_main #jni_class("co/swipelab/sxobjcosgate/SxObjcOsGateStub") {}
+// `inline if OS` gating around `@ObjcCall`, not Activity wiring.
+SxObjcOsGateStub :: @JniClass("co/swipelab/sxobjcosgate/SxObjcOsGateStub", main = true) {}
 
 main :: () -> i32 {
     inline match OS {
         case .ios: {
             // Stripped on macOS + Android. Compiled on iOS / ios-sim.
-            #objc_call(void)(null, "init");
+            @ObjcCall(void, null, "init");
             print("ios path\n");
         }
         case .android: {
             // Stripped on macOS + iOS. Compiled on Android.
-            // Nothing #objc_call-shaped here — just text — so we
+            // Nothing @ObjcCall-shaped here — just text — so we
             // exercise the gate symmetrically across targets.
             print("android path\n");
         }

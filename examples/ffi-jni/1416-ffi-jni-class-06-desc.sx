@@ -1,4 +1,4 @@
-// The `#jni_method_descriptor("(Sig)Ret")` per-method JNI-descriptor
+// The `@JniMethod(descriptor = "(Sig)Ret")` per-method JNI-descriptor
 // override. The default descriptor is derived from sx types; this directive is
 // the escape hatch when the auto-derived signature doesn't match (synthetic
 // methods, ambiguous overloads, JNI internals). It trails the method's return
@@ -6,8 +6,8 @@
 
 #import "modules/std.sx";
 
-Foo :: #jni_class("com/example/Foo") extern {
-    weirdMethod :: (self: *Self) -> i32 #jni_method_descriptor("()I");
+Foo :: @JniClass("com/example/Foo") extern {
+    weirdMethod :: (self: *Self) -> i32 @JniMethod(descriptor = "()I");
 }
 
 main :: () -> i32 {

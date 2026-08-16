@@ -1,6 +1,6 @@
-// `#jni_call(void)` codegen.
+// `@JniCall(void)` codegen.
 //
-// `#jni_call(T)(env, target, "method_name", "(Sig)RetSig", args...)`
+// `@JniCall(T, env, target, "method_name", "(Sig)RetSig", args...)`
 // dispatches a JNI instance-method call. The lowering hand-emits the
 // vtable indirection:
 //
@@ -20,10 +20,10 @@
 #import "modules/std.sx";
 #import "modules/build.sx";
 
-// Android target requires a `#jni_main` Activity declaration to
+// Android target requires a `main = true` Activity declaration to
 // satisfy the entry-point check. An empty stub class is enough — this
-// file is testing `#jni_call` lowering, not Activity wiring.
-SxJniCallVoidStub :: #jni_main #jni_class("co/swipelab/sxjnicall/SxJniCallVoidStub") {}
+// file is testing `@JniCall` lowering, not Activity wiring.
+SxJniCallVoidStub :: @JniClass("co/swipelab/sxjnicall/SxJniCallVoidStub", main = true) {}
 
 main :: () -> i32 {
     inline if OS == .android {
@@ -33,9 +33,7 @@ main :: () -> i32 {
         // by the chess sx_android_query_safe_insets path.
         env    : *void = null;
         target : *void = null;
-        #jni_env(env) {
-            #jni_call(void)(target, "noop", "()V");
-        }
+        @JniCall(void, env, target, "noop", "()V");
     }
     inline if OS != .android {
         print("skipped (not android)\n");

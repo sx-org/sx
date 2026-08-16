@@ -1490,7 +1490,7 @@ pub const Analyzer = struct {
                 if (fd.is_extern and fd.is_main) {
                     try self.diagnostics.append(self.allocator, .{
                         .level = .err,
-                        .message = "'extern' and '#jni_main' / '#objc_main' are mutually exclusive — a extern-referenced class can't be the app's main entry",
+                        .message = "'extern' and 'main = true' / 'main = true' are mutually exclusive — a extern-referenced class can't be the app's main entry",
                         .span = node.span,
                     });
                 }

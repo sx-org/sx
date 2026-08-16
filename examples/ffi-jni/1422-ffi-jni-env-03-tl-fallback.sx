@@ -1,24 +1,17 @@
-// The thread-local env fallback in `#jni_call`. When a `#jni_call` site has
-// its env arg omitted AND no `#jni_env` block exists in the same function
-// (a helper called FROM such a block), the compiler emits a TL load.
-//
-// The TL is pushed/popped by the `#jni_env(env) { ... }` enclosing scope at
-// runtime; a helper that does not see the lexical scope picks up the env
-// transparently, so a cross-function caller need not thread env as an
-// explicit parameter.
+// A helper called from a `push .{ jni = env }` block reads `context.jni`.
+// The handle is call-carried on the context, so the helper does not take
+// env as a parameter.
 
 #import "modules/std.sx";
 
 g_should_call : bool = false;
 
-// No `#jni_env` block in scope: without the TL fallback the omitted env
-// cannot be resolved and this errors.
 helper :: (target: *void) {
-    #jni_call(void)(target, "noop", "()V");
+    @JniCall(void, context.jni, target, "noop", "()V");
 }
 
 unused :: (env: *void, target: *void) {
-    #jni_env(env) {
+    push .{ jni = env } {
         helper(target);
     }
 }

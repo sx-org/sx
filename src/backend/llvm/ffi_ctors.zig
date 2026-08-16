@@ -9,8 +9,8 @@ const JniSlotPair = LLVMEmitter.JniSlotPair;
 /// Obj-C / JNI runtime-constructor emission. A backend `*LLVMEmitter` facade
 /// (field `e`): it builds the
 /// module-init constructors that populate the cached selector / class slots and
-/// register sx-defined `#objc_class` class pairs (IMP tables, ivars, +alloc /
-/// -dealloc / property IMPs, `#implements` protocol conformances). Reads the
+/// register sx-defined `@ObjcClass` class pairs (IMP tables, ivars, +alloc /
+/// -dealloc / property IMPs, `implements =` protocol conformances). Reads the
 /// emit-time caches (`ir_mod.objc_*_cache`, `global_map`) + cached LLVM handles
 /// via `self.e.*`; the shared infra it calls back into
 /// (`lazyDeclareCRuntime`/`emitPrivateCString`/`injectCtorIntoMain`) stays on
@@ -237,7 +237,7 @@ pub const FfiCtors = struct {
     }
 
     /// emit class-pair registration constructor for every
-    /// sx-defined `#objc_class` declaration. Same shape as the Phase
+    /// sx-defined `@ObjcClass` declaration. Same shape as the Phase
     /// 3.1 `emitObjcClassInit` companion: a `@llvm.global_ctors`-
     /// registered constructor that runs at module load AND gets
     /// injected at the top of `main` for the ORC JIT path (which
@@ -357,7 +357,7 @@ pub const FfiCtors = struct {
                 _ = c.LLVMBuildCall2(self.e.builder, add_method_ty, add_method_fn, &add_args, 4, "");
             }
 
-            // Register `#implements` protocol conformances
+            // Register `implements =` protocol conformances
             // BEFORE objc_registerClassPair. iOS checks
             // `class_conformsToProtocol` when instantiating scene
             // delegates and other protocol-typed callbacks; without
@@ -477,7 +477,7 @@ pub const FfiCtors = struct {
 
     /// Return `{cls_slot, mid_slot}` global pair for the
     /// `(name, sig)` literal — created on first lookup, shared across
-    /// later `#jni_call` sites with the same literal pair. Both
+    /// later `@JniCall` sites with the same literal pair. Both
     /// slots are zero-initialized `ptr`; the call-site lowering does
     /// lazy population on first dispatch. The cache (`jni_slots`) +
     /// `mangleJniKey` stay on `LLVMEmitter`.

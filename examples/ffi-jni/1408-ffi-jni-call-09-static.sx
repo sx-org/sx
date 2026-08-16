@@ -1,4 +1,4 @@
-// `#jni_static_call` lowering.
+// `@JniStaticCall` lowering.
 // The target is already a `jclass`, so the lowering skips `GetObjectClass`
 // and uses `GetStaticMethodID` + `CallStatic<Type>Method`.
 
@@ -7,9 +7,7 @@
 g_should_call : bool = false;
 
 call_static_max :: (env: *void, cls: *void) -> i32 {
-    #jni_env(env) {
-        #jni_static_call(i32)(cls, "max", "(II)I", 3, 7)
-    }
+    @JniStaticCall(i32, env, cls, "max", "(II)I", 3, 7)
 }
 
 main :: () -> i32 {

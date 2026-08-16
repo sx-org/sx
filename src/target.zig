@@ -4,7 +4,7 @@ const llvm = @import("llvm_api.zig");
 const c = llvm.c;
 const zig_backend = @import("zig_backend.zig");
 
-/// One `#jni_main #jni_class("...")` declaration's Java-source emission.
+/// One `main = true @JniClass("...")` declaration's Java-source emission.
 /// Populated by lowering and surfaced to the sx Android bundler in
 /// `library/modules/platform/bundle.sx` via `BuildConfig.jni_main_*`,
 /// which writes a `.java` file under `<stage>/java/<pkg>/<Cls>.java`,
@@ -743,7 +743,7 @@ pub fn link(allocator: std.mem.Allocator, io: std.Io, output_obj: []const u8, ex
         //
         // Two entry shapes:
         //
-        //   - **#jni_main path (`has_jni_main = true`)** — the Java side
+        //   - **main = true path (`has_jni_main = true`)** — the Java side
         //     drives lifecycle (the bundled classes.dex declares an
         //     Activity that overrides `onCreate` etc.). The .so just
         //     provides the JNI implementations, bound by their mangled

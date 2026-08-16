@@ -1,4 +1,4 @@
-// All-double HFA returns through `#objc_call`. 4×f64 = 32 B, staying in
+// All-double HFA returns through `@ObjcCall`. 4×f64 = 32 B, staying in
 // v0..v3 on AAPCS64 and xmm0..xmm3 on SysV AMD64 — the UIEdgeInsets /
 // NSRect / CGRect shape, where an f32-vs-f64 slip mis-reads every field.
 //
@@ -33,7 +33,7 @@ main :: () -> i32 {
         objc_registerClassPair(my_cls);
 
         instance := class_createInstance(my_cls, 0);
-        ins := #objc_call(UIEdgeInsets)(instance, "safeAreaInsets");
+        ins := @ObjcCall(UIEdgeInsets, instance, "safeAreaInsets");
         print("insets = ({}, {}, {}, {})\n", ins.top, ins.left, ins.bottom, ins.right);
     }
     inline if OS != .macos {

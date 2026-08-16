@@ -1,9 +1,9 @@
-// `xx self` inside a BOOL-returning `#objc_class` method must
+// `xx self` inside a BOOL-returning `@ObjcClass` method must
 // resolve to the full receiver pointer at a runtime-class method
 // call site, not get truncated to i8 by the enclosing function's
 // BOOL return type. `resolveCallParamTypes` threads runtime-class
 // method param types even when the receiver is an `extern
-// #objc_class` alias. Every probe round-trips the receiver pointer:
+// @ObjcClass` alias. Every probe round-trips the receiver pointer:
 // truncation reads only the low byte, so the observer pointer
 // appears as e.g. 0xC0 / 0x20 instead of its real 64-bit value.
 #import "modules/std.sx";
@@ -15,12 +15,12 @@ g_observer : *void = null;
 // Stand-in for NSNotificationCenter — we just need a runtime-class
 // method with several *void args so the call site's arg-target-type
 // resolution exercises the same path as uikit.sx's keyboard observer.
-SxIssue44Bus :: #objc_class("NSNotificationCenter") extern {
+SxIssue44Bus :: @ObjcClass("NSNotificationCenter") extern {
     defaultCenter :: () -> *SxIssue44Bus;
     addObserver_selector_name_object :: (self: *Self, observer: *void, sel: *void, name: *void, obj: *void);
 }
 
-SxIssue44Foo :: #objc_class("SxIssue44Foo") {
+SxIssue44Foo :: @ObjcClass("SxIssue44Foo") {
     counter: i32;
     sentinel: *void;
 

@@ -1,12 +1,12 @@
-// `#objc_call(bool)`
+// `@ObjcCall(bool)`
 // against `BOOL`-returning selectors. Obj-C `BOOL` is single-byte on
 // every Apple ABI we ship to (signed char on i386, native `bool` on
-// arm64), so the slot shape is identical to `#objc_call(u8)` — this
+// arm64), so the slot shape is identical to `@ObjcCall(u8)` — this
 // test is about the source-level type being meaningful, not a
 // distinct ABI path.
 //
 // Two IMPs are installed: `yes_imp` returns true, `no_imp` returns
-// false. Both are dispatched through `#objc_call(bool)` and the
+// false. Both are dispatched through `@ObjcCall(bool)` and the
 // results are checked.
 
 #import "modules/std.sx";
@@ -19,7 +19,7 @@ no_imp  :: (self: *void, _cmd: *void) -> bool abi(.c) { false }
 main :: () -> i32 {
     inline if OS == .macos {
         // Nil-recv: libobjc returns a zeroed slot, which decodes as false.
-        nil_b := #objc_call(bool)(null, "isEqual:");
+        nil_b := @ObjcCall(bool, null, "isEqual:");
         print("nil bool     = {}\n", nil_b);
 
         ns_object := objc_getClass("NSObject".ptr);
@@ -36,8 +36,8 @@ main :: () -> i32 {
         objc_registerClassPair(my_cls);
 
         instance := class_createInstance(my_cls, 0);
-        y := #objc_call(bool)(instance, "yes");
-        n := #objc_call(bool)(instance, "no");
+        y := @ObjcCall(bool, instance, "yes");
+        n := @ObjcCall(bool, instance, "no");
         print("yes = {}\n", y);
         print("no  = {}\n", n);
     }

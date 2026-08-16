@@ -3,14 +3,14 @@
 
 #import "modules/std.sx";
 
-Buf :: #jni_class("java/nio/ByteBuffer") extern {
+Buf :: @JniClass("java/nio/ByteBuffer") extern {
     get :: (self: *Self) -> u32;
 }
 
 g_should_call : bool = false;
 
 unused :: (env: *void, b: *Buf) {
-    #jni_env(env) {
+    push .{ jni = env } {
         _ := b.get();
     }
 }

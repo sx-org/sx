@@ -10,9 +10,9 @@
 #import "modules/gpu/api.sx";
 #import "modules/gpu/gles3.sx";
 
-Bundle :: #jni_class("android/os/Bundle") extern {}
+Bundle :: @JniClass("android/os/Bundle") extern {}
 
-SxApp :: #jni_main #jni_class("co/swipelab/sxgles3build/SxApp") {
+SxApp :: @JniClass("co/swipelab/sxgles3build/SxApp", main = true) {
     onCreate :: (self: *Self, b: *Bundle) {
         super.onCreate(b);
     }

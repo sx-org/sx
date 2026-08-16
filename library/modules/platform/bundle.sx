@@ -619,9 +619,9 @@ codesign :: (bundle: string, identity: string, ent_path: string) -> bool {
 //   1. Discover SDK root + highest build-tools / platforms version.
 //   2. Stage `<apk>.stage/lib/arm64-v8a/<libfoo.so>`.
 //   3. Use the user-supplied AndroidManifest.xml or synthesize one
-//      (NativeActivity shape when no `#jni_main` decl; Activity-bound
-//      shape pointing at the user's `#jni_main` class otherwise).
-//   4. For each `#jni_main` decl: write `<stage>/java/<pkg>/<Cls>.java`,
+//      (NativeActivity shape when no `main = true` decl; Activity-bound
+//      shape pointing at the user's `main = true` class otherwise).
+//   4. For each `main = true` decl: write `<stage>/java/<pkg>/<Cls>.java`,
 //      compile via `javac --release 11 -classpath android.jar`, then
 //      dex via `d8 --release --lib android.jar --output <stage>`.
 //   5. `aapt2 link -I android.jar --manifest <m> -o <apk>.unaligned`.
@@ -731,7 +731,7 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
         manifest_used = generated_path;
     }
 
-    // Compile each `#jni_main` decl's Java source.
+    // Compile each `main = true` decl's Java source.
     jm_count := opts.jni_main_count();
     if jm_count > 0 {
         if !compile_jni_main_sources(opts, stage, android_jar, d8_path) {
@@ -939,7 +939,7 @@ lib_name_from_so_basename :: (basename: string) -> string {
 }
 
 // AndroidManifest.xml synthesizer. When the program declares a
-// `#jni_main` class, the manifest points its `<activity
+// `main = true` class, the manifest points its `<activity
 // android:name>` at the user's class and flips
 // `android:hasCode="true"` so Android loads the bundled classes.dex.
 // Otherwise it falls back to the legacy NativeActivity shape with an
@@ -948,7 +948,7 @@ build_android_manifest :: (opts: BuildOptions, package: string, lib_name: string
     pkg_esc := xml.escape(package);
     lib_esc := xml.escape(lib_name);
     if opts.jni_main_count() > 0 {
-        // First `#jni_main` decl drives the Activity. The runtime_path
+        // First `main = true` decl drives the Activity. The runtime_path
         // uses `/` separators; Java fully-qualified class names use
         // `.` so we rewrite.
         runtime_path := opts.jni_main_runtime_path_at(0);
@@ -1036,7 +1036,7 @@ dir_part :: (path: string) -> string {
     ""
 }
 
-// Write each `#jni_main` decl's `.java` source, then compile to
+// Write each `main = true` decl's `.java` source, then compile to
 // classes via `javac --release 11 -classpath <android.jar>`, then dex
 // the resulting class files via `d8 --release --lib <android.jar>
 // --output <stage>` so `<stage>/classes.dex` lands where the

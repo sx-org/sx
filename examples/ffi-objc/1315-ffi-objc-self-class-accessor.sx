@@ -14,12 +14,12 @@
 #import "modules/build.sx";
 #import "modules/ffi/objc.sx";
 
-NSObjectFwd :: #objc_class("NSObject") extern {
+NSObjectFwd :: @ObjcClass("NSObject") extern {
     alloc :: () -> *NSObjectFwd;
     init  :: (self: *NSObjectFwd) -> *NSObjectFwd;
 }
 
-SxFoo :: #objc_class("SxFoo") {
+SxFoo :: @ObjcClass("SxFoo") {
     counter: i32;
     alloc :: () -> *SxFoo;
     bump :: (self: *Self) { self.counter += 1; }

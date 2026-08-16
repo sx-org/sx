@@ -1,6 +1,6 @@
-// Parser coverage for `#jni_call`
-// and `#jni_static_call`. Same `#<intrinsic>(ReturnT)(args...)`
-// shape as `#objc_call`, parsed by the same rule.
+// Parser coverage for `@JniCall`
+// and `@JniStaticCall`. Same `#<intrinsic>(ReturnT)(args...)`
+// shape as `@ObjcCall`, parsed by the same rule.
 //
 // `inline if false` suppresses sema/codegen; this file pins the parse
 // surface only.
@@ -10,15 +10,15 @@
 main :: () -> i32 {
     inline if false {
         env : *void = null;
-        #jni_env(env) {
+        push .{ jni = env } {
             // Instance method: target, name, sig, args...
-            #jni_call(*void)(null, "getWindow", "()Landroid/view/Window;");
+            @JniCall(*void, env, null, "getWindow", "()Landroid/view/Window;");
 
             // Static method: class, name, sig, args...
-            #jni_static_call(i32)(null, "max", "(II)I", 3, 7);
+            @JniStaticCall(i32, env, null, "max", "(II)I", 3, 7);
 
             // Returning a Java primitive (jboolean → sx bool).
-            #jni_call(bool)(null, "isShown", "()Z");
+            @JniCall(bool, env, null, "isShown", "()Z");
         }
     }
     print("parse-only ok\n");

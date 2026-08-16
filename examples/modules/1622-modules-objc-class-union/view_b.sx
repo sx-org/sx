@@ -4,7 +4,7 @@
 // A second view of the SAME runtime class under the same sx name,
 // declaring a different method. A last-wins registry would drop one
 // view, failing that module's calls at resolution.
-Probe :: #objc_class("NSString") extern {
+Probe :: @ObjcClass("NSString") extern {
     length :: (self: *Self) -> u64;
 }
 

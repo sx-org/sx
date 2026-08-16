@@ -782,7 +782,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         // Android-specific bundling state.
         if (e.build_config.manifest_path == null) e.build_config.manifest_path = merged_config.manifest_path;
         if (e.build_config.keystore_path == null) e.build_config.keystore_path = merged_config.keystore_path;
-        // `#jni_main` decls flow from the compiler's lowering pass —
+        // `main = true` decls flow from the compiler's lowering pass —
         // pre-rendered Java sources + the runtime_path for each. Build
         // two parallel slices since BuildConfig hooks return strings.
         const jni_decls = comp.getJniMainEmissions();

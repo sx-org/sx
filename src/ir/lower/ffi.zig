@@ -20,6 +20,17 @@ const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 
+fn currentJniEnv(self: *Lowering) ?Ref {
+    if (self.jni_env_stack.items.len > self.jni_env_stack_base) {
+        return self.jni_env_stack.items[self.jni_env_stack.items.len - 1];
+    }
+    if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) return null;
+    const ctx_name = self.module.types.internString("Context");
+    const ctx_ty = self.module.types.findByName(ctx_name) orelse return null;
+    const fl = self.fieldLvaluePtr(self.current_ctx_ref, ctx_ty, "jni") orelse return null;
+    return self.builder.load(fl.ptr, fl.ty);
+}
+
 /// Intern an Obj-C selector string into a module-scoped `SEL*` slot.
 /// First call creates the global; subsequent calls return the same
 /// `GlobalId`. emit_llvm.zig walks `module.objc_selector_cache` and
@@ -80,7 +91,7 @@ pub fn internObjcClassObject(self: *Lowering, class_name: []const u8) inst_mod.G
 }
 
 /// Lazily declare `sel_registerName(name: *u8) -> *void` as an extern.
-/// Cached per Lowering instance so multiple `#objc_call` sites share
+/// Cached per Lowering instance so multiple `@ObjcCall` sites share
 /// one declaration.
 pub fn getSelRegisterNameFid(self: *Lowering) FuncId {
     if (self.sel_register_name_fid) |fid| return fid;
@@ -97,7 +108,7 @@ pub fn getSelRegisterNameFid(self: *Lowering) FuncId {
     return fid;
 }
 
-/// Lower `#objc_call(T)(recv, "sel:", args...)` to:
+/// Lower `@ObjcCall(T)(recv, "sel:", args...)` to:
 ///   %sel = call ptr @sel_registerName(<"sel:">)
 ///   %ret = call <ABI(T)> @objc_msgSend(recv, %sel, args...)
 /// Only the (void return, no extra args) form is wired.
@@ -108,7 +119,7 @@ pub fn lowerFfiIntrinsicCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall, 
 
     if (fic.args.len < 2) {
         if (self.diagnostics) |d| {
-            d.add(.err, "#objc_call requires at least a receiver and a selector", null);
+            d.add(.err, "@ObjcCall requires at least a receiver and a selector", null);
         }
         return Ref.none;
     }
@@ -118,7 +129,7 @@ pub fn lowerFfiIntrinsicCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall, 
 
     if (fic.args.len < 2) {
         if (self.diagnostics) |d| {
-            d.add(.err, "#objc_call requires at least a receiver and a selector", null);
+            d.add(.err, "@ObjcCall requires at least a receiver and a selector", null);
         }
         return Ref.none;
     }
@@ -165,13 +176,10 @@ pub fn lowerFfiIntrinsicCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall, 
 }
 
 pub fn lowerJniCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall, span: ast.Span) Ref {
-    // env is always implicit: lexical-direct from the enclosing `#jni_env(env)`
-    // block (2.16b, cheap), else the thread-local slot the block populated
-    // at runtime (2.16c, one TL load per call). Surface form is uniform:
-    //   #jni_call(T)(target, "name", "sig", method-args...)        (≥3 args)
-    if (fic.args.len < 3) {
+    // @JniCall(Ret, env, target, "name", "sig", method-args...)
+    if (fic.args.len < 4) {
         if (self.diagnostics) |d| {
-            d.add(.err, "#jni_call requires target, method name, and signature", null);
+            d.add(.err, "@JniCall requires env, target, method name, and signature", span);
         }
         return Ref.none;
     }
@@ -184,18 +192,12 @@ pub fn lowerJniCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall, span: ast
         return Ref.none;
     }
 
-    const env_ref = if (self.jni_env_stack.items.len > self.jni_env_stack_base)
-        self.jni_env_stack.items[self.jni_env_stack.items.len - 1]
-    else blk: {
-        const fids = self.getJniEnvTlFids();
-        const ptr_ty = self.module.types.ptrTo(.void);
-        break :blk self.builder.emit(.{ .call = .{ .callee = fids.get, .args = &.{} } }, ptr_ty);
-    };
+    const env_ref = self.lowerExpr(fic.args[0]);
 
-    const target_idx: usize = 0;
-    const name_idx: usize = 1;
-    const sig_idx: usize = 2;
-    const first_method_arg_idx: usize = 3;
+    const target_idx: usize = 1;
+    const name_idx: usize = 2;
+    const sig_idx: usize = 3;
+    const first_method_arg_idx: usize = 4;
 
     const target_ref = self.lowerExpr(fic.args[target_idx]);
     const name_node = fic.args[name_idx];
@@ -233,7 +235,7 @@ pub fn lowerJniCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall, span: ast
 }
 
 /// Lower an `inst.method(args)` call where `inst`'s type is a runtime-class
-/// alias declared by `#jni_class("...") { ... }` (or its parallel forms).
+/// alias declared by `@JniClass("...") { ... }` (or its parallel forms).
 /// JNI runtimes lower directly to `jni_msg_send` with a descriptor derived
 /// from the method's sx signature; Obj-C / Swift runtimes surface a clear
 /// diagnostic instead.
@@ -245,7 +247,7 @@ pub fn lowerRuntimeMethodCall(
     method_args: []const Ref,
     span: ast.Span,
 ) Ref {
-    // walk the `#extends` chain when the method isn't
+    // walk the `extends =` chain when the method isn't
     // declared directly on this fcd. The dispatch target stays
     // the original receiver — objc_msgSend's runtime walks the
     // class hierarchy by isa, so we just need to find ANY
@@ -256,14 +258,14 @@ pub fn lowerRuntimeMethodCall(
     // child receiver, not the parent.
     const found = self.findRuntimeMethodInChain(fcd, method_name) orelse {
         if (self.diagnostics) |d| {
-            d.addFmt(.err, span, "no method '{s}' on runtime class '{s}' (or any `#extends` ancestor)", .{ method_name, fcd.name });
+            d.addFmt(.err, span, "no method '{s}' on runtime class '{s}' (or any `extends =` ancestor)", .{ method_name, fcd.name });
         }
         return Ref.none;
     };
     const method = found.method;
 
     // Obj-C instance dispatch.
-    // `inst.method(args)` on an `#objc_class` / `#objc_protocol`
+    // `inst.method(args)` on an `@ObjcClass` / `@ObjcProtocol`
     // receiver derives a selector from the sx method name (default
     // mangling: split on `_`, each piece becomes a keyword with a
     // trailing `:`; niladic stays verbatim) and lowers to
@@ -287,13 +289,12 @@ pub fn lowerRuntimeMethodCall(
         return Ref.none;
     }
 
-    if (self.jni_env_stack.items.len == 0) {
+    const env_ref = currentJniEnv(self) orelse {
         if (self.diagnostics) |d| {
-            d.addFmt(.err, span, "method call on '{s}' requires an enclosing '#jni_env' scope", .{fcd.name});
+            d.addFmt(.err, span, "method call on '{s}' requires context.jni (push .{{ jni = env }} or a native @JniClass body)", .{fcd.name});
         }
         return Ref.none;
-    }
-    const env_ref = self.jni_env_stack.items[self.jni_env_stack.items.len - 1];
+    };
 
     // Build a ClassRegistry snapshot so descriptor derivation can
     // resolve `*Foo` cross-class refs to their runtime paths.
@@ -386,11 +387,11 @@ pub fn runtimeClassStructType(self: *Lowering, fcd: *const ast.RuntimeClassDecl)
     return self.module.types.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });
 }
 
-/// Lower `inst.method(args)` on an `#objc_class` / `#objc_protocol`
+/// Lower `inst.method(args)` on an `@ObjcClass` / `@ObjcProtocol`
 /// receiver. The selector is derived by `deriveObjcSelector`; arity
 /// is validated against the keyword count produced by the mangling
 /// (excluding self). Dispatch then runs through `objc_msg_send`,
-/// sharing the cached-SEL slot path with explicit `#objc_call`.
+/// sharing the cached-SEL slot path with explicit `@ObjcCall`.
 pub fn lowerObjcMethodCall(
     self: *Lowering,
     fcd: *const ast.RuntimeClassDecl,
@@ -406,7 +407,7 @@ pub fn lowerObjcMethodCall(
     // selector) must equal the number of args passed at the call
     // site. For methods using the default mangling rule, a mismatch
     // is an error because the user can fix the sx-side name. For
-    // `#selector("...")` overrides, the user has deliberately
+    // `@ObjcMethod("...")` overrides, the user has deliberately
     // chosen the selector — downgrade to a warning so the build
     // proceeds, but still surface the typo case (Obj-C's runtime
     // doesn't validate colon-vs-arg, so this is the last defense).
@@ -423,7 +424,7 @@ pub fn lowerObjcMethodCall(
                 d.addFmt(
                     .err,
                     span,
-                    "Obj-C selector for '{s}.{s}' has {} keyword(s) but the call passes {} argument(s); split the sx method name on '_' so it produces exactly {} keyword(s), or override with `#selector(\"...\")`",
+                    "Obj-C selector for '{s}.{s}' has {} keyword(s) but the call passes {} argument(s); split the sx method name on '_' so it produces exactly {} keyword(s), or override with `@ObjcMethod(selector = \"...\")`",
                     .{ fcd.name, method.name, derived.keyword_count, arity, arity },
                 );
                 return Ref.none;
@@ -434,7 +435,7 @@ pub fn lowerObjcMethodCall(
     const ret_ty = self.resolveRuntimeMethodReturnType(fcd, method);
 
     // Cache the SEL slot per (selector-string, module) like
-    // `#objc_call` does. The mangling produces the literal selector
+    // `@ObjcCall` does. The mangling produces the literal selector
     // string; we don't need a runtime sel_registerName call at the
     // dispatch site because the global initializer already does it.
     const vptr_ty = self.module.types.ptrTo(.void);
@@ -450,8 +451,8 @@ pub fn lowerObjcMethodCall(
     } }, ret_ty);
 }
 
-/// Lower `Cls.static_method(args)` on an `#objc_class` /
-/// `#objc_protocol` alias. Loads the class object through the
+/// Lower `Cls.static_method(args)` on an `@ObjcClass` /
+/// `@ObjcProtocol` alias. Loads the class object through the
 /// module-scoped cached slot (populated by `objc_getClass` at
 /// module-init) and dispatches `objc_msg_send` with the same
 /// selector mangling as instance methods.
@@ -478,7 +479,7 @@ pub fn lowerObjcStaticCall(
                 d.addFmt(
                     .err,
                     span,
-                    "Obj-C selector for static call '{s}.{s}' has {} keyword(s) but the call passes {} argument(s); split the sx method name on '_' so it produces exactly {} keyword(s), or override with `#selector(\"...\")`",
+                    "Obj-C selector for static call '{s}.{s}' has {} keyword(s) but the call passes {} argument(s); split the sx method name on '_' so it produces exactly {} keyword(s), or override with `@ObjcMethod(selector = \"...\")`",
                     .{ fcd.name, method.name, derived.keyword_count, arity, arity },
                 );
                 return Ref.none;
@@ -562,8 +563,8 @@ pub fn lowerObjcStaticCall(
 /// clazz, mid, args...)`. Returns the new jobject.
 ///
 /// Non-`new` static methods aren't supported via this path yet — the
-/// user can use `#jni_static_call(T)(class, "name", sig, args...)`
-/// for those. Constructor is the common case for #jni_main bodies
+/// user can use `@JniStaticCall(T)(class, "name", sig, args...)`
+/// for those. Constructor is the common case for main = true bodies
 /// that need to instantiate Android classes (SurfaceView, etc.).
 pub fn lowerRuntimeStaticCall(
     self: *Lowering,
@@ -573,7 +574,7 @@ pub fn lowerRuntimeStaticCall(
     span: ast.Span,
 ) Ref {
     // Obj-C static dispatch. `Cls.static_method(args)`
-    // on an `#objc_class` alias loads the class object through a
+    // on an `@ObjcClass` alias loads the class object through a
     // module-scoped cached slot (populated once per module via
     // `objc_getClass`) and dispatches with the derived selector.
     if (fcd.runtime == .objc_class or fcd.runtime == .objc_protocol) {
@@ -584,15 +585,14 @@ pub fn lowerRuntimeStaticCall(
         return Ref.none;
     }
     if (!std.mem.eql(u8, method.name, "new")) {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "static runtime-class call '{s}.{s}' not yet supported via `Alias.method()` syntax \u{2014} only `new` is wired today; use `#jni_static_call` directly for other static methods", .{ fcd.name, method.name });
+        if (self.diagnostics) |d| d.addFmt(.err, span, "static runtime-class call '{s}.{s}' is not supported via `Alias.method()` — only `new` is; use @JniStaticCall for other static methods", .{ fcd.name, method.name });
         return Ref.none;
     }
 
-    if (self.jni_env_stack.items.len <= self.jni_env_stack_base) {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "constructor `{s}.new(...)` requires an enclosing `#jni_env` scope (or `#jni_main` body)", .{fcd.name});
+    const env_ref = currentJniEnv(self) orelse {
+        if (self.diagnostics) |d| d.addFmt(.err, span, "constructor `{s}.new(...)` requires context.jni", .{fcd.name});
         return Ref.none;
-    }
-    const env_ref = self.jni_env_stack.items[self.jni_env_stack.items.len - 1];
+    };
 
     // Build class registry snapshot for `*Foo` cross-class refs.
     var registry = jni_descriptor.ClassRegistry.init(self.alloc);
@@ -657,9 +657,9 @@ pub fn lowerRuntimeStaticCall(
     } }, ret_ty);
 }
 
-/// Lower `super.method(args)` inside a `#jni_main` / sx-defined
-/// `#jni_class` bodied method. Resolves the parent class from the
-/// enclosing fcd's `#extends` clause (default `android.app.Activity`)
+/// Lower `super.method(args)` inside a `main = true` / sx-defined
+/// `@JniClass` bodied method. Resolves the parent class from the
+/// enclosing fcd's `extends =` clause (default `android.app.Activity`)
 /// and emits a `JniMsgSend` with `is_nonvirtual=true`, which
 /// emit_llvm expands into a `FindClass(parent) + GetMethodID +
 /// CallNonvirtual<T>Method` chain.
@@ -668,7 +668,7 @@ pub fn lowerRuntimeStaticCall(
 /// method's name (the common case — `super.onCreate(b)` from inside
 /// `onCreate :: (self, b)` override), the enclosing method's
 /// signature is reused. Other method names require the parent class
-/// to be declared via `#jni_class(…) extern` so the signature can be
+/// to be declared via `@JniClass(…) extern` so the signature can be
 /// looked up.
 pub fn lowerSuperCall(
     self: *Lowering,
@@ -677,11 +677,11 @@ pub fn lowerSuperCall(
     span: ast.Span,
 ) Ref {
     const fcd = self.current_runtime_class orelse {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "'super' is only valid inside a `#jni_class` method body", .{});
+        if (self.diagnostics) |d| d.addFmt(.err, span, "'super' is only valid inside a `@JniClass` method body", .{});
         return Ref.none;
     };
 
-    // Resolve parent runtime_path from the fcd's `#extends`. Default to
+    // Resolve parent runtime_path from the fcd's `extends =`. Default to
     // android.app.Activity to match the jni_java_emit default.
     var parent_path: []const u8 = "android/app/Activity";
     for (fcd.members) |m| switch (m) {
@@ -698,7 +698,7 @@ pub fn lowerSuperCall(
 
     // Resolve method signature. Same-name fast path reuses the
     // enclosing method's descriptor; cross-method super calls require
-    // the parent class to be declared via `#jni_class(…) extern`.
+    // the parent class to be declared via `@JniClass(…) extern`.
     var descriptor: []const u8 = "";
     var resolved_method: ?ast.RuntimeMethodDecl = null;
     if (self.current_runtime_method) |em| {
@@ -722,7 +722,7 @@ pub fn lowerSuperCall(
         }
     }
     const method = resolved_method orelse {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "no method '{s}' found for `super.{s}(...)` — declare the parent class via `#jni_class(…) extern` to make cross-method super calls available", .{ method_name, method_name });
+        if (self.diagnostics) |d| d.addFmt(.err, span, "no method '{s}' found for `super.{s}(...)` — declare the parent class via `@JniClass(…) extern` to make cross-method super calls available", .{ method_name, method_name });
         return Ref.none;
     };
 
@@ -742,12 +742,10 @@ pub fn lowerSuperCall(
         return Ref.none;
     };
 
-    // env from the lexical stack (pushed by synthesizeJniMainStub).
-    if (self.jni_env_stack.items.len <= self.jni_env_stack_base) {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "`super.{s}(...)` requires an enclosing `#jni_main` method scope (env is unavailable)", .{method_name});
+    const env_ref = currentJniEnv(self) orelse {
+        if (self.diagnostics) |d| d.addFmt(.err, span, "`super.{s}(...)` requires context.jni", .{method_name});
         return Ref.none;
-    }
-    const env_ref = self.jni_env_stack.items[self.jni_env_stack.items.len - 1];
+    };
 
     // `self` is the first param of the synthesized `Java_*` fn. Bound
     // in scope as `self` by synthesizeJniMainStub.
@@ -794,8 +792,8 @@ pub fn registerRuntimeClassDecl(self: *Lowering, fcd: *const ast.RuntimeClassDec
     if (!fcd.is_extern and fcd.runtime == .objc_class) {
         if (self.module.lookupObjcDefinedClass(fcd.name) == null) {
             self.module.appendObjcDefinedClass(fcd.name, fcd);
-            // resolve the `#extends` alias to the actual
-            // Obj-C runtime class name. `#extends NSObjectBase`
+            // resolve the `extends =` alias to the actual
+            // Obj-C runtime class name. `extends = NSObjectBase`
             // where NSObjectBase is aliased to "NSObject" must
             // pass "NSObject" to objc_allocateClassPair, otherwise
             // the runtime's class-hierarchy link is broken and
@@ -873,7 +871,7 @@ fn upsertRuntimeClass(self: *Lowering, key: []const u8, fcd: *const ast.RuntimeC
                 }
                 if (conflict) {
                     if (self.diagnostics) |d| {
-                        d.addFmt(.err, null, "extern runtime-class '{s}': method '{s}' declared with conflicting shapes in {s} and {s} (static-ness, arity, or #selector differ)", .{ key, md.name, src_a, src_b });
+                        d.addFmt(.err, null, "extern runtime-class '{s}': method '{s}' declared with conflicting shapes in {s} and {s} (static-ness, arity, or @ObjcMethod differ)", .{ key, md.name, src_a, src_b });
                     }
                     return;
                 }
@@ -900,7 +898,7 @@ fn upsertRuntimeClass(self: *Lowering, key: []const u8, fcd: *const ast.RuntimeC
                 if (existing_parent) |ep| {
                     if (!std.mem.eql(u8, ep, parent)) {
                         if (self.diagnostics) |d| {
-                            d.addFmt(.err, null, "extern runtime-class '{s}': #extends disagrees — '{s}' (in {s}) vs '{s}' (in {s})", .{ key, ep, src_a, parent, src_b });
+                            d.addFmt(.err, null, "extern runtime-class '{s}': extends = disagrees — '{s}' (in {s}) vs '{s}' (in {s})", .{ key, ep, src_a, parent, src_b });
                         }
                         return;
                     }
@@ -928,9 +926,9 @@ fn upsertRuntimeClass(self: *Lowering, key: []const u8, fcd: *const ast.RuntimeC
     self.program_index.runtime_class_map.put(key, merged) catch {};
 }
 
-/// Resolve the `#extends ParentAlias` declaration on a sx-defined
-/// `#objc_class` to the actual Obj-C runtime class name. Falls
-/// back to "NSObject" when no `#extends` is declared.
+/// Resolve the `extends = ParentAlias` declaration on a sx-defined
+/// `@ObjcClass` to the actual Obj-C runtime class name. Falls
+/// back to "NSObject" when no `extends =` is declared.
 /// Aliases that resolve to runtime Obj-C classes use the
 /// runtime_path; aliases for OTHER sx-defined classes use the
 /// alias name directly (which equals the Obj-C class name for
@@ -984,7 +982,7 @@ pub fn declareObjcDefinedClassGlobal(self: *Lowering, class_name: []const u8) vo
     });
 }
 
-/// For each bodied instance method on an sx-defined `#objc_class`,
+/// For each bodied instance method on an sx-defined `@ObjcClass`,
 /// synthesize an `FnDecl` from the `RuntimeMethodDecl`, register it
 /// in `fn_ast_map` under `<ClassName>.<methodName>`, declare the IR
 /// function, AND collect per-method registration data (selector
@@ -1013,7 +1011,7 @@ pub fn registerObjcDefinedClassMethods(self: *Lowering, fcd: *const ast.RuntimeC
         self.declareFunction(fd, qualified);
 
         // Selector mangling — A.1's deriveObjcSelector handles
-        // `#selector("...")` override + the default rule. Static
+        // `@ObjcMethod("...")` override + the default rule. Static
         // methods use the same mangling rule (their first param
         // ISN'T *Self, so no offset).
         //
@@ -1076,7 +1074,7 @@ pub fn synthesizeFnDeclFromObjcMethod(self: *Lowering, method: ast.RuntimeMethod
     return fd;
 }
 
-/// If `name` matches an sx-defined `#objc_class`'s qualified-method
+/// If `name` matches an sx-defined `@ObjcClass`'s qualified-method
 /// pattern (`<ClassName>.<methodName>`), return the class's
 /// RuntimeClassDecl. Used by `lowerFunction` to set
 /// `current_runtime_class` so `*Self` resolves to the state struct
@@ -1232,13 +1230,20 @@ pub fn synthesizeJniMainStub(self: *Lowering, fcd: *const ast.RuntimeClassDecl, 
         scope.put(self.module.types.getString(p.name), .{ .ref = slot, .ty = p.ty, .is_alloca = true });
     }
 
-    // Push the JNIEnv* arg onto the lexical `#jni_env` stack so the
-    // method body's `#jni_call(...)` / `super.method(...)` sites pick
-    // it up without an explicit `#jni_env(env) { ... }` wrapper. The
-    // JNI runtime guarantees the env passed to a native method is
+    // Bind the JNIEnv* so the method body and its callees see it:
+    // the lexical stack (same function) and `context.jni` (callees).
+    // The JNI runtime guarantees the env passed to a native method is
     // valid for the calling thread.
     const env_slot = scope.lookup("env").?.ref;
     const env_loaded = self.builder.load(env_slot, ptr_void);
+    if (self.implicit_ctx_enabled and self.current_ctx_ref != Ref.none) {
+        const ctx_name = self.module.types.internString("Context");
+        if (self.module.types.findByName(ctx_name)) |ctx_ty| {
+            if (self.fieldLvaluePtr(self.current_ctx_ref, ctx_ty, "jni")) |fl| {
+                self.builder.store(fl.ptr, env_loaded);
+            }
+        }
+    }
     const env_stack_base = self.jni_env_stack_base;
     self.jni_env_stack_base = self.jni_env_stack.items.len;
     self.jni_env_stack.append(self.alloc, env_loaded) catch {};
@@ -1248,7 +1253,7 @@ pub fn synthesizeJniMainStub(self: *Lowering, fcd: *const ast.RuntimeClassDecl, 
     }
 
     // Record method context so `super.method(args)` inside the body
-    // can find the parent class (via `#extends`) and the method's
+    // can find the parent class (via `extends =`) and the method's
     // signature.
     const saved_fcd = self.current_runtime_class;
     const saved_method = self.current_runtime_method;

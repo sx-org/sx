@@ -1,5 +1,5 @@
 // Pass-by-value struct args/returns in
-// sx-defined `#objc_class` methods.
+// sx-defined `@ObjcClass` methods.
 //
 // The `{Name=field0field1...}` arm of `appendObjcEncoding` feeds
 // `class_addMethod` registration, so a method that takes or returns a
@@ -26,7 +26,7 @@ Point :: struct {
     y: f64;
 }
 
-SxMover :: #objc_class("SxMover") {
+SxMover :: @ObjcClass("SxMover") {
     pos: Point;
 
     alloc :: () -> *SxMover;

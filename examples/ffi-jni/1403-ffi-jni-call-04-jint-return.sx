@@ -1,4 +1,4 @@
-// `#jni_call(i32)` (jint return). CallIntMethod is vtable slot 49.
+// `@JniCall(i32)` (jint return). CallIntMethod is vtable slot 49.
 //
 // Runtime: unreachable. Same `g_should_call` global pattern as
 // `ffi-jni-call-03` — keeps `read_int` alive so the IR snapshot has
@@ -9,9 +9,7 @@
 g_should_call : bool = false;
 
 read_int :: (env: *void, target: *void) -> i32 {
-    #jni_env(env) {
-        #jni_call(i32)(target, "getCount", "()I")
-    }
+    @JniCall(i32, env, target, "getCount", "()I")
 }
 
 main :: () -> i32 {

@@ -1,6 +1,6 @@
 // The default Obj-C selector mangling rule. One fixture covers the common
 // shapes (niladic, 1-arg through 4-arg, camelCase across pieces, and
-// the `#selector(...)` override). The accompanying `.ir` snapshot
+// the `@ObjcMethod(...)` override). The accompanying `.ir` snapshot
 // records each resolved selector string as an `OBJC_METH_VAR_NAME_*`
 // constant — a change to `deriveObjcSelector` produces ONE diff that
 // surfaces every affected case at once.
@@ -9,21 +9,21 @@
 // - Niladic (arity 0): name verbatim. `length` → "length".
 // - Arity N (1..): split the sx name on `_`; each piece becomes a
 //   keyword with a trailing `:`. Piece count must equal arity.
-// - `#selector("...")` overrides the mangling entirely; the literal
+// - `@ObjcMethod(selector = "...")` overrides the mangling entirely; the literal
 //   string is used as the selector. Arity is the user's contract.
 
 #import "modules/std.sx";
 #import "modules/build.sx";
 #import "modules/ffi/objc.sx";
 
-SxManglingProbe :: #objc_class("SxManglingProbe") extern {
+SxManglingProbe :: @ObjcClass("SxManglingProbe") extern {
     length                         :: (self: *Self) -> i32;
     addObject                      :: (self: *Self, a: i32) -> i32;
     combine_and                    :: (self: *Self, a: i32, b: i32) -> i32;
     insert_after_index             :: (self: *Self, a: i32, b: i32, c: i32) -> i32;
     add_observer_for_event         :: (self: *Self, a: i32, b: i32, c: i32, d: i32) -> i32;
     initWithFrame_options          :: (self: *Self, f: i32, o: i32) -> i32;
-    custom_name                    :: (self: *Self) -> i32 #selector("actualSelectorName");
+    custom_name                    :: (self: *Self) -> i32 @ObjcMethod(selector = "actualSelectorName");
 }
 
 universal_imp :: (self: *void, _cmd: *void, a: i32, b: i32, c: i32, d: i32) -> i32 abi(.c) {

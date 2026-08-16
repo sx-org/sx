@@ -14,8 +14,7 @@
 #import "modules/ffi/objc.sx";
 #import "modules/build.sx";
 
-SxMultiProbe :: #objc_class("SxMultiProbe") {
-    #extends NSObject;
+SxMultiProbe :: @ObjcClass("SxMultiProbe", extends = NSObject) {
     a: i32;
     b: i32;
     alloc :: () -> *SxMultiProbe;

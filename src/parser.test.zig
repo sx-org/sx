@@ -1319,14 +1319,14 @@ test "parser: a runtime-class linkage word reads through a line break" {
     const alloc = arena.allocator();
 
     var p = try Parser.init(alloc,
-        \\NSString :: #objc_class("NSString")
+        \\NSString :: @ObjcClass("NSString")
         \\    extern
         \\    { length :: (self: *Self) -> i32; }
     );
     const rc = (try p.parse()).data.root.decls[0].data.runtime_class_decl;
     try std.testing.expect(rc.is_extern);
 
-    var same = try Parser.init(alloc, "NSString :: #objc_class(\"NSString\") extern { length :: (self: *Self) -> i32; }\n");
+    var same = try Parser.init(alloc, "NSString :: @ObjcClass(\"NSString\") extern { length :: (self: *Self) -> i32; }\n");
     try std.testing.expect((try same.parse()).data.root.decls[0].data.runtime_class_decl.is_extern);
 }
 
@@ -1505,7 +1505,7 @@ test "parser: a fixed form's list still demands its `;`" {
 
     // Runtime-class members.
     _ = try parseErrMsg(alloc,
-        \\NSString :: #objc_class("NSString") extern {
+        \\NSString :: @ObjcClass("NSString") extern {
         \\    length :: (self: *Self) -> i32
         \\}
     );

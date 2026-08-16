@@ -16,7 +16,7 @@
 
 class_getMethodImplementation :: (cls: *void, sel: *void) -> *void extern objc;
 
-SxFoo :: #objc_class("SxFoo") {
+SxFoo :: @ObjcClass("SxFoo") {
     counter: i32;
 
     bump :: (self: *Self) {

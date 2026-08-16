@@ -1,6 +1,6 @@
 // A reserved/builtin type name used as a PARAMETER name is rejected in the two
 // method-with-body forms that carry their params as bare name lists rather than
-// `Param` nodes: a protocol default-body method (`u8`) and a `#objc_class` method
+// `Param` nodes: a protocol default-body method (`u8`) and a `@ObjcClass` method
 // (`i16`). Each method's `param_name_spans` puts the caret on the offending
 // parameter token, not on the enclosing block.
 #import "modules/std.sx";
@@ -12,7 +12,7 @@ Greeter :: protocol {
     }
 }
 
-SxFoo :: #objc_class("SxFoo") {
+SxFoo :: @ObjcClass("SxFoo") {
     counter: i32;
 
     bump :: (self: *Self, i16: i32) {

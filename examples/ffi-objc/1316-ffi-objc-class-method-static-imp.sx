@@ -1,5 +1,5 @@
 // class methods (no `*Self` first param) on a
-// sx-defined `#objc_class`.
+// sx-defined `@ObjcClass`.
 //
 // The user declares a method without `self: *Self`. The compiler
 // recognises it as a class method (is_static), synthesizes a C-ABI
@@ -18,7 +18,7 @@
 
 class_getClassMethod :: (cls: *void, sel: *void) -> *void extern objc;
 
-SxFoo :: #objc_class("SxFoo") {
+SxFoo :: @ObjcClass("SxFoo") {
     counter: i32;
 
     // Class method — no `self`. Returns 42.

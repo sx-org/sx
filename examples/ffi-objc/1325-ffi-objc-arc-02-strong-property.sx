@@ -1,4 +1,4 @@
-// `#property(strong)` on a sx-defined class.
+// `@ObjcProperty(strong)` on a sx-defined class.
 //
 // Strong contract:
 // - setter retains the new value, releases the old.
@@ -18,15 +18,13 @@
 #import "modules/ffi/objc.sx";
 #import "modules/build.sx";
 
-SxStrongChild :: #objc_class("SxStrongChild") {
-    #extends NSObject;
+SxStrongChild :: @ObjcClass("SxStrongChild", extends = NSObject) {
     tag: i32;
     alloc :: () -> *SxStrongChild;
 }
 
-SxStrongParent :: #objc_class("SxStrongParent") {
-    #extends NSObject;
-    child: *SxStrongChild #property(strong);
+SxStrongParent :: @ObjcClass("SxStrongParent", extends = NSObject) {
+    child: @ObjcProperty(*SxStrongChild, ownership = strong);
     alloc :: () -> *SxStrongParent;
 }
 

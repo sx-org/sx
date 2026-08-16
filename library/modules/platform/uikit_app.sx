@@ -32,8 +32,7 @@ uikit_app_run :: (plat: *UIKitPlatform, frame_fn: Closure()) {
 // SxAppDelegate — UIApplicationMain's delegate class (the app delegate, a
 // UIResponder — NOT the UIApplication principal class). Method bodies
 // dispatch to UIKitPlatform methods on the shared `g_uikit_plat`.
-SxAppDelegate :: #objc_class("SxAppDelegate") export {
-    #extends UIResponder;
+SxAppDelegate :: @ObjcClass("SxAppDelegate", extends = UIResponder) export {
 
     application_didFinishLaunchingWithOptions :: (self: *Self, app: *void, opts: *void) -> BOOL {
         if g_uikit_plat != null {
@@ -58,14 +57,11 @@ SxAppDelegate :: #objc_class("SxAppDelegate") export {
 }
 
 // SxSceneDelegate — iOS 13+ scene-based lifecycle delegate. Two
-// `#implements` declarations formally conform to the scene-delegate
+// `implements =` declarations formally conform to the scene-delegate
 // protocols — iOS rejects the class otherwise. The delegate allocates
 // the GL/Metal view (the shell owns the view classes) and hands it to
 // the platform; iOS reads the window back through `-window`.
-SxSceneDelegate :: #objc_class("SxSceneDelegate") export {
-    #extends UIResponder;
-    #implements UISceneDelegate;
-    #implements UIWindowSceneDelegate;
+SxSceneDelegate :: @ObjcClass("SxSceneDelegate", extends = UIResponder, implements = .[UISceneDelegate, UIWindowSceneDelegate]) export {
 
     scene_willConnectToSession_options :: (self: *Self, scene: *void, session: *void, options: *void) {
         if g_uikit_plat == null { return; }
@@ -94,8 +90,7 @@ SxSceneDelegate :: #objc_class("SxSceneDelegate") export {
 // ── SxGLView class ─────────────────────────────────────────────────────────
 // UIView subclass overriding `+layerClass` to return [CAEAGLLayer class].
 // Instance method `sxTick:` is what CADisplayLink calls.
-SxGLView :: #objc_class("SxGLView") export {
-    #extends UIView;
+SxGLView :: @ObjcClass("SxGLView", extends = UIView) export {
 
     alloc :: () -> *SxGLView;
     init  :: (self: *Self) -> *SxGLView;
@@ -137,8 +132,7 @@ SxGLView :: #objc_class("SxGLView") export {
 // already branch on `plat.gpu_mode` for the GL-specific bits (renderbuffer
 // setup, etc.), so a single set of IMPs serves both view classes. Only
 // `+layerClass` differs (returns CAMetalLayer instead of CAEAGLLayer).
-SxMetalView :: #objc_class("SxMetalView") export {
-    #extends UIView;
+SxMetalView :: @ObjcClass("SxMetalView", extends = UIView) export {
 
     alloc :: () -> *SxMetalView;
     init  :: (self: *Self) -> *SxMetalView;

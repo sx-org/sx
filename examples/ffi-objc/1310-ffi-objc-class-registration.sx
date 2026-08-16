@@ -1,6 +1,6 @@
 // Class-pair registration with the Obj-C runtime.
 //
-// Every sx-defined '#objc_class' produces a module-init constructor
+// Every sx-defined '@ObjcClass' produces a module-init constructor
 // (registered in '@llvm.global_ctors' AND injected at the top of
 // 'main' for the ORC JIT path) that calls:
 //
@@ -19,7 +19,7 @@
 #import "modules/build.sx";
 #import "modules/ffi/objc.sx";
 
-SxFoo :: #objc_class("SxFoo") {
+SxFoo :: @ObjcClass("SxFoo") {
     counter: i32;
 
     bump :: (self: *Self) {

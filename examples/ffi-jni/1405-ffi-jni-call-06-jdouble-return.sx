@@ -1,4 +1,4 @@
-// `#jni_call(f64)` (jdouble return).
+// `@JniCall(f64)` (jdouble return).
 // First non-integer return type for JNI — exercises the LLVM
 // `double` ret path through CallDoubleMethod (vtable slot 58).
 
@@ -7,9 +7,7 @@
 g_should_call : bool = false;
 
 read_double :: (env: *void, target: *void) -> f64 {
-    #jni_env(env) {
-        #jni_call(f64)(target, "getValue", "()D")
-    }
+    @JniCall(f64, env, target, "getValue", "()D")
 }
 
 main :: () -> i32 {

@@ -31,7 +31,7 @@ pub const Module = struct {
     /// (selector_string, slot_GlobalId) so emit_llvm.zig produces the
     /// init constructor in a stable order across builds (the
     /// selector-sharing IR snapshot would otherwise flicker on
-    /// hashtable rehash). `#objc_call` lowering uses
+    /// hashtable rehash). `@ObjcCall` lowering uses
     /// `lookupObjcSelector` / `appendObjcSelector` to read/write it.
     objc_selector_cache: std.ArrayList(ObjcSelectorEntry),
     /// Interned Obj-C class objects. Parallel structure to
@@ -39,17 +39,17 @@ pub const Module = struct {
     /// (class_name, slot_GlobalId) so the constructor that calls
     /// `objc_getClass` per slot at module load is deterministic.
     /// Used by static method dispatch — every
-    /// `Cls.static_method(...)` against an `#objc_class` alias resolves
+    /// `Cls.static_method(...)` against an `@ObjcClass` alias resolves
     /// the class object through this cache once per module.
     objc_class_cache: std.ArrayList(ObjcClassEntry),
-    /// sx-defined Obj-C classes — every `Cls :: #objc_class("Cls") { ... }`
+    /// sx-defined Obj-C classes — every `Cls :: @ObjcClass("Cls") { ... }`
     /// declaration WITHOUT `extern`. Insertion-ordered so the
     /// class-registration constructors emit in source order
     /// — parent classes register before children, which matters because
     /// `objc_allocateClassPair(super, ...)` resolves `super` by lookup.
     /// Each entry holds a pointer back into the AST so later passes
     /// (trampoline emission, +alloc/-dealloc synthesis) can re-walk
-    /// `members` for fields / methods / `#extends` / `#implements`.
+    /// `members` for fields / methods / `extends =` / `implements =`.
     objc_defined_class_cache: std.ArrayList(ObjcDefinedClassEntry),
     /// The dense member tags of every declared open set, assigned when the
     /// program's sets freeze. A set's own numbering space, so a member's tag is
@@ -90,7 +90,7 @@ pub const Module = struct {
     pub const ObjcSelectorEntry = struct { sel: []const u8, slot: GlobalId };
     pub const ObjcClassEntry = struct { name: []const u8, slot: GlobalId };
     /// Pointer back to the AST node lets later passes re-walk `members`
-    /// for fields / methods / `#extends` / `#implements` without
+    /// for fields / methods / `extends =` / `implements =` without
     /// duplicating that data here. `methods` holds emit-time registration
     /// info derived in lower.zig (selector mangling + type encoding +
     /// IMP symbol name) so emit_llvm can call `class_addMethod` per
@@ -103,7 +103,7 @@ pub const Module = struct {
         /// emit_llvm can pass it to `objc_getClass(parent)` /
         /// `objc_allocateClassPair(super, ...)` without walking the
         /// sx-side runtime_class_map (which lives in lower.zig).
-        /// Defaults to "NSObject" when no `#extends` member is present.
+        /// Defaults to "NSObject" when no `extends =` member is present.
         parent_objc_name: []const u8 = "NSObject",
     };
 

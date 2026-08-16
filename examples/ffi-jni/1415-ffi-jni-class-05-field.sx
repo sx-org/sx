@@ -1,11 +1,11 @@
-// The field body item inside a `#jni_class` declaration. `name: Type;`
+// The field body item inside a `@JniClass` declaration. `name: Type;`
 // declares an instance field backed by JNI's `Get<Type>Field` /
 // `Set<Type>Field` family at lowering; the colon between name and type is the
 // field-decl indicator (vs the `::` of a method).
 
 #import "modules/std.sx";
 
-Point :: #jni_class("android/graphics/Point") extern {
+Point :: @JniClass("android/graphics/Point") extern {
     x: i32;
     y: i32;
 }

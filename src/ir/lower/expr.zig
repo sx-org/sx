@@ -1090,7 +1090,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
         }
     }
 
-    // `obj.field` where `field` is declared with `#property`
+    // `obj.field` where `field` is declared with `@ObjcProperty`
     // on a runtime Obj-C class lowers as `[obj field]` (the synthesized
     // getter). Receiver stays opaque — no auto-deref.
     if (self.lookupObjcPropertyOnPointer(fa.object, fa.field)) |prop| {
@@ -1098,7 +1098,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     }
 
     // `self.field` (or `obj.field`) on a *sx-defined-class
-    // pointer for a plain instance field (NOT a #property) lowers as
+    // pointer for a plain instance field (NOT a @ObjcProperty) lowers as
     // `object_getIvar(obj, load(__<Cls>_state_ivar))` + struct_gep on
     // the state struct + load. The receiver is the opaque Obj-C id
     // (matching Apple's `self` semantics); the state lives in the
@@ -4083,7 +4083,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         .spread_expr => self.emitError("spread_expr", node.span),
         .chained_comparison => |cc| self.lowerChainedComparison(&cc),
 
-        // `#jni_env(env) { body }` in expression position — the block's
+        // `context.jni(env) { body }` in expression position — the block's
         // value becomes the env-scope's value. Save→set→body-value→restore.
         .jni_env_block => |eb| blk: {
             const env_ref = self.lowerExpr(eb.env);
@@ -4680,7 +4680,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     const lhs_ref_pointee = self.refCapturePointee(bop.lhs);
     if (lhs_ref_pointee) |p| lhs = self.builder.load(lhs, p);
     // Set target_type from LHS so enum literals on RHS resolve correctly.
-    // When the LHS isn't statically inferable (e.g. `#objc_call(...)`), use
+    // When the LHS isn't statically inferable (e.g. `@ObjcCall(...)`), use
     // the lowered operand's concrete type rather than a guess.
     const lhs_ty = blk: {
         if (lhs_ref_pointee) |p| break :blk p;

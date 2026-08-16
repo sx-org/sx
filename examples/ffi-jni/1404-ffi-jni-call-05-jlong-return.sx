@@ -1,4 +1,4 @@
-// `#jni_call(i64)` (jlong return) dispatches through `CallLongMethod`,
+// `@JniCall(i64)` (jlong return) dispatches through `CallLongMethod`,
 // vtable slot 52.
 
 #import "modules/std.sx";
@@ -6,9 +6,7 @@
 g_should_call : bool = false;
 
 read_long :: (env: *void, target: *void) -> i64 {
-    #jni_env(env) {
-        #jni_call(i64)(target, "currentTimeMillis", "()J")
-    }
+    @JniCall(i64, env, target, "currentTimeMillis", "()J")
 }
 
 main :: () -> i32 {

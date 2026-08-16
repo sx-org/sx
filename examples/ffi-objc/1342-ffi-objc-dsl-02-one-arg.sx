@@ -6,7 +6,7 @@
 #import "modules/build.sx";
 #import "modules/ffi/objc.sx";
 
-SxProbeOneArg :: #objc_class("SxProbeOneArg") extern {
+SxProbeOneArg :: @ObjcClass("SxProbeOneArg") extern {
     addObject :: (self: *Self, val: i32) -> i32;
 }
 

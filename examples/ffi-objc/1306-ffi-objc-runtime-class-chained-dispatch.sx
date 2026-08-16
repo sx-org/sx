@@ -10,12 +10,12 @@
 #import "modules/std.sx";
 #import "modules/build.sx";
 
-NSObject :: #objc_class("NSObject") extern {
+NSObject :: @ObjcClass("NSObject") extern {
     alloc :: () -> *NSObject;
     init :: (self: *Self) -> *Self;
 }
 
-NSObjectSelfReturn :: #objc_class("NSObject") extern {
+NSObjectSelfReturn :: @ObjcClass("NSObject") extern {
     alloc :: () -> *Self;
     init :: (self: *Self) -> *Self;
 }

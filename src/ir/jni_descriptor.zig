@@ -1,4 +1,4 @@
-// JNI descriptor derivation for #jni_class methods.
+// JNI descriptor derivation for @JniClass methods.
 //
 // Walks sx parameter / return type AST nodes through the standard JNI
 // signature alphabet (JLS §4.3.3 and JNI spec §3.3) to produce the
@@ -19,7 +19,7 @@
 //   *Self         → L<enclosing-runtime-path>;
 //   *Foo          → L<Foo's runtime path>;   (cross-class)
 //
-// `#jni_method_descriptor("...")` overrides this whole walk
+// `@JniMethod("...")` overrides this whole walk
 // when set; sema/lowering use the override verbatim.
 
 const std = @import("std");
@@ -31,21 +31,21 @@ const TypeId = types.TypeId;
 
 pub const DeriveError = error{
     UnknownPrimitive,
-    UnknownClassAlias, // *Foo where Foo isn't a declared #jni_class
+    UnknownClassAlias, // *Foo where Foo isn't a declared @JniClass
     UnsupportedType,
     OutOfMemory,
 };
 
-/// Map from sx-side alias → runtime path of declared `#jni_class` /
-/// `#jni_interface` decls. Used to resolve `*Foo` into `L<path>;` in
+/// Map from sx-side alias → runtime path of declared `@JniClass` /
+/// `@JniInterface` decls. Used to resolve `*Foo` into `L<path>;` in
 /// the descriptor. Built during lowering's scan pass.
 pub const ClassRegistry = std.StringHashMap([]const u8);
 
 pub const Context = struct {
-    /// Runtime path of the enclosing #jni_class — used to resolve `*Self`.
+    /// Runtime path of the enclosing @JniClass — used to resolve `*Self`.
     /// e.g. "android/view/View".
     enclosing_path: []const u8,
-    /// Lookup for sibling/forward-declared `#jni_class` aliases. When null,
+    /// Lookup for sibling/forward-declared `@JniClass` aliases. When null,
     /// only `*Self` resolves; any other pointer-to-named-type errors.
     classes: ?*const ClassRegistry = null,
 };
@@ -111,7 +111,7 @@ pub fn deriveMethod(
     ctx: Context,
     method: ast.RuntimeMethodDecl,
 ) DeriveError![]u8 {
-    // `#jni_method_descriptor("(Sig)Ret")` short-circuits derivation
+    // `@JniMethod("(Sig)Ret")` short-circuits derivation
     // entirely. Allocate a copy so the caller has uniform ownership
     // semantics regardless of which branch ran.
     if (method.jni_descriptor_override) |override| {

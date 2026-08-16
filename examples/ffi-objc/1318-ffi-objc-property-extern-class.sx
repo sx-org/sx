@@ -1,7 +1,7 @@
-// `#property` directive on runtime-class fields synthesizes
+// `@ObjcProperty` directive on runtime-class fields synthesizes
 // Obj-C-runtime getter/setter dispatch.
 //
-// field: T #property[(modifiers)];
+// field: T @ObjcProperty[(modifiers)];
 //
 // `obj.field`      → [obj field]         (selector = field name)
 // `obj.field = x`  → [obj setField:x]    (selector = "set<Field>:")
@@ -30,11 +30,11 @@ probe_set_tag :: (self: *void, _cmd: *void, v: i32) abi(.c) {
     g_probe_tag = v;
 }
 
-// Extern declaration with #property on `tag`.
-SxPropProbe :: #objc_class("SxPropProbe") extern {
+// Extern declaration with @ObjcProperty on `tag`.
+SxPropProbe :: @ObjcClass("SxPropProbe") extern {
     alloc :: () -> *SxPropProbe;
     init  :: (self: *SxPropProbe) -> *SxPropProbe;
-    tag: i32 #property;
+    tag: @ObjcProperty(i32);
 }
 
 main :: () -> i32 {

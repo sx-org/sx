@@ -149,7 +149,7 @@ fn refuseDestinationFirstDispatch(self: *Lowering, fd: *const ast.FnDecl, spelle
 ///   - a method of a GENERIC instance, which carries a separate author stamp and
 ///     is intentionally absent from `plainStructMethod` (`genericInstanceMethod`);
 ///   - a method an `impl` contributed, keyed `<Type>.<name>` in the function map;
-///   - a runtime-class member (`#jni_class` and its parallels);
+///   - a runtime-class member (`@JniClass` and its parallels);
 ///   - a protocol's method, on an erased value;
 ///   - a set's required method, on a set value;
 ///   - and any of these through a POINTER or an OPTIONAL, which the path reaches
@@ -1551,10 +1551,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             if (qualified_callable) |selected|
                 return callThroughSelectedGlobal(self, selected, args.items, c, c.callee.span);
 
-            // `super.method(args)` from inside a `#jni_main` (or any
-            // sx-defined `#jni_class`) bodied method. Dispatch via
+            // `super.method(args)` from inside a `main = true` (or any
+            // sx-defined `@JniClass`) bodied method. Dispatch via
             // CallNonvirtual<T>Method against the parent class
-            // resolved from the enclosing fcd's `#extends` clause.
+            // resolved from the enclosing fcd's `extends =` clause.
             if (fa.object.data == .identifier and
                 std.mem.eql(u8, fa.object.data.identifier.name, "super"))
             {
@@ -2055,7 +2055,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
 
             // Runtime-class DSL: `inst.method(args)` where `inst`'s
-            // type is an alias declared by `#jni_class("...") { ... }`
+            // type is an alias declared by `@JniClass("...") { ... }`
             // (or its parallel forms). Routes to the JNI dispatch
             // shape, descriptor derived from the sx signature.
             const struct_name = self.getStructTypeName(obj_ty);
@@ -5502,8 +5502,8 @@ pub fn resolveCallParamTypes(
             }
         }
         if (self.getStructTypeName(obj_ty)) |sname| {
-            // Runtime-class receiver (`#objc_class` / `#jni_class` / etc.):
-            // resolve the method from `runtime_class_map` walking `#extends`.
+            // Runtime-class receiver (`@ObjcClass` / `@JniClass` / etc.):
+            // resolve the method from `runtime_class_map` walking `extends =`.
             // Without this path, `target_type` for each arg falls back to
             // whatever `self.target_type` was on entry — typically the
             // enclosing fn's return type — which silently truncates `xx ptr`

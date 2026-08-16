@@ -1,19 +1,19 @@
-// `#selector("explicit:string")`
-// override on `#objc_class` members. Escape hatch for cases where the
+// `@ObjcMethod(selector = "explicit:string")`
+// override on `@ObjcClass` members. Escape hatch for cases where the
 // sx-side method name doesn't conveniently produce the target selector
 // through the default mangling rule (split on `_`, each
 // piece becomes a keyword with a trailing `:`).
 //
-// Surface form mirrors `#jni_method_descriptor("(Sig)Ret")` — sits
+// Surface form mirrors `@JniMethod(descriptor = "(Sig)Ret")` — sits
 // after the optional `-> ReturnType` and before the body / terminator.
 #import "modules/std.sx";
 #import "modules/build.sx";
 
-NSObject :: #objc_class("NSObject") extern {
+NSObject :: @ObjcClass("NSObject") extern {
     // Default mangling would yield selector "gimme" — NSObject has no
     // such IMP. The override pins it to the real selector
     // "description". Static method (no `self: *Self` first param).
-    gimme :: () -> *void #selector("description");
+    gimme :: () -> *void @ObjcMethod(selector = "description");
 }
 
 // Instance-method override exercises a different lowering path
@@ -21,8 +21,8 @@ NSObject :: #objc_class("NSObject") extern {
 // only on this side — main only invokes the static path because we
 // don't have a real NSDictionary in scope, but the declaration locks
 // in the parser + AST + lowering wiring for the multi-arg shape.
-NSDictionary :: #objc_class("NSDictionary") extern {
-    lookup :: (self: *Self, key: *void) -> *void #selector("objectForKey:");
+NSDictionary :: @ObjcClass("NSDictionary") extern {
+    lookup :: (self: *Self, key: *void) -> *void @ObjcMethod(selector = "objectForKey:");
 }
 
 main :: () -> i32 {

@@ -10,7 +10,7 @@
 
 #import "modules/std.sx";
 
-MotionEvent :: #jni_class("android/view/MotionEvent") extern {
+MotionEvent :: @JniClass("android/view/MotionEvent") extern {
     getAction :: (self: *Self) -> i32;
     getX      :: (self: *Self) -> f32;
     getY      :: (self: *Self) -> f32;
@@ -27,7 +27,7 @@ sx_consume_touch :: (action: i32, x: f32, y: f32) {
 g_should_call : bool = false;
 
 drive_touch :: (env: *void, ev: *MotionEvent) {
-    #jni_env(env) {
+    push .{ jni = env } {
         // All three JNI calls emit proper Call<T>Method dispatches;
         // lowering getX() / getY() to `undef` floats would pass garbage
         // to sx_consume_touch.

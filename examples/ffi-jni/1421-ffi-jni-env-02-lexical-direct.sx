@@ -1,7 +1,7 @@
-// Lexical-direct env resolution inside a `#jni_env` scope.
-// `#jni_call(T)(target, "name", "sig", args...)` — three args before the first
+// Lexical-direct env resolution inside a `push .{ jni = env }` scope.
+// `@JniCall(T, env, target, "name", "sig", args...)` — three args before the first
 // string literal — has the env omitted. Lowering walks the in-progress AST
-// visit stack to find the enclosing `#jni_env(env)` block and uses that env
+// visit stack to find the enclosing `push .{ jni = env }(env)` block and uses that env
 // value directly as the IR-level env arg. No thread-local read, no per-call
 // lookup; env stays register-resident across loop bodies.
 
@@ -10,9 +10,9 @@
 g_should_call : bool = false;
 
 unused_jni :: (env: *void, target: *void) {
-    #jni_env(env) {
-        // Omitted env — env comes from the enclosing #jni_env scope.
-        #jni_call(void)(target, "noop", "()V");
+    push .{ jni = env } {
+        // Omitted env — env comes from the enclosing push .{ jni = env } scope.
+        @JniCall(void, env, target, "noop", "()V");
     }
 }
 

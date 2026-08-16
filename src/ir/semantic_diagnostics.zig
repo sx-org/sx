@@ -312,8 +312,8 @@ pub const UnknownTypeChecker = struct {
                 self.checkBindingNames(os.body);
             },
             // impl / protocol-default / runtime-class method bodies: each
-            // method introduces its own params + locals. A `#jni_main` /
-            // `#objc_class` bodied method is lowered, so its reserved
+            // method introduces its own params + locals. A `main = true` /
+            // `@ObjcClass` bodied method is lowered, so its reserved
             // param/local names mis-lower the same as any other.
             .impl_block => |ib| for (ib.methods) |m| self.checkBindingNames(m),
             .open_set_decl => |sd| {

@@ -1,4 +1,4 @@
-// Multiple `#objc_call` sites with the same selector: each site emits
+// Multiple `@ObjcCall` sites with the same selector: each site emits
 // its own `call @sel_registerName(<"init">)`, so the SEL handle is
 // recomputed per call.
 //
@@ -17,13 +17,13 @@ main :: () -> i32 {
         // Three calls, same selector, same nil receiver. These
         // emit three `sel_registerName("init")` calls. After 1.5 the
         // emit collapses to one (cached SEL global).
-        #objc_call(void)(null, "init");
-        #objc_call(void)(null, "init");
-        #objc_call(void)(null, "init");
+        @ObjcCall(void, null, "init");
+        @ObjcCall(void, null, "init");
+        @ObjcCall(void, null, "init");
 
         // A different selector — should remain distinct after 1.5
         // (one cached SEL per unique string, not per call site).
-        #objc_call(void)(null, "release");
+        @ObjcCall(void, null, "release");
 
         print("ok\n");
     }

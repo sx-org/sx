@@ -1,4 +1,4 @@
-// `#jni_call(bool)` (jboolean
+// `@JniCall(bool)` (jboolean
 // return). JNI's `jboolean` is a single-byte unsigned integer (0 or
 // 1) on every supported ABI; sx's `bool` lowers to LLVM `i1` but the
 // arg/return coercion path widens it to the byte slot the JNI
@@ -9,9 +9,7 @@
 g_should_call : bool = false;
 
 read_bool :: (env: *void, target: *void) -> bool {
-    #jni_env(env) {
-        #jni_call(bool)(target, "isShown", "()Z")
-    }
+    @JniCall(bool, env, target, "isShown", "()Z")
 }
 
 main :: () -> i32 {

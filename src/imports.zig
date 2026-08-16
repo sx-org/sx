@@ -927,7 +927,7 @@ pub fn stampFnBodySource(decl: *Node, file_path: []const u8) void {
         // defining path so the instantiation resolves method-signature types in
         // this module.
         .protocol_decl => decl.data.protocol_decl.source_file = file_path,
-        // An sx-defined `#objc_class` / `#jni_class`: its IMP trampolines are
+        // An sx-defined `@ObjcClass` / `@JniClass`: its IMP trampolines are
         // emitted at lowering time (possibly from another module's context), so
         // record the defining path AND stamp each method body.
         .runtime_class_decl => {

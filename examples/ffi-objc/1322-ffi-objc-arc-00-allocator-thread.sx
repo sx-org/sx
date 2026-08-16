@@ -18,8 +18,7 @@
 #import "modules/ffi/objc.sx";
 #import "modules/build.sx";
 
-SxAllocProbe :: #objc_class("SxAllocProbe") {
-    #extends NSObject;
+SxAllocProbe :: @ObjcClass("SxAllocProbe", extends = NSObject) {
     counter: i32;
     alloc :: () -> *SxAllocProbe;
 }

@@ -1,5 +1,5 @@
 // Multi-keyword Obj-C selectors
-// through `#objc_call`. Selector mangling matches clang's: every
+// through `@ObjcCall`. Selector mangling matches clang's: every
 // `:` in the source-level selector becomes a `_` in the symbol
 // name of the cached SEL slot (so `initWithFrame:options:` →
 // `OBJC_SELECTOR_REFERENCES_initWithFrame_options_`).
@@ -31,7 +31,7 @@ main :: () -> i32 {
         objc_registerClassPair(my_cls);
 
         instance := class_createInstance(my_cls, 0);
-        r := #objc_call(i32)(instance, "combine:and:", 7, 42);
+        r := @ObjcCall(i32, instance, "combine:and:", 7, 42);
         print("combine(7, 42) = {}\n", r);
     }
     inline if OS != .macos {

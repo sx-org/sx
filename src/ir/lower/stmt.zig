@@ -248,7 +248,7 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
 }
 
 /// Lower a block and return the last expression's value — an ordinary VALUE
-/// position (a `catch` body, a `match` arm, a `#jni_env` block), never a
+/// position (a `catch` body, a `match` arm, a `context.jni` block), never a
 /// function body.
 pub fn lowerBlockValue(self: *Lowering, node: *const Node) ?Ref {
     return switch (lowerDemandedBody(self, node, .value)) {
@@ -642,7 +642,7 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
         .block => self.lowerBlock(node),
         .jni_env_block => |eb| {
             // A compile-time stack push resolves the env lexically: a
-            // `#jni_call` in the same fn reads `jni_env_stack` directly, no TL
+            // `@JniCall` in the same fn reads `jni_env_stack` directly, no TL
             // read. Callees in OTHER fns invoked from inside the body reach the
             // slot via `sx_jni_env_tl_get`, so the env is also saved/set/
             // restored in thread-local storage. That storage lives in a
@@ -2471,7 +2471,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 .handled => return,
                 .not_applicable => {},
             }
-            // `obj.field = val` for an Obj-C `#property` field
+            // `obj.field = val` for an Obj-C `@ObjcProperty` field
             // dispatches via objc_msgSend `setField:`. Skip struct-
             // pointer / GEP entirely; receivers are opaque Obj-C ids.
             // Only `=` lowers here: a compound op would need
@@ -2483,7 +2483,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 }
             }
             // `self.field [op]= val` on a sx-defined Obj-C
-            // class instance field (NOT a #property): write through
+            // class instance field (NOT a @ObjcProperty): write through
             // the __sx_state ivar. Handles plain assignment AND
             // compound ops (+=, -=, etc.) via storeOrCompound.
             if (self.lookupObjcDefinedStateFieldOnPointer(fa.object, fa.field)) |info| {
@@ -2717,7 +2717,7 @@ fn quietGlobalRef(self: *Lowering, name: []const u8) ?program_index_mod.GlobalIn
 
 /// The one addressable storage slot an assignable target names, with every
 /// subexpression evaluated exactly once. Null when the target names no slot: an
-/// accessor property (a get/set call pair), an Obj-C `#property` or
+/// accessor property (a get/set call pair), an Obj-C `@ObjcProperty` or
 /// `__sx_state` field, a tagged-union variant, a slice's `.len`/`.ptr` header
 /// word, and a comptime tuple/struct index. The caller diagnoses; this emits no
 /// diagnostic of its own.
@@ -3645,6 +3645,7 @@ pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {
         //    to target, so it is rejected loudly rather than silently writing
         //    the wrong field.
         self.current_ctx_ref = slot; // body + field values see the new slot
+        var pushed_jni = false;
         for (lit.?.field_inits) |fi| {
             const fname = fi.name orelse {
                 if (self.diagnostics) |d|
@@ -3674,6 +3675,15 @@ pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {
             else
                 fval;
             self.builder.store(fl.ptr, store_val);
+            if (std.mem.eql(u8, fname, "jni")) {
+                self.jni_env_stack.append(self.alloc, store_val) catch {};
+                pushed_jni = true;
+            }
+        }
+        if (pushed_jni) {
+            defer _ = self.jni_env_stack.pop();
+            self.lowerBlock(ps.body);
+            return;
         }
     } else {
         // Non-literal context-expr, or no ambient context to inherit from:

@@ -2521,8 +2521,8 @@ triple_c  :: (x: i32) -> i32 export "triple_c" { x * 3 }  // export under a C na
 __stdinp  : *void extern;
 
 // Aggregates (Obj-C / JNI runtime classes) — postfix after the directive
-NSObject  :: #objc_class("NSObject") extern { alloc :: () -> *NSObject; }  // reference
-SxFoo     :: #objc_class("SxFoo")    export { counter: i32; bump :: (self: *Self) { … } }  // define
+NSObject  :: @ObjcClass("NSObject") extern { alloc :: () -> *NSObject; }  // reference
+SxFoo     :: @ObjcClass("SxFoo")    export { counter: i32; bump :: (self: *Self) { … } }  // define
 ```
 
 - `#library "name"` must be assigned to a named constant. The library is passed
@@ -5909,7 +5909,7 @@ binary because no runtime root reaches it.
 | `is_macos() / is_ios() / is_ios_device() / is_ios_simulator() / is_android()` | read | per-target predicates |
 | `framework_count() / framework_at(i)` | read | linker `-framework` names (for `Frameworks/` embed) |
 | `framework_path_count() / framework_path_at(i)` | read | linker `-F` search paths |
-| `jni_main_count() / jni_main_runtime_path_at(i) / jni_main_java_source_at(i)` | read | `#jni_main` emissions for the APK bundler |
+| `jni_main_count() / jni_main_runtime_path_at(i) / jni_main_java_source_at(i)` | read | `main = true` emissions for the APK bundler |
 | `asset_dir_count() / asset_dir_src_at(i) / asset_dir_dest_at(i)` | read | iterate registered asset trees |
 
 Returned strings are `""` when unset; integer counts are `0`. Accessors
@@ -5982,9 +5982,9 @@ The Android branch:
 2. **Find highest `build-tools` / `platforms` subdir** — `process.run("ls -1 <parent> | sort -V | tail -1")`.
 3. **Stage `<apk>.stage/lib/arm64-v8a/<libfoo.so>`** — `copy_file` from the linked output.
 4. **Manifest** — user-supplied via `set_manifest_path()`, or synthesized:
-   - `NativeActivity` shape when no `#jni_main` is declared.
-   - `#jni_main` Activity shape with `android:name="<runtime_path_with_dots>"` + `android:hasCode="true"` otherwise.
-5. **Compile `#jni_main` Java sources** — write each entry's `java_source` to `<stage>/java/<pkg>/<Cls>.java`, run `javac --release 11 -classpath <android.jar>` to `<stage>/classes/`, run `d8 --release --lib <android.jar> --output <stage>` to produce `<stage>/classes.dex`. `javac` discovered via `$JAVA_HOME/bin/javac` then `command -v javac`.
+   - `NativeActivity` shape when no `main = true` is declared.
+   - `main = true` Activity shape with `android:name="<runtime_path_with_dots>"` + `android:hasCode="true"` otherwise.
+5. **Compile `main = true` Java sources** — write each entry's `java_source` to `<stage>/java/<pkg>/<Cls>.java`, run `javac --release 11 -classpath <android.jar>` to `<stage>/classes/`, run `d8 --release --lib <android.jar> --output <stage>` to produce `<stage>/classes.dex`. `javac` discovered via `$JAVA_HOME/bin/javac` then `command -v javac`.
 6. **`aapt2 link -I <android.jar> --manifest <m> -o <unaligned>`**.
 7. **Append archives** — `zip -q -r <unaligned> lib/`, then `zip -q <unaligned> classes.dex` (if dex was produced), then `zip` each registered asset dir at its `dest` path.
 8. **`zipalign -f 4 <unaligned> <aligned>`**.

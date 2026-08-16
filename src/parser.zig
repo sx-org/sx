@@ -375,15 +375,11 @@ pub const Parser = struct {
             }
         }
 
-        // Runtime-class binding with an optional `#jni_main` prefix modifier:
-        //   [#jni_main]* (#jni_class / #jni_interface / #objc_class /
-        //   #objc_protocol / #swift_class / #swift_struct / #swift_protocol) ("path") { body }
-        //
-        // Define-by-default: bare `#jni_class("...")` declares a new class (sx-defined).
-        // Postfix `extern` flips that to "reference an existing class on the runtime
-        // side". `#jni_main` flags the class as the launchable entry (Android Activity).
-        if (self.tryParseRuntimeClassPrefix()) |prefix| {
-            return self.parseRuntimeClassDecl(name, start_pos, prefix.runtime, prefix.is_main, name_is_raw);
+        // Runtime-class binding: `Name :: @JniClass("path", extends = Super, main = true) extern { … }`
+        if (self.tokens.tag(self.tok) == .at_identifier) {
+            if (self.runtimeKindForAtName(self.tokens.slice(self.tok))) |kind| {
+                return self.parseRuntimeClassDecl(name, start_pos, kind, name_is_raw);
+            }
         }
 
         // C-style union declaration
@@ -1735,88 +1731,187 @@ pub const Parser = struct {
         } });
     }
 
-    fn runtimeKindForCurrent(self: *Parser) ?ast.RuntimeKind {
-        return switch (self.tokens.tag(self.tok)) {
-            .hash_jni_class => .jni_class,
-            .hash_jni_interface => .jni_interface,
-            .hash_objc_class => .objc_class,
-            .hash_objc_protocol => .objc_protocol,
-            .hash_swift_class => .swift_class,
-            .hash_swift_struct => .swift_struct,
-            .hash_swift_protocol => .swift_protocol,
-            else => null,
-        };
+    fn parseRuntimeAliasList(self: *Parser, out: *std.ArrayList([]const u8)) !void {
+        if (self.tokens.tag(self.tok) == .dot) {
+            self.advance();
+            try self.expect(.l_bracket);
+            while (self.tokens.tag(self.tok) != .r_bracket and self.tokens.tag(self.tok) != .eof) {
+                if (out.items.len > 0) {
+                    try self.expect(.comma);
+                    if (self.tokens.tag(self.tok) == .r_bracket) break;
+                }
+                if (self.tokens.tag(self.tok) != .identifier) {
+                    return self.fail("expected type alias in the implements/extends list");
+                }
+                try out.append(self.allocator, self.tokens.slice(self.tok));
+                self.advance();
+            }
+            try self.expect(.r_bracket);
+            if (out.items.len == 0) return self.fail("expected at least one type alias in '.[…]'");
+            return;
+        }
+        if (self.tokens.tag(self.tok) != .identifier) {
+            return self.fail("expected a type alias after '='");
+        }
+        try out.append(self.allocator, self.tokens.slice(self.tok));
+        self.advance();
     }
 
-    const RuntimeClassPrefix = struct {
-        runtime: ast.RuntimeKind,
-        is_main: bool,
-    };
+    const ObjcPropertyParsed = struct { payload: *Node, modifiers: []const []const u8 };
 
-    /// Recognise an optional sequence of `extern` / `#jni_main` modifiers
-    /// followed by a type-introducer directive (`#jni_class`, `#objc_class`,
-    /// ...). Returns null if the current position isn't a runtime-class
-    /// directive (possibly after modifiers). Consumes the modifier tokens
-    /// only when a runtime directive follows; otherwise leaves the parser
-    /// state untouched.
-    fn tryParseRuntimeClassPrefix(self: *Parser) ?RuntimeClassPrefix {
-        // Peek ahead through the optional `#jni_main` modifier to confirm a
-        // runtime-class directive follows. (reference vs define is decided by the
-        // POSTFIX `extern`/`export` keyword in parseRuntimeClassDecl, never a prefix.)
-        var lookahead_idx: usize = 0;
-        var is_main = false;
-        while (true) {
-            const tag = self.peekTag(lookahead_idx);
-            switch (tag) {
-                .hash_jni_main => {
-                    is_main = true;
-                    lookahead_idx += 1;
-                },
-                else => break,
+    fn parseObjcPropertyType(self: *Parser) !ObjcPropertyParsed {
+        self.advance(); // skip @ObjcProperty
+        try self.expect(.l_paren);
+        const payload = try self.parseTypeExpr();
+        var mods = std.ArrayList([]const u8).empty;
+        while (self.tokens.tag(self.tok) == .comma) {
+            self.advance();
+            if (self.tokens.tag(self.tok) == .r_paren) break;
+            if (self.tokens.tag(self.tok) != .identifier) {
+                return self.fail("expected 'ownership', 'access', 'atomic', 'getter', or 'setter'");
+            }
+            const key = self.tokens.slice(self.tok);
+            self.advance();
+            try self.expect(.equal);
+            if (std.mem.eql(u8, key, "ownership") or std.mem.eql(u8, key, "access")) {
+                if (self.tokens.tag(self.tok) != .identifier) {
+                    return self.fail("expected an identifier after '='");
+                }
+                try mods.append(self.allocator, self.tokens.slice(self.tok));
+                self.advance();
+            } else if (std.mem.eql(u8, key, "atomic")) {
+                if (self.tokens.tag(self.tok) == .kw_false) {
+                    try mods.append(self.allocator, "nonatomic");
+                    self.advance();
+                } else if (self.tokens.tag(self.tok) == .kw_true) {
+                    try mods.append(self.allocator, "atomic");
+                    self.advance();
+                } else {
+                    return self.fail("expected true or false after 'atomic ='");
+                }
+            } else if (std.mem.eql(u8, key, "getter") or std.mem.eql(u8, key, "setter")) {
+                if (self.tokens.tag(self.tok) != .string_literal) {
+                    return self.fail("expected a string literal after '='");
+                }
+                // Stored as the bare key; the string is consumed. ARC does not read getter/setter names.
+                _ = self.tokens.slice(self.tok);
+                self.advance();
+                try mods.append(self.allocator, key);
+            } else {
+                return self.fail("expected 'ownership', 'access', 'atomic', 'getter', or 'setter'");
             }
         }
-        const runtime = self.runtimeKindForOffset(lookahead_idx) orelse return null;
-        // Commit: consume modifier tokens.
-        var i: usize = 0;
-        while (i < lookahead_idx) : (i += 1) self.advance();
-        return .{ .runtime = runtime, .is_main = is_main };
+        try self.expect(.r_paren);
+        return .{ .payload = payload, .modifiers = try mods.toOwnedSlice(self.allocator) };
+    }
+
+    fn parseObjcMethodNote(self: *Parser) ![]const u8 {
+        self.advance(); // skip @ObjcMethod
+        try self.expect(.l_paren);
+        if (self.tokens.tag(self.tok) != .identifier or !std.mem.eql(u8, self.tokens.slice(self.tok), "selector")) {
+            return self.fail("expected 'selector =' after '@ObjcMethod('");
+        }
+        self.advance();
+        try self.expect(.equal);
+        if (self.tokens.tag(self.tok) != .string_literal) {
+            return self.fail("expected string literal after 'selector ='");
+        }
+        const raw = self.tokens.slice(self.tok);
+        const sel = raw[1 .. raw.len - 1];
+        self.advance();
+        try self.expect(.r_paren);
+        return sel;
+    }
+
+    fn parseJniMethodNote(self: *Parser) ![]const u8 {
+        self.advance(); // skip @JniMethod
+        try self.expect(.l_paren);
+        if (self.tokens.tag(self.tok) != .identifier or !std.mem.eql(u8, self.tokens.slice(self.tok), "descriptor")) {
+            return self.fail("expected 'descriptor =' after '@JniMethod('");
+        }
+        self.advance();
+        try self.expect(.equal);
+        if (self.tokens.tag(self.tok) != .string_literal) {
+            return self.fail("expected string literal after 'descriptor ='");
+        }
+        const raw = self.tokens.slice(self.tok);
+        const desc = raw[1 .. raw.len - 1];
+        self.advance();
+        try self.expect(.r_paren);
+        return desc;
     }
 
     fn peekTag(self: *Parser, offset: usize) Tag {
         return self.tokens.tag(self.tokens.peek(self.tok, @intCast(offset)));
     }
 
-    fn runtimeKindForOffset(self: *Parser, offset: usize) ?ast.RuntimeKind {
-        const tag = self.peekTag(offset);
-        return switch (tag) {
-            .hash_jni_class => .jni_class,
-            .hash_jni_interface => .jni_interface,
-            .hash_objc_class => .objc_class,
-            .hash_objc_protocol => .objc_protocol,
-            .hash_swift_class => .swift_class,
-            .hash_swift_struct => .swift_struct,
-            .hash_swift_protocol => .swift_protocol,
-            else => null,
-        };
+    fn runtimeKindForAtName(_: *Parser, at_name: []const u8) ?ast.RuntimeKind {
+        if (std.mem.eql(u8, at_name, contracts.jni_class_head)) return .jni_class;
+        if (std.mem.eql(u8, at_name, contracts.jni_interface_head)) return .jni_interface;
+        if (std.mem.eql(u8, at_name, contracts.objc_class_head)) return .objc_class;
+        if (std.mem.eql(u8, at_name, contracts.objc_protocol_head)) return .objc_protocol;
+        if (std.mem.eql(u8, at_name, contracts.swift_class_head)) return .swift_class;
+        if (std.mem.eql(u8, at_name, contracts.swift_struct_head)) return .swift_struct;
+        if (std.mem.eql(u8, at_name, contracts.swift_protocol_head)) return .swift_protocol;
+        return null;
     }
 
-    fn parseRuntimeClassDecl(self: *Parser, name: []const u8, start_pos: u32, runtime: ast.RuntimeKind, is_main: bool, name_is_raw: bool) anyerror!*Node {
-        self.advance(); // skip directive token
+    fn parseRuntimeClassDecl(self: *Parser, name: []const u8, start_pos: u32, runtime: ast.RuntimeKind, name_is_raw: bool) anyerror!*Node {
+        self.advance(); // skip @JniClass / @ObjcClass / …
 
         try self.expect(.l_paren);
         if (self.tokens.tag(self.tok) != .string_literal) {
-            return self.fail("expected string literal runtime-class type path after directive");
+            return self.fail("expected string literal runtime path as the first argument");
         }
         const raw = self.tokens.slice(self.tok);
         const runtime_path = raw[1 .. raw.len - 1];
         self.advance();
+
+        var is_main = false;
+        var extends_aliases = std.ArrayList([]const u8).empty;
+        var implements_aliases = std.ArrayList([]const u8).empty;
+        while (self.tokens.tag(self.tok) == .comma) {
+            self.advance();
+            if (self.tokens.tag(self.tok) == .r_paren) break;
+            if (self.tokens.tag(self.tok) != .identifier) {
+                return self.fail("expected named argument 'extends', 'implements', or 'main'");
+            }
+            const arg_name = self.tokens.slice(self.tok);
+            self.advance();
+            try self.expect(.equal);
+            if (std.mem.eql(u8, arg_name, "main")) {
+                if (self.tokens.tag(self.tok) == .kw_true) {
+                    is_main = true;
+                    self.advance();
+                } else if (self.tokens.tag(self.tok) == .kw_false) {
+                    is_main = false;
+                    self.advance();
+                } else {
+                    return self.fail("expected true or false after 'main ='");
+                }
+            } else if (std.mem.eql(u8, arg_name, "extends")) {
+                try self.parseRuntimeAliasList(&extends_aliases);
+            } else if (std.mem.eql(u8, arg_name, "implements")) {
+                try self.parseRuntimeAliasList(&implements_aliases);
+            } else {
+                return self.fail("expected named argument 'extends', 'implements', or 'main'");
+            }
+        }
         try self.expect(.r_paren);
 
-        // The postfix `extern` / `export` modifier after the `#objc_class("X")`
-        // directive (mirrors `struct #compiler` postfix placement):
+        if (extends_aliases.items.len > 1 and (runtime == .jni_class or runtime == .objc_class or runtime == .swift_class)) {
+            return self.fail("a class takes one 'extends' type");
+        }
+        if (implements_aliases.items.len > 0 and (runtime == .jni_interface or runtime == .objc_protocol or runtime == .swift_protocol)) {
+            return self.fail("'implements' is only legal on a class");
+        }
+        if (is_main and (runtime != .jni_class and runtime != .objc_class)) {
+            return self.fail("'main = true' is only legal on @JniClass or @ObjcClass");
+        }
+
+        // Postfix `extern` / `export` after the constructor:
         //   `… extern { … }`  ⇒ reference an existing runtime class.
         //   `… export { … }`  ⇒ define + register a new sx class (the default).
-        // Maps onto `is_extern`, threaded into the runtime_class_decl node.
         var is_extern_eff = false;
         if (self.tokens.tag(self.tok) == .kw_extern or self.tokens.tag(self.tok) == .kw_export) {
             is_extern_eff = self.tokens.tag(self.tok) == .kw_extern;
@@ -1826,71 +1921,35 @@ pub const Parser = struct {
         try self.expect(.l_brace);
 
         var members = std.ArrayList(ast.RuntimeClassMember).empty;
+        for (extends_aliases.items) |alias| {
+            try members.append(self.allocator, .{ .extends = alias });
+        }
+        for (implements_aliases.items) |alias| {
+            try members.append(self.allocator, .{ .implements = alias });
+        }
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
-            // #extends Alias;  or  #implements Alias;
-            if (self.tokens.tag(self.tok) == .hash_extends or self.tokens.tag(self.tok) == .hash_implements) {
-                const is_extends = self.tokens.tag(self.tok) == .hash_extends;
-                self.advance();
-                if (self.tokens.tag(self.tok) != .identifier) {
-                    return self.fail(if (is_extends) "expected superclass alias after '#extends'" else "expected interface alias after '#implements'");
-                }
-                const alias = self.tokens.slice(self.tok);
-                self.advance();
-                try self.expect(.semicolon);
-                try members.append(self.allocator, if (is_extends)
-                    .{ .extends = alias }
-                else
-                    .{ .implements = alias });
-                continue;
-            }
-
             // Field: name: Type;       (instance field — JNI Get/Set<Type>Field)
             // Method: name :: (args...) -> Ret;
             if (self.tokens.tag(self.tok) != .identifier) {
-                return self.fail("expected member name in '#jni_class' body");
+                return self.fail("expected member name in a runtime-class body");
             }
             const member_name = self.tokens.slice(self.tok);
             self.advance();
 
             if (self.tokens.tag(self.tok) == .colon) {
                 self.advance(); // consume `:`
-                const field_type = try self.parseTypeExpr();
-
-                // Optional `#property[(modifier, modifier, ...)]`
-                // directive after the field type. Synthesizes Obj-C
-                // getter/setter dispatch at access sites.
+                var field_type: *Node = undefined;
                 var is_property = false;
-                var property_modifiers = std.ArrayList([]const u8).empty;
-                if (self.tokens.tag(self.tok) == .hash_property) {
+                var property_modifiers: []const []const u8 = &.{};
+                if (self.tokens.tag(self.tok) == .at_identifier and
+                    std.mem.eql(u8, self.tokens.slice(self.tok), contracts.objc_property_head))
+                {
+                    const parsed = try self.parseObjcPropertyType();
+                    field_type = parsed.payload;
                     is_property = true;
-                    self.advance();
-                    if (self.tokens.tag(self.tok) == .l_paren) {
-                        self.advance(); // consume `(`
-                        while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
-                            if (property_modifiers.items.len > 0) {
-                                try self.expect(.comma);
-                                if (self.tokens.tag(self.tok) == .r_paren) break;
-                            }
-                            if (self.tokens.tag(self.tok) != .identifier) {
-                                return self.fail("expected property modifier name (strong, weak, copy, readonly, ...)");
-                            }
-                            const mod_name = self.tokens.slice(self.tok);
-                            self.advance();
-                            // Optional argument: getter("name") / setter("name")
-                            // — parsed but stored as part of the modifier string
-                            // — the ARC wiring does not read it.
-                            if (self.tokens.tag(self.tok) == .l_paren) {
-                                self.advance();
-                                if (self.tokens.tag(self.tok) != .string_literal) {
-                                    return self.fail("expected string literal argument for property modifier");
-                                }
-                                self.advance();
-                                try self.expect(.r_paren);
-                            }
-                            try property_modifiers.append(self.allocator, mod_name);
-                        }
-                        try self.expect(.r_paren);
-                    }
+                    property_modifiers = parsed.modifiers;
+                } else {
+                    field_type = try self.parseTypeExpr();
                 }
 
                 try self.expect(.semicolon);
@@ -1898,7 +1957,7 @@ pub const Parser = struct {
                     .name = member_name,
                     .field_type = field_type,
                     .is_property = is_property,
-                    .property_modifiers = try property_modifiers.toOwnedSlice(self.allocator),
+                    .property_modifiers = property_modifiers,
                 } });
                 continue;
             }
@@ -1906,7 +1965,7 @@ pub const Parser = struct {
             try self.expect(.colon_colon);
 
             // Class-level constant `name :: Type = expr;` inside
-            // a `#objc_class` block. Reframed as a synthesized class method
+            // a `@ObjcClass` block. Reframed as a synthesized class method
             // with an expression body (`name :: () -> Type => expr;`) so
             // the class-synthesis pipeline picks it up:
             // a class-method IMP is emitted and registered on the metaclass.
@@ -1947,7 +2006,7 @@ pub const Parser = struct {
                     if (self.tokens.tag(self.tok) == .r_paren) break;
                 }
                 if (self.tokens.tag(self.tok) != .identifier and self.tokens.tag(self.tok) != .kw_Self) {
-                    return self.fail("expected parameter name in '#jni_class' method");
+                    return self.fail("expected parameter name in '@JniClass' method");
                 }
                 const pname = self.tokens.slice(self.tok);
                 try param_name_spans.append(self.allocator, .{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) });
@@ -1981,34 +2040,15 @@ pub const Parser = struct {
                 return_type = try self.parseFnReturnType();
             }
 
-            // Optional `#jni_method_descriptor("(Sig)Ret")` — explicit JNI descriptor override.
             var desc_override: ?[]const u8 = null;
-            if (self.tokens.tag(self.tok) == .hash_jni_method_descriptor) {
-                self.advance(); // skip `#jni_method_descriptor`
-                try self.expect(.l_paren);
-                if (self.tokens.tag(self.tok) != .string_literal) {
-                    return self.fail("expected string literal JNI descriptor after '#jni_method_descriptor('");
-                }
-                const raw_desc = self.tokens.slice(self.tok);
-                desc_override = raw_desc[1 .. raw_desc.len - 1];
-                self.advance();
-                try self.expect(.r_paren);
-            }
-
-            // Optional `#selector("explicit:string")` — explicit Obj-C selector override
-            // Same slot as the JNI descriptor; they're not mutually
-            // exclusive at parse time though they belong to different runtimes.
             var sel_override: ?[]const u8 = null;
-            if (self.tokens.tag(self.tok) == .hash_selector) {
-                self.advance(); // skip `#selector`
-                try self.expect(.l_paren);
-                if (self.tokens.tag(self.tok) != .string_literal) {
-                    return self.fail("expected string literal selector after '#selector('");
+            if (self.tokens.tag(self.tok) == .at_identifier) {
+                const note = self.tokens.slice(self.tok);
+                if (std.mem.eql(u8, note, contracts.objc_method_head)) {
+                    sel_override = try self.parseObjcMethodNote();
+                } else if (std.mem.eql(u8, note, contracts.jni_method_head)) {
+                    desc_override = try self.parseJniMethodNote();
                 }
-                const raw_sel = self.tokens.slice(self.tok);
-                sel_override = raw_sel[1 .. raw_sel.len - 1];
-                self.advance();
-                try self.expect(.r_paren);
             }
 
             // Method body is optional: `;` → declaration (extern or inherited
@@ -3724,6 +3764,12 @@ pub const Parser = struct {
                 self.advance();
                 return try self.createNode(start, .{ .caller_site = {} });
             }
+            if (std.mem.eql(u8, at_name, contracts.objc_call_head) or
+                std.mem.eql(u8, at_name, contracts.jni_call_head) or
+                std.mem.eql(u8, at_name, contracts.jni_static_call_head))
+            {
+                return try self.parseFfiAtCall(start, at_name);
+            }
             self.advance();
             return try self.createNode(start, .{ .identifier = .{ .name = at_name } });
         }
@@ -3980,12 +4026,7 @@ pub const Parser = struct {
                 const inner = try self.parseExprRole(pipe);
                 return try self.createNode(start, .{ .comptime_expr = .{ .expr = inner } });
             },
-            .hash_objc_call, .hash_jni_call, .hash_jni_static_call => {
-                return try self.parseFfiIntrinsicCall();
-            },
-            .hash_jni_env => {
-                return try self.parseJniEnvBlock();
-            },
+
             // `error` in expression position is the head of a tag literal
             // `error.X` (parsed as a field access); sema gives it meaning.
             .kw_error => {
@@ -4000,58 +4041,23 @@ pub const Parser = struct {
         }
     }
 
-    /// Parse `#objc_call(T)(recv, "sel:", args...)`,
-    /// `#jni_call(T)(env, target, "name", "(Sig)R", args...)`, or
-    /// `#jni_static_call(T)(class, "name", "(Sig)R", args...)`. The
-    /// return type sits in the first parens; the actual call args
-    /// follow in the second.
-    fn parseJniEnvBlock(self: *Parser) anyerror!*Node {
-        const start = self.tokens.start(self.tok);
-        self.advance(); // skip `#jni_env`
-
-        try self.expect(.l_paren);
-        const env_expr = try self.parseExpr();
-        try self.expect(.r_paren);
-
-        // Body is a brace-delimited block.
-        if (self.tokens.tag(self.tok) != .l_brace) {
-            return self.fail("expected '{' after '#jni_env(env)'");
-        }
-        const body = try self.parseBlock();
-
-        return try self.createNode(start, .{ .jni_env_block = .{
-            .env = env_expr,
-            .body = body,
-        } });
-    }
-
-    fn parseFfiIntrinsicCall(self: *Parser) anyerror!*Node {
-        const start = self.tokens.start(self.tok);
-        const kind: ast.FfiIntrinsicKind = switch (self.tokens.tag(self.tok)) {
-            .hash_objc_call => .objc_call,
-            .hash_jni_call => .jni_call,
-            .hash_jni_static_call => .jni_static_call,
-            else => unreachable,
-        };
-        self.advance(); // skip the directive
-
+    fn parseFfiAtCall(self: *Parser, start: u32, at_name: []const u8) anyerror!*Node {
+        const kind: ast.FfiIntrinsicKind = if (std.mem.eql(u8, at_name, contracts.objc_call_head))
+            .objc_call
+        else if (std.mem.eql(u8, at_name, contracts.jni_static_call_head))
+            .jni_static_call
+        else
+            .jni_call;
+        self.advance(); // skip @JniCall / @ObjcCall / @JniStaticCall
         try self.expect(.l_paren);
         const ret_type = try self.parseTypeExpr();
-        try self.expect(.r_paren);
-
-        try self.expect(.l_paren);
         var args = std.ArrayList(*Node).empty;
-        while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
-            const arg = try self.parseExpr();
-            try args.append(self.allocator, arg);
-            if (self.tokens.tag(self.tok) == .comma) {
-                self.advance();
-            } else {
-                break;
-            }
+        while (self.tokens.tag(self.tok) == .comma) {
+            self.advance();
+            if (self.tokens.tag(self.tok) == .r_paren) break;
+            try args.append(self.allocator, try self.parseExpr());
         }
         try self.expect(.r_paren);
-
         return try self.createNode(start, .{ .ffi_intrinsic_call = .{
             .kind = kind,
             .return_type = ret_type,
@@ -5007,25 +5013,8 @@ pub const Parser = struct {
             .hash_define,
             .hash_flags,
             .hash_identity,
-            .hash_objc_call,
-            .hash_jni_call,
-            .hash_jni_static_call,
-            .hash_jni_class,
-            .hash_jni_interface,
-            .hash_objc_class,
-            .hash_objc_protocol,
-            .hash_swift_class,
-            .hash_swift_struct,
-            .hash_swift_protocol,
-            .hash_extends,
-            .hash_implements,
-            .hash_jni_method_descriptor,
-            .hash_selector,
-            .hash_property,
             .hash_get,
             .hash_set,
-            .hash_jni_env,
-            .hash_jni_main,
             .hash_context_extend,
             .triple_minus,
             .minus_minus,
@@ -5236,25 +5225,8 @@ pub const Parser = struct {
             .hash_define,
             .hash_flags,
             .hash_identity,
-            .hash_objc_call,
-            .hash_jni_call,
-            .hash_jni_static_call,
-            .hash_jni_class,
-            .hash_jni_interface,
-            .hash_objc_class,
-            .hash_objc_protocol,
-            .hash_swift_class,
-            .hash_swift_struct,
-            .hash_swift_protocol,
-            .hash_extends,
-            .hash_implements,
-            .hash_jni_method_descriptor,
-            .hash_selector,
-            .hash_property,
             .hash_get,
             .hash_set,
-            .hash_jni_env,
-            .hash_jni_main,
             .hash_context_extend,
             .triple_minus,
             .minus_minus,

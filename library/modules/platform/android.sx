@@ -1,4 +1,4 @@
-// Android backend driven by a `#jni_main` Activity (no native_app_glue).
+// Android backend driven by a `main = true` Activity (no native_app_glue).
 //
 // Lifecycle:
 //
@@ -37,40 +37,40 @@
 
 // ── Runtime Java types ──────────────────────────────────────────────────
 
-Bundle   :: #jni_class("android/os/Bundle") extern { }
-JContext :: #jni_class("android/content/Context") extern {
+Bundle :: @JniClass("android/os/Bundle") extern { }
+JContext :: @JniClass("android/content/Context") extern {
     getAssets :: (self: *Self) -> *AssetManagerJ;
 }
-AssetManagerJ :: #jni_class("android/content/res/AssetManager") extern { }
+AssetManagerJ :: @JniClass("android/content/res/AssetManager") extern { }
 
-Surface :: #jni_class("android/view/Surface") extern { }
-SurfaceHolder :: #jni_class("android/view/SurfaceHolder") extern {
+Surface :: @JniClass("android/view/Surface") extern { }
+SurfaceHolder :: @JniClass("android/view/SurfaceHolder") extern {
     getSurface  :: (self: *Self) -> *Surface;
     addCallback :: (self: *Self, cb: *SurfaceHolderCallback);
 }
-SurfaceView :: #jni_class("android/view/SurfaceView") extern {
+SurfaceView :: @JniClass("android/view/SurfaceView") extern {
     new        :: (ctx: *JContext) -> *Self;  // no `self: *Self` → class method
     getHolder  :: (self: *Self) -> *SurfaceHolder;
 }
-SurfaceHolderCallback :: #jni_class("android/view/SurfaceHolder$Callback") extern { }
+SurfaceHolderCallback :: @JniClass("android/view/SurfaceHolder$Callback") extern { }
 
-MotionEvent :: #jni_class("android/view/MotionEvent") extern {
+MotionEvent :: @JniClass("android/view/MotionEvent") extern {
     getAction :: (self: *Self) -> i32;
     getX      :: (self: *Self) -> f32;
     getY      :: (self: *Self) -> f32;
 }
 
-JView :: #jni_class("android/view/View") extern { }
-JWindow :: #jni_class("android/view/Window") extern {
+JView :: @JniClass("android/view/View") extern { }
+JWindow :: @JniClass("android/view/Window") extern {
     getWindowManager :: (self: *Self) -> *JWindowManager;
 }
-JWindowManager :: #jni_class("android/view/WindowManager") extern {
+JWindowManager :: @JniClass("android/view/WindowManager") extern {
     getDefaultDisplay :: (self: *Self) -> *JDisplay;
 }
-JDisplay :: #jni_class("android/view/Display") extern {
+JDisplay :: @JniClass("android/view/Display") extern {
     getRefreshRate :: (self: *Self) -> f32;
 }
-ActivityClass :: #jni_class("android/app/Activity") extern {
+ActivityClass :: @JniClass("android/app/Activity") extern {
     setContentView :: (self: *Self, v: *JView);
     getWindow :: (self: *Self) -> *JWindow;
 }
@@ -202,10 +202,9 @@ AndroidPlatform :: struct {
     touch_mutex_inited:    bool = false;
 }
 
-// ── User-facing helpers for the consumer's `#jni_main` Activity ────────
+// ── User-facing helpers for the consumer's `main = true` Activity ────────
 //
-// The consumer (chess, etc.) writes their own `SxApp :: #jni_main
-// #jni_class("...")` declaration with `#implements SurfaceHolderCallback`
+// The consumer (chess, etc.) writes their own `SxApp :: // @JniClass("...")` declaration with `implements = SurfaceHolderCallback`
 // and the standard lifecycle methods. This file provides the primitives
 // those methods call:
 //
@@ -221,7 +220,7 @@ AndroidPlatform :: struct {
 // C file_utils so `read_file_bytes` can route through `AAssetManager_open`.
 // Call this from your Activity's `onCreate` (BEFORE any asset read).
 sx_android_forward_assets :: (env: *void, activity: *JContext) {
-    #jni_env(env) {
+    push .{ jni = env } {
         assets := activity.getAssets();
         aam := AAssetManager_fromJava(env, xx assets);
         sx_android_set_asset_manager(aam);
@@ -233,7 +232,7 @@ sx_android_forward_assets :: (env: *void, activity: *JContext) {
 // valid until `sx_android_detach_window` runs (typically in
 // `surfaceDestroyed`).
 sx_android_attach_window :: (plat: *AndroidPlatform, env: *void, holder: *SurfaceHolder) {
-    #jni_env(env) {
+    push .{ jni = env } {
         surface := holder.getSurface();
         plat.app_window = ANativeWindow_fromSurface(env, xx surface);
     }
@@ -265,7 +264,7 @@ sx_android_set_viewport :: (plat: *AndroidPlatform, w: i32, h: i32) {
 // Activity's onCreate (env available); 60.0 on any failure.
 sx_android_refresh_rate :: (env: *void, activity: *JContext) -> f32 {
     rate : f32 = 60.0;
-    #jni_env(env) {
+    push .{ jni = env } {
         a : *ActivityClass = xx activity;
         r := a.getWindow().getWindowManager().getDefaultDisplay().getRefreshRate();
         if r > 0.0 { rate = r; }

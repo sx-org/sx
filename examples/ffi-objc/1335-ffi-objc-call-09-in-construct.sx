@@ -1,4 +1,4 @@
-// `#objc_call` call sites
+// `@ObjcCall` call sites
 // embedded inside the sx surface constructs. None touch a new ABI
 // path — the lowering routes the call identically regardless of
 // the enclosing scope, and this test pins that lemma.
@@ -14,11 +14,11 @@
 #import "modules/build.sx";
 #import "modules/ffi/objc.sx";
 
-// ── 1. Struct method calling #objc_call ─────────────────────────────
+// ── 1. Struct method calling @ObjcCall ─────────────────────────────
 Probe :: struct {
     receiver: *void = null;
     fetch :: (self: *Probe) -> i64 {
-        #objc_call(i64)(self.receiver, "hash")
+        @ObjcCall(i64, self.receiver, "hash")
     }
 }
 
@@ -29,22 +29,22 @@ Hashable :: protocol {
 
 impl Hashable for Probe {
     sx_hash :: (self: *Probe) -> i64 {
-        #objc_call(i64)(self.receiver, "hash") * 2
+        @ObjcCall(i64, self.receiver, "hash") * 2
     }
 }
 
-// ── 3. Closure body invoking #objc_call ─────────────────────────────
+// ── 3. Closure body invoking @ObjcCall ─────────────────────────────
 // The closure captures `recv` from its enclosing function and
-// references it inside the `#objc_call` arg list. Locked in by
+// references it inside the `@ObjcCall` arg list. Locked in by
 // `examples/103-ffi-closure-capture.sx`.
 make_hasher :: (recv: *void) -> Closure(i32) -> i64 {
-    return |dummy: i32| -> i64 #objc_call(i64)(recv, "hash");
+    return |dummy: i32| -> i64 @ObjcCall(i64, recv, "hash");
 }
 
 // ── 4. Generic function body — instantiated per call site ───────────
 hash_through :: (recv: $T) -> i64 {
     p : *void = xx recv;
-    #objc_call(i64)(p, "hash")
+    @ObjcCall(i64, p, "hash")
 }
 
 main :: () -> i32 {
@@ -64,7 +64,7 @@ main :: () -> i32 {
 
         // 3. closure (receives a dummy arg to keep the `Closure(T) -> R`
         //    arity matching 35-closures.sx; `recv` is captured from
-        //    `make_hasher`'s arg list and used inside the `#objc_call`).
+        //    `make_hasher`'s arg list and used inside the `@ObjcCall`).
         hasher := make_hasher(ns_object);
         h3 := hasher(0);
         print("closure h3  = {}\n", h3 == h1);

@@ -1,6 +1,6 @@
 // QuartzCore layer surfaces shared by the platform host (uikit.sx) and
 // the Metal GPU backend (gpu/metal.sx). ONE declaration per runtime
-// class: the #objc_class registry is name-keyed program-wide, so two
+// class: the @ObjcClass registry is name-keyed program-wide, so two
 // modules declaring the same class race for the slot and whichever
 // loses resolves against the other's method surface.
 //
@@ -15,19 +15,16 @@
 // CGSize is a 2-element f64 HFA. arm64 Apple ABI puts it in d0,d1.
 CGSize :: struct { width: f64; height: f64; }
 
-CALayer :: #objc_class("CALayer") extern {
-    #extends NSObject;
+CALayer :: @ObjcClass("CALayer", extends = NSObject) extern {
     setOpaque :: (self: *Self, opaque: i8);
 }
 
-CAEAGLLayer :: #objc_class("CAEAGLLayer") extern {
-    #extends CALayer;
+CAEAGLLayer :: @ObjcClass("CAEAGLLayer", extends = CALayer) extern {
     class :: () -> *void;
     setDrawableProperties :: (self: *Self, props: *void);
 }
 
-CAMetalLayer :: #objc_class("CAMetalLayer") extern {
-    #extends CALayer;
+CAMetalLayer :: @ObjcClass("CAMetalLayer", extends = CALayer) extern {
     class :: () -> *void;
     setDevice :: (self: *Self, device: *void);
     setPixelFormat :: (self: *Self, fmt: u64);

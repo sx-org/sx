@@ -49,10 +49,10 @@ pub const Compilation = struct {
     /// (e.g. `platform.bundle.bundle_main` after `target.link`).
     ir_module: ?*ir.Module = null,
     /// C sources requested by the lowering pass (not in the user's AST).
-    /// E.g. the JNI env TL runtime when `#jni_env` is used. Merged with
+    /// E.g. the JNI env TL runtime when `context.jni` is used. Merged with
     /// AST sources in `collectCImportSources`.
     lowering_extra_c_sources: std.ArrayList(c_import.CImportInfo) = .empty,
-    /// `#jni_main #jni_class("...")` declarations whose Java sources were
+    /// `main = true @JniClass("...")` declarations whose Java sources were
     /// rendered during lowering. Surfaced to the sx Android bundler
     /// (`library/modules/platform/bundle.sx`) via `BuildConfig.jni_main_*`
     /// in `compiler_hooks.zig`; the bundler writes `.java` files + runs
@@ -263,7 +263,7 @@ pub const Compilation = struct {
 
     /// Collect C import source info — both from user-written `#import c { ... }`
     /// blocks in the AST AND from lowering-time auto-injections (currently:
-    /// the JNI env TL runtime when `#jni_env` / `#jni_call`-with-omitted-env
+    /// the JNI env TL runtime when `context.jni` / `@JniCall`-with-omitted-env
     /// is used). The lower-side auto-injections live in
     /// `lowering_extra_c_sources` and are populated by `lowerToIR` based on
     /// `Lowering.needs_jni_env_tl_runtime` etc.
@@ -360,7 +360,7 @@ pub const Compilation = struct {
     }
 
     /// Walk `lowering.program_index.runtime_class_map` and render Java sources for every
-    /// `#jni_main #jni_class("...")` declaration. Renders happen here so the
+    /// `main = true @JniClass("...")` declaration. Renders happen here so the
     /// AST + class-registry snapshot stay confined to the lowering pass; the
     /// downstream APK pipeline only needs `{runtime_path, java_source}` pairs.
     fn collectJniMainEmissions(self: *Compilation, lowering: *ir.Lowering) !void {
@@ -370,7 +370,7 @@ pub const Compilation = struct {
         defer seen.deinit();
 
         // Class registry passed to jni_java_emit for `*Foo` cross-class refs
-        // and `#extends Alias` resolution.
+        // and `extends = Alias` resolution.
         var registry = std.StringHashMap([]const u8).init(self.allocator);
         defer registry.deinit();
         var it_reg = lowering.program_index.runtime_class_map.iterator();
@@ -414,7 +414,7 @@ pub const Compilation = struct {
         return basename[3 .. basename.len - 3];
     }
 
-    /// Java sources rendered from `#jni_main #jni_class("...")` decls during
+    /// Java sources rendered from `main = true @JniClass("...")` decls during
     /// lowering. Empty unless `lowerToIR` has run.
     pub fn getJniMainEmissions(self: *const Compilation) []const JniMainEmission {
         return self.lowering_jni_main_decls.items;

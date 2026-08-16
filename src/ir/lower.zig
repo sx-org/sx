@@ -634,8 +634,8 @@ pub const Lowering = struct {
     implicit_ctx_enabled: bool = false,
     current_ctx_ref: Ref = Ref.none,
     sel_register_name_fid: ?FuncId = null, // lazily-declared `sel_registerName` extern (non-literal selector fallback)
-    jni_env_stack: std.ArrayList(Ref) = std.ArrayList(Ref).empty, // lexical `#jni_env(env)` Ref stack — top is current scope's env for omitted-env `#jni_call`
-    jni_env_stack_base: usize = 0, // index above which the currently-lowering fn's `#jni_env` scopes live; outer-fn Refs aren't valid in this fn's instruction stream
+    jni_env_stack: std.ArrayList(Ref) = std.ArrayList(Ref).empty, // lexical `context.jni(env)` Ref stack — top is current scope's env for omitted-env `@JniCall`
+    jni_env_stack_base: usize = 0, // index above which the currently-lowering fn's `context.jni` scopes live; outer-fn Refs aren't valid in this fn's instruction stream
     jni_env_tl_get_fid: ?FuncId = null, // extern `sx_jni_env_tl_get` (from library/vendors/sx_jni_runtime/sx_jni_env_tl.c)
     jni_env_tl_set_fid: ?FuncId = null, // extern `sx_jni_env_tl_set`
     needs_jni_env_tl_runtime: bool = false, // set when lowering touches the JNI env TL; signals Compilation to auto-link the runtime .c
@@ -643,7 +643,7 @@ pub const Lowering = struct {
     trace_clear_fid: ?FuncId = null, // extern `sx_trace_clear`
     needs_trace_runtime: bool = false, // set when lowering emits a trace push/clear; signals Compilation to auto-link sx_trace.c
     chain_fail_target: ?ChainFailTarget = null, // when set, a failable `??` chain routes its TOTAL failure here (an absorbing consumer like `catch`) instead of propagating to the function
-    current_runtime_class: ?*const ast.RuntimeClassDecl = null, // set while lowering a `#jni_main` (or any sx-defined `#jni_class`) bodied method — `super.method(args)` dispatch resolves the parent class against this fcd's `#extends`
+    current_runtime_class: ?*const ast.RuntimeClassDecl = null, // set while lowering a `main = true` (or any sx-defined `@JniClass`) bodied method — `super.method(args)` dispatch resolves the parent class against this fcd's `extends =`
     current_runtime_method: ?ast.RuntimeMethodDecl = null, // the specific method whose body is being lowered; `super.<same_name>(...)` reuses its signature
     current_fn_decl: ?*const ast.FnDecl = null, // the declaration whose body is being lowered; `@va_start` reads its `..` tail from it
     type_bindings: ?std.StringHashMap(TypeId) = null, // generic type param bindings ($T → concrete TypeId)
@@ -1060,7 +1060,7 @@ pub const Lowering = struct {
             l.continue_target = null;
             l.loop_defer_base = 0;
             l.build_scopes = .empty;
-            // The `#jni_env` Ref stack is lexical to ONE function's instruction
+            // The `context.jni` Ref stack is lexical to ONE function's instruction
             // stream; move the visible base to the current top. Pack-fn mono
             // state is likewise lexical to the pack-fn body — null it so a
             // callee sharing a param NAME with the active pack doesn't fold the

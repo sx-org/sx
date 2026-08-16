@@ -1,5 +1,5 @@
 // Instance-method body lowering on sx-defined
-// `#objc_class`.
+// `@ObjcClass`.
 //
 // The Obj-C runtime invokes class methods via the IMP pointers
 // wired up at class-pair init. No sx-side call path drives lazy lowering,
@@ -27,7 +27,7 @@
 #import "modules/std.sx";
 #import "modules/build.sx";
 
-SxFoo :: #objc_class("SxFoo") {
+SxFoo :: @ObjcClass("SxFoo") {
     counter: i32;
 
     bump :: (self: *Self) {

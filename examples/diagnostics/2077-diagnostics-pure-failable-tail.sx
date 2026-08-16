@@ -12,7 +12,7 @@
 //      set, so a nonmember is caught there rather than discarded as a value.
 //   3. A closure body that produces no value gets the same missing-value
 //      diagnostic as a named function, instead of returning `undef`.
-//   4. A native `#jni_main` method cannot be failable: Java has no error
+//   4. A native `main = true` method cannot be failable: Java has no error
 //      channel to receive the tag.
 #import "modules/std.sx";
 #import "modules/build.sx";
@@ -49,9 +49,9 @@ nonmember :: () -> !Named {
 }
 
 // 4. Refused at the declaration: an sx error channel has no Java counterpart.
-Bundle :: #jni_class("android/os/Bundle") extern {}
+Bundle :: @JniClass("android/os/Bundle") extern {}
 
-SxApp :: #jni_main #jni_class("co/swipelab/sxpurefailable/SxApp") {
+SxApp :: @JniClass("co/swipelab/sxpurefailable/SxApp", main = true) {
     onCreate :: (self: *Self, b: *Bundle) -> !Named {
         raise error.Nope;
     }

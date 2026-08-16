@@ -1,5 +1,5 @@
 // Struct returns through
-// `#objc_call`. emit_llvm's `objc_msg_send` arm hands the IR
+// `@ObjcCall`. emit_llvm's `objc_msg_send` arm hands the IR
 // struct type straight to LLVMBuildCall2; the AArch64 / SysV
 // AMD64 backend handles the register-pair / HFA / byval+sret
 // lowering as long as the function type at the call site is
@@ -30,15 +30,15 @@ NSRect :: struct {
 main :: () -> i32 {
     inline if OS == .macos {
         // 16 B HFA — both fields zero.
-        p := #objc_call(NSPoint)(null, "pointValue");
+        p := @ObjcCall(NSPoint, null, "pointValue");
         print("point = ({}, {})\n", p.x, p.y);
 
         // 16 B integer — both fields zero.
-        r := #objc_call(NSRange)(null, "rangeValue");
+        r := @ObjcCall(NSRange, null, "rangeValue");
         print("range = ({}, {})\n", r.location, r.length);
 
         // 32 B HFA — all four fields zero.
-        rect := #objc_call(NSRect)(null, "rectValue");
+        rect := @ObjcCall(NSRect, null, "rectValue");
         print("rect  = ({}, {}, {}, {})\n", rect.x, rect.y, rect.width, rect.height);
 
         // >16 B non-HFA struct returns (sret path) live in 1332.

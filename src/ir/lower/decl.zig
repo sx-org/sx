@@ -323,17 +323,17 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     self.checkRequiredEntryPoints();
     // Pass 4a: validate main's signature.
     self.validateMainSignature();
-    // Pass 4b: eagerly lower bodied methods on sx-defined `#objc_class`
+    // Pass 4b: eagerly lower bodied methods on sx-defined `@ObjcClass`
     // declarations. The Obj-C runtime calls these via IMP pointers
     // registered there — no sx-side call path drives lazy
     // lowering, so we trigger it here. Mirrors the JNI eager-lower
     // pattern in Pass 5.
     self.lowerObjcDefinedClassMethods();
-    // Pass 5: synthesize JNI-mangled exports for `#jni_main` bodied methods.
+    // Pass 5: synthesize JNI-mangled exports for `main = true` bodied methods.
     // Android's JNI runtime resolves `private native sx_<m>(...)` declared in
     // the bundled classes.dex by looking up the symbol
     // `Java_<pkg-mangled>_<Class>_sx_1<m-mangled>` in the loaded .so. Each
-    // bodied method on a `#jni_main #jni_class` decl becomes an exported
+    // bodied method on a `main = true @JniClass` decl becomes an exported
     // C-ABI fn with that name; the JNIEnv* / jobject params are prepended,
     // then the user-declared params (with type-erased pointers since JNI
     // doesn't carry sx-side types across the binding).
@@ -411,9 +411,9 @@ pub fn validateMainSignature(self: *Lowering) void {
 // `self.errorFlow().checkErrorFlow(decls)`.
 
 /// On Android, the OS loads the .so via a Java-side Activity declared
-/// with `#jni_main #jni_class("...")`. The Java class drives the
+/// with `main = true @JniClass("...")`. The Java class drives the
 /// lifecycle (onCreate / onPause / etc.) and sx provides the native
-/// delegates bound via JNI name mangling. Without a `#jni_main` decl
+/// delegates bound via JNI name mangling. Without a `main = true` decl
 /// there's no entry point — the .so would load but Android has nothing
 /// to call into.
 pub fn checkRequiredEntryPoints(self: *Lowering) void {
@@ -427,11 +427,11 @@ pub fn checkRequiredEntryPoints(self: *Lowering) void {
     }
 
     if (self.diagnostics) |diags| {
-        diags.addFmt(.err, null, "target is Android but no `#jni_main` Activity declared. " ++
+        diags.addFmt(.err, null, "target is Android but no `main = true` Activity declared. " ++
             "The OS launches a Java-side Activity that delegates lifecycle " ++
             "callbacks into sx — declare one like:\n\n" ++
-            "    Bundle :: #jni_class(\"android/os/Bundle\") extern {{ }}\n\n" ++
-            "    MyApp :: #jni_main #jni_class(\"co/example/MyApp\") {{\n" ++
+            "    Bundle :: @JniClass(\"android/os/Bundle\") extern {{ }}\n\n" ++
+            "    MyApp :: main = true @JniClass(\"co/example/MyApp\") {{\n" ++
             "        onCreate :: (self: *Self, b: *Bundle) {{ /* ... */ }}\n" ++
             "    }}", .{});
     }
@@ -3638,7 +3638,7 @@ pub fn lazyLowerFunction(self: *Lowering, name: []const u8) void {
     // Already lowered?
     if (self.lowered_functions.contains(name)) return;
 
-    // For sx-defined `#objc_class` methods, pin current_runtime_class
+    // For sx-defined `@ObjcClass` methods, pin current_runtime_class
     // so `*Self` substitutions in resolveTypeWithBindings find the
     // state-struct type The inline body-lowering path
     // below re-resolves param types, so the context must be set
@@ -3860,7 +3860,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
 
 /// Lower a single function declaration.
 pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, is_imported: bool) void {
-    // For sx-defined `#objc_class` methods (qualified `<Class>.<method>`),
+    // For sx-defined `@ObjcClass` methods (qualified `<Class>.<method>`),
     // set `current_runtime_class` so `*Self` substitutions through
     // `resolveTypeWithBindings` find the state-struct type
     // Save+restore — function lowering can re-enter.

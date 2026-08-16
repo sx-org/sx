@@ -1,5 +1,5 @@
 // '__sx_state' ivar registration on sx-defined
-// '#objc_class'.
+// '@ObjcClass'.
 //
 // Class-pair init:
 //   1. allocs the class pair
@@ -22,7 +22,7 @@
 
 class_getInstanceVariable :: (cls: *void, name: [*]u8) -> *void extern objc;
 
-SxFoo :: #objc_class("SxFoo") {
+SxFoo :: @ObjcClass("SxFoo") {
     counter: i32;
 
     bump :: (self: *Self) {

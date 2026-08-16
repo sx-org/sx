@@ -250,7 +250,7 @@ pub const Op = union(enum) {
     call_closure: CallIndirect,
     call_builtin: BuiltinCall,
 
-    /// `#objc_call(ReturnT)(recv, sel, args...)` — dispatched through
+    /// `@ObjcCall(ReturnT)(recv, sel, args...)` — dispatched through
     /// `objc_msgSend`. emit_llvm.zig synthesizes a per-call-site LLVM
     /// function type from the arg/result Refs and reuses a single
     /// declared `@objc_msgSend` symbol across all return-type
@@ -259,8 +259,8 @@ pub const Op = union(enum) {
     /// per signature shape.
     objc_msg_send: ObjcMsgSend,
 
-    /// `#jni_call(ReturnT)(env, target, name, sig, args...)` and
-    /// `#jni_static_call(ReturnT)(env, class, name, sig, args...)`.
+    /// `@JniCall(ReturnT)(env, target, name, sig, args...)` and
+    /// `@JniStaticCall(ReturnT)(env, class, name, sig, args...)`.
     /// emit_llvm.zig expands this into the JNI vtable indirection:
     /// `(*env)->GetObjectClass` (instance only) → `GetMethodID` /
     /// `GetStaticMethodID` → `Call<Type>Method` / `CallStatic<Type>Method`.
@@ -473,7 +473,7 @@ pub const CallIndirect = struct {
     args: []const Ref,
 };
 
-/// `#objc_call` dispatch through `objc_msgSend`. emit_llvm reads
+/// `@ObjcCall` dispatch through `objc_msgSend`. emit_llvm reads
 /// `recv`/`sel`/each arg's IR type to build the per-call-site LLVM
 /// function type; the instruction's own `ty` field (`Inst.ty`) is the
 /// Obj-C return type. One declared `@objc_msgSend` symbol is shared
@@ -537,7 +537,7 @@ pub const JniMsgSend = struct {
     args: []const Ref,
     is_static: bool,
     /// `true` when this is a `super.method(args)` dispatch from inside a
-    /// `#jni_main` Activity method body — lowers to `CallNonvirtual<T>Method`
+    /// `main = true` Activity method body — lowers to `CallNonvirtual<T>Method`
     /// against `parent_class_path`. Mutually exclusive with `is_static`.
     is_nonvirtual: bool = false,
     /// `true` when this is a `Foo.new(args)` constructor dispatch — lowers

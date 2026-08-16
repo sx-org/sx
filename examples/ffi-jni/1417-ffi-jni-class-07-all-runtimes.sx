@@ -1,35 +1,35 @@
 // Six further type-introducer directive forms parse with the same body
-// grammar as `#jni_class`:
-//   #jni_interface  — Java interface binding
-//   #objc_class     — Obj-C class binding
-//   #objc_protocol  — Obj-C protocol binding
-//   #swift_class    — Swift class binding (via @_cdecl bridge)
-//   #swift_struct   — Swift @frozen value-type binding
-//   #swift_protocol — Swift @objc-bridgeable protocol binding
+// grammar as `@JniClass`:
+//   @JniInterface  — Java interface binding
+//   @ObjcClass     — Obj-C class binding
+//   @ObjcProtocol  — Obj-C protocol binding
+//   @SwiftClass    — Swift class binding (via @_cdecl bridge)
+//   @SwiftStruct   — Swift @frozen value-type binding
+//   @SwiftProtocol — Swift @objc-bridgeable protocol binding
 
 #import "modules/std.sx";
 
-IFoo :: #jni_interface("com/example/IFoo") extern {
+IFoo :: @JniInterface("com/example/IFoo") extern {
     bar :: (self: *Self) -> i32;
 }
 
-NSString :: #objc_class("NSString") extern {
+NSString :: @ObjcClass("NSString") extern {
     length :: (self: *Self) -> i32;
 }
 
-NSCopying :: #objc_protocol("NSCopying") extern {
+NSCopying :: @ObjcProtocol("NSCopying") extern {
     copy :: (self: *Self) -> *Self;
 }
 
-URL :: #swift_class("Foundation.URL") extern {
+URL :: @SwiftClass("Foundation.URL") extern {
     absoluteString :: (self: *Self) -> *void;
 }
 
-Date :: #swift_struct("Foundation.Date") extern {
+Date :: @SwiftStruct("Foundation.Date") extern {
     timeIntervalSince1970 :: (self: *Self) -> f64;
 }
 
-Hashable :: #swift_protocol("Swift.Hashable") extern {
+Hashable :: @SwiftProtocol("Swift.Hashable") extern {
     hash :: (self: *Self) -> i32;
 }
 

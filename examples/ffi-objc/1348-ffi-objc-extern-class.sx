@@ -1,11 +1,11 @@
-// Postfix `extern` on an aggregate (`#objc_class`) imports the class.
+// Postfix `extern` on an aggregate (`@ObjcClass`) imports the class.
 // Mirrors 1306's runtime-class chained dispatch:
-//   Name :: #objc_class("X") extern { … }   ==   Name :: #objc_class(…) extern("X") { … }
+//   Name :: @ObjcClass("X") extern { … }   ==   Name :: @ObjcClass(…) extern("X") { … }
 
 #import "modules/std.sx";
 #import "modules/build.sx";
 
-NSObject :: #objc_class("NSObject") extern {
+NSObject :: @ObjcClass("NSObject") extern {
     alloc :: () -> *NSObject;
     init :: (self: *Self) -> *Self;
 }

@@ -16,7 +16,7 @@ const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
 
 /// Eagerly lower bodied instance methods on every sx-defined
-/// `#objc_class`. The Obj-C runtime invokes these through the IMP
+/// `@ObjcClass`. The Obj-C runtime invokes these through the IMP
 /// pointers `emitObjcDefinedClassImps` installs — no sx-side call path
 /// triggers lazy lowering, so this walks the cache and force-lowers.
 /// `lowerFunction` sets `current_runtime_class` from the qualified name,
@@ -40,8 +40,8 @@ pub fn lowerObjcDefinedClassMethods(self: *Lowering) void {
 }
 
 /// If `obj_expr` is typed as a pointer to a runtime Obj-C class
-/// and that class (or any of its `#extends` ancestors) declares a
-/// `#property` field with the given name, return the
+/// and that class (or any of its `extends =` ancestors) declares a
+/// `@ObjcProperty` field with the given name, return the
 /// `RuntimeFieldDecl`.
 pub fn lookupObjcPropertyOnPointer(self: *Lowering, obj_expr: *const ast.Node, field_name: []const u8) ?ast.RuntimeFieldDecl {
     const obj_ty = self.inferExprType(obj_expr);
@@ -56,7 +56,7 @@ pub fn lookupObjcPropertyOnPointer(self: *Lowering, obj_expr: *const ast.Node, f
     return self.findRuntimePropertyInChain(fcd, field_name);
 }
 
-/// Walk the `#extends` chain looking for a method by name.
+/// Walk the `extends =` chain looking for a method by name.
 /// Returns the owning fcd + the method decl, or null if no ancestor
 /// declares it. Depth-capped at 16 to break accidental cycles
 /// (real Obj-C class chains rarely exceed 6 levels).
@@ -68,7 +68,7 @@ pub fn findRuntimeMethodInChain(self: *Lowering, fcd: *const ast.RuntimeClassDec
             .method => |md| if (std.mem.eql(u8, md.name, method_name)) return .{ .fcd = current, .method = md },
             else => {},
         };
-        // Not on this level — follow `#extends ParentName`.
+        // Not on this level — follow `extends = ParentName`.
         const parent = blk: {
             for (current.members) |m| switch (m) {
                 .extends => |p| break :blk p,
@@ -81,7 +81,7 @@ pub fn findRuntimeMethodInChain(self: *Lowering, fcd: *const ast.RuntimeClassDec
     return null;
 }
 
-/// Walk the `#extends` chain looking for a `#property` field by
+/// Walk the `extends =` chain looking for a `@ObjcProperty` field by
 /// name. Companion to findRuntimeMethodInChain.
 pub fn findRuntimePropertyInChain(self: *Lowering, fcd: *const ast.RuntimeClassDecl, field_name: []const u8) ?ast.RuntimeFieldDecl {
     var current: *const ast.RuntimeClassDecl = fcd;
@@ -190,7 +190,7 @@ pub fn lowerObjcDefinedStateForObj(self: *Lowering, obj_ref: Ref, fcd: *const as
     return self.builder.emit(.{ .call = .{ .callee = get_ivar_fid, .args = args } }, ptr_void);
 }
 
-/// Lower `obj.field` for an Obj-C `#property` field as
+/// Lower `obj.field` for an Obj-C `@ObjcProperty` field as
 /// `objc_msg_send(obj, sel_<fieldName>)`. Getter side.
 /// The setter side lives in the assignment-statement lowering.
 pub fn lowerObjcPropertyGetter(self: *Lowering, obj_expr: *const ast.Node, field: ast.RuntimeFieldDecl, _: []const u8, _: ast.Span) Ref {
@@ -210,7 +210,7 @@ pub fn lowerObjcPropertyGetter(self: *Lowering, obj_expr: *const ast.Node, field
     } }, ret_ty);
 }
 
-/// Lower `obj.field = val` for an Obj-C `#property` field as
+/// Lower `obj.field = val` for an Obj-C `@ObjcProperty` field as
 /// `objc_msg_send(obj, sel_set<Field>:, val)`. Setter side.
 /// Selector: prepend "set", capitalize the first letter of the
 /// field name, append ":".  `backgroundColor` → `setBackgroundColor:`.
@@ -269,7 +269,7 @@ pub fn ensureCRuntimeDecl(self: *Lowering, name: []const u8, param_tys: []const 
     return fid;
 }
 
-/// For each bodied instance method on a sx-defined `#objc_class`,
+/// For each bodied instance method on a sx-defined `@ObjcClass`,
 /// emit a C-ABI IMP trampoline that the Obj-C runtime calls (after
 /// the dispatch path from `objc_msgSend`). The trampoline:
 ///   1. Loads the cached ivar handle from `@__<Cls>_state_ivar`.
@@ -331,7 +331,7 @@ pub fn ensureArcRuntimeDecls(self: *Lowering) void {
 }
 
 /// Second pass — emit synthesized getter/setter IMPs for a
-/// property field on a sx-defined `#objc_class`. The state struct
+/// property field on a sx-defined `@ObjcClass`. The state struct
 /// already holds the field (via objcDefinedStateStructType); the
 /// IMPs just dispatch a load/store through the `__sx_state` ivar.
 ///
@@ -763,7 +763,7 @@ pub fn emitObjcDefinedClassImp(self: *Lowering, fcd: *const ast.RuntimeClassDecl
     self.builder.finalize();
 }
 
-/// Synthesize the `+alloc` IMP for an sx-defined `#objc_class`.
+/// Synthesize the `+alloc` IMP for an sx-defined `@ObjcClass`.
 /// Class method registered on the metaclass — when `[SxFoo alloc]`
 /// runs from Apple's runtime (Info.plist principal class,
 /// NSCoder unarchive, UIKit reflection), this IMP fires.
@@ -941,7 +941,7 @@ pub fn emitObjcDefinedAllocAndInit(
 }
 
 /// Emit a C-ABI IMP trampoline for a CLASS method (no `*Self`
-/// first param) on a sx-defined `#objc_class`.
+/// first param) on a sx-defined `@ObjcClass`.
 /// Registered on the metaclass by emit_llvm.
 ///
 /// C-ABI: `(cls: Class, _cmd: SEL, ...user_args) -> ret`
@@ -1031,7 +1031,7 @@ pub fn emitObjcDefinedClassStaticImp(self: *Lowering, fcd: *const ast.RuntimeCla
     self.builder.finalize();
 }
 
-/// Synthesize the `-dealloc` IMP for an sx-defined `#objc_class`.
+/// Synthesize the `-dealloc` IMP for an sx-defined `@ObjcClass`.
 /// Runs when the Obj-C runtime drops the last retain on an instance.
 ///
 /// C-ABI: `(self: id, _cmd: SEL) -> void`. No implicit sx ctx.

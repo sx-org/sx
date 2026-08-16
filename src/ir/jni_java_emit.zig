@@ -1,4 +1,4 @@
-// Java source emission for `#jni_main #jni_class("...") { ... }` decls.
+// Java source emission for `main = true @JniClass("...") { ... }` decls.
 //
 // Given a `RuntimeClassDecl` whose `is_main` flag is set, emit a `.java`
 // source file that:
@@ -6,8 +6,8 @@
 //   - declares a `public class` at the runtime_path's package + simple
 //     name (e.g. `co/swipelab/Test/SxTestActivity` →
 //     `package co.swipelab.Test; public class SxTestActivity`);
-//   - extends the parent specified by `#extends Alias` (or
-//     `android.app.NativeActivity` by default for a #jni_main class);
+//   - extends the parent specified by `extends = Alias` (or
+//     `android.app.NativeActivity` by default for a main = true class);
 //   - for each method with a body, emits an `@Override` Java method
 //     that calls `super` then a private native delegate `sx_<method>`;
 //   - emits the matching `private native ... sx_<method>(...)` decls.
@@ -23,7 +23,7 @@
 //     f32/f64)
 //   - `(self: *Self)` plus primitive params
 //   - cross-class refs (`*Foo` where Foo is another declared
-//     `#jni_class(…) extern`) lower to Foo's runtime path → Java
+//     `@JniClass(…) extern`) lower to Foo's runtime path → Java
 //     fully-qualified type
 //   - `*void` → `Object` (opaque jobject)
 
@@ -38,10 +38,10 @@ pub const EmitError = error{
 };
 
 pub const Options = struct {
-    /// Map from sx alias → runtime path of declared `#jni_class` decls.
+    /// Map from sx alias → runtime path of declared `@JniClass` decls.
     /// Used to resolve `*Foo` cross-class refs in method signatures.
     classes: ?*const std.StringHashMap([]const u8) = null,
-    /// Default superclass when the user doesn't write `#extends ...;`.
+    /// Default superclass when the user doesn't write `extends = ...;`.
     /// `android.app.Activity` is the standard base for Java-driven
     /// Activities — `NativeActivity` is the legacy NDK path that
     /// requires native_app_glue's `ANativeActivity_onCreate`.
@@ -120,9 +120,9 @@ pub fn emitJavaSource(
     try buf.appendSlice(allocator, " extends ");
     try buf.appendSlice(allocator, parent);
 
-    // `#implements Alias;` body items become Java `implements` clauses on the
+    // `implements = Alias;` body items become Java `implements` clauses on the
     // class header. Aliases resolve through the class registry the same way
-    // `#extends` does — an unmapped alias passes through verbatim (useful for
+    // `extends =` does — an unmapped alias passes through verbatim (useful for
     // referring to built-in JVM interfaces without declaring them).
     var first_iface = true;
     for (fcd.members) |m| switch (m) {

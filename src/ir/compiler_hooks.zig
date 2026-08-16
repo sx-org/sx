@@ -100,7 +100,7 @@ pub const BuildConfig = struct {
     /// first use via `keytool`).
     keystore_path: ?[]const u8 = null,
 
-    /// `#jni_main #jni_class("path") { ... }` decls discovered during
+    /// `main = true @JniClass("path") { ... }` decls discovered during
     /// lowering, paired with their pre-rendered Java source. The
     /// Android bundler writes each entry to
     /// `<stage>/java/<pkg>/<Class>.java`, compiles via `javac` + `d8`,

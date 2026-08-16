@@ -1,4 +1,4 @@
-// Smallest end-to-end `#objc_call`.
+// Smallest end-to-end `@ObjcCall`.
 // Void return, nil receiver — Obj-C runtime guarantees that messages
 // to nil are no-ops with a zero result, so we don't need to set up
 // a real object graph to exercise the lowering surface.
@@ -12,7 +12,7 @@
 
 main :: () -> i32 {
     inline if OS == .macos {
-        #objc_call(void)(null, "init");
+        @ObjcCall(void, null, "init");
         print("ok\n");
     }
     inline if OS != .macos {

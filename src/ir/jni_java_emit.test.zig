@@ -169,7 +169,7 @@ test "declaration-only methods are skipped" {
     try std.testing.expect(std.mem.indexOf(u8, out, "void finish(") == null);
 }
 
-test "#extends Alias resolves through class registry" {
+test "extends = Alias resolves through class registry" {
     const a = std.testing.allocator;
     var arena = std.heap.ArenaAllocator.init(a);
     defer arena.deinit();
@@ -307,7 +307,7 @@ test "field declarations render as private Java fields" {
     try std.testing.expect(std.mem.indexOf(u8, out, "private int viewport_w;") != null);
 }
 
-test "#implements clauses on the class header" {
+test "implements = clauses on the class header" {
     const a = std.testing.allocator;
     var arena = std.heap.ArenaAllocator.init(a);
     defer arena.deinit();

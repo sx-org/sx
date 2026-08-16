@@ -15,15 +15,15 @@
 // Build-only: `--target android` is a cross-compile, so the APK can't run on
 // the build host.
 //
-// Shape mirrors 1424 (a `#jni_main` Activity whose `onCreate` calls
+// Shape mirrors 1424 (a `main = true` Activity whose `onCreate` calls
 // `super.onCreate(b)`, so the app is well-formed).
 
 #import "modules/std.sx";
 #import "modules/build.sx";
 
-Bundle :: #jni_class("android/os/Bundle") extern {}
+Bundle :: @JniClass("android/os/Bundle") extern {}
 
-SxApp :: #jni_main #jni_class("co/swipelab/sxapksmoke/SxApp") {
+SxApp :: @JniClass("co/swipelab/sxapksmoke/SxApp", main = true) {
     onCreate :: (self: *Self, b: *Bundle) {
         super.onCreate(b);
     }

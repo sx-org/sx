@@ -167,6 +167,22 @@ pub fn takesCount(name: []const u8) bool {
 pub const open_set_head = "@OpenSet";
 pub const open_variant_head = "@OpenVariant";
 
+pub const jni_class_head = "@JniClass";
+pub const jni_interface_head = "@JniInterface";
+pub const jni_call_head = "@JniCall";
+pub const jni_static_call_head = "@JniStaticCall";
+pub const jni_method_head = "@JniMethod";
+pub const objc_class_head = "@ObjcClass";
+pub const objc_protocol_head = "@ObjcProtocol";
+pub const objc_property_head = "@ObjcProperty";
+pub const objc_method_head = "@ObjcMethod";
+pub const objc_call_head = "@ObjcCall";
+pub const swift_class_head = "@SwiftClass";
+pub const swift_struct_head = "@SwiftStruct";
+pub const swift_protocol_head = "@SwiftProtocol";
+
+
+
 /// True for a name the compiler FORMS. `parseCompilerFormedType` is its only
 /// producer, so these names never reach a declaration or a value.
 pub fn isCompilerFormed(name: []const u8) bool {
