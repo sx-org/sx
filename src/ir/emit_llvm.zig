@@ -643,10 +643,6 @@ pub const LLVMEmitter = struct {
         return str_global;
     }
 
-    /// Append a constructor entry to `@llvm.global_ctors` (creating the
-    /// global if not present, extending the array if so) AND inject a
-    /// direct call from `main`'s entry block so the ORC JIT path runs
-    /// the constructor too.
     /// Inject a call to `ctor()` at the start of `main`'s entry block
     /// (past any existing init calls). Used by class-pair init etc.
     /// that need to run BEFORE user code but AFTER dyld's framework
@@ -657,18 +653,37 @@ pub const LLVMEmitter = struct {
         const main_z = "main";
         const main_fn = c.LLVMGetNamedFunction(self.llvm_module, main_z);
         if (main_fn == null) return;
-        const entry_bb = c.LLVMGetEntryBasicBlock(main_fn);
+        self.positionAfterInitPrelude(c.LLVMGetEntryBasicBlock(main_fn));
+        var no_args: [0]c.LLVMValueRef = .{};
+        _ = c.LLVMBuildCall2(self.builder, ctor_ty, ctor, &no_args, 0, "");
+    }
+
+    /// Park the builder just past the run of already-injected `__sx_*_init`
+    /// calls opening `main`'s entry block, so a newly injected ctor call lands
+    /// after its siblings and before every other instruction. The scan stops
+    /// at the first non-ctor instruction — a user call in `main`'s entry is
+    /// body code, and skipping it would run the ctor after code that reads
+    /// the slots the ctor fills.
+    pub fn positionAfterInitPrelude(self: *LLVMEmitter, entry_bb: c.LLVMBasicBlockRef) void {
         var insert_before = c.LLVMGetFirstInstruction(entry_bb);
         while (insert_before != null) : (insert_before = c.LLVMGetNextInstruction(insert_before)) {
             if (c.LLVMGetInstructionOpcode(insert_before) != c.LLVMCall) break;
+            const callee = c.LLVMGetCalledValue(insert_before);
+            if (callee == null or !isSxInitCtorName(callee)) break;
         }
         if (insert_before != null) {
             c.LLVMPositionBuilderBefore(self.builder, insert_before);
         } else {
             c.LLVMPositionBuilderAtEnd(self.builder, entry_bb);
         }
-        var no_args: [0]c.LLVMValueRef = .{};
-        _ = c.LLVMBuildCall2(self.builder, ctor_ty, ctor, &no_args, 0, "");
+    }
+
+    fn isSxInitCtorName(value: c.LLVMValueRef) bool {
+        var len: usize = 0;
+        const name_ptr = c.LLVMGetValueName2(value, &len);
+        if (name_ptr == null) return false;
+        const name = name_ptr[0..len];
+        return std.mem.startsWith(u8, name, "__sx_") and std.mem.endsWith(u8, name, "_init");
     }
 
     fn appendModuleCtor(self: *LLVMEmitter, ctor: c.LLVMValueRef, ctor_ty: c.LLVMTypeRef) void {
@@ -714,21 +729,12 @@ pub const LLVMEmitter = struct {
             c.LLVMSetLinkage(ctors_global, c.LLVMAppendingLinkage);
         }
 
-        // ORC JIT: inject a direct call at the end of main's prelude
-        // (past any existing init calls).
+        // ORC JIT: the JIT path ignores `@llvm.global_ctors`, so the ctor
+        // also gets a direct call from main's prelude.
         const main_z = "main";
         const main_fn = c.LLVMGetNamedFunction(self.llvm_module, main_z);
         if (main_fn != null) {
-            const entry_bb = c.LLVMGetEntryBasicBlock(main_fn);
-            var insert_before = c.LLVMGetFirstInstruction(entry_bb);
-            while (insert_before != null) : (insert_before = c.LLVMGetNextInstruction(insert_before)) {
-                if (c.LLVMGetInstructionOpcode(insert_before) != c.LLVMCall) break;
-            }
-            if (insert_before != null) {
-                c.LLVMPositionBuilderBefore(self.builder, insert_before);
-            } else {
-                c.LLVMPositionBuilderAtEnd(self.builder, entry_bb);
-            }
+            self.positionAfterInitPrelude(c.LLVMGetEntryBasicBlock(main_fn));
             var no_args: [0]c.LLVMValueRef = .{};
             _ = c.LLVMBuildCall2(self.builder, ctor_ty, ctor, &no_args, 0, "");
         }
