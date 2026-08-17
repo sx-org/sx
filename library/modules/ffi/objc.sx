@@ -109,21 +109,23 @@ NSObject :: @ObjcClass("NSObject") extern {
 // ─── NSString ────────────────────────────────────────────────────────────
 // Foundation's immutable string. `UTF8String` views the bytes as a C string
 // whose lifetime is tied to the NSString (don't free it). The `Into` impl
-// lets a string literal flow into any `*NSString` slot via `xx`, e.g.
+// lets any `string` flow into a `*NSString` slot via `xx`, e.g.
 // `dict.objectForKey(xx "SomeKey")`.
 NSString :: @ObjcClass("NSString", extends = NSObject) extern {
+    // Narrows the inherited `NSObject.alloc` return so an `initWith…` chained
+    // onto it dispatches against NSString.
+    alloc      :: () -> *NSString;
     UTF8String :: (self: *Self) -> [*]u8;
+    initWithBytes_length_encoding :: (self: *Self, bytes: [*]u8, length: usize, encoding: usize) -> *NSString;
 }
 
-// Wraps the bytes in an autoreleased NSString via `+stringWithUTF8String:`.
-// `self.ptr` must be NUL-terminated — string literals are; an arbitrary
-// sliced/built `string` may not be.
+// Copies exactly `self.len` bytes into an autoreleased NSString; `self` need
+// not be NUL-terminated.
 impl Into(*NSString) for string {
     convert :: (self: string) -> *NSString {
-        cls := objc_getClass("NSString".ptr);
-        sel := sel_registerName("stringWithUTF8String:".ptr);
-        msg : (*void, *void, [*]u8) -> *void abi(.c) = xx objc_msgSend;
-        return xx msg(cls, sel, self.ptr);
+        NSUTF8StringEncoding :: 4;
+        obj := NSString.alloc().initWithBytes_length_encoding(self.ptr, self.len.(usize), NSUTF8StringEncoding);
+        return obj.autorelease();
     }
 }
 

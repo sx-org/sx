@@ -1,0 +1,38 @@
+// `impl Into(*NSString) for string` is total over `string`: it copies exactly
+// `self.len` bytes, so a slice of a larger buffer — which has no NUL at
+// `len` — converts to just its own bytes.
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+cstr_len :: (p: [*]u8) -> i64 {
+    n := 0;
+    while p[n] != 0 {
+        n += 1;
+    }
+    n
+}
+
+show :: (label: string, ns: *NSString) {
+    back := ns.UTF8String();
+    s : string = ---;
+    s.ptr = back;
+    s.len = cstr_len(back);
+    print("{}: \"{}\" len {}\n", label, s, s.len);
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        autoreleasepool(|| {
+            src := "hello world";
+            show("sliced", xx src[0..5]);
+            show("literal", xx "hello world");
+            show("empty", xx "");
+            show("tail", xx src[6..11]);
+        });
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}
