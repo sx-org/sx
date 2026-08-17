@@ -124,7 +124,7 @@ main :: () {
     // ── GPA ─────────────────────────────────────────────────
     {
         gpa := GPA.init();
-        a : Allocator = xx gpa;
+        a : Allocator = gpa;
         p1 := a.alloc_bytes(64);
         p2 := a.alloc_bytes(128);
         print("gpa allocs: {}\n", gpa.alloc_count);         // gpa allocs: 2
@@ -137,7 +137,7 @@ main :: () {
     {
         gpa3 := GPA.init();
         arena := Arena.init(gpa3, 32);
-        a : Allocator = xx arena;
+        a : Allocator = arena;
         // First chunk fits 80 usable bytes
         a1 := a.alloc_bytes(40);
         a2 := a.alloc_bytes(40);
@@ -169,7 +169,7 @@ main :: () {
     {
         stack_buf : [128]u8 = ---;
         buf := BufAlloc.init(*stack_buf[0], 128);
-        a : Allocator = xx buf;
+        a : Allocator = buf;
         b1 := a.alloc_bytes(24);
         b2 := a.alloc_bytes(24);
         print("buf pos: {}\n", buf.pos);                    // buf pos: 48
@@ -871,7 +871,7 @@ main :: () {
         step2 :: (a: Allocator) -> *void { step3(a) }
         step1 :: (a: Allocator) -> *void { step2(a) }
         gpa_e6 := GPA.init();
-        a_e6 : Allocator = xx gpa_e6;
+        a_e6 : Allocator = gpa_e6;
         ptr_e6 := step1(a_e6);
         print("closure-chain-call: {}\n", ptr_e6 != null);
         a_e6.dealloc_bytes(ptr_e6);
@@ -925,7 +925,7 @@ main :: () {
         arena_l1.deinit();
 
         gpa_l2 := GPA.init();
-        a_l2 : Allocator = xx gpa_l2;
+        a_l2 : Allocator = gpa_l2;
         n_l2 : i32 = 7;
         result_l2 : i32 = 0;
         push .{ allocator = a_l2 } {
@@ -1057,7 +1057,7 @@ main :: () {
         print("closure-neg: {}\n", neg_fn(val_e16));
 
         gpa_e17 := GPA.init();
-        a_e17 : Allocator = xx gpa_e17;
+        a_e17 : Allocator = gpa_e17;
         alloc_fn := |size: i64| -> *void a_e17.alloc_bytes(size);
         ptr_e17 := alloc_fn(32);
         print("closure-proto-cap: {}\n", ptr_e17 != null);

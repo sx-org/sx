@@ -147,8 +147,7 @@ c_allocator : CAllocator = .{};
 //
 // `init` returns the GPA by value. Caller binds it to a local; the
 // local IS the allocator state, no heap-side allocation for the
-// struct itself. `xx gpa` borrows the local under Option 3, so the
-// Allocator protocol value's `ctx` points at the local.
+// struct itself. A named `gpa` at an `Allocator` slot borrows the local.
 //
 // Usage:
 //   gpa := GPA.init();                                    // GPA

@@ -20,7 +20,7 @@ main :: () {
     a := context.allocator;
 
     s : Sink = .{};
-    t : Take = xx s;
+    t : Take = s;
 
     many : [*]u8 = xx a.alloc_bytes(8);
     truth : usize = xx many;

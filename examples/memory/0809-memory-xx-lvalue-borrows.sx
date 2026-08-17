@@ -1,6 +1,5 @@
-// `xx <lvalue>` borrows the operand's storage instead of heap-copying. The
-// protocol value's `ctx` points directly at the local; mutations through the
-// protocol are visible to the original.
+// A named allocator at an `Allocator` slot borrows the operand's storage.
+// Mutations through the protocol are visible to the original.
 //
 // The witness is TrackingAllocator: incrementing the parent allocator's
 // counter happens through the Allocator protocol value, and the local sees
@@ -10,10 +9,8 @@
 
 main :: () -> i32 {
     gpa := GPA.init();
-    tracker := TrackingAllocator.init(xx gpa);   // value, stack-local
+    tracker := TrackingAllocator.init(gpa);
 
-    // xx tracker — operand is an identifier (lvalue), so the protocol
-    // borrows tracker's storage. No heap copy. Mutations propagate.
     push .{ allocator = tracker } {
         p := context.allocator.alloc_bytes(128);
         context.allocator.dealloc_bytes(p);

@@ -39,7 +39,7 @@ main :: () -> i64 {
     // The coordinator runs as a fiber so `await` has a `current` to park. The
     // scheduler is installed as `context.io`, so the unified async layer
     // (`context.io.async`/`await`/`sleep`/`now_ms`) reaches it inside the workers.
-    push .{ io = xx s } {
+    push .{ io = s } {
         ps.spawn(|| {
             // Launch three async workers; each sleeps, logs its completion, returns.
             a := context.io.async(|| -> (i64, !) { try context.io.sleep(30); rec(pl, 1, context.io.now_ms()); 100 });

@@ -8,7 +8,7 @@
 
 main :: () -> i32 {
     gpa := GPA.init();
-    a : Allocator = xx gpa;
+    a : Allocator = gpa;
 
     // Recover BEFORE first dispatch.
     recovered : *GPA = xx a;

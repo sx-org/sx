@@ -358,7 +358,7 @@ raw_pointer_to        :: (t: Type) -> Type intrinsic;
 // Bytes-level primitives carry the `_bytes` suffix so the typed
 // helpers in std/mem.sx own the bare names (`alloc(T, n)`, `free(s)`).
 // `#identity`: an allocator IS its state object — protocol values only
-// ever borrow a named allocator (`xx gpa`, `gpa.(Allocator)`); rvalue
+// ever borrow a named allocator (`gpa`, `gpa.(Allocator)`); rvalue
 // erasure and `free` of the protocol value refuse at compile time.
 Allocator :: protocol vtable #identity {
     alloc_bytes :: (self: *Self, size: i64) -> *void;

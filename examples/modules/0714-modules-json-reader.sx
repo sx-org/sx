@@ -131,19 +131,19 @@ main :: () -> ! {
     report("uni-i3",  u[6] == 0x80);
 
     // ── 6. Malformed inputs each surface the right error variant ─────
-    report("err-truncated",     raises("{\"a\":",       error.UnexpectedEnd,   xx arena));
-    report("err-bad-escape",    raises("\"a\\xb\"",     error.BadEscape,       xx arena));
+    report("err-truncated",     raises("{\"a\":",       error.UnexpectedEnd,   arena));
+    report("err-bad-escape",    raises("\"a\\xb\"",     error.BadEscape,       arena));
     report("err-trailing-junk", raises("[1,2] x",       error.TrailingGarbage, arena));
     report("err-bad-token",     raises("xyz",           error.UnexpectedToken, arena));
-    report("err-leading-zero",  raises("01",            error.BadNumber,       xx arena));
+    report("err-leading-zero",  raises("01",            error.BadNumber,       arena));
     report("err-overflow",      raises("9223372036854775808", error.BadNumber, arena));
-    report("err-unterminated",  raises("\"abc",         error.UnexpectedEnd,   xx arena));
+    report("err-unterminated",  raises("\"abc",         error.UnexpectedEnd,   arena));
 
     // ── 7. RFC 8259 §7: unescaped control bytes (U+0000..U+001F) ──────
     // A RAW control byte inside a string is invalid JSON -> BadControlChar.
-    report("err-raw-tab", ctrl_raises(9,  xx arena));   // raw 0x09
+    report("err-raw-tab", ctrl_raises(9,  arena));   // raw 0x09
     report("err-raw-lf",  ctrl_raises(10, arena));   // raw 0x0A
-    report("err-raw-nul", ctrl_raises(0,  xx arena));   // raw 0x00
+    report("err-raw-nul", ctrl_raises(0,  arena));   // raw 0x00
 
     // POSITIVE: the ESCAPED control forms stay valid and decode to the
     // exact bytes. JSON "\t\n\u0009" -> 0x09 0x0A 0x09 (3 bytes).

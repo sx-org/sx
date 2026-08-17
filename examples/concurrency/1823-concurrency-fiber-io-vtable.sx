@@ -32,7 +32,7 @@ main :: () -> i64 {
     ps := *s;
     d1 : i64 = 20;
     d2 : i64 = 10;
-    push .{ io = xx s } {
+    push .{ io = s } {
         context.io.spawn_raw(xx sleeper, xx *d1, .{});
         context.io.spawn_raw(xx sleeper, xx *d2, .{});
         ps.run();

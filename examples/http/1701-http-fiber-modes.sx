@@ -225,7 +225,7 @@ main :: () -> i32 {
             timeout_keepalive_ms = 5000,
             request_count = 50,
             max_conn = 4,
-            fibers = xx runner,          // fiber mode, ACCUMULATE bodies
+            fibers = runner,          // fiber mode, ACCUMULATE bodies
         };
         srv, se := http.Server.init(cfg, route, xx *chunky);
         if se { print("init failed\n"); return 1; }

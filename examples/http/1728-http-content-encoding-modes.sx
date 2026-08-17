@@ -317,7 +317,7 @@ run_mode :: (app: *App, mode: i64, port: i64) -> bool {
         compress_min_size = 32,
     };
     if mode == 1 { cfg.thread_pool_count = 2; }
-    if mode == 2 { cfg.fibers = xx runner; }
+    if mode == 2 { cfg.fibers = runner; }
     srv, se := http.Server.init(cfg, route, xx app);
     if se { runner.deinit(); return false; }
     t, te := thread.Thread.spawn(server_entry, xx *srv);

@@ -11,7 +11,7 @@ main :: () -> void {
     arena := Arena.init(context.allocator, 4096);
 
     new_ctx := context;
-    new_ctx.allocator = xx arena;
+    new_ctx.allocator = arena;
     push new_ctx {
         ptr := context.allocator.alloc_bytes(128);
         out("inside push\n");

@@ -116,7 +116,7 @@ test_gzip_truncation :: (alloc: Allocator) -> bool {
 main :: () -> i32 {
     gpa := mem.GPA.init();
     ok := true;
-    push .{ allocator = xx gpa } {
+    push .{ allocator = gpa } {
         alloc := context.allocator;
         if !test_checksum_vectors() { print("checksum vectors failed\n"); ok = false; }
         if ok and !test_zlib_lifecycle(alloc) { print("zlib lifecycle failed\n"); ok = false; }

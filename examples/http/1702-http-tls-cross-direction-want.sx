@@ -269,7 +269,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64, needle: str
 
 main :: () -> i32 {
     gpa := GPA.init();
-    acc : FakeAcceptor = .{ a = xx gpa };
+    acc : FakeAcceptor = .{ a = gpa };
     rc : i32 = 1;
     push .{ allocator = gpa } {
         rc = run(*acc);

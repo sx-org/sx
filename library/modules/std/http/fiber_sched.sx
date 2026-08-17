@@ -6,7 +6,7 @@
 //     fs :: #import "modules/std/http/fiber_sched.sx";
 //     …
 //     runner := fs.SchedRunner.init();          // value, allocator-style
-//     cfg : http.Config = .{ …, fibers = xx runner };
+//     cfg : http.Config = .{ …, fibers = runner };
 //     srv, e := http.Server.init(cfg, handler, ctx);
 //     … srv.run() / tick loop … srv.close();
 //     runner.deinit();                          // caller owns the runner

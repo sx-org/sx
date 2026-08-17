@@ -64,7 +64,7 @@ main :: () {
 
     // `inline` layout: same story through an Allocator value
     ga := GPA.init();
-    a : Allocator = xx ga;
+    a : Allocator = ga;
     print("inline: {}\n", type_name(type_of(a)));
     g := a.(GPA);
     _ = g;

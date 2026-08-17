@@ -44,7 +44,7 @@ main :: () {
 
     // protocol (`inline` layout, Allocator) — correct ctx, no layout lie
     ga := GPA.init();
-    a : Allocator = xx ga;
+    a : Allocator = ga;
     print("inline: {}\n", a.(ProtocolRaw).ctx == xx *ga);
     print("inline type_id: {}\n", a.(ProtocolRaw).type_id == type_of(a));
 

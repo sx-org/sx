@@ -57,7 +57,7 @@ main :: () {
     // explicit-allocator argument. The freed value itself can never be an
     // Allocator — `Allocator` is `#identity` (borrow-only: rvalue erasure
     // and `free` of the value refuse at compile time; diagnostics/1255).
-    av : Allocator = xx ta;
+    av : Allocator = ta;
     s3 : Sizable = ---;
     push .{ allocator = av } {
         s3 = Widget{ value = 3 }.(Sizable, context.allocator);

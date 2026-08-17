@@ -14,7 +14,7 @@ Session :: struct { id: i64; score: i64; }
 main :: () {
     gpa := GPA.init();
     tracker := TrackingAllocator.init(gpa);
-    a : Allocator = xx tracker;
+    a : Allocator = tracker;
 
     // create / destroy — direct spelling
     s := create(a, Session);

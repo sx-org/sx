@@ -40,7 +40,7 @@ main :: () {
     xs : []i64 = .[1, 2, 3];
     o : ?i64 = 5;
     ga := GPA.init();
-    a : Allocator = xx ga;    // `inline`-kind protocol — classifies as protocol too
+    a : Allocator = ga;    // `inline`-kind protocol — classifies as protocol too
     print("{} {} {} {}\n", describe(s), describe(xs), describe(5), describe(w));
     print("{} {} {} {}\n", describe(Pt{ x = 1 }), describe(o), describe(a), describe(1.5));
 }

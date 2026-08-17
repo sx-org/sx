@@ -22,7 +22,7 @@ main :: () -> i64 {
     lg : Log = ---; lg.n = 0;
     s := sched.Scheduler.init();
     ps := *s; pl := *lg;
-    push .{ io = xx s } {
+    push .{ io = s } {
         ps.spawn(|| {
             rec(pl, 1);                                              // coordinator starts
             a := context.io.async(|| -> (i64, !) { rec(pl, 10); 100 }); // worker A — deferred

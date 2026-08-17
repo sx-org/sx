@@ -99,7 +99,7 @@ main :: () -> ! {
     gpa := GPA.init();
     arena := Arena.init(gpa, 16384);
     defer arena.deinit();
-    a : Allocator = xx arena;
+    a : Allocator = arena;
 
     // ── PART A. build -> write -> parse -> write ─────────────────────────
     root := build(a);

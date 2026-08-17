@@ -197,7 +197,7 @@ coding_list_fails :: (value: string) -> bool {
 
 main :: () -> i32 {
     gpa := GPA.init();
-    arena := mem.Arena.init(xx gpa, 65536);
+    arena := mem.Arena.init(gpa, 65536);
     ok := true;
     push .{ allocator = arena } {
         ok = bodyless_then_normal("HTTP/1.1 200 OK\r\nContent-Length: 999\r\nContent-Encoding: gzip\r\n\r\n", "HEAD")

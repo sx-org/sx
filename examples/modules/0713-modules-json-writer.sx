@@ -71,7 +71,7 @@ main :: () -> ! {
     arena := Arena.init(gpa, 4096);
     defer arena.deinit();
 
-    root := build(xx arena);
+    root := build(arena);
 
     // 1. Write into a caller buffer; assert exact bytes + byte count.
     buf : [512]u8 = ---;

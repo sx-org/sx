@@ -56,7 +56,7 @@ count :: (into: *Tally, content: $B/@BuildBlock(View)) {
 
 main :: () -> i32 {
     arena := Arena.init(context.allocator, 512);
-    roots := Roots{ storage = xx arena };
+    roots := Roots{ storage = arena };
     rows := .["one", "two"];
 
     capture(*roots) {

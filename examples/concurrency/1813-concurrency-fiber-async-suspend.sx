@@ -42,7 +42,7 @@ main :: () -> i64 {
     // The coordinator fiber: drives two async workers, awaits both, then exercises
     // cancel. It runs as a fiber so `await` has a `self.current` to park. The
     // scheduler is installed as `context.io`, so the unified async layer reaches it.
-    push .{ io = xx s } {
+    push .{ io = s } {
         ps.spawn(|| {
             // Worker A yields mid-body so B interleaves before A completes.
             a := context.io.async(|| -> (i64, !) {

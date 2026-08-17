@@ -29,7 +29,7 @@ main :: () -> i64 {
     ps := *s; pl := *lg;
 
     // The coordinator runs as a fiber so `race` has a `current` to park.
-    push .{ io = xx s } {
+    push .{ io = s } {
         ps.spawn(|| {
             // Three async workers, DIFFERENT result types and sleep durations.
             a := context.io.async(|| -> (i64,  !) { try context.io.sleep(10); rec(pl, 1, context.io.now_ms()); 111 });

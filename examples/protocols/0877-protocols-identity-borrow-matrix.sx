@@ -4,8 +4,8 @@
 // POSITIVE matrix: lvalue borrows via `xx`, the target-explicit postfix
 // `x.(P)`, decl targets, call args, and struct-field targets all alias
 // the original (mutations visible both ways); `is_identity` reflects the
-// class at compile time; Allocator (std) is adopted — `Context{
-// allocator = xx gpa }` stays a legal value-borrow. The refusals
+// class at compile time; Allocator (std) is adopted — `push .{ allocator = gpa }`
+// borrows. `xx` at a typed identity slot also borrows. The refusals
 // (rvalue erasure, free) are pinned in diagnostics/1255.
 #import "modules/std.sx";
 #import "modules/std/mem.sx";

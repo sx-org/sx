@@ -187,7 +187,7 @@ main :: () -> i32 {
             max_conn = 4,
             max_body = 4096,             // fiber streaming is exempt too
             stream_request_body = true,  // no pool: REQUIRES fibers
-            fibers = xx runner,
+            fibers = runner,
         };
         srv, se := http.Server.init(cfg, route, xx *obs);
         if se { print("init failed\n"); return 1; }

@@ -61,7 +61,7 @@ Three dispatch models, chosen by `Config`:
   fs :: #import "modules/std/http/fiber_sched.sx";   // opt-in: compiles the fiber runtime
   …
   runner := fs.SchedRunner.init();                   // must outlive the Server
-  cfg : http.Config = .{ …, stream_request_body = true, fibers = xx runner };
+  cfg : http.Config = .{ …, stream_request_body = true, fibers = runner };
   srv, e := http.Server.init(cfg, handler, ctx);
   … srv.run(); srv.close();
   runner.deinit();                                   // caller owns the runner

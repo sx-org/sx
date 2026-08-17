@@ -26,7 +26,7 @@ main :: () -> i64 {
     lg : Log = .{ n = 0 };
     s := sched.Scheduler.init();
     ps := *s; pl := *lg;
-    push .{ io = xx s } {
+    push .{ io = s } {
         ps.spawn(|| {
             w := context.io.async(|| -> (i64, !) {
                 rec(pl, 1);                  // worker started

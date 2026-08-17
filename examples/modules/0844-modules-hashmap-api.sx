@@ -95,12 +95,12 @@ main :: () {
 
     // ── clone: empty, populated, independent ─────────────────────────────
     o : HashMap(i64, i64) = .{};
-    ec := o.clone(xx gpa);
+    ec := o.clone(gpa);
     report("clone-empty", ec.len == 0);
     ec.deinit(gpa);
     i = 0;
     while i < 10 { o.put(i, i * 10, gpa); i += 1; }
-    cp := o.clone(xx gpa);
+    cp := o.clone(gpa);
     all_c := true;
     i = 0;
     while i < 10 { if cp.get(i)! != i * 10 { all_c = false; } i += 1; }
@@ -207,7 +207,7 @@ main :: () {
     rh : HashMap(i64, i64) = .{};
     i = 0;
     while i < 100 { rh.put(i, i, gpa); if i % 3 == 0 { rh.remove(i, gpa); } i += 1; }
-    rh.rehash(xx gpa);
+    rh.rehash(gpa);
     rehash_ok := rh.tombstones == 0;
     i = 0;
     while i < 100 {
@@ -291,7 +291,7 @@ main :: () {
     c5.put(17, 170, gpa); c5.put(25, 250, gpa);
     c5.remove(1, gpa); c5.remove(9, gpa);
     report("g5-src", c5.tombstones == 2 and c5.len == 2);
-    c5g := c5.clone(xx gpa);
+    c5g := c5.clone(gpa);
     report("g5-clone-live-across-tomb", c5g.get(17)! == 170 and c5g.get(25)! == 250);
     report("g5-clone-removed-rejected", !c5g.contains(1) and !c5g.contains(9) and c5g.len == 2);
     c5g.put(17, 1717, gpa);                           // independence
@@ -303,12 +303,12 @@ main :: () {
     c6 : HashMap(i64, i64) = .{};
     c6.put(1, 1, gpa); c6.put(2, 2, gpa); c6.put(3, 3, gpa);
     c6cap := c6.capacity();
-    g6c := c6.clone(xx gpa);
+    g6c := c6.clone(gpa);
     i = 100; while i < 200 { g6c.put(i, i, gpa); i += 1; }   // force the CLONE to grow/rehash
     report("g6-grow-clone-orig-unchanged",
            c6.len == 3 and c6.capacity() == c6cap and c6.get(1)! == 1 and !c6.contains(150));
     report("g6-grow-clone-has-new", g6c.get(150)! == 150 and g6c.get(1)! == 1 and g6c.len == 103);
-    g6b := c6.clone(xx gpa);
+    g6b := c6.clone(gpa);
     i = 300; while i < 400 { c6.put(i, i, gpa); i += 1; }    // now grow the ORIGINAL
     report("g6-grow-orig-clone-unchanged",
            g6b.len == 3 and !g6b.contains(300) and g6b.get(2)! == 2);

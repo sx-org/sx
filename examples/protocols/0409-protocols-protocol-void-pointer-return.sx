@@ -10,7 +10,7 @@
 
 main :: () -> i32 {
     gpa := GPA.init();
-    alloc : Allocator = xx gpa;
+    alloc : Allocator = gpa;
 
     p_direct := gpa.alloc_bytes(64);
     print("direct: null? {}\n", p_direct == null);
