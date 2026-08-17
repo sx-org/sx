@@ -357,7 +357,25 @@ print_any(xx pkt);   // walk with struct_field_value / any_element — no copies
 
 **C-variadic** — a trailing `..` on an `abi(.c)` / `extern` / `export` signature. Read with `@VaList` / `@va_start` / `@va_arg` / `@va_end` / `@va_copy`. Promotions apply (`f32` → `f64`). See specs.
 
-**Async** — `context.io.async` / `await` / `sleep`. Default `Io` is blocking; `sched.Scheduler` as `context.io` is fibers (aarch64, M:1). `#import "modules/std/sched.sx"`.
+**Async** — `context.io.async` / `await` / `sleep`. Default `Io` is blocking. A `Scheduler` as `context.io` is fibers (aarch64, M:1):
+
+```sx
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+
+main :: () {
+    s := sched.Scheduler.init();
+    push .{ io = s } {
+        s.spawn(|| {
+            a := context.io.async(|| -> (i64, !) { try context.io.sleep(10); 1 });
+            print("{}\n", a.await() ?? 0);
+        });
+        s.run();
+    }
+}
+```
+
+`await` parks the current fiber, so the coordinator is `s.spawn`ed.
 
 **CLI** — `modules/std/cli.sx`: `os_args`, `parse`, `EX_OK` / `EX_USAGE`.
 

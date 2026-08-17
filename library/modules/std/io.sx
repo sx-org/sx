@@ -44,7 +44,7 @@ CBlockingIo :: struct {}
 // The process-wide default io instance, and the context field it backs.
 // The folded constant borrows this global (identity semantics — the
 // receiver is its real address, never null). Installing a scheduler is an
-// ordinary `push .{ io = xx s }`.
+// ordinary `push .{ io = s }`.
 c_blocking_io : CBlockingIo = .{};
 
 #context_extend io: Io = c_blocking_io;
