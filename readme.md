@@ -61,48 +61,6 @@ Third-party attributions for stdlib-derived code are recorded in
 
 ## Language Overview
 
-### Whitespace is syntax
-
-`{` juxtaposes with the expression before it wherever that statement is open.
-`!` is postfix force-unwrap on its own line and prefix `not` across a break.
-A line break is otherwise ordinary space, and `;` ends a statement.
-
-```sx
-foo(2)      Box(i64)      xs[0]     // `(` applies, `[` indexes
-foo (2)     Box (i64)     xs [0]    // the same three, spaced
-
-a - b       a-b           a -b      // infix: the left operand is complete
-g();        -b                      // the `;` cut it — a prefix `-b`
-
-n := add(1, 2);                     // `;` is the terminator
-total := (hi << 16)
-    | lo;                           // unterminated above, so this is one
-                                    // expression
-```
-
-A `(` applies arguments and a `[` indexes however much space stands before it —
-in expressions and in every type position alike — and a `(` that opens something
-new (grouping, parameters, a declaration form) is free the same way:
-`add :: (a: i64) -> i64`, `n := (a + b) * c`. `-` and `*` also have prefix
-readings, and position alone decides: after a completed left operand the glyph
-is infix, whatever the gaps. `!` is the one glyph the line decides: postfix
-force-unwrap on the same line, prefix `not` across a break.
-
-A statement that IS a block ends at its `}` instead of a `;`, and so does a
-declaration whose initializer is one; the last expression before a `}` may drop
-it too. Statements break and expressions chain: a block statement ends at its
-`}`, while a call ending in a block keeps its postfix chain across the line.
-
-Ending a statement is all `;` does — it is a pure separator. A block's value is
-its last statement whenever that statement is an expression, and that value
-flows to whatever the position demands: the return of a `-> T` body, the value
-of a value-bound block, a published child in a build body. Where nothing demands
-it, it is discarded. The terminator never enters into any of that.
-
-```sx
-double :: (n: i32) -> i32 { n * 2; }   // returns n * 2 — as does `{ n * 2 }`
-```
-
 ### Types
 
 | Type | Description |
