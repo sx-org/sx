@@ -1,6 +1,6 @@
 // The objc.sx literal→NSString bridge: `xx "..."` in a *NSString slot
-// routes through `impl Into(*NSString) for string` (stringWithUTF8String:),
-// declared in modules/ffi/objc.sx — i.e. in an IMPORTED module, not the
+// routes through `impl Into(*NSString) for string`, declared in
+// modules/ffi/objc.sx — i.e. in an IMPORTED module, not the
 // consumer. The impl registers only because objc.sx imports std: an impl
 // whose protocol name is not nameable in its own module is silently
 // dropped.

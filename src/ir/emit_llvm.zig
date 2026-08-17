@@ -643,10 +643,6 @@ pub const LLVMEmitter = struct {
         return str_global;
     }
 
-    /// Append a constructor entry to `@llvm.global_ctors` (creating the
-    /// global if not present, extending the array if so) AND inject a
-    /// direct call from `main`'s entry block so the ORC JIT path runs
-    /// the constructor too.
     /// Inject a call to `ctor()` at the start of `main`'s entry block
     /// (past any existing init calls). Used by class-pair init etc.
     /// that need to run BEFORE user code but AFTER dyld's framework
@@ -733,21 +729,12 @@ pub const LLVMEmitter = struct {
             c.LLVMSetLinkage(ctors_global, c.LLVMAppendingLinkage);
         }
 
-        // ORC JIT: inject a direct call at the end of main's prelude
-        // (past any existing init calls).
+        // ORC JIT: the JIT path ignores `@llvm.global_ctors`, so the ctor
+        // also gets a direct call from main's prelude.
         const main_z = "main";
         const main_fn = c.LLVMGetNamedFunction(self.llvm_module, main_z);
         if (main_fn != null) {
-            const entry_bb = c.LLVMGetEntryBasicBlock(main_fn);
-            var insert_before = c.LLVMGetFirstInstruction(entry_bb);
-            while (insert_before != null) : (insert_before = c.LLVMGetNextInstruction(insert_before)) {
-                if (c.LLVMGetInstructionOpcode(insert_before) != c.LLVMCall) break;
-            }
-            if (insert_before != null) {
-                c.LLVMPositionBuilderBefore(self.builder, insert_before);
-            } else {
-                c.LLVMPositionBuilderAtEnd(self.builder, entry_bb);
-            }
+            self.positionAfterInitPrelude(c.LLVMGetEntryBasicBlock(main_fn));
             var no_args: [0]c.LLVMValueRef = .{};
             _ = c.LLVMBuildCall2(self.builder, ctor_ty, ctor, &no_args, 0, "");
         }
