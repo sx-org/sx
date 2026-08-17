@@ -1667,11 +1667,9 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // expected) — diagnose it instead of fabricating garbage.
         .none => {
             switch (mode) {
-                // A pointer-shaped EXPLICIT cast (`*T`, `[*]T`, `cstring`)
-                // keeps the address but carries `dst_ty` on its RESULT — an
-                // inferred `live := p.(*i64)` types the binding off that ref,
-                // so a passthrough would bind the receiver's type instead.
-                // Opaque pointers make the `bitcast` a no-op in LLVM.
+                // Pointer-shaped EXPLICIT cast (`*T`, `[*]T`, `cstring`): same
+                // address, RESULT typed `dst_ty`. An inferred `live := p.(*i64)`
+                // binds off that ref. LLVM bitcast is a no-op under opaque pointers.
                 .explicit => {
                     if (src_ty != dst_ty and isPointerValueKind(self, src_ty) and isPointerValueKind(self, dst_ty)) {
                         const retyped = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
