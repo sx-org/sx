@@ -94,19 +94,7 @@ pub const FfiCtors = struct {
         // automatically run `@llvm.global_ctors`. Inject a direct
         // call from `main`'s entry block as well; idempotent under
         // dyld (sel_registerName returns the same SEL on second call).
-        const main_z = "main";
-        const main_fn = c.LLVMGetNamedFunction(self.e.llvm_module, main_z);
-        if (main_fn != null) {
-            const entry_bb = c.LLVMGetEntryBasicBlock(main_fn);
-            const first_inst = c.LLVMGetFirstInstruction(entry_bb);
-            if (first_inst != null) {
-                c.LLVMPositionBuilderBefore(self.e.builder, first_inst);
-            } else {
-                c.LLVMPositionBuilderAtEnd(self.e.builder, entry_bb);
-            }
-            var no_args: [0]c.LLVMValueRef = .{};
-            _ = c.LLVMBuildCall2(self.e.builder, ctor_ty, ctor, &no_args, 0, "");
-        }
+        self.e.injectCtorIntoMain(ctor, ctor_ty);
     }
 
     /// Companion to `emitObjcSelectorInit`. Walks

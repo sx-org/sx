@@ -574,9 +574,9 @@ pub const LLVMEmitter = struct {
         // cached `Class*` slots via `objc_getClass` at module-init time.
         self.ffiCtors().emitObjcClassInit();
 
-        // Pass 2.6: On macOS, chdir to the .app bundle's Resources dir at
-        // startup so relative asset paths work when Finder/`open`
-        // launches the binary with CWD=/. Non-bundled binaries no-op.
+        // Pass 2.6: On a macOS build that asks for a bundle, chdir to the
+        // .app's Resources dir at startup so relative asset paths work when
+        // Finder/`open` launches the binary with CWD=/.
         self.emitMacosBundleChdir();
 
         // Pass 3: Verify typeSizeBytes matches LLVM's ABI sizes
@@ -746,16 +746,13 @@ pub const LLVMEmitter = struct {
     /// `assets/foo.png` resolve correctly when Finder/`open` launches the
     /// binary with CWD=/.
     ///
-    /// Bundled binary: strstr finds the marker, chdir succeeds.
-    /// CLI binary / `sx run`: strstr returns null, the function no-ops.
-    ///
-    /// The call is injected at the very start of `main()` (matching the
-    /// pattern used for the Obj-C selector init) rather than registered
-    /// via `@llvm.global_ctors`, so the ORC JIT path runs it too without
-    /// special handling.
+    /// Only a build that asks for a bundle gets it: `--bundle` lands on
+    /// `target_config`, `#run set_bundle_path` on `build_config`, and either
+    /// is set by the time this pass runs.
     fn emitMacosBundleChdir(self: *LLVMEmitter) void {
         if (!self.target_config.is_aot) return;
         if (!self.target_config.isMacOS()) return;
+        if (self.target_config.bundle_path == null and self.build_config.bundle_path == null) return;
 
         const ptr_ty = self.cached_ptr;
         const i32_ty = self.cached_i32;
@@ -785,7 +782,7 @@ pub const LLVMEmitter = struct {
 
         var no_params: [0]c.LLVMTypeRef = .{};
         const ctor_ty = c.LLVMFunctionType(void_ty, &no_params, 0, 0);
-        const ctor = c.LLVMAddFunction(self.llvm_module, "__sx_macos_bundle_chdir", ctor_ty);
+        const ctor = c.LLVMAddFunction(self.llvm_module, "__sx_macos_bundle_chdir_init", ctor_ty);
         c.LLVMSetLinkage(ctor, c.LLVMInternalLinkage);
 
         const entry_bb = c.LLVMAppendBasicBlockInContext(self.context, ctor, "entry");
@@ -821,21 +818,7 @@ pub const LLVMEmitter = struct {
         c.LLVMPositionBuilderAtEnd(self.builder, done_bb);
         _ = c.LLVMBuildRetVoid(self.builder);
 
-        // Inject a call at the very start of main(). Matches the
-        // emitObjcSelectorInit pattern so the ORC JIT path picks it up
-        // without needing `@llvm.global_ctors` plumbing.
-        const main_fn = c.LLVMGetNamedFunction(self.llvm_module, "main");
-        if (main_fn != null) {
-            const main_entry = c.LLVMGetEntryBasicBlock(main_fn);
-            const first_inst = c.LLVMGetFirstInstruction(main_entry);
-            if (first_inst != null) {
-                c.LLVMPositionBuilderBefore(self.builder, first_inst);
-            } else {
-                c.LLVMPositionBuilderAtEnd(self.builder, main_entry);
-            }
-            var no_args: [0]c.LLVMValueRef = .{};
-            _ = c.LLVMBuildCall2(self.builder, ctor_ty, ctor, &no_args, 0, "");
-        }
+        self.injectCtorIntoMain(ctor, ctor_ty);
     }
 
     /// Build an LLVM-friendly identifier suffix from a JNI
