@@ -1,0 +1,11 @@
+// A macOS build that asks for no bundle carries no `.app` startup chdir:
+// neither the injected helper nor the libc calls behind it reach the binary.
+// The `.build` sidecar asserts that on the symbol table — the program's own
+// output cannot show it. `1665` covers the bundled side.
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    print("no bundle chdir\n");
+    return 0;
+}

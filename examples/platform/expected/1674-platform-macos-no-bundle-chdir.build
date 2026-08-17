@@ -1,0 +1,1 @@
+{ "aot": true, "serial": true, "host_os": "macos", "absent_symbols": ["__sx_macos_bundle_chdir_init", "_NSGetExecutablePath", "chdir"] }
