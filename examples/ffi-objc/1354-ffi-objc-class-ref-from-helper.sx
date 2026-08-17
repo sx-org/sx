@@ -1,0 +1,25 @@
+// The cached `Class*` slot behind `@ObjcClass` static dispatch is populated
+// before any user code in `main` runs, so a helper called from `main` sees a
+// live class rather than the null the slot starts at.
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+alloc_in_helper :: () -> bool {
+    obj := NSString.alloc();
+    if obj == null {
+        return false;
+    }
+    obj.release();
+    true
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        print("class live in helper: {}\n", alloc_in_helper());
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

@@ -1,0 +1,4 @@
+sliced: "hello" len 5
+literal: "hello world" len 11
+empty: "" len 0
+tail: "world" len 5

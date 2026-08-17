@@ -210,27 +210,11 @@ pub const FfiCtors = struct {
 
         // ORC JIT injection: same trick as emitObjcSelectorInit. Inject a
         // direct call from main's entry so the JIT path populates the
-        // slots too. Must run AFTER the selector init's main injection
-        // (selectors are needed independently of class objects), so we
-        // place this call AFTER the first instruction (which is the
-        // selector-init call, if present) rather than at the very top.
+        // slots too.
         const main_z = "main";
         const main_fn = c.LLVMGetNamedFunction(self.e.llvm_module, main_z);
         if (main_fn != null) {
-            const entry_bb = c.LLVMGetEntryBasicBlock(main_fn);
-            // Walk past any existing init calls (selector init etc.) so
-            // class init runs after them. The order within main's prelude
-            // doesn't matter functionally (the two caches are independent),
-            // but stable ordering keeps IR snapshots deterministic.
-            var insert_before = c.LLVMGetFirstInstruction(entry_bb);
-            while (insert_before != null) : (insert_before = c.LLVMGetNextInstruction(insert_before)) {
-                if (c.LLVMGetInstructionOpcode(insert_before) != c.LLVMCall) break;
-            }
-            if (insert_before != null) {
-                c.LLVMPositionBuilderBefore(self.e.builder, insert_before);
-            } else {
-                c.LLVMPositionBuilderAtEnd(self.e.builder, entry_bb);
-            }
+            self.e.positionAfterInitPrelude(c.LLVMGetEntryBasicBlock(main_fn));
             var no_args: [0]c.LLVMValueRef = .{};
             _ = c.LLVMBuildCall2(self.e.builder, ctor_ty, ctor, &no_args, 0, "");
         }
