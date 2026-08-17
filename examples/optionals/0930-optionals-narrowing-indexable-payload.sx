@@ -1,0 +1,121 @@
+// Guard-narrowing reaches INDEXABLE payloads. After `if o == null
+// { return; }` — and inside `if o != null` — a narrowed optional over an
+// indexable payload (`?[]T`, `?[N]T`, `?*[N]T`, `?*[]T`) IS that payload at
+// every container use site:
+// - index reads (`o[i]` is the element, not `?Elem`);
+// - index writes, compound writes, element addresses, element field writes,
+//   and index targets of a multi-assign;
+// - subslices (`o[0..n]` is `[]T`, viewing the payload's own storage);
+// - generic binding, so a `[]$T` ufcs receiver binds `[]i64`.
+// Un-narrowed, `o[i]` stays the optional chain `?Elem`; `q := o` keeps the
+// declared `?[]T` (only guarded locals narrow — spell `q := o!`).
+#import "modules/std.sx";
+
+P :: struct { n: i64 = 0; }
+head :: ufcs (xs: []$T, k: i64) -> $T { return xs[k]; }
+
+read_elem :: (o: ?[]i64) -> i64 {
+    if o == null { return -1; }
+    return o[0];
+}
+read_in_arm :: (o: ?[]i64) -> i64 {
+    if o != null { return o[1]; }
+    return -1;
+}
+write_elem :: (o: ?[]i64) {
+    if o == null { return; }
+    o[0] = 9;
+}
+compound_elem :: (o: ?[]i64) {
+    if o == null { return; }
+    o[1] += 1;
+}
+elem_addr :: (o: ?[]i64) -> *i64 {
+    if o == null { return null; }
+    return *o[2];
+}
+elem_field :: (o: ?[]P) {
+    if o == null { return; }
+    o[0].n = 5;
+}
+subslice :: (o: ?[]i64) -> i64 {
+    if o == null { return 0; }
+    s := o[1..3];
+    return s.len + s[0];
+}
+generic_bind :: (o: ?[]i64) -> i64 {
+    if o == null { return -1; }
+    return o.head(1);
+}
+array_payload :: (o: ?[4]i64) -> i64 {
+    if o == null { return -1; }
+    o[3] = 40;             // the payload writes IN PLACE, not through a copy
+    s := o[1..3];          // and its subslice views that same storage
+    return o[3] + s.len;
+}
+ptr_to_array :: (o: ?*[4]i64) -> i64 {
+    if o == null { return -1; }
+    o[0] = 50;
+    return o[0];
+}
+ptr_to_slice :: (o: ?*[]i64) -> i64 {
+    if o == null { return -1; }
+    o[1] = 60;
+    return o[1];
+}
+multi_target :: (o: ?[]i64) {
+    if o == null { return; }
+    o[0], o[1] = 100, 200;
+}
+len_through_guard :: (o: ?[]i64) -> i64 {
+    if o == null { return 0; }
+    return o.len;
+}
+still_chains :: (o: ?[]i64) -> ?i64 {
+    return o[0];           // un-narrowed: the optional chain keeps `?i64`
+}
+keeps_static_type :: (o: ?[]i64) -> ?[]i64 {
+    if o == null { return null; }
+    q := o;                // `q` is `?[]i64`, not `[]i64`
+    return q;
+}
+
+main :: () {
+    a: [4]i64 = .{ 1, 2, 3, 4 };
+    process.assert(read_elem(a[0..4]) == 1 and read_elem(null) == -1, "read");
+    process.assert(read_in_arm(a[0..4]) == 2, "read in != null arm");
+
+    write_elem(a[0..4]);
+    process.assert(a[0] == 9, "write");
+    compound_elem(a[0..4]);
+    process.assert(a[1] == 3, "compound write");
+    p := elem_addr(a[0..4]);
+    p.* = 30;
+    process.assert(a[2] == 30, "element address");
+
+    ps: [2]P = .{ .{}, .{} };
+    elem_field(ps[0..2]);
+    process.assert(ps[0].n == 5, "element field write");
+
+    process.assert(subslice(a[0..4]) == 5, "subslice");
+    process.assert(generic_bind(a[0..4]) == 3, "ufcs generic bind");
+    process.assert(array_payload(a) == 42, "array payload write and subslice");
+
+    b: [4]i64 = .{ 1, 2, 3, 4 };
+    process.assert(ptr_to_array(*b) == 50 and b[0] == 50, "pointer-to-array payload");
+    bs := b[0..4];
+    process.assert(ptr_to_slice(*bs) == 60 and b[1] == 60, "pointer-to-slice payload");
+
+    multi_target(a[0..4]);
+    process.assert(a[0] == 100 and a[1] == 200, "multi-assign targets");
+    process.assert(len_through_guard(a[0..4]) == 4, "len");
+
+    c := still_chains(a[0..4]);
+    process.assert(c != null and c! == 100, "un-narrowed index chains");
+    process.assert(still_chains(null) == null, "null receiver chains to null");
+
+    q := keeps_static_type(a[0..4]);
+    process.assert(q != null and q!.len == 4, "declared type preserved");
+
+    print("ok\n");
+}

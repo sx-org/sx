@@ -2308,6 +2308,54 @@ pub const Lowering = struct {
         return if (pi == .slice) pi.slice.element else null;
     }
 
+    /// The payload type a container use site (index, slice, generic binding)
+    /// sees for `node`: a guard-narrowed optional local whose payload is
+    /// indexable presents that payload — the guard proved presence, so `o[i]`
+    /// and `o.method()` reach the container itself. `null` for every other
+    /// shape, and the declared type stands: an un-narrowed `o[i]` keeps its
+    /// optional-chain result, and identifier inference (`q := o`) never peels.
+    pub fn narrowedContainerChild(self: *Lowering, node: *const ast.Node) ?TypeId {
+        if (node.data != .identifier) return null;
+        if (self.narrowed.count() == 0 or !self.narrowed.contains(node.data.identifier.name)) return null;
+        const ty = self.inferExprType(node);
+        if (ty.isBuiltin()) return null;
+        const info = self.module.types.get(ty);
+        if (info != .optional) return null;
+        const child = info.optional.child;
+        const elem = self.ptrToArrayElem(child) orelse self.ptrToSliceElem(child) orelse self.getElementType(child);
+        return if (elem == .unresolved) null else child;
+    }
+
+    /// The payload VALUE of a guard-narrowed container local.
+    pub fn lowerNarrowedContainer(self: *Lowering, node: *const ast.Node, child: TypeId) Ref {
+        const opt = self.lowerExpr(node);
+        return self.builder.emit(.{ .optional_unwrap = .{ .operand = opt } }, child);
+    }
+
+    /// The payload STORAGE of a guard-narrowed container local — the optional's
+    /// slot reinterpreted as its payload, so an in-place element write reaches
+    /// the local itself rather than an unwrapped copy.
+    pub fn narrowedContainerPtr(self: *Lowering, node: *const ast.Node, child: TypeId) Ref {
+        const slot = self.getExprAlloca(node) orelse self.lowerExprAsPtr(node);
+        const opt_ty = self.inferExprType(node);
+        return self.builder.structGepTyped(slot, 0, self.module.types.ptrTo(child), opt_ty);
+    }
+
+    /// The base an element GEP addresses through for container `node` of type
+    /// `obj_ty` (already peeled to `narrowed_child` where one applies). An array
+    /// addresses its storage IN PLACE — a loaded array VALUE is a copy and the
+    /// write would be dropped; every other container carries its pointer in the
+    /// value itself.
+    pub fn indexBase(self: *Lowering, node: *const ast.Node, obj_ty: TypeId, narrowed_child: ?TypeId) Ref {
+        const is_array = !obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .array;
+        if (narrowed_child) |child| {
+            if (is_array) return self.narrowedContainerPtr(node, child);
+            return self.derefPtrToSliceIndexBase(self.lowerNarrowedContainer(node, child), obj_ty);
+        }
+        if (is_array) return self.getExprAlloca(node) orelse self.lowerExprAsPtr(node);
+        return self.derefPtrToSliceIndexBase(self.lowerExpr(node), obj_ty);
+    }
+
     /// Load the slice value behind a `*[]T` index base. Other indexable bases
     /// are already values in the representation expected by index_get/GEP.
     pub fn derefPtrToSliceIndexBase(self: *Lowering, base: Ref, ty: TypeId) Ref {
@@ -3709,6 +3757,7 @@ pub const Lowering = struct {
     pub const resolveArrayLiteralType = lower_expr.resolveArrayLiteralType;
     pub const lowerIndexExpr = lower_expr.lowerIndexExpr;
     pub const lowerIndexOperand = lower_expr.lowerIndexOperand;
+    pub const indexLoweredValue = lower_expr.indexLoweredValue;
     pub const diagNonIndexable = lower_expr.diagNonIndexable;
     pub const lowerSliceExpr = lower_expr.lowerSliceExpr;
     pub const lowerTupleLiteral = lower_expr.lowerTupleLiteral;

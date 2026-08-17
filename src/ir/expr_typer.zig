@@ -642,7 +642,9 @@ pub const ExprTyper = struct {
                 if (self.l.packArgNodeAt(&ie)) |arg_node| {
                     return self.l.inferExprType(arg_node);
                 }
-                const obj_ty = self.l.inferExprType(ie.object);
+                // A guard-narrowed container local indexes its payload — the
+                // lockstep partner of `lowerIndexExpr`'s narrowing peel.
+                const obj_ty = self.l.narrowedContainerChild(ie.object) orelse self.l.inferExprType(ie.object);
                 // Comptime-constant index into a tuple VALUE — `tup[i]` where `i`
                 // folds to a compile-time integer (an `inline for` cursor or a
                 // literal). Mirrors the lowering in `lowerIndexExpr`: the result is
@@ -677,7 +679,7 @@ pub const ExprTyper = struct {
                 return self.l.getElementType(obj_ty);
             },
             .slice_expr => |se| {
-                const obj_ty = self.l.inferExprType(se.object);
+                const obj_ty = self.l.narrowedContainerChild(se.object) orelse self.l.inferExprType(se.object);
                 if (obj_ty == .string) return .string;
                 return self.l.module.types.sliceOf(self.l.getElementType(obj_ty));
             },

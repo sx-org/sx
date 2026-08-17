@@ -1,0 +1,23 @@
+error: cannot index a value of type '?[]i64'
+  --> examples/optionals/0931-optionals-unnarrowed-container-refused.sx:12:5
+   |
+12 |     o[0] = 1;              // error: not indexable as a container
+   |     ^
+
+error: cannot slice a value of type '?[]i64' — an optional does not implicitly unwrap; force-unwrap with '!', bind it (`if v := ...`), or guard with '!= null'
+  --> examples/optionals/0931-optionals-unnarrowed-container-refused.sx:15:10
+   |
+15 |     s := o[0..1];          // error: no storage to view
+   |          ^
+
+error: cannot infer generic type parameter for ufcs call 'head' (no visible overload's receiver matches)
+  --> examples/optionals/0931-optionals-unnarrowed-container-refused.sx:19:12
+   |
+19 |     return o.head(0);      // error: `[]$T` has no `?[]i64` receiver
+   |            ^^^^^^
+
+error: cannot use a value of type '?i64' where 'i64' is expected: an optional does not implicitly unwrap; force-unwrap with '!', supply a fallback with '?? <default>', bind it (`if v := ...`), or guard with '!= null'
+  --> examples/optionals/0931-optionals-unnarrowed-container-refused.sx:22:12
+   |
+22 |     return takes(o[0]);    // error: `o[0]` is `?i64`
+   |            ^^^^^^^^^^^

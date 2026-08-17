@@ -2545,6 +2545,13 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
             return self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts before codegen
         }
     }
+    // A guard-narrowed container local indexes its PAYLOAD: the guard proved
+    // presence, so `o[i]` is the element, not an optional chain.
+    if (self.narrowedContainerChild(ie.object)) |child| {
+        const payload = self.lowerNarrowedContainer(ie.object, child);
+        const idx = self.lowerIndexOperand(ie.index);
+        return self.indexLoweredValue(payload, child, idx, ie.object.span);
+    }
     // Optional-chain index: `opt?.xs[i]`. The `?.` makes the object an
     // optional whose child is the (array/slice/many-ptr) field — so the index
     // applies inside the chain's some-branch and the whole expression is
@@ -2587,6 +2594,13 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     }
     const obj = self.lowerExpr(ie.object);
     const idx = self.lowerIndexOperand(ie.index);
+    return self.indexLoweredValue(obj, obj_ty, idx, ie.object.span);
+}
+
+/// Read the element of an already-lowered container VALUE. Every indexable
+/// shape a value can carry lands here: `*[N]T` and `*[]T` auto-deref, the
+/// remaining containers `index_get` directly.
+pub fn indexLoweredValue(self: *Lowering, obj: Ref, obj_ty: TypeId, idx: Ref, obj_span: ast.Span) Ref {
     // `*[N]T` receiver auto-derefs: `obj` IS the pointer
     // value — GEP the pointee array and load the element.
     if (self.ptrToArrayElem(obj_ty)) |elem| {
@@ -2608,7 +2622,7 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     // diagNonIndexable) and return a placeholder so hasErrors() aborts before
     // codegen.
     if (elem_ty == .unresolved) {
-        self.diagNonIndexable(obj_ty, ie.object.span);
+        self.diagNonIndexable(obj_ty, obj_span);
         return self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts before codegen
     }
     return self.builder.emit(.{ .index_get = .{ .lhs = obj, .rhs = idx } }, elem_ty);
@@ -2652,8 +2666,14 @@ pub fn diagNonIndexable(self: *Lowering, obj_ty: TypeId, span: ast.Span) void {
 }
 
 pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
-    const obj = self.lowerExpr(se.object);
-    const obj_ty = self.inferExprType(se.object);
+    // A guard-narrowed container local slices its PAYLOAD; the view is over
+    // the payload's storage.
+    const narrowed_child = self.narrowedContainerChild(se.object);
+    const obj = if (narrowed_child) |child|
+        self.lowerNarrowedContainer(se.object, child)
+    else
+        self.lowerExpr(se.object);
+    const obj_ty = narrowed_child orelse self.inferExprType(se.object);
     // A slice base whose type never resolved to a concrete array — an inline
     // array literal (`i64.[1,2,3][0..2]`), a struct-literal array, or an
     // already-poisoned base — must not reach codegen: `emitSubslice` would
@@ -2667,6 +2687,20 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
         if (self.diagnostics) |d| {
             if (!d.hasErrors())
                 d.addFmt(.err, se.object.span, "cannot slice a temporary array — a slice is a view into the array's storage, and a temporary (an array literal, a call result) has none; bind it to a local first (`a := <expr>; a[..]`)", .{});
+        }
+        return self.builder.constUndef(self.module.types.sliceOf(.u8));
+    }
+    // A base with no element type is a view over nothing: the `sliceOf` that
+    // would form carries an `.unresolved` element and panics at LLVM emission.
+    // An optional is the shape that HAS an element but hasn't proven it present.
+    if (self.getElementType(obj_ty) == .unresolved) {
+        if (self.diagnostics) |d| {
+            const name = self.formatTypeName(obj_ty);
+            if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .optional) {
+                d.addFmt(.err, se.object.span, "cannot slice a value of type '{s}' — an optional does not implicitly unwrap; force-unwrap with '!', bind it (`if v := ...`), or guard with '!= null'", .{name});
+            } else {
+                d.addFmt(.err, se.object.span, "cannot slice a value of type '{s}' — a slice views an array, a slice, a many-pointer or a string", .{name});
+            }
         }
         return self.builder.constUndef(self.module.types.sliceOf(.u8));
     }
@@ -2739,7 +2773,13 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     // place). `base_ty` becomes `[*]elem` so the comptime VM strides by the
     // element size, not the whole-array size.
     if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .array) {
-        if (self.refStorageAddress(obj)) |addr| {
+        // A narrowed payload's storage is the optional's own slot; the
+        // unwrapped VALUE has no address to walk back to.
+        const storage: ?Ref = if (narrowed_child) |child|
+            self.narrowedContainerPtr(se.object, child)
+        else
+            self.refStorageAddress(obj);
+        if (storage) |addr| {
             return self.builder.emit(.{ .subslice = .{
                 .base = addr,
                 .lo = lo,
@@ -3590,7 +3630,8 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             // address_of(index_expr) → emit index_gep (pointer to element) instead of index_get + addr_of
             if (uop.op == .address_of and uop.operand.data == .index_expr) {
                 const ie = &uop.operand.data.index_expr;
-                const obj_ty = self.inferExprType(ie.object);
+                const narrowed_child = self.narrowedContainerChild(ie.object);
+                const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
                 // Comptime-constant index into a tuple VALUE — `@tup[i]`. A tuple is
                 // heterogeneous: the element address is a typed `structGep` of the
                 // i-th field, never an `index_gep` (whose `ptrTo(.unresolved)`
@@ -3625,12 +3666,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     break :blk self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts
                 }
                 const ptr_ty = self.module.types.ptrTo(elem_ty);
-                // For array targets, use the storage pointer (alloca for a
-                // local, global_addr for a module global) so the resulting
-                // pointer is into live storage, not a loaded copy.
-                const is_array = !obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .array;
-                var base = if (is_array) (self.getExprAlloca(ie.object) orelse self.lowerExprAsPtr(ie.object)) else self.lowerExpr(ie.object);
-                base = self.derefPtrToSliceIndexBase(base, obj_ty);
+                const base = self.indexBase(ie.object, obj_ty, narrowed_child);
                 break :blk self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = idx } }, ptr_ty);
             }
             // address_of(field_access) → use lowerExprAsPtr for GEP chain

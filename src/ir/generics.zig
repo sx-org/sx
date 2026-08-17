@@ -288,7 +288,10 @@ pub const GenericResolver = struct {
                 const matched = self.l.matchTypeParam(param.type_expr, tp.name);
                 if (matched) {
                     if (s2_arg_idx < args_ast.len) {
-                        const inferred = self.l.inferExprType(args_ast[s2_arg_idx]);
+                        // A guard-narrowed container argument binds through its
+                        // payload — `[]$T` against `[]i64`, not `?[]i64`.
+                        const inferred = self.l.narrowedContainerChild(args_ast[s2_arg_idx]) orelse
+                            self.l.inferExprType(args_ast[s2_arg_idx]);
                         // A bare fn NAME has no inferable expression type — it
                         // is a value whose type lives in its declaration. Bind
                         // `$F` to that signature so the instance's param is a
