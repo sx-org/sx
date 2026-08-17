@@ -206,7 +206,7 @@ Sink :: struct {
 
 // Lowercase-hex ASCII byte for a 0..15 nibble. 48='0', 97='a'.
 hex_digit :: (n: i64) -> u8 {
-    if n < 10 then xx (n + '0') else xx (n - 10 + 'a')
+    if n < 10 then (n + '0').(u8) else (n - 10 + 'a').(u8)
 }
 
 // `\u00XX` escape for a control byte (< 0x20). Two hex nibbles; the high
@@ -259,7 +259,7 @@ write_int :: (n: i64, sink: *Sink) -> !JsonError {
     while v < 0 {
         i -= 1;
         d := 0 - (v % 10);    // sx `%` keeps the dividend's sign; this is 0..9
-        tmp[i] = xx (d + '0');
+        tmp[i] = (d + '0').(u8);
         v = v / 10;           // truncates toward zero
     }
     if neg { i -= 1; tmp[i] = '-'; }
@@ -286,7 +286,7 @@ emit_decimal :: (n: i64, k: i64, p: i64, sink: *Sink) -> !JsonError {
     i := p;
     while i > 0 {
         i -= 1;
-        digits[i] = xx ((v % 10) + '0');
+        digits[i] = ((v % 10) + '0').(u8);
         v = v / 10;
     }
     if integral_form(k, p) {
@@ -467,24 +467,24 @@ hex_value :: (c: u8) -> (i64, !JsonParseError) {
 // decode buffer is sized to the raw escaped span, which always dominates.
 encode_utf8 :: (cp: i64, out: [*]u8) -> i64 {
     if cp < 0x80 {
-        out[0] = xx cp;
+        out[0] = cp.(u8);
         return 1;
     }
     if cp < 0x800 {
-        out[0] = xx (0xC0 | (cp >> 6));
-        out[1] = xx (0x80 | (cp & 0x3F));
+        out[0] = (0xC0 | (cp >> 6)).(u8);
+        out[1] = (0x80 | (cp & 0x3F)).(u8);
         return 2;
     }
     if cp < 0x10000 {
-        out[0] = xx (0xE0 | (cp >> 12));
-        out[1] = xx (0x80 | ((cp >> 6) & 0x3F));
-        out[2] = xx (0x80 | (cp & 0x3F));
+        out[0] = (0xE0 | (cp >> 12)).(u8);
+        out[1] = (0x80 | ((cp >> 6) & 0x3F)).(u8);
+        out[2] = (0x80 | (cp & 0x3F)).(u8);
         return 3;
     }
-    out[0] = xx (0xF0 | (cp >> 18));
-    out[1] = xx (0x80 | ((cp >> 12) & 0x3F));
-    out[2] = xx (0x80 | ((cp >> 6) & 0x3F));
-    out[3] = xx (0x80 | (cp & 0x3F));
+    out[0] = (0xF0 | (cp >> 18)).(u8);
+    out[1] = (0x80 | ((cp >> 12) & 0x3F)).(u8);
+    out[2] = (0x80 | ((cp >> 6) & 0x3F)).(u8);
+    out[3] = (0x80 | (cp & 0x3F)).(u8);
     return 4;
 }
 

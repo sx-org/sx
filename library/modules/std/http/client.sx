@@ -257,7 +257,7 @@ parse_status_line :: (line: string) -> (i64, string) {
     code : i64 = 0;
     digits : i64 = 0;
     while p < line.len and line.ptr[p] >= '0' and line.ptr[p] <= '9' {
-        code = code * 10 + xx (line.ptr[p] - '0');
+        code = code * 10 + (line.ptr[p] - '0').(i64);
         p += 1; digits += 1;
     }
     if digits == 0 { return 0, ""; }
@@ -288,7 +288,7 @@ send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_he
         v := body.len;
         tmp : [20]u8 = ---;
         tn : i64 = 0;
-        while v > 0 { tmp[tn] = xx ('0' + v % 10); v = v / 10; tn += 1; }
+        while v > 0 { tmp[tn] = ('0' + v % 10).(u8); v = v / 10; tn += 1; }
         while tn > 0 { tn -= 1; clbuf[cln] = tmp[tn]; cln += 1; }
     }
     total := method.len + 1 + path.len + 11            // "<m> <p> HTTP/1.1\r\n"
@@ -393,7 +393,7 @@ parse_url :: (url: string) -> (Url, bool) {
         v : i64 = 0;
         d : i64 = 0;
         while ps < rest.len and rest[ps] >= '0' and rest[ps] <= '9' {
-            v = v * 10 + xx (rest[ps] - '0');
+            v = v * 10 + (rest[ps] - '0').(i64);
             ps += 1;
             d += 1;
         }
@@ -759,9 +759,9 @@ recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
         wire_at += 1;
         if phase == .size {
             digit : i64 = -1;
-            if b >= '0' and b <= '9' { digit = xx (b - '0'); }
-            else if b >= 'a' and b <= 'f' { digit = xx (b - 'a' + 10); }
-            else if b >= 'A' and b <= 'F' { digit = xx (b - 'A' + 10); }
+            if b >= '0' and b <= '9' { digit = (b - '0').(i64); }
+            else if b >= 'a' and b <= 'f' { digit = (b - 'a' + 10).(i64); }
+            else if b >= 'A' and b <= 'F' { digit = (b - 'A' + 10).(i64); }
             if digit >= 0 {
                 if chunk_size > 0x07FFFFFFFFFFFFFF { raise error.Recv; }
                 chunk_size = chunk_size * 16 + digit;
@@ -857,7 +857,7 @@ valid_content_length :: (value: string) -> (i64, bool) {
         b := value[i];
         if b < '0' or b > '9' { return 0, false; }
         if result > 0x0CCCCCCCCCCCCCCC { return 0, false; }
-        result = result * 10 + xx (b - '0');
+        result = result * 10 + (b - '0').(i64);
         if result < 0 { return 0, false; }
         i += 1;
     }

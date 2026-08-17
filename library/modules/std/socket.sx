@@ -200,14 +200,14 @@ parse_addr :: (text: string, port: i64) -> (Addr, bool) {
 addr_unix :: (path: string) -> (Addr, bool) {
     a : Addr = .{};
     if path.len == 0 or path.len >= SUN_PATH_MAX { return a, false; }
-    un_header(*a, xx (2 + path.len + 1));
+    un_header(*a, (2 + path.len + 1).(u32));
     i : i64 = 0;
     while i < path.len {
         a.buf[2 + i] = path[i];
         i += 1;
     }
     a.buf[2 + path.len] = 0;
-    a.len = xx (2 + path.len + 1);
+    a.len = (2 + path.len + 1).(u32);
     return a, true;
 }
 
@@ -227,7 +227,7 @@ resolve :: (host: string, port: i64) -> (Addr, bool) {
     else {
         tmp : [8]u8 = ---;
         tn : i64 = 0;
-        while p > 0 { tmp[tn] = xx ('0' + p % 10); p = p / 10; tn += 1; }
+        while p > 0 { tmp[tn] = ('0' + p % 10).(u8); p = p / 10; tn += 1; }
         while tn > 0 { tn -= 1; sb[sn] = tmp[tn]; sn += 1; }
     }
     sb[sn] = '\0';
@@ -270,7 +270,7 @@ inline if OS == .linux or OS == .android or OS == .wasm {
     // Build an AF_INET sockaddr for `port` (host order) at `addr` (network
     // order; 0 = INADDR_ANY). No sin_len on linux or Android.
     sockaddr_in :: (port: i64, addr: u32) -> SockAddr {
-        return .{ sin_family = xx AF_INET, sin_port = htons(port), sin_addr = addr };
+        return .{ sin_family = AF_INET.(u8), sin_port = htons(port), sin_addr = addr };
     }
 
     // ── per-OS io-timeout surface ──────────────────────────────
@@ -297,7 +297,7 @@ inline if OS == .linux or OS == .android or OS == .wasm {
     }
 
     timeval_ms :: (ms: i64) -> Timeval {
-        return .{ tv_sec = ms / 1000, tv_usec = xx ((ms % 1000) * 1000) };
+        return .{ tv_sec = ms / 1000, tv_usec = ((ms % 1000) * 1000).(i32) };
     }
 
     // ── per-OS address surface ──────────────────────────────────
@@ -314,7 +314,7 @@ inline if OS == .linux or OS == .android or OS == .wasm {
     }
 
     sockaddr_in6 :: (port: i64, ip: *[16]u8) -> SockAddrIn6 {
-        return .{ sin6_family = xx AF_INET6, sin6_port = htons(port), sin6_addr = ip.* };
+        return .{ sin6_family = AF_INET6.(u8), sin6_port = htons(port), sin6_addr = ip.* };
     }
 
     // linux/bionic/Emscripten sockaddr_un: u16 family + sun_path[108].
@@ -324,7 +324,7 @@ inline if OS == .linux or OS == .android or OS == .wasm {
     // — header + path + NUL — is unused here, darwin wants it for sun_len).
     un_header :: (a: *Addr, total: u8) {
         _ := total;
-        a.buf[0] = xx AF_UNIX;
+        a.buf[0] = AF_UNIX.(u8);
         a.buf[1] = 0;
     }
 
@@ -392,7 +392,7 @@ inline if OS == .macos or OS == .ios {
     // Build an AF_INET sockaddr for `port` (host order) at `addr` (network
     // order; 0 = INADDR_ANY). The leading sin_len:u8 is darwin-only.
     sockaddr_in :: (port: i64, addr: u32) -> SockAddr {
-        return .{ sin_len = 16, sin_family = xx AF_INET, sin_port = htons(port), sin_addr = addr };
+        return .{ sin_len = 16, sin_family = AF_INET.(u8), sin_port = htons(port), sin_addr = addr };
     }
 
     // ── per-OS io-timeout surface ──────────────────────────────
@@ -407,7 +407,7 @@ inline if OS == .macos or OS == .ios {
     }
 
     timeval_ms :: (ms: i64) -> Timeval {
-        return .{ tv_sec = ms / 1000, tv_usec = xx ((ms % 1000) * 1000) };
+        return .{ tv_sec = ms / 1000, tv_usec = ((ms % 1000) * 1000).(i32) };
     }
 
     // ── per-OS address surface ──────────────────────────────────
@@ -425,7 +425,7 @@ inline if OS == .macos or OS == .ios {
     }
 
     sockaddr_in6 :: (port: i64, ip: *[16]u8) -> SockAddrIn6 {
-        return .{ sin6_family = xx AF_INET6, sin6_port = htons(port), sin6_addr = ip.* };
+        return .{ sin6_family = AF_INET6.(u8), sin6_port = htons(port), sin6_addr = ip.* };
     }
 
     // darwin sockaddr_un: sun_len:u8 + sun_family:u8 + sun_path[104].
@@ -435,7 +435,7 @@ inline if OS == .macos or OS == .ios {
     // struct length including the NUL, per BSD convention).
     un_header :: (a: *Addr, total: u8) {
         a.buf[0] = total;
-        a.buf[1] = xx AF_UNIX;
+        a.buf[1] = AF_UNIX.(u8);
     }
 
     // The address family stored in an Addr (byte 1; byte 0 is sa_len).

@@ -316,9 +316,9 @@ decode_chunked_pass :: (src: [*]u8, avail: i64, max_body: i64, commit: bool, res
         while rp < avail {
             ch := src[rp];
             hv : i64 = -1;
-            if ch >= '0' and ch <= '9' { hv = xx (ch - '0'); }
-            else if ch >= 'a' and ch <= 'f' { hv = xx (ch - 'a' + 10); }
-            else if ch >= 'A' and ch <= 'F' { hv = xx (ch - 'A' + 10); }
+            if ch >= '0' and ch <= '9' { hv = (ch - '0').(i64); }
+            else if ch >= 'a' and ch <= 'f' { hv = (ch - 'a' + 10).(i64); }
+            else if ch >= 'A' and ch <= 'F' { hv = (ch - 'A' + 10).(i64); }
             if hv < 0 { break; }
             // Overflow guard: this protects ONLY against an i64 wrap in the
             // `size*16 + hv` shift below. The max_body ceiling is a separate,
@@ -396,8 +396,8 @@ decode_chunked_pass :: (src: [*]u8, avail: i64, max_body: i64, commit: bool, res
 IMF_DATE_LEN :: 29;
 
 imf_two :: (n: i64, dst: [*]u8, off: i64) {
-    dst[off] = xx ('0' + n / 10);
-    dst[off + 1] = xx ('0' + n % 10);
+    dst[off] = ('0' + n / 10).(u8);
+    dst[off + 1] = ('0' + n % 10).(u8);
 }
 
 // Format unix epoch `secs` as IMF-fixdate into dst[0..29). Calendar
@@ -479,12 +479,12 @@ normalize_path :: (buf: [*]u8, len: i64) -> i64 {
             lo : i64 = -1;
             h := buf[rp + 1];
             l := buf[rp + 2];
-            if h >= '0' and h <= '9' { hi = xx (h - '0'); }
-            else if h >= 'a' and h <= 'f' { hi = xx (h - 'a' + 10); }
-            else if h >= 'A' and h <= 'F' { hi = xx (h - 'A' + 10); }
-            if l >= '0' and l <= '9' { lo = xx (l - '0'); }
-            else if l >= 'a' and l <= 'f' { lo = xx (l - 'a' + 10); }
-            else if l >= 'A' and l <= 'F' { lo = xx (l - 'A' + 10); }
+            if h >= '0' and h <= '9' { hi = (h - '0').(i64); }
+            else if h >= 'a' and h <= 'f' { hi = (h - 'a' + 10).(i64); }
+            else if h >= 'A' and h <= 'F' { hi = (h - 'A' + 10).(i64); }
+            if l >= '0' and l <= '9' { lo = (l - '0').(i64); }
+            else if l >= 'a' and l <= 'f' { lo = (l - 'a' + 10).(i64); }
+            else if l >= 'A' and l <= 'F' { lo = (l - 'A' + 10).(i64); }
             if hi < 0 or lo < 0 { return -1; }   // non-hex escape
             d : i64 = hi * 16 + lo;
             if d < ' ' or d == '\x7f' { return -1; } // control (incl. NUL/CR/LF)
@@ -583,7 +583,7 @@ dec_into :: (n: i64, dst: [*]u8) -> i64 {
     cnt : i64 = 0;
     v := n;
     while v > 0 {
-        tmp[cnt] = xx ('0' + v % 10);
+        tmp[cnt] = ('0' + v % 10).(u8);
         v = v / 10;
         cnt += 1;
     }

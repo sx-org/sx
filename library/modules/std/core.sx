@@ -179,7 +179,7 @@ __sx_printf_i64 :: (n: i64) {
             v := if n < 0 then 0 - n else n;
             while v != 0 {
                 i -= 1;
-                buf[i] = xx ((v % 10) + '0');
+                buf[i] = ((v % 10) + '0').(u8);
                 v = v / 10;
             }
             if n < 0 {
@@ -229,7 +229,7 @@ __sx_printf_u64 :: (n: u64) {
                 k += 1;
             }
             i -= 1;
-            buf[i] = xx (rem + '0');
+            buf[i] = (rem + '0').(u8);
         }
     }
     c.write(1, *buf[i], (20 - i));
@@ -251,7 +251,7 @@ __sx_printf_f64 :: (f: f64) {
     i := 6;
     while i > 0 {
         i -= 1;
-        buf[i] = xx ((frac % 10) + '0');
+        buf[i] = ((frac % 10) + '0').(u8);
         frac = frac / 10;
     }
     c.write(1, *buf[0], 6);

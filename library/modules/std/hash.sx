@@ -161,7 +161,7 @@ Sha256 :: struct {
         // 64-bit big-endian message length in bits.
         b := 0;
         while b < 8 {
-            self.buf[56 + b] = xx ((bit_len >> ((7 - b) * 8)) & 0xFF);
+            self.buf[56 + b] = ((bit_len >> ((7 - b) * 8)) & 0xFF).(u8);
             b += 1;
         }
         self.process_block();
@@ -187,7 +187,7 @@ Sha256 :: struct {
 
 // Lowercase-hex ASCII byte for a 0..15 nibble.
 nibble_hex :: (n: i64) -> u8 {
-    if n < 10 then xx (n + '0') else xx (n - 10 + 'a')
+    if n < 10 then (n + '0').(u8) else (n - 10 + 'a').(u8)
 }
 
 // Returns the SHA-256 state by value; the caller binds it to a local

@@ -51,8 +51,9 @@ if.merge.49:                                      ; preds = %or.merge.47
   %lenN = extractvalue { ptr, i64 } %loadN, 1
   %add = add i64 2, %lenN
   %addN = add i64 %add, 1
-  %trunc = trunc i64 %addN to i8
-  call void @un_header(ptr %allocaN, i8 %trunc)
+  %trunc = trunc i64 %addN to i32
+  %truncN = trunc i32 %trunc to i8
+  call void @un_header(ptr %allocaN, i8 %truncN)
   store i64 0, ptr %allocaN, align 8
   br label %while.hdr.50
 
@@ -84,8 +85,8 @@ while.exit.52:                                    ; preds = %while.hdr.50
   %lenN = extractvalue { ptr, i64 } %loadN, 1
   %addN = add i64 2, %lenN
   %gepN = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %allocaN, i32 0, i32 0
-  %igp.ptr25 = getelementptr i8, ptr %gepN, i64 %addN
-  store i8 0, ptr %igp.ptr25, align 1
+  %igp.ptr26 = getelementptr i8, ptr %gepN, i64 %addN
+  store i8 0, ptr %igp.ptr26, align 1
   %loadN = load { ptr, i64 }, ptr %alloca, align 8
   %lenN = extractvalue { ptr, i64 } %loadN, 1
   %addN = add i64 2, %lenN

@@ -1377,8 +1377,8 @@ hex_len_into :: (n: i64, dst: [*]u8) -> i64 {
     v := n;
     while v > 0 {
         d := v % 16;
-        if d < 10 { tmp[cnt] = xx ('0' + d); }       // '0'..'9'
-        else { tmp[cnt] = xx ('a' + (d - 10)); }     // 'a'..'f'
+        if d < 10 { tmp[cnt] = ('0' + d).(u8); }       // '0'..'9'
+        else { tmp[cnt] = ('a' + (d - 10)).(u8); }     // 'a'..'f'
         v = v / 16;
         cnt += 1;
     }
@@ -2571,9 +2571,9 @@ Server :: struct {
                 while p < e {
                     ch := c.read_buf[p];
                     hv : i64 = -1;
-                    if ch >= '0' and ch <= '9' { hv = xx (ch - '0'); }
-                    else if ch >= 'a' and ch <= 'f' { hv = xx (ch - 'a' + 10); }
-                    else if ch >= 'A' and ch <= 'F' { hv = xx (ch - 'A' + 10); }
+                    if ch >= '0' and ch <= '9' { hv = (ch - '0').(i64); }
+                    else if ch >= 'a' and ch <= 'f' { hv = (ch - 'a' + 10).(i64); }
+                    else if ch >= 'A' and ch <= 'F' { hv = (ch - 'A' + 10).(i64); }
                     if hv < 0 { break; }
                     if size > 0x07FFFFFFFFFFFFFF { bad = true; break; }   // would wrap i64
                     size = size * 16 + hv;
@@ -2702,7 +2702,7 @@ Server :: struct {
                     return;
                 }
             }
-            nq, re := self.conn_read(slot, *c.read_buf[c.read_len], xx (c.read_cap - c.read_len));
+            nq, re := self.conn_read(slot, *c.read_buf[c.read_len], c.read_cap - c.read_len);
             if re == error.WouldBlock { return; }
             if re {
                 self.emit(EventKind.READ_FAULT, slot, 0);
@@ -2924,7 +2924,7 @@ Server :: struct {
         mp : [*]u8 = msg.ptr;
         off : i64 = 0;
         while off < msg.len {
-            nq, we := self.conn_write(slot, *mp[off], xx (msg.len - off));
+            nq, we := self.conn_write(slot, *mp[off], msg.len - off);
             if we {   // WouldBlock or fault — see above: both close
                 self.emit(EventKind.WRITE_FAULT, slot, 0);
                 self.conn_close(slot);
@@ -2979,7 +2979,7 @@ Server :: struct {
                     return;
                 }
             }
-            nq, re := self.conn_read(slot, *c.read_buf[c.read_len], xx (c.read_cap - c.read_len));
+            nq, re := self.conn_read(slot, *c.read_buf[c.read_len], c.read_cap - c.read_len);
             if re == error.WouldBlock { break; }
             if re {   // Closed or Fault — peer reset / EOF mid-request
                 self.emit(EventKind.READ_FAULT, slot, 0);
@@ -4061,7 +4061,7 @@ Server :: struct {
         c := *self.conns[slot];
         while true {
             while c.out_sent < c.out_len {
-                nq, we := self.conn_write(slot, *c.out_buf[c.out_sent], xx (c.out_len - c.out_sent));
+                nq, we := self.conn_write(slot, *c.out_buf[c.out_sent], c.out_len - c.out_sent);
                 if we == error.WouldBlock {
                     // a TLS write that wants READABILITY must not arm
                     // the write watch (conn_write already dropped it) — the
