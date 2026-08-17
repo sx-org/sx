@@ -342,7 +342,7 @@ describe :: (tp: Type) {
     }
 }
 describe(type_of(av));
-print_any(xx pkt);   // walk with struct_field_value / any_element — no copies
+print_any(pkt);   // walk with struct_field_value / any_element — no copies
 ```
 
 `xx av` is an unchecked load. `==` on `any` is an error — unbox or compare `type_of`.

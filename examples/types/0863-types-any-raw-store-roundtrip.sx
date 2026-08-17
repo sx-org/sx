@@ -40,9 +40,9 @@ main :: () -> i64 {
     a : i64 = 42;
     b : f64 = 2.5;
     p := Point{ x = 7, y = 9 };
-    s.put(xx a);
-    s.put(xx b);
-    s.put(xx p);
+    s.put(a);
+    s.put(b);
+    s.put(p);
 
     print("{} {}\n", s.get(0), s.get(1));            // 42 2.500000
     print("{}\n", s.get(2));                          // Point{ x: 7, y: 9}

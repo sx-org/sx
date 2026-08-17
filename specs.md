@@ -3268,7 +3268,7 @@ the recovery targets — a pointer type (`p.(*T)`, the typed ctx read; `T`
 must be a CONCRETE type or `void` — a pointer-to-protocol target is refused,
 since ctx addresses the concrete value: lend a view of the protocol value
 itself with `*p` instead),
-`ProtocolRaw`, `any` (the explicit concrete view `xx p : any`), and
+`ProtocolRaw`, `any` (a protocol value boxes as its concrete receiver), and
 another protocol (re-erasure) — are conversions and pass through.
 
 `p.(?*T)` is the SOFT ctx recovery — the pointer target under the soft

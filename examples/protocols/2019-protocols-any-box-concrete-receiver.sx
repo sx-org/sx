@@ -1,8 +1,8 @@
 // Boxing a protocol value into `any` yields a view of the CONCRETE receiver
 // (§7.3), never of the protocol handle. Every binding position funnels
 // through the one coercion seam, so the declaration target, an assignment,
-// a call argument, a field init, a container element and a return all agree
-// with the explicit `xx p : any` — on both ownership classes.
+// a call argument, a field init, a container element and a return all box
+// the concrete receiver — on both ownership classes.
 #import "modules/std.sx";
 
 Sized :: protocol vtable { size :: (self: *Self) -> i64; }
@@ -27,11 +27,6 @@ main :: () {
     av : any = v;
     nv : any = n;
     print("decl {} {}\n", named(av), named(nv));
-
-    // The explicit conversion has always answered the concrete receiver;
-    // the implicit box now agrees with it.
-    xv : any = xx v;
-    print("xx {}\n", named(xv));
 
     // Assignment into an existing `any` slot.
     slot : any = 1;

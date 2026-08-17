@@ -83,6 +83,6 @@ main :: () {
         samples = .[10, -20, 30, -40],
         payload = .{ as_int = 7 },
     };
-    print_any(xx pkt);                            // one erasure at the root
+    print_any(pkt);
     print("\n");
 }

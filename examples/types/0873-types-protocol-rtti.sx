@@ -10,8 +10,7 @@
 //   - the type switch on PROTOCOL subjects — concrete arms bind the
 //     typed value (a copy, assertion parity), categories and else as on
 //     `any`;
-//   - `xx p : any` — the explicit CONCRETE view (the prefix); implicit
-//     boxing (`av : any = p`) still boxes the protocol value itself;
+//   - boxing to `any` (`av : any = p`) is a view of the concrete receiver;
 //   - all of it layout-independent (`vtable` AND `inline` protocols).
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
@@ -58,8 +57,7 @@ main :: () {
         }
     }
 
-    // xx p : any — the explicit concrete view
-    av : any = xx s;
+    av : any = s;
     print("view: {}\n", type_name(type_of(av)));
 
     // `inline` layout: same story through an Allocator value
