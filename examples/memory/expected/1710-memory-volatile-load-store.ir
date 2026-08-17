@@ -1,5 +1,5 @@
 
-@__sx_default_context = internal constant {} zeroinitializer
+@__sx_default_context = internal constant { ptr } zeroinitializer
 @str = private unnamed_addr constant [18 x i8] c"scalar: 41 41 42\0A\00", align 1
 @str.1 = private unnamed_addr constant [15 x i8] c"scalar: WRONG\0A\00", align 1
 @str.2 = private unnamed_addr constant [13 x i8] c"widened: -1\0A\00", align 1
