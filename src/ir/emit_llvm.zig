@@ -821,13 +821,16 @@ pub const LLVMEmitter = struct {
         self.injectCtorIntoMain(ctor, ctor_ty);
     }
 
-    /// Build an LLVM-friendly identifier suffix from a JNI
-    /// `(method_name, signature)` pair. Non-identifier characters are
-    /// rewritten to `_`; the resulting string is unique per pair (the
-    /// caller guarantees uniqueness on `(name, sig)`, which we
-    /// preserve through the separator between mangled name and sig).
-    pub fn mangleJniKey(self: *LLVMEmitter, name: []const u8, sig: []const u8) []u8 {
+    /// Build an LLVM-friendly identifier suffix naming a JNI method-ID
+    /// slot: `[static_]<class_>method__signature`, with non-identifier
+    /// characters rewritten to `_`. The `_` rewrite is lossy, so this
+    /// is a reading aid only — `getOrCreateJniSlots` interns on the raw
+    /// key.
+    pub fn mangleJniKey(self: *LLVMEmitter, is_static: bool, class_path: []const u8, name: []const u8, sig: []const u8) []u8 {
         var buf = std.ArrayList(u8).empty;
+        if (is_static) buf.appendSlice(self.alloc, "static_") catch unreachable;
+        for (class_path) |b| buf.append(self.alloc, if (isIdentByte(b)) b else '_') catch unreachable;
+        if (class_path.len > 0) buf.append(self.alloc, '_') catch unreachable;
         for (name) |b| buf.append(self.alloc, if (isIdentByte(b)) b else '_') catch unreachable;
         buf.appendSlice(self.alloc, "__") catch unreachable;
         for (sig) |b| buf.append(self.alloc, if (isIdentByte(b)) b else '_') catch unreachable;

@@ -887,8 +887,9 @@ pub const Ops = struct {
         //              ifs[NewObject](env, cls, mid, args...) → jobject
         //   nonvirt:   handled below via FindClass + GetMethodID +
         //              CallNonvirtual<T>Method.
-        // The cached path (msg.cache_key != null) still shares one
-        // (jclass GlobalRef, jmethodID) pair per literal (name, sig).
+        // The cached path (msg.cache_key != null) shares one
+        // (jclass GlobalRef, jmethodID) pair per
+        // (is_static, class_path, name, sig) tuple.
         if (msg.is_constructor) {
             self.e.emitJniConstructor(msg, instruction.ty);
             return;
@@ -921,15 +922,14 @@ pub const Ops = struct {
         const ifs = c.LLVMBuildLoad2(self.e.builder, self.e.cached_ptr, env, "jni.ifs");
 
         // Method-ID resolution. When `name` and `sig` are both
-        // string literals the call site participates in
-        // `(name, sig)` slot interning: a shared
-        // pair of static globals holds the `jclass` GlobalRef
-        // and the `jmethodID`, populated lazily on the first
-        // call to any matching site. Non-literal sites fall
-        // back to the per-call `GetObjectClass + GetMethodID`
-        // sequence (1.15 shape).
+        // string literals the call site participates in slot
+        // interning: a shared pair of static globals holds the
+        // `jclass` GlobalRef and the `jmethodID`, populated lazily on
+        // the first call to any site with the same tuple. Non-literal
+        // sites fall back to the per-call `GetObjectClass +
+        // GetMethodID` sequence.
         const mid = if (msg.cache_key) |ck| blk: {
-            const pair = self.e.ffiCtors().getOrCreateJniSlots(ck.name_str, ck.sig_str);
+            const pair = self.e.ffiCtors().getOrCreateJniSlots(msg.is_static, ck.class_path, ck.name_str, ck.sig_str);
             const cached_mid = c.LLVMBuildLoad2(self.e.builder, self.e.cached_ptr, pair.mid_slot, "jni.cached.mid");
             const is_cached = c.LLVMBuildICmp(self.e.builder, c.LLVMIntNE, cached_mid, c.LLVMConstNull(self.e.cached_ptr), "jni.is.cached");
 

@@ -448,21 +448,20 @@ pub const FfiCtors = struct {
     }
 
     /// Return `{cls_slot, mid_slot}` global pair for the
-    /// `(name, sig)` literal — created on first lookup, shared across
-    /// later `@JniCall` sites with the same literal pair. Both
-    /// slots are zero-initialized `ptr`; the call-site lowering does
-    /// lazy population on first dispatch. The cache (`jni_slots`) +
-    /// `mangleJniKey` stay on `LLVMEmitter`.
-    pub fn getOrCreateJniSlots(self: FfiCtors, name: []const u8, sig: []const u8) JniSlotPair {
-        // Compose the key from name + a separator + sig. The separator
-        // is a byte that can't appear in a JNI method name or signature
-        // (NUL), so the same key never collides across distinct pairs.
-        const key = std.fmt.allocPrint(self.e.alloc, "{s}\x00{s}", .{ name, sig }) catch unreachable;
+    /// `(is_static, class_path, name, sig)` tuple — created on first
+    /// lookup, shared across later dispatch sites with the same tuple.
+    /// Both slots are zero-initialized `ptr`; the call-site lowering
+    /// does lazy population on first dispatch. The cache (`jni_slots`)
+    /// + `mangleJniKey` stay on `LLVMEmitter`.
+    pub fn getOrCreateJniSlots(self: FfiCtors, is_static: bool, class_path: []const u8, name: []const u8, sig: []const u8) JniSlotPair {
+        // NUL joins the components: it appears in no class path, method
+        // name or signature, so distinct tuples never share a key.
+        const key = std.fmt.allocPrint(self.e.alloc, "{d}\x00{s}\x00{s}\x00{s}", .{ @intFromBool(is_static), class_path, name, sig }) catch unreachable;
         if (self.e.jni_slots.get(key)) |existing| {
             self.e.alloc.free(key);
             return existing;
         }
-        const mangled = self.e.mangleJniKey(name, sig);
+        const mangled = self.e.mangleJniKey(is_static, class_path, name, sig);
         defer self.e.alloc.free(mangled);
         const cls_name = std.fmt.allocPrintSentinel(self.e.alloc, "SX_JNI_CLS_{s}", .{mangled}, 0) catch unreachable;
         defer self.e.alloc.free(cls_name);
