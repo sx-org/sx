@@ -2470,6 +2470,18 @@ pub const LLVMEmitter = struct {
         return c.LLVMFunctionType(st, &param_types, 3, 0);
     }
 
+    pub fn getOrDeclareRead(self: *LLVMEmitter) c.LLVMValueRef {
+        if (c.LLVMGetNamedFunction(self.llvm_module, "read")) |f| return f;
+        return c.LLVMAddFunction(self.llvm_module, "read", self.getReadType());
+    }
+
+    pub fn getReadType(self: *LLVMEmitter) c.LLVMTypeRef {
+        // read(fd: i32, buf: ptr, count: size_t) → ssize_t
+        const st = self.sizeType();
+        var param_types = [_]c.LLVMTypeRef{ self.cached_i32, self.cached_ptr, st };
+        return c.LLVMFunctionType(st, &param_types, 3, 0);
+    }
+
     fn getOrDeclareSnprintf(self: *LLVMEmitter) c.LLVMValueRef {
         if (c.LLVMGetNamedFunction(self.llvm_module, "snprintf")) |f| return f;
         return c.LLVMAddFunction(self.llvm_module, "snprintf", self.getSnprintfType());
@@ -2484,7 +2496,7 @@ pub const LLVMEmitter = struct {
     /// Check if a function name is a known libc builtin that has a dedicated
     /// getOrDeclare* helper with correct C-compatible types.
     fn isBuiltinLibcName(name: []const u8) bool {
-        const builtins = [_][]const u8{ "malloc", "free", "memcpy", "memset", "memcmp", "write", "snprintf" };
+        const builtins = [_][]const u8{ "malloc", "free", "memcpy", "memset", "memcmp", "read", "write", "snprintf" };
         for (builtins) |b| {
             if (std.mem.eql(u8, name, b)) return true;
         }
@@ -2498,6 +2510,7 @@ pub const LLVMEmitter = struct {
         if (std.mem.eql(u8, name, "memcpy")) return self.getOrDeclareMemcpy();
         if (std.mem.eql(u8, name, "memset")) return self.getOrDeclareMemset();
         if (std.mem.eql(u8, name, "memcmp")) return self.getOrDeclareMemcmp();
+        if (std.mem.eql(u8, name, "read")) return self.getOrDeclareRead();
         if (std.mem.eql(u8, name, "write")) return self.getOrDeclareWrite();
         if (std.mem.eql(u8, name, "snprintf")) return self.getOrDeclareSnprintf();
         return null;

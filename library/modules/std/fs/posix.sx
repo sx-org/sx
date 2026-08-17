@@ -31,12 +31,12 @@ fs_file_close :: (handle: i64) -> bool {
 
 fs_file_read :: (handle: i64, output: string) -> i64 {
     if !fs_file_is_valid(handle) { return -1; }
-    fs_posix_c.read(handle.(i32), output.ptr, xx output.len).(i64)
+    fs_posix_c.read(handle.(i32), output.ptr, output.len).(i64)
 }
 
 fs_file_write :: (handle: i64, data: string) -> i64 {
     if !fs_file_is_valid(handle) { return -1; }
-    fs_posix_c.write(handle.(i32), data.ptr, xx data.len).(i64)
+    fs_posix_c.write(handle.(i32), data.ptr, data.len).(i64)
 }
 
 fs_file_truncate :: (handle: i64, len: i64) -> bool {
@@ -85,7 +85,7 @@ fs_read_file :: (path: [:0]u8) -> ?string {
     at := 0;
     ok := true;
     while at < size {
-        made := fs_posix_c.read(fd, *buf.ptr[at], xx (size - at));
+        made := fs_posix_c.read(fd, *buf.ptr[at], (size - at));
         if made <= 0 { ok = false; break; }
         at += made;
     }
@@ -100,7 +100,7 @@ fs_read_file :: (path: [:0]u8) -> ?string {
 fs_posix_write_all :: (fd: i32, data: string) -> bool {
     at := 0;
     while at < data.len {
-        made := fs_posix_c.write(fd, *data.ptr[at], xx (data.len - at));
+        made := fs_posix_c.write(fd, *data.ptr[at], (data.len - at));
         if made <= 0 { return false; }
         at += made;
     }
@@ -192,7 +192,7 @@ fs_copy_file :: (src: [:0]u8, dst: [:0]u8) -> bool {
         if n > 0 {
             at := 0;
             while at < n.(i64) {
-                made := fs_posix_c.write(dst_fd, *buf.ptr[at], xx (n.(i64) - at));
+                made := fs_posix_c.write(dst_fd, *buf.ptr[at], (n.(i64) - at));
                 if made <= 0 { ok = false; loop = false; break; }
                 at += made;
             }

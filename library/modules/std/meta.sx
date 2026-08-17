@@ -200,7 +200,7 @@ define :: (handle: Type, info: TypeInfo) -> Type {
             // Reflect-only shapes (int/float/array/union/...) cannot be minted:
             // there is nothing nominal to register. Loud, not silent.
             msg := "define: only struct/enum/tuple TypeInfo shapes can be minted\n";
-            c.write(2, msg.ptr, xx msg.len);
+            c.write(2, msg.ptr, msg.len);
         }
     }
     return handle;

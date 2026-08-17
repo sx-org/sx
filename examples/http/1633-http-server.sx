@@ -87,12 +87,12 @@ resp_complete :: (buf: [*]u8, len: i64) -> bool {
 // Send a request and tick the server until its full response arrives.
 // Returns the response text ("" = the connection closed instead).
 roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8) -> string {
-    socket.write(fd, reqtext.ptr, xx reqtext.len);
+    socket.write(fd, reqtext.ptr, reqtext.len);
     total : i64 = 0;
     tries := 0;
     while tries < 400 {
         srv.tick(5) catch {};
-        n, re := socket.read_nb(fd, *scratch[total], xx (4096 - total));
+        n, re := socket.read_nb(fd, *scratch[total], (4096 - total));
         if !re { total += n; }
         else if re == error.Closed { return string{ ptr = scratch, len = xx total }; }
         if resp_complete(scratch, total) { return string{ ptr = scratch, len = xx total }; }
@@ -167,12 +167,12 @@ main :: () -> i32 {
     c2b := dial();
     if c2b < 0 { print("dial2b failed\n"); return 1; }
     bigbuf : [*]u8 = xx context.allocator.alloc_bytes(xx (big_n + 4096));
-    socket.write(c2b, breq.ptr, xx breq.len);
+    socket.write(c2b, breq.ptr, breq.len);
     btotal : i64 = 0;
     btries := 0;
     while btries < 2000 {
         srv.tick(5) catch {};
-        bn, bre := socket.read_nb(c2b, *bigbuf[btotal], xx (big_n + 4096 - btotal));
+        bn, bre := socket.read_nb(c2b, *bigbuf[btotal], (big_n + 4096 - btotal));
         if !bre { btotal += bn; }
         else if bre == error.Closed { break; }
         if resp_complete(bigbuf, btotal) { break; }
@@ -190,7 +190,7 @@ main :: () -> i32 {
     c3 := dial();
     if c3 < 0 { print("dial3 failed\n"); return 1; }
     half := "GET /hel";
-    socket.write(c3, half.ptr, xx half.len);
+    socket.write(c3, half.ptr, half.len);
     gone := event.deadline_in(300);   // > timeout_request_ms
     while !event.expired(gone) { srv.tick(5) catch {}; }
     c4 := dial();

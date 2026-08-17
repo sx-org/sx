@@ -86,7 +86,7 @@ main :: () -> i32 {
         if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
 
         req := "GET /big HTTP/1.1\r\nHost: t\r\n\r\n";
-        socket.write(ca, req.ptr, xx req.len);
+        socket.write(ca, req.ptr, req.len);
 
         // Let the server accept, serve, and PARK mid-write. Deterministic:
         // poll the slot until the write watch is armed (a write actually
@@ -112,7 +112,7 @@ main :: () -> i32 {
         fsent : i64 = 0;
         t = 0;
         while fsent < FLOOD_LEN and t < 300 {
-            n, we := socket.write_nb(ca, *junk[fsent], xx (FLOOD_LEN - fsent));
+            n, we := socket.write_nb(ca, *junk[fsent], (FLOOD_LEN - fsent));
             if !we { fsent += n; }
             // 3x the 8 KB cap already landed and the kernel is backed up
             // (the fixed server stopped reading): the over-cap branch has
@@ -133,7 +133,7 @@ main :: () -> i32 {
             srv.tick(1) catch {};
             got : i64 = 0;
             while true {
-                n, re := socket.read_nb(ca, *rbuf[total], xx (cap - total));
+                n, re := socket.read_nb(ca, *rbuf[total], (cap - total));
                 if !re { total += n; got += n; continue; }
                 if re == error.Closed { done = true; }  // orderly EOF after close_after
                 break;                                  // WouldBlock: next tick

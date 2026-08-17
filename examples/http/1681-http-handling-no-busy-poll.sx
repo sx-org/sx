@@ -84,7 +84,7 @@ main :: () -> i32 {
 
         // Request 1: /slow — accepted, parsed, dispatched to a worker.
         req1 := "GET /slow HTTP/1.1\r\nHost: t\r\n\r\n";
-        socket.write(ca, req1.ptr, xx req1.len);
+        socket.write(ca, req1.ptr, req1.len);
         t : i64 = 0;
         while t < 5 { srv.tick(2) catch {}; t += 1; }   // accept + dispatch
 
@@ -92,7 +92,7 @@ main :: () -> i32 {
         // unread in the kernel buffer — under level-triggered readiness they
         // are reported every wait() and the loop spins doing nothing.
         req2 := "GET /fast HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
-        socket.write(ca, req2.ptr, xx req2.len);
+        socket.write(ca, req2.ptr, req2.len);
         usleep(10000);   // let the bytes land
 
         // Count loop iterations until both responses are in (worker sleeps
@@ -104,7 +104,7 @@ main :: () -> i32 {
         while ticks < 20000 and !done {
             srv.tick(30) catch {};
             ticks += 1;
-            n, re := socket.read_nb(ca, *rbuf[total], xx (cap - total));
+            n, re := socket.read_nb(ca, *rbuf[total], (cap - total));
             if !re { total += n; }
             else if re == error.Closed { done = true; }
             resp := string{ ptr = rbuf, len = xx total };

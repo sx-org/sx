@@ -132,7 +132,7 @@ main :: () -> i32 {
         ca := dial_port(PORT);
         if ca < 0 { print("dial A failed\n"); srv.close(); return 1; }
         slow_req := "GET /slow HTTP/1.1\r\nHost: t\r\n\r\n";
-        socket.write(ca, slow_req.ptr, xx slow_req.len);
+        socket.write(ca, slow_req.ptr, slow_req.len);
 
         // Tick enough to accept + dispatch the slow request (CONN_HANDLING),
         // then keep ticking past the 40 ms handler deadline so the loop's
@@ -142,7 +142,7 @@ main :: () -> i32 {
         t : i64 = 0;
         while t < 120 {   // ~120 ms of 1 ms ticks — past the 40 ms deadline
             srv.tick(1) catch {};
-            n, re := socket.read_nb(ca, *sbuf[sa_total], xx (cap - sa_total));
+            n, re := socket.read_nb(ca, *sbuf[sa_total], (cap - sa_total));
             if !re { sa_total += n; }
             else if re == error.Closed {
                 slow_resp = string{ ptr = sbuf, len = xx sa_total };
@@ -169,13 +169,13 @@ main :: () -> i32 {
         cb := dial_port(PORT);
         if cb < 0 { print("dial B failed\n"); srv.close(); return 1; }
         fast_req := "GET /fast HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
-        socket.write(cb, fast_req.ptr, xx fast_req.len);
+        socket.write(cb, fast_req.ptr, fast_req.len);
         fb_total : i64 = 0;
         fast_resp : string = "";
         t = 0;
         while t < 200 {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(cb, *fbuf[fb_total], xx (cap - fb_total));
+            n, re := socket.read_nb(cb, *fbuf[fb_total], (cap - fb_total));
             if !re { fb_total += n; }
             else if re == error.Closed {
                 fast_resp = string{ ptr = fbuf, len = xx fb_total };

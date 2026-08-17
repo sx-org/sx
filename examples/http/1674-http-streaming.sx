@@ -176,13 +176,13 @@ main :: () -> i32 {
             if c1 < 0 { print("dial failed\n"); rc = 1; }
             if rc == 0 {
                 req := "GET /big HTTP/1.1\r\nHost: t\r\n\r\n";
-                socket.write(c1, req.ptr, xx req.len);
+                socket.write(c1, req.ptr, req.len);
                 total : i64 = 0;
                 tries := 0;
                 done := false;
                 while tries < 200000 and !done {
                     srv.tick(2) catch {};
-                    n, re := socket.read_nb(c1, *rbuf[total], xx (cap - total));
+                    n, re := socket.read_nb(c1, *rbuf[total], (cap - total));
                     if !re { total += n; }
                     else if re == error.Closed { break; }
                     if chunked_complete(rbuf, total) { done = true; }
@@ -215,13 +215,13 @@ main :: () -> i32 {
                 if c2 < 0 { print("dial2 failed\n"); rc = 1; }
                 if rc == 0 {
                     req := "GET /small HTTP/1.1\r\nHost: t\r\n\r\n";
-                    socket.write(c2, req.ptr, xx req.len);
+                    socket.write(c2, req.ptr, req.len);
                     total : i64 = 0;
                     tries := 0;
                     got := false;
                     while tries < 4000 and !got {
                         srv.tick(2) catch {};
-                        n, re := socket.read_nb(c2, *rbuf[total], xx (cap - total));
+                        n, re := socket.read_nb(c2, *rbuf[total], (cap - total));
                         if !re { total += n; }
                         else if re == error.Closed { break; }
                         s := string{ ptr = rbuf, len = xx total };
@@ -244,13 +244,13 @@ main :: () -> i32 {
                 if rc == 0 {
                     // first: chunked /big
                     req := "GET /big HTTP/1.1\r\nHost: t\r\n\r\n";
-                    socket.write(c3, req.ptr, xx req.len);
+                    socket.write(c3, req.ptr, req.len);
                     total : i64 = 0;
                     tries := 0;
                     done := false;
                     while tries < 200000 and !done {
                         srv.tick(2) catch {};
-                        n, re := socket.read_nb(c3, *rbuf[total], xx (cap - total));
+                        n, re := socket.read_nb(c3, *rbuf[total], (cap - total));
                         if !re { total += n; }
                         else if re == error.Closed { break; }
                         if chunked_complete(rbuf, total) { done = true; }
@@ -265,13 +265,13 @@ main :: () -> i32 {
                     // second: fixed /small on the SAME connection
                     if rc == 0 {
                         req2 := "GET /small HTTP/1.1\r\nHost: t\r\n\r\n";
-                        socket.write(c3, req2.ptr, xx req2.len);
+                        socket.write(c3, req2.ptr, req2.len);
                         total = 0;
                         tries = 0;
                         got := false;
                         while tries < 4000 and !got {
                             srv.tick(2) catch {};
-                            n, re := socket.read_nb(c3, *rbuf[total], xx (cap - total));
+                            n, re := socket.read_nb(c3, *rbuf[total], (cap - total));
                             if !re { total += n; }
                             else if re == error.Closed { break; }
                             s := string{ ptr = rbuf, len = xx total };

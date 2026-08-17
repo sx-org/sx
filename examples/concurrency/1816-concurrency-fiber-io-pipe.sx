@@ -27,8 +27,8 @@ sched :: #import "modules/std/sched.sx";
 // Raw libc fd primitives. These MUST match the canonical signatures already
 // bound by std (socket.sx / core.sx), or the extern dedupe rejects a divergent
 // re-binding of the same C symbol. `pipe` comes from the c.sx surface itself.
-read   :: (fd: i32, buf: [*]u8, count: usize) -> isize extern libc "read";
-write  :: (fd: i32, buf: [*]u8, count: usize) -> isize extern libc "write";
+read   :: (fd: i32, buf: [*]u8, count: i64) -> isize extern libc "read";
+write  :: (fd: i32, buf: [*]u8, count: i64) -> isize extern libc "write";
 close  :: (fd: i32) -> i32 extern libc "close";
 
 // Shared log: a tiny ledger of what happened, in order.

@@ -83,7 +83,7 @@ send_split :: (srv: *http.Server, fd: i32, s: string, piece: i64) {
         if sent + want > s.len { want = s.len - sent; }
         off : i64 = 0;
         while off < want {
-            n, we := socket.write_nb(fd, *s.ptr[sent + off], xx (want - off));
+            n, we := socket.write_nb(fd, *s.ptr[sent + off], (want - off));
             if !we { off += n; }
             srv.tick(1) catch {};
         }
@@ -101,7 +101,7 @@ read_response :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64) -> string {
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, *buf[total], xx (cap - total));
+            n, re := socket.read_nb(fd, *buf[total], (cap - total));
             if !re { total += n; got += n; continue; }
             break;
         }
@@ -212,7 +212,7 @@ main :: () -> i32 {
 
         // ── 3. pipelined plain request on the same connection ─────────
         r3 := "GET /plain HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
-        socket.write(ca, r3.ptr, xx r3.len);
+        socket.write(ca, r3.ptr, r3.len);
         resp3 := read_response(*srv, ca, rbuf, cap);
         if !contains(resp3, "HTTP/1.1 200 OK") or !contains(resp3, "plain-ok") {
             print("follow-up plain request failed\n");

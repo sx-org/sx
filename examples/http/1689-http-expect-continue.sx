@@ -67,7 +67,7 @@ count_occurrences :: (hay: string, needle: string) -> i64 {
 drain :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64, total: *i64) -> bool {
     srv.tick(1) catch {};
     while true {
-        n, re := socket.read_nb(fd, *buf[total.*], xx (cap - total.*));
+        n, re := socket.read_nb(fd, *buf[total.*], (cap - total.*));
         if !re { total.* += n; continue; }
         if re == error.Closed { return true; }
         return false;
@@ -84,7 +84,7 @@ drain :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64, total: *i64) -> bool
 staged :: (srv: *http.Server, first: string, second: string, third: string, wait_for: string, buf: [*]u8, cap: i64) -> string {
     fd := dial_port(PORT);
     if fd < 0 { return ""; }
-    socket.write(fd, first.ptr, xx first.len);
+    socket.write(fd, first.ptr, first.len);
     total : i64 = 0;
     // Phase 1: wait for the interim (or prove silence).
     if wait_for.len > 0 {
@@ -104,7 +104,7 @@ staged :: (srv: *http.Server, first: string, second: string, third: string, wait
     // Phase 2: a partial body piece, then ticks that would expose a
     // re-emitted interim on the extra need-more cycle.
     if second.len > 0 {
-        socket.write(fd, second.ptr, xx second.len);
+        socket.write(fd, second.ptr, second.len);
         if third.len > 0 {
             mid : i64 = 0;
             while mid < 20 {
@@ -114,7 +114,7 @@ staged :: (srv: *http.Server, first: string, second: string, third: string, wait
         }
     }
     // Phase 3: the rest of the request, then read to EOF.
-    if third.len > 0 { socket.write(fd, third.ptr, xx third.len); }
+    if third.len > 0 { socket.write(fd, third.ptr, third.len); }
     stall : i64 = 0;
     done := false;
     prev := total;

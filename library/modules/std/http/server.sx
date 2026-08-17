@@ -2838,7 +2838,7 @@ Server :: struct {
         }
     }
 
-    conn_read :: (self: *Server, slot: i64, buf: [*]u8, cap: usize) -> (i64, !) {
+    conn_read :: (self: *Server, slot: i64, buf: [*]u8, cap: i64) -> (i64, !) {
         c := *self.conns[slot];
         if c.tls != null {
             n, step := c.tls.read(buf, cap);
@@ -2873,7 +2873,7 @@ Server :: struct {
         return nq;
     }
 
-    conn_write :: (self: *Server, slot: i64, buf: [*]u8, len: usize) -> (i64, !) {
+    conn_write :: (self: *Server, slot: i64, buf: [*]u8, len: i64) -> (i64, !) {
         c := *self.conns[slot];
         if c.tls != null {
             n, step := c.tls.write(buf, len);

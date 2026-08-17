@@ -81,7 +81,7 @@ to_string :: () -> string {
 print_current :: () {
     s := to_string();
     if s.len > 0 {
-        c.write(2, s.ptr, xx s.len);
+        c.write(2, s.ptr, s.len);
     }
 }
 

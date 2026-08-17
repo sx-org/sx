@@ -13,7 +13,7 @@
 // escape (the VM's dlsym path / the interp's extern call); at runtime it's an
 // ordinary libc call through the canonical std/c.sx surface.
 out :: (str: string) -> void {
-    c.write(1, str.ptr, xx str.len);
+    c.write(1, str.ptr, str.len);
 }
 // sqrt :: (x: $T) -> T intrinsic;
 // sin :: (x: $T) -> T intrinsic;
@@ -187,7 +187,7 @@ __sx_printf_i64 :: (n: i64) {
                 buf[i] = '-';
             }
         }
-        c.write(1, *buf[i], xx (20 - i));
+        c.write(1, *buf[i], (20 - i));
     }
 }
 
@@ -232,7 +232,7 @@ __sx_printf_u64 :: (n: u64) {
             buf[i] = xx (rem + '0');
         }
     }
-    c.write(1, *buf[i], xx (20 - i));
+    c.write(1, *buf[i], (20 - i));
 }
 
 // Six fractional digits, zero-padded — the rendering `float_to_string` gives

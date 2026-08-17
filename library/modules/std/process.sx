@@ -27,7 +27,7 @@ libc :: c.libc;
 
 popen  :: (cmd: [:0]u8, mode: [:0]u8) -> *void extern libc;
 pclose :: (stream: *void) -> i32 extern libc;
-fread  :: (ptr: [*]u8, size: usize, nmemb: usize, stream: *void) -> usize extern libc;
+fread  :: (ptr: [*]u8, size: i64, nmemb: i64, stream: *void) -> usize extern libc;
 feof   :: (stream: *void) -> i32 extern libc;
 getenv :: (name: cstring) -> ?cstring extern libc;
 system :: (cmd: [:0]u8) -> i32 extern libc;
@@ -186,13 +186,13 @@ Child :: struct {
     // returns exactly what libc returned: the byte count, 0 for EOF on a
     // read, or -1 with the reason in `posix.errno()`.
     stdin_write :: (self: *Child, line: []u8) -> isize {
-        return c.write(self.stdin, line.ptr, xx line.len);
+        return c.write(self.stdin, line.ptr, line.len);
     }
     stdout_read :: (self: *Child, buf: []u8) -> isize {
-        return c.read(self.stdout, buf.ptr, xx buf.len);
+        return c.read(self.stdout, buf.ptr, buf.len);
     }
     stderr_read :: (self: *Child, buf: []u8) -> isize {
-        return c.read(self.stderr, buf.ptr, xx buf.len);
+        return c.read(self.stderr, buf.ptr, buf.len);
     }
 
     // Close the parent's end of a slot. Closing stdin is how the child

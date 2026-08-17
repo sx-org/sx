@@ -88,9 +88,7 @@ copy_bytes :: (dst: [*]u8, src: [*]u8, n: i64) {
 }
 
 // ── poll + socket-level error/timeouts (— timed client dials) ──
-// pollfd is byte-identical on darwin + linux; nfds is declared usize so the
-// full zero-extended register is correct against BOTH ABIs (darwin nfds_t
-// is u32 — reads the low word; linux is u64).
+// pollfd is byte-identical on darwin + linux. `nfds` is i64.
 PollFd :: struct {
     fd:      i32 = -1;
     events:  i16 = 0;
@@ -102,7 +100,7 @@ POLLOUT :i16: 0x0004;
 POLLERR :i16: 0x0008;
 POLLHUP :i16: 0x0010;
 
-poll :: (fds: *PollFd, nfds: usize, timeout_ms: i32) -> i32 extern libc;
+poll :: (fds: *PollFd, nfds: i64, timeout_ms: i32) -> i32 extern libc;
 
 getsockopt :: (fd: i32, level: i32, optname: i32, optval: *i32, optlen: *u32) -> i32 extern libc;
 
@@ -539,7 +537,7 @@ accept_nb :: (fd: i32) -> (i32, !SockErr) {
 
 // Read up to `cap` bytes. Returns the byte count (> 0); an orderly EOF
 // or a peer reset is Closed.
-read_nb :: (fd: i32, buf: [*]u8, cap: usize) -> (i64, !SockErr) {
+read_nb :: (fd: i32, buf: [*]u8, cap: i64) -> (i64, !SockErr) {
     while true {
         n := clib.read(fd, buf, cap);
         if n > 0 { return xx n; }
@@ -555,7 +553,7 @@ read_nb :: (fd: i32, buf: [*]u8, cap: usize) -> (i64, !SockErr) {
 
 // Write up to `len` bytes, returning how many the kernel took (possibly
 // fewer — the caller continues from there on the next writability).
-write_nb :: (fd: i32, buf: [*]u8, len: usize) -> (i64, !SockErr) {
+write_nb :: (fd: i32, buf: [*]u8, len: i64) -> (i64, !SockErr) {
     while true {
         n := clib.write(fd, buf, len);
         if n >= 0 { return xx n; }

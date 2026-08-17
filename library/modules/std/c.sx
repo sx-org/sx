@@ -31,8 +31,8 @@ memset  :: (dst: *void, val: i64, size: i64) -> void extern libc;
 memmove :: (dst: *void, src: *void, size: i64) -> *void extern libc;
 
 // ── file / io ───────────────────────────────────────────────────────────────
-read   :: (fd: i32, buf: [*]u8, count: usize) -> isize extern libc;
-write  :: (fd: i32, buf: [*]u8, count: usize) -> isize extern libc;
+read   :: (fd: i32, buf: [*]u8, count: i64) -> isize extern libc;
+write  :: (fd: i32, buf: [*]u8, count: i64) -> isize extern libc;
 close  :: (fd: i32) -> i32 extern libc;
 open   :: (path: [:0]u8, flags: i32, ..args: []i32) -> i32 extern libc;
 lseek  :: (fd: i32, offset: i64, whence: i32) -> i64 extern libc;

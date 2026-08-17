@@ -245,7 +245,7 @@ dial_port :: (port: i64) -> i32 {
 write_all :: (fd: i32, data: string) -> bool {
     at : i64 = 0;
     while at < data.len {
-        n := socket.write(fd, *data.ptr[at], xx (data.len - at));
+        n := socket.write(fd, *data.ptr[at], (data.len - at));
         if n <= 0 { return false; }
         at += n;
     }
@@ -267,7 +267,7 @@ fault_wire_case :: (port: i64, path: string, accept: string) -> bool {
     storage : [65536]u8 = ---;
     total : i64 = 0;
     while ok and total < storage.len {
-        n := socket.read(fd, *storage[total], xx (storage.len - total));
+        n := socket.read(fd, *storage[total], (storage.len - total));
         if n <= 0 { break; }
         total += n;
     }

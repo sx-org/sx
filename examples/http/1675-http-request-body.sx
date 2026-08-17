@@ -94,13 +94,13 @@ resp_complete :: (buf: [*]u8, len: i64) -> bool {
 roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
     fd := dial_port(PORT);
     if fd < 0 { return ""; }
-    socket.write(fd, reqtext.ptr, xx reqtext.len);
+    socket.write(fd, reqtext.ptr, reqtext.len);
     total : i64 = 0;
     tries := 0;
     out : string = "";
     while tries < 4000 {
         srv.tick(2) catch {};
-        n, re := socket.read_nb(fd, *scratch[total], xx (8192 - total));
+        n, re := socket.read_nb(fd, *scratch[total], (8192 - total));
         if !re { total += n; }
         else if re == error.Closed { out = string{ ptr = scratch, len = xx total }; break; }
         if resp_complete(scratch, total) { out = string{ ptr = scratch, len = xx total }; break; }
@@ -127,11 +127,11 @@ roundtrip_split :: (srv: *http.Server, reqtext: string, pieces: i64, scratch: [*
         if sent < reqtext.len {
             n := piece;
             if sent + n > reqtext.len { n = reqtext.len - sent; }
-            socket.write(fd, *reqtext.ptr[sent], xx n);
+            socket.write(fd, *reqtext.ptr[sent], n);
             sent += n;
         }
         srv.tick(2) catch {};
-        rn, re := socket.read_nb(fd, *scratch[total], xx (8192 - total));
+        rn, re := socket.read_nb(fd, *scratch[total], (8192 - total));
         if !re { total += rn; }
         else if re == error.Closed { out = string{ ptr = scratch, len = xx total }; break; }
         if resp_complete(scratch, total) { out = string{ ptr = scratch, len = xx total }; break; }
@@ -295,7 +295,7 @@ main :: () -> i32 {
             else {
                 // partial chunked body, then disconnect before completion
                 partial := "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel";
-                socket.write(fd, partial.ptr, xx partial.len);
+                socket.write(fd, partial.ptr, partial.len);
                 t := 0;
                 while t < 50 { srv.tick(1) catch {}; t += 1; }   // let the server read the partial
                 socket.close(fd);                                 // disconnect mid-body

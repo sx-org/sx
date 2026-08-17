@@ -14,7 +14,7 @@ c :: #import "modules/std/c.sx"; // libc write
 // Prefix the level, append a newline, write the whole line to stderr.
 log_emit :: (level: string, msg: string) {
     line := concat(concat(level, msg), "\n");
-    c.write(2, line.ptr, xx line.len);
+    c.write(2, line.ptr, line.len);
 }
 
 warn  :: ($fmt: string, ..$args) { #insert build_format(fmt); #insert "log_emit(\"WARN:  \", result);"; }

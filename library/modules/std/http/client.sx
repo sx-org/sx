@@ -146,11 +146,11 @@ close_conn :: (c: *ClientConn) {
 // would wait the whole timeout again, forever; it is a Send failure.
 conn_write_step :: (c: *ClientConn, buf: [*]u8, len: i64) -> i64 {
     if c.tls != null {
-        n, step := c.tls.write(buf, xx len);
+        n, step := c.tls.write(buf, len);
         if step == TlsStep.Done { return n; }
         return -1;
     }
-    n := socket.write(c.fd, buf, xx len);
+    n := socket.write(c.fd, buf, len);
     if n <= 0 { return -1; }
     return n;
 }
@@ -164,12 +164,12 @@ READ_RESET :i64: -2;
 // reset the conn, -1 = any other fault/timeout.
 conn_read_step :: (c: *ClientConn, buf: [*]u8, cap: i64) -> i64 {
     if c.tls != null {
-        n, step := c.tls.read(buf, xx cap);
+        n, step := c.tls.read(buf, cap);
         if step == TlsStep.Done { return n; }
         if step == TlsStep.Closed { return 0; }
         return -1;   // Want (io timeout on a blocking fd) or Fatal
     }
-    n := socket.read(c.fd, buf, xx cap);
+    n := socket.read(c.fd, buf, cap);
     if n < 0 {
         // READ_RESET, not a generic fault: an idle keep-alive conn the peer
         // has closed answers the request we just wrote with an RST, and the
@@ -237,7 +237,7 @@ send :: (fd: i32, method: string, path: string, host: string, extra_headers: str
 
     sent : i64 = 0;
     while sent < req.len {
-        n := socket.write(fd, *req.ptr[sent], xx (req.len - sent));
+        n := socket.write(fd, *req.ptr[sent], (req.len - sent));
         if n <= 0 { raise error.Send; }
         sent += n;
     }

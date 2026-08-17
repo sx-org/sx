@@ -72,7 +72,7 @@ inline match OS {
             if fd < 0 { return -1; }
             at := 0;
             while at < cap {
-                made := c.read(fd, *buf[at], xx (cap - at)).(i64);
+                made := c.read(fd, *buf[at], (cap - at)).(i64);
                 if made < 0 { c.close(fd); return -1; }
                 if made == 0 { break; }
                 at += made;

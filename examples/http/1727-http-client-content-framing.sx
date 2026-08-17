@@ -29,7 +29,7 @@ contains :: (value: string, needle: string) -> bool {
 write_all :: (fd: i32, data: string) -> bool {
     at : i64 = 0;
     while at < data.len {
-        n := socket.write(fd, *data.ptr[at], xx (data.len - at));
+        n := socket.write(fd, *data.ptr[at], (data.len - at));
         if n <= 0 { return false; }
         at += n;
     }

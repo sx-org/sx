@@ -70,13 +70,13 @@ dial_addr :: (a: *socket.Addr) -> i32 {
 // One GET → expect a 200 "pong" within the tick budget.
 roundtrip :: (srv: *http.Server, fd: i32) -> bool {
     req := "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
-    socket.write(fd, req.ptr, xx req.len);
+    socket.write(fd, req.ptr, req.len);
     rbuf : [2048]u8 = ---;
     total : i64 = 0;
     t : i64 = 0;
     while t < 2000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, *rbuf[total], xx (2048 - total));
+        n, re := socket.read_nb(fd, *rbuf[total], (2048 - total));
         if !re { total += n; }
         else if re == error.Closed { break; }
         s := string{ ptr = *rbuf[0], len = xx total };

@@ -71,7 +71,7 @@ contains :: (hay: string, needle: string) -> bool {
 roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -> string {
     fd := dial_port(port);
     if fd < 0 { return ""; }
-    socket.write(fd, req.ptr, xx req.len);
+    socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
     stall : i64 = 0;
     done := false;
@@ -79,7 +79,7 @@ roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, *buf[total], xx (cap - total));
+            n, re := socket.read_nb(fd, *buf[total], (cap - total));
             if !re { total += n; got += n; continue; }
             if re == error.Closed { done = true; }
             break;

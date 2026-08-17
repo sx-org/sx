@@ -121,7 +121,7 @@ num_after :: (hay: string, key: string) -> i64 {
 send_all :: (srv: *http.Server, fd: i32, s: string) {
     sent : i64 = 0;
     while sent < s.len {
-        n, we := socket.write_nb(fd, *s.ptr[sent], xx (s.len - sent));
+        n, we := socket.write_nb(fd, *s.ptr[sent], (s.len - sent));
         if !we { sent += n; }
         srv.tick(1) catch {};
     }
@@ -132,7 +132,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     t : i64 = 0;
     while t < 20000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, *rbuf[total], xx (cap - total));
+        n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
         if !re { total += n; }
         else if re == error.Closed { return total; }
         resp := string{ ptr = rbuf, len = xx total };
@@ -159,7 +159,7 @@ read_chunked :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     t : i64 = 0;
     while t < 200000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, *rbuf[total], xx (cap - total));
+        n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
         if !re { total += n; }
         else if re == error.Closed { return total; }
         if total >= 5
@@ -258,7 +258,7 @@ main :: () -> i32 {
         t : i64 = 0;
         while t < 20000 and he < 0 {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(c1, *rbuf[h_total], xx (cap - h_total));
+            n, re := socket.read_nb(c1, *rbuf[h_total], (cap - h_total));
             if !re { h_total += n; }
             k : i64 = 0;
             while k + 3 < h_total {
@@ -270,7 +270,7 @@ main :: () -> i32 {
         t = 0;
         while t < 50 {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(c1, *rbuf[h_total], xx (cap - h_total));
+            n, re := socket.read_nb(c1, *rbuf[h_total], (cap - h_total));
             if !re { h_total += n; }
             t += 1;
         }

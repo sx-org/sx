@@ -62,7 +62,7 @@ count_occurrences :: (hay: string, needle: string) -> i64 {
 exchange :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64, eof: *bool) -> string {
     fd := dial_port(PORT);
     if fd < 0 { eof.* = false; return ""; }
-    socket.write(fd, req.ptr, xx req.len);
+    socket.write(fd, req.ptr, req.len);
     total : i64 = 0;
     stall : i64 = 0;
     done := false;
@@ -70,7 +70,7 @@ exchange :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64, eof: *bool) -
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, *buf[total], xx (cap - total));
+            n, re := socket.read_nb(fd, *buf[total], (cap - total));
             if !re { total += n; got += n; continue; }
             if re == error.Closed { done = true; }
             break;

@@ -80,7 +80,7 @@ FakeConn :: struct {
 drain_fd :: (c: *FakeConn) -> i64 {
     got : i64 = 0;
     while c.pend_len < PEND_CAP {
-        n, re := socket.read_nb(c.fd, *c.pend[c.pend_len], xx (PEND_CAP - c.pend_len));
+        n, re := socket.read_nb(c.fd, *c.pend[c.pend_len], (PEND_CAP - c.pend_len));
         if re == error.WouldBlock { break; }
         if re { if got > 0 { break; } return -1; }
         c.pend_len += n;
@@ -94,7 +94,7 @@ impl TlsConn for FakeConn {
         return TlsStep.Done;   // passthrough: no real negotiation
     }
 
-    read :: (self: *FakeConn, buf: [*]u8, cap: usize) -> (i64, TlsStep) {
+    read :: (self: *FakeConn, buf: [*]u8, cap: i64) -> (i64, TlsStep) {
         // Held-back bytes first — the retry after an injected WantWrite.
         if self.pend_off < self.pend_len {
             n := self.pend_len - self.pend_off;
@@ -140,7 +140,7 @@ impl TlsConn for FakeConn {
         return n, TlsStep.Done;
     }
 
-    write :: (self: *FakeConn, buf: [*]u8, len: usize) -> (i64, TlsStep) {
+    write :: (self: *FakeConn, buf: [*]u8, len: i64) -> (i64, TlsStep) {
         if self.mode == MODE_W {
             if self.wr_waiting {
                 // Needs one fresh peer byte (a "handshake record") before the
@@ -257,7 +257,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64, needle: str
     t : i64 = 0;
     while t < 2500 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, *rbuf[total], xx (cap - total));
+        n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
         if !re { total += n; }
         else if re == error.Closed { break; }
         s := string{ ptr = rbuf, len = xx total };
@@ -304,7 +304,7 @@ run :: (acc: *FakeAcceptor) -> i32 {
     c1 := dial();
     if c1 < 0 { return 3; }
     req_a := "GET /a HTTP/1.1\r\nHost: t\r\n\r\n";
-    socket.write(c1, req_a.ptr, xx req_a.len);
+    socket.write(c1, req_a.ptr, req_a.len);
     if !read_response(*srv, c1, *rbuf[0], 4096, "ok-a") { srv.close(); return 10; }
     socket.close(c1);
 
@@ -315,7 +315,7 @@ run :: (acc: *FakeAcceptor) -> i32 {
     c2 := dial();
     if c2 < 0 { return 4; }
     req_b := "GET /b HTTP/1.1\r\nHost: t\r\n\r\n";
-    socket.write(c2, req_b.ptr, xx req_b.len);
+    socket.write(c2, req_b.ptr, req_b.len);
     t : i64 = 0;
     while acc.wr_declared == 0 and t < 2500 { srv.tick(1) catch {}; t += 1; }
     if acc.wr_declared != 1 { srv.close(); return 11; }
@@ -330,7 +330,7 @@ run :: (acc: *FakeAcceptor) -> i32 {
     if acc.wr_extra_retries != 0 { srv.close(); return 13; }
     // keep-alive on the same conn: the watch state healed.
     req_b2 := "GET /b2 HTTP/1.1\r\nHost: t\r\n\r\n";
-    socket.write(c2, req_b2.ptr, xx req_b2.len);
+    socket.write(c2, req_b2.ptr, req_b2.len);
     if !read_response(*srv, c2, *rbuf[0], 4096, "pong") { srv.close(); return 14; }
     socket.close(c2);
 
@@ -340,11 +340,11 @@ run :: (acc: *FakeAcceptor) -> i32 {
     c3 := dial();
     if c3 < 0 { return 5; }
     req_c := "POST /c HTTP/1.1\r\nHost: t\r\nContent-Length: 12\r\n\r\nabcd";
-    socket.write(c3, req_c.ptr, xx req_c.len);
+    socket.write(c3, req_c.ptr, req_c.len);
     t = 0;
     while t < 30 { srv.tick(1) catch {}; t += 1; }   // headers dispatched, pump waiting
     tail := "efghijkl";
-    socket.write(c3, tail.ptr, xx tail.len);
+    socket.write(c3, tail.ptr, tail.len);
     if !read_response(*srv, c3, *rbuf[0], 4096, "got-12") { srv.close(); return 15; }
     socket.close(c3);
 
@@ -355,7 +355,7 @@ run :: (acc: *FakeAcceptor) -> i32 {
     c4 := dial();
     if c4 < 0 { return 6; }
     req_h := "GET /h HTTP/1.1\r\nHost: t\r\n\r\n";
-    socket.write(c4, req_h.ptr, xx req_h.len);
+    socket.write(c4, req_h.ptr, req_h.len);
     if !read_response(*srv, c4, *rbuf[0], 4096, "ok-h") { srv.close(); return 17; }
     socket.close(c4);
 

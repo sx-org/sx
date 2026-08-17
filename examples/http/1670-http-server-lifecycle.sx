@@ -95,12 +95,12 @@ contains :: (hay: string, needle: string) -> bool {
 
 // Send one request, tick the server to completion, return the response.
 roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: i64) -> string {
-    socket.write(fd, reqtext.ptr, xx reqtext.len);
+    socket.write(fd, reqtext.ptr, reqtext.len);
     total : i64 = 0;
     tries := 0;
     while tries < 2000 {
         srv.tick(5) catch {};
-        n, re := socket.read_nb(fd, *scratch[total], xx (cap - total));
+        n, re := socket.read_nb(fd, *scratch[total], (cap - total));
         if !re { total += n; }
         else if re == error.Closed { return string{ ptr = scratch, len = xx total }; }
         if resp_complete(scratch, total) { return string{ ptr = scratch, len = xx total }; }
@@ -182,7 +182,7 @@ serve_inflight_close :: (port: i64, n: i64) -> bool {
     req := "GET /slow HTTP/1.1\r\nHost: t\r\n\r\n";
     i = 0;
     while i < n {
-        socket.write(fds[i], req.ptr, xx req.len);
+        socket.write(fds[i], req.ptr, req.len);
         i += 1;
     }
     // Tick ~30ms total (30 ticks * 1ms) — long enough to accept and

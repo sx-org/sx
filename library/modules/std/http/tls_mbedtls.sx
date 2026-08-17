@@ -79,7 +79,7 @@ impl TlsConn for TlsSession {
         return TlsStep.Fatal;
     }
 
-    read :: (self: *TlsSession, buf: [*]u8, cap: usize) -> (i64, TlsStep) {
+    read :: (self: *TlsSession, buf: [*]u8, cap: i64) -> (i64, TlsStep) {
         while true {
             r := mbedtls.mbedtls_ssl_read(*self.ssl, buf, cap);
             if r > 0 { return xx r, TlsStep.Done; }
@@ -97,7 +97,7 @@ impl TlsConn for TlsSession {
         return 0, TlsStep.Fatal;
     }
 
-    write :: (self: *TlsSession, buf: [*]u8, len: usize) -> (i64, TlsStep) {
+    write :: (self: *TlsSession, buf: [*]u8, len: i64) -> (i64, TlsStep) {
         r := mbedtls.mbedtls_ssl_write(*self.ssl, buf, len);
         if r > 0 { return xx r, TlsStep.Done; }
         if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return 0, TlsStep.WantRead; }

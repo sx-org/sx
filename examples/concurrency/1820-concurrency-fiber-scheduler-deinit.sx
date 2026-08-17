@@ -37,8 +37,8 @@ sched :: #import "modules/std/sched.sx";
 // Raw libc fd primitives — canonical signatures (the extern dedupe rejects a
 // divergent re-binding of the same C symbol). `close` matches sched.sx's own;
 // `pipe` comes from the c.sx surface itself.
-read   :: (fd: i32, buf: [*]u8, count: usize) -> isize extern libc "read";
-write  :: (fd: i32, buf: [*]u8, count: usize) -> isize extern libc "write";
+read   :: (fd: i32, buf: [*]u8, count: i64) -> isize extern libc "read";
+write  :: (fd: i32, buf: [*]u8, count: i64) -> isize extern libc "write";
 close  :: (fd: i32) -> i32 extern libc "close";
 
 S :: struct {

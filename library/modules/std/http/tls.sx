@@ -33,10 +33,10 @@ TlsConn :: protocol vtable #identity {
     handshake :: (self: *Self) -> TlsStep;
     // Read decrypted app-data. Returns (bytes, step): on Done, `bytes` were
     // read; WantRead/WantWrite retry; Closed = clean EOF; Fatal = drop.
-    read  :: (self: *Self, buf: [*]u8, cap: usize) -> (i64, TlsStep);
+    read  :: (self: *Self, buf: [*]u8, cap: i64) -> (i64, TlsStep);
     // Write app-data, encrypting. Returns (bytes, step): on Done, `bytes` were
     // written; WantRead/WantWrite retry; Fatal = drop.
-    write :: (self: *Self, buf: [*]u8, len: usize) -> (i64, TlsStep);
+    write :: (self: *Self, buf: [*]u8, len: i64) -> (i64, TlsStep);
     // Best-effort close_notify, then free this session's own resources.
     close :: (self: *Self);
 }

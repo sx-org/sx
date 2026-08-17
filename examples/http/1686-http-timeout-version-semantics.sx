@@ -58,7 +58,7 @@ drain_to_eof :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64) -> string {
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, *buf[total], xx (cap - total));
+            n, re := socket.read_nb(fd, *buf[total], (cap - total));
             if !re { total += n; got += n; continue; }
             if re == error.Closed { done = true; }
             break;
@@ -91,7 +91,7 @@ main :: () -> i32 {
         ca := dial_port(PORT);
         if ca < 0 { print("dial A failed\n"); srv.close(); return 1; }
         partial := "GET /slowclient HTTP/1.1\r\nHo";   // header block never finishes
-        socket.write(ca, partial.ptr, xx partial.len);
+        socket.write(ca, partial.ptr, partial.len);
         ra := drain_to_eof(*srv, ca, rbuf, cap);       // rides past the deadline
         if !contains(ra, "HTTP/1.1 408") or !contains(ra, "Connection: close") {
             print("expected 408 for a timed-out partial request, got {} bytes\n", ra.len);
@@ -103,7 +103,7 @@ main :: () -> i32 {
         cb := dial_port(PORT);
         if cb < 0 { print("dial B failed\n"); srv.close(); return 1; }
         good := "GET / HTTP/1.1\r\nHost: t\r\n\r\n";
-        socket.write(cb, good.ptr, xx good.len);
+        socket.write(cb, good.ptr, good.len);
         rb := drain_to_eof(*srv, cb, rbuf, cap);       // response, idle, evicted
         if !contains(rb, "HTTP/1.1 200 OK") or !contains(rb, "served") {
             print("keepalive request failed\n");
@@ -120,7 +120,7 @@ main :: () -> i32 {
         cc := dial_port(PORT);
         if cc < 0 { print("dial C failed\n"); srv.close(); return 1; }
         v2 := "GET / HTTP/2.0\r\nHost: t\r\n\r\n";
-        socket.write(cc, v2.ptr, xx v2.len);
+        socket.write(cc, v2.ptr, v2.len);
         rc := drain_to_eof(*srv, cc, rbuf, cap);
         if !contains(rc, "HTTP/1.1 505") {
             print("expected 505 for HTTP/2.0, got: {}\n", rc);
@@ -132,7 +132,7 @@ main :: () -> i32 {
         cd := dial_port(PORT);
         if cd < 0 { print("dial D failed\n"); srv.close(); return 1; }
         vg := "GET / FOO/1.1\r\nHost: t\r\n\r\n";
-        socket.write(cd, vg.ptr, xx vg.len);
+        socket.write(cd, vg.ptr, vg.len);
         rd := drain_to_eof(*srv, cd, rbuf, cap);
         if !contains(rd, "HTTP/1.1 400") {
             print("expected 400 for a garbage version, got: {}\n", rd);

@@ -100,7 +100,7 @@ contains :: (hay: string, needle: string) -> bool {
 send_all :: (srv: *http.Server, fd: i32, s: string) {
     sent : i64 = 0;
     while sent < s.len {
-        n, we := socket.write_nb(fd, *s.ptr[sent], xx (s.len - sent));
+        n, we := socket.write_nb(fd, *s.ptr[sent], (s.len - sent));
         if !we { sent += n; }
         srv.tick(1) catch {};
     }
@@ -152,7 +152,7 @@ main :: () -> i32 {
         t : i64 = 0;
         while t < 120 and !got_504 {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(ca, *rbuf[a_total], xx (cap - a_total));
+            n, re := socket.read_nb(ca, *rbuf[a_total], (cap - a_total));
             if !re { a_total += n; }
             a_resp := string{ ptr = rbuf, len = xx a_total };
             if contains(a_resp, "HTTP/1.1 504") { got_504 = true; }
@@ -180,7 +180,7 @@ main :: () -> i32 {
         t = 0;
         while t < 300 and !got_b {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(cb, *rbuf[b_total], xx (cap - b_total));
+            n, re := socket.read_nb(cb, *rbuf[b_total], (cap - b_total));
             if !re { b_total += n; }
             else if re == error.Closed { got_b = true; }
             b_resp := string{ ptr = rbuf, len = xx b_total };
