@@ -154,7 +154,7 @@ inline match OS {
     case .linux:   F_DUPFD_CLOEXEC :i32: 1030;
     case .android: F_DUPFD_CLOEXEC :i32: 1030;
     case .wasm:    F_DUPFD_CLOEXEC :i32: 1030;   // Emscripten's musl
-    else:          #error("std/process.sx: F_DUPFD_CLOEXEC is only known for Darwin (67) and Linux/Android/Emscripten (1030) — add a case for this target.");
+    else:          @error("std/process.sx: F_DUPFD_CLOEXEC is only known for Darwin (67) and Linux/Android/Emscripten (1030) — add a case for this target.");
 }
 
 // What a child's standard slot is wired to. `inherit` passes the

@@ -233,7 +233,6 @@ pub const Lexer = struct {
                 .{ "#import", Tag.hash_import },
                 .{ "#insert", Tag.hash_insert },
                 .{ "#run", Tag.hash_run },
-                .{ "#error", Tag.hash_error },
                 .{ "#library", Tag.hash_library },
                 .{ "#framework", Tag.hash_framework },
                 .{ "#using", Tag.hash_using },

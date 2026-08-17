@@ -436,7 +436,7 @@ print("{}\n", b);
 
 One rule, applied wherever a statement or a declaration ENDS: top-level and
 local bindings, expression statements, assignments, `return` / `raise` /
-`break` / `continue` / `defer` / `onfail`, `#import` / `#insert` / `#error` and
+`break` / `continue` / `defer` / `onfail`, `#import` / `#insert` / `@error` and
 the other directive forms, and a function's `extern` / `intrinsic` / `=> expr`
 body. The value-less spellings take it the same way — a `return` with nothing to
 return, and a `name : Type` declaration with no initializer:
@@ -4646,7 +4646,7 @@ free :: ufcs (x: $T, a: Allocator = context.allocator) {
         case protocol: a.dealloc_bytes(x.(@Protocol).ctx);
         case closure:  { env := x.(@Closure).env; if env != null { a.dealloc_bytes(env); } }
         case slice:    a.dealloc_bytes(xx x.ptr);
-        else:          #error("free expects a protocol value, a closure, or a slice");
+        else:          @error("free expects a protocol value, a closure, or a slice");
     }
 }
 ```
@@ -4654,7 +4654,7 @@ free :: ufcs (x: $T, a: Allocator = context.allocator) {
 Arms select in order (a specific type name may precede its category);
 `else:` matches when nothing else does; with no match and no `else:` the
 match lowers to nothing (the runtime form's skip-to-merge, statically). A
-`#error(…)` arm fires only when SELECTED — the un-selected case is
+`@error(…)` arm fires only when SELECTED — the un-selected case is
 the OS-match discipline. The static classifier mirrors the runtime tag
 switch arm for arm, **plus the `protocol` category**, which exists
 ONLY here: a protocol value
@@ -5471,11 +5471,12 @@ Comptime globals are resolved lazily: the JIT executes only when the value is fi
 #run print("compiling...");
 ```
 
-### `#error` Directive
+### `@error`
 
-`#error("message");` emits `message` as a compile-time error and halts
-compilation. It is valid as a top-level item or a statement, and it is THE
-compile-time rejection spelling.
+`@error("message");` emits `message` as a compile-time error and halts
+compilation. It is valid as a top-level item or a statement, and it is the
+compile-time rejection spelling — a compiler-maintained contract, sibling of
+`@panic`.
 
 The directive fires only when it is reached in **live** code, at every
 level where code goes dead:
@@ -5489,7 +5490,7 @@ level where code goes dead:
 inline match OS {
     case .macos: errno_location :: () -> *i32 extern libc "__error";
     case .linux: errno_location :: () -> *i32 extern libc "__errno_location";
-    else:        #error("errno_location: unsupported target — add its libc symbol.");
+    else:        @error("errno_location: unsupported target — add its libc symbol.");
 }
 ```
 
@@ -5503,14 +5504,14 @@ free :: ufcs (x: $T, a: Allocator = context.allocator) {
         case protocol: { ... }
         case closure:  { ... }
         case slice:    a.dealloc_bytes(xx x.ptr);
-        else:          #error("free expects a protocol value, a closure, or a slice");
+        else:          @error("free expects a protocol value, a closure, or a slice");
     }
 }
 ```
 
-- A bare top-level `#error("...");` always fires.
+- A bare top-level `@error("...");` always fires.
 
-When a surviving `#error` fires inside a monomorphized body, the diagnostic
+When a surviving `@error` fires inside a monomorphized body, the diagnostic
 anchors at the OUTERMOST instantiation call site — the user call that
 forced the instantiation — with the directive's own location attached as a
 note. A library-internal anchor would read like a run-time panic's stack

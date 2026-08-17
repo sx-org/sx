@@ -1,5 +1,5 @@
-error: compilation intentionally halted: the #error directive was reached.
+error: compilation intentionally halted: the @error directive was reached.
   --> examples/diagnostics/1235-diagnostics-error-directive.sx:7:1
    |
- 7 | #error("compilation intentionally halted: the #error directive was reached.");
+ 7 | @error("compilation intentionally halted: the @error directive was reached.");
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

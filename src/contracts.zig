@@ -104,6 +104,7 @@ pub const entries = [_]Contract{
     // An sx body, not an intrinsic: the registry entry is what gives stdlib
     // sole authorship of the name and lets any module reach it.
     .{ .name = "@panic", .module = "modules/std/core.sx" },
+    .{ .name = "@error", .module = "modules/std/core.sx" },
     // Fat-value ABI views. Nullary `@Slice` is this declared struct; `@Slice(T, Len)`
     // is still the type constructor (`isTypeConstructor`).
     .{

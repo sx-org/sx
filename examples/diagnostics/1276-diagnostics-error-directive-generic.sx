@@ -1,5 +1,5 @@
-// `#error("msg");` in a monomorphization-pruned `inline match T` arm
-// (specs: #error Directive): fires ONLY for the instantiation that selects
+// `@error("msg");` in a monomorphization-pruned `inline match T` arm
+// (specs: @error Directive): fires ONLY for the instantiation that selects
 // the arm, and the diagnostic anchors at the OUTERMOST instantiation call
 // site — the user call that forced the instantiation — with the directive's
 // own location as a note. The good instantiation on the line above compiles
@@ -10,7 +10,7 @@ pick :: (v: $T) {
     inline match T {
         case i64: { print("int {}\n", v); }
         case string: { print("str {}\n", v); }
-        else: { #error("pick: unsupported type — add an arm or convert at the call site"); }
+        else: { @error("pick: unsupported type — add an arm or convert at the call site"); }
     }
 }
 

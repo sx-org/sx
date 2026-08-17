@@ -134,6 +134,11 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 //
 // A `#run` panic exits the COMPILER with code 1; a compiled panic raises
 // SIGABRT.
+// Compile-time refusal. Reached in live code (after `inline if` /
+// `inline match` prune, including per monomorph), it is a compile
+// diagnostic at `site`, never a runtime abort.
+@error :: (msg: string, site: @SourceSite = @caller) -> noreturn;
+
 @panic :: (msg: string, site: @SourceSite = @caller) -> noreturn {
     if site.line == 0 {
         @printf("{}\n", msg);

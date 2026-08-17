@@ -87,8 +87,8 @@ error: free expects a protocol value, a closure, or a slice
 91 |     free(v);
    |     ^^^^
 
-note: raised by '#error' here
+note: raised by '@error' here
   --> library/modules/std/mem.sx:73:24
    |
-73 |         else:          #error("free expects a protocol value, a closure, or a slice");
+73 |         else:          @error("free expects a protocol value, a closure, or a slice");
    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

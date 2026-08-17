@@ -2760,6 +2760,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .@"@volatile_store",
         .@"@printf",
         .@"@is_comptime",
+        .@"@error",
         .@"@va_start",
         .@"@va_arg",
         .@"@va_copy",
@@ -3003,6 +3004,7 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .@"@volatile_store",
         .@"@printf",
         .@"@is_comptime",
+        .@"@error",
         .@"@va_start",
         .@"@va_arg",
         .@"@va_copy",
@@ -3244,6 +3246,7 @@ fn isVolatileIntrinsic(name: []const u8) bool {
 
         .@"@printf",
         .@"@is_comptime",
+        .@"@error",
         .@"@va_start",
         .@"@va_arg",
         .@"@va_copy",
@@ -3628,6 +3631,7 @@ fn isReflectionCall(name: []const u8) bool {
         .raw_make_any,
         .type_info,
         .@"@is_comptime",
+        .@"@error",
         => true,
 
         // Lowered elsewhere: math -> `call_builtin`, atomics -> atomic ops,

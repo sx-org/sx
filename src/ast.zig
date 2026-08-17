@@ -755,7 +755,7 @@ pub const ComptimeExpr = struct {
     expr: *Node,
 };
 
-/// `#error "message"` — a compile-time diagnostic. When it survives the
+/// `@error("message")` — a compile-time diagnostic. When it survives the
 /// comptime-conditional flatten pass into live decls (e.g. the taken arm of an
 /// `inline match OS { ... }` is an unsupported-target `else`), the flatten pass
 /// emits `message` as an error and drops the node. In a non-taken arm it is

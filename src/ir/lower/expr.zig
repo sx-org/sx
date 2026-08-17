@@ -4255,7 +4255,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         .catch_expr => |ce| self.lowerCatch(&ce, node.span),
         .caller_site => self.lowerCallerSite(node),
         .asm_expr => |ae| self.lowerAsmExpr(&ae, node.span),
-        // `#error("msg");` that survived comptime pruning into live code —
+        // `@error("msg");` that survived comptime pruning into live code —
         // fire at lower time (specs: the directive fires when REACHED; a
         // pruned `inline if` arm never lowers, so per-monomorphization
         // rejection works exactly like the module-scope OS-match form).
@@ -4271,7 +4271,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     d.current_source_file = site.source;
                     const id = d.addFmtId(.err, site.span, "{s}", .{ed.message});
                     d.current_source_file = saved_file;
-                    d.addNoteFmt(id, node.span, "raised by '#error' here", .{});
+                    d.addNoteFmt(id, node.span, "raised by '@error' here", .{});
                 } else {
                     d.addFmt(.err, node.span, "{s}", .{ed.message});
                 }

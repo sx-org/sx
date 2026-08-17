@@ -135,7 +135,8 @@ pub const Parser = struct {
                 .hash_run => return self.fail("'private' is not allowed on a standalone '#run'"),
                 .hash_framework => return self.fail("'private' is not allowed on '#framework'"),
                 .kw_impl => return self.fail("'private' is not allowed on an 'impl' block"),
-                .hash_error => return self.fail("'private' is not allowed on '#error'"),
+                .at_identifier => if (std.mem.eql(u8, self.tokens.slice(self.tok), "@error"))
+                    return self.fail("'private' is not allowed on '@error'"),
                 .hash_context_extend => return self.fail("'private' is not allowed on '#context_extend'"),
                 .kw_inline => return self.fail("'private' is not allowed on 'inline if'; mark the declarations inside its branches instead"),
                 .kw_private => return self.fail("duplicate 'private'"),
@@ -233,8 +234,8 @@ pub const Parser = struct {
             }
         }
 
-        // Top-level `#error "msg";` — compile-time diagnostic.
-        if (self.tokens.tag(self.tok) == .hash_error) {
+        // Top-level `@error("msg");` — compile-time diagnostic.
+        if (self.isErrorContractCall()) {
             return self.parseErrorDirective();
         }
 
@@ -2880,8 +2881,8 @@ pub const Parser = struct {
         if (self.tokens.tag(self.tok) == .pipe) {
             return self.fail("a closure literal cannot open a statement — bind it (`f := |x| …`) or pass it as an argument");
         }
-        // `#error "msg";` — compile-time diagnostic (fires when reached in live code).
-        if (self.tokens.tag(self.tok) == .hash_error) {
+        // `@error("msg");` — compile-time diagnostic (fires when reached in live code).
+        if (self.isErrorContractCall()) {
             return self.parseErrorDirective();
         }
         // `#context_extend` is a top-level-only directive: the Context is
@@ -4436,15 +4437,21 @@ pub const Parser = struct {
         return try self.createNode(start_pos, .{ .match_expr = .{ .subject = subject, .arms = try arms.toOwnedSlice(self.allocator) } });
     }
 
-    /// `#error "message";` — a compile-time diagnostic. Usable as a statement or
+    fn isErrorContractCall(self: *Parser) bool {
+        return self.tokens.tag(self.tok) == .at_identifier and
+            std.mem.eql(u8, self.tokens.slice(self.tok), "@error") and
+            self.peekTag(1) == .l_paren;
+    }
+
+    /// `@error("message");` — a compile-time diagnostic. Usable as a statement or
     /// a top-level item; the message fires only when the node reaches live decls
     /// (the flatten pass drops it in non-taken `inline if` arms).
     fn parseErrorDirective(self: *Parser) anyerror!*Node {
         const start = self.tokens.start(self.tok);
-        self.advance(); // skip '#error'
+        self.advance(); // skip '@error'
         try self.expect(.l_paren);
         if (self.tokens.tag(self.tok) != .string_literal) {
-            return self.fail("expected a string message in '#error(...)'");
+            return self.fail("expected a string message in '@error(...)'");
         }
         const raw = self.tokens.slice(self.tok);
         const message = raw[1 .. raw.len - 1];

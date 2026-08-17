@@ -123,7 +123,7 @@ pub const Tag = enum(u8) {
 
     // Directives
     hash_run, // #run
-    hash_error, // #error "msg" — emit a compile-time diagnostic (e.g. in an unsupported `inline if OS` arm)
+    hash_error, // unused; `@error` is the compile-time diagnostic
     hash_import, // #import
     hash_insert, // #insert
     hash_library, // #library

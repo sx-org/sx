@@ -163,6 +163,7 @@ pub const Id = enum(u16) {
     @"@volatile_store",
     @"@printf",
     @"@is_comptime",
+    @"@error",
     @"@va_start",
     @"@va_arg",
     @"@va_copy",
@@ -347,6 +348,7 @@ pub const entries = [_]Entry{
     // differently: the VM reads `true`, compiled code folds `false`. One lowered
     // body serves both stages, so the answer cannot be folded here.
     .{ .id = .@"@is_comptime", .module = core, .name = "@is_comptime", .mode = .lower, .arity = 0, .ret = .bool },
+    .{ .id = .@"@error", .module = core, .name = "@error", .mode = .lower, .arity = 2 },
 
     // Lowered to the four cursor IR ops. A cursor walks arguments a real call
     // frame delivered, so there is no VM arm: `#run` over one bails loudly
