@@ -726,6 +726,9 @@ const Expansion = struct {
         if (!std.mem.eql(u8, callee, "has_impl") or c.args.len < 2) return null;
         const proto_name = ast.bareName(protocolHead(c.args[0])) orelse return null;
         ex.primeMembershipFacts(proto_name, c.args[1], src);
+        // A name still waiting on a fact is not yet a spelling anything resolves;
+        // reading it here would freeze the miss into an unresolved answer.
+        if (ex.self.expansion.awaited != null) return null;
         const target = ex.self.resolveTypeArg(c.args[1]);
         if (target == .unresolved) return null;
         // A protocol kind asks site-local impl VISIBILITY. Impls are
@@ -764,6 +767,7 @@ const Expansion = struct {
     /// it. Only the type-shaped declarations a membership question can name
     /// answer here; everything else stays for the scan.
     fn primeDecl(ex: *Expansion, name: []const u8) void {
+        if (ex.mintTypeFnAlias(name)) return;
         if (ex.primed.contains(name)) return;
         ex.primed.put(name, {}) catch {};
         var it = ex.decidedDecls();
@@ -781,18 +785,37 @@ const Expansion = struct {
                     .struct_decl => |*sd| ex.self.registerStructDecl(sd, decl.source_file),
                     .enum_decl => |*ed| ex.self.registerEnumDecl(ed),
                     .union_decl => |*ud| ex.self.registerUnionDecl(ud),
-                    // A type-function-bound constant (`Chosen :: pick()`) is
-                    // MINTED by running its constructor, so the question can
-                    // only name the type once the decided declaration space —
-                    // the constructor's own body included — is registered.
-                    .call => |c| if (ex.typeFunctionCall(c.callee)) {
-                        _ = ex.contextReady();
-                    },
                     else => {},
                 },
                 else => {},
             }
         }
+    }
+
+    /// Mint the type a type-function-bound constant (`Chosen :: pick()`) names,
+    /// and answer whether `name` is one. The name denotes nothing a spelling can
+    /// resolve: the constructor RUNS on the comptime VM against the decided
+    /// declaration space, and its result is the binding. The mint is the alias's
+    /// own writer — a resolved alias is the only evidence it happened, so a visit
+    /// that parks before the ground is ready mints on resume instead.
+    fn mintTypeFnAlias(ex: *Expansion, name: []const u8) bool {
+        var it = ex.decidedDecls();
+        while (it.next()) |decl| {
+            if (decl.data != .const_decl) continue;
+            const cd = decl.data.const_decl;
+            if (!std.mem.eql(u8, cd.name, name)) continue;
+            if (cd.value.data != .call) continue;
+            if (!ex.typeFunctionCall(cd.value.data.call.callee)) continue;
+            if (ex.self.program_index.type_alias_map.get(name)) |tid| {
+                if (tid != .unresolved) return true;
+            }
+            if (!ex.contextReady()) return true;
+            ex.self.setCurrentSourceFile(decl.source_file);
+            const minted = ex.self.evalComptimeType(cd.value) orelse return true;
+            ex.self.putTypeAlias(decl.source_file, name, minted);
+            return true;
+        }
+        return false;
     }
 
     /// Does `callee` name a non-generic function returning `Type`? That is the
