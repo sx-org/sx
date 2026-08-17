@@ -1667,7 +1667,19 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // expected) — diagnose it instead of fabricating garbage.
         .none => {
             switch (mode) {
-                .explicit => self.xx_passthrough_refs.put(val, {}) catch {},
+                // A pointer-shaped EXPLICIT cast (`*T`, `[*]T`, `cstring`)
+                // keeps the address but carries `dst_ty` on its RESULT — an
+                // inferred `live := p.(*i64)` types the binding off that ref,
+                // so a passthrough would bind the receiver's type instead.
+                // Opaque pointers make the `bitcast` a no-op in LLVM.
+                .explicit => {
+                    if (src_ty != dst_ty and isPointerValueKind(self, src_ty) and isPointerValueKind(self, dst_ty)) {
+                        const retyped = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
+                        self.xx_passthrough_refs.put(retyped, {}) catch {};
+                        return retyped;
+                    }
+                    self.xx_passthrough_refs.put(val, {}) catch {};
+                },
                 .implicit => diagnoseUnmodeledCoercion(self, val, src_ty, dst_ty),
             }
             return val;

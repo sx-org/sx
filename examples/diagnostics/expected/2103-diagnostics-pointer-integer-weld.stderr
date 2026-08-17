@@ -46,7 +46,7 @@ error: cannot coerce a value of type 'i64' to 'cstring': a number is not an addr
 28 |     c : cstring = 5;
    |     ^^^^^^^^^^^^^^^^
 
-error: cannot coerce a value of type '*Obj' to 'i64': an address is not a number; use an explicit cast (`xx`/`.(T)`)
+error: cannot coerce a value of type '*void' to 'i64': an address is not a number; use an explicit cast (`xx`/`.(T)`)
   --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:30:5
    |
 30 |     wrong_target : i64 = p.(*void);
