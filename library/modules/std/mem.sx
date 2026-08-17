@@ -29,7 +29,7 @@ c :: #import "modules/std/c.sx";
 
 // Allocate one T. Contents are UNINITIALISED — assign before reading.
 create :: ufcs (a: Allocator, $T: Type) -> *T {
-    xx a.alloc_bytes(size_of(T))
+    a.alloc_bytes(size_of(T)).(*T)
 }
 
 // Free a *T obtained from `create`.
@@ -40,10 +40,7 @@ destroy :: ufcs (a: Allocator, ptr: *$T) {
 // Allocate a []T of `count` elements. Contents are UNINITIALISED.
 alloc :: ufcs (a: Allocator, $T: Type, count: i64) -> []T {
     raw := a.alloc_bytes(count * size_of(T));
-    s : []T = ---;
-    s.ptr = xx raw;
-    s.len = count;
-    s
+    .{ ptr = raw.([*]T), len = count }
 }
 
 // THE free: releases what `x` owns, kind-dispatched at compile time.
@@ -78,10 +75,7 @@ free :: ufcs (x: $T, a: Allocator = context.allocator) {
 clone :: ufcs (src: []$T, a: Allocator) -> []T {
     raw := a.alloc_bytes(src.len * size_of(T));
     c.memcpy(raw, src.ptr, src.len * size_of(T));
-    s : []T = ---;
-    s.ptr = xx raw;
-    s.len = src.len;
-    s
+    .{ ptr = raw.([*]T), len = src.len }
 }
 
 // Reallocate a slice to `new_count` elements: fresh storage, contents
@@ -95,10 +89,7 @@ resize :: ufcs (slice: []$T, a: Allocator, new_count: i64) -> ?[]T {
     n := if slice.len < new_count then slice.len else new_count;
     c.memcpy(raw, slice.ptr, n * size_of(T));
     a.dealloc_bytes(slice.ptr);
-    s : []T = ---;
-    s.ptr = xx raw;
-    s.len = new_count;
-    s
+    .{ ptr = raw.([*]T), len = new_count }
 }
 
 // Bytes-level realloc. 2-method era: alloc + copy(min(old,new)) +

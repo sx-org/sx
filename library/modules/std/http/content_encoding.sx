@@ -6,6 +6,7 @@
 // std.zlib and std.gzip types; HTTP only selects and drives them.
 
 #import "modules/std/core.sx";
+#import "modules/std/mem.sx";
 #import "modules/std/compress.sx";
 gzip_codec :: #import "modules/std/codecs/gzip.sx";
 zlib_codec :: #import "modules/std/codecs/zlib.sx";
@@ -566,13 +567,12 @@ EncodedProducer :: struct {
 }
 
 create_encoded_producer :: (encoding: Encoding, level: i64, source: Producer, source_ctx: usize, alloc: Allocator) -> *EncodedProducer {
-    raw := alloc.alloc_bytes(size_of(EncodedProducer));
-    if raw == null { return null; }
+    result := alloc.create(EncodedProducer);
+    if result == null { return null; }
     state := EncodedProducer.init(encoding, level, source, source_ctx, alloc) catch {
-        alloc.dealloc_bytes(raw);
+        alloc.dealloc_bytes(result);
         return null;
     };
-    result : *EncodedProducer = xx raw;
     result.* = state;
     result
 }

@@ -1,5 +1,6 @@
 #import "modules/std/core.sx";   // @SourceSite
 #import "modules/std/fmt.sx";    // print, concat, substr, alloc_string, to_cstring, from_cstring
+#import "modules/std/mem.sx";
 c :: #import "modules/std/c.sx"; // c.exit (_exit) + the shared libc handle
 posix :: #import "modules/std/posix.sx";
 trace :: #import "modules/std/trace.sx";
@@ -250,7 +251,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
     if argv.len == 0 { raise error.EmptyArgv; }
 
     // Marshalling happens HERE, in the parent — see THE FORK WINDOW below.
-    vec : [*]?cstring = xx context.allocator.alloc_bytes((argv.len + 1) * size_of(?cstring));
+    vec : [*]?cstring = context.allocator.alloc(?cstring, argv.len + 1).ptr;
     i := 0;
     while i < argv.len {
         vec[i] = to_cstring(argv[i]);

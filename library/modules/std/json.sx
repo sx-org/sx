@@ -123,7 +123,7 @@ Object :: struct {
     put :: (self: *Object, key: string, v: Value, alloc: Allocator) {
         if self.len >= self.cap {
             new_cap := if self.cap == 0 then 4 else self.cap * 2;
-            new_items : [*]Member = xx alloc.alloc_bytes(new_cap * size_of(Member));
+            new_items : [*]Member = alloc.alloc(Member, new_cap).ptr;
             if self.len > 0 {
                 c.memcpy(new_items, self.items, self.len * size_of(Member));
                 alloc.dealloc_bytes(self.items);
@@ -607,7 +607,7 @@ Parser :: struct {
             return string{ ptr = *self.src[start], len = end - start };
         }
         raw_len := end - start;        // decoded length <= raw_len (escapes shrink)
-        out : [*]u8 = xx self.alloc.alloc_bytes(raw_len);
+        out : [*]u8 = self.alloc.alloc(u8, raw_len).ptr;
         dlen := try self.decode_into(start, end, out);
         self.pos = end + 1;
         return string{ ptr = out, len = dlen };

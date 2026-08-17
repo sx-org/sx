@@ -20,6 +20,7 @@
 
 #import "modules/std/core.sx";          // Allocator
 #import "modules/std/list.sx";          // List
+#import "modules/std/mem.sx";
 #import "modules/std/http/tls.sx";      // TlsConn, TlsAcceptor, TlsStep (flat)
 clib    :: #import "modules/std/c.sx";
 socket  :: #import "modules/std/socket.sx";
@@ -252,7 +253,7 @@ TlsServer :: struct {
         if !self.ok { return false; }
         if protos.len == 0 { return false; }
         n := protos.len;
-        vec : [*][*]u8 = xx self.a.alloc_bytes((n + 1) * 8);
+        vec : [*][*]u8 = self.a.alloc([*]u8, n + 1).ptr;
         i : i64 = 0;
         while i < n {
             s := protos[i];
@@ -309,7 +310,7 @@ TlsServer :: struct {
         }
 
         // Store the name lowercased — the lookup lowercases the wire bytes.
-        nm : [*]u8 = xx self.a.alloc_bytes(name.len);
+        nm : [*]u8 = self.a.alloc(u8, name.len).ptr;
         i : i64 = 0;
         while i < name.len {
             ch := name[i];
@@ -468,7 +469,7 @@ tls_sni_select :: (ctx: *void, ssl: *mbedtls.SslContext, name: [*]u8, name_len: 
 // won't have it, so we always re-buffer.
 nul_dup :: (a: Allocator, src: []u8) -> ([*]u8, usize) {
     n := src.len;
-    p : [*]u8 = xx a.alloc_bytes(n + 1);
+    p : [*]u8 = a.alloc(u8, n + 1).ptr;
     if n > 0 { clib.memcpy(p, src.ptr, xx n); }
     p[n] = 0;
     return p, xx (n + 1);

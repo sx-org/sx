@@ -724,24 +724,23 @@ OutChan :: struct {
 }
 
 create_out_chan :: (alloc: Allocator, lp: event.Loop) -> *OutChan {
-    raw := alloc.alloc_bytes(size_of(OutChan));
-    if raw == null { return null; }
-    result : *OutChan = xx raw;
+    result := alloc.create(OutChan);
+    if result == null { return null; }
     result.* = OutChan{ alloc = alloc, lp = lp };
-    if !result.mu.setup() { alloc.dealloc_bytes(raw); return null; }
+    if !result.mu.setup() { alloc.dealloc_bytes(result); return null; }
     if !result.cv.setup() {
         result.mu.destroy();
-        alloc.dealloc_bytes(raw);
+        alloc.dealloc_bytes(result);
         return null;
     }
-    bytes := alloc.alloc_bytes(OUT_CHAN_CAP);
-    if bytes == null {
+    bytes := alloc.alloc(u8, OUT_CHAN_CAP);
+    if bytes.ptr == null {
         result.cv.destroy();
         result.mu.destroy();
-        alloc.dealloc_bytes(raw);
+        alloc.dealloc_bytes(result);
         return null;
     }
-    result.buf = xx bytes;
+    result.buf = bytes.ptr;
     result.cap = OUT_CHAN_CAP;
     result
 }
@@ -1462,7 +1461,7 @@ Server :: struct {
     heap_push :: (self: *Server, dl: i64, slot: i64, gen: i64) {
         if self.dheap_len == self.dheap_cap {
             ncap := self.dheap_cap * 2;
-            nb : [*]DlEntry = xx self.own_alloc.alloc_bytes(ncap * size_of(DlEntry));
+            nb : [*]DlEntry = self.own_alloc.alloc(DlEntry, ncap).ptr;
             i : i64 = 0;
             while i < self.dheap_len { nb[i] = self.dheap[i]; i += 1; }
             self.own_alloc.dealloc_bytes(self.dheap);
@@ -1676,7 +1675,7 @@ Server :: struct {
         if swe { close_listener(lfd, cfg.unix_path); raise error.Loop; }
 
         oa := context.allocator;
-        slots : [*]Conn = xx oa.alloc_bytes(cfg.max_conn * size_of(Conn));
+        slots : [*]Conn = oa.alloc(Conn, cfg.max_conn).ptr;
         i : i64 = 0;
         while i < cfg.max_conn {
             slots[i] = Conn{};
@@ -1686,11 +1685,11 @@ Server :: struct {
             i += 1;
         }
         dcap : i64 = 64;
-        dh : [*]DlEntry = xx oa.alloc_bytes(dcap * size_of(DlEntry));
+        dh : [*]DlEntry = oa.alloc(DlEntry, dcap).ptr;
 
         ps : *PoolState = null;
         if cfg.thread_pool_count > 0 {
-            ps = xx oa.alloc_bytes(size_of(PoolState));
+            ps = oa.create(PoolState);
             ps.* = PoolState{};
             // Failure below this point must release what init already
             // allocated (slots, dheap, ps, ps.done) — these late paths used
@@ -1709,10 +1708,10 @@ Server :: struct {
             // alone under-counts that same-tick refill; queue_completion
             // still handles a drop loudly as belt.
             ps.done_cap = cfg.max_conn + cfg.thread_pool_backlog + cfg.thread_pool_count;
-            ps.done = xx oa.alloc_bytes(ps.done_cap * size_of(Completion));
+            ps.done = oa.alloc(Completion, ps.done_cap).ptr;
             ps.done_len = 0;
             // one pumping stream channel per worker, at most.
-            ps.ochans = xx oa.alloc_bytes(cfg.thread_pool_count * size_of(usize));
+            ps.ochans = oa.alloc(usize, cfg.thread_pool_count).ptr;
             ps.ochans_len = 0;
             // Capture the loop AFTER add_wake (registered above): on epoll,
             // add_wake lazily creates wake_fd, so a copy taken earlier would
@@ -2354,7 +2353,7 @@ Server :: struct {
             if c.read_buf == null {
                 init_cap : i64 = READ_BUF_INITIAL;
                 if init_cap > self.cfg.read_buf_cap { init_cap = self.cfg.read_buf_cap; }
-                c.read_buf = xx self.own_alloc.alloc_bytes(init_cap);
+                c.read_buf = self.own_alloc.alloc(u8, init_cap).ptr;
                 c.read_cap = init_cap;
             }
             c.fd = fd;
@@ -2772,7 +2771,7 @@ Server :: struct {
         if want <= c.read_cap { return true; }
         if want > self.cfg.read_buf_cap { want = self.cfg.read_buf_cap; }
         if want <= c.read_cap { return false; }   // already at the limit
-        nb : [*]u8 = xx self.own_alloc.alloc_bytes(want);
+        nb : [*]u8 = self.own_alloc.alloc(u8, want).ptr;
         if c.read_len > 0 { clib.memcpy(nb, c.read_buf, xx c.read_len); }
         self.own_alloc.dealloc_bytes(c.read_buf);
         c.read_buf = nb;
@@ -3402,7 +3401,7 @@ Server :: struct {
             is_head := ascii_ieq(req.method, "head");
             req.deadline_ms = self.cfg.handler_timeout_ms;
 
-            ch : *BodyChan = xx self.own_alloc.alloc_bytes(size_of(BodyChan));
+            ch : *BodyChan = self.own_alloc.create(BodyChan);
             ch.* = BodyChan{ alloc = self.own_alloc };
             if !ch.mu.setup() {
                 self.own_alloc.dealloc_bytes(ch);
@@ -3415,7 +3414,7 @@ Server :: struct {
                 self.respond_error_close(slot, 500);
                 return false;
             }
-            ch.buf = xx self.own_alloc.alloc_bytes(BODY_CHAN_CAP);
+            ch.buf = self.own_alloc.alloc(u8, BODY_CHAN_CAP).ptr;
             ch.cap = BODY_CHAN_CAP;
             // Copy AFTER init's unconditional add_wake — wake_fd is live.
             ch.lp = self.loop;
@@ -3424,7 +3423,7 @@ Server :: struct {
             // views are rebuilt over the copy exactly like the accumulate
             // pool path, minus the body — the channel IS the body).
             hdr_total := he + 4;
-            job : *HandlerJob = xx self.own_alloc.alloc_bytes(size_of(HandlerJob) + hdr_total);
+            job : *HandlerJob = self.own_alloc.alloc_bytes(size_of(HandlerJob) + hdr_total).(*HandlerJob);
             jb : [*]u8 = xx job;
             raw : [*]u8 = *jb[size_of(HandlerJob)];
             clib.memcpy(raw, c.read_buf, xx hdr_total);
@@ -3617,7 +3616,7 @@ Server :: struct {
             // chunked — at he + 4). A synthetic "/" path (empty-path
             // absolute-form) is a static literal, valid on any thread — no
             // rebuild.
-            job : *HandlerJob = xx self.own_alloc.alloc_bytes(size_of(HandlerJob) + total);
+            job : *HandlerJob = self.own_alloc.alloc_bytes(size_of(HandlerJob) + total).(*HandlerJob);
             jb : [*]u8 = xx job;
             raw : [*]u8 = *jb[size_of(HandlerJob)];
             clib.memcpy(raw, c.read_buf, xx total);
@@ -3733,7 +3732,7 @@ Server :: struct {
         if c.wbuf_cap >= need { return; }
         want := ((need + 4095) / 4096) * 4096;
         if c.wbuf != null { self.own_alloc.dealloc_bytes(c.wbuf); }
-        c.wbuf = xx self.own_alloc.alloc_bytes(want);
+        c.wbuf = self.own_alloc.alloc(u8, want).ptr;
         c.wbuf_cap = want;
     }
 
@@ -3835,7 +3834,7 @@ Server :: struct {
         // Scratch buffer from own_alloc (thread-safe, and freed below) —
         // not context.allocator, which would both depend on a transient
         // scope and leak (this buffer must be reclaimed every drain).
-        batch : [*]Completion = xx self.own_alloc.alloc_bytes(if n > 0 then n * size_of(Completion) else 8);
+        batch : [*]Completion = self.own_alloc.alloc_bytes(if n > 0 then n * size_of(Completion) else 8).([*]Completion);
         i : i64 = 0;
         while i < n {
             batch[i] = ps.done[i];

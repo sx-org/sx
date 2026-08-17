@@ -28,6 +28,7 @@
 #import "modules/std/core.sx";
 #import "modules/std/fmt.sx";
 #import "modules/std/list.sx";
+#import "modules/std/mem.sx";
 c :: #import "modules/std/c.sx";
 // True cancellation: `suspend_raw` reads the spawned fiber's cancel
 // flag — a `*Atomic(bool)` back-ref to the `Future.canceled` — to decide whether
@@ -199,12 +200,11 @@ Scheduler :: struct {
     // under an arena/tracking allocator accumulates one env per fiber. Freeing
     // it needs a language affordance for closure-env ownership.
     spawn :: (self: *Scheduler, body: Closure() -> void) -> *Fiber {
-        raw := self.own_allocator.alloc_bytes(size_of(Fiber));
-        if raw == null {
+        f := self.own_allocator.create(Fiber);
+        if f == null {
             print("sched: out of memory allocating a Fiber\n");
             c.abort();
         }
-        f : *Fiber = xx raw;
         f.body = body;
         f.sched = self;
         f.id = self.next_id;

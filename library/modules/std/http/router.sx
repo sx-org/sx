@@ -35,6 +35,7 @@
 // application/x-www-form-urlencoded.
 
 #import "modules/std/fmt.sx";          // concat
+#import "modules/std/mem.sx";
 types :: #import "modules/std/http/types.sx";
 json  :: #import "modules/std/json.sx";   // router uses `json.Value` / `json.parse` (namespaced)
 
@@ -186,7 +187,7 @@ RouteCtx :: struct {
         // Stage into an arena-backed buffer sized generously; json.sx's
         // writer reports overflow rather than truncating.
         cap : i64 = 65536;
-        buf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        buf : [*]u8 = context.allocator.alloc(u8, cap).ptr;
         n, e := json.write_to_buffer(v, string{ ptr = buf, len = cap });
         if e { return false; }
         self.resp.status = status;
@@ -296,7 +297,7 @@ needs_decode :: (s: string) -> bool {
 // is decoded into the per-request arena (context.allocator).
 decode_token :: (s: string) -> string {
     if !needs_decode(s) { return s; }
-    buf : [*]u8 = xx context.allocator.alloc_bytes(if s.len > 0 then s.len else 1);
+    buf : [*]u8 = context.allocator.alloc(u8, if s.len > 0 then s.len else 1).ptr;
     n := url_decode_into(s, buf);
     return string{ ptr = buf, len = n };
 }

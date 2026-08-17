@@ -31,6 +31,7 @@
 // =====================================================================
 #import "modules/std/core.sx";
 #import "modules/std/hash.sx";
+#import "modules/std/mem.sx";
 c :: #import "modules/std/c.sx";
 // `struct_field_type` (used by the structural key hash below) comes from `core.sx`,
 // alongside its sibling reflection builtins `struct_field_count` / `struct_field_value`.
@@ -149,9 +150,9 @@ HashMap :: struct ($K: Type, $V: Type) {
         old_vals := self.values;
         old_cap  := self.cap;
 
-        nm : [*]u8 = xx alloc.alloc_bytes(new_cap);
-        nk : [*]K  = xx alloc.alloc_bytes(new_cap * size_of(K));
-        nv : [*]V  = xx alloc.alloc_bytes(new_cap * size_of(V));
+        nm : [*]u8 = alloc.alloc(u8, new_cap).ptr;
+        nk : [*]K  = alloc.alloc(K, new_cap).ptr;
+        nv : [*]V  = alloc.alloc(V, new_cap).ptr;
         c.memset(nm, 0, new_cap);              // every bucket -> META_FREE
 
         self.metadata   = nm;
@@ -380,9 +381,9 @@ HashMap :: struct ($K: Type, $V: Type) {
     clone :: (self: *HashMap(K, V), alloc: Allocator = context.allocator) -> HashMap(K, V) {
         r : HashMap(K, V) = .{};
         if self.cap == 0 { return r; }
-        nm : [*]u8 = xx alloc.alloc_bytes(self.cap);
-        nk : [*]K  = xx alloc.alloc_bytes(self.cap * size_of(K));
-        nv : [*]V  = xx alloc.alloc_bytes(self.cap * size_of(V));
+        nm : [*]u8 = alloc.alloc(u8, self.cap).ptr;
+        nk : [*]K  = alloc.alloc(K, self.cap).ptr;
+        nv : [*]V  = alloc.alloc(V, self.cap).ptr;
         c.memcpy(nm, self.metadata, self.cap);
         c.memcpy(nk, self.keys,   self.cap * size_of(K));
         c.memcpy(nv, self.values, self.cap * size_of(V));
@@ -527,7 +528,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
         if self.ecap >= n { return; }
         new_cap := if self.ecap == 0 then 8 else self.ecap;
         while new_cap < n { new_cap = new_cap * 2; }
-        np : [*]IMEntry(K, V) = xx alloc.alloc_bytes(new_cap * size_of(IMEntry(K, V)));
+        np : [*]IMEntry(K, V) = alloc.alloc(IMEntry(K, V), new_cap).ptr;
         if self.ecount > 0 { c.memcpy(np, self.entries, self.ecount * size_of(IMEntry(K, V))); }
         if self.ecap > 0 { alloc.dealloc_bytes(self.entries); }
         self.entries = np;
@@ -542,7 +543,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
         new_icap := 8;
         while new_icap < need { new_icap = new_icap * 2; }
         if self.icap > 0 { alloc.dealloc_bytes(self.index); }
-        ni : [*]i64 = xx alloc.alloc_bytes(new_icap * size_of(i64));
+        ni : [*]i64 = alloc.alloc(i64, new_icap).ptr;
         s := 0;
         while s < new_icap { ni[s] = -1; s += 1; }
         self.index = ni;
@@ -635,7 +636,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
         while want < need { want = want * 2; }
         if want == self.icap { return; }
         if self.icap > 0 { alloc.dealloc_bytes(self.index); }
-        ni : [*]i64 = xx alloc.alloc_bytes(want * size_of(i64));
+        ni : [*]i64 = alloc.alloc(i64, want).ptr;
         s := 0;
         while s < want { ni[s] = -1; s += 1; }
         self.index = ni;

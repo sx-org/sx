@@ -22,6 +22,7 @@
 #import "modules/std/core.sx";         // Allocator
 #import "modules/std/fmt.sx";          // concat, int_to_string
 #import "modules/std/list.sx";         // List
+#import "modules/std/mem.sx";
 clib :: #import "modules/std/c.sx";    // block ops (`c` is a ClientConn local throughout)
 socket :: #import "modules/std/socket.sx";
 #import "modules/std/http/tls.sx";     // TlsConn, TlsDialer (client TLS seam)
@@ -295,7 +296,7 @@ send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_he
     if body.len > 0 { total += 16 + cln + 2; }         // "Content-Length: <n>\r\n"
     if advertise { total += HDR_ACCEPT_ENCODING.len; }
     total += extra_headers.len + 2 + body.len;         // "<extra>\r\n<body>"
-    p : [*]u8 = xx context.allocator.alloc_bytes(total);
+    p : [*]u8 = context.allocator.alloc(u8, total).ptr;
     w : i64 = 0;
     w = put(p, w, method);
     p[w] = ' '; w += 1;
@@ -556,7 +557,7 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
         }
         // Build the next target BEFORE the buffer is reused: copy the
         // location out, then re-parse.
-        np : [*]u8 = xx context.allocator.alloc_bytes(loc.len);
+        np : [*]u8 = context.allocator.alloc(u8, loc.len).ptr;
         clib.memcpy(np, loc.ptr, xx loc.len);
         locv := string{ ptr = np, len = loc.len };
         close_conn(*c);
@@ -1082,7 +1083,7 @@ ClientPool :: struct {
                 if freeing { context.allocator.dealloc_bytes(pathp); }
                 raise error.Redirect;
             }
-            np : [*]u8 = xx context.allocator.alloc_bytes(loc.len);
+            np : [*]u8 = context.allocator.alloc(u8, loc.len).ptr;
             clib.memcpy(np, loc.ptr, xx loc.len);
             locv := string{ ptr = np, len = loc.len };
             if freeing { context.allocator.dealloc_bytes(pathp); }
@@ -1191,7 +1192,7 @@ ClientPool :: struct {
             if !self.entries.items[i].live { break; }
             i += 1;
         }
-        hp : [*]u8 = xx self.a.alloc_bytes(u.host.len);
+        hp : [*]u8 = self.a.alloc(u8, u.host.len).ptr;
         j : i64 = 0;
         while j < u.host.len { hp[j] = u.host[j]; j += 1; }
         ne : PoolEntry = .{ host = hp, host_len = u.host.len, port = u.port,

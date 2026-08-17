@@ -111,12 +111,12 @@ use_state :: ($T: Type, default: T, site: SiteId = site_of(@caller)) -> State(T)
         return State(T){ ptr = xx e.data };
     }
 
-    e : *StateEntry = xx store.gpa.alloc_bytes(size_of(StateEntry));
+    e : *StateEntry = store.gpa.create(StateEntry);
     e.* = StateEntry{
         key = key,
         ty = T,
         size = size_of(T),
-        data = xx store.gpa.alloc_bytes(size_of(T)),
+        data = store.gpa.create(T),
         claimed = true,
     };
     seed := default;

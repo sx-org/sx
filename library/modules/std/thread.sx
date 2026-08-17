@@ -135,7 +135,7 @@ Pool :: struct {
     // and it embeds a live mutex), init in place, spawn the workers.
     create :: (workers: i64, backlog: i64) -> (*Pool, !ThreadErr) {
         alloc := context.allocator;
-        p : *Pool = xx alloc.alloc_bytes(size_of(Pool));
+        p : *Pool = alloc.create(Pool);
         p.* = Pool{};
         p.own_alloc = alloc;
         // Free-before-raise: nothing past `p` is allocated yet, so the
@@ -143,9 +143,9 @@ Pool :: struct {
         // failure additionally tears down the already-init'd mutex.
         if !p.mu.setup() { alloc.dealloc_bytes(p); raise error.Init; }
         if !p.nonempty.setup() { p.mu.destroy(); alloc.dealloc_bytes(p); raise error.Init; }
-        p.tasks = xx alloc.alloc_bytes(backlog * size_of(PoolTask));
+        p.tasks = alloc.alloc(PoolTask, backlog).ptr;
         p.cap = backlog;
-        p.threads = xx alloc.alloc_bytes(workers * size_of(usize));
+        p.threads = alloc.alloc(usize, workers).ptr;
         p.count = workers;
         i : i64 = 0;
         while i < workers {
