@@ -380,14 +380,21 @@ const BuildConfig = struct {
 
     /// Symbols that must NOT appear in the built binary (requires `aot`).
     ///
-    /// This is how a compile-time-only function is held to its promise: a build
-    /// callback runs during the build and must leave no trace in the output. A
-    /// behavioural test cannot see the difference — the program's stdout is the
-    /// same either way — so assert the symbol table directly.
+    /// This is how "the compiler emits nothing for this" is held to its
+    /// promise — a compile-time-only build callback, an injector gated off for
+    /// this build. A behavioural test cannot see the difference — the program's
+    /// stdout is the same either way — so assert the symbol table directly.
     ///
     /// Matched against `nm` output as a whole symbol name, allowing one leading
     /// underscore (Mach-O prefixes them). Skipped where `nm` is unavailable.
     absent_symbols: ?[]const []const u8 = null,
+
+    /// Symbols that MUST appear in the built binary (requires `aot`), matched
+    /// like `absent_symbols`. The other half of the same assertion: an injector
+    /// a build opts into leaves a trace the program's stdout cannot show. Name a
+    /// symbol the optimizer keeps — an internal helper gets inlined away at the
+    /// corpus build's default `--opt`, the libc calls it makes do not.
+    expect_symbols: ?[]const []const u8 = null,
 
     /// Run this example OUTSIDE the worker pool, sequentially after the
     /// parallel batch drains. For wall-clock-sensitive examples (socket read
@@ -934,8 +941,8 @@ fn runOne(
             act_out = trimNl(try normalizeStd(a, exec_res.stdout));
             act_err = trimNl(try normalizeStd(a, exec_res.stderr));
 
-            // Compile-time-only symbols must be absent from the binary.
-            if (cfg.absent_symbols) |syms| {
+            // Symbol-table assertions, both directions off one `nm`.
+            if (cfg.absent_symbols != null or cfg.expect_symbols != null) {
                 const nm_res = std.process.run(a, io, .{
                     .argv = &.{ "nm", bin_path },
                     .cwd = .{ .path = repo_root },
@@ -943,14 +950,19 @@ fn runOne(
                 }) catch null;
                 if (nm_res) |nr| {
                     if (termCode(nr.term) == 0) {
-                        var present: std.ArrayList(u8) = .empty;
-                        for (syms) |sym| {
+                        var wrong: std.ArrayList(u8) = .empty;
+                        for (cfg.absent_symbols orelse &.{}) |sym| {
                             if (nmHasSymbol(nr.stdout, sym)) {
-                                try present.appendSlice(a, try std.fmt.allocPrint(a, "{s}: '{s}' is in the binary's symbols but should be compile-time only\n", .{ name, sym }));
+                                try wrong.appendSlice(a, try std.fmt.allocPrint(a, "{s}: '{s}' is in the binary's symbols but must be absent\n", .{ name, sym }));
                             }
                         }
-                        if (present.items.len > 0) {
-                            out.failure = try results_gpa.dupe(u8, trimNl(present.items));
+                        for (cfg.expect_symbols orelse &.{}) |sym| {
+                            if (!nmHasSymbol(nr.stdout, sym)) {
+                                try wrong.appendSlice(a, try std.fmt.allocPrint(a, "{s}: '{s}' is missing from the binary's symbols\n", .{ name, sym }));
+                            }
+                        }
+                        if (wrong.items.len > 0) {
+                            out.failure = try results_gpa.dupe(u8, trimNl(wrong.items));
                             return;
                         }
                     }
