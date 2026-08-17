@@ -1,0 +1,29 @@
+// Without a guard, an optional container is not its payload. An index WRITE,
+// a subslice and a generic binding each refuse: the payload may be absent, and
+// only a `!= null` proof (or an explicit `!`) reaches it. An index READ is the
+// exception that stays legal — it chains to `?Elem`, so consuming it as the
+// bare element is what refuses.
+#import "modules/std.sx";
+
+head :: ufcs (xs: []$T, k: i64) -> $T { return xs[k]; }
+takes :: (x: i64) -> i64 { return x; }
+
+write :: (o: ?[]i64) {
+    o[0] = 1;              // error: not indexable as a container
+}
+subslice :: (o: ?[]i64) -> i64 {
+    s := o[0..1];          // error: no storage to view
+    return s.len;
+}
+bind :: (o: ?[]i64) -> i64 {
+    return o.head(0);      // error: `[]$T` has no `?[]i64` receiver
+}
+read :: (o: ?[]i64) -> i64 {
+    return takes(o[0]);    // error: `o[0]` is `?i64`
+}
+
+main :: () {
+    a: [2]i64 = .{ 1, 2 };
+    write(a[0..2]);
+    print("{} {} {}\n", subslice(a[0..2]), bind(a[0..2]), read(a[0..2]));
+}

@@ -2284,7 +2284,8 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
         // `.unresolved` element (non-indexable base — diagnosed by the store
         // arm below) must not become the RHS target type: it would mistype
         // RHS literals before the diagnostic fires.
-        const tgt_obj_ty = self.inferExprType(asgn.target.data.index_expr.object);
+        const tgt_obj_ty = self.narrowedContainerChild(asgn.target.data.index_expr.object) orelse
+            self.inferExprType(asgn.target.data.index_expr.object);
         const elem_ty = self.ptrToArrayElem(tgt_obj_ty) orelse self.ptrToSliceElem(tgt_obj_ty) orelse self.getElementType(tgt_obj_ty);
         if (elem_ty != .void and elem_ty != .unresolved) self.target_type = elem_ty;
     } else if (asgn.target.data == .field_access) {
@@ -2595,7 +2596,8 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             }
         },
         .index_expr => |ie| {
-            const obj_ty = self.inferExprType(ie.object);
+            const narrowed_child = self.narrowedContainerChild(ie.object);
+            const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
             // Comptime-constant store into a tuple element — `tup[i] = v`. A tuple
             // is heterogeneous, so the destination is a typed `structGep` of field
             // `i`, never an `index_gep` (whose `ptrTo(.unresolved)` element type
@@ -2640,26 +2642,9 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             // (`arr[0] = "hi"` for an i32 array) — it would overrun the element
             // and corrupt neighbors. Plain `=` only.
             if (asgn.op == .assign and !self.checkAssignable(self.builder.getRefType(val), elem_ty, asgn.value.span, "assign", "element", asgn.value)) return;
-            // For fixed-size array assignment targets, use the alloca pointer directly
-            // so that the store modifies the original variable (not a loaded copy).
-            const is_array = !obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .array;
-            const obj_alloca = if (is_array) self.getExprAlloca(ie.object) else null;
-            if (obj_alloca) |alloca_ref| {
-                // Array alloca: single-index GEP with element stride
-                const gep = self.builder.emit(.{ .index_gep = .{ .lhs = alloca_ref, .rhs = idx } }, ptr_ty);
-                self.storeOrCompound(gep, val, asgn.op, elem_ty);
-            } else if (is_array) {
-                // Array in a struct field or other composite: get pointer to array in-place
-                const obj_ptr = self.lowerExprAsPtr(ie.object);
-                const gep = self.builder.emit(.{ .index_gep = .{ .lhs = obj_ptr, .rhs = idx } }, ptr_ty);
-                self.storeOrCompound(gep, val, asgn.op, elem_ty);
-            } else {
-                // Pointer/slice: load the pointer value and GEP
-                var obj = self.lowerExpr(ie.object);
-                obj = self.derefPtrToSliceIndexBase(obj, obj_ty);
-                const gep = self.builder.emit(.{ .index_gep = .{ .lhs = obj, .rhs = idx } }, ptr_ty);
-                self.storeOrCompound(gep, val, asgn.op, elem_ty);
-            }
+            const base = self.indexBase(ie.object, obj_ty, narrowed_child);
+            const gep = self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = idx } }, ptr_ty);
+            self.storeOrCompound(gep, val, asgn.op, elem_ty);
         },
         .deref_expr => |de| {
             const ptr = self.lowerExpr(de.operand);
@@ -2797,7 +2782,8 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
             return .{ .slot = .{ .ptr = fl.ptr, .ty = fl.ty } };
         },
         .index_expr => |ie| {
-            const obj_ty = self.inferExprType(ie.object);
+            const narrowed_child = self.narrowedContainerChild(ie.object);
+            const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
             if (!obj_ty.isBuiltin() and
                 (self.module.types.get(obj_ty) == .tuple or self.module.types.get(obj_ty) == .@"struct") and
                 self.comptimeIndexOf(ie.index) != null) return null;
@@ -2807,14 +2793,7 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
             if (elem_ty == .unresolved) return null;
             const ptr_ty = self.module.types.ptrTo(elem_ty);
 
-            const is_array = !obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .array;
-            const obj_alloca = if (is_array) self.getExprAlloca(ie.object) else null;
-            const base = if (obj_alloca) |alloca_ref|
-                alloca_ref
-            else if (is_array)
-                self.lowerExprAsPtr(ie.object)
-            else
-                self.derefPtrToSliceIndexBase(self.lowerExpr(ie.object), obj_ty);
+            const base = self.indexBase(ie.object, obj_ty, narrowed_child);
             const gep = self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = idx } }, ptr_ty);
             return .{ .slot = .{ .ptr = gep, .ty = elem_ty } };
         },
@@ -3332,7 +3311,8 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
             return self.emitFieldError(obj_ty, fa.field, node.span);
         },
         .index_expr => |ie| {
-            const obj_ty = self.inferExprType(ie.object);
+            const narrowed_child = self.narrowedContainerChild(ie.object);
+            const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
             // Comptime-constant index into a tuple VALUE — the L-value sibling of
             // `lowerIndexExpr`'s tuple read path. A tuple is heterogeneous, so its
             // element address is a `structGep` of the i-th field (typed with that
@@ -3374,13 +3354,7 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
                 return self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts before codegen
             }
             const ptr_ty = self.module.types.ptrTo(elem_ty);
-            // For fixed-size arrays, use the alloca so GEP addresses the original memory
-            const is_array = !obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .array;
-            var base = if (is_array)
-                (self.getExprAlloca(ie.object) orelse self.lowerExprAsPtr(ie.object))
-            else
-                self.lowerExpr(ie.object);
-            base = self.derefPtrToSliceIndexBase(base, obj_ty);
+            const base = self.indexBase(ie.object, obj_ty, narrowed_child);
             return self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = idx } }, ptr_ty);
         },
         .deref_expr => |de| {
@@ -3733,7 +3707,7 @@ fn setMultiAssignTargetType(self: *Lowering, target: *const Node, value: *const 
         },
         .index_expr => |ie| {
             // For `arr[i] = val`, type the RHS against the element type.
-            const tgt_obj_ty = self.inferExprType(ie.object);
+            const tgt_obj_ty = self.narrowedContainerChild(ie.object) orelse self.inferExprType(ie.object);
             const elem_ty = self.ptrToArrayElem(tgt_obj_ty) orelse self.ptrToSliceElem(tgt_obj_ty) orelse self.getElementType(tgt_obj_ty);
             if (elem_ty != .void) self.target_type = elem_ty;
         },
@@ -3922,7 +3896,8 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 }
             },
             .index_expr => |ie| {
-                const obj_ty = self.inferExprType(ie.object);
+                const narrowed_child = self.narrowedContainerChild(ie.object);
+                const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
                 // Comptime-constant direct store into a tuple element — `tup[i] = v`
                 // (the store sibling of the L-value tuple path above). Heterogeneous
                 // elements → a typed `structGep` of field `i`, never an `index_gep`
@@ -3973,19 +3948,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                     self.coerceToType(val, val_ty, elem_ty)
                 else
                     val;
-                // For fixed-size arrays, address the storage IN PLACE — a local
-                // alloca, or a MODULE-GLOBAL array via `global_addr`
-                // (lowerExprAsPtr resolves both). A global-array base that fell
-                // through to `lowerExpr` would load the whole array into a
-                // register, and the GEP+store would hit that throwaway COPY
-                // with the write silently dropped. A slice/pointer
-                // base loads the pointer VALUE.
-                const is_array = !obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .array;
-                var base = if (is_array)
-                    (self.getExprAlloca(ie.object) orelse self.lowerExprAsPtr(ie.object))
-                else
-                    self.lowerExpr(ie.object);
-                base = self.derefPtrToSliceIndexBase(base, obj_ty);
+                const base = self.indexBase(ie.object, obj_ty, narrowed_child);
                 const gep = self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = idx } }, ptr_ty);
                 self.builder.store(gep, store_val);
             },
