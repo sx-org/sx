@@ -210,6 +210,7 @@ pub fn lowerJniCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall, span: ast
     // the shared `jclass`/`jmethodID` slot pair.
     const cache_key: ?inst_mod.CacheKey = if (name_node.data == .string_literal and sig_node.data == .string_literal)
         inst_mod.CacheKey{
+            .class_path = "",
             .name_str = name_node.data.string_literal.raw,
             .sig_str = sig_node.data.string_literal.raw,
         }
@@ -329,6 +330,7 @@ pub fn lowerRuntimeMethodCall(
     const sig_ref = self.builder.constString(sig_sid);
 
     const cache_key: inst_mod.CacheKey = .{
+        .class_path = fcd.runtime_path,
         .name_str = method_name,
         .sig_str = desc_str,
     };

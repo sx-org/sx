@@ -1,0 +1,39 @@
+// The cached `jclass`/`jmethodID` slot pair is keyed on
+// (is_static, class, method name, signature). `A.getX` and `B.getX` share a
+// name and a signature but not a class, a raw `@JniCall` names no class at
+// all, and static dispatch resolves through `GetStaticMethodID` — so all four
+// sites here get their own `SX_JNI_MID_*` slot.
+//
+// Runtime: unreachable. The JNI dispatch is all indirect through `*env`, so
+// the IR loads cleanly into the host JIT, and the dereferences never execute
+// because the guarding `g_should_call` global stays false. A plain `if false`
+// folds away, taking the `unused_jni` body out of the IR with it; the
+// runtime-readable global keeps the JNI lowering visible to the snapshot.
+
+#import "modules/std/core.sx";
+
+A :: @JniClass("com/example/A") extern {
+    getX :: (self: *Self) -> i32;
+}
+
+B :: @JniClass("com/example/B") extern {
+    getX :: (self: *Self) -> i32;
+}
+
+g_should_call : bool = false;
+
+unused_jni :: (env: *void, a: *A, b: *B, target: *void, cls: *void) {
+    push .{ jni = env } {
+        _ := a.getX();
+        _ := b.getX();
+        _ := @JniCall(i32, env, target, "getX", "()I");
+        _ := @JniStaticCall(i32, env, cls, "getX", "()I");
+    }
+}
+
+main :: () {
+    if g_should_call {
+        unused_jni(null, null, null, null, null);
+    }
+    out("ok\n");
+}

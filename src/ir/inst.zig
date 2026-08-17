@@ -526,9 +526,9 @@ pub const InlineAsm = struct {
 /// `[*]u8` from a string-literal `.ptr`). When the source-level
 /// `name` and `sig` are string literals, `cache_key` carries their
 /// content so emit_llvm.zig can intern a shared `jclass GlobalRef` +
-/// `jmethodID` slot keyed on `(name, sig)`; otherwise the lookup
-/// stays uncached. The dispatch sequence is expanded in
-/// emit_llvm.zig — see `Inst.jni_msg_send`.
+/// `jmethodID` slot keyed on `(is_static, class_path, name, sig)`;
+/// otherwise the lookup stays uncached. The dispatch sequence is
+/// expanded in emit_llvm.zig — see `Inst.jni_msg_send`.
 pub const JniMsgSend = struct {
     env: Ref,
     target: Ref,
@@ -554,6 +554,11 @@ pub const JniMsgSend = struct {
 };
 
 pub const CacheKey = struct {
+    /// Runtime path of the class the method is declared on, e.g.
+    /// `com/example/A`. Empty for a site that names the method by
+    /// literal alone (`@JniCall`), which shares its slot with no
+    /// declared class.
+    class_path: []const u8,
     name_str: []const u8,
     sig_str: []const u8,
 };
