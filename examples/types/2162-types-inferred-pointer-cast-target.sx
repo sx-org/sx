@@ -1,0 +1,36 @@
+// A pointer-shaped explicit cast (`p.(*T)`, `xx`) is typed by its TARGET, not
+// by its receiver: an inferred `live := p.(*i64)` binds `*i64` exactly like the
+// annotated `ann : *i64 = p.(*i64)`, and dereferencing it loads an i64. The
+// family is every address-shaped pair — `*T`, `[*]T`, `cstring`. Implicit
+// same-width pointer assignment (`q : *i64 = p`) stays a plain store.
+#import "modules/std.sx";
+
+main :: () {
+    x := 42;
+    p : *void = xx *x;
+
+    live := p.(*i64);
+    ann : *i64 = p.(*i64);
+    print("inferred={} annotated={}\n", type_name(type_of(live)), type_name(type_of(ann)));
+    print("live={}\n", live.*);
+    print("ann={}\n", ann.*);
+
+    // Implicit, no cast: a same-width pointer store.
+    q : *i64 = p;
+    print("implicit={} {}\n", type_name(type_of(q)), q.*);
+
+    // Byte view of the same address.
+    b := p.(*u8);
+    print("byte={} {}\n", type_name(type_of(b)), b.*);
+
+    // `*T` ↔ `[*]T`.
+    many := p.([*]i64);
+    back := many.(*i64);
+    print("many={} {} back={} {}\n", type_name(type_of(many)), many[0], type_name(type_of(back)), back.*);
+
+    // `cstring` on both sides of the cast.
+    cs : cstring = "hi";
+    head := cs.(*u8);
+    round := head.(cstring);
+    print("head={} {} round={}\n", type_name(type_of(head)), head.*, type_name(type_of(round)));
+}
