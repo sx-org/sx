@@ -42,6 +42,16 @@ test "conversions: classify covers the built-in coercion ladder" {
     try std.testing.expectEqual(Plan.ptr_int_bitcast, cr.classify(ptr_i64, .i64));
     try std.testing.expectEqual(Plan.ptr_int_bitcast, cr.classify(.i64, ptr_i64));
 
+    // *T / [*]T → *void is implicit; *void → *T is not.
+    const ptr_void = tt.ptrTo(.void);
+    const many_i32 = tt.manyPtrTo(.i32);
+    try std.testing.expectEqual(Plan.ptr_to_void, cr.classify(ptr_i64, ptr_void));
+    try std.testing.expectEqual(Plan.ptr_to_void, cr.classify(many_i32, ptr_void));
+    try std.testing.expectEqual(Plan.none, cr.classify(ptr_void, ptr_i64));
+    try std.testing.expect(!l.noneReinterpretIsUnsafe(ptr_i64, ptr_void));
+    try std.testing.expectEqual(Plan.ptr_int_bitcast, cr.classify(many_i32, .i64));
+    try std.testing.expectEqual(Plan.ptr_int_bitcast, cr.classify(.i64, many_i32));
+
     // Optional wrap / unwrap, and void → optional.
     const opt_i64 = tt.optionalOf(.i64);
     try std.testing.expectEqual(Plan.optional_wrap, cr.classify(.i64, opt_i64));
@@ -180,4 +190,33 @@ test "conversions: unmodeled width-mismatched coercion is flagged unsafe" {
     const opt_ptr = tt.optionalOf(tt.ptrTo(.i64));
     try std.testing.expectEqual(Plan.none, cr.classify(opt_ptr, .i64));
     try std.testing.expect(l.noneReinterpretIsUnsafe(opt_ptr, .i64));
+}
+
+test "conversions: classifyCompare meets pointers, numbers, and refuses mixed signedness" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var l = Lowering.init(&module);
+    const cr = CoercionResolver{ .l = &l };
+    const tt = &module.types;
+    const Meet = CoercionResolver.CompareMeet;
+
+    const ptr_void = tt.ptrTo(.void);
+    const ptr_i64 = tt.ptrTo(.i64);
+    const ptr_u8 = tt.ptrTo(.u8);
+
+    try std.testing.expectEqual(Meet{ .type = .i64 }, cr.classifyCompare(.i64, .i64));
+    try std.testing.expectEqual(Meet{ .type = .i64 }, cr.classifyCompare(.i32, .i64));
+    try std.testing.expectEqual(Meet{ .type = .f64 }, cr.classifyCompare(.i32, .f64));
+    try std.testing.expectEqual(Meet{ .type = .f64 }, cr.classifyCompare(.f32, .f64));
+    try std.testing.expectEqual(Meet{ .type = .i16 }, cr.classifyCompare(.u8, .i16));
+
+    try std.testing.expectEqual(Meet.signedness, cr.classifyCompare(.i32, .u32));
+    try std.testing.expectEqual(Meet.signedness, cr.classifyCompare(.i64, .u64));
+
+    try std.testing.expectEqual(Meet{ .type = ptr_void }, cr.classifyCompare(ptr_i64, ptr_u8));
+    try std.testing.expectEqual(Meet{ .type = ptr_i64 }, cr.classifyCompare(ptr_i64, .i64));
+    try std.testing.expectEqual(Meet{ .type = ptr_void }, cr.classifyCompare(ptr_void, .i64));
 }

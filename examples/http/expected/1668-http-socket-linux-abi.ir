@@ -250,8 +250,7 @@ if.merge.15:                                      ; preds = %if.merge.13
   store { i16, i16, i32, i64 } %call, ptr %alloca, align 8
   %load = load { i16, i16, i32, i64 }, ptr %alloca, align 8
   %sg = extractvalue { i16, i16, i32, i64 } %load, 0
-  %cmp.ext = zext i16 %sg to i64
-  %icmp = icmp ne i64 %cmp.ext, 2
+  %icmp = icmp ne i16 %sg, 2
   br i1 %icmp, label %if.then.16, label %if.merge.17
 
 if.then.16:                                       ; preds = %if.merge.15
@@ -260,8 +259,7 @@ if.then.16:                                       ; preds = %if.merge.15
 if.merge.17:                                      ; preds = %if.merge.15
   %loadN = load { i16, i16, i32, i64 }, ptr %alloca, align 8
   %sgN = extractvalue { i16, i16, i32, i64 } %loadN, 1
-  %cmp.ext3 = zext i16 %sgN to i64
-  %icmpN = icmp ne i64 %cmp.ext3, 36895
+  %icmpN = icmp ne i16 %sgN, -28641
   br i1 %icmpN, label %if.then.18, label %if.merge.19
 
 if.then.18:                                       ; preds = %if.merge.17
@@ -372,8 +370,7 @@ if.merge.41:                                      ; preds = %if.merge.39
   store { i16, i16, i32, [16 x i8], i32 } %callN, ptr %allocaN, align 4
   %loadN = load { i16, i16, i32, [16 x i8], i32 }, ptr %allocaN, align 4
   %sgN = extractvalue { i16, i16, i32, [16 x i8], i32 } %loadN, 0
-  %cmp.ext39 = zext i16 %sgN to i64
-  %icmpN = icmp ne i64 %cmp.ext39, 10
+  %icmpN = icmp ne i16 %sgN, 10
   br i1 %icmpN, label %if.then.42, label %if.merge.43
 
 if.then.42:                                       ; preds = %if.merge.41
@@ -382,8 +379,7 @@ if.then.42:                                       ; preds = %if.merge.41
 if.merge.43:                                      ; preds = %if.merge.41
   %loadN = load { i16, i16, i32, [16 x i8], i32 }, ptr %allocaN, align 4
   %sgN = extractvalue { i16, i16, i32, [16 x i8], i32 } %loadN, 1
-  %cmp.ext43 = zext i16 %sgN to i64
-  %icmpN = icmp ne i64 %cmp.ext43, 36895
+  %icmpN = icmp ne i16 %sgN, -28641
   br i1 %icmpN, label %if.then.44, label %if.merge.45
 
 if.then.44:                                       ; preds = %if.merge.43
@@ -404,8 +400,7 @@ if.then.53:                                       ; preds = %if.merge.45
 
 if.merge.54:                                      ; preds = %if.merge.45
   %callN = call i32 @addr_family(ptr %allocaN)
-  %cmp.ext52 = sext i32 %callN to i64
-  %icmpN = icmp ne i64 %cmp.ext52, 1
+  %icmpN = icmp ne i32 %callN, 1
   br i1 %icmpN, label %if.then.55, label %if.merge.56
 
 if.then.55:                                       ; preds = %if.merge.54
@@ -414,8 +409,8 @@ if.then.55:                                       ; preds = %if.merge.54
 if.merge.56:                                      ; preds = %if.merge.54
   %loadN = load { [128 x i8], i32 }, ptr %allocaN, align 4
   %sgN = extractvalue { [128 x i8], i32 } %loadN, 1
-  %cmp.ext56 = zext i32 %sgN to i64
-  %icmpN = icmp ne i64 %cmp.ext56, 14
+  %zext = zext i32 %sgN to i64
+  %icmpN = icmp ne i64 %zext, 14
   br i1 %icmpN, label %if.then.57, label %if.merge.58
 
 if.then.57:                                       ; preds = %if.merge.56

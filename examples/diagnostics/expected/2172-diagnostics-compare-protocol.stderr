@@ -1,0 +1,5 @@
+error: cannot compare a protocol value with 'i64'
+  --> examples/diagnostics/2172-diagnostics-compare-protocol.sx:18:8
+   |
+18 |     if s == 1 { print("no\n"); }
+   |        ^^^^^^

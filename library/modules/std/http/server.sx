@@ -514,7 +514,7 @@ BodyChan :: struct {
         n := if want < self.len then want else self.len;
         clib.memcpy(dst, self.buf, xx n);
         rest := self.len - n;
-        if rest > 0 { clib.memmove(xx self.buf, xx *self.buf[n], rest); }
+        if rest > 0 { clib.memmove(self.buf, *self.buf[n], rest); }
         self.len = rest;
         wake := self.stalled;
         if wake { self.stalled = false; }
@@ -574,8 +574,8 @@ BodyChan :: struct {
             self.mu.destroy();
             self.cv.destroy();
             a := self.alloc;
-            if self.buf != null { a.dealloc_bytes(xx self.buf); }
-            a.dealloc_bytes(xx self);
+            if self.buf != null { a.dealloc_bytes(self.buf); }
+            a.dealloc_bytes(self);
         }
     }
 }
@@ -677,7 +677,7 @@ OutChan :: struct {
         if n > 0 {
             clib.memcpy(dst, self.buf, xx n);
             rest := self.len - n;
-            if rest > 0 { clib.memmove(xx self.buf, xx *self.buf[n], rest); }
+            if rest > 0 { clib.memmove(self.buf, *self.buf[n], rest); }
             self.len = rest;
             self.cv.signal();   // space freed — unblock the feeder
         }
@@ -717,8 +717,8 @@ OutChan :: struct {
             self.mu.destroy();
             self.cv.destroy();
             a := self.alloc;
-            if self.buf != null { a.dealloc_bytes(xx self.buf); }
-            a.dealloc_bytes(xx self);
+            if self.buf != null { a.dealloc_bytes(self.buf); }
+            a.dealloc_bytes(self);
         }
     }
 }
@@ -824,7 +824,7 @@ queue_completion :: (ps: *PoolState, alloc: Allocator, done: Completion) {
     }
     ps.mu.unlock();
     if dropped {
-        if done.out.buf != null { alloc.dealloc_bytes(xx done.out.buf); }
+        if done.out.buf != null { alloc.dealloc_bytes(done.out.buf); }
         if done.ochan != null {
             done.ochan.abort();
             done.ochan.release();
@@ -1009,7 +1009,7 @@ body_fiber_read :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
             n := if cap < ch.len then cap else ch.len;
             clib.memcpy(dst, ch.buf, xx n);
             rest := ch.len - n;
-            if rest > 0 { clib.memmove(xx ch.buf, xx *ch.buf[n], rest); }
+            if rest > 0 { clib.memmove(ch.buf, *ch.buf[n], rest); }
             ch.len = rest;
             wake := ch.stalled;
             if wake { ch.stalled = false; }
@@ -1183,7 +1183,7 @@ run_handler_job :: (arg: usize) {
         });
     }
     a := job.alloc;
-    a.dealloc_bytes(xx job);
+    a.dealloc_bytes(job);
 }
 
 // the fiber task — one per dispatched request in fiber mode. Runs
@@ -1238,7 +1238,7 @@ run_fiber_job :: (arg: usize) {
             // Drop the consumed request bytes (accumulate dispatch; the
             // streamed dispatch consumed its headers up front → 0).
             rest := c.read_len - job.consumed;
-            if rest > 0 { clib.memmove(xx c.read_buf, xx *c.read_buf[job.consumed], rest); }
+            if rest > 0 { clib.memmove(c.read_buf, *c.read_buf[job.consumed], rest); }
             c.read_len = rest;
             c.reset_parse();
             c.fiber_early = early;
@@ -1249,7 +1249,7 @@ run_fiber_job :: (arg: usize) {
     arena.deinit();
     if job.chan != null { job.chan.release(); }   // the job's ref; the conn's is released at finalize/close
     a := job.alloc;
-    a.dealloc_bytes(xx job);
+    a.dealloc_bytes(job);
 }
 
 // ── single-pass response-head serialization ────────────────────
@@ -1465,7 +1465,7 @@ Server :: struct {
             nb : [*]DlEntry = xx self.own_alloc.alloc_bytes(ncap * size_of(DlEntry));
             i : i64 = 0;
             while i < self.dheap_len { nb[i] = self.dheap[i]; i += 1; }
-            self.own_alloc.dealloc_bytes(xx self.dheap);
+            self.own_alloc.dealloc_bytes(self.dheap);
             self.dheap = nb;
             self.dheap_cap = ncap;
         }
@@ -1696,9 +1696,9 @@ Server :: struct {
             // allocated (slots, dheap, ps, ps.done) — these late paths used
             // to close only the fd and leak the rest .
             if !ps.mu.setup() {
-                oa.dealloc_bytes(xx ps);
-                oa.dealloc_bytes(xx slots);
-                oa.dealloc_bytes(xx dh);
+                oa.dealloc_bytes(ps);
+                oa.dealloc_bytes(slots);
+                oa.dealloc_bytes(dh);
                 close_listener(lfd, cfg.unix_path);
                 raise error.Loop;
             }
@@ -1722,11 +1722,11 @@ Server :: struct {
             pool, pce := thread.Pool.create(cfg.thread_pool_count, cfg.thread_pool_backlog);
             if pce {
                 ps.mu.destroy();
-                oa.dealloc_bytes(xx ps.done);
-                oa.dealloc_bytes(xx ps.ochans);
-                oa.dealloc_bytes(xx ps);
-                oa.dealloc_bytes(xx slots);
-                oa.dealloc_bytes(xx dh);
+                oa.dealloc_bytes(ps.done);
+                oa.dealloc_bytes(ps.ochans);
+                oa.dealloc_bytes(ps);
+                oa.dealloc_bytes(slots);
+                oa.dealloc_bytes(dh);
                 close_listener(lfd, cfg.unix_path);
                 raise error.Loop;
             }
@@ -1804,21 +1804,21 @@ Server :: struct {
         while i < self.cfg.max_conn {
             c := *self.conns[i];
             if c.read_buf != null {
-                self.own_alloc.dealloc_bytes(xx c.read_buf);
+                self.own_alloc.dealloc_bytes(c.read_buf);
                 c.read_buf = null;
                 c.read_cap = 0;
             }
             if c.wbuf != null {   // the persistent write buffer
-                self.own_alloc.dealloc_bytes(xx c.wbuf);
+                self.own_alloc.dealloc_bytes(c.wbuf);
                 c.wbuf = null;
                 c.wbuf_cap = 0;
             }
             i += 1;
         }
-        self.own_alloc.dealloc_bytes(xx self.conns);
+        self.own_alloc.dealloc_bytes(self.conns);
         self.conns = null;
         if self.dheap != null {
-            self.own_alloc.dealloc_bytes(xx self.dheap);
+            self.own_alloc.dealloc_bytes(self.dheap);
             self.dheap = null;
             self.dheap_len = 0;
             self.dheap_cap = 0;
@@ -1836,7 +1836,7 @@ Server :: struct {
             d : i64 = 0;
             while d < self.ps.done_len {
                 if self.ps.done[d].out.buf != null {
-                    self.own_alloc.dealloc_bytes(xx self.ps.done[d].out.buf);
+                    self.own_alloc.dealloc_bytes(self.ps.done[d].out.buf);
                 }
                 // an undrained streamed completion still holds the
                 // conn-side channel reference (it was never attached).
@@ -1845,10 +1845,10 @@ Server :: struct {
                 }
                 d += 1;
             }
-            if self.ps.done != null { self.own_alloc.dealloc_bytes(xx self.ps.done); }
-            if self.ps.ochans != null { self.own_alloc.dealloc_bytes(xx self.ps.ochans); }
+            if self.ps.done != null { self.own_alloc.dealloc_bytes(self.ps.done); }
+            if self.ps.ochans != null { self.own_alloc.dealloc_bytes(self.ps.ochans); }
             self.ps.mu.destroy();
-            self.own_alloc.dealloc_bytes(xx self.ps);
+            self.own_alloc.dealloc_bytes(self.ps);
             self.ps = null;
         }
 
@@ -1942,7 +1942,7 @@ Server :: struct {
         if c.out_buf != null {
             // only per-response allocations are freed here — an
             // out_buf aliasing the persistent wbuf is retained for reuse.
-            if c.out_owned { self.own_alloc.dealloc_bytes(xx c.out_buf); }
+            if c.out_owned { self.own_alloc.dealloc_bytes(c.out_buf); }
             c.out_buf = null;
         }
         c.out_owned = true;
@@ -1951,7 +1951,7 @@ Server :: struct {
         // response) is released now instead of pinning the high-water mark
         // for the server's lifetime .
         if c.wbuf_cap > WBUF_RETAIN_CAP {
-            self.own_alloc.dealloc_bytes(xx c.wbuf);
+            self.own_alloc.dealloc_bytes(c.wbuf);
             c.wbuf = null;
             c.wbuf_cap = 0;
         }
@@ -2535,7 +2535,7 @@ Server :: struct {
                 if took > 0 {
                     progressed = true;
                     rest := c.read_len - took;
-                    if rest > 0 { clib.memmove(xx c.read_buf, xx *c.read_buf[took], rest); }
+                    if rest > 0 { clib.memmove(c.read_buf, *c.read_buf[took], rest); }
                     c.read_len = rest;
                     c.body_remaining -= took;
                 }
@@ -2588,7 +2588,7 @@ Server :: struct {
                 }
                 consumed := e + 2;
                 rest := c.read_len - consumed;
-                if rest > 0 { clib.memmove(xx c.read_buf, xx *c.read_buf[consumed], rest); }
+                if rest > 0 { clib.memmove(c.read_buf, *c.read_buf[consumed], rest); }
                 c.read_len = rest;
                 progressed = true;
                 if size == 0 {
@@ -2609,7 +2609,7 @@ Server :: struct {
                 if took > 0 {
                     progressed = true;
                     rest := c.read_len - took;
-                    if rest > 0 { clib.memmove(xx c.read_buf, xx *c.read_buf[took], rest); }
+                    if rest > 0 { clib.memmove(c.read_buf, *c.read_buf[took], rest); }
                     c.read_len = rest;
                     c.body_remaining -= took;
                 }
@@ -2627,7 +2627,7 @@ Server :: struct {
                     return;
                 }
                 rest := c.read_len - 2;
-                if rest > 0 { clib.memmove(xx c.read_buf, xx *c.read_buf[2], rest); }
+                if rest > 0 { clib.memmove(c.read_buf, *c.read_buf[2], rest); }
                 c.read_len = rest;
                 progressed = true;
                 c.bch_state = 0;
@@ -2640,7 +2640,7 @@ Server :: struct {
             if c.read_len < 2 { break; }
             if c.read_buf[0] == '\r' and c.read_buf[1] == '\n' {
                 rest := c.read_len - 2;
-                if rest > 0 { clib.memmove(xx c.read_buf, xx *c.read_buf[2], rest); }
+                if rest > 0 { clib.memmove(c.read_buf, *c.read_buf[2], rest); }
                 c.read_len = rest;
                 self.body_eof(slot);
                 break;
@@ -2666,7 +2666,7 @@ Server :: struct {
                 return;
             }
             rest := c.read_len - (te + 2);
-            if rest > 0 { clib.memmove(xx c.read_buf, xx *c.read_buf[te + 2], rest); }
+            if rest > 0 { clib.memmove(c.read_buf, *c.read_buf[te + 2], rest); }
             c.read_len = rest;
             progressed = true;
         }
@@ -2774,7 +2774,7 @@ Server :: struct {
         if want <= c.read_cap { return false; }   // already at the limit
         nb : [*]u8 = xx self.own_alloc.alloc_bytes(want);
         if c.read_len > 0 { clib.memcpy(nb, c.read_buf, xx c.read_len); }
-        self.own_alloc.dealloc_bytes(xx c.read_buf);
+        self.own_alloc.dealloc_bytes(c.read_buf);
         c.read_buf = nb;
         c.read_cap = want;
         return true;
@@ -3405,13 +3405,13 @@ Server :: struct {
             ch : *BodyChan = xx self.own_alloc.alloc_bytes(size_of(BodyChan));
             ch.* = BodyChan{ alloc = self.own_alloc };
             if !ch.mu.setup() {
-                self.own_alloc.dealloc_bytes(xx ch);
+                self.own_alloc.dealloc_bytes(ch);
                 self.respond_error_close(slot, 500);
                 return false;
             }
             if !ch.cv.setup() {
                 ch.mu.destroy();
-                self.own_alloc.dealloc_bytes(xx ch);
+                self.own_alloc.dealloc_bytes(ch);
                 self.respond_error_close(slot, 500);
                 return false;
             }
@@ -3472,7 +3472,7 @@ Server :: struct {
             } else if !self.ps.pool.submit(run_handler_job, xx job) {
                 // Backlog full: shed 503 — undo the dispatch (the worker
                 // never saw the job; both channel refs die here).
-                self.own_alloc.dealloc_bytes(xx job);
+                self.own_alloc.dealloc_bytes(job);
                 c.bchan = null;
                 c.body_mode = 0;
                 c.state = CONN_READING;
@@ -3485,7 +3485,7 @@ Server :: struct {
             // Drop the consumed header region NOW — from here the front of
             // read_buf is body framing (the job owns its own header copy).
             rest := c.read_len - hdr_total;
-            if rest > 0 { clib.memmove(xx c.read_buf, xx *c.read_buf[hdr_total], rest); }
+            if rest > 0 { clib.memmove(c.read_buf, *c.read_buf[hdr_total], rest); }
             c.read_len = rest;
             c.reset_parse();
             self.set_deadline(slot, self.cfg.timeout_request_ms);
@@ -3663,7 +3663,7 @@ Server :: struct {
                     c.handler_deadline = 0;
                 }
                 if !self.ps.pool.submit(run_handler_job, xx job) {
-                    self.own_alloc.dealloc_bytes(xx job);
+                    self.own_alloc.dealloc_bytes(job);
                     c.state = CONN_READING;
                     c.handler_deadline = 0;
                     self.respond_error_close(slot, 503);
@@ -3709,7 +3709,7 @@ Server :: struct {
         // drain_completions instead — never inside the worker.
         self.st_requests += 1;
         rest := c.read_len - total;
-        if rest > 0 { clib.memmove(xx c.read_buf, xx *c.read_buf[total], rest); }
+        if rest > 0 { clib.memmove(c.read_buf, *c.read_buf[total], rest); }
         c.read_len = rest;
         c.reset_parse();   // the next pipelined request now starts at 0
         self.write_more(slot);
@@ -3732,7 +3732,7 @@ Server :: struct {
         c := *self.conns[slot];
         if c.wbuf_cap >= need { return; }
         want := ((need + 4095) / 4096) * 4096;
-        if c.wbuf != null { self.own_alloc.dealloc_bytes(xx c.wbuf); }
+        if c.wbuf != null { self.own_alloc.dealloc_bytes(c.wbuf); }
         c.wbuf = xx self.own_alloc.alloc_bytes(want);
         c.wbuf_cap = want;
     }
@@ -3849,7 +3849,7 @@ Server :: struct {
             i += 1;
             c := *self.conns[done.slot];
             if (c.state != CONN_HANDLING and c.state != CONN_BODY) or c.gen != done.gen {
-                if done.out.buf != null { self.own_alloc.dealloc_bytes(xx done.out.buf); }
+                if done.out.buf != null { self.own_alloc.dealloc_bytes(done.out.buf); }
                 // the conn died before attach — abort the feeder (the
                 // worker may still be pumping) and drop the conn-side ref.
                 if done.ochan != null {
@@ -3905,7 +3905,7 @@ Server :: struct {
                 rae := false;
                 self.loop.add_read(c.fd, xx done.slot) catch { rae = true; };
                 if rae {
-                    self.own_alloc.dealloc_bytes(xx done.out.buf);
+                    self.own_alloc.dealloc_bytes(done.out.buf);
                     // the chan is NOT attached yet, so the
                     // conn_close below cannot see it — abort + release here
                     // or the pumping worker blocks until Server.close and
@@ -3928,7 +3928,7 @@ Server :: struct {
                 if done.out.len > cap { cap = done.out.len; }
                 raw := self.own_alloc.alloc_bytes(cap);
                 if raw == null {
-                    self.own_alloc.dealloc_bytes(xx done.out.buf);
+                    self.own_alloc.dealloc_bytes(done.out.buf);
                     if done.ochan != null { done.ochan.abort(); done.ochan.release(); }
                     self.emit(EventKind.WRITE_FAULT, done.slot, 0);
                     self.conn_close(done.slot);
@@ -3936,7 +3936,7 @@ Server :: struct {
                 }
                 sb : [*]u8 = xx raw;
                 clib.memcpy(sb, done.out.buf, done.out.len);
-                self.own_alloc.dealloc_bytes(xx done.out.buf);
+                self.own_alloc.dealloc_bytes(done.out.buf);
                 c.out_buf = sb;
                 c.out_len = done.out.len;
                 c.out_sent = 0;
@@ -3964,14 +3964,14 @@ Server :: struct {
             // drop the served bytes (memmove — overlap-safe, and the
             // kernel-grade copy beats a byte loop on multi-KB pipelines)
             rest := c.read_len - done.consumed;
-            if rest > 0 { clib.memmove(xx c.read_buf, xx *c.read_buf[done.consumed], rest); }
+            if rest > 0 { clib.memmove(c.read_buf, *c.read_buf[done.consumed], rest); }
             c.read_len = rest;
             c.reset_parse();   // the next pipelined request now starts at 0
             c.state = CONN_READING;
             self.set_deadline(done.slot, self.cfg.timeout_request_ms);
             self.write_more(done.slot);
         }
-        self.own_alloc.dealloc_bytes(xx batch);
+        self.own_alloc.dealloc_bytes(batch);
     }
 
     // Refill the streaming scratch (out_buf) with the next chunk —
@@ -4138,7 +4138,7 @@ Server :: struct {
         }
         // free only per-response buffers (pool attach, stream
         // scratch); the persistent wbuf is reused by the next response.
-        if c.out_owned { self.own_alloc.dealloc_bytes(xx c.out_buf); }
+        if c.out_owned { self.own_alloc.dealloc_bytes(c.out_buf); }
         c.out_buf = null;
         c.out_owned = true;
         c.out_len = 0;

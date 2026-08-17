@@ -560,7 +560,7 @@ EncodedProducer :: struct {
 
     deinit :: (self: *EncodedProducer) {
         self.encoder.deinit();
-        if self.input != null { self.alloc.dealloc_bytes(xx self.input); self.input = null; }
+        if self.input != null { self.alloc.dealloc_bytes(self.input); self.input = null; }
         self.finished = true;
     }
 }
@@ -580,5 +580,5 @@ create_encoded_producer :: (encoding: Encoding, level: i64, source: Producer, so
 destroy_encoded_producer :: (state: *EncodedProducer, alloc: Allocator) {
     if state == null { return; }
     state.deinit();
-    alloc.dealloc_bytes(xx state);
+    alloc.dealloc_bytes(state);
 }

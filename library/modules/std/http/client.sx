@@ -322,7 +322,7 @@ send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_he
         if n <= 0 { failed = true; break; }
         sent += n;
     }
-    context.allocator.dealloc_bytes(xx p);
+    context.allocator.dealloc_bytes(p);
     if failed { raise error.Send; }
     c.request_was_head = ce_ascii_ieq(method, "head");
     return;
@@ -525,7 +525,7 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
         // Materialize the host into the stack buffer and REPOINT u.host at
         // it — a later relative hop must not leave u.host viewing a freed
         // previous location copy (absolute-then-relative chains).
-        if u.host.len == 0 or u.host.len > 255 { if freeing { context.allocator.dealloc_bytes(xx pathp); } raise error.Url; }
+        if u.host.len == 0 or u.host.len > 255 { if freeing { context.allocator.dealloc_bytes(pathp); } raise error.Url; }
         hbp : [*]u8 = xx *hostb[0];
         if u.host.ptr != hbp {
             clib.memcpy(hbp, u.host.ptr, xx u.host.len);
@@ -535,23 +535,23 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
 
         vh := if first then opts.tls_host else "";
         c, r, he := fetch_hop(hu, m, b, opts, vh, buf, cap);
-        if he { if freeing { context.allocator.dealloc_bytes(xx pathp); } raise he; }
+        if he { if freeing { context.allocator.dealloc_bytes(pathp); } raise he; }
 
         if !is_redirect(r.status) or opts.max_redirects <= 0 {
             close_conn(*c);
-            if freeing { context.allocator.dealloc_bytes(xx pathp); }
+            if freeing { context.allocator.dealloc_bytes(pathp); }
             return r;
         }
         loc := r.header("location");
         if loc.len == 0 {
             close_conn(*c);
-            if freeing { context.allocator.dealloc_bytes(xx pathp); }
+            if freeing { context.allocator.dealloc_bytes(pathp); }
             return r;
         }
         hops += 1;
         if hops > opts.max_redirects {
             close_conn(*c);
-            if freeing { context.allocator.dealloc_bytes(xx pathp); }
+            if freeing { context.allocator.dealloc_bytes(pathp); }
             raise error.Redirect;
         }
         // Build the next target BEFORE the buffer is reused: copy the
@@ -560,18 +560,18 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
         clib.memcpy(np, loc.ptr, xx loc.len);
         locv := string{ ptr = np, len = loc.len };
         close_conn(*c);
-        if freeing { context.allocator.dealloc_bytes(xx pathp); }
+        if freeing { context.allocator.dealloc_bytes(pathp); }
         pathp = np;
         freeing = true;
 
         if starts_with(locv, "http://") or starts_with(locv, "https://") {
             nu, nok := parse_url(locv);
-            if !nok { context.allocator.dealloc_bytes(xx pathp); raise error.Url; }
+            if !nok { context.allocator.dealloc_bytes(pathp); raise error.Url; }
             u = nu;   // host/path view pathp — copied into hostb / kept owned next iteration
         } else if locv.len > 0 and locv[0] == '/' {   // '/'-relative: keep authority
             u.path = strip_fragment(locv);   // parse_url strips the absolute arm
         } else {
-            context.allocator.dealloc_bytes(xx pathp);
+            context.allocator.dealloc_bytes(pathp);
             raise error.Url;   // relative-without-slash — unsupported
         }
         if r.status == 301 or r.status == 302 or r.status == 303 {
@@ -639,7 +639,7 @@ normalize_decoded_headers :: (raw: [*]u8, len: i64) -> i64 {
         }
         if !remove {
             count := after - read_at;
-            if write_at != read_at { clib.memmove(xx *raw[write_at], xx *raw[read_at], count); }
+            if write_at != read_at { clib.memmove(*raw[write_at], *raw[read_at], count); }
             write_at += count;
         }
         read_at = after;
@@ -906,7 +906,7 @@ recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr
 
             if code >= 100 and code < 200 {
                 remaining := total - head_end;
-                if remaining > 0 { clib.memmove(xx buf, xx *buf[head_end], remaining); }
+                if remaining > 0 { clib.memmove(buf, *buf[head_end], remaining); }
                 total = remaining;
                 head_end = -1;
                 saw_informational = true;
@@ -1060,42 +1060,42 @@ ClientPool :: struct {
         hops : i64 = 0;
         first := true;
         while true {
-            if u.host.len == 0 or u.host.len > 255 { if freeing { context.allocator.dealloc_bytes(xx pathp); } raise error.Url; }
+            if u.host.len == 0 or u.host.len > 255 { if freeing { context.allocator.dealloc_bytes(pathp); } raise error.Url; }
             hbp : [*]u8 = xx *hostb[0];
             if u.host.ptr != hbp {
                 clib.memcpy(hbp, u.host.ptr, xx u.host.len);
                 u.host = string{ ptr = hbp, len = u.host.len };
             }
             r, he := self.hop(u, m, b, first, buf, cap);
-            if he { if freeing { context.allocator.dealloc_bytes(xx pathp); } raise he; }
+            if he { if freeing { context.allocator.dealloc_bytes(pathp); } raise he; }
             if !is_redirect(r.status) or self.opts.max_redirects <= 0 {
-                if freeing { context.allocator.dealloc_bytes(xx pathp); }
+                if freeing { context.allocator.dealloc_bytes(pathp); }
                 return r;
             }
             loc := r.header("location");
             if loc.len == 0 {
-                if freeing { context.allocator.dealloc_bytes(xx pathp); }
+                if freeing { context.allocator.dealloc_bytes(pathp); }
                 return r;
             }
             hops += 1;
             if hops > self.opts.max_redirects {
-                if freeing { context.allocator.dealloc_bytes(xx pathp); }
+                if freeing { context.allocator.dealloc_bytes(pathp); }
                 raise error.Redirect;
             }
             np : [*]u8 = xx context.allocator.alloc_bytes(loc.len);
             clib.memcpy(np, loc.ptr, xx loc.len);
             locv := string{ ptr = np, len = loc.len };
-            if freeing { context.allocator.dealloc_bytes(xx pathp); }
+            if freeing { context.allocator.dealloc_bytes(pathp); }
             pathp = np;
             freeing = true;
             if starts_with(locv, "http://") or starts_with(locv, "https://") {
                 nu, nok := parse_url(locv);
-                if !nok { context.allocator.dealloc_bytes(xx pathp); raise error.Url; }
+                if !nok { context.allocator.dealloc_bytes(pathp); raise error.Url; }
                 u = nu;
             } else if locv.len > 0 and locv[0] == '/' {
                 u.path = locv;
             } else {
-                context.allocator.dealloc_bytes(xx pathp);
+                context.allocator.dealloc_bytes(pathp);
                 raise error.Url;
             }
             if r.status == 301 or r.status == 302 or r.status == 303 {
@@ -1198,7 +1198,7 @@ ClientPool :: struct {
                             https = u.https, conn = c, live = true };
         if i < self.entries.len {
             old := *self.entries.items[i];
-            if old.host != null { self.a.dealloc_bytes(xx old.host); }
+            if old.host != null { self.a.dealloc_bytes(old.host); }
             self.entries.items[i] = ne;
         } else {
             self.entries.append(ne, self.a);
@@ -1219,7 +1219,7 @@ ClientPool :: struct {
         while i < self.entries.len {
             e := *self.entries.items[i];
             if e.live { close_conn(*e.conn); e.live = false; }
-            if e.host != null { self.a.dealloc_bytes(xx e.host); e.host = null; }
+            if e.host != null { self.a.dealloc_bytes(e.host); e.host = null; }
             i += 1;
         }
         self.entries.deinit(self.a);

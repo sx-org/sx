@@ -34,7 +34,7 @@ create :: ufcs (a: Allocator, $T: Type) -> *T {
 
 // Free a *T obtained from `create`.
 destroy :: ufcs (a: Allocator, ptr: *$T) {
-    a.dealloc_bytes(xx ptr);
+    a.dealloc_bytes(ptr);
 }
 
 // Allocate a []T of `count` elements. Contents are UNINITIALISED.
@@ -69,7 +69,7 @@ free :: ufcs (x: $T, a: Allocator = context.allocator) {
             env := x.(@Closure).env;
             if env != null { a.dealloc_bytes(env); }
         }
-        case slice:    a.dealloc_bytes(xx x.ptr);
+        case slice:    a.dealloc_bytes(x.ptr);
         else:          @error("free expects a protocol value, a closure, or a slice");
     }
 }
@@ -77,7 +77,7 @@ free :: ufcs (x: $T, a: Allocator = context.allocator) {
 // Copy a slice into fresh storage owned by `a`.
 clone :: ufcs (src: []$T, a: Allocator) -> []T {
     raw := a.alloc_bytes(src.len * size_of(T));
-    c.memcpy(raw, xx src.ptr, src.len * size_of(T));
+    c.memcpy(raw, src.ptr, src.len * size_of(T));
     s : []T = ---;
     s.ptr = xx raw;
     s.len = src.len;
@@ -93,8 +93,8 @@ resize :: ufcs (slice: []$T, a: Allocator, new_count: i64) -> ?[]T {
     raw := a.alloc_bytes(new_count * size_of(T));
     if raw == null { return null; }
     n := if slice.len < new_count then slice.len else new_count;
-    c.memcpy(raw, xx slice.ptr, n * size_of(T));
-    a.dealloc_bytes(xx slice.ptr);
+    c.memcpy(raw, slice.ptr, n * size_of(T));
+    a.dealloc_bytes(slice.ptr);
     s : []T = ---;
     s.ptr = xx raw;
     s.len = new_count;

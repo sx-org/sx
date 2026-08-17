@@ -2319,6 +2319,9 @@ d := q - p;               // 1 — elements, not bytes
 - `[]T` → `[*]T` (slice decays to many-pointer, extracts `.ptr`)
 - `T` → `*T` at call sites (implicit address-of)
 - `null` (`*void`) → any `*T`
+- `*T` / `[*]T` / `cstring` → `*void` (losing the pointee). `[]T.ptr` is a
+  many-pointer, so it takes this arm. Gaining a pointee (`*void` → `*T`) is
+  explicit: `raw.(*T)` or `xx raw` at a `*T` slot.
 
 **Unchecked writes (the pointer contract)**: pointers carry no
 read-only qualifier — there is no `const` pointer type in sx (`const` is
@@ -3143,6 +3146,7 @@ isReady : ValueListenable(bool) = map(
 - Any integer to any float (`u8` → `f32`, `i32` → `f64`)
 - Float to wider float (`f32` → `f64`)
 - Integer literals can convert to any numeric type implicitly
+- `*T` / `[*]T` / `cstring` → `*void`
 
 **Implicit float → integer (the unified narrowing rule)** — a float flowing into
 an integer-typed binding without `xx`/`.(T)` is governed by the SAME rule an
@@ -3196,11 +3200,26 @@ d : u8 = #run xx resolve(5); // i32 → u8 at compile time
 
 Using `xx` outside a typed context (where the target type is known) is a compile error.
 
-In a comparison the target is the OTHER operand's type: `a == xx b` converts `b`
-to `a`'s type, reading exactly as the hoisted `t : <type of a> = xx b; a == t`.
-A comparison yields `bool`, and that `bool` is the value the surrounding context
-expects — it is never the target of an operand, so the comparison reads the same
-inferred, as an `if` condition, and in a `bool` declaration, argument or return.
+Comparisons (`== != < <= > >=`) meet at a **comparison type**. They are not
+stores: neither operand has to already be that type, and the converted values
+are not written onward.
+
+| Pair | Comparison type |
+|---|---|
+| Both numeric, same signedness or int↔float | the arithmetic common type (widen; int+float → float) |
+| Signed vs unsigned, same width | error — write `a.(u64) < b` |
+| Two pointers, any pointees (`*T`, `*void`, `[*]T`, fn-ptr, `cstring`) | address bits / address order |
+| Pointer vs integer | the integer is an address-sized bit pattern: `region == -1`, `p != 0` |
+| `?T == T` / `?T == null` / error-set vs tag | unchanged |
+
+`any`, protocol values against a foreign type, and distinct structs are refused.
+
+An explicit `xx` in a comparison still takes its target from the OTHER operand:
+`a == xx b` converts `b` to `a`'s type, reading exactly as the hoisted
+`t : <type of a> = xx b; a == t`. A comparison yields `bool`, and that `bool` is
+the value the surrounding context expects — it is never the target of an
+operand, so the comparison reads the same inferred, as an `if` condition, and
+in a `bool` declaration, argument or return.
 
 When an explicit cast pair has **no modeled conversion** (and no user `Into`
 applies), the cast is a raw bit-reinterpretation. Between two same-shaped

@@ -376,7 +376,7 @@ decode_chunked_pass :: (src: [*]u8, avail: i64, max_body: i64, commit: bool, res
         // compact: move the data up over the stripped framing (wp <= rp always).
         // Only on the commit pass — the validation pass must not mutate.
         if commit and wp != rp {
-            c.memmove(xx *src[wp], xx *src[rp], size);
+            c.memmove(*src[wp], *src[rp], size);
         }
         wp += size;
         rp += size;

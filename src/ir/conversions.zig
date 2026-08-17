@@ -46,6 +46,7 @@ pub const CoercionResolver = struct {
         int_to_enum, // int → payload-less enum (through the enum's backing type)
         enum_to_int, // payload-less enum → int (through the enum's backing type)
         ptr_int_bitcast, // ptr ↔ int
+        ptr_to_void, // *T / [*]T / cstring → *void
         widen, // same kind, dst wider
         narrow, // same kind, dst narrower
         array_to_slice, // [N]T → []T (materialize backing storage + header)
@@ -189,8 +190,8 @@ pub const CoercionResolver = struct {
         const dst_float = Lowering.isFloat(dst_ty);
         const src_int = self.l.isIntEx(src_ty);
         const dst_int = self.l.isIntEx(dst_ty);
-        const src_ptr = (!src_ty.isBuiltin() and self.l.module.types.get(src_ty) == .pointer) or src_ty == .cstring;
-        const dst_ptr = (!dst_ty.isBuiltin() and self.l.module.types.get(dst_ty) == .pointer) or dst_ty == .cstring;
+        const src_ptr = self.isTypedAddress(src_ty);
+        const dst_ptr = self.isTypedAddress(dst_ty);
 
         // Int ↔ payload-less enum. Such an enum IS an integer of its backing
         // type (§Enums), so the conversion is that integer conversion plus a
@@ -204,6 +205,11 @@ pub const CoercionResolver = struct {
 
         if (src_int and dst_float) return .int_to_float;
         if (src_float and dst_int) return .float_to_int;
+        // Losing a pointee is the destination's request: a single-pointer,
+        // many-pointer, or `cstring` stores into `*void` without a glyph.
+        // The reverse (`*void` → `*T`) is a pointer↔pointer `.none`
+        // (explicit `raw.(*T)` / `xx raw`).
+        if (self.isVoidPointer(dst_ty) and self.isTypedAddress(src_ty)) return .ptr_to_void;
         if ((src_ptr and dst_int) or (src_int and dst_ptr)) return .ptr_int_bitcast;
 
         const src_bits = self.l.typeBitsEx(src_ty);
@@ -298,5 +304,81 @@ pub const CoercionResolver = struct {
         // untouched: it still boxes the protocol value itself.
         if (self.l.getProtocolInfo(src_ty) != null and dst_ty == .any) return .protocol_to_any;
         return .coerce;
+    }
+
+    /// How two operand types meet for `== != < <= > >=`. Comparisons are
+    /// not stores: the operands do not have to already be the comparison
+    /// type, and the converted values are not written onward.
+    pub const CompareMeet = union(enum) {
+        /// Both sides convert to this type (identity when already equal).
+        type: TypeId,
+        /// Signed vs unsigned integers that do not widen into each other.
+        signedness,
+        /// No comparison-specific meeting; the existing operand rules apply.
+        none,
+    };
+
+    pub fn classifyCompare(self: CoercionResolver, lhs_ty: TypeId, rhs_ty: TypeId) CompareMeet {
+        if (lhs_ty == rhs_ty) return .{ .type = lhs_ty };
+        if (lhs_ty == .unresolved or rhs_ty == .unresolved) return .none;
+        if (lhs_ty == .void or rhs_ty == .void) return .none;
+
+        const l_addr = self.isAddressType(lhs_ty);
+        const r_addr = self.isAddressType(rhs_ty);
+        if (l_addr and r_addr) {
+            if (lhs_ty == rhs_ty) return .{ .type = lhs_ty };
+            return .{ .type = self.l.module.types.ptrTo(.void) };
+        }
+        if (l_addr and self.l.isIntEx(rhs_ty)) return .{ .type = lhs_ty };
+        if (r_addr and self.l.isIntEx(lhs_ty)) return .{ .type = rhs_ty };
+
+        const l_float = Lowering.isFloat(lhs_ty);
+        const r_float = Lowering.isFloat(rhs_ty);
+        const l_int = self.l.isIntEx(lhs_ty);
+        const r_int = self.l.isIntEx(rhs_ty);
+        if (!(l_int or l_float) or !(r_int or r_float)) return .none;
+
+        if (l_float or r_float) {
+            if (l_float and r_float) {
+                const lb = self.l.typeBitsEx(lhs_ty);
+                const rb = self.l.typeBitsEx(rhs_ty);
+                return .{ .type = if (lb >= rb) lhs_ty else rhs_ty };
+            }
+            return .{ .type = if (l_float) lhs_ty else rhs_ty };
+        }
+
+        const l_u = self.l.module.types.isUnsignedInt(lhs_ty);
+        const r_u = self.l.module.types.isUnsignedInt(rhs_ty);
+        const lb = self.l.typeBitsEx(lhs_ty);
+        const rb = self.l.typeBitsEx(rhs_ty);
+        if (l_u == r_u) return .{ .type = if (lb >= rb) lhs_ty else rhs_ty };
+        // Unsigned → strictly wider signed is the implicit numeric rule.
+        if (l_u and !r_u and lb < rb) return .{ .type = rhs_ty };
+        if (r_u and !l_u and rb < lb) return .{ .type = lhs_ty };
+        return .signedness;
+    }
+
+    fn isVoidPointer(self: CoercionResolver, ty: TypeId) bool {
+        if (ty.isBuiltin()) return false;
+        const info = self.l.module.types.get(ty);
+        return info == .pointer and info.pointer.pointee == .void;
+    }
+
+    fn isTypedAddress(self: CoercionResolver, ty: TypeId) bool {
+        if (ty == .cstring) return true;
+        if (ty.isBuiltin()) return false;
+        return switch (self.l.module.types.get(ty)) {
+            .pointer, .many_pointer => true,
+            else => false,
+        };
+    }
+
+    fn isAddressType(self: CoercionResolver, ty: TypeId) bool {
+        if (ty == .cstring) return true;
+        if (ty.isBuiltin()) return false;
+        return switch (self.l.module.types.get(ty)) {
+            .pointer, .many_pointer, .function => true,
+            else => false,
+        };
     }
 };

@@ -178,7 +178,7 @@ std_zip_reader_deinit :: (state: *StdZipReaderState) {
     alloc := state.owned.alloc;
     state.owned.deinit();
     if state.source_bridge != null {
-        alloc.dealloc_bytes(xx state.source_bridge);
+        alloc.dealloc_bytes(state.source_bridge);
         state.source_bridge = null;
     }
     state.closed = true;
@@ -632,14 +632,14 @@ std_zip_writer_close :: (state: *StdZipWriterState) -> !Error {
         case .memory: {
             if !state.*.memory.writer.end() { ok = false; }
             state.*.memory.output.bytes.deinit();
-            state.*.memory.alloc.dealloc_bytes(xx state.*.memory.output);
+            state.*.memory.alloc.dealloc_bytes(state.*.memory.output);
             if state.*.memory.owns_default_comment and state.*.memory.default_comment.ptr != null {
                 state.*.memory.alloc.dealloc_bytes(state.*.memory.default_comment.ptr);
             }
         }
         case .sink: {
             if !state.*.sink.writer.end() { ok = false; }
-            state.*.sink.alloc.dealloc_bytes(xx state.*.sink.bridge);
+            state.*.sink.alloc.dealloc_bytes(state.*.sink.bridge);
         }
         case .file: {
             if !state.*.file.owned.end() { ok = false; }
@@ -659,14 +659,14 @@ std_zip_writer_deinit :: (state: *StdZipWriterState) {
         case .memory: {
             state.*.memory.writer.deinit();
             state.*.memory.output.bytes.deinit();
-            state.*.memory.alloc.dealloc_bytes(xx state.*.memory.output);
+            state.*.memory.alloc.dealloc_bytes(state.*.memory.output);
             if state.*.memory.owns_default_comment and state.*.memory.default_comment.ptr != null {
                 state.*.memory.alloc.dealloc_bytes(state.*.memory.default_comment.ptr);
             }
         }
         case .sink: {
             state.*.sink.writer.deinit();
-            state.*.sink.alloc.dealloc_bytes(xx state.*.sink.bridge);
+            state.*.sink.alloc.dealloc_bytes(state.*.sink.bridge);
         }
         case .file: { state.*.file.owned.deinit(); }
         case .update_file: {

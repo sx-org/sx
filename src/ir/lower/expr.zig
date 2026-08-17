@@ -4709,6 +4709,12 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         const peer_ty = self.inferExprType(bop.rhs);
         if (peer_ty != .unresolved and peer_ty != .void) self.target_type = peer_ty;
     }
+    // An integer literal takes the other operand's type — `n == 0` with
+    // `n: usize` is a usize compare, not signed-vs-unsigned.
+    if (comparison and isComptimeIntExpr(bop.lhs)) {
+        const peer_ty = self.inferExprType(bop.rhs);
+        if (isCompareNumericPeer(self, peer_ty)) self.target_type = peer_ty;
+    }
     var lhs = self.lowerExpr(bop.lhs);
     if (comparison) self.target_type = null;
     // A `for *x in xs` capture is a pointer; in a value position (here, an
@@ -4741,6 +4747,9 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         } else if (lhs_ty == .f32 or lhs_ty == .f64 or rhs_untyped) {
             self.target_type = lhs_ty;
         }
+    }
+    if (comparison and isComptimeIntExpr(bop.rhs) and isCompareNumericPeer(self, lhs_ty)) {
+        self.target_type = lhs_ty;
     }
     // In a comparison, an anonymous positional literal on the RHS is typed
     // from the LHS just like an enum shorthand. This also keeps the following
@@ -4975,29 +4984,21 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         }
     }
 
-    // Comparison operand promotion. Arithmetic arms below carry the promoted
-    // common type `ty` on the result op, so the LLVM emitter re-matches the
-    // operands against it (`matchBinOpTypes`). Comparisons carry `.bool`
-    // instead, so `emitCmp`/`emitCmpOrdered` only see the raw operand LLVM
-    // types — and those only reconcile int↔int width (SExt/ZExt). A mixed
-    // int-vs-float compare (`xx i < t`, i:i32 t:f32) or a two-float-width
-    // compare (`f64 >= f32`) reaches the emitter with mismatched operands and
-    // fails LLVM verification. Coerce each operand up to the
-    // promoted common type HERE — `coerceToType` emits the SIToFP / FPExt /
-    // width-ext — so the operands are already type-equal when the cmp is built.
-    // Restricted to float `ty`: an int↔int compare is handled by the emitter,
-    // and a non-numeric `ty` (struct/string/enum) has its own cmp path.
+    // Comparison operands meet at a comparison type — not a store.
+    // Numeric pairs widen / promote to float; two pointers meet at `*void`;
+    // a pointer and an integer meet at the pointer (the integer is an
+    // address-sized bit pattern). Signed vs unsigned of the same width
+    // is refused.
     switch (bop.op) {
         .eq, .neq, .lt, .lte, .gt, .gte => {
-            if (Lowering.isFloat(ty)) {
-                const lhs_ir = self.builder.getRefType(lhs);
-                if (lhs_ir != ty and (Lowering.isFloat(lhs_ir) or self.isIntEx(lhs_ir))) {
-                    lhs = self.coerceToType(lhs, lhs_ir, ty);
-                }
-                const rhs_ir = self.builder.getRefType(rhs);
-                if (rhs_ir != ty and (Lowering.isFloat(rhs_ir) or self.isIntEx(rhs_ir))) {
-                    rhs = self.coerceToType(rhs, rhs_ir, ty);
-                }
+            const span = ast.Span{ .start = bop.lhs.span.start, .end = bop.rhs.span.end };
+            const lhs_ir = self.builder.getRefType(lhs);
+            const rhs_ir = self.builder.getRefType(rhs);
+            if (meetCompareOperands(self, lhs, rhs, lhs_ir, rhs_ir, span)) |met| {
+                lhs = met.lhs;
+                rhs = met.rhs;
+            } else {
+                return self.emitPlaceholder("compare-meet");
             }
         },
         else => {},
@@ -5493,25 +5494,122 @@ pub fn lowerChainedComparison(self: *Lowering, cc: *const ast.ChainedComparison)
         self.target_type = null;
     }
 
-    var result = self.emitCmp(refs.items[0], refs.items[1], cc.ops[0]);
+    const first_span = ast.Span{ .start = cc.operands[0].span.start, .end = cc.operands[1].span.end };
+    var result = self.emitCmp(refs.items[0], refs.items[1], cc.ops[0], first_span);
 
     var i: usize = 1;
     while (i < cc.ops.len) : (i += 1) {
-        const next_cmp = self.emitCmp(refs.items[i], refs.items[i + 1], cc.ops[i]);
+        const pair_span = ast.Span{ .start = cc.operands[i].span.start, .end = cc.operands[i + 1].span.end };
+        const next_cmp = self.emitCmp(refs.items[i], refs.items[i + 1], cc.ops[i], pair_span);
         result = self.builder.emit(.{ .bool_and = .{ .lhs = result, .rhs = next_cmp } }, .bool);
     }
 
     return result;
 }
 
-pub fn emitCmp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.BinaryOp.Op) Ref {
+fn isComptimeIntExpr(node: *const Node) bool {
+    return switch (node.data) {
+        .int_literal, .char_literal => true,
+        .unary_op => |u| u.op == .negate and isComptimeIntExpr(u.operand),
+        else => false,
+    };
+}
+
+fn isCompareNumericPeer(self: *Lowering, ty: TypeId) bool {
+    if (self.isIntEx(ty) or Lowering.isFloat(ty) or ty == .cstring) return true;
+    if (ty.isBuiltin()) return false;
+    return switch (self.module.types.get(ty)) {
+        .pointer, .many_pointer, .function => true,
+        else => false,
+    };
+}
+
+fn constIntOf(self: *Lowering, val: Ref) ?i64 {
+    const op = self.builder.getRefOp(val) orelse return null;
     return switch (op) {
-        .eq => self.builder.cmpEq(lhs, rhs),
-        .neq => self.builder.emit(.{ .cmp_ne = .{ .lhs = lhs, .rhs = rhs } }, .bool),
-        .lt => self.builder.cmpLt(lhs, rhs),
-        .lte => self.builder.emit(.{ .cmp_le = .{ .lhs = lhs, .rhs = rhs } }, .bool),
-        .gt => self.builder.cmpGt(lhs, rhs),
-        .gte => self.builder.emit(.{ .cmp_ge = .{ .lhs = lhs, .rhs = rhs } }, .bool),
+        .const_int => |v| v,
+        .neg => |n| blk: {
+            const inner = constIntOf(self, n.operand) orelse break :blk null;
+            break :blk -%inner;
+        },
+        else => null,
+    };
+}
+
+const CompareOperands = struct { lhs: Ref, rhs: Ref };
+
+/// Convert both sides of a comparison to the comparison type, or diagnose.
+fn meetCompareOperands(
+    self: *Lowering,
+    lhs: Ref,
+    rhs: Ref,
+    lhs_ty: TypeId,
+    rhs_ty: TypeId,
+    span: ast.Span,
+) ?CompareOperands {
+    switch (self.coercionResolver().classifyCompare(lhs_ty, rhs_ty)) {
+        .type => |meet_ty| {
+            return .{
+                .lhs = coerceCompareOperand(self, lhs, lhs_ty, meet_ty),
+                .rhs = coerceCompareOperand(self, rhs, rhs_ty, meet_ty),
+            };
+        },
+        .signedness => {
+            if (constIntOf(self, lhs)) |n| {
+                if (self.isIntEx(rhs_ty)) {
+                    self.checkIntLiteralMagnitudeFits(n, rhs_ty, span);
+                    return .{ .lhs = self.builder.constInt(n, rhs_ty), .rhs = rhs };
+                }
+            }
+            if (constIntOf(self, rhs)) |n| {
+                if (self.isIntEx(lhs_ty)) {
+                    self.checkIntLiteralMagnitudeFits(n, lhs_ty, span);
+                    return .{ .lhs = lhs, .rhs = self.builder.constInt(n, lhs_ty) };
+                }
+            }
+            if (self.diagnostics) |d| {
+                d.addFmt(.err, span, "cannot compare signed and unsigned values of type '{s}' and '{s}'; write an explicit cast on one side (e.g. `a.(u64) < b`)", .{
+                    self.formatTypeName(lhs_ty), self.formatTypeName(rhs_ty),
+                });
+            }
+            return null;
+        },
+        .none => {
+            const l_proto = self.getProtocolInfo(lhs_ty) != null;
+            const r_proto = self.getProtocolInfo(rhs_ty) != null;
+            if (l_proto or r_proto) {
+                if (self.diagnostics) |d| {
+                    const other = if (l_proto) rhs_ty else lhs_ty;
+                    d.addFmt(.err, span, "cannot compare a protocol value with '{s}'", .{self.formatTypeName(other)});
+                }
+                return null;
+            }
+            return .{ .lhs = lhs, .rhs = rhs };
+        },
+    }
+}
+
+fn coerceCompareOperand(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) Ref {
+    if (src_ty == dst_ty) return val;
+    // Pointer ↔ integer is a store-time explicit conversion; a comparison
+    // still uses that IR (inttoptr / ptrtoint) without requiring a glyph.
+    if (self.coercionResolver().classify(src_ty, dst_ty) == .ptr_int_bitcast) {
+        return self.coerceExplicit(val, src_ty, dst_ty);
+    }
+    return self.coerceToType(val, src_ty, dst_ty);
+}
+
+pub fn emitCmp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.BinaryOp.Op, span: ast.Span) Ref {
+    const met = meetCompareOperands(self, lhs, rhs, self.builder.getRefType(lhs), self.builder.getRefType(rhs), span) orelse {
+        return self.emitPlaceholder("compare-meet");
+    };
+    return switch (op) {
+        .eq => self.builder.cmpEq(met.lhs, met.rhs),
+        .neq => self.builder.emit(.{ .cmp_ne = .{ .lhs = met.lhs, .rhs = met.rhs } }, .bool),
+        .lt => self.builder.cmpLt(met.lhs, met.rhs),
+        .lte => self.builder.emit(.{ .cmp_le = .{ .lhs = met.lhs, .rhs = met.rhs } }, .bool),
+        .gt => self.builder.cmpGt(met.lhs, met.rhs),
+        .gte => self.builder.emit(.{ .cmp_ge = .{ .lhs = met.lhs, .rhs = met.rhs } }, .bool),
         else => self.builder.constBool(false),
     };
 }

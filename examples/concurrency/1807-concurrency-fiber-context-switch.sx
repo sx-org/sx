@@ -105,7 +105,7 @@ fib_body :: (self: *Fiber) export "fib_body" {
     while i < self.rounds {
         self.count.* = self.count.* + 1;
         swap_context(*self.ctx, self.peer);
-        if canary != 0xCA11AB1E0000 + (xx self.id) { self.canary_fail = self.canary_fail + 1; }
+        if canary != (0xCA11AB1E0000 + (xx self.id)).(u64) { self.canary_fail = self.canary_fail + 1; }
         i = i + 1;
     }
     swap_context(*self.ctx, self.finish);

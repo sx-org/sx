@@ -94,7 +94,7 @@ entry:
   %itp = inttoptr i64 %subN to ptr
   store ptr %itp, ptr %allocaN, align 8
   %loadN = load ptr, ptr %allocaN, align 8
-  store ptr @fib_tramp, ptr %loadN, align 8
+  store i64 ptrtoint (ptr @fib_tramp to i64), ptr %loadN, align 8
   %allocaN = alloca i64, align 8
   store i64 0, ptr %allocaN, align 8
   br label %while.hdr.0

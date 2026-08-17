@@ -930,7 +930,7 @@ OwnedZipReader :: struct {
             if self.file_state.owns_file and !self.file_state.file.close() {
                 close_ok = false;
             }
-            self.alloc.dealloc_bytes(xx self.file_state);
+            self.alloc.dealloc_bytes(self.file_state);
         }
         self.bytes.ptr = null;
         self.bytes.len = 0;
@@ -2742,7 +2742,7 @@ OwnedZipWriter :: struct {
             if self.file_state.owns_file and !self.file_state.file.close() {
                 close_ok = false;
             }
-            self.alloc.dealloc_bytes(xx self.file_state);
+            self.alloc.dealloc_bytes(self.file_state);
             self.file_state = null;
         }
         writer_ok and flush_ok and close_ok

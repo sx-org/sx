@@ -1,0 +1,11 @@
+error: cannot compare signed and unsigned values of type 'i32' and 'u32'; write an explicit cast on one side (e.g. `a.(u64) < b`)
+  --> examples/diagnostics/2171-diagnostics-compare-signed-unsigned.sx:8:8
+   |
+ 8 |     if a < b { print("lt\n"); }
+   |        ^^^^^
+
+error: cannot compare signed and unsigned values of type 'i32' and 'u32'; write an explicit cast on one side (e.g. `a.(u64) < b`)
+  --> examples/diagnostics/2171-diagnostics-compare-signed-unsigned.sx:9:8
+   |
+ 9 |     if a == b { print("eq\n"); }
+   |        ^^^^^^

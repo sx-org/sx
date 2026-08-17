@@ -196,7 +196,7 @@ InputQueue :: struct {
     clear :: (self: *InputQueue) {
         for e in self.events {
             match e {
-                case .text: |t| { self.gpa.dealloc_bytes(xx t.text.ptr); true }
+                case .text: |t| { self.gpa.dealloc_bytes(t.text.ptr); true }
                 else: false
             } { }
         }

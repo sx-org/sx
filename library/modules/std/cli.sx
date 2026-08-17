@@ -91,7 +91,7 @@ inline match OS {
             while true {
                 region := c.mmap(null, cap, CMDLINE_PROT_RW, CMDLINE_MAP_AP, -1, 0);
                 // mmap signals failure with MAP_FAILED = (void*)-1, not null.
-                if (xx region) == (xx (0 - 1)) {
+                if region == -1 {
                     out("std.cli: mmap failed while reading /proc/self/cmdline.\n");
                     proc.exit(EX_UNAVAILABLE);
                 }

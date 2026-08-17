@@ -152,7 +152,7 @@ HashMap :: struct ($K: Type, $V: Type) {
         nm : [*]u8 = xx alloc.alloc_bytes(new_cap);
         nk : [*]K  = xx alloc.alloc_bytes(new_cap * size_of(K));
         nv : [*]V  = xx alloc.alloc_bytes(new_cap * size_of(V));
-        c.memset(xx nm, 0, new_cap);              // every bucket -> META_FREE
+        c.memset(nm, 0, new_cap);              // every bucket -> META_FREE
 
         self.metadata   = nm;
         self.keys       = nk;
@@ -169,9 +169,9 @@ HashMap :: struct ($K: Type, $V: Type) {
                 }
                 j += 1;
             }
-            alloc.dealloc_bytes(xx old_meta);
-            alloc.dealloc_bytes(xx old_keys);
-            alloc.dealloc_bytes(xx old_vals);
+            alloc.dealloc_bytes(old_meta);
+            alloc.dealloc_bytes(old_keys);
+            alloc.dealloc_bytes(old_vals);
         }
     }
 
@@ -383,9 +383,9 @@ HashMap :: struct ($K: Type, $V: Type) {
         nm : [*]u8 = xx alloc.alloc_bytes(self.cap);
         nk : [*]K  = xx alloc.alloc_bytes(self.cap * size_of(K));
         nv : [*]V  = xx alloc.alloc_bytes(self.cap * size_of(V));
-        c.memcpy(xx nm, xx self.metadata, self.cap);
-        c.memcpy(xx nk, xx self.keys,   self.cap * size_of(K));
-        c.memcpy(xx nv, xx self.values, self.cap * size_of(V));
+        c.memcpy(nm, self.metadata, self.cap);
+        c.memcpy(nk, self.keys,   self.cap * size_of(K));
+        c.memcpy(nv, self.values, self.cap * size_of(V));
         r.metadata   = nm;
         r.keys       = nk;
         r.values     = nv;
@@ -403,7 +403,7 @@ HashMap :: struct ($K: Type, $V: Type) {
 
     // Drop all entries, keep the buffer. Read-only on an unallocated map.
     clear :: (self: *HashMap(K, V)) {
-        if self.cap > 0 { c.memset(xx self.metadata, 0, self.cap); }
+        if self.cap > 0 { c.memset(self.metadata, 0, self.cap); }
         self.count      = 0;
         self.tombstones = 0;
     }
@@ -411,9 +411,9 @@ HashMap :: struct ($K: Type, $V: Type) {
     // Idempotent free. `cap > 0` is the ownership signal (mirrors List).
     deinit :: (self: *HashMap(K, V), alloc: Allocator = context.allocator) {
         if self.cap > 0 {
-            alloc.dealloc_bytes(xx self.metadata);
-            alloc.dealloc_bytes(xx self.keys);
-            alloc.dealloc_bytes(xx self.values);
+            alloc.dealloc_bytes(self.metadata);
+            alloc.dealloc_bytes(self.keys);
+            alloc.dealloc_bytes(self.values);
         }
         self.metadata   = null;
         self.keys       = null;
@@ -528,8 +528,8 @@ IndexMap :: struct ($K: Type, $V: Type) {
         new_cap := if self.ecap == 0 then 8 else self.ecap;
         while new_cap < n { new_cap = new_cap * 2; }
         np : [*]IMEntry(K, V) = xx alloc.alloc_bytes(new_cap * size_of(IMEntry(K, V)));
-        if self.ecount > 0 { c.memcpy(xx np, xx self.entries, self.ecount * size_of(IMEntry(K, V))); }
-        if self.ecap > 0 { alloc.dealloc_bytes(xx self.entries); }
+        if self.ecount > 0 { c.memcpy(np, self.entries, self.ecount * size_of(IMEntry(K, V))); }
+        if self.ecap > 0 { alloc.dealloc_bytes(self.entries); }
         self.entries = np;
         self.ecap = new_cap;
     }
@@ -541,7 +541,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
         need := (self.ecount * 100 / INDEX_LOAD_PCT) + 1;
         new_icap := 8;
         while new_icap < need { new_icap = new_icap * 2; }
-        if self.icap > 0 { alloc.dealloc_bytes(xx self.index); }
+        if self.icap > 0 { alloc.dealloc_bytes(self.index); }
         ni : [*]i64 = xx alloc.alloc_bytes(new_icap * size_of(i64));
         s := 0;
         while s < new_icap { ni[s] = -1; s += 1; }
@@ -634,7 +634,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
         want := if self.icap == 0 then 8 else self.icap;
         while want < need { want = want * 2; }
         if want == self.icap { return; }
-        if self.icap > 0 { alloc.dealloc_bytes(xx self.index); }
+        if self.icap > 0 { alloc.dealloc_bytes(self.index); }
         ni : [*]i64 = xx alloc.alloc_bytes(want * size_of(i64));
         s := 0;
         while s < want { ni[s] = -1; s += 1; }
@@ -852,15 +852,15 @@ IndexMap :: struct ($K: Type, $V: Type) {
         r : IndexMap(K, V) = .{};
         if self.ecount == 0 { return r; }
         r.ensure_entry_cap(self.ecount, alloc);
-        c.memcpy(xx r.entries, xx self.entries, self.ecount * size_of(IMEntry(K, V)));
+        c.memcpy(r.entries, self.entries, self.ecount * size_of(IMEntry(K, V)));
         r.ecount = self.ecount;
         r.reindex(alloc);
         return r;
     }
 
     deinit :: (self: *IndexMap(K, V), alloc: Allocator = context.allocator) {
-        if self.ecap > 0 { alloc.dealloc_bytes(xx self.entries); }
-        if self.icap > 0 { alloc.dealloc_bytes(xx self.index); }
+        if self.ecap > 0 { alloc.dealloc_bytes(self.entries); }
+        if self.icap > 0 { alloc.dealloc_bytes(self.index); }
         self.entries = null;
         self.index = null;
         self.ecount = 0;

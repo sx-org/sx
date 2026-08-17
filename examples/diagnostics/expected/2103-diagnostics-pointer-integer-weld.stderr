@@ -52,7 +52,7 @@ error: cannot coerce a value of type '*void' to 'i64': an address is not a numbe
 30 |     wrong_target : i64 = p.(*void);
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: cannot coerce a value of type 'i64' to '*Obj': a number is not an address; use an explicit cast (`xx`/`.(T)`)
+error: cannot coerce a value of type 'u64' to '*Obj': a number is not an address; use an explicit cast (`xx`/`.(T)`)
   --> examples/diagnostics/2103-diagnostics-pointer-integer-weld.sx:32:5
    |
 32 |     wrong_pointer : *Obj = number.(u64);

@@ -98,7 +98,7 @@ impl TlsConn for FakeConn {
         // Held-back bytes first — the retry after an injected WantWrite.
         if self.pend_off < self.pend_len {
             n := self.pend_len - self.pend_off;
-            if n > xx cap { n = xx cap; }
+            if n > cap.(i64) { n = cap.(i64); }
             cstd.memcpy(buf, *self.pend[self.pend_off], xx n);
             self.pend_off += n;
             if self.pend_off == self.pend_len { self.pend_off = 0; self.pend_len = 0; }

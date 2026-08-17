@@ -80,7 +80,7 @@ fib_body :: (self: *Fiber) export "fib_body" {
 // PROT_NONE. Returns the 16-aligned stack top; reports guard-syscall success.
 guarded_stack :: (f: *Fiber, size: i64) -> u64 {
     region : *void = mmap(null, GUARD + size, PROT_RW, MAP_AP, -1, 0);
-    if (xx region) == (xx (0 - 1)) { f.guard_ok = 0; return 0; }
+    if region == -1 { f.guard_ok = 0; return 0; }
     f.guard_ok = 0;
     if mprotect(region, GUARD, PROT_NONE) == 0 { f.guard_ok = 1; }
     usable : u64 = (xx region) + GUARD;

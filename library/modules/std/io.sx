@@ -154,7 +154,7 @@ sx_run_boxed_closure :: (arg: *void) {
     worker_env := b.worker_env;
     if run_env != null { context.allocator.dealloc_bytes(run_env); }
     if worker_env != null { context.allocator.dealloc_bytes(worker_env); }
-    context.allocator.dealloc_bytes(xx b);
+    context.allocator.dealloc_bytes(b);
 }
 
 // `async(io, worker)` — submit a NULLARY `worker: Closure() -> ($R, !)` and get
@@ -186,7 +186,7 @@ sx_run_boxed_closure :: (arg: *void) {
 // once. The freed struct must not be touched after.
 fut_release :: ufcs (f: *Future($R)) {
     if f.worker_done and f.consumed {
-        f.alloc.dealloc_bytes(xx f);
+        f.alloc.dealloc_bytes(f);
     }
 }
 

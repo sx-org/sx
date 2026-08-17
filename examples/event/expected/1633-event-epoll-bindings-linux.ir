@@ -27,8 +27,7 @@ entry:
   %load = load { i32, i32, i32 }, ptr %alloca, align 4
   %sg = extractvalue { i32, i32, i32 } %load, 0
   %and = and i32 %sg, 1
-  %cmp.ext = zext i32 %and to i64
-  %icmp = icmp ne i64 %cmp.ext, 0
+  %icmp = icmp ne i32 %and, 0
   ret i1 %icmp
 }
 
@@ -40,8 +39,7 @@ entry:
   %load = load { i32, i32, i32 }, ptr %alloca, align 4
   %sg = extractvalue { i32, i32, i32 } %load, 0
   %and = and i32 %sg, 4
-  %cmp.ext = zext i32 %and to i64
-  %icmp = icmp ne i64 %cmp.ext, 0
+  %icmp = icmp ne i32 %and, 0
   ret i1 %icmp
 }
 
@@ -53,8 +51,7 @@ entry:
   %load = load { i32, i32, i32 }, ptr %alloca, align 4
   %sg = extractvalue { i32, i32, i32 } %load, 0
   %and = and i32 %sg, 8208
-  %cmp.ext = zext i32 %and to i64
-  %icmp = icmp ne i64 %cmp.ext, 0
+  %icmp = icmp ne i32 %and, 0
   ret i1 %icmp
 }
 
@@ -66,8 +63,7 @@ entry:
   %load = load { i32, i32, i32 }, ptr %alloca, align 4
   %sg = extractvalue { i32, i32, i32 } %load, 0
   %and = and i32 %sg, 8
-  %cmp.ext = zext i32 %and to i64
-  %icmp = icmp ne i64 %cmp.ext, 0
+  %icmp = icmp ne i32 %and, 0
   ret i1 %icmp
 }
 
@@ -110,8 +106,7 @@ entry:
   %loadN = load i32, ptr %allocaN, align 4
   %loadN = load i32, ptr %allocaN, align 4
   %call = call i32 @epoll_ctl(i32 %loadN, i32 %loadN, i32 %loadN, ptr %allocaN)
-  %cmp.ext = sext i32 %call to i64
-  %icmp = icmp eq i64 %cmp.ext, 0
+  %icmp = icmp eq i32 %call, 0
   ret i1 %icmp
 }
 
@@ -142,8 +137,7 @@ while.body.3:                                     ; preds = %while.hdr.2
   %call = call i32 @epoll_wait(i32 %load, ptr %igp.ptr, i32 %loadN, i32 %loadN)
   store i32 %call, ptr %allocaN, align 4
   %loadN = load i32, ptr %allocaN, align 4
-  %cmp.ext = sext i32 %loadN to i64
-  %icmp = icmp sge i64 %cmp.ext, 0
+  %icmp = icmp sge i32 %loadN, 0
   br i1 %icmp, label %if.then.5, label %if.merge.6
 
 while.exit.4:                                     ; preds = %while.hdr.2
@@ -155,8 +149,8 @@ if.then.5:                                        ; preds = %while.body.3
 
 if.merge.6:                                       ; preds = %while.body.3
   %callN = call i32 @errno()
-  %cmp.ext11 = sext i32 %callN to i64
-  %icmpN = icmp ne i64 %cmp.ext11, 4
+  %sext = sext i32 %callN to i64
+  %icmpN = icmp ne i64 %sext, 4
   br i1 %icmpN, label %if.then.7, label %if.merge.8
 
 if.then.7:                                        ; preds = %if.merge.6
@@ -195,8 +189,7 @@ if.merge.1:                                       ; preds = %entry
   %callN = call i32 @ep_wait(i32 %loadN, { ptr, i64 } %loadN, i32 8, i32 100)
   store i32 %callN, ptr %allocaN, align 4
   %loadN = load i32, ptr %allocaN, align 4
-  %cmp.ext = sext i32 %loadN to i64
-  %icmp = icmp sgt i64 %cmp.ext, 0
+  %icmp = icmp sgt i32 %loadN, 0
   br i1 %icmp, label %if.then.9, label %if.merge.10
 
 if.then.9:                                        ; preds = %if.merge.1

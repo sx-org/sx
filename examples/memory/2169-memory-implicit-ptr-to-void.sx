@@ -1,0 +1,35 @@
+// *T / [*]T / slice `.ptr` convert to `*void` without a glyph. Gaining a
+// pointee is explicit: `raw.(*T)`.
+#import "modules/std.sx";
+c :: #import "modules/std/c.sx";
+
+take :: (p: *void) -> i64 {
+    if p == null { return 0; }
+    1
+}
+
+main :: () {
+    x := 7;
+    p := *x;
+    print("typed={}\n", take(p));
+
+    arr : [2]i64 = .[3, 4];
+    mp : [*]i64 = *arr[0];
+    print("many={}\n", take(mp));
+
+    sl := arr[0..2];
+    print("slice-ptr={}\n", take(sl.ptr));
+
+    raw : *void = p;
+    typed := raw.(*i64);
+    print("back={}\n", typed.*);
+
+    dst : [2]i64 = .[0, 0];
+    c.memcpy(*dst[0], *arr[0], 16);
+    print("copy={}\n", dst[0]);
+
+    s := context.allocator.create(i64);
+    s.* = 9;
+    context.allocator.destroy(s);
+    print("destroy=ok\n");
+}

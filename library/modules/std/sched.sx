@@ -868,7 +868,7 @@ boot_stack :: (f: *Fiber, size: i64) -> u64 {
     region : *void = c.mmap(null, total, PROT_RW, MAP_AP, -1, 0);
     // mmap signals failure with MAP_FAILED = (void*)-1 (NOT null). Handing a
     // wild SP to the switch would `ret` onto garbage — bail loudly instead.
-    if (xx region) == (xx (0 - 1)) {
+    if region == -1 {
         print("sched: mmap failed for a {}-byte fiber stack\n", total);
         c.abort();
     }
@@ -903,7 +903,7 @@ reap_fiber :: (self: *Scheduler, f: *Fiber) {
         f.dctx.allocator.dealloc_bytes(f.body.env);
     }
     c.munmap(f.stack_region, f.stack_len);
-    self.own_allocator.dealloc_bytes(xx f);
+    self.own_allocator.dealloc_bytes(f);
 }
 
 // --- intrusive FIFO ready-queue -------------------------------------------

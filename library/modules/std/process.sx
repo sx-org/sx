@@ -370,10 +370,10 @@ set_cloexec :: (fd: i32) -> bool {
 free_argv :: (vec: [*]?cstring, n: i64) {
     i := 0;
     while i < n {
-        if p := vec[i] { context.allocator.dealloc_bytes(xx p); }
+        if p := vec[i] { context.allocator.dealloc_bytes(p); }
         i += 1;
     }
-    context.allocator.dealloc_bytes(xx vec);
+    context.allocator.dealloc_bytes(vec);
 }
 
 // ── Process termination ───────────────────────────────

@@ -411,7 +411,7 @@ impl GPU for Gles3Gpu {
         if count < 0 { return; }
         if count > GPU_MAX_BONES { return; }
         n : i64 = xx count;
-        c.memcpy(xx *self.bone_palette[0], data, n * size_of(BoneMatrix));
+        c.memcpy(*self.bone_palette[0], data, n * size_of(BoneMatrix));
         self.bone_count = count;
     }
 

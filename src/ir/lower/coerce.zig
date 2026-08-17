@@ -1329,10 +1329,9 @@ pub fn checkFormationWritable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, s
 /// UNCHANGED — a raw reinterpreting store. That is only DANGEROUS when the
 /// value's byte width differs from the slot's: a 16-byte `string` written into
 /// a 4-byte `i32` slot overruns it, corrupting memory and segfaulting at run
-/// time. A SAME-width `.none` is a bit-compatible reinterpretation
-/// sx's passthrough has always performed for legitimate pairs that the
-/// classifier doesn't model — `*T → [*]T`, `i64 → isize`, `*void ← *T`, a bare
-/// fn-ref into a function slot — so it must stay allowed.
+/// time. A SAME-width `.none` is a bit-compatible reinterpretation for
+/// pairs the classifier does not model — `*T → [*]T`, `i64 → isize`, a bare
+/// fn-ref into a function slot — so it is allowed.
 ///
 /// Reject ONLY a width mismatch: emit a diagnostic and return false so the
 /// caller stores a safe default instead of the overrunning value. Returns true
@@ -1539,8 +1538,8 @@ pub fn externalErrorsExist(self: *Lowering) bool {
 /// The core unsafe-store predicate shared by `checkAssignable` and the
 /// named-return-default guard. An unmodeled coercion is unsafe when the types
 /// have incompatible value shapes or different store widths. Same-width scalar
-/// and pointer families are bit-compatible (`i64 → isize`, `*T → [*]T`,
-/// `*void ← *T`). Callers clear unresolved operands and explicit casts first.
+/// and pointer families are bit-compatible (`i64 → isize`, `*T → [*]T`).
+/// Callers clear unresolved operands and explicit casts first.
 pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
     if (src_ty == dst_ty) return false;
     if (self.coercionResolver().classify(src_ty, dst_ty) != .none) return false;
@@ -1568,7 +1567,7 @@ pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) 
     // a same-width scalar occupy the same bytes but mean different things, so
     // the store types an address as a number the program then does arithmetic
     // on (or a number as an address it then dereferences). Pointer↔pointer
-    // stays in the same-width family below (`*T → [*]T`, `*void ← *T`).
+    // stays in the same-width family below (`*T → [*]T`).
     if (isPointerValueKind(self, src_ty) != isPointerValueKind(self, dst_ty)) return true;
     return !sameStoreWidth(self, src_ty, dst_ty);
 }
@@ -1672,6 +1671,15 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 // binds off that ref. LLVM bitcast is a no-op under opaque pointers.
                 .explicit => {
                     if (src_ty != dst_ty and isPointerValueKind(self, src_ty) and isPointerValueKind(self, dst_ty)) {
+                        const retyped = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
+                        self.xx_passthrough_refs.put(retyped, {}) catch {};
+                        return retyped;
+                    }
+                    // Same-width integer pair (`i64` ↔ `u64`, `i64` ↔ `usize`):
+                    // the dest type is the result type.
+                    if (src_ty != dst_ty and self.isIntEx(src_ty) and self.isIntEx(dst_ty) and
+                        self.typeBitsEx(src_ty) == self.typeBitsEx(dst_ty))
+                    {
                         const retyped = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
                         self.xx_passthrough_refs.put(retyped, {}) catch {};
                         return retyped;
@@ -1975,6 +1983,8 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             if (mode == .implicit) diagnosePointerIntegerWeld(self, src_ty, dst_ty);
             return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
         },
+        // *T / [*]T / cstring → *void: same address, result typed `*void`.
+        .ptr_to_void => return self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .narrow => return self.builder.emit(.{ .narrow = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .widen => return self.builder.emit(.{ .widen = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .array_to_slice => {
