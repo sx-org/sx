@@ -283,7 +283,7 @@ pub const StaticTypeMatchSel = union(enum) {
 /// statically-BOUND generic type param: classify the bound type against
 /// each arm at lower time and select the first match (else-arm fallback).
 /// The siblings are DROPPED WHOLE — each kind arm only type-checks for its
-/// own kind (`x.ptr` exists on slices, `x.(ProtocolRaw)` on protocol
+/// own kind (`x.ptr` exists on slices, `x.(@Protocol)` on protocol
 /// values), so lowering them all would reject every mixed-kind generic
 /// body. Same discipline as `evalComptimeMatch` / `inline if` branch
 /// elimination; a `compile_error(…)` arm fires only when SELECTED.

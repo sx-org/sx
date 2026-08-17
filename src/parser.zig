@@ -587,11 +587,16 @@ pub const Parser = struct {
         // Every other `@` name in type position names a compiler-maintained
         // stdlib declaration (`@SourceSite`) and resolves like any other type.
         if (self.tokens.tag(self.tok) == .at_identifier) {
-            if (isCompilerFormedTypeName(self.tokens.slice(self.tok))) {
+            const at_name = self.tokens.slice(self.tok);
+            // `@Slice(T, Len)` is the type constructor; nullary `@Slice` is
+            // the declared ABI view. Other formed names always take arguments.
+            if (contracts.isTypeConstructor(at_name) and self.peekTag(1) == .l_paren) {
+                return self.parseCompilerFormedType(start);
+            }
+            if (isCompilerFormedTypeName(at_name)) {
                 return self.parseCompilerFormedType(start);
             }
             const at_idx = self.tok;
-            const at_name = self.tokens.slice(at_idx);
             self.advance();
             // A type-argument list is what a compiler-formed type takes; a
             // declared contract is a plain type name.
@@ -1106,7 +1111,9 @@ pub const Parser = struct {
         const name = self.tokens.slice(name_idx);
         self.advance();
         const contract = contracts.find(name);
-        const spelling = if (contract != null and contract.?.kind == .compiler_formed)
+        const spelling = if (contracts.isTypeConstructor(name))
+            if (std.mem.eql(u8, name, contracts.slice_head)) "@Slice(T, Len)" else if (contract) |c| c.spelling else name
+        else if (contract != null and contract.?.kind == .compiler_formed)
             contract.?.spelling
         else
             return self.failAt(self.tokens.token(name_idx).loc, try self.unknownCompilerFormedTypeMsg(name));

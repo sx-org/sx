@@ -24,11 +24,7 @@ SpawnOpts       :: core.SpawnOpts;
 PinTarget       :: core.PinTarget;
 ParkToken       :: core.ParkToken;
 Into            :: core.Into;
-ClosureRaw      :: core.ClosureRaw;
-SliceRaw        :: core.SliceRaw;
-StringRaw       :: core.StringRaw;
-ProtocolRaw     :: core.ProtocolRaw;
-AnyRaw          :: core.AnyRaw;
+
 
 // --- Type system & reflection intrinsics ---
 // (no aliases: an intrinsic is a compiler feature, not a library export. The

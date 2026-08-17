@@ -224,23 +224,23 @@ pub const CoercionResolver = struct {
         erase_protocol, // dst is a protocol → buildProtocolErasure
         erase_protocol_wrap, // dst is ?P (protocol child) → node-aware erase to P, then wrap
         protocol_to_pointer, // src is a protocol, dst is a pointer → recover ctx
-        protocol_to_raw, // src is a protocol, dst is ProtocolRaw → build {ctx, type_id} field-wise
+        protocol_to_raw, // src is a protocol, dst is @Protocol → build {ctx, type_id} field-wise
         protocol_to_any, // src is a protocol, dst is any → the {ctx, type_id} prefix view
         coerce, // built-in ladder + user `Into` fallback
     };
 
-    /// Is `dst_ty` the `ProtocolRaw` view shape — a struct named
-    /// "ProtocolRaw" with a pointer field "ctx" and a `Type` field
+    /// Is `dst_ty` the `@Protocol` view — the declared contract struct
+    /// with a pointer field "ctx" and a `Type` field
     /// "type_id"? Name AND shape gate the modeled protocol→raw conversion
     /// together, so an unrelated same-named user struct with a different
     /// shape can never hijack it (and an identical one converts soundly by
     /// construction).
-    fn isProtocolRawDst(self: CoercionResolver, dst_ty: TypeId) bool {
+    fn isProtocolViewDst(self: CoercionResolver, dst_ty: TypeId) bool {
         if (dst_ty.isBuiltin()) return false;
         const info = self.l.module.types.get(dst_ty);
         if (info != .@"struct") return false;
         const st = info.@"struct";
-        if (!std.mem.eql(u8, self.l.module.types.getString(st.name), "ProtocolRaw")) return false;
+        if (!std.mem.eql(u8, self.l.module.types.getString(st.name), "@Protocol")) return false;
         if (st.fields.len != 2) return false;
         if (!std.mem.eql(u8, self.l.module.types.getString(st.fields[0].name), "ctx")) return false;
         const fty = st.fields[0].ty;
@@ -249,19 +249,19 @@ pub const CoercionResolver = struct {
         return st.fields[1].ty == .type_value;
     }
 
-    /// Is `dst_ty` the `AnyRaw` view shape — a struct named "AnyRaw" with
+    /// Is `dst_ty` the `@Any` view — the declared contract struct with
     /// a pointer field "data" and a `Type` field "type_id"? Same
-    /// name-AND-shape gate as `isProtocolRawDst`. Consulted ONLY by the
-    /// POSTFIX arm (`av.(AnyRaw)` is the raw-view retrieval): `xx av`
-    /// keeps its unbox meaning for EVERY target, AnyRaw included — the
+    /// name-AND-shape gate as `isProtocolViewDst`. Consulted ONLY by the
+    /// POSTFIX arm (`av.(@Any)` is the raw-view retrieval): `xx av`
+    /// keeps its unbox meaning for EVERY target, @Any included — the
     /// pure-sx assert helpers (`__sx_cast_maybe` & co.) and any generic
     /// `(av: any) -> $T { xx av }` rely on the unbox being universal.
-    pub fn isAnyRawDst(self: CoercionResolver, dst_ty: TypeId) bool {
+    pub fn isAnyViewDst(self: CoercionResolver, dst_ty: TypeId) bool {
         if (dst_ty.isBuiltin()) return false;
         const info = self.l.module.types.get(dst_ty);
         if (info != .@"struct") return false;
         const st = info.@"struct";
-        if (!std.mem.eql(u8, self.l.module.types.getString(st.name), "AnyRaw")) return false;
+        if (!std.mem.eql(u8, self.l.module.types.getString(st.name), "@Any")) return false;
         if (st.fields.len != 2) return false;
         if (!std.mem.eql(u8, self.l.module.types.getString(st.fields[0].name), "data")) return false;
         const fty = st.fields[0].ty;
@@ -291,7 +291,7 @@ pub const CoercionResolver = struct {
         }
         if (self.l.getProtocolInfo(src_ty) != null and !dst_ty.isBuiltin() and
             self.l.module.types.get(dst_ty) == .pointer) return .protocol_to_pointer;
-        if (self.l.getProtocolInfo(src_ty) != null and self.isProtocolRawDst(dst_ty)) return .protocol_to_raw;
+        if (self.l.getProtocolInfo(src_ty) != null and self.isProtocolViewDst(dst_ty)) return .protocol_to_raw;
         // Protocol → any (explicit): the CONCRETE view — {data = ctx,
         // type_id} read straight off the value's prefix.
         // The IMPLICIT boxing of a protocol value (`av : any = s`) is

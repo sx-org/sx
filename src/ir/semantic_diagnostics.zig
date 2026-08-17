@@ -1259,6 +1259,10 @@ pub const UnknownTypeChecker = struct {
             .type_expr => |te| std.mem.eql(u8, te.name, want),
             .optional_type_expr => |ote| want.len > 1 and want[0] == '?' and
                 fieldTypeMatches(ote.inner_type, want[1..]),
+            .pointer_type_expr => |p| want.len > 1 and want[0] == '*' and
+                fieldTypeMatches(p.pointee_type, want[1..]),
+            .many_pointer_type_expr => |m| want.len > 3 and std.mem.eql(u8, want[0..3], "[*]") and
+                fieldTypeMatches(m.element_type, want[3..]),
             else => false,
         };
     }

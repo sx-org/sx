@@ -153,7 +153,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
             if (dst_ty == void_ptr_ty) return ctx_ref;
             return self.builder.emit(.{ .bitcast = .{ .operand = ctx_ref, .from = void_ptr_ty, .to = dst_ty } }, dst_ty);
         },
-        // Protocol → ProtocolRaw: the modeled raw-view retrieval. Built
+        // Protocol → @Protocol: the modeled raw-view retrieval. Built
         // FIELD-WISE — {ctx, __type_id} is the prefix of BOTH protocol
         // layouts, so the view can never carry a wrong word and the result
         // is a real value that works in any position (a bit reinterpret
@@ -1594,7 +1594,7 @@ pub fn isPointerValueKind(self: *Lowering, ty: TypeId) bool {
 /// nominality: `string` ({ptr,len}), `any` ({data,type_id}), slices, and
 /// closures ({fn,env}) are aggregate-IR even though string/any are
 /// builtins. Aggregate↔aggregate same-width reinterprets are the
-/// legitimate raw-view family (string→SliceRaw, closure→ClosureRaw);
+/// legitimate raw-view family (string→@Slice, closure→@Closure);
 /// only an aggregate↔scalar pair is unrepresentable. Optionals are handled
 /// separately above. Vectors are deliberately in NEITHER set because their
 /// representation varies — they never pun-flag.

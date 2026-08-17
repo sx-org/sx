@@ -327,7 +327,7 @@ pub const ImplSite = struct {
 
 /// The concrete `Type` word of a protocol value: the stamped slot 1 (§7.2,
 /// §7.3). Everything that reads a protocol value's RTTI — `type_of`, the
-/// downcast, the type switch, `ProtocolRaw`, the `any` bridge — goes through
+/// downcast, the type switch, `@Protocol`, the `any` bridge — goes through
 /// here.
 pub fn protocolTypeIdWord(self: *Lowering, value: Ref) Ref {
     return self.builder.structGet(value, 1, .type_value);

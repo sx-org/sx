@@ -63,10 +63,10 @@ free :: ufcs (x: $T, a: Allocator = context.allocator) {
             inline if is_identity(T) {
                 #error("free on an '#identity' protocol value — identity values only ever borrow a named object's storage; there is no owned allocation to free");
             }
-            a.dealloc_bytes(x.(ProtocolRaw).ctx);
+            a.dealloc_bytes(x.(@Protocol).ctx);
         }
         case closure: {
-            env := x.(ClosureRaw).env;
+            env := x.(@Closure).env;
             if env != null { a.dealloc_bytes(env); }
         }
         case slice:    a.dealloc_bytes(xx x.ptr);

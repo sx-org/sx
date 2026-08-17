@@ -1095,20 +1095,20 @@ pub fn isErasedAssertNode(self: *Lowering, node: *const Node) bool {
     }
     const rt = self.inferExprType(pc.operand);
     if (rt == .any) {
-        // `.(AnyRaw)` on an `any` is the raw-view retrieval — never
+        // `.(@Any)` on an `any` is the raw-view retrieval — never
         // fails, so it is not claimable by try/or/catch. Name-based like
-        // the ProtocolRaw exemption below (this predicate runs
+        // the @Protocol exemption below (this predicate runs
         // speculatively and must not resolve or diagnose).
         const tname: []const u8 = switch (pc.type_expr.data) {
             .identifier => |id| id.name,
             .type_expr => |te| te.name,
             else => return true,
         };
-        return !std.mem.eql(u8, tname, "AnyRaw");
+        return !std.mem.eql(u8, tname, "@Any");
     }
     // A PROTOCOL receiver is the downcast — failable exactly like the any
     // assertion — unless the target is a recovery/conversion (a pointer,
-    // ProtocolRaw, `any`, or another protocol), which never fails. The
+    // @Protocol, `any`, or another protocol), which never fails. The
     // gate is SHAPE-based (no resolveTypeArg here — this predicate runs
     // speculatively and must not emit diagnostics).
     if (self.getProtocolInfo(rt) != null) {
@@ -1119,7 +1119,7 @@ pub fn isErasedAssertNode(self: *Lowering, node: *const Node) bool {
                 .type_expr => |te| te.name,
                 else => return true, // composite targets: assertion by tag
             };
-            if (std.mem.eql(u8, tname, "ProtocolRaw")) return false; // raw view
+            if (std.mem.eql(u8, tname, "@Protocol")) return false;
             if (std.mem.eql(u8, tname, "any")) return false; // prefix view
             if (self.program_index.protocol_decl_map.contains(tname)) return false; // re-erasure
             return true;

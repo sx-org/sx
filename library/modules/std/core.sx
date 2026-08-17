@@ -464,74 +464,29 @@ Into :: protocol(Target: Type) constraint {
     convert :: (self: *Self) -> Target;
 }
 
-// --- Raw ABI views of the language's fat-pointer types -----------------------
-//
-// sx's closures and slices/strings are two-word "fat" values. These structs name
-// that underlying layout in ONE place so it is discoverable and documented, and so
-// owning code can reinterpret a fat value (`raw : ClosureRaw = xx c`) to reach a
-// field the ergonomic accessors do not expose for a use case — e.g. freeing a
-// stored closure's heap `env`. Field order/types mirror the compiler ABI
-// (`types.zig`: closure / slice size = 2 words); if that ABI ever changes these
-// move with it.
-//
-// The ergonomic accessors are the normal way in: a closure value answers
-// `.fn_ptr` (the code pointer) and `.env` (the captured environment — heap,
-// allocated at the literal via the then-current `context.allocator`; `null` for a
-// capture-free closure), and a slice/string answers `.ptr` / `.len`. The `*Raw`
-// structs are the explicit type-erased layout behind those accessors.
+// Fat-value ABI views. Compiler-maintained contracts: the compiler recognizes
+// these declarations by (module, name) identity. Ergonomic accessors stay the
+// normal path — `.ptr` / `.len` on a slice or string, `.fn_ptr` / `.env` on a
+// closure. Nullary `@Slice` is this erased `{ptr, len}` view; `@Slice(T, Len)`
+// is the typed fat pointer (`@Slice(T, i64)` is `[]T`). A string's `.len` is
+// a byte count; a slice's is an element count.
 
-// A closure value: `{ fn_ptr, env }`. Reinterpret with `xx` to reach `env` for
-// ownership/lifetime work (the owner of a stored closure frees `env` when the
-// closure is dead). Equivalent to the `c.fn_ptr` / `c.env` field accessors.
-ClosureRaw :: struct {
+@Closure :: struct {
     fn_ptr: *void;
     env: *void;
 }
 
-// A slice or string value: `{ ptr, len }` (the element type is erased to bytes
-// here). Equivalent to the `s.ptr` / `s.len` accessors. `len` is the element
-// count (an `i64`, matching the ABI), not a byte count.
-SliceRaw :: struct {
+@Slice :: struct {
     ptr: [*]u8;
     len: i64;
 }
 
-// A `string` value: `{ ptr, len }` — the same two words as SliceRaw, named
-// for the string domain. `len` is the byte count. NUL termination is a
-// property of the PRODUCER, not the type: literals and `alloc_string`-backed
-// strings (substr / format / concat) carry a terminator at `ptr[len]`, but a
-// slice VIEW (`s[a..b]`) does not — which is why only a string LITERAL
-// coerces to `cstring` implicitly and everything else crosses the C boundary
-// through `to_cstring`. Never treat `raw.ptr` as a `char*` for an arbitrary
-// string.
-StringRaw :: struct {
-    ptr: [*]u8;
-    len: i64;
-}
-
-// A protocol value's raw view: the `{ctx, type_id}` prefix of a `vtable`
-// value `{ctx, __type_id, vtable}` — byte-identical to an `any`
-// `{data, type_id}`. `ctx` is the concrete data (the heap COPY for an
-// owning `xx <rvalue>` erasure, the borrowed storage otherwise); `type_id`
-// is the erased value's concrete type. Retrieval is a MODELED conversion
-// (`p.(ProtocolRaw)` / `xx p`), built field-wise per the operand's
-// layout — never a bit reinterpret.
-ProtocolRaw :: struct {
+@Protocol :: struct {
     ctx: *void;
     type_id: Type;
 }
 
-// An `any` view's raw pair: `{data, type_id}` — the data pointer and the
-// held value's type tag. Retrieval is the POSTFIX spelling ONLY:
-// `av.(AnyRaw)` builds the pair field-wise, the one target exempt from
-// the `av.(T)` assertion regime (which otherwise checks the boxed
-// PAYLOAD; the soft/failable forms `.(?AnyRaw)` etc. still assert the
-// payload). `xx av` is NOT a retrieval spelling — on an `any` it keeps
-// its unchecked-unbox meaning for every target, AnyRaw included. Same
-// sharp edges as the raw accessors below: per-build tags, shallow data,
-// no lifetime. `raw_make_any(r.type_id, r.data)` reassembles a view
-// from the pair.
-AnyRaw :: struct {
+@Any :: struct {
     data: *void;
     type_id: Type;
 }

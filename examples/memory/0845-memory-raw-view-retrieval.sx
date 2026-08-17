@@ -1,6 +1,6 @@
 // Raw-view retrieval through the shared xx/.(T) conversion engine: the
-// fat-value views ClosureRaw {fn_ptr, env}, SliceRaw {ptr, len} (slices AND
-// strings), and ProtocolRaw {ctx, type_id} come back via `v.(XxxRaw)` or
+// fat-value views @Closure {fn_ptr, env}, @Slice {ptr, len} (slices AND
+// strings), and @Protocol {ctx, type_id} come back via `v.(@Protocol)` or
 // `xx v`. The protocol pair is a MODELED conversion built field-wise —
 // {ctx, __type_id} is the prefix BOTH protocol layouts share (default
 // {ctx, __type_id, vtable} and `inline` {ctx, __type_id, fn_ptrs…}),
@@ -16,42 +16,42 @@ Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }
 impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
 
-take_raw :: (r: ProtocolRaw) -> *void { r.ctx }
+take_raw :: (r: @Protocol) -> *void { r.ctx }
 
 main :: () {
-    // closure -> ClosureRaw, both spellings
+    // closure -> @Closure, both spellings
     n := 10;
     cl := |x: i64| -> i64 { x + n };
-    r1 : ClosureRaw = xx cl;
-    r2 := cl.(ClosureRaw);
+    r1 : @Closure = xx cl;
+    r2 := cl.(@Closure);
     print("closure: {} {}\n", r1.fn_ptr == r2.fn_ptr, r1.env == r2.env);
 
-    // slice and string -> SliceRaw
+    // slice and string -> @Slice
     s : []i64 = .[1, 2, 3];
-    print("slice: {} {}\n", s.(SliceRaw).ptr == xx s.ptr, s.(SliceRaw).len);
+    print("slice: {} {}\n", s.(@Slice).ptr == xx s.ptr, s.(@Slice).len);
     t := "hey";
-    print("string: {}\n", t.(SliceRaw).len);
+    print("string: {}\n", t.(@Slice).len);
 
-    // protocol (default layout) -> ProtocolRaw, both spellings. The value
+    // protocol (default layout) -> @Protocol, both spellings. The value
     // OWNS its ctx: the recovered pointer is the heap copy — a
     // faithful Widget that is NOT w's address.
     w := Widget{ value = 7 };
     sz := w.(Sizable, context.allocator);
-    pr : ProtocolRaw = xx sz;
-    wc : *Widget = xx sz.(ProtocolRaw).ctx;
-    print("default: {} {}\n", wc.value == 7 and sz.(ProtocolRaw).ctx != xx *w, pr.ctx == sz.(ProtocolRaw).ctx);
-    print("default type_id: {}\n", sz.(ProtocolRaw).type_id == type_of(sz));
+    pr : @Protocol = xx sz;
+    wc : *Widget = xx sz.(@Protocol).ctx;
+    print("default: {} {}\n", wc.value == 7 and sz.(@Protocol).ctx != xx *w, pr.ctx == sz.(@Protocol).ctx);
+    print("default type_id: {}\n", sz.(@Protocol).type_id == type_of(sz));
 
     // protocol (`inline` layout, Allocator) — correct ctx, no layout lie
     ga := GPA.init();
     a : Allocator = ga;
-    print("inline: {}\n", a.(ProtocolRaw).ctx == xx *ga);
-    print("inline type_id: {}\n", a.(ProtocolRaw).type_id == type_of(a));
+    print("inline: {}\n", a.(@Protocol).ctx == xx *ga);
+    print("inline type_id: {}\n", a.(@Protocol).type_id == type_of(a));
 
     // a real constructed value: passes through call args
-    print("arg: {}\n", take_raw(a.(ProtocolRaw)) == xx *ga);
+    print("arg: {}\n", take_raw(a.(@Protocol)) == xx *ga);
 
     // parity with the typed ctx-pointer recovery
     p : *void = xx a;
-    print("parity: {}\n", a.(ProtocolRaw).ctx == p);
+    print("parity: {}\n", a.(@Protocol).ctx == p);
 }

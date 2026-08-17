@@ -3960,13 +3960,13 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             // panic on mismatch (the deliberate carve-out from the
             // unconsumed-failable rule, scoped to assertion forms).
             if (self.inferExprType(pc.operand) == .any) {
-                // `av.(AnyRaw)` is the raw-view RETRIEVAL — the view's own
+                // `av.(@Any)` is the raw-view RETRIEVAL — the view's own
                 // {data, type_id} words, built field-wise; NOT an
                 // assertion about the boxed payload. POSTFIX-only:
                 // `xx av` keeps the unbox meaning for every target
-                // (AnyRaw included) — the assert helpers' generic
+                // (@Any included) — the assert helpers' generic
                 // `xx av` must stay universal. Name-and-shape gated,
-                // like ProtocolRaw on a protocol receiver.
+                // like @Protocol on a protocol receiver.
                 raw_view: {
                     if (pc.alloc_arg != null) break :raw_view;
                     const tname: []const u8 = switch (pc.type_expr.data) {
@@ -3974,9 +3974,9 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                         .type_expr => |te| te.name,
                         else => "",
                     };
-                    if (!std.mem.eql(u8, tname, "AnyRaw")) break :raw_view;
+                    if (!std.mem.eql(u8, tname, "@Any")) break :raw_view;
                     const raw_dst = self.resolveTypeArg(pc.type_expr);
-                    if (raw_dst == .unresolved or !self.coercionResolver().isAnyRawDst(raw_dst))
+                    if (raw_dst == .unresolved or !self.coercionResolver().isAnyViewDst(raw_dst))
                         break :raw_view;
                     const av_ref = self.lowerExpr(pc.operand);
                     const void_ptr_ty = self.module.types.ptrTo(.void);
@@ -4008,7 +4008,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             // {ctx, type_id} prefix view — the operand wraps in an
             // `xx …: any` (the modeled protocol_to_any conversion) and the
             // SAME helpers serve all three temperaments. Recovery /
-            // conversion targets (p.(*T), p.(ProtocolRaw), p.(any),
+            // conversion targets (p.(*T), p.(@Protocol), p.(any),
             // re-erasure to another protocol) fall through to lowerXX.
             {
                 const recv_ty = self.inferExprType(pc.operand);

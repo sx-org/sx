@@ -4,7 +4,7 @@
 //   - an all-excluded protocol (every method mentions `Self` past the
 //     receiver — the Eq shape).
 // Both erase; the erased value still carries {ctx, __type_id}, so
-// type_of, the checked downcast, the type switch, the ProtocolRaw view,
+// type_of, the checked downcast, the type switch, the @Protocol view,
 // and free (on an OWNED rvalue erasure) all work with zero dispatchable
 // methods.
 #import "modules/std.sx";
@@ -27,7 +27,7 @@ main :: () {
 
     m := sq.(Marker, context.allocator);
     print("marker type: {}\n", type_of(m) == Sq);
-    print("marker raw:  {}\n", m.(ProtocolRaw).type_id == Sq);
+    print("marker raw:  {}\n", m.(@Protocol).type_id == Sq);
 
     e := sq.(Eqish, context.allocator);
     print("eqish type:  {}\n", type_of(e) == Sq);

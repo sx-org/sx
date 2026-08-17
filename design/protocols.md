@@ -292,7 +292,7 @@ Slot 0 is the receiver address; slot 1 is the concrete type's id,
 stamped at erasure. The first two words are byte-identical to an
 `any` `{data, type_id}` — an erased protocol value *is* an `any` of
 its receiver, extended with dispatch information. `type_of`, the
-downcast, the type switch, and `ProtocolRaw` all read this prefix.
+downcast, the type switch, and `@Protocol` all read this prefix.
 
 Vtables are global constants, one per `(protocol-instantiation,
 concrete type, impl)` — a parameterized erased protocol gets
@@ -428,7 +428,7 @@ The two-argument form `.(Rng, alloc)` refuses on an identity target
 
 `free` is one ordinary function, kind-dispatched at compile time via
 an inline type match. Its protocol arm reads the backing through
-`x.(ProtocolRaw)`:
+`x.(@Protocol)`:
 
 - `free(p)` releases through `context.allocator` **as current at the
   free**. If a different allocator was pushed since the erasure, the
@@ -519,7 +519,7 @@ are_equal(p1, p2);   // Self is the bound Point
 
 A protocol always erases, whatever its methods: a marker protocol
 and an all-excluded protocol both produce legal values with an empty
-vtable — `type_of`, downcast, type switch, `ProtocolRaw`, and `free`
+vtable — `type_of`, downcast, type switch, `@Protocol`, and `free`
 work without any dispatchable method. Slots index the dispatchable
 methods only, in declaration order. Non-receiver parameters keep
 their declared concrete types; only the receiver erases.
@@ -534,13 +534,13 @@ on a protocol subject follow the same source: a runtime type_id
 compare. There is no implicit opening of a protocol value; the type
 switch is the opening construct.
 
-### 6.2 `ProtocolRaw`
+### 6.2 `@Protocol`
 
 ```sx
-ProtocolRaw :: struct { ctx: *void; type_id: Type; }
+@Protocol :: struct { ctx: *void; type_id: Type; }
 ```
 
-`p.(ProtocolRaw)` (and `xx p` at a `ProtocolRaw` target) builds the
+`p.(@Protocol)` (and `xx p` at a `@Protocol` target) builds the
 pair **field-wise per the operand's layout — never a bit
 reinterpret**: a prefix copy of the erased value.
 
@@ -822,7 +822,7 @@ vtable:  load p.vtable → load slot k → indirect call(ctx, args…)
 ```
 
 **`free`.** One function, compile-time kind-dispatched by an inline
-type match: a protocol arm (ctx via `ProtocolRaw`, gated on the
+type match: a protocol arm (ctx via `@Protocol`, gated on the
 ownership class — `#identity` refuses), a closure arm, a slice arm;
 every other argument kind is a compile error.
 
@@ -852,7 +852,7 @@ requires no compiler change.
 | rvalue at `*P` | compile error — nothing durable to borrow |
 | rvalue at `P` (`#identity`) | compile error — identity objects need a name |
 | `free` on: view / identity / constraint-typed anything | compile error in each case (distinct wordings; constraint has no values at all) |
-| `p.(ProtocolRaw)` | field-wise build per layout |
+| `p.(@Protocol)` | field-wise build per layout |
 | `p.(Q)`, different protocol | direct re-erasure conversion (§6.4); temperaments apply; result ownership per `Q`'s class; `#identity` targets refuse at compile time; the unique-impl table resolves the check — a duplicated pair converts as non-conforming |
 | `s.(P)`, operand already `P` | value/own: independent owning copy of the receiver |
 | `any` holding a protocol value | never arises from boxing a protocol value (that boxes the receiver); `xx *s` boxes a `*Show` — a concrete composite type with its own tag |

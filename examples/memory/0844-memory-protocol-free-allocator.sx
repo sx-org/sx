@@ -6,7 +6,7 @@
 // documented drift hazard), and `free(s, allocator)` is the symmetric,
 // drift-immune form that pairs the allocator explicitly. `free` is ONE
 // pure-sx function (std/mem.sx), kind-dispatched at compile time via the
-// inline type match: a protocol arm (ctx via `x.(ProtocolRaw)` — one body
+// inline type match: a protocol arm (ctx via `x.(@Protocol)` — one body
 // for both layouts, `vtable` and `inline`) and a slice arm; anything else
 // is a compile error.
 #import "modules/std.sx";

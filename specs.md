@@ -1323,7 +1323,7 @@ Slot 0 is the receiver address; slot 1 is the concrete type's id,
 stamped at erasure. The first two words are byte-identical to an
 `any` `{data, type_id}` — an erased protocol value *is* an `any` of
 its receiver, extended with dispatch information. `type_of`, the
-downcast, the type switch, and `ProtocolRaw` all read this prefix.
+downcast, the type switch, and `@Protocol` all read this prefix.
 
 Vtables are global constants, one per `(protocol-instantiation,
 concrete type, impl)` — a parameterized erased protocol gets
@@ -1468,7 +1468,7 @@ The two-argument form `.(Rng, alloc)` refuses on an identity target
 
 `free` is one ordinary function, kind-dispatched at compile time via
 an inline type match. Its protocol arm reads the backing through
-`x.(ProtocolRaw)`:
+`x.(@Protocol)`:
 
 - `free(p)` releases through `context.allocator` **as current at the
   free**. If a different allocator was pushed since the erasure, the
@@ -1559,7 +1559,7 @@ are_equal(p1, p2);   // Self is the bound Point
 
 A protocol always erases, whatever its methods: a marker protocol
 and an all-excluded protocol both produce legal values with an empty
-vtable — `type_of`, downcast, type switch, `ProtocolRaw`, and `free`
+vtable — `type_of`, downcast, type switch, `@Protocol`, and `free`
 work without any dispatchable method. Slots index the dispatchable
 methods only, in declaration order. Non-receiver parameters keep
 their declared concrete types; only the receiver erases.
@@ -1574,13 +1574,13 @@ on a protocol subject follow the same source: a runtime type_id
 compare. There is no implicit opening of a protocol value; the type
 switch is the opening construct.
 
-##### 6.2 `ProtocolRaw`
+##### 6.2 `@Protocol`
 
 ```sx
-ProtocolRaw :: struct { ctx: *void; type_id: Type; }
+@Protocol :: struct { ctx: *void; type_id: Type; }
 ```
 
-`p.(ProtocolRaw)` (and `xx p` at a `ProtocolRaw` target) builds the
+`p.(@Protocol)` (and `xx p` at a `@Protocol` target) builds the
 pair **field-wise per the operand's layout — never a bit
 reinterpret**: a prefix copy of the erased value.
 
@@ -1863,7 +1863,7 @@ vtable:  load p.vtable → load slot k → indirect call(ctx, args…)
 ```
 
 **`free`.** One function, compile-time kind-dispatched by an inline
-type match: a protocol arm (ctx via `ProtocolRaw`, gated on the
+type match: a protocol arm (ctx via `@Protocol`, gated on the
 ownership class — `#identity` refuses), a closure arm, a slice arm;
 every other argument kind is a compile error.
 
@@ -1895,7 +1895,7 @@ requires no compiler change.
 | rvalue at `*P` | compile error — nothing durable to borrow |
 | rvalue at `P` (`#identity`) | compile error — identity objects need a name |
 | `free` on: view / identity / constraint-typed anything | compile error in each case (distinct wordings; constraint has no values at all) |
-| `p.(ProtocolRaw)` | field-wise build per layout |
+| `p.(@Protocol)` | field-wise build per layout |
 | `p.(Q)`, different protocol | direct re-erasure conversion (§6.4); temperaments apply; result ownership per `Q`'s class; `#identity` targets refuse at compile time; the unique-impl table resolves the check — a duplicated pair converts as non-conforming |
 | `s.(P)`, operand already `P` | value/own: independent owning copy of the receiver |
 | `any` holding a protocol value | never arises from boxing a protocol value (that boxes the receiver); `xx *s` boxes a `*Show` — a concrete composite type with its own tag |
@@ -3204,7 +3204,7 @@ inferred, as an `if` condition, and in a `bool` declaration, argument or return.
 
 When an explicit cast pair has **no modeled conversion** (and no user `Into`
 applies), the cast is a raw bit-reinterpretation. Between two same-shaped
-types (scalar↔scalar, aggregate↔aggregate — e.g. `string` ↔ `SliceRaw`) the
+types (scalar↔scalar, aggregate↔aggregate — e.g. `string` ↔ `@Slice`) the
 value passes through unchanged. Between an **aggregate-shaped value and a
 scalar/pointer** the reinterpretation is **spill-mediated**: the value
 passes through a zero-initialized memory slot typed as the larger side and
@@ -3251,15 +3251,15 @@ The target is exactly one **compile-time** type (a runtime-`Type` target
 would make the expression untypeable). `56.(i8)` lexes as a cast (never a
 float); `0..(5)` stays a range.
 
-**Raw-view retrieval.** The fat-value raw views (`std.sx`: `ClosureRaw`
-`{fn_ptr, env}`, `SliceRaw` `{ptr, len}` for slices AND strings,
-`ProtocolRaw` `{ctx, type_id}`, and `AnyRaw` `{data, type_id}`) are
-retrieved through this same engine — `c.(ClosureRaw)`, `name.(SliceRaw)`,
-`p.(ProtocolRaw)` (or the `xx` spelling), `av.(AnyRaw)` (postfix ONLY —
+**Raw-view retrieval.** The fat-value raw views (`@Closure`
+`{fn_ptr, env}`, `@Slice` `{ptr, len}` for slices AND strings,
+`@Protocol` `{ctx, type_id}`, and `@Any` `{data, type_id}`) are
+retrieved through this same engine — `c.(@Closure)`, `name.(@Slice)`,
+`p.(@Protocol)` (or the `xx` spelling), `av.(@Any)` (postfix ONLY —
 see below). The protocol case is a MODELED conversion built field-wise, not
 a bit reinterpret: `{ctx, __type_id}` is the leading prefix of a protocol
 value `{ctx, __type_id, vtable}`, so the result is a real value usable in
-any position (argument, return, store). `ProtocolRaw` mirrors exactly that
+any position (argument, return, store). `@Protocol` mirrors exactly that
 prefix — byte-identical to an `any` `{data, type_id}`; the protocol value
 is wider, which is why the build is field-wise and never a reinterpret. A protocol receiver with any
 other concrete target is the checked DOWNCAST (see the assertion
@@ -3268,7 +3268,7 @@ the recovery targets — a pointer type (`p.(*T)`, the typed ctx read; `T`
 must be a CONCRETE type or `void` — a pointer-to-protocol target is refused,
 since ctx addresses the concrete value: lend a view of the protocol value
 itself with `*p` instead),
-`ProtocolRaw`, `any` (a protocol value boxes as its concrete receiver), and
+`@Protocol`, `any` (a protocol value boxes as its concrete receiver), and
 another protocol (re-erasure) — are conversions and pass through.
 
 `p.(?*T)` is the SOFT ctx recovery — the pointer target under the soft
@@ -3298,12 +3298,12 @@ On an **`any` receiver** the assertion has three temperaments:
   the inner `T`, the result exactly `?T`, composing with the optional
   toolbox: `av.(?f64) ?? 9.5`, `if v := av.(?i64) { … }`, `== null`.
 
-**`av.(AnyRaw)` is the raw-view retrieval, not an assertion** — the one
+**`av.(@Any)` is the raw-view retrieval, not an assertion** — the one
 target exempt from the three temperaments: it answers the view's own
 `{data, type_id}` pair, built field-wise (name-AND-shape gated, so only
-the std `AnyRaw` shape triggers). The exemption is the bare postfix
-target only: the soft form `.(?AnyRaw)` still asserts the boxed payload,
-and `xx av` keeps its unchecked-unbox meaning for EVERY target, `AnyRaw`
+the std `@Any` shape triggers). The exemption is the bare postfix
+target only: the soft form `.(?@Any)` still asserts the boxed payload,
+and `xx av` keeps its unchecked-unbox meaning for EVERY target, `@Any`
 included (the assert helpers' generic `xx av` depends on it).
 `raw_make_any(r.type_id, r.data)` reassembles a working view from the
 pair.
@@ -4187,7 +4187,7 @@ view borrows the slot, so it answers for the member carried there and is valid
 exactly as long as that slot is. Every boxing position agrees with that spelling —
 an `any` local, an `any` argument, a formatted value — so a set value is never seen
 as the set anywhere `any` is. A set is not a protocol handle: it has no
-`ProtocolRaw` view, and `any` is the one it has.
+`@Protocol` view, and `any` is the one it has.
 
 Because a box holds the member, **no `any` holds a set value**, and each assertion
 form answers from its own contract. `av.(View)` states that a box holds one, which
@@ -4638,13 +4638,13 @@ match av {
 type param** selects its arm at lower time — the siblings are dropped
 whole, exactly like `inline if` branch elimination. Each kind arm may
 therefore use kind-specific operations that would not type-check for other
-kinds (`x.len` in a slice arm, `x.(ProtocolRaw)` in a protocol arm):
+kinds (`x.len` in a slice arm, `x.(@Protocol)` in a protocol arm):
 
 ```sx
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
     inline match T {
-        case protocol: a.dealloc_bytes(x.(ProtocolRaw).ctx);
-        case closure:  { env := x.(ClosureRaw).env; if env != null { a.dealloc_bytes(env); } }
+        case protocol: a.dealloc_bytes(x.(@Protocol).ctx);
+        case closure:  { env := x.(@Closure).env; if env != null { a.dealloc_bytes(env); } }
         case slice:    a.dealloc_bytes(xx x.ptr);
         else:          #error("free expects a protocol value, a closure, or a slice");
     }
@@ -5426,7 +5426,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `variant_count($E: Type) -> i64` / `variant_name($E: Type, idx: i64) -> string` / `variant_type($E: Type, idx: i64) -> Type` — the enum / tagged-union duals: variant count, the `idx`-th variant's name, and its payload type. A struct/tuple argument is a compile error naming the `struct_field_*` builtin.
 - `variant_payload(u: $E, idx: i64) -> any` — the live payload of a tagged-union VALUE at variant index `idx`, as an `any` VIEW of the payload area (same borrow rules as `struct_field_value`).
 - `any_element(av: any, elem: Type, idx: i64) -> any` — element view into an array/vector held by `av`: pure stride math, `{elem, raw_any_data(av) + idx * size_of(elem)}`. `elem` may be a compile-time type (the size folds to a constant) or a runtime `Type` (the size reads the runtime table). Bounds are the caller's responsibility (same OOB rule as the field family); vector lanes are packed, so the same stride walks both arrays and vectors.
-- `raw_any_data(av: any) -> *void` / `raw_make_any(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(AnyRaw)` retrieves both words as one `{data, type_id}` pair (see Raw-view retrieval, §Postfix Cast). `raw_make_any` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `size_of(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `type_info`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
+- `raw_any_data(av: any) -> *void` / `raw_make_any(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, type_id}` pair (see Raw-view retrieval, §Postfix Cast). `raw_make_any` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `size_of(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `type_info`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
 - `variant_value($E: Type, idx: i64) -> i64` — the `idx`-th variant's integer value: its explicit value / explicit tag when declared (custom values, flags, tagged-union tags), else its ordinal. Works on enums AND tagged unions. A runtime `Type` reads the `__sx_member_value_ptrs` tables (same master-index pattern as the name/type/offset families, same `memberValue` source as the static fold).
 - `variant_index($E: Type, val: E) -> i64` — a value's sequential variant ordinal (the inverse of `variant_value`; explicit values reverse-map, an unmatched tag answers itself — the identity seed). With a **runtime** `Type` the value travels as an `any` view: `variant_index(t, av)` reads the tag word through the view (a signed backing sign-extends; a layout-struct union loads its narrow tag slot, not the wider header) and scans the value table — a typed second argument is impossible there and is a compile error.
 - `is_flags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `#flags`)

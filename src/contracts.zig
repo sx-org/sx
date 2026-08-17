@@ -21,8 +21,9 @@
 //!     appears. `@Init` and `@BuildBlock` are constraints, so both are
 //!     `bound_only`: they are written as a generic bound on the parameter
 //!     (`$I/@Init(T)`, `$B/@BuildBlock(P)`), never as its type. `@Vector`,
-//!     `@Array` and `@Slice` are type constructors: each is written wherever a
-//!     type is.
+//!     `@Array` is a type constructor, written wherever a type is. `@Slice`
+//!     is both: the declared ABI view (nullary) and the type constructor
+//!     `@Slice(T, Len)`.
 
 const std = @import("std");
 const imports = @import("imports.zig");
@@ -103,6 +104,40 @@ pub const entries = [_]Contract{
     // An sx body, not an intrinsic: the registry entry is what gives stdlib
     // sole authorship of the name and lets any module reach it.
     .{ .name = "@panic", .module = "modules/std/core.sx" },
+    // Fat-value ABI views. Nullary `@Slice` is this declared struct; `@Slice(T, Len)`
+    // is still the type constructor (`isTypeConstructor`).
+    .{
+        .name = "@Slice",
+        .module = "modules/std/core.sx",
+        .fields = &.{
+            .{ .name = "ptr", .type_name = "[*]u8" },
+            .{ .name = "len", .type_name = "i64" },
+        },
+    },
+    .{
+        .name = "@Closure",
+        .module = "modules/std/core.sx",
+        .fields = &.{
+            .{ .name = "fn_ptr", .type_name = "*void" },
+            .{ .name = "env", .type_name = "*void" },
+        },
+    },
+    .{
+        .name = "@Protocol",
+        .module = "modules/std/core.sx",
+        .fields = &.{
+            .{ .name = "ctx", .type_name = "*void" },
+            .{ .name = "type_id", .type_name = "Type" },
+        },
+    },
+    .{
+        .name = "@Any",
+        .module = "modules/std/core.sx",
+        .fields = &.{
+            .{ .name = "data", .type_name = "*void" },
+            .{ .name = "type_id", .type_name = "Type" },
+        },
+    },
     // Formed, never declared.
     .{
         .name = "@Init",
@@ -127,11 +162,6 @@ pub const entries = [_]Contract{
         .name = "@Array",
         .kind = .compiler_formed,
         .spelling = "@Array(N, T)",
-    },
-    .{
-        .name = "@Slice",
-        .kind = .compiler_formed,
-        .spelling = "@Slice(T, Len)",
     },
 };
 
