@@ -28,8 +28,8 @@ handle :: (e: Ev) -> i64 {
     r
 }
 
-// The two payload fields, kept apart, so a named init that lands in the wrong
-// slot reads differently from one that lands in the right slot.
+// The two payload fields, weighted apart, so each reads back from the slot it
+// names.
 split :: (e: Ev) -> i64 {
     r := match e {
         case .mouse: |m| { m.a * 10 + m.b }

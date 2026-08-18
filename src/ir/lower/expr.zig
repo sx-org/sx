@@ -382,15 +382,19 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     if (has_names and struct_fields.len > 0) {
         // Named literal: reorder fields to match struct declaration order
         // First, lower all field values in source order (to preserve evaluation order)
-        var lowered = std.ArrayList(struct { val: Ref, name: []const u8, node: *const Node }).empty;
+        var lowered = std.ArrayList(struct { val: Ref, index: ?u32, node: *const Node }).empty;
         defer lowered.deinit(self.alloc);
         for (sl.field_inits) |fi| {
             const saved_tt = self.target_type;
+            var index: ?u32 = null;
             // Set target_type to the field's declared type so array literals
             // know if the target is a vector, etc.
             if (fi.name) |fname| {
                 switch (self.mentionField(ty, fname, fi.value.span)) {
-                    .hit, .private => |h| self.target_type = h.ty,
+                    .hit, .private => |h| {
+                        self.target_type = h.ty;
+                        index = h.index;
+                    },
                     // An explicit `name = expr` naming no real field is an error —
                     // not silently dropped. (A punned bare-ident that misses a field
                     // was already reclassified as positional by `has_names` above, so
@@ -404,7 +408,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
             self.target_type = saved_tt;
             lowered.append(self.alloc, .{
                 .val = val,
-                .name = fi.name orelse "",
+                .index = index,
                 .node = fi.value,
             }) catch unreachable;
         }
@@ -413,11 +417,11 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         var fields = std.ArrayList(Ref).empty;
         defer fields.deinit(self.alloc);
         for (struct_fields, 0..) |sf, fi| {
-            const sf_name = self.module.types.getString(sf.name);
+            const sf_index: u32 = @intCast(fi);
             // Find the matching lowered value
             var found = false;
             for (lowered.items) |l| {
-                if (std.mem.eql(u8, l.name, sf_name)) {
+                if (l.index == sf_index) {
                     var val = l.val;
                     const src_ty = self.builder.getRefType(val);
                     // An #identity protocol field erases NODE-AWARE, so an
@@ -640,10 +644,9 @@ pub fn mentionField(self: *Lowering, ty: TypeId, field: []const u8, span: ast.Sp
     return found;
 }
 
-/// Read `field` as a member promoted out of a union variant's struct payload —
-/// the variants overlay at offset 0, so the member is a `struct_get` on the
-/// reinterpreted payload. The name is mentioned on the PAYLOAD type, which owns
-/// its visibility.
+/// Read `field` as a member promoted out of a union variant's struct payload:
+/// reinterpret the union as that payload, then `struct_get` the member. The
+/// name is mentioned on the PAYLOAD type, which owns its visibility.
 fn promotedUnionMemberRead(
     self: *Lowering,
     obj: Ref,
@@ -2120,8 +2123,8 @@ pub fn lowerTaggedEnumLiteral(
 
     // Named payload inits (`.key{ a = 1 }`) are a named struct literal of the
     // payload type: reorder-by-name, defaults, and the visibility mention all
-    // live there. Stripping the head keeps the delegation out of this
-    // function's own dispatch.
+    // live there. The head must be stripped — `lowerStructLiteral` routes a
+    // literal that still carries its variant spelling back into this function.
     if (sl.field_inits[0].name != null) {
         var payload_sl = sl.*;
         payload_sl.type_expr = null;
