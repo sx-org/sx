@@ -10,7 +10,7 @@ cross :: (a: @Vector(3,f32), b: @Vector(3,f32)) -> @Vector(3,f32) {
 }
 
 length :: (v: @Vector(3,f32)) -> f32 {
-    math.sqrt(dot(v, v))
+    @sqrt(dot(v, v))
 }
 
 normalize :: (v: @Vector(3,f32)) -> @Vector(3,f32) {

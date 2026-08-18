@@ -200,12 +200,8 @@ pub var last_bail_reason: ?[]const u8 = null;
 /// (`regToValue` — the comptime function RAN to completion but its result shape
 /// cannot be materialized into a host `Value`), as opposed to an EXECUTION bail
 /// (`runEntry` couldn't evaluate the body — an unported op, a VM
-/// `DivisionByZero`, etc.). The distinction matters for a body-local `@run`
-/// fold: a BRIDGE bail means a runtime re-execution would run the
-/// SAME body over (possibly `---`) storage and produce DIFFERENT, garbage data —
-/// a silent miscompile that must fail the build. An EXECUTION bail means the VM
-/// simply can't run it; the established runtime-call fallback computes the
-/// correct value and must be preserved. Meaningful only when `tryEval` returned
+/// `DivisionByZero`, etc.). Both kinds fail the build: `@run` evaluates at
+/// compile time or the compile fails. Meaningful only when `tryEval` returned
 /// `null`; cleared at the top of every `tryEval`.
 pub var last_bail_was_bridge: bool = false;
 
@@ -335,9 +331,7 @@ pub const Evaluation = struct {
             .void_val
         else
             e.vm.regToValue(e.gpa, &e.module.types, reg, func.ret) catch |err| blk: {
-                // The body RAN; only the result bridge failed → mark this a BRIDGE
-                // bail so a body-local `@run` fold can tell a genuine "result can't
-                // be materialized" miscompile from a "VM can't run it" fallback.
+                // The body RAN; only the result bridge failed.
                 last_bail_was_bridge = true;
                 last_bail_reason = e.vm.detail orelse @errorName(err);
                 break :blk null;
@@ -1588,9 +1582,10 @@ pub const Vm = struct {
     }
 
     /// 64-bit integer (wrapping) or f64 arithmetic, keyed on the result type.
-    /// `/` and `%` truncate toward zero and take their signedness from that
-    /// type, matching codegen's `sdiv`/`srem`, `udiv`/`urem` and `frem`;
-    /// `+ - *` wrap identically under either signedness.
+    /// Integer `/` and `%` truncate toward zero and take their signedness from
+    /// that type, matching codegen's `sdiv`/`srem` and `udiv`/`urem`. Float
+    /// `/` is IEEE (0/0 is NaN, n/0 is ±inf), matching codegen's `fdiv`.
+    /// Integer `+ - *` wrap identically under either signedness.
     fn arith(tag: OpTag, ty: TypeId, l: Reg, r: Reg) Error!Reg {
         if (isFloat(ty)) {
             const lf: f64 = @bitCast(l);
@@ -1599,7 +1594,7 @@ pub const Vm = struct {
                 .add => lf + rf,
                 .sub => lf - rf,
                 .mul => lf * rf,
-                .div => if (rf == 0.0) return error.DivisionByZero else lf / rf,
+                .div => lf / rf,
                 .mod => @rem(lf, rf),
                 else => unreachable,
             };
@@ -2547,6 +2542,18 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 if (bi.args.len != 1) return self.failMsg("comptime type_info: expected (Type)");
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
                 return try self.buildTypeInfo(table, ins_ty, tid);
+            },
+            .sqrt, .sin, .cos, .floor => {
+                if (bi.args.len < 1) return self.failMsg("comptime math: missing argument");
+                const x: f64 = @bitCast(frame.get(bi.args[0].index()));
+                const y: f64 = switch (bi.builtin) {
+                    .sqrt => @sqrt(x),
+                    .sin => @sin(x),
+                    .cos => @cos(x),
+                    .floor => @floor(x),
+                    else => unreachable,
+                };
+                return @bitCast(y);
             },
             else => return null, // not modeled on the VM yet → caller bails
         }

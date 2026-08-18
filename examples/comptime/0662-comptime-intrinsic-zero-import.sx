@@ -18,6 +18,7 @@ SIZE  :: @run size_of(P);        // 16
 ALIGN :: @run align_of(i64);     //  8
 NFLD  :: @run struct_field_count(P);    //  2
 IDX   :: @run variant_index(E, E.Y); // 1
+CT_SQRT :: @run @sqrt(16.0);
 
 check :: (label: string, got: i64, want: i64) -> i64 {
     if got != want { return 1; }
@@ -36,9 +37,10 @@ main :: () -> i64 {
     bad = bad + check("comptime struct_field_count", NFLD, 2);
     bad = bad + check("comptime variant_index", IDX, 1);
 
-    // Math — lowered to a builtin call.
-    bad = bad + check("sqrt", sqrt(16.0).(i64), 4);
-    bad = bad + check("floor", floor(3.9).(i64), 3);
+    // Math — lowered to a builtin call; `@run` evaluates the same ops.
+    bad = bad + check("@sqrt", @sqrt(16.0).(i64), 4);
+    bad = bad + check("@floor", @floor(3.9).(i64), 3);
+    if CT_SQRT < 3.9 or CT_SQRT > 4.1 { bad = bad + 1; }
 
     // Atomics — lowered to atomic ops. `.seq_cst` is an enum literal inferred
     // from the intrinsic's own signature, so even `Ordering` needs no import.

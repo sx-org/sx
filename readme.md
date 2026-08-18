@@ -10,7 +10,7 @@ protocols, and an LLVM backend — compiled to native code.
 
 Point :: struct {
     x, y: i32;
-    magnitude :: (self: *Point) -> f32 { sqrt(self.x * self.x + self.y * self.y); }
+    magnitude :: (self: *Point) -> f32 { @sqrt(self.x * self.x + self.y * self.y); }
 }
 
 main :: () {
@@ -127,7 +127,7 @@ vstack(8.0) { text("hello"); }.padded();
 ```sx
 Vec3 :: struct {
     x, y, z: f32 = 0;
-    length :: (self: *Vec3) -> f32 { sqrt(self.x * self.x + self.y * self.y + self.z * self.z); }
+    length :: (self: *Vec3) -> f32 { @sqrt(self.x * self.x + self.y * self.y + self.z * self.z); }
 }
 v := Vec3{ x = 1, y = 2, z = 3 };
 v2 := Vec3{ 1, 2, 3 };

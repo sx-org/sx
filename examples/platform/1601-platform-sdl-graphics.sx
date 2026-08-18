@@ -30,7 +30,7 @@ multiply :: ufcs mat4_multiply;
 
 mat4_perspective :: (fov: f32, aspect: f32, near: f32, far: f32) -> Matrix44 {
     half := fov / 2.0;
-    f := cos(half) / sin(half);
+    f := @cos(half) / @sin(half);
     m : Matrix44 = ---;
     m.c0 = vec4(f / aspect, 0.0, 0.0, 0.0);
     m.c1 = vec4(0.0, f, 0.0, 0.0);
@@ -40,8 +40,8 @@ mat4_perspective :: (fov: f32, aspect: f32, near: f32, far: f32) -> Matrix44 {
 }
 
 mat4_rotate_y :: (angle: f32) -> Matrix44 {
-    c := cos(angle);
-    s := sin(angle);
+    c := @cos(angle);
+    s := @sin(angle);
     m : Matrix44 = ---;
     m.c0 = vec4(c, 0.0, 0.0 - s, 0.0);
     m.c1 = vec4(0.0, 1.0, 0.0, 0.0);
@@ -51,8 +51,8 @@ mat4_rotate_y :: (angle: f32) -> Matrix44 {
 }
 
 mat4_rotate_x :: (angle: f32) -> Matrix44 {
-    c := cos(angle);
-    s := sin(angle);
+    c := @cos(angle);
+    s := @sin(angle);
     m : Matrix44 = ---;
     m.c0 = vec4(1.0, 0.0, 0.0, 0.0);
     m.c1 = vec4(0.0, c, s, 0.0);

@@ -1,0 +1,7 @@
+// A body-local `@run` of an extern the host cannot resolve fails the build.
+// `@run` evaluates at compile time or the compile fails.
+no_such_sx_comptime_sym :: (x: i64) -> i64 extern;
+
+main :: () {
+    n :: @run no_such_sx_comptime_sym(1);
+}

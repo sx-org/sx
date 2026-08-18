@@ -74,8 +74,8 @@ test "no duplicate binding keys" {
 /// missing one means the test PASSES for an unregistered intrinsic, which is the
 /// exact failure this file exists to prevent.
 ///
-/// Comments are stripped first so prose in core.sx ("// sqrt :: (x: $T) -> T
-/// intrinsic;") is never mistaken for a declaration.
+/// Comments are stripped first so prose in core.sx is never mistaken for a
+/// declaration.
 fn isIdentChar(c: u8) bool {
     return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or
         (c >= '0' and c <= '9') or c == '_';

@@ -114,7 +114,8 @@ the import can stand in for the canonical declaration:
 A contract need not be a type: an `@` name also declares a function, under the
 same (module, name) identity rule. Most are a signature with no body, which the
 compiler implements — `@volatile_load` and `@volatile_store` (§Intrinsics,
-Memory), `@printf`, `@is_comptime` (§Compile-time Evaluation, `@is_comptime()`).
+Memory), `@sqrt` / `@sin` / `@cos` / `@floor`, `@printf`, `@is_comptime`
+(§Compile-time Evaluation, `@is_comptime()`).
 `@panic` is ordinary sx: a body written in the owning module, over `@printf` and
 `@is_comptime`.
 
@@ -2614,9 +2615,9 @@ v.xy = .[3.0, 4.0];
 v[0]    // first element
 ```
 
-**Built-in `sqrt`**: Calls LLVM `llvm.sqrt.f32`/`.f64` intrinsic.
+**Built-in `@sqrt`**: Calls LLVM `llvm.sqrt.f32`/`.f64` intrinsic.
 ```sx
-s := sqrt(9.0);     // 3.0
+s := @sqrt(9.0);     // 3.0
 ```
 
 ### Function Types
@@ -5353,10 +5354,9 @@ compiler-API surface (`raw_intern`, `raw_find_type`, the `BuildOptions` methods,
 all. Calling one from the runtime call graph is a compile-time error that prints
 the path from the root that reached it.
 
-Dispatch is not the same as stage-availability. `sqrt` and `atomic_load` are both
-lowered, yet `atomic_load` evaluates under `@run` and `sqrt` does not: the
-evaluator interprets the atomic ops, but has no arm for the math call `sqrt`
-lowers to. A `@run sqrt(x)` fails loudly rather than folding to a wrong value.
+Dispatch is not the same as stage-availability. `@sqrt` and `atomic_load` are both
+lowered. The evaluator interprets the atomic ops, and evaluates the `call_builtin`
+that `@sqrt` lowers to, so `@run @sqrt(x)` is a compile-time constant.
 
 Two categories are **not** intrinsics. `string`, `@Vector`, `@Array` and
 `@Slice` are language primitives, resolved by name by the type system like `int` / `bool` /
@@ -5413,9 +5413,10 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `print(fmt: string, ..args: []any)` — formatted print. Parses `{}` placeholders in the format string and substitutes arguments. When all argument types are statically known, the compiler specializes the call at compile time (no `any` boxing).
 
 ### Math
-- `sqrt(x: $T) -> T` — square root (maps to LLVM intrinsic)
-- `sin(x: $T) -> T` — sine (maps to LLVM intrinsic)
-- `cos(x: $T) -> T` — cosine (maps to LLVM intrinsic)
+- `@sqrt(x: $T) -> T` — square root (maps to LLVM intrinsic)
+- `@sin(x: $T) -> T` — sine (maps to LLVM intrinsic)
+- `@cos(x: $T) -> T` — cosine (maps to LLVM intrinsic)
+- `@floor(x: $T) -> T` — floor (maps to LLVM intrinsic)
 
 ### Memory
 - `malloc(size: i64) -> *void` — allocate `size` bytes of heap memory
@@ -5483,6 +5484,11 @@ Comptime globals are resolved lazily: the JIT executes only when the value is fi
 ```sx
 @run print("compiling...");
 ```
+
+`@run` evaluates at compile time at every site — a module constant, a
+top-level side effect, and a body-local binding. If the evaluator cannot
+complete it, the compile fails (`error: comptime init of '…' failed: …`).
+There is no runtime-call consolation.
 
 ### `@error`
 

@@ -20,7 +20,7 @@ Vec2 :: struct {
     }
 
     length :: (self: Vec2) -> f32 {
-        sqrt(self.x * self.x + self.y * self.y)
+        @sqrt(self.x * self.x + self.y * self.y)
     }
 
     normalize :: (self: Vec2) -> Vec2 {

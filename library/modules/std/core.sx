@@ -15,9 +15,7 @@
 out :: (str: string) -> void {
     c.write(1, str.ptr, str.len);
 }
-// sqrt :: (x: $T) -> T intrinsic;
-// sin :: (x: $T) -> T intrinsic;
-// cos :: (x: $T) -> T intrinsic;
+// `@sqrt` / `@sin` / `@cos` / `@floor` are declared in math/scalar.sx.
 size_of :: ($T: Type) -> i64 intrinsic;
 align_of :: ($T: Type) -> i64 intrinsic;
 type_of :: (val: $T) -> Type intrinsic;

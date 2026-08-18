@@ -1,0 +1,14 @@
+// `@sqrt` / `@sin` / `@cos` / `@floor` are compiler contracts: they resolve
+// with no import. A module `@run` and a body-local `@run` produce the same
+// values as the runtime call.
+CT :: @run @sqrt(16.0);
+
+main :: () -> i32 {
+    loc : f64 = @run @sqrt(9.0);
+    rt := @sqrt(16.0);
+    if CT < 3.9 or CT > 4.1 { return 1; }
+    if loc < 2.9 or loc > 3.1 { return 2; }
+    if rt < 3.9 or rt > 4.1 { return 3; }
+    if @floor(3.9) < 2.9 or @floor(3.9) > 3.1 { return 4; }
+    0
+}

@@ -1440,12 +1440,14 @@ pub const Ops = struct {
             return;
         }
 
-        if (callee_func.isComptimeOnly() and !enclosing.isComptimeOnly()) {
+        if (callee_func.comptime_role == .run_wrapper and !enclosing.isComptimeOnly()) {
             // Inline comptime-call fold: a body-local `@run expr` lowers to a
-            // `call` of its `is_comptime` `__ct` wrapper. That wrapper is
+            // `call` of its `run_wrapper` `__ct` function. That wrapper is
             // comptime-ONLY — it must NEVER survive as a runtime call (its body
             // may read `---` storage / depend on comptime-only state). Evaluate
-            // it on the VM (the sole evaluator).
+            // it on the VM (the sole evaluator). A `type_builder` called from
+            // runtime (`through(*v)` when `through` returns `Type`) is not an
+            // `@run` and is not folded here.
             //
             // GATE on `!enclosing.isComptimeOnly()`: only a call reached from a REAL
             // runtime body (e.g. `main`) is an actual `@run` fold site. An
@@ -1457,13 +1459,12 @@ pub const Ops = struct {
             // failure. Leave those to the normal (dead) call path.
             //
             // For the live `@run` fold:
-            //   - scalar / string result → splat as a constant (the common case);
-            //   - a BAIL (`tryEval` null — e.g. an unbridgeable `[2][]i64` return)
-            //     is a comptime-init FAILURE. Mirror the GLOBAL `@run` path
-            //     (`emitGlobals` → `error: comptime init of 'X' failed: <reason>`,
-            //     `comptime_failed`): emit the located diagnostic and gate the
-            //     build, NEVER fall through to a runtime call over `---` storage
-            //     (that produced exit-0 garbage with no diagnostic).
+            //   - scalar / string result → splat as a constant;
+            //   - a BAIL (`tryEval` null) is a comptime-init FAILURE, same as a
+            //     GLOBAL `@run` (`emitGlobals` → `error: comptime init of 'X'
+            //     failed: <reason>`, `comptime_failed`). `@run` evaluates at
+            //     compile time or the compile fails — there is no runtime-call
+            //     consolation.
             const evaluation = comptime_vm.tryEval(self.e.alloc, self.e.ir_mod, call_op.callee, &self.e.build_config, self.e.import_sources, null);
             defer evaluation.destroy();
             if (evaluation.completed()) |result| {
@@ -1486,15 +1487,7 @@ pub const Ops = struct {
                 // the ordinary call path (the established, tested behavior — the
                 // result is well-defined data, not `---` garbage). Only a BAIL
                 // (handled below) signals an actual comptime failure.
-            } else if (comptime_vm.last_bail_was_bridge) {
-                // `tryEval` RAN the wrapper but could not BRIDGE its result shape
-                // to a host value (e.g. an unbridgeable `[2][]i64` — array of
-                // slices). Re-emitting a runtime `call` would re-run the SAME body
-                // over its (possibly `---`) storage and produce DIFFERENT garbage
-                // with no diagnostic — a silent miscompile.
-                // Mirror the GLOBAL `@run` path (`emitGlobals` → `error: comptime
-                // init of 'X' failed: <reason>`, `comptime_failed`): surface the
-                // bridge bail loudly and gate the build.
+            } else {
                 const fname = if (callee_func.comptime_display_name) |dn|
                     self.e.ir_mod.types.getString(dn)
                 else
@@ -1507,10 +1500,6 @@ pub const Ops = struct {
                 self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
                 return;
             }
-            // An EXECUTION bail (the VM couldn't run the body — an unported op, a
-            // VM `DivisionByZero` that the runtime computes as NaN, …): the
-            // established runtime-call fallback computes the correct value. Fall
-            // through to the ordinary call path — NOT a build failure.
         }
         const callee = self.e.func_map.get(call_op.callee.index()) orelse {
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));

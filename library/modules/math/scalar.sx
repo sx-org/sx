@@ -3,10 +3,10 @@ TAU :f32: 6.28318530;
 DEG2RAD :f32: 0.01745329;
 RAD2DEG :f32: 57.2957795;
 
-sqrt :: (x: $T) -> T intrinsic;
-sin :: (x: $T) -> T intrinsic;
-cos :: (x: $T) -> T intrinsic;
-floor :: (x: $T) -> T intrinsic;
+@sqrt  :: (x: $T) -> T;
+@sin   :: (x: $T) -> T;
+@cos   :: (x: $T) -> T;
+@floor :: (x: $T) -> T;
 
 min :: (a: $T, b: T) -> T {
     if a < b then a else b

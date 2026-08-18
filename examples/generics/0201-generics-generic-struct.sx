@@ -67,7 +67,7 @@ main :: () {
     print("neg: {}\n", neg);
 
     // sqrt
-    s := sqrt(9.0);
+    s := @sqrt(9.0);
     print("sqrt(9): {}\n", s);
 
     // inline generic type

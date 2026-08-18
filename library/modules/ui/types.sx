@@ -21,7 +21,7 @@ Point :: struct {
     distance :: (self: Point, b: Point) -> f32 {
         dx := self.x - b.x;
         dy := self.y - b.y;
-        sqrt(dx * dx + dy * dy)
+        @sqrt(dx * dx + dy * dy)
     }
 }
 

@@ -750,7 +750,10 @@ pub const Server = struct {
             .{ .label = "malloc", .detail = "(size: i64) -> *void" },
             .{ .label = "memcpy", .detail = "(dst: *void, src: *void, size: i64) -> *void" },
             .{ .label = "memset", .detail = "(dst: *void, val: i64, size: i64) -> void" },
-            .{ .label = "sqrt", .detail = "(x: $T) -> T" },
+            .{ .label = "@sqrt", .detail = "(x: $T) -> T" },
+            .{ .label = "@sin", .detail = "(x: $T) -> T" },
+            .{ .label = "@cos", .detail = "(x: $T) -> T" },
+            .{ .label = "@floor", .detail = "(x: $T) -> T" },
         };
         for (&keywords) |kw| {
             try items.append(self.allocator, .{
@@ -1241,7 +1244,10 @@ pub const Server = struct {
             .{ .name = "malloc", .label = "malloc(size: i64) -> *void", .params = &.{"size: i64"} },
             .{ .name = "memcpy", .label = "memcpy(dst: *void, src: *void, size: i64) -> *void", .params = &.{ "dst: *void", "src: *void", "size: i64" } },
             .{ .name = "memset", .label = "memset(dst: *void, val: i64, size: i64) -> void", .params = &.{ "dst: *void", "val: i64", "size: i64" } },
-            .{ .name = "sqrt", .label = "sqrt(x: $T) -> T", .params = &.{"x: $T"} },
+            .{ .name = "@sqrt", .label = "@sqrt(x: $T) -> T", .params = &.{"x: $T"} },
+            .{ .name = "@sin", .label = "@sin(x: $T) -> T", .params = &.{"x: $T"} },
+            .{ .name = "@cos", .label = "@cos(x: $T) -> T", .params = &.{"x: $T"} },
+            .{ .name = "@floor", .label = "@floor(x: $T) -> T", .params = &.{"x: $T"} },
             .{ .name = "print", .label = "print(fmt: string, args: ..any)", .params = &.{ "fmt: string", "args: ..any" } },
             .{ .name = "out", .label = "out(str: string) -> void", .params = &.{"str: string"} },
         };

@@ -9,8 +9,8 @@ Quat :: struct {
     from_axis_angle :: (axis: Vec3, angle: f32) -> Quat {
         n := axis.normalize();
         half := angle * 0.5;
-        s := sin(half);
-        Quat{ x = n.x * s, y = n.y * s, z = n.z * s, w = cos(half) }
+        s := @sin(half);
+        Quat{ x = n.x * s, y = n.y * s, z = n.z * s, w = @cos(half) }
     }
 
     mul :: (self: Quat, b: Quat) -> Quat {
@@ -23,7 +23,7 @@ Quat :: struct {
     }
 
     length :: (self: Quat) -> f32 {
-        sqrt(self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w)
+        @sqrt(self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w)
     }
 
     normalize :: (self: Quat) -> Quat {

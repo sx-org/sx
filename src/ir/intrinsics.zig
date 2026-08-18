@@ -30,10 +30,9 @@ const types = @import("types.zig");
 const TypeId = types.TypeId;
 
 /// How an intrinsic call is dispatched. This describes DISPATCH, not
-/// stage-availability — the two are independent. `sqrt` and `atomic_load` are
-/// both `.lower`, yet `atomic_load` evaluates at comptime and `sqrt` does not:
-/// the VM interprets the atomic ops `atomic_load` lowers to, but has no arm for
-/// the `call_builtin` that `sqrt` lowers to.
+/// stage-availability — the two are independent. `@sqrt` and `atomic_load` are
+/// both `.lower`. The VM interprets the atomic ops `atomic_load` lowers to,
+/// and evaluates the `call_builtin` that `@sqrt` lowers to.
 pub const Mode = enum {
     /// Handled at lowering — folded to a constant, or lowered to IR ops.
     lower,
@@ -140,10 +139,10 @@ pub const Id = enum(u16) {
     jni_main_java_source_at,
     on_build,
     // ── math/scalar.sx ──────────────────────────────────────────────────────
-    sqrt,
-    sin,
-    cos,
-    floor,
+    @"@sqrt",
+    @"@sin",
+    @"@cos",
+    @"@floor",
     // ── std/atomic.sx ───────────────────────────────────────────────────────
     atomic_load,
     atomic_store,
@@ -306,12 +305,12 @@ pub const entries = [_]Entry{
     .{ .id = .on_build, .module = build, .name = "on_build", .mode = .evaluate, .arity = 1 },
 
     // ── math: lowered to a `call_builtin` the LLVM backend maps to an
-    // intrinsic / libm call. The VM has no arm — a `@run sqrt(x)` bails loudly
-    // ("comptime init failed: sqrt") rather than silently folding.
-    .{ .id = .sqrt, .module = scalar, .name = "sqrt", .mode = .lower, .arity = 1 },
-    .{ .id = .sin, .module = scalar, .name = "sin", .mode = .lower, .arity = 1 },
-    .{ .id = .cos, .module = scalar, .name = "cos", .mode = .lower, .arity = 1 },
-    .{ .id = .floor, .module = scalar, .name = "floor", .mode = .lower, .arity = 1 },
+    // intrinsic / libm call. The VM evaluates the same ops (`@sqrt` / `@sin` /
+    // `@cos` / `@floor`), so `@run @sqrt(x)` is a compile-time constant.
+    .{ .id = .@"@sqrt", .module = scalar, .name = "@sqrt", .mode = .lower, .arity = 1 },
+    .{ .id = .@"@sin", .module = scalar, .name = "@sin", .mode = .lower, .arity = 1 },
+    .{ .id = .@"@cos", .module = scalar, .name = "@cos", .mode = .lower, .arity = 1 },
+    .{ .id = .@"@floor", .module = scalar, .name = "@floor", .mode = .lower, .arity = 1 },
 
     // ── atomics: lowered to dedicated atomic IR ops. `.lower`, yet they DO
     // evaluate at comptime — the VM interprets the ops they lower to.

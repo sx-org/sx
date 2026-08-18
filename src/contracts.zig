@@ -105,6 +105,10 @@ pub const entries = [_]Contract{
     // sole authorship of the name and lets any module reach it.
     .{ .name = "@panic", .module = "modules/std/core.sx" },
     .{ .name = "@error", .module = "modules/std/core.sx" },
+    .{ .name = "@sqrt", .module = "modules/math/scalar.sx" },
+    .{ .name = "@sin", .module = "modules/math/scalar.sx" },
+    .{ .name = "@cos", .module = "modules/math/scalar.sx" },
+    .{ .name = "@floor", .module = "modules/math/scalar.sx" },
     // Fat-value ABI views. Nullary `@Slice` is this declared struct; `@Slice(T, Len)`
     // is still the type constructor (`isTypeConstructor`).
     .{

@@ -92,7 +92,7 @@ test "calls: builtin and reflection result types, unknown fallthrough" {
         .{ .name = "__interp_print_frames", .want = .void },
         // A math builtin with a non-`f32` argument widens to `f64` (the int
         // literal arg is not `f32`, so the `f32` fast-path is not taken).
-        .{ .name = "sqrt", .want = .f64 },
+        .{ .name = "@sqrt", .want = .f64 },
         // Unknown bare callee with no builtin / declared fn / scope binding
         // types as unresolved, not a fabricated guess.
         .{ .name = "definitely_not_a_fn", .want = .unresolved },

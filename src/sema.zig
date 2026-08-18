@@ -736,9 +736,9 @@ pub const Analyzer = struct {
                 }
                 // Built-in: sqrt/sin/cos returns same type as argument
                 const base = baseName(callee_name);
-                if (std.mem.eql(u8, base, "sqrt") or
-                    std.mem.eql(u8, base, "sin") or
-                    std.mem.eql(u8, base, "cos"))
+                if (std.mem.eql(u8, base, "@sqrt") or
+                    std.mem.eql(u8, base, "@sin") or
+                    std.mem.eql(u8, base, "@cos"))
                 {
                     if (call_node.args.len > 0) return self.inferExprType(call_node.args[0]);
                     return .f64;
