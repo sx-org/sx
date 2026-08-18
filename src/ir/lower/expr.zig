@@ -589,20 +589,19 @@ pub fn lowerInitBlock(self: *Lowering, struct_val: Ref, ty: TypeId, ib: *const N
     return self.builder.load(slot, ty);
 }
 
+/// The file that wrote `ty`'s declaration — its own, or the template a generic
+/// instance was stamped from.
 pub fn structDeclaringSource(self: *Lowering, ty: TypeId) ?[]const u8 {
-    var owner = ty;
-    if (!owner.isBuiltin()) {
-        const info = self.module.types.get(owner);
-        if (info == .pointer) owner = info.pointer.pointee;
-    }
-    if (self.plain_struct_authors.get(owner)) |author| return author.source;
-    const name = self.getStructTypeName(owner) orelse return null;
-    if (self.struct_instance_author.contains(name)) {
-        const tmpl_name = self.struct_instance_template.get(name) orelse return null;
-        const tmpl = self.program_index.struct_template_map.get(tmpl_name) orelse return null;
-        return tmpl.source_file;
-    }
-    return null;
+    const author = self.memberAuthor(self.plainStructOwnerType(ty)) orelse return null;
+    return author.source;
+}
+
+/// The file that may mention `field` on `ty`. A `#using` promotion carries the
+/// base's authority; every other field answers to the struct's own declaration.
+pub fn fieldDeclaringSource(self: *Lowering, ty: TypeId, field: StringId) ?[]const u8 {
+    const owner = self.plainStructOwnerType(ty);
+    if (self.promoted_field_authority.get(.{ .ty = owner, .name = field })) |source| return source;
+    return self.structDeclaringSource(owner);
 }
 
 pub fn diagPrivateField(self: *Lowering, ty: TypeId, field: []const u8, span: ast.Span) bool {
@@ -615,7 +614,10 @@ pub fn diagPrivateField(self: *Lowering, ty: TypeId, field: []const u8, span: as
         }
     }
     if (vis != .private) return false;
-    const declaring = self.structDeclaringSource(ty) orelse return false;
+    // Only a named declaration or a generic instance can carry a private field
+    // — the parser refuses one on an anonymous body — and both stamp an author.
+    const declaring = self.fieldDeclaringSource(ty, wanted) orelse
+        std.debug.panic("private field '{s}' on a struct type with no declaring file", .{field});
     const from = self.current_source_file orelse return false;
     if (std.mem.eql(u8, from, declaring)) return false;
     if (self.diagnostics) |d|

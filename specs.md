@@ -5724,7 +5724,8 @@ Collision rules mirror ordinary declarations:
 ### Visibility: `private`
 
 `private` restricts a name to its declaring **source file**. It is a prefix on
-identifier-headed top-level declarations and on struct fields:
+identifier-headed top-level declarations and on a named struct declaration's
+fields:
 
 ```sx
 private Helper :: (x: i64) -> i64 { return x * 2; }
@@ -5768,15 +5769,20 @@ Semantics:
   without naming the field (`File{}` defaults, `File{ --- }` / `---`, copy
   assignment). Same-file methods, free functions, and literals may name the
   field. Authority is the source file that declares the struct type.
+- **A `#using` promotion carries the base's authority.** A struct that promotes
+  a base with a private field gains the field's storage, not the right to name
+  it: only the base's declaring file may.
 
 Placement rules — `private` is allowed on identifier-headed module-scope
-declarations and on struct fields. It is rejected on: locals, parameters,
-union and runtime-class fields, enum cases and error tags, struct/protocol/impl
-methods and requirements, flat `#import`, `impl` blocks, `#context_extend`,
-`#using`, standalone `@run`, global `asm`, and `#framework`. Top-level
-`inline if` branches and `inline for` bodies MAY declare private globals
-(their statements are module-scope after comptime flattening); function and
-method bodies may not.
+declarations and on the fields of a NAMED struct declaration (a generic
+template included). It is rejected on: anonymous struct fields (a field's
+inline `struct { … }`, a type function's returned `struct { … }`), locals,
+parameters, union and runtime-class fields, enum cases and error tags,
+struct/protocol/impl methods and requirements, flat `#import`, `impl` blocks,
+`#context_extend`, `#using`, standalone `@run`, global `asm`, and `#framework`.
+Top-level `inline if` branches and `inline for` bodies MAY declare private
+globals (their statements are module-scope after comptime flattening); function
+and method bodies may not.
 
 `` `private `` (backtick raw identifier) remains a legal name, and the
 `.private` member spelling remains legal after a dot.

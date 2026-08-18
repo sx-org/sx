@@ -1,5 +1,6 @@
-// A private field is file-local: same-file methods and literals may name it;
-// another file uses the methods, default construction, and copy.
+// A private field is file-local: same-file methods, literals, and `#using`
+// promotions may name it; another file uses the methods, default construction,
+// and copy.
 
 #import "modules/std.sx";
 box :: #import "2198-modules-private-struct-fields/box.sx";
@@ -10,6 +11,6 @@ main :: () -> i32 {
     b := a;
     b.set(b.get() + 7);
     c := box.Box{};
-    print("{}\n", a.get() + b.get() + c.get() + box.same_file_sum(1));
+    print("{}\n", a.get() + b.get() + c.get() + box.same_file_sum(1) + box.promoted_sum(4));
     return 0;
 }

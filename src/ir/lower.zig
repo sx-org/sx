@@ -89,6 +89,14 @@ pub const PlainStructAuthor = struct {
     source: ?[]const u8,
 };
 
+/// A private field reached through `#using` promotion, keyed on the PROMOTING
+/// struct's TypeId. The promoting struct copies the base's field verbatim, so
+/// only this record still names the file that may mention it.
+pub const PromotedField = struct {
+    ty: TypeId,
+    name: types.StringId,
+};
+
 /// Identity key for a materialized protocol/concrete dispatch table. The
 /// concrete TypeId (not its display name) keeps two modules' same-named
 /// structs from sharing thunks or a vtable global.
@@ -576,6 +584,8 @@ pub const Lowering = struct {
     /// author here lets method dispatch select the body from that identity rather
     /// than from the global last-wins `fn_ast_map["Struct.method"]` entry.
     plain_struct_authors: std.AutoHashMap(TypeId, PlainStructAuthor),
+    /// Declaring file of each private field a struct gained through `#using`.
+    promoted_field_authority: std.AutoHashMap(PromotedField, ?[]const u8),
     /// Explicit nullary-protocol impl methods, addressed by protocol + nominal
     /// concrete TypeId + method. The `Type.method` AST map cannot distinguish
     /// same-display-name types.
@@ -1199,6 +1209,7 @@ pub const Lowering = struct {
             .decl_identity_first = std.StringHashMap(*const anyopaque).init(module.alloc),
             .decl_identity_ids = std.AutoHashMap(*const anyopaque, u32).init(module.alloc),
             .plain_struct_authors = std.AutoHashMap(TypeId, PlainStructAuthor).init(module.alloc),
+            .promoted_field_authority = std.AutoHashMap(PromotedField, ?[]const u8).init(module.alloc),
             .protocol_impl_methods = std.AutoHashMap(ProtocolImplMethodKey, ProtocolImplMethod).init(module.alloc),
             .protocol_impl_decls = std.AutoHashMap(ProtocolConcreteKey, void).init(module.alloc),
             .protocol_impl_sites = std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_protocol.ImplSite)).init(module.alloc),
@@ -1937,16 +1948,7 @@ pub const Lowering = struct {
             // dropped `self`, leaving inline-decl payloads on the global
             // `findByName` first-match.
             .enum_decl => return type_bridge.resolveInlineEnum(&node.data.enum_decl, &self.module.types, self),
-            .struct_decl => {
-                const id = type_bridge.resolveInlineStruct(&node.data.struct_decl, &self.module.types, self);
-                if (!self.plain_struct_authors.contains(id)) {
-                    self.plain_struct_authors.put(id, .{
-                        .decl = &node.data.struct_decl,
-                        .source = self.current_source_file,
-                    }) catch {};
-                }
-                return id;
-            },
+            .struct_decl => return type_bridge.resolveInlineStruct(&node.data.struct_decl, &self.module.types, self),
             .union_decl => return type_bridge.resolveInlineUnion(&node.data.union_decl, &self.module.types, self),
             // A NAMED error-set reference (`!Named`) resolves its name through
             // `self` (visibility-aware) too; the bare `!` inferred set has no name
@@ -3436,6 +3438,10 @@ pub const Lowering = struct {
     pub const resolveUsingBase = lower_nominal.resolveUsingBase;
     pub const staticStructHead = lower_nominal.staticStructHead;
     pub const hasPlainStructAuthor = lower_nominal.hasPlainStructAuthor;
+    pub const plainStructOwnerType = lower_nominal.plainStructOwnerType;
+    pub const PromotedPrivate = lower_nominal.PromotedPrivate;
+    pub const notePromotedPrivate = lower_nominal.notePromotedPrivate;
+    pub const recordPromotedPrivate = lower_nominal.recordPromotedPrivate;
     pub const plainStructMethod = lower_nominal.plainStructMethod;
     pub const plainStructAdoptableMethod = lower_nominal.plainStructAdoptableMethod;
     pub const plainStructMethodName = lower_nominal.plainStructMethodName;
@@ -3736,6 +3742,7 @@ pub const Lowering = struct {
     pub const lowerInitBlock = lower_expr.lowerInitBlock;
     pub const getStructFields = lower_expr.getStructFields;
     pub const structDeclaringSource = lower_expr.structDeclaringSource;
+    pub const fieldDeclaringSource = lower_expr.fieldDeclaringSource;
     pub const diagPrivateField = lower_expr.diagPrivateField;
     pub const getAccessorFor = lower_expr.getAccessorFor;
     pub const getSetterFor = lower_expr.getSetterFor;
@@ -3818,6 +3825,7 @@ pub const Lowering = struct {
 
     // --- lower/build_block.zig (`@BuildBlock(P)`) ---
     // --- lower/open_set.zig (`@OpenSet` / `@OpenVariant`) ---
+    pub const memberAuthor = lower_open_set.memberAuthor;
     pub const registerOpenSetDecl = lower_open_set.registerSetDecl;
     pub const admitOpenVariant = lower_open_set.admitVariant;
     pub const openSetOf = lower_open_set.setOf;

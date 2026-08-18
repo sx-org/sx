@@ -1428,6 +1428,12 @@ pub const Parser = struct {
             // Or typed constant: name :Type: value;
             var field_vis: ast.Visibility = .public;
             if (self.tokens.tag(self.tok) == .kw_private) {
+                // Privacy authority is the file that declares the struct type.
+                // An anonymous body is interned by shape, so its type has no
+                // single declaring file to answer to.
+                if (std.mem.startsWith(u8, name, "__anon")) {
+                    return self.fail("'private' is not allowed on an anonymous struct field");
+                }
                 if (self.peekNext() == .kw_private) {
                     self.advance();
                     return self.fail("duplicate 'private'");

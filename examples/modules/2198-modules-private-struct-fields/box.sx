@@ -5,6 +5,23 @@ Box :: struct {
     set :: (self: *Box, v: i64) { self.secret = v; }
 }
 
+Peek :: struct {
+    #using Box;
+    doubled :: (self: *Peek) -> i64 { self.secret * 2 }
+}
+
+Wrap :: struct ($T: Type) {
+    #using Box;
+    t: T = ---;
+}
+
+promoted_sum :: (n: i64) -> i64 {
+    p := Peek{ secret = n };
+    w : Wrap(i64) = ---;
+    w.secret = n;
+    p.doubled() + w.secret
+}
+
 same_file_sum :: (n: i64) -> i64 {
     local := Box{ secret = n };
     local.secret += 1;
