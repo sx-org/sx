@@ -2,7 +2,12 @@
 
 box :: #import "2201-diagnostics-private-field-literal/box.sx";
 
+g : box.Box = box.Box{ secret = 1 };
+h : box.Box = .{ secret = 2 };
+G :: box.Box{ secret = 3 };
+arr : [1]box.Box = .[ .{ secret = 4 } ];
+
 main :: () -> i32 {
-    x := box.Box{ secret = 1 };
+    x := box.Box{ secret = 5 };
     return 0;
 }

@@ -156,6 +156,10 @@ pub fn constStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Typ
     if (ty.isBuiltin()) return null;
     const ti = self.module.types.get(ty);
     if (ti != .@"struct") return null;
+    for (sl.field_inits) |fi| {
+        const n = fi.name orelse continue;
+        _ = self.diagPrivateField(ty, n, fi.value.span);
+    }
     const struct_fields = ti.@"struct".fields;
     const struct_name = self.module.types.getString(ti.@"struct".name);
     // TypeId identity first; for an author-tracked type a tid-map miss means

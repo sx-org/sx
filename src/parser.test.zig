@@ -455,7 +455,7 @@ test "parser: private stamps struct fields" {
 // A named struct declaration is the only field position `private` takes: an
 // anonymous body — a field's inline struct, a type function's returned struct —
 // is interned by shape and has no declaring file to answer to.
-test "parser: private rejected on anonymous struct fields, methods, constants, union and runtime-class fields" {
+test "parser: private rejected on anonymous struct fields, methods, constants, union and runtime-class fields, enum cases" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -468,6 +468,7 @@ test "parser: private rejected on anonymous struct fields, methods, constants, u
         .{ .src = "F :: ($T: Type) -> Type { return struct { private x: T; }; }", .want = "anonymous struct field" },
         .{ .src = "U :: union { private x: i64; }", .want = "union field" },
         .{ .src = "C :: @JniClass(\"pkg/C\") { private x: i64; }", .want = "runtime-class field" },
+        .{ .src = "E :: enum { private A; B; }", .want = "enum case" },
     };
     for (cases) |c| {
         var p = try Parser.init(alloc, c.src);

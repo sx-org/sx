@@ -3,5 +3,5 @@
 
 main :: () -> i32 {
     v : struct { private q: i64; } = ---;
-    return xx v.q;
+    return v.q.(i32);
 }

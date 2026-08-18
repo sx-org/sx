@@ -10,5 +10,5 @@ main :: () -> i32 {
     p := Peek{ secret = 1 };
     w : Wrap(i64) = ---;
     w.secret = 2;
-    return xx p.secret;
+    return p.secret.(i32);
 }

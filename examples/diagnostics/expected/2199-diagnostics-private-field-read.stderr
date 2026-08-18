@@ -1,5 +1,5 @@
 error: field 'secret' is private to its declaring file
-  --> examples/diagnostics/2199-diagnostics-private-field-read.sx:7:15
+  --> examples/diagnostics/2199-diagnostics-private-field-read.sx:7:12
    |
- 7 |     return xx x.secret;
-   |               ^^^^^^^^
+ 7 |     return x.secret.(i32);
+   |            ^^^^^^^^

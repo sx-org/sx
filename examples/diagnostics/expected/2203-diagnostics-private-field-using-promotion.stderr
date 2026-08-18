@@ -11,7 +11,7 @@ error: field 'secret' is private to its declaring file
    |     ^^^^^^^^
 
 error: field 'secret' is private to its declaring file
-  --> examples/diagnostics/2203-diagnostics-private-field-using-promotion.sx:13:15
+  --> examples/diagnostics/2203-diagnostics-private-field-using-promotion.sx:13:12
    |
-13 |     return xx p.secret;
-   |               ^^^^^^^^
+13 |     return p.secret.(i32);
+   |            ^^^^^^^^

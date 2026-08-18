@@ -1164,6 +1164,9 @@ pub const Parser = struct {
         var has_any_type = false;
         var has_any_value = false;
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
+            if (self.tokens.tag(self.tok) == .kw_private) {
+                return self.fail("'private' is not allowed on an enum case");
+            }
             if (!self.isMemberDeclName()) {
                 return self.failMemberDeclName("expected variant name");
             }
