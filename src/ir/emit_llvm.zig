@@ -1285,7 +1285,7 @@ pub const LLVMEmitter = struct {
     /// (sets `comptime_failed`, returns `undef`): the in-process module
     /// finishes constructing, but the driver halts with a non-zero exit
     /// before object emission / JIT, so the placeholder never ships.
-    fn valueToLLVMConst(
+    pub fn valueToLLVMConst(
         self: *LLVMEmitter,
         val: Value,
         ty: TypeId,

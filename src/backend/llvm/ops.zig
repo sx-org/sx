@@ -1458,48 +1458,27 @@ pub const Ops = struct {
             // call would mis-`tryEval` it (wrong arg count) and emit a spurious
             // failure. Leave those to the normal (dead) call path.
             //
-            // For the live `@run` fold:
-            //   - scalar / string result → splat as a constant;
-            //   - a BAIL (`tryEval` null) is a comptime-init FAILURE, same as a
-            //     GLOBAL `@run` (`emitGlobals` → `error: comptime init of 'X'
-            //     failed: <reason>`, `comptime_failed`). `@run` evaluates at
-            //     compile time or the compile fails — there is no runtime-call
-            //     consolation.
+            // For the live `@run` fold the VM result is the program's value —
+            // the same `valueToLLVMConst` path a GLOBAL `@run` uses. A BAIL
+            // (`tryEval` null) or a value that cannot be serialized is a
+            // comptime-init FAILURE. There is no runtime-call consolation.
+            const fname = if (callee_func.comptime_display_name) |dn|
+                self.e.ir_mod.types.getString(dn)
+            else
+                self.e.ir_mod.types.getString(callee_func.name);
             const evaluation = comptime_vm.tryEval(self.e.alloc, self.e.ir_mod, call_op.callee, &self.e.build_config, self.e.import_sources, null);
             defer evaluation.destroy();
             if (evaluation.completed()) |result| {
-                if (result.asInt()) |v| {
-                    self.e.mapRef(c.LLVMConstInt(self.e.toLLVMType(instruction.ty), @bitCast(v), 0));
-                    return;
-                } else if (result.asFloat()) |v| {
-                    self.e.mapRef(c.LLVMConstReal(self.e.toLLVMType(instruction.ty), v));
-                    return;
-                } else if (result.asBool()) |v| {
-                    self.e.mapRef(c.LLVMConstInt(self.e.toLLVMType(instruction.ty), @intFromBool(v), 0));
-                    return;
-                } else if (result == .string) {
-                    self.e.mapRef(self.e.emitStringConstant(result.string));
-                    return;
-                }
-                // A non-scalar bridgeable result (struct / array / `?Arr`) the VM
-                // materialized successfully but this scalar fold can't splat.
-                // Its `__ct` body runs correctly at runtime, so fall through to
-                // the ordinary call path (the established, tested behavior — the
-                // result is well-defined data, not `---` garbage). Only a BAIL
-                // (handled below) signals an actual comptime failure.
-            } else {
-                const fname = if (callee_func.comptime_display_name) |dn|
-                    self.e.ir_mod.types.getString(dn)
-                else
-                    self.e.ir_mod.types.getString(callee_func.name);
-                std.debug.print(
-                    "error: comptime init of '{s}' failed: {s}\n",
-                    .{ fname, comptime_vm.last_bail_reason orelse "<unknown>" },
-                );
-                self.e.comptime_failed = true;
-                self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+                self.e.mapRef(self.e.valueToLLVMConst(result, instruction.ty, fname));
                 return;
             }
+            std.debug.print(
+                "error: comptime init of '{s}' failed: {s}\n",
+                .{ fname, comptime_vm.last_bail_reason orelse "<unknown>" },
+            );
+            self.e.comptime_failed = true;
+            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            return;
         }
         const callee = self.e.func_map.get(call_op.callee.index()) orelse {
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));

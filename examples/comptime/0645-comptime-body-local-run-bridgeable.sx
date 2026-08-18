@@ -1,18 +1,35 @@
-// A body-local `@run` const of a BRIDGEABLE shape — a scalar, a struct, an
-// array, or an `?Array` optional — evaluates and produces its const value.
-// These are the common cases that must keep working; only an unbridgeable
-// result (e.g. `[2][]i64`) fails.
-//
-// Failing loudly on an unbridgeable result must not cost the bridgeable cases
-// their fold.
+// A body-local `@run` of a scalar, a struct, an array, or an `?Array`
+// optional bakes the VM result as a constant. The constructors run only at
+// compile time (`@is_comptime()`). An unbridgeable result (e.g. `[2][]i64`)
+// still fails the build.
 #import "modules/std.sx";
 
 Pt :: struct { x: i64; y: i64; }
 
-mk_scalar :: () -> i64 { return 42; }
-mk_struct :: () -> Pt { return .{ x = 3, y = 4 }; }
-mk_arr :: () -> [3]i64 { r : [3]i64 = ---; r[0] = 10; r[1] = 20; r[2] = 30; return r; }
-mk_opt :: () -> ?[3]i64 { r : [3]i64 = ---; r[0] = 1; r[1] = 2; r[2] = 3; return r; }
+mk_scalar :: () -> i64 {
+    if !@is_comptime() { @panic("mk_scalar ran at runtime"); }
+    42
+}
+mk_struct :: () -> Pt {
+    if !@is_comptime() { @panic("mk_struct ran at runtime"); }
+    .{ x = 3, y = 4 }
+}
+mk_arr :: () -> [3]i64 {
+    if !@is_comptime() { @panic("mk_arr ran at runtime"); }
+    r : [3]i64 = ---;
+    r[0] = 10;
+    r[1] = 20;
+    r[2] = 30;
+    r
+}
+mk_opt :: () -> ?[3]i64 {
+    if !@is_comptime() { @panic("mk_opt ran at runtime"); }
+    r : [3]i64 = ---;
+    r[0] = 1;
+    r[1] = 2;
+    r[2] = 3;
+    r
+}
 
 main :: () {
     N :: @run mk_scalar();

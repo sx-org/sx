@@ -5486,9 +5486,12 @@ Comptime globals are resolved lazily: the JIT executes only when the value is fi
 ```
 
 `@run` evaluates at compile time at every site — a module constant, a
-top-level side effect, and a body-local binding. If the evaluator cannot
-complete it, the compile fails (`error: comptime init of '…' failed: …`).
-There is no runtime-call consolation.
+top-level side effect, and a body-local binding. The value the evaluator
+produces is the program's value (a struct, array, or optional is baked the
+same way a scalar is). If the evaluator cannot complete it, or the result
+cannot be serialized as a constant, the compile fails
+(`error: comptime init of '…' failed: …`). There is no runtime-call
+consolation.
 
 ### `@error`
 
