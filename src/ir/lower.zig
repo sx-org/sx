@@ -3749,6 +3749,7 @@ pub const Lowering = struct {
     pub const diagPrivateField = lower_expr.diagPrivateField;
     pub const FieldLookup = lower_expr.FieldLookup;
     pub const lookupField = lower_expr.lookupField;
+    pub const payloadPromotes = lower_expr.payloadPromotes;
     pub const mentionField = lower_expr.mentionField;
     pub const getAccessorFor = lower_expr.getAccessorFor;
     pub const getSetterFor = lower_expr.getSetterFor;

@@ -1,0 +1,23 @@
+error: field 'a' not found on type 'U'
+  --> examples/diagnostics/2207-diagnostics-union-pointer-payload-member.sx:21:5
+   |
+21 |     u.a = 3;
+   |     ^^^
+
+error: field 'a' not found on type 'E'
+  --> examples/diagnostics/2207-diagnostics-union-pointer-payload-member.sx:23:5
+   |
+23 |     e.a = 4;
+   |     ^^^
+
+error: field 'a' not found on type 'U'
+  --> examples/diagnostics/2207-diagnostics-union-pointer-payload-member.sx:24:13
+   |
+24 |     return (u.a + e.a).(i32);
+   |             ^^^
+
+error: field 'a' not found on type 'E'
+  --> examples/diagnostics/2207-diagnostics-union-pointer-payload-member.sx:24:19
+   |
+24 |     return (u.a + e.a).(i32);
+   |                   ^^^

@@ -636,6 +636,13 @@ pub fn lookupField(self: *Lowering, ty: TypeId, field: []const u8) FieldLookup {
     return .missing;
 }
 
+/// A union variant promotes members only when its payload IS a struct — the
+/// union's bytes are the pointer, not the pointee.
+pub fn payloadPromotes(self: *Lowering, ty: TypeId) bool {
+    if (ty.isBuiltin()) return false;
+    return self.module.types.get(ty) == .@"struct";
+}
+
 /// `lookupField` for a name a human wrote: diagnoses `.private` once, then
 /// answers as `lookupField`.
 pub fn mentionField(self: *Lowering, ty: TypeId, field: []const u8, span: ast.Span) FieldLookup {
@@ -655,6 +662,7 @@ fn promotedUnionMemberRead(
     span: ast.Span,
 ) ?Ref {
     for (union_fields) |f| {
+        if (!self.payloadPromotes(f.ty)) continue;
         switch (self.mentionField(f.ty, field, span)) {
             .missing => {},
             .private => return self.emitPlaceholder(field),
@@ -865,6 +873,7 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
         if (u_fields) |ufields| {
             for (ufields) |f| {
                 if (f.name == field_name_id) return f.ty;
+                if (!self.payloadPromotes(f.ty)) continue;
                 // Members promoted out of a struct variant
                 switch (self.lookupField(f.ty, field)) {
                     .hit, .private => |h| return h.ty,

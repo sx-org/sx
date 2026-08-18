@@ -2956,6 +2956,7 @@ pub fn fieldLvalueResolve(self: *Lowering, obj_ty: TypeId, field: []const u8) ?F
             if (f.name == field_name_id) {
                 return .{ .union_direct = .{ .index = @intCast(i), .ty = f.ty } };
             }
+            if (!self.payloadPromotes(f.ty)) continue;
             switch (self.lookupField(f.ty, field)) {
                 .hit, .private => |h| return .{ .union_promoted = .{ .variant_index = @intCast(i), .variant_ty = f.ty, .member_index = h.index, .ty = h.ty } },
                 .missing => {},
