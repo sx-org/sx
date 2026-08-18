@@ -61,7 +61,7 @@ __sx_block_descriptor : BlockDescriptor = .{
 // Single generic impl covers every closure shape. The compiler
 // monomorphises this body per call shape; inside each mono,
 // `$args` is the bound pack of arg types and `$R` is the bound
-// return type. The `#insert` evaluates `build_block_convert` at
+// return type. The `@insert` evaluates `build_block_convert` at
 // comptime and substitutes the resulting source — a nested
 // `abi(.c)` trampoline + the Block literal that points its
 // `invoke` slot at it. One impl in stdlib replaces every per-
@@ -69,7 +69,7 @@ __sx_block_descriptor : BlockDescriptor = .{
 impl Into(Block) for Closure(..$args) -> $R {
     convert :: (self: Closure(..$args) -> $R, alloc: Allocator = context.allocator) -> Block {
         _ = alloc;
-        #insert build_block_convert($args, $R);
+        @insert build_block_convert($args, $R);
     }
 }
 
@@ -86,7 +86,7 @@ impl Into(Block) for Closure(..$args) -> $R {
 //   2. Returns a stack Block literal whose `invoke` slot points at
 //      the nested trampoline via `*__invoke`.
 //
-// The host impl wraps the emitted source via `#insert
+// The host impl wraps the emitted source via `@insert
 // build_block_convert($args, $R);`. Per-call-shape monomorphisation
 // of the impl body re-runs this builder with the concrete types
 // bound, so each closure shape gets its own dedicated trampoline.

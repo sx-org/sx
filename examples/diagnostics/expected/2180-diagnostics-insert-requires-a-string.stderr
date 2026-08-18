@@ -1,0 +1,5 @@
+error: `@insert` requires a string
+  --> examples/diagnostics/2180-diagnostics-insert-requires-a-string.sx:3:13
+   |
+ 3 |     @insert 1 + 2;
+   |             ^^^^^

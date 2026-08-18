@@ -1,10 +1,10 @@
 // Every shape an INLINED comptime body can exit through reaches the same
 // destination: the slot and join the call site installed, never the caller's
 // `ret`. The exit context is installed for the body unconditionally, so none of
-// these shapes has to be recognizable in the AST beforehand — the `#insert`
+// these shapes has to be recognizable in the AST beforehand — the `@insert`
 // ones are not even parsed until the body is being lowered.
 //
-//   generated   a `return` an `#insert` produced, bare and namespace-qualified
+//   generated   a `return` an `@insert` produced, bare and namespace-qualified
 //   invisible   a `return` inside a `catch` body and inside a declaration's
 //               initializer — containers no pre-scan of the body walked
 //   lambda      a closure formed INSIDE an inlined body emits its OWN return;
@@ -23,7 +23,7 @@ fmtns :: #import "modules/std/fmt.sx";
 Bad :: error { Nope }
 
 gen :: ($n: i64) -> i64 {
-    #insert "return 40 + 2;";
+    @insert "return 40 + 2;";
 }
 
 invisible :: ($tag: string, n: i64) -> i64 {

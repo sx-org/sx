@@ -2120,7 +2120,7 @@ pub const Lowering = struct {
             // and enclosing function name. The diagnostic renderer's
             // `source_file` -> `file:line:col` prefix can drift when a span is
             // offset into one source but the diagnostic falls back to another
-            // (e.g. synthetic AST nodes inserted from `#insert` take their
+            // (e.g. synthetic AST nodes inserted from `@insert` take their
             // span from the call site, not from the string being inserted).
             // Embedding the file + function in the message means a
             // misattributed span can never hide WHERE the lookup actually

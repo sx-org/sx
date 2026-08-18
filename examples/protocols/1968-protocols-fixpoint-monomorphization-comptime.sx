@@ -2,7 +2,7 @@
 // monomorphization of an open set's arm.
 //
 // Nothing calls `Box.draw` directly — its body is written when the convergence
-// fixpoint materializes `Draw`'s arm for that member. The `#insert` in that body
+// fixpoint materializes `Draw`'s arm for that member. The `@insert` in that body
 // therefore runs from INSIDE a drained round, and what it reaches — an erasure
 // into a protocol — is lowered there too, so the round re-registers and the drain
 // continues until nothing new is reached.
@@ -26,7 +26,7 @@ tally :: () -> string {
 Box :: @OpenVariant(Draw) {
     n: i64 = 0;
     draw :: (self: *Box) -> i64 {
-        #insert tally();
+        @insert tally();
         return self.n + bonus;
     }
 }

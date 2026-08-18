@@ -5,5 +5,5 @@
 #import "modules/std.sx";
 
 emit :: ($who: string) {
-    #insert concat(concat("print(\"hello ", who), "\\n\");");
+    @insert concat(concat("print(\"hello ", who), "\\n\");");
 }

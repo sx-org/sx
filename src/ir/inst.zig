@@ -706,7 +706,7 @@ pub const ComptimeRole = enum {
     /// Not compiler-only: an ordinary function, emitted when runtime-reachable.
     none,
     /// A wrapper lowering synthesized for a `@run`, a `::` initializer, or an
-    /// `#insert` — evaluated by the comptime VM, never called at runtime.
+    /// `@insert` — evaluated by the comptime VM, never called at runtime.
     run_wrapper,
     /// A `-> Type` constructor, evaluated at lowering time to mint a type. Types
     /// are erased after lowering, so it has nothing to return at runtime.

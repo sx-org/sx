@@ -119,7 +119,7 @@ CT_OPT_UNWRAP :: @run ct_opt_unwrap();
 
 CT_OPT_GUARD :: @run ct_opt_guard();
 
-// #insert helpers
+// @insert helpers
 gen_code :: () -> string {
     return "print(\"insert-ok\\n\");";
 }

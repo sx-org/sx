@@ -1397,7 +1397,7 @@ pub fn monomorphizePackFn(
     // Bind non-pack params. Walk fd.params + call_node.args
     // together; comptime non-pack params bind both as runtime
     // locals (so bare-name body access works) AND as
-    // comptime_param_nodes entries (so `#insert` substitution
+    // comptime_param_nodes entries (so `@insert` substitution
     // works). Non-comptime non-pack params consume IR param
     // slots in order.
     var cpn = std.StringHashMap(*const Node).init(self.alloc);
@@ -1462,7 +1462,7 @@ pub fn monomorphizePackFn(
     self.materialisePackSlice(&scope, pack_name, pack_param_slots.items, arg_types);
 
     // Pin to the metaprogram's OWN module for the BODY lowering only, so its
-    // bare names (and anything it `#insert`s — e.g. `build_format` / `out` /
+    // bare names (and anything it `@insert`s — e.g. `build_format` / `out` /
     // `emit` inside `std.print`) resolve in the defining module's visibility
     // context, not the call site's. The comptime-param call-site
     // args above were deliberately lowered FIRST, in the caller's context.
@@ -1483,7 +1483,7 @@ pub fn monomorphizePackFn(
 /// AND is_comptime`). Mixed shapes — non-pack comptime params
 /// before the pack — are also accepted; the mono folds those
 /// comptime VALUES into the mangled name and binds them as both
-/// comptime substitutions (for #insert) and runtime locals (for
+/// comptime substitutions (for @insert) and runtime locals (for
 /// bare-name body references).
 pub fn isPackFn(fd: *const ast.FnDecl) bool {
     for (fd.params) |p| {

@@ -1,0 +1,4 @@
+// `#insert` is not a directive. Splice is `@insert expr`.
+#insert "x := 1;";
+
+main :: () {}

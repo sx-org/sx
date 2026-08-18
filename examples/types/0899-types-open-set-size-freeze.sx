@@ -89,7 +89,7 @@ main :: () -> i32 {
     // answerable where it is written.
     buf: [size_of(Cell)]u8 = ---;
     print("cell {} buf {}\n", size_of(Cell), buf.len);
-    #insert cell_line();
+    @insert cell_line();
     print("render {} {}\n", Label{ text = "l" }.render(), p.render());
     0
 }

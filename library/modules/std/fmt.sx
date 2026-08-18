@@ -578,13 +578,13 @@ build_format :: (fmt: string) -> string {
 }
 
 format :: ($fmt: string, ..$args) -> string {
-    #insert build_format(fmt);
-    #insert "return result;";
+    @insert build_format(fmt);
+    @insert "return result;";
 }
 
 print :: ($fmt: string, ..$args) {
-    #insert build_format(fmt);
-    #insert "out(result);";
+    @insert build_format(fmt);
+    @insert "out(result);";
 }
 
 // ── Postfix-assertion runtime ───────────────────────────────────────────

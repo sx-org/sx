@@ -137,10 +137,11 @@ declaration of it, so there is no second author for the import-visibility rule t
 choose between: `@SourceSite` and `@VaList` are spelled bare wherever they are
 written.
 
-Separately, a few `@` names are **compiler-formed** — `@run`, `@Init(T)`,
+Separately, a few `@` names are **compiler-formed** — `@run`, `@insert`, `@Init(T)`,
 `@BuildBlock(P)`, `@Vector(N, T)`, `@Array(N, T)` and `@Slice(T, Len)`. There is
 no stdlib declaration to read, and declaring the name is an error. `@run` is
-the compile-time evaluation prefix (`@run expr`); see
+the compile-time evaluation prefix (`@run expr`); `@insert` splices a
+compile-time string as sx (`@insert expr`); see
 [§8](#8-compile-time-evaluation). `@Init` and `@BuildBlock` are constraints,
 written only as a bound on the parameter (`value: $I/@Init(T)`,
 `content: $B/@BuildBlock(P)`) and never as its type — see [`@Init(T)`](#initt)
@@ -438,7 +439,7 @@ print("{}\n", b);
 
 One rule, applied wherever a statement or a declaration ENDS: top-level and
 local bindings, expression statements, assignments, `return` / `raise` /
-`break` / `continue` / `defer` / `onfail`, `#import` / `#insert` / `@error` and
+`break` / `continue` / `defer` / `onfail`, `#import` / `@insert` / `@error` and
 the other directive forms, and a function's `extern` / `intrinsic` / `=> expr`
 body. The value-less spellings take it the same way — a `return` with nothing to
 return, and a `name : Type` declaration with no initializer:
@@ -4094,7 +4095,7 @@ again. Read the size where it is a value, or bind it with `@run size_of(P)`. A s
 that **no generic member can reach** settles as soon as the declarations are
 admitted, and a dimension over that set inside a body folds normally.
 
-A compile-time evaluation that runs **during** lowering — `#insert`, a comptime type
+A compile-time evaluation that runs **during** lowering — `@insert`, a comptime type
 construction — may ask for a set's size, and **waits** when nothing can answer yet
 (§6.9). It is answered the moment nothing can grow the set. If the answer needs the
 freeze and the freeze needs the program that evaluation is still writing, the drain
@@ -5370,7 +5371,7 @@ scheduling discipline (see Protocols, compile-time execution).
 An ordinary sx function is **stage-polymorphic**. Nothing in a declaration says
 whether it runs at compile time or at runtime; what decides is **reachability**.
 
-- **Compile-time roots**: `@run`, type construction, `#insert`, module-scope
+- **Compile-time roots**: `@run`, type construction, `@insert`, module-scope
   `inline if` / `inline match` / `inline for`, and a build callback registered
   with `on_build`. A `::` whose initializer is a call is not a compile-time
   root.
@@ -5541,9 +5542,9 @@ bottom; the offending code is the caller's.
 
 The message must be a string literal (it is consumed at compile time).
 
-### `#insert` Directive
+### `@insert` Directive
 
-`#insert expr;` evaluates `expr` at compile time to obtain a string, then parses and compiles that string as inline code at the insertion point.
+`@insert expr;` evaluates `expr` at compile time to obtain a string, then parses and compiles that string as inline code at the insertion point.
 
 ```sx
 generate :: () -> string {
@@ -5551,12 +5552,17 @@ generate :: () -> string {
 }
 
 main :: () {
-    #insert @run generate();
+    @insert @run generate();
     // equivalent to: print("hello from the other side");
 }
 ```
 
-The inserted string must contain valid `sx` statements (including semicolons). The statements are parsed and compiled in the same scope as the `#insert` site. Variables created by one `#insert` are visible to subsequent `#insert` directives in the same function.
+The expression must evaluate to a string of valid `sx` statements (including
+semicolons). If the evaluator cannot produce a string, the result is not a
+string, or the string is not valid sx, the compile fails at the `@insert`.
+The statements are parsed and compiled in the same scope as the `@insert`
+site. Variables created by one `@insert` are visible to subsequent `@insert`
+directives in the same function.
 
 A `::` whose initializer is a call is an immutable runtime binding. Compile-time evaluation of a call is `@run`:
 
@@ -6486,7 +6492,7 @@ continue_stmt   = 'continue' end
 raise_stmt      = 'raise' expr end
 onfail_stmt     = 'onfail' ('|' IDENT '|')? (block | expr end)
 defer_stmt      = 'defer' expr end
-insert_stmt     = '#insert' expr end
+insert_stmt     = '@insert' expr end
 push_stmt       = 'push' expr block
 assignment      = lvalue ('=' | '+=' | '-=' | '*=' | '/=') expr
 multi_assign    = lvalue (',' lvalue)+ '=' expr (',' expr)+

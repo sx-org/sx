@@ -106,14 +106,20 @@ test "#import lexes as a directive; #importing does not" {
     try std.testing.expectEqual(Tag.invalid, tl2.tags[0]);
 }
 
-test "#insert lexes as a directive; #inserting does not" {
-    var tl = try lexT("#insert @run generate()");
+test "@insert lexes as the splice prefix; @inserting is an @-name" {
+    var tl = try lexT("@insert @run generate()");
     defer deinitT(&tl);
-    try std.testing.expectEqualSlices(Tag, &.{ .hash_insert, .at_run, .identifier, .l_paren, .r_paren, .eof }, tl.tags);
+    try std.testing.expectEqualSlices(Tag, &.{ .at_insert, .at_run, .identifier, .l_paren, .r_paren, .eof }, tl.tags);
 
-    var tl2 = try lexT("#inserting");
+    var tl2 = try lexT("@inserting");
     defer deinitT(&tl2);
-    try std.testing.expectEqual(Tag.invalid, tl2.tags[0]);
+    try std.testing.expectEqual(Tag.at_identifier, tl2.tags[0]);
+}
+
+test "#insert is not a directive" {
+    var tl = try lexT("#insert generate()");
+    defer deinitT(&tl);
+    try std.testing.expectEqual(Tag.invalid, tl.tags[0]);
 }
 
 test "#library lexes as a directive; #librarypath does not" {

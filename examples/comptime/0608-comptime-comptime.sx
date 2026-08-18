@@ -39,7 +39,7 @@ CT_OPT_UNWRAP :: @run ct_opt_unwrap();
 
 CT_OPT_GUARD :: @run ct_opt_guard();
 
-// #insert helpers
+// @insert helpers
 gen_code :: () -> string {
     return "print(\"insert-ok\\n\");";
 }
@@ -71,9 +71,9 @@ main :: () {
     print("ct-opt-unwrap: {}\n", CT_OPT_UNWRAP);               // ct-opt-unwrap: 77
     print("ct-opt-guard: {}\n", CT_OPT_GUARD);                 // ct-opt-guard: 10
 
-    // #insert with function
-    #insert gen_code();
+    // @insert with function
+    @insert gen_code();
 
-    // #insert additional
-    #insert gen_val();
+    // @insert additional
+    @insert gen_val();
 }

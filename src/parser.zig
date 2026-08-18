@@ -3118,8 +3118,8 @@ pub const Parser = struct {
             return try self.createNode(start, .{ .continue_expr = {} });
         }
 
-        // Insert directive: #insert <expr>;
-        if (self.tokens.tag(self.tok) == .hash_insert) {
+        // Insert directive: @insert <expr>;
+        if (self.tokens.tag(self.tok) == .at_insert) {
             const start = self.tokens.start(self.tok);
             self.advance();
             const inner = try self.parseExpr();
@@ -5026,7 +5026,7 @@ pub const Parser = struct {
             .at_run,
             .hash_error,
             .hash_import,
-            .hash_insert,
+            .at_insert,
             .hash_library,
             .hash_framework,
             .hash_using,
@@ -5238,7 +5238,7 @@ pub const Parser = struct {
             .at_run,
             .hash_error,
             .hash_import,
-            .hash_insert,
+            .at_insert,
             .hash_library,
             .hash_framework,
             .hash_using,

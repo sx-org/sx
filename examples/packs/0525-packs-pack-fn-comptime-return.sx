@@ -7,7 +7,7 @@
 // The shape is not pack-specific: ANY comptime fn with `is_comptime`
 // params, a non-void return, and a block body with `return X;` takes
 // this path. `format`/`print` use arrow form (`=> expr`) or
-// `#insert`-only bodies and so never reach it.
+// `@insert`-only bodies and so never reach it.
 //
 // Calling foo() reaches the body's `return 42;`, the inliner stores 42
 // into a result slot, the caller loads it as the inline value, and main

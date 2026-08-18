@@ -1,5 +1,5 @@
 // Expansion-driving comptime carries protocol values (specs.md §6.9). A body
-// evaluated DURING lowering — a `-> Type` builder, an `#insert` — erases a
+// evaluated DURING lowering — a `-> Type` builder, an `@insert` — erases a
 // conformer, dispatches through the protocol, and reads the answer. The impl
 // bodies it needs are lowered on demand, against the impls visible at that
 // point.
@@ -47,7 +47,7 @@ weigh :: () -> Type {
 }
 Weighed :: weigh();
 
-// An `#insert`'s result becomes declarations, so it is evaluated there too.
+// An `@insert`'s result becomes declarations, so it is evaluated there too.
 gen :: () -> string {
     w := Widget{ n = 3 };
     v : *View = w;
@@ -56,7 +56,7 @@ gen :: () -> string {
 }
 
 main :: () {
-    #insert gen();
+    @insert gen();
     c : Chosen = 3;
     g : Weighed = 4;
     w := Widget{ n = 6 };

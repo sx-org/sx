@@ -1,0 +1,5 @@
+error: expected identifier at top level
+  --> examples/diagnostics/2179-diagnostics-hash-insert-is-not-a-directive.sx:2:1
+   |
+ 2 | #insert "x := 1;";
+   | ^

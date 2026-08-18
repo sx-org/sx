@@ -1,0 +1,4 @@
+// `@insert` evaluates to a string. A non-string result fails the compile.
+main :: () {
+    @insert 1 + 2;
+}

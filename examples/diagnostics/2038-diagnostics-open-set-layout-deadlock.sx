@@ -2,7 +2,7 @@
 // layout that waits for the evaluation is the expansion deadlock (spec: Open Sets —
 // when the layout is final; §7.9).
 //
-// `#insert` writes code, so it runs DURING lowering: the set has not frozen, and a
+// `@insert` writes code, so it runs DURING lowering: the set has not frozen, and a
 // generic member means a body lowered later can still spell an instantiation and
 // grow it. The evaluation therefore parks on the set's layout rather than reading a
 // size a later member would contradict — and nothing can publish that fact while
@@ -13,7 +13,7 @@
 // unit and the fact it awaits.
 //
 // A set no generic member can reach settles as soon as the declarations are
-// admitted, and the same `#insert` against it is answered immediately — that is the
+// admitted, and the same `@insert` against it is answered immediately — that is the
 // positive half, pinned in examples/types/0899.
 #import "modules/std.sx";
 
@@ -43,6 +43,6 @@ line :: () -> string {
 }
 
 main :: () -> i32 {
-    #insert line();
+    @insert line();
     0
 }

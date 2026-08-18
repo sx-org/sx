@@ -519,7 +519,7 @@ pub fn lowerInlineComptime(self: *Lowering, expr: *const Node) Ref {
     return self.builder.call(func_id, final_args, ret_ty);
 }
 
-/// Lower a `#insert expr` statement. Evaluates `expr` at compile time to get
+/// Lower a `@insert expr` statement. Evaluates `expr` at compile time to get
 /// a string, parses it as sx code, and lowers each statement inline.
 pub fn lowerInsertExpr(self: *Lowering, expr: *const Node) void {
     _ = self.lowerInsertExprValue(expr);
@@ -533,15 +533,26 @@ pub fn lowerInsertExprValue(self: *Lowering, expr: *const Node) Ref {
     else
         expr;
 
-    // Step 2: Evaluate the expression to get a string
+    // Step 2: Evaluate the expression to get a string. Null is a park or a
+    // diagnosed failure — do not splice.
     const code_str = self.evalComptimeString(substituted) orelse return self.builder.constInt(0, .void);
 
-    // Step 3: Parse the string as sx code and lower each statement
-    // The last expression's value is captured as the return value
-    var p = parser_mod.Parser.init(self.alloc, code_str) catch unreachable;
+    // Step 3: Parse the string as sx code and lower each statement.
+    // The last expression's value is captured as the return value.
+    var p = parser_mod.Parser.init(self.alloc, code_str) catch {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, expr.span, "`@insert` could not parse the produced string", .{});
+        return self.builder.constInt(0, .void);
+    };
     var last_val: Ref = self.builder.constInt(0, .void);
     while (!p.atEof()) {
-        const stmt = p.parseStmt() catch break;
+        const stmt = p.parseStmt() catch {
+            if (self.diagnostics) |d| {
+                const msg = p.err_msg orelse "invalid sx";
+                d.addFmt(.err, expr.span, "`@insert` produced invalid sx: {s}", .{msg});
+            }
+            return last_val;
+        };
         if (p.atEof()) {
             // Last statement — try to capture as expression value
             // tryLowerAsExpr internally calls lowerStmt for statement nodes,
@@ -877,6 +888,17 @@ pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {
         return self.alloc.dupeZ(u8, str) catch null;
     }
 
+    // A non-string expression never reaches the VM: wrapping it as
+    // `-> string` would hand `regToValue` a fat-pointer load of an integer.
+    const expr_ty = self.inferExprType(expr);
+    if (expr_ty != .string) {
+        if (self.diagnostics) |d| {
+            if (!d.hasErrors())
+                d.addFmt(.err, expr.span, "`@insert` requires a string", .{});
+        }
+        return null;
+    }
+
     // Case 2: evaluate on the comptime VM (the SOLE evaluator), reusing
     // the parent module. The parent's `scanDecls` pass has already registered
     // every type / protocol / impl / thunk the comptime call may need
@@ -892,14 +914,27 @@ pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {
     const ct_func_id = self.createComptimeFunction("__insert", .expansion, expr, .string);
     const evaluation = comptime_vm.tryEval(self.alloc, self.module, ct_func_id, null, null, self.factScheduler());
     if (evaluation.state == .parked) {
-        self.expansion.parkEvaluation(evaluation, "this `#insert`", lower_open_set.describeFact(self, evaluation.state.parked), expr.span);
+        self.expansion.parkEvaluation(evaluation, "this `@insert`", lower_open_set.describeFact(self, evaluation.state.parked), expr.span);
         return null;
     }
     defer evaluation.destroy();
-    const result = evaluation.completed() orelse return null;
+    const result = evaluation.completed() orelse {
+        // A park already recorded the wait. A bail with no earlier diagnostic
+        // is a silent hole unless we report it here.
+        if (self.diagnostics) |d| {
+            if (!d.hasErrors()) {
+                d.addFmt(.err, expr.span, "cannot evaluate this `@insert`; it must produce a string at compile time: {s}", .{comptime_vm.last_bail_reason orelse "<unknown>"});
+            }
+        }
+        return null;
+    };
     const str = switch (result) {
         .string => |s| s,
-        else => return null,
+        else => {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, expr.span, "`@insert` requires a string", .{});
+            return null;
+        },
     };
     return self.alloc.dupeZ(u8, str) catch null;
 }
@@ -953,7 +988,7 @@ pub fn substituteComptimeNodes(self: *Lowering, node: *const Node, cpn: std.Stri
 }
 
 /// Lower a call to a function with comptime params by inlining its body.
-/// Comptime params are substituted, `#insert` expressions are evaluated.
+/// Comptime params are substituted, `@insert` expressions are evaluated.
 pub fn lowerComptimeCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const ast.Call) Ref {
     return lowerComptimeCallArgsMode(self, fd, call_node.args, 0, false, false, call_node.callee.span);
 }
@@ -1386,7 +1421,7 @@ fn lowerComptimeCallArgsMode(
     }
 
     // Pin the lowering to the metaprogram's OWN module for the body (and
-    // its return type + anything it `#insert`s, e.g. `build_format` / `out`
+    // its return type + anything it `@insert`s, e.g. `build_format` / `out`
     // / `emit` inside `std.print` / `log.*`), so those bare names resolve
     // in the defining module's visibility context rather than the call
     // site's. The call-site ARGS above are deliberately lowered
@@ -1412,7 +1447,7 @@ fn lowerComptimeCallArgsMode(
     // differs, and the target installed here is what every exit reads.
     //
     // Installed unconditionally: no syntactic property of the body can decide
-    // whether it needs one. An `#insert`'s text is parsed during lowering, so
+    // whether it needs one. An `@insert`'s text is parsed during lowering, so
     // a `return` it generates is invisible to any pre-scan of the AST — and a
     // body with no exit context of its own emits the CALLER's `ret`.
     const ret_ty = self.resolveReturnType(fd);
@@ -1680,7 +1715,7 @@ pub fn enumHasVariant(self: *Lowering, variants: []const types.StringId, variant
 /// Which comptime phase a wrapper body belongs to (§7.9's phase law).
 pub const ComptimePhase = enum {
     /// Evaluated DURING lowering, so its result can still add declarations:
-    /// a type-fn body, an `#insert`. Nothing it observes about an open set is
+    /// a type-fn body, an `@insert`. Nothing it observes about an open set is
     /// final.
     expansion,
     /// Evaluated after the convergence fixpoint — a `@run` constant, a `@run`
@@ -1700,7 +1735,7 @@ pub fn createComptimeFunction(self: *Lowering, prefix: []const u8, phase: Compti
 /// comptime-evaluate a generic type-fn body that has locals before its `return`
 /// (the non-prelude path only sees the return expression).
 pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, phase: ComptimePhase, prelude: []const *const Node, expr: *const Node, ret_ty: TypeId) FuncId {
-    // EVERY comptime wrapper body (type-fn, @run-at-scan, #insert, …) lowers
+    // EVERY comptime wrapper body (type-fn, @run-at-scan, @insert, …) lowers
     // through here — and it (or a lazily-lowered callee) may read
     // `context.allocator`, which only exists once the Context is ASSEMBLED
     // and whose VALUE the VM materializes from the EMITTED
@@ -1723,7 +1758,7 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     // about to build runs the comptime expression in isolation — it must NOT
     // inherit pack bindings (which would substitute caller's `args` inside
     // the wrapper) or comptime-param bindings (which would substitute
-    // caller's `$fmt` inside the wrapper's #insert children). Without these
+    // caller's `$fmt` inside the wrapper's @insert children). Without these
     // saves, nested comptime calls leak outer state into the interp-executed
     // wrapper, producing garbage stores (a null `storeAtRawPtr`). The guard
     // above owns the inlined-body exit.

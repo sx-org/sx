@@ -9,7 +9,7 @@
 // [arg_ref])` for the interp's runtime arm to handle.
 //
 // Type values are comptime-only — the dynamic path only works
-// inside a comptime context (`@run` / `#insert`). The test
+// inside a comptime context (`@run` / `@insert`). The test
 // runs `walk(42, "hi")` at `@run` time and prints the result.
 
 #import "modules/std.sx";

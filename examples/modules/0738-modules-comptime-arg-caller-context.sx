@@ -3,7 +3,7 @@
 // metaprogram's defining module.
 //
 // `emit` is reachable only as `m.emit`; the comptime arg `caller_name()` is
-// authored HERE in the caller. When `emit` splices that arg into its `#insert`
+// authored HERE in the caller. When `emit` splices that arg into its `@insert`
 // body and lowers it, the bare name `caller_name` must stay visible in the
 // caller's context. A body defining-module pin that also covers
 // the substituted caller arg checks `caller_name` against

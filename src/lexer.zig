@@ -201,7 +201,7 @@ pub const Lexer = struct {
             return self.makeToken(.invalid, start, self.index);
         }
 
-        // `@run` is the compile-time evaluation prefix. Every other `@Name` is
+        // `@run` / `@insert` are compile-time prefixes. Every other `@Name` is
         // a compiler-formed type / contract token — the `@` is part of the
         // name, so the token spans it; the tag keeps it out of every
         // identifier position.
@@ -215,6 +215,10 @@ pub const Lexer = struct {
                     tok.tag = .at_run;
                     return tok;
                 }
+                if (std.mem.eql(u8, self.source[tok.loc.start..tok.loc.end], "@insert")) {
+                    tok.tag = .at_insert;
+                    return tok;
+                }
                 tok.tag = .at_identifier;
                 return tok;
             }
@@ -222,7 +226,7 @@ pub const Lexer = struct {
             return self.makeToken(.invalid, start, self.index);
         }
 
-        // Directives: #import, #insert, #library, #string
+        // Directives: #import, #library, #string
         if (c == '#') {
             // #string needs special handling (heredoc)
             const str_kw = "#string";
@@ -237,7 +241,6 @@ pub const Lexer = struct {
 
             const directives = .{
                 .{ "#import", Tag.hash_import },
-                .{ "#insert", Tag.hash_insert },
                 .{ "#library", Tag.hash_library },
                 .{ "#framework", Tag.hash_framework },
                 .{ "#using", Tag.hash_using },

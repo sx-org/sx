@@ -1,0 +1,5 @@
+error: `@insert` produced invalid sx: unexpected token in expression
+  --> examples/diagnostics/2181-diagnostics-insert-invalid-sx.sx:3:13
+   |
+ 3 |     @insert "@@@ not sx";
+   |             ^^^^^^^^^^^^

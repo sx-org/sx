@@ -1,0 +1,4 @@
+// `@insert` of a string that is not valid sx fails the compile.
+main :: () {
+    @insert "@@@ not sx";
+}

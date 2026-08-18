@@ -123,9 +123,9 @@ pub const Tag = enum(u8) {
 
     // Directives
     at_run, // @run — compile-time evaluation prefix
+    at_insert, // @insert — splice a compile-time string as sx
     hash_error, // unused; `@error` is the compile-time diagnostic
     hash_import, // #import
-    hash_insert, // #insert
     hash_library, // #library
     hash_framework, // #framework
     hash_using, // #using
@@ -279,7 +279,7 @@ pub const Tag = enum(u8) {
             .at_run,
             .hash_error,
             .hash_import,
-            .hash_insert,
+            .at_insert,
             .hash_library,
             .hash_framework,
             .hash_using,
@@ -469,7 +469,7 @@ pub const Tag = enum(u8) {
             .at_run,
             .hash_error,
             .hash_import,
-            .hash_insert,
+            .at_insert,
             .hash_library,
             .hash_framework,
             .hash_using,

@@ -5,5 +5,5 @@ generate::() -> string {
 }
 
 main :: () {
-    #insert generate();
+    @insert generate();
 }
