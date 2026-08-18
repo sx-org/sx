@@ -1,0 +1,9 @@
+// Dest-inferred `xx` unboxes `any` after the boxed type is known.
+#import "modules/std.sx";
+
+main :: () {
+    n : i64 = 7;
+    av : any = n;
+    got : i64 = xx av;
+    print("{}\n", got);
+}

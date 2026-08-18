@@ -1,0 +1,10 @@
+// A pair with no conversion is a hard error under both spellings.
+#import "modules/std.sx";
+
+Box :: struct { n: i64 }
+
+main :: () {
+    x : i64 = 1;
+    b := x.(Box);
+    print("{}\n", b.n);
+}

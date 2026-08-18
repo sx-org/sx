@@ -2601,6 +2601,15 @@ pub fn diagnoseMissingContext(self: *Lowering, what: []const u8) Ref {
 /// emits a diagnostic and returns a placeholder. It deliberately does
 /// NOT fall back to a direct libc malloc: that silently escapes the
 /// allocator the program installed.
+/// The `Allocator` value currently installed as `context.allocator`.
+pub fn ambientAllocator(self: *Lowering) ?Ref {
+    if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) return null;
+    const ctx_ty = self.module.types.findByName(self.module.types.internString("Context")) orelse return null;
+    const af = self.contextFieldByName("allocator") orelse return null;
+    const ctx = self.builder.load(self.current_ctx_ref, ctx_ty);
+    return self.builder.structGet(ctx, af.index, af.ty);
+}
+
 pub fn allocViaContext(self: *Lowering, size_ref: Ref) Ref {
     if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) {
         return self.diagnoseMissingContext("heap allocation");

@@ -3421,17 +3421,22 @@ pub fn storeOrCompound(self: *Lowering, gep: Ref, val: Ref, op: ast.Assignment.O
 
 pub fn emitCompoundOp(self: *Lowering, lhs: Ref, rhs: Ref, op: ast.Assignment.Op, ty: TypeId) Ref {
     if (op != .assign and self.pointerElement(ty) != null) return emitPointerCompoundOp(self, lhs, rhs, op, ty);
+    const rhs_ty = self.builder.getRefType(rhs);
+    const rhs_c = if (rhs_ty != ty and rhs_ty != .void and ty != .void)
+        self.coerceToType(rhs, rhs_ty, ty)
+    else
+        rhs;
     return switch (op) {
-        .add_assign => self.builder.add(lhs, rhs, ty),
-        .sub_assign => self.builder.sub(lhs, rhs, ty),
-        .mul_assign => self.builder.mul(lhs, rhs, ty),
-        .div_assign => self.builder.div(lhs, rhs, ty),
-        .mod_assign => self.builder.emit(.{ .mod = .{ .lhs = lhs, .rhs = rhs } }, ty),
-        .and_assign => self.builder.emit(.{ .bit_and = .{ .lhs = lhs, .rhs = rhs } }, ty),
-        .or_assign => self.builder.emit(.{ .bit_or = .{ .lhs = lhs, .rhs = rhs } }, ty),
-        .xor_assign => self.builder.emit(.{ .bit_xor = .{ .lhs = lhs, .rhs = rhs } }, ty),
-        .shl_assign => self.builder.emit(.{ .shl = .{ .lhs = lhs, .rhs = rhs } }, ty),
-        .shr_assign => self.builder.emit(.{ .shr = .{ .lhs = lhs, .rhs = rhs } }, ty),
+        .add_assign => self.builder.add(lhs, rhs_c, ty),
+        .sub_assign => self.builder.sub(lhs, rhs_c, ty),
+        .mul_assign => self.builder.mul(lhs, rhs_c, ty),
+        .div_assign => self.builder.div(lhs, rhs_c, ty),
+        .mod_assign => self.builder.emit(.{ .mod = .{ .lhs = lhs, .rhs = rhs_c } }, ty),
+        .and_assign => self.builder.emit(.{ .bit_and = .{ .lhs = lhs, .rhs = rhs_c } }, ty),
+        .or_assign => self.builder.emit(.{ .bit_or = .{ .lhs = lhs, .rhs = rhs_c } }, ty),
+        .xor_assign => self.builder.emit(.{ .bit_xor = .{ .lhs = lhs, .rhs = rhs_c } }, ty),
+        .shl_assign => self.builder.emit(.{ .shl = .{ .lhs = lhs, .rhs = rhs_c } }, ty),
+        .shr_assign => self.builder.emit(.{ .shr = .{ .lhs = lhs, .rhs = rhs_c } }, ty),
         else => self.emitError("compound_assign", null),
     };
 }

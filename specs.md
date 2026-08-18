@@ -1062,7 +1062,7 @@ default methods); they differ only in what a protocol-typed
 
 ```sx
 Into      :: protocol(Target: Type) constraint {
-    convert :: (self: *Self) -> Target;
+    convert :: (self: *Self, alloc: Allocator) -> Target;
 }
 Show      :: protocol vtable   { fmt :: (self: *Self) -> string; }
 Hasher    :: protocol vtable {
@@ -1262,11 +1262,12 @@ largest :: (xs: []$T/Ord) -> T { … }          // bound: any T conforming to Or
 
 // Into, restated from §1:
 Into :: protocol(Target: Type) constraint {
-    convert :: (self: *Self) -> Target;
+    convert :: (self: *Self, alloc: Allocator) -> Target;
 }
-// `xx val : T` falls through the built-in conversion ladder to an
-// `impl Into(T) for Source` lookup; the compiler monomorphizes
-// `convert` for the (Source, T) pair and emits a direct call.
+// Dest-inferred `xx val` at a `T` slot, or `val.(T)` / `val.(T, alloc)`,
+// falls through the built-in conversion ladder to an `impl Into(T) for
+// Source` lookup; the compiler monomorphizes `convert` for the (Source, T)
+// pair and emits a direct call. `.(T)` funds from `context.allocator`.
 ```
 
 **Erasure refuses.** Every erasure spelling — implicit at a
@@ -1340,13 +1341,12 @@ Every erased protocol belongs to one of two classes:
 
 - **value/own** (unmarked): erasure creates manually managed,
   allocation-backed storage — a heap copy of the receiver, made only
-  under the explicit postfix spelling `.(P, alloc)`, through the named
-  allocator (`context.allocator` is spelled out to use the ambient
-  one). No other spelling allocates: an implicit erasure is the demand
-  diagnostic for every operand shape, and the one-argument `.(P)` on
-  an owning shape refuses — an owning erasure names its allocator. The handles over that storage may ALIAS it (§5.3a);
-  "owning erasure" names the operation and the storage's discipline,
-  not a per-handle claim. `*P` is the borrowed view.
+  under the explicit postfix spelling `.(P)` (funded by
+  `context.allocator`) or `.(P, alloc)` (a named fund). No other
+  spelling allocates: an implicit erasure is the demand diagnostic for
+  every operand shape. The handles over that storage may ALIAS it
+  (§5.3a); "owning erasure" names the operation and the storage's
+  discipline, not a per-handle claim. `*P` is the borrowed view.
 - **`#identity`**: for protocols whose runtime object *is* unique
   state (an allocator, an io runtime). Values only ever borrow, in
   every spelling; there is nothing to free.
@@ -1358,11 +1358,10 @@ it and pairs with `free(p, alloc)`.
 
 | spelling | receiver | result |
 |---|---|---|
-| `expr.(P, alloc)` | concrete lvalue or rvalue | **owns** — independent heap copy |
-| `expr.(P, alloc)` | `*Concrete` | **owns** — snapshot of the pointee |
+| `expr.(P)` / `expr.(P, alloc)` | concrete lvalue or rvalue | **owns** — independent heap copy |
+| `expr.(P)` / `expr.(P, alloc)` | `*Concrete` | **owns** — snapshot of the pointee |
 | `expr.(P, alloc)` | `P` (same protocol, value) | **owns** — clone: independent copy of the receiver (`rt_size_of(type_id)` bytes; vtable/fn words reused) |
 | `expr.(P, alloc)` | `*P` (same protocol) | **owns** — promotion: fresh ctx copy, vtable/fn words reused |
-| `expr.(P)` | any owning shape | **compile error** — an owning erasure names its allocator |
 | `expr.(P)` | `P` (same protocol, value) | no-op — an ordinary handle copy, aliasing (§5.3a) |
 | implicit / `xx` | any shape | **compile error** — the demand diagnostic |
 | any lvalue / pointer | at a `*P` target | **view** — borrows storage (§5.5) |
@@ -1424,14 +1423,12 @@ impl Sizable for Widget {
 
 w := Widget{value = 7 };
 s : Sizable = w;      // error: 'w' is an lvalue and 'Sizable' values own
-                      // their storage — write the copy ('w.(Sizable, <alloc>)')
+                      // their storage — write the copy ('w.(Sizable)')
                       // or pass a view ('*Sizable') for transient use
 t : Sizable = Widget{value = 8 };   // error: rvalue — an implicit
                                     // erasure would silently heap-allocate
-u := w.(Sizable);                   // error: an owning erasure names its
-                                    // allocator — '.(Sizable, <alloc>)'
-s := w.(Sizable, context.allocator);       // the explicit owning copy
-t := Widget{value = 8 }.(Sizable, context.allocator);  // the rvalue's copy
+s := w.(Sizable);                          // owning copy through context.allocator
+t := Widget{value = 8 }.(Sizable, arena);  // the rvalue's copy through a named fund
 ```
 
 **Shallow-copy caveat.** Owning erasure copies the receiver's BYTES.
@@ -1890,8 +1887,7 @@ requires no compiler change.
 | protocol-typed protocol member (`m :: (self: *Self, v: View)`) | ordinary — the parameter erases per `View`'s kind at the call |
 | bare `Self` later parameter | excluded from erased dispatch |
 | `Self` at depth in parameter or return (`[]Self`, `?Self`, `Buffer(Self)`) | excluded from dynamic dispatch on every kind; concrete/bound calls fine |
-| rvalue at `P` (value/own), implicit / `xx` | compile error — the demand diagnostic; the owning copy is postfix-only (`.(P, alloc)`) |
-| `.(P)` without the allocator at a value/own owning shape | compile error — an owning erasure names its allocator (`.(P, alloc)`; `context.allocator` for the ambient one) |
+| rvalue at `P` (value/own), implicit / `xx` | compile error — the demand diagnostic; the owning copy is postfix-only (`.(P)` / `.(P, alloc)`) |
 | rvalue at `*P` | compile error — nothing durable to borrow |
 | rvalue at `P` (`#identity`) | compile error — identity objects need a name |
 | `free` on: view / identity / constraint-typed anything | compile error in each case (distinct wordings; constraint has no values at all) |
@@ -3221,17 +3217,15 @@ the value the surrounding context expects — it is never the target of an
 operand, so the comparison reads the same inferred, as an `if` condition, and
 in a `bool` declaration, argument or return.
 
-When an explicit cast pair has **no modeled conversion** (and no user `Into`
-applies), the cast is a raw bit-reinterpretation. Between two same-shaped
-types (scalar↔scalar, aggregate↔aggregate — e.g. `string` ↔ `@Slice`) the
-value passes through unchanged. Between an **aggregate-shaped value and a
-scalar/pointer** the reinterpretation is **spill-mediated**: the value
-passes through a zero-initialized memory slot typed as the larger side and
-is loaded back as the target, so the result is a genuinely target-typed
-value in every position (comparisons, call arguments, arithmetic — not just
-stores). A width mismatch is deterministic: the smaller side covers/reads
-its bytes and the rest are zero. User `Into` conversions always take
-precedence over the reinterpretation fallback.
+An explicit cast pair with **no conversion** is a compile error
+(`no conversion from 'A' to 'B'`). Dest-inferred `xx` is also an error
+when the value is already the slot type (`already 'i64'`) and when an
+implicit conversion already applies (`already converts to '*void'`).
+The remaining reinterprets are modeled: unchecked `any` unbox, pointer
+↔ integer, same-size aggregate pun (e.g. `string` ↔ `@Slice`), pointer
+or function-pointer pun, and same-width integer pun. There is no spill
+fallback. User `Into` conversions run when the built-in ladder makes no
+progress.
 
 ### Postfix Cast `expr.(T)`
 
@@ -3241,27 +3235,24 @@ ladder, one engine rather than a second cast. "Safe" means
 **well-defined**, not value-preserving: `1000.(i8)` truncates by definition.
 
 A PROTOCOL target follows the target's KIND (see Protocols). For an
-erased value/own target the two-argument form `expr.(P, alloc)` is the
-**owning erasure** — an independent heap copy through `alloc` (an
-LVALUE naming an allocator; pair with `free(p, alloc)`;
-`context.allocator` is spelled out to use the ambient one) for
-concrete receivers (lvalue and rvalue alike), a SNAPSHOT of the
-pointee for a `*Concrete` receiver, a CLONE for a same-protocol `P`
-value, and a PROMOTION for a `*P` view. The one-argument `expr.(P)`
-refuses on every owning shape — an owning erasure names its
-allocator. `#identity` targets keep the borrow (`gpa.(Allocator)`)
-and refuse the allocator form. A CONSTRAINT target refuses (no runtime
-values). A soft protocol target on a concrete receiver is the
-conformance PROBE; a protocol-to-protocol conversion is RE-ERASURE —
-both defined in Protocols.
+erased value/own target `expr.(P)` is the **owning erasure** through
+`context.allocator`; `expr.(P, alloc)` names another fund (`alloc` is
+an LVALUE; pair with `free(p, alloc)`). Concrete receivers (lvalue
+and rvalue alike) heap-copy, a `*Concrete` receiver SNAPSHOTS the
+pointee, a same-protocol `P` value CLONES, and a `*P` view PROMOTES.
+`#identity` targets keep the borrow (`gpa.(Allocator)`) and refuse
+the allocator form. A CONSTRAINT target refuses (no runtime values).
+A soft protocol target on a concrete receiver is the conformance
+PROBE; a protocol-to-protocol conversion is RE-ERASURE — both defined
+in Protocols.
 
 ```sx
 b := a.(i8);            // narrow (truncates)
 v := f.(i64);           // float → int
 p := raw.(*Point);      // pointer bitcast; composite targets parse: *T, []u8, ?T
 o := 5.(?i64);          // optional wrap
-s := dog.(Speaker, a);                 // owning erasure through `a`
-u := dog.(Speaker, context.allocator); // the same, through the ambient allocator
+s := dog.(Speaker);                    // owning erasure through context.allocator
+u := dog.(Speaker, a);                 // the same, through a named fund
 x.(u8).(i64)            // postfix chains left to right
 -x.(i8)                 // postfix binds tighter: -(x.(i8))
 ```
@@ -5458,7 +5449,7 @@ The type-only builtins — `size_of`, `align_of`, `struct_field_count`, `variant
 An `any` is accepted because it can hold either a value or a `Type`. `type_name` and `is_unsigned` consult the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `type_name(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `type_of(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `type_name(av)` agree on what `av` is.
 
 ### Type Conversion
-- Conversions are spelled `xx expr` (target from context) or postfix `expr.(T)` (explicit target) — see §Postfix Cast. There is no `cast(Type, expr)` builtin; runtime-typed data travels as `any` and comes back through the assertion forms.
+- Conversions are implicit, or they name the type with `expr.(T)` / `expr.(T, alloc)`. Dest-inferred `xx expr` is the same classifier for application code; the stdlib never writes `xx`. There is no `cast(Type, expr)` builtin; runtime-typed data travels as `any` and comes back through the assertion forms.
 
 ### Vectors
 - `@Vector($N: int, $T: Type) -> Type` — returns an LLVM vector type of `N` elements of type `T`

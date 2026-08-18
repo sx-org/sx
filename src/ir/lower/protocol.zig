@@ -1222,10 +1222,9 @@ pub fn allocViaAllocatorValue(self: *Lowering, allocator: Ref, size_ref: Ref) Re
 ///   - `*P` (same protocol): PROMOTION — the same, over the pointee;
 ///   - `#identity` target: `.(P)` is the borrow; `.(P, alloc)` refuses
 ///     (a borrow allocates nothing).
-/// The allocator argument is REQUIRED on the owning shapes (plain `.(P)`
-/// refuses — every allocation names its allocator; `context.allocator` is
-/// spelled out to use the ambient one) and must be an LVALUE naming an
-/// allocator.
+/// `.(P)` funds from `context.allocator`; `.(P, alloc)` names another.
+/// The named allocator must be an LVALUE. `#identity` is a borrow and
+/// refuses an allocator argument.
 pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: TypeId, span: ast.Span) Ref {
     if (self.refuseValuelessProtocol(dst_ty, span, "make a value of")) return self.builder.constUndef(dst_ty);
     const dst_pi = self.getProtocolInfo(dst_ty) orelse return self.builder.constUndef(dst_ty);
@@ -1241,24 +1240,25 @@ pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: T
         return self.buildProtocolErasure(operand, pc.operand, self.builder.getRefType(operand), dst_ty);
     }
 
-    const an = pc.alloc_arg orelse {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, span, "an owning erasure allocates and must name its allocator — write '.({s}, <alloc>)'; for the ambient allocator write '.({s}, context.allocator)'", .{ dst_pi.name, dst_pi.name });
-        return self.builder.constUndef(dst_ty);
-    };
-    if (!self.isLvalueExpr(an)) {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, an.span, "the allocator argument of an owning erasure must be an LVALUE naming an allocator — bind it first (the value must outlive the erasure so `free(p, a)` can pair with it)", .{});
-        return self.builder.constUndef(dst_ty);
-    }
-    const av = self.lowerExpr(an);
-    const avt = self.builder.getRefType(av);
     const alloc_ty = self.module.types.findByName(self.module.types.internString("Allocator")) orelse {
         if (self.diagnostics) |d|
-            d.addFmt(.err, an.span, "'.(P, alloc)' needs the 'Allocator' protocol in scope — #import \"modules/std.sx\"", .{});
+            d.addFmt(.err, span, "'.(P)' needs the 'Allocator' protocol in scope — #import \"modules/std.sx\"", .{});
         return self.builder.constUndef(dst_ty);
     };
-    const alloc_val = if (avt == alloc_ty) av else self.coerceOrErase(av, avt, alloc_ty, an);
+    const alloc_val = if (pc.alloc_arg) |an| blk: {
+        if (!self.isLvalueExpr(an)) {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, an.span, "the allocator argument of an owning erasure must be an LVALUE naming an allocator — bind it first (the value must outlive the erasure so `free(p, a)` can pair with it)", .{});
+            return self.builder.constUndef(dst_ty);
+        }
+        const av = self.lowerExpr(an);
+        const avt = self.builder.getRefType(av);
+        break :blk if (avt == alloc_ty) av else self.coerceOrErase(av, avt, alloc_ty, an);
+    } else self.ambientAllocator() orelse {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "'.({s})' funds from context.allocator — import std or write '.({s}, <alloc>)'", .{ dst_pi.name, dst_pi.name });
+        return self.builder.constUndef(dst_ty);
+    };
 
     const operand = self.lowerExpr(pc.operand);
     const src_ty = self.builder.getRefType(operand);

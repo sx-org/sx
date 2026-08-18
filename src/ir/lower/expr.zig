@@ -3879,9 +3879,12 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 self.builder.switchToBlock(some_bb);
                 const unwrapped = self.builder.emit(.{ .optional_unwrap = .{ .operand = opt_val } }, child);
                 const saved_target = self.target_type;
+                const saved_postfix = self.xx_is_postfix;
                 self.target_type = dst;
+                self.xx_is_postfix = true;
                 const converted = self.lowerXX(unwrapped, pc.operand);
                 self.target_type = saved_target;
+                self.xx_is_postfix = saved_postfix;
                 const some_result = if (dst_is_opt) converted else self.builder.emit(.{ .optional_wrap = .{ .operand = converted } }, result_ty);
                 self.builder.br(merge_bb, &.{some_result});
                 self.builder.switchToBlock(none_bb);
@@ -4047,10 +4050,10 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     d.addFmt(.err, pc.type_expr.span, "unknown type in postfix cast '.(T)'", .{});
                 break :blk self.builder.constUndef(.unresolved);
             }
-            // Owning erasure `expr.(P, alloc)`: a PROTOCOL target with a
-            // CONCRETE (or pointer) receiver OWNS — copy / snapshot /
-            // promotion per receiver shape, always through the named
-            // allocator (plain `.(P)` refuses there); #identity targets
+            // Owning erasure `expr.(P)` / `expr.(P, alloc)`: a PROTOCOL
+            // target with a CONCRETE (or pointer) receiver OWNS — copy /
+            // snapshot / promotion per receiver shape, funded by
+            // context.allocator or the named allocator; #identity targets
             // keep the borrow. Erased receivers (any / protocol) were
             // handled above; a protocol receiver reaching here is the
             // recovery/re-erasure family and stays on lowerXX.
@@ -4084,19 +4087,17 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 if (self.getProtocolInfo(dst) != null and self.inferExprType(pc.operand) == dst) {
                     break :blk self.lowerOwningErasure(&pc, dst, node.span);
                 }
-                if (self.diagnostics) |d| {
-                    // An open set is not a protocol conversion at all: the active
-                    // member lives INLINE in the slot, so forming one is ordinary
-                    // value formation and there is nothing an allocator could fund
-                    // (spec: Open Sets — formation).
-                    if (self.isOpenSet(dst)) {
+                if (self.isOpenSet(dst)) {
+                    if (self.diagnostics) |d| {
+                        // An open set is not a protocol conversion at all: the active
+                        // member lives INLINE in the slot, so forming one is ordinary
+                        // value formation and there is nothing an allocator could fund
+                        // (spec: Open Sets — formation).
                         const id = d.addFmtId(.err, node.span, "'.({s}, alloc)' is not a conversion that allocates: '{s}' holds its member inline", .{ self.formatTypeName(dst), self.formatTypeName(dst) });
                         d.addHelpFmt(id, node.span, null, "forming a set value is ordinary value formation — write '.({s})', or let the expected type form it", .{self.formatTypeName(dst)});
-                    } else {
-                        d.addFmt(.err, node.span, "an allocator argument only applies to an owning protocol erasure — '.({s}, alloc)' needs a protocol target and a concrete receiver", .{self.formatTypeName(dst)});
                     }
+                    break :blk self.builder.constUndef(dst);
                 }
-                break :blk self.builder.constUndef(dst);
             }
             const saved_target = self.target_type;
             self.target_type = dst;
@@ -4108,6 +4109,30 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             self.suppress_int_fit_check = true;
             const operand = self.lowerExpr(pc.operand);
             self.suppress_int_fit_check = saved_fit;
+            var named_alloc: ?Ref = null;
+            if (pc.alloc_arg) |an| {
+                if (!self.isLvalueExpr(an)) {
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, an.span, "the allocator argument must be an LVALUE naming an allocator", .{});
+                    break :blk self.builder.constUndef(dst);
+                }
+                const alloc_ty = self.module.types.findByName(self.module.types.internString("Allocator")) orelse {
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, an.span, "'.(T, alloc)' needs the 'Allocator' protocol in scope — #import \"modules/std.sx\"", .{});
+                    break :blk self.builder.constUndef(dst);
+                };
+                const av = self.lowerExpr(an);
+                const avt = self.builder.getRefType(av);
+                named_alloc = if (avt == alloc_ty) av else self.coerceOrErase(av, avt, alloc_ty, an);
+            }
+            const saved_postfix = self.xx_is_postfix;
+            const saved_into = self.into_alloc_ref;
+            self.xx_is_postfix = true;
+            self.into_alloc_ref = named_alloc;
+            defer {
+                self.xx_is_postfix = saved_postfix;
+                self.into_alloc_ref = saved_into;
+            }
             break :blk self.lowerXX(operand, pc.operand);
         },
         .enum_literal => |el| self.lowerEnumLiteral(&el),

@@ -109,8 +109,22 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
                 .operand = operand,
             } }, dst_ty);
         },
-        // Same type: no-op.
-        .no_op => return operand,
+        // Same type: postfix `.(T)` is a no-op. Dest-inferred `xx` is an
+        // error when the operand's own type is already dest; a literal
+        // that adopted dest is truncation, not this case.
+        .no_op => {
+            if (!self.xx_is_postfix and target_explicit) {
+                const natural = self.inferExprType(operand_node);
+                if (natural == src_ty or natural == .unresolved) {
+                    if (self.diagnostics) |d| {
+                        const cs = self.builder.current_span;
+                        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "already '{s}'", .{self.formatTypeName(src_ty)});
+                    }
+                }
+            }
+            if (self.into_alloc_ref != null) return refuseUnusedIntoAlloc(self, dst_ty);
+            return operand;
+        },
         // Concrete → Protocol: build protocol value.
         .erase_protocol => return self.buildProtocolErasure(operand, operand_node, src_ty, dst_ty),
         // Concrete → ?Protocol: erase to the protocol CHILD first — node-aware,
@@ -171,60 +185,68 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         .coerce => {},
     }
 
+    // Dest-inferred `xx` is an error when implicit conversion already applies.
+    if (!self.xx_is_postfix and target_explicit and src_ty != dst_ty) {
+        const plan = self.coercionResolver().classify(src_ty, dst_ty);
+        if (isGlyphFreeImplicit(plan)) {
+            if (self.diagnostics) |d| {
+                const cs = self.builder.current_span;
+                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "already converts to '{s}'", .{self.formatTypeName(dst_ty)});
+            }
+            return self.builder.constUndef(dst_ty);
+        }
+    }
+
     const result = self.coerceExplicit(operand, src_ty, dst_ty);
 
-    // User-space fallback via `impl Into(Target) for Source`. Only fires
-    // when the target was explicitly named (not the .i64 default), src and
-    // dst differ, and the built-in ladder made no progress. Built-ins
-    // always win.
+    // User-space `impl Into(Target)` — dest-inferred `xx` and postfix `.(T)`.
     if (target_explicit and src_ty != dst_ty and result == operand) {
         if (self.tryUserConversion(operand, operand_node, src_ty, dst_ty)) |converted| {
             return converted;
         }
-        // Pointer-target fallback: `xx <expr>` whose surrounding context
-        // expects `*T` (a fn arg slot, a var typed as a pointer-to-aggregate)
-        // can be satisfied by `impl Into(T) for src` plus an implicit
-        // alloca+store on the result. Lets users write
-        // `fn(xx || { ... })` instead of materialising a named Block local
-        // just to take its address.
-        if (!dst_ty.isBuiltin()) {
-            const dst_info = self.module.types.get(dst_ty);
-            if (dst_info == .pointer) {
-                const pointee = dst_info.pointer.pointee;
-                if (pointee != src_ty) {
-                    if (self.tryUserConversion(operand, operand_node, src_ty, pointee)) |converted| {
-                        const slot = self.builder.alloca(pointee);
-                        self.builder.store(slot, converted);
-                        return slot;
-                    }
-                }
+    }
+
+    if (self.into_alloc_ref != null) return refuseUnusedIntoAlloc(self, dst_ty);
+
+    if (target_explicit and src_ty != dst_ty and result == operand) {
+        if (self.diagnostics) |d| {
+            const plan = self.coercionResolver().classify(src_ty, dst_ty);
+            const allowed_reinterpret = plan == .ptr_int_bitcast or plan == .unbox_any or
+                (plan == .none and sameStoreWidth(self, src_ty, dst_ty) and
+                    isAggregateValueKind(self, src_ty) and isAggregateValueKind(self, dst_ty));
+            const pointer_pun = plan == .none and isPointerValueKind(self, src_ty) and
+                (isPointerValueKind(self, dst_ty) or isFunctionType(self, dst_ty));
+            const fn_word = plan == .none and
+                ((self.isIntEx(src_ty) and isFunctionType(self, dst_ty)) or
+                    (isFunctionType(self, src_ty) and self.isIntEx(dst_ty)));
+            const int_pun = plan == .none and self.isIntEx(src_ty) and self.isIntEx(dst_ty) and
+                self.typeBitsEx(src_ty) == self.typeBitsEx(dst_ty);
+            const error_tag = plan == .none and isErrorSetType(self, src_ty) and
+                (self.isIntEx(dst_ty) or isErrorSetType(self, dst_ty));
+            if (!allowed_reinterpret and !pointer_pun and !fn_word and !int_pun and !error_tag) {
+                const cs = self.builder.current_span;
+                d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "no conversion from '{s}' to '{s}'", .{
+                    self.formatTypeName(src_ty), self.formatTypeName(dst_ty),
+                });
             }
         }
     }
-    // Explicit aggregate↔scalar reinterpret, AFTER every conversion declined
-    // (`result == operand` — the builtin ladder made no progress and no user
-    // `Into` applied; the ORDER matters: a spill here must never pre-empt
-    // Into or its visibility diagnostics). The raw SSA passthrough would
-    // hand codegen a value whose IR type contradicts its sx type — fine in
-    // store positions (memory is untyped), but the first VALUE-context use
-    // (icmp, call arg, arithmetic) aborts
-    // the LLVM verifier. Deliver the promised reinterpretation
-    // for real: spill through a zero-initialized slot typed as the larger
-    // side, load back as the target — a genuine dst-typed value in every
-    // context, byte-identical to the store-mediated semantics ("width be
-    // damned" included: the smaller side partially covers/reads).
-    if (src_ty != dst_ty and result == operand and
-        isAggregateValueKind(self, src_ty) != isAggregateValueKind(self, dst_ty))
-    {
-        const src_sz = self.module.types.typeSizeBytes(src_ty);
-        const dst_sz = self.module.types.typeSizeBytes(dst_ty);
-        const slot_ty = if (dst_sz >= src_sz) dst_ty else src_ty;
-        const slot = self.builder.alloca(slot_ty);
-        self.builder.store(slot, self.buildDefaultValue(slot_ty));
-        self.builder.store(slot, operand);
-        return self.builder.load(slot, dst_ty);
-    }
     return result;
+}
+
+fn refuseUnusedIntoAlloc(self: *Lowering, dst_ty: TypeId) Ref {
+    if (self.diagnostics) |d| {
+        const cs = self.builder.current_span;
+        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "an allocator argument only applies to Into or an owning protocol erasure", .{});
+    }
+    return self.builder.constUndef(dst_ty);
+}
+
+fn isGlyphFreeImplicit(plan: @import("../conversions.zig").CoercionResolver.CoercionPlan) bool {
+    return switch (plan) {
+        .widen, .int_to_float, .array_to_slice, .optional_wrap, .void_to_optional, .member_to_open_set, .ptr_to_void, .string_to_cstring, .optional_to_optional, .tuple_elementwise, .struct_to_tuple, .slice_len_convert => true,
+        else => false,
+    };
 }
 
 /// Detect the `xx closure : Block` cast pattern so `tryUserConversion`
@@ -262,7 +284,6 @@ pub fn tryPackImplMatch(
     pack_key: []const u8,
     guard_key: u64,
 ) ?Ref {
-    _ = operand_node;
     // PLANNING: select the matching pack impl + its `convert` (registry).
     const match = self.protocolResolver().matchPackImpl(src_ty, pack_key) orelse return null;
     const entry = match.entry;
@@ -310,8 +331,7 @@ pub fn tryPackImplMatch(
     const func = &self.module.functions.items[@intFromEnum(fid)];
     const ret_ty = func.ret;
     const params = func.params;
-    var single = [_]Ref{operand};
-    const final_args = self.prependCtxIfNeeded(func, single[0..]);
+    const final_args = intoConvertArgs(self, operand, operand_node, func) orelse return operand;
     self.coerceCallArgs(final_args, params);
     return self.builder.call(fid, final_args, ret_ty);
 }
@@ -436,10 +456,31 @@ pub fn tryUserConversion(self: *Lowering, operand: Ref, operand_node: *const Nod
     const func = &self.module.functions.items[@intFromEnum(fid)];
     const ret_ty = func.ret;
     const params = func.params;
-    var single = [_]Ref{operand};
-    const final_args = self.prependCtxIfNeeded(func, single[0..]);
+    const final_args = intoConvertArgs(self, operand, operand_node, func) orelse return operand;
     self.coerceCallArgs(final_args, params);
     return self.builder.call(fid, final_args, ret_ty);
+}
+
+/// `convert(self, alloc)` — named `.(T, alloc)` or `context.allocator`.
+fn intoConvertArgs(self: *Lowering, operand: Ref, operand_node: *const Node, func: *const Function) ?[]Ref {
+    const alloc_ty = self.module.types.findByName(self.module.types.internString("Allocator"));
+    const alloc_ref = if (self.into_alloc_ref) |r| r else self.ambientAllocator() orelse {
+        if (self.diagnostics) |d| {
+            d.addFmt(.err, operand_node.span, "this conversion funds from context.allocator — import std or write '.(T, <alloc>)'", .{});
+        }
+        return null;
+    };
+    var alloc_val = alloc_ref;
+    if (alloc_ty) |aty| {
+        const got = self.builder.getRefType(alloc_val);
+        if (got != aty) {
+            alloc_val = self.coerceOrErase(alloc_val, got, aty, operand_node);
+        }
+    }
+    const pair = self.alloc.alloc(Ref, 2) catch return null;
+    pair[0] = operand;
+    pair[1] = alloc_val;
+    return self.prependCtxIfNeeded(func, pair);
 }
 
 /// True for expression shapes that name an addressable storage location
@@ -893,10 +934,10 @@ pub fn protocolIsIdentity(self: *Lowering, ty: TypeId) bool {
 pub const ErasureOperandShape = enum { lvalue, pointer, rvalue };
 
 /// The DEMAND diagnostic: a value/own protocol value always OWNS its ctx,
-/// and only the explicit postfix spelling `.(P, alloc)` may fund that
-/// copy — an implicit erasure (a bare operand at a `P` target, or `xx`,
-/// the conversion operator) would silently heap-allocate. Demand the
-/// explicit spelling instead, for every operand shape.
+/// and only the explicit postfix spelling `.(P)` / `.(P, alloc)` may fund
+/// that copy — an implicit erasure (a bare operand at a `P` target, or
+/// `xx`, the conversion operator) would silently heap-allocate. Demand
+/// the explicit spelling instead, for every operand shape.
 /// `subject` is the operand's source name when known (identifier), else a
 /// generic subject. Emits and returns a protocol-typed placeholder.
 pub fn demandOwnedErasure(self: *Lowering, dst_ty: TypeId, proto_name: []const u8, operand_node: ?*const Node, shape: ErasureOperandShape) Ref {
@@ -907,18 +948,18 @@ pub fn demandOwnedErasure(self: *Lowering, dst_ty: TypeId, proto_name: []const u
         };
         const named: ?[]const u8 = if (operand_node) |n| (if (n.data == .identifier) n.data.identifier.name else null) else null;
         if (shape == .rvalue) {
-            d.addFmt(.err, span, "the operand is an rvalue and '{s}' values own their storage — an implicit erasure here would silently heap-allocate the copy; write the owning copy (postfix '.({s}, <alloc>)')", .{ proto_name, proto_name });
+            d.addFmt(.err, span, "the operand is an rvalue and '{s}' values own their storage — an implicit erasure here would silently heap-allocate the copy; write the owning copy (postfix '.({s})' or '.({s}, <alloc>)')", .{ proto_name, proto_name, proto_name });
         } else if (shape == .pointer) {
             if (named) |nm| {
-                d.addFmt(.err, span, "'{s}' is a pointer and '{s}' values own their storage — an implicit erasure here would silently alias or copy the pointee; write the snapshot ('{s}.({s}, <alloc>)' copies the pointee through the named allocator) or pass a view ('*{s}' parameter) for transient use", .{ nm, proto_name, nm, proto_name, proto_name });
+                d.addFmt(.err, span, "'{s}' is a pointer and '{s}' values own their storage — an implicit erasure here would silently alias or copy the pointee; write the snapshot ('{s}.({s})' copies the pointee through context.allocator) or pass a view ('*{s}' parameter) for transient use", .{ nm, proto_name, nm, proto_name, proto_name });
             } else {
-                d.addFmt(.err, span, "the operand is a pointer and '{s}' values own their storage — an implicit erasure here would silently alias or copy the pointee; write the snapshot (postfix '.({s}, <alloc>)' copies the pointee through the named allocator) or pass a view ('*{s}' parameter) for transient use", .{ proto_name, proto_name, proto_name });
+                d.addFmt(.err, span, "the operand is a pointer and '{s}' values own their storage — an implicit erasure here would silently alias or copy the pointee; write the snapshot (postfix '.({s})') or pass a view ('*{s}' parameter) for transient use", .{ proto_name, proto_name, proto_name });
             }
         } else {
             if (named) |nm| {
-                d.addFmt(.err, span, "'{s}' is an lvalue and '{s}' values own their storage — an implicit erasure here would silently heap-copy it; write the copy ('{s}.({s}, <alloc>)') or pass a view ('*{s}' parameter) for transient use", .{ nm, proto_name, nm, proto_name, proto_name });
+                d.addFmt(.err, span, "'{s}' is an lvalue and '{s}' values own their storage — an implicit erasure here would silently heap-copy it; write the copy ('{s}.({s})') or pass a view ('*{s}' parameter) for transient use", .{ nm, proto_name, nm, proto_name, proto_name });
             } else {
-                d.addFmt(.err, span, "the operand is an lvalue and '{s}' values own their storage — an implicit erasure here would silently heap-copy it; write the copy (postfix '.({s}, <alloc>)') or pass a view ('*{s}' parameter) for transient use", .{ proto_name, proto_name, proto_name });
+                d.addFmt(.err, span, "the operand is an lvalue and '{s}' values own their storage — an implicit erasure here would silently heap-copy it; write the copy (postfix '.({s})') or pass a view ('*{s}' parameter) for transient use", .{ proto_name, proto_name, proto_name });
             }
         }
     }
@@ -1577,6 +1618,11 @@ fn isFunctionType(self: *Lowering, ty: TypeId) bool {
     return self.module.types.get(ty) == .function;
 }
 
+fn isErrorSetType(self: *Lowering, ty: TypeId) bool {
+    if (ty.isBuiltin()) return false;
+    return self.module.types.get(ty) == .error_set;
+}
+
 /// A type whose values are a raw ADDRESS at the IR level, for the pointer-pun
 /// test above. Optional and erased values use separate representation checks.
 pub fn isPointerValueKind(self: *Lowering, ty: TypeId) bool {
@@ -1677,6 +1723,16 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                         self.xx_passthrough_refs.put(retyped, {}) catch {};
                         return retyped;
                     }
+                    // A bare function value is an address word (`func_ref` typed
+                    // i64). Explicit dest `.(F)` / `xx` retypes that word as `F`.
+                    if (src_ty != dst_ty and
+                        ((self.isIntEx(src_ty) and isFunctionType(self, dst_ty)) or
+                            (isFunctionType(self, src_ty) and self.isIntEx(dst_ty))))
+                    {
+                        const retyped = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
+                        self.xx_passthrough_refs.put(retyped, {}) catch {};
+                        return retyped;
+                    }
                     // Same-width integer pair (`i64` ↔ `u64`, `i64` ↔ `usize`):
                     // the dest type is the result type.
                     if (src_ty != dst_ty and self.isIntEx(src_ty) and self.isIntEx(dst_ty) and
@@ -1685,6 +1741,32 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                         const retyped = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
                         self.xx_passthrough_refs.put(retyped, {}) catch {};
                         return retyped;
+                    }
+                    // Error-set tag word is an i32. Integer dests widen it;
+                    // another error set keeps the tag word.
+                    if (src_ty != dst_ty and isErrorSetType(self, src_ty)) {
+                        if (self.isIntEx(dst_ty)) {
+                            const tag = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = .i32 } }, .i32);
+                            const converted = self.coerceMode(tag, .i32, dst_ty, .explicit);
+                            self.xx_passthrough_refs.put(converted, {}) catch {};
+                            return converted;
+                        }
+                        if (isErrorSetType(self, dst_ty)) {
+                            const retyped = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
+                            self.xx_passthrough_refs.put(retyped, {}) catch {};
+                            return retyped;
+                        }
+                    }
+                    // Same-size aggregate pun (string ↔ @Slice, closure ↔ @Closure).
+                    if (src_ty != dst_ty and isAggregateValueKind(self, src_ty) and
+                        isAggregateValueKind(self, dst_ty) and sameStoreWidth(self, src_ty, dst_ty))
+                    {
+                        const slot = self.builder.alloca(dst_ty);
+                        self.builder.store(slot, self.buildDefaultValue(dst_ty));
+                        self.builder.store(slot, val);
+                        const loaded = self.builder.load(slot, dst_ty);
+                        self.xx_passthrough_refs.put(loaded, {}) catch {};
+                        return loaded;
                     }
                     self.xx_passthrough_refs.put(val, {}) catch {};
                 },

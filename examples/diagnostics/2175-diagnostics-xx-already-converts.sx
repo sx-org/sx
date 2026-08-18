@@ -1,0 +1,10 @@
+// Dest-inferred `xx` where an implicit conversion already applies is an
+// error. `*T` loses its pointee to `*void` without a glyph.
+#import "modules/std.sx";
+
+main :: () {
+    n := 1;
+    p := *n;
+    raw : *void = xx p;
+    print("{}\n", raw != null);
+}

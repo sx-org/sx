@@ -1,0 +1,5 @@
+error: already converts to '*void'
+  --> examples/diagnostics/2175-diagnostics-xx-already-converts.sx:8:19
+   |
+ 8 |     raw : *void = xx p;
+   |                   ^^^^

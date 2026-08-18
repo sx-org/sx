@@ -1,0 +1,11 @@
+error: no conversion from 'i64' to 'Box'
+  --> examples/diagnostics/2176-diagnostics-no-conversion.sx:8:10
+   |
+ 8 |     b := x.(Box);
+   |          ^^^^^^^
+
+error: field 'n' not found on type 'i64'
+  --> examples/diagnostics/2176-diagnostics-no-conversion.sx:9:19
+   |
+ 9 |     print("{}\n", b.n);
+   |                   ^^^

@@ -439,8 +439,8 @@ test "a generic monomorph keeps the declaration's convention and tail" {
         \\    ap: @VaList = ---;
         \\    @va_start(*ap);
         \\    defer @va_end(*ap);
-        \\    total: i64 = xx first;
-        \\    total += xx @va_arg(i32, *ap);
+        \\    total: i64 = first;
+        \\    total += @va_arg(i32, *ap);
         \\    return total;
         \\}
         \\main :: () -> i64 { return read_tail(i32, 40, 2); }

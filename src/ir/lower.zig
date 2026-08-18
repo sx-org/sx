@@ -855,6 +855,11 @@ pub const Lowering = struct {
     comptime_type_list_aliases: std.StringHashMap([]const u8),
     diagnostics: ?*errors.DiagnosticList = null, // error reporting with source locations
     xx_reentrancy: std.AutoHashMap(u64, void), // (src_ty, dst_ty) pairs currently being resolved through user-space Into; prevents infinite monomorphisation when a convert body re-enters the same xx
+    /// True while lowering postfix `expr.(T)` — dest is written on the value.
+    /// Prefix `xx` uses the slot dest and is an error when implicit already applies.
+    xx_is_postfix: bool = false,
+    /// Allocator for `Into` / `.(T, alloc)`. Null means `context.allocator`.
+    into_alloc_ref: ?Ref = null,
     /// Whole-program-converged inferred error sets: top-level
     /// bare-`!` function name → its sorted escape-tag ids (literal raises +
     /// pure-failable `try` edges, fix-pointed across the call graph). The
@@ -3600,6 +3605,7 @@ pub const Lowering = struct {
     pub const selectUfcsGenericByReceiver = lower_call.selectUfcsGenericByReceiver;
     pub const diagnoseMissingContext = lower_call.diagnoseMissingContext;
     pub const allocViaContext = lower_call.allocViaContext;
+    pub const ambientAllocator = lower_call.ambientAllocator;
     pub const callExtern = lower_call.callExtern;
     pub const prependCtxIfNeeded = lower_call.prependCtxIfNeeded;
     pub const resolveFuncByName = lower_call.resolveFuncByName;

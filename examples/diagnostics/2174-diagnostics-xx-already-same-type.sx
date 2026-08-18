@@ -1,0 +1,9 @@
+// Dest-inferred `xx` on a value that is already the slot type is an error.
+// Write the value. Postfix `n.(i64)` is a no-op.
+#import "modules/std.sx";
+
+main :: () {
+    n : i64 = 1;
+    m : i64 = xx n;
+    print("{}\n", m);
+}
