@@ -1,0 +1,14 @@
+Box :: struct {
+    private secret: i64 = 0;
+    open: i64 = 0;
+}
+
+U :: union {
+    b: Box;
+    f: f64;
+}
+
+T :: enum {
+    b: Box;
+    f: f64;
+}

@@ -9,11 +9,12 @@ pub const Span = struct {
 /// as a union's anonymous `__anon_N` field.
 pub const no_source_start: u32 = std.math.maxInt(u32);
 
-/// Module-scope declaration visibility. `.private` restricts the name to its
-/// declaring SOURCE FILE: it stays fully usable throughout that file (forward
-/// references included) but is never carried by flat imports and never
-/// selectable through another module's namespace. Meaningful only on
-/// module-scope declaration nodes; every other node stays `.public`.
+/// File-local visibility. `.private` restricts the name to its declaring
+/// SOURCE FILE: it stays fully usable throughout that file (forward
+/// references included) but is never carried by flat imports, never
+/// selectable through another module's namespace, and never mentionable as a
+/// struct field from another file. Set on module-scope declaration nodes and
+/// on `StructDecl.field_visibilities`; every other node stays `.public`.
 pub const Visibility = enum { public, private };
 
 pub const Node = struct {
@@ -598,6 +599,7 @@ pub const StructDecl = struct {
     field_name_starts: []const u32,
     field_types: []const *Node, // type_expr nodes
     field_defaults: []const ?*Node, // default value per field, null if none
+    field_visibilities: []const Visibility = &.{},
     type_params: []const StructTypeParam = &.{},
     using_entries: []const UsingEntry = &.{},
     methods: []const *Node = &.{}, // fn_decl nodes for struct methods

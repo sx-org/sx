@@ -1,0 +1,39 @@
+Box :: struct {
+    private secret: i64 = 0;
+
+    get :: (self: *Box) -> i64 { self.secret }
+    set :: (self: *Box, v: i64) { self.secret = v; }
+}
+
+Peek :: struct {
+    #using Box;
+    doubled :: (self: *Peek) -> i64 { self.secret * 2 }
+}
+
+Wrap :: struct ($T: Type) {
+    #using Box;
+    t: T = ---;
+}
+
+// A method may carry the name of a private data field: the call spelling
+// dispatches to the method, so the foreign caller never mentions the field.
+Coll :: struct {
+    private m: i64 = 7;
+
+    m :: (self: *Coll, v: i64) -> i64 { v * 2 + self.m }
+}
+
+make_coll :: () -> Coll { Coll{} }
+
+promoted_sum :: (n: i64) -> i64 {
+    p := Peek{ secret = n };
+    w : Wrap(i64) = ---;
+    w.secret = n;
+    p.doubled() + w.secret
+}
+
+same_file_sum :: (n: i64) -> i64 {
+    local := Box{ secret = n };
+    local.secret += 1;
+    local.secret
+}

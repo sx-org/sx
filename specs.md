@@ -273,7 +273,8 @@ GLSL;
 
 > Note: `raise`, `try`, `catch`, `onfail`, and `error` are the error-handling keywords. `??` supplies a failable's default, alongside its optional one. See [§12 Error Handling](#12-error-handling).
 
-> Note: `private` is the module-scope declaration visibility modifier — see
+> Note: `private` is the file-local visibility modifier for module-scope
+> declarations and struct fields — see
 > [§9 Module-Scope Visibility](#9-modules--imports). `` `private `` (backtick
 > raw identifier) and the `.private` member spelling remain legal.
 
@@ -5720,10 +5721,11 @@ Collision rules mirror ordinary declarations:
 
 `#import c { ... }` aliases (`tc :: #import c { ... }`) carry the same way.
 
-### Module-Scope Visibility: `private`
+### Visibility: `private`
 
-`private` restricts a module-scope declaration to its declaring **source
-file**. It is a prefix on identifier-headed top-level declarations:
+`private` restricts a name to its declaring **source file**. It is a prefix on
+identifier-headed top-level declarations and on a named struct declaration's
+fields:
 
 ```sx
 private Helper :: (x: i64) -> i64 { return x * 2; }
@@ -5731,6 +5733,7 @@ private State  :: struct { n: i64; }
 private LIMIT  :: 21;
 private counter : i64 = 0;
 private dep    :: #import "dependency.sx";
+File    :: struct { private fd: i64 = -1; }
 ```
 
 It applies to functions and type functions, structs/enums/unions/error sets,
@@ -5760,17 +5763,35 @@ Semantics:
 - **Privacy authority is the exact declaring source file**, not a directory
   import: two files aggregated by a directory import cannot use each other's
   private names.
-- **Identifier visibility only.** `private` does not make struct fields
-  opaque; a value of a privately-declared type exposed through a public alias
-  still has accessible fields.
+- **A private field is a name.** `private fd: i64 = -1;` on a struct field is
+  file-local. Another file cannot mention it (`x.fd`, `x.fd = …`,
+  `File{ fd = 3 }`, `.{ fd = 3 }`, `.variant{ fd = 3 }`, `[File_const.fd]T`),
+  and a mention includes `x.fd(…)` when `fd` is a callable field. Another file
+  can still produce a value without naming the field: a positional init
+  (`File{ 3 }`), `File{}` defaults, `File{ --- }` / `---`, and copy assignment.
+  A value spread (`f(..x)`), an index (`x[0]`), and reflection (`print("{}", x)`,
+  `struct_field_value`) read the layout rather than the name, so none is a
+  mention. Same-file methods, free functions, and literals may name the field.
+  A method whose name matches a private field still dispatches: `x.fd(…)` is a
+  mention only when `fd` resolves to a field.
+  Authority is the source file that declares the struct type.
+- **A promoted union member answers to its payload's file.** A union whose
+  variant is a named struct promotes that struct's members; a private one is
+  nameable only from the file declaring the payload.
+- **A `#using` promotion carries the base's authority.** A struct that promotes
+  a base with a private field gains the field's storage, not the right to name
+  it: only the base's declaring file may.
 
-Placement rules — `private` is rejected on: locals, parameters, struct/union/
-runtime-class fields, enum cases and error tags, struct/protocol/impl methods
-and requirements, flat `#import`, `impl` blocks, `#context_extend`, `#using`,
-standalone `@run`, global `asm`, and `#framework`. Top-level `inline if`
-branches and `inline for` bodies MAY declare private globals (their statements
-are module-scope after comptime flattening); function and method bodies may
-not.
+Placement rules — `private` is allowed on identifier-headed module-scope
+declarations and on the fields of a NAMED struct declaration (a generic
+template included). It is rejected on: anonymous struct fields (a field's
+inline `struct { … }`, a type function's returned `struct { … }`), locals,
+parameters, union and runtime-class fields, enum cases and error tags,
+struct/protocol/impl methods and requirements, flat `#import`, `impl` blocks,
+`#context_extend`, `#using`, standalone `@run`, global `asm`, and `#framework`.
+Top-level `inline if` branches and `inline for` bodies MAY declare private
+globals (their statements are module-scope after comptime flattening); function
+and method bodies may not.
 
 `` `private `` (backtick raw identifier) remains a legal name, and the
 `.private` member spelling remains legal after a dot.

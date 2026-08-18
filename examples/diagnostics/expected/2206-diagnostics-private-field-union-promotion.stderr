@@ -1,0 +1,23 @@
+error: field 'secret' is private to its declaring file
+  --> examples/diagnostics/2206-diagnostics-private-field-union-promotion.sx:10:5
+   |
+10 |     a.secret = 1;
+   |     ^^^^^^^^
+
+error: field 'secret' is private to its declaring file
+  --> examples/diagnostics/2206-diagnostics-private-field-union-promotion.sx:11:5
+   |
+11 |     b.secret = 2;
+   |     ^^^^^^^^
+
+error: field 'secret' is private to its declaring file
+  --> examples/diagnostics/2206-diagnostics-private-field-union-promotion.sx:12:13
+   |
+12 |     return (a.secret + b.secret).(i32);
+   |             ^^^^^^^^
+
+error: field 'secret' is private to its declaring file
+  --> examples/diagnostics/2206-diagnostics-private-field-union-promotion.sx:12:24
+   |
+12 |     return (a.secret + b.secret).(i32);
+   |                        ^^^^^^^^

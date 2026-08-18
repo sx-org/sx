@@ -279,14 +279,11 @@ pub const ExprTyper = struct {
                     if (u_fields2) |ufields| {
                         for (ufields) |f| {
                             if (f.name == field_name_id) return if (is_opt_chain) self.l.optionalOfFlattened(f.ty) else f.ty;
-                            // Check promoted fields from anonymous struct variants
-                            if (!f.ty.isBuiltin()) {
-                                const fi = self.l.module.types.get(f.ty);
-                                if (fi == .@"struct") {
-                                    for (fi.@"struct".fields) |sf| {
-                                        if (sf.name == field_name_id) return if (is_opt_chain) self.l.optionalOfFlattened(sf.ty) else sf.ty;
-                                    }
-                                }
+                            if (!self.l.payloadPromotes(f.ty)) continue;
+                            // Members promoted out of a struct variant
+                            switch (self.l.lookupField(f.ty, fa.field)) {
+                                .hit, .private => |h| return if (is_opt_chain) self.l.optionalOfFlattened(h.ty) else h.ty,
+                                .missing => {},
                             }
                         }
                     }
@@ -317,9 +314,9 @@ pub const ExprTyper = struct {
                         }
                     }
                     // Check struct fields
-                    const fields = self.l.getStructFields(obj_ty);
-                    for (fields) |f| {
-                        if (f.name == field_name_id) return if (is_opt_chain) self.l.optionalOfFlattened(f.ty) else f.ty;
+                    switch (self.l.lookupField(obj_ty, fa.field)) {
+                        .hit, .private => |h| return if (is_opt_chain) self.l.optionalOfFlattened(h.ty) else h.ty,
+                        .missing => {},
                     }
                     // `#get` property accessor through an optional chain
                     // (`obj?.getter`): resolve the getter on the dereferenced

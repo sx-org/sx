@@ -1,0 +1,11 @@
+// A private field is not nameable as a compile-time constant leaf from another
+// file. The public field of the same const still folds, so the refusal is the
+// visibility rule and not a lost const-fold.
+
+#import "2204-diagnostics-private-field-const-dim/c.sx";
+
+main :: () -> i32 {
+    bad : [C.cap]i64 = ---;
+    ok : [C.n]i64 = ---;
+    return (bad.len + ok.len).(i32);
+}

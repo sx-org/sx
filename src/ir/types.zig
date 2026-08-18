@@ -126,6 +126,7 @@ pub const TypeInfo = union(enum) {
         pub const Field = struct {
             name: StringId,
             ty: TypeId,
+            visibility: ast.Visibility = .public,
         };
     };
 

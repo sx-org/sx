@@ -1,0 +1,11 @@
+error: field 'cap' is private to its declaring file
+  --> examples/diagnostics/2204-diagnostics-private-field-const-dim.sx:8:12
+   |
+ 8 |     bad : [C.cap]i64 = ---;
+   |            ^^^^^
+
+error: array dimension must be a compile-time integer constant
+  --> examples/diagnostics/2204-diagnostics-private-field-const-dim.sx:8:12
+   |
+ 8 |     bad : [C.cap]i64 = ---;
+   |            ^^^^^

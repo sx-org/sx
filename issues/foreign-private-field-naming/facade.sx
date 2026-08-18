@@ -1,7 +1,7 @@
 #import "internal.sx";
 
 Wrapper :: struct {
-    state: Secret;
+    private state: Secret;
 
     init :: (value: i64) -> Wrapper {
         Wrapper{ state = make_secret(value) }

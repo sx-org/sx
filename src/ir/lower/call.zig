@@ -160,13 +160,12 @@ fn receiverProvidesMethod(self: *Lowering, ty: TypeId, name: []const u8) bool {
     // A CALLABLE field of that name: the path calls the field. A field of another
     // type has no arm at all, so declining to it would leave the call to the very
     // dispatch this gate exists to avoid.
-    if (!ty.isBuiltin()) {
-        const field_name_id = self.module.types.internString(name);
-        for (self.getStructFields(ty)) |f| {
-            if (f.name != field_name_id or f.ty.isBuiltin()) continue;
-            const fti = self.module.types.get(f.ty);
+    switch (self.lookupField(ty, name)) {
+        .hit, .private => |h| if (!h.ty.isBuiltin()) {
+            const fti = self.module.types.get(h.ty);
             if (fti == .closure or fti == .function) return true;
-        }
+        },
+        .missing => {},
     }
 
     if (self.plainStructMethod(ty, name) != null) return true;
@@ -1920,13 +1919,12 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
 
             // Check if field is a closure type — call as closure, not method
-            if (!obj_ty.isBuiltin()) {
-                const field_name_id = self.module.types.internString(fa.field);
-                const struct_fields = self.getStructFields(obj_ty);
-                for (struct_fields, 0..) |f, fi| {
-                    if (f.name == field_name_id and !f.ty.isBuiltin()) {
-                        const fti = self.module.types.get(f.ty);
+            switch (self.lookupField(obj_ty, fa.field)) {
+                .hit, .private => |h| {
+                    if (!h.ty.isBuiltin()) {
+                        const fti = self.module.types.get(h.ty);
                         if (fti == .closure) {
+                            if (self.mentionField(obj_ty, fa.field, c.callee.span) == .private) return Ref.none;
                             // Exact-arity + spread-placeholder validation
                             // against the field's closure TYPE.
                             if (checkCallableValueArgs(self, "closure", fa.field, args.items, .{ .fixed = fti.closure.params.len, .pack_start = fti.closure.pack_start }, c, c.callee.span)) return Ref.none;
@@ -1936,7 +1934,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             if (oi == .pointer) {
                                 agg = self.builder.load(obj, oi.pointer.pointee);
                             }
-                            const closure_val = self.builder.structGet(agg, @intCast(fi), f.ty);
+                            const closure_val = self.builder.structGet(agg, h.index, h.ty);
                             // Coerce user args to the closure's param types.
                             coerceClosureCallArgs(self, args.items, fti.closure.params);
                             // Prepend ctx for sx-side closure call ABI.
@@ -1953,6 +1951,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         // mirroring the bare-identifier / global fn-pointer paths
                         // (ctx prepend gated on the fn-ptr's own ABI).
                         if (fti == .function) {
+                            if (self.mentionField(obj_ty, fa.field, c.callee.span) == .private) return Ref.none;
                             // Arity + spread-placeholder validation
                             // against the field's fn-pointer TYPE.
                             if (checkCallableValueArgs(self, "function pointer", fa.field, args.items, fnPointerShape(fti.function), c, c.callee.span)) return Ref.none;
@@ -1961,11 +1960,11 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             if (oi == .pointer) {
                                 agg = self.builder.load(obj, oi.pointer.pointee);
                             }
-                            const fp_val = self.builder.structGet(agg, @intCast(fi), f.ty);
+                            const fp_val = self.builder.structGet(agg, h.index, h.ty);
                             coerceFnPointerCallArgs(self, args.items, fti.function);
                             var final_args = std.ArrayList(Ref).empty;
                             defer final_args.deinit(self.alloc);
-                            if (self.fnPtrTypeWantsCtx(f.ty)) {
+                            if (self.fnPtrTypeWantsCtx(h.ty)) {
                                 final_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
                             }
                             final_args.appendSlice(self.alloc, args.items) catch unreachable;
@@ -1973,7 +1972,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             return self.builder.emit(.{ .call_indirect = .{ .callee = fp_val, .args = owned } }, fti.function.ret);
                         }
                     }
-                }
+                },
+                .missing => {},
             }
 
             // Receiver is an OPEN SET (or a pointer to one) and the field names a
@@ -5669,16 +5669,13 @@ pub fn resolveCallParamTypes(
         // Closure-typed struct field: `c.on(args)` lowers to call_closure on
         // the field value. Pick up the callee's param types from the closure
         // type so each arg gets the right target_type during lowering.
-        if (!obj_ty.isBuiltin()) {
-            const field_name_id = self.module.types.internString(fa.field);
-            const struct_fields = self.getStructFields(obj_ty);
-            for (struct_fields) |f| {
-                if (f.name == field_name_id and !f.ty.isBuiltin()) {
-                    const fti = self.module.types.get(f.ty);
-                    if (fti == .closure) return fti.closure.params;
-                    if (fti == .function) return fti.function.params;
-                }
-            }
+        switch (self.lookupField(obj_ty, fa.field)) {
+            .hit, .private => |h| if (!h.ty.isBuiltin()) {
+                const fti = self.module.types.get(h.ty);
+                if (fti == .closure) return fti.closure.params;
+                if (fti == .function) return fti.function.params;
+            },
+            .missing => {},
         }
         if (self.getStructTypeName(obj_ty)) |sname| {
             // Runtime-class receiver (`@ObjcClass` / `@JniClass` / etc.):

@@ -97,7 +97,7 @@ pub fn staticStructHead(self: *Lowering, node: *const Node) StaticStructHead {
 /// `getStructTypeName` and the call dispatch path. Generic-struct instances use
 /// their separate author stamp and therefore intentionally do not appear in
 /// this map.
-fn plainStructOwnerType(self: *Lowering, ty: TypeId) TypeId {
+pub fn plainStructOwnerType(self: *Lowering, ty: TypeId) TypeId {
     var owner_ty = ty;
     if (!owner_ty.isBuiltin()) {
         const info = self.module.types.get(owner_ty);
@@ -864,6 +864,26 @@ pub fn registerGenericStructAlias(self: *Lowering, alias_name: []const u8, tmpl:
     self.putTypeAlias(self.current_source_file, alias_name, inst_id);
 }
 
+pub const PromotedPrivate = struct { name: types.StringId, source: ?[]const u8 };
+
+/// Note a private field a `#using` promotion is copying out of `used_ty`, so
+/// the promoted copy keeps answering to the base's declaring file.
+pub fn notePromotedPrivate(
+    self: *Lowering,
+    out: *std.ArrayList(PromotedPrivate),
+    used_ty: TypeId,
+    f: types.TypeInfo.StructInfo.Field,
+) void {
+    if (f.visibility != .private) return;
+    out.append(self.alloc, .{ .name = f.name, .source = self.fieldDeclaringSource(used_ty, f.name) }) catch unreachable;
+}
+
+pub fn recordPromotedPrivate(self: *Lowering, struct_ty: TypeId, promoted: []const PromotedPrivate) void {
+    for (promoted) |p| {
+        self.promoted_field_authority.put(.{ .ty = struct_ty, .name = p.name }, p.source) catch @panic("out of memory");
+    }
+}
+
 pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_file: ?[]const u8) void {
     const table = &self.module.types;
     const name_id = table.internString(sd.name);
@@ -921,6 +941,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     // field's declared default lands at its flattened position.
     var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
     var layout_defaults = std.ArrayList(?*const Node).empty;
+    var promoted_private = std.ArrayList(PromotedPrivate).empty;
     var field_idx: usize = 0;
     var using_idx: usize = 0;
     const using_authority: ?[]const u8 = source_file orelse self.current_source_file;
@@ -933,6 +954,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
                 const used_info = table.get(used_ty);
                 if (used_info == .@"struct") {
                     for (used_info.@"struct".fields) |f| {
+                        notePromotedPrivate(self, &promoted_private, used_ty, f);
                         fields.append(self.alloc, f) catch unreachable;
                         layout_defaults.append(self.alloc, null) catch unreachable;
                     }
@@ -949,6 +971,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
             fields.append(self.alloc, .{
                 .name = table.internString(sd.field_names[field_idx]),
                 .ty = field_ty,
+                .visibility = if (field_idx < sd.field_visibilities.len) sd.field_visibilities[field_idx] else .public,
             }) catch unreachable;
             layout_defaults.append(self.alloc, if (field_idx < sd.field_defaults.len) sd.field_defaults[field_idx] else null) catch unreachable;
             field_idx += 1;
@@ -961,6 +984,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
             const used_info = table.get(used_ty);
             if (used_info == .@"struct") {
                 for (used_info.@"struct".fields) |f| {
+                    notePromotedPrivate(self, &promoted_private, used_ty, f);
                     fields.append(self.alloc, f) catch unreachable;
                     layout_defaults.append(self.alloc, null) catch unreachable;
                 }
@@ -997,6 +1021,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     // calls must select through this TypeId-keyed provenance, never through the
     // process-global `StructName.method` spelling.
     self.plain_struct_authors.put(struct_ty, .{ .decl = sd, .source = source_file orelse self.current_source_file }) catch @panic("out of memory");
+    recordPromotedPrivate(self, struct_ty, promoted_private.items);
 
     // Store field defaults for struct literal lowering — the LAYOUT-ALIGNED
     // array, keyed by the concrete TypeId (authoritative) and by

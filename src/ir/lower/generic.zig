@@ -2455,6 +2455,7 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
 
     var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
     var instance_defaults = std.ArrayList(?*Node).empty;
+    var promoted_private = std.ArrayList(Lowering.PromotedPrivate).empty;
     var field_idx: usize = 0;
     var using_idx: usize = 0;
     while (field_idx < tmpl.field_names.len or using_idx < tmpl.decl.using_entries.len) {
@@ -2466,6 +2467,7 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
             if (self.resolveUsingBase(ue.type_name, self.current_source_file, tmpl.name)) |used_ty| {
                 const used_info = table.get(used_ty);
                 if (used_info == .@"struct") for (used_info.@"struct".fields) |f| {
+                    self.notePromotedPrivate(&promoted_private, used_ty, f);
                     fields.append(self.alloc, f) catch unreachable;
                     instance_defaults.append(self.alloc, null) catch unreachable;
                 };
@@ -2477,6 +2479,7 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
         fields.append(self.alloc, .{
             .name = table.internString(tmpl.field_names[field_idx]),
             .ty = field_ty,
+            .visibility = if (field_idx < tmpl.decl.field_visibilities.len) tmpl.decl.field_visibilities[field_idx] else .public,
         }) catch unreachable;
         instance_defaults.append(self.alloc, if (field_idx < tmpl.decl.field_defaults.len) tmpl.decl.field_defaults[field_idx] else null) catch unreachable;
         field_idx += 1;
@@ -2486,6 +2489,7 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
         if (self.resolveUsingBase(ue.type_name, self.current_source_file, tmpl.name)) |used_ty| {
             const used_info = table.get(used_ty);
             if (used_info == .@"struct") for (used_info.@"struct".fields) |f| {
+                self.notePromotedPrivate(&promoted_private, used_ty, f);
                 fields.append(self.alloc, f) catch unreachable;
                 instance_defaults.append(self.alloc, null) catch unreachable;
             };
@@ -2505,6 +2509,7 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
     const info: types.TypeInfo = .{ .@"struct" = .{ .name = name_id, .fields = fields.items } };
     const id = if (table.findByName(name_id)) |existing| existing else table.intern(info);
     table.updatePreservingKey(id, info);
+    self.recordPromotedPrivate(id, promoted_private.items);
 
     // Bind the template name to this concrete instance so a method's
     // `self: *Combined` (the template name) resolves to `*Combined__i64_i64`

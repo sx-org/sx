@@ -28,6 +28,16 @@ handle :: (e: Ev) -> i64 {
     r
 }
 
+// The two payload fields, weighted apart, so each reads back from the slot it
+// names.
+split :: (e: Ev) -> i64 {
+    r := match e {
+        case .mouse: |m| { m.a * 10 + m.b }
+        else: -1;
+    };
+    r
+}
+
 main :: () {
     // (a) call-shaped construction, payloadful — reaches the .key arm.
     print("{}\n", handle(Ev.key(5)));        // 105
@@ -38,6 +48,10 @@ main :: () {
     print("{}\n", handle(k2));               // 107
     // Struct-payload variant, flattened fields.
     print("{}\n", handle(Ev.mouse{ 3, 4 })); // 7
+    // A named payload init binds by NAME, so an out-of-order spelling and a
+    // partial one each land in the field they name.
+    print("{}\n", split(Ev.mouse{ b = 3, a = 4 })); // 43
+    print("{}\n", split(Ev.mouse{ b = 5 }));        // 5
     // Payload-less variant still dispatches.
     print("{}\n", handle(Ev.quit));          // 1
 

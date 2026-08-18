@@ -429,6 +429,55 @@ test "parser: #context_extend rejected in statement position" {
     try std.testing.expect(std.mem.indexOf(u8, parser.err_msg.?, "top level") != null);
 }
 
+test "parser: private stamps struct fields" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\Box :: struct {
+        \\    private secret: i64 = 0;
+        \\    open: i64;
+        \\    private a, b: i64 = 1;
+        \\}
+        \\
+    ;
+    var p = try Parser.init(alloc, src);
+    const root = try p.parse();
+    const sd = root.data.root.decls[0].data.struct_decl;
+    try std.testing.expectEqual(@as(usize, 4), sd.field_names.len);
+    try std.testing.expectEqual(ast.Visibility.private, sd.field_visibilities[0]);
+    try std.testing.expectEqual(ast.Visibility.public, sd.field_visibilities[1]);
+    try std.testing.expectEqual(ast.Visibility.private, sd.field_visibilities[2]);
+    try std.testing.expectEqual(ast.Visibility.private, sd.field_visibilities[3]);
+}
+
+// A named struct declaration is the only field position `private` takes: an
+// anonymous body — a field's inline struct, a type function's returned struct —
+// is interned by shape and has no declaring file to answer to.
+test "parser: private rejected on anonymous struct fields, methods, constants, union and runtime-class fields, enum cases" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const cases = [_]struct { src: [:0]const u8, want: []const u8 }{
+        .{ .src = "S :: struct { private m :: (self: *S) -> i64 { return 0; } }", .want = "struct method or constant" },
+        .{ .src = "S :: struct { private C :: 1; }", .want = "struct method or constant" },
+        .{ .src = "S :: struct { private C: i64: 1; }", .want = "struct constant" },
+        .{ .src = "S :: struct { x: struct { private q: i64; }; }", .want = "anonymous struct field" },
+        .{ .src = "F :: ($T: Type) -> Type { return struct { private x: T; }; }", .want = "anonymous struct field" },
+        .{ .src = "U :: union { private x: i64; }", .want = "union field" },
+        .{ .src = "C :: @JniClass(\"pkg/C\") { private x: i64; }", .want = "runtime-class field" },
+        .{ .src = "E :: enum { private A; B; }", .want = "enum case" },
+    };
+    for (cases) |c| {
+        var p = try Parser.init(alloc, c.src);
+        try std.testing.expectError(error.ParseError, p.parse());
+        try std.testing.expect(p.err_msg != null);
+        try std.testing.expect(std.mem.indexOf(u8, p.err_msg.?, c.want) != null);
+    }
+}
+
 // `private` prefixes an identifier-headed module-scope declaration and stamps
 // the node's visibility; every declaration kind takes it uniformly.
 test "parser: private stamps module-scope declarations" {

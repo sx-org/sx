@@ -1,0 +1,13 @@
+// A union promotes the members of a struct variant, and a promoted member
+// answers to the payload's declaring file — on both union kinds, read and
+// write.
+
+um :: #import "2206-diagnostics-private-field-union-promotion/u.sx";
+
+main :: () -> i32 {
+    a : um.U = ---;
+    b : um.T = ---;
+    a.secret = 1;
+    b.secret = 2;
+    return (a.secret + b.secret).(i32);
+}
