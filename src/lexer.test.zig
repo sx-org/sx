@@ -261,7 +261,7 @@ test "lex hash_context_extend" {
     try std.testing.expectEqual(Tag.invalid, tl2.tags[0]);
 }
 
-// `private` is the module-scope visibility keyword; the backtick escape keeps
+// `private` is the file-local visibility keyword; the backtick escape keeps
 // the literal spelling usable as an identifier, and a longer identifier
 // (`privates`) never matches the keyword.
 test "lex private keyword; backtick escape stays identifier" {

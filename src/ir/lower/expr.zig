@@ -412,6 +412,8 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                 if (!matched) {
                     if (self.diagnostics) |d|
                         d.addFmt(.err, fi.value.span, "field '{s}' not found on type '{s}'", .{ fname, self.formatTypeName(ty) });
+                } else {
+                    _ = self.diagPrivateField(ty, fname, fi.value.span);
                 }
             }
             const val = self.lowerExpr(fi.value);
@@ -585,6 +587,40 @@ pub fn lowerInitBlock(self: *Lowering, struct_val: Ref, ty: TypeId, ib: *const N
 
     // Load and return the (possibly modified) struct value
     return self.builder.load(slot, ty);
+}
+
+pub fn structDeclaringSource(self: *Lowering, ty: TypeId) ?[]const u8 {
+    var owner = ty;
+    if (!owner.isBuiltin()) {
+        const info = self.module.types.get(owner);
+        if (info == .pointer) owner = info.pointer.pointee;
+    }
+    if (self.plain_struct_authors.get(owner)) |author| return author.source;
+    const name = self.getStructTypeName(owner) orelse return null;
+    if (self.struct_instance_author.contains(name)) {
+        const tmpl_name = self.struct_instance_template.get(name) orelse return null;
+        const tmpl = self.program_index.struct_template_map.get(tmpl_name) orelse return null;
+        return tmpl.source_file;
+    }
+    return null;
+}
+
+pub fn diagPrivateField(self: *Lowering, ty: TypeId, field: []const u8, span: ast.Span) bool {
+    const wanted = self.module.types.internString(field);
+    var vis: ast.Visibility = .public;
+    for (self.getStructFields(ty)) |f| {
+        if (f.name == wanted) {
+            vis = f.visibility;
+            break;
+        }
+    }
+    if (vis != .private) return false;
+    const declaring = self.structDeclaringSource(ty) orelse return false;
+    const from = self.current_source_file orelse return false;
+    if (std.mem.eql(u8, from, declaring)) return false;
+    if (self.diagnostics) |d|
+        d.addFmt(.err, span, "field '{s}' is private to its declaring file", .{field});
+    return true;
 }
 
 /// Get the field list for a struct TypeId, or empty if not a struct.
@@ -1815,6 +1851,7 @@ pub fn lowerFieldAccessOnType(self: *Lowering, obj: Ref, obj_ty: TypeId, field: 
     const struct_fields = self.getStructFields(obj_ty);
     for (struct_fields, 0..) |f, i| {
         if (f.name == field_name_id) {
+            if (self.diagPrivateField(obj_ty, field, span)) return self.emitPlaceholder(field);
             return self.builder.structGet(obj, @intCast(i), f.ty);
         }
     }

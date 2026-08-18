@@ -1,0 +1,12 @@
+Box :: struct {
+    private secret: i64 = 0;
+
+    get :: (self: *Box) -> i64 { self.secret }
+    set :: (self: *Box, v: i64) { self.secret = v; }
+}
+
+same_file_sum :: (n: i64) -> i64 {
+    local := Box{ secret = n };
+    local.secret += 1;
+    local.secret
+}

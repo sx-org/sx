@@ -1,0 +1,5 @@
+error: field 'secret' is private to its declaring file
+  --> examples/diagnostics/2200-diagnostics-private-field-write.sx:7:5
+   |
+ 7 |     x.secret = 1;
+   |     ^^^^^^^^

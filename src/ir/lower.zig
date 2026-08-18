@@ -1937,7 +1937,16 @@ pub const Lowering = struct {
             // dropped `self`, leaving inline-decl payloads on the global
             // `findByName` first-match.
             .enum_decl => return type_bridge.resolveInlineEnum(&node.data.enum_decl, &self.module.types, self),
-            .struct_decl => return type_bridge.resolveInlineStruct(&node.data.struct_decl, &self.module.types, self),
+            .struct_decl => {
+                const id = type_bridge.resolveInlineStruct(&node.data.struct_decl, &self.module.types, self);
+                if (!self.plain_struct_authors.contains(id)) {
+                    self.plain_struct_authors.put(id, .{
+                        .decl = &node.data.struct_decl,
+                        .source = self.current_source_file,
+                    }) catch {};
+                }
+                return id;
+            },
             .union_decl => return type_bridge.resolveInlineUnion(&node.data.union_decl, &self.module.types, self),
             // A NAMED error-set reference (`!Named`) resolves its name through
             // `self` (visibility-aware) too; the bare `!` inferred set has no name
@@ -3726,6 +3735,8 @@ pub const Lowering = struct {
     pub const synthesizeAnonStruct = lower_expr.synthesizeAnonStruct;
     pub const lowerInitBlock = lower_expr.lowerInitBlock;
     pub const getStructFields = lower_expr.getStructFields;
+    pub const structDeclaringSource = lower_expr.structDeclaringSource;
+    pub const diagPrivateField = lower_expr.diagPrivateField;
     pub const getAccessorFor = lower_expr.getAccessorFor;
     pub const getSetterFor = lower_expr.getSetterFor;
     pub const getterReturnTypeOnDeref = lower_expr.getterReturnTypeOnDeref;

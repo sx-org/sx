@@ -1,0 +1,8 @@
+// A private field cannot be read by name from another file.
+
+box :: #import "2199-diagnostics-private-field-read/box.sx";
+
+main :: () -> i32 {
+    x := box.make();
+    return xx x.secret;
+}

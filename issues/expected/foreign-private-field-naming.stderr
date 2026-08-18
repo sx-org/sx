@@ -1,0 +1,11 @@
+error: field 'state' is private to its declaring file
+  --> issues/foreign-private-field-naming.sx:8:5
+   |
+ 8 |     wrapped.state.value = 2;
+   |     ^^^^^^^^^^^^^
+
+error: field 'state' is private to its declaring file
+  --> issues/foreign-private-field-naming.sx:9:42
+   |
+ 9 |     forged : facade.Wrapper = .{ state = .{ value = 3 } };
+   |                                          ^^^^^^^^^^^^^^

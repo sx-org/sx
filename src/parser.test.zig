@@ -431,6 +431,47 @@ test "parser: #context_extend rejected in statement position" {
 
 // `private` prefixes an identifier-headed module-scope declaration and stamps
 // the node's visibility; every declaration kind takes it uniformly.
+test "parser: private stamps struct fields" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\Box :: struct {
+        \\    private secret: i64 = 0;
+        \\    open: i64;
+        \\    private a, b: i64 = 1;
+        \\}
+        \\
+    ;
+    var p = try Parser.init(alloc, src);
+    const root = try p.parse();
+    const sd = root.data.root.decls[0].data.struct_decl;
+    try std.testing.expectEqual(@as(usize, 4), sd.field_names.len);
+    try std.testing.expectEqual(ast.Visibility.private, sd.field_visibilities[0]);
+    try std.testing.expectEqual(ast.Visibility.public, sd.field_visibilities[1]);
+    try std.testing.expectEqual(ast.Visibility.private, sd.field_visibilities[2]);
+    try std.testing.expectEqual(ast.Visibility.private, sd.field_visibilities[3]);
+}
+
+test "parser: private rejected on struct methods, constants, union and runtime-class fields" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const cases = [_][:0]const u8{
+        "S :: struct { private m :: (self: *S) -> i64 { return 0; } }",
+        "S :: struct { private C :: 1; }",
+        "S :: struct { private C: i64: 1; }",
+        "U :: union { private x: i64; }",
+        "C :: @JniClass(\"pkg/C\") { private x: i64; }",
+    };
+    for (cases) |src| {
+        var p = try Parser.init(alloc, src);
+        try std.testing.expectError(error.ParseError, p.parse());
+    }
+}
+
 test "parser: private stamps module-scope declarations" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

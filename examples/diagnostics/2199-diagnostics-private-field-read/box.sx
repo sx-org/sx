@@ -1,0 +1,5 @@
+Box :: struct {
+    private secret: i64 = 0;
+}
+
+make :: () -> Box { Box{} }

@@ -1,0 +1,5 @@
+error: field 'secret' is private to its declaring file
+  --> examples/diagnostics/2201-diagnostics-private-field-literal.sx:6:28
+   |
+ 6 |     x := box.Box{ secret = 1 };
+   |                            ^

@@ -949,6 +949,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
             fields.append(self.alloc, .{
                 .name = table.internString(sd.field_names[field_idx]),
                 .ty = field_ty,
+                .visibility = if (field_idx < sd.field_visibilities.len) sd.field_visibilities[field_idx] else .public,
             }) catch unreachable;
             layout_defaults.append(self.alloc, if (field_idx < sd.field_defaults.len) sd.field_defaults[field_idx] else null) catch unreachable;
             field_idx += 1;

@@ -2477,6 +2477,7 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
         fields.append(self.alloc, .{
             .name = table.internString(tmpl.field_names[field_idx]),
             .ty = field_ty,
+            .visibility = if (field_idx < tmpl.decl.field_visibilities.len) tmpl.decl.field_visibilities[field_idx] else .public,
         }) catch unreachable;
         instance_defaults.append(self.alloc, if (field_idx < tmpl.decl.field_defaults.len) tmpl.decl.field_defaults[field_idx] else null) catch unreachable;
         field_idx += 1;
@@ -2661,11 +2662,12 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     if (findStructInBody(fd.body)) |struct_decl| {
         // Resolve struct fields with type bindings active
         var struct_fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
-        for (struct_decl.field_names, struct_decl.field_types) |fname, ftype_node| {
+        for (struct_decl.field_names, struct_decl.field_types, 0..) |fname, ftype_node, fi| {
             const field_ty = self.resolveTypeWithBindings(ftype_node);
             struct_fields.append(self.alloc, .{
                 .name = table.internString(fname),
                 .ty = field_ty,
+                .visibility = if (fi < struct_decl.field_visibilities.len) struct_decl.field_visibilities[fi] else .public,
             }) catch {};
         }
 

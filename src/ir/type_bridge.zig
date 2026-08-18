@@ -516,11 +516,12 @@ pub fn buildEnumInfo(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype)
                                 field_ty = existing;
                             } else {
                                 var sfields = std.ArrayList(TypeInfo.StructInfo.Field).empty;
-                                for (sd.field_names, sd.field_types) |fname, ftype_node| {
+                                for (sd.field_names, sd.field_types, 0..) |fname, ftype_node, fi| {
                                     const fty = inner.resolveInner(ftype_node);
                                     sfields.append(alloc, .{
                                         .name = table.internString(fname),
                                         .ty = fty,
+                                        .visibility = if (fi < sd.field_visibilities.len) sd.field_visibilities[fi] else .public,
                                     }) catch unreachable;
                                 }
                                 const sinfo: TypeInfo = .{ .@"struct" = .{
@@ -663,11 +664,12 @@ pub fn resolveInlineStruct(sd: *const ast.StructDecl, table: *TypeTable, inner: 
     }
 
     var fields = std.ArrayList(TypeInfo.StructInfo.Field).empty;
-    for (sd.field_names, sd.field_types) |fname, ftype_node| {
+    for (sd.field_names, sd.field_types, 0..) |fname, ftype_node, fi| {
         const field_ty = inner.resolveInner(ftype_node);
         fields.append(alloc, .{
             .name = table.internString(fname),
             .ty = field_ty,
+            .visibility = if (fi < sd.field_visibilities.len) sd.field_visibilities[fi] else .public,
         }) catch unreachable;
     }
     const info: TypeInfo = .{ .@"struct" = .{

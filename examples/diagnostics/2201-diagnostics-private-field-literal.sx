@@ -1,0 +1,8 @@
+// A private field cannot be named in a struct literal from another file.
+
+box :: #import "2201-diagnostics-private-field-literal/box.sx";
+
+main :: () -> i32 {
+    x := box.Box{ secret = 1 };
+    return 0;
+}

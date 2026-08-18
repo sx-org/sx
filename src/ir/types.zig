@@ -126,6 +126,7 @@ pub const TypeInfo = union(enum) {
         pub const Field = struct {
             name: StringId,
             ty: TypeId,
+            visibility: ast.Visibility = .public,
         };
     };
 
@@ -530,6 +531,7 @@ pub const TypeTable = struct {
                 for (s.fields) |f| {
                     key.appendSlice(self.alloc, std.mem.asBytes(&f.name)) catch unreachable;
                     key.appendSlice(self.alloc, std.mem.asBytes(&f.ty)) catch unreachable;
+                    key.append(self.alloc, @intFromEnum(f.visibility)) catch unreachable;
                 }
             },
             .@"union" => |u| {

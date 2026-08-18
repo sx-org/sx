@@ -1774,6 +1774,13 @@ fn selectQualifiedGlobalStoreTarget(self: *Lowering, node: *const Node) Qualifie
         const wanted = self.module.types.internString(field_name);
         for (self.getStructFields(gi.ty), 0..) |f, i| {
             if (f.name != wanted) continue;
+            if (self.diagPrivateField(gi.ty, field_name, qualifiedStoreTerminalSpan(node, field_name))) {
+                return .{ .non_lvalue = .{
+                    .name = diagnostic_name,
+                    .span = qualifiedStoreTerminalSpan(node, field_name),
+                    .is_function = false,
+                } };
+            }
             field = .{ .name = field_name, .index = @intCast(i), .ty = f.ty };
             break;
         }
@@ -1990,6 +1997,7 @@ fn tryLowerQualifiedGlobalStore(
             const wanted = self.module.types.internString(field_name);
             for (self.getStructFields(gi.ty), 0..) |field, i| {
                 if (field.name != wanted) continue;
+                if (self.diagPrivateField(gi.ty, field_name, span)) return .handled;
                 const val_ty = self.builder.getRefType(val);
                 if (op == .assign and !self.checkAssignable(val_ty, field.ty, val_span, "assign", field_name, val_node)) return .handled;
                 const base = self.builder.emit(.{ .global_addr = gi.id }, self.module.types.ptrTo(gi.ty));
@@ -2568,6 +2576,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 self.storeOrCompound(gep, val, asgn.op, field_ty);
             } else if (self.storeSwizzle(obj_ptr, obj_ty, fa.field, val, asgn.op, asgn.target.span, asgn.value.span, asgn.value)) {
                 // Multi-letter shuffle store (and diagnosed swizzle errors).
+            } else if (self.diagPrivateField(obj_ty, fa.field, asgn.target.span)) {
             } else if (self.fieldLvaluePtr(obj_ptr, obj_ty, fa.field)) |fl| {
                 // Resolve the target field (struct / union direct / promoted
                 // anonymous-struct member / tuple element / vector lane) via
@@ -3307,6 +3316,7 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
                     },
                 }
             }
+            if (self.diagPrivateField(obj_ty, fa.field, node.span)) return self.emitPlaceholder(fa.field);
             if (self.fieldLvaluePtr(obj_ptr, obj_ty, fa.field)) |r| return r.ptr;
             return self.emitFieldError(obj_ty, fa.field, node.span);
         },
@@ -3979,7 +3989,8 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 // diagnostic instead of defaulting to field 0 / field_ty
                 // .unresolved, which silently corrupts a neighbouring field
                 // (or panics at LLVM emission).
-                if (self.fieldLvaluePtr(obj_ptr, obj_ty, fa.field)) |r| {
+                if (self.diagPrivateField(obj_ty, fa.field, target.span)) {
+                } else if (self.fieldLvaluePtr(obj_ptr, obj_ty, fa.field)) |r| {
                     const val_ty = self.builder.getRefType(val);
                     if (!self.checkAssignable(val_ty, r.ty, ma.values[i].span, "assign", fa.field, ma.values[i])) continue;
                     const store_val = if (val_ty != r.ty and val_ty != .void and r.ty != .void)
