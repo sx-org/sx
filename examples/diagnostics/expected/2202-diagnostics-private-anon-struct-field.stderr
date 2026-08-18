@@ -1,0 +1,5 @@
+error: 'private' is not allowed on an anonymous struct field
+  --> examples/diagnostics/2202-diagnostics-private-anon-struct-field.sx:5:18
+   |
+ 5 |     v : struct { private q: i64; } = ---;
+   |                  ^^^^^^^

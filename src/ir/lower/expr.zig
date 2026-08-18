@@ -371,16 +371,9 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                 const is_punned = fi.value.data == .identifier and
                     std.mem.eql(u8, fi.value.data.identifier.name, fname);
                 if (!is_punned) continue;
-                var matches_field = false;
-                for (struct_fields) |sf| {
-                    if (std.mem.eql(u8, self.module.types.getString(sf.name), fname)) {
-                        matches_field = true;
-                        break;
-                    }
-                }
                 // A punned name that is not a field name → this was a positional
                 // element the parser named; the literal is positional.
-                if (!matches_field) break :blk false;
+                if (self.lookupField(ty, fname) == .missing) break :blk false;
             }
         }
         break :blk true;
@@ -389,36 +382,33 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     if (has_names and struct_fields.len > 0) {
         // Named literal: reorder fields to match struct declaration order
         // First, lower all field values in source order (to preserve evaluation order)
-        var lowered = std.ArrayList(struct { val: Ref, name: []const u8, node: *const Node }).empty;
+        var lowered = std.ArrayList(struct { val: Ref, index: ?u32, node: *const Node }).empty;
         defer lowered.deinit(self.alloc);
         for (sl.field_inits) |fi| {
             const saved_tt = self.target_type;
+            var index: ?u32 = null;
             // Set target_type to the field's declared type so array literals
             // know if the target is a vector, etc.
             if (fi.name) |fname| {
-                var matched = false;
-                for (struct_fields) |sf| {
-                    if (std.mem.eql(u8, self.module.types.getString(sf.name), fname)) {
-                        self.target_type = sf.ty;
-                        matched = true;
-                        break;
-                    }
-                }
-                // An explicit `name = expr` naming no real field is an error —
-                // not silently dropped. (A punned bare-ident that misses a field
-                // was already reclassified as positional by `has_names` above, so
-                // anything unmatched here is a genuine, mistaken named field — a
-                // typo or a field removed by an `inline if OS` branch.)
-                if (!matched) {
-                    if (self.diagnostics) |d|
-                        d.addFmt(.err, fi.value.span, "field '{s}' not found on type '{s}'", .{ fname, self.formatTypeName(ty) });
+                switch (self.mentionField(ty, fname, fi.value.span)) {
+                    .hit, .private => |h| {
+                        self.target_type = h.ty;
+                        index = h.index;
+                    },
+                    // An explicit `name = expr` naming no real field is an error —
+                    // not silently dropped. (A punned bare-ident that misses a field
+                    // was already reclassified as positional by `has_names` above, so
+                    // anything unmatched here is a genuine, mistaken named field — a
+                    // typo or a field removed by an `inline if OS` branch.)
+                    .missing => if (self.diagnostics) |d|
+                        d.addFmt(.err, fi.value.span, "field '{s}' not found on type '{s}'", .{ fname, self.formatTypeName(ty) }),
                 }
             }
             const val = self.lowerExpr(fi.value);
             self.target_type = saved_tt;
             lowered.append(self.alloc, .{
                 .val = val,
-                .name = fi.name orelse "",
+                .index = index,
                 .node = fi.value,
             }) catch unreachable;
         }
@@ -427,11 +417,11 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         var fields = std.ArrayList(Ref).empty;
         defer fields.deinit(self.alloc);
         for (struct_fields, 0..) |sf, fi| {
-            const sf_name = self.module.types.getString(sf.name);
+            const sf_index: u32 = @intCast(fi);
             // Find the matching lowered value
             var found = false;
             for (lowered.items) |l| {
-                if (std.mem.eql(u8, l.name, sf_name)) {
+                if (l.index == sf_index) {
                     var val = l.val;
                     const src_ty = self.builder.getRefType(val);
                     // An #identity protocol field erases NODE-AWARE, so an
@@ -585,6 +575,111 @@ pub fn lowerInitBlock(self: *Lowering, struct_val: Ref, ty: TypeId, ib: *const N
 
     // Load and return the (possibly modified) struct value
     return self.builder.load(slot, ty);
+}
+
+/// The file that wrote `ty`'s declaration — its own, or the template a generic
+/// instance was stamped from.
+pub fn structDeclaringSource(self: *Lowering, ty: TypeId) ?[]const u8 {
+    const author = self.memberAuthor(self.plainStructOwnerType(ty)) orelse return null;
+    return author.source;
+}
+
+/// The file that may mention `field` on `ty`. A `#using` promotion carries the
+/// base's authority; every other field answers to the struct's own declaration.
+pub fn fieldDeclaringSource(self: *Lowering, ty: TypeId, field: StringId) ?[]const u8 {
+    const owner = self.plainStructOwnerType(ty);
+    if (self.promoted_field_authority.get(.{ .ty = owner, .name = field })) |source| return source;
+    return self.structDeclaringSource(owner);
+}
+
+pub fn privateFieldHere(self: *Lowering, ty: TypeId, field: []const u8) bool {
+    const wanted = self.module.types.internString(field);
+    var vis: ast.Visibility = .public;
+    for (self.getStructFields(ty)) |f| {
+        if (f.name == wanted) {
+            vis = f.visibility;
+            break;
+        }
+    }
+    if (vis != .private) return false;
+    const from = self.current_source_file orelse return false;
+    // Only a named declaration or a generic instance can carry a private field
+    // — the parser refuses one on an anonymous body — and both stamp an author.
+    const declaring = self.fieldDeclaringSource(ty, wanted) orelse
+        std.debug.panic("private field '{s}' on a struct type with no declaring file", .{field});
+    return !std.mem.eql(u8, from, declaring);
+}
+
+/// The result of matching a source-written name against a named struct's
+/// fields.
+pub const FieldLookup = union(enum) {
+    missing,
+    hit: Hit,
+    /// The field exists and this file may not name it. Terminal: resolution
+    /// stops rather than falling through to `#get`/`#set`, UFCS, or a method.
+    private: Hit,
+
+    pub const Hit = struct { index: u32, ty: TypeId, name: StringId };
+};
+
+/// The only match of a source-written name against a named struct's fields.
+/// A private field is `.private`, never `.missing`: a taken name read as absent
+/// reclassifies a punned literal as positional and silently succeeds.
+pub fn lookupField(self: *Lowering, ty: TypeId, field: []const u8) FieldLookup {
+    const wanted = self.module.types.internString(field);
+    for (self.getStructFields(ty), 0..) |f, i| {
+        if (f.name != wanted) continue;
+        const hit: FieldLookup.Hit = .{ .index = @intCast(i), .ty = f.ty, .name = wanted };
+        if (f.visibility == .private and self.privateFieldHere(ty, field)) return .{ .private = hit };
+        return .{ .hit = hit };
+    }
+    return .missing;
+}
+
+/// A union variant promotes members only when its payload IS a struct — the
+/// union's bytes are the pointer, not the pointee.
+pub fn payloadPromotes(self: *Lowering, ty: TypeId) bool {
+    if (ty.isBuiltin()) return false;
+    return self.module.types.get(ty) == .@"struct";
+}
+
+/// `lookupField` for a name a human wrote: diagnoses `.private` once, then
+/// answers as `lookupField`.
+pub fn mentionField(self: *Lowering, ty: TypeId, field: []const u8, span: ast.Span) FieldLookup {
+    const found = self.lookupField(ty, field);
+    if (found == .private) _ = self.diagPrivateField(ty, field, span);
+    return found;
+}
+
+/// Read `field` as a member promoted out of a union variant's struct payload:
+/// reinterpret the union as that payload, then `struct_get` the member. The
+/// name is mentioned on the PAYLOAD type, which owns its visibility.
+fn promotedUnionMemberRead(
+    self: *Lowering,
+    obj: Ref,
+    union_fields: []const types.TypeInfo.StructInfo.Field,
+    field: []const u8,
+    span: ast.Span,
+) ?Ref {
+    for (union_fields) |f| {
+        if (!self.payloadPromotes(f.ty)) continue;
+        switch (self.mentionField(f.ty, field, span)) {
+            .missing => {},
+            .private => return self.emitPlaceholder(field),
+            .hit => |h| {
+                const reinterpreted = self.builder.emit(.{ .union_get = .{ .base = obj, .field_index = 0 } }, f.ty);
+                return self.builder.structGet(reinterpreted, h.index, h.ty);
+            },
+        }
+    }
+    return null;
+}
+
+pub fn diagPrivateField(self: *Lowering, ty: TypeId, field: []const u8, span: ast.Span) bool {
+    if (!self.privateFieldHere(ty, field)) return false;
+    if (self.diagnostics) |d|
+        d.addFmt(.err, span, "field '{s}' is private to its declaring file", .{field});
+    return true;
 }
 
 /// Get the field list for a struct TypeId, or empty if not a struct.
@@ -778,14 +873,11 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
         if (u_fields) |ufields| {
             for (ufields) |f| {
                 if (f.name == field_name_id) return f.ty;
-                // Check promoted fields from anonymous struct variants
-                if (!f.ty.isBuiltin()) {
-                    const fi = self.module.types.get(f.ty);
-                    if (fi == .@"struct") {
-                        for (fi.@"struct".fields) |sf| {
-                            if (sf.name == field_name_id) return sf.ty;
-                        }
-                    }
+                if (!self.payloadPromotes(f.ty)) continue;
+                // Members promoted out of a struct variant
+                switch (self.lookupField(f.ty, field)) {
+                    .hit, .private => |h| return h.ty,
+                    .missing => {},
                 }
             }
         }
@@ -809,9 +901,9 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
             return .unresolved;
         }
     }
-    const struct_fields = self.getStructFields(ty);
-    for (struct_fields) |f| {
-        if (f.name == field_name_id) return f.ty;
+    switch (self.lookupField(ty, field)) {
+        .hit, .private => |h| return h.ty,
+        .missing => {},
     }
     // Pseudo-field fallback for non-containers with no matching real
     // member (`#get len` accessors type through here).
@@ -1602,10 +1694,7 @@ pub fn getAccessorFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const as
     // A REAL field of this name wins over a same-name `#get` (a getter must not
     // shadow stored data on the read path). If the struct genuinely declares the
     // field, this is not a property access.
-    const field_id = self.module.types.internString(field);
-    for (self.getStructFields(ty)) |f| {
-        if (f.name == field_id) return null;
-    }
+    if (self.lookupField(ty, field) != .missing) return null;
     // Generic instance: genericInstanceMethod is keyed by the instance name
     // (e.g. "List(i64)"), which is what formatTypeName produces.
     const tn = self.formatTypeName(ty);
@@ -1666,10 +1755,7 @@ pub fn getSetterFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const ast.
     if (ty.isBuiltin()) return null;
     // A REAL field of this name wins over a same-name `#set` (a setter must not
     // shadow stored data on the write path).
-    const field_id = self.module.types.internString(field);
-    for (self.getStructFields(ty)) |f| {
-        if (f.name == field_id) return null;
-    }
+    if (self.lookupField(ty, field) != .missing) return null;
     const eff = std.fmt.allocPrint(self.alloc, "{s}" ++ Lowering.setter_eff_suffix, .{field}) catch return null;
     // Generic instance: keyed by the instance name (e.g. "List(i64)").
     const tn = self.formatTypeName(ty);
@@ -1711,20 +1797,8 @@ pub fn lowerFieldAccessOnType(self: *Lowering, obj: Ref, obj_ty: TypeId, field: 
                         return self.builder.emit(.{ .enum_payload = .{ .base = obj, .field_index = @intCast(i) } }, f.ty);
                     }
                 }
-                // Check promoted fields from anonymous struct variants
-                for (u.fields) |f| {
-                    if (!f.ty.isBuiltin()) {
-                        const field_info = self.module.types.get(f.ty);
-                        if (field_info == .@"struct") {
-                            for (field_info.@"struct".fields, 0..) |sf, si| {
-                                if (sf.name == field_name_id) {
-                                    const reinterpreted = self.builder.emit(.{ .union_get = .{ .base = obj, .field_index = 0 } }, f.ty);
-                                    return self.builder.structGet(reinterpreted, @intCast(si), sf.ty);
-                                }
-                            }
-                        }
-                    }
-                }
+                // Promoted members of a struct variant
+                if (promotedUnionMemberRead(self, obj, u.fields, field, span)) |r| return r;
             },
             .@"union" => |u| {
                 // Untagged union — use union_get to reinterpret bytes
@@ -1733,20 +1807,8 @@ pub fn lowerFieldAccessOnType(self: *Lowering, obj: Ref, obj_ty: TypeId, field: 
                         return self.builder.emit(.{ .union_get = .{ .base = obj, .field_index = @intCast(i) } }, f.ty);
                     }
                 }
-                // Check promoted fields from anonymous struct variants
-                for (u.fields) |f| {
-                    if (!f.ty.isBuiltin()) {
-                        const field_info = self.module.types.get(f.ty);
-                        if (field_info == .@"struct") {
-                            for (field_info.@"struct".fields, 0..) |sf, si| {
-                                if (sf.name == field_name_id) {
-                                    const reinterpreted = self.builder.emit(.{ .union_get = .{ .base = obj, .field_index = 0 } }, f.ty);
-                                    return self.builder.structGet(reinterpreted, @intCast(si), sf.ty);
-                                }
-                            }
-                        }
-                    }
-                }
+                // Promoted members of a struct variant
+                if (promotedUnionMemberRead(self, obj, u.fields, field, span)) |r| return r;
             },
             else => {},
         }
@@ -1812,11 +1874,10 @@ pub fn lowerFieldAccessOnType(self: *Lowering, obj: Ref, obj_ty: TypeId, field: 
     }
 
     // Resolve struct field index and type
-    const struct_fields = self.getStructFields(obj_ty);
-    for (struct_fields, 0..) |f, i| {
-        if (f.name == field_name_id) {
-            return self.builder.structGet(obj, @intCast(i), f.ty);
-        }
+    switch (self.mentionField(obj_ty, field, span)) {
+        .hit => |h| return self.builder.structGet(obj, h.index, h.ty),
+        .private => return self.emitPlaceholder(field),
+        .missing => {},
     }
 
     return self.emitFieldError(obj_ty, field, span);
@@ -2067,6 +2128,19 @@ pub fn lowerTaggedEnumLiteral(
         val = self.coerceToType(val, src_ty, payload_ty);
         self.target_type = saved_tt;
         return self.builder.enumInit(tag, val, union_ty);
+    }
+
+    // Named payload inits (`.key{ a = 1 }`) are a named struct literal of the
+    // payload type: reorder-by-name, defaults, and the visibility mention all
+    // live there. The head must be stripped — `lowerStructLiteral` routes a
+    // literal that still carries its variant spelling back into this function.
+    if (sl.field_inits[0].name != null) {
+        var payload_sl = sl.*;
+        payload_sl.type_expr = null;
+        payload_sl.struct_name = null;
+        const payload_val = self.lowerStructLiteral(&payload_sl, span);
+        self.target_type = saved_tt;
+        return self.builder.enumInit(tag, payload_val, union_ty);
     }
 
     var fields = std.ArrayList(Ref).empty;

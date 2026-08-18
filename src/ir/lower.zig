@@ -89,6 +89,14 @@ pub const PlainStructAuthor = struct {
     source: ?[]const u8,
 };
 
+/// A private field reached through `#using` promotion, keyed on the PROMOTING
+/// struct's TypeId. The promoting struct copies the base's field verbatim, so
+/// only this record still names the file that may mention it.
+pub const PromotedField = struct {
+    ty: TypeId,
+    name: types.StringId,
+};
+
 /// Identity key for a materialized protocol/concrete dispatch table. The
 /// concrete TypeId (not its display name) keeps two modules' same-named
 /// structs from sharing thunks or a vtable global.
@@ -187,8 +195,8 @@ pub const SourceConstCtx = struct {
     pub fn lookupConstArrayElem(self: SourceConstCtx, name: []const u8, idx: i64, span: ?ast.Span) ?i64 {
         return self.lowering.foldConstArrayElem(name, idx, span, self.frame);
     }
-    pub fn lookupConstStructField(self: SourceConstCtx, name: []const u8, field: []const u8) ?i64 {
-        return self.lowering.foldConstStructField(name, field, self.frame);
+    pub fn lookupConstStructField(self: SourceConstCtx, name: []const u8, field: []const u8, span: ?ast.Span) ?i64 {
+        return self.lowering.foldConstStructField(name, field, span, self.frame);
     }
     // Type-query builtin folds (`field_count`/`size_of`/`align_of`) — delegate to
     // the wrapped Lowering, which can resolve the type-expr arg.
@@ -576,6 +584,8 @@ pub const Lowering = struct {
     /// author here lets method dispatch select the body from that identity rather
     /// than from the global last-wins `fn_ast_map["Struct.method"]` entry.
     plain_struct_authors: std.AutoHashMap(TypeId, PlainStructAuthor),
+    /// Declaring file of each private field a struct gained through `#using`.
+    promoted_field_authority: std.AutoHashMap(PromotedField, ?[]const u8),
     /// Explicit nullary-protocol impl methods, addressed by protocol + nominal
     /// concrete TypeId + method. The `Type.method` AST map cannot distinguish
     /// same-display-name types.
@@ -1199,6 +1209,7 @@ pub const Lowering = struct {
             .decl_identity_first = std.StringHashMap(*const anyopaque).init(module.alloc),
             .decl_identity_ids = std.AutoHashMap(*const anyopaque, u32).init(module.alloc),
             .plain_struct_authors = std.AutoHashMap(TypeId, PlainStructAuthor).init(module.alloc),
+            .promoted_field_authority = std.AutoHashMap(PromotedField, ?[]const u8).init(module.alloc),
             .protocol_impl_methods = std.AutoHashMap(ProtocolImplMethodKey, ProtocolImplMethod).init(module.alloc),
             .protocol_impl_decls = std.AutoHashMap(ProtocolConcreteKey, void).init(module.alloc),
             .protocol_impl_sites = std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_protocol.ImplSite)).init(module.alloc),
@@ -1635,8 +1646,8 @@ pub const Lowering = struct {
     pub fn lookupConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?ast.Span) ?i64 {
         return self.foldConstArrayElem(name, idx, span, null);
     }
-    pub fn lookupConstStructField(self: *Lowering, name: []const u8, field: []const u8) ?i64 {
-        return self.foldConstStructField(name, field, null);
+    pub fn lookupConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span) ?i64 {
+        return self.foldConstStructField(name, field, span, null);
     }
     /// Qualified-import-member const leaf (`m.CAP`) for the shared
     /// dimension evaluator — resolves the namespace alias `ns` to its target
@@ -3278,6 +3289,8 @@ pub const Lowering = struct {
     pub const lowerAssignment = lower_stmt.lowerAssignment;
     pub const fieldLvalueResolve = lower_stmt.fieldLvalueResolve;
     pub const fieldLvaluePtr = lower_stmt.fieldLvaluePtr;
+    pub const fieldLvalueMention = lower_stmt.fieldLvalueMention;
+    pub const FieldLvalueMention = lower_stmt.FieldLvalueMention;
     pub const storeSwizzle = lower_stmt.storeSwizzle;
     pub const lowerUnionLiteral = lower_stmt.lowerUnionLiteral;
     pub const diagTaggedUnionVariantWrite = lower_stmt.diagTaggedUnionVariantWrite;
@@ -3427,6 +3440,10 @@ pub const Lowering = struct {
     pub const resolveUsingBase = lower_nominal.resolveUsingBase;
     pub const staticStructHead = lower_nominal.staticStructHead;
     pub const hasPlainStructAuthor = lower_nominal.hasPlainStructAuthor;
+    pub const plainStructOwnerType = lower_nominal.plainStructOwnerType;
+    pub const PromotedPrivate = lower_nominal.PromotedPrivate;
+    pub const notePromotedPrivate = lower_nominal.notePromotedPrivate;
+    pub const recordPromotedPrivate = lower_nominal.recordPromotedPrivate;
     pub const plainStructMethod = lower_nominal.plainStructMethod;
     pub const plainStructAdoptableMethod = lower_nominal.plainStructAdoptableMethod;
     pub const plainStructMethodName = lower_nominal.plainStructMethodName;
@@ -3726,6 +3743,14 @@ pub const Lowering = struct {
     pub const synthesizeAnonStruct = lower_expr.synthesizeAnonStruct;
     pub const lowerInitBlock = lower_expr.lowerInitBlock;
     pub const getStructFields = lower_expr.getStructFields;
+    pub const structDeclaringSource = lower_expr.structDeclaringSource;
+    pub const fieldDeclaringSource = lower_expr.fieldDeclaringSource;
+    pub const privateFieldHere = lower_expr.privateFieldHere;
+    pub const diagPrivateField = lower_expr.diagPrivateField;
+    pub const FieldLookup = lower_expr.FieldLookup;
+    pub const lookupField = lower_expr.lookupField;
+    pub const payloadPromotes = lower_expr.payloadPromotes;
+    pub const mentionField = lower_expr.mentionField;
     pub const getAccessorFor = lower_expr.getAccessorFor;
     pub const getSetterFor = lower_expr.getSetterFor;
     pub const getterReturnTypeOnDeref = lower_expr.getterReturnTypeOnDeref;
@@ -3807,6 +3832,7 @@ pub const Lowering = struct {
 
     // --- lower/build_block.zig (`@BuildBlock(P)`) ---
     // --- lower/open_set.zig (`@OpenSet` / `@OpenVariant`) ---
+    pub const memberAuthor = lower_open_set.memberAuthor;
     pub const registerOpenSetDecl = lower_open_set.registerSetDecl;
     pub const admitOpenVariant = lower_open_set.admitVariant;
     pub const openSetOf = lower_open_set.setOf;

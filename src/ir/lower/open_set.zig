@@ -1128,7 +1128,7 @@ pub fn declaresMembership(self: *Lowering, ty: TypeId, set: *const ast.OpenSetDe
 /// its `@OpenVariant` head resolves from.
 const MemberAuthor = struct { decl: *const ast.StructDecl, source: ?[]const u8 };
 
-fn memberAuthor(self: *Lowering, ty: TypeId) ?MemberAuthor {
+pub fn memberAuthor(self: *Lowering, ty: TypeId) ?MemberAuthor {
     const name = self.getStructTypeName(ty) orelse return null;
     // A generic instance carries its template's declaration; the file that wrote
     // the template is where its head resolves from, and the template is reached

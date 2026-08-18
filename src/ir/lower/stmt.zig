@@ -1634,6 +1634,7 @@ const QualifiedGlobalStoreVerdict = union(enum) {
     ambiguous: struct { alias: []const u8, span: ast.Span },
     immutable: struct { name: []const u8, span: ast.Span },
     non_lvalue: struct { name: []const u8, span: ast.Span, is_function: bool },
+    private_field: struct { name: []const u8, span: ast.Span },
 };
 
 fn qualifiedStorePathSpan(node: *const Node, path: []const u8, part: []const u8) ast.Span {
@@ -1771,17 +1772,18 @@ fn selectQualifiedGlobalStoreTarget(self: *Lowering, node: *const Node) Qualifie
 
     var field: ?QualifiedGlobalStoreTarget.Field = null;
     if (nested_field) |field_name| {
-        const wanted = self.module.types.internString(field_name);
-        for (self.getStructFields(gi.ty), 0..) |f, i| {
-            if (f.name != wanted) continue;
-            field = .{ .name = field_name, .index = @intCast(i), .ty = f.ty };
-            break;
+        switch (self.lookupField(gi.ty, field_name)) {
+            .private => return .{ .private_field = .{
+                .name = field_name,
+                .span = qualifiedStoreTerminalSpan(node, field_name),
+            } },
+            .hit => |h| field = .{ .name = field_name, .index = h.index, .ty = h.ty },
+            .missing => return .{ .non_lvalue = .{
+                .name = diagnostic_name,
+                .span = qualifiedStoreTerminalSpan(node, field_name),
+                .is_function = false,
+            } },
         }
-        if (field == null) return .{ .non_lvalue = .{
-            .name = diagnostic_name,
-            .span = qualifiedStoreTerminalSpan(node, field_name),
-            .is_function = false,
-        } };
     }
 
     const stable_member = if (nested_field != null)
@@ -1814,6 +1816,8 @@ fn diagnoseQualifiedStoreVerdict(self: *Lowering, verdict: QualifiedGlobalStoreV
             else
                 d.addFmt(.err, bad.span, "cannot assign to '{s}' — it is not a mutable global lvalue", .{bad.name});
         },
+        .private_field => |bad| if (self.diagnostics) |d|
+            d.addFmt(.err, bad.span, "field '{s}' is private to its declaring file", .{bad.name}),
     }
     return true;
 }
@@ -1987,18 +1991,21 @@ fn tryLowerQualifiedGlobalStore(
                 if (self.diagnostics) |d| d.addFmt(.err, span, "cannot assign through constant global '{s}'", .{qualified_name});
                 return .handled;
             }
-            const wanted = self.module.types.internString(field_name);
-            for (self.getStructFields(gi.ty), 0..) |field, i| {
-                if (field.name != wanted) continue;
-                const val_ty = self.builder.getRefType(val);
-                if (op == .assign and !self.checkAssignable(val_ty, field.ty, val_span, "assign", field_name, val_node)) return .handled;
-                const base = self.builder.emit(.{ .global_addr = gi.id }, self.module.types.ptrTo(gi.ty));
-                const ptr = self.builder.structGepTyped(base, @intCast(i), self.module.types.ptrTo(field.ty), gi.ty);
-                self.storeOrCompound(ptr, val, op, field.ty);
-                return .handled;
+            switch (self.mentionField(gi.ty, field_name, span)) {
+                .private => return .handled,
+                .hit => |h| {
+                    const val_ty = self.builder.getRefType(val);
+                    if (op == .assign and !self.checkAssignable(val_ty, h.ty, val_span, "assign", field_name, val_node)) return .handled;
+                    const base = self.builder.emit(.{ .global_addr = gi.id }, self.module.types.ptrTo(gi.ty));
+                    const ptr = self.builder.structGepTyped(base, h.index, self.module.types.ptrTo(h.ty), gi.ty);
+                    self.storeOrCompound(ptr, val, op, h.ty);
+                    return .handled;
+                },
+                .missing => {
+                    if (self.diagnostics) |d| d.addFmt(.err, span, "field '{s}' not found on global '{s}'", .{ field_name, qualified_name });
+                    return .handled;
+                },
             }
-            if (self.diagnostics) |d| d.addFmt(.err, span, "field '{s}' not found on global '{s}'", .{ field_name, qualified_name });
-            return .handled;
         }
         if (op == .assign) {
             const val_ty = self.builder.getRefType(val);
@@ -2255,7 +2262,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
     const qualified_store_target: ?QualifiedGlobalStoreTarget = switch (qualified_store_verdict) {
         .target => |target| target,
         .not_applicable => null,
-        .missing, .ambiguous, .immutable, .non_lvalue => unreachable,
+        .missing, .ambiguous, .immutable, .non_lvalue, .private_field => unreachable,
     };
 
     // Set target_type from LHS for RHS lowering (enum literals, struct literals, etc.)
@@ -2568,31 +2575,33 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
                 self.storeOrCompound(gep, val, asgn.op, field_ty);
             } else if (self.storeSwizzle(obj_ptr, obj_ty, fa.field, val, asgn.op, asgn.target.span, asgn.value.span, asgn.value)) {
                 // Multi-letter shuffle store (and diagnosed swizzle errors).
-            } else if (self.fieldLvaluePtr(obj_ptr, obj_ty, fa.field)) |fl| {
+            } else switch (self.fieldLvalueMention(obj_ptr, obj_ty, fa.field, asgn.target.span)) {
+                .private => {},
                 // Resolve the target field (struct / union direct / promoted
-                // anonymous-struct member / tuple element / vector lane) via
-                // the shared lvalue resolver — the same one the address-of
-                // and multi-target store paths use — so the three never
-                // resolve a field to a different slot or default field 0
-                // (two-resolver defect class). fl.ptr is
-                // *field_ty (the store handler unwraps one pointer level);
-                // fl.ty is the value type to coerce the rhs to.
-                const src_ty = self.builder.getRefType(val);
-                // Guard a width-mismatched `.none` store into the field slot
-                // (`w.s = "hi"` for a struct field `s`) — it would overrun the
-                // slot and corrupt neighbors. Plain `=` only;
-                // compound ops load-op-store through the field type.
-                if (asgn.op == .assign and !self.checkAssignable(src_ty, fl.ty, asgn.value.span, "assign", fa.field, asgn.value)) return;
-                const coerced = self.coerceToType(val, src_ty, fl.ty);
-                self.storeOrCompound(fl.ptr, coerced, asgn.op, fl.ty);
-            } else {
+                // struct member / tuple element / vector lane) via the shared
+                // lvalue resolver — the same one the address-of and
+                // multi-target store paths use — so the three never resolve a
+                // field to a different slot or default field 0 (two-resolver
+                // defect class). fl.ptr is *field_ty (the store handler
+                // unwraps one pointer level); fl.ty is the value type to
+                // coerce the rhs to.
+                .ptr => |fl| {
+                    const src_ty = self.builder.getRefType(val);
+                    // Guard a width-mismatched `.none` store into the field slot
+                    // (`w.s = "hi"` for a struct field `s`) — it would overrun the
+                    // slot and corrupt neighbors. Plain `=` only;
+                    // compound ops load-op-store through the field type.
+                    if (asgn.op == .assign and !self.checkAssignable(src_ty, fl.ty, asgn.value.span, "assign", fa.field, asgn.value)) return;
+                    const coerced = self.coerceToType(val, src_ty, fl.ty);
+                    self.storeOrCompound(fl.ptr, coerced, asgn.op, fl.ty);
+                },
                 // No struct / union / tuple / vector field matches the
                 // assignment target. Emit the same field-not-found
                 // diagnostic the read path uses (emitFieldError) and bail;
                 // building a pointer with field_ty = .unresolved would
                 // otherwise store through a pointer-to-.unresolved that
                 // panics at LLVM emission.
-                _ = self.emitFieldError(obj_ty, fa.field, asgn.target.span);
+                .missing => _ = self.emitFieldError(obj_ty, fa.field, asgn.target.span),
             }
         },
         .index_expr => |ie| {
@@ -2731,7 +2740,7 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
                     const ptr = self.builder.structGepTyped(base, field.index, self.module.types.ptrTo(field.ty), qt.global.ty);
                     return .{ .slot = .{ .ptr = ptr, .ty = field.ty } };
                 },
-                .missing, .ambiguous, .immutable, .non_lvalue => return null,
+                .missing, .ambiguous, .immutable, .non_lvalue, .private_field => return null,
             }
 
             var accessor_recv_ty = self.inferExprType(fa.object);
@@ -2947,15 +2956,10 @@ pub fn fieldLvalueResolve(self: *Lowering, obj_ty: TypeId, field: []const u8) ?F
             if (f.name == field_name_id) {
                 return .{ .union_direct = .{ .index = @intCast(i), .ty = f.ty } };
             }
-            if (!f.ty.isBuiltin()) {
-                const fi = self.module.types.get(f.ty);
-                if (fi == .@"struct") {
-                    for (fi.@"struct".fields, 0..) |sf, si| {
-                        if (sf.name == field_name_id) {
-                            return .{ .union_promoted = .{ .variant_index = @intCast(i), .variant_ty = f.ty, .member_index = @intCast(si), .ty = sf.ty } };
-                        }
-                    }
-                }
+            if (!self.payloadPromotes(f.ty)) continue;
+            switch (self.lookupField(f.ty, field)) {
+                .hit, .private => |h| return .{ .union_promoted = .{ .variant_index = @intCast(i), .variant_ty = f.ty, .member_index = h.index, .ty = h.ty } },
+                .missing => {},
             }
         }
         return null;
@@ -3003,11 +3007,9 @@ pub fn fieldLvalueResolve(self: *Lowering, obj_ty: TypeId, field: []const u8) ?F
     }
 
     // Plain struct field.
-    const struct_fields = self.getStructFields(obj_ty);
-    for (struct_fields, 0..) |f, i| {
-        if (f.name == field_name_id) {
-            return .{ .indexed = .{ .index = @intCast(i), .ty = f.ty } };
-        }
+    switch (self.lookupField(obj_ty, field)) {
+        .hit, .private => |h| return .{ .indexed = .{ .index = h.index, .ty = h.ty } },
+        .missing => {},
     }
     return null;
 }
@@ -3034,6 +3036,35 @@ pub fn fieldLvalueResolve(self: *Lowering, obj_ty: TypeId, field: []const u8) ?F
 /// a field to a different slot or default field 0.
 pub fn fieldLvaluePtr(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, field: []const u8) ?FieldLvalue {
     const res = self.fieldLvalueResolve(obj_ty, field) orelse return null;
+    return fieldLvaluePtrFrom(self, obj_ptr, obj_ty, res);
+}
+
+/// An lvalue for a name a human wrote. The mention lands on the type that OWNS
+/// the name — the aggregate itself for a plain struct field, the variant
+/// payload for a promoted member — so a private field is refused on the write
+/// path exactly where it is refused on the read path.
+pub fn fieldLvalueMention(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, field: []const u8, span: ast.Span) FieldLvalueMention {
+    const res = self.fieldLvalueResolve(obj_ty, field) orelse return .missing;
+    const owner: ?TypeId = switch (res) {
+        .indexed => obj_ty,
+        .union_promoted => |u| u.variant_ty,
+        .union_direct, .swizzle => null,
+    };
+    if (owner) |o| {
+        if (self.mentionField(o, field, span) == .private) return .private;
+    }
+    return .{ .ptr = fieldLvaluePtrFrom(self, obj_ptr, obj_ty, res) orelse return .missing };
+}
+
+/// `.private` is already diagnosed — the caller stops without adding a
+/// field-not-found on top of it.
+pub const FieldLvalueMention = union(enum) {
+    missing,
+    private,
+    ptr: FieldLvalue,
+};
+
+fn fieldLvaluePtrFrom(self: *Lowering, obj_ptr: Ref, obj_ty: TypeId, res: FieldResolution) ?FieldLvalue {
     switch (res) {
         .union_direct => |u| {
             const ptr = self.builder.emit(.{ .union_gep = .{ .base = obj_ptr, .field_index = u.index, .base_type = obj_ty } }, self.module.types.ptrTo(u.ty));
@@ -3307,8 +3338,11 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
                     },
                 }
             }
-            if (self.fieldLvaluePtr(obj_ptr, obj_ty, fa.field)) |r| return r.ptr;
-            return self.emitFieldError(obj_ty, fa.field, node.span);
+            switch (self.fieldLvalueMention(obj_ptr, obj_ty, fa.field, node.span)) {
+                .private => return self.emitPlaceholder(fa.field),
+                .ptr => |r| return r.ptr,
+                .missing => return self.emitFieldError(obj_ty, fa.field, node.span),
+            }
         },
         .index_expr => |ie| {
             const narrowed_child = self.narrowedContainerChild(ie.object);
@@ -3979,16 +4013,18 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 // diagnostic instead of defaulting to field 0 / field_ty
                 // .unresolved, which silently corrupts a neighbouring field
                 // (or panics at LLVM emission).
-                if (self.fieldLvaluePtr(obj_ptr, obj_ty, fa.field)) |r| {
-                    const val_ty = self.builder.getRefType(val);
-                    if (!self.checkAssignable(val_ty, r.ty, ma.values[i].span, "assign", fa.field, ma.values[i])) continue;
-                    const store_val = if (val_ty != r.ty and val_ty != .void and r.ty != .void)
-                        self.coerceToType(val, val_ty, r.ty)
-                    else
-                        val;
-                    self.builder.store(r.ptr, store_val);
-                } else {
-                    _ = self.emitFieldError(obj_ty, fa.field, target.span);
+                switch (self.fieldLvalueMention(obj_ptr, obj_ty, fa.field, target.span)) {
+                    .private => {},
+                    .ptr => |r| {
+                        const val_ty = self.builder.getRefType(val);
+                        if (!self.checkAssignable(val_ty, r.ty, ma.values[i].span, "assign", fa.field, ma.values[i])) continue;
+                        const store_val = if (val_ty != r.ty and val_ty != .void and r.ty != .void)
+                            self.coerceToType(val, val_ty, r.ty)
+                        else
+                            val;
+                        self.builder.store(r.ptr, store_val);
+                    },
+                    .missing => _ = self.emitFieldError(obj_ty, fa.field, target.span),
                 }
             },
             .deref_expr => |de| {

@@ -1,0 +1,7 @@
+// `private` is rejected on an anonymous struct field: an anonymous body is
+// interned by shape, so it has no declaring file to answer to.
+
+main :: () -> i32 {
+    v : struct { private q: i64; } = ---;
+    return v.q.(i32);
+}

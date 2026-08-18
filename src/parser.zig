@@ -1164,6 +1164,9 @@ pub const Parser = struct {
         var has_any_type = false;
         var has_any_value = false;
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
+            if (self.tokens.tag(self.tok) == .kw_private) {
+                return self.fail("'private' is not allowed on an enum case");
+            }
             if (!self.isMemberDeclName()) {
                 return self.failMemberDeclName("expected variant name");
             }
@@ -1259,6 +1262,9 @@ pub const Parser = struct {
         var anon_idx: u32 = 0;
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             // Anonymous struct field: struct { x, y: f32; };
+            if (self.tokens.tag(self.tok) == .kw_private) {
+                return self.fail("'private' is not allowed on a union field");
+            }
             if (self.tokens.tag(self.tok) == .kw_struct) {
                 const anon_field = try std.fmt.allocPrint(self.allocator, "__anon_{d}", .{anon_idx});
                 anon_idx += 1;
@@ -1374,6 +1380,7 @@ pub const Parser = struct {
         var field_name_starts = std.ArrayList(u32).empty;
         var field_types = std.ArrayList(*Node).empty;
         var field_defaults = std.ArrayList(?*Node).empty;
+        var field_visibilities = std.ArrayList(ast.Visibility).empty;
         var using_entries = std.ArrayList(ast.UsingEntry).empty;
         var methods = std.ArrayList(*Node).empty;
         var constants = std.ArrayList(*Node).empty;
@@ -1420,13 +1427,38 @@ pub const Parser = struct {
                 continue;
             }
 
-            // Parse field group: name1, name2, ...: type (= default)?;
+            // Parse field group: [private] name1, name2, ...: type (= default)?;
             // Or typed constant: name :Type: value;
+            var field_vis: ast.Visibility = .public;
+            if (self.tokens.tag(self.tok) == .kw_private) {
+                // Privacy authority is the file that declares the struct type.
+                // An anonymous body is interned by shape, so its type has no
+                // single declaring file to answer to.
+                if (std.mem.startsWith(u8, name, "__anon")) {
+                    return self.fail("'private' is not allowed on an anonymous struct field");
+                }
+                if (self.peekNext() == .kw_private) {
+                    self.advance();
+                    return self.fail("duplicate 'private'");
+                }
+                self.advance();
+                if (self.tokens.tag(self.tok) == .hash_using) {
+                    return self.fail("'private' is not allowed on '#using'");
+                }
+                if (self.isMemberDeclName() and self.peekNext() == .colon_colon) {
+                    return self.fail("'private' is not allowed on a struct method or constant");
+                }
+                field_vis = .private;
+            }
+
             var group_names = std.ArrayList([]const u8).empty;
             var group_starts = std.ArrayList(u32).empty;
 
             if (!self.isMemberDeclName()) {
-                return self.failMemberDeclName("expected field name in struct");
+                return self.failMemberDeclName(if (field_vis == .private)
+                    "expected field name after 'private'"
+                else
+                    "expected field name in struct");
             }
             const field_start = self.tokens.start(self.tok);
             // Captured for the single-name typed-const path (`name :Type: value`)
@@ -1455,6 +1487,9 @@ pub const Parser = struct {
 
             // Typed constant: name :Type: value; (second colon after type)
             if (self.tokens.tag(self.tok) == .colon and group_names.items.len == 1) {
+                if (field_vis == .private) {
+                    return self.fail("'private' is not allowed on a struct constant");
+                }
                 self.advance(); // skip second ':'
                 const value = try self.parseExpr();
                 if (self.tokens.tag(self.tok) == .semicolon) self.advance();
@@ -1486,6 +1521,7 @@ pub const Parser = struct {
                 try field_name_starts.append(self.allocator, fstart);
                 try field_types.append(self.allocator, field_type);
                 try field_defaults.append(self.allocator, default_val);
+                try field_visibilities.append(self.allocator, field_vis);
             }
 
             if (self.tokens.tag(self.tok) == .semicolon) {
@@ -1500,6 +1536,7 @@ pub const Parser = struct {
             .field_name_starts = try field_name_starts.toOwnedSlice(self.allocator),
             .field_types = try field_types.toOwnedSlice(self.allocator),
             .field_defaults = try field_defaults.toOwnedSlice(self.allocator),
+            .field_visibilities = try field_visibilities.toOwnedSlice(self.allocator),
             .type_params = try type_params.toOwnedSlice(self.allocator),
             .using_entries = try using_entries.toOwnedSlice(self.allocator),
             .methods = try methods.toOwnedSlice(self.allocator),
@@ -1938,6 +1975,9 @@ pub const Parser = struct {
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
             // Field: name: Type;       (instance field — JNI Get/Set<Type>Field)
             // Method: name :: (args...) -> Ret;
+            if (self.tokens.tag(self.tok) == .kw_private) {
+                return self.fail("'private' is not allowed on a runtime-class field");
+            }
             if (self.tokens.tag(self.tok) != .identifier) {
                 return self.fail("expected member name in a runtime-class body");
             }

@@ -1,0 +1,9 @@
+Box :: struct {
+    private secret: i64 = 0;
+    open: i64 = 0;
+}
+
+E :: enum {
+    b: Box;
+    n: i64;
+}

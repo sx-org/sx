@@ -16,7 +16,7 @@ SeekFrom :: enum { set; current; end; }
 
 File :: struct {
     // The portable handle slot is wide enough for both a POSIX descriptor and
-    // the bits of a Win32 HANDLE. Direct field privacy is tracked by issue 0321.
+    // the bits of a Win32 HANDLE.
     fd: i64 = -1;
 
     is_valid :: (self: *File) -> bool {

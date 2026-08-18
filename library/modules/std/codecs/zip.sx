@@ -32,8 +32,7 @@ Sink              :: StdZipSink;
 // the caller's output buffer. Reading once more after the final non-empty
 // chunk returns an empty slice and validates the entry checksum.
 EntryReader :: struct {
-    // Representation privacy is tracked by issue 0321. Construct this state
-    // only through Reader.stream*().
+    // Construct this state only through Reader.stream*().
     state: StdZipEntryReaderState;
 
     len :: (self: *EntryReader) -> i64 { std_zip_entry_reader_len(*self.state) }
@@ -58,8 +57,7 @@ EntryReader :: struct {
 }
 
 Reader :: struct {
-    // Representation privacy is tracked by issue 0321. Construct this state
-    // only through open(), open_source(), or open_file().
+    // Construct this state only through open(), open_source(), or open_file().
     state: StdZipReaderState;
 
     len :: (self: *Reader) -> i64 { std_zip_reader_len(*self.state) }
@@ -175,7 +173,7 @@ open_file :: (path: [:0]u8, options: OpenFileOptions = .{}, alloc: Allocator = c
 }
 
 Writer :: struct {
-    // Provisional representation field; see Reader.state and issue 0321.
+    // Construct this state only through the Writer factory operations.
     state: StdZipWriterState;
 
     // Memory output. Call finish() and then take() to transfer ownership.

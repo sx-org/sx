@@ -204,7 +204,7 @@ const ModuleConstCtx = struct {
     pub fn lookupConstArrayElem(_: ModuleConstCtx, _: []const u8, _: i64, _: ?ast.Span) ?i64 {
         return null;
     }
-    pub fn lookupConstStructField(_: ModuleConstCtx, _: []const u8, _: []const u8) ?i64 {
+    pub fn lookupConstStructField(_: ModuleConstCtx, _: []const u8, _: []const u8, _: ?ast.Span) ?i64 {
         return null;
     }
     pub fn lookupPackLen(_: ModuleConstCtx, _: []const u8) ?i64 {
@@ -494,7 +494,7 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
                 if (type_resolver.TypeResolver.integerLimitFor(on, fa.field)) |v| break :blk v;
                 // A struct const's integer field (`LIT.r`) folds to the
                 // SELECTED author's field value.
-                if (ctx.lookupConstStructField(on, fa.field)) |v| break :blk v;
+                if (ctx.lookupConstStructField(on, fa.field, node.span)) |v| break :blk v;
                 // A QUALIFIED-import-member const (`m.CAP`): `on`
                 // names a namespace alias and `fa.field` a const in its target
                 // module. Tried last so a same-named struct-const / numeric-limit

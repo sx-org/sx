@@ -220,7 +220,5 @@ own extraction root.
 ## Representation boundary
 
 Construct codec state only through the documented `init`, `open`, and writer
-factory operations. SX has no module-private struct fields; issue 0321 tracks
-representation privacy for the by-value public wrappers. Their state fields
-are provisional implementation details and are not part of the supported
-stdlib contract.
+factory operations. Public wrapper `state` fields are implementation details
+and are not part of the supported stdlib contract.

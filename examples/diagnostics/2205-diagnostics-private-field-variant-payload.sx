@@ -1,0 +1,9 @@
+// A named tagged-variant payload init names the payload struct's own fields, so
+// a private one is refused there exactly as in a plain named literal.
+
+em :: #import "2205-diagnostics-private-field-variant-payload/e.sx";
+
+main :: () -> i32 {
+    v : em.E = .b{ secret = 1 };
+    return 0;
+}

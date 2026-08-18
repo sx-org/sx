@@ -269,9 +269,10 @@ math :: #import "modules/math";        // namespaced — math.name
 r :: #import "rich.sx";
 helper :: r.helper;                    // re-export
 private helper :: (x: i64) -> i64 { x * 2 }
+Box :: struct { private secret: i64 = 0; }
 ```
 
-Visibility does not chain. Two flat imports of the same name are ambiguous; an own declaration wins. `private` is file-local on a top-level identifier.
+Visibility does not chain. Two flat imports of the same name are ambiguous; an own declaration wins. `private` is file-local on a top-level identifier or a struct field.
 
 `#import "modules/std.sx"` is the prelude (`print`, `List`, `Context`, …) plus `mem`, `fs`, `process`, `socket`, `json`, `cli`, `hash`, `xml`, `log`, `test`.
 

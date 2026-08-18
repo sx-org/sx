@@ -377,37 +377,25 @@ pub const CallResolver = struct {
             // value returns marshalled as garbage, failable
             // returns couldn't be `try`/`catch`-ed. Lowering owns the dispatch;
             // plan only needs the field's `.ret` so typing matches.
-            {
-                var fld_recv = recv_ty;
-                if (!fld_recv.isBuiltin()) {
-                    const ri = self.l.module.types.get(fld_recv);
-                    if (ri == .pointer) fld_recv = ri.pointer.pointee;
-                }
-                if (!fld_recv.isBuiltin()) {
-                    const ri = self.l.module.types.get(fld_recv);
-                    if (ri == .@"struct") {
-                        const field_name_id = self.l.module.types.internString(cfa.field);
-                        for (ri.@"struct".fields) |f| {
-                            if (f.name == field_name_id and !f.ty.isBuiltin()) {
-                                const fti = self.l.module.types.get(f.ty);
-                                if (fti == .closure) return .{
-                                    .kind = .closure,
-                                    .return_type = fti.closure.ret,
-                                    .target = .{ .named = cfa.field },
-                                };
-                                // Bare function-pointer field (`fp: (T) -> R`),
-                                // symmetric with the bare-identifier fn-pointer
-                                // path above — call via `call_indirect`.
-                                if (fti == .function) return .{
-                                    .kind = .fn_pointer,
-                                    .return_type = fti.function.ret,
-                                    .target = .{ .named = cfa.field },
-                                    .prepends_ctx = self.l.implicit_ctx_enabled and fti.function.call_conv != .c,
-                                };
-                            }
-                        }
-                    }
-                }
+            switch (self.l.lookupField(recv_ty, cfa.field)) {
+                .hit, .private => |h| if (!h.ty.isBuiltin()) {
+                    const fti = self.l.module.types.get(h.ty);
+                    if (fti == .closure) return .{
+                        .kind = .closure,
+                        .return_type = fti.closure.ret,
+                        .target = .{ .named = cfa.field },
+                    };
+                    // Bare function-pointer field (`fp: (T) -> R`),
+                    // symmetric with the bare-identifier fn-pointer
+                    // path above — call via `call_indirect`.
+                    if (fti == .function) return .{
+                        .kind = .fn_pointer,
+                        .return_type = fti.function.ret,
+                        .target = .{ .named = cfa.field },
+                        .prepends_ctx = self.l.implicit_ctx_enabled and fti.function.call_conv != .c,
+                    };
+                },
+                .missing => {},
             }
             // Instance method call: obj.method(args) → StructName.method.
             {

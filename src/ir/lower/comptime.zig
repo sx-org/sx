@@ -156,6 +156,10 @@ pub fn constStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Typ
     if (ty.isBuiltin()) return null;
     const ti = self.module.types.get(ty);
     if (ti != .@"struct") return null;
+    for (sl.field_inits) |fi| {
+        const n = fi.name orelse continue;
+        _ = self.mentionField(ty, n, fi.value.span);
+    }
     const struct_fields = ti.@"struct".fields;
     const struct_name = self.module.types.getString(ti.@"struct".name);
     // TypeId identity first; for an author-tracked type a tid-map miss means
@@ -2161,10 +2165,18 @@ pub fn foldConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?as
 /// `<struct const>.field` as a compile-time integer — the SELECTED author's
 /// field initializer, matched by name (named inits) or position, folded in
 /// the author's context.
-pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8, frame: ?*const ConstFoldFrame) ?i64 {
+pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span, frame: ?*const ConstFoldFrame) ?i64 {
     const sel = selectShapedConst(self, name) orelse return null;
     if (sel.info.value.data != .struct_literal) return null;
     const sl = &sel.info.value.data.struct_literal;
+    // `selectShapedConst` restores the READER's source on every exit path, and
+    // the author pin below re-enters the const's own file — where every field
+    // is nameable. The mention answers here, between the two.
+    if (self.privateFieldHere(sel.info.ty, field)) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "field '{s}' is private to its declaring file", .{field});
+        return null;
+    }
     const init_expr: ?*const Node = blk: {
         const has_names = sl.field_inits.len > 0 and sl.field_inits[0].name != null;
         if (has_names) {
@@ -2174,16 +2186,13 @@ pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8
             break :blk null;
         }
         // Positional inits: index via the struct type's field order.
-        if (sel.info.ty.isBuiltin()) break :blk null;
-        const ti = self.module.types.get(sel.info.ty);
-        if (ti != .@"struct") break :blk null;
-        for (ti.@"struct".fields, 0..) |sf, i| {
-            if (std.mem.eql(u8, self.module.types.getString(sf.name), field)) {
-                if (i < sl.field_inits.len) break :blk sl.field_inits[i].value;
+        switch (self.lookupField(sel.info.ty, field)) {
+            .hit, .private => |h| {
+                if (h.index < sl.field_inits.len) break :blk sl.field_inits[h.index].value;
                 break :blk null;
-            }
+            },
+            .missing => break :blk null,
         }
-        break :blk null;
     };
     const e = init_expr orelse return null;
     if (constFoldFrameContains(frame, name, sel.source)) return null;

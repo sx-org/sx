@@ -1,4 +1,7 @@
-facade :: #import "0321-no-module-private-struct-state/facade.sx";
+// A private field cannot be named from another file: a foreign write and a
+// foreign named literal both fail.
+
+facade :: #import "foreign-private-field-naming/facade.sx";
 
 main :: () -> i32 {
     wrapped := facade.Wrapper.init(1);
