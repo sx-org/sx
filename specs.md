@@ -5765,11 +5765,19 @@ Semantics:
   private names.
 - **A private field is a name.** `private fd: i64 = -1;` on a struct field is
   file-local. Another file cannot mention it (`x.fd`, `x.fd = …`,
-  `File{ fd = 3 }`, `.{ fd = 3 }`). Another file can still produce a value
-  without naming the field: a positional init (`File{ 3 }`), `File{}` defaults,
-  `File{ --- }` / `---`, and copy assignment. Only a named mention is refused.
-  Same-file methods, free functions, and literals may name the field.
+  `File{ fd = 3 }`, `.{ fd = 3 }`, `.variant{ fd = 3 }`, `[File_const.fd]T`),
+  and a mention includes `x.fd(…)` when `fd` is a callable field. Another file
+  can still produce a value without naming the field: a positional init
+  (`File{ 3 }`), `File{}` defaults, `File{ --- }` / `---`, and copy assignment.
+  A value spread (`f(..x)`), an index (`x[0]`), and reflection (`print("{}", x)`,
+  `struct_field_value`) read the layout rather than the name, so none is a
+  mention. Same-file methods, free functions, and literals may name the field.
+  A method whose name matches a private field still dispatches: `x.fd(…)` is a
+  mention only when `fd` resolves to a field.
   Authority is the source file that declares the struct type.
+- **A promoted union member answers to its payload's file.** A union whose
+  variant is a named struct promotes that struct's members; a private one is
+  nameable only from the file declaring the payload.
 - **A `#using` promotion carries the base's authority.** A struct that promotes
   a base with a private field gains the field's storage, not the right to name
   it: only the base's declaring file may.

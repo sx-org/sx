@@ -89,7 +89,7 @@ const StatelessInner = struct {
     pub fn lookupConstArrayElem(_: StatelessInner, _: []const u8, _: i64, _: ?ast.Span) ?i64 {
         return null;
     }
-    pub fn lookupConstStructField(_: StatelessInner, _: []const u8, _: []const u8) ?i64 {
+    pub fn lookupConstStructField(_: StatelessInner, _: []const u8, _: []const u8, _: ?ast.Span) ?i64 {
         return null;
     }
     pub fn lookupPackLen(_: StatelessInner, _: []const u8) ?i64 {

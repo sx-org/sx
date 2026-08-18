@@ -801,43 +801,27 @@ fn spreadElemNodes(self: *Lowering, operand: *const Node, span: ast.Span) ?[]*No
     }
     const ty = self.inferExprType(operand);
     if (ty.isBuiltin()) return null;
+    // Every aggregate spreads element-wise as `operand[0]`, `operand[1]`, … —
+    // an index, never a name, so no synthesized node can read as a mention of a
+    // field a human never wrote.
     switch (self.module.types.get(ty)) {
-        .tuple => |t| {
-            var nodes = std.ArrayList(*Node).empty;
-            for (0..t.fields.len) |i| {
-                const fname = std.fmt.allocPrint(self.alloc, "{d}", .{i}) catch return null;
-                const fa_node = self.alloc.create(Node) catch return null;
-                fa_node.* = .{ .span = span, .data = .{ .field_access = .{ .object = @constCast(operand), .field = fname } } };
-                nodes.append(self.alloc, fa_node) catch return null;
-            }
-            return nodes.toOwnedSlice(self.alloc) catch null;
-        },
-        // A struct value spreads field-wise like a tuple (the materialized
-        // pack carrier is an anonymous positional struct with fields
-        // "0"/"1"/…) — synthesize `.field` access nodes in declaration order.
-        .@"struct" => |st| {
-            var nodes = std.ArrayList(*Node).empty;
-            for (st.fields) |f| {
-                const fa_node = self.alloc.create(Node) catch return null;
-                fa_node.* = .{ .span = span, .data = .{ .field_access = .{ .object = @constCast(operand), .field = self.module.types.getString(f.name) } } };
-                nodes.append(self.alloc, fa_node) catch return null;
-            }
-            return nodes.toOwnedSlice(self.alloc) catch null;
-        },
-        .array => |a| {
-            var nodes = std.ArrayList(*Node).empty;
-            var i: u32 = 0;
-            while (i < a.length) : (i += 1) {
-                const idx_node = self.alloc.create(Node) catch return null;
-                idx_node.* = .{ .span = span, .data = .{ .int_literal = .{ .value = @intCast(i) } } };
-                const index_node = self.alloc.create(Node) catch return null;
-                index_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = @constCast(operand), .index = idx_node } } };
-                nodes.append(self.alloc, index_node) catch return null;
-            }
-            return nodes.toOwnedSlice(self.alloc) catch null;
-        },
+        .tuple => |t| return spreadIndexNodes(self, operand, span, t.fields.len),
+        .@"struct" => |st| return spreadIndexNodes(self, operand, span, st.fields.len),
+        .array => |a| return spreadIndexNodes(self, operand, span, a.length),
         else => return null,
     }
+}
+
+fn spreadIndexNodes(self: *Lowering, operand: *const Node, span: ast.Span, count: usize) ?[]*Node {
+    var nodes = std.ArrayList(*Node).empty;
+    for (0..count) |i| {
+        const idx_node = self.alloc.create(Node) catch return null;
+        idx_node.* = .{ .span = span, .data = .{ .int_literal = .{ .value = @intCast(i) } } };
+        const index_node = self.alloc.create(Node) catch return null;
+        index_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = @constCast(operand), .index = idx_node } } };
+        nodes.append(self.alloc, index_node) catch return null;
+    }
+    return nodes.toOwnedSlice(self.alloc) catch null;
 }
 
 /// Node-aware lowering for a pack function's fixed runtime prefix. Pack calls

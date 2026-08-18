@@ -195,8 +195,8 @@ pub const SourceConstCtx = struct {
     pub fn lookupConstArrayElem(self: SourceConstCtx, name: []const u8, idx: i64, span: ?ast.Span) ?i64 {
         return self.lowering.foldConstArrayElem(name, idx, span, self.frame);
     }
-    pub fn lookupConstStructField(self: SourceConstCtx, name: []const u8, field: []const u8) ?i64 {
-        return self.lowering.foldConstStructField(name, field, self.frame);
+    pub fn lookupConstStructField(self: SourceConstCtx, name: []const u8, field: []const u8, span: ?ast.Span) ?i64 {
+        return self.lowering.foldConstStructField(name, field, span, self.frame);
     }
     // Type-query builtin folds (`field_count`/`size_of`/`align_of`) — delegate to
     // the wrapped Lowering, which can resolve the type-expr arg.
@@ -1646,8 +1646,8 @@ pub const Lowering = struct {
     pub fn lookupConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?ast.Span) ?i64 {
         return self.foldConstArrayElem(name, idx, span, null);
     }
-    pub fn lookupConstStructField(self: *Lowering, name: []const u8, field: []const u8) ?i64 {
-        return self.foldConstStructField(name, field, null);
+    pub fn lookupConstStructField(self: *Lowering, name: []const u8, field: []const u8, span: ?ast.Span) ?i64 {
+        return self.foldConstStructField(name, field, span, null);
     }
     /// Qualified-import-member const leaf (`m.CAP`) for the shared
     /// dimension evaluator — resolves the namespace alias `ns` to its target
@@ -3289,6 +3289,8 @@ pub const Lowering = struct {
     pub const lowerAssignment = lower_stmt.lowerAssignment;
     pub const fieldLvalueResolve = lower_stmt.fieldLvalueResolve;
     pub const fieldLvaluePtr = lower_stmt.fieldLvaluePtr;
+    pub const fieldLvalueMention = lower_stmt.fieldLvalueMention;
+    pub const FieldLvalueMention = lower_stmt.FieldLvalueMention;
     pub const storeSwizzle = lower_stmt.storeSwizzle;
     pub const lowerUnionLiteral = lower_stmt.lowerUnionLiteral;
     pub const diagTaggedUnionVariantWrite = lower_stmt.diagTaggedUnionVariantWrite;
@@ -3745,6 +3747,9 @@ pub const Lowering = struct {
     pub const fieldDeclaringSource = lower_expr.fieldDeclaringSource;
     pub const privateFieldHere = lower_expr.privateFieldHere;
     pub const diagPrivateField = lower_expr.diagPrivateField;
+    pub const FieldLookup = lower_expr.FieldLookup;
+    pub const lookupField = lower_expr.lookupField;
+    pub const mentionField = lower_expr.mentionField;
     pub const getAccessorFor = lower_expr.getAccessorFor;
     pub const getSetterFor = lower_expr.getSetterFor;
     pub const getterReturnTypeOnDeref = lower_expr.getterReturnTypeOnDeref;

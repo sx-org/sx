@@ -1,0 +1,6 @@
+Cfg :: struct {
+    private cap: i64 = 0;
+    n: i64 = 0;
+}
+
+C :: Cfg{ cap = 4, n = 1 };

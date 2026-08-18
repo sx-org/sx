@@ -167,7 +167,7 @@ const DimCtx = struct {
     pub fn lookupConstArrayElem(_: DimCtx, _: []const u8, _: i64, _: ?ast.Span) ?i64 {
         return null;
     }
-    pub fn lookupConstStructField(_: DimCtx, _: []const u8, _: []const u8) ?i64 {
+    pub fn lookupConstStructField(_: DimCtx, _: []const u8, _: []const u8, _: ?ast.Span) ?i64 {
         return null;
     }
     pub fn evalConstCallInt(_: DimCtx, _: *const ast.Node) ?i64 {

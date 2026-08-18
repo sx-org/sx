@@ -1,9 +1,12 @@
 // A private field is file-local: same-file methods, literals, and `#using`
 // promotions may name it; another file uses the methods, default construction,
-// and copy.
+// and copy. A spread, an index, and reflection read the layout rather than the
+// name, so all three stay legal on a foreign value.
 
 #import "modules/std.sx";
 box :: #import "2198-modules-private-struct-fields/box.sx";
+
+first :: (v: i64) -> i64 { v }
 
 main :: () -> i32 {
     a := box.Box{};
@@ -13,5 +16,8 @@ main :: () -> i32 {
     c := box.Box{};
     d := box.Box{ 9 };
     print("{}\n", a.get() + b.get() + c.get() + d.get() + box.same_file_sum(1) + box.promoted_sum(4));
+    print("{} {} {}\n", first(..b), b[0], b);
+    k := box.make_coll();
+    print("{}\n", k.m(3));
     return 0;
 }

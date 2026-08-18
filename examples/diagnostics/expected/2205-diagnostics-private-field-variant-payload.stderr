@@ -1,0 +1,5 @@
+error: field 'secret' is private to its declaring file
+  --> examples/diagnostics/2205-diagnostics-private-field-variant-payload.sx:7:29
+   |
+ 7 |     v : em.E = .b{ secret = 1 };
+   |                             ^

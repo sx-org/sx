@@ -1,5 +1,7 @@
 Box :: struct {
     private secret: i64 = 0;
+    private fp: (i64) -> i64 = ---;
+    private cl: Closure(i64) -> i64 = ---;
 }
 
 make :: () -> Box { Box{} }

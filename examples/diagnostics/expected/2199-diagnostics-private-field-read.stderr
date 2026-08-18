@@ -1,5 +1,17 @@
-error: field 'secret' is private to its declaring file
-  --> examples/diagnostics/2199-diagnostics-private-field-read.sx:7:12
+error: field 'fp' is private to its declaring file
+  --> examples/diagnostics/2199-diagnostics-private-field-read.sx:8:5
    |
- 7 |     return x.secret.(i32);
+ 8 |     x.fp(1);
+   |     ^^^^
+
+error: field 'cl' is private to its declaring file
+  --> examples/diagnostics/2199-diagnostics-private-field-read.sx:9:5
+   |
+ 9 |     x.cl(1);
+   |     ^^^^
+
+error: field 'secret' is private to its declaring file
+  --> examples/diagnostics/2199-diagnostics-private-field-read.sx:10:12
+   |
+10 |     return x.secret.(i32);
    |            ^^^^^^^^
