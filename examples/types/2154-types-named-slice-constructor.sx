@@ -52,9 +52,9 @@ show :: ($L: Type, a: *[4]u8) -> void {
     print("generic {} {}\n", type_name(type_of(s)), s);
 }
 
-COMPTIME_SUM :: #run total(@Array(3, u8).[7, 8, 9]);
+COMPTIME_SUM :: @run total(@Array(3, u8).[7, 8, 9]);
 
-#run boxed();
+@run boxed();
 
 main :: () -> i32 {
     print("same={} name={}\n", type_eq(Named, Punct), type_name(Named));

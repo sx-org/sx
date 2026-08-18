@@ -7,7 +7,7 @@
 // bookmark down, and the expansion is refused with every waiting unit named.
 #import "modules/std.sx";
 
-inline if #run { context.depth > 2 } {
+inline if @run { context.depth > 2 } {
     #context_extend depth: i64 = 3;
 } else {
     #context_extend depth: i64 = 9;

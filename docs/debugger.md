@@ -40,7 +40,7 @@ to satisfy all three. "JIT" and "comptime" are **not** the same thing.
 |---|---|---|
 | **AOT** (`sx build`) | native machine code in an on-disk binary | pointer to an interned `Frame` |
 | **JIT** (`sx run`) | ORC-JIT'd machine code in anonymous memory | pointer to an interned `Frame` |
-| **Comptime** (`#run`) | the IR interpreter (`interp.zig`) — no machine code | packed `(func_id, span.start)` |
+| **Comptime** (`@run`) | the IR interpreter (`interp.zig`) — no machine code | packed `(func_id, span.start)` |
 
 The crucial constraint: **the same lowered IR runs in the compiled
 backend *and* the interpreter.** So a value the IR produces (like a trace
@@ -189,7 +189,7 @@ Traces follow the optimization level (mirrors `Lowering.tracesEnabled`):
 - **Debug (`-O0`/`-O1`, the `sx run` default):** push/clear emitted; the
   `Frame` table is emitted.
 - **Release (`-O2`/`-O3`):** push/clear are no-ops, no `Frame` table.
-- **Comptime (`#run`):** always on, regardless of build mode — a `#run`
+- **Comptime (`@run`):** always on, regardless of build mode — a `@run`
   failure must produce a useful diagnostic even in a release build.
 
 The success path costs nothing; the failure path costs one pointer push.
@@ -247,7 +247,7 @@ both the trace path and the DWARF path.
 
 | File | Responsibility |
 |---|---|
-| [`src/core.zig`](../src/core.zig) | `Compilation`: owns `import_sources` (file→source map), constructs the emitter, calls `setDebugContext` + `emit`; re-enters the interpreter for `#run`/post-link |
+| [`src/core.zig`](../src/core.zig) | `Compilation`: owns `import_sources` (file→source map), constructs the emitter, calls `setDebugContext` + `emit`; re-enters the interpreter for `@run`/post-link |
 | [`src/ir/lower.zig`](../src/ir/lower.zig) | AST→IR. Stamps `Inst.span`; emits push/clear at failure/absorb sites; `tracesEnabled` gate; declares the `sx_trace_*` externs |
 | [`src/ir/emit_llvm.zig`](../src/ir/emit_llvm.zig) | IR→LLVM orchestrator. Owns `LLVMEmitter` + the source map (`setDebugContext`); dispatches the `.trace_frame` op and the DWARF passes to the helpers below |
 | [`src/backend/llvm/reflection.zig`](../src/backend/llvm/reflection.zig) | `Reflection`: builds the interned `Frame` table + the tag-name / type-name tables; yields the `.trace_frame` op's value (the `Frame` global's address) — the `sx_trace_push` call itself is emitted by `lower.zig` |
@@ -313,7 +313,7 @@ a **read-side context-split primitive** (the mirror of the `.trace_frame` op):
   IR/source tables → a `Frame`.
 
 The same `trace.sx` source works in both because it runs in the matching
-machine — a compiled program formats compiled frames, a `#run` formats
+machine — a compiled program formats compiled frames, a `@run` formats
 comptime frames. It then prints `func at file:line:col` + a best-effort
 source snippet.
 

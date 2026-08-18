@@ -1,5 +1,5 @@
-// Comptime `#run` of a failable composes with the handlers exactly as at
-// runtime: `catch` absorbs, `or` terminates, a successful bare `#run` yields the
+// Comptime `@run` of a failable composes with the handlers exactly as at
+// runtime: `catch` absorbs, `or` terminates, a successful bare `@run` yields the
 // value (error channel stripped), and an `onfail` in the evaluated body still
 // runs during comptime unwinding.
 
@@ -19,11 +19,11 @@ guard :: (ok: bool) -> !E {
     return;
 }
 
-ok_v   :: #run parse(5);            // success → 10 (value, error stripped)
-caught :: #run parse(-1) catch |e| 99; // Bad   → 99
-ored   :: #run parse(0) ?? 55;       // Empty → 55
+ok_v   :: @run parse(5);            // success → 10 (value, error stripped)
+caught :: @run parse(-1) catch |e| 99; // Bad   → 99
+ored   :: @run parse(0) ?? 55;       // Empty → 55
 
-#run guard(false) catch |e| {};       // onfail fires during the comptime unwind
+@run guard(false) catch |e| {};       // onfail fires during the comptime unwind
 
 main :: () -> i32 {
     print("ok={} caught={} ored={}\n", ok_v, caught, ored);

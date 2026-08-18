@@ -1,7 +1,7 @@
 #import "modules/std.sx";
 #import "modules/build.sx";
 
-// --- #run build configuration ---
+// --- @run build configuration ---
 // build_options() returns a BuildOptions struct at compile time.
 // Methods on it (add_link_flag, set_output_path) are compiler builtins
 // that configure the build without runtime cost.
@@ -15,12 +15,12 @@ configure_build :: () {
         opts.add_link_flag("-sUSE_SDL=3");
     }
 }
-#run configure_build();
+@run configure_build();
 
 // --- inline if with compiler constants ---
 
 main :: () {
-    // Verify #run configure_build() executed without error
+    // Verify @run configure_build() executed without error
     print("build config: ok\n");
 
     // Verify compiler constants are available

@@ -1417,20 +1417,20 @@ pub const Ops = struct {
         // runtime symbol (the comptime interp dispatches them to a Zig handler).
         // A welded call inside a RUNTIME function is illegal; surface a clean
         // build-gating error instead of an undefined-symbol link failure. A
-        // welded call inside a COMPTIME function (a `#run` / `::` initializer
+        // welded call inside a COMPTIME function (a `@run` / `::` initializer
         // wrapper, `is_comptime`) is fine — that body is interp-evaluated and its
         // LLVM emission is dead, so skip the gate there.
         const enclosing = &self.e.ir_mod.functions.items[self.e.current_func_idx];
         if (callee_func.is_intrinsic and !enclosing.isComptimeOnly()) {
             const fname = self.e.ir_mod.types.getString(callee_func.name);
-            std.debug.print("error: '{s}' runs only at compile time — it cannot be called from the runtime call graph (use it inside #run or a comptime '::')\n", .{fname});
+            std.debug.print("error: '{s}' runs only at compile time — it cannot be called from the runtime call graph (use it inside @run or a comptime '::')\n", .{fname});
             self.reportRuntimePath(fname);
             self.e.comptime_failed = true;
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
             return;
         }
         // A comptime-only callee (compiler-API or compiler-domain) reached here from
-        // a COMPTIME (dead) body — the enclosing `#run`/`::` wrapper whose LLVM is
+        // a COMPTIME (dead) body — the enclosing `@run`/`::` wrapper whose LLVM is
         // never executed. Such a function has no runtime symbol, so emit `undef`
         // instead of a real `call` (which would leave an undefined reference for the
         // AOT linker). The comptime VALUE is produced by the VM, not this dead
@@ -1441,14 +1441,14 @@ pub const Ops = struct {
         }
 
         if (callee_func.isComptimeOnly() and !enclosing.isComptimeOnly()) {
-            // Inline comptime-call fold: a body-local `#run expr` lowers to a
+            // Inline comptime-call fold: a body-local `@run expr` lowers to a
             // `call` of its `is_comptime` `__ct` wrapper. That wrapper is
             // comptime-ONLY — it must NEVER survive as a runtime call (its body
             // may read `---` storage / depend on comptime-only state). Evaluate
             // it on the VM (the sole evaluator).
             //
             // GATE on `!enclosing.isComptimeOnly()`: only a call reached from a REAL
-            // runtime body (e.g. `main`) is an actual `#run` fold site. An
+            // runtime body (e.g. `main`) is an actual `@run` fold site. An
             // `is_comptime` callee that appears INSIDE another comptime wrapper's
             // body (`make_enum` / `declare` / `define` called from a `__ctype`
             // type-fn wrapper) is DEAD LLVM — never executed — and the VM
@@ -1456,10 +1456,10 @@ pub const Ops = struct {
             // call would mis-`tryEval` it (wrong arg count) and emit a spurious
             // failure. Leave those to the normal (dead) call path.
             //
-            // For the live `#run` fold:
+            // For the live `@run` fold:
             //   - scalar / string result → splat as a constant (the common case);
             //   - a BAIL (`tryEval` null — e.g. an unbridgeable `[2][]i64` return)
-            //     is a comptime-init FAILURE. Mirror the GLOBAL `#run` path
+            //     is a comptime-init FAILURE. Mirror the GLOBAL `@run` path
             //     (`emitGlobals` → `error: comptime init of 'X' failed: <reason>`,
             //     `comptime_failed`): emit the located diagnostic and gate the
             //     build, NEVER fall through to a runtime call over `---` storage
@@ -1492,7 +1492,7 @@ pub const Ops = struct {
                 // slices). Re-emitting a runtime `call` would re-run the SAME body
                 // over its (possibly `---`) storage and produce DIFFERENT garbage
                 // with no diagnostic — a silent miscompile.
-                // Mirror the GLOBAL `#run` path (`emitGlobals` → `error: comptime
+                // Mirror the GLOBAL `@run` path (`emitGlobals` → `error: comptime
                 // init of 'X' failed: <reason>`, `comptime_failed`): surface the
                 // bridge bail loudly and gate the build.
                 const fname = if (callee_func.comptime_display_name) |dn|

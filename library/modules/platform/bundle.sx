@@ -14,9 +14,9 @@
 // platform's requirements.
 //
 // Wiring: users opt in by registering `bundle_main` as the post-link
-// callback in their own `#run` block. Example:
+// callback in their own `@run` block. Example:
 //
-//     #run {
+//     @run {
 //         opts := build_options();
 //         opts.set_bundle_path("MyApp.app");
 //         opts.set_bundle_id("co.example.myapp");

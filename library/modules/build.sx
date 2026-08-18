@@ -112,7 +112,7 @@ jni_main_java_source_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic
 
 // The build callback registrar. Registers the sx function that drives
 // the build — the compiler invokes it after codegen with the `BuildOptions`
-// handle. `#run on_build(build);` (from inside a `#run` block) is the override
+// handle. `@run on_build(build);` (from inside a `@run` block) is the override
 // form, where `build :: (opt: BuildOptions) -> bool { … }`; the
 // last registration wins. With no override the compiler auto-invokes the stdlib
 // `default_pipeline` (below). This is the sole post-build callback mechanism.
@@ -136,11 +136,11 @@ emit_and_link :: (opt: BuildOptions) -> bool {
 // `default_pipeline` is the stdlib build driver: the compiler invokes it after
 // codegen (everything is sx-driven — there is no auto-emit/auto-link). It emits +
 // links the program via `emit_and_link`. A user overrides the whole pipeline with
-// their own `#run on_build(custom);` in main.sx (last-wins) — e.g. bundling is
-// `#import "modules/platform/bundle.sx"; #run on_build(bundle_main);`, where
+// their own `@run on_build(custom);` in main.sx (last-wins) — e.g. bundling is
+// `#import "modules/platform/bundle.sx"; @run on_build(bundle_main);`, where
 // `bundle_main` runs `emit_and_link` then wraps the binary into a `.app` / `.apk`.
 // The compiler FORCE-LOWERS this well-known name and auto-invokes it after codegen
-// when no `on_build` override was registered (no library `#run` needed).
+// when no `on_build` override was registered (no library `@run` needed).
 //
 // When a bundle was requested (`--bundle`/`--apk` or `set_bundle_path`), delegate
 // to the per-target bundler (`bundle_main` runs the emit+link core then wraps the

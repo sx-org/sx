@@ -1,4 +1,4 @@
-// The design's flagship conformance-conditional: a `#run` that asks about a
+// The design's flagship conformance-conditional: a `@run` that asks about a
 // protocol the branch it selects feeds.
 //
 // The run has a body, so it EXECUTES — and the probe inside it is a real
@@ -17,7 +17,7 @@ Serialize :: protocol vtable { write :: (self: *Self) -> i64; }
 
 GPA :: struct { n: i64; }
 
-HAS :: #run { g := GPA{ n = 1 }; g.(?Serialize) != null };
+HAS :: @run { g := GPA{ n = 1 }; g.(?Serialize) != null };
 
 inline if !HAS {
     impl Serialize for GPA { write :: (self: *GPA) -> i64 { self.n } }

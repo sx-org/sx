@@ -3,7 +3,7 @@
 //! sx functions are stage-polymorphic: nothing about a function declares which
 //! stage it belongs to. What decides is REACHABILITY — a function is in the
 //! binary because `main` (or an export, or something whose address was taken) can
-//! reach it through the call graph, and it runs at compile time because a `#run`,
+//! reach it through the call graph, and it runs at compile time because a `@run`,
 //! a constant initializer, a type builder, or a registered build callback can.
 //! A helper reached from both does both.
 //!
@@ -31,7 +31,7 @@ pub const Reachability = struct {
     has_roots: bool,
     /// Indexed by FuncId: can a runtime root reach this function?
     runtime: []bool,
-    /// Indexed by FuncId: can a COMPILE-TIME root reach it? (a `#run` wrapper, a
+    /// Indexed by FuncId: can a COMPILE-TIME root reach it? (a `@run` wrapper, a
     /// type builder, a registered build callback)
     compiler: []bool,
     /// The function through which the runtime search first reached this one.
@@ -240,7 +240,7 @@ pub fn compute(alloc: std.mem.Allocator, m: *const Module) !Reachability {
     r.has_roots = queue.items.len > 0;
     try bfs(alloc, m, r.runtime, r.via, &queue);
 
-    // The compile-time graph: every function a `#run` wrapper, a type builder, or
+    // The compile-time graph: every function a `@run` wrapper, a type builder, or
     // a registered build callback can reach. Same traversal, different roots and
     // no parent tracking (only the runtime path is ever printed).
     var cq: std.ArrayList(FuncId) = .empty;

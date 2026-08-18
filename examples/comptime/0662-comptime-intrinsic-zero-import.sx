@@ -14,10 +14,10 @@ P :: struct { a: i64; b: f32; }
 E :: enum { X; Y; }
 
 // Layout + reflection — folded at lowering.
-SIZE  :: #run size_of(P);        // 16
-ALIGN :: #run align_of(i64);     //  8
-NFLD  :: #run struct_field_count(P);    //  2
-IDX   :: #run variant_index(E, E.Y); // 1
+SIZE  :: @run size_of(P);        // 16
+ALIGN :: @run align_of(i64);     //  8
+NFLD  :: @run struct_field_count(P);    //  2
+IDX   :: @run variant_index(E, E.Y); // 1
 
 check :: (label: string, got: i64, want: i64) -> i64 {
     if got != want { return 1; }

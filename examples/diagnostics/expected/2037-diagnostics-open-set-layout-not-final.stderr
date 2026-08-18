@@ -9,7 +9,7 @@ help: a set's members are declared anywhere in the program, and this position is
 21 |     bytes: [size_of(View)]u8 = ---;
    |             ^^^^^^^^^^^^^
 
-help: read the size where it is a VALUE ('n := size_of(…)'), or bind it with '#run size_of(…)' — both are answered from the frozen layout
+help: read the size where it is a VALUE ('n := size_of(…)'), or bind it with '@run size_of(…)' — both are answered from the frozen layout
    |
 21 |     bytes: [size_of(View)]u8 = ---;
    |             ^^^^^^^^^^^^^
@@ -25,7 +25,7 @@ help: a set's members are declared anywhere in the program, and this position is
 30 |     bytes: [size_of(Wrapper)]u8 = ---;
    |             ^^^^^^^^^^^^^^^^
 
-help: read the size where it is a VALUE ('n := size_of(…)'), or bind it with '#run size_of(…)' — both are answered from the frozen layout
+help: read the size where it is a VALUE ('n := size_of(…)'), or bind it with '@run size_of(…)' — both are answered from the frozen layout
    |
 30 |     bytes: [size_of(Wrapper)]u8 = ---;
    |             ^^^^^^^^^^^^^^^^
@@ -41,7 +41,7 @@ help: a set's members are declared anywhere in the program, and this position is
 51 |     local: [size_of(View)]u8 = ---;
    |             ^^^^^^^^^^^^^
 
-help: read the size where it is a VALUE ('n := size_of(…)'), or bind it with '#run size_of(…)' — both are answered from the frozen layout
+help: read the size where it is a VALUE ('n := size_of(…)'), or bind it with '@run size_of(…)' — both are answered from the frozen layout
    |
 51 |     local: [size_of(View)]u8 = ---;
    |             ^^^^^^^^^^^^^

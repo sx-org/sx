@@ -11,7 +11,7 @@
 // really has.
 #import "modules/std.sx";
 
-DEEP :: #run { context.depth > 2 };
+DEEP :: @run { context.depth > 2 };
 
 inline if DEEP { MODE :: 1; } else { MODE :: 0; }
 

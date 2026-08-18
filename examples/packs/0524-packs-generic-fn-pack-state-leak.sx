@@ -24,6 +24,6 @@ run_all :: () {
     print("2: {}\n", probe(42, "hi"));
     print("4: {}\n", probe(1, 2.0, "x", true));
 }
-#run run_all();
+@run run_all();
 
 main :: () { print("rt\n"); }

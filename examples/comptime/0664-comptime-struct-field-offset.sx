@@ -13,7 +13,7 @@ parity :: () -> bool {
     match ti { case .struct: |si| { return si.fields[1].offset == struct_field_offset(Padded, 1); } else: {} }
     return false;
 }
-PARITY :: #run parity();
+PARITY :: @run parity();
 
 main :: () {
     print("{} {} {}\n", struct_field_offset(Padded, 0), struct_field_offset(Padded, 1), struct_field_offset(Padded, 2));

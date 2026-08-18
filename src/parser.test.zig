@@ -471,7 +471,7 @@ test "parser: private rejected on locals and directive forms" {
         "private #import \"x.sx\";",
         "private impl P for T {}",
         "private inline if true { a :: 1; }",
-        "private #run 1;",
+        "private @run 1;",
     };
     for (cases) |src| {
         var p = try Parser.init(alloc, src);

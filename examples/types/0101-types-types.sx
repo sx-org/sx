@@ -9,7 +9,7 @@ Foo :: struct {
     a : u2; // this will have 0 as default
     b : u8 = SPECIAL_VALUE; 
     c : u8 = ---; // default for c is undefined
-    d : u8 = #run xx resolve(5); // converts i32 to u8
+    d : u8 = @run xx resolve(5); // converts i32 to u8
 }
 
 main :: () {

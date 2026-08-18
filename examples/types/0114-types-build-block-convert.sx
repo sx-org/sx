@@ -28,6 +28,6 @@ run_all :: () {
     print("--- void / i64, string ---\n{}\n", preview_void(42, "hi"));
     print("--- i32 / f64 ---\n{}\n", preview_i32(3.14));
 }
-#run run_all();
+@run run_all();
 
 main :: () { print("rt\n"); }

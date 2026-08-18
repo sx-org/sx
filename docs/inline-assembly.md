@@ -343,11 +343,11 @@ under both execution paths:
   then run. Both inline and global asm work.
 - **`sx build` (AOT)** — same, into a native binary.
 
-It does **not** run at **compile time**. A `#run` (comptime) call into a
+It does **not** run at **compile time**. A `@run` (comptime) call into a
 global-asm symbol fails loudly:
 
 ```sx
-COMPUTED :: #run my_add(40, 2);   // error: the symbol isn't linked yet at comptime
+COMPUTED :: @run my_add(40, 2);   // error: the symbol isn't linked yet at comptime
 ```
 
 ```
@@ -356,7 +356,7 @@ comptime extern call: symbol not found via dlsym
 
 The comptime interpreter resolves `extern` calls against the host
 process; a module-asm symbol only exists once the program is
-assembled and linked, so call it at runtime, not in a `#run`.
+assembled and linked, so call it at runtime, not in a `@run`.
 
 ---
 
@@ -419,7 +419,7 @@ q, r := divmod(17, 5);              // (3, 2)
   store), `+` (read-modify-write), `=*m` (write through the address).
   The place must be mutable — not a scalar `::` constant.
 - **Global `asm { … }`** defines symbols; import them with a lib-less
-  `extern`. They run under JIT and AOT, but **not** in a `#run`.
+  `extern`. They run under JIT and AOT, but **not** in a `@run`.
 - **It's target-specific.** Gate or pick instructions per architecture;
   there is no portable instruction set.
 

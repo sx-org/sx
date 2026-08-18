@@ -18,8 +18,8 @@ from_context :: () -> Allocator {
     return context.allocator;
 }
 
-H :: #run capture();
-A :: #run from_context();
+H :: @run capture();
+A :: @run from_context();
 
 main :: () {
     p := H.a.create(i64);

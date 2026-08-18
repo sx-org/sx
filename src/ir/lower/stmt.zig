@@ -1106,7 +1106,7 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
         return;
     }
 
-    // For a body-local `#run` const (`L :: #run f()`), record the const NAME so
+    // For a body-local `@run` const (`L :: @run f()`), record the const NAME so
     // the `__ct` wrapper carries it as a display name — a comptime-init failure
     // then reports `comptime init of 'L' failed` instead of `__ct_N`.
     const saved_ct_name = self.comptime_const_name;
@@ -1437,7 +1437,7 @@ fn assignmentRootIdent(target: *const Node) ?[]const u8 {
 }
 
 /// True when `root` names a module CONSTANT from the current source —
-/// a const-flagged global (array/struct consts, #run consts) or a
+/// a const-flagged global (array/struct consts, @run consts) or a
 /// module value const. Locals shadow (caller checks scope first).
 pub fn rootIsConstant(self: *Lowering, root: []const u8) bool {
     switch (self.selectGlobalAuthor(root)) {
@@ -2232,7 +2232,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
 
     // Writes through a constant are rejected at compile time:
     // the target chain's root naming a const global (array/struct consts,
-    // #run consts) or a module value const cannot be stored to — an
+    // @run consts) or a module value const cannot be stored to — an
     // unguarded store to a struct const bus-errors at runtime, and to a
     // scalar it silently misfires.
     if (diagConstRootWrite(self, asgn.target)) return;

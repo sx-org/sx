@@ -32,20 +32,20 @@ describe :: ($T: Type) -> string {
     return "?";
 }
 
-// The TypeInfo VALUE lives in comptime memory — consume it there (#run
+// The TypeInfo VALUE lives in comptime memory — consume it there (@run
 // folds each description to a string constant).
-D_STRUCT  :: #run describe(Padded);
-D_UNION   :: #run describe(Overlay);
-D_I16     :: #run describe(i16);
-D_U32     :: #run describe(u32);
-D_F32     :: #run describe(f32);
-D_ARR     :: #run describe([4]i64);
-D_VEC     :: #run describe(struct_field_type(WithVec, 0));
-D_SLICE   :: #run describe([]u8);
-D_PTR     :: #run describe(*Padded);
-D_OPT     :: #run describe(?i32);
-D_STR     :: #run describe(string);
-D_BOOL    :: #run describe(bool);
+D_STRUCT  :: @run describe(Padded);
+D_UNION   :: @run describe(Overlay);
+D_I16     :: @run describe(i16);
+D_U32     :: @run describe(u32);
+D_F32     :: @run describe(f32);
+D_ARR     :: @run describe([4]i64);
+D_VEC     :: @run describe(struct_field_type(WithVec, 0));
+D_SLICE   :: @run describe([]u8);
+D_PTR     :: @run describe(*Padded);
+D_OPT     :: @run describe(?i32);
+D_STR     :: @run describe(string);
+D_BOOL    :: @run describe(bool);
 
 main :: () {
     print("{}\n", D_STRUCT);

@@ -70,10 +70,10 @@ pub const BuildConfig = struct {
     c_object_paths: []const []const u8 = &.{},
     link_libraries: []const []const u8 = &.{},
 
-    /// The fully-merged link flags (CLI `extra_link_flags` + `#run` build-block
+    /// The fully-merged link flags (CLI `extra_link_flags` + `@run` build-block
     /// flags), forwarded by main.zig. The sx driver reads them via `build_flags()`
     /// and passes them to `link`. (Distinct from `link_flags`, which holds only
-    /// the `#run`-accumulated subset.)
+    /// the `@run`-accumulated subset.)
     merged_link_flags: []const []const u8 = &.{},
 
     /// Host-installed callbacks for build-pipeline ACTIONS the comptime VM can't

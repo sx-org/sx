@@ -22,7 +22,7 @@ main :: () {
     print("2.0 != 2.0: {}\n", 2.0 != 2.0);   // false
 
     // Native codegen converges with the comptime interpreter.
-    print("comptime nan != nan: {}\n", #run nan_ne_nan());
+    print("comptime nan != nan: {}\n", @run nan_ne_nan());
 }
 
 nan_ne_nan :: () -> bool {

@@ -705,7 +705,7 @@ pub const Block = struct {
 pub const ComptimeRole = enum {
     /// Not compiler-only: an ordinary function, emitted when runtime-reachable.
     none,
-    /// A wrapper lowering synthesized for a `#run`, a `::` initializer, or an
+    /// A wrapper lowering synthesized for a `@run`, a `::` initializer, or an
     /// `#insert` — evaluated by the comptime VM, never called at runtime.
     run_wrapper,
     /// A `-> Type` constructor, evaluated at lowering time to mint a type. Types
@@ -724,7 +724,7 @@ pub const Function = struct {
     is_extern: bool = false,
     /// WHY this function is compiler-only, when it is. Three unrelated facts used
     /// to share one `is_comptime` bool, which is why `runComptimeSideEffects` had
-    /// to string-match on a `__run` name prefix: the flag could not tell a `#run`
+    /// to string-match on a `__run` name prefix: the flag could not tell a `@run`
     /// wrapper from a type builder.
     ///
     /// Every role means "never present in the shipped binary" — that shared
@@ -761,11 +761,11 @@ pub const Function = struct {
     is_intrinsic: bool = false,
 
 
-    /// For a body-local `#run` wrapper (`L :: #run f()` → an `is_comptime`
-    /// `__ct_N` function): the user-facing const NAME the `#run` initializes, so
+    /// For a body-local `@run` wrapper (`L :: @run f()` → an `is_comptime`
+    /// `__ct_N` function): the user-facing const NAME the `@run` initializes, so
     /// a comptime-init failure can report `comptime init of 'L' failed` rather
-    /// than the internal `__ct_N` wrapper name. Null when the `#run`
-    /// is not bound to a named const (a bare inline `#run`).
+    /// than the internal `__ct_N` wrapper name. Null when the `@run`
+    /// is not bound to a named const (a bare inline `@run`).
     comptime_display_name: ?StringId = null,
 
     /// True for an `abi(.naked)` function — no calling-convention

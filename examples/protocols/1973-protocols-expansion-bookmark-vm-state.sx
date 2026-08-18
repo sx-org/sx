@@ -26,7 +26,7 @@ probe :: () -> i64 {
     return context.depth + v.draw();
 }
 
-SUM :: #run probe();
+SUM :: @run probe();
 
 inline if POINTER_SIZE == 8 {
     #context_extend depth: i64 = 3;

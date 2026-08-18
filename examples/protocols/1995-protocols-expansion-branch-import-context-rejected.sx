@@ -8,7 +8,7 @@
 // waiting forever — an expansion deadlock instead of an answer.
 #import "modules/std.sx";
 
-DEEP :: #run { budget() > 8 };
+DEEP :: @run { budget() > 8 };
 
 inline if DEEP { MODE :: 1; } else { MODE :: 0; }
 

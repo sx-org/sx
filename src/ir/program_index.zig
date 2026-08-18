@@ -854,7 +854,7 @@ pub const ProgramIndex = struct {
     qualified_fn_source: std.StringHashMap([]const u8),
     /// sx alias → RuntimeClassDecl (jni_class / objc_class / swift_class / ... — registered in scan pass).
     runtime_class_map: std.StringHashMap(*const ast.RuntimeClassDecl),
-    /// `#run` global name → GlobalId.
+    /// `@run` global name → GlobalId.
     global_names: std.StringHashMap(GlobalInfo),
     /// Type alias name → target TypeId. The single-source alias table; passed
     /// explicitly to `TypeResolver` / `type_bridge` resolution (no borrow).
@@ -888,7 +888,7 @@ pub const ProgramIndex = struct {
     type_aliases_by_source: std.StringHashMap(std.StringHashMap(TypeId)),
     /// Module-level value const → info, partitioned by declaring source.
     module_consts_by_source: std.StringHashMap(std.StringHashMap(ModuleConstInfo)),
-    /// `#run` / top-level global name → GlobalInfo, partitioned by declaring source.
+    /// `@run` / top-level global name → GlobalInfo, partitioned by declaring source.
     globals_by_source: std.StringHashMap(std.StringHashMap(GlobalInfo)),
 
     // ── Context extension (design/context-extension.md) ──

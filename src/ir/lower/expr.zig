@@ -3363,7 +3363,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 };
                 break :blk self.builder.load(self.current_ctx_ref, ctx_ty);
             }
-            // Check globals (#run constants) — source-aware:
+            // Check globals (@run constants) — source-aware:
             // the global registry is last-wins across modules, so select the
             // AUTHOR first and emit ITS global, never an unrelated module's
             // same-named one.

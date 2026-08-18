@@ -1,7 +1,7 @@
 //! The one worklist lowering drains for expansion.
 //!
 //! Three driver classes register here and nowhere else: the conditions and
-//! iterables of module-scope `inline if` / `inline for`, the `#run`s those
+//! iterables of module-scope `inline if` / `inline for`, the `@run`s those
 //! conditions reach, and the comptime the convergence fixpoint reaches by
 //! monomorphizing an admitted member. Each is REGISTERED before it runs and
 //! RETIRED when it is decided, so the program's declaration space has an
@@ -46,7 +46,7 @@ const Node = ast.Node;
 pub const Kind = enum {
     /// A module-scope `inline if` / `inline match` / `inline for`.
     module_driver,
-    /// A `#run` a driver's condition reached.
+    /// A `@run` a driver's condition reached.
     run,
     /// One round of the convergence fixpoint: materializing the arms whose
     /// monomorphization reaches further comptime.
@@ -101,7 +101,7 @@ pub const Worklist = struct {
     /// than the whole scope: a driver waiting on a name it does not itself
     /// declare is not waiting on itself.
     open_decls: std.StringHashMap(u32),
-    /// `#run` nodes being driven right now — a condition that reaches the run
+    /// `@run` nodes being driven right now — a condition that reaches the run
     /// it is itself part of would otherwise recurse forever.
     driving: std.AutoHashMap(*const Node, void),
     /// How many `#context_extend` declarations unretired drivers could still
@@ -177,7 +177,7 @@ pub const Worklist = struct {
     }
 
     /// Register a driver of a non-declaration class. These contribute no
-    /// declarations of their own — a `#run` computes a value, a fixpoint round
+    /// declarations of their own — a `@run` computes a value, a fixpoint round
     /// monomorphizes bodies — so they carry an empty contribution set and
     /// retire as soon as they are drained.
     pub fn note(w: *Worklist, kind: Kind) void {
@@ -206,7 +206,7 @@ pub const Worklist = struct {
         return true;
     }
 
-    /// Claim a `#run` for driving. False when it is already on the stack —
+    /// Claim a `@run` for driving. False when it is already on the stack —
     /// a condition reachable from its own run has no value to read.
     pub fn claimRun(w: *Worklist, node: *const Node) bool {
         if (w.driving.contains(node)) return false;

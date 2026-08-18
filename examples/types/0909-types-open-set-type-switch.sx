@@ -53,7 +53,7 @@ describe :: (v: View) -> string {
 // The numbering the arms compare against is written at the freeze, so a switch
 // asked before it waits for it — including for a member instantiated later than
 // the question.
-CT_ANSWER :: #run early_switch();
+CT_ANSWER :: @run early_switch();
 
 early_switch :: () -> string {
     v: View = Padded(i64){ inner = 7 };

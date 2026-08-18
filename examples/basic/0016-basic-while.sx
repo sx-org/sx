@@ -10,7 +10,7 @@ sumOf10 :: () -> i32 {
     s
 }
 
-someSum :: #run sumOf10();
+someSum :: @run sumOf10();
 
 main :: () {
     // Basic while loop: count to 5

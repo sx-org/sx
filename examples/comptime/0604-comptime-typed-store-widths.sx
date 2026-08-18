@@ -9,7 +9,7 @@
 // neighbors with zeros and the sum drops.
 //
 // Each test computes its expected sum at COMPTIME (the value is baked
-// into a `#run` constant — the interp's `storeAtRawPtr` runs). The
+// into a `@run` constant — the interp's `storeAtRawPtr` runs). The
 // runtime program prints the same checksum computed by codegen
 // (LLVM-emitted typed stores). The two MUST match.
 //
@@ -148,20 +148,20 @@ run_f64 :: () -> i64 {
 }
 
 // ── comptime-baked expected checksums ───────────────────────────────
-// `#run` evaluates each helper via the interp, so its
+// `@run` evaluates each helper via the interp, so its
 // `storeAtRawPtr(addr, val, val_ty)` honors the declared width.
 
-EXP_U8   :: #run run_u8();
-EXP_U16  :: #run run_u16();
-EXP_U32  :: #run run_u32();
-EXP_U64  :: #run run_u64();
-EXP_S8   :: #run run_i8();
-EXP_S16  :: #run run_i16();
-EXP_S32  :: #run run_i32();
-EXP_S64  :: #run run_i64();
-EXP_BOOL :: #run run_bool();
-EXP_F32  :: #run run_f32();
-EXP_F64  :: #run run_f64();
+EXP_U8   :: @run run_u8();
+EXP_U16  :: @run run_u16();
+EXP_U32  :: @run run_u32();
+EXP_U64  :: @run run_u64();
+EXP_S8   :: @run run_i8();
+EXP_S16  :: @run run_i16();
+EXP_S32  :: @run run_i32();
+EXP_S64  :: @run run_i64();
+EXP_BOOL :: @run run_bool();
+EXP_F32  :: @run run_f32();
+EXP_F64  :: @run run_f64();
 
 // ── runtime comparison ──────────────────────────────────────────────
 

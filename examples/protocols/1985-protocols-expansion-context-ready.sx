@@ -20,7 +20,7 @@ Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
 Deep :: struct { n: i64; }
 Flat :: struct { n: i64; }
 
-DEEP :: #run { context.depth > 2 };
+DEEP :: @run { context.depth > 2 };
 
 inline if DEEP {
     MODE :: 1;
@@ -33,7 +33,7 @@ chosen :: () -> [1]Type {
     return .[Flat];
 }
 
-inline for T in #run chosen() {
+inline for T in @run chosen() {
     impl Show for T { fmt :: (self: *T) -> i64 { self.n * 2 } }
 }
 

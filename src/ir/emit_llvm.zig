@@ -34,8 +34,8 @@ const Value = @import("comptime_value.zig").Value;
 const comptime_vm = @import("comptime_vm.zig");
 
 // The vendored error-trace ring buffer (library/vendors/sx_trace_runtime/sx_trace.c)
-// is linked into the compiler. Comptime `#run` evaluation pushes frames to it via
-// extern `sx_trace_push` calls; after a `#run` we read it here to render the
+// is linked into the compiler. Comptime `@run` evaluation pushes frames to it via
+// extern `sx_trace_push` calls; after a `@run` we read it here to render the
 // return trace for an escaping comptime error.
 extern fn sx_trace_len() u32;
 extern fn sx_trace_frame_at(i: u32) u64;
@@ -177,7 +177,7 @@ pub const LLVMEmitter = struct {
     // IR Module being emitted
     ir_mod: *const Module,
 
-    // Set when a comptime `#run` raised an unhandled error, or when a
+    // Set when a comptime `@run` raised an unhandled error, or when a
     // global initializer could not be serialized to a valid static constant.
     // The driver (core.generateCode) aborts with a non-zero exit after emit()
     // when set, so an invalid/placeholder initializer never reaches the object
@@ -315,7 +315,7 @@ pub const LLVMEmitter = struct {
     // Target configuration (stored for ABI decisions during emission)
     target_config: TargetConfig,
 
-    // Build configuration accumulated from #run blocks
+    // Build configuration accumulated from @run blocks
     build_config: compiler_hooks.BuildConfig,
 
     // ── DWARF debug info ──────────────────────────────────
@@ -488,7 +488,7 @@ pub const LLVMEmitter = struct {
         // Which functions can the binary actually reach, and via what path? A
         // compile-time-only callee found in that set is a staging error, and the
         // path is what makes it actionable — the immediate caller alone rarely
-        // says why a `#run`-only helper ended up in the runtime graph.
+        // says why a `@run`-only helper ended up in the runtime graph.
         if (@import("reachability.zig").compute(self.alloc, self.ir_mod)) |r| {
             self.reach = r;
         } else |_| {
@@ -512,10 +512,10 @@ pub const LLVMEmitter = struct {
         // Pass 0: Declare and initialize globals
         self.emitGlobals();
 
-        // Pass 0.5: Run comptime side-effect functions (#run expr; at top level)
+        // Pass 0.5: Run comptime side-effect functions (@run expr; at top level)
         self.runComptimeSideEffects();
 
-        // A comptime/global init failure (e.g. an unbridgeable `#run` result)
+        // A comptime/global init failure (e.g. an unbridgeable `@run` result)
         // sets `comptime_failed` AND leaves the failed const's type as the
         // `.unresolved` sentinel. The driver converts `comptime_failed` into a
         // clean exit-1 *after* emit() returns — but the remaining passes
@@ -543,7 +543,7 @@ pub const LLVMEmitter = struct {
         // Pass 2: Emit function bodies
         for (self.ir_mod.functions.items, 0..) |func, i| {
             if (func.is_extern or func.blocks.items.len == 0) continue;
-            // Emit only what the runtime can reach. Anything else — a `#run`
+            // Emit only what the runtime can reach. Anything else — a `@run`
             // wrapper, a build callback, a helper only they call, an unused
             // stdlib function — is dead code for the binary and is neither
             // declared (below) nor defined here.
@@ -747,7 +747,7 @@ pub const LLVMEmitter = struct {
     /// binary with CWD=/.
     ///
     /// Only a build that asks for a bundle gets it: `--bundle` lands on
-    /// `target_config`, `#run set_bundle_path` on `build_config`, and either
+    /// `target_config`, `@run set_bundle_path` on `build_config`, and either
     /// is set by the time this pass runs.
     fn emitMacosBundleChdir(self: *LLVMEmitter) void {
         if (!self.target_config.is_aot) return;
@@ -926,7 +926,7 @@ pub const LLVMEmitter = struct {
         }
     }
 
-    /// Inspect a failable `#run` result. On a non-zero error tag, print the
+    /// Inspect a failable `@run` result. On a non-zero error tag, print the
     /// comptime-error diagnostic + return trace, flag compilation failed, and
     /// return null. On success, return the value part (error channel stripped):
     /// `void_val` for a pure failable, the lone value for `(T, !)`, the
@@ -968,7 +968,7 @@ pub const LLVMEmitter = struct {
     /// resolved return trace from the thread-local buffer, and a help line.
     fn reportComptimeEscape(self: *LLVMEmitter, label: []const u8, tag: u32) void {
         const tname = self.ir_mod.types.tags.getName(tag);
-        std.debug.print("error: comptime `#run` ({s}) raised an unhandled error: error.{s}\n", .{ label, tname });
+        std.debug.print("error: comptime `@run` ({s}) raised an unhandled error: error.{s}\n", .{ label, tname });
         const n = sx_trace_len();
         if (n > 0) {
             std.debug.print("error return trace (most recent call last):\n", .{});
@@ -994,15 +994,15 @@ pub const LLVMEmitter = struct {
                 std.debug.print("  {s} at {s}:{d}:{d}\n", .{ fname, file, line, col });
             }
         }
-        std.debug.print("help: handle it at the `#run` site — `#run <expr> catch |e| {{ ... }}` or `#run <expr> or <default>`\n", .{});
+        std.debug.print("help: handle it at the `@run` site — `@run <expr> catch |e| {{ ... }}` or `@run <expr> or <default>`\n", .{});
     }
 
-    /// Run comptime side-effect functions (e.g., `#run main();` at top level).
+    /// Run comptime side-effect functions (e.g., `@run main();` at top level).
     /// These are functions marked `is_comptime = true` with void return that
     /// aren't associated with any global. They produce compile-time output.
     fn runComptimeSideEffects(self: *LLVMEmitter) void {
         for (self.ir_mod.functions.items, 0..) |func, i| {
-            // `#run expr;` side-effects are the `__run_N` wrappers (global
+            // `@run expr;` side-effects are the `__run_N` wrappers (global
             // initializers are named after their global and run by emitGlobals;
             // inline `__ct`/`__insert` wrappers run from their call sites). A
             // failable side-effect carries the error channel on `func.ret`.
@@ -1012,17 +1012,17 @@ pub const LLVMEmitter = struct {
 
             const func_id = ir_inst.FuncId.fromIndex(@intCast(i));
             sx_trace_clear();
-            // The comptime VM is the SOLE evaluator. A `#run` side-effect writes
+            // The comptime VM is the SOLE evaluator. A `@run` side-effect writes
             // its `print` output directly to fd 1 via host-FFI. A bail is a
             // build-gating error naming the reason.
             const evaluation = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources, null);
             defer evaluation.destroy();
             const result = evaluation.completed() orelse {
-                std.debug.print("error: comptime `#run` ({s}) failed: {s}\n", .{ fname, comptime_vm.last_bail_reason orelse "<unknown>" });
+                std.debug.print("error: comptime `@run` ({s}) failed: {s}\n", .{ fname, comptime_vm.last_bail_reason orelse "<unknown>" });
                 self.comptime_failed = true;
                 continue;
             };
-            // A bare failable `#run f();` whose error escapes → diagnostic + halt.
+            // A bare failable `@run f();` whose error escapes → diagnostic + halt.
             if (self.comptimeErrChannel(func.ret) != null) {
                 _ = self.checkComptimeFailable(result, func.ret, "top-level statement");
             }
@@ -1033,7 +1033,7 @@ pub const LLVMEmitter = struct {
         // Dead-global elimination: a plain-data global no instruction
         // references is not emitted — without this, every module pulled in
         // via the std namespace tail lands its data (hash's K table, ...)
-        // in every binary. Comptime-backed globals are kept: their #run
+        // in every binary. Comptime-backed globals are kept: their @run
         // evaluation (and its failure diagnostics) is a semantic effect,
         // not just data.
         var used = std.AutoHashMap(u32, void).init(self.alloc);
@@ -1097,7 +1097,7 @@ pub const LLVMEmitter = struct {
                     self.global_map.put(@intCast(i), llvm_global) catch {};
                     continue;
                 };
-                // A bare failable `NAME :: #run f();`: the comptime function
+                // A bare failable `NAME :: @run f();`: the comptime function
                 // returns the failable tuple; split it. Escaping error →
                 // diagnostic + halt (leave the global undef); success → the
                 // value part materializes into the global's success type.
@@ -1279,7 +1279,7 @@ pub const LLVMEmitter = struct {
     /// the LLVM type is derived from it. `interp` gives access to the
     /// interpreter's heap so heap_ptr values can be walked. `global_name`
     /// is included in any diagnostic the path produces so the user can
-    /// locate the offending `#run` site.
+    /// locate the offending `@run` site.
     ///
     /// On bail, prints the diagnostic and routes through `failGlobalInit`
     /// (sets `comptime_failed`, returns `undef`): the in-process module

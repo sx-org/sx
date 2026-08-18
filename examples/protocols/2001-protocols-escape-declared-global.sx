@@ -44,9 +44,9 @@ impl Slot for Anchor { id :: (self: *Anchor) -> i64 { self.k } }
 g_anchor := Anchor{ k = 9 };
 pick_slot :: () -> Slot { return g_anchor; }
 
-W :: #run pick_widget();
-N :: #run pick_native();
-S :: #run pick_slot();
+W :: @run pick_widget();
+N :: @run pick_native();
+S :: @run pick_slot();
 
 main :: () {
     print("{} {}\n", W.area(), g_widget.n);

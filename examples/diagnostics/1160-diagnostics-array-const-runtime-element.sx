@@ -1,5 +1,5 @@
 // An array constant's elements must be compile-time constants — a call
-// (or any runtime expression) in an element slot is diagnosed. `#run`
+// (or any runtime expression) in an element slot is diagnosed. `@run`
 // is the tool for computed constants.
 
 #import "modules/std.sx";

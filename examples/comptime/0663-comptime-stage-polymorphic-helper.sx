@@ -1,7 +1,7 @@
 // Functions are stage-polymorphic: nothing in a declaration says which stage it
 // belongs to. What decides is REACHABILITY — a function is in the binary because
 // a runtime root (`main`, an export) reaches it, and it runs at compile time
-// because a `#run` / constant initializer reaches it.
+// because a `@run` / constant initializer reaches it.
 //
 // `shared` is reached from BOTH, so it does both: evaluated by the comptime VM
 // for `CT`, and emitted into the binary for `main`. The two must agree.
@@ -15,7 +15,7 @@ shared :: (n: i64) -> i64 {
 }
 
 // Compile-time root.
-CT :: #run shared(10);
+CT :: @run shared(10);
 
 main :: () -> i64 {
     // Runtime root.

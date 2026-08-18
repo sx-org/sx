@@ -132,7 +132,7 @@ pub const Parser = struct {
             switch (self.tokens.tag(self.tok)) {
                 .hash_import => return self.fail("'private' is not allowed on a flat '#import'; only a named import ('name :: #import \"…\"') can be private"),
                 .kw_asm => return self.fail("'private' is not allowed on global 'asm'"),
-                .hash_run => return self.fail("'private' is not allowed on a standalone '#run'"),
+                .at_run => return self.fail("'private' is not allowed on a standalone '@run'"),
                 .hash_framework => return self.fail("'private' is not allowed on '#framework'"),
                 .kw_impl => return self.fail("'private' is not allowed on an 'impl' block"),
                 .at_identifier => if (std.mem.eql(u8, self.tokens.slice(self.tok), "@error"))
@@ -175,8 +175,8 @@ pub const Parser = struct {
             return self.parseAsmGlobal(start);
         }
 
-        // Top-level #run directive
-        if (self.tokens.tag(self.tok) == .hash_run) {
+        // Top-level @run directive
+        if (self.tokens.tag(self.tok) == .at_run) {
             self.advance();
             const expr = try self.parseExpr();
             try self.expectStatementEnd();
@@ -291,7 +291,7 @@ pub const Parser = struct {
 
     fn parseConstBinding(self: *Parser, name: []const u8, name_span: ast.Span, start_pos: u32, name_is_raw: bool) anyerror!*Node {
         // After `::`
-        // Could be: #run expr, enum { ... }, (params) -> type { body }, or expr;
+        // Could be: @run expr, enum { ... }, (params) -> type { body }, or expr;
 
         // Namespaced import: name :: #import "path"; or name :: #import c { ... };
         if (self.tokens.tag(self.tok) == .hash_import) {
@@ -324,8 +324,8 @@ pub const Parser = struct {
             return try self.createNode(start_pos, .{ .library_decl = .{ .lib_name = lib_name, .name = name, .is_raw = name_is_raw } });
         }
 
-        // Compile-time evaluation: name :: #run expr;
-        if (self.tokens.tag(self.tok) == .hash_run) {
+        // Compile-time evaluation: name :: @run expr;
+        if (self.tokens.tag(self.tok) == .at_run) {
             const run_start = self.tokens.start(self.tok);
             self.advance();
             const inner = try self.parseExpr();
@@ -4037,8 +4037,8 @@ pub const Parser = struct {
                 self.advance();
                 return try self.createNode(start, .{ .undef_literal = {} });
             },
-            .hash_run => {
-                self.advance(); // skip '#run'
+            .at_run => {
+                self.advance(); // skip '@run'
                 const inner = try self.parseExprRole(pipe);
                 return try self.createNode(start, .{ .comptime_expr = .{ .expr = inner } });
             },
@@ -5023,7 +5023,7 @@ pub const Parser = struct {
             .r_bracket,
             .arrow,
             .fat_arrow,
-            .hash_run,
+            .at_run,
             .hash_error,
             .hash_import,
             .hash_insert,
@@ -5235,7 +5235,7 @@ pub const Parser = struct {
             .r_bracket,
             .arrow,
             .fat_arrow,
-            .hash_run,
+            .at_run,
             .hash_error,
             .hash_import,
             .hash_insert,
@@ -5760,8 +5760,8 @@ test "block value: an arm's written `;` still leaves the arm producing a value" 
     }
 }
 
-test "parse #run const binding" {
-    const source = "x :: #run compute(5);";
+test "parse @run const binding" {
+    const source = "x :: @run compute(5);";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), source);
@@ -5775,8 +5775,8 @@ test "parse #run const binding" {
     try std.testing.expect(decl.data.const_decl.value.data.comptime_expr.expr.data == .call);
 }
 
-test "parse top-level #run" {
-    const source = "#run main();";
+test "parse top-level @run" {
+    const source = "@run main();";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), source);
@@ -6116,10 +6116,10 @@ test "a `catch` body is a pipe-parameter default" {
     try std.testing.expectEqualStrings("x", lam.body.data.identifier.name);
 }
 
-test "a `#run` and a `return` are pipe-parameter defaults" {
+test "a `@run` and a `return` are pipe-parameter defaults" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
-    const run_lam = try pipeLambda(arena.allocator(), "|x: i64 = #run 13| x");
+    const run_lam = try pipeLambda(arena.allocator(), "|x: i64 = @run 13| x");
     const inner = run_lam.params[0].default_expr.?.data.comptime_expr.expr;
     try std.testing.expectEqual(@as(i64, 13), inner.data.int_literal.value);
     try std.testing.expectEqualStrings("x", run_lam.body.data.identifier.name);

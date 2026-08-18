@@ -1,15 +1,15 @@
 #import "modules/std.sx";
 
-// An aggregate (struct) returned from a `#run`
+// An aggregate (struct) returned from a `@run`
 // initializer must serialize correctly into the static binary, not
 // silently collapse to a zero-init constant.
 //
 // An LLVM `valueToLLVMConst` that handles int/float/bool only and drops
 // everything else into `LLVMConstNull` emits `{0, 0}` for a global like
-// `POINT :: #run make_point();` regardless of what the interp computed,
+// `POINT :: @run make_point();` regardless of what the interp computed,
 // so reading POINT.x gives 0 and hides the loss.
 //
-// Also exercises type inference at the `NAME :: #run expr;` binding site:
+// Also exercises type inference at the `NAME :: @run expr;` binding site:
 // without an explicit annotation, the global's type is taken from the
 // comptime expression's return shape (here, `Point`).
 
@@ -22,7 +22,7 @@ make_point :: () -> Point {
     return Point{ x = 7, y = 13 };
 }
 
-POINT :: #run make_point();
+POINT :: @run make_point();
 
 main :: () -> i32 {
     print("POINT.x = {}\n", POINT.x);

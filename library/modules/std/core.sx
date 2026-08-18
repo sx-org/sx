@@ -132,7 +132,7 @@ raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
 // Allocation-free like `@printf`: it renders through the same primitives, so a
 // panic reaches its message with a broken or exhausted allocator behind it.
 //
-// A `#run` panic exits the COMPILER with code 1; a compiled panic raises
+// A `@run` panic exits the COMPILER with code 1; a compiled panic raises
 // SIGABRT.
 // Compile-time refusal. Reached in live code (after `inline if` /
 // `inline match` prune, including per monomorph), it is a compile
@@ -301,7 +301,7 @@ __sx_printf_f64 :: (f: f64) {
 
 // ── The comptime compiler-API readers ────────────────────────────────────────
 // Serviced by the comptime evaluator (mode `evaluate`) — they read and mint into
-// the compiler's own string pool and type table, so they exist only at `#run` /
+// the compiler's own string pool and type table, so they exist only at `@run` /
 // constant-evaluation time and have no runtime form.
 //
 // Handles are bare `u32`s on purpose: a `StringId` / `TypeId` alias would be a

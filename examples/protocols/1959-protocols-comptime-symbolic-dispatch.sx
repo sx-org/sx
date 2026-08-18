@@ -1,7 +1,7 @@
 // Compile-time protocol values are SYMBOLIC (specs.md §6.9): the VM carries
 // `{ctx, concrete type}`, never a dispatch address — those are assigned when
 // the image is laid out, a link-stage artifact. Dispatch resolves against the
-// carried concrete type, so a `#run` gets the same answers the compiled program
+// carried concrete type, so a `@run` gets the same answers the compiled program
 // does, by a different mechanism. The downcast and `type_of` read the same
 // symbolic word.
 #import "modules/std.sx";
@@ -51,10 +51,10 @@ relayed :: () -> i64 {
     return twice(u);
 }
 
-BOTH    :: #run both();
-NARROW  :: #run narrowed();
-NAME    :: #run named();
-RELAYED :: #run relayed();
+BOTH    :: @run both();
+NARROW  :: @run narrowed();
+NAME    :: @run named();
+RELAYED :: @run relayed();
 
 main :: () {
     print("{} {}\n", BOTH, both());

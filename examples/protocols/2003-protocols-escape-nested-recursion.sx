@@ -40,8 +40,8 @@ build :: () -> Tree {
     return Tree{ top = node, cell = cell, seen = view };
 }
 
-T  :: #run build();
-FN :: #run pick_fn();
+T  :: @run build();
+FN :: @run pick_fn();
 
 main :: () {
     print("{} {} {}\n", T.top.area(), T.cell.*, T.seen.label());

@@ -1,15 +1,15 @@
 // Atomic($T) read-modify-write: fetch_add/sub/and/or/xor/min/max → LLVM atomicrmw.
 // Each returns the OLD value. Single-thread.
-// Also covers signed min/max with NEGATIVES at BOTH comptime (#run) and runtime —
+// Also covers signed min/max with NEGATIVES at BOTH comptime (@run) and runtime —
 // they must agree — a comptime unsigned compare would diverge from runtime.
 #import "modules/std.sx";
 #import "modules/std/atomic.sx";
 
-// comptime (#run) signed min/max with a negative — must match runtime.
+// comptime (@run) signed min/max with a negative — must match runtime.
 c_max :: () -> i64 { a := Atomic(i64).init(-5); _ := a.fetch_max(3, .seq_cst); return a.load(.seq_cst); }
 c_min :: () -> i64 { a := Atomic(i64).init(-5); _ := a.fetch_min(3, .seq_cst); return a.load(.seq_cst); }
-G_MAX :: #run c_max();
-G_MIN :: #run c_min();
+G_MAX :: @run c_max();
+G_MIN :: @run c_min();
 
 main :: () {
     a := Atomic(i64).init(10);
@@ -28,7 +28,7 @@ main :: () {
     print("old max: {}\n", m.fetch_max(15, .seq_cst));  // returns 8, now 15
     print("now: {}\n", m.load(.seq_cst));               // 15
 
-    // signed min/max with a negative — comptime (#run) and runtime must agree.
+    // signed min/max with a negative — comptime (@run) and runtime must agree.
     s := Atomic(i64).init(-5);
     _ := s.fetch_max(3, .seq_cst);
     print("runtime signed max(-5,3): {}\n", s.load(.seq_cst));  // 3

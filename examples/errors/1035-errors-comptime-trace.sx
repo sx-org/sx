@@ -1,4 +1,4 @@
-// Comptime return-trace resolution. A `#run` block that
+// Comptime return-trace resolution. A `@run` block that
 // raises, propagates via `try`, and catches the error, then formats the trace
 // with `trace.print_current()`. At comptime a frame is a packed
 // `(func_id, span.start)` (not a `*Frame`); the interpreter's `.trace_resolve`
@@ -26,7 +26,7 @@ probe :: () {
     };
 }
 
-#run probe();
+@run probe();
 
 main :: () -> i32 {
     return 0;

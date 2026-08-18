@@ -13,6 +13,6 @@ configure :: () {
     opts.set_bundle_id("co.example.hello");
     on_build(bundle_main);
 }
-#run configure();
+@run configure();
 
 main :: () { print("runtime main\n"); }

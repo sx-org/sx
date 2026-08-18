@@ -1,7 +1,7 @@
 #import "modules/std.sx";
 #import "modules/build.sx";
 
-// The `on_build` override. A user `#run on_build(build);` replaces the
+// The `on_build` override. A user `@run on_build(build);` replaces the
 // stdlib `default_pipeline` as the build driver; the compiler invokes it after
 // codegen with the `BuildOptions` handle. This build GROWS a `List` on the build
 // VM then DELEGATES to `default_pipeline` for the real emit + link, so a
@@ -15,6 +15,6 @@ build :: (opt: BuildOptions) -> bool {
     if names.len != 3 { return false; }
     return default_pipeline(opt);
 }
-#run on_build(build);
+@run on_build(build);
 
 main :: () { print("runtime main\n"); }

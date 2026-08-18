@@ -68,7 +68,7 @@ vm_pick :: ($tag: string, n: i64) -> i64 {
     n * 3
 }
 
-VM_RESULT :: #run vm_pick("vm", 4);
+VM_RESULT :: @run vm_pick("vm", 4);
 
 main :: () -> i32 {
     print("gen {}\n", gen(1));

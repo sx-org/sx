@@ -421,11 +421,11 @@ pub const Lowering = struct {
     int_lit_extra_fit_ty: ?TypeId = null, // inside a `cast(T)` operand (T is the ambient type here): an ADDITIONAL range the literal may fit — set to i64 so a value fitting i64 but not T still truncates rather than erroring
     block_counter: u32 = 0,
     comptime_counter: u32 = 0,
-    /// Transient: the user-facing const name of the body-local `#run` currently
-    /// being lowered (`L :: #run f()`), so `lowerInlineComptime` can stamp the
+    /// Transient: the user-facing const name of the body-local `@run` currently
+    /// being lowered (`L :: @run f()`), so `lowerInlineComptime` can stamp the
     /// `__ct` wrapper's `comptime_display_name` for a friendly comptime-init
     /// failure diagnostic. Set/cleared around the const's value
-    /// lowering; null for a bare inline `#run`.
+    /// lowering; null for a bare inline `@run`.
     comptime_const_name: ?[]const u8 = null,
     main_file: ?[]const u8 = null, // path of the main file; imported functions are declared extern
     /// Source-site index over the program's declarations, built once (see
@@ -776,7 +776,7 @@ pub const Lowering = struct {
     /// Which comptime phase the wrapper body being lowered belongs to, or null
     /// outside every comptime body (§7.9's phase law). An EXPANSION-driving
     /// body runs during lowering, so it reads the sets as they stand and can
-    /// carry no answer to finality. An ORDINARY `#run` runs after convergence
+    /// carry no answer to finality. An ORDINARY `@run` runs after convergence
     /// and sees the final sets.
     comptime_phase: ?lower_comptime.ComptimePhase = null,
     param_impl_map: std.StringHashMap(std.ArrayList(ParamImplEntry)), // "Proto\x00<arg_mangled>\x00<src_mangled>" → impl entries (parameterised protocols only; the list lets overlap detection see cross-module duplicates)

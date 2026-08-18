@@ -15,6 +15,6 @@ configure :: () {
     opts.set_bundle_id("co.example.iossim");
     on_build(bundle_main);
 }
-#run configure();
+@run configure();
 
 main :: () { print("ios-sim runtime main\n"); }

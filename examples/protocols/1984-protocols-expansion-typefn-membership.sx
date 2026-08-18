@@ -2,7 +2,7 @@
 //
 // `Chosen` is bound to a type function, so the name denotes nothing a spelling
 // can resolve: the constructor has to run first. That makes the question a
-// driver-class evaluation like a `#run` — the decided declaration space
+// driver-class evaluation like a `@run` — the decided declaration space
 // registers, the constructor executes on the comptime VM, and only then does
 // the query have a type to ask about.
 //

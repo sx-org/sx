@@ -1,4 +1,4 @@
-// A `#run`-COMPUTED iterable.
+// A `@run`-COMPUTED iterable.
 //
 // An unroll's type list need not be written: it can be computed, and then the
 // run that computes it is a driver like any other — it executes under the
@@ -17,7 +17,7 @@ pick_list :: () -> [2]Type {
     return .[Dot, Bar];
 }
 
-inline for T in #run pick_list() {
+inline for T in @run pick_list() {
     impl Show for T { fmt :: (self: *T) -> i64 { self.n * 3 } }
 }
 

@@ -31,6 +31,6 @@ main :: () {
     print("nonvec: {}\n", vector_lanes(type_of(ax)));
 
     // comptime VM parity
-    K :: #run vector_lanes(@Vector(4, i32));
+    K :: @run vector_lanes(@Vector(4, i32));
     print("comptime: {}\n", K);
 }

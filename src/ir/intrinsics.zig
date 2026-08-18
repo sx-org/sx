@@ -306,7 +306,7 @@ pub const entries = [_]Entry{
     .{ .id = .on_build, .module = build, .name = "on_build", .mode = .evaluate, .arity = 1 },
 
     // ── math: lowered to a `call_builtin` the LLVM backend maps to an
-    // intrinsic / libm call. The VM has no arm — a `#run sqrt(x)` bails loudly
+    // intrinsic / libm call. The VM has no arm — a `@run sqrt(x)` bails loudly
     // ("comptime init failed: sqrt") rather than silently folding.
     .{ .id = .sqrt, .module = scalar, .name = "sqrt", .mode = .lower, .arity = 1 },
     .{ .id = .sin, .module = scalar, .name = "sin", .mode = .lower, .arity = 1 },
@@ -331,7 +331,7 @@ pub const entries = [_]Entry{
 
     // Lowered to the volatile load/store IR ops. The access is non-atomic and
     // carries no ordering, so — like the atomics — the VM interprets it
-    // directly and `#run` sees an ordinary access. The `@` is part of the name:
+    // directly and `@run` sees an ordinary access. The `@` is part of the name:
     // these are compiler-maintained contracts (contracts.zig) as well as
     // intrinsics.
     .{ .id = .@"@volatile_load", .module = core, .name = "@volatile_load", .mode = .lower, .arity = 2 },
@@ -339,7 +339,7 @@ pub const entries = [_]Entry{
 
     // Expanded at lowering into calls to the emission primitives core.sx
     // declares beside it — one per format segment, one per argument. The
-    // expansion is ordinary sx calls, so `#run` renders through the same
+    // expansion is ordinary sx calls, so `@run` renders through the same
     // primitives the runtime does. Arity 2 is the declaration's `($fmt, ..$args)`;
     // the call site takes one argument per `{}`.
     .{ .id = .@"@printf", .module = core, .name = "@printf", .mode = .lower, .arity = 2, .ret = .void },
@@ -351,7 +351,7 @@ pub const entries = [_]Entry{
     .{ .id = .@"@error", .module = core, .name = "@error", .mode = .lower, .arity = 2 },
 
     // Lowered to the four cursor IR ops. A cursor walks arguments a real call
-    // frame delivered, so there is no VM arm: `#run` over one bails loudly
+    // frame delivered, so there is no VM arm: `@run` over one bails loudly
     // rather than inventing a frame to read.
     .{ .id = .@"@va_start", .module = core, .name = "@va_start", .mode = .lower, .arity = 1, .ret = .void },
     .{ .id = .@"@va_arg", .module = core, .name = "@va_arg", .mode = .lower, .arity = 2 },

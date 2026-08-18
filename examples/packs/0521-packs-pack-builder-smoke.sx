@@ -1,7 +1,7 @@
 // Bare `$args` reaches a builder as data and the builder discovers each
 // position's type at interp time:
 //
-//   1. A pack-fn passes its bound `$args` to a builder via `#run`.
+//   1. A pack-fn passes its bound `$args` to a builder via `@run`.
 //   2. The builder receives a `[]Type` slice and walks it, calling
 //      `type_name(list[i])` per position.
 //   3. `type_name(list[i])` is the DYNAMIC form — the index_expr argument is
@@ -33,6 +33,6 @@ run_all :: () {
     print("{}\n", describe(42, "hi"));                 // [i64, string]
     print("{}\n", describe(true, 3.14, "x", 99));       // [bool, f64, string, i64]
 }
-#run run_all();
+@run run_all();
 
 main :: () { print("rt\n"); }

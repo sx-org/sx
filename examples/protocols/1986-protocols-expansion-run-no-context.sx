@@ -1,4 +1,4 @@
-// A driver `#run` in a program that has no Context at all.
+// A driver `@run` in a program that has no Context at all.
 //
 // Context-ready is a fact about a program that HAS an implicit context. This
 // one calls libc directly and never declares one, so the implicit-context
@@ -8,7 +8,7 @@
 // way; only the fact list differs.
 puts :: (s: [*]u8) -> i32 extern;
 
-PICK :: #run { a := 3; a * 3 > 8 };
+PICK :: @run { a := 3; a * 3 > 8 };
 
 inline if PICK {
     LABEL :: "wide";

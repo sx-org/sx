@@ -194,7 +194,7 @@ fn isExportedEntryName(name: []const u8) bool {
 }
 
 /// The well-known stdlib build driver (`library/modules/build.sx`). It is invoked
-/// by the compiler post-codegen when no `#run on_build(...)` override exists, but
+/// by the compiler post-codegen when no `@run on_build(...)` override exists, but
 /// is never CALLED from sx — so it must be force-lowered like an OS entry point,
 /// else lazy lowering leaves it a bodiless `declare` stub the VM can't run.
 fn isDefaultBuildPipeline(name: []const u8) bool {
@@ -313,7 +313,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     self.lowerMainAndComptime(decls);
     // Pass 2b: force-lower the stdlib build driver `default_pipeline` (in the
     // flat-imported `modules/build.sx`, so NOT in the main `decls` above). The
-    // compiler auto-invokes it post-codegen when no `#run on_build(...)` override
+    // compiler auto-invokes it post-codegen when no `@run on_build(...)` override
     // exists, but nothing CALLS it from sx — so without this it stays a bodiless
     // stub the build VM can't run. No-ops when build.sx isn't imported.
     self.lazyLowerFunction("default_pipeline");
@@ -2352,7 +2352,7 @@ pub fn aliasResolvedInSource(self: *Lowering, src: []const u8, name: []const u8)
 /// Pass 2: Lower main function body and comptime side-effects.
 pub fn lowerMainAndComptime(self: *Lowering, decls: []const *const Node) void {
     for (decls) |decl| {
-        // A `#run` body lowers in its OWN module's source context: `NAME :: #run f()` written in an imported module must
+        // A `@run` body lowers in its OWN module's source context: `NAME :: @run f()` written in an imported module must
         // resolve a bare `f` from that module's flat imports, not the main
         // file's. Without this, `selectCallableAuthor` runs with the main
         // file's perspective and reports a genuine per-source author as
@@ -3457,7 +3457,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     // evaluated at lowering time (`runComptimeTypeFunc`) to mint a type, never
     // called at runtime. Flag it `is_comptime` so its emitted body is dead: the
     // comptime-only `compiler`-library gate then permits welded calls inside it
-    // (`register_type`/`declare_type`/`pointer_to`), exactly as in a #run/`::`
+    // (`register_type`/`declare_type`/`pointer_to`), exactly as in a @run/`::`
     // wrapper. Without this, a builder that calls a welded fn would be rejected
     // as "comptime-only fn called at runtime" even though it never runs at runtime.
     if (fnReturnsTypeValue(fd)) func.comptime_role = .type_builder;

@@ -15,7 +15,7 @@ make :: () -> Box {
     return Box{ p = *g_outer.inner };
 }
 
-B :: #run make();
+B :: @run make();
 
 main :: () {
     print("{}\n", B.p.n);

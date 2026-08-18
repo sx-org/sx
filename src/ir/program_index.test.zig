@@ -61,7 +61,7 @@ test "ProgramIndex declaration maps round-trip" {
     try idx.type_alias_map.put("ShaderHandle", .i64);
     try std.testing.expectEqual(@as(?types.TypeId, .i64), idx.type_alias_map.get("ShaderHandle"));
 
-    // global_names: #run global name → GlobalInfo.
+    // global_names: @run global name → GlobalInfo.
     try idx.global_names.put("g", .{ .id = inst.GlobalId.fromIndex(0), .ty = .i64 });
     try std.testing.expect(idx.global_names.get("g").?.id == inst.GlobalId.fromIndex(0));
 

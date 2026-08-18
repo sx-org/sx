@@ -14,7 +14,7 @@
 // truncation surfaces as a missing tail (or a different type at
 // some position) — not just the wrong length.
 //
-// Walking under `#run` is required: the bare-`$args` slice
+// Walking under `@run` is required: the bare-`$args` slice
 // carries `const_type` elements that only the interp materialises;
 // LLVM emission leaves the per-element slots as undef, bare-pack
 // being comptime-only.
@@ -48,6 +48,6 @@ run_all :: () {
     print("3: {}\n", probe(1, "x", true));
     print("5: {}\n", probe(1, 2.0, "x", true, 99));
 }
-#run run_all();
+@run run_all();
 
 main :: () { print("rt\n"); }

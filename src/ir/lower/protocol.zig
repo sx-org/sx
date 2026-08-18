@@ -464,7 +464,7 @@ fn walkEscape(self: *Lowering, ty: TypeId, span: ast.Span, by_value: bool, seen:
             const pd = self.getProtocolInfo(ty) orelse return;
             if (!by_value or pd.kind == .constraint or pd.ownership == .identity) return;
             if (self.diagnostics) |d| {
-                d.addFmt(.err, span, "a '{s}' value owns its storage and cannot escape a `#run` — no runtime allocator owns a compile-time copy; bind the concrete value, and let the owning erasure happen at runtime", .{self.formatTypeName(ty)});
+                d.addFmt(.err, span, "a '{s}' value owns its storage and cannot escape a `@run` — no runtime allocator owns a compile-time copy; bind the concrete value, and let the owning erasure happen at runtime", .{self.formatTypeName(ty)});
             }
         },
         else => {},

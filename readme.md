@@ -20,7 +20,7 @@ main :: () {
 ```
 
 - `name :: value` constants, `name := value` variables
-- LLVM native code; `#run` / `#insert` / `@error` at compile time
+- LLVM native code; `@run` / `#insert` / `@error` at compile time
 - Monomorphized generics, first-class closures, protocol polymorphism
 - Pattern matching, C interop (`extern` / `export` / `#import c`), inline `asm`
 - Colorblind async (cooperative fibers, no function coloring)
@@ -236,8 +236,8 @@ a, b = b, a;
 ### Compile time and C
 
 ```sx
-FIBONACCI_10 :: #run fib(10);
-#insert #run generate_lookup_table();
+FIBONACCI_10 :: @run fib(10);
+#insert @run generate_lookup_table();
 
 libc :: #library "c";
 printf :: (fmt: [:0]u8, args: ..any) -> i32 extern libc;

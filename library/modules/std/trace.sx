@@ -85,7 +85,7 @@ print_current :: () {
     }
 }
 
-// Dump the comptime (`#run`) interpreter call-frame chain. At
+// Dump the comptime (`@run`) interpreter call-frame chain. At
 // comptime the interpreter walks its active sx frames and appends them to the
 // build output; in compiled code this folds to nothing (there is no
 // interpreter stack — the only caller is a dead `@is_comptime()` branch).

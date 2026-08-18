@@ -1,6 +1,6 @@
 //! Host FFI dispatch for the IR interpreter.
 //!
-//! When the interpreter encounters a call to an extern function during `#run`
+//! When the interpreter encounters a call to an extern function during `@run`
 //! (or post-link interpretation), it has no body to walk. This module
 //! `dlsym`s the symbol from the host's already-loaded dylibs (libc, libSystem,
 //! kernel32, whatever the OS provides) and calls it via an arity-switched

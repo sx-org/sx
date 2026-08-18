@@ -60,7 +60,7 @@ const TypeId = types.TypeId;
 const FuncId = inst_mod.FuncId;
 
 // The error return-trace buffer (sx_trace.c, linked into the compiler) — the same
-// one emit_llvm reads after a `#run` to render the comptime escape trace. A
+// one emit_llvm reads after a `@run` to render the comptime escape trace. A
 // comptime failable that raises emits `sx_trace_push(trace_frame())` as it unwinds;
 // the VM services those calls natively so the escape trace populates as it unwinds.
 extern fn sx_trace_push(frame: u64) void;
@@ -200,7 +200,7 @@ pub var last_bail_reason: ?[]const u8 = null;
 /// (`regToValue` — the comptime function RAN to completion but its result shape
 /// cannot be materialized into a host `Value`), as opposed to an EXECUTION bail
 /// (`runEntry` couldn't evaluate the body — an unported op, a VM
-/// `DivisionByZero`, etc.). The distinction matters for a body-local `#run`
+/// `DivisionByZero`, etc.). The distinction matters for a body-local `@run`
 /// fold: a BRIDGE bail means a runtime re-execution would run the
 /// SAME body over (possibly `---`) storage and produce DIFFERENT, garbage data —
 /// a silent miscompile that must fail the build. An EXECUTION bail means the VM
@@ -329,14 +329,14 @@ pub const Evaluation = struct {
             return;
         };
         const func = e.module.getFunction(e.func_id);
-        // A void/noreturn entry (a `#run <expr>;` side-effect) produces no value —
+        // A void/noreturn entry (a `@run <expr>;` side-effect) produces no value —
         // `regToValue` would bail on the void type, so yield `.void_val` directly.
         const value: ?Value = if (func.ret == .void or func.ret == .noreturn)
             .void_val
         else
             e.vm.regToValue(e.gpa, &e.module.types, reg, func.ret) catch |err| blk: {
                 // The body RAN; only the result bridge failed → mark this a BRIDGE
-                // bail so a body-local `#run` fold can tell a genuine "result can't
+                // bail so a body-local `@run` fold can tell a genuine "result can't
                 // be materialized" miscompile from a "VM can't run it" fallback.
                 last_bail_was_bridge = true;
                 last_bail_reason = e.vm.detail orelse @errorName(err);
@@ -411,7 +411,7 @@ fn evaluationTask(vm: *Vm, func_id: FuncId, extra: []const Reg) Error!Reg {
 /// compiler. On a bail, `last_bail_reason` names the cause.
 ///
 /// The evaluation materializes the implicit `*Context` (a comptime const-init /
-/// `#run` wrapper is nullary in user args, so the implicit ctx is its sole
+/// `@run` wrapper is nullary in user args, so the implicit ctx is its sole
 /// param) as a zeroed Context in its own comptime memory — VM-local, never
 /// shared with another evaluation, and alive for as long as this one is.
 pub fn tryEval(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.FuncId, build_config: ?*compiler_hooks.BuildConfig, source_map: ?*const std.StringHashMap([:0]const u8), scheduler: ?FactScheduler) *Evaluation {
@@ -527,7 +527,7 @@ pub const Vm = struct {
     module: ?*const Module = null,
     /// The mutable build configuration (`BuildOptions` accumulator) — the SAME
     /// `BuildConfig` `EmitLLVM` owns and `main.zig` reads post-link. Threaded in at
-    /// the `#run`/const-init eval sites so a `BuildOptions` intrinsic
+    /// the `@run`/const-init eval sites so a `BuildOptions` intrinsic
     /// (e.g. `set_post_link_callback`) records into it directly. Null at lowering-time
     /// type-fn evals (no build config exists yet); such a function bails loudly.
     build_config: ?*compiler_hooks.BuildConfig = null,
@@ -615,7 +615,7 @@ pub const Vm = struct {
 
     /// Run a comptime entry with the materialized implicit `*Context` (when the
     /// function has one) PREPENDED to `extra` explicit arg words. A nullary
-    /// const-init / `#run` passes `extra = &.{}`; a post-link build callback of
+    /// const-init / `@run` passes `extra = &.{}`; a post-link build callback of
     /// the `on_build` form passes the opaque `BuildOptions` handle.
     fn runEntryArgs(self: *Vm, func_id: FuncId, extra: []const Reg) Error!Reg {
         const module = self.module orelse return self.failMsg("comptime VM: entry run needs a module");
@@ -2141,7 +2141,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             return try self.makeStringValue(table, path);
         }
         // Build-config metadata the sx driver passes to `link`. Read-only data
-        // forwarded by `main.zig` (the merged CLI + `#run` build config).
+        // forwarded by `main.zig` (the merged CLI + `@run` build config).
         if (intr == .build_output) {
             if (args.len != 0) return self.failMsg("comptime build_output: expected no args");
             const bc = self.build_config orelse return self.failMsg("comptime build_output: no build config");
@@ -2200,7 +2200,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
 
     /// Read string arg `idx` (a `{ptr,len}` fat pointer) and DUPE it into the
     /// persistent `self.gpa`. The VM-arena view dies at `Vm.deinit`, so a
-    /// BuildConfig string set at `#run` must own a persistent copy.
+    /// BuildConfig string set at `@run` must own a persistent copy.
     fn dupeArgStr(self: *Vm, args: []const Ref, frame: *Frame, idx: usize) Error![]const u8 {
         const table = try self.requireTable();
         const view = try self.readStringArg(table, frame.get(args[idx].index()));
@@ -2215,7 +2215,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // setter (one extra arg) writes a persistent dupe; a getter returns the
         // value (or "" when unset). Both ignore the `self` handle at args[0].
         const StrField = struct { set: []const u8, get: []const u8, field: *?[]const u8 };
-        // A BuildOptions accessor is only ever reached from a `#run` / post-link
+        // A BuildOptions accessor is only ever reached from a `@run` / post-link
         // eval, which always threads a `BuildConfig`. A null `bc` here means this
         // isn't a BuildOptions call at all (e.g. a lowering-time type-fn) — yield
         // null so the caller treats it as unknown (it then bails loudly).

@@ -201,22 +201,28 @@ pub const Lexer = struct {
             return self.makeToken(.invalid, start, self.index);
         }
 
-        // Compiler-formed type name: `@Init`. The `@` is part of the name, so
-        // the token spans it; the tag keeps it out of every identifier position.
+        // `@run` is the compile-time evaluation prefix. Every other `@Name` is
+        // a compiler-formed type / contract token — the `@` is part of the
+        // name, so the token spans it; the tag keeps it out of every
+        // identifier position.
         if (c == '@') {
             const id_start = start + 1;
             if (id_start < self.source.len and isIdentStart(self.source[id_start])) {
                 self.index = id_start;
                 var tok = self.lexIdentifier(id_start);
-                tok.tag = .at_identifier;
                 tok.loc.start = start;
+                if (std.mem.eql(u8, self.source[tok.loc.start..tok.loc.end], "@run")) {
+                    tok.tag = .at_run;
+                    return tok;
+                }
+                tok.tag = .at_identifier;
                 return tok;
             }
             self.index += 1;
             return self.makeToken(.invalid, start, self.index);
         }
 
-        // Directives: #import, #insert, #run, #library, #string
+        // Directives: #import, #insert, #library, #string
         if (c == '#') {
             // #string needs special handling (heredoc)
             const str_kw = "#string";
@@ -232,7 +238,6 @@ pub const Lexer = struct {
             const directives = .{
                 .{ "#import", Tag.hash_import },
                 .{ "#insert", Tag.hash_insert },
-                .{ "#run", Tag.hash_run },
                 .{ "#library", Tag.hash_library },
                 .{ "#framework", Tag.hash_framework },
                 .{ "#using", Tag.hash_using },

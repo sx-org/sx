@@ -8,7 +8,7 @@
 // measured again.
 //
 // The refusal names the set and says where the size IS answerable: a value
-// position, or a `#run`. Both read the frozen layout.
+// position, or a `@run`. Both read the frozen layout.
 #import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 256, align = 8 }) {

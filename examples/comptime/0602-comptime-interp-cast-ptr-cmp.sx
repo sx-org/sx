@@ -30,6 +30,6 @@ configure :: () {
     opts := build_options();
     on_build(post_link);
 }
-#run configure();
+@run configure();
 
 main :: () { print("rt\n"); }

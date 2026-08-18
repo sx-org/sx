@@ -122,7 +122,7 @@ pub const Tag = enum(u8) {
     fat_arrow, // =>
 
     // Directives
-    hash_run, // #run
+    at_run, // @run — compile-time evaluation prefix
     hash_error, // unused; `@error` is the compile-time diagnostic
     hash_import, // #import
     hash_insert, // #insert
@@ -276,7 +276,7 @@ pub const Tag = enum(u8) {
             .kw_intrinsic,
             .kw_private,
             => .keyword,
-            .hash_run,
+            .at_run,
             .hash_error,
             .hash_import,
             .hash_insert,
@@ -466,7 +466,7 @@ pub const Tag = enum(u8) {
             .r_bracket,
             .arrow,
             .fat_arrow,
-            .hash_run,
+            .at_run,
             .hash_error,
             .hash_import,
             .hash_insert,

@@ -9,14 +9,14 @@
 //
 // So `size_of(P)` is not a literal baked where it is written: it is answered from
 // the frozen layout. `early` is lowered before `Padded(Big)` is instantiated and
-// `late` after it, and they agree — including with a `#run` written before any
+// `late` after it, and they agree — including with a `@run` written before any
 // member is declared, and with a compile-time evaluation that runs DURING lowering
 // and waits for the answer.
 #import "modules/std.sx";
 
-// Written before the set's members: a `#run` is answered from the frozen layout,
+// Written before the set's members: a `@run` is answered from the frozen layout,
 // not from the layout as it stands at this line.
-VIEW_BEFORE :: #run size_of(View);
+VIEW_BEFORE :: @run size_of(View);
 
 View :: @OpenSet(.{ max = 256, align = 8 }) {
     render :: (self: *Self) -> string;
@@ -39,7 +39,7 @@ Big :: struct {
     e: i64 = 0; f: i64 = 0; g: i64 = 0; h: i64 = 0;
 }
 
-VIEW_AFTER :: #run size_of(View);
+VIEW_AFTER :: @run size_of(View);
 
 // A plain struct holding the set by value has the same problem, and the same
 // answer: its own size is settled by the set's.

@@ -3,7 +3,7 @@
 // integrated assembler assembles the `module asm` block into it), then ORC
 // relocates and runs it — so a module-asm symbol IS resolvable at JIT main
 // execution, just like a normal symbol. The only path that can't see it is a
-// COMPILE-TIME `#run` call (the interpreter resolves externs via host dlsym; the
+// COMPILE-TIME `@run` call (the interpreter resolves externs via host dlsym; the
 // symbol isn't linked yet — see 1654). Sibling of 1648 (which exercises the same
 // feature via AOT). aarch64-macos-pinned; ir-only elsewhere.
 asm {

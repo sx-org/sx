@@ -1,4 +1,4 @@
-// A `#run` that returns a string (or any aggregate
+// A `@run` that returns a string (or any aggregate
 // containing a heap-allocated buffer) must serialize correctly into
 // the static binary. The interp computes the string at build time,
 // allocating its backing through `context.allocator` (which bottoms
@@ -15,7 +15,7 @@ build_greeting :: () -> string {
     return concat("hello", " world");
 }
 
-GREETING :: #run build_greeting();
+GREETING :: @run build_greeting();
 
 main :: () -> i32 {
     print("greeting = '{}'\n", GREETING);

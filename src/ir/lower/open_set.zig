@@ -1086,7 +1086,7 @@ pub fn refuseUnfrozenLayout(self: *Lowering, measured: TypeId, span: ast.Span) v
     // belong to the one that stands.
     if (d.items.items.len == before) return;
     d.addHelpFmt(id, span, null, "a set's members are declared anywhere in the program, and this position is fixed where it is written — a member declared later would contradict the number", .{});
-    d.addHelpFmt(id, span, null, "read the size where it is a VALUE ('n := size_of(…)'), or bind it with '#run size_of(…)' — both are answered from the frozen layout", .{});
+    d.addHelpFmt(id, span, null, "read the size where it is a VALUE ('n := size_of(…)'), or bind it with '@run size_of(…)' — both are answered from the frozen layout", .{});
 }
 
 /// The set `measured`'s layout depends on, named for the refusal.

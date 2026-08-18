@@ -13,7 +13,7 @@
 //! module scope until its branch is selected.
 //!
 //! A condition or iterable that COMPUTES rather than names is executed, not
-//! folded: the `#run` it reaches runs on the one comptime VM, against the
+//! folded: the `@run` it reaches runs on the one comptime VM, against the
 //! decided declaration space and the settled program Context. Both are
 //! scheduled facts of the same worklist every other threshold read uses, so a
 //! run that cannot start yet parks its driver, and a run that suspends
@@ -116,7 +116,7 @@ const Ledger = struct {
     nodes: std.AutoHashMap(*const Node, void),
 };
 
-/// What driving a `#run` produced. A body-bearing run is EXECUTED, once: the
+/// What driving a `@run` produced. A body-bearing run is EXECUTED, once: the
 /// value it settled on is kept for every re-fold that reaches it, and an
 /// evaluation that suspended keeps its VM — heap, task, VM-local Context — so
 /// the resume lands at the instruction that asked rather than restarting the
@@ -163,7 +163,7 @@ const Expansion = struct {
     parked: std.ArrayList(ParkedDriver),
     ledgers: std.ArrayList(*Ledger),
     cursors: std.ArrayList(*std.StringHashMap([]const u8)),
-    /// Every `#run` a driver condition reached, by node — the run is evaluated
+    /// Every `@run` a driver condition reached, by node — the run is evaluated
     /// once and read as often as the folds that reach it need.
     runs: std.AutoHashMap(*const Node, RunResult),
     /// Whether the fold being driven parked on a fact it could not answer.
@@ -534,7 +534,7 @@ const Expansion = struct {
         return out.toOwnedSlice(ex.self.alloc) catch &.{};
     }
 
-    /// Execute the `#run` a driver condition reached. The wrapper lowers under
+    /// Execute the `@run` a driver condition reached. The wrapper lowers under
     /// the same fold that reached it, so a threshold read inside the body parks
     /// the driver before the VM starts; from there the evaluation OWNS its VM,
     /// and a fact it awaits mid-flight keeps the whole continuation.
@@ -631,7 +631,7 @@ const Expansion = struct {
     /// The sole evaluator of a module-scope driver condition. It folds the
     /// facts the scan primed (targets, module constants) and, where the
     /// condition asks about the program instead, drives what the answer needs:
-    /// the `#run` a named constant binds, the declarations a membership
+    /// the `@run` a named constant binds, the declarations a membership
     /// question names. Whichever route answers, the driver is the worklist's.
     fn driveCondition(ex: *Expansion, node: *const Node, src: ?[]const u8, depth: u8) ?bool {
         if (depth > 16) return null;
@@ -1181,7 +1181,7 @@ const Group = struct {
     /// type name, substituted through the cloned group.
     fn expandInlineFor(g: *Group, decl: *const Node, fe: *const ast.ForExpr, src: ?[]const u8) bool {
         const self = g.ex.self;
-        // The iterable is a driver condition's twin — it can reach a `#run`,
+        // The iterable is a driver condition's twin — it can reach a `@run`,
         // and the same discipline applies — so it is resolved BEFORE anything
         // is claimed: a fold that parks must leave the driver exactly as it
         // found it, for the drain to run again.
@@ -1299,7 +1299,7 @@ fn typeListLiteral(ex: *Expansion, node: *const Node, src: ?[]const u8, depth: u
     }
 }
 
-/// A `#run`-COMPUTED iterable. The run executes under the same discipline a
+/// A `@run`-COMPUTED iterable. The run executes under the same discipline a
 /// condition's does — it is the same driver class — and the types it answers
 /// with are respelled as the element names the unroll substitutes, so the
 /// group it expands is written exactly as a literal list's would be.

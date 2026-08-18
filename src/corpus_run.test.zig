@@ -996,7 +996,7 @@ fn runOne(
         // run after a non-compiler change skips codegen for every unchanged
         // example — the difference between a ~2min and a sub-minute suite.
         // The key hashes the compiler binary itself, so a rebuilt compiler
-        // always recompiles; examples with top-level #run self-exempt.)
+        // always recompiles; examples with top-level @run self-exempt.)
         const slots = categoryRunSlots(item.rel_prefix);
         if (slots) |s| s.waitUncancelable(io);
         defer if (slots) |s| s.post(io);

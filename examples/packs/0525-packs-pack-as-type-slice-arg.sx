@@ -19,7 +19,7 @@ inner :: (args: []Type) -> string {
 
 outer :: (..$args) -> string { return inner($args); }
 
-R :: #run outer(42, "hi", true);
+R :: @run outer(42, "hi", true);
 
 main :: () {
     print("[{}]\n", R);

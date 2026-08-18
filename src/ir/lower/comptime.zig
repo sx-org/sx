@@ -444,21 +444,21 @@ pub fn evalComptimeInt(self: *Lowering, node: *const Node) ?i64 {
     return program_index_mod.evalConstIntExpr(node, self);
 }
 
-/// Lower a `#run expr` that appears as a top-level constant binding:
-///   NAME :: #run expr;
+/// Lower a `@run expr` that appears as a top-level constant binding:
+///   NAME :: @run expr;
 /// Creates a comptime function wrapping the expression (for later
 /// interpretation), plus a global constant to hold the result.
 pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node, type_ann: ?*const Node) void {
-    // When the user writes `NAME :: #run expr;` with no type annotation,
+    // When the user writes `NAME :: @run expr;` with no type annotation,
     // infer the global's type from the comptime expression's return
     // shape. `resolveType(null)` returns `.i64` — good for primitive
     // helpers, silently wrong for anything else.
     const expr_ty = self.inferExprType(expr);
-    // A failable `#run` (bare, no `catch`/`??`): the comptime function
-    // returns the full failable tuple so the #run site can inspect the
+    // A failable `@run` (bare, no `catch`/`??`): the comptime function
+    // returns the full failable tuple so the @run site can inspect the
     // error slot, but the GLOBAL is typed as the success value. On a
     // comptime error the global never materializes — emit halts with a
-    // diagnostic + trace. A handled `#run … catch/?? …` already
+    // diagnostic + trace. A handled `@run … catch/?? …` already
     // strips the error channel, so it lands here as non-failable.
     const is_failable = self.errorChannelOf(expr_ty) != null;
     const func_ret: TypeId = if (is_failable)
@@ -487,10 +487,10 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
     self.putGlobal(self.current_source_file, name, .{ .id = gid, .ty = global_ty });
 }
 
-/// Lower a standalone `#run expr;` at the top level (side-effect only).
+/// Lower a standalone `@run expr;` at the top level (side-effect only).
 /// Creates a comptime function that the interpreter should execute.
 pub fn lowerComptimeSideEffect(self: *Lowering, expr: *const Node) void {
-    // A failable side-effect `#run f();` returns the failable tuple so the
+    // A failable side-effect `@run f();` returns the failable tuple so the
     // emit-time runner can detect an escaping error and halt;
     // non-failable side effects stay `void`.
     const expr_ty = self.inferExprType(expr);
@@ -498,13 +498,13 @@ pub fn lowerComptimeSideEffect(self: *Lowering, expr: *const Node) void {
     _ = self.createComptimeFunction("__run", .ordinary, expr, ret);
 }
 
-/// Lower a `#run expr` that appears inline within an expression.
+/// Lower a `@run expr` that appears inline within an expression.
 /// Creates a comptime function and emits a `call` to it, so the
 /// interpreter can evaluate it and replace with the constant result.
 pub fn lowerInlineComptime(self: *Lowering, expr: *const Node) Ref {
     const ret_ty: TypeId = self.target_type orelse self.inferExprType(expr);
     const func_id = self.createComptimeFunction("__ct", .ordinary, expr, ret_ty);
-    // Carry the binding const's name (when this `#run` initializes one) onto the
+    // Carry the binding const's name (when this `@run` initializes one) onto the
     // wrapper so a comptime-init failure names the user const, not `__ct_N`.
     if (self.comptime_const_name) |cname| {
         self.module.getFunctionMut(func_id).comptime_display_name = self.module.types.internString(cname);
@@ -1683,8 +1683,8 @@ pub const ComptimePhase = enum {
     /// a type-fn body, an `#insert`. Nothing it observes about an open set is
     /// final.
     expansion,
-    /// Evaluated after the convergence fixpoint — a `#run` constant, a `#run`
-    /// side effect, a body-local `#run`. Sees the final sets.
+    /// Evaluated after the convergence fixpoint — a `@run` constant, a `@run`
+    /// side effect, a body-local `@run`. Sees the final sets.
     ordinary,
 };
 
@@ -1700,7 +1700,7 @@ pub fn createComptimeFunction(self: *Lowering, prefix: []const u8, phase: Compti
 /// comptime-evaluate a generic type-fn body that has locals before its `return`
 /// (the non-prelude path only sees the return expression).
 pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, phase: ComptimePhase, prelude: []const *const Node, expr: *const Node, ret_ty: TypeId) FuncId {
-    // EVERY comptime wrapper body (type-fn, #run-at-scan, #insert, …) lowers
+    // EVERY comptime wrapper body (type-fn, @run-at-scan, #insert, …) lowers
     // through here — and it (or a lazily-lowered callee) may read
     // `context.allocator`, which only exists once the Context is ASSEMBLED
     // and whose VALUE the VM materializes from the EMITTED
@@ -1795,7 +1795,7 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     if (wants_ctx) self.current_ctx_ref = Ref.fromIndex(0);
 
     // Create a scope that chains to the enclosing scope (so the
-    // expression can reference names visible at the #run site).
+    // expression can reference names visible at the @run site).
     var ct_scope = Scope.init(self.alloc, saved_scope);
     self.scope = &ct_scope;
 
@@ -1828,7 +1828,7 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
 
 /// Resolve a name to a compile-time integer across the three const tables.
 /// A comptime binding (generic value param / inline-for cursor) or a
-/// `#run`/`OS`/`ARCH` comptime constant wins first; otherwise the name is a
+/// `@run`/`OS`/`ARCH` comptime constant wins first; otherwise the name is a
 /// SOURCE-AWARE module const, folded with nested leaves resolved own-wins.
 pub fn comptimeIntNamed(self: *Lowering, name: []const u8) ?i64 {
     if (self.comptime_constants.get(name)) |cv| switch (cv) {

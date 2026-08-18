@@ -1,0 +1,4 @@
+// `#run` is not a directive. Compile-time evaluation is `@run expr`.
+#run 1;
+
+main :: () {}

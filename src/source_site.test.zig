@@ -607,8 +607,8 @@ test "distinct top-level sites in one module take distinct ordinals" {
     defer arena.deinit();
     const a = arena.allocator();
     const decls = try parse(a,
-        \\#run probe("first");
-        \\#run probe("second");
+        \\@run probe("first");
+        \\@run probe("second");
     );
     var idx = try site.build(a, decls, .{ .main_file = "app/main.sx" });
     defer idx.deinit();

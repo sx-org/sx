@@ -88,14 +88,14 @@ vec3 :: (x: f32, y: f32, z: f32) -> @Vector(3, f32) {
 
 point_sum :: (p: Point) -> i32 { p.x + p.y }
 
-// #run compile-time constants
-CT_VAL :: #run add(10, 15);
+// @run compile-time constants
+CT_VAL :: @run add(10, 15);
 
-CT_MUL :: #run mul(6, 7);
+CT_MUL :: @run mul(6, 7);
 
-CT_CHAIN :: #run add(CT_VAL, 5);
+CT_CHAIN :: @run add(CT_VAL, 5);
 
-// #run compile-time optional tests
+// @run compile-time optional tests
 ct_opt_coalesce :: () -> i32 {
     x: ?i32 = 42;
     y: ?i32 = null;
@@ -113,11 +113,11 @@ ct_opt_guard :: () -> i32 {
     return x;
 }
 
-CT_OPT_COALESCE :: #run ct_opt_coalesce();
+CT_OPT_COALESCE :: @run ct_opt_coalesce();
 
-CT_OPT_UNWRAP :: #run ct_opt_unwrap();
+CT_OPT_UNWRAP :: @run ct_opt_unwrap();
 
-CT_OPT_GUARD :: #run ct_opt_guard();
+CT_OPT_GUARD :: @run ct_opt_guard();
 
 // #insert helpers
 gen_code :: () -> string {

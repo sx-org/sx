@@ -8,14 +8,14 @@ add :: (a: i32, b: i32) -> i32 { a + b }
 
 mul :: (a: i32, b: i32) -> i32 { a * b }
 
-// #run compile-time constants
-CT_VAL :: #run add(10, 15);
+// @run compile-time constants
+CT_VAL :: @run add(10, 15);
 
-CT_MUL :: #run mul(6, 7);
+CT_MUL :: @run mul(6, 7);
 
-CT_CHAIN :: #run add(CT_VAL, 5);
+CT_CHAIN :: @run add(CT_VAL, 5);
 
-// #run compile-time optional tests
+// @run compile-time optional tests
 ct_opt_coalesce :: () -> i32 {
     x: ?i32 = 42;
     y: ?i32 = null;
@@ -33,11 +33,11 @@ ct_opt_guard :: () -> i32 {
     return x;
 }
 
-CT_OPT_COALESCE :: #run ct_opt_coalesce();
+CT_OPT_COALESCE :: @run ct_opt_coalesce();
 
-CT_OPT_UNWRAP :: #run ct_opt_unwrap();
+CT_OPT_UNWRAP :: @run ct_opt_unwrap();
 
-CT_OPT_GUARD :: #run ct_opt_guard();
+CT_OPT_GUARD :: @run ct_opt_guard();
 
 // #insert helpers
 gen_code :: () -> string {
@@ -57,16 +57,16 @@ main :: () {
     // ========================================================
     print("=== 8. Comptime ===\n");
 
-    // #run constant
+    // @run constant
     print("run-const: {}\n", CT_VAL);
 
-    // #run with expression
+    // @run with expression
     print("run-expr: {}\n", CT_MUL);
 
-    // #run chained dependency
+    // @run chained dependency
     print("run-chain: {}\n", CT_CHAIN);
 
-    // #run comptime optionals
+    // @run comptime optionals
     print("ct-opt-coalesce: {}\n", CT_OPT_COALESCE);           // ct-opt-coalesce: 141
     print("ct-opt-unwrap: {}\n", CT_OPT_UNWRAP);               // ct-opt-unwrap: 77
     print("ct-opt-guard: {}\n", CT_OPT_GUARD);                 // ct-opt-guard: 10

@@ -25,7 +25,7 @@ link_libraries :: () -> List(string) intrinsic;
 // ACTION — the sx driver calls this; the compiler does not emit on its own.
 emit_object :: () -> string intrinsic;
 
-// Build-config metadata the sx driver passes to `link` (the merged CLI + `#run`
+// Build-config metadata the sx driver passes to `link` (the merged CLI + `@run`
 // build config the compiler accumulated for this build).
 build_output     :: () -> string intrinsic;        // the output binary path
 build_target     :: () -> string intrinsic;        // the target triple ("" = host)

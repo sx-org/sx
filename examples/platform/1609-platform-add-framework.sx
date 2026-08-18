@@ -10,7 +10,7 @@ configure_build :: () {
     opts := build_options();
     opts.add_framework("CoreFoundation");
 }
-#run configure_build();
+@run configure_build();
 
 CFAbsoluteTimeGetCurrent :: () -> f64 extern;
 

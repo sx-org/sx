@@ -245,7 +245,7 @@ pub fn main(init: std.process.Init) !void {
         timer.record("imports");
 
         // Cache check — use .o files (precompiled object, skip IR compilation in JIT)
-        // Disable caching for files with top-level #run (side effects lost on cache hit)
+        // Disable caching for files with top-level @run (side effects lost on cache hit)
         const root = comp.resolved_root orelse comp.root orelse return;
 
         // Pre-JIT entry-point check. The ORC `main` lookup in
@@ -331,14 +331,14 @@ pub fn main(init: std.process.Init) !void {
         // JIT from precompiled object (relocation only, no IR compilation)
         sx.llvm_api.initNativeTarget();
         timer.mark();
-        // Phase separator: emit a clear delimiter between any #run output
+        // Phase separator: emit a clear delimiter between any @run output
         // (which prints via the interp to stderr) and the JIT-executed
         // main's runtime output (which writes to stdout). Without this,
         // test logs and human-eye reads interleave compile-time and
-        // run-time output ambiguously. Only when top-level #run exists —
+        // run-time output ambiguously. Only when top-level @run exists —
         // pure-runtime tests keep their current snapshots.
         if (hasTopLevelRun(root)) {
-            // Stay on the same stream as the #run output (stdout, via
+            // Stay on the same stream as the @run output (stdout, via
             // core.flushInterpOutput): the
             // user doesn't distinguish build-time `print` from
             // runtime `print` at the call site, and the delimiter is
@@ -612,7 +612,7 @@ const BuildHooksCtx = struct {
         if (objects.len == 0) return error.NoObjects;
         var cfg = self.base_config;
         // The passed `flags` are already the full merged set (`build_flags()` returns
-        // the merged CLI + `#run` flags), so use them as-is rather than re-unioning.
+        // the merged CLI + `@run` flags), so use them as-is rather than re-unioning.
         cfg.extra_link_flags = flags;
         try sx.target.link(self.allocator, self.io, objects[0], objects[1..], output, libraries, frameworks, cfg, self.has_jni_main);
     }
@@ -662,7 +662,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     const obj_path = try std.fmt.allocPrintSentinel(allocator, "{s}/main.o", .{tmp_dir}, 0);
 
     // Codegen only. There is NO auto-emit / auto-link: the build is driven
-    // entirely by the sx `default_pipeline` (or a user `#run on_build(...)`
+    // entirely by the sx `default_pipeline` (or a user `@run on_build(...)`
     // override), invoked after codegen below. `emit_object` (verify + object
     // emission) and `link` run as sx-called ACTIONS through the build hooks.
     // The `--cache` object cache does not reach this path: it short-circuits
@@ -686,7 +686,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     };
     timer.record("c-import");
 
-    // Merge build config (from #run blocks) with CLI config
+    // Merge build config (from @run blocks) with CLI config
     var merged_config = target_config;
     const build_flags = comp.getBuildLinkFlags();
     const build_fws = comp.getBuildFrameworks();
@@ -704,13 +704,13 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         for (build_flags) |f| try all_flags.append(allocator, f);
         merged_config.extra_link_flags = try all_flags.toOwnedSlice(allocator);
     }
-    // Override output path from #run if set (and no explicit -o was given on CLI)
+    // Override output path from @run if set (and no explicit -o was given on CLI)
     const final_output = if (target_config.output_path == null)
         (comp.getBuildOutputPath() orelse output_path)
     else
         output_path;
 
-    // Override WASM shell template from #run if set
+    // Override WASM shell template from @run if set
     if (comp.getBuildWasmShell()) |shell| {
         merged_config.wasm_shell_path = shell;
     }
@@ -788,7 +788,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         const jni_decls = comp.getJniMainEmissions();
         if (jni_decls.len > 0) {
             // If the output path was set via `BuildOptions.set_output_path`
-            // (i.e. from a #run block, not CLI -o), the Java sources were
+            // (i.e. from a @run block, not CLI -o), the Java sources were
             // rendered during lowering before we knew the .so basename and
             // they're missing the `static { System.loadLibrary(...); }`
             // block. Inject it now using the final resolved output.
@@ -813,7 +813,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     }
 
     // Post-link build driver. Either the user registered an `on_build(cb)`
-    // override (bundling is `#run on_build(bundle_main);` — bundle_main runs the
+    // override (bundling is `@run on_build(bundle_main);` — bundle_main runs the
     // emit+link core then wraps the `.app`/`.apk`), or we run the stdlib
     // `default_pipeline` (emit + link; it fails with a precise hint if a bundle was
     // requested via `--bundle`/`--apk` but no bundler was registered). The CLI

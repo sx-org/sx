@@ -53,13 +53,13 @@ erased_probe :: () -> bool {
     return l.(?Show) != null;
 }
 
-IN      :: #run in_set();
-OUT     :: #run out_of_set();
-EMPTY   :: #run empty_set();
-COUNT   :: #run through_probe();
-ERASED  :: #run erased_probe();
-HAS_YES :: #run has_impl(Show, Loose);
-HAS_NO  :: #run has_impl(Nobody, Loose);
+IN      :: @run in_set();
+OUT     :: @run out_of_set();
+EMPTY   :: @run empty_set();
+COUNT   :: @run through_probe();
+ERASED  :: @run erased_probe();
+HAS_YES :: @run has_impl(Show, Loose);
+HAS_NO  :: @run has_impl(Nobody, Loose);
 
 main :: () {
     print("{} {}\n", IN, in_set());

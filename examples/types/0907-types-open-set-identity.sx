@@ -10,7 +10,7 @@
 // boxing position agrees with it, so an `any` parameter, an `any` local, and a
 // formatted argument all see the member rather than the set.
 //
-// The numbering exists only once the sets freeze, so a `#run` that asks waits for
+// The numbering exists only once the sets freeze, so a `@run` that asks waits for
 // it and gets the same answer the run-time program gets.
 #import "modules/std.sx";
 
@@ -39,7 +39,7 @@ boxed :: (a: any) -> Type => type_of(a);
 // working when it is instantiated at a set.
 probe :: ($T: Type, a: any) -> ?T => a.(?T);
 
-CT_MEMBER :: #run early_member();
+CT_MEMBER :: @run early_member();
 
 // Asked while the program is still being lowered: the tag space is assigned at
 // the freeze, so this waits for it rather than answering from a numbering that

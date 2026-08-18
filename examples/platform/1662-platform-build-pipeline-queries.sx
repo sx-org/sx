@@ -27,6 +27,6 @@ build :: (opt: BuildOptions) -> bool {
     if sum < 0 { return false; }
     return default_pipeline(opt);   // the real emit + link
 }
-#run on_build(build);
+@run on_build(build);
 
 main :: () { print("runtime main: {}\n", c_marker()); }

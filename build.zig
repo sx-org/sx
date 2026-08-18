@@ -263,7 +263,7 @@ pub fn build(b: *std.Build) void {
     // Nothing in the Zig sources calls these C entry points — the JIT resolves
     // them via dlsym at comptime, and AOT output picks them up via an
     // auto-injected c_import. With no static reference, dead-strip drops them in
-    // every non-Debug mode and `#run` fails with "symbol not found via dlsym",
+    // every non-Debug mode and `@run` fails with "symbol not found via dlsym",
     // so pin them as undefined to force retention.
     // `-u` matches the mangled name, and Mach-O prefixes C symbols with `_`.
     // Covered by tests/jit_symbols_retained.sh.

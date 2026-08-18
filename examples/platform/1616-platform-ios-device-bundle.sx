@@ -34,7 +34,7 @@ configure :: () {
     opts.set_bundle_path("/tmp/SxDeviceProbe.app");
     on_build(bundle_main);
 }
-#run configure();
+@run configure();
 
 // IMP for application:didFinishLaunchingWithOptions:
 //   Obj-C: -(BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)opts

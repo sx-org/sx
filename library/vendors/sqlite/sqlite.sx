@@ -63,7 +63,7 @@ configure_sqlite :: () {
         build_options().add_link_flag("-lm");
     }
 }
-#run configure_sqlite();
+@run configure_sqlite();
 
 sqlib :: #import c {
     #define "SQLITE_DQS=0";

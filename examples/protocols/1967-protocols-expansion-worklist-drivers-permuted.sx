@@ -10,7 +10,7 @@ inline if POINTER_SIZE == 8 {
     impl View for Panel { area :: (self: *Panel) -> i64 { self.n + 100 } }
 }
 
-HAS_PANEL :: #run has_impl(View, Panel);
+HAS_PANEL :: @run has_impl(View, Panel);
 inline if HAS_PANEL { WIDTH :: 3; } else { WIDTH :: 0; }
 
 inline for T in SHAPES {

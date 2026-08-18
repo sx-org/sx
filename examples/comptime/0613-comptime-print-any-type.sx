@@ -1,4 +1,4 @@
-// Comptime `#run` formatting of an `any` that holds a `Type`.
+// Comptime `@run` formatting of an `any` that holds a `Type`.
 //
 // `print("{}", at)` where `at: any` holds a `Type` value routes through
 // `format` → `any_to_string`, whose `type := type_of(val)` lowers (for an
@@ -22,6 +22,6 @@ ct_probe :: () {
     print("after\n");
 }
 
-#run ct_probe();
+@run ct_probe();
 
 main :: () {}

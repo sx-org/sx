@@ -49,8 +49,8 @@ retuned :: () -> i64 {
     return context.sink.emit(5);
 }
 
-CT :: #run through_default();
-CT_PUSH :: #run through_push();
+CT :: @run through_default();
+CT_PUSH :: @run through_push();
 
 main :: () {
     print("{} {}\n", CT, through_default());

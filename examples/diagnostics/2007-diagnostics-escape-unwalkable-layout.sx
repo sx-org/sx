@@ -10,7 +10,7 @@ make :: () -> Box {
     return Box{ p = context.allocator.alloc_bytes(8) };
 }
 
-B :: #run make();
+B :: @run make();
 
 main :: () {
     print("{}\n", 1);

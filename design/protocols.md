@@ -642,7 +642,7 @@ through Context fields such as the ambient allocator.
 work unchanged.
 
 Comptime execution is **per-evaluation**: each evaluation (a
-driver, an ordinary `#run`) owns its VM, heap, and **VM-local
+driver, an ordinary `@run`) owns its VM, heap, and **VM-local
 Context**; suspension parks and resumes *that* evaluation — its VM
 state is never shared with or visible to another evaluation, so
 scheduler order cannot leak through Context or heap state. The
@@ -657,7 +657,7 @@ fold included); correspondence survives borrows, not copies — a
 struct copy is a new object and escapes through the temporary path.
 
 **Scheduling.** Comptime entangled with conformance — the conditions
-and iterables of top-level `inline if`/`inline for`, any `#run`
+and iterables of top-level `inline if`/`inline for`, any `@run`
 they transitively reference, and body-level comptime reached by
 monomorphizing an impl — evaluates under one dataflow discipline:
 
@@ -710,7 +710,7 @@ monomorphizing an impl — evaluates under one dataflow discipline:
   ```sx
   GPA :: struct { … }
   Serialize :: protocol vtable { write :: (self: *Self, out: *Buf); }
-  HAS :: #run { g := GPA{ … }; g.(?Serialize) != null };
+  HAS :: @run { g := GPA{ … }; g.(?Serialize) != null };
   inline if !HAS { impl Serialize for GPA { … } }
   ```
   ```
@@ -738,7 +738,7 @@ diagnostics of the instantiation it queries (§3) and reaches
 nothing for emission.
 
 **The phase law.** All comptime execution not under the discipline
-runs **after the declaration space is final**, so every such `#run`
+runs **after the declaration space is final**, so every such `@run`
 sees the same world and **cannot enlarge it**: an operation
 requiring a conformance no impl provides is a compile error at the
 operation's site rather than a fact the run publishes. Post-fixpoint
@@ -862,12 +862,12 @@ requires no compiler change.
 | generic type argument `List(P)` | erased: legal, element = the protocol value layout. constraint: refused at the instantiation site |
 | protocol as a protocol-instantiation argument (`Series(View)`) | legal — a type argument like any other |
 | value parameters in a protocol head (`protocol(N: u32) vtable`) | as generic structs; canonicalized by folded value equality |
-| protocol values inside `#run` / comptime execution | legal, symbolic — `{ctx, concrete type, impl}`, VM-devirtualized dispatch; under the §6.9 discipline, negative probes, erased-target conversions (both polarities), and name-lookup misses suspend until finality |
+| protocol values inside `@run` / comptime execution | legal, symbolic — `{ctx, concrete type, impl}`, VM-devirtualized dispatch; under the §6.9 discipline, negative probes, erased-target conversions (both polarities), and name-lookup misses suspend until finality |
 | scheduler quiesces with parked evaluations (self-feeding or mutual) | compile error — expansion deadlock, every parked evaluation and its awaited facts named (§6.9) |
 | comptime protocol value escaping into the image | declared-global referents relocate in place (mutable); comptime temporaries become writable anonymous image globals, deduped by object identity, nested handles recursing; OWNING erased values cannot escape — compile error (§6.9) |
 | type declared inside a top-level `inline for` body | flattens to module scope — duplicate across iterations diagnoses; parameterize the type (`Vec :: struct($N: u32)`) instead of re-declaring per iteration |
 | type annotation on an `inline for` type-list cursor | compile error — the cursor binds a type, not a value of one |
-| `inline for` conformance-list elements | concrete types only (a `Type` never tags a protocol, §7); `#run`-computed lists are legal but expansion-driving (§6.9 scheduling); duplicate elements and nested unrolls diagnose with cursor provenance ("T = Point, i = 1") |
+| `inline for` conformance-list elements | concrete types only (a `Type` never tags a protocol, §7); `@run`-computed lists are legal but expansion-driving (§6.9 scheduling); duplicate elements and nested unrolls diagnose with cursor provenance ("T = Point, i = 1") |
 | conformer method name colliding with an existing member of the type | exact protocol signature: the existing method satisfies conformance (impl may omit; providing it duplicates). anything else (field, different signature): compile error at the impl |
 | default method calling an excluded method | legal — defaults compile per conformer against concrete `Self` (§2); exclusion binds only calls through erased values |
 

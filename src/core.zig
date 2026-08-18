@@ -165,7 +165,7 @@ pub const Compilation = struct {
         // callbacks can re-enter the interpreter via `invokeByName`.
         self.ir_module = ir_mod_ptr;
         self.ir_emitter = emitter;
-        // A comptime `#run` raised an unhandled error — the diagnostic + trace
+        // A comptime `@run` raised an unhandled error — the diagnostic + trace
         // were already printed to stderr; abort before JIT/link.
         if (emitter.comptime_failed) return error.ComptimeError;
         if (emitter.emission_failed) return error.CodegenError;
@@ -199,7 +199,7 @@ pub const Compilation = struct {
     }
 
     /// Re-enter the evaluator and call an already-resolved function id. The
-    /// post-link build callback, captured at `#run` time (by `on_build` /
+    /// post-link build callback, captured at `@run` time (by `on_build` /
     /// `set_post_link_callback`). `pass_options` passes the opaque `BuildOptions`
     /// handle as the callback's arg (the `on_build(cb)` form, `cb: (opt:
     /// BuildOptions) -> bool`); false for the no-arg form.
@@ -216,25 +216,25 @@ pub const Compilation = struct {
         return evaluation.completed() orelse error.ComptimeVmBail;
     }
 
-    /// Get link flags accumulated from #run build blocks.
+    /// Get link flags accumulated from @run build blocks.
     pub fn getBuildLinkFlags(self: *Compilation) []const []const u8 {
         if (self.ir_emitter) |*e| return e.build_config.link_flags.items;
         return &.{};
     }
 
-    /// Get frameworks accumulated from #run build blocks (BuildOptions.add_framework).
+    /// Get frameworks accumulated from @run build blocks (BuildOptions.add_framework).
     pub fn getBuildFrameworks(self: *Compilation) []const []const u8 {
         if (self.ir_emitter) |*e| return e.build_config.frameworks.items;
         return &.{};
     }
 
-    /// Get output path set from #run build blocks, if any.
+    /// Get output path set from @run build blocks, if any.
     pub fn getBuildOutputPath(self: *Compilation) ?[]const u8 {
         if (self.ir_emitter) |*e| return e.build_config.output_path;
         return null;
     }
 
-    /// Get custom WASM shell template path set from #run build blocks, if any.
+    /// Get custom WASM shell template path set from @run build blocks, if any.
     pub fn getBuildWasmShell(self: *Compilation) ?[]const u8 {
         if (self.ir_emitter) |*e| return e.build_config.wasm_shell_path;
         return null;

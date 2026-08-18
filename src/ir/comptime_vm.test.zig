@@ -167,7 +167,7 @@ test "comptime_vm exec: loop with block params sums i..1" {
 
 test "comptime_vm exec: nested value-merge threads inner if value" {
     // f(a, b) = if a { 100 } else { if b { 42 } else { 0 } }
-    // The correct IR (what lowering emits for both #run forms) chains two
+    // The correct IR (what lowering emits for both @run forms) chains two
     // value-merge blocks: the OUTER merge's else-edge value IS the INNER merge's
     // block_param result. The VM must thread that inner phi word into the outer
     // phi — the shape lowering relies on being interpreted faithfully.

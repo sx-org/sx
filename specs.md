@@ -127,7 +127,7 @@ compile error, because rendering it takes the allocating formatter, `print`.
 
 `@panic(msg: string, site: @SourceSite = @caller) -> noreturn` writes
 `file:line: msg` and stops the program; a site with `line == 0` writes bare
-`msg`. A `#run` panic exits the COMPILER with code 1, a compiled panic raises
+`msg`. A `@run` panic exits the COMPILER with code 1, a compiled panic raises
 SIGABRT. It renders through `@printf`, so it reaches its message with a broken
 or exhausted allocator behind it.
 
@@ -136,13 +136,14 @@ declaration of it, so there is no second author for the import-visibility rule t
 choose between: `@SourceSite` and `@VaList` are spelled bare wherever they are
 written.
 
-Separately, a few `@` names are **compiler-formed** — `@Init(T)`,
-`@BuildBlock(P)`, `@Vector(N, T)`, `@Array(N, T)` and `@Slice(T, Len)`. The
-compiler forms the type, so there is no stdlib declaration to read and declaring
-the name is an error. `@Init` and `@BuildBlock` are constraints, written only as
-a bound on the parameter (`value: $I/@Init(T)`, `content: $B/@BuildBlock(P)`)
-and never as its type — see [`@Init(T)`](#initt) and
-[`@BuildBlock(P)`](#buildblockp). `@Vector(N, T)` (§Vector Types),
+Separately, a few `@` names are **compiler-formed** — `@run`, `@Init(T)`,
+`@BuildBlock(P)`, `@Vector(N, T)`, `@Array(N, T)` and `@Slice(T, Len)`. There is
+no stdlib declaration to read, and declaring the name is an error. `@run` is
+the compile-time evaluation prefix (`@run expr`); see
+[§8](#8-compile-time-evaluation). `@Init` and `@BuildBlock` are constraints,
+written only as a bound on the parameter (`value: $I/@Init(T)`,
+`content: $B/@BuildBlock(P)`) and never as its type — see [`@Init(T)`](#initt)
+and [`@BuildBlock(P)`](#buildblockp). `@Vector(N, T)` (§Vector Types),
 `@Array(N, T)` (§Array Types) and `@Slice(T, Len)` (§Slice Types) are type
 constructors, written wherever a type is.
 
@@ -1680,7 +1681,7 @@ fields such as the ambient allocator. `protocol_kind`,
 `is_identity`, and all monomorphized machinery work unchanged.
 
 Comptime execution is **per-evaluation**: each evaluation (a
-driver, an ordinary `#run`) owns its VM, heap, and **VM-local
+driver, an ordinary `@run`) owns its VM, heap, and **VM-local
 Context**; suspension parks and resumes *that* evaluation — its VM
 state is never shared with or visible to another evaluation, so
 scheduler order cannot leak through Context or heap state. The
@@ -1695,7 +1696,7 @@ fold included); correspondence survives borrows, not copies — a
 struct copy is a new object and escapes through the temporary path.
 
 **Scheduling.** Comptime entangled with conformance — the conditions
-and iterables of top-level `inline if`/`inline for`, any `#run`
+and iterables of top-level `inline if`/`inline for`, any `@run`
 they transitively reference, and body-level comptime reached by
 monomorphizing an impl — evaluates under one dataflow discipline:
 
@@ -1748,7 +1749,7 @@ monomorphizing an impl — evaluates under one dataflow discipline:
   ```sx
   GPA :: struct { … }
   Serialize :: protocol vtable { write :: (self: *Self, out: *Buf); }
-  HAS :: #run { g := GPA{… }; g.(?Serialize) != null };
+  HAS :: @run { g := GPA{… }; g.(?Serialize) != null };
   inline if !HAS { impl Serialize for GPA { … } }
   ```
   ```
@@ -1776,7 +1777,7 @@ diagnostics of the instantiation it queries (§3) and reaches
 nothing for emission.
 
 **The phase law.** All comptime execution not under the discipline
-runs **after the declaration space is final**, so every such `#run`
+runs **after the declaration space is final**, so every such `@run`
 sees the same world and **cannot enlarge it**: an operation
 requiring a conformance no impl provides is a compile error at the
 operation's site rather than a fact the run publishes. Post-fixpoint
@@ -1901,11 +1902,11 @@ requires no compiler change.
 | generic type argument `List(P)` | erased: legal, element = the protocol value layout. constraint: refused at the instantiation site |
 | protocol as a protocol-instantiation argument (`Series(View)`) | legal — a type argument like any other |
 | value parameters in a protocol head (`protocol(N: u32) vtable`) | as generic structs; canonicalized by folded value equality |
-| protocol values inside `#run` / comptime execution | legal, symbolic — `{ctx, concrete type, impl}`, VM-devirtualized dispatch; under the §6.9 discipline, negative probes, erased-target conversions (both polarities), and name-lookup misses suspend until finality |
+| protocol values inside `@run` / comptime execution | legal, symbolic — `{ctx, concrete type, impl}`, VM-devirtualized dispatch; under the §6.9 discipline, negative probes, erased-target conversions (both polarities), and name-lookup misses suspend until finality |
 | scheduler quiesces with parked evaluations (self-feeding or mutual) | compile error — expansion deadlock, every parked evaluation and its awaited facts named (§6.9) |
 | comptime protocol value escaping into the image | declared-global referents relocate in place (mutable); comptime temporaries become writable anonymous image globals, deduped by object identity, nested handles recursing; OWNING erased values cannot escape — compile error (§6.9) |
 | type declared inside a top-level `inline for` body | flattens to module scope — duplicate across iterations diagnoses; parameterize the type (`Vec :: struct($N: u32)`) instead of re-declaring per iteration |
-| `inline for` conformance-list elements | concrete types only (a `Type` never tags a protocol, §7); `#run`-computed lists are legal but expansion-driving (§6.9 scheduling); duplicate elements and nested unrolls diagnose with cursor provenance ("T = Point, i = 1") |
+| `inline for` conformance-list elements | concrete types only (a `Type` never tags a protocol, §7); `@run`-computed lists are legal but expansion-driving (§6.9 scheduling); duplicate elements and nested unrolls diagnose with cursor provenance ("T = Point, i = 1") |
 | conformer method name colliding with an existing member of the type | exact protocol signature: the existing method satisfies conformance (impl may omit; providing it duplicates). anything else (field, different signature): compile error at the impl |
 | default method calling an excluded method | legal — defaults compile per conformer against concrete `Self` (§2); exclusion binds only calls through erased values |
 | impl inside a dead `inline if` branch | never exists — emits nothing |
@@ -2506,7 +2507,7 @@ n := Node{value = 10 };    // n.next is null
 `print("{}", opt)` prints the payload value if present, or `"null"`.
 
 #### Comptime
-Optionals work in `#run` blocks — `??`, `!`, `if val :=`, null checks all supported.
+Optionals work in `@run` blocks — `??`, `!`, `if val :=`, null checks all supported.
 
 ### C Interop
 
@@ -3191,7 +3192,7 @@ The `xx` prefix operator marks an expression for auto-conversion to the expected
 ```sx
 large: f64 = 5999.5;
 x : u16 = xx large;       // f64 → u16
-d : u8 = #run xx resolve(5); // i32 → u8 at compile time
+d : u8 = @run xx resolve(5); // i32 → u8 at compile time
 ```
 
 Using `xx` outside a typed context (where the target type is known) is a compile error.
@@ -3452,7 +3453,7 @@ CALL :: Color{r = bump(), g = 0, b = 0 };
 print("{} {}\n", CALL.r, CALL.r);   // prints '1 2'; counter is now 2
 ```
 
-For evaluate-once semantics use `NAME :: #run f();` (see
+For evaluate-once semantics use `NAME :: @run f();` (see
 [Compile-time Evaluation](#8-compile-time-evaluation)).
 
 #### Constant Folding over Aggregates
@@ -4071,7 +4072,7 @@ freeze also numbers each set's members densely from 0 in the set's **own** tag s
 and writes its `tag → member Type` table.
 
 So `size_of(P)` is **not a literal baked where it is written**. Wherever it is a
-value — a body, a `#run`, an argument — it is answered from the frozen layout, and
+value — a body, a `@run`, an argument — it is answered from the frozen layout, and
 one program therefore has **one** answer for it everywhere: a body lowered before a
 generic member's instantiation and a body lowered after it agree. The same holds for
 any type whose layout a set decides, such as a plain struct with a `P` field.
@@ -4088,7 +4089,7 @@ Slot :: struct {
 An array dimension is fixed where it is written, and the struct that carries it is
 registered on the spot — a member declared later in the program (or in a module the
 program imports) would contradict the number, in a layout that cannot be measured
-again. Read the size where it is a value, or bind it with `#run size_of(P)`. A set
+again. Read the size where it is a value, or bind it with `@run size_of(P)`. A set
 that **no generic member can reach** settles as soon as the declarations are
 admitted, and a dimension over that set inside a body folds normally.
 
@@ -4853,7 +4854,7 @@ is two `|` tokens around an empty parameter list. A parameter default is an
 ordinary expression except that the first `|` on that default's own value spine
 closes the parameter list. The value spine is the default's operator spine
 together with the trailing expression of an inline `if`, a `catch |e| expr`, a
-nested `|params| expr` body, `#run`, and `return`. Inside `(…)`, `[…]`, `{…}`,
+nested `|params| expr` body, `@run`, and `return`. Inside `(…)`, `[…]`, `{…}`,
 or an `if` / `while` / `for` / `match` header, `|` is bitwise OR — so a
 bitwise-OR default is parenthesized (`|x: i64 = (a | b)|`), while
 `|x: i64 = mask(a | b)|` and `|x: i64 = if a | b { 1 } else { 0 }|` need
@@ -5084,7 +5085,7 @@ scaffold() { chat_list(); };                   // defaults skipped, block binds 
   expression must be parenthesized so the statement body keeps its `{`:
   `if (Button{ label = "x" }.ready) { … }`. A tail written on the header spine
   is at the header's own depth and takes the same parentheses — after `try`,
-  `catch |e|`, `#run`, or a bare closure body:
+  `catch |e|`, `@run`, or a bare closure body:
   `if (mk() catch |e| Pt { x = 0 }).x == 1 { … }`. Push is different — named
   aggregates are legal in the context expr and the following brace is the push
   body: `push Context{ io = my_io } { … }`. Idiomatic: `push .{ … } { … }`.
@@ -5243,7 +5244,7 @@ sentinel, per the pointer contract.
 - **One flat namespace, loud collisions**: two declarations with the same field name (or colliding with a builtin field) are a hard compile error naming both declaration sites.
 - **Defaults are mandatory and comptime-evaluable**: a declaration without a default — or with one that doesn't fold to a compile-time constant — is a compile error; the default context must be constructible before `main` runs. Defaults fold into `__sx_default_context`. A protocol-typed context field is legal only at an `#identity` protocol — its default folds as the identity erasure of a named instance global; a value/own protocol-typed field is refused at its declaration (an owning constant cannot exist before `main`). `*T = null` is the idiom for handle fields (`?*T = null` where checked absence is wanted); the root `push` in `main` is the idiom for wiring real values.
 - **`push` semantics**: added fields patch exactly like builtin ones.
-- **Comptime**: `#run` bodies execute under a VM-LOCAL copy of the assembled default context (see Protocols, compile-time execution): an added field's default is readable at comptime; protocol-typed fields reference VM-owned instances whose mutations are execution-local and discarded — comptime code cannot mutate globals (the VM reads globals into VM-local copies and never writes back).
+- **Comptime**: `@run` bodies execute under a VM-LOCAL copy of the assembled default context (see Protocols, compile-time execution): an added field's default is readable at comptime; protocol-typed fields reference VM-owned instances whose mutations are execution-local and discarded — comptime code cannot mutate globals (the VM reads globals into VM-local copies and never writes back).
 - **Cost guideline** (not enforced): reads are a constant-offset load and calls share the pusher's slot — the only growth cost is the spread-copy at `push` (and the per-fiber snapshot). Prefer one POINTER per concern (`*Ui`, `*Logger`) over fat inline values; a 2 KB inline field makes every push a 2 KB memcpy. Small inline value fields are fine.
 
 There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`#context_extend logger: *Logger = null;`).
@@ -5353,9 +5354,9 @@ all. Calling one from the runtime call graph is a compile-time error that prints
 the path from the root that reached it.
 
 Dispatch is not the same as stage-availability. `sqrt` and `atomic_load` are both
-lowered, yet `atomic_load` evaluates under `#run` and `sqrt` does not: the
+lowered, yet `atomic_load` evaluates under `@run` and `sqrt` does not: the
 evaluator interprets the atomic ops, but has no arm for the math call `sqrt`
-lowers to. A `#run sqrt(x)` fails loudly rather than folding to a wrong value.
+lowers to. A `@run sqrt(x)` fails loudly rather than folding to a wrong value.
 
 Two categories are **not** intrinsics. `string`, `@Vector`, `@Array` and
 `@Slice` are language primitives, resolved by name by the type system like `int` / `bool` /
@@ -5369,8 +5370,10 @@ scheduling discipline (see Protocols, compile-time execution).
 An ordinary sx function is **stage-polymorphic**. Nothing in a declaration says
 whether it runs at compile time or at runtime; what decides is **reachability**.
 
-- **Compile-time roots**: `#run`, constant and type evaluation, and a build
-  callback registered with `on_build`.
+- **Compile-time roots**: `@run`, type construction, `#insert`, module-scope
+  `inline if` / `inline match` / `inline for`, and a build callback registered
+  with `on_build`. A `::` whose initializer is a call is not a compile-time
+  root.
 - **Runtime roots**: `main`, exported definitions, and anything named by global
   data (a protocol vtable, an open set's tag table, the default `Context`).
   Comptime not entangled with conformance runs after the declaration space is
@@ -5383,7 +5386,7 @@ A function reached from **both** does both, and must agree with itself:
 ```sx
 shared :: (n: i64) -> i64 { return n * 2 + size_of(P); }
 
-CT :: #run shared(10);          // evaluated by the comptime evaluator
+CT :: @run shared(10);          // evaluated by the comptime evaluator
 main :: () { rt := shared(10); } // and emitted into the binary
 ```
 
@@ -5397,7 +5400,7 @@ Two consequences follow, and neither needs an annotation:
 
 ```
 error: 'intern' runs only at compile time — it cannot be called from the
-       runtime call graph (use it inside #run or a comptime '::')
+       runtime call graph (use it inside @run or a comptime '::')
   reached from the runtime graph:
     main
     -> alpha
@@ -5464,21 +5467,21 @@ An `any` is accepted because it can hold either a value or a `Type`. `type_name`
 
 ## 8. Compile-time Evaluation
 
-### `#run` Directive
+### `@run` Directive
 
-`#run expr` evaluates `expr` at compile time using lazy JIT execution. It can appear in two contexts:
+`@run expr` evaluates `expr` at compile time using lazy JIT execution. It can appear in two contexts:
 
 **Compile-time constants** — bind a compile-time value to a name:
 ```sx
 compute :: (x: i32) -> i32 { x * x; }
-x :: #run compute(5);   // x = 25, evaluated at compile time
+x :: @run compute(5);   // x = 25, evaluated at compile time
 ```
 
 Comptime globals are resolved lazily: the JIT executes only when the value is first referenced during code generation. Chained dependencies are resolved automatically.
 
 **Side effects** — execute code at compile time for its side effects:
 ```sx
-#run print("compiling...");
+@run print("compiling...");
 ```
 
 ### `@error`
@@ -5539,24 +5542,20 @@ generate :: () -> string {
 }
 
 main :: () {
-    #insert #run generate();
+    #insert @run generate();
     // equivalent to: print("hello from the other side");
 }
 ```
 
 The inserted string must contain valid `sx` statements (including semicolons). The statements are parsed and compiled in the same scope as the `#insert` site. Variables created by one `#insert` are visible to subsequent `#insert` directives in the same function.
 
-### Comptime Call Evaluation
-
-When a `::` constant binding is initialized with a function call and all arguments are comptime-known (literals or other `::` constants), the compiler attempts to evaluate the entire call at compile time using the bytecode VM. If evaluation succeeds, the result is baked into the binary as a static constant with zero runtime overhead.
+A `::` whose initializer is a call is an immutable runtime binding. Compile-time evaluation of a call is `@run`:
 
 ```sx
-body :: "<html><body><h1>Hello</h1></body></html>";
-response :: format("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body.len, body);
-// response is a static string constant — no runtime allocation
+response :: format(...);       // immutable, runtime
+response :: @run format(...);  // compile time
+response := format(...);       // mutable, runtime
 ```
-
-This works for any function, not just `format`. The mechanism is general: the VM compiles the function body (including `#insert` directives, variadic `..args: []any` args, and calls to other functions) and executes it entirely at compile time. If the VM encounters something it cannot evaluate (e.g., extern function calls, unsupported operations), it silently falls through to runtime codegen.
 
 ### `@is_comptime()`
 
@@ -5570,7 +5569,7 @@ the compiler where a compiled panic aborts.
 
 ### Build Configuration
 
-The `BuildOptions` struct (from `modules/build.sx`) provides compile-time build configuration via `#run`. Methods on `BuildOptions` are compiler builtins intercepted during compilation — they have no runtime cost.
+The `BuildOptions` struct (from `modules/build.sx`) provides compile-time build configuration via `@run`. Methods on `BuildOptions` are compiler builtins intercepted during compilation — they have no runtime cost.
 
 ```sx
 #import "modules/build.sx";
@@ -5586,7 +5585,7 @@ configure_build :: () {
         opts.add_link_flag("-sALLOW_MEMORY_GROWTH=1");
     }
 }
-#run configure_build();
+@run configure_build();
 ```
 
 **API:**
@@ -5752,7 +5751,7 @@ Semantics:
 Placement rules — `private` is rejected on: locals, parameters, struct/union/
 runtime-class fields, enum cases and error tags, struct/protocol/impl methods
 and requirements, flat `#import`, `impl` blocks, `#context_extend`, `#using`,
-standalone `#run`, global `asm`, and `#framework`. Top-level `inline if`
+standalone `@run`, global `asm`, and `#framework`. Top-level `inline if`
 branches and `inline for` bodies MAY declare private globals (their statements
 are module-scope after comptime flattening); function and method bodies may
 not.
@@ -5883,13 +5882,13 @@ interpreter post-link.
 
 ### Discovery
 
-Users opt in **explicitly** from their own `#run` block:
+Users opt in **explicitly** from their own `@run` block:
 
 ```sx
 #import "modules/build.sx";
 #import "modules/platform/bundle.sx";
 
-#run {
+@run {
     opts := build_options();
     opts.set_bundle_path("MyApp.app");
     opts.set_bundle_id("com.example.app");
@@ -5955,12 +5954,12 @@ binary because no runtime root reaches it.
 
 Returned strings are `""` when unset; integer counts are `0`. Accessors
 that read after-the-fact (`binary_path`, `bundle_path`, etc.) return
-the value that was either set in `#run` or forwarded from a CLI flag.
+the value that was either set in `@run` or forwarded from a CLI flag.
 
 ### `fs.sx` and `process.sx` stdlib modules
 
 The bundler is implemented in sx; its calls into `fs.sx` / `process.sx`
-work both at runtime through the dynamic linker and at `#run` / post-link
+work both at runtime through the dynamic linker and at `@run` / post-link
 through the host-FFI dispatch in
 [src/ir/host_ffi.zig](src/ir/host_ffi.zig) (a `dlsym(RTLD_DEFAULT)` +
 arity-switched cdecl trampoline).
@@ -6409,7 +6408,7 @@ trace** — the chain of `raise` / `try` sites the error passed through.
   comptime frame is `(func_id, ir_offset)` resolved via the interpreter's
   in-memory IR/source tables.
 - **Mode.** On by default in debug; release no-ops the push points.
-  **Comptime (`#run`) is always traced.**
+  **Comptime (`@run`) is always traced.**
 - **Formatting** lives in `library/modules/trace.sx` (`trace.print_current()`),
   rendering `func at file:line:col` per frame plus the source line and a `^`
   caret. DWARF line-info is emitted (debug, strippable) so `lldb` / `gdb`
@@ -6507,7 +6506,7 @@ brace_item      = IDENT '=' expr (';' | ',' | &'}')    // a field init or a stor
                   // (`` `push = 7 ``), bare it heads the stmt alternative
 primary         = INT | HEX_INT | OCT_INT | BIN_INT | FLOAT | STRING | BOOL | IDENT | '---'
                 | '.' IDENT | '.' '{' field_init_list '}'
-                | '(' expr ')' | block | '#run' expr    // bare parens = grouping ONLY
+                | '(' expr ')' | block | '@run' expr    // bare parens = grouping ONLY
 field_init_list = field_init (',' field_init)* ','?
 field_init      = IDENT '=' expr | IDENT | '..' expr | expr
                   // the label is an IDENT — a keyword label is backticked

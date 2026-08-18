@@ -426,7 +426,7 @@ q, r := divmod(17, 5);                // q = 3, r = 2
   result through storage instead of the result value.
 
 * **[DEVIATION 6 — global asm is a top-level `asm { … }` declaration.]** sx has no
-  namespace-level `comptime {}` block (it has `#run`, `specs.md:2598`), so global
+  namespace-level `comptime {}` block (it has `@run`, `specs.md:2598`), so global
   asm is a top-level statement:
 
   ```sx
@@ -703,7 +703,7 @@ lib-less `extern` (Deviation 6, §II.2): `my_func :: (sig) -> R extern;` emits
 an external-linkage, raw-named, C-ABI extern that the linker resolves against the
 `.global` the asm block defines.
 
-A global-asm symbol exists only in the final linked binary, not in the `#run`/JIT
+A global-asm symbol exists only in the final linked binary, not in the `@run`/JIT
 host process. The comptime VM resolves externs via `dlsym(RTLD_DEFAULT)`
 (`host_ffi.zig`), which does not find it, so a comptime call reports the
 dlsym-miss diagnostic (pinned by `1654-platform-asm-global-comptime-call`). A

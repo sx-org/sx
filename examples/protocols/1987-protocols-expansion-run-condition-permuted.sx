@@ -24,7 +24,7 @@ inline for T in SHAPES {
     impl Show for T { fmt :: (self: *T) -> i64 { self.n } }
 }
 
-WIDE :: #run { budget() > 8 };
+WIDE :: @run { budget() > 8 };
 
 budget :: () -> i64 {
     p := context.allocator.alloc_bytes(64);

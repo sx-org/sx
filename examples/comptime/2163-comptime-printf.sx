@@ -1,4 +1,4 @@
-// A `@printf` under a top-level `#run` renders in the compiler and writes the
+// A `@printf` under a top-level `@run` renders in the compiler and writes the
 // compiler's stdout. The comptime VM walks the same core.sx primitives the
 // runtime does, so one call site spells one rendering at both stages, with no
 // allocator at either.
@@ -14,7 +14,7 @@ render :: (stage: string) -> i64 {
     0
 }
 
-#run render("comptime");
+@run render("comptime");
 
 main :: () {
     render("runtime");

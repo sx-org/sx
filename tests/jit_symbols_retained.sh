@@ -5,7 +5,7 @@
 # the Zig sources calls — the JIT resolves them dynamically via dlsym, and AOT
 # output picks them up via an auto-injected c_import. A non-Debug build runs
 # dead-strip, which removes any symbol with no static reference, so these vanish
-# and every `#run` that needs a trace fails with "symbol not found via dlsym".
+# and every `@run` that needs a trace fails with "symbol not found via dlsym".
 # Debug builds hide this: they don't dead-strip.
 #
 # Usage: ./tests/jit_symbols_retained.sh [optimize-mode ...]   (default: all)

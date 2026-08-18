@@ -88,7 +88,7 @@ fn printGlobal(global: *const Global, _: u32, module: *const Module, writer: Wri
         try writeConstant(init, writer);
     }
     if (global.comptime_func) |fid| {
-        try writer.print(" = #run @{d}", .{fid.index()});
+        try writer.print(" = @run @{d}", .{fid.index()});
     }
     try writer.writeAll(";\n");
 }

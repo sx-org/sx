@@ -1,4 +1,4 @@
-// A body-local `#run` const of a BRIDGEABLE shape — a scalar, a struct, an
+// A body-local `@run` const of a BRIDGEABLE shape — a scalar, a struct, an
 // array, or an `?Array` optional — evaluates and produces its const value.
 // These are the common cases that must keep working; only an unbridgeable
 // result (e.g. `[2][]i64`) fails.
@@ -15,10 +15,10 @@ mk_arr :: () -> [3]i64 { r : [3]i64 = ---; r[0] = 10; r[1] = 20; r[2] = 30; retu
 mk_opt :: () -> ?[3]i64 { r : [3]i64 = ---; r[0] = 1; r[1] = 2; r[2] = 3; return r; }
 
 main :: () {
-    N :: #run mk_scalar();
-    S :: #run mk_struct();
-    A :: #run mk_arr();
-    O :: #run mk_opt();
+    N :: @run mk_scalar();
+    S :: @run mk_struct();
+    A :: @run mk_arr();
+    O :: @run mk_opt();
 
     print("N={}\n", N);
     print("S={} {}\n", S.x, S.y);

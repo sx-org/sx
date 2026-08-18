@@ -1,7 +1,7 @@
-// A body-local `#run` const whose comptime function returns a shape the comptime
+// A body-local `@run` const whose comptime function returns a shape the comptime
 // VM cannot BRIDGE to a host value — here `[2][]i64`, an array of slices — fails
 // the build with a located `comptime init of '<name>' failed: <reason>`, the same
-// failure a GLOBAL `#run` const produces.
+// failure a GLOBAL `@run` const produces.
 //
 // An EXECUTION bail — a body the VM cannot run but the runtime computes correctly,
 // e.g. `0.0/0.0` → NaN — still falls through to the runtime call. Only an
@@ -17,6 +17,6 @@ mk :: () -> [2][]i64 {
 }
 
 main :: () {
-    L :: #run mk();          // unbridgeable comptime result → clean build error
+    L :: @run mk();          // unbridgeable comptime result → clean build error
     print("{}\n", L[0][0]);
 }

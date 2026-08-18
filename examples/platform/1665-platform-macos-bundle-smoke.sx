@@ -13,7 +13,7 @@ configure :: () {
     opts.set_bundle_path(".sx-tmp/1665-platform-macos-bundle-smoke.app");
     opts.set_bundle_id("co.example.bundlesmoke");
 }
-#run configure();
+@run configure();
 
 main :: () -> i32 {
     print("bundle smoke ok\n");

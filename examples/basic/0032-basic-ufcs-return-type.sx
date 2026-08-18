@@ -8,7 +8,7 @@ Point :: struct { x, y: i32; }
 
 point_sum :: ufcs (p: Point) -> i32 { p.x + p.y }
 
-// #run compile-time constants
+// @run compile-time constants
 
 main :: () {
 

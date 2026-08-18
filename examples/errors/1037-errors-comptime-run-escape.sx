@@ -1,5 +1,5 @@
-// Comptime `#run` of a failable whose error ESCAPES (no `catch` / `or`): the
-// compiler reports the raised tag name + the return trace at the `#run` site and
+// Comptime `@run` of a failable whose error ESCAPES (no `catch` / `or`): the
+// compiler reports the raised tag name + the return trace at the `@run` site and
 // halts with a non-zero exit — never a segfault (const form) or a silent
 // success (statement form).
 
@@ -13,6 +13,6 @@ parse :: (n: i32) -> (i32, !E) {
     return n * 2;
 }
 
-x :: #run parse(-1);            // error.Bad escapes → comptime diagnostic + halt
+x :: @run parse(-1);            // error.Bad escapes → comptime diagnostic + halt
 
 main :: () -> i32 { return x; }

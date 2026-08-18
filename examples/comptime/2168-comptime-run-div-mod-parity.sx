@@ -8,7 +8,7 @@ report :: (stage: string, n: i64, d: i64, un: u64, ud: u64, x: f64, y: f64) -> i
     0
 }
 
-#run report("comptime", -7, 10, u64.max, 3, -7.5, 2.0);
+@run report("comptime", -7, 10, u64.max, 3, -7.5, 2.0);
 
 main :: () {
     report("runtime", -7, 10, u64.max, 3, -7.5, 2.0);

@@ -23,12 +23,12 @@ TypeId   :: u32;
 Point :: struct { x: i64; y: i64; }
 Pair  :: struct { lo: Point; hi: Point; }
 
-pair    :: #run raw_find_type(raw_intern("Pair"));
-n       :: #run raw_field_count(raw_find_type(raw_intern("Pair")));
-f0_name :: #run raw_text_of(raw_field_name(raw_find_type(raw_intern("Pair")), 0));
-f1_name :: #run raw_text_of(raw_field_name(raw_find_type(raw_intern("Pair")), 1));
+pair    :: @run raw_find_type(raw_intern("Pair"));
+n       :: @run raw_field_count(raw_find_type(raw_intern("Pair")));
+f0_name :: @run raw_text_of(raw_field_name(raw_find_type(raw_intern("Pair")), 0));
+f1_name :: @run raw_text_of(raw_field_name(raw_find_type(raw_intern("Pair")), 1));
 // field 0's type is `Point` — read its nominal name through the type handle.
-f0_type :: #run raw_text_of(raw_type_name(raw_field_type(raw_find_type(raw_intern("Pair")), 0)));
+f0_type :: @run raw_text_of(raw_type_name(raw_field_type(raw_find_type(raw_intern("Pair")), 0)));
 
 main :: () {
     print("Pair has {} fields\n", n);

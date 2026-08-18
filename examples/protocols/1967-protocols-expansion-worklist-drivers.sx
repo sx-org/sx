@@ -8,7 +8,7 @@
 // contributions back.
 //
 // So an impl read is answerable once no undecided driver could still write one,
-// a `#run` a condition names is registered and drained by the same worklist, and
+// a `@run` a condition names is registered and drained by the same worklist, and
 // an answer stands even while other drivers are still open, because a driver
 // that contributes to a DIFFERENT protocol never held this one open.
 #import "modules/std.sx";
@@ -28,10 +28,10 @@ inline if POINTER_SIZE == 8 {
     impl View for Panel { area :: (self: *Panel) -> i64 { self.n + 100 } }
 }
 
-// The condition names a `#run`; the run registers on the worklist, drains
+// The condition names a `@run`; the run registers on the worklist, drains
 // there, and its value decides the branch. What it sees includes the impl the
 // driver above spliced — a taken group is module scope.
-HAS_PANEL :: #run has_impl(View, Panel);
+HAS_PANEL :: @run has_impl(View, Panel);
 inline if HAS_PANEL { WIDTH :: 3; } else { WIDTH :: 0; }
 
 // Every iteration of an `inline for` contributes, so `Tally` stays open until

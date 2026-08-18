@@ -1,6 +1,6 @@
 // `log.sx` leveled logging + the `@is_comptime()` builtin.
 // `log{ warn,info,err,debug}` interpolate like `print` and write
-// `LEVEL: <msg>` to stderr. `@is_comptime()` is `true` under `#run` (the
+// `LEVEL: <msg>` to stderr. `@is_comptime()` is `true` under `@run` (the
 // comptime interpreter) and folds to `false` in compiled code, so a gated
 // branch dead-codes out of the runtime binary.
 //
@@ -17,7 +17,7 @@ probe :: () -> i32 {
     return 2;                             // compiled-code path
 }
 
-CT :: #run probe();                       // folds to 1 (run in the interpreter)
+CT :: @run probe();                       // folds to 1 (run in the interpreter)
 
 main :: () -> i32 {
     log.warn("disk {}% full", 91);

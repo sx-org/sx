@@ -665,7 +665,7 @@ pub const CallResolver = struct {
         } else if (c.callee.data == .lambda) {
             // An immediately-invoked lambda carries its callable signature in
             // the lambda expression itself.  Type the call from that closure
-            // instead of leaving a module-level `#run` const `.unresolved`
+            // instead of leaving a module-level `@run` const `.unresolved`
             // until global emission.
             const callee_ty = self.l.inferExprType(c.callee);
             if (!callee_ty.isBuiltin()) {

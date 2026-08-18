@@ -5,7 +5,7 @@
 // walker's recursion pattern), aliasing the boxed value's storage.
 // For a tagged union the offset table answers the payload offset, so
 // variant_payload composes the same way. The comptime VM mirrors the
-// whole composition (the #run below).
+// whole composition (the @run below).
 
 #import "modules/std.sx";
 
@@ -40,7 +40,7 @@ main :: () -> i64 {
     print("{}\n", variant_payload(sv, variant_index(Shape, s)));  // 42
 
     // Comptime parity: the same composition on the comptime VM.
-    K :: #run read_b(Pair{ a = 1, b = 41 });
+    K :: @run read_b(Pair{ a = 1, b = 41 });
     print("{}\n", K + 1);                        // 42
     return 0;
 }

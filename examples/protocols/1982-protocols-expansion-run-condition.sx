@@ -1,6 +1,6 @@
 // A driver condition that must be RUN.
 //
-// The `#run` has a BODY, so nothing about it folds: it executes, on the one
+// The `@run` has a BODY, so nothing about it folds: it executes, on the one
 // comptime VM, owned by the expansion worklist that owns the driver asking. It
 // calls a function, and that function reads the ambient allocator — so the
 // evaluation needs the ground the program stands on before it can take a
@@ -22,7 +22,7 @@ budget :: () -> i64 {
     return 12;
 }
 
-WIDE :: #run { budget() > 8 };
+WIDE :: @run { budget() > 8 };
 
 inline if WIDE {
     LANES :: 8;

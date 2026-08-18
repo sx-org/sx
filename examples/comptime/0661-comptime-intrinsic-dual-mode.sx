@@ -3,17 +3,17 @@
 // it is not. `type_name` / `is_unsigned` / `type_info` are the only three
 // (see `ir/intrinsics.zig`).
 //
-// Both stages agree: the same intrinsic evaluated behind `#run` and at runtime
+// Both stages agree: the same intrinsic evaluated behind `@run` and at runtime
 // yields the same answer.
 #import "modules/std.sx";
 
 P :: struct { a: i64; b: f32; }
 
-// `#run` forces evaluation in the comptime VM.
-CT_NAME     :: #run type_name(P);
-CT_UNSIGNED :: #run is_unsigned(u32);
-CT_SIGNED   :: #run is_unsigned(i32);
-CT_SIZE     :: #run size_of(P);
+// `@run` forces evaluation in the comptime VM.
+CT_NAME     :: @run type_name(P);
+CT_UNSIGNED :: @run is_unsigned(u32);
+CT_SIGNED   :: @run is_unsigned(i32);
+CT_SIZE     :: @run size_of(P);
 
 main :: () {
     // comptime vs runtime — the two columns must match.

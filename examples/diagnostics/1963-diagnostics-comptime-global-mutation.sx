@@ -11,7 +11,7 @@ bump :: () -> i64 {
     return counter;
 }
 
-FIRST :: #run bump();
+FIRST :: @run bump();
 
 main :: () {
     print("{} {}\n", FIRST, counter);

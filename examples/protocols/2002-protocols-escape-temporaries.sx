@@ -35,9 +35,9 @@ split :: () -> Pair {
     return Pair{ a = x, b = y };
 }
 
-SHARED :: #run shared();
-SPLIT  :: #run split();
-AGAIN  :: #run shared();
+SHARED :: @run shared();
+SPLIT  :: @run split();
+AGAIN  :: @run shared();
 
 main :: () {
     // The shared object is one global: bumping through either handle moves both.
