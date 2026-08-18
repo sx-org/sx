@@ -1,1 +1,1 @@
-error: comptime init of 'FIRST' failed: global_set
+error: comptime init of 'FIRST' failed: comptime code cannot mutate a global

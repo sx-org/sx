@@ -195,6 +195,7 @@ pub const Frame = struct {
 /// host reads it under a coverage-trace gate to learn what to port next. Cleared at
 /// the top of every `tryEval`; meaningful only when `tryEval` returned `null`.
 pub var last_bail_reason: ?[]const u8 = null;
+var missing_op_buf: [128]u8 = undefined;
 
 /// True iff the most recent `tryEval` bail happened at the RESULT-BRIDGE step
 /// (`regToValue` — the comptime function RAN to completion but its result shape
@@ -1568,16 +1569,15 @@ pub const Vm = struct {
             // builtin returns null → bail with its name (never a silent default).
             .call_builtin => |bi| {
                 if (try self.callBuiltinVm(bi, ins.ty, frame, ref_types)) |r| return .{ .value = r };
-                self.detail = @tagName(bi.builtin);
-                return error.Unsupported;
+                return self.failMissingOp(@tagName(bi.builtin));
             },
 
-            // Unsupported ops (memory, aggregates, calls, …): bail loudly with the
-            // op name — never a silent default.
-            else => {
-                self.detail = @tagName(ins.op);
-                return error.Unsupported;
-            },
+            // A store through a module global: the VM reads a local copy and
+            // never writes back, so the store has nowhere to land.
+            .global_set => return self.failMsg("comptime code cannot mutate a global"),
+
+            // An IR op with no VM arm — never a silent default.
+            else => return self.failMissingOp(@tagName(ins.op)),
         }
     }
 
@@ -1688,6 +1688,12 @@ pub const Vm = struct {
     fn failMsg(self: *Vm, msg: []const u8) error{Unsupported} {
         self.detail = msg;
         return error.Unsupported;
+    }
+
+    fn failMissingOp(self: *Vm, name: []const u8) error{Unsupported} {
+        const msg = std.fmt.bufPrint(&missing_op_buf, "the compile-time evaluator has no implementation of '{s}'", .{name}) catch
+            "the compile-time evaluator has no implementation of this operation";
+        return self.failMsg(msg);
     }
 
     /// Like `failMsg` but for a runtime-formatted reason (e.g. naming the offending
@@ -2189,8 +2195,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // VM handler. Returning null would drop it to the dlsym path, where it
         // would either fail as an undefined symbol or — worse — bind to an
         // unrelated host symbol of the same name. Name it and stop.
-        self.detail = name;
-        return self.failMsg("evaluate-mode intrinsic has no VM handler");
+        return self.failMissingOp(name);
     }
 
     /// Read string arg `idx` (a `{ptr,len}` fat pointer) and DUPE it into the

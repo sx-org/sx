@@ -5492,7 +5492,8 @@ produces is the program's value (a struct, array, or optional is baked the
 same way a scalar is). If the evaluator cannot complete it, or the result
 cannot be serialized as a constant, the compile fails
 (`error: comptime init of '…' failed: …`). There is no runtime-call
-consolation.
+consolation. An operation the evaluator does not implement is named
+(`the compile-time evaluator has no implementation of '…'`).
 
 ### `@error`
 

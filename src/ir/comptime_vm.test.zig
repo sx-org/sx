@@ -1347,6 +1347,10 @@ test "comptime_vm tryEval: pure function → Value; unsupported → null" {
     const bad_eval = vm.tryEval(alloc, &module, bad_id, null, null, null);
     defer bad_eval.destroy();
     try std.testing.expect(bad_eval.completed() == null);
+    try std.testing.expectEqualStrings(
+        "the compile-time evaluator has no implementation of 'vec_splat'",
+        vm.last_bail_reason orelse "",
+    );
 }
 
 test "comptime_vm tryEval: wasm32 target keeps host pointers intact and restores target width" {
@@ -1395,7 +1399,10 @@ test "comptime_vm exec: division by zero and unsupported op bail loudly" {
         var v = vm.Vm.init(std.testing.allocator);
         defer v.deinit();
         try std.testing.expectError(error.Unsupported, v.run(&fb.func, &.{}));
-        try std.testing.expectEqualStrings("vec_splat", v.detail.?);
+        try std.testing.expectEqualStrings(
+            "the compile-time evaluator has no implementation of 'vec_splat'",
+            v.detail.?,
+        );
     }
 }
 
