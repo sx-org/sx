@@ -297,10 +297,10 @@ impl Platform for UIKitPlatform {
         self.frame_closure = frame_fn;
         self.has_frame_closure = true;
         if self.delegate_class_name.len == 0 {
-            NSLog(xx "[sx] UIKitPlatform.run_frame_loop: delegate_class_name unset — boot through uikit_app_run (platform/uikit_app.sx) or set your own delegate class first\n");
+            NSLog("[sx] UIKitPlatform.run_frame_loop: delegate_class_name unset — boot through uikit_app_run (platform/uikit_app.sx) or set your own delegate class first\n".(*NSString));
             return;
         }
-        UIApplicationMain(0, xx 0, xx 0, xx self.delegate_class_name);
+        UIApplicationMain(0, (0).(*void), (0).(*NSString), self.delegate_class_name.(*NSString));
     }
 
     poll_events :: (self: *UIKitPlatform) -> []PlatformEvent {
@@ -372,23 +372,23 @@ impl Platform for UIKitPlatform {
     refresh_safe_insets :: (self: *UIKitPlatform) {
         if gl_view := self.gl_view {
             i := gl_view.safeAreaInsets();
-            self.safe_top    = xx i.top;
-            self.safe_left   = xx i.left;
-            self.safe_bottom = xx i.bottom;
-            self.safe_right  = xx i.right;
+            self.safe_top    = i.top;
+            self.safe_left   = i.left;
+            self.safe_bottom = i.bottom;
+            self.safe_right  = i.right;
         }
     }
 
     read_screen_scale :: (self: *UIKitPlatform) {
         screen := UIScreen.mainScreen();
-        self.dpi_scale = xx screen.nativeScale();
+        self.dpi_scale = screen.nativeScale();
     }
 
     create_gl_context :: (self: *UIKitPlatform) {
         // Read the screen scale up-front so callers can size font caches and
         // textures with the right DPI before the window even exists.
         screen := UIScreen.mainScreen();
-        self.dpi_scale = xx screen.nativeScale();
+        self.dpi_scale = screen.nativeScale();
 
         ctx := EAGLContext.alloc().initWithAPI(EAGL_API_GLES3);
         self.gl_ctx = ctx;
@@ -423,8 +423,8 @@ impl Platform for UIKitPlatform {
         glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_HEIGHT, *ph);
         self.pixel_w = pw;
         self.pixel_h = ph;
-        self.viewport_w = xx pw;
-        self.viewport_h = xx ph;
+        self.viewport_w = pw;
+        self.viewport_h = ph;
         if self.dpi_scale > 0.0 {
             self.viewport_w = self.viewport_w / self.dpi_scale;
             self.viewport_h = self.viewport_h / self.dpi_scale;
@@ -434,7 +434,7 @@ impl Platform for UIKitPlatform {
 
         status := glCheckFramebufferStatus(GL_FRAMEBUFFER);
         if status != GL_FRAMEBUFFER_COMPLETE {
-            NSLog(xx "[sx] framebuffer incomplete after renderbuffer setup\n");
+            NSLog("[sx] framebuffer incomplete after renderbuffer setup\n".(*NSString));
         }
     }
 
@@ -454,14 +454,14 @@ impl Platform for UIKitPlatform {
 
             w_pts : f64 = b.width;
             h_pts : f64 = b.height;
-            self.viewport_w = xx w_pts;
-            self.viewport_h = xx h_pts;
+            self.viewport_w = w_pts;
+            self.viewport_h = h_pts;
 
-            scale64 : f64 = xx self.dpi_scale;
+            scale64 : f64 = self.dpi_scale.(f64);
             pw : f64 = w_pts * scale64;
             ph : f64 = h_pts * scale64;
-            self.pixel_w = xx pw;
-            self.pixel_h = xx ph;
+            self.pixel_w = pw;
+            self.pixel_h = ph;
         }
     }
 
@@ -481,22 +481,22 @@ impl Platform for UIKitPlatform {
         user_info := notification.userInfo();
         if user_info == null { return; }
 
-        end_value_raw := user_info.objectForKey(xx "UIKeyboardFrameEndUserInfoKey");
+        end_value_raw := user_info.objectForKey("UIKeyboardFrameEndUserInfoKey".(*NSString));
         if end_value_raw == null { return; }
-        end_value : *NSValue = xx end_value_raw;
+        end_value : *NSValue = end_value_raw.(*NSValue);
         end_rect := end_value.CGRectValue();
 
-        dur_value_raw := user_info.objectForKey(xx "UIKeyboardAnimationDurationUserInfoKey");
+        dur_value_raw := user_info.objectForKey("UIKeyboardAnimationDurationUserInfoKey".(*NSString));
         anim_dur : f64 = 0.0;
         if dur_value_raw != null {
-            dur_value : *NSNumber = xx dur_value_raw;
+            dur_value : *NSNumber = dur_value_raw.(*NSNumber);
             anim_dur = dur_value.doubleValue();
         }
 
-        curve_value_raw := user_info.objectForKey(xx "UIKeyboardAnimationCurveUserInfoKey");
+        curve_value_raw := user_info.objectForKey("UIKeyboardAnimationCurveUserInfoKey".(*NSString));
         curve_int : u64 = 0;
         if curve_value_raw != null {
-            curve_value : *NSNumber = xx curve_value_raw;
+            curve_value : *NSNumber = curve_value_raw.(*NSNumber);
             curve_int = curve_value.unsignedLongValue();
         }
 
@@ -512,7 +512,7 @@ impl Platform for UIKitPlatform {
             h := sh - kb_top;
             if h < 0.0 { h = 0.0; }
             if h > sh  { h = sh;  }
-            target_h : f32 = xx h;
+            target_h : f32 = h.(f32);
 
             self.keyboard_visible = h > 0.5;
 
@@ -574,10 +574,10 @@ impl Platform for UIKitPlatform {
             rgba8_value     := uikit_extern_nsstring("kEAGLColorFormatRGBA8".ptr);
 
             dict := NSMutableDictionary.dictionary();
-            dict.setObject_forKey(xx ns_no, retained_key);
+            dict.setObject_forKey(ns_no, retained_key);
             dict.setObject_forKey(rgba8_value, colorformat_key);
-            eagl_layer : *CAEAGLLayer = xx gl_layer;
-            eagl_layer.setDrawableProperties(xx dict);
+            eagl_layer : *CAEAGLLayer = gl_layer.(*CAEAGLLayer);
+            eagl_layer.setDrawableProperties(dict);
         }
 
         // Match the layer's drawable scale to the screen's native scale so we
@@ -585,7 +585,7 @@ impl Platform for UIKitPlatform {
         // on 64-bit Apple platforms; reading as f32 would clobber the value.
         screen2 := win.screen();
         scale := screen2.nativeScale();
-        self.dpi_scale = xx scale;
+        self.dpi_scale = scale;
         gl_view.setContentScaleFactor(scale);
 
         // Renderbuffer is allocated lazily in -[SxGLView layoutSubviews] once
@@ -607,9 +607,9 @@ impl Platform for UIKitPlatform {
         link := CADisplayLink.displayLinkWithTarget_selector(gl_view, sel_tick);
         self.display_link = link;
         runloop := NSRunLoop.currentRunLoop();
-        link.addToRunLoop_forMode(runloop, xx "kCFRunLoopDefaultMode");
+        link.addToRunLoop_forMode(runloop, "kCFRunLoopDefaultMode".(*NSString));
 
-        NSLog(xx "[sx] UIKitPlatform booted\n");
+        NSLog("[sx] UIKitPlatform booted\n".(*NSString));
     }
 
     // CADisplayLink callback (vsync-paced). Drives keyboard-inset
@@ -631,7 +631,7 @@ impl Platform for UIKitPlatform {
                 self.keyboard_height = self.kb_anim_to;
                 self.kb_animating = false;
             } else {
-                t : f32 = xx (elapsed / self.kb_anim_dur);
+                t : f32 = (elapsed / self.kb_anim_dur).(f32);
                 inv := 1.0 - t;
                 eased := 1.0 - inv * inv * inv;
                 self.keyboard_height = self.kb_anim_from + (self.kb_anim_to - self.kb_anim_from) * eased;
@@ -642,7 +642,7 @@ impl Platform for UIKitPlatform {
         if !self.gl_initialized { return; }
 
         dur_d := link.duration();
-        self.delta_time = xx dur_d;
+        self.delta_time = dur_d;
         self.last_target_ts = link.targetTimestamp();
 
         fn := self.frame_closure;
@@ -706,7 +706,7 @@ uikit_pointer :: (pos: Point) -> PointerEvent {
 // dlsym(RTLD_DEFAULT, name) — Apple platforms. RTLD_DEFAULT is (void*)-2.
 // abi(.c) so this is callable from `load_gl`'s C-conv proc-loader slot.
 ios_gl_proc :: (name: cstring) -> *void abi(.c) {
-    rtld_default : *void = xx (0 - 2);
+    rtld_default : *void = (0 - 2).(*void);
     dlsym(rtld_default, name)
 }
 
@@ -714,10 +714,10 @@ ios_gl_proc :: (name: cstring) -> *void abi(.c) {
 // extern variable holds a pointer to the NSString instance — dlsym returns
 // the address of that variable, which we dereference.
 uikit_extern_nsstring :: (name: [*]u8) -> *void {
-    rtld_default : *void = xx (0 - 2);
+    rtld_default : *void = (0 - 2).(*void);
     p := dlsym(rtld_default, name);
     if p == null { return null; }
-    pp : **void = xx p;
+    pp : **void = p.(**void);
     pp.*
 }
 
@@ -737,13 +737,13 @@ uikit_chdir_to_bundle :: () {
 // UIKitPlatform.
 
 uikit_touch_location :: (touch: *void, view: *void) -> Point {
-    t : *UITouch = xx touch;
+    t : *UITouch = touch.(*UITouch);
     p := t.locationInView(view);
-    Point{ x = xx p.x, y = xx p.y }
+    Point{ x = p.x, y = p.y }
 }
 
 uikit_first_touch :: (touches: *void) -> *void {
-    touches_set : *NSSet = xx touches;
+    touches_set : *NSSet = touches.(*NSSet);
     touches_set.anyObject()
 }
 

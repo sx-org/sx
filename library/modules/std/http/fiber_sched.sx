@@ -43,12 +43,12 @@ impl FiberRunner for SchedRunner {
             entry_fn := entry.((*void) -> void);
             entry_fn(arg);
         });
-        return xx f;
+        return f.(usize);
     }
 
     wake :: (self: *SchedRunner, handle: usize) {
         if handle == 0 { return; }
-        f : *sched.Fiber = xx handle;
+        f : *sched.Fiber = handle.(*sched.Fiber);
         self.s.wake(f);
     }
 

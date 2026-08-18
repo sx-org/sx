@@ -14,7 +14,7 @@ sum_ints :: (n: i32, ..) -> i64 abi(.c) {
     defer @va_end(*ap);
     total: i64 = 0;
     for i in 0..n {
-        total += xx @va_arg(i32, *ap);
+        total += @va_arg(i32, *ap);
     }
     return total;
 }
@@ -24,7 +24,7 @@ sum_ints :: (n: i32, ..) -> i64 abi(.c) {
 read_ints :: (n: i32, ap: @VaList) -> i64 abi(.c) {
     total: i64 = 0;
     for i in 0..n {
-        total += xx @va_arg(i32, *ap);
+        total += @va_arg(i32, *ap);
     }
     return total;
 }
@@ -50,11 +50,11 @@ twice :: (n: i32, ..) -> i64 abi(.c) {
 
     first: i64 = 0;
     for i in 0..n {
-        first += xx @va_arg(i32, *ap);
+        first += @va_arg(i32, *ap);
     }
     second: i64 = 0;
     for i in 0..n {
-        second += xx @va_arg(i32, *dup);
+        second += @va_arg(i32, *dup);
     }
     return first * 100 + second;
 }
@@ -70,7 +70,7 @@ sum_addresses :: (n: i32, ..) -> i64 abi(.c) {
     defer @va_end(*ap);
     total: i64 = 0;
     for i in 0..n {
-        total += xx @va_arg(isize, *ap);
+        total += @va_arg(isize, *ap);
     }
     return total;
 }

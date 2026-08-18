@@ -78,12 +78,12 @@ client_init :: (c: *TlsClient, fd: i32) -> bool {
     mbedtls.mbedtls_ssl_init(*c.ssl);
     mbedtls.mbedtls_ctr_drbg_init(*c.drbg);
     mbedtls.mbedtls_entropy_init(*c.ent);
-    if mbedtls.mbedtls_ctr_drbg_seed(*c.drbg, mbedtls.mbedtls_entropy_func, xx *c.ent, null, 0) != 0 { return false; }
+    if mbedtls.mbedtls_ctr_drbg_seed(*c.drbg, mbedtls.mbedtls_entropy_func, *c.ent, null, 0) != 0 { return false; }
     if mbedtls.mbedtls_ssl_config_defaults(*c.cfg, mbedtls.MBEDTLS_SSL_IS_CLIENT, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 { return false; }
     mbedtls.mbedtls_ssl_conf_authmode(*c.cfg, mbedtls.MBEDTLS_SSL_VERIFY_NONE);
-    mbedtls.mbedtls_ssl_conf_rng(*c.cfg, mbedtls.mbedtls_ctr_drbg_random, xx *c.drbg);
+    mbedtls.mbedtls_ssl_conf_rng(*c.cfg, mbedtls.mbedtls_ctr_drbg_random, *c.drbg);
     if mbedtls.mbedtls_ssl_setup(*c.ssl, *c.cfg) != 0 { return false; }
-    mbedtls.mbedtls_ssl_set_bio(*c.ssl, xx *c.fd, cli_send, cli_recv, null);
+    mbedtls.mbedtls_ssl_set_bio(*c.ssl, *c.fd, cli_send, cli_recv, null);
     return true;
 }
 
@@ -183,7 +183,7 @@ https_roundtrip :: (srv: *http.Server, cl: *TlsClient) -> i32 {
     sent := false; j : i64 = 0;
     while j < 200 and !sent {
         srv.tick(5) catch {};
-        w := mbedtls.mbedtls_ssl_write(*cl.ssl, xx req.ptr, xx req.len);
+        w := mbedtls.mbedtls_ssl_write(*cl.ssl, req.ptr, xx req.len);
         if w > 0 { sent = true; }
         else if w != mbedtls.MBEDTLS_ERR_SSL_WANT_READ and w != mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 12; }
         j += 1;
@@ -197,7 +197,7 @@ https_roundtrip :: (srv: *http.Server, cl: *TlsClient) -> i32 {
         r := mbedtls.mbedtls_ssl_read(*cl.ssl, xx *rbuf[total], xx (4096 - total));
         if r > 0 {
             total += r;
-            s := string{ ptr = xx *rbuf[0], len = xx total };
+            s := string{ ptr = xx *rbuf[0], len = total };
             if contains(s, "\r\n\r\n") { got = true; }
         } else if r == mbedtls.MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY or r == 0 {
             got = true;
@@ -206,7 +206,7 @@ https_roundtrip :: (srv: *http.Server, cl: *TlsClient) -> i32 {
         }
         k += 1;
     }
-    resp := string{ ptr = xx *rbuf[0], len = xx total };
+    resp := string{ ptr = xx *rbuf[0], len = total };
     if !contains(resp, "HTTP/1.1 200 OK") { return 15; }
     if !contains(resp, "secure-ok")       { return 16; }
     return 0;

@@ -176,7 +176,7 @@ InputQueue :: struct {
     }
 
     copy_text :: (self: *InputQueue, t: TextEvent) -> TextEvent {
-        raw : [*]u8 = xx self.gpa.alloc_bytes(t.text.len);
+        raw : [*]u8 = (self.gpa.alloc_bytes(t.text.len)).([*]u8);
         c.memcpy(raw, t.text.ptr, t.text.len);
         owned : string = ---;
         owned.ptr = raw;

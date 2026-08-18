@@ -340,8 +340,8 @@ sq_from_cstr :: (p: ?cstring) -> string {
 // `n` raw bytes at `p` as a context.allocator copy ("" when p is null).
 sq_copy_bytes :: (p: ?*u8, n: i64) -> string {
     if p == null or n <= 0 { return ""; }
-    cp : [*]u8 = xx p!;
-    raw : [*]u8 = xx context.allocator.alloc_bytes(n + 1);
+    cp : [*]u8 = (p!).([*]u8);
+    raw : [*]u8 = (context.allocator.alloc_bytes(n + 1)).([*]u8);
     c.memcpy(raw, cp, n);
     raw[n] = 0;
     return string{ ptr = raw, len = n };
@@ -380,7 +380,7 @@ sqlite_complete :: (sql: string) -> bool {
 // `n` bytes from SQLite's CSPRNG.
 sqlite_randomness :: (n: i32) -> string {
     len : i64 = n;
-    raw : [*]u8 = xx context.allocator.alloc_bytes(len + 1);
+    raw : [*]u8 = (context.allocator.alloc_bytes(len + 1)).([*]u8);
     sqlite3_randomness(n, raw);
     raw[len] = 0;
     return string{ ptr = raw, len = len };
@@ -426,12 +426,12 @@ SqliteStmt :: struct {
 
     // ── binding ──
     bind_text :: (self: *SqliteStmt, idx: i32, s: string) -> !SqliteErr {
-        rc := sqlite3_bind_text(self.handle, idx, s.ptr, xx s.len, SQLITE_TRANSIENT);
+        rc := sqlite3_bind_text(self.handle, idx, s.ptr, s.len, SQLITE_TRANSIENT);
         if rc != SQLITE_OK { raise error.Bind; }
         return;
     }
     bind_blob :: (self: *SqliteStmt, idx: i32, bytes: string) -> !SqliteErr {
-        rc := sqlite3_bind_blob(self.handle, idx, bytes.ptr, xx bytes.len, SQLITE_TRANSIENT);
+        rc := sqlite3_bind_blob(self.handle, idx, bytes.ptr, bytes.len, SQLITE_TRANSIENT);
         if rc != SQLITE_OK { raise error.Bind; }
         return;
     }
@@ -499,12 +499,12 @@ SqliteStmt :: struct {
     column_text :: (self: *SqliteStmt, icol: i32) -> string {
         p := sqlite3_column_text(self.handle, icol);
         n := sqlite3_column_bytes(self.handle, icol);
-        return sq_copy_bytes(p, xx n);
+        return sq_copy_bytes(p, n);
     }
     column_blob :: (self: *SqliteStmt, icol: i32) -> string {
         p := sqlite3_column_blob(self.handle, icol);
         n := sqlite3_column_bytes(self.handle, icol);
-        return sq_copy_bytes(p, xx n);
+        return sq_copy_bytes(p, n);
     }
     column_bytes :: (self: *SqliteStmt, icol: i32) -> i32 {
         return sqlite3_column_bytes(self.handle, icol);
@@ -544,7 +544,7 @@ SqliteStmt :: struct {
     expanded_sql :: (self: *SqliteStmt) -> string {
         p := sqlite3_expanded_sql(self.handle);
         s := sq_from_cstr(p);
-        if p != null { sqlite3_free(xx p!); }
+        if p != null { sqlite3_free(p!); }
         return s;
     }
     busy :: (self: *SqliteStmt) -> bool {
@@ -620,7 +620,7 @@ Sqlite :: struct {
 
     prepare :: (self: *Sqlite, sql: string) -> (SqliteStmt, !SqliteErr) {
         sh : usize = 0;
-        rc := sqlite3_prepare_v2(self.handle, sql.ptr, xx sql.len, *sh, 0);
+        rc := sqlite3_prepare_v2(self.handle, sql.ptr, sql.len, *sh, 0);
         if rc != SQLITE_OK { raise error.Prepare; }
         return SqliteStmt{ handle = sh, db = self.handle };
     }
@@ -628,7 +628,7 @@ Sqlite :: struct {
     // statement cache a storage layer keeps hot).
     prepare_v3 :: (self: *Sqlite, sql: string, flags: u32) -> (SqliteStmt, !SqliteErr) {
         sh : usize = 0;
-        rc := sqlite3_prepare_v3(self.handle, sql.ptr, xx sql.len, flags, *sh, 0);
+        rc := sqlite3_prepare_v3(self.handle, sql.ptr, sql.len, flags, *sh, 0);
         if rc != SQLITE_OK { raise error.Prepare; }
         return SqliteStmt{ handle = sh, db = self.handle };
     }
@@ -723,16 +723,16 @@ Sqlite :: struct {
         p := sqlite3_serialize(self.handle, to_cstring("main"), *size, 0);
         if p == null { raise error.Serialize; }
         out := sq_copy_bytes(p, size);
-        sqlite3_free(xx p!);
+        sqlite3_free(p!);
         return out;
     }
     // Replace "main" with the database image in `bytes`. The image is
     // copied into sqlite-owned memory (FREEONCLOSE+RESIZEABLE), so
     // `bytes` may die immediately after.
     deserialize :: (self: *Sqlite, bytes: string) -> !SqliteErr {
-        buf := sqlite3_malloc64(xx (bytes.len));
+        buf := sqlite3_malloc64((bytes.len));
         if buf == 0 { raise error.Serialize; }
-        bp : [*]u8 = xx buf;
+        bp : [*]u8 = buf.([*]u8);
         c.memcpy(bp, bytes.ptr, bytes.len);
         rc := sqlite3_deserialize(self.handle, to_cstring("main"), buf, bytes.len, bytes.len,
                                   SQLITE_DESERIALIZE_FREEONCLOSE | SQLITE_DESERIALIZE_RESIZEABLE);
@@ -768,14 +768,14 @@ SqliteBlob :: struct {
     }
     read :: (self: *SqliteBlob, offset: i32, n: i32) -> (string, !SqliteErr) {
         len : i64 = n;
-        raw : [*]u8 = xx context.allocator.alloc_bytes(len + 1);
+        raw : [*]u8 = (context.allocator.alloc_bytes(len + 1)).([*]u8);
         rc := sqlite3_blob_read(self.handle, raw, n, offset);
         if rc != SQLITE_OK { raise error.Blob; }
         raw[len] = 0;
         return string{ ptr = raw, len = len };
     }
     write :: (self: *SqliteBlob, offset: i32, data: string) -> !SqliteErr {
-        rc := sqlite3_blob_write(self.handle, data.ptr, xx data.len, offset);
+        rc := sqlite3_blob_write(self.handle, data.ptr, data.len, offset);
         if rc != SQLITE_OK { raise error.Blob; }
         return;
     }

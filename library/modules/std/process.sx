@@ -398,7 +398,7 @@ exit :: (code: u8, site: @SourceSite = @caller) -> noreturn {
         print("\nprocess.exit({}) called from {} at {}:{}\n", code, site.declaration, site.file, site.line);
         trace.print_interpreter_frames();
     }
-    c.exit(xx code)
+    c.exit(code)
 }
 
 // Abort with a message when `cond` is false. Prints `ASSERTION FAILED at

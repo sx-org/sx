@@ -17,5 +17,5 @@ inline if PICK {
 }
 
 main :: () {
-    puts(xx LABEL);
+    puts(LABEL);
 }

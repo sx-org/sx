@@ -11,7 +11,7 @@ Wide :: struct { x: i64; y: i64; }
 Hfa :: struct { x: f32; y: f32; }
 
 add_pt :: (p: Point) -> i32 { return p.x + p.y; }
-add_tiny :: (t: Tiny) -> i32 { return xx t.a + xx t.b; }
+add_tiny :: (t: Tiny) -> i32 { return t.a + t.b; }
 add_wide :: (w: Wide) -> i64 { return w.x + w.y; }
 add_hfa :: (h: Hfa) -> f32 { return h.x + h.y; }
 
@@ -28,7 +28,7 @@ main :: () {
     print("closure-local: {} {}\n", res_q.x, res_q.y);
 
     // Width matrix through closures: packed (2 B), wide (16 B), HFA.
-    ft := |t: Tiny| -> i32 xx t.a + xx t.b;
+    ft := |t: Tiny| -> i32 t.a + t.b;
     print("closure-tiny: {}\n", ft(Tiny{ a = 7, b = 8 }));
     fw := |w: Wide| -> i64 w.x + w.y;
     print("closure-wide: {}\n", fw(Wide{ x = 30, y = 40 }));

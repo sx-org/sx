@@ -198,7 +198,7 @@ __sx_printf_i64 :: (n: i64) {
 __sx_printf_u64 :: (n: u64) {
     buf: [20]u8 = ---;
     i := 20;
-    bits: i64 = xx n;
+    bits: i64 = n.(i64);
     if bits == 0 {
         i -= 1;
         buf[i] = '0';
@@ -266,7 +266,7 @@ __sx_printf_f64 :: (f: f64) {
 //         ap: @VaList = ---;
 //         @va_start(*ap);
 //         total: i64 = 0;
-//         for i in 0..n { total += xx @va_arg(i32, *ap); }
+//         for i in 0..n { total += @va_arg(i32, *ap); }
 //         @va_end(*ap);
 //         return total;
 //     }
@@ -460,13 +460,14 @@ Context :: struct {}
 // sentinel. DSL dispatch and helpers read `context.jni`.
 #context_extend jni: *void = null;
 
-// User-space `xx` extension. `xx val : T` where the built-in conversion
-// ladder makes no progress falls through to an `impl Into(T) for Source`
-// lookup; the compiler monomorphises `convert` for the (Source, T) pair
-// and emits a direct call. Compile-time only — no vtable, no runtime
-// dispatch.
+// User-space conversion. Dest-inferred opt-in at a `T` slot, or `val.(T)` /
+// `val.(T, alloc)`, falls through the built-in conversion ladder to an
+// `impl Into(T) for Source` lookup; the compiler monomorphises `convert` for
+// the (Source, T) pair and emits a direct call. Compile-time only — no vtable,
+// no runtime dispatch. `.(T)` funds from `context.allocator`; `.(T, alloc)`
+// names another. The stdlib writes `.(T)` and never dest-inferred opt-in.
 Into :: protocol(Target: Type) constraint {
-    convert :: (self: *Self) -> Target;
+    convert :: (self: *Self, alloc: Allocator) -> Target;
 }
 
 // Fat-value ABI views. Compiler-maintained contracts: the compiler recognizes

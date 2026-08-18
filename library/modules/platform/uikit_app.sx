@@ -38,17 +38,17 @@ SxAppDelegate :: @ObjcClass("SxAppDelegate", extends = UIResponder) export {
         if g_uikit_plat != null {
             center := NSNotificationCenter.defaultCenter();
             center.addObserver_selector_name_object(
-                xx self,
+                self,
                 sel_registerName("sxKeyboardWillChangeFrame:".ptr),
-                xx "UIKeyboardWillChangeFrameNotification",
+                "UIKeyboardWillChangeFrameNotification",
                 null);
         }
-        return xx 1;
+        return 1;
     }
 
     sxKeyboardWillChangeFrame :: (self: *Self, notification: *void) {
         if g_uikit_plat == null { return; }
-        notif : *NSNotification = xx notification;
+        notif : *NSNotification = notification.(*NSNotification);
         g_uikit_plat.keyboard_will_change_frame(notif);
     }
 
@@ -69,9 +69,9 @@ SxSceneDelegate :: @ObjcClass("SxSceneDelegate", extends = UIResponder, implemen
         // CAEAGLLayer / CAMetalLayer subclass.
         view : *UIView = null;
         if g_uikit_plat.gpu_mode == .gles {
-            view = xx SxGLView.alloc().init();
+            view = SxGLView.alloc().init();
         } else {
-            view = xx SxMetalView.alloc().init();
+            view = SxMetalView.alloc().init();
         }
         g_uikit_plat.scene_will_connect(scene, view);
     }
@@ -109,22 +109,22 @@ SxGLView :: @ObjcClass("SxGLView", extends = UIView) export {
 
     touchesBegan_withEvent :: (self: *Self, touches: *void, event: *void) {
         if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_down(xx self, touches);
+        g_uikit_plat.push_touch_down(self, touches);
     }
 
     touchesMoved_withEvent :: (self: *Self, touches: *void, event: *void) {
         if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_moved(xx self, touches);
+        g_uikit_plat.push_touch_moved(self, touches);
     }
 
     touchesEnded_withEvent :: (self: *Self, touches: *void, event: *void) {
         if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_up(xx self, touches);
+        g_uikit_plat.push_touch_up(self, touches);
     }
 
     touchesCancelled_withEvent :: (self: *Self, touches: *void, event: *void) {
         if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_cancel(xx self, touches);
+        g_uikit_plat.push_touch_cancel(self, touches);
     }
 }
 
@@ -151,21 +151,21 @@ SxMetalView :: @ObjcClass("SxMetalView", extends = UIView) export {
 
     touchesBegan_withEvent :: (self: *Self, touches: *void, event: *void) {
         if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_down(xx self, touches);
+        g_uikit_plat.push_touch_down(self, touches);
     }
 
     touchesMoved_withEvent :: (self: *Self, touches: *void, event: *void) {
         if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_moved(xx self, touches);
+        g_uikit_plat.push_touch_moved(self, touches);
     }
 
     touchesEnded_withEvent :: (self: *Self, touches: *void, event: *void) {
         if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_up(xx self, touches);
+        g_uikit_plat.push_touch_up(self, touches);
     }
 
     touchesCancelled_withEvent :: (self: *Self, touches: *void, event: *void) {
         if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_cancel(xx self, touches);
+        g_uikit_plat.push_touch_cancel(self, touches);
     }
 }

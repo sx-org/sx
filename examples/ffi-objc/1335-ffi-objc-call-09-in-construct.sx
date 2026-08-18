@@ -43,7 +43,7 @@ make_hasher :: (recv: *void) -> Closure(i32) -> i64 {
 
 // ── 4. Generic function body — instantiated per call site ───────────
 hash_through :: (recv: $T) -> i64 {
-    p : *void = xx recv;
+    p : *void = recv;
     @ObjcCall(i64, p, "hash")
 }
 

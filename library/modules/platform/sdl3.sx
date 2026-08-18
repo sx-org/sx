@@ -101,7 +101,7 @@ translate_sdl_event :: (sdl: *SDL_Event) -> ?PlatformEvent {
             return .quit;
         }
         case .window_resized: |data| {
-            return .window_resize(.{ width = xx data.data1, height = xx data.data2 });
+            return .window_resize(.{ width = data.data1, height = data.data2 });
         }
         case .key_down: |data| {
             return .input(.key_down(.{
@@ -234,8 +234,8 @@ impl Platform for SdlPlatform {
 
         SDL_GetWindowSize(self.window, *self.width, *self.height);
         SDL_GetWindowSizeInPixels(self.window, *self.pixel_w, *self.pixel_h);
-        wf : f32 = xx self.width;
-        pw : f32 = xx self.pixel_w;
+        wf : f32 = self.width.(f32);
+        pw : f32 = self.pixel_w.(f32);
         self.dpi_scale = if wf > 0.0 then pw / wf else 1.0;
 
         if self.gpu_mode == .opengl {
@@ -254,7 +254,7 @@ impl Platform for SdlPlatform {
 
         inline match OS {
             case .wasm: {}
-            else: { SDL_AddEventWatch(*sdl_event_watch, xx self); }
+            else: { SDL_AddEventWatch(*sdl_event_watch, self); }
         }
 
         inline match OS {
@@ -294,8 +294,8 @@ impl Platform for SdlPlatform {
         current := SDL_GetPerformanceCounter();
         freq := SDL_GetPerformanceFrequency();
         if freq > 0 and self.last_perf > 0 {
-            diff : f32 = xx (current - self.last_perf);
-            fr : f32 = xx freq;
+            diff : f32 = (current - self.last_perf).(f32);
+            fr : f32 = freq.(f32);
             self.delta_time = diff / fr;
         }
         self.last_perf = current;
@@ -315,8 +315,8 @@ impl Platform for SdlPlatform {
         }
 
         FrameContext{
-            viewport_w = xx self.width,
-            viewport_h = xx self.height,
+            viewport_w = self.width,
+            viewport_h = self.height,
             pixel_w = self.pixel_w,
             pixel_h = self.pixel_h,
             dpi_scale = self.dpi_scale,
@@ -363,7 +363,7 @@ impl Platform for SdlPlatform {
 // macOS's modal resize-drag, when SDL_PollEvent can't run. Re-invoking the
 // frame closure here keeps content rendering at the new size during the drag.
 sdl_event_watch :: (userdata: *void, event: *SDL_Event) -> bool abi(.c) {
-    plat : *SdlPlatform = xx userdata;
+    plat : *SdlPlatform = userdata.(*SdlPlatform);
     match event.* {
         case .window_resized: |data| {
             plat.width = data.data1;

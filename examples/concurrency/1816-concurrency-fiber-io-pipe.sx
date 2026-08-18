@@ -57,7 +57,7 @@ main :: () -> i64 {
     mk_reader :: (ps: *sched.Scheduler, pst: *S, rfd: i32) {
         ps.spawn(|| {
             ps.block_on_fd(rfd, true);   // parks until read_fd is readable
-            n := read(rfd, xx *pst.bytes[0], xx 3);
+            n := read(rfd, *pst.bytes[0], 3);
             pst.read_n = xx n;
             pst.read_done = true;
         });
@@ -66,8 +66,8 @@ main :: () -> i64 {
     mk_writer :: (ps: *sched.Scheduler, pst: *S, wfd: i32) {
         ps.spawn(|| {
             buf : [3]u8 = ---;
-            buf[0] = xx 97; buf[1] = xx 98; buf[2] = xx 99;  // 'a' 'b' 'c'
-            write(wfd, xx *buf[0], xx 3);
+            buf[0] = 97; buf[1] = 98; buf[2] = 99;  // 'a' 'b' 'c'
+            write(wfd, *buf[0], 3);
             pst.wrote = true;
         });
     }

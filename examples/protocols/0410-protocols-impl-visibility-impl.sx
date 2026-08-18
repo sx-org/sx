@@ -4,7 +4,8 @@
 #import "./0410-protocols-impl-visibility-types.sx";
 
 impl Into(Wrap) for i64 {
-  convert :: (self: i64) -> Wrap {
+  convert :: (self: i64, alloc: Allocator = context.allocator) -> Wrap {
+    _ = alloc;
     .{ v = self * 10 }
   }
 }

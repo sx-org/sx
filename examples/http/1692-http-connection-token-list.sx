@@ -79,7 +79,7 @@ exchange :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64, eof: *bool) -
     }
     socket.close(fd);
     eof.* = done;
-    return string{ ptr = buf, len = xx total };
+    return string{ ptr = buf, len = total };
 }
 
 check :: (r: string, frag: string, label: string, failed: *i64) {
@@ -151,7 +151,7 @@ main :: () -> i32 {
             "closefoo", rbuf, cap, *failed);
 
         srv.close();
-        context.allocator.dealloc_bytes(xx rbuf);
+        context.allocator.dealloc_bytes(rbuf);
         leaked = gpa.alloc_count;
     }
 

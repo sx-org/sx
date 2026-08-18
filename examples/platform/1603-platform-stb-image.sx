@@ -8,7 +8,7 @@ main :: () -> i32 {
     img := stb.stbi_load("test.png", *w, *h, *ch, 4);
     if xx img != 0 {
         print("loaded {}x{} ({} channels)\n", w, h, ch);
-        stb.stbi_image_free(xx img);
+        stb.stbi_image_free(img);
     } else {
         print("no image (expected in test)\n");
     }

@@ -162,7 +162,7 @@ range_coding_preserved :: (packed: string, coding: string, status: i64) -> bool 
 corrupt_copy :: (data: string, at: i64) -> string {
     raw := context.allocator.alloc_bytes(data.len);
     if raw == null { return ""; }
-    result : string = .{ ptr = xx raw, len = data.len };
+    result : string = .{ ptr = raw.([*]u8), len = data.len };
     i : i64 = 0;
     while i < data.len { result.ptr[i] = data[i]; i += 1; }
     if at >= 0 and at < result.len { result.ptr[at] = result[at] ^ 1; }

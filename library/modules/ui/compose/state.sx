@@ -108,7 +108,7 @@ use_state :: ($T: Type, default: T, site: SiteId = site_of(@caller)) -> State(T)
             process.exit(1)
         }
         e.claimed = true;
-        return State(T){ ptr = xx e.data };
+        return State(T){ ptr = e.data };
     }
 
     e : *StateEntry = store.gpa.create(StateEntry);
@@ -122,5 +122,5 @@ use_state :: ($T: Type, default: T, site: SiteId = site_of(@caller)) -> State(T)
     seed := default;
     c.memcpy(e.data, *seed, size_of(T));
     store.entries.append(e, store.gpa);
-    State(T){ ptr = xx e.data }
+    State(T){ ptr = e.data }
 }

@@ -12,14 +12,14 @@ read_tail :: ($T: Type, first: $T, ..) -> i64 abi(.c) {
     ap: @VaList = ---;
     @va_start(*ap);
     defer @va_end(*ap);
-    total: i64 = xx first;
-    total += xx @va_arg(i32, *ap);
+    total: i64 = first;
+    total += @va_arg(i32, *ap);
     return total;
 }
 
 read_list :: ($T: Type, n: i32, ap: @VaList) -> i64 abi(.c) {
     total: i64 = 0;
-    for i in 0..n { total += xx @va_arg($T, *ap); }
+    for i in 0..n { total += @va_arg($T, *ap); }
     return total;
 }
 

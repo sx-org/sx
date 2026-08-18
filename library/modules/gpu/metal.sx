@@ -278,21 +278,21 @@ MetalGPU :: struct {
     // Handle → retained object lookups shared by the buffer/shader paths.
     lookup_buffer :: (self: *MetalGPU, handle: u32) -> *MTLBuffer {
         if handle == 0 { return null; }
-        h64 : i64 = xx handle;
+        h64 : i64 = handle.(i64);
         if h64 > self.buffers.len { return null; }
         self.buffers.items[handle - 1]
     }
 
     lookup_index :: (self: *MetalGPU, handle: u32) -> *MTLBuffer {
         if handle == 0 { return null; }
-        h64 : i64 = xx handle;
+        h64 : i64 = handle.(i64);
         if h64 > self.indices.len { return null; }
         self.indices.items[handle - 1]
     }
 
     lookup_shader :: (self: *MetalGPU, handle: u32) -> *MTLRenderPipelineState {
         if handle == 0 { return null; }
-        h64 : i64 = xx handle;
+        h64 : i64 = handle.(i64);
         if h64 > self.shaders.len { return null; }
         self.shaders.items[handle - 1]
     }
@@ -335,7 +335,7 @@ MetalGPU :: struct {
         }
 
         desc := MTLTextureDescriptor.texture2DDescriptorWithPixelFormat_width_height_mipmapped(
-            MTL_PIXEL_FORMAT_DEPTH32_FLOAT, xx self.pixel_w, xx self.pixel_h, 0);
+            MTL_PIXEL_FORMAT_DEPTH32_FLOAT, self.pixel_w, self.pixel_h, 0);
         if desc == null { return null; }
         desc.setUsage(MTL_TEXTURE_USAGE_RENDER_TARGET);
         desc.setStorageMode(MTL_STORAGE_MODE_PRIVATE);
@@ -369,7 +369,7 @@ MetalGPU :: struct {
         }
 
         desc := MTLTextureDescriptor.texture2DDescriptorWithPixelFormat_width_height_mipmapped(
-            self.target_format, xx pixel_w, xx pixel_h, 0);
+            self.target_format, pixel_w, pixel_h, 0);
         if desc == null { return false; }
         desc.setUsage(MTL_TEXTURE_USAGE_RENDER_TARGET | MTL_TEXTURE_USAGE_SHADER_READ);
         desc.setStorageMode(MTL_STORAGE_MODE_PRIVATE);
@@ -377,7 +377,7 @@ MetalGPU :: struct {
         if self.offscreen_tex == null { return false; }
 
         rdesc := MTLTextureDescriptor.texture2DDescriptorWithPixelFormat_width_height_mipmapped(
-            self.target_format, xx pixel_w, xx pixel_h, 0);
+            self.target_format, pixel_w, pixel_h, 0);
         if rdesc == null { return false; }
         rdesc.setStorageMode(MTL_STORAGE_MODE_SHARED);
         self.readback_tex = self.device.newTextureWithDescriptor(rdesc);
@@ -406,9 +406,9 @@ MetalGPU :: struct {
 
         region : MTLRegion = .{
             origin = .{ x = 0, y = 0, z = 0 },
-            size   = .{ width = xx self.pixel_w, height = xx self.pixel_h, depth = 1 },
+            size   = .{ width = self.pixel_w, height = self.pixel_h, depth = 1 },
         };
-        bytes_per_row : u64 = xx (self.pixel_w * 4);
+        bytes_per_row : u64 = (self.pixel_w * 4).(u64);
         self.readback_tex.getBytes_bytesPerRow_fromRegion_mipmapLevel(out, bytes_per_row, region, 0);
         true
     }
@@ -423,7 +423,7 @@ impl GPU for MetalGPU {
     // the layer is only touched when one's been supplied.
     init :: (self: *MetalGPU, target: *void, pixel_w: i32, pixel_h: i32) -> bool {
         if target != null {
-            self.layer   = xx target;
+            self.layer   = target;
             self.pixel_w = pixel_w;
             self.pixel_h = pixel_h;
         }
@@ -453,7 +453,7 @@ impl GPU for MetalGPU {
             // defaults to its bounds×contentsScale until we override it, which
             // also lets the first frame render at the natural backing size.
             if self.pixel_w > 0 and self.pixel_h > 0 {
-                self.layer.setDrawableSize(.{ width = xx self.pixel_w, height = xx self.pixel_h });
+                self.layer.setDrawableSize(.{ width = self.pixel_w, height = self.pixel_h });
             }
         }
 
@@ -469,7 +469,7 @@ impl GPU for MetalGPU {
         self.pixel_w = pixel_w;
         self.pixel_h = pixel_h;
         if self.layer == null { return; }
-        self.layer.setDrawableSize(.{ width = xx self.pixel_w, height = xx self.pixel_h });
+        self.layer.setDrawableSize(.{ width = self.pixel_w, height = self.pixel_h });
     }
 
     begin_frame :: (self: *MetalGPU, clear: ClearColor) -> bool {
@@ -479,7 +479,7 @@ impl GPU for MetalGPU {
 
         target_texture := self.offscreen_tex;
         if self.layer != null {
-            self.drawable = xx self.layer.nextDrawable();
+            self.drawable = self.layer.nextDrawable();
             if self.drawable == null { return false; }
             target_texture = self.drawable.texture();
         }
@@ -490,10 +490,10 @@ impl GPU for MetalGPU {
         color0.setLoadAction(MTL_LOAD_ACTION_CLEAR);
         color0.setStoreAction(MTL_STORE_ACTION_STORE);
         color0.setClearColor(.{
-            red   = xx clear.r,
-            green = xx clear.g,
-            blue  = xx clear.b,
-            alpha = xx clear.a,
+            red   = clear.r,
+            green = clear.g,
+            blue  = clear.b,
+            alpha = clear.a,
         });
 
         depth := self.ensure_depth_texture();
@@ -558,16 +558,16 @@ impl GPU for MetalGPU {
         if self.device == null { return 0; }
 
         err : *void = null;
-        library := self.device.newLibraryWithSource_options_error(xx vsrc, null, *err);
+        library := self.device.newLibraryWithSource_options_error(vsrc.(*NSString), null, *err);
         if library == null {
-            NSLog(xx "[metal] MSL compile failed\n");
+            NSLog("[metal] MSL compile failed\n".(*NSString));
             return 0;
         }
 
-        vfn := library.newFunctionWithName(xx "vmain");
-        ffn := library.newFunctionWithName(xx "fmain");
-        if vfn == null { NSLog(xx "[metal] missing vmain in MSL\n"); return 0; }
-        if ffn == null { NSLog(xx "[metal] missing fmain in MSL\n"); return 0; }
+        vfn := library.newFunctionWithName("vmain".(*NSString));
+        ffn := library.newFunctionWithName("fmain".(*NSString));
+        if vfn == null { NSLog("[metal] missing vmain in MSL\n".(*NSString)); return 0; }
+        if ffn == null { NSLog("[metal] missing fmain in MSL\n".(*NSString)); return 0; }
 
         desc := MTLRenderPipelineDescriptor.alloc().init();
         desc.setVertexFunction(vfn);
@@ -587,12 +587,12 @@ impl GPU for MetalGPU {
         err2 : *void = null;
         state := self.device.newRenderPipelineStateWithDescriptor_error(desc, *err2);
         if state == null {
-            NSLog(xx "[metal] pipeline state creation failed\n");
+            NSLog("[metal] pipeline state creation failed\n".(*NSString));
             return 0;
         }
 
         self.shaders.append(state, self.parent_allocator);
-        xx self.shaders.len
+        self.shaders.len
     }
 
     // Shared-memory MTLBuffer (CPU + GPU visible on UMA hardware). `contents`
@@ -602,22 +602,22 @@ impl GPU for MetalGPU {
         if size_bytes <= 0 { return 0; }
 
         // MTLResourceStorageModeShared is the default (option value 0).
-        buf := self.device.newBufferWithLength_options(xx size_bytes, 0);
+        buf := self.device.newBufferWithLength_options(size_bytes, 0);
         if buf == null { return 0; }
 
         self.buffers.append(buf, self.parent_allocator);
-        xx self.buffers.len
+        self.buffers.len
     }
 
     create_index_buffer :: (self: *MetalGPU, size_bytes: i64) -> IndexHandle {
         if self.device == null { return 0; }
         if size_bytes <= 0 { return 0; }
 
-        buf := self.device.newBufferWithLength_options(xx size_bytes, 0);
+        buf := self.device.newBufferWithLength_options(size_bytes, 0);
         if buf == null { return 0; }
 
         self.indices.append(buf, self.parent_allocator);
-        xx self.indices.len
+        self.indices.len
     }
 
     update_index_buffer :: (self: *MetalGPU, buf: IndexHandle, data: *void, size_bytes: i64) {
@@ -653,8 +653,8 @@ impl GPU for MetalGPU {
         if base == null { return; }
         // Add byte_offset via integer arithmetic. `@dst[i]` on `[*]u8` does
         // the same thing; the explicit form keeps the arithmetic visible.
-        base_i : i64 = xx base;
-        dst_at : *void = xx (base_i + byte_offset);
+        base_i : i64 = base.(i64);
+        dst_at : *void = (base_i + byte_offset).(*void);
         c.memcpy(dst_at, data, size_bytes);
     }
 
@@ -674,7 +674,7 @@ impl GPU for MetalGPU {
         }
 
         desc := MTLTextureDescriptor.texture2DDescriptorWithPixelFormat_width_height_mipmapped(
-            pixel_format, xx w, xx h, 0);
+            pixel_format, w, h, 0);
         if desc == null { return 0; }
 
         // Force shared storage so the CPU can keep writing pixels (atlas updates,
@@ -689,16 +689,16 @@ impl GPU for MetalGPU {
         self.textures.append(slot, self.parent_allocator);
 
         if pixels != null {
-            handle : u32 = xx self.textures.len;
+            handle : u32 = self.textures.len.(u32);
             self.update_texture_region(handle, 0, 0, w, h, pixels);
         }
 
-        xx self.textures.len
+        self.textures.len
     }
 
     update_texture_region :: (self: *MetalGPU, tex: TextureHandle, x: i32, y: i32, w: i32, h: i32, pixels: *void) {
         if tex == 0 { return; }
-        h64 : i64 = xx tex;
+        h64 : i64 = tex.(i64);
         if h64 > self.textures.len { return; }
         slot := self.textures.items[tex - 1];
         if slot.tex == null { return; }
@@ -707,10 +707,10 @@ impl GPU for MetalGPU {
         if h <= 0 { return; }
 
         region : MTLRegion = .{
-            origin = .{ x = xx x, y = xx y, z = 0 },
-            size   = .{ width = xx w, height = xx h, depth = 1 },
+            origin = .{ x = x, y = y, z = 0 },
+            size   = .{ width = w, height = h, depth = 1 },
         };
-        bytes_per_row : u64 = xx (slot.bytes_per_pixel * w.(u32));
+        bytes_per_row : u64 = (slot.bytes_per_pixel * w.(u32)).(u64);
         slot.tex.replaceRegion_mipmapLevel_withBytes_bytesPerRow(region, 0, pixels, bytes_per_row);
     }
 
@@ -724,7 +724,7 @@ impl GPU for MetalGPU {
 
     destroy_shader :: (self: *MetalGPU, sh: ShaderHandle) {
         if sh == 0 { return; }
-        h64 : i64 = xx sh;
+        h64 : i64 = sh.(i64);
         if h64 > self.shaders.len { return; }
         obj := self.shaders.items[sh - 1];
         if obj == null { return; }
@@ -734,7 +734,7 @@ impl GPU for MetalGPU {
 
     destroy_buffer :: (self: *MetalGPU, buf: BufferHandle) {
         if buf == 0 { return; }
-        h64 : i64 = xx buf;
+        h64 : i64 = buf.(i64);
         if h64 > self.buffers.len { return; }
         obj := self.buffers.items[buf - 1];
         if obj == null { return; }
@@ -744,7 +744,7 @@ impl GPU for MetalGPU {
 
     destroy_index_buffer :: (self: *MetalGPU, buf: IndexHandle) {
         if buf == 0 { return; }
-        h64 : i64 = xx buf;
+        h64 : i64 = buf.(i64);
         if h64 > self.indices.len { return; }
         obj := self.indices.items[buf - 1];
         if obj == null { return; }
@@ -755,7 +755,7 @@ impl GPU for MetalGPU {
 
     destroy_texture :: (self: *MetalGPU, tex: TextureHandle) {
         if tex == 0 { return; }
-        h64 : i64 = xx tex;
+        h64 : i64 = tex.(i64);
         if h64 > self.textures.len { return; }
         obj := self.textures.items[tex - 1].tex;
         if obj == null { return; }
@@ -789,30 +789,30 @@ impl GPU for MetalGPU {
     set_texture :: (self: *MetalGPU, slot: u32, tex: TextureHandle) {
         if self.encoder == null { return; }
         if tex == 0 { return; }
-        h64 : i64 = xx tex;
+        h64 : i64 = tex.(i64);
         if h64 > self.textures.len { return; }
         mtex := self.textures.items[tex - 1].tex;
         if mtex == null { return; }
-        self.encoder.setFragmentTexture_atIndex(mtex, xx slot);
+        self.encoder.setFragmentTexture_atIndex(mtex, slot);
     }
 
     set_vertex_constants :: (self: *MetalGPU, slot: u32, data: *void, size_bytes: i64) {
         if self.encoder == null { return; }
         if data == null { return; }
         if size_bytes <= 0 { return; }
-        self.encoder.setVertexBytes_length_atIndex(data, xx size_bytes, xx slot);
+        self.encoder.setVertexBytes_length_atIndex(data, size_bytes, slot);
     }
 
     set_scissor :: (self: *MetalGPU, x: i32, y: i32, w: i32, h: i32) {
         if self.encoder == null { return; }
-        self.encoder.setScissorRect(.{ x = xx x, y = xx y, width = xx w, height = xx h });
+        self.encoder.setScissorRect(.{ x = x, y = y, width = w, height = h });
     }
 
     disable_scissor :: (self: *MetalGPU) {
         if self.encoder == null { return; }
         // Metal has no "disable scissor" — set the rect to cover the full
         // drawable so subsequent draws aren't clipped.
-        self.encoder.setScissorRect(.{ x = 0, y = 0, width = xx self.pixel_w, height = xx self.pixel_h });
+        self.encoder.setScissorRect(.{ x = 0, y = 0, width = self.pixel_w, height = self.pixel_h });
     }
 
     set_depth_mode :: (self: *MetalGPU, mode: DepthMode) {
@@ -834,7 +834,7 @@ impl GPU for MetalGPU {
         if data == null { return; }
         if count < 0 { return; }
         if count > GPU_MAX_BONES { return; }
-        n : i64 = xx count;
+        n : i64 = count.(i64);
         c.memcpy(*self.bone_palette[0], data, n * size_of(BoneMatrix));
         self.bone_count = count;
     }
@@ -843,7 +843,7 @@ impl GPU for MetalGPU {
         if self.encoder == null { return; }
         if vertex_count <= 0 { return; }
         self.encoder.drawPrimitives_vertexStart_vertexCount(
-            MTL_PRIMITIVE_TYPE_TRIANGLE, xx vertex_offset, xx vertex_count);
+            MTL_PRIMITIVE_TYPE_TRIANGLE, vertex_offset, vertex_count);
     }
 
     draw_indexed :: (self: *MetalGPU, index_offset: i32, index_count: i32) {
@@ -851,9 +851,9 @@ impl GPU for MetalGPU {
         if self.bound_index == null { return; }
         if index_count <= 0 { return; }
         if index_offset < 0 { return; }
-        byte_offset : u64 = xx (index_offset * 4);
+        byte_offset : u64 = (index_offset * 4).(u64);
         self.encoder.drawIndexedPrimitives_indexCount_indexType_indexBuffer_indexBufferOffset(
-            MTL_PRIMITIVE_TYPE_TRIANGLE, xx index_count, MTL_INDEX_TYPE_UINT32,
+            MTL_PRIMITIVE_TYPE_TRIANGLE, index_count, MTL_INDEX_TYPE_UINT32,
             self.bound_index, byte_offset);
     }
 
@@ -864,13 +864,13 @@ impl GPU for MetalGPU {
         if index_offset < 0 { return; }
         if self.bone_count <= 0 { return; }
 
-        n : i64 = xx self.bone_count;
+        n : i64 = self.bone_count.(i64);
         self.encoder.setVertexBytes_length_atIndex(
-            xx *self.bone_palette[0], xx (n * size_of(BoneMatrix)), 8);
+            *self.bone_palette[0], (n * size_of(BoneMatrix)), 8);
 
-        byte_offset : u64 = xx (index_offset * 4);
+        byte_offset : u64 = (index_offset * 4).(u64);
         self.encoder.drawIndexedPrimitives_indexCount_indexType_indexBuffer_indexBufferOffset(
-            MTL_PRIMITIVE_TYPE_TRIANGLE, xx index_count, MTL_INDEX_TYPE_UINT32,
+            MTL_PRIMITIVE_TYPE_TRIANGLE, index_count, MTL_INDEX_TYPE_UINT32,
             self.bound_index, byte_offset);
     }
 }

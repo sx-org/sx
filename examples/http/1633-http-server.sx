@@ -55,7 +55,7 @@ dial :: () -> i32 {
 
 // True when `buf[0..len]` holds a complete response (headers + body).
 resp_complete :: (buf: [*]u8, len: i64) -> bool {
-    s := string{ ptr = buf, len = xx len };
+    s := string{ ptr = buf, len = len };
     he := -1;
     i := 0;
     while i + 3 < s.len {
@@ -94,8 +94,8 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8) -> st
         srv.tick(5) catch {};
         n, re := socket.read_nb(fd, *scratch[total], (4096 - total));
         if !re { total += n; }
-        else if re == error.Closed { return string{ ptr = scratch, len = xx total }; }
-        if resp_complete(scratch, total) { return string{ ptr = scratch, len = xx total }; }
+        else if re == error.Closed { return string{ ptr = scratch, len = total }; }
+        if resp_complete(scratch, total) { return string{ ptr = scratch, len = total }; }
         tries += 1;
     }
     return "";
@@ -159,14 +159,14 @@ main :: () -> i32 {
 
     // ── 5b. a body past READ_BUF_INITIAL forces the buffer to grow ────
     big_n := 50000;
-    payload : [*]u8 = xx context.allocator.alloc_bytes(xx big_n);
+    payload : [*]u8 = (context.allocator.alloc_bytes(big_n)).([*]u8);
     f := 0;
     while f < big_n { payload[f] = 97 + (f % 26).(u8); f += 1; }
     breq := concat("POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: ", concat(int_to_string(big_n), "\r\n\r\n"));
-    breq = concat(breq, string{ ptr = payload, len = xx big_n });
+    breq = concat(breq, string{ ptr = payload, len = big_n });
     c2b := dial();
     if c2b < 0 { print("dial2b failed\n"); return 1; }
-    bigbuf : [*]u8 = xx context.allocator.alloc_bytes(xx (big_n + 4096));
+    bigbuf : [*]u8 = (context.allocator.alloc_bytes((big_n + 4096))).([*]u8);
     socket.write(c2b, breq.ptr, breq.len);
     btotal : i64 = 0;
     btries := 0;
@@ -178,7 +178,7 @@ main :: () -> i32 {
         if resp_complete(bigbuf, btotal) { break; }
         btries += 1;
     }
-    bresp := string{ ptr = bigbuf, len = xx btotal };
+    bresp := string{ ptr = bigbuf, len = btotal };
     if !contains(bresp, "HTTP/1.1 200 OK") { print("case5b: big echo not 200\n"); return 1; }
     if !contains(bresp, concat("Content-Length: ", int_to_string(big_n))) { print("case5b: wrong echo length\n"); return 1; }
     if bigbuf[btotal - 1] != 97 + ((big_n - 1) % 26).(u8) { print("case5b: tail byte wrong\n"); return 1; }

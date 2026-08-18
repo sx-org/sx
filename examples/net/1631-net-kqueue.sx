@@ -33,7 +33,7 @@ main :: () -> i32 {
     socket.write(b, msg.ptr, 4);
     n = kq.kq_wait(q, *evs[0], 4, 1000);
     if n != 1 { print("after write: expected 1 event, got {}\n", n); return 1; }
-    if evs[0].ident != xx a { print("event names the wrong fd\n"); return 1; }
+    if evs[0].ident != a.(usize) { print("event names the wrong fd\n"); return 1; }
     if evs[0].filter != kq.EVFILT_READ { print("event names the wrong filter\n"); return 1; }
     if evs[0].udata != 7777 { print("udata did not round-trip\n"); return 1; }
     if evs[0].data != 4 { print("pending byte count: expected 4, got {}\n", evs[0].data); return 1; }

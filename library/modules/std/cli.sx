@@ -95,13 +95,13 @@ inline match OS {
                     out("std.cli: mmap failed while reading /proc/self/cmdline.\n");
                     proc.exit(EX_UNAVAILABLE);
                 }
-                n := cmdline_read(xx region, cap);
+                n := cmdline_read(region, cap);
                 if n < 0 {
                     out("std.cli: cannot read /proc/self/cmdline.\n");
                     proc.exit(EX_UNAVAILABLE);
                 }
                 if n < cap {
-                    cmdline.ptr = xx region;
+                    cmdline.ptr = region;
                     cmdline.len = n;
                     break;
                 }
@@ -183,11 +183,11 @@ os_args :: (buf: []string) -> []string {
     inline match OS {
         case .macos: {
             argc := (ns_get_argc().*).(i64);
-            argv : [*]i64 = xx ns_get_argv().*;
+            argv : [*]i64 = (ns_get_argv().*).([*]i64);
             n := if argc > buf.len then buf.len else argc;
             i := 0;
             while i < n {
-                cstr : [*]u8 = xx argv[i];
+                cstr : [*]u8 = argv[i].([*]u8);
                 len := 0;
                 while cstr[len] != 0 { len += 1; }
                 buf[i] = string{ ptr = cstr, len = len };

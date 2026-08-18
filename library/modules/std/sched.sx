@@ -216,10 +216,10 @@ Scheduler :: struct {
         self.n_spawned = self.n_spawned + 1;
 
         top := boot_stack(f, STACK);
-        f.ctx.regs[0]  = xx f;             // x19 = self (→ x0 in the tramp)
-        f.ctx.regs[1]  = xx fib_dispatch;  // x20 = dispatch entry (tramp `br`s to it)
+        f.ctx.regs[0]  = f.(u64);             // x19 = self (→ x0 in the tramp)
+        f.ctx.regs[1]  = fib_dispatch.(u64);  // x20 = dispatch entry (tramp `br`s to it)
         f.ctx.regs[10] = 0;                // fp
-        f.ctx.regs[11] = xx fib_tramp;     // lr → trampoline
+        f.ctx.regs[11] = fib_tramp.(u64);     // lr → trampoline
         f.ctx.regs[12] = top;              // sp
 
         f.state = .ready;
@@ -500,7 +500,7 @@ Scheduler :: struct {
                         }
                         i := 0;
                         while i < n {
-                            ready_fd : i32 = xx evbuf[i].ident;
+                            ready_fd : i32 = evbuf[i].ident.(i32);
                             wake_io_waiter_for_fd(self, ready_fd);
                             i = i + 1;
                         }
@@ -631,7 +631,7 @@ impl Io for Scheduler {
         // Stash the cancel-flag back-ref: `suspend_raw` consults it on
         // this fiber to raise `error.Canceled`. `null` for an uncancellable spawn.
         f.cancel_flag = opts.cancel_flag;
-        return xx f;
+        return f;
     }
 
     // Park the running fiber until a matching `ready`. `-> !` is the cancellation
@@ -657,7 +657,7 @@ impl Io for Scheduler {
         // Record the parking fiber so a cross-fiber `ready(park)` (the worker that
         // completes the awaited task, or a `cancel` that wakes this worker) can
         // find and wake it.
-        park.handle = xx self.current;
+        park.handle = self.current;
         self.suspend_self();
         // POST-RESUME check: a `cancel` that landed while we were parked woke us
         // here (evicting any armed timer). Deliver `Canceled` so the worker
@@ -673,7 +673,7 @@ impl Io for Scheduler {
     fiber_canceled :: (self: *Scheduler, f: *Fiber) -> bool {
         if f == null { return false; }
         if f.cancel_flag == null { return false; }
-        flag : *Atomic(bool) = xx f.cancel_flag;
+        flag : *Atomic(bool) = f.cancel_flag.(*Atomic(bool));
         return flag.load(.acquire);
     }
 
@@ -682,7 +682,7 @@ impl Io for Scheduler {
     // `.suspended`, so a ready of an already-running/queued fiber is a safe no-op.
     ready :: (self: *Scheduler, park: ParkToken) {
         if park.handle == null { return; }
-        f : *Fiber = xx park.handle;
+        f : *Fiber = park.handle.(*Fiber);
         self.wake(f);
     }
 
@@ -762,7 +762,7 @@ impl Io for Scheduler {
             print("sched: current_park() called outside a fiber (no running fiber)\n");
             c.abort();
         }
-        return .{ handle = xx self.current };
+        return .{ handle = self.current };
     }
 }
 
@@ -801,7 +801,7 @@ ASM
 // there is no hand-written global-asm symbol and nothing here needs per-OS
 // symbol naming (`_fib_tramp` on darwin vs `fib_tramp` on linux) or a `bl` to a
 // named export. As a naked sx fn `fib_tramp`'s own symbol is emitted with the
-// platform-correct name automatically, so `spawn`'s `xx fib_tramp` resolves on
+// platform-correct name automatically, so `spawn`'s `fib_tramp` resolves on
 // every target. This register-indirect bootstrap replaced an OS-conditional
 // global `asm` block (a top-level `asm` wrapped in an `inline if` is dropped in
 // this module's context) and sidesteps the hand-written
@@ -831,7 +831,7 @@ T
 // capture" and re-invokes `fib_dispatch` forever → stack overflow → bus error
 // (reached through the go/wait/sleep capstone 1817).
 // `abi(.c)` rather than `export "fib_dispatch"`: both pin the C ABI, but this fn
-// is reached ONLY by address through the trampoline (`xx fib_dispatch` resolves
+// is reached ONLY by address through the trampoline (`fib_dispatch` resolves
 // regardless of linkage), never by an external name — so it needs the convention,
 // not a public symbol. `abi(.c)` states that intent and keeps the symbol private.
 //
@@ -844,7 +844,7 @@ T
 // LIFETIME CONTRACT (consequence of the snapshot): every capability in the
 // spawn-time context — builtin or extended — must OUTLIVE the fiber, since
 // the body dereferences them later through `dctx`. Protocol values (`io`,
-// `allocator`) borrow a receiver (often a stack local via `xx`); that receiver,
+// `allocator`) borrow a receiver (often a stack local); that receiver,
 // and any `data` pointee, must stay alive until the fiber is reaped. A fiber that
 // grows a long-lived container through the inherited `context.allocator` is
 // subject to the usual long-lived-container rule.
@@ -882,7 +882,7 @@ boot_stack :: (f: *Fiber, size: i64) -> u64 {
         print("sched: mprotect(PROT_NONE) failed to arm the stack guard page\n");
         c.abort();
     }
-    usable : u64 = (xx region) + GUARD;
+    usable : u64 = region.(u64) + GUARD;
     top : u64 = usable + size;
     return top - (top % 16);   // 16-byte aligned stack top (AAPCS)
 }

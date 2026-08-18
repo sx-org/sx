@@ -32,7 +32,7 @@ do_render :: () {
 callback_inline :: (userdata: *void, code: i64) -> bool abi(.c) {
     g_width = xx code;
     g_height = xx (code + 1);
-    g_pipe.resize(xx g_width, xx g_height);
+    g_pipe.resize(g_width, g_height);
     g_pipe.tick();
     print("inline:  pw={}, ph={}, frame={}\n", g_pipe.pw, g_pipe.ph, g_pipe.frame);
     true

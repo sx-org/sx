@@ -125,14 +125,14 @@ run :: () -> i32 {
                              timeout_keepalive_ms = 250, max_conn = 16 };
     srv_a, se_a := http.Server.init(cfg_a, handler_a, 0);
     if se_a { return 2; }
-    ta, tae := thread.Thread.spawn(srv_entry, xx *srv_a);
+    ta, tae := thread.Thread.spawn(srv_entry, *srv_a);
     if tae { return 3; }
     // dual-stack: the cross-host Location names "localhost", which the
     // resolver may answer with ::1 — B must serve either family.
     cfg_b : http.Config = .{ port = PORT_B, bind_addr = "::", timeout_request_ms = 5000, max_conn = 8 };
     srv_b, se_b := http.Server.init(cfg_b, handler_b, 0);
     if se_b { srv_a.stop(); ta.join(); return 4; }
-    tb, tbe := thread.Thread.spawn(srv_entry, xx *srv_b);
+    tb, tbe := thread.Thread.spawn(srv_entry, *srv_b);
     if tbe { srv_a.stop(); ta.join(); return 5; }
 
     opts : http.ClientOpts = .{ connect_timeout_ms = 2000, io_timeout_ms = 3000 };
@@ -207,7 +207,7 @@ run :: () -> i32 {
     cfg_t.tls = xx *ts;
     srv_t, se_t := http.Server.init(cfg_t, handler_a, 0);
     if se_t { return teardown(31, *srv_a, *ta, *srv_b, *tb); }
-    tt, tte := thread.Thread.spawn(srv_entry, xx *srv_t);
+    tt, tte := thread.Thread.spawn(srv_entry, *srv_t);
     if tte { return teardown(32, *srv_a, *ta, *srv_b, *tb); }
     tcc : tlsp.TlsClientConfig = .{};
     if !tcc.setup_files("examples/http/1705-http-client-transport/cert.pem", context.allocator) {

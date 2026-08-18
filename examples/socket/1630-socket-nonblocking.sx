@@ -78,7 +78,7 @@ main :: () -> i32 {
     tries := 0;
     while got < 0 and tries < 1000 {
         c2, ae2 := socket.accept_nb(lfd);
-        if !ae2 { got = xx c2; }
+        if !ae2 { got = c2; }
         else if ae2 != error.WouldBlock { print("accept_nb fault\n"); return 1; }
         tries += 1;
     }

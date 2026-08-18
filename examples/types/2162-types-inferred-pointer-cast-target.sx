@@ -7,7 +7,7 @@
 
 main :: () {
     x := 42;
-    p : *void = xx *x;
+    p : *void = *x;
 
     live := p.(*i64);
     ann : *i64 = p.(*i64);

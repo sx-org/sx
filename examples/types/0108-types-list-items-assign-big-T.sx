@@ -19,7 +19,7 @@ Container :: struct {
     sentinel: i64;
 
     do_work :: (self: *Container) {
-        self.tree.nodes.items = xx 0;   // BUG: corrupts self.sentinel
+        self.tree.nodes.items = .[];   // empty slice; must not corrupt self.sentinel
     }
 }
 

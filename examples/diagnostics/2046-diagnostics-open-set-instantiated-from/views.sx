@@ -13,7 +13,7 @@ Label :: @OpenVariant(View) {
 
 // Nothing here is wrong: `T` is whatever the caller asks for, and a member answers
 // it. The body is refused only for an instantiation that cannot.
-into :: ($T: Type, x: $S) -> T => xx x;
+into :: ($T: Type, x: $S) -> T => x;
 
 // One more hop, so the note has a chain to walk back through.
 into_view :: (x: $S) -> View => into(View, x);

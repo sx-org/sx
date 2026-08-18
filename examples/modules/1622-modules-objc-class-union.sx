@@ -10,5 +10,5 @@
 
 main :: () {
     ns : *NSString = xx "hello union";
-    print("first: {} len: {}\n", probe_first_byte(xx ns), probe_len(xx ns));
+    print("first: {} len: {}\n", probe_first_byte(ns), probe_len(ns));
 }

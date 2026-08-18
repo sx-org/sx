@@ -28,7 +28,7 @@ sum_ints :: (n: i32, ..) -> i64 abi(.c) {
     defer @va_end(*ap);
     total: i64 = 0;
     for i in 0..n {
-        total += xx @va_arg(i32, *ap);
+        total += @va_arg(i32, *ap);
     }
     return total;
 }
@@ -42,7 +42,7 @@ plain :: () -> i64 abi(.c) {
 }
 
 fixed_one :: (n: i32) -> i64 abi(.c) {
-    return xx n;
+    return n;
 }
 
 Summer :: (n: i32, ..) -> i64 abi(.c);

@@ -32,7 +32,7 @@ main :: () -> i32 {
 
         sel_release : SEL = sel_registerName("release".ptr);
         release_fn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
-        release_fn(xx b, sel_release);
+        release_fn(b, sel_release);
     }
     inline if OS != .macos {
         print("counter: 2\n");

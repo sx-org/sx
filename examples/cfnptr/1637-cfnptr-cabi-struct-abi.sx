@@ -15,8 +15,8 @@ Big :: struct { x: i64; y: i64; z: i64; }
 Hfa :: struct { x: f32; y: f32; }
 
 add_pt :: (p: Point) -> i32 abi(.c) { return p.x + p.y; }
-add_tiny :: (t: Tiny) -> i32 abi(.c) { return xx t.a + xx t.b; }
-add_mid :: (m: Mid) -> i64 abi(.c) { return m.x + xx m.y; }
+add_tiny :: (t: Tiny) -> i32 abi(.c) { return t.a + t.b; }
+add_mid :: (m: Mid) -> i64 abi(.c) { return m.x + m.y; }
 add_big :: (b: Big) -> i64 abi(.c) { return b.x + b.y + b.z; }
 add_hfa :: (h: Hfa) -> f32 abi(.c) { return h.x + h.y; }
 str_len :: (s: string) -> i64 abi(.c) { return s.len; }

@@ -394,7 +394,7 @@ Router :: struct {
     // Initialize with the app's own ctx word (whatever route handlers want
     // — a store handle, config). No allocation: the route table is inline
     // (fixed MAX_ROUTES), so the Router needs no owning allocator and never
-    // grows the heap. Bind the result to a local; `xx router` is the ctx.
+    // grows the heap. Bind the result to a local; `router` is the ctx.
     init :: (app_ctx: usize) -> Router {
         Router{ app_ctx = app_ctx, n_routes = 0, not_found = null }
     }
@@ -419,14 +419,14 @@ Router :: struct {
 
 // The one handler you hand to Server.init — a plain free function with the
 // exact (*Request, *Response, usize) server-handler shape (so it binds to
-// the Server's handler fn-ptr field). `ctx` is `xx router`. Matches the
+// the Server's handler fn-ptr field). `ctx` is `router`. Matches the
 // request to a route and dispatches; a path that matches no pattern → 404;
 // a path that matches a pattern but whose method no route registered → 405
 // with an `Allow` header listing the methods registered for that path.
 //
-// Use it as:  srv, e := http.Server.init(cfg, http.dispatch, xx @router);
+// Use it as:  srv, e := http.Server.init(cfg, http.dispatch, @router);
 dispatch :: (req: *types.Request, resp: *types.Response, ctx: usize) {
-    self : *Router = xx ctx;
+    self : *Router = ctx.(*Router);
     path := path_only(req.path);    
 
     rc : RouteCtx = .{ req = req, resp = resp, app_ctx = self.app_ctx };

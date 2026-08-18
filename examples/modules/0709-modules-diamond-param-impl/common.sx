@@ -14,7 +14,8 @@
 Wrapped :: struct { v: i64; }
 
 impl Into(Wrapped) for i64 {
-    convert :: (self: i64) -> Wrapped {
+    convert :: (self: i64, alloc: Allocator = context.allocator) -> Wrapped {
+    _ = alloc;
         return .{ v = self + 35 };
     }
 }

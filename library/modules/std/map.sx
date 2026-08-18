@@ -90,7 +90,7 @@ map_hash_key :: (key: $K) -> u64 {
 // bools, pointers and integers are non-struct, so they take the raw-byte leaf.
 map_hash_into :: (v: $T, h: u64) -> u64 {
     inline if type_eq(T, string) {
-        sv : *string = xx *v;
+        sv : *string = (*v).(*string);
         return fnv1a_fold(h, sv.ptr, sv.len);
     }
     inline if is_struct(T) {
@@ -100,7 +100,7 @@ map_hash_into :: (v: $T, h: u64) -> u64 {
         }
         return hh;
     }
-    return fnv1a_fold(h, xx *v, size_of(T));   // scalar/enum/bool/pointer leaf
+    return fnv1a_fold(h, *v, size_of(T));   // scalar/enum/bool/pointer leaf
 }
 
 // Loud tripwire for the "no free bucket after a full probe walk" terminal —

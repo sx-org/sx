@@ -222,7 +222,7 @@ AndroidPlatform :: struct {
 sx_android_forward_assets :: (env: *void, activity: *JContext) {
     push .{ jni = env } {
         assets := activity.getAssets();
-        aam := AAssetManager_fromJava(env, xx assets);
+        aam := AAssetManager_fromJava(env, assets);
         sx_android_set_asset_manager(aam);
     }
 }
@@ -234,7 +234,7 @@ sx_android_forward_assets :: (env: *void, activity: *JContext) {
 sx_android_attach_window :: (plat: *AndroidPlatform, env: *void, holder: *SurfaceHolder) {
     push .{ jni = env } {
         surface := holder.getSurface();
-        plat.app_window = ANativeWindow_fromSurface(env, xx surface);
+        plat.app_window = ANativeWindow_fromSurface(env, surface);
     }
 }
 
@@ -265,7 +265,7 @@ sx_android_set_viewport :: (plat: *AndroidPlatform, w: i32, h: i32) {
 sx_android_refresh_rate :: (env: *void, activity: *JContext) -> f32 {
     rate : f32 = 60.0;
     push .{ jni = env } {
-        a : *ActivityClass = xx activity;
+        a : *ActivityClass = activity.(*ActivityClass);
         r := a.getWindow().getWindowManager().getDefaultDisplay().getRefreshRate();
         if r > 0.0 { rate = r; }
     }
@@ -278,12 +278,12 @@ sx_android_refresh_rate :: (env: *void, activity: *JContext) -> f32 {
 sx_android_start_render_thread :: (plat: *AndroidPlatform, entry_fn: () -> void) {
     if plat.render_thread_started { return; }
     plat.user_main_fn = entry_fn;
-    c.pthread_create(*plat.render_thread, null, sx_android_render_thread_entry, xx plat);
+    c.pthread_create(*plat.render_thread, null, sx_android_render_thread_entry, plat);
     plat.render_thread_started = true;
 }
 
 sx_android_render_thread_entry :: (arg: *void) -> *void abi(.c) {
-    plat : *AndroidPlatform = xx arg;
+    plat : *AndroidPlatform = arg.(*AndroidPlatform);
     while plat.app_window == null and !plat.should_stop {
         usleep(1000);
     }
@@ -353,7 +353,7 @@ sx_android_egl_init :: (plat: *AndroidPlatform) -> bool {
 // when consumer didn't set logical_w (1:1 logical/physical mode).
 sx_android_recompute_scale :: (plat: *AndroidPlatform) {
     if plat.logical_w > 0.0 and plat.pixel_w > 0 {
-        plat.dpi_scale = xx plat.pixel_w / plat.logical_w;
+        plat.dpi_scale = plat.pixel_w / plat.logical_w;
     } else {
         plat.dpi_scale = 1.0;
     }
@@ -461,8 +461,8 @@ impl Platform for AndroidPlatform {
         // scale) viewport == pixel.
         inv : f32 = if self.dpi_scale > 0.0 then 1.0 / self.dpi_scale else 1.0;
         FrameContext{
-            viewport_w = xx self.pixel_w * inv,
-            viewport_h = xx self.pixel_h * inv,
+            viewport_w = self.pixel_w * inv,
+            viewport_h = self.pixel_h * inv,
             pixel_w = self.pixel_w,
             pixel_h = self.pixel_h,
             dpi_scale = self.dpi_scale,

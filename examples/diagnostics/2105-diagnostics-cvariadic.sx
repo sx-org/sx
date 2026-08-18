@@ -114,7 +114,7 @@ reads :: (n: i32, ..) -> i64 abi(.c) {
     word := ap.w0;                // no published fields
     later := || -> i64 { return @va_arg(i64, *ap); }; // a closure may outlive the frame
     rows: [1]@VaList = ---;
-    kept := || -> i64 { return xx rows.len; }; // a wrapper carries the same tail
+    kept := || -> i64 { return rows.len; }; // a wrapper carries the same tail
     @va_end(*ap);
     return xx narrow;
 }

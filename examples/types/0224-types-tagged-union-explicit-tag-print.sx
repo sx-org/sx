@@ -27,9 +27,9 @@ main :: () {
     print("{}\n", Ev.quit);          // .quit
     print("{} {}\n", Sig.term, Sig.interrupt);   // .term .interrupt
 
-    // The explicit tag value is still the value read via `xx` (unchanged).
-    q : i64 = xx Ev.quit;
-    t : i64 = xx Sig.term;
+    // The explicit tag value is the tagged-union `.tag` word.
+    q : i64 = Ev.quit.tag;
+    t : i64 = Sig.term.tag;
     print("{} {}\n", q, t);          // 256 15
 
     // Round-trip through a typed local, then print.

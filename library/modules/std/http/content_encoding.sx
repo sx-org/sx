@@ -514,7 +514,7 @@ EncodedProducer :: struct {
             source = source,
             source_ctx = source_ctx,
             source_off = 0,
-            input = xx input,
+            input = input,
             input_at = 0,
             input_len = 0,
             source_eof = false,

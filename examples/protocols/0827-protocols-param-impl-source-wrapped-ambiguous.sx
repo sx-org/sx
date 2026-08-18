@@ -13,7 +13,8 @@
 Marker :: struct { v: i32; }
 
 impl Into(Marker) for *Box {
-    convert :: (self: *Box) -> Marker {
+    convert :: (self: *Box, alloc: Allocator = context.allocator) -> Marker {
+    _ = alloc;
         .{ v = 0 }
     }
 }

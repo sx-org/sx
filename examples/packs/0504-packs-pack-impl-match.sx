@@ -9,13 +9,14 @@
 #import "modules/ffi/objc_block.sx";
 
 impl Into(Block) for Closure(..$args) -> $R {
-    convert :: (self: Closure(..$args) -> $R) -> Block {
+    convert :: (self: Closure(..$args) -> $R, alloc: Allocator = context.allocator) -> Block {
+        _ = alloc;
         .{
             isa = *_NSConcreteStackBlock,
             flags = 0,
             reserved = 0,
             invoke = null,
-            descriptor = xx *__sx_block_descriptor,
+            descriptor = *__sx_block_descriptor,
             sx_env = self.env,
             sx_fn = self.fn_ptr,
         }
@@ -24,7 +25,8 @@ impl Into(Block) for Closure(..$args) -> $R {
 
 main :: () -> i32 {
     cl := |a: i32, b: bool| true;
-    b : *Block = xx cl;
+    blk := cl.(Block);
+    b := *blk;
     print("pack impl match ok\n");
     return 0;
 }

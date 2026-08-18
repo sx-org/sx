@@ -28,6 +28,6 @@ main :: () -> i32 {
     print("s.0={} s.1={}\n", s.0, s.1);
 
     dbl := |v: i32| -> i32 v * 2;
-    print("apply={}\n", apply(xx dbl, 21));
+    print("apply={}\n", apply(dbl, 21));
     0
 }

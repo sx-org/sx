@@ -149,7 +149,7 @@ Pool :: struct {
         p.count = workers;
         i : i64 = 0;
         while i < workers {
-            if c.pthread_create(*p.threads[i], null, pool_worker, xx p) != 0 {
+            if c.pthread_create(*p.threads[i], null, pool_worker, p) != 0 {
                 // join what started, then fail loudly
                 p.count = i;
                 p.shutdown();
@@ -201,7 +201,7 @@ Pool :: struct {
 // The worker loop: C entry, own fabricated Context, then
 // pop-task/run-task until stop with an empty queue.
 pool_worker :: (arg: *void) -> *void abi(.c) {
-    p : *Pool = xx arg;
+    p : *Pool = arg.(*Pool);
     gpa := GPA.init();
     push .{ allocator = gpa } {
         while true {

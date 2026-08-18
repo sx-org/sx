@@ -41,10 +41,10 @@ HttpErr :: error {
 unlink_path :: (path: string) {
     if path.len == 0 or path.len > 110 { return; }
     pb : [112]u8 = ---;
-    clib.memcpy(*pb[0], path.ptr, xx path.len);
+    clib.memcpy(*pb[0], path.ptr, path.len);
     pb[path.len] = 0;
     p : string = .{ ptr = *pb[0], len = path.len };
-    fs.delete_file(xx p);
+    fs.delete_file(p);
 }
 
 // tear down a bound-but-unusable listener on an init
@@ -512,7 +512,7 @@ BodyChan :: struct {
             return 0;
         }
         n := if want < self.len then want else self.len;
-        clib.memcpy(dst, self.buf, xx n);
+        clib.memcpy(dst, self.buf, n);
         rest := self.len - n;
         if rest > 0 { clib.memmove(self.buf, *self.buf[n], rest); }
         self.len = rest;
@@ -533,7 +533,7 @@ BodyChan :: struct {
         space := self.cap - self.len;
         take := if n < space then n else space;
         if take > 0 {
-            clib.memcpy(*self.buf[self.len], src, xx take);
+            clib.memcpy(*self.buf[self.len], src, take);
             self.len += take;
             self.cv.signal();
         }
@@ -583,7 +583,7 @@ BodyChan :: struct {
 // The BodyReadFn the server wires into a streamed request's Request
 // (body_read_ctx = the *BodyChan).
 body_chan_read :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
-    ch : *BodyChan = xx ctx;
+    ch : *BodyChan = ctx.(*BodyChan);
     return ch.read(dst, cap);
 }
 
@@ -635,7 +635,7 @@ OutChan :: struct {
             space := self.cap - self.len;
             rem := n - off;
             take := if rem < space then rem else space;
-            clib.memcpy(*self.buf[self.len], *src[off], xx take);
+            clib.memcpy(*self.buf[self.len], *src[off], take);
             self.len += take;
             off += take;
             w := self.hungry;
@@ -675,7 +675,7 @@ OutChan :: struct {
         self.mu.lock();
         n := if want < self.len then want else self.len;
         if n > 0 {
-            clib.memcpy(dst, self.buf, xx n);
+            clib.memcpy(dst, self.buf, n);
             rest := self.len - n;
             if rest > 0 { clib.memmove(self.buf, *self.buf[n], rest); }
             self.len = rest;
@@ -999,14 +999,14 @@ prepare_content_encoding :: (req: *Request, resp: *Response, enabled: bool, min_
 // mutex is uncontended here (single thread) — kept for field-protocol
 // uniformity with the pool path, not for exclusion.
 body_fiber_read :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
-    job : *HandlerJob = xx ctx;
+    job : *HandlerJob = ctx.(*HandlerJob);
     ch := job.chan;
     if cap <= 0 { return 0; }
     while true {
         ch.mu.lock();
         if ch.len > 0 {
             n := if cap < ch.len then cap else ch.len;
-            clib.memcpy(dst, ch.buf, xx n);
+            clib.memcpy(dst, ch.buf, n);
             rest := ch.len - n;
             if rest > 0 { clib.memmove(ch.buf, *ch.buf[n], rest); }
             ch.len = rest;
@@ -1034,7 +1034,7 @@ body_fiber_read :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
 // allocator; serialize into job-owned bytes; queue the completion; wake
 // the loop.
 run_handler_job :: (arg: usize) {
-    job : *HandlerJob = xx arg;
+    job : *HandlerJob = arg.(*HandlerJob);
     resp : Response = .{};
     arena := Arena.init(job.alloc, 65536);
     ob : OutBytes = .{};
@@ -1057,7 +1057,7 @@ run_handler_job :: (arg: usize) {
         // wire the streaming reader into the request the handler sees.
         if job.chan != null {
             job.req.body_read_fn = body_chan_read;
-            job.req.body_read_ctx = xx job.chan;
+            job.req.body_read_ctx = job.chan.(usize);
         }
         // a HEAD response never carries body bytes; a 204/304 never
         // carries a body regardless of method — and a no-body status wins
@@ -1193,7 +1193,7 @@ run_handler_job :: (arg: usize) {
 // stack in finalize_fibers, never on this bounded fiber stack). The job is
 // freed here; the runner reaps the fiber (env + stack) after this returns.
 run_fiber_job :: (arg: usize) {
-    job : *HandlerJob = xx arg;
+    job : *HandlerJob = arg.(*HandlerJob);
     srv := job.srv;
     resp : Response = .{};
     arena := Arena.init(job.alloc, 65536);
@@ -1202,7 +1202,7 @@ run_fiber_job :: (arg: usize) {
         h := job.handler;
         if job.chan != null {
             job.req.body_read_fn = body_fiber_read;
-            job.req.body_read_ctx = xx job;
+            job.req.body_read_ctx = job.(usize);
         }
         is_head := ascii_ieq(job.req.method, "head");
         h(*job.req, *resp, job.app_ctx);
@@ -1270,7 +1270,7 @@ HTTP_PFX  :: "HTTP/1.1 ";
 // Append `s` at dst[off]; returns the new offset.
 put_str :: (dst: [*]u8, off: i64, s: string) -> i64 {
     clib.memcpy(*dst[off], s.ptr, s.len);
-    return off + xx s.len;
+    return off + s.len;
 }
 
 // Exact byte length of the head resp_head_write emits for the same
@@ -1281,15 +1281,15 @@ put_str :: (dst: [*]u8, off: i64, s: string) -> i64 {
 // line is just invalid ("HTTP/1.1  Status"), as any negative status is.
 resp_head_len :: (resp: *Response, keep: bool, date: string, server_name: string, no_body_status: bool, chunked: bool) -> i64 {
     sl := status_line_for(resp.status);
-    n : i64 = if sl.len > 0 then xx sl.len
-              else xx HTTP_PFX.len + dec_len(resp.status) + 1 + xx reason_for(resp.status).len;
-    if chunked { n += xx HDR_TE.len; }
-    else if !no_body_status { n += xx HDR_CL.len + dec_len(xx resp.body.len); }
-    n += xx HDR_CT.len + xx resp.content_type.len;
-    n += xx HDR_DATE.len + xx date.len;
-    if server_name.len > 0 { n += xx HDR_SRV.len + xx server_name.len; }
-    n += if keep then xx HDR_KA.len else xx HDR_CLOSE.len;
-    n += xx resp.extra_headers.len;
+    n : i64 = if sl.len > 0 then sl.len
+              else HTTP_PFX.len + dec_len(resp.status) + 1 + reason_for(resp.status).len;
+    if chunked { n += HDR_TE.len; }
+    else if !no_body_status { n += HDR_CL.len + dec_len(resp.body.len); }
+    n += HDR_CT.len + resp.content_type.len;
+    n += HDR_DATE.len + date.len;
+    if server_name.len > 0 { n += HDR_SRV.len + server_name.len; }
+    n += if keep then HDR_KA.len else HDR_CLOSE.len;
+    n += resp.extra_headers.len;
     return n + 2;   // final "\r\n"
 }
 
@@ -1309,7 +1309,7 @@ resp_head_write :: (resp: *Response, keep: bool, date: string, server_name: stri
     if chunked { off = put_str(dst, off, HDR_TE); }
     else if !no_body_status {
         off = put_str(dst, off, HDR_CL);
-        off += dec_into(xx resp.body.len, *dst[off]);
+        off += dec_into(resp.body.len, *dst[off]);
     }
     off = put_str(dst, off, HDR_CT);
     off = put_str(dst, off, resp.content_type);
@@ -1344,12 +1344,12 @@ resp_head_write :: (resp: *Response, keep: bool, date: string, server_name: stri
 serialize_bytes :: (resp: *Response, keep: bool, alloc: Allocator, head_only: bool, date: string, server_name: string) -> OutBytes {
     no_body_status := resp.status == 204 or resp.status == 304;
     hl := resp_head_len(resp, keep, date, server_name, no_body_status, false);
-    body_len : i64 = if head_only or no_body_status then 0 else xx resp.body.len;
+    body_len : i64 = if head_only or no_body_status then 0 else resp.body.len;
     raw := alloc.alloc_bytes(hl + body_len);
     if raw == null { return .{}; }
-    buf : [*]u8 = xx raw;
+    buf : [*]u8 = raw.([*]u8);
     w := resp_head_write(resp, keep, date, server_name, no_body_status, false, buf);
-    if body_len > 0 { clib.memcpy(*buf[w], resp.body.ptr, xx body_len); }
+    if body_len > 0 { clib.memcpy(*buf[w], resp.body.ptr, body_len); }
     return OutBytes{ buf = buf, len = w + body_len };
 }
 
@@ -1362,7 +1362,7 @@ serialize_chunked_head :: (resp: *Response, keep: bool, alloc: Allocator, date: 
     hl := resp_head_len(resp, keep, date, server_name, false, true);
     raw := alloc.alloc_bytes(hl);
     if raw == null { return .{}; }
-    buf : [*]u8 = xx raw;
+    buf : [*]u8 = raw.([*]u8);
     w := resp_head_write(resp, keep, date, server_name, false, true, buf);
     return OutBytes{ buf = buf, len = w };
 }
@@ -2014,7 +2014,7 @@ Server :: struct {
                 self.resume_stream_pumps();   // a worker fed a hungry channel
                 continue;
             }
-            slot : i64 = xx ev.udata;
+            slot : i64 = ev.udata.(i64);
             c := *self.conns[slot];
             if c.state == CONN_FREE or c.fd != ev.fd { continue; }   // stale event for a recycled slot
             if c.state == CONN_HANDLING { continue; }   // buffer frozen until the worker finishes
@@ -2105,7 +2105,7 @@ Server :: struct {
                     // conn stays read-parked: inbound is discard-only
                     // until the linger close.
                     rae := false;
-                    self.loop.add_read(c.fd, xx i) catch { rae = true; };
+                    self.loop.add_read(c.fd, i.(usize)) catch { rae = true; };
                     if rae {
                         self.emit(EventKind.READ_FAULT, i, 0);
                         self.conn_close(i);
@@ -2369,7 +2369,7 @@ Server :: struct {
             self.st_accepted += 1;
             self.emit(EventKind.ACCEPT, slot, 0);
             are := false;
-            self.loop.add_read(fd, xx slot) catch { are = true; };
+            self.loop.add_read(fd, slot.(usize)) catch { are = true; };
             if are {
                 self.emit(EventKind.ACCEPT_FAULT, slot, 0);
                 self.conn_close(slot);
@@ -2406,7 +2406,7 @@ Server :: struct {
         if step == TlsStep.WantWrite {
             if !c.write_armed {
                 awe := false;
-                self.loop.add_write(c.fd, xx slot) catch { awe = true; };
+                self.loop.add_write(c.fd, slot.(usize)) catch { awe = true; };
                 if awe {
                     self.emit(EventKind.TLS_HANDSHAKE_FAULT, slot, 0);
                     self.conn_close(slot);
@@ -2571,9 +2571,9 @@ Server :: struct {
                 while p < e {
                     ch := c.read_buf[p];
                     hv : i64 = -1;
-                    if ch >= '0' and ch <= '9' { hv = (ch - '0').(i64); }
-                    else if ch >= 'a' and ch <= 'f' { hv = (ch - 'a' + 10).(i64); }
-                    else if ch >= 'A' and ch <= 'F' { hv = (ch - 'A' + 10).(i64); }
+                    if '0' <= ch <= '9' { hv = (ch - '0').(i64); }
+                    else if 'a' <= ch <= 'f' { hv = (ch - 'a' + 10).(i64); }
+                    else if 'A' <= ch <= 'F' { hv = (ch - 'A' + 10).(i64); }
                     if hv < 0 { break; }
                     if size > 0x07FFFFFFFFFFFFFF { bad = true; break; }   // would wrap i64
                     size = size * 16 + hv;
@@ -2730,7 +2730,7 @@ Server :: struct {
                 // Still streaming and not re-parked → hungry for wire bytes.
                 if c.state == CONN_BODY and !c.body_parked and c.body_mode != 0 {
                     are := false;
-                    self.loop.add_read(c.fd, xx i) catch { are = true; };
+                    self.loop.add_read(c.fd, i.(usize)) catch { are = true; };
                     if are {
                         self.emit(EventKind.READ_FAULT, i, 0);
                         self.conn_close(i);
@@ -2772,7 +2772,7 @@ Server :: struct {
         if want > self.cfg.read_buf_cap { want = self.cfg.read_buf_cap; }
         if want <= c.read_cap { return false; }   // already at the limit
         nb : [*]u8 = self.own_alloc.alloc(u8, want).ptr;
-        if c.read_len > 0 { clib.memcpy(nb, c.read_buf, xx c.read_len); }
+        if c.read_len > 0 { clib.memcpy(nb, c.read_buf, c.read_len); }
         self.own_alloc.dealloc_bytes(c.read_buf);
         c.read_buf = nb;
         c.read_cap = want;
@@ -2853,7 +2853,7 @@ Server :: struct {
                 c.tls_rd_want_write = true;
                 if !c.write_armed {
                     awe := false;
-                    self.loop.add_write(c.fd, xx slot) catch { awe = true; };
+                    self.loop.add_write(c.fd, slot.(usize)) catch { awe = true; };
                     if awe { raise error.Closed; }
                     c.write_armed = true;
                 }
@@ -3058,7 +3058,7 @@ Server :: struct {
     // (need more bytes) or the connection left the READING state.
     try_serve_one :: (self: *Server, slot: i64) -> bool {
         c := *self.conns[slot];
-        buf := string{ ptr = c.read_buf, len = xx c.read_len };
+        buf := string{ ptr = c.read_buf, len = c.read_len };
 
         // headers complete? Resume the terminator scan where the last
         // cycle left off (scan_pos bytes are known clean; back up 3 so a
@@ -3074,7 +3074,7 @@ Server :: struct {
                 i += 1;
             }
             if he < 0 {
-                c.scan_pos = xx buf.len;
+                c.scan_pos = buf.len;
                 return false;
             }
             c.hdr_end = he;
@@ -3424,9 +3424,9 @@ Server :: struct {
             // pool path, minus the body — the channel IS the body).
             hdr_total := he + 4;
             job : *HandlerJob = self.own_alloc.alloc_bytes(size_of(HandlerJob) + hdr_total).(*HandlerJob);
-            jb : [*]u8 = xx job;
+            jb : [*]u8 = job.([*]u8);
             raw : [*]u8 = *jb[size_of(HandlerJob)];
-            clib.memcpy(raw, c.read_buf, xx hdr_total);
+            clib.memcpy(raw, c.read_buf, hdr_total);
             jreq := req;
             jreq.body = "";
             jreq.method = string{ ptr = raw, len = req.method.len };
@@ -3466,9 +3466,9 @@ Server :: struct {
                 // runs at this tick's drive). Its read_body suspends on an
                 // empty channel; the pump wakes it. Completion is the
                 // fiber tail + finalize_fibers.
-                c.fiber_h = self.cfg.fibers.spawn(xx run_fiber_job, xx job);
+                c.fiber_h = self.cfg.fibers.spawn(run_fiber_job.(*void), job);
                 self.fiber_spawned = true;   // tick re-drives until quiescent
-            } else if !self.ps.pool.submit(run_handler_job, xx job) {
+            } else if !self.ps.pool.submit(run_handler_job, job.(usize)) {
                 // Backlog full: shed 503 — undo the dispatch (the worker
                 // never saw the job; both channel refs die here).
                 self.own_alloc.dealloc_bytes(job);
@@ -3548,7 +3548,7 @@ Server :: struct {
             // rejected NOW — before the body is buffered (the body bytes are
             // never admitted into the slot's read buffer).
             if clen > max_body { self.respond_error_close(slot, 413); return false; }
-            total = xx he + 4 + clen;
+            total = he + 4 + clen;
             if total > self.cfg.read_buf_cap { self.respond_error_close(slot, 413); return false; }
             if c.read_len < total {
                 // size the buffer for the declared body in one step
@@ -3559,7 +3559,7 @@ Server :: struct {
                 if expect_continue and clen > 0 and !self.send_continue(slot) { return false; }
                 return false;
             }
-            req.body = string{ ptr = *c.read_buf[he + 4], len = xx clen };
+            req.body = string{ ptr = *c.read_buf[he + 4], len = clen };
         }
 
         // canonicalize the routable path (percent-decode + dot-segment
@@ -3617,9 +3617,9 @@ Server :: struct {
             // absolute-form) is a static literal, valid on any thread — no
             // rebuild.
             job : *HandlerJob = self.own_alloc.alloc_bytes(size_of(HandlerJob) + total).(*HandlerJob);
-            jb : [*]u8 = xx job;
+            jb : [*]u8 = job.([*]u8);
             raw : [*]u8 = *jb[size_of(HandlerJob)];
-            clib.memcpy(raw, c.read_buf, xx total);
+            clib.memcpy(raw, c.read_buf, total);
             jreq := req;
             jreq.method      = string{ ptr = raw, len = req.method.len };
             if !path_static_root { jreq.path = string{ ptr = *raw[path_off], len = req.path.len }; }
@@ -3647,7 +3647,7 @@ Server :: struct {
                 // cannot preempt a fiber it is hosting (inline semantics;
                 // Request.deadline_ms stays the advisory budget).
                 c.handler_deadline = 0;
-                c.fiber_h = self.cfg.fibers.spawn(xx run_fiber_job, xx job);
+                c.fiber_h = self.cfg.fibers.spawn(run_fiber_job.(*void), job);
                 self.fiber_spawned = true;   // tick re-drives until quiescent
             } else {
                 // Arm the handler deadline as the slot enters
@@ -3661,7 +3661,7 @@ Server :: struct {
                 } else {
                     c.handler_deadline = 0;
                 }
-                if !self.ps.pool.submit(run_handler_job, xx job) {
+                if !self.ps.pool.submit(run_handler_job, job.(usize)) {
                     self.own_alloc.dealloc_bytes(job);
                     c.state = CONN_READING;
                     c.handler_deadline = 0;
@@ -3761,7 +3761,7 @@ Server :: struct {
             if encoded != null { destroy_encoded_producer(encoded, self.own_alloc); }
             return false;
         }
-        sb : [*]u8 = xx raw;
+        sb : [*]u8 = raw.([*]u8);
         w := resp_head_write(resp, keep, date, self.cfg.server_name, false, true, sb);
         c.out_buf = sb;
         c.out_len = w;
@@ -3808,10 +3808,10 @@ Server :: struct {
             return;
         }
         hl := resp_head_len(resp, keep, date, self.cfg.server_name, no_body, false);
-        body_len : i64 = if head_only or no_body then 0 else xx resp.body.len;
+        body_len : i64 = if head_only or no_body then 0 else resp.body.len;
         self.ensure_wbuf(slot, hl + body_len);
         w := resp_head_write(resp, keep, date, self.cfg.server_name, no_body, false, c.wbuf);
-        if body_len > 0 { clib.memcpy(*c.wbuf[w], resp.body.ptr, xx body_len); }
+        if body_len > 0 { clib.memcpy(*c.wbuf[w], resp.body.ptr, body_len); }
         c.out_buf = c.wbuf;
         c.out_len = w + body_len;
         c.out_sent = 0;
@@ -3902,7 +3902,7 @@ Server :: struct {
             // re-arm: inbound is discard-only until the linger close.)
             if !early {
                 rae := false;
-                self.loop.add_read(c.fd, xx done.slot) catch { rae = true; };
+                self.loop.add_read(c.fd, done.slot.(usize)) catch { rae = true; };
                 if rae {
                     self.own_alloc.dealloc_bytes(done.out.buf);
                     // the chan is NOT attached yet, so the
@@ -3933,7 +3933,7 @@ Server :: struct {
                     self.conn_close(done.slot);
                     continue;
                 }
-                sb : [*]u8 = xx raw;
+                sb : [*]u8 = raw.([*]u8);
                 clib.memcpy(sb, done.out.buf, done.out.len);
                 self.own_alloc.dealloc_bytes(done.out.buf);
                 c.out_buf = sb;
@@ -4068,7 +4068,7 @@ Server :: struct {
                     // read watch delivers the retry.
                     if !c.write_armed and !c.tls_wr_want_read {
                         awe := false;
-                        self.loop.add_write(c.fd, xx slot) catch { awe = true; };
+                        self.loop.add_write(c.fd, slot.(usize)) catch { awe = true; };
                         if awe {                             // arming the write watch failed
                             self.emit(EventKind.WRITE_FAULT, slot, 0);
                             self.conn_close(slot);
@@ -4181,7 +4181,7 @@ Server :: struct {
         self.tls_want_drop(slot);
         socket.shutdown(c.fd, socket.SHUT_WR);
         are := false;
-        self.loop.add_read(c.fd, xx slot) catch { are = true; };
+        self.loop.add_read(c.fd, slot.(usize)) catch { are = true; };
         if are {   // can't watch the fd: fall back to the abrupt close
             self.conn_close(slot);
             return;

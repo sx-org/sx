@@ -276,7 +276,7 @@ run_server_cases :: (app: *App, pool_count: i64, port: i64) -> bool {
     };
     srv, se := http.Server.init(cfg, handler, xx app);
     if se { return false; }
-    t, te := thread.Thread.spawn(server_entry, xx *srv);
+    t, te := thread.Thread.spawn(server_entry, *srv);
     if te { srv.close(); return false; }
 
     opts : http.ClientOpts = .{ connect_timeout_ms = 2000, io_timeout_ms = 5000 };
@@ -483,7 +483,7 @@ run_server_cases :: (app: *App, pool_count: i64, port: i64) -> bool {
         http.Client.close_conn(*bad_conn);
     }
 
-    context.allocator.dealloc_bytes(xx storage);
+    context.allocator.dealloc_bytes(storage);
     srv.stop();
     t.join();
     srv.close();
@@ -496,11 +496,11 @@ main :: () -> i32 {
     push .{ allocator = gpa } {
         raw := context.allocator.alloc_bytes(BODY_LEN);
         if raw == null { return 2; }
-        body : string = .{ ptr = xx raw, len = BODY_LEN };
+        body : string = .{ ptr = raw.([*]u8), len = BODY_LEN };
         i : i64 = 0;
         while i < body.len {
             // Compressible but not constant: catches ordering/copy mistakes.
-            body.ptr[i] = xx ('a' + ((i / 97) % 17));
+            body.ptr[i] = ('a' + ((i / 97) % 17)).(u8);
             i += 1;
         }
         body_packed := gzip.encode(body) catch { context.allocator.dealloc_bytes(raw); return 2; };

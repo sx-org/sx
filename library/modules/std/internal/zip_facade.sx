@@ -53,7 +53,7 @@ private StdZipSourceBridge :: struct {
 }
 
 private std_zip_source_read :: (ctx: *void, offset: i64, output: string) -> i64 {
-    bridge : *StdZipSourceBridge = xx ctx;
+    bridge : *StdZipSourceBridge = ctx.(*StdZipSourceBridge);
     made := 0;
     while made < output.len {
         destination := output[made..];
@@ -80,7 +80,7 @@ private StdZipSinkBridge :: struct {
 }
 
 private std_zip_sink_write :: (ctx: *void, data: string) -> bool {
-    bridge : *StdZipSinkBridge = xx ctx;
+    bridge : *StdZipSinkBridge = ctx.(*StdZipSinkBridge);
     if bridge.poisoned { return false; }
     bridge.sink.write(data) catch |e| {
         bridge.failure = e;
@@ -96,21 +96,21 @@ private StdZipMemoryOutput :: struct {
 }
 
 private std_zip_memory_truncate :: (ctx: *void, len: i64) -> bool {
-    output : *StdZipMemoryOutput = xx ctx;
+    output : *StdZipMemoryOutput = ctx.(*StdZipMemoryOutput);
     if len < 0 or len > output.bytes.bytes.len or output.bytes.failed { return false; }
     output.bytes.bytes.items.len = len;
     true
 }
 
 private std_zip_memory_write :: (ctx: *void, data: string) -> bool {
-    output : *StdZipMemoryOutput = xx ctx;
+    output : *StdZipMemoryOutput = ctx.(*StdZipMemoryOutput);
     before := output.bytes.bytes.len;
     output.bytes.put_bytes(data);
     !output.bytes.failed and output.bytes.bytes.len == before + data.len
 }
 
 private std_zip_memory_write_at :: (ctx: *void, offset: i64, data: string) -> bool {
-    output : *StdZipMemoryOutput = xx ctx;
+    output : *StdZipMemoryOutput = ctx.(*StdZipMemoryOutput);
     if offset < 0 or offset > output.bytes.bytes.len or data.len > output.bytes.bytes.len - offset { return false; }
     i := 0;
     while i < data.len {
@@ -121,7 +121,7 @@ private std_zip_memory_write_at :: (ctx: *void, offset: i64, data: string) -> bo
 }
 
 private std_zip_memory_read_at :: (ctx: *void, offset: i64, output: string) -> i64 {
-    state : *StdZipMemoryOutput = xx ctx;
+    state : *StdZipMemoryOutput = ctx.(*StdZipMemoryOutput);
     if offset < 0 or offset >= state.bytes.bytes.len { return 0; }
     take := state.bytes.bytes.len - offset;
     if take > output.len { take = output.len; }
@@ -156,9 +156,9 @@ std_zip_reader_source :: (source: StdZipSource, max_metadata: i64 = 67108864, al
     if size < 0 or max_metadata < 0 { raise error.InvalidArgument; }
     raw := alloc.alloc_bytes(size_of(StdZipSourceBridge));
     if raw == null { raise error.AllocationFailed; }
-    bridge : *StdZipSourceBridge = xx raw;
+    bridge : *StdZipSourceBridge = raw.(*StdZipSourceBridge);
     bridge.* = .{ source = source };
-    reader_source := ZipReadSource{ ctx = xx bridge, size = size, read = std_zip_source_read };
+    reader_source := ZipReadSource{ ctx = bridge, size = size, read = std_zip_source_read };
     owned := open_zip_source(reader_source, true, alloc, max_metadata) catch |e| {
         failure := bridge.failure;
         alloc.dealloc_bytes(raw);
@@ -396,10 +396,10 @@ StdZipWriterState :: enum {
 std_zip_writer_memory :: (zip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !Error) {
     raw := alloc.alloc_bytes(size_of(StdZipMemoryOutput));
     if raw == null { raise error.AllocationFailed; }
-    output : *StdZipMemoryOutput = xx raw;
+    output : *StdZipMemoryOutput = raw.(*StdZipMemoryOutput);
     output.* = .{ bytes = ByteWriter.init(alloc) };
     sink := ZipSink{
-        ctx = xx output,
+        ctx = output,
         write = std_zip_memory_write,
         write_at = std_zip_memory_write_at,
         read_at = std_zip_memory_read_at,
@@ -414,9 +414,9 @@ std_zip_writer_memory :: (zip64: bool = false, alloc: Allocator = context.alloca
 std_zip_writer_sink :: (target: StdZipSink, zip64: bool = false, alloc: Allocator = context.allocator) -> (StdZipWriterState, !Error) {
     raw := alloc.alloc_bytes(size_of(StdZipSinkBridge));
     if raw == null { raise error.AllocationFailed; }
-    bridge : *StdZipSinkBridge = xx raw;
+    bridge : *StdZipSinkBridge = raw.(*StdZipSinkBridge);
     bridge.* = .{ sink = target };
-    sink := ZipSink{ ctx = xx bridge, write = std_zip_sink_write };
+    sink := ZipSink{ ctx = bridge, write = std_zip_sink_write };
     writer := ZipStreamWriter.init_mode(sink, zip64, alloc);
     if !writer.active {
         alloc.dealloc_bytes(raw);
@@ -440,7 +440,7 @@ std_zip_writer_from_reader :: (source: *StdZipReaderState, force_zip64: bool = f
     if source_comment.len > 0 {
         comment_raw := alloc.alloc_bytes(source_comment.len);
         if comment_raw == null { raise error.AllocationFailed; }
-        comment : string = .{ ptr = xx comment_raw, len = source_comment.len };
+        comment : string = .{ ptr = comment_raw, len = source_comment.len };
         i := 0;
         while i < source_comment.len { comment[i] = source_comment[i]; i += 1; }
         state.memory.default_comment = comment;
@@ -455,7 +455,7 @@ std_zip_writer_from_reader :: (source: *StdZipReaderState, force_zip64: bool = f
         raise std_zip_reader_failure(source, e);
     };
     replacement := ZipStreamWriter.init_from_reader(*source.owned.reader, ZipSink{
-        ctx = xx output,
+        ctx = output,
         write = std_zip_memory_write,
         write_at = std_zip_memory_write_at,
         read_at = std_zip_memory_read_at,
@@ -681,7 +681,7 @@ std_zip_writer_deinit :: (state: *StdZipWriterState) {
 private std_zip_extract_to_sink :: (reader: *ZipReader, index: i64, target: StdZipSink, compressed: bool = false, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
     bridge := StdZipSinkBridge{ sink = target };
     options : ZipExtractOptions = .{ compressed_data = compressed };
-    result := zip_extract_to_output(reader, index, .{ ctx = xx *bridge, write = std_zip_sink_write }, options, max_output, alloc) catch |e| {
+    result := zip_extract_to_output(reader, index, .{ ctx = *bridge, write = std_zip_sink_write }, options, max_output, alloc) catch |e| {
         if bridge.failure != null { raise bridge.failure!; }
         raise e;
     };
@@ -692,7 +692,7 @@ private std_zip_add_source :: (writer: *ZipStreamWriter, name: string, source: S
     size := source.size();
     if size < 0 { raise error.InvalidArgument; }
     bridge := StdZipSourceBridge{ source = source };
-    input := ZipInputSource{ ctx = xx *bridge, size = size, read = std_zip_source_read };
+    input := ZipInputSource{ ctx = *bridge, size = size, read = std_zip_source_read };
     writer.add_source(name, input, options) catch |e| {
         if bridge.failure != null { raise bridge.failure!; }
         raise e;

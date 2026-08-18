@@ -99,7 +99,7 @@ impl TlsConn for FakeConn {
         if self.pend_off < self.pend_len {
             n := self.pend_len - self.pend_off;
             if n > cap.(i64) { n = cap.(i64); }
-            cstd.memcpy(buf, *self.pend[self.pend_off], xx n);
+            cstd.memcpy(buf, *self.pend[self.pend_off], n);
             self.pend_off += n;
             if self.pend_off == self.pend_len { self.pend_off = 0; self.pend_len = 0; }
             return n, TlsStep.Done;
@@ -260,7 +260,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64, needle: str
         n, re := socket.read_nb(fd, *rbuf[total], (cap - total));
         if !re { total += n; }
         else if re == error.Closed { break; }
-        s := string{ ptr = rbuf, len = xx total };
+        s := string{ ptr = rbuf, len = total };
         if contains(s, needle) and contains(s, "\r\n\r\n") { return true; }
         t += 1;
     }

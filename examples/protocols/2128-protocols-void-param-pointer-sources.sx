@@ -25,18 +25,18 @@ main :: () {
     many : [*]u8 = xx a.alloc_bytes(8);
     truth : usize = xx many;
     one : *u8 = xx many;
-    raw : *void = xx many;
+    raw : *void = many;
     cs : cstring = xx many;
 
-    print("plain {}\n", plain(xx cs) == truth);
+    print("plain {}\n", plain(cs) == truth);
 
-    t.take(xx many);
+    t.take(many);
     print("many {}\n", s.seen == truth);
     t.take(one);
     print("single {}\n", s.seen == truth);
     t.take(raw);
     print("void {}\n", s.seen == truth);
-    t.take(xx cs);
+    t.take(cs);
     print("cstring {}\n", s.seen == truth);
 
     // A non-pointer argument still crosses as the address of its slot.

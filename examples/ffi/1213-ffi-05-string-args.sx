@@ -14,8 +14,8 @@
     #source "1213-ffi-05-string-args.c";
 };
 
-ffi_strlen          :: (s: [:0]u8)                    -> i32 extern;
-ffi_first_byte      :: (s: [:0]u8)                    -> i32 extern;
+ffi_strlen          :: (s: [*]u8)                     -> i32 extern;
+ffi_first_byte      :: (s: [*]u8)                     -> i32 extern;
 ffi_sum_bytes       :: (buf: [*]u8, len: i32)         -> i32 extern;
 ffi_write_byte      :: (buf: [*]u8, idx: i32, v: u8)  -> void extern;
 ffi_static_greeting :: ()                             -> [*]u8 extern;
@@ -23,12 +23,12 @@ ffi_static_greeting :: ()                             -> [*]u8 extern;
 main :: () -> i32 {
     // ── [:0]u8 null-terminated literal ─────────────────────────────
     msg : [:0]u8 = "hello";
-    print("strlen(\"hello\")     = {}\n", ffi_strlen(msg));
-    print("first_byte           = {}\n", ffi_first_byte(msg));
+    print("strlen(\"hello\")     = {}\n", ffi_strlen(msg.ptr));
+    print("first_byte           = {}\n", ffi_first_byte(msg.ptr));
 
-    // ── sx `string` → C `const char *` (slice-decay through coerceArg) ─
+    // ── sx `string` → C `const char *` (the data pointer) ─
     s : string = "sx string here";
-    print("strlen(sx string)    = {}\n", ffi_strlen(xx s.ptr));
+    print("strlen(sx string)    = {}\n", ffi_strlen(s.ptr));
 
     // ── [*]u8 raw buffer + length ──────────────────────────────────
     bytes : [4]u8 = .[10, 20, 30, 40];
@@ -41,7 +41,7 @@ main :: () -> i32 {
 
     // ── C returns a static string pointer; read it byte-by-byte ────
     g := ffi_static_greeting();
-    n := ffi_strlen(xx g);
+    n := ffi_strlen(g);
     print("static greeting len  = {}\n", n);
     print("static greeting [0]  = {}\n", g[0]);
 

@@ -169,7 +169,7 @@ ByteWriter :: struct {
         }
         raw := self.alloc.alloc_bytes(new_cap);
         if raw == null { self.failed = true; return false; }
-        new_ptr : [*]u8 = xx raw;
+        new_ptr : [*]u8 = raw.([*]u8);
         i := 0;
         while i < self.bytes.items.len { new_ptr[i] = self.bytes.items[i]; i += 1; }
         if self.bytes.cap > 0 { self.alloc.dealloc_bytes(self.bytes.items.ptr); }
@@ -289,7 +289,7 @@ private BitWriter :: struct {
         if self.out.failed { return; }
         bytes := self.count >> 3;
         if bytes > 0 {
-            words : [*]u64 = xx *self.out.bytes.items.ptr[self.out.bytes.items.len];
+            words : [*]u64 = (*self.out.bytes.items.ptr[self.out.bytes.items.len]).([*]u64);
             words[0] = self.bits.(u64);
             self.out.bytes.items.len += bytes;
             self.bits = self.bits >> (bytes * 8);
@@ -409,7 +409,7 @@ private TdeflTokenBuffer :: struct {
             capacity := if less_memory then 24 * 1024 else 64 * 1024;
             raw := alloc.alloc_bytes(capacity);
             if raw != null {
-                result.codes = .{ ptr = xx raw, len = capacity };
+                result.codes = .{ ptr = raw, len = capacity };
                 result.codes[0] = 0;
             }
         }
@@ -877,7 +877,7 @@ private emit_tdefl_dynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Al
                 }
             }
         }
-        output_words : [*]u64 = xx *output_ptr[output_at];
+        output_words : [*]u64 = (*output_ptr[output_at]).([*]u64);
         output_words[0] = bit_buffer.(u64);
         output_at += bits_in >> 3;
         bit_buffer = bit_buffer >> (bits_in & ~7);
@@ -886,7 +886,7 @@ private emit_tdefl_dynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Al
     }
     bit_buffer = bit_buffer | (lit_codes[256].(i64) << bits_in);
     bits_in += lit_lengths[256];
-    output_words : [*]u64 = xx *output_ptr[output_at];
+    output_words : [*]u64 = (*output_ptr[output_at]).([*]u64);
     output_words[0] = bit_buffer.(u64);
     output_at += bits_in >> 3;
     bit_buffer = bit_buffer >> (bits_in & ~7);
@@ -977,7 +977,7 @@ private emit_tdefl_fixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allo
                 }
             }
         }
-        output_words : [*]u64 = xx *output_ptr[output_at];
+        output_words : [*]u64 = (*output_ptr[output_at]).([*]u64);
         output_words[0] = bit_buffer.(u64);
         output_at += bits_in >> 3;
         bit_buffer = bit_buffer >> (bits_in & ~7);
@@ -986,7 +986,7 @@ private emit_tdefl_fixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allo
     }
     bit_buffer = bit_buffer | (reverse_bits(0, 7) << bits_in);
     bits_in += 7;
-    output_words : [*]u64 = xx *output_ptr[output_at];
+    output_words : [*]u64 = (*output_ptr[output_at]).([*]u64);
     output_words[0] = bit_buffer.(u64);
     output_at += bits_in >> 3;
     bit_buffer = bit_buffer >> (bits_in & ~7);
@@ -1248,7 +1248,7 @@ private StoredDeflater :: struct {
     init :: (alloc: Allocator = context.allocator) -> StoredDeflater {
         raw := alloc.alloc_bytes(65535);
         buffer : string = .{ ptr = null, len = 0 };
-        if raw != null { buffer = .{ ptr = xx raw, len = 65535 }; }
+        if raw != null { buffer = .{ ptr = raw, len = 65535 }; }
         StoredDeflater.init_with_buffer(alloc, buffer)
     }
 
@@ -1257,7 +1257,7 @@ private StoredDeflater :: struct {
         alloc := self.alloc;
         if buffer.ptr == null {
             raw := alloc.alloc_bytes(65535);
-            if raw != null { buffer = .{ ptr = xx raw, len = 65535 }; }
+            if raw != null { buffer = .{ ptr = raw, len = 65535 }; }
         }
         self.* = StoredDeflater.init_with_buffer(alloc, buffer);
     }
@@ -1502,7 +1502,7 @@ Deflater :: struct {
             // maximum stored-block length.
             raw_limit := if less_memory then TDEFL_LESS_MEMORY_RAW_BLOCK_LIMIT else TDEFL_RAW_BLOCK_LIMIT;
             raw := alloc.alloc_bytes(raw_limit);
-            if raw != null { raw_buffer = .{ ptr = xx raw, len = raw_limit }; }
+            if raw != null { raw_buffer = .{ ptr = raw, len = raw_limit }; }
         }
         else {
             // Match miniz's production layout exactly. The 257-byte mirror
@@ -1514,9 +1514,9 @@ Deflater :: struct {
             hash_size := if less_memory then 4096 else 32768;
             hash := alloc.alloc_bytes(hash_size * size_of(u16));
             next := alloc.alloc_bytes(32768 * size_of(u16));
-            if dict != null { dict_buffer = .{ ptr = xx dict, len = 32768 + 257 }; }
-            if hash != null { hash_buffer = .{ ptr = xx hash, len = hash_size * size_of(u16) }; }
-            if next != null { next_buffer = .{ ptr = xx next, len = 32768 * size_of(u16) }; }
+            if dict != null { dict_buffer = .{ ptr = dict, len = 32768 + 257 }; }
+            if hash != null { hash_buffer = .{ ptr = hash, len = hash_size * size_of(u16) }; }
+            if next != null { next_buffer = .{ ptr = next, len = 32768 * size_of(u16) }; }
         }
         token_buffer := TdeflTokenBuffer.init(alloc, actual_level > 0, less_memory);
         failed := if actual_level == 0 then raw_buffer.ptr == null else
@@ -1565,8 +1565,8 @@ Deflater :: struct {
             alloc = alloc,
         };
         if actual_level > 0 and !nondeterministic and !failed {
-            heads : [*]u16 = xx result.hash.ptr;
-            links : [*]u16 = xx result.next.ptr;
+            heads : [*]u16 = result.hash.ptr.([*]u16);
+            links : [*]u16 = result.next.ptr.([*]u16);
             // tdefl's tables are uint16_t arrays cleared to zero. Code zero
             // is the chain terminator even when an absolute position wraps to
             // zero; preserving that quirk is required for byte identity.
@@ -1650,8 +1650,8 @@ Deflater :: struct {
         if take <= 0 { return; }
 
         dict := self.dict.ptr;
-        heads : [*]u16 = xx self.hash.ptr;
-        links : [*]u16 = xx self.next.ptr;
+        heads : [*]u16 = self.hash.ptr.([*]u16);
+        links : [*]u16 = self.next.ptr.([*]u16);
         lookahead := self.lookahead_size;
         absolute := self.lookahead_pos + lookahead;
         history := lookahead + self.dict_size;
@@ -1719,16 +1719,16 @@ Deflater :: struct {
         lookahead_size := self.lookahead_size.(u32);
         initial := initial_length.(u32);
         if lookahead_size <= initial { return result; }
-        links : [*]u16 = xx self.next.ptr;
+        links : [*]u16 = self.next.ptr.([*]u16);
         dict := self.dict.ptr;
         lookahead_pos := self.lookahead_pos.(u32);
         dict_size := self.dict_size.(u32);
         pos := lookahead_pos & 32767;
         probe_pos := pos;
-        source_words : [*]u16 = xx *dict[pos];
+        source_words : [*]u16 = (*dict[pos]).([*]u16);
         source_first := source_words[0];
         tail_at := pos + initial - 1;
-        tail_words : [*]u16 = xx *dict[tail_at];
+        tail_words : [*]u16 = (*dict[tail_at]).([*]u16);
         tail := tail_words[0];
         configured := self.max_probes.(u32);
         // tdefl probes up to three chain entries for the two-byte tail
@@ -1748,7 +1748,7 @@ Deflater :: struct {
                 distance = (lookahead_pos - next_probe) & 65535;
                 if distance > dict_size { return result; }
                 probe_pos = next_probe & 32767;
-                candidate_tail : [*]u16 = xx *dict[probe_pos + result.length.(u32) - 1];
+                candidate_tail : [*]u16 = (*dict[probe_pos + result.length.(u32) - 1]).([*]u16);
                 if candidate_tail[0] == tail {
                     found = true;
                     break;
@@ -1757,12 +1757,12 @@ Deflater :: struct {
             }
             if found {
                 if distance == 0 { return result; }
-                candidate_words : [*]u16 = xx *dict[probe_pos];
+                candidate_words : [*]u16 = (*dict[probe_pos]).([*]u16);
                 if candidate_words[0] != source_first { continue; }
                 // Compare a full group on the hot equal path, then recover
                 // tdefl's exact 16-bit mismatch boundary inside that group.
-                source_groups : [*]u64 = xx *source_words[1];
-                candidate_groups : [*]u64 = xx *candidate_words[1];
+                source_groups : [*]u64 = (*source_words[1]).([*]u64);
+                candidate_groups : [*]u64 = (*candidate_words[1]).([*]u64);
                 pair : u32 = 0;
                 group : u32 = 0;
                 compare_groups : u32 = 32;
@@ -1794,7 +1794,7 @@ Deflater :: struct {
                     result.distance = distance.(i64);
                     if length == lookahead_size { break; }
                     tail_at = pos + length - 1;
-                    tail_words = xx *dict[tail_at];
+                    tail_words = (*dict[tail_at]).([*]u16);
                     tail = tail_words[0];
                 }
             }
@@ -1810,7 +1810,7 @@ Deflater :: struct {
     }
 
     process_fast :: (self: *Deflater) {
-        heads : [*]u16 = xx self.hash.ptr;
+        heads : [*]u16 = self.hash.ptr.([*]u16);
         dict := self.dict.ptr;
         codes := self.lz.codes.ptr;
         lookahead_pos := self.lookahead_pos;
@@ -1824,7 +1824,7 @@ Deflater :: struct {
         code_limit := self.lz.codes.len - 8;
         while lookahead_size >= 4 and code_len <= code_limit {
             pos := lookahead_pos & 32767;
-            first_at : [*]u32 = xx *dict[pos];
+            first_at : [*]u32 = (*dict[pos]).([*]u32);
             first := first_at[0].(i64) & 0xffffff;
             h := (first ^ (first >> 17)) & 4095;
             probe := heads[h].(i64);
@@ -1832,14 +1832,14 @@ Deflater :: struct {
             distance := ((lookahead_pos & 65535) - probe) & 65535;
             length := 1;
             probe_pos := probe & 32767;
-            candidate_at : [*]u32 = xx *dict[probe_pos];
+            candidate_at : [*]u32 = (*dict[probe_pos]).([*]u32);
             if distance <= dict_size and (candidate_at[0].(i64) & 0xffffff) == first {
-                source_words : [*]u16 = xx *dict[pos];
-                candidate_words : [*]u16 = xx *dict[probe_pos];
+                source_words : [*]u16 = (*dict[pos]).([*]u16);
+                candidate_words : [*]u16 = (*dict[probe_pos]).([*]u16);
                 // Compare a full group on the hot equal path, then recover
                 // tdefl's exact 16-bit mismatch boundary inside that group.
-                source_groups : [*]u64 = xx *source_words[1];
-                candidate_groups : [*]u64 = xx *candidate_words[1];
+                source_groups : [*]u64 = (*source_words[1]).([*]u64);
+                candidate_groups : [*]u64 = (*candidate_words[1]).([*]u64);
                 pair := 0;
                 group := 0;
                 groups := 32;
@@ -2767,7 +2767,7 @@ Inflater :: struct {
     init :: (max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> Inflater {
         raw := alloc.alloc_bytes(32768);
         window : string = .{ ptr = null, len = 0 };
-        if raw != null { window = .{ ptr = xx raw, len = 32768 }; }
+        if raw != null { window = .{ ptr = raw, len = 32768 }; }
         Inflater.init_with_window(max_output, alloc, window)
     }
 
@@ -2776,7 +2776,7 @@ Inflater :: struct {
         alloc := self.alloc;
         if window.ptr == null {
             raw := alloc.alloc_bytes(32768);
-            if raw != null { window = .{ ptr = xx raw, len = 32768 }; }
+            if raw != null { window = .{ ptr = raw, len = 32768 }; }
         }
         self.* = Inflater.init_with_window(max_output, alloc, window);
     }

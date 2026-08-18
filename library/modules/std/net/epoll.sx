@@ -106,7 +106,7 @@ ev_writable :: (e: EpollEvent) -> bool { return (e.events & EPOLLOUT) != 0; }
 ev_eof      :: (e: EpollEvent) -> bool { return (e.events & (EPOLLHUP | EPOLLRDHUP)) != 0; }
 ev_err      :: (e: EpollEvent) -> bool { return (e.events & EPOLLERR) != 0; }
 // The fd stashed in `data` at registration.
-ev_fd       :: (e: EpollEvent) -> i32  { return xx e.data_lo; }
+ev_fd       :: (e: EpollEvent) -> i32  { return e.data_lo; }
 
 // ── thin wrappers ──────────────────────────────────────────────────────────
 
@@ -119,7 +119,7 @@ ep_create :: () -> i32 {
 // `events` on `epfd`, stashing `fd` in `data` so `epoll_wait` reports it. True
 // on success. For EPOLL_CTL_DEL the kernel ignores the event payload.
 ep_ctl :: (epfd: i32, op: i32, fd: i32, events: u32) -> bool {
-    ev : EpollEvent = .{ events = events, data_lo = xx fd };
+    ev : EpollEvent = .{ events = events, data_lo = fd };
     return epoll_ctl(epfd, op, fd, *ev) == 0;
 }
 

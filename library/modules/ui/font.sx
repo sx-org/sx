@@ -14,7 +14,7 @@ measure_text :: (text: string, font_size: f32) -> Size {
     if g_font == null {
         // Fallback approximate measurement
         scale := font_size / 16.0;
-        return Size{ width = xx text.len * 8.0 * scale, height = font_size };
+        return Size{ width = text.len * 8.0 * scale, height = font_size };
     }
     g_font.measure_text(text, font_size)
 }

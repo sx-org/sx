@@ -9,11 +9,12 @@
 MyA :: struct { v: i64 = 0; }
 
 impl Into(MyA) for i64 {
-  convert :: (self: i64) -> MyA { .{ v = self } }
+  convert :: (self: i64, alloc: Allocator = context.allocator) -> MyA {
+    _ = alloc; .{ v = self } }
 }
 
 impl Into(MyA) for i64 {
-  convert :: (self: i64) -> MyA { .{ v = self * 2 } }
+  convert :: (self: i64, alloc: Allocator = context.allocator) -> MyA { _ = alloc; .{ v = self * 2 } }
 }
 
 main :: () -> i32 { 0 }

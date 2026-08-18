@@ -9,7 +9,7 @@ inline if OS != .windows {
 
     read_times :: (file: *fs.File) -> (i64, i64, bool) {
         raw : [256]u8 = .{};
-        if c.fstat(file.fd.(i32), xx *raw[0]) != 0 { return 0, 0, false; }
+        if c.fstat(file.fd.(i32), *raw[0]) != 0 { return 0, 0, false; }
 
         access_offset := 0;
         modified_offset := 0;
@@ -45,7 +45,7 @@ main :: () -> i32 {
             .{ sec = initial_access, nsec = 0 },
             .{ sec = initial_modified, nsec = 0 },
         ];
-        if posix_abi.fs_posix_utimensat(posix_abi.FS_POSIX_AT_FDCWD, path, xx *initial[0], 0) != 0 {
+        if posix_abi.fs_posix_utimensat(posix_abi.FS_POSIX_AT_FDCWD, path, *initial[0], 0) != 0 {
             fs.delete_file(path);
             return 2;
         }

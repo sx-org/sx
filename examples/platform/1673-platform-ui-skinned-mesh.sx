@@ -77,28 +77,31 @@ main :: () -> i32 {
         .{ rows = .[ .[1.0, 0.0, 0.0, 0.6], .[0.0, 1.0, 0.0, 0.0], .[0.0, 0.0, 1.0, 0.0] ] },
     ];
 
-    n : i64 = xx (W * H * 4);
+    n : i64 = (W * H * 4);
     px : [*]u8 = xx context.allocator.alloc_bytes(n);
-    center : i64 = xx (((H / 2) * W + (W / 2)) * 4);
+    center : i64 = (((H / 2) * W + (W / 2)) * 4);
     // Column 51 of row 32 sits inside the bone-0 range as authored.
-    bone0 : i64 = xx (((H / 2) * W + 51) * 4);
+    bone0 : i64 = (((H / 2) * W + 51) * 4);
 
     renderer.set_bone_palette(rest[..]);
+    // The offscreen pass starts in `.less` so begin_frame installs that
+    // state with the far-plane clear (same shape as 1670).
+    gpu.set_depth_mode(.less);
     if !gpu.begin_frame(ClearColor.black()) { print("begin_frame failed\n"); return 1; }
-    renderer.begin(xx W, xx H, 0);
+    renderer.begin(W, H, 0);
     renderer.process(*tree);
     renderer.flush();
     gpu.end_frame(0.0);
-    if !gpu.read_offscreen(xx px) { print("readback failed\n"); return 1; }
+    if !gpu.read_offscreen(px) { print("readback failed\n"); return 1; }
     rest_center := sample(px, center);
 
     renderer.set_bone_palette(moved[..]);
     if !gpu.begin_frame(ClearColor.black()) { print("begin_frame failed\n"); return 1; }
-    renderer.begin(xx W, xx H, 0);
+    renderer.begin(W, H, 0);
     renderer.process(*tree);
     renderer.flush();
     gpu.end_frame(0.0);
-    if !gpu.read_offscreen(xx px) { print("readback failed\n"); return 1; }
+    if !gpu.read_offscreen(px) { print("readback failed\n"); return 1; }
     moved_center := sample(px, center);
     moved_bone0 := sample(px, bone0);
 

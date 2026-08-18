@@ -21,7 +21,7 @@ main :: () -> i32 {
     inline if OS != .macos { print("format ok, shader handle: 1\n"); return 0; }
 
     gpu : *MetalGPU = xx context.allocator.alloc_bytes(size_of(MetalGPU));
-    c.memset(xx gpu, 0, size_of(MetalGPU));
+    c.memset(gpu, 0, size_of(MetalGPU));
     if !gpu.init(null, 0, 0) { return 1; }
 
     // The invariant itself: the host driver tolerates format 0 until draw

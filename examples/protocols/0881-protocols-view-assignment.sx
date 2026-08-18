@@ -38,5 +38,5 @@ main :: () {
     lv = *c;                           // address-of a local — view assignment
     print("lvalue assign = {}\n", lv.n());
 
-    context.allocator.dealloc_bytes(xx p);
+    context.allocator.dealloc_bytes(p);
 }

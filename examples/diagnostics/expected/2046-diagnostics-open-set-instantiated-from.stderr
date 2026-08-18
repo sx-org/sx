@@ -1,8 +1,8 @@
 error: 'Plain' cannot be converted to 'View': it is not a member of it
   --> examples/diagnostics/2046-diagnostics-open-set-instantiated-from/views.sx:16:35
    |
-16 | into :: ($T: Type, x: $S) -> T => xx x;
-   |                                   ^^^^
+16 | into :: ($T: Type, x: $S) -> T => x;
+   |                                   ^
 
 note: instantiated from here
   --> examples/diagnostics/2046-diagnostics-open-set-instantiated-from.sx:29:15
@@ -12,14 +12,14 @@ note: instantiated from here
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
    |
-16 | into :: ($T: Type, x: $S) -> T => xx x;
-   |                                   ^^^^
+16 | into :: ($T: Type, x: $S) -> T => x;
+   |                                   ^
 
 error: 'Stray' cannot be converted to 'View': it is not a member of it
   --> examples/diagnostics/2046-diagnostics-open-set-instantiated-from/views.sx:16:35
    |
-16 | into :: ($T: Type, x: $S) -> T => xx x;
-   |                                   ^^^^
+16 | into :: ($T: Type, x: $S) -> T => x;
+   |                                   ^
 
 note: instantiated from here
   --> examples/diagnostics/2046-diagnostics-open-set-instantiated-from.sx:33:18
@@ -29,5 +29,5 @@ note: instantiated from here
 
 help: a type joins by declaring itself into the set: 'Stray :: @OpenVariant(View) { … }'
    |
-16 | into :: ($T: Type, x: $S) -> T => xx x;
-   |                                   ^^^^
+16 | into :: ($T: Type, x: $S) -> T => x;
+   |                                   ^

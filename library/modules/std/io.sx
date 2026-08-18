@@ -142,7 +142,7 @@ Future :: struct ($R: Type) {
 ThunkBox :: struct { run: Closure() -> void; worker_env: *void = null; }
 
 sx_run_boxed_closure :: (arg: *void) {
-    b : *ThunkBox = xx arg;
+    b : *ThunkBox = arg.(*ThunkBox);
     b.run();
     // `b.run` has returned, so its env, the worker's env, and the box itself are
     // all dead — free them (the per-`async` heap, minus the Future). This runs
@@ -192,7 +192,7 @@ fut_release :: ufcs (f: *Future($R)) {
 
 async :: ufcs (io: Io, worker: Closure() -> ($R, !)) -> *Future($R) {
     raw := context.allocator.alloc_bytes(size_of(Future($R)));
-    f : *Future($R) = xx raw;
+    f : *Future($R) = raw.(*Future($R));
     f.state = .pending;
     f.park = .{ handle = null };
     f.canceled = Atomic(bool).init(false);
@@ -215,7 +215,7 @@ async :: ufcs (io: Io, worker: Closure() -> ($R, !)) -> *Future($R) {
     // runs to completion (a post-hoc `cancel` still makes `await` raise via the
     // sticky `f.canceled`, the 1806 contract).
     braw := context.allocator.alloc_bytes(size_of(ThunkBox));
-    b : *ThunkBox = xx braw;
+    b : *ThunkBox = braw.(*ThunkBox);
     // Record the worker's own heap env so `sx_run_boxed_closure` can free it (it is
     // captured by-value into `run`'s env below, otherwise unreachable). `null` for
     // a capture-free worker.
@@ -237,9 +237,8 @@ async :: ufcs (io: Io, worker: Closure() -> ($R, !)) -> *Future($R) {
         f.worker_done = true;
         fut_release(f);             // last touch of `f`
     };
-    // Pass the cancel-flag back-ref so the worker fiber's `suspend_raw` can consult
-    // it. `xx @f.canceled` erases the `*Atomic(bool)` to `*void`.
-    f.task = io.spawn_raw(xx sx_run_boxed_closure, xx b, .{ cancel_flag = xx *f.canceled });
+    // Pass the cancel-flag address so the worker fiber's `suspend_raw` can consult it.
+    f.task = io.spawn_raw(sx_run_boxed_closure.(*void), b, .{ cancel_flag = *f.canceled });
     return f;
 }
 

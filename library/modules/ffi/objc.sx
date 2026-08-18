@@ -4,7 +4,8 @@
 // Each call site must invoke through a function pointer of the *exact*
 // argument and return shape. The idiom:
 //
-//     msg_fn : (recv: *void, sel: *void, arg: [*]u8) -> *void = xx objc_msgSend;
+//     Msg :: (recv: *void, sel: *void, arg: [*]u8) -> *void;
+//     msg_fn : Msg = objc_msgSend.(Msg);
 //     result := msg_fn(receiver, selector, c_str);
 
 // std is required for real: the `impl Into(*NSString) for string` bridge
@@ -109,8 +110,8 @@ NSObject :: @ObjcClass("NSObject") extern {
 // ─── NSString ────────────────────────────────────────────────────────────
 // Foundation's immutable string. `UTF8String` views the bytes as a C string
 // whose lifetime is tied to the NSString (don't free it). The `Into` impl
-// lets any `string` flow into a `*NSString` slot via `xx`, e.g.
-// `dict.objectForKey(xx "SomeKey")`.
+// lets any `string` flow into a `*NSString` slot via Into, e.g.
+// `dict.objectForKey("SomeKey".(*NSString))`.
 NSString :: @ObjcClass("NSString", extends = NSObject) extern {
     // Narrows the inherited `NSObject.alloc` return so an `initWith…` chained
     // onto it dispatches against NSString.
@@ -122,7 +123,8 @@ NSString :: @ObjcClass("NSString", extends = NSObject) extern {
 // Copies exactly `self.len` bytes into an autoreleased NSString; `self` need
 // not be NUL-terminated.
 impl Into(*NSString) for string {
-    convert :: (self: string) -> *NSString {
+    convert :: (self: string, alloc: Allocator = context.allocator) -> *NSString {
+        _ = alloc;
         NSUTF8StringEncoding :: 4;
         obj := NSString.alloc().initWithBytes_length_encoding(self.ptr, self.len.(usize), NSUTF8StringEncoding);
         return obj.autorelease();

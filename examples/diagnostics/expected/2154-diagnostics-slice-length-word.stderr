@@ -5,10 +5,10 @@ error: @Slice length type must be an integer type, got 'bool'
    |                   ^^^^
 
 error: array length 300 does not fit the u8 length word of '@Slice(u8,u8)'
-  --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:19:8
+  --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:19:5
    |
-19 |     xx take(big);
-   |        ^^^^^^^^^
+19 |     take(big);
+   |     ^^^^^^^^^
 
 error: array length 300 does not fit the u8 length word of '@Slice(u8,u8)'
   --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:21:5
@@ -23,10 +23,10 @@ error: length 300 does not fit the u8 length word of '@Slice(u8,u8)'
    |                 ^^^^^^^^
 
 error: array length 20 does not fit the u4 length word of '@Slice(u8,u4)'
-  --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:25:8
+  --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:25:5
    |
-25 |     xx take_nib(mid);
-   |        ^^^^^^^^^^^^^
+25 |     take_nib(mid);
+   |     ^^^^^^^^^^^^^
 
 error: integer literal 300 does not fit in u8 (range 0..255) — use an explicit `xx` / `.(T)` to truncate
   --> examples/diagnostics/2154-diagnostics-slice-length-word.sx:29:13

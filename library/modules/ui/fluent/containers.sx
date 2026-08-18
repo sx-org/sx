@@ -23,7 +23,7 @@ VStack :: @OpenVariant(View) {
             h += s.height;
         }
         if self.children.len > 1 {
-            h += self.spacing * xx (self.children.len - 1);
+            h += self.spacing * (self.children.len - 1);
         }
         Size{ width = w, height = h }
     }

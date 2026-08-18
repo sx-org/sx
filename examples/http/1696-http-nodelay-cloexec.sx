@@ -87,10 +87,10 @@ main :: () -> i32 {
                 break;
             }
             if got > 0 { stall = 0; } else { stall += 1; }
-            r := string{ ptr = rbuf, len = xx total };
+            r := string{ ptr = rbuf, len = total };
             if contains(r, "served") { break; }
         }
-        resp := string{ ptr = rbuf, len = xx total };
+        resp := string{ ptr = rbuf, len = total };
         if !contains(resp, "HTTP/1.1 200 OK") or !contains(resp, "served") {
             print("keep-alive roundtrip: expected 200\n");
             failed = 1;
@@ -143,7 +143,7 @@ main :: () -> i32 {
             reap += 1;
         }
         srv.close();
-        context.allocator.dealloc_bytes(xx rbuf);
+        context.allocator.dealloc_bytes(rbuf);
         leaked = gpa.alloc_count;
     }
 

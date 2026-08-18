@@ -13,7 +13,7 @@ fs_windows_wide_path :: (path: [:0]u8) -> FsWindowsWidePath {
     if count <= 0 { return .{}; }
     heap := fs_windows_GetProcessHeap(); if heap == null { return .{}; }
     raw := fs_windows_HeapAlloc(heap, 0, (count.(u64) * 2)); if raw == null { return .{}; }
-    wide : [*]u16 = xx raw;
+    wide : [*]u16 = raw.([*]u16);
     if fs_windows_MultiByteToWideChar(FS_WINDOWS_CP_UTF8, 0, path.ptr, -1, wide, count) != count {
         fs_windows_HeapFree(heap, 0, raw); return .{};
     }
@@ -22,7 +22,7 @@ fs_windows_wide_path :: (path: [:0]u8) -> FsWindowsWidePath {
 
 fs_windows_wide_free :: (wide: FsWindowsWidePath) { if wide.ptr != null { fs_windows_HeapFree(wide.heap, 0, wide.ptr); } }
 
-fs_windows_handle :: (handle: i64) -> *void { xx handle }
+fs_windows_handle :: (handle: i64) -> *void { handle.(*void) }
 fs_file_is_valid :: (handle: i64) -> bool { handle != -1 and handle != 0 }
 
 fs_file_close :: (handle: i64) -> bool {
@@ -70,7 +70,7 @@ fs_open_handle :: (path: [:0]u8, mode: i32) -> i64 {
     else if mode == 3 { access = FS_WINDOWS_GENERIC_READ | FS_WINDOWS_GENERIC_WRITE; creation = FS_WINDOWS_OPEN_EXISTING; }
     handle := fs_windows_CreateFileW(wide.ptr, access, FS_WINDOWS_FILE_SHARE_ALL, null, creation, FS_WINDOWS_FILE_ATTRIBUTE_NORMAL, null);
     fs_windows_wide_free(wide);
-    bits : i64 = xx handle;
+    bits : i64 = handle.(i64);
     if !fs_file_is_valid(bits) { return -1; }
     if mode == 2 and fs_file_seek(bits, 0, 2) < 0 { fs_file_close(bits); return -1; }
     bits
@@ -229,7 +229,7 @@ fs_set_modified_seconds :: (path: [:0]u8, seconds: i64) -> bool {
     if seconds < -11644473600 or seconds > 1833029933770 { return false; }
     wide := fs_windows_wide_path(path); if wide.ptr == null { return false; }
     handle := fs_windows_CreateFileW(wide.ptr, FS_WINDOWS_FILE_WRITE_ATTRIBUTES, FS_WINDOWS_FILE_SHARE_ALL, null, FS_WINDOWS_OPEN_EXISTING, FS_WINDOWS_FILE_ATTRIBUTE_NORMAL, null);
-    fs_windows_wide_free(wide); bits : i64 = xx handle;
+    fs_windows_wide_free(wide); bits : i64 = handle.(i64);
     if !fs_file_is_valid(bits) { return false; }
     ticks := (seconds + 11644473600).(u64) * 10000000;
     value := FsWindowsFileTime{ low = ticks.(u32), high = (ticks >> 32).(u32) };

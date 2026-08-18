@@ -87,7 +87,7 @@ roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -
         if got > 0 { stall = 0; } else { stall += 1; }
     }
     socket.close(fd);
-    return string{ ptr = buf, len = xx total };
+    return string{ ptr = buf, len = total };
 }
 
 check :: (r: string, frag: string, label: string, failed: *i64) {
@@ -115,7 +115,7 @@ name_index :: (table: string, s: string, off: i64) -> i64 {
 two_digits :: (s: string, off: i64) -> i64 {
     a := s[off]; b := s[off + 1];
     if a < 48 or a > 57 or b < 48 or b > 57 { return -1; }
-    return xx ((a - 48) * 10 + (b - 48));
+    return ((a - 48) * 10 + (b - 48));
 }
 
 // days-from-civil (the INVERSE of the server's civil-from-days).
@@ -244,7 +244,7 @@ main :: () -> i32 {
         check_date(r, before, after, "pooled Date", *failed);
         srvp.close();
 
-        context.allocator.dealloc_bytes(xx rbuf);
+        context.allocator.dealloc_bytes(rbuf);
         leaked = gpa.alloc_count;
     }
 

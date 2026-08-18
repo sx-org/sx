@@ -1,11 +1,9 @@
-// `context.allocator` as the NAMED allocator of an owning erasure
-// resolves at the erasure site: inside a `push .{ allocator = tracer }`
-// block, `StructLiteral{}.(P, context.allocator)` allocates through the
-// tracker.
+// `context.allocator` as the fund of an owning erasure resolves at the
+// erasure site: inside a `push .{ allocator = tracer }` block,
+// `StructLiteral{}.(P)` allocates through the tracker.
 //
-// Only `.(P, alloc)` allocates; an implicit erasure (bare operand or
-// `xx`) and the one-argument `.(P)` refuse — pinned in
-// diagnostics/1256.
+// Implicit erasure (bare operand or dest-inferred opt-in) still refuses —
+// pinned in diagnostics/1256.
 #import "modules/std.sx";
 #import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
 
@@ -13,7 +11,7 @@ Tracer :: struct {
     count: i64;
 
     init :: () -> *Tracer {
-        t : *Tracer = xx c.libc_malloc(size_of(Tracer));
+        t : *Tracer = (c.libc_malloc(size_of(Tracer))).(*Tracer);
         t.count = 0;
         t
     }
@@ -43,7 +41,7 @@ main :: () -> i32 {
     push .{ allocator = tracer } {
         // Struct-literal receiver: the owning copy allocates through
         // context.allocator — i.e. through the pushed tracer.
-        ignore := Tracer{ count = 0 }.(Boxed, context.allocator);
+        ignore := Tracer{ count = 0 }.(Boxed);
         _ = ignore;
     }
     print("Tracer.count = {}\n", tracer.count);

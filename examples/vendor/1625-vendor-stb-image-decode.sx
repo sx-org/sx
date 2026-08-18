@@ -27,9 +27,9 @@ main :: () -> i32 {
         print("decode failed\n");
         return 1;
     }
-    p : [*]u8 = xx img;
+    p : [*]u8 = img;
     print("decoded {}x{} ({} channels)\n", w, h, ch);
     print("top-left pixel: {} {} {}\n", p[0], p[1], p[2]);
-    stb.stbi_image_free(xx img);
+    stb.stbi_image_free(img);
     0
 }

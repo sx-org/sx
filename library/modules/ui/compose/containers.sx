@@ -54,7 +54,7 @@ measure_column :: (children: *List(View), width: ?f32, spacing: f32) -> StackMet
         if s.width > m.cross { m.cross = s.width; }
         m.main += s.height;
     }
-    if children.len > 1 { m.main += spacing * xx (children.len - 1); }
+    if children.len > 1 { m.main += spacing * (children.len - 1); }
     m
 }
 
@@ -70,7 +70,7 @@ measure_row :: (children: *List(View), height: ?f32, spacing: f32) -> StackMetri
         if s.height > m.cross { m.cross = s.height; }
         m.main += s.width;
     }
-    if children.len > 1 { m.main += spacing * xx (children.len - 1); }
+    if children.len > 1 { m.main += spacing * (children.len - 1); }
     m
 }
 
@@ -78,7 +78,7 @@ measure_row :: (children: *List(View), height: ?f32, spacing: f32) -> StackMetri
 // out nothing.
 spacer_share :: (slack: f32, spacers: i64) -> f32 {
     if spacers == 0 or slack <= 0.0 { return 0.0; }
-    slack / xx spacers
+    slack / spacers
 }
 
 VStack :: @OpenVariant(View) {

@@ -21,6 +21,6 @@ sx_double :: (n: i32) -> i32 export
 main :: () -> i32 {
     stdin_bits : u64 = xx *__stdinp;
     print("limit={} stdin={}\n", LIMIT, stdin_bits != 0);
-    print("abs={} double={}\n", c_abs(xx -42), sx_double(21));
+    print("abs={} double={}\n", c_abs(-42), sx_double(21));
     0
 }

@@ -23,7 +23,7 @@ SxApp :: @JniClass("co/swipelab/sxjnictor/SxApp", main = true) {
         super.onCreate(b);
         ctx : *JContext = xx self; // Activity IS a JContext (extends JContext).
         view := SurfaceView.new(ctx);
-        g_held_view = xx view; // keep alive so LLVM doesn't DCE the construction.
+        g_held_view = view; // keep alive so LLVM doesn't DCE the construction.
     }
 }
 

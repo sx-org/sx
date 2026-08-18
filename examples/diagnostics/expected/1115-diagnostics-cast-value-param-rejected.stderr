@@ -3,3 +3,9 @@ error: 'T' is a value parameter, not a type; introduce a generic type parameter 
    |
  4 |     return x.(T);
    |               ^
+
+error: no conversion from 'i32' to 'T'
+  --> examples/diagnostics/1115-diagnostics-cast-value-param-rejected.sx:4:12
+   |
+ 4 |     return x.(T);
+   |            ^^^^^

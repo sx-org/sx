@@ -39,17 +39,17 @@ main :: () {
     sz := w.(Sizable, context.allocator);
     pr : @Protocol = xx sz;
     wc : *Widget = xx sz.(@Protocol).ctx;
-    print("default: {} {}\n", wc.value == 7 and sz.(@Protocol).ctx != xx *w, pr.ctx == sz.(@Protocol).ctx);
+    print("default: {} {}\n", wc.value == 7 and sz.(@Protocol).ctx != *w, pr.ctx == sz.(@Protocol).ctx);
     print("default type_id: {}\n", sz.(@Protocol).type_id == type_of(sz));
 
     // protocol (`inline` layout, Allocator) — correct ctx, no layout lie
     ga := GPA.init();
     a : Allocator = ga;
-    print("inline: {}\n", a.(@Protocol).ctx == xx *ga);
+    print("inline: {}\n", a.(@Protocol).ctx == *ga);
     print("inline type_id: {}\n", a.(@Protocol).type_id == type_of(a));
 
     // a real constructed value: passes through call args
-    print("arg: {}\n", take_raw(a.(@Protocol)) == xx *ga);
+    print("arg: {}\n", take_raw(a.(@Protocol)) == *ga);
 
     // parity with the typed ctx-pointer recovery
     p : *void = xx a;

@@ -299,7 +299,7 @@ Hashable :: protocol {
 
 impl Hashable for Point {
     hash :: (self: *Point) -> i64 {
-        xx self.x * 31 + xx self.y
+        self.x * 31 + self.y
     }
 }
 
@@ -321,7 +321,7 @@ Pair :: struct ($T: Type) {
 
 impl Summable for Pair($T) {
     sum :: (self: *Pair(T)) -> i32 {
-        xx self.a + xx self.b
+        self.a + self.b
     }
 }
 

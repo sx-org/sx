@@ -65,7 +65,7 @@ roundtrip2 :: (s1: *http.Server, s2: *http.Server, req: string, buf: [*]u8, cap:
         if got > 0 { stall = 0; } else { stall += 1; }
     }
     socket.close(fd);
-    return string{ ptr = buf, len = xx total };
+    return string{ ptr = buf, len = total };
 }
 
 main :: () -> i32 {
@@ -114,7 +114,7 @@ main :: () -> i32 {
         // must not cascade srv2's buffers into the leak report's noise.
         if !e2 { srv2.close(); }
         srv1.close();
-        context.allocator.dealloc_bytes(xx rbuf);
+        context.allocator.dealloc_bytes(rbuf);
         leaked = gpa.alloc_count;
     }
 

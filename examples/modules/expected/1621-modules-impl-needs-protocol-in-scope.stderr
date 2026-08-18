@@ -1,3 +1,9 @@
+error: no conversion from 'string' to '*DeadBox'
+  --> examples/modules/1621-modules-impl-needs-protocol-in-scope.sx:10:20
+   |
+10 |     b : *DeadBox = xx "abc";
+   |                    ^^^^^^^^
+
 error: unknown protocol 'Into' in impl — not declared or imported in this module
   --> examples/modules/1621-modules-impl-needs-protocol-in-scope/dead_impl.sx:7:1
    |

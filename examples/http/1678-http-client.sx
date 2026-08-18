@@ -36,7 +36,7 @@ main :: () -> i32 {
         srv, se := http.Server.init(cfg, handler, 0);
         if se { print("init failed\n"); rc = 1; }
         else {
-            t, te := thread.Thread.spawn(srv_entry, xx *srv);
+            t, te := thread.Thread.spawn(srv_entry, *srv);
             if te { print("spawn failed\n"); rc = 1; }
             else {
                 b1 : [4096]u8 = ---;

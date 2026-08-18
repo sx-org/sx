@@ -19,18 +19,19 @@
 // runtime calls. Forwards through to the sx closure with the
 // standard `(__sx_ctx, env, ...args)` shape.
 __block_invoke_void_i32_p :: (block_self: *Block, arg0: i32, arg1: *void) abi(.c) {
-    typed_fn : (*void, i32, *void) -> void = xx block_self.sx_fn;
+    typed_fn : (*void, i32, *void) -> void = block_self.sx_fn.((*void, i32, *void) -> void);
     typed_fn(block_self.sx_env, arg0, arg1);
 }
 
 impl Into(Block) for Closure(i32, *void) -> void {
-    convert :: (self: Closure(i32, *void) -> void) -> Block {
+    convert :: (self: Closure(i32, *void) -> void, alloc: Allocator = context.allocator) -> Block {
+        _ = alloc;
         .{
             isa = *_NSConcreteStackBlock,
             flags = 0,
             reserved = 0,
-            invoke = xx *__block_invoke_void_i32_p,
-            descriptor = xx *__sx_block_descriptor,
+            invoke = (*__block_invoke_void_i32_p).(*void),
+            descriptor = *__sx_block_descriptor,
             sx_env = self.env,
             sx_fn = self.fn_ptr,
         }
@@ -47,11 +48,11 @@ main :: () -> i32 {
         g_sum = n + 1;
         g_tag = tag;
     };
-    b : Block = xx cl;
+    b : Block = cl.(Block);
 
-    invoke_fn : (*Block, i32, *void) -> void abi(.c) = xx b.invoke;
+    invoke_fn : (*Block, i32, *void) -> void abi(.c) = b.invoke.((*Block, i32, *void) -> void abi(.c));
     sentinel: i32 = 42;
-    invoke_fn(*b, 41, xx *sentinel);
+    invoke_fn(*b, 41, *sentinel);
 
     if g_sum != 42 { print("FAIL: g_sum expected 42, got {}\n", g_sum); return 1; }
     if g_tag == null { print("FAIL: g_tag null\n"); return 1; }

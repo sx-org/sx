@@ -183,8 +183,8 @@ main :: () -> i32 {
 
         socket.close(ca);
         srv.close();
-        context.allocator.dealloc_bytes(xx junk);
-        context.allocator.dealloc_bytes(xx rbuf);
+        context.allocator.dealloc_bytes(junk);
+        context.allocator.dealloc_bytes(rbuf);
         leaked = gpa.alloc_count;
     }
 

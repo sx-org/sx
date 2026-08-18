@@ -12,7 +12,7 @@ Shared :: struct {
 
 // Raw-thread entry: C->sx boundary, own fabricated context.
 bump_entry :: (arg: *void) -> *void abi(.c) {
-    sh : *Shared = xx arg;
+    sh : *Shared = arg.(*Shared);
     gpa := GPA.init();
     push .{ allocator = gpa } {
         i := 0;
@@ -33,7 +33,7 @@ AddArg :: struct {
 }
 
 add_task :: (arg: usize) {
-    a : *AddArg = xx arg;
+    a : *AddArg = arg.(*AddArg);
     a.sh.mu.lock();
     a.sh.counter += a.v;
     a.sh.mu.unlock();
@@ -41,7 +41,7 @@ add_task :: (arg: usize) {
 
 // Holds its worker hostage until the gate opens (backpressure case).
 gate_task :: (arg: usize) {
-    sh : *Shared = xx arg;
+    sh : *Shared = arg.(*Shared);
     while true {
         sh.mu.lock();
         g := sh.gate;
@@ -58,7 +58,7 @@ main :: () -> i32 {
     ths : [4]thread.Thread = ---;
     i := 0;
     while i < 4 {
-        t, te := thread.Thread.spawn(bump_entry, xx *sh);
+        t, te := thread.Thread.spawn(bump_entry, *sh);
         if te { print("spawn failed\n"); return 1; }
         ths[i] = t;
         i += 1;
@@ -75,11 +75,11 @@ main :: () -> i32 {
     sh.counter = 0;
     pool, pe := thread.Pool.create(4, 128);
     if pe { print("pool create failed\n"); return 1; }
-    args : [*]AddArg = xx context.allocator.alloc_bytes(100 * size_of(AddArg));
+    args : [*]AddArg = (context.allocator.alloc_bytes(100 * size_of(AddArg))).([*]AddArg);
     n := 0;
     while n < 100 {
-        args[n] = AddArg{ sh = *sh, v = xx (n + 1) };
-        if !pool.submit(add_task, xx *args[n]) { print("submit unexpectedly refused\n"); return 1; }
+        args[n] = AddArg{ sh = *sh, v = (n + 1) };
+        if !pool.submit(add_task, (*args[n]).(usize)) { print("submit unexpectedly refused\n"); return 1; }
         n += 1;
     }
     pool.shutdown();   // queued tasks finish before workers exit
@@ -90,7 +90,7 @@ main :: () -> i32 {
     sh.gate = 0;
     p2, pe2 := thread.Pool.create(1, 2);
     if pe2 { print("pool2 create failed\n"); return 1; }
-    if !p2.submit(gate_task, xx *sh) { print("gate submit refused\n"); return 1; }
+    if !p2.submit(gate_task, (*sh).(usize)) { print("gate submit refused\n"); return 1; }
     // give the worker a beat to take the gate task off the queue
     spins := 0;
     taken := false;

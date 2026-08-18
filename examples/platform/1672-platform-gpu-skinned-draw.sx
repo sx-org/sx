@@ -102,31 +102,31 @@ main :: () -> i32 {
     ib := gpu.create_index_buffer(ibytes);
     if vb == 0 { print("vertex buffer failed\n"); return 1; }
     if ib == 0 { print("index buffer failed\n"); return 1; }
-    gpu.update_buffer(vb, xx *verts[0], vbytes);
-    gpu.update_index_buffer(ib, xx *idx[0], ibytes);
+    gpu.update_buffer(vb, *verts[0], vbytes);
+    gpu.update_index_buffer(ib, *idx[0], ibytes);
 
     green : [4]f32 = .[0.0, 1.0, 0.0, 1.0];
     red   : [4]f32 = .[1.0, 0.0, 0.0, 1.0];
 
-    gpu.set_bone_palette(xx *bones[0], 2);
+    gpu.set_bone_palette(*bones[0], 2);
     if !gpu.begin_frame(ClearColor.black()) { print("begin_frame failed\n"); return 1; }
     gpu.set_shader(sh);
     gpu.set_vertex_buffer(vb);
     gpu.set_index_buffer(ib);
 
-    gpu.set_vertex_constants(1, xx *green[0], 16);
+    gpu.set_vertex_constants(1, *green[0], 16);
     gpu.draw_skinned(0, 3);
-    gpu.set_vertex_constants(1, xx *red[0], 16);
+    gpu.set_vertex_constants(1, *red[0], 16);
     gpu.draw_skinned(3, 3);
     gpu.end_frame(0.0);
 
-    n : i64 = xx (W * H * 4);
+    n : i64 = (W * H * 4);
     px : [*]u8 = xx context.allocator.alloc_bytes(n);
-    if !gpu.read_offscreen(xx px) { print("readback failed\n"); return 1; }
+    if !gpu.read_offscreen(px) { print("readback failed\n"); return 1; }
 
-    center : i64 = xx (((H / 2) * W + (W / 2)) * 4);
+    center : i64 = (((H / 2) * W + (W / 2)) * 4);
     // Column 51 of row 32 sits inside the red triangle as authored.
-    bone0 : i64 = xx (((H / 2) * W + 51) * 4);
+    bone0 : i64 = (((H / 2) * W + 51) * 4);
     print("skin center rgba: {} {} {} {}\n", px[center], px[center + 1], px[center + 2], px[center + 3]);
     print("skin bone0 rgba: {} {} {} {}\n", px[bone0], px[bone0 + 1], px[bone0 + 2], px[bone0 + 3]);
 

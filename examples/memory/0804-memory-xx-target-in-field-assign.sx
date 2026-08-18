@@ -1,6 +1,5 @@
-// `xx` cast inside an RHS expression assigned to a struct field takes its
-// target type from the field, not from the enclosing function's return type.
-// Covers if-then-else RHS and binary-op RHS variants.
+// A field assignment's dest is the field type, not the enclosing function's
+// return type. Covers if-then-else RHS and binary-op RHS variants.
 
 #import "modules/std.sx";
 
@@ -14,15 +13,15 @@ FC :: struct { a: f32; b: f32; c: i32; d: i32; e: f32; f: f32; }
 
 // If-then-else RHS in a function whose return type is not f32.
 calc_bool :: (self: *Foo, wf: f32) -> bool {
-    self.dpi = if wf > 0.0 then xx self.pixel_w / wf else 1.0;
+    self.dpi = if wf > 0.0 then self.pixel_w / wf else 1.0;
     true
 }
 
-// Binary-op RHS in a struct-returning function. The xx casts must target f32,
-// not the FC return-struct shape.
+// Binary-op RHS in a struct-returning function. Integer operands of `/`
+// convert to f32 before the divide; dest does not change the `/` itself.
 begin :: (self: *Foo, current: i64, freq: i64) -> FC {
     if self.last_perf > 0 {
-        self.delta_time = xx (current - self.last_perf) / xx freq;
+        self.delta_time = (current - self.last_perf).(f32) / freq.(f32);
     }
     FC{ a = 1.0, b = 2.0, c = 3, d = 4, e = 5.0, f = 6.0 }
 }

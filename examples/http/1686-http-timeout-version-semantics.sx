@@ -65,7 +65,7 @@ drain_to_eof :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64) -> string {
         }
         if got > 0 { stall = 0; } else { stall += 1; }
     }
-    return string{ ptr = buf, len = xx total };
+    return string{ ptr = buf, len = total };
 }
 
 main :: () -> i32 {
@@ -148,7 +148,7 @@ main :: () -> i32 {
         }
 
         srv.close();
-        context.allocator.dealloc_bytes(xx rbuf);
+        context.allocator.dealloc_bytes(rbuf);
         leaked = gpa.alloc_count;
     }
 

@@ -107,7 +107,7 @@ read_response :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64) -> string {
         }
         if got > 0 { stall = 0; } else { stall += 1; }
         // complete when the declared Content-Length body is fully in
-        s := string{ ptr = buf, len = xx total };
+        s := string{ ptr = buf, len = total };
         he := -1;
         i := 0;
         while i + 3 < s.len {
@@ -130,10 +130,10 @@ read_response :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64) -> string {
                 }
                 j += 1;
             }
-            if cl >= 0 and total >= he + 4 + cl { return string{ ptr = buf, len = xx (he + 4 + cl) }; }
+            if cl >= 0 and total >= he + 4 + cl { return string{ ptr = buf, len = (he + 4 + cl) }; }
         }
     }
-    return string{ ptr = buf, len = xx total };
+    return string{ ptr = buf, len = total };
 }
 
 main :: () -> i32 {
@@ -222,7 +222,7 @@ main :: () -> i32 {
         socket.close(ca);
         srv.close();
         req_arena.deinit();
-        context.allocator.dealloc_bytes(xx rbuf);
+        context.allocator.dealloc_bytes(rbuf);
         leaked = gpa.alloc_count;
     }
 

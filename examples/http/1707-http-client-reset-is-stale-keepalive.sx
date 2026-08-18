@@ -44,7 +44,7 @@ main :: () -> i32 {
 
     // Let it arrive, then close with it unread → RST rather than FIN.
     sleep_ms(100);
-    socket.close(xx afd);
+    socket.close(afd);
     sleep_ms(100);
 
     buf : [4096]u8 = ---;

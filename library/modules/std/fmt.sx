@@ -11,7 +11,7 @@ alloc_string :: (size: i64) -> string {
     raw := context.allocator.alloc_bytes(size + 1);
     c.memset(raw, 0, size + 1);
     s : string = ---;
-    s.ptr = xx raw;
+    s.ptr = raw.([*]u8);
     s.len = size;
     s
 }
@@ -20,7 +20,7 @@ alloc_slice :: ($T: Type, count: i64) -> []T {
     raw := context.allocator.alloc_bytes(count * size_of(T));
     c.memset(raw, 0, count * size_of(T));
     s : []T = ---;
-    s.ptr = xx raw;
+    s.ptr = raw.([*]T);
     s.len = count;
     s
 }
@@ -185,7 +185,7 @@ substr :: (s: string, start: i64, len: i64) -> string {
 
 // Byte length of `c` (strlen — O(n), walks to the terminator).
 cstring_len :: (c: cstring) -> i64 {
-    p : [*]u8 = xx c;
+    p : [*]u8 = c.([*]u8);
     n := 0;
     while p[n] != '\0' { n += 1; }
     n
@@ -194,7 +194,7 @@ cstring_len :: (c: cstring) -> i64 {
 // A zero-copy string VIEW over `c`'s bytes ({ptr, strlen}). The view
 // shares C's buffer — `substr` it if it must outlive the source.
 from_cstring :: (c: cstring) -> string {
-    p : [*]u8 = xx c;
+    p : [*]u8 = c.([*]u8);
     string{ ptr = p, len = cstring_len(c) }
 }
 
@@ -202,7 +202,7 @@ from_cstring :: (c: cstring) -> string {
 to_cstring :: (s: string) -> cstring {
     z := alloc_string(s.len);
     c.memcpy(z.ptr, s.ptr, s.len);
-    xx z.ptr
+    z.ptr.(cstring)
 }
 
 // Join path components with the POSIX separator ('/'). Skips empty
@@ -287,7 +287,7 @@ slice_to_string :: (items: []$T) -> string {
 }
 
 pointer_to_string :: (p: $T) -> string {
-    addr : i64 = xx p;
+    addr : i64 = p.(i64);
     if addr == 0 { "null" } else {
         concat(type_name(T), concat("@0x", int_to_hex_string(addr)))
     }
@@ -326,18 +326,45 @@ optional_to_string :: (o: $T) -> string {
     return any_to_string(o!);
 }
 
+// Width-dispatch unbox of an `any` whose tag is in the int / float category.
+// A postfix `av.(i64)` is the checked assertion (exact tag), so a narrower
+// boxed integer cannot go through it.
+any_int :: (av: any) -> i64 {
+    p := av.(@Any).data;
+    n := size_of(type_of(av));
+    if n == 1 { return p.(*i8).*; }
+    if n == 2 { return p.(*i16).*; }
+    if n == 4 { return p.(*i32).*; }
+    p.(*i64).*
+}
+
+any_uint :: (av: any) -> i64 {
+    p := av.(@Any).data;
+    n := size_of(type_of(av));
+    if n == 1 { return p.(*u8).*; }
+    if n == 2 { return p.(*u16).*; }
+    if n == 4 { return p.(*u32).*; }
+    p.(*u64).*.(i64)
+}
+
+any_float :: (av: any) -> f64 {
+    p := av.(@Any).data;
+    if size_of(type_of(av)) == 4 { return p.(*f32).*; }
+    p.(*f64).*
+}
+
 any_to_string :: (val: any) -> string {
     result := "<?>";
     type := type_of(val);
     match type {
         case void: result = "";
         case int: {
-            if is_unsigned(type) { result = uint_to_string(xx val); }
-            else { result = int_to_string(xx val); }
+            if is_unsigned(type) { result = uint_to_string(any_uint(val)); }
+            else { result = int_to_string(any_int(val)); }
         }
-        case string: { s : string = xx val; result = s; }
-        case bool: result = bool_to_string(xx val);
-        case float: result = float_to_string(xx val);
+        case string: { s : string = val.(@Any).data.(*string).*; result = s; }
+        case bool: result = bool_to_string(val.(@Any).data.(*bool).*);
+        case float: result = float_to_string(any_float(val));
         // Structs walk WITHOUT monomorphizing: one compiled body serves
         // every struct type — the field count/name come from the runtime
         // reflection tables, and each field is an interior VIEW into the
@@ -390,7 +417,7 @@ any_to_string :: (val: any) -> string {
                 result = r;
             }
         }
-        case error_set: { tagid : u32 = xx val; result = error_name(tagid); }
+        case error_set: { tagid : u32 = val.(@Any).data.(*u32).*; result = error_name(tagid); }
         // Vectors walk by element VIEW like arrays; the lane count comes
         // from the lanes table (a vector's ABI size is pow2-rounded, so
         // size/elem_size would over-count e.g. 3 lanes as 4).
@@ -433,11 +460,11 @@ any_to_string :: (val: any) -> string {
         case slice: {
             et := struct_field_type(type, 0);
             esz := size_of(et);
-            hb : [*]u8 = xx raw_any_data(val);
+            hb : [*]u8 = raw_any_data(val).([*]u8);
             base := 0;
             pi := 0;
             while pi < size_of(*void) {
-                pb : i64 = xx hb[pi];
+                pb : i64 = hb[pi];
                 base = base | (pb << (8 * pi));
                 pi += 1;
             }
@@ -446,7 +473,7 @@ any_to_string :: (val: any) -> string {
             si := 0;
             while si < n {
                 if si > 0 { r = concat(r, ", "); }
-                ep : *void = xx (base + si * esz);
+                ep : *void = (base + si * esz).(*void);
                 r = concat(r, any_to_string(raw_make_any(et, ep)));
                 si += 1;
             }
@@ -455,7 +482,7 @@ any_to_string :: (val: any) -> string {
         // A pointer is one word behind the view: 0 prints null, else the
         // pointer TYPE's name @ the address (pointer_to_string's format).
         case pointer: {
-            pw : [*]i64 = xx raw_any_data(val);
+            pw : [*]i64 = raw_any_data(val).([*]i64);
             addr := pw[0];
             if addr == 0 { result = "null"; }
             else { result = concat(type_name(type), concat("@0x", int_to_hex_string(addr))); }
@@ -469,11 +496,11 @@ any_to_string :: (val: any) -> string {
             csz := size_of(child);
             present := false;
             if size_of(type) == csz {
-                pw : [*]i64 = xx raw_any_data(val);
+                pw : [*]i64 = raw_any_data(val).([*]i64);
                 present = pw[0] != 0;
             } else {
-                pb : [*]u8 = xx raw_any_data(val);
-                b : i64 = xx pb[csz];
+                pb : [*]u8 = raw_any_data(val).([*]u8);
+                b : i64 = pb[csz];
                 present = b != 0;
             }
             if present { result = any_to_string(raw_make_any(child, raw_any_data(val))); }
@@ -571,7 +598,7 @@ CastError :: error { mismatch }
 
 __sx_cast_assert :: (av: any, $T: Type) -> (T, !CastError) {
     if !type_eq(type_of(av), T) { raise error.mismatch; }
-    return xx av;
+    return av.(@Any).data.(*T).*;
 }
 
 __sx_cast_or_panic :: (av: any, $T: Type, site: @SourceSite = @caller) -> T {
@@ -579,14 +606,14 @@ __sx_cast_or_panic :: (av: any, $T: Type, site: @SourceSite = @caller) -> T {
         print("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, T, type_of(av));
         c.exit(1);
     }
-    return xx av;
+    return av.(@Any).data.(*T).*;
 }
 
 // The SOFT assertion form `av.(?T)`: mismatch is a value (`null`), never a
 // failure — the optional IS the check (comma-ok parity).
 __sx_cast_maybe :: (av: any, $T: Type) -> ?T {
     if !type_eq(type_of(av), T) { return null; }
-    v : T = xx av;
+    v : T = av.(@Any).data.(*T).*;
     return v;
 }
 
@@ -602,7 +629,7 @@ __sx_cast_maybe :: (av: any, $T: Type) -> ?T {
 __sx_chain_cast_assert :: (o: ?any, $T: Type) -> (?T, !CastError) {
     if av := o {
         if !type_eq(type_of(av), T) { raise error.mismatch; }
-        v : T = xx av;
+        v : T = av.(@Any).data.(*T).*;
         r : ?T = v;
         return r;
     }
@@ -616,7 +643,7 @@ __sx_chain_cast_or_panic :: (o: ?any, $T: Type, site: @SourceSite = @caller) -> 
             print("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, T, type_of(av));
             c.exit(1);
         }
-        v : T = xx av;
+        v : T = av.(@Any).data.(*T).*;
         r : ?T = v;
         return r;
     }
@@ -627,7 +654,7 @@ __sx_chain_cast_or_panic :: (o: ?any, $T: Type, site: @SourceSite = @caller) -> 
 __sx_chain_cast_maybe :: (o: ?any, $T: Type) -> ?T {
     if av := o {
         if !type_eq(type_of(av), T) { return null; }
-        v : T = xx av;
+        v : T = av.(@Any).data.(*T).*;
         r : ?T = v;
         return r;
     }
@@ -644,11 +671,11 @@ __sx_any_tag_word :: (t: Type, av: any) -> i64 {
     w := __sx_variant_tag_width(t);
     signed := false;
     if w < 0 { signed = true; w = -w; }
-    p : [*]u8 = xx raw_any_data(av);
+    p : [*]u8 = raw_any_data(av).([*]u8);
     v := 0;
     i := 0;
     while i < w {
-        b : i64 = xx p[i];
+        b : i64 = p[i];
         v = v | (b << (8 * i));
         i += 1;
     }
@@ -671,11 +698,11 @@ __sx_any_len_word :: (t: Type, av: any) -> i64 {
     bits := row & 0xFF;
     off := (row >> 16) & 0xFFFF;
     w := (bits + 7) / 8;
-    p : [*]u8 = xx raw_any_data(av);
+    p : [*]u8 = raw_any_data(av).([*]u8);
     v := 0;
     i := 0;
     while i < w {
-        b : i64 = xx p[off + i];
+        b : i64 = p[off + i];
         v = v | (b << (8 * i));
         i += 1;
     }

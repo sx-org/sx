@@ -29,10 +29,10 @@ total :: (x: $T/Summable) -> i32 { x.val() }
 // bound is satisfied by the visible impl, not by shape.
 Celsius :: struct { deg: i32 = 0; }
 impl Into(i32) for Celsius {
-    convert :: (self: *Celsius) -> i32 { self.deg }
+    convert :: (self: *Celsius, alloc: Allocator = context.allocator) -> i32 { _ = alloc; self.deg }
 }
 
-degrees :: (c: $C/Into(i32)) -> i32 { xx c }
+degrees :: (c: $C/Into(i32)) -> i32 { c.(i32) }
 
 // A head naming a SIBLING type parameter: nothing is known about `P` in the
 // template, so the bound defers — and is asked at the call that binds `P`. What

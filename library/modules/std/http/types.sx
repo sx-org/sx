@@ -62,11 +62,11 @@ Request :: struct {
             return f(self.body_read_ctx, dst, cap);
         }
         if cap <= 0 { return 0; }
-        blen : i64 = xx self.body.len;
+        blen : i64 = self.body.len.(i64);
         left := blen - self.body_off;
         if left <= 0 { return 0; }
         n := if cap < left then cap else left;
-        c.memcpy(*dst[0], *self.body.ptr[self.body_off], xx n);
+        c.memcpy(*dst[0], *self.body.ptr[self.body_off], n);
         self.body_off += n;
         return n;
     }
@@ -316,9 +316,9 @@ decode_chunked_pass :: (src: [*]u8, avail: i64, max_body: i64, commit: bool, res
         while rp < avail {
             ch := src[rp];
             hv : i64 = -1;
-            if ch >= '0' and ch <= '9' { hv = (ch - '0').(i64); }
-            else if ch >= 'a' and ch <= 'f' { hv = (ch - 'a' + 10).(i64); }
-            else if ch >= 'A' and ch <= 'F' { hv = (ch - 'A' + 10).(i64); }
+            if '0' <= ch <= '9' { hv = (ch - '0').(i64); }
+            else if 'a' <= ch <= 'f' { hv = (ch - 'a' + 10).(i64); }
+            else if 'A' <= ch <= 'F' { hv = (ch - 'A' + 10).(i64); }
             if hv < 0 { break; }
             // Overflow guard: this protects ONLY against an i64 wrap in the
             // `size*16 + hv` shift below. The max_body ceiling is a separate,
@@ -479,18 +479,18 @@ normalize_path :: (buf: [*]u8, len: i64) -> i64 {
             lo : i64 = -1;
             h := buf[rp + 1];
             l := buf[rp + 2];
-            if h >= '0' and h <= '9' { hi = (h - '0').(i64); }
-            else if h >= 'a' and h <= 'f' { hi = (h - 'a' + 10).(i64); }
-            else if h >= 'A' and h <= 'F' { hi = (h - 'A' + 10).(i64); }
-            if l >= '0' and l <= '9' { lo = (l - '0').(i64); }
-            else if l >= 'a' and l <= 'f' { lo = (l - 'a' + 10).(i64); }
-            else if l >= 'A' and l <= 'F' { lo = (l - 'A' + 10).(i64); }
+            if '0' <= h <= '9' { hi = (h - '0').(i64); }
+            else if 'a' <= h <= 'f' { hi = (h - 'a' + 10).(i64); }
+            else if 'A' <= h <= 'F' { hi = (h - 'A' + 10).(i64); }
+            if '0' <= l <= '9' { lo = (l - '0').(i64); }
+            else if 'a' <= l <= 'f' { lo = (l - 'a' + 10).(i64); }
+            else if 'A' <= l <= 'F' { lo = (l - 'A' + 10).(i64); }
             if hi < 0 or lo < 0 { return -1; }   // non-hex escape
             d : i64 = hi * 16 + lo;
             if d < ' ' or d == '\x7f' { return -1; } // control (incl. NUL/CR/LF)
             if d == '/' { return -1; }            // segmentation change
             if d == '?' { return -1; }            // unrepresentable
-            buf[wp] = xx d;
+            buf[wp] = d;
             wp += 1;
             rp += 3;
         } else {

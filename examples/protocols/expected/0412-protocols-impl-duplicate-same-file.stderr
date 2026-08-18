@@ -3,17 +3,19 @@ error: duplicate impl 'Into' for source 'i64' in examples/protocols/0412-protoco
    |
 11 | impl Into(MyA) for i64 {
    | ^^^^^^^^^^^^^^^^^^^^^^^^
-12 |   convert :: (self: i64) -> MyA { .{ v = self } }
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-13 | }
+12 |   convert :: (self: i64, alloc: Allocator = context.allocator) -> MyA {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+13 |     _ = alloc; .{ v = self } }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 | }
    | ^
 
 note: also implemented here
-  --> examples/protocols/0412-protocols-impl-duplicate-same-file.sx:15:1
+  --> examples/protocols/0412-protocols-impl-duplicate-same-file.sx:16:1
    |
-15 | impl Into(MyA) for i64 {
+16 | impl Into(MyA) for i64 {
    | ^^^^^^^^^^^^^^^^^^^^^^^^
-16 |   convert :: (self: i64) -> MyA { .{ v = self * 2 } }
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-17 | }
+17 |   convert :: (self: i64, alloc: Allocator = context.allocator) -> MyA { _ = alloc; .{ v = self * 2 } }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+18 | }
    | ^

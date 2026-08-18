@@ -180,7 +180,7 @@ conn_read_step :: (c: *ClientConn, buf: [*]u8, cap: i64) -> i64 {
         if socket.is_conn_reset(socket.errno()) { return READ_RESET; }
         return -1;
     }
-    return xx n;
+    return n;
 }
 
 // A parsed HTTP response. `headers_raw` is the raw block between the status
@@ -331,7 +331,7 @@ send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_he
 
 // Append `s` into the request build at offset `w`, returning the new offset.
 put :: (p: [*]u8, w: i64, s: string) -> i64 {
-    if s.len > 0 { clib.memcpy(*p[w], s.ptr, xx s.len); }
+    if s.len > 0 { clib.memcpy(*p[w], s.ptr, s.len); }
     return w + s.len;
 }
 
@@ -527,9 +527,9 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
         // it — a later relative hop must not leave u.host viewing a freed
         // previous location copy (absolute-then-relative chains).
         if u.host.len == 0 or u.host.len > 255 { if freeing { context.allocator.dealloc_bytes(pathp); } raise error.Url; }
-        hbp : [*]u8 = xx *hostb[0];
+        hbp : [*]u8 = (*hostb[0]).([*]u8);
         if u.host.ptr != hbp {
-            clib.memcpy(hbp, u.host.ptr, xx u.host.len);
+            clib.memcpy(hbp, u.host.ptr, u.host.len);
             u.host = string{ ptr = hbp, len = u.host.len };
         }
         hu := u;
@@ -558,7 +558,7 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
         // Build the next target BEFORE the buffer is reused: copy the
         // location out, then re-parse.
         np : [*]u8 = context.allocator.alloc(u8, loc.len).ptr;
-        clib.memcpy(np, loc.ptr, xx loc.len);
+        clib.memcpy(np, loc.ptr, loc.len);
         locv := string{ ptr = np, len = loc.len };
         close_conn(*c);
         if freeing { context.allocator.dealloc_bytes(pathp); }
@@ -665,7 +665,7 @@ recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
 
     wire : [CLIENT_WIRE_PIECE]u8 = ---;
     if initial.len > CLIENT_WIRE_PIECE { raise error.TooLarge; }
-    if initial.len > 0 { clib.memcpy(*wire[0], initial.ptr, xx initial.len); }
+    if initial.len > 0 { clib.memcpy(*wire[0], initial.ptr, initial.len); }
     wire_at : i64 = 0;
     wire_len : i64 = initial.len;
     output_at : i64 = 0;
@@ -759,9 +759,9 @@ recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
         wire_at += 1;
         if phase == .size {
             digit : i64 = -1;
-            if b >= '0' and b <= '9' { digit = (b - '0').(i64); }
-            else if b >= 'a' and b <= 'f' { digit = (b - 'a' + 10).(i64); }
-            else if b >= 'A' and b <= 'F' { digit = (b - 'A' + 10).(i64); }
+            if '0' <= b <= '9' { digit = (b - '0').(i64); }
+            else if 'a' <= b <= 'f' { digit = (b - 'a' + 10).(i64); }
+            else if 'A' <= b <= 'F' { digit = (b - 'A' + 10).(i64); }
             if digit >= 0 {
                 if chunk_size > 0x07FFFFFFFFFFFFFF { raise error.Recv; }
                 chunk_size = chunk_size * 16 + digit;
@@ -1062,9 +1062,9 @@ ClientPool :: struct {
         first := true;
         while true {
             if u.host.len == 0 or u.host.len > 255 { if freeing { context.allocator.dealloc_bytes(pathp); } raise error.Url; }
-            hbp : [*]u8 = xx *hostb[0];
+            hbp : [*]u8 = (*hostb[0]).([*]u8);
             if u.host.ptr != hbp {
-                clib.memcpy(hbp, u.host.ptr, xx u.host.len);
+                clib.memcpy(hbp, u.host.ptr, u.host.len);
                 u.host = string{ ptr = hbp, len = u.host.len };
             }
             r, he := self.hop(u, m, b, first, buf, cap);
@@ -1084,7 +1084,7 @@ ClientPool :: struct {
                 raise error.Redirect;
             }
             np : [*]u8 = context.allocator.alloc(u8, loc.len).ptr;
-            clib.memcpy(np, loc.ptr, xx loc.len);
+            clib.memcpy(np, loc.ptr, loc.len);
             locv := string{ ptr = np, len = loc.len };
             if freeing { context.allocator.dealloc_bytes(pathp); }
             pathp = np;

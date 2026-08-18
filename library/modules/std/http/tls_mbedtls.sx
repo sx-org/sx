@@ -4,14 +4,14 @@
 // http/tls.sx) over the VENDORED mbedTLS (vendors/mbedtls). This is the ONLY
 // place that pulls in the crypto C: importing http alone stays plaintext; a
 // program opts into TLS by importing THIS module, constructing a `TlsServer`
-// from a cert+key, and handing `xx @server` to `Config.tls`. http.sx never
+// from a cert+key, and handing `@server` to `Config.tls`. http.sx never
 // sees an mbedTLS type or error code — the impls below map every
 // `MBEDTLS_ERR_SSL_WANT_*` / `PEER_CLOSE_NOTIFY` onto the abstract `TlsStep`.
 //
 //   tlsp :: #import "modules/std/http/tls_mbedtls.sx";
 //   ts : tlsp.TlsServer = .{};
 //   ts.setup(cert_pem, key_pem, alloc);   // cert+key as PEM bytes
-//   cfg.tls = xx @ts;                       // erased ?TlsAcceptor
+//   cfg.tls = @ts;                       // erased ?TlsAcceptor
 //
 // The BIO thunks (tls_bio_send / tls_bio_recv) are the abi(.c) callbacks
 // mbedTLS calls to move ciphertext; they bridge the non-blocking fd's EAGAIN
@@ -35,10 +35,10 @@ mbedtls :: #import "vendors/mbedtls/mbedtls.sx";
 // retried in-thunk (a readiness loop has nothing else to do with it).
 
 tls_bio_send :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
-    s : *TlsSession = xx ctx;
+    s : *TlsSession = ctx.(*TlsSession);
     while true {
         n := socket.write(s.fd, buf, len);
-        if n >= 0 { return xx n; }
+        if n >= 0 { return n; }
         e := socket.errno();
         if e == posix.EINTR { continue; }
         if socket.is_wouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE; }
@@ -48,10 +48,10 @@ tls_bio_send :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
 }
 
 tls_bio_recv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
-    s : *TlsSession = xx ctx;
+    s : *TlsSession = ctx.(*TlsSession);
     while true {
         n := socket.read(s.fd, buf, len);
-        if n > 0 { return xx n; }
+        if n > 0 { return n; }
         if n == 0 { return 0; }   // orderly EOF — mbedTLS treats as conn closed
         e := socket.errno();
         if e == posix.EINTR { continue; }
@@ -83,7 +83,7 @@ impl TlsConn for TlsSession {
     read :: (self: *TlsSession, buf: [*]u8, cap: i64) -> (i64, TlsStep) {
         while true {
             r := mbedtls.mbedtls_ssl_read(*self.ssl, buf, cap);
-            if r > 0 { return xx r, TlsStep.Done; }
+            if r > 0 { return r, TlsStep.Done; }
             if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return 0, TlsStep.WantRead; }
             if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 0, TlsStep.WantWrite; }
             if r == mbedtls.MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY { return 0, TlsStep.Closed; }
@@ -100,7 +100,7 @@ impl TlsConn for TlsSession {
 
     write :: (self: *TlsSession, buf: [*]u8, len: i64) -> (i64, TlsStep) {
         r := mbedtls.mbedtls_ssl_write(*self.ssl, buf, len);
-        if r > 0 { return xx r, TlsStep.Done; }
+        if r > 0 { return r, TlsStep.Done; }
         if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return 0, TlsStep.WantRead; }
         if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 0, TlsStep.WantWrite; }
         return 0, TlsStep.Fatal;
@@ -118,7 +118,7 @@ impl TlsConn for TlsSession {
 
 // ── shared server config (impls TlsAcceptor) ────────────────────────
 // Holds the parsed cert chain, private key, RNG, and the SslConfig all
-// sessions share. MUST outlive the Server (Config.tls borrows `xx @this`).
+// sessions share. MUST outlive the Server (Config.tls borrows `@this`).
 // `ok` gates accept: a failed setup never mints a session, so a misconfigured
 // server drops every connection rather than serving it in the clear.
 
@@ -180,7 +180,7 @@ TlsServer :: struct {
         mbedtls.mbedtls_x509_crt_init(*self.ca);   // parsed by require_client_cert; freed by deinit either way
 
         // Seed the DRBG from the platform entropy source.
-        if mbedtls.mbedtls_ctr_drbg_seed(*self.drbg, mbedtls.mbedtls_entropy_func, xx *self.entropy, null, 0) != 0 {
+        if mbedtls.mbedtls_ctr_drbg_seed(*self.drbg, mbedtls.mbedtls_entropy_func, *self.entropy, null, 0) != 0 {
             return false;
         }
 
@@ -198,7 +198,7 @@ TlsServer :: struct {
 
         // Parse the private key (the DRBG seeds any PEM-decryption RNG).
         kbuf, kn := nul_dup(a, key_pem);
-        rk := mbedtls.mbedtls_pk_parse_key(*self.pkey, kbuf, kn, null, 0, mbedtls.mbedtls_ctr_drbg_random, xx *self.drbg);
+        rk := mbedtls.mbedtls_pk_parse_key(*self.pkey, kbuf, kn, null, 0, mbedtls.mbedtls_ctr_drbg_random, *self.drbg);
         a.dealloc_bytes(kbuf);
         if rk != 0 { return false; }
 
@@ -206,7 +206,7 @@ TlsServer :: struct {
         if mbedtls.mbedtls_ssl_config_defaults(*self.conf, mbedtls.MBEDTLS_SSL_IS_SERVER, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 {
             return false;
         }
-        mbedtls.mbedtls_ssl_conf_rng(*self.conf, mbedtls.mbedtls_ctr_drbg_random, xx *self.drbg);
+        mbedtls.mbedtls_ssl_conf_rng(*self.conf, mbedtls.mbedtls_ctr_drbg_random, *self.drbg);
         if mbedtls.mbedtls_ssl_conf_own_cert(*self.conf, *self.cert, *self.pkey) != 0 {
             return false;
         }
@@ -296,7 +296,7 @@ TlsServer :: struct {
         cbuf, cn := nul_dup(self.a, cert_pem);
         if mbedtls.mbedtls_x509_crt_parse(*e.cert, cbuf, cn) == 0 {
             kbuf, kn := nul_dup(self.a, key_pem);
-            if mbedtls.mbedtls_pk_parse_key(*e.pkey, kbuf, kn, null, 0, mbedtls.mbedtls_ctr_drbg_random, xx *self.drbg) == 0 {
+            if mbedtls.mbedtls_pk_parse_key(*e.pkey, kbuf, kn, null, 0, mbedtls.mbedtls_ctr_drbg_random, *self.drbg) == 0 {
                 ok = true;
             }
             self.a.dealloc_bytes(kbuf);
@@ -322,7 +322,7 @@ TlsServer :: struct {
         e.name_len = name.len;
 
         if !self.sni_registered {
-            mbedtls.mbedtls_ssl_conf_sni(*self.conf, tls_sni_select, xx self);
+            mbedtls.mbedtls_ssl_conf_sni(*self.conf, tls_sni_select, self);
             self.sni_registered = true;
         }
         self.sni.append(e, self.a);
@@ -439,8 +439,8 @@ free_alpn :: (a: Allocator, vec: [*][*]u8, n: i64) {
 // identity). A set_hs_own_cert failure aborts rather than serving the wrong
 // identity.
 tls_sni_select :: (ctx: *void, ssl: *mbedtls.SslContext, name: [*]u8, name_len: usize) -> i32 abi(.c) {
-    ts : *TlsServer = xx ctx;
-    nlen : i64 = xx name_len;
+    ts : *TlsServer = ctx.(*TlsServer);
+    nlen : i64 = name_len.(i64);
     i : i64 = 0;
     while i < ts.sni.len {
         e := ts.sni.items[i];
@@ -470,9 +470,9 @@ tls_sni_select :: (ctx: *void, ssl: *mbedtls.SslContext, name: [*]u8, name_len: 
 nul_dup :: (a: Allocator, src: []u8) -> ([*]u8, usize) {
     n := src.len;
     p : [*]u8 = a.alloc(u8, n + 1).ptr;
-    if n > 0 { clib.memcpy(p, src.ptr, xx n); }
+    if n > 0 { clib.memcpy(p, src.ptr, n); }
     p[n] = 0;
-    return p, xx (n + 1);
+    return p, (n + 1);
 }
 
 impl TlsAcceptor for TlsServer {
@@ -489,14 +489,14 @@ impl TlsAcceptor for TlsServer {
         }
         s.fd = fd;
         s.a  = self.a;
-        mbedtls.mbedtls_ssl_set_bio(*s.ssl, xx s, tls_bio_send, tls_bio_recv, null);
-        return xx s;
+        mbedtls.mbedtls_ssl_set_bio(*s.ssl, s, tls_bio_send, tls_bio_recv, null);
+        return s;
     }
 }
 
 // ── client-side config (impls TlsDialer) ─────────────────────
 // The shared client TLS state: trust anchor + RNG + SslConfig. MUST outlive
-// every connection it minted (ClientOpts.tls borrows `xx @this`). Two
+// every connection it minted (ClientOpts.tls borrows `@this`). Two
 // setups, both loud:
 //   setup(ca_pem)  — REQUIRED verification against the explicit trust
 //                    anchor + the connect-time hostname (a self-signed
@@ -521,13 +521,13 @@ TlsClientConfig :: struct {
         mbedtls.mbedtls_x509_crt_init(*self.ca);
         mbedtls.mbedtls_ctr_drbg_init(*self.drbg);
         mbedtls.mbedtls_entropy_init(*self.entropy);
-        if mbedtls.mbedtls_ctr_drbg_seed(*self.drbg, mbedtls.mbedtls_entropy_func, xx *self.entropy, null, 0) != 0 {
+        if mbedtls.mbedtls_ctr_drbg_seed(*self.drbg, mbedtls.mbedtls_entropy_func, *self.entropy, null, 0) != 0 {
             return false;
         }
         if mbedtls.mbedtls_ssl_config_defaults(*self.conf, mbedtls.MBEDTLS_SSL_IS_CLIENT, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 {
             return false;
         }
-        mbedtls.mbedtls_ssl_conf_rng(*self.conf, mbedtls.mbedtls_ctr_drbg_random, xx *self.drbg);
+        mbedtls.mbedtls_ssl_conf_rng(*self.conf, mbedtls.mbedtls_ctr_drbg_random, *self.drbg);
         return true;
     }
 
@@ -605,7 +605,7 @@ impl TlsDialer for TlsClientConfig {
         }
         s.fd = fd;
         s.a  = self.a;
-        mbedtls.mbedtls_ssl_set_bio(*s.ssl, xx s, tls_bio_send, tls_bio_recv, null);
+        mbedtls.mbedtls_ssl_set_bio(*s.ssl, s, tls_bio_send, tls_bio_recv, null);
         // Blocking fd: the BIO parks until bytes move, so a WANT_* can only
         // mean an SO_RCVTIMEO/SNDTIMEO expiry surfaced as EAGAIN — retrying
         // would wait the timeout again forever. Any non-zero result fails
@@ -615,6 +615,6 @@ impl TlsDialer for TlsClientConfig {
             self.a.destroy(s);
             return null;
         }
-        return xx s;
+        return s;
     }
 }

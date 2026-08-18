@@ -117,10 +117,10 @@ Color :: struct {
         Color{ r = r, g = g, b = b, a = 255 }
     }
 
-    rf :: (self: Color) -> f32 { xx self.r / 255.0 }
-    gf :: (self: Color) -> f32 { xx self.g / 255.0 }
-    bf :: (self: Color) -> f32 { xx self.b / 255.0 }
-    af :: (self: Color) -> f32 { xx self.a / 255.0 }
+    rf :: (self: Color) -> f32 { self.r.(f32) / 255.0 }
+    gf :: (self: Color) -> f32 { self.g.(f32) / 255.0 }
+    bf :: (self: Color) -> f32 { self.b.(f32) / 255.0 }
+    af :: (self: Color) -> f32 { self.a.(f32) / 255.0 }
 
     with_alpha :: (self: Color, a: u8) -> Color {
         Color{ r = self.r, g = self.g, b = self.b, a = a }
@@ -128,10 +128,10 @@ Color :: struct {
 
     lerp :: (self: Color, b: Color, t: f32) -> Color {
         Color{
-            r = xx (self.r + (b.r - self.r) * t),
-            g = xx (self.g + (b.g - self.g) * t),
-            b = xx (self.b + (b.b - self.b) * t),
-            a = xx (self.a + (b.a - self.a) * t),
+            r = (self.r + (b.r - self.r) * t),
+            g = (self.g + (b.g - self.g) * t),
+            b = (self.b + (b.b - self.b) * t),
+            a = (self.a + (b.a - self.a) * t),
         }
     }
 }

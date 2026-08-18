@@ -15,7 +15,7 @@ mk :: ($T: Type, p: *T) -> Box(T) { Box(T){ p = p } }
 
 f1 :: (v: *Buf) -> i64 {
     b := mk(Buf, v);
-    xx b.get().data[0]
+    b.get().data[0]
 }
 
 main :: () {

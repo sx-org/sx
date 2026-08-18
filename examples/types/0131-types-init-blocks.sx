@@ -190,7 +190,7 @@ main :: () {
 
         // coercion from i32
         x : i32 = 10;
-        y : usize = xx x;
+        y : usize = x;
         print("i32->usize: {}\n", y);
 
         // coercion to i64

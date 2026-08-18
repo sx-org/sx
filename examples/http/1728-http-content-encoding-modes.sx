@@ -320,7 +320,7 @@ run_mode :: (app: *App, mode: i64, port: i64) -> bool {
     if mode == 2 { cfg.fibers = runner; }
     srv, se := http.Server.init(cfg, route, xx app);
     if se { runner.deinit(); return false; }
-    t, te := thread.Thread.spawn(server_entry, xx *srv);
+    t, te := thread.Thread.spawn(server_entry, *srv);
     if te { srv.close(); runner.deinit(); return false; }
 
     storage : [*]u8 = xx context.allocator.alloc_bytes(BODY_LEN + 8192);
@@ -349,7 +349,7 @@ run_mode :: (app: *App, mode: i64, port: i64) -> bool {
     }
     if ok { ok = fairness_case(app, port, storage, BODY_LEN + 8192); }
 
-    context.allocator.dealloc_bytes(xx storage);
+    context.allocator.dealloc_bytes(storage);
     srv.stop();
     t.join();
     srv.close();
@@ -363,9 +363,9 @@ main :: () -> i32 {
     push .{ allocator = gpa } {
         raw := context.allocator.alloc_bytes(BODY_LEN);
         if raw == null { return 2; }
-        body : string = .{ ptr = xx raw, len = BODY_LEN };
+        body : string = .{ ptr = raw.([*]u8), len = BODY_LEN };
         i : i64 = 0;
-        while i < body.len { body.ptr[i] = xx ('a' + ((i / 97) % 17)); i += 1; }
+        while i < body.len { body.ptr[i] = ('a' + ((i / 97) % 17)).(u8); i += 1; }
         gz := gzip.encode(body) catch { context.allocator.dealloc_bytes(raw); return 2; };
         zl := zlib.encode(body) catch {
             context.allocator.dealloc_bytes(gz.ptr);

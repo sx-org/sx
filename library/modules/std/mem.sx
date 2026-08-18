@@ -45,7 +45,7 @@ alloc :: ufcs (a: Allocator, $T: Type, count: i64) -> []T {
 
 // THE free: releases what `x` owns, kind-dispatched at compile time.
 //   - a SLICE from `alloc` / `clone` / `resize` → frees the backing;
-//   - a PROTOCOL value from an owning erasure (`xx <rvalue>`) → frees the
+//   - a PROTOCOL value from an owning erasure (`<rvalue>`) → frees the
 //     heap-copied ctx (borrow-mode values own no backing — do not free
 //     them);
 //   - a CLOSURE → frees the heap `env` captured at the literal (a
@@ -196,7 +196,7 @@ Arena :: struct {
         needed := min_size + 16 + 16;
         len := (prev_cap + needed) * 3 / 2;
         raw := a.parent.alloc_bytes(len);
-        chunk : *ArenaChunk = xx raw;
+        chunk : *ArenaChunk = raw.(*ArenaChunk);
         chunk.next = a.first;
         chunk.cap = len;
         a.first = chunk;
@@ -240,14 +240,14 @@ impl Allocator for Arena {
         if self.first != null {
             usable := self.first.cap - 16;
             if self.end_index + aligned <= usable {
-                buf : [*]u8 = xx self.first;
+                buf : [*]u8 = self.first.([*]u8);
                 ptr := *buf[16 + self.end_index];
                 self.end_index = self.end_index + aligned;
                 return ptr;
             }
         }
         self.add_chunk(aligned);
-        buf : [*]u8 = xx self.first;
+        buf : [*]u8 = self.first.([*]u8);
         ptr := *buf[16 + self.end_index];
         self.end_index = self.end_index + aligned;
         ptr

@@ -615,7 +615,7 @@ ZipReader :: struct {
         if needed > max_output { raise error.OutputLimit; }
         raw := alloc.alloc_bytes(needed);
         if needed > 0 and raw == null { raise error.AllocationFailed; }
-        result := string{ ptr = xx raw, len = needed };
+        result := string{ ptr = raw, len = needed };
         made := self.extract_into(index, result, options, alloc) catch |e| {
             if raw != null { alloc.dealloc_bytes(raw); }
             raise e;
@@ -663,7 +663,7 @@ ZipReader :: struct {
                 } else {
                     input_raw := alloc.alloc_bytes(capacity);
                     if input_raw == null { state.deinit(); raise error.AllocationFailed; }
-                    input_buf = .{ ptr = xx input_raw, len = capacity };
+                    input_buf = .{ ptr = input_raw, len = capacity };
                     input_owned = true;
                 }
                 input_len = 0;
@@ -772,7 +772,7 @@ ZipReader :: struct {
         if local_extra_len > 0 and (local_compressed_raw == 0xffffffff or local_size_raw == 0xffffffff) {
             extra_raw := alloc.alloc_bytes(local_extra_len);
             if extra_raw == null { raise error.AllocationFailed; }
-            local_extra := string{ ptr = xx extra_raw, len = local_extra_len };
+            local_extra := string{ ptr = extra_raw, len = local_extra_len };
             self.read_exact_at(at + 30 + local_name_len, local_extra) catch |e| {
                 alloc.dealloc_bytes(extra_raw); raise e;
             };
@@ -860,7 +860,7 @@ private ZipFileReadState :: struct {
 }
 
 private zip_file_source_read :: (ctx: *void, offset: i64, output: string) -> i64 {
-    state : *ZipFileReadState = xx ctx;
+    state : *ZipFileReadState = ctx.(*ZipFileReadState);
     file := *state.file;
     absolute := state.start + offset;
     if absolute < state.start or file.seek(absolute, .set) != absolute { return 0; }
@@ -868,7 +868,7 @@ private zip_file_source_read :: (ctx: *void, offset: i64, output: string) -> i64
 }
 
 private zip_file_update_truncate :: (ctx: *void, len: i64) -> bool {
-    state : *ZipFileReadState = xx ctx;
+    state : *ZipFileReadState = ctx.(*ZipFileReadState);
     if len < 0 or len > state.write_position { return false; }
     file := *state.file;
     // The tail beyond the rollback point is either the failed record or the
@@ -880,7 +880,7 @@ private zip_file_update_truncate :: (ctx: *void, len: i64) -> bool {
 }
 
 private zip_file_update_write :: (ctx: *void, data: string) -> bool {
-    state : *ZipFileReadState = xx ctx;
+    state : *ZipFileReadState = ctx.(*ZipFileReadState);
     file := *state.file;
     absolute := state.write_base + state.write_position;
     if absolute < state.write_base or file.seek(absolute, .set) != absolute { return false; }
@@ -895,7 +895,7 @@ private zip_file_update_write :: (ctx: *void, data: string) -> bool {
 }
 
 private zip_file_update_write_at :: (ctx: *void, offset: i64, data: string) -> bool {
-    state : *ZipFileReadState = xx ctx;
+    state : *ZipFileReadState = ctx.(*ZipFileReadState);
     file := *state.file;
     absolute := state.write_base + offset;
     if offset < 0 or absolute < state.write_base or file.seek(absolute, .set) != absolute { return false; }
@@ -909,7 +909,7 @@ private zip_file_update_write_at :: (ctx: *void, offset: i64, data: string) -> b
 }
 
 private zip_file_update_read_at :: (ctx: *void, offset: i64, output: string) -> i64 {
-    state : *ZipFileReadState = xx ctx;
+    state : *ZipFileReadState = ctx.(*ZipFileReadState);
     file := *state.file;
     absolute := state.write_base + offset;
     if offset < 0 or absolute < state.write_base or file.seek(absolute, .set) != absolute { return -1; }
@@ -1058,7 +1058,7 @@ open_zip_source :: (source: ZipReadSource, detect_prefix: bool = true, alloc: Al
 
     raw := alloc.alloc_bytes(metadata_size);
     if metadata_size > 0 and raw == null { raise error.AllocationFailed; }
-    bytes := string{ ptr = xx raw, len = metadata_size };
+    bytes := string{ ptr = raw, len = metadata_size };
     zip_source_read_exact(source, central_absolute, bytes[..central_size]) catch |e| {
         if raw != null { alloc.dealloc_bytes(raw); } raise e;
     };
@@ -1161,9 +1161,9 @@ private open_zip_file_mode :: (path: [:0]u8, start: i64, size: i64, writable: bo
     }
     state_raw := alloc.alloc_bytes(size_of(ZipFileReadState));
     if state_raw == null { file.close(); raise error.AllocationFailed; }
-    state : *ZipFileReadState = xx state_raw;
+    state : *ZipFileReadState = state_raw.(*ZipFileReadState);
     state.* = ZipFileReadState{ file = file, start = start, owns_file = true, writable = writable };
-    source := ZipReadSource{ ctx = xx state, size = actual_size, read = zip_file_source_read };
+    source := ZipReadSource{ ctx = state, size = actual_size, read = zip_file_source_read };
     owned := open_zip_source(source, start == 0, alloc, max_metadata) catch |e| {
         state.file.close(); alloc.dealloc_bytes(state_raw); raise e;
     };
@@ -1220,7 +1220,7 @@ zip_extract_to_output :: (reader: *ZipReader, index: i64, sink: ZipExtractSink, 
         if capacity > 65536 { capacity = 65536; }
         input_raw := alloc.alloc_bytes(capacity);
         if input_raw == null { state.deinit(); raise error.AllocationFailed; }
-        input_buf = .{ ptr = xx input_raw, len = capacity };
+        input_buf = .{ ptr = input_raw, len = capacity };
         input_owned = true;
         input_len = 0;
         source_at = 0;
@@ -1271,7 +1271,7 @@ private ZipFileSinkState :: struct {
 }
 
 private zip_file_sink_write :: (ctx: *void, data: string) -> bool {
-    state : *ZipFileSinkState = xx ctx;
+    state : *ZipFileSinkState = ctx.(*ZipFileSinkState);
     at := 0;
     while at < data.len {
         made := state.file.write(data[at..]);
@@ -1288,7 +1288,7 @@ private zip_extract_to_handle :: (reader: *ZipReader, index: i64, file: *File, o
         raise error.Unsupported;
     }
     state := ZipFileSinkState{ file = file };
-    sink := ZipExtractSink{ ctx = xx *state, write = zip_file_sink_write };
+    sink := ZipExtractSink{ ctx = *state, write = zip_file_sink_write };
     zip_extract_to_output(reader, index, sink, options, max_output, alloc)
 }
 
@@ -1356,7 +1356,7 @@ private ZipExtractIterator :: struct {
                     inflater.deinit();
                     raise error.AllocationFailed;
                 }
-                input_buf = .{ ptr = xx input_raw, len = capacity };
+                input_buf = .{ ptr = input_raw, len = capacity };
                 owns_input = true;
             } else {
                 input_buf = reader.data[payload_start..payload_start + entry.compressed_size];
@@ -1571,7 +1571,7 @@ private zip_entries_reserve :: (entries: *List(ZipWriterEntry), needed: i64, all
     if new_cap > i64.max / size_of(ZipWriterEntry) { return false; }
     raw := alloc.alloc_bytes(new_cap * size_of(ZipWriterEntry));
     if raw == null { return false; }
-    new_ptr : [*]ZipWriterEntry = xx raw;
+    new_ptr : [*]ZipWriterEntry = raw.([*]ZipWriterEntry);
     if entries.items.len > 0 {
         c.memcpy(new_ptr, entries.items.ptr, entries.items.len * size_of(ZipWriterEntry));
     }
@@ -1687,7 +1687,7 @@ private ZipFileInputState :: struct {
 }
 
 private zip_file_input_read :: (ctx: *void, offset: i64, output: string) -> i64 {
-    state : *ZipFileInputState = xx ctx;
+    state : *ZipFileInputState = ctx.(*ZipFileInputState);
     if offset < 0 or state.file.seek(state.start + offset, .set) != state.start + offset { return 0; }
     made := state.file.read(output);
     if made < 0 then 0 else made
@@ -1730,7 +1730,7 @@ private zip_writer_file_flush_buffer :: (state: *ZipFileWriteState) -> bool {
 }
 
 private zip_writer_file_sink_truncate :: (ctx: *void, len: i64) -> bool {
-    state : *ZipFileWriteState = xx ctx;
+    state : *ZipFileWriteState = ctx.(*ZipFileWriteState);
     if len < 0 or len > state.position { return false; }
     cut := state.position - len;
     if state.buffered and cut <= state.buffer_len {
@@ -1747,7 +1747,7 @@ private zip_writer_file_sink_truncate :: (ctx: *void, len: i64) -> bool {
 }
 
 private zip_writer_file_sink_write :: (ctx: *void, data: string) -> bool {
-    state : *ZipFileWriteState = xx ctx;
+    state : *ZipFileWriteState = ctx.(*ZipFileWriteState);
     if state.buffered {
         at := 0;
         while at < data.len {
@@ -1773,7 +1773,7 @@ private zip_writer_file_sink_write :: (ctx: *void, data: string) -> bool {
 }
 
 zip_writer_file_sink_write_at :: (ctx: *void, offset: i64, data: string) -> bool {
-    state : *ZipFileWriteState = xx ctx;
+    state : *ZipFileWriteState = ctx.(*ZipFileWriteState);
     if state.buffered and !zip_writer_file_flush_buffer(state) { return false; }
     if offset < 0 or state.start > i64.max - offset { return false; }
     file := zip_file_write_handle(state);
@@ -1789,7 +1789,7 @@ zip_writer_file_sink_write_at :: (ctx: *void, offset: i64, data: string) -> bool
 }
 
 zip_writer_file_sink_read_at :: (ctx: *void, offset: i64, output: string) -> i64 {
-    state : *ZipFileWriteState = xx ctx;
+    state : *ZipFileWriteState = ctx.(*ZipFileWriteState);
     if state.buffered and !zip_writer_file_flush_buffer(state) { return -1; }
     if offset < 0 or state.start > i64.max - offset { return -1; }
     file := zip_file_write_handle(state);
@@ -1806,7 +1806,7 @@ zip_writer_file_sink_read_at :: (ctx: *void, offset: i64, output: string) -> i64
 }
 
 zip_writer_file_sink_flush :: (ctx: *void) -> bool {
-    state : *ZipFileWriteState = xx ctx;
+    state : *ZipFileWriteState = ctx.(*ZipFileWriteState);
     zip_writer_file_flush_buffer(state)
 }
 
@@ -2457,7 +2457,7 @@ ZipStreamWriter :: struct {
             if local_extra_len > 0 and (local_compressed == 0xffffffff or local_size == 0xffffffff) {
                 extra_raw := self.alloc.alloc_bytes(local_extra_len);
                 if extra_raw == null { raise error.AllocationFailed; }
-                extra := string{ ptr = xx extra_raw, len = local_extra_len };
+                extra := string{ ptr = extra_raw, len = local_extra_len };
                 source.read_exact_at(record_start + 30 + local_name_len, extra) catch |e| {
                     self.alloc.dealloc_bytes(extra_raw); raise e;
                 };
@@ -2602,7 +2602,7 @@ ZipStreamWriter :: struct {
         }
         actual_options.descriptor_for_empty = true;
         state := ZipFileInputState{ file = file, start = 0 };
-        source := ZipInputSource{ ctx = xx *state, size = max_size, read = zip_file_input_read };
+        source := ZipInputSource{ ctx = *state, size = max_size, read = zip_file_input_read };
         try self.add_source(name, source, actual_options);
     }
 
@@ -2769,10 +2769,10 @@ open_zip_writer_file_mode :: (path: [:0]u8, reserve: i64, zip64: bool, allow_rea
     }
     state_raw := alloc.alloc_bytes(size_of(ZipFileWriteState));
     if state_raw == null { file.close(); raise error.AllocationFailed; }
-    state : *ZipFileWriteState = xx state_raw;
+    state : *ZipFileWriteState = state_raw.(*ZipFileWriteState);
     state.* = ZipFileWriteState{ file = file, start = 0, owns_file = true, buffered = true };
     sink := ZipSink{
-        ctx = xx state,
+        ctx = state,
         write = zip_writer_file_sink_write,
         write_at = zip_writer_file_sink_write_at,
         flush = zip_writer_file_sink_flush,
@@ -2799,7 +2799,7 @@ zip_file_writer_from_reader :: (owned: *OwnedZipReader, force_zip64: bool = fals
     state.write_base = state.start + owned.reader.archive_start;
     state.write_position = owned.reader.central_relative_offset;
     sink := ZipSink{
-        ctx = xx state,
+        ctx = state,
         write = zip_file_update_write,
         write_at = zip_file_update_write_at,
         read_at = zip_file_update_read_at,

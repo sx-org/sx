@@ -211,8 +211,8 @@ Loop :: struct {
     wait :: (self: *Loop, out: []Event, timeout_ms: i64) -> (i64, !EventErr) {
         raw : [64]ep.EpollEvent = ---;
         cap : i64 = 64;
-        if xx out.len < cap { cap = xx out.len; }
-        n := ep.ep_wait(self.epfd, .{ ptr = *raw[0], len = cap }, xx cap, xx timeout_ms);
+        if out.len < cap { cap = out.len; }
+        n := ep.ep_wait(self.epfd, .{ ptr = *raw[0], len = cap }, cap, timeout_ms);
         if n < 0 { raise error.Wait; }
         i := 0;
         while i < n {
@@ -236,7 +236,7 @@ Loop :: struct {
             out[i] = e;
             i += 1;
         }
-        return xx n;
+        return n;
     }
 }
 
@@ -293,13 +293,13 @@ Loop :: struct {
     wait :: (self: *Loop, out: []Event, timeout_ms: i64) -> (i64, !EventErr) {
         raw : [64]kqb.Kevent = ---;
         cap : i64 = 64;
-        if xx out.len < cap { cap = xx out.len; }
-        n := kqb.kq_wait(self.kq, *raw[0], xx cap, timeout_ms);
+        if out.len < cap { cap = out.len; }
+        n := kqb.kq_wait(self.kq, *raw[0], cap, timeout_ms);
         if n < 0 { raise error.Wait; }
         i := 0;
         while i < n {
             ev := raw[i];
-            e : Event = .{ fd = xx ev.ident, udata = ev.udata, nbytes = ev.data };
+            e : Event = .{ fd = ev.ident, udata = ev.udata, nbytes = ev.data };
             if ev.filter == kqb.EVFILT_READ  { e.readable = true; }
             if ev.filter == kqb.EVFILT_WRITE { e.writable = true; }
             if ev.filter == kqb.EVFILT_USER  { e.user = true; }
@@ -308,7 +308,7 @@ Loop :: struct {
             out[i] = e;
             i += 1;
         }
-        return xx n;
+        return n;
     }
 }
 

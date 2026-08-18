@@ -16,11 +16,11 @@ main :: () -> i32 {
     }
     bytes := data!;
 
-    ctx := kb.kbts_CreateShapeContext(xx 0, xx 0);
-    print("context created: {}\n", xx ctx != 0);
+    ctx := kb.kbts_CreateShapeContext((0).(*void), (0).(*void));
+    print("context created: {}\n", ctx != 0);
 
-    font := kb.kbts_ShapePushFontFromMemory(ctx, xx bytes.ptr, xx bytes.len, 0);
-    print("font pushed: {}\n", xx font != 0);
+    font := kb.kbts_ShapePushFontFromMemory(ctx, bytes.ptr, bytes.len, 0);
+    print("font pushed: {}\n", font != 0);
 
     kb.kbts_DestroyShapeContext(ctx);
     print("context destroyed\n");

@@ -84,13 +84,13 @@ cstr_eq :: (p: [*]u8, s: string) -> bool {
 load_crt :: (crt: *mbedtls.X509Crt, path: [:0]u8) -> bool {
     ok := false;
     if data := fs.read_file(path) {
-        n : i64 = xx data.len;
+        n : i64 = data.len;
         p : [*]u8 = xx context.allocator.alloc_bytes(n + 1);
-        if n > 0 { clib.memcpy(p, data.ptr, xx n); }
+        if n > 0 { clib.memcpy(p, data.ptr, n); }
         p[n] = 0;
         ok = mbedtls.mbedtls_x509_crt_parse(crt, p, xx (n + 1)) == 0;
-        context.allocator.dealloc_bytes(xx p);
-        context.allocator.dealloc_bytes(xx data.ptr);
+        context.allocator.dealloc_bytes(p);
+        context.allocator.dealloc_bytes(data.ptr);
     }
     return ok;
 }
@@ -98,13 +98,13 @@ load_crt :: (crt: *mbedtls.X509Crt, path: [:0]u8) -> bool {
 load_key :: (pk: *mbedtls.PkContext, path: [:0]u8, drbg: *mbedtls.CtrDrbg) -> bool {
     ok := false;
     if data := fs.read_file(path) {
-        n : i64 = xx data.len;
+        n : i64 = data.len;
         p : [*]u8 = xx context.allocator.alloc_bytes(n + 1);
-        if n > 0 { clib.memcpy(p, data.ptr, xx n); }
+        if n > 0 { clib.memcpy(p, data.ptr, n); }
         p[n] = 0;
-        ok = mbedtls.mbedtls_pk_parse_key(pk, p, xx (n + 1), null, 0, mbedtls.mbedtls_ctr_drbg_random, xx drbg) == 0;
-        context.allocator.dealloc_bytes(xx p);
-        context.allocator.dealloc_bytes(xx data.ptr);
+        ok = mbedtls.mbedtls_pk_parse_key(pk, p, xx (n + 1), null, 0, mbedtls.mbedtls_ctr_drbg_random, drbg) == 0;
+        context.allocator.dealloc_bytes(p);
+        context.allocator.dealloc_bytes(data.ptr);
     }
     return ok;
 }
@@ -141,9 +141,9 @@ client_init :: (c: *TlsClient, fd: i32, opt: CliOpt) -> bool {
     mbedtls.mbedtls_x509_crt_init(*c.ca);
     mbedtls.mbedtls_x509_crt_init(*c.own);
     mbedtls.mbedtls_pk_init(*c.pk);
-    if mbedtls.mbedtls_ctr_drbg_seed(*c.drbg, mbedtls.mbedtls_entropy_func, xx *c.ent, null, 0) != 0 { return false; }
+    if mbedtls.mbedtls_ctr_drbg_seed(*c.drbg, mbedtls.mbedtls_entropy_func, *c.ent, null, 0) != 0 { return false; }
     if mbedtls.mbedtls_ssl_config_defaults(*c.cfg, mbedtls.MBEDTLS_SSL_IS_CLIENT, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 { return false; }
-    mbedtls.mbedtls_ssl_conf_rng(*c.cfg, mbedtls.mbedtls_ctr_drbg_random, xx *c.drbg);
+    mbedtls.mbedtls_ssl_conf_rng(*c.cfg, mbedtls.mbedtls_ctr_drbg_random, *c.drbg);
 
     // Trust anchor + strict verification of the server cert.
     if !load_crt(*c.ca, opt.ca_path) { return false; }
@@ -175,7 +175,7 @@ client_init :: (c: *TlsClient, fd: i32, opt: CliOpt) -> bool {
 
     if mbedtls.mbedtls_ssl_setup(*c.ssl, *c.cfg) != 0 { return false; }
     if mbedtls.mbedtls_ssl_set_hostname(*c.ssl, opt.hostname.ptr) != 0 { return false; }
-    mbedtls.mbedtls_ssl_set_bio(*c.ssl, xx *c.fd, cli_send, cli_recv, null);
+    mbedtls.mbedtls_ssl_set_bio(*c.ssl, *c.fd, cli_send, cli_recv, null);
     return true;
 }
 
@@ -219,7 +219,7 @@ one_get :: (srv: *http.Server, cl: *TlsClient) -> i32 {
     sent := false; j : i64 = 0;
     while j < 200 and !sent {
         srv.tick(5) catch {};
-        w := mbedtls.mbedtls_ssl_write(*cl.ssl, xx req.ptr, xx req.len);
+        w := mbedtls.mbedtls_ssl_write(*cl.ssl, req.ptr, xx req.len);
         if w > 0 { sent = true; }
         else if w != mbedtls.MBEDTLS_ERR_SSL_WANT_READ and w != mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 1; }
         j += 1;
@@ -232,7 +232,7 @@ one_get :: (srv: *http.Server, cl: *TlsClient) -> i32 {
         r := mbedtls.mbedtls_ssl_read(*cl.ssl, xx *rbuf[total], xx (4096 - total));
         if r > 0 {
             total += r;
-            s := string{ ptr = xx *rbuf[0], len = xx total };
+            s := string{ ptr = xx *rbuf[0], len = total };
             if contains(s, "secure-ok") { got = true; }
         } else if r == mbedtls.MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY or r == 0 {
             got = true;
@@ -241,7 +241,7 @@ one_get :: (srv: *http.Server, cl: *TlsClient) -> i32 {
         }
         k += 1;
     }
-    resp := string{ ptr = xx *rbuf[0], len = xx total };
+    resp := string{ ptr = xx *rbuf[0], len = total };
     if !contains(resp, "HTTP/1.1 200 OK") { return 4; }
     if !contains(resp, "secure-ok")       { return 5; }
     return 0;

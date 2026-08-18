@@ -17,8 +17,9 @@ impl Rank for Point { rank :: (self: *Point) -> i64 { self.v + 1 } }
 Boxed :: struct { v: i64 = 0; }
 Doubled :: struct { v: i64 = 0; }
 
-impl Into(Boxed) for i64 { convert :: (self: i64) -> Boxed { .{ v = self } } }
-impl Into(Doubled) for i64 { convert :: (self: i64) -> Doubled { .{ v = self * 2 } } }
+impl Into(Boxed) for i64 { convert :: (self: i64, alloc: Allocator = context.allocator) -> Boxed {
+    _ = alloc; .{ v = self } } }
+impl Into(Doubled) for i64 { convert :: (self: i64, alloc: Allocator = context.allocator) -> Doubled { _ = alloc; .{ v = self * 2 } } }
 
 main :: () {
     p : Point = .{ v = 3 };

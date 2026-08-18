@@ -24,5 +24,5 @@ main :: () -> i32 {
     msg_2 : (*void, *void) -> [*]u8 abi(.c) = xx objc_msgSend;
     back := msg_2(ns_str, sel_utf8);
 
-    return xx (back[0] + back[1]); // 'h' + 'i' = 104 + 105 = 209
+    return (back[0] + back[1]); // 'h' + 'i' = 104 + 105 = 209
 }

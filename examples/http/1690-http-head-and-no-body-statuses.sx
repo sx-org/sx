@@ -133,7 +133,7 @@ roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -
         if got > 0 { stall = 0; } else { stall += 1; }
     }
     socket.close(fd);
-    return string{ ptr = buf, len = xx total };
+    return string{ ptr = buf, len = total };
 }
 
 check :: (r: string, frag: string, label: string, failed: *i64) {
@@ -273,7 +273,7 @@ main :: () -> i32 {
         }
         srvp.close();
 
-        context.allocator.dealloc_bytes(xx rbuf);
+        context.allocator.dealloc_bytes(rbuf);
         leaked = gpa.alloc_count;
     }
 

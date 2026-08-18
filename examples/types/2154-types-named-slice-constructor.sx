@@ -18,7 +18,7 @@ Holder :: struct { data: Bytes; }
 
 total :: (b: Bytes) -> i64 {
     t : i64 = 0;
-    for x in b { t = t + xx x; }
+    for x in b { t = t + x; }
     t
 }
 

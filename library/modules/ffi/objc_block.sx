@@ -15,7 +15,7 @@
 // through to `sx_fn(sx_env, args...)`.
 //
 // ── Lifetime contract ───────────────────────────────────────────────────
-// `xx <closure> : *Block` returns a pointer into the surrounding sx
+// `*(closure).(Block)` returns a pointer into the surrounding sx
 // function's stack frame. Same rule as `&local_var`: pass it directly to
 // a callee that consumes it immediately or `_Block_copy`s internally
 // (UIKit/Foundation always do). Don't store the pointer to use after the
@@ -67,7 +67,8 @@ __sx_block_descriptor : BlockDescriptor = .{
 // `invoke` slot at it. One impl in stdlib replaces every per-
 // signature hand-rolled `__block_invoke_*` + `Into(Block)` pair.
 impl Into(Block) for Closure(..$args) -> $R {
-    convert :: (self: Closure(..$args) -> $R) -> Block {
+    convert :: (self: Closure(..$args) -> $R, alloc: Allocator = context.allocator) -> Block {
+        _ = alloc;
         #insert build_block_convert($args, $R);
     }
 }
@@ -83,7 +84,7 @@ impl Into(Block) for Closure(..$args) -> $R {
 //      reconstructs a typed fn-pointer from `block_self.sx_fn`,
 //      prepends `block_self.sx_env`, and tail-calls the sx closure.
 //   2. Returns a stack Block literal whose `invoke` slot points at
-//      the nested trampoline via `xx *__invoke`.
+//      the nested trampoline via `*__invoke`.
 //
 // The host impl wraps the emitted source via `#insert
 // build_block_convert($args, $R);`. Per-call-shape monomorphisation
@@ -114,7 +115,16 @@ build_block_convert :: (args: []Type, $ret: Type) -> string {
     }
     code = concat(code, ") -> ");
     code = concat(code, ret_name);
-    code = concat(code, " = xx block_self.sx_fn; ");
+    code = concat(code, " = block_self.sx_fn.((*void");
+    i = 0;
+    while i < args.len {
+        code = concat(code, ", ");
+        code = concat(code, type_name(args[i]));
+        i = i + 1;
+    }
+    code = concat(code, ") -> ");
+    code = concat(code, ret_name);
+    code = concat(code, "); ");
     if ret_name == "void" {
         code = concat(code, "typed_fn(block_self.sx_env");
     } else {
@@ -131,8 +141,8 @@ build_block_convert :: (args: []Type, $ret: Type) -> string {
     code = concat(code, "isa = *_NSConcreteStackBlock, ");
     code = concat(code, "flags = 0, ");
     code = concat(code, "reserved = 0, ");
-    code = concat(code, "invoke = xx *__invoke, ");
-    code = concat(code, "descriptor = xx *__sx_block_descriptor, ");
+    code = concat(code, "invoke = (*__invoke).(*void), ");
+    code = concat(code, "descriptor = *__sx_block_descriptor, ");
     code = concat(code, "sx_env = self.env, ");
     code = concat(code, "sx_fn = self.fn_ptr, ");
     code = concat(code, "};");

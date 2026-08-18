@@ -37,7 +37,7 @@ c_total_text :: (n: i32, ..) -> i64 extern;
 c_twice :: (n: i32, ..) -> i64 extern;
 
 tally :: (n: i32, ..) -> i64 abi(.c) {
-    return xx n;
+    return n;
 }
 
 // Zero fixed parameters: every argument is a tail argument, and a call with
@@ -53,7 +53,7 @@ sum_ints :: (n: i32, ..) -> i64 abi(.c) {
     @va_start(*ap);
     total: i64 = 0;
     for i in 0..n {
-        total += xx @va_arg(i32, *ap);
+        total += @va_arg(i32, *ap);
     }
     @va_end(*ap);
     return total;
@@ -73,7 +73,7 @@ sum_doubles :: (n: i32, ..) -> f64 abi(.c) {
 // A borrowed `*@VaList` reads on behalf of the owner and leaves the ending to
 // it.
 take_text :: (ap: *@VaList) -> i64 {
-    return xx cstring_len(@va_arg(cstring, ap));
+    return cstring_len(@va_arg(cstring, ap));
 }
 
 total_text :: (n: i32, ..) -> i64 abi(.c) {
@@ -97,13 +97,13 @@ twice :: (n: i32, ..) -> i64 abi(.c) {
 
     first: i64 = 0;
     for i in 0..n {
-        first += xx @va_arg(i32, *ap);
+        first += @va_arg(i32, *ap);
     }
     @va_end(*ap);
 
     second: i64 = 0;
     for i in 0..n {
-        second += xx @va_arg(i32, *dup);
+        second += @va_arg(i32, *dup);
     }
     @va_end(*dup);
     return first * 100 + second;

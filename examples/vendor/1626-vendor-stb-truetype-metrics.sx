@@ -19,7 +19,7 @@ main :: () -> i32 {
     off := tt.stbtt_GetFontOffsetForIndex(bytes.ptr, 0);
     print("font offset >= 0: {}\n", off >= 0);
 
-    info : *void = xx context.allocator.alloc_bytes(256);
+    info : *void = context.allocator.alloc_bytes(256);
     ok := tt.stbtt_InitFont(info, bytes.ptr, off);
     print("init ok: {}\n", ok != 0);
 

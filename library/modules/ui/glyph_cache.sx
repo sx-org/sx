@@ -31,16 +31,16 @@ GlyphEntry :: struct {
 // Quantize font size to half-point increments to limit cache entries.
 // e.g., 13.0 -> 26, 13.5 -> 27, 14.0 -> 28
 quantize_size :: (font_size: f32) -> u16 {
-    xx (font_size * 2.0 + 0.5)
+    (font_size * 2.0 + 0.5)
 }
 
 dequantize_size :: (q: u16) -> f32 {
-    xx q / 2.0
+    q / 2.0
 }
 
 // Pack (glyph_index, size_quantized) into a single u32 for fast comparison
 make_glyph_key :: (glyph_index: u16, size_quantized: u16) -> u32 {
-    (xx glyph_index << 16) | xx size_quantized
+    (glyph_index << 16) | size_quantized
 }
 
 // Shaped glyph — output of text shaping (positioned glyph with index)
@@ -212,7 +212,7 @@ GlyphCache :: struct {
             out("\n");
             return;
         }
-        self.font_data = xx font_data;
+        self.font_data = font_data;
         self.font_data_size = file_size;
 
         // Init stbtt_fontinfo
@@ -227,27 +227,27 @@ GlyphCache :: struct {
         stbtt_GetFontVMetrics(self.font_info, *ascent_i, *descent_i, *linegap_i);
 
         // Store unscaled metrics — we'll scale per font_size in measure_text
-        self.ascent = xx ascent_i;
-        self.descent = xx descent_i;
-        self.line_gap = xx linegap_i;
+        self.ascent = ascent_i;
+        self.descent = descent_i;
+        self.line_gap = linegap_i;
 
         // Init text shaping context
-        self.shape_ctx = xx kbts_CreateShapeContext(xx 0, xx 0);
+        self.shape_ctx = kbts_CreateShapeContext((0).(*void), (0).(*void));
         if self.shape_ctx != null {
-            self.shape_font = xx kbts_ShapePushFontFromMemory(xx self.shape_ctx, self.font_data, file_size, 0);
+            self.shape_font = kbts_ShapePushFontFromMemory(self.shape_ctx, self.font_data, file_size, 0);
             // Get font metrics (units_per_em) from kbts
             kb_info : KbtsFontInfo2_1 = ---;
             c.memset(*kb_info, 0, size_of(KbtsFontInfo2_1));
-            kb_info.base.size = xx size_of(KbtsFontInfo2_1);
-            kbts_GetFontInfo2(xx self.shape_font, xx *kb_info);
+            kb_info.base.size = size_of(KbtsFontInfo2_1);
+            kbts_GetFontInfo2(self.shape_font, *kb_info);
             self.units_per_em = kb_info.units_per_em;
         }
 
         // Allocate atlas bitmap
         self.atlas_width = GLYPH_ATLAS_W;
         self.atlas_height = GLYPH_ATLAS_H;
-        bitmap_size : i64 = xx self.atlas_width * xx self.atlas_height;
-        self.bitmap = xx self.parent_allocator.alloc_bytes(bitmap_size);
+        bitmap_size : i64 = (self.atlas_width * self.atlas_height).(i64);
+        self.bitmap = self.parent_allocator.alloc_bytes(bitmap_size);
         c.memset(self.bitmap, 0, bitmap_size);
 
         // Shelf packer init
@@ -263,10 +263,10 @@ GlyphCache :: struct {
         // Init hash table (256 slots)
         self.hash_cap = 256;
         hash_bytes : i64 = self.hash_cap * 4;  // u32 per slot
-        self.hash_keys = xx self.parent_allocator.alloc_bytes(hash_bytes);
+        self.hash_keys = self.parent_allocator.alloc_bytes(hash_bytes);
         c.memset(self.hash_keys, 0, hash_bytes);
         val_bytes : i64 = self.hash_cap * 8;  // i64 per slot (i32 would suffice but alignment)
-        self.hash_vals = xx self.parent_allocator.alloc_bytes(val_bytes);
+        self.hash_vals = self.parent_allocator.alloc_bytes(val_bytes);
 
         // Create the atlas texture. In GPU-protocol mode we create empty and
         // let the first `flush()` push the (zero-initialized) bitmap via
@@ -281,11 +281,11 @@ GlyphCache :: struct {
             glGenTextures(1, *self.texture_id);
             glBindTexture(GL_TEXTURE_2D, self.texture_id);
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            glTexImage2D(GL_TEXTURE_2D, 0, xx GL_R8, self.atlas_width, self.atlas_height, 0, GL_RED, GL_UNSIGNED_BYTE, self.bitmap);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, xx GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, xx GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, xx GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, xx GL_CLAMP_TO_EDGE);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, self.atlas_width, self.atlas_height, 0, GL_RED, GL_UNSIGNED_BYTE, self.bitmap);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         }
 
         out("GlyphCache initialized: ");
@@ -301,7 +301,7 @@ GlyphCache :: struct {
 
         // Hash table lookup (open addressing, linear probing)
         mask := self.hash_cap - 1;
-        slot : i64 = xx ((key * 2654435761) >> 24) & xx mask;
+        slot : i64 = (((key * 2654435761) >> 24) & mask).(i64);
         while self.hash_keys[slot] != 0 {
             if self.hash_keys[slot] == key {
                 return *self.entries.items[self.hash_vals[slot]].glyph;
@@ -318,7 +318,7 @@ GlyphCache :: struct {
         y0 : i32 = 0;
         x1 : i32 = 0;
         y1 : i32 = 0;
-        stbtt_GetGlyphBitmapBox(self.font_info, xx glyph_index, scale, scale, *x0, *y0, *x1, *y1);
+        stbtt_GetGlyphBitmapBox(self.font_info, glyph_index, scale, scale, *x0, *y0, *x1, *y1);
 
         glyph_w := if x1 > x0 then x1 - x0 else 0;
         glyph_h := if y1 > y0 then y1 - y0 else 0;
@@ -326,8 +326,8 @@ GlyphCache :: struct {
         // Get horizontal metrics
         advance_i : i32 = 0;
         lsb_i : i32 = 0;
-        stbtt_GetGlyphHMetrics(self.font_info, xx glyph_index, *advance_i, *lsb_i);
-        advance : f32 = xx advance_i * scale;
+        stbtt_GetGlyphHMetrics(self.font_info, glyph_index, *advance_i, *lsb_i);
+        advance : f32 = (advance_i * scale).(f32);
 
         // Zero-size glyph (e.g. space) — cache with advance only
         if glyph_w == 0 or glyph_h == 0 {
@@ -336,7 +336,7 @@ GlyphCache :: struct {
                 glyph = CachedGlyph{
                     uv_x = 0.0, uv_y = 0.0, uv_w = 0.0, uv_h = 0.0,
                     width = 0.0, height = 0.0,
-                    offset_x = xx x0, offset_y = xx y0,
+                    offset_x = x0, offset_y = y0,
                     advance = advance
                 }
             };
@@ -354,32 +354,32 @@ GlyphCache :: struct {
         }
 
         // Rasterize directly into atlas bitmap
-        dest_offset : i64 = xx pack.y * xx self.atlas_width + xx pack.x;
+        dest_offset : i64 = (pack.y * self.atlas_width + pack.x).(i64);
         stbtt_MakeGlyphBitmap(
             self.font_info,
             *self.bitmap[dest_offset],
             glyph_w, glyph_h,
             self.atlas_width,
             scale, scale,
-            xx glyph_index
+            glyph_index
         );
         self.dirty = true;
 
         // Compute normalized UV coordinates
-        atlas_wf : f32 = xx self.atlas_width;
-        atlas_hf : f32 = xx self.atlas_height;
+        atlas_wf : f32 = self.atlas_width.(f32);
+        atlas_hf : f32 = self.atlas_height.(f32);
 
         entry := GlyphEntry{
             key = key,
             glyph = CachedGlyph{
-                uv_x = xx pack.x / atlas_wf,
-                uv_y = xx pack.y / atlas_hf,
-                uv_w = xx glyph_w / atlas_wf,
-                uv_h = xx glyph_h / atlas_hf,
-                width = xx glyph_w,
-                height = xx glyph_h,
-                offset_x = xx x0,
-                offset_y = xx y0,
+                uv_x = pack.x / atlas_wf,
+                uv_y = pack.y / atlas_hf,
+                uv_w = glyph_w / atlas_wf,
+                uv_h = glyph_h / atlas_hf,
+                width = glyph_w,
+                height = glyph_h,
+                offset_x = x0,
+                offset_y = y0,
                 advance = advance
             }
         };
@@ -395,12 +395,12 @@ GlyphCache :: struct {
             self.hash_grow();
         }
         mask := self.hash_cap - 1;
-        slot : i64 = xx ((key * 2654435761) >> 24) & xx mask;
+        slot : i64 = (((key * 2654435761) >> 24) & mask).(i64);
         while self.hash_keys[slot] != 0 {
             slot = (slot + 1) & mask;
         }
         self.hash_keys[slot] = key;
-        self.hash_vals[slot] = xx index;
+        self.hash_vals[slot] = index;
     }
 
     // Double the hash table and rehash all entries
@@ -411,10 +411,10 @@ GlyphCache :: struct {
 
         self.hash_cap = old_cap * 2;
         hash_bytes : i64 = self.hash_cap * 4;
-        self.hash_keys = xx self.parent_allocator.alloc_bytes(hash_bytes);
+        self.hash_keys = self.parent_allocator.alloc_bytes(hash_bytes);
         c.memset(self.hash_keys, 0, hash_bytes);
         val_bytes : i64 = self.hash_cap * 8;
-        self.hash_vals = xx self.parent_allocator.alloc_bytes(val_bytes);
+        self.hash_vals = self.parent_allocator.alloc_bytes(val_bytes);
 
         // Rehash
         mask := self.hash_cap - 1;
@@ -422,7 +422,7 @@ GlyphCache :: struct {
         while i < old_cap {
             k := old_keys[i];
             if k != 0 {
-                slot : i64 = xx ((k * 2654435761) >> 24) & xx mask;
+                slot : i64 = (((k * 2654435761) >> 24) & mask).(i64);
                 while self.hash_keys[slot] != 0 {
                     slot = (slot + 1) & mask;
                 }
@@ -455,7 +455,7 @@ GlyphCache :: struct {
         if self.gpu == null { return; }
         if self.dirty == false { return; }
         self.gpu.update_texture_region(self.texture_id, 0, 0,
-            self.atlas_width, self.atlas_height, xx self.bitmap);
+            self.atlas_width, self.atlas_height, self.bitmap);
         self.dirty = false;
     }
 
@@ -493,16 +493,16 @@ GlyphCache :: struct {
     grow :: (self: *GlyphCache) {
         new_w := self.atlas_width * 2;
         new_h := self.atlas_height * 2;
-        new_size : i64 = xx new_w * xx new_h;
-        new_bitmap : [*]u8 = xx self.parent_allocator.alloc_bytes(new_size);
+        new_size : i64 = (new_w * new_h).(i64);
+        new_bitmap : [*]u8 = (self.parent_allocator.alloc_bytes(new_size)).([*]u8);
         c.memset(new_bitmap, 0, new_size);
 
         // Copy old rows into new bitmap
         y : i32 = 0;
         while y < self.atlas_height {
-            old_off : i64 = xx y * xx self.atlas_width;
-            new_off : i64 = xx y * xx new_w;
-            c.memcpy(*new_bitmap[new_off], *self.bitmap[old_off], xx self.atlas_width);
+            old_off : i64 = (y * self.atlas_width).(i64);
+            new_off : i64 = (y * new_w).(i64);
+            c.memcpy(*new_bitmap[new_off], *self.bitmap[old_off], self.atlas_width);
             y += 1;
         }
 
@@ -514,22 +514,22 @@ GlyphCache :: struct {
         // Recreate atlas at the new size.
         if self.gpu != null {
             self.gpu.destroy_texture(self.texture_id);
-            self.texture_id = self.gpu.create_texture(new_w, new_h, .r8, xx new_bitmap);
+            self.texture_id = self.gpu.create_texture(new_w, new_h, .r8, new_bitmap);
         } else {
             glDeleteTextures(1, *self.texture_id);
             glGenTextures(1, *self.texture_id);
             glBindTexture(GL_TEXTURE_2D, self.texture_id);
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            glTexImage2D(GL_TEXTURE_2D, 0, xx GL_R8, new_w, new_h, 0, GL_RED, GL_UNSIGNED_BYTE, new_bitmap);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, xx GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, xx GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, xx GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, xx GL_CLAMP_TO_EDGE);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, new_w, new_h, 0, GL_RED, GL_UNSIGNED_BYTE, new_bitmap);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         }
 
         // Recompute UV coordinates for all cached glyphs
-        atlas_wf : f32 = xx new_w;
-        atlas_hf : f32 = xx new_h;
+        atlas_wf : f32 = new_w.(f32);
+        atlas_hf : f32 = new_h.(f32);
         i : i64 = 0;
         while i < self.entries.len {
             g := *self.entries.items[i].glyph;
@@ -598,13 +598,13 @@ GlyphCache :: struct {
         total : f32 = 0.0;
         i : i64 = 0;
         while i < text.len {
-            ch : i32 = xx text[i];
-            glyph_index : u16 = xx stbtt_FindGlyphIndex(self.font_info, ch);
+            ch : i32 = text[i].(i32);
+            glyph_index : u16 = (stbtt_FindGlyphIndex(self.font_info, ch)).(u16);
 
             advance_i : i32 = 0;
             lsb_i : i32 = 0;
-            stbtt_GetGlyphHMetrics(self.font_info, xx glyph_index, *advance_i, *lsb_i);
-            adv : f32 = xx advance_i * scale;
+            stbtt_GetGlyphHMetrics(self.font_info, glyph_index, *advance_i, *lsb_i);
+            adv : f32 = (advance_i * scale).(f32);
 
             self.shaped_buf.append(ShapedGlyph{
                 glyph_index = glyph_index,
@@ -631,18 +631,18 @@ GlyphCache :: struct {
         scale := self.scale_for_size(font_size);
         total : f32 = 0.0;
 
-        kbts_ShapeBegin(xx self.shape_ctx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
-        kbts_ShapeUtf8(xx self.shape_ctx, xx text.ptr, xx text.len, KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
-        kbts_ShapeEnd(xx self.shape_ctx);
+        kbts_ShapeBegin(self.shape_ctx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
+        kbts_ShapeUtf8(self.shape_ctx, text.ptr, text.len, KBTS_USER_ID_GENERATION_MODE_CODEPOINT_INDEX);
+        kbts_ShapeEnd(self.shape_ctx);
 
         run : KbtsRun = ---;
-        while kbts_ShapeRun(xx self.shape_ctx, xx *run) != 0 {
+        while kbts_ShapeRun(self.shape_ctx, *run) != 0 {
             glyph_ptr : *KbtsGlyph = null;
-            while kbts_GlyphIteratorNext(xx *run.glyphs, xx *glyph_ptr) != 0 {
+            while kbts_GlyphIteratorNext(*run.glyphs, *glyph_ptr) != 0 {
                 if glyph_ptr == null { continue; }
-                gx := total + xx glyph_ptr.offset_x * scale;
-                gy : f32 = xx glyph_ptr.offset_y * scale;
-                adv : f32 = xx glyph_ptr.advance_x * scale;
+                gx := total + glyph_ptr.offset_x * scale;
+                gy : f32 = (glyph_ptr.offset_y * scale).(f32);
+                adv : f32 = (glyph_ptr.advance_x * scale).(f32);
 
                 self.shaped_buf.append(ShapedGlyph{
                     glyph_index = glyph_ptr.id,

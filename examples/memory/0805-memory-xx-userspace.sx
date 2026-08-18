@@ -8,7 +8,8 @@
 MyString :: struct { tag: i64 = 0; }
 
 impl Into(MyString) for i64 {
-  convert :: (self: i64) -> MyString {
+  convert :: (self: i64, alloc: Allocator = context.allocator) -> MyString {
+    _ = alloc;
     .{ tag = self }
   }
 }

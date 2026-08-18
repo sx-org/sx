@@ -36,7 +36,7 @@ SxIssue44Foo :: @ObjcClass("SxIssue44Foo") {
 
     // Return the receiver — direct `xx this` round-trip.
     me :: (this: *Self) -> *void {
-        return xx this;
+        return this;
     }
 
     // SxAppDelegate-shape: BOOL return + 2 extra *void args. Should
@@ -46,7 +46,7 @@ SxIssue44Foo :: @ObjcClass("SxIssue44Foo") {
     appDelegate_options :: (this: *Self, app: *void, opts: *void) -> BOOL {
         bus := SxIssue44Bus.defaultCenter();
         bus.addObserver_selector_name_object(
-            xx this,
+            this,
             xx 0,
             xx 0,
             null);
@@ -57,7 +57,7 @@ SxIssue44Foo :: @ObjcClass("SxIssue44Foo") {
     // so we can read it back without going through NSNotificationCenter
     // (which would crash with a real observer != NSObject subclass).
     captureSelf_options :: (this: *Self, app: *void, opts: *void) -> BOOL {
-        capture_observer(xx this);
+        capture_observer(this);
         return 1;
     }
 }
@@ -77,7 +77,7 @@ main :: () -> i32 {
         print("counter: {}\n", f.get());
 
         // Direct `xx this` round-trip — the control.
-        f_void : *void = xx f;
+        f_void : *void = f;
         if f.me() == f_void {
             print("me: ok\n");
         } else {
