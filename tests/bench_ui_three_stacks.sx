@@ -1,0 +1,110 @@
+// Like-for-like BUILD + WALK of the three UI libraries. Runnable on demand:
+//
+//     ./zig-out/bin/sx build --opt 3 -o .sx-tmp/bench-ui \
+//         tests/bench_ui_three_stacks.sx && .sx-tmp/bench-ui
+//
+// Same tree: a VStack of N Labels, one child per loop iteration, spacing 0.
+// Idiomatic construction in each library (see the lane files):
+//   compose — vstack block, bare Label expressions
+//   emit    — vstack closure, Label.emit()
+//   fluent  — VStack{ children = collectViews() { Label; } }
+//
+// Two phases, measured separately:
+//   BUILD — construct the tree BUILDS times (one construction is too short
+//           for a stable clock sample)
+//   WALK  — render_root repeatedly; the command list is truncated each
+//           walk so the pass is one frame, not an unbounded append
+//
+// NOT a corpus example: it runs for seconds.
+
+#import "modules/std.sx";
+
+compose :: #import "tests/bench_ui_lane_compose.sx";
+emit    :: #import "tests/bench_ui_lane_emit.sx";
+fluent  :: #import "tests/bench_ui_lane_fluent.sx";
+
+N       : i64 : 500;
+BUILDS  : i64 : 200;
+WALKS   : i64 : 200;
+SAMPLES : i64 : 7;
+
+median :: (xs: []i64) -> i64 {
+    i := 1;
+    while i < xs.len {
+        k := xs[i];
+        j := i - 1;
+        while j >= 0 and xs[j] > k { xs[j + 1] = xs[j]; j = j - 1; }
+        xs[j + 1] = k;
+        i = i + 1;
+    }
+    xs[xs.len / 2]
+}
+
+report :: (label: string, build_ns: i64, walk_ns: i64) {
+    print("{}  build {} ns  walk {} ns  build {} ns/child  walk {} ns/child-frame\n",
+          label, build_ns, walk_ns, build_ns / (N * BUILDS), walk_ns / (N * WALKS));
+}
+
+ratio :: (label: string, build_ns: i64, walk_ns: i64, base_build: i64, base_walk: i64) {
+    print("{}  build x{}.{}  walk x{}.{}\n", label,
+          build_ns / base_build, (build_ns * 10 / base_build) % 10,
+          walk_ns / base_walk, (walk_ns * 10 / base_walk) % 10);
+}
+
+main :: () {
+    print("N {}  BUILDS {}  WALKS {}  SAMPLES {}\n", N, BUILDS, WALKS, SAMPLES);
+    print("slots compose {} emit {} fluent {}\n",
+          compose.slot_bytes(), emit.slot_bytes(), fluent.slot_bytes());
+
+    cb := context.allocator.alloc(i64, SAMPLES);
+    cw := context.allocator.alloc(i64, SAMPLES);
+    eb := context.allocator.alloc(i64, SAMPLES);
+    ew := context.allocator.alloc(i64, SAMPLES);
+    fb := context.allocator.alloc(i64, SAMPLES);
+    fw := context.allocator.alloc(i64, SAMPLES);
+
+    cc := compose.warmup(N);
+    ec := emit.warmup(N);
+    fc := fluent.warmup(N);
+    if cc != N or ec != N or fc != N {
+        print("CHECKSUM MISMATCH warmup commands compose {} emit {} fluent {} (want {})\n",
+              cc, ec, fc, N);
+        process.exit(1);
+    }
+
+    csink := 0;
+    esink := 0;
+    fsink := 0;
+    s := 0;
+    while s < SAMPLES {
+        cb0, cw0, cc0 := compose.sample(N, BUILDS, WALKS);
+        cb[s] = cb0; cw[s] = cw0; csink = csink + cc0;
+
+        eb0, ew0, ec0 := emit.sample(N, BUILDS, WALKS);
+        eb[s] = eb0; ew[s] = ew0; esink = esink + ec0;
+
+        fb0, fw0, fc0 := fluent.sample(N, BUILDS, WALKS);
+        fb[s] = fb0; fw[s] = fw0; fsink = fsink + fc0;
+
+        s = s + 1;
+    }
+
+    cbm := median(cb);
+    cwm := median(cw);
+    ebm := median(eb);
+    ewm := median(ew);
+    fbm := median(fb);
+    fwm := median(fw);
+
+    report("compose", cbm, cwm);
+    report("emit   ", ebm, ewm);
+    report("fluent ", fbm, fwm);
+    ratio("emit/compose  ", ebm, ewm, cbm, cwm);
+    ratio("fluent/compose", fbm, fwm, cbm, cwm);
+
+    if csink != esink or csink != fsink {
+        print("CHECKSUM MISMATCH compose {} emit {} fluent {}\n", csink, esink, fsink);
+        process.exit(1);
+    }
+    print("checksum {} (all three agree)\n", csink);
+}

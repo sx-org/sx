@@ -1,0 +1,45 @@
+// Emit lane for tests/bench_ui_three_stacks.sx. The terminal `.emit()`
+// and `@Init(View)` bound need emit.View as this module's `View`.
+#import "modules/std.sx";
+#import "modules/ui/emit.sx";
+
+slot_bytes :: () -> i64 => size_of(View);
+
+build :: (n: i64) -> VStack {
+    vstack(0.0) {
+        for i in 0..n {
+            Label{ text = "c" }.emit();
+        }
+    }
+}
+
+warmup :: (n: i64) -> i64 {
+    stack := build(n);
+    root : View = stack;
+    tree := RenderTree{};
+    render_root(*root, Size{ width = 200.0, height = 400.0 }, *tree);
+    command_count(*tree)
+}
+
+sample :: (n: i64, builds: i64, walks: i64) -> Tuple(i64, i64, i64) {
+    t0 := time.mono_ns();
+    b := 0;
+    built := 0;
+    while b < builds {
+        stack := build(n);
+        built = built + stack.children.len;
+        b = b + 1;
+    }
+    t1 := time.mono_ns();
+    stack := build(n);
+    tree := RenderTree{};
+    root : View = stack;
+    k := 0;
+    while k < walks {
+        tree.commands.len = 0;
+        render_root(*root, Size{ width = 200.0, height = 400.0 }, *tree);
+        k = k + 1;
+    }
+    t2 := time.mono_ns();
+    .{t1 - t0, t2 - t1, command_count(*tree) + (built - builds * n)}
+}
