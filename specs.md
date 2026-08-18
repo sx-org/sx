@@ -5766,9 +5766,10 @@ Semantics:
 - **A private field is a name.** `private fd: i64 = -1;` on a struct field is
   file-local. Another file cannot mention it (`x.fd`, `x.fd = …`,
   `File{ fd = 3 }`, `.{ fd = 3 }`). Another file can still produce a value
-  without naming the field (`File{}` defaults, `File{ --- }` / `---`, copy
-  assignment). Same-file methods, free functions, and literals may name the
-  field. Authority is the source file that declares the struct type.
+  without naming the field: a positional init (`File{ 3 }`), `File{}` defaults,
+  `File{ --- }` / `---`, and copy assignment. Only a named mention is refused.
+  Same-file methods, free functions, and literals may name the field.
+  Authority is the source file that declares the struct type.
 - **A `#using` promotion carries the base's authority.** A struct that promotes
   a base with a private field gains the field's storage, not the right to name
   it: only the base's declaring file may.

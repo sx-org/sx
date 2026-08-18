@@ -1634,6 +1634,7 @@ const QualifiedGlobalStoreVerdict = union(enum) {
     ambiguous: struct { alias: []const u8, span: ast.Span },
     immutable: struct { name: []const u8, span: ast.Span },
     non_lvalue: struct { name: []const u8, span: ast.Span, is_function: bool },
+    private_field: struct { name: []const u8, span: ast.Span },
 };
 
 fn qualifiedStorePathSpan(node: *const Node, path: []const u8, part: []const u8) ast.Span {
@@ -1774,11 +1775,10 @@ fn selectQualifiedGlobalStoreTarget(self: *Lowering, node: *const Node) Qualifie
         const wanted = self.module.types.internString(field_name);
         for (self.getStructFields(gi.ty), 0..) |f, i| {
             if (f.name != wanted) continue;
-            if (self.diagPrivateField(gi.ty, field_name, qualifiedStoreTerminalSpan(node, field_name))) {
-                return .{ .non_lvalue = .{
-                    .name = diagnostic_name,
+            if (self.privateFieldHere(gi.ty, field_name)) {
+                return .{ .private_field = .{
+                    .name = field_name,
                     .span = qualifiedStoreTerminalSpan(node, field_name),
-                    .is_function = false,
                 } };
             }
             field = .{ .name = field_name, .index = @intCast(i), .ty = f.ty };
@@ -1821,6 +1821,8 @@ fn diagnoseQualifiedStoreVerdict(self: *Lowering, verdict: QualifiedGlobalStoreV
             else
                 d.addFmt(.err, bad.span, "cannot assign to '{s}' — it is not a mutable global lvalue", .{bad.name});
         },
+        .private_field => |bad| if (self.diagnostics) |d|
+            d.addFmt(.err, bad.span, "field '{s}' is private to its declaring file", .{bad.name}),
     }
     return true;
 }
@@ -2263,7 +2265,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
     const qualified_store_target: ?QualifiedGlobalStoreTarget = switch (qualified_store_verdict) {
         .target => |target| target,
         .not_applicable => null,
-        .missing, .ambiguous, .immutable, .non_lvalue => unreachable,
+        .missing, .ambiguous, .immutable, .non_lvalue, .private_field => unreachable,
     };
 
     // Set target_type from LHS for RHS lowering (enum literals, struct literals, etc.)
@@ -2740,7 +2742,7 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
                     const ptr = self.builder.structGepTyped(base, field.index, self.module.types.ptrTo(field.ty), qt.global.ty);
                     return .{ .slot = .{ .ptr = ptr, .ty = field.ty } };
                 },
-                .missing, .ambiguous, .immutable, .non_lvalue => return null,
+                .missing, .ambiguous, .immutable, .non_lvalue, .private_field => return null,
             }
 
             var accessor_recv_ty = self.inferExprType(fa.object);

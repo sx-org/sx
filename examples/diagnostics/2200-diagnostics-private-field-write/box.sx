@@ -3,3 +3,4 @@ Box :: struct {
 }
 
 make :: () -> Box { Box{} }
+g : Box = .{};

@@ -3743,6 +3743,7 @@ pub const Lowering = struct {
     pub const getStructFields = lower_expr.getStructFields;
     pub const structDeclaringSource = lower_expr.structDeclaringSource;
     pub const fieldDeclaringSource = lower_expr.fieldDeclaringSource;
+    pub const privateFieldHere = lower_expr.privateFieldHere;
     pub const diagPrivateField = lower_expr.diagPrivateField;
     pub const getAccessorFor = lower_expr.getAccessorFor;
     pub const getSetterFor = lower_expr.getSetterFor;

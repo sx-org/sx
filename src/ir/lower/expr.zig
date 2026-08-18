@@ -604,7 +604,7 @@ pub fn fieldDeclaringSource(self: *Lowering, ty: TypeId, field: StringId) ?[]con
     return self.structDeclaringSource(owner);
 }
 
-pub fn diagPrivateField(self: *Lowering, ty: TypeId, field: []const u8, span: ast.Span) bool {
+pub fn privateFieldHere(self: *Lowering, ty: TypeId, field: []const u8) bool {
     const wanted = self.module.types.internString(field);
     var vis: ast.Visibility = .public;
     for (self.getStructFields(ty)) |f| {
@@ -619,7 +619,11 @@ pub fn diagPrivateField(self: *Lowering, ty: TypeId, field: []const u8, span: as
     const declaring = self.fieldDeclaringSource(ty, wanted) orelse
         std.debug.panic("private field '{s}' on a struct type with no declaring file", .{field});
     const from = self.current_source_file orelse return false;
-    if (std.mem.eql(u8, from, declaring)) return false;
+    return !std.mem.eql(u8, from, declaring);
+}
+
+pub fn diagPrivateField(self: *Lowering, ty: TypeId, field: []const u8, span: ast.Span) bool {
+    if (!self.privateFieldHere(ty, field)) return false;
     if (self.diagnostics) |d|
         d.addFmt(.err, span, "field '{s}' is private to its declaring file", .{field});
     return true;
