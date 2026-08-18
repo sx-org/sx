@@ -1,6 +1,7 @@
-// The three UI libraries in one program.
+// Three UI View sets in one program: the stdlib fluent library plus the
+// compose and emit example packages.
 //
-// They are separate libraries, not modes of one. Each is imported under its own
+// They are separate packages, not modes of one. Each is imported under its own
 // name, and each `View` is its own open set: three sets declaring the same three
 // methods and sharing no components.
 //
@@ -11,8 +12,8 @@
 // carry their own, and the three sets are distinct either way.
 #import "modules/std.sx";
 
-c :: #import "modules/ui/compose.sx";
-e :: #import "modules/ui/emit.sx";
+c :: #import "examples/ui/compose.sx";
+e :: #import "examples/ui/emit.sx";
 f :: #import "modules/ui/fluent.sx";
 
 main :: () -> i32 {

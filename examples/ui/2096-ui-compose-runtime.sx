@@ -14,7 +14,7 @@
 // caller's instead, reused across projects and released once.
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
-#import "modules/ui/compose.sx";
+#import "examples/ui/compose.sx";
 ui :: #import "modules/ui/types.sx";
 
 at :: (x: f32, y: f32) -> Point => .{ x = x, y = y };

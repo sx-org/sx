@@ -1,4 +1,4 @@
-// The compose UI library — public facade.
+// Example compose UI library — public facade.
 //
 // One import gets a consumer the library; the modules behind this file are its
 // implementation. Each name below is re-exported explicitly, because an import
@@ -6,27 +6,25 @@
 //
 // The geometry, the paint types, the render tree and the text metrics are the ui
 // foundation's, so a compose scene renders into the tree the platform renderer
-// consumes. `compose.View` is the library's own open set: `ui/emit` and
-// `ui/fluent` declare their own, a component of another library is not a member
-// of this one, and no conversion stands in for a declaration.
+// consumes. `compose.View` is this package's open set.
 #import "modules/std.sx";
 
 types :: #import "modules/ui/types.sx";
 render :: #import "modules/ui/render.sx";
 font :: #import "modules/ui/font.sx";
 input :: #import "modules/ui/input.sx";
-view :: #import "modules/ui/compose/view.sx";
-identity :: #import "modules/ui/compose/identity.sx";
-state :: #import "modules/ui/compose/state.sx";
-frame :: #import "modules/ui/compose/frame.sx";
-router :: #import "modules/ui/compose/input.sx";
-focus :: #import "modules/ui/compose/focus.sx";
-loop :: #import "modules/ui/compose/loop.sx";
-components :: #import "modules/ui/compose/components.sx";
-sink :: #import "modules/ui/compose/sink.sx";
-containers :: #import "modules/ui/compose/containers.sx";
-placement :: #import "modules/ui/compose/placement.sx";
-runtime :: #import "modules/ui/compose/runtime.sx";
+view :: #import "examples/ui/compose/view.sx";
+identity :: #import "examples/ui/compose/identity.sx";
+state :: #import "examples/ui/compose/state.sx";
+frame :: #import "examples/ui/compose/frame.sx";
+router :: #import "examples/ui/compose/input.sx";
+focus :: #import "examples/ui/compose/focus.sx";
+loop :: #import "examples/ui/compose/loop.sx";
+components :: #import "examples/ui/compose/components.sx";
+sink :: #import "examples/ui/compose/sink.sx";
+containers :: #import "examples/ui/compose/containers.sx";
+placement :: #import "examples/ui/compose/placement.sx";
+runtime :: #import "examples/ui/compose/runtime.sx";
 
 // Geometry
 Point :: types.Point;

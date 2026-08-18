@@ -5,7 +5,7 @@
 // They are the foundation's node kinds, and a member reaches them through the
 // render context the set hands it.
 #import "modules/std.sx";
-#import "modules/ui/compose.sx";
+#import "examples/ui/compose.sx";
 ui :: #import "modules/ui/types.sx";
 
 show :: (n: RenderNode) {

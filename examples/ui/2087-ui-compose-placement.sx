@@ -5,7 +5,7 @@
 // does not change how deep the tree gets — and the order is the Mod's, never the
 // order the fields were written in.
 #import "modules/std.sx";
-#import "modules/ui/compose.sx";
+#import "examples/ui/compose.sx";
 ui :: #import "modules/ui/types.sx";
 
 show :: (tree: *RenderTree) {

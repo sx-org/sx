@@ -6,7 +6,7 @@
 // carries. Between them the element reads as pressed, which is what a build
 // styles on.
 #import "modules/std.sx";
-#import "modules/ui/compose.sx";
+#import "examples/ui/compose.sx";
 #import "modules/ui/input.sx";
 ui :: #import "modules/ui/types.sx";
 

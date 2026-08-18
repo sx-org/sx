@@ -8,8 +8,8 @@
 // inside the slot, so the write is an identity slot copy and nothing allocates.
 #import "modules/std.sx";
 #import "modules/fluent.sx";
-#import "modules/ui/emit/view.sx";
-#import "modules/ui/emit/context.sx";
+#import "examples/ui/emit/view.sx";
+#import "examples/ui/emit/context.sx";
 
 emit :: ufcs (value: $I/@Init(View)) {
     item: View = ---;

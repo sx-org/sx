@@ -6,7 +6,7 @@
 // separates the siblings a single site emits, and it restarts at every
 // `begin_build`.
 #import "modules/std.sx";
-#import "modules/ui/compose.sx";
+#import "examples/ui/compose.sx";
 
 // One site, reached as many times as its callers ask.
 cell :: () -> ElementId => element_id();

@@ -5,7 +5,7 @@
 // generic collect sink: emit has no `@BuildBlock` interception, and a child that
 // does not call `.emit()` does not appear.
 #import "modules/std.sx";
-#import "modules/ui/emit/view.sx";
+#import "examples/ui/emit/view.sx";
 
 EmitSink :: struct {
     children: *List(View) = null;

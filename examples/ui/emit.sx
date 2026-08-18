@@ -1,22 +1,21 @@
-// The emit UI library — public facade.
+// Example emit UI library — public facade.
 //
 // One import gets a consumer the library. Its product story is an ambient child
 // list plus an explicit terminal `.emit()`: there is no interception, so a child
 // written without `.emit()` does not appear.
 //
-// This library shares no UI-level code and no geometry, render, or component
-// types with `ui/compose` or `ui/fluent`. `emit.View` is its own open set.
+// `emit.View` is this package's open set.
 #import "modules/std.sx";
 
-geometry :: #import "modules/ui/emit/geometry.sx";
-render :: #import "modules/ui/emit/render.sx";
-view :: #import "modules/ui/emit/view.sx";
-modifier :: #import "modules/ui/emit/modifier.sx";
-components :: #import "modules/ui/emit/components.sx";
-sink :: #import "modules/ui/emit/sink.sx";
-containers :: #import "modules/ui/emit/containers.sx";
-emit_mod :: #import "modules/ui/emit/emit.sx";
-runtime :: #import "modules/ui/emit/runtime.sx";
+geometry :: #import "examples/ui/emit/geometry.sx";
+render :: #import "examples/ui/emit/render.sx";
+view :: #import "examples/ui/emit/view.sx";
+modifier :: #import "examples/ui/emit/modifier.sx";
+components :: #import "examples/ui/emit/components.sx";
+sink :: #import "examples/ui/emit/sink.sx";
+containers :: #import "examples/ui/emit/containers.sx";
+emit_mod :: #import "examples/ui/emit/emit.sx";
+runtime :: #import "examples/ui/emit/runtime.sx";
 
 // Geometry
 Point :: geometry.Point;

@@ -1,14 +1,10 @@
-// The emit UI library as a package.
+// The emit example UI library as a package.
 //
 // One product story: an ambient child list plus an explicit terminal `.emit()`.
 // There is no interception here — a child written WITHOUT `.emit()` is an
-// ordinary statement that produces nothing, which is the whole difference from
-// the compose library's bare `child;`.
-//
-// `emit.View` is its own open set, sharing no geometry, render surface or
-// components with `ui/fluent` or `ui/compose`.
+// ordinary statement that produces nothing.
 #import "modules/std.sx";
-#import "modules/ui/emit.sx";
+#import "examples/ui/emit.sx";
 
 main :: () -> i32 {
     // The container rebinds the ambient sink to its own child list, so every

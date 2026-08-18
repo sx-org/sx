@@ -1,4 +1,4 @@
-// The fluent UI library as a package.
+// The fluent UI library as a package. This is the stdlib widget library.
 //
 // One import of the facade is the whole API: the library re-exports its own
 // names, because an import publishes nothing on its own. A container's children

@@ -27,12 +27,12 @@
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
 #import "modules/ui/input.sx";
-#import "modules/ui/compose/view.sx";
-#import "modules/ui/compose/identity.sx";
-#import "modules/ui/compose/state.sx";
-#import "modules/ui/compose/frame.sx";
-#import "modules/ui/compose/input.sx";
-#import "modules/ui/compose/focus.sx";
+#import "examples/ui/compose/view.sx";
+#import "examples/ui/compose/identity.sx";
+#import "examples/ui/compose/state.sx";
+#import "examples/ui/compose/frame.sx";
+#import "examples/ui/compose/input.sx";
+#import "examples/ui/compose/focus.sx";
 
 // What a frame arena starts with. A reset keeps the largest chunk, so the pair
 // settles at the high-water mark of one frame and allocates nothing after.

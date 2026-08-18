@@ -2,7 +2,7 @@
 // intercepts Label expressions only when View is this module's name
 // for compose.View, so the lane cannot live in the driver.
 #import "modules/std.sx";
-#import "modules/ui/compose.sx";
+#import "examples/ui/compose.sx";
 
 slot_bytes :: () -> i64 => size_of(View);
 

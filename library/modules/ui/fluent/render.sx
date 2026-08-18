@@ -1,8 +1,7 @@
 // The render surface owned by the fluent library.
 //
 // A render pass collects commands into a tree; the library's own runtime walks
-// them. Nothing here is shared with `ui/emit`, and `ui/compose` renders into
-// the ui foundation's tree.
+// them.
 #import "modules/std.sx";
 #import "modules/ui/fluent/geometry.sx";
 

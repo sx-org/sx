@@ -1,10 +1,9 @@
-// The render surface owned by the emit library.
+// The render surface owned by the emit example library.
 //
 // A render pass collects commands into a tree; the library's own runtime walks
-// them. Nothing here is shared with `ui/fluent`, and `ui/compose` renders into
-// the ui foundation's tree.
+// them.
 #import "modules/std.sx";
-#import "modules/ui/emit/geometry.sx";
+#import "examples/ui/emit/geometry.sx";
 
 Color :: struct {
     r: f32 = 0.0;

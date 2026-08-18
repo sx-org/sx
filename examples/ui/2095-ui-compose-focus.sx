@@ -7,7 +7,7 @@
 // first when nothing is focused. What the committed frame stops declaring stops
 // being focused.
 #import "modules/std.sx";
-#import "modules/ui/compose.sx";
+#import "examples/ui/compose.sx";
 #import "modules/ui/input.sx";
 ui :: #import "modules/ui/types.sx";
 

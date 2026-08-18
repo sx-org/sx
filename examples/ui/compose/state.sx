@@ -10,7 +10,7 @@
 #import "modules/std.sx";
 #import "modules/std/core.sx";
 #import "modules/std/mem.sx";
-#import "modules/ui/compose/identity.sx";
+#import "examples/ui/compose/identity.sx";
 
 c :: #import "modules/std/c.sx";
 

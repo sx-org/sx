@@ -4,12 +4,12 @@
 // ambient sink to its own child list for the extent of that closure, so every
 // `.emit()` inside lands in this container.
 #import "modules/std.sx";
-#import "modules/ui/emit/geometry.sx";
-#import "modules/ui/emit/render.sx";
-#import "modules/ui/emit/view.sx";
-#import "modules/ui/emit/modifier.sx";
-#import "modules/ui/emit/sink.sx";
-#import "modules/ui/emit/context.sx";
+#import "examples/ui/emit/geometry.sx";
+#import "examples/ui/emit/render.sx";
+#import "examples/ui/emit/view.sx";
+#import "examples/ui/emit/modifier.sx";
+#import "examples/ui/emit/sink.sx";
+#import "examples/ui/emit/context.sx";
 
 VStack :: @OpenVariant(View) {
     children: List(View) = .{};

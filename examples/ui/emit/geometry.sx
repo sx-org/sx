@@ -1,8 +1,4 @@
-// Geometry owned by the emit library.
-//
-// No type here is shared: `ui/fluent` carries its own geometry, `ui/compose`
-// measures on the ui foundation, and neither may import this module. Two
-// libraries whose `Size` looks identical still have two `Size` types.
+// Geometry owned by the emit example library.
 #import "modules/std.sx";
 
 Point :: struct {

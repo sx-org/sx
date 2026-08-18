@@ -6,7 +6,7 @@
 // one build gets one entry per occurrence, and a site a committed build stops
 // reaching loses its entry.
 #import "modules/std.sx";
-#import "modules/ui/compose.sx";
+#import "examples/ui/compose.sx";
 
 // One site — its entry survives every frame that runs this.
 tick :: () -> i64 {

@@ -16,9 +16,9 @@
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
 #import "modules/ui/input.sx";
-#import "modules/ui/compose/view.sx";
-#import "modules/ui/compose/identity.sx";
-#import "modules/ui/compose/frame.sx";
+#import "examples/ui/compose/view.sx";
+#import "examples/ui/compose/identity.sx";
+#import "examples/ui/compose/frame.sx";
 
 // A component wrapped in its own focus region. The child is stored inline at
 // its own type, so a focusable element is one value and the calls into it stay

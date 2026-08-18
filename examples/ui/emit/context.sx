@@ -3,6 +3,6 @@
 // The sink is ambient rather than passed: a container rebinds it for the extent
 // of its own children, and `.emit()` reads whichever one is in scope.
 #import "modules/std.sx";
-#import "modules/ui/emit/sink.sx";
+#import "examples/ui/emit/sink.sx";
 
 #context_extend emit_ui: *EmitSink = null;

@@ -5,11 +5,10 @@
 // compose lands in the tree the platform renderer consumes, and a reader typed
 // on the foundation takes it with no conversion.
 //
-// What stays the library's own is the set and the collection style:
-// `compose.View` is a set that `ui/emit` and `ui/fluent` are no part of, and a
-// container still TAKES the block.
+// What stays the package's own is the set and the collection style:
+// `compose.View` is this package's set, and a container still TAKES the block.
 #import "modules/std.sx";
-#import "modules/ui/compose.sx";
+#import "examples/ui/compose.sx";
 
 ui :: #import "modules/ui/types.sx";
 foundation :: #import "modules/ui/render.sx";

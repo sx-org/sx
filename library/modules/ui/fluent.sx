@@ -1,13 +1,11 @@
-// The fluent UI library — public facade.
+// The fluent UI library — public facade. This is the stdlib widget library.
 //
 // One import gets a consumer the library; the modules behind this file are its
 // implementation. Each name below is re-exported explicitly, because an import
 // publishes nothing on its own.
 //
-// This library shares no UI-level code and no geometry, render, or component
-// types with `ui/compose` or `ui/emit`. `fluent.View` is its own open set: a
-// component of another library is not a member of it, and no conversion stands in
-// for a declaration.
+// `fluent.View` is the library's own open set: a component joins by declaring
+// itself into it, and no conversion stands in for a declaration.
 #import "modules/std.sx";
 
 geometry :: #import "modules/ui/fluent/geometry.sx";

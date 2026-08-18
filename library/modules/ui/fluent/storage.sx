@@ -5,9 +5,7 @@
 // is allocated and nothing borrows the block's frame, which is why the
 // initializer's target is the fixed `@Init(View)` rather than an open binder.
 //
-// This sink is package-local by design. `compose` and `emit` declare their own;
-// where the three listings look alike that is deliberate duplication, not a
-// module to share.
+// This sink is package-local by design.
 #import "modules/std.sx";
 #import "modules/fluent.sx";
 #import "modules/ui/fluent/view.sx";

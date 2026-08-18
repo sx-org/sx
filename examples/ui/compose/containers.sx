@@ -12,8 +12,8 @@
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/compose/view.sx";
-#import "modules/ui/compose/sink.sx";
+#import "examples/ui/compose/view.sx";
+#import "examples/ui/compose/sink.sx";
 
 // A leaf with no surface: it holds a minimum along its stack's MAIN axis and
 // takes the slack that stack has left to give. The stack is what spends

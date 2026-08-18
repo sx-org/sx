@@ -10,8 +10,8 @@
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/compose/view.sx";
-#import "modules/ui/compose/components.sx";
+#import "examples/ui/compose/view.sx";
+#import "examples/ui/compose/components.sx";
 
 ModFrames :: struct {
     box: Frame;
