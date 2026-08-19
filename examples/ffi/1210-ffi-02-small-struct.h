@@ -4,7 +4,7 @@
 //   Pair64 — 16 B, two i64         — 9..16 B int ABI ([2 x i64] coercion)
 //   Quad32 — 16 B, four i32        — 9..16 B int ABI ([2 x i64] coercion)
 // Declared here so the .c has a header to include; sx side imports
-// via `#source` only and re-declares the structs natively (c_import
+// via `@source` only and re-declares the structs natively (c_import
 // rewrites struct-typed params/returns to *void).
 
 typedef struct { float x; float y; }                           Vec2;

@@ -1,4 +1,4 @@
-/* The variadic prototype shapes `#import c` synthesizes an extern declaration
+/* The variadic prototype shapes `@import c` synthesizes an extern declaration
    for: a C23 tail with no named parameter before it, the fixed-parameter tail,
    and a reader that takes the list itself. */
 

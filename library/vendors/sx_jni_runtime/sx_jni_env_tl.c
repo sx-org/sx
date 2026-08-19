@@ -9,7 +9,7 @@
 // linked C helper sidesteps that — JIT process-symbol resolution finds
 // these `_Thread_local`-backed functions via the host's dlsym (sx
 // itself is built with this .c linked in via build.zig); AOT targets
-// (Android, etc.) pick it up as a regular `#import c { #source ...; }`
+// (Android, etc.) pick it up as a regular `@import c { @source ...; }`
 // auto-injected by the lowering pass.
 //
 // The slot is per-thread; nesting is handled at the call site via

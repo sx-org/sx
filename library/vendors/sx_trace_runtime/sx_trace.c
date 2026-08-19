@@ -13,7 +13,7 @@
 // platform support doesn't initialise TLS for objects added via
 // `LLVMOrcLLJITAddObjectFile`. The host (sx-the-compiler) links this .c so the
 // JIT's process-symbol generator resolves these functions via dlsym; AOT
-// targets pick up the same .c as an auto-injected `#source` (see core.zig,
+// targets pick up the same .c as an auto-injected `@source` (see core.zig,
 // gated on `Lowering.needs_trace_runtime`).
 //
 // Overflow policy (Zig-style): the newest frames survive — once the ring is
