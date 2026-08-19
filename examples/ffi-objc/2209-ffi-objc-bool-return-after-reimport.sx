@@ -1,0 +1,20 @@
+// An `@ObjcClass` method whose return type is the `BOOL` alias (`i8`)
+// accepts an integer literal when the class sits in a taken `inline if`
+// and `objc.sx` is also imported at the enclosing module.
+
+#import "modules/std.sx";
+
+inline if true {
+    #import "modules/ffi/objc.sx";
+    BoolReturnHost :: @ObjcClass("BoolReturnHost", extends = NSObject) export {
+        yes :: (self: *Self) -> BOOL {
+            return 1;
+        }
+    }
+}
+
+#import "modules/ffi/objc.sx";
+
+main :: () {
+    print("ok\n");
+}

@@ -2666,6 +2666,17 @@ pub fn selectCallableAuthor(self: *Lowering, name: []const u8, caller_file: []co
     return .{ .func = one };
 }
 
+/// A type-alias RHS that is a builtin name (`i8`, `f64`, `u1`, …), or
+/// null when the RHS is some other shape.
+fn aliasRhsBuiltin(cd: *const ast.ConstDecl, table: *types.TypeTable) ?TypeId {
+    const name = switch (cd.value.data) {
+        .type_expr => |te| te.name,
+        .identifier => |id| id.name,
+        else => return null,
+    };
+    return TypeResolver.resolveBuiltinName(name, table);
+}
+
 /// Resolve an as-yet-unregistered alias author directly to a terminal named
 /// type when raw import/declaration facts already prove the whole chain. This
 /// is principally the declaration-ABI path for `Alias :: foreign.P`: function
@@ -2674,7 +2685,15 @@ pub fn selectCallableAuthor(self: *Lowering, name: []const u8, caller_file: []co
 /// known before their IR types are interned. Materializing a terminal protocol
 /// is safe and exactly-once through `registered_protocol_decls`; other named
 /// kinds are used only when their ordinary scan already registered a slot.
+/// A builtin RHS (`BOOL :: i8`) has no named terminal; intern the primitive
+/// here so a signature that names the alias is that primitive.
 fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alias_name: []const u8) ?TypeId {
+    if (author.raw == .const_decl) {
+        if (aliasRhsBuiltin(author.raw.const_decl, &self.module.types)) |tid| {
+            self.putTypeAlias(author.source, alias_name, tid);
+            return tid;
+        }
+    }
     const terminal = self.followAliasChain(author) orelse return null;
 
     if (terminal.raw == .protocol_decl) {
@@ -2879,12 +2898,15 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
 
     // 1c. Pending flat aliases (const_decl in a flat-imported module but not
     //     yet resolved in type_aliases_by_source — the forward-alias fixpoint
-    //     will settle these).
+    //     will settle these). A builtin RHS (`BOOL :: i8`) has no named
+    //     terminal; intern the primitive so a signature that names the alias
+    //     is that primitive.
     for (author_set.flat) |fa| {
         if (fa.raw == .const_decl) {
             if (self.program_index.type_aliases_by_source.get(fa.source)) |inner| {
                 if (inner.get(name)) |tid| return .{ .resolved = tid };
             }
+            if (resolvePendingAliasType(self, fa, name)) |tid| return .{ .resolved = tid };
             return .pending;
         }
     }
