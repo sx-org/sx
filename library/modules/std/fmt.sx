@@ -323,7 +323,7 @@ enum_to_string :: (u: $T) -> string {
 
 optional_to_string :: (o: $T) -> string {
     if o == null { return "null"; }
-    return any_to_string(o!);
+    return any_to_string(o);
 }
 
 // Width-dispatch unbox of an `any` whose tag is in the int / float category.
