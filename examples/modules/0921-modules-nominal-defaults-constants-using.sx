@@ -1,4 +1,4 @@
-// Nominal identity for struct DEFAULTS, CONSTANTS, and #USING bases —
+// Nominal identity for struct DEFAULTS, CONSTANTS, and @using bases —
 // same-name structs in different modules must each keep their OWN field
 // defaults, struct-level constants, and embedded @using layout, selected by
 // concrete TypeId/author, never through the process-global display-name key
