@@ -3808,6 +3808,13 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 self.checkIntLiteralFits(v, nty, node.span);
                 break :blk self.builder.constInt(v, nty);
             }
+            // A dest-typed float literal is that dest width; the negated form
+            // is the same constant with the sign flipped.
+            if (uop.op == .negate and uop.operand.data == .float_literal) {
+                const lit = uop.operand.data.float_literal;
+                const fty: TypeId = if (self.target_type) |tt| (if (tt == .f32 or tt == .f64) tt else .f64) else .f64;
+                break :blk self.builder.constFloat(-lit.value, fty);
+            }
             // Prefix `*` on a TYPE-valued operand is the pointer TYPE, not
             // address-of: `size_of(*T)`, Type-arg positions, and nested
             // `**T` (address_of over address_of resolves inside-out). Must
@@ -3840,7 +3847,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             const operand = self.lowerExpr(uop.operand);
             self.suppress_int_fit_check = saved_fit;
             break :blk switch (uop.op) {
-                .negate => self.builder.emit(.{ .neg = .{ .operand = operand } }, self.inferExprType(uop.operand)),
+                .negate => self.builder.emit(.{ .neg = .{ .operand = operand } }, self.builder.getRefType(operand)),
                 // `!` is LOGICAL not. Only a real bool may go through the
                 // bitwise `bool_not` (i1); an integer-backed operand — an
                 // error binding (u32 tag), a plain integer — lowers as the

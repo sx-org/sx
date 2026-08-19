@@ -1,0 +1,14 @@
+// An f32 compared with a dest-typed negated float literal (`v > -0.75`)
+// uses the same width on both sides. A positive literal and a subtracted
+// zero share that rule.
+
+#import "modules/std.sx";
+
+main :: () {
+    v : f32 = -0.5;
+    if v > -0.75 { print("gt\n"); } else { print("le\n"); }
+    if v > 0.75 { print("gt2\n"); } else { print("le2\n"); }
+    if v > (0.0 - 0.75) { print("gt3\n"); } else { print("le3\n"); }
+    w : f32 = 0.75;
+    if v > -w { print("gt4\n"); } else { print("le4\n"); }
+}
