@@ -229,6 +229,41 @@ pub const DocumentStore = struct {
         return doc;
     }
 
+    /// Collect `#import`s from a decl list, descending into module drivers
+    /// (`inline if` / comptime `match` / `inline for`). Every branch
+    /// contributes, whichever one the driver would select: the editor answers
+    /// for the whole file, including the arms this target does not compile.
+    fn collectImports(self: *DocumentStore, list: *std.ArrayList(Import), decls: []const *sx.ast.Node, base_dir: []const u8) anyerror!void {
+        for (decls) |decl| {
+            if (sx.imports.isModuleDriver(decl)) {
+                switch (decl.data) {
+                    .if_expr => |ie| {
+                        try self.collectBranchImports(list, ie.then_branch, base_dir);
+                        if (ie.else_branch) |eb| try self.collectBranchImports(list, eb, base_dir);
+                    },
+                    .match_expr => |me| {
+                        for (me.arms) |arm| try self.collectBranchImports(list, arm.body, base_dir);
+                    },
+                    .for_expr => |fe| try self.collectBranchImports(list, fe.body, base_dir),
+                    else => {},
+                }
+                continue;
+            }
+            if (decl.data != .import_decl) continue;
+            const imp = decl.data.import_decl;
+            const resolved_path = try sx.imports.resolveImportPath(self.allocator, self.io, base_dir, imp.path, self.rootPathOpt(), self.stdlib_paths);
+            try list.append(self.allocator, .{
+                .ns = imp.name,
+                .path = resolved_path,
+            });
+        }
+    }
+
+    fn collectBranchImports(self: *DocumentStore, list: *std.ArrayList(Import), body: *sx.ast.Node, base_dir: []const u8) anyerror!void {
+        const stmts: []const *sx.ast.Node = if (body.data == .block) body.data.block.stmts else &[_]*sx.ast.Node{body};
+        try self.collectImports(list, stmts, base_dir);
+    }
+
     /// Analyze a document: parse, resolve imports, run sema with imported symbols pre-registered.
     pub fn analyzeDocument(self: *DocumentStore, doc: *Document) !void {
         if (doc.is_analyzing) return; // circular import guard
@@ -283,15 +318,7 @@ pub const DocumentStore = struct {
         var import_list = std.ArrayList(Import).empty;
         const base_dir = sx.imports.dirName(doc.path);
         if (root.data == .root) {
-            for (root.data.root.decls) |decl| {
-                if (decl.data != .import_decl) continue;
-                const imp = decl.data.import_decl;
-                const resolved_path = try sx.imports.resolveImportPath(self.allocator, self.io, base_dir, imp.path, self.rootPathOpt(), self.stdlib_paths);
-                try import_list.append(self.allocator, .{
-                    .ns = imp.name,
-                    .path = resolved_path,
-                });
-            }
+            try self.collectImports(&import_list, root.data.root.decls, base_dir);
         }
         doc.imports = try import_list.toOwnedSlice(self.allocator);
         doc.last_good_imports = doc.imports;

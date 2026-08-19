@@ -480,3 +480,39 @@ test "openOrUpdate: repeated updates return the prior token arena to its backing
     try std.testing.expectEqual(live_after_two, counter.live());
     try std.testing.expect(counter.freed > 0);
 }
+
+fn hasSymbol(sema: sx.sema.SemaResult, name: []const u8) bool {
+    for (sema.symbols) |s| {
+        if (std.mem.eql(u8, s.name, name)) return true;
+    }
+    return false;
+}
+
+test "analyzeDocument: imports inside a module driver register from every branch" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+
+    const a_doc = try store.openOrUpdate("driver_a.sx", "Alpha :: struct { x: i32 }", 1);
+    try store.analyzeDocument(a_doc);
+    const b_doc = try store.openOrUpdate("driver_b.sx", "Beta :: struct { y: i32 }", 1);
+    try store.analyzeDocument(b_doc);
+
+    const main_src: [:0]const u8 =
+        \\inline if OS == .macos {
+        \\    #import "driver_a.sx";
+        \\} else {
+        \\    #import "driver_b.sx";
+        \\}
+        \\main :: () { }
+    ;
+    const main_doc = try store.openOrUpdate("driver_main.sx", main_src, 1);
+    try store.analyzeDocument(main_doc);
+
+    try std.testing.expectEqual(@as(usize, 2), main_doc.imports.len);
+    const sema = main_doc.sema orelse return error.SkipZigTest;
+    try std.testing.expect(hasSymbol(sema, "Alpha"));
+    try std.testing.expect(hasSymbol(sema, "Beta"));
+}
