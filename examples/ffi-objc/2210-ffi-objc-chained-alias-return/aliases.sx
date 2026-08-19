@@ -1,0 +1,4 @@
+// Type-alias chain ending at a builtin. The `@ObjcClass` method in the
+// sibling file names `MYB2` as its return type.
+MYB :: i8;
+MYB2 :: MYB;
