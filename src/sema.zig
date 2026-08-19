@@ -90,6 +90,10 @@ pub const SemaResult = struct {
     fn_signatures: std.StringHashMap(FnSignature),
     struct_types: std.StringHashMap(StructTypeInfo),
     enum_types: std.StringHashMap([]const []const u8),
+    /// `#context_extend` field name → declared type. The Context is assembled
+    /// program-wide, so this is a union across every analyzed document rather
+    /// than a member list on one declaration.
+    context_members: std.StringHashMap(Type),
     type_aliases: std.StringHashMap([]const u8),
     type_map: TypeMap,
 };
@@ -116,6 +120,7 @@ pub const Analyzer = struct {
     fn_signatures: std.StringHashMap(FnSignature),
     struct_types: std.StringHashMap(StructTypeInfo),
     enum_types: std.StringHashMap([]const []const u8),
+    context_members: std.StringHashMap(Type),
     type_aliases: std.StringHashMap([]const u8),
     /// Module-global integer consts, by bare name → value. Lets an array
     /// dimension written as a named const (`MAX :: 4; [MAX]u8`) fold to a
@@ -141,6 +146,7 @@ pub const Analyzer = struct {
             .symbol_index = std.StringHashMap(std.ArrayList(u32)).init(allocator),
             .fn_signatures = std.StringHashMap(FnSignature).init(allocator),
             .struct_types = std.StringHashMap(StructTypeInfo).init(allocator),
+            .context_members = std.StringHashMap(Type).init(allocator),
             .enum_types = std.StringHashMap([]const []const u8).init(allocator),
             .type_aliases = std.StringHashMap([]const u8).init(allocator),
             .const_int_values = std.StringHashMap(i64).init(allocator),
@@ -176,6 +182,7 @@ pub const Analyzer = struct {
             .fn_signatures = self.fn_signatures,
             .struct_types = self.struct_types,
             .enum_types = self.enum_types,
+            .context_members = self.context_members,
             .type_aliases = self.type_aliases,
             .type_map = self.type_map,
         };
@@ -241,6 +248,14 @@ pub const Analyzer = struct {
                 // Populate type_aliases registry
                 if (cd.value.data == .type_expr) {
                     try self.type_aliases.put(cd.name, cd.value.data.type_expr.name);
+                }
+                // A re-export alias (`Allocator :: core.Allocator`) names the
+                // same type, so it joins the registries under its own name —
+                // a facade module's exports resolve for its importers, which
+                // never see the part-file the alias points into.
+                if (self.aliasTargetName(cd.value)) |target| {
+                    if (self.struct_types.get(target)) |info| try self.struct_types.put(cd.name, info);
+                    if (self.enum_types.get(target)) |variants| try self.enum_types.put(cd.name, variants);
                 }
                 // Lambda as function
                 if (cd.value.data == .lambda) {
@@ -339,9 +354,20 @@ pub const Analyzer = struct {
                 }
             },
             .protocol_decl => |pd| {
+                // A protocol name is a type the editor can name, so it joins the
+                // same registry structs use — a protocol-typed value carries the
+                // protocol as its owner, and its methods resolve against it.
+                var tp_names = std.ArrayList([]const u8).empty;
+                for (pd.type_params) |p| try tp_names.append(self.allocator, p.name);
+                try self.struct_types.put(pd.name, .{
+                    .field_names = &.{},
+                    .field_types = &.{},
+                    .type_params = try tp_names.toOwnedSlice(self.allocator),
+                });
                 for (pd.methods) |m| {
                     try self.registerMethodSig(m.name, pd.name, m.return_type);
                     try self.registerMethodSig(m.name, ns_prefix, m.return_type);
+                    self.recordMemberRef(m.name, pd.name, true);
                 }
             },
             .union_decl => |ud| {
@@ -357,11 +383,32 @@ pub const Analyzer = struct {
                 }
                 self.popScope();
             },
+            .context_extend_decl => |ce| {
+                try self.context_members.put(ce.name, self.resolveTypeNode(ce.type_expr));
+            },
             .ufcs_alias => |ua| {
                 try self.addSymbol(ua.name, .function, null, node.span);
             },
             else => {},
         }
+    }
+
+    /// The dotted name a const's value spells (`core.Allocator`), or null when
+    /// the value isn't a bare name path.
+    fn aliasTargetName(self: *Analyzer, value: *const Node) ?[]const u8 {
+        return switch (value.data) {
+            .type_expr => |te| te.name,
+            .identifier => |id| id.name,
+            .field_access => |fa| blk: {
+                const obj = switch (fa.object.data) {
+                    .identifier => |id| id.name,
+                    .type_expr => |te| te.name,
+                    else => break :blk null,
+                };
+                break :blk std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ obj, fa.field }) catch null;
+            },
+            else => null,
+        };
     }
 
     /// Register a method's return type in `fn_signatures`. Called twice per
@@ -770,6 +817,9 @@ pub const Analyzer = struct {
                                 return info.field_types[idx];
                             }
                         }
+                    }
+                    if (std.mem.eql(u8, obj_ty.struct_type, "Context")) {
+                        if (self.context_members.get(fa.field)) |ty| return ty;
                     }
                 }
                 if (obj_ty.isArray()) {
@@ -1458,6 +1508,7 @@ pub const Analyzer = struct {
             .open_set_decl => |sd| {
                 try self.addSymbol(sd.name, .struct_type, null, node.span);
                 for (sd.methods) |method| {
+                    self.recordMemberRef(method.name, sd.name, true);
                     if (method.default_body) |body| {
                         try self.pushScope();
                         try self.addSymbol("self", .param, null, node.span);
@@ -1524,6 +1575,9 @@ pub const Analyzer = struct {
                 // Each impl block gets its own scope so methods don't conflict across impls
                 try self.pushScope();
                 for (ib.methods) |method_node| {
+                    if (method_node.data == .fn_decl) {
+                        self.recordMemberRef(method_node.data.fn_decl.name, ib.target_type, true);
+                    }
                     try self.analyzeNode(method_node);
                 }
                 self.popScope();
@@ -1650,16 +1704,12 @@ pub const Analyzer = struct {
                     }
                 }
             }
-            // Compound types: ?T, *T, [*]T, []T, [N]T — delegate to resolveTypeNode
-            switch (tn.data) {
-                .optional_type_expr, .pointer_type_expr, .many_pointer_type_expr,
-                .slice_type_expr, .array_type_expr,
-                => {
-                    const resolved = self.resolveTypeNode(tn);
-                    if (resolved != .void_type) return resolved;
-                },
-                else => {},
-            }
+            // Anything the type registry can name: compound shapes
+            // (?T, *T, [*]T, []T, [N]T) and bare names whose declaration
+            // carries no symbol type of its own (a protocol, a re-export
+            // alias).
+            const registered = self.resolveTypeNode(tn);
+            if (registered != .void_type) return registered;
             // For compound types, resolve inner type refs
             self.resolveTypeRef(tn);
         }

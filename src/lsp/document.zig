@@ -364,6 +364,11 @@ pub const DocumentStore = struct {
                             const prefixed = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ ns_name, entry.key_ptr.* });
                             try analyzer.enum_types.put(prefixed, entry.value_ptr.*);
                         }
+                        // Context members are program-wide, never namespaced.
+                        var ctx_it = file_sema.context_members.iterator();
+                        while (ctx_it.next()) |entry| {
+                            try analyzer.context_members.put(entry.key_ptr.*, entry.value_ptr.*);
+                        }
                     } else {
                         for (file_sema.symbols) |sym| {
                             if (sym.scope_depth == 0) {
@@ -391,6 +396,10 @@ pub const DocumentStore = struct {
                         var enum_it = file_sema.enum_types.iterator();
                         while (enum_it.next()) |entry| {
                             try analyzer.enum_types.put(entry.key_ptr.*, entry.value_ptr.*);
+                        }
+                        var ctx_it = file_sema.context_members.iterator();
+                        while (ctx_it.next()) |entry| {
+                            try analyzer.context_members.put(entry.key_ptr.*, entry.value_ptr.*);
                         }
                     }
                 }
@@ -432,6 +441,11 @@ pub const DocumentStore = struct {
                     const prefixed = try std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ ns_name, entry.key_ptr.* });
                     try analyzer.enum_types.put(prefixed, entry.value_ptr.*);
                 }
+                // Context members are program-wide, never namespaced.
+                var ctx_it = imp_sema.context_members.iterator();
+                while (ctx_it.next()) |entry| {
+                    try analyzer.context_members.put(entry.key_ptr.*, entry.value_ptr.*);
+                }
             } else {
                 // Flat import: pre-register all top-level symbols with origin set
                 for (imp_sema.symbols) |sym| {
@@ -463,6 +477,10 @@ pub const DocumentStore = struct {
                 var enum_it = imp_sema.enum_types.iterator();
                 while (enum_it.next()) |entry| {
                     try analyzer.enum_types.put(entry.key_ptr.*, entry.value_ptr.*);
+                }
+                var ctx_it = imp_sema.context_members.iterator();
+                while (ctx_it.next()) |entry| {
+                    try analyzer.context_members.put(entry.key_ptr.*, entry.value_ptr.*);
                 }
             }
         }

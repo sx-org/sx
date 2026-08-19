@@ -516,3 +516,128 @@ test "analyzeDocument: imports inside a module driver register from every branch
     try std.testing.expect(hasSymbol(sema, "Alpha"));
     try std.testing.expect(hasSymbol(sema, "Beta"));
 }
+
+test "analyzeDocument: protocol and impl methods are member defs owned by their type" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const src: [:0]const u8 =
+        \\Shape :: protocol vtable {
+        \\    area :: (self: *Self) -> i64;
+        \\}
+        \\
+        \\Box :: struct { n: i64; }
+        \\
+        \\impl Shape for Box {
+        \\    area :: (self: *Box) -> i64 { self.n }
+        \\}
+    ;
+    const doc = try store.openOrUpdate("proto_defs.sx", src, 1);
+    try store.analyzeDocument(doc);
+
+    const sema = doc.sema orelse return error.SkipZigTest;
+    try std.testing.expect(findMemberRef(&sema, "area", "Shape", true) != null);
+    try std.testing.expect(findMemberRef(&sema, "area", "Box", true) != null);
+}
+
+test "analyzeDocument: a protocol-typed local owns its method uses" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const lib_src: [:0]const u8 =
+        \\Shape :: protocol vtable {
+        \\    area :: (self: *Self) -> i64;
+        \\}
+        \\
+        \\Box :: struct { n: i64; }
+    ;
+    const lib_doc = try store.openOrUpdate("proto_lib.sx", lib_src, 1);
+    try store.analyzeDocument(lib_doc);
+
+    const main_src: [:0]const u8 =
+        \\#import "proto_lib.sx";
+        \\main :: (b: *Box) {
+        \\    s : Shape = b.(Shape);
+        \\    _ = s.area();
+        \\}
+    ;
+    const main_doc = try store.openOrUpdate("proto_use.sx", main_src, 1);
+    try store.analyzeDocument(main_doc);
+
+    const sema = main_doc.sema orelse return error.SkipZigTest;
+    try std.testing.expect(findMemberRef(&sema, "area", "Shape", false) != null);
+}
+
+test "analyzeDocument: a re-export alias carries its target type to importers" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const inner_src: [:0]const u8 =
+        \\Shape :: protocol vtable {
+        \\    area :: (self: *Self) -> i64;
+        \\}
+        \\
+        \\Box :: struct { n: i64; }
+    ;
+    const inner_doc = try store.openOrUpdate("alias_inner.sx", inner_src, 1);
+    try store.analyzeDocument(inner_doc);
+
+    const facade_src: [:0]const u8 =
+        \\core :: #import "alias_inner.sx";
+        \\
+        \\Shape :: core.Shape;
+        \\Box   :: core.Box;
+    ;
+    const facade_doc = try store.openOrUpdate("alias_facade.sx", facade_src, 1);
+    try store.analyzeDocument(facade_doc);
+
+    const main_src: [:0]const u8 =
+        \\#import "alias_facade.sx";
+        \\main :: (b: *Box) {
+        \\    s : Shape = b.(Shape);
+        \\    _ = s.area();
+        \\}
+    ;
+    const main_doc = try store.openOrUpdate("alias_use.sx", main_src, 1);
+    try store.analyzeDocument(main_doc);
+
+    const sema = main_doc.sema orelse return error.SkipZigTest;
+    try std.testing.expect(findMemberRef(&sema, "area", "Shape", false) != null);
+}
+
+test "analyzeDocument: a #context_extend member's type owns its method uses" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
+    const lib_src: [:0]const u8 =
+        \\Context :: struct { }
+        \\
+        \\Shape :: protocol vtable {
+        \\    area :: (self: *Self) -> i64;
+        \\}
+        \\
+        \\#context_extend shape: Shape;
+    ;
+    const lib_doc = try store.openOrUpdate("ctx_lib.sx", lib_src, 1);
+    try store.analyzeDocument(lib_doc);
+
+    const main_src: [:0]const u8 =
+        \\#import "ctx_lib.sx";
+        \\main :: () {
+        \\    _ = context.shape.area();
+        \\}
+    ;
+    const main_doc = try store.openOrUpdate("ctx_use.sx", main_src, 1);
+    try store.analyzeDocument(main_doc);
+
+    const sema = main_doc.sema orelse return error.SkipZigTest;
+    try std.testing.expect(findMemberRef(&sema, "area", "Shape", false) != null);
+}
