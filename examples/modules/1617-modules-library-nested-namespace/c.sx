@@ -1,4 +1,4 @@
-// Innermost module: owns the #library and its extern fn.
+// Innermost module: owns the @library and its extern fn.
 @import "modules/std.sx";
 
 pcaplib :: @library "pcap";

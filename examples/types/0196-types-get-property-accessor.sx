@@ -1,4 +1,4 @@
-// `#get` property accessors — a method marked `#get` is invoked via no-paren
+// `@get` property accessors — a method marked `@get` is invoked via no-paren
 // field syntax (`obj.name`) rather than `obj.name()`. Works on plain structs
 // and generic-struct instances (including a getter whose return type is the
 // instance's type parameter), and the accessed value types correctly in

@@ -5,7 +5,7 @@
 // The build-pipeline query primitives on the comptime VM. A custom
 // `on_build` override inspects the build metadata (`c_object_paths` returns the
 // VM-built `List(string)` of C companion objects), then DELEGATES to the stdlib
-// `default_pipeline` for the real emit + link. The `#import c` source compiles to
+// `default_pipeline` for the real emit + link. The `@import c` source compiles to
 // one object, so `c_object_paths()` must be a one-element list of a non-empty
 // path. AOT runs the produced binary → "runtime main: 42".
 

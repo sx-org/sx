@@ -74,7 +74,7 @@ class_addProtocol      :: (cls: *void, proto: *void)                          ->
 objc_getProtocol       :: (name: [*]u8)                                       -> *void  extern objc;
 objc_registerClassPair :: (cls: *void)                                        -> void   extern objc;
 
-// Foundation C-API helpers (Foundation is already linked above via #framework).
+// Foundation C-API helpers (Foundation is already linked above via @framework).
 // NSLog takes an NSString format; the variadic tail is not exposed here.
 NSLog :: (fmt: *NSString) extern;
 

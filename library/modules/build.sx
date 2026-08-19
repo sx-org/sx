@@ -137,7 +137,7 @@ emit_and_link :: (opt: BuildOptions) -> bool {
 // codegen (everything is sx-driven — there is no auto-emit/auto-link). It emits +
 // links the program via `emit_and_link`. A user overrides the whole pipeline with
 // their own `@run on_build(custom);` in main.sx (last-wins) — e.g. bundling is
-// `#import "modules/platform/bundle.sx"; @run on_build(bundle_main);`, where
+// `@import "modules/platform/bundle.sx"; @run on_build(bundle_main);`, where
 // `bundle_main` runs `emit_and_link` then wraps the binary into a `.app` / `.apk`.
 // The compiler FORCE-LOWERS this well-known name and auto-invokes it after codegen
 // when no `on_build` override was registered (no library `@run` needed).

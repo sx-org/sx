@@ -1,5 +1,5 @@
 // Targets that are NOT an addressable storage place still take `OP=` through
-// their own path. A `#get`/`#set` property is a call pair: `obj.prop += 1`
+// their own path. A `@get`/`@set` property is a call pair: `obj.prop += 1`
 // reads via the getter and writes via the setter, with the receiver evaluated
 // exactly once. A slice's `.len` / `.ptr` are the two header words, so `OP=`
 // retargets the view itself. A comptime tuple or struct index is a

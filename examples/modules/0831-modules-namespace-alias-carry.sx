@@ -1,4 +1,4 @@
-// Namespace aliases are module surface: a `ns :: #import` declared by a
+// Namespace aliases are module surface: a `ns :: @import` declared by a
 // module is usable by that module's DIRECT flat importers (the carry rule —
 // no `pub` keyword). Covers every qualified shape through BOTH a direct and
 // a carried alias: plain fn, struct static method + instance method, type

@@ -1,4 +1,4 @@
-// A `#context_extend` default folds to a compile-time constant: it is baked into
+// A `@context_extend` default folds to a compile-time constant: it is baked into
 // `__sx_default_context`, which exists before `main` runs. A runtime call cannot
 // initialize it, and the serializer rejects it rather than zero-filling the field.
 @import "modules/std.sx";

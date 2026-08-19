@@ -9,7 +9,7 @@
 //   - implicit / `xx` RVALUE erasure (decl, call arg) — the owning
 //     copy is postfix-only (`.(P)` / `.(P, alloc)`);
 // plus the two `.(P, alloc)` refusals: an rvalue allocator argument, and
-// `.(P, alloc)` on an `#identity` target (a borrow allocates nothing).
+// `.(P, alloc)` on an `@identity` target (a borrow allocates nothing).
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 

@@ -47,7 +47,7 @@ variant_name :: ($T: Type, idx: i64) -> string intrinsic;
 variant_type :: ($T: Type, idx: i64) -> Type intrinsic;
 variant_payload :: (u: $T, idx: i64) -> any intrinsic;
 is_flags :: ($T: Type) -> bool intrinsic;
-// Is T an `#identity` protocol (borrow-only ownership class)? COMPILE-TIME
+// Is T an `@identity` protocol (borrow-only ownership class)? COMPILE-TIME
 // only — a runtime `Type` value always tags a concrete type, never a
 // protocol, so there is no runtime form.
 is_identity :: ($T: Type) -> bool intrinsic;
@@ -360,7 +360,7 @@ raw_pointer_to        :: (t: Type) -> Type intrinsic;
 
 // Bytes-level primitives carry the `_bytes` suffix so the typed
 // helpers in std/mem.sx own the bare names (`alloc(T, n)`, `free(s)`).
-// `#identity`: an allocator IS its state object — protocol values only
+// `@identity`: an allocator IS its state object — protocol values only
 // ever borrow a named allocator (`gpa`, `gpa.(Allocator)`); rvalue
 // erasure and `free` of the protocol value refuse at compile time.
 Allocator :: protocol vtable @identity {
@@ -408,7 +408,7 @@ ParkToken :: struct {
     handle: *void = null;
 }
 
-// `#identity` — like `Allocator`: the runtime object is unique state,
+// `@identity` — like `Allocator`: the runtime object is unique state,
 // borrowed into the protocol value, never owned by it.
 Io :: protocol vtable @identity {
     spawn_raw :: (self: *Self, entry: *void, arg: *void, opts: SpawnOpts) -> *void;
@@ -434,7 +434,7 @@ Io :: protocol vtable @identity {
 // --- Context ---
 //
 // The dynamically-scoped capability bag. The struct is declared EMPTY: the
-// compiler assembles 100% of its fields from the program's `#context_extend`
+// compiler assembles 100% of its fields from the program's `@context_extend`
 // declarations (sorted by declaring module path, then field name) —
 // `allocator` lives in std/mem.sx and `io` in std/io.sx, declared exactly
 // like any user field. `__sx_default_context` is emitted from the assembled
@@ -446,7 +446,7 @@ Io :: protocol vtable @identity {
 // There is no untyped escape slot: a module that wants to carry a payload
 // declares its own typed field:
 //
-//     #context_extend logger: ?*Logger = null;
+//     @context_extend logger: ?*Logger = null;
 //
 // Guideline (not enforced): prefer one POINTER per concern over fat inline
 // values — every `push` copies the whole Context, so a 2 KB inline field

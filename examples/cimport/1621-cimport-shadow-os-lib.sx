@@ -1,4 +1,4 @@
-// Unit-first JIT resolution: a `#source` unit defining a
+// Unit-first JIT resolution: a `@source` unit defining a
 // symbol that ALSO lives in an OS image already loaded into the
 // compiler process (libz, via libLLVM) still wins — the unit's dylib
 // is a priority symbol-search target ahead of the process-wide

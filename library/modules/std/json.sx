@@ -38,7 +38,7 @@
 //     Sink/IO/overflow failures surface on the error channel
 //     (`!JsonError`).
 //
-// Building a value (`#import "modules/std/json.sx";` brings these in):
+// Building a value (`@import "modules/std/json.sx";` brings these in):
 //
 //     obj : Object = .{};
 //     obj.put("name", .str(name_view), alloc);   // name_view: a `string`

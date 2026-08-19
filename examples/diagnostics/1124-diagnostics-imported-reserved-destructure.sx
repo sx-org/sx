@@ -1,6 +1,6 @@
 // A reserved type name used as a DESTRUCTURE binding name (`i2`) is rejected
 // inside an IMPORTED module: the binding-name walk descends the `namespace_decl`
-// an `mod :: #import` wraps and renders the caret against that module's source.
+// an `mod :: @import` wraps and renders the caret against that module's source.
 @import "modules/std.sx";
 mod :: @import "1124-diagnostics-imported-reserved-destructure/mod.sx";
 

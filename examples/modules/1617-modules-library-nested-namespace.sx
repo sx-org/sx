@@ -1,4 +1,4 @@
-// A #library declared in a module reached through
+// A @library declared in a module reached through
 // TWO aliased imports must still be linked (AOT) / dlopened (JIT).
 @import "modules/std.sx";
 b :: @import "1617-modules-library-nested-namespace/b.sx";

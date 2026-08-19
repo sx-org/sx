@@ -1,5 +1,5 @@
 // OpenGL 3.3 Core — runtime-loaded function pointers
-// No #library needed — caller provides a loader (e.g. SDL_GL_GetProcAddress)
+// No @library needed — caller provides a loader (e.g. SDL_GL_GetProcAddress)
 
 // Constants
 GL_FALSE             :i32: 0;

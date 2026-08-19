@@ -1,6 +1,6 @@
 // Bare module-const visibility under a NAMESPACED-only import — the const
 // sibling of 0736.
-// `dep.sx` is imported only as `dep :: #import`, so its top-level `DEP_LEN`
+// `dep.sx` is imported only as `dep :: @import`, so its top-level `DEP_LEN`
 // is reachable ONLY as `dep.DEP_LEN`. A BARE `DEP_LEN` in a comptime
 // array-dimension position does NOT resolve: bare module-const visibility
 // joins over the FLAT import edges (`flat_import_graph`), and a namespaced

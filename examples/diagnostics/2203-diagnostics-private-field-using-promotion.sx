@@ -1,4 +1,4 @@
-// A `#using` promotion carries the base's authority, so the promoting file
+// A `@using` promotion carries the base's authority, so the promoting file
 // cannot name a promoted private field — plain or generic.
 
 @import "2203-diagnostics-private-field-using-promotion/box.sx";

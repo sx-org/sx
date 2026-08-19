@@ -1,4 +1,4 @@
-// A `#context_extend` declaration without a default value is a compile error: the
+// A `@context_extend` declaration without a default value is a compile error: the
 // default context must be constructible before `main` runs. The parser accepts the
 // clause-less spelling so the rejection carries this wording instead of a bare
 // parse error; `?T = null` is the idiom for handle fields with no meaningful

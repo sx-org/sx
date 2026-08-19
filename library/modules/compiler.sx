@@ -15,8 +15,8 @@
 // standalone.
 @import "modules/std/list.sx";
 
-// The C companion object files for this build (`#import c { #source ... }`,
-// compiled to `.o`) and the `#library` link names. The sx driver passes them to
+// The C companion object files for this build (`@import c { @source ... }`,
+// compiled to `.o`) and the `@library` link names. The sx driver passes them to
 // the linker. Answered from the compiler's accumulated build state.
 c_object_paths :: () -> List(string) intrinsic;
 link_libraries :: () -> List(string) intrinsic;

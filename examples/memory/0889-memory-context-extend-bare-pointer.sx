@@ -1,4 +1,4 @@
-// A bare nullable pointer as a `#context_extend` field. Pointers are
+// A bare nullable pointer as a `@context_extend` field. Pointers are
 // permanently nullable (specs: Null); `?*T` is the opt-in checked spelling —
 // this pins that the unchecked `*T = null` default folds, pushes, and
 // restores like any other context field.

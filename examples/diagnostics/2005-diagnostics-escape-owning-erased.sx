@@ -3,7 +3,7 @@
 // with the erasure could never happen. The refusal is at the escape site, on
 // the type the result crosses into the image as.
 //
-// A borrow is unaffected: a view (`*Show`) and an `#identity` handle are
+// A borrow is unaffected: a view (`*Show`) and an `@identity` handle are
 // pointers to storage the image already has.
 @import "modules/std.sx";
 

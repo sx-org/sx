@@ -1,5 +1,5 @@
 // Bare-name visibility under a NAMESPACED-only import.
-// `a.sx` is imported only as `m :: #import` — its top-level `secret` is reachable
+// `a.sx` is imported only as `m :: @import` — its top-level `secret` is reachable
 // ONLY as `m.secret`. A BARE `secret()` errors: bare-name visibility joins
 // over the FLAT import edges (`flat_import_graph`), and a namespaced alias is not
 // a flat edge.

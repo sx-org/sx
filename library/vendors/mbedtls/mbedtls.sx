@@ -2,8 +2,8 @@
 // vendors/mbedtls — sx bindings over the VENDORED mbedTLS (c/, tag
 // v3.6.6, Apache-2.0; see VENDORED.md for provenance + the config trim).
 //
-// `#import "vendors/mbedtls/mbedtls.sx"` gives any sx program native TLS
-// with NO system dependency and NO build flags: the `#import c` unit
+// `@import "vendors/mbedtls/mbedtls.sx"` gives any sx program native TLS
+// with NO system dependency and NO build flags: the `@import c` unit
 // below compiles c/library/*.c (109 files) against the sx-owned trimmed
 // config (c/sx_mbedtls_config.h, selected via MBEDTLS_CONFIG_FILE), and
 // every `extern mbedtls` decl binds against it — through sx's

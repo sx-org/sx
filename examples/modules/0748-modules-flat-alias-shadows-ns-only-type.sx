@@ -1,7 +1,7 @@
 // A flat-visible (here own-module) type ALIAS resolves even when a
 // namespaced-only import authors a same-name NAMED type — the alias↔named-type
 // analog of 0745/0746, in the false-rejection direction. `dep.sx` is namespaced
-// (`ns :: #import`) and authors a top-level `Secret` STRUCT; `main` authors its
+// (`ns :: @import`) and authors a top-level `Secret` STRUCT; `main` authors its
 // OWN top-level alias `Secret :: i32`. A bare `Secret` resolves to MAIN's
 // alias (`i32`), not poisoned by the invisible same-name struct: the alias is
 // the only flat-visible TYPE author, and the leaf counts an alias (a

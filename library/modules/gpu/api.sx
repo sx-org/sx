@@ -5,7 +5,7 @@
 // siblings of this file, one per rendering API; the consumer picks one
 // at its own platform seam.
 
-// #identity: a GPU backend is a named long-lived singleton owning a
+// @identity: a GPU backend is a named long-lived singleton owning a
 // device and a context, reached through concrete handles alongside the
 // erased value — erasure always borrows the named object's storage,
 // never copies it (same class as Platform/Allocator/Io).

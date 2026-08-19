@@ -1,4 +1,4 @@
-// A `#get` property accessor is reachable through an optional chain
+// A `@get` property accessor is reachable through an optional chain
 // (`obj?.getter`): the some-branch dispatches the getter and the result is
 // re-wrapped as `?R`; a null receiver short-circuits to null. Works for a value
 // optional (`?T`), a pointer optional (`?*T`), and a generic-instance getter —

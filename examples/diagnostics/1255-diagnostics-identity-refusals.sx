@@ -1,4 +1,4 @@
-// `#identity` refusals: identity protocol values only ever borrow a
+// `@identity` refusals: identity protocol values only ever borrow a
 // NAMED object's storage —
 //   - erasing an RVALUE (literal, call result; xx or postfix) refuses
 //     with the bind-it-first fixit;

@@ -1,14 +1,14 @@
-// Nominal identity for struct DEFAULTS, CONSTANTS, and #USING bases —
+// Nominal identity for struct DEFAULTS, CONSTANTS, and @using bases —
 // same-name structs in different modules must each keep their OWN field
-// defaults, struct-level constants, and embedded #using layout, selected by
+// defaults, struct-level constants, and embedded @using layout, selected by
 // concrete TypeId/author, never through the process-global display-name key
-// (last-wins). Also pins the #using default ALIGNMENT: a default declared
-// after a #using embed applies at its flattened position.
+// (last-wins). Also pins the @using default ALIGNMENT: a default declared
+// after a @using embed applies at its flattened position.
 @import "modules/std.sx";
 a :: @import "0921-modules-nominal-defaults-constants-using/wa.sx";
 b :: @import "0921-modules-nominal-defaults-constants-using/wb.sx";
 
-// Single-module alignment leg: default after #using applies.
+// Single-module alignment leg: default after @using applies.
 LocalBase :: struct { tag: i64; }
 LocalThing :: struct { @using LocalBase; v: i64 = 42; }
 
@@ -21,12 +21,12 @@ main :: () -> i32 {
     // Constants select per author, bare-literal heads included.
     print("consts: a={} b={}\n", a.Thing.SIZE, b.Thing.SIZE);
 
-    // #using embeds each module's OWN Base: a's {ca,cb}, b's {da}.
+    // @using embeds each module's OWN Base: a's {ca,cb}, b's {da}.
     va := a.Thing{ ca = 3, cb = 4 };
     vb := b.Thing{ da = 6 };
     print("using: a=({},{}) b={}\n", va.ca, va.cb, vb.da);
 
-    // Alignment: default after a #using embed.
+    // Alignment: default after a @using embed.
     lt := LocalThing{ tag = 1 };
     print("align: v={}\n", lt.v);
     return 0;

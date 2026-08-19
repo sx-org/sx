@@ -1,5 +1,5 @@
-// `#define`/`#flags` reach a unit whose ONLY consumer is hand-curated
-// `extern` decls — no `#include`, no auto-synthesis:
+// `@define`/`@flags` reach a unit whose ONLY consumer is hand-curated
+// `extern` decls — no `@include`, no auto-synthesis:
 // the macro decides what the unit-bound decl answers.
 @import "modules/std.sx";
 

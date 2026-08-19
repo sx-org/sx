@@ -4,7 +4,7 @@
 //
 // Here the user's `Event` enum shares its name with the stdlib
 // `std/event.sx` `Event :: struct` (pulled in, namespaced as `event`, by
-// `#import "modules/std.sx"`). `Plat.one_event` returns the user's `Event`;
+// `@import "modules/std.sx"`). `Plat.one_event` returns the user's `Event`;
 // `ev := g_plat.one_event()` infers that type, so the `case .key_up:|e|`
 // payload binds a `KeyData` and `.escape` resolves against `Keycode`.
 //

@@ -1,4 +1,4 @@
-// `#context_extend` end-to-end (design/context-extension.md):
+// `@context_extend` end-to-end (design/context-extension.md):
 // - a module declares a field; the compiler assembles the program's
 //   Context from every declaration in the compilation.
 // - the default is visible before any push (`trace_depth` reads 3,

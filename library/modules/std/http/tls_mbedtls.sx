@@ -8,7 +8,7 @@
 // sees an mbedTLS type or error code — the impls below map every
 // `MBEDTLS_ERR_SSL_WANT_*` / `PEER_CLOSE_NOTIFY` onto the abstract `TlsStep`.
 //
-//   tlsp :: #import "modules/std/http/tls_mbedtls.sx";
+//   tlsp :: @import "modules/std/http/tls_mbedtls.sx";
 //   ts : tlsp.TlsServer = .{};
 //   ts.setup(cert_pem, key_pem, alloc);   // cert+key as PEM bytes
 //   cfg.tls = @ts;                       // erased ?TlsAcceptor

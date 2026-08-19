@@ -2,9 +2,9 @@
 // vendors/sqlite — sx bindings over the VENDORED SQLite amalgamation
 // (c/, see README.md for version + provenance + upgrade notes).
 //
-// `#import "vendors/sqlite/sqlite.sx"` gives any sx program SQLite
+// `@import "vendors/sqlite/sqlite.sx"` gives any sx program SQLite
 // with no system SQLite dependency or caller-supplied build flags: the
-// named `#import c` unit below compiles c/sqlite3.c with the pinned
+// named `@import c` unit below compiles c/sqlite3.c with the pinned
 // options (through sx's content-addressed object cache, so it compiles
 // once per machine, not once per run) and every `extern sqlib` decl binds
 // against it. Under `sx run` the unit's dylib is a PRIORITY

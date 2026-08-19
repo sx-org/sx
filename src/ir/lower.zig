@@ -529,7 +529,7 @@ pub const Lowering = struct {
     /// consumed across function bodies.
     precomputed_args: std.AutoHashMap(*const Node, Ref),
     /// The generic-instantiation call-site chain active while a monomorphized
-    /// body lowers (outermost first). A `#error` that survives comptime
+    /// body lowers (outermost first). A `@error` that survives comptime
     /// pruning inside a mono anchors its diagnostic at the OUTERMOST site —
     /// the user call that forced the instantiation — instead of the
     /// library-internal directive line (the "comptime panic" anchor problem).

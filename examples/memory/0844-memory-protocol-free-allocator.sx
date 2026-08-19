@@ -55,7 +55,7 @@ main :: () {
 
     // An Allocator VALUE (a borrow of a named allocator) works as the
     // explicit-allocator argument. The freed value itself can never be an
-    // Allocator — `Allocator` is `#identity` (borrow-only: rvalue erasure
+    // Allocator — `Allocator` is `@identity` (borrow-only: rvalue erasure
     // and `free` of the value refuse at compile time; diagnostics/1255).
     av : Allocator = ta;
     s3 : Sizable = ---;

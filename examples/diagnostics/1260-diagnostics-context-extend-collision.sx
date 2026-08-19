@@ -1,4 +1,4 @@
-// The Context field namespace is program-global and FLAT — two `#context_extend`
+// The Context field namespace is program-global and FLAT — two `@context_extend`
 // declarations with the same field name, here across two modules, are a compile
 // error naming BOTH declaration sites: the primary at the later site, a note at the
 // first. No merging, no own-wins, no per-source resolution.

@@ -1,7 +1,7 @@
 // An `export` function: define an sx function with
 // the bare `export` linkage modifier — external linkage + C ABI + no sx ctx —
 // so a companion C translation unit can call back into it by its plain symbol
-// name. The C side (`#source`) declares `sx_square` as a normal `extern int`
+// name. The C side (`@source`) declares `sx_square` as a normal `extern int`
 // and calls it; sx `main` drives the C side via `call_sx_square`. Mirrors the
 // import-direction `extern` examples (1223–1225) for the define direction.
 //

@@ -1,4 +1,4 @@
-// The sx library ships kb_text_shape: `#import "vendors/kb_text_shape/
+// The sx library ships kb_text_shape: `@import "vendors/kb_text_shape/
 // kb_text_shape.sx"` resolves through the stdlib search paths and the
 // ~30k-line implementation compiles through the object cache (decls
 // come from the curated c/kbts_api.h). Pins INVARIANTS only: a shape

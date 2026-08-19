@@ -1,5 +1,5 @@
 // An `extern` function binding: bind libc's `abs` directly via the bare
-// `extern` linkage modifier — no `#library`. `extern` ⇒ external linkage +
+// `extern` linkage modifier — no `@library`. `extern` ⇒ external linkage +
 // C ABI + no sx ctx; the symbol resolves against the default-linked libc at
 // link time. The sx name `abs` IS the C symbol; `extern LIB "csym"` is the
 // rename form.

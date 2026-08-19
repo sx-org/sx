@@ -2,7 +2,7 @@
 // inset chain (`Activity.getWindow → Window.getDecorView → View
 // .getRootWindowInsets → WindowInsets.getSystemWindowInset{Top,Left,
 // Bottom,Right}`). Intended to be imported under a named namespace
-// (e.g. `Jni :: #import "library/modules/platform/android_jni.sx"`) so
+// (e.g. `Jni :: @import "library/modules/platform/android_jni.sx"`) so
 // the bare class names don't pollute the top-level namespace —
 // `View` in particular collides with `modules/ui/view.sx`'s protocol.
 // Inside the namespace these are referenced as `Jni.Activity`,

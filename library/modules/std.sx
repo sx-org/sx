@@ -2,7 +2,7 @@
 // live in the part-files (std/core.sx — compiler-coupled primitives,
 // std/fmt.sx — formatting + string helpers, std/list.sx — List); each
 // alias below is an ordinary OWN declaration of this file, so a flat
-// `#import "modules/std.sx"` sees the whole prelude bare, one hop —
+// `@import "modules/std.sx"` sees the whole prelude bare, one hop —
 // visibility never chains, aliases are the re-export mechanism. The
 // part-file namespaces (`core` / `fmt` / `list`) and the namespace tail at
 // the bottom are carried to flat importers the same one level.

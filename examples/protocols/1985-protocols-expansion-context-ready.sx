@@ -2,7 +2,7 @@
 //
 // The program Context is ONE layout, so an evaluation that reads it must see
 // the one the whole program ends up with. The `inline if` at the bottom can
-// still write a `#context_extend` — in the branch it takes or the branch it
+// still write a `@context_extend` — in the branch it takes or the branch it
 // does not, which is not decided yet either way — so while it is undecided the
 // layout cannot publish, and both drivers above park against the fact: the
 // condition that runs, and the unroll whose ITERABLE runs.
