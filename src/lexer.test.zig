@@ -106,7 +106,7 @@ test "@import lexes as a directive; @importing is an @-name" {
     try std.testing.expectEqual(Tag.at_identifier, tl2.tags[0]);
 }
 
-test "former # directives lex as invalid then a word" {
+test "a #name lexes as invalid then a word" {
     const names = [_][]const u8{
         "import",          "library", "framework", "using", "include", "source",
         "define",          "flags",   "identity",  "get",   "set",    "context_extend",
@@ -123,7 +123,7 @@ test "former # directives lex as invalid then a word" {
     }
 }
 
-test "leftover #string is not a heredoc" {
+test "#string is not a heredoc" {
     var tl = try lexT("#string END\nhello\nEND");
     defer deinitT(&tl);
     try std.testing.expectEqualSlices(Tag, &.{
