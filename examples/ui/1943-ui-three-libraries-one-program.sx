@@ -7,9 +7,9 @@
 //
 // A component joins a set by DECLARING itself into it, and each of these
 // declared itself into exactly one — so `compose.Label` is a member of
-// `compose.View` and of nothing else. Shared geometry would not change that:
-// compose measures and renders through the ui foundation, emit and fluent each
-// carry their own, and the three sets are distinct either way.
+// `compose.View` and of nothing else. compose and fluent both measure and
+// render through the ui foundation; emit carries its own. The three sets
+// stay distinct either way.
 #import "modules/std.sx";
 
 c :: #import "examples/ui/compose.sx";

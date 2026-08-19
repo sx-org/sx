@@ -1,59 +1,17 @@
-// Geometry owned by the fluent library.
+// Geometry the fluent library speaks — the ui foundation's types, so a
+// fluent scene lays out in the same coordinate space the renderer draws.
 #import "modules/std.sx";
+types :: #import "modules/ui/types.sx";
 
-Point :: struct {
-    x: f32 = 0.0;
-    y: f32 = 0.0;
-
-    zero :: () -> Point => .{ x = 0.0, y = 0.0 };
-
-    add :: (self: Point, b: Point) -> Point {
-        Point{ x = self.x + b.x, y = self.y + b.y }
-    }
-}
-
-Size :: struct {
-    width: f32 = 0.0;
-    height: f32 = 0.0;
-
-    zero :: () -> Size => .{ width = 0.0, height = 0.0 };
-}
-
-Frame :: struct {
-    origin: Point = .{};
-    size: Size = .{};
-
-    zero :: () -> Frame { Frame{ origin = Point.zero(), size = Size.zero() } }
-
-    make :: (x: f32, y: f32, w: f32, h: f32) -> Frame {
-        Frame{ origin = Point{ x = x, y = y }, size = Size{ width = w, height = h } }
-    }
-}
-
-// A proposal leaves an axis unconstrained by leaving it null.
-ProposedSize :: struct {
-    width: ?f32;
-    height: ?f32;
-
-    fixed :: (w: f32, h: f32) -> ProposedSize {
-        ProposedSize{ width = w, height = h }
-    }
-
-    flexible :: () -> ProposedSize {
-        ProposedSize{ width = null, height = null }
-    }
-}
-
-EdgeInsets :: struct {
-    top: f32 = 0.0;
-    leading: f32 = 0.0;
-    bottom: f32 = 0.0;
-    trailing: f32 = 0.0;
-
-    zero :: () -> EdgeInsets => .{ top = 0.0, leading = 0.0, bottom = 0.0, trailing = 0.0 };
-
-    all :: (v: f32) -> EdgeInsets => .{ top = v, leading = v, bottom = v, trailing = v };
-
-    horizontal :: (self: EdgeInsets) -> f32 => self.leading + self.trailing;
-    vertical :: (self: EdgeInsets) -> f32 => self.top + self.bottom;
-}
+Point :: types.Point;
+Size :: types.Size;
+Frame :: types.Frame;
+ProposedSize :: types.ProposedSize;
+EdgeInsets :: types.EdgeInsets;
+Alignment :: types.Alignment;
+HAlignment :: types.HAlignment;
+VAlignment :: types.VAlignment;
+Color :: types.Color;
+Stroke :: types.Stroke;
+ALIGN_CENTER :: types.ALIGN_CENTER;
+ALIGN_TOP_LEADING :: types.ALIGN_TOP_LEADING;

@@ -3,19 +3,25 @@
 // A modifier is an ordinary value carried by a component, and a modifier call is
 // an ordinary value operation — chaining one does not intercept anything.
 #import "modules/std.sx";
-#import "modules/ui/fluent/geometry.sx";
+#import "modules/ui/types.sx";
 
 Modifier :: struct {
     opacity: f32 = 1.0;
     padding: EdgeInsets = .{};
+
+    with_opacity :: (self: Modifier, alpha: f32) -> Modifier {
+        Modifier{ opacity = alpha, padding = self.padding }
+    }
+
+    with_padding :: (self: Modifier, insets: EdgeInsets) -> Modifier {
+        Modifier{ opacity = self.opacity, padding = insets }
+    }
 }
 
-// The modifiers take and return the modifier itself, so a component exposes them
-// by threading its own field through.
 with_opacity :: ufcs (m: Modifier, alpha: f32) -> Modifier {
-    Modifier{ opacity = alpha, padding = m.padding }
+    m.with_opacity(alpha)
 }
 
 with_padding :: ufcs (m: Modifier, insets: EdgeInsets) -> Modifier {
-    Modifier{ opacity = m.opacity, padding = insets }
+    m.with_padding(insets)
 }

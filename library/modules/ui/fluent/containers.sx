@@ -1,60 +1,160 @@
 // The fluent library's stacks and containers.
 //
-// A container is an ordinary struct value and its child list is an explicit field
-// initializer — `children = collectViews() { … }`. There is no ambient emitter and
-// no terminal marker on a child.
+// A container TAKES the block itself: `vstack(2.0) { child; child; }`. The
+// standalone expressions in that block are its children — no terminal marker on
+// the child, no ambient sink, and no collection call at the call site. What makes
+// it happen is the container's own parameter, `content: $B/@BuildBlock(View)`, so
+// interception is a property of the signature rather than of the call.
+//
+// Layout is stateless: measuring, laying out and rendering walk the children the
+// same way, so a child gets the same frame in every pass without a stack holding
+// one.
 #import "modules/std.sx";
-#import "modules/ui/fluent/geometry.sx";
-#import "modules/ui/fluent/render.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
 #import "modules/ui/fluent/view.sx";
-#import "modules/ui/fluent/modifier.sx";
+#import "modules/ui/fluent/sink.sx";
+
+// A leaf with no surface: it holds a minimum along its stack's MAIN axis and
+// takes the slack that stack has left to give. The stack is what spends
+// `min_length`, so the spacer itself measures to nothing on either axis.
+Spacer :: @OpenVariant(View) {
+    min_length: f32 = 0.0;
+
+    size_that_fits :: (self: *Spacer, proposal: ProposedSize) -> Size {
+        Size.zero()
+    }
+
+    layout :: (self: *Spacer, bounds: Frame) {}
+
+    render :: (self: *Spacer, rc: *RenderContext, frame: Frame) {}
+}
+
+// What a stack's children come to on their own: the widest cross extent, the
+// summed main extent including the gaps, and how many spacers stand ready for
+// slack.
+StackMetrics :: struct {
+    cross: f32 = 0.0;
+    main: f32 = 0.0;
+    spacers: i64 = 0;
+}
+
+// A column proposes its own width and leaves height free; a row does the
+// opposite. A spacer's minimum lands on the main axis alone, so it never widens
+// a column or heightens a row, and each one counts toward the slack share.
+measure_column :: (children: *List(View), width: ?f32, spacing: f32) -> StackMetrics {
+    m := StackMetrics{};
+    for *c in children {
+        if sp := c.*.(?Spacer) {
+            m.main += sp.min_length;
+            m.spacers += 1;
+            continue;
+        }
+        s := c.size_that_fits(ProposedSize{ width = width, height = null });
+        if s.width > m.cross { m.cross = s.width; }
+        m.main += s.height;
+    }
+    if children.len > 1 { m.main += spacing * (children.len - 1); }
+    m
+}
+
+measure_row :: (children: *List(View), height: ?f32, spacing: f32) -> StackMetrics {
+    m := StackMetrics{};
+    for *c in children {
+        if sp := c.*.(?Spacer) {
+            m.main += sp.min_length;
+            m.spacers += 1;
+            continue;
+        }
+        s := c.size_that_fits(ProposedSize{ width = null, height = height });
+        if s.height > m.cross { m.cross = s.height; }
+        m.main += s.width;
+    }
+    if children.len > 1 { m.main += spacing * (children.len - 1); }
+    m
+}
+
+// Slack goes to the spacers in equal parts, and a stack with none to give hands
+// out nothing.
+spacer_share :: (slack: f32, spacers: i64) -> f32 {
+    if spacers == 0 or slack <= 0.0 { return 0.0; }
+    slack / spacers
+}
 
 VStack :: @OpenVariant(View) {
     children: List(View) = .{};
     spacing: f32 = 0.0;
-    modifier: Modifier = .{};
+    alignment: HAlignment = .leading;
 
     size_that_fits :: (self: *VStack, proposal: ProposedSize) -> Size {
-        w := 0.0;
-        h := 0.0;
-        for c in self.children {
-            s := c.size_that_fits(proposal);
-            if s.width > w { w = s.width; }
-            h += s.height;
-        }
-        if self.children.len > 1 {
-            h += self.spacing * (self.children.len - 1);
-        }
-        Size{ width = w, height = h }
+        m := measure_column(*self.children, proposal.width, self.spacing);
+        Size{ width = m.cross, height = m.main }
     }
 
     layout :: (self: *VStack, bounds: Frame) {
+        m := measure_column(*self.children, bounds.size.width, self.spacing);
+        extra := spacer_share(bounds.size.height - m.main, m.spacers);
         y := bounds.origin.y;
-        for c in self.children {
-            s := c.size_that_fits(ProposedSize.fixed(bounds.size.width, bounds.size.height));
-            c.layout(Frame.make(bounds.origin.x, y, bounds.size.width, s.height));
-            y += s.height + self.spacing;
+        for *c in self.children {
+            f := column_frame(c, bounds, self.alignment, y, extra);
+            c.layout(f);
+            y += f.size.height + self.spacing;
         }
     }
 
     render :: (self: *VStack, rc: *RenderContext, frame: Frame) {
+        m := measure_column(*self.children, frame.size.width, self.spacing);
+        extra := spacer_share(frame.size.height - m.main, m.spacers);
         y := frame.origin.y;
-        for c in self.children {
-            s := c.size_that_fits(ProposedSize.fixed(frame.size.width, frame.size.height));
-            c.render(rc, Frame.make(frame.origin.x, y, frame.size.width, s.height));
-            y += s.height + self.spacing;
+        for *c in self.children {
+            f := column_frame(c, frame, self.alignment, y, extra);
+            c.render(rc, f);
+            y += f.size.height + self.spacing;
+        }
+    }
+}
+
+HStack :: @OpenVariant(View) {
+    children: List(View) = .{};
+    spacing: f32 = 0.0;
+    alignment: VAlignment = .center;
+
+    size_that_fits :: (self: *HStack, proposal: ProposedSize) -> Size {
+        m := measure_row(*self.children, proposal.height, self.spacing);
+        Size{ width = m.main, height = m.cross }
+    }
+
+    layout :: (self: *HStack, bounds: Frame) {
+        m := measure_row(*self.children, bounds.size.height, self.spacing);
+        extra := spacer_share(bounds.size.width - m.main, m.spacers);
+        x := bounds.origin.x;
+        for *c in self.children {
+            f := row_frame(c, bounds, self.alignment, x, extra);
+            c.layout(f);
+            x += f.size.width + self.spacing;
+        }
+    }
+
+    render :: (self: *HStack, rc: *RenderContext, frame: Frame) {
+        m := measure_row(*self.children, frame.size.height, self.spacing);
+        extra := spacer_share(frame.size.width - m.main, m.spacers);
+        x := frame.origin.x;
+        for *c in self.children {
+            f := row_frame(c, frame, self.alignment, x, extra);
+            c.render(rc, f);
+            x += f.size.width + self.spacing;
         }
     }
 }
 
 ZStack :: @OpenVariant(View) {
     children: List(View) = .{};
-    modifier: Modifier = .{};
+    alignment: Alignment = ALIGN_CENTER;
 
     size_that_fits :: (self: *ZStack, proposal: ProposedSize) -> Size {
         w := 0.0;
         h := 0.0;
-        for c in self.children {
+        for *c in self.children {
             s := c.size_that_fits(proposal);
             if s.width > w { w = s.width; }
             if s.height > h { h = s.height; }
@@ -63,10 +163,72 @@ ZStack :: @OpenVariant(View) {
     }
 
     layout :: (self: *ZStack, bounds: Frame) {
-        for c in self.children { c.layout(bounds); }
+        for *c in self.children { c.layout(stacked_frame(c, bounds, self.alignment)); }
     }
 
     render :: (self: *ZStack, rc: *RenderContext, frame: Frame) {
-        for c in self.children { c.render(rc, frame); }
+        for *c in self.children { c.render(rc, stacked_frame(c, frame, self.alignment)); }
     }
+}
+
+// Where one child sits, asked the same way by every pass. A spacer's frame is
+// its main-axis length plus its share of the slack, and nothing across.
+column_frame :: (child: *View, bounds: Frame, alignment: HAlignment, y: f32, extra: f32) -> Frame {
+    if sp := child.*.(?Spacer) {
+        return Frame.make(bounds.origin.x, y, 0.0, sp.min_length + extra);
+    }
+    s := child.size_that_fits(ProposedSize{ width = bounds.size.width, height = null });
+    Frame.make(bounds.origin.x + align_h(alignment, s.width, bounds.size.width), y, s.width, s.height)
+}
+
+row_frame :: (child: *View, bounds: Frame, alignment: VAlignment, x: f32, extra: f32) -> Frame {
+    if sp := child.*.(?Spacer) {
+        return Frame.make(x, bounds.origin.y, sp.min_length + extra, 0.0);
+    }
+    s := child.size_that_fits(ProposedSize{ width = null, height = bounds.size.height });
+    Frame.make(x, bounds.origin.y + align_v(alignment, s.height, bounds.size.height), s.width, s.height)
+}
+
+stacked_frame :: (child: *View, bounds: Frame, alignment: Alignment) -> Frame {
+    s := child.size_that_fits(ProposedSize.fixed(bounds.size.width, bounds.size.height));
+    Frame.make(
+        bounds.origin.x + align_h(alignment.h, s.width, bounds.size.width),
+        bounds.origin.y + align_v(alignment.v, s.height, bounds.size.height),
+        s.width,
+        s.height,
+    )
+}
+
+// The container builders: interception happens inside the trailing block, and the
+// children land in the container the builder returns.
+vstack :: (spacing: f32, alignment: HAlignment = .leading, content: $B/@BuildBlock(View)) -> VStack {
+    sink := Sink{};
+    content.run(*sink);
+    VStack{ children = sink.children, spacing = spacing, alignment = alignment }
+}
+
+hstack :: (spacing: f32, alignment: VAlignment = .center, content: $B/@BuildBlock(View)) -> HStack {
+    sink := Sink{};
+    content.run(*sink);
+    HStack{ children = sink.children, spacing = spacing, alignment = alignment }
+}
+
+zstack :: (alignment: Alignment = ALIGN_CENTER, content: $B/@BuildBlock(View)) -> ZStack {
+    sink := Sink{};
+    content.run(*sink);
+    ZStack{ children = sink.children, alignment = alignment }
+}
+
+// The same stacks over children a caller already holds — a loop's output, or a
+// block collected through `collectViews`.
+fold_vstack :: (items: []View, spacing: f32, alignment: HAlignment = .leading) -> VStack {
+    vs := VStack{ spacing = spacing, alignment = alignment };
+    for v in items { vs.children.append(v); }
+    vs
+}
+
+fold_hstack :: (items: []View, spacing: f32, alignment: VAlignment = .center) -> HStack {
+    hs := HStack{ spacing = spacing, alignment = alignment };
+    for v in items { hs.children.append(v); }
+    hs
 }

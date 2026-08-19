@@ -1,0 +1,94 @@
+// The fluent library's element identity.
+//
+// An element's id is its CALL SITE folded with that site's occurrence within
+// the build. `@SourceSite.id` fingerprints (file, declaration, lexical
+// ordinal), so a site's key is unchanged by edits to unrelated declarations
+// and by how many times the site runs; the occurrence is what separates the
+// siblings one site emits in a loop. A rebuild that reaches the same sites in
+// the same order therefore hands out the same ids.
+//
+// The occurrence is POSITIONAL: a site's n-th element keeps its id only while
+// that site keeps producing its siblings in the same order.
+#import "modules/std.sx";
+#import "modules/std/core.sx";
+#import "modules/std/mem.sx";
+#import "modules/std/source_site.sx";
+
+// A call site reduced to what identity needs, plus the position a diagnostic
+// prints. `key` is `@SourceSite.id`, so two sites collide only where their
+// fingerprints do.
+SiteId :: struct {
+    key: u64 = 0
+    file: string = ""
+    line: i32 = 0
+}
+
+// Written as a parameter default — `site: SiteId = site_of(@caller)` — which
+// is the only position `@caller` is legal in, and which makes the CALLER's
+// site the one a component records.
+site_of :: (site: @SourceSite) -> SiteId => .{ key = site.id, file = site.file, line = site.line };
+
+ElementId :: struct { value: u64 = 0 }
+
+// The domain separates fluent element ids from every other key space built
+// on the same source-site state.
+ELEMENT_DOMAIN :: "ui.fluent.element.v1";
+
+// Resumes the hash from the site fingerprint the compiler already folded.
+site_hasher :: (site: SiteId, domain: string) -> SourceSiteHasher {
+    hasher := SourceSiteHasher{ state = site.key };
+    hasher.write_string(domain);
+    hasher
+}
+
+// One site's tally within the build in progress.
+SiteCount :: struct {
+    key: u64 = 0
+    count: i64 = 0
+}
+
+// The per-root identity carrier. It outlives every build, so its tally list is
+// the root's memory, never the frame's.
+Identity :: struct {
+    counts: List(SiteCount) = .{}
+    gpa: Allocator
+
+    init :: (gpa: Allocator) -> Identity => .{ gpa = gpa };
+
+    // Every site starts the build at occurrence zero, which is what makes an
+    // unchanged tree hand out unchanged ids.
+    begin_build :: (self: *Identity) {
+        for *c in self.counts {
+            c.count = 0;
+        }
+    }
+
+    next_occurrence :: (self: *Identity, key: u64) -> i64 {
+        for c, i in self.counts, 0.. {
+            if c.key == key {
+                n := c.count;
+                self.counts.items[i].count = n + 1;
+                return n;
+            }
+        }
+        self.counts.append(.{ key = key, count = 1 }, self.gpa);
+        0
+    }
+
+    deinit :: (self: *Identity) {
+        self.counts.deinit(self.gpa)
+    }
+}
+
+#context_extend fluent_ui: *Identity = null;
+
+// The id of the element being built at THIS call site. A component mints it
+// while the tree is built and carries it into render, where it names the hit
+// and focus regions the element declares.
+element_id :: (site: SiteId = site_of(@caller)) -> ElementId {
+    process.assert(context.fluent_ui != null, "element_id outside a fluent build — push .{ fluent_ui = *root.identity }");
+    occurrence := context.fluent_ui.next_occurrence(site.key);
+    hasher := site_hasher(site, ELEMENT_DOMAIN);
+    hasher.write_u64_le(occurrence.(u64));
+    ElementId{ value = hasher.state }
+}

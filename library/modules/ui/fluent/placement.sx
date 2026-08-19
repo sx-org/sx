@@ -1,0 +1,99 @@
+// What a caller puts AROUND a component.
+//
+// ONE canonical order: margin → size → bg/border/corner → padding → content.
+// The margin/padding split states both background-relative orders — a chip's
+// padding inside its background, a card's margin outside it — and however many
+// fields are set they act at ONE wrapper.
+//
+// A component that owns a surface owns the padding inside it, so `Mod.padding`
+// is for a box composed at the call site.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/fluent/view.sx";
+#import "modules/ui/fluent/components.sx";
+
+ModFrames :: struct {
+    box: Frame;
+    content: Frame;
+}
+
+Mod :: struct {
+    margin:  EdgeInsets = .{};
+    width:   ?f32 = null;
+    height:  ?f32 = null;
+    bg:      ?Color = null;
+    corner:  f32 = 0.0;
+    border:  ?Stroke = null;
+    padding: EdgeInsets = .{};
+    opacity: f32 = 1.0;
+    clip:    bool = false;
+    hidden:  bool = false;
+
+    // A fixed dimension centres in what the margin leaves.
+    frames :: (self: Mod, bounds: Frame) -> ModFrames {
+        inner := bounds.inset(self.margin);
+        w := self.width ?? inner.size.width;
+        h := self.height ?? inner.size.height;
+        box := Frame.make(
+            inner.origin.x + (inner.size.width - w) * 0.5,
+            inner.origin.y + (inner.size.height - h) * 0.5,
+            w,
+            h,
+        );
+        ModFrames{ box = box, content = box.inset(self.padding) }
+    }
+
+    paints :: (self: Mod) -> bool => self.bg != null or self.border != null;
+}
+
+// The wrapper `place` builds. The child is stored INLINE at its own type, so a
+// placed component is one value with no allocation and calls into it are static.
+ModBox :: @OpenVariant(View) ($V: Type) {
+    child: V;
+    m: Mod = .{};
+
+    size_that_fits :: (self: *ModBox(V), proposal: ProposedSize) -> Size {
+        if self.m.hidden { return Size.zero(); }
+        box_w : ?f32 = self.m.width;
+        box_h : ?f32 = self.m.height;
+        if box_w == null { if w := proposal.width { box_w = w - self.m.margin.horizontal(); } }
+        if box_h == null { if h := proposal.height { box_h = h - self.m.margin.vertical(); } }
+        content_w : ?f32 = null;
+        content_h : ?f32 = null;
+        if w := box_w { content_w = w - self.m.padding.horizontal(); }
+        if h := box_h { content_h = h - self.m.padding.vertical(); }
+        child := self.child.size_that_fits(ProposedSize{ width = content_w, height = content_h });
+        Size{
+            width = (self.m.width ?? (child.width + self.m.padding.horizontal()))
+                + self.m.margin.horizontal(),
+            height = (self.m.height ?? (child.height + self.m.padding.vertical()))
+                + self.m.margin.vertical(),
+        }
+    }
+
+    layout :: (self: *ModBox(V), bounds: Frame) {
+        if self.m.hidden { return; }
+        self.child.layout(self.m.frames(bounds).content);
+    }
+
+    render :: (self: *ModBox(V), rc: *RenderContext, frame: Frame) {
+        if self.m.hidden { return; }
+        f := self.m.frames(frame);
+        prev := rc.opacity;
+        if self.m.opacity < 1.0 { rc.push_opacity(self.m.opacity); }
+        if self.m.paints() {
+            paint_box(rc, f.box, self.m.bg ?? COLOR_TRANSPARENT, self.m.corner, self.m.border);
+        }
+        if self.m.clip { rc.push_clip(f.box); }
+        self.child.render(rc, f.content);
+        if self.m.clip { rc.pop_clip(); }
+        if self.m.opacity < 1.0 { rc.pop_opacity(prev); }
+    }
+}
+
+// The one way a Mod reaches a component: the result is itself a member, so a
+// placed component goes wherever a `View` goes.
+place :: (v: $V/View, m: Mod = .{}) -> ModBox(V) {
+    ModBox(V){ child = v, m = m }
+}

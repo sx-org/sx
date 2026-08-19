@@ -4,45 +4,118 @@
 // implementation. Each name below is re-exported explicitly, because an import
 // publishes nothing on its own.
 //
-// `fluent.View` is the library's own open set: a component joins by declaring
-// itself into it, and no conversion stands in for a declaration.
+// The geometry, the paint types, the render tree and the text metrics are the ui
+// foundation's, so a fluent scene renders into the tree the platform renderer
+// consumes. `fluent.View` is the library's own open set.
 #import "modules/std.sx";
 
-geometry :: #import "modules/ui/fluent/geometry.sx";
-render :: #import "modules/ui/fluent/render.sx";
+types :: #import "modules/ui/types.sx";
+render :: #import "modules/ui/render.sx";
+font :: #import "modules/ui/font.sx";
+input :: #import "modules/ui/input.sx";
 view :: #import "modules/ui/fluent/view.sx";
-modifier :: #import "modules/ui/fluent/modifier.sx";
+identity :: #import "modules/ui/fluent/identity.sx";
+state :: #import "modules/ui/fluent/state.sx";
+frame :: #import "modules/ui/fluent/frame.sx";
+router :: #import "modules/ui/fluent/input.sx";
+focus :: #import "modules/ui/fluent/focus.sx";
+loop :: #import "modules/ui/fluent/loop.sx";
 components :: #import "modules/ui/fluent/components.sx";
-storage :: #import "modules/ui/fluent/storage.sx";
+sink :: #import "modules/ui/fluent/sink.sx";
 containers :: #import "modules/ui/fluent/containers.sx";
+placement :: #import "modules/ui/fluent/placement.sx";
 runtime :: #import "modules/ui/fluent/runtime.sx";
+modifier :: #import "modules/ui/fluent/modifier.sx";
+storage :: #import "modules/ui/fluent/storage.sx";
 
 // Geometry
-Point :: geometry.Point;
-Size :: geometry.Size;
-Frame :: geometry.Frame;
-ProposedSize :: geometry.ProposedSize;
-EdgeInsets :: geometry.EdgeInsets;
+Point :: types.Point;
+Size :: types.Size;
+Frame :: types.Frame;
+ProposedSize :: types.ProposedSize;
+EdgeInsets :: types.EdgeInsets;
+Alignment :: types.Alignment;
+HAlignment :: types.HAlignment;
+VAlignment :: types.VAlignment;
+ALIGN_CENTER :: types.ALIGN_CENTER;
+ALIGN_TOP_LEADING :: types.ALIGN_TOP_LEADING;
+ALIGN_TOP :: types.ALIGN_TOP;
+ALIGN_TOP_TRAILING :: types.ALIGN_TOP_TRAILING;
+ALIGN_LEADING :: types.ALIGN_LEADING;
+ALIGN_TRAILING :: types.ALIGN_TRAILING;
+ALIGN_BOTTOM :: types.ALIGN_BOTTOM;
+ALIGN_BOTTOM_LEADING :: types.ALIGN_BOTTOM_LEADING;
+ALIGN_BOTTOM_TRAILING :: types.ALIGN_BOTTOM_TRAILING;
+
+Color :: types.Color;
+Stroke :: types.Stroke;
 
 // Render
-Color :: render.Color;
-RenderCommand :: render.RenderCommand;
+RenderNode :: render.RenderNode;
+RenderNodeType :: render.RenderNodeType;
 RenderTree :: render.RenderTree;
 RenderContext :: render.RenderContext;
 
-// The set and what joins it
+HitRegion :: render.HitRegion;
+HitPolicy :: render.HitPolicy;
+FocusRegion :: render.FocusRegion;
+KeyEvent :: input.KeyEvent;
+LogicalKey :: input.LogicalKey;
+
+measure_text :: font.measure_text;
+set_global_font :: font.set_global_font;
+
+SiteId :: identity.SiteId;
+site_of :: identity.site_of;
+ElementId :: identity.ElementId;
+Identity :: identity.Identity;
+element_id :: identity.element_id;
+
+State :: state.State;
+StateEntry :: state.StateEntry;
+StateStore :: state.StateStore;
+use_state :: state.use_state;
+
+CommittedUiSnapshot :: frame.CommittedUiSnapshot;
+project :: frame.project;
+Router :: router.Router;
+HitTarget :: router.HitTarget;
+Tappable :: router.Tappable;
+tappable :: router.tappable;
+is_pressed :: router.is_pressed;
+
+FocusRouter :: focus.FocusRouter;
+Focusable :: focus.Focusable;
+focusable :: focus.focusable;
+is_focused :: focus.is_focused;
+
+UiRoot :: loop.UiRoot;
+FrameLoop :: loop.FrameLoop;
+
+InputQueue :: input.InputQueue;
+InputEvent :: input.InputEvent;
+UiRootId :: types.UiRootId;
+
 View :: view.View;
-Modifier :: modifier.Modifier;
 Label :: components.Label;
+Rect :: components.Rect;
 Button :: components.Button;
 VStack :: containers.VStack;
+HStack :: containers.HStack;
 ZStack :: containers.ZStack;
+Spacer :: containers.Spacer;
+Modifier :: modifier.Modifier;
 
-// Collection boundary
-Sink :: storage.Sink;
+Mod :: placement.Mod;
+ModBox :: placement.ModBox;
+place :: placement.place;
 
-// The collection boundary is re-exported as the library's own name, so one
-// import of this facade is the whole API.
-collectViews :: storage.collectViews;
+Sink :: sink.Sink;
+collectViews :: sink.collectViews;
+vstack :: containers.vstack;
+hstack :: containers.hstack;
+zstack :: containers.zstack;
+fold_vstack :: containers.fold_vstack;
+fold_hstack :: containers.fold_hstack;
 render_root :: runtime.render_root;
 command_count :: runtime.command_count;

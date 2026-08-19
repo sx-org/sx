@@ -1,0 +1,209 @@
+// The fluent library's tap routing.
+//
+// An element declares a hit region while it renders; the router resolves a
+// pointer against the LATEST committed snapshot's list, never against the tree.
+// A down captures the region under it, an up over that same region taps, and
+// the handler that runs is the one the CURRENT snapshot carries — a rebuild
+// between the down and the up therefore taps with the newest handler, and an
+// element that stopped declaring its region taps not at all.
+//
+// A tap is what this router recognizes. A point whose policy is `.fail` is
+// transparent there, so the probe continues down the paint-ordered stack; any
+// other non-`.tap` policy takes the point without taps.
+#import "modules/std.sx";
+#import "modules/std/core.sx";
+#import "modules/std/mem.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/fluent/view.sx";
+#import "modules/ui/fluent/identity.sx";
+#import "modules/ui/fluent/frame.sx";
+
+// A component wrapped in its own hit region. The child is stored inline at its
+// own type, so an interactive element is one value and the calls into it stay
+// static.
+Tappable :: @OpenVariant(View) ($V: Type) {
+    child: V
+    id: ElementId = .{}
+    on_tap: ?Closure() = null
+    policy: ?Closure(Point) -> HitPolicy = null
+
+    size_that_fits :: (self: *Tappable(V), proposal: ProposedSize) -> Size {
+        self.child.size_that_fits(proposal)
+    }
+
+    layout :: (self: *Tappable(V), bounds: Frame) {
+        self.child.layout(bounds)
+    }
+
+    // The region is declared BEFORE the child draws, so a child's own regions
+    // land later in paint order and win the points they cover.
+    render :: (self: *Tappable(V), rc: *RenderContext, frame: Frame) {
+        rc.hit_region(self.id.value, frame, self.policy, self.on_tap);
+        self.child.render(rc, frame)
+    }
+}
+
+// The one way a component becomes tappable: the result is itself a member, so
+// it goes wherever a `View` goes. The id is minted at THIS call site.
+tappable :: (v: $V/View, on_tap: ?Closure() = null, policy: ?Closure(Point) -> HitPolicy = null, site: SiteId = site_of(@caller)) -> Tappable(V) {
+    Tappable(V){ child = v, id = element_id(site), on_tap = on_tap, policy = policy }
+}
+
+// Which region owns a point, and what it allows there.
+HitTarget :: struct {
+    id: u64 = 0
+    policy: HitPolicy = .tap
+}
+
+// One live pointer. `inside` follows the pointer off and back onto its captured
+// region, and only an up taken inside taps.
+PointerSequence :: struct {
+    pointer: PointerId = .{ value = 0 }
+    element: u64 = 0
+    down: Point = .{ x = 0.0, y = 0.0 }
+    inside: bool = true
+}
+
+Router :: struct {
+    // The surface every resolution runs against; null until a frame commits.
+    snap: *CommittedUiSnapshot = null
+    sequences: List(PointerSequence) = .{}
+    gpa: Allocator
+
+    init :: (gpa: Allocator) -> Router => .{ gpa = gpa };
+
+    // Point the router at the frame that just committed. A sequence whose
+    // element stopped declaring a region is cancelled — there is nothing left
+    // for its up to tap.
+    observe :: (self: *Router, snap: *CommittedUiSnapshot) {
+        self.snap = snap;
+        i := 0;
+        while i < self.sequences.len {
+            if Router.declares(snap, self.sequences.items[i].element) {
+                i += 1;
+            } else {
+                self.sequences.swap_remove(i)
+            }
+        }
+    }
+
+    declares :: (snap: *CommittedUiSnapshot, id: u64) -> bool {
+        for r in snap.hit_list {
+            if r.id == id then return true
+        }
+        false
+    }
+
+    // The top region at a point: the LAST containing one in paint order whose
+    // policy does not fail there.
+    hit_top :: (self: *Router, p: Point) -> ?HitTarget {
+        if self.snap == null then return null;
+        i := self.snap.hit_list.len - 1;
+        while i >= 0 {
+            r := *self.snap.hit_list.items[i];
+            if r.frame.contains(p) {
+                allowed : HitPolicy = .tap;
+                if pf := r.policy {
+                    allowed = pf(p);
+                }
+                if allowed != .fail {
+                    return HitTarget{ id = r.id, policy = allowed };
+                }
+            }
+            i -= 1;
+        }
+        null
+    }
+
+    // Whether `id` is the region a point lands on.
+    covers :: (self: *Router, p: Point, id: u64) -> bool {
+        if t := self.hit_top(p) {
+            return t.id == id;
+        }
+        false
+    }
+
+    pressed :: (self: *Router, id: u64) -> bool {
+        for s in self.sequences {
+            if s.element == id and s.inside then return true
+        }
+        false
+    }
+
+    find :: (self: *Router, pointer: PointerId) -> i64 {
+        for s, i in self.sequences, 0.. {
+            if s.pointer.value == pointer.value then return i
+        }
+        -1
+    }
+
+    drop :: (self: *Router, pointer: PointerId) {
+        i := self.find(pointer);
+        if i >= 0 {
+            self.sequences.swap_remove(i)
+        }
+    }
+
+    // Runs the handler the CURRENT snapshot carries for `id`.
+    fire :: (self: *Router, id: u64) {
+        for r in self.snap.hit_list {
+            if r.id == id {
+                if h := r.on_tap {
+                    h()
+                }
+                return;
+            }
+        }
+    }
+
+    dispatch :: (self: *Router, ev: *InputEvent) {
+        if self.snap == null then return;
+        match ev.* {
+            case .pointer_down: |p| {
+                if t := self.hit_top(p.position) {
+                    if t.policy != .tap then return;
+                    self.drop(p.pointer);
+                    self.sequences.append(.{
+                        pointer = p.pointer,
+                        element = t.id,
+                        down = p.position,
+                        inside = true,
+                    }, self.gpa)
+                }
+            }
+            case .pointer_move: |p| {
+                i := self.find(p.pointer);
+                if i < 0 then return;
+                self.sequences.items[i].inside = self.covers(p.position, self.sequences.items[i].element);
+            }
+            case .pointer_up: |p| {
+                i := self.find(p.pointer);
+                if i < 0 then return;
+                s := self.sequences.items[i];
+                self.sequences.swap_remove(i);
+                if s.inside and self.covers(p.position, s.element) {
+                    self.fire(s.element)
+                }
+            }
+            case .pointer_cancel: |p| {
+                self.drop(p.pointer)
+            }
+            else: {}
+        }
+    }
+
+    deinit :: (self: *Router) {
+        self.sequences.deinit(self.gpa)
+    }
+}
+
+#context_extend fluent_input: *Router = null;
+
+// The press state a build reads to style an element by what the pointer is
+// doing to it. With no router in context nothing is pressed.
+is_pressed :: (id: ElementId) -> bool {
+    if context.fluent_input == null then return false;
+    context.fluent_input.pressed(id.value)
+}

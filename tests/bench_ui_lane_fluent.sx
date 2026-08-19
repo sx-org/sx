@@ -36,7 +36,7 @@ sample :: (n: i64, builds: i64, walks: i64) -> Tuple(i64, i64, i64) {
     root : View = stack;
     k := 0;
     while k < walks {
-        tree.commands.len = 0;
+        tree.nodes.len = 0;
         render_root(*root, Size{ width = 200.0, height = 400.0 }, *tree);
         k = k + 1;
     }

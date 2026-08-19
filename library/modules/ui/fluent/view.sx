@@ -1,12 +1,16 @@
-// `fluent.View` — the library's own open set.
+// `fluent.View` — the fluent library's open set.
 //
-// A type joins by declaring itself into THIS set. No conversion stands in for
-// a declaration.
+// A type joins by declaring itself into THIS set. The set speaks the ui
+// foundation's geometry and render context, so a member draws into the same
+// tree the platform renderer consumes.
 #import "modules/std.sx";
-#import "modules/ui/fluent/geometry.sx";
-#import "modules/ui/fluent/render.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
 
-View :: @OpenSet(.{ max = 256, align = 8 }) {
+// The ceiling is the largest member payload admitted: a `ModBox` carries its
+// child inline, so nested placement is what spends it. The slot itself is sized
+// by the members a program declares.
+View :: @OpenSet(.{ max = 512, align = 8 }) {
     size_that_fits :: (self: *Self, proposal: ProposedSize) -> Size;
     layout :: (self: *Self, bounds: Frame);
     render :: (self: *Self, rc: *RenderContext, frame: Frame);

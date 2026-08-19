@@ -5,9 +5,9 @@
 // are an explicit field initializer — `children = collectViews() { … }` — and
 // interception happens only inside that block.
 //
-// `fluent.View` is the library's own open set. It shares no geometry, no render
-// surface and no components with any other UI library: a component of another
-// library is not a member of this set, whatever the two declare.
+// `fluent.View` is the library's own open set. Geometry and the render tree
+// are the ui foundation's, so a fluent scene is what the platform renderer
+// consumes. A component of another library is not a member of this set.
 #import "modules/std.sx";
 #import "modules/ui/fluent.sx";
 

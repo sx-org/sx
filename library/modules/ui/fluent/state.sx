@@ -1,0 +1,126 @@
+// The fluent library's per-site state.
+//
+// A `use_state` call site owns one entry in the root's store, keyed the way an
+// element is: the site's fingerprint folded with that site's occurrence in the
+// build. The build that first reaches the site fills the entry from `default`;
+// every rebuild that reaches it again is handed back what the last one left.
+//
+// A `State(T)` borrows its entry's payload. The borrow stands until a committed
+// build stops reaching the site, which is when the entry goes.
+#import "modules/std.sx";
+#import "modules/std/core.sx";
+#import "modules/std/mem.sx";
+#import "modules/ui/fluent/identity.sx";
+
+c :: #import "modules/std/c.sx";
+
+State :: struct ($T: Type) {
+    ptr: *T
+
+    get :: (self: State(T)) -> T => self.ptr.*;
+    set :: (self: State(T), value: T) {
+        self.ptr.* = value;
+    }
+}
+
+// The domain separates state keys from the element ids the same sites mint.
+STATE_DOMAIN :: "ui.fluent.state.v1";
+
+// One site's persistent storage. `ty` is compared on every rebind, so a site
+// whose payload type changes is refused rather than reinterpreted.
+StateEntry :: struct {
+    key: u64 = 0
+    ty: Type
+    size: i64 = 0
+    data: [*]u8
+    claimed: bool = false
+}
+
+// The per-root store. Entries are individually allocated, so a claim's pointer
+// stands while the entries list grows around it.
+StateStore :: struct {
+    entries: List(*StateEntry) = .{}
+    gpa: Allocator
+    in_build: bool = false
+
+    init :: (gpa: Allocator) -> StateStore => .{ gpa = gpa };
+
+    begin_build :: (self: *StateStore) {
+        for e in self.entries {
+            e.claimed = false;
+        }
+        self.in_build = true;
+    }
+
+    // A site the committed build did not reach loses its entry: state lasts
+    // exactly as long as the element claiming it.
+    commit_build :: (self: *StateStore) {
+        self.in_build = false;
+        i := 0;
+        while i < self.entries.len {
+            e := self.entries.items[i];
+            if e.claimed {
+                i += 1;
+            } else {
+                self.release(e);
+                self.entries.swap_remove(i)
+            }
+        }
+    }
+
+    teardown :: (self: *StateStore) {
+        for e in self.entries {
+            self.release(e)
+        }
+        self.entries.len = 0;
+        self.entries.deinit(self.gpa)
+    }
+
+    release :: (self: *StateStore, e: *StateEntry) {
+        self.gpa.dealloc_bytes(e.data);
+        self.gpa.dealloc_bytes(e)
+    }
+
+    find :: (self: *StateStore, key: u64) -> ?*StateEntry {
+        for e in self.entries {
+            if e.key == key then return e
+        }
+        null
+    }
+}
+
+#context_extend fluent_state: *StateStore = null;
+
+// Claims the storage this call site owns for the build in progress.
+use_state :: ($T: Type, default: T, site: SiteId = site_of(@caller)) -> State(T) {
+    process.assert(context.fluent_ui != null and context.fluent_state != null,
+        "use_state outside a fluent build — push .{ fluent_ui = *root.identity, fluent_state = *root.store }");
+    store := context.fluent_state;
+    process.assert(store.in_build, "use_state outside a build transaction — call begin_build first");
+
+    hasher := site_hasher(site, STATE_DOMAIN);
+    hasher.write_u64_le(context.fluent_ui.next_occurrence(site.key).(u64));
+    key := hasher.state;
+
+    if e := store.find(key) {
+        if e.ty != T or e.size != size_of(T) {
+            print("use_state at {}:{} changed payload type between builds\n", site.file, site.line);
+            process.exit(1)
+        }
+        e.claimed = true;
+        return State(T){ ptr = e.data };
+    }
+
+    e : *StateEntry = store.gpa.create(StateEntry);
+    e.* = StateEntry{
+        key = key,
+        ty = T,
+        size = size_of(T),
+        data = store.gpa.create(T),
+        claimed = true,
+    };
+    seed := default;
+    c.memcpy(e.data, *seed, size_of(T));
+    store.entries.append(e, store.gpa);
+    State(T){ ptr = e.data }
+}

@@ -1,7 +1,7 @@
 // The fluent library's root and rendering entry points.
 #import "modules/std.sx";
-#import "modules/ui/fluent/geometry.sx";
-#import "modules/ui/fluent/render.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
 #import "modules/ui/fluent/view.sx";
 
 // Measures the root against the viewport, lays it out, and renders it into a
@@ -15,6 +15,4 @@ render_root :: (root: *View, viewport: Size, tree: *RenderTree) {
     root.render(*rc, bounds);
 }
 
-// The command count is what a test asserts against without owning the tree's
-// representation.
-command_count :: (tree: *RenderTree) -> i64 => tree.commands.len;
+command_count :: (tree: *RenderTree) -> i64 => tree.nodes.len;

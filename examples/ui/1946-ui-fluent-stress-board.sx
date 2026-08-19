@@ -28,13 +28,13 @@ BoardView :: @OpenVariant(View) {
     layout :: (self: *BoardView, bounds: Frame) {}
 
     render :: (self: *BoardView, rc: *RenderContext, frame: Frame) {
-        rc.add_rect(frame, Color{ r = 0.1, g = 0.1, b = 0.1, a = 1.0 });
+        rc.add_rect(frame, Color{ r = 26, g = 26, b = 26, a = 255 });
     }
 }
 
 main :: () -> i32 {
     st := BoardViewState{};
-    for i in 0..81 { st.cell_eids[i] = xx (i + 1); }
+    for i in 0..81 { st.cell_eids[i] = (i + 1).(u64); }
 
     cells := VStack{ children = collectViews() {
         for i in 0..81 {
