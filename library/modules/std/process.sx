@@ -89,7 +89,7 @@ decode_status :: (raw: i32) -> i32 {
 env :: (name: [:0]u8) -> ?string {
     p := getenv(to_cstring(name));
     if p == null { return null; }
-    v := from_cstring(p!);
+    v := from_cstring(p);
     if v.len == 0 { return ""; }
     substr(v, 0, v.len)
 }

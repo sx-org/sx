@@ -25,7 +25,9 @@ private std_zip_entry_options :: (options: StdZipEntryOptions, from_file: bool =
     if options.method == .unsupported { raise error.Unsupported; }
     if options.level < 0 or options.level > 10 { raise error.InvalidOptions; }
     if options.comment.len > 65535 or options.extra.len > 65535 { raise error.TooLarge; }
-    if options.central_extra != null and options.central_extra!.len > 65535 { raise error.TooLarge; }
+    if extra := options.central_extra {
+        if extra.len > 65535 { raise error.TooLarge; }
+    }
     if options.modified_seconds != null and options.use_file_modified_time { raise error.InvalidOptions; }
     if options.use_file_modified_time and !from_file { raise error.InvalidOptions; }
 
@@ -162,7 +164,7 @@ std_zip_reader_source :: (source: StdZipSource, max_metadata: i64 = 67108864, al
     owned := open_zip_source(reader_source, true, alloc, max_metadata) catch |e| {
         failure := bridge.failure;
         alloc.dealloc_bytes(raw);
-        if failure != null { raise failure!; }
+        if failure != null { raise failure; }
         raise e;
     };
     StdZipReaderState{ owned = owned, source_bridge = bridge }
@@ -190,8 +192,8 @@ private std_zip_reader_ready :: (state: *StdZipReaderState) -> !Error {
 }
 
 private std_zip_reader_failure :: (state: *StdZipReaderState, fallback: Error) -> Error {
-    if state.source_bridge != null and state.source_bridge.failure != null {
-        return state.source_bridge.failure!;
+    if state.source_bridge != null {
+        if failure := state.source_bridge.failure { return failure; }
     }
     fallback
 }
@@ -494,9 +496,9 @@ private std_zip_writer_stream :: (state: *StdZipWriterState) -> *ZipStreamWriter
 private std_zip_writer_failure :: (state: *StdZipWriterState, fallback: Error) -> Error {
     match state { case .sink: {} else: { return fallback; } }
     bridge := state.*.sink.bridge;
-    if bridge.failure != null {
+    if failure := bridge.failure {
         bridge.poisoned = true;
-        return bridge.failure!;
+        return failure;
     }
     fallback
 }
@@ -505,9 +507,9 @@ private std_zip_writer_transfer_failure :: (target: *StdZipWriterState, source: 
     match target {
         case .sink: {
             bridge := target.*.sink.bridge;
-            if bridge.failure != null {
+            if failure := bridge.failure {
                 bridge.poisoned = true;
-                return bridge.failure!;
+                return failure;
             }
         }
         else: {}
@@ -523,7 +525,7 @@ private std_zip_writer_ready :: (state: *StdZipWriterState) -> (*ZipStreamWriter
         case .sink: {
             bridge := state.*.sink.bridge;
             if bridge.poisoned {
-                if bridge.failure != null { raise bridge.failure!; }
+                if failure := bridge.failure { raise failure; }
                 raise error.Io;
             }
             bridge.failure = null;
@@ -606,7 +608,7 @@ std_zip_writer_read_at :: (state: *StdZipWriterState, offset: i64, output: strin
 
 std_zip_writer_finish :: (state: *StdZipWriterState, comment: ?string = null) -> !Error {
     writer := try std_zip_writer_ready(state);
-    archive_comment := if comment != null then comment! else std_zip_writer_default_comment(state);
+    archive_comment := comment ?? std_zip_writer_default_comment(state);
     writer.finish_comment(archive_comment) catch |e| { raise std_zip_writer_failure(state, e); };
 }
 
@@ -682,7 +684,7 @@ private std_zip_extract_to_sink :: (reader: *ZipReader, index: i64, target: StdZ
     bridge := StdZipSinkBridge{ sink = target };
     options : ZipExtractOptions = .{ compressed_data = compressed };
     result := zip_extract_to_output(reader, index, .{ ctx = *bridge, write = std_zip_sink_write }, options, max_output, alloc) catch |e| {
-        if bridge.failure != null { raise bridge.failure!; }
+        if failure := bridge.failure { raise failure; }
         raise e;
     };
     result
@@ -694,7 +696,7 @@ private std_zip_add_source :: (writer: *ZipStreamWriter, name: string, source: S
     bridge := StdZipSourceBridge{ source = source };
     input := ZipInputSource{ ctx = *bridge, size = size, read = std_zip_source_read };
     writer.add_source(name, input, options) catch |e| {
-        if bridge.failure != null { raise bridge.failure!; }
+        if failure := bridge.failure { raise failure; }
         raise e;
     };
 }
