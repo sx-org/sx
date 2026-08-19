@@ -1,4 +1,4 @@
-// `#import c` extern-name exemption: C names that collide with sx's reserved
+// `@import c` extern-name exemption: C names that collide with sx's reserved
 // type spellings import unedited. Extern decls are treated as RAW — their names
 // are never type-classified nor reserved-checked — so the generated `extern`
 // bindings import and call without hand-edits (no backticks needed). This covers

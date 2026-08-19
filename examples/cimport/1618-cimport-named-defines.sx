@@ -1,6 +1,6 @@
-// Pins the NAMED `#import c` block: the block's name
-// namespaces the decls synthesized from `#include`, and `#define` /
-// `#flags` entries reach the unit's clang invocation — the macro decides
+// Pins the NAMED `@import c` block: the block's name
+// namespaces the decls synthesized from `@include`, and `@define` /
+// `@flags` entries reach the unit's clang invocation — the macro decides
 // what cdef_value answers.
 @import "modules/std.sx";
 

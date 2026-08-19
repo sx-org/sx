@@ -1,6 +1,6 @@
 // A locally declared `error` set wins over a same-name set carried in by a
 // flat import: `EventErr :: error { Boom }` here, `event.EventErr`
-// (Init/Register/Wait) through `#import "modules/std.sx"`. Error-set
+// (Init/Register/Wait) through `@import "modules/std.sx"`. Error-set
 // declarations get per-decl nominal identity, so `raise error.Boom` and
 // `r == error.Boom` check against the LOCAL set and its `Boom` tag.
 

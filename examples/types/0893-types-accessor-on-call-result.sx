@@ -1,4 +1,4 @@
-// A `#get` accessor reached through a CALL RESULT reads the same value it
+// A `@get` accessor reached through a CALL RESULT reads the same value it
 // would through a bound local. The object of a field chain is only a SLOT for
 // field/index/deref shapes; a call result already IS the value, and is not
 // loaded again on the way to the accessor's receiver. Only the synthesized

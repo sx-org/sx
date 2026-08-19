@@ -1,5 +1,5 @@
-// Pins the curated-bindings shape: a `#source`-only unit
-// (no `#include`, so no auto-synthesized decls) paired with a
+// Pins the curated-bindings shape: a `@source`-only unit
+// (no `@include`, so no auto-synthesized decls) paired with a
 // hand-written `extern` decl naming the unit. Works in JIT and AOT;
 // see 1620 — the unit ref is not validated or scoped, so the symbol
 // resolves globally rather than through the unit.

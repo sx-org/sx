@@ -1,4 +1,4 @@
-// `#context_extend` is a top-level-only directive — the Context is assembled once
+// `@context_extend` is a top-level-only directive — the Context is assembled once
 // per program, so a function-local declaration is rejected at parse time.
 @import "modules/std.sx";
 

@@ -5,7 +5,7 @@
 //
 // Two dispatch models over one shared array of concrete conformers:
 //   vtable/own  — `protocol vtable`, value/own erasure.
-//   vtable/id   — `protocol vtable #identity`, borrowing erasure.
+//   vtable/id   — `protocol vtable @identity`, borrowing erasure.
 //
 // Two phases, measured separately:
 //   BUILD — fill an array of protocol values from the conformers. The

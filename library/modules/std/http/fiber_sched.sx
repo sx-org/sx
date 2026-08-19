@@ -3,7 +3,7 @@
 // Opt-in: importing this module compiles the M:1 fiber runtime (std/sched
 // — aarch64-pinned context-switch asm). A fiber-handler server does:
 //
-//     fs :: #import "modules/std/http/fiber_sched.sx";
+//     fs :: @import "modules/std/http/fiber_sched.sx";
 //     …
 //     runner := fs.SchedRunner.init();          // value, allocator-style
 //     cfg : http.Config = .{ …, fibers = runner };

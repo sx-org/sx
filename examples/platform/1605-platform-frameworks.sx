@@ -1,4 +1,4 @@
-// `#framework "Name"` top-level directive registers an Apple framework for
+// `@framework "Name"` top-level directive registers an Apple framework for
 // linking; `extern` declarations can omit the library identifier (frameworks
 // resolve symbols by global namespace at link time).
 

@@ -1,6 +1,6 @@
-// `allocator` and `io` are ordinary `#context_extend`
+// `allocator` and `io` are ordinary `@context_extend`
 // declarations (std/mem.sx, std/io.sx) whose defaults are the erasure of the
-// stdlib's own instance globals — a BORROW per #identity semantics, so the
+// stdlib's own instance globals — a BORROW per @identity semantics, so the
 // default context's receivers are real addresses, never null:
 // - a `?Protocol` wrap of a default capability is PRESENT (null ctx is the
 //   absent sentinel and must never appear in a live protocol value);

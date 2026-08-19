@@ -26,14 +26,14 @@ none of it.
 
 ```
 mbedtls :: @import c {
-    #include "c/include/sx_mbedtls_anchor.h";       // -> -Ic/include
-    #include "c/library/sx_mbedtls_lib_anchor.h";   // -> -Ic/library
+    @include "c/include/sx_mbedtls_anchor.h";       // -> -Ic/include
+    @include "c/library/sx_mbedtls_lib_anchor.h";   // -> -Ic/library
     @flags  "-Os";
     @source "c/library/<each>.c";                   // x109
 };
 ```
 
-The two **anchor headers** are an sx idiom: a `@import c` `#include "x"` adds
+The two **anchor headers** are an sx idiom: a `@import c` `@include "x"` adds
 `dirName(x)` to `-I` (and parses `x` for FFI decls — the anchors are empty, so
 no decls). We need `-Ic/include` (so the sources find `<mbedtls/*.h>` and the
 default `mbedtls/mbedtls_config.h`) and `-Ic/library` (so they find their

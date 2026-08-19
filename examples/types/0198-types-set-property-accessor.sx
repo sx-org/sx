@@ -1,9 +1,9 @@
-// `#set` property accessors — the write counterpart of `#get`. A method
-// `name :: (self: *T, value: V) #set { ... }` is invoked via field-assign
+// `@set` property accessors — the write counterpart of `@get`. A method
+// `name :: (self: *T, value: V) @set { ... }` is invoked via field-assign
 // syntax (`obj.name = rhs`) rather than `obj.name(rhs)`. A property may carry
-// BOTH a `#get` and a `#set` of the same name (reads pick the getter, writes
-// pick the setter); compound assignment (`+=`) reads via `#get` then writes via
-// `#set`. Works on plain structs and generic-struct instances, as a multi-assign
+// BOTH a `@get` and a `@set` of the same name (reads pick the getter, writes
+// pick the setter); compound assignment (`+=`) reads via `@get` then writes via
+// `@set`. Works on plain structs and generic-struct instances, as a multi-assign
 // target, and the compound form evaluates the receiver exactly once.
 @import "modules/std.sx";
 

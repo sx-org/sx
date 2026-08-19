@@ -2870,7 +2870,7 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
 
     if (!self.lowered_functions.contains(mangled_name)) {
         // Record this call as the instantiation site for the mono's body:
-        // a surviving `#error` inside it anchors HERE (outermost frame of
+        // a surviving `@error` inside it anchors HERE (outermost frame of
         // the chain), not at the library-internal directive line.
         self.mono_sites.append(self.alloc, .{
             .source = call_node.callee.source_file orelse self.current_source_file,

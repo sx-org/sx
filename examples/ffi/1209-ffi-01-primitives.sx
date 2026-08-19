@@ -1,5 +1,5 @@
 // Every primitive type passed
-// in/out of a C `extern` fn via `#import c { #include / #source }`.
+// in/out of a C `extern` fn via `@import c { @include / @source }`.
 // Pins the parameter and return ABI of each one.
 //
 // c_import maps `signed char` to sx `u8` (see c_import.zig:541), so the

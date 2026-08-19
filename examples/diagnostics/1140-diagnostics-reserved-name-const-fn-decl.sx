@@ -2,7 +2,7 @@
 // declaration — both a constant (`i2 :: 5`) and a function (`u8 :: (…) {…}`) —
 // with the caret on the declared name. The backtick escape
 // (`` `i2 :: … ``, examples/0153) is the only way to spell these names;
-// `#import c` extern decls remain exempt (examples/1220).
+// `@import c` extern decls remain exempt (examples/1220).
 @import "modules/std.sx";
 
 i2 :: 5;

@@ -1,4 +1,4 @@
-// `#get` property accessor — stress coverage: getters returning scalars / bool
+// `@get` property accessor — stress coverage: getters returning scalars / bool
 // / a type param / a struct / a pointer; getters used as a field read, in
 // expressions, conditions, call args, loop bounds, chained, and nested
 // (a getter calling another getter); on a pointer receiver and via auto-deref;

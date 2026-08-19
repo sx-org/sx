@@ -1,4 +1,4 @@
-// Two `#import c` units defining the same exported symbol is a
+// Two `@import c` units defining the same exported symbol is a
 // compile-time diagnostic naming both sources, not a death inside the
 // JIT dylib link (or the AOT link) with raw linker spew.
 // All units share one link namespace; per-unit symbol isolation is

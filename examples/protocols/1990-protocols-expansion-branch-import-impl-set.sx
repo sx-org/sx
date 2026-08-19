@@ -1,6 +1,6 @@
-// A branch-local `#import` is a contribution, and the ledger counts it (§7.9).
+// A branch-local `@import` is a contribution, and the ledger counts it (§7.9).
 //
-// An `#import` written inside an unexpanded branch names a whole MODULE, and
+// An `@import` written inside an unexpanded branch names a whole MODULE, and
 // selecting that branch would put everything the module authors into this
 // program. So the conservative sweep counts that module's surface exactly as
 // it counts the text of the branch itself: the impl heads it spells are impls

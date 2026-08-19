@@ -1,4 +1,4 @@
-// The sx library ships stb_truetype: `#import "vendors/stb_truetype/
+// The sx library ships stb_truetype: `@import "vendors/stb_truetype/
 // stb_truetype.sx"` resolves through the stdlib search paths and the
 // implementation compiles through the object cache. Loads the system
 // Helvetica collection and pins INVARIANTS only (font versions vary

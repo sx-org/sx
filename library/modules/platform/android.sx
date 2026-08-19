@@ -23,7 +23,7 @@
 // `AndroidPlatform` (the EGL handles, the ANativeWindow, the render
 // thread, the touch ring, the frame closure, the user main fn, the
 // touch mutex). Module-level globals are out — they shadow consumer
-// globals on `#import`.
+// globals on `@import`.
 //
 // Vulkan-compatible: same ANativeWindow drives `vkCreate*SurfaceKHR`
 // without changing the lifecycle.
@@ -141,7 +141,7 @@ TouchEvent :: struct {
 // thread, touch ring + mutex, frame closure, user main fn — lives here.
 // No module-level globals: a previous shape had `g_viewport_w : i32` at
 // module scope, which silently shadowed chess's own
-// `g_viewport_w : f32` on `#import` and caused the renderer to receive
+// `g_viewport_w : f32` on `@import` and caused the renderer to receive
 // a logical width cast to i32 instead of the physical pixel width.
 //
 // `logical_w` is the consumer's design width in points (e.g. chess sets

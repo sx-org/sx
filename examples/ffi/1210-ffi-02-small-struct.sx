@@ -11,7 +11,7 @@
 
 @import "modules/std.sx";
 
-// `#source` only — c_import would rewrite struct-typed params/returns
+// `@source` only — c_import would rewrite struct-typed params/returns
 // in the .h to *void (its struct/opaque pointer default), losing the
 // by-value ABI. The hand-written extern decls below keep sx's
 // struct types end-to-end.

@@ -843,7 +843,7 @@ const Expansion = struct {
         return .{ .textual = ex.scope, .spliced = ex.spliced.items };
     }
 
-    /// A `#error` reached in live code. A non-selected group never reaches
+    /// A `@error` reached in live code. A non-selected group never reaches
     /// here, which is how `std/c.sx`'s per-target tables guard their `else`
     /// arms.
     fn raise(ex: *Expansion, decl: *const Node) void {

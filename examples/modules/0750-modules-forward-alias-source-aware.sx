@@ -3,7 +3,7 @@
 // global `type_alias_map` (which is last-wins across every module).
 //
 // `main` authors a forward alias `A :: B` and its own `B :: u64`. The namespaced
-// import `ns :: #import ".../dep.sx"` ALSO authors a top-level `B :: u8`; being
+// import `ns :: @import ".../dep.sx"` ALSO authors a top-level `B :: u8`; being
 // scanned after main's `B`, dep's alias is what the GLOBAL `type_alias_map["B"]`
 // ends up holding. The source-aware fixpoint resolves `A` against MAIN's source:
 // the local `B :: u64`.

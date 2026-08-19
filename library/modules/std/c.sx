@@ -3,8 +3,8 @@
 // per-OS quirks (errno location symbol) resolved HERE via `inline if OS`.
 //
 // Every module that needs a libc symbol imports THIS and calls `c.read(...)`
-// etc. — no module redeclares `libc :: #library "c"` or its own `extern`
-// slice. `#library` constants dedup program-wide, and the compiler dedups
+// etc. — no module redeclares `libc :: @library "c"` or its own `extern`
+// slice. `@library` constants dedup program-wide, and the compiler dedups
 // extern decls by symbol (rejecting a divergent signature), so a single
 // canonical decl here is both the source of truth and drift-proof.
 //

@@ -44,7 +44,7 @@ kqb  :: @import "modules/std/net/kqueue.sx";
 timp :: @import "modules/std/time.sx";
 // The epoll backend is imported INSIDE the `inline if OS == .linux`
 // branch below, never at top level. event.sx rides the std.sx barrel, so a
-// top-level `#import "epoll.sx"` would register epoll's types into EVERY std
+// top-level `@import "epoll.sx"` would register epoll's types into EVERY std
 // program's type table on darwin too — drifting every `.ir` snapshot. Scoping
 // the import to the linux branch keeps darwin's type graph unchanged. (kqb
 // stays top-level; on linux its kqueue externs are unused declares.)
