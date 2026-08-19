@@ -544,7 +544,7 @@ SqliteStmt :: struct {
     expanded_sql :: (self: *SqliteStmt) -> string {
         p := sqlite3_expanded_sql(self.handle);
         s := sq_from_cstr(p);
-        if p != null { sqlite3_free(p!); }
+        if p != null { sqlite3_free(xx (p!)); }
         return s;
     }
     busy :: (self: *SqliteStmt) -> bool {
@@ -723,7 +723,7 @@ Sqlite :: struct {
         p := sqlite3_serialize(self.handle, to_cstring("main"), *size, 0);
         if p == null { raise error.Serialize; }
         out := sq_copy_bytes(p, size);
-        sqlite3_free(p!);
+        sqlite3_free(xx (p!));
         return out;
     }
     // Replace "main" with the database image in `bytes`. The image is
