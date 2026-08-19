@@ -8,8 +8,8 @@
 // `fluent.View` is the library's own open set. Geometry and the render tree
 // are the ui foundation's, so a fluent scene is what the platform renderer
 // consumes. A component of another library is not a member of this set.
-#import "modules/std.sx";
-#import "modules/ui/fluent.sx";
+@import "modules/std.sx";
+@import "modules/ui/fluent.sx";
 
 main :: () -> i32 {
     // A leaf is an ordinary value, and a modifier call is an ordinary value

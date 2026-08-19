@@ -3,7 +3,7 @@
 // valid and an empty/inverted range simply runs zero iterations.
 // `inline for -2..1` iterates -2,-1,0; the integral-float empty range
 // `0..(-2.0)` runs zero iterations. Comptime and runtime loops agree.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     s := 0;

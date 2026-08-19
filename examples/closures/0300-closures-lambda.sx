@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     fx :: (s:i3) -> i3 {

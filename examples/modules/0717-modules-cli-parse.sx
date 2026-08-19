@@ -18,8 +18,8 @@
 //                    `CliError` variant on the error channel, and the
 //                    caller-owned `Diag` names the offending token.
 
-#import "modules/std.sx";
-#import "modules/std/cli.sx";
+@import "modules/std.sx";
+@import "modules/std/cli.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

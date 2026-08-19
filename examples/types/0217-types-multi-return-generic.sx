@@ -3,7 +3,7 @@
 // `a: $T, b: $U` infers from the args; an explicit `$T: Type` form also works.
 // (The NAMED-slot implicit-return form with generics is a separate gap;
 // the positional explicit-`return` form here is the supported surface.)
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // inferred type params from the value args
 pair :: (a: $T, b: $U) -> (T, U) { return a, b; }

@@ -1,6 +1,6 @@
 // One module's Panel.
-#import "modules/std.sx";
-#import "../view.sx";
+@import "modules/std.sx";
+@import "../view.sx";
 
 Panel :: @OpenVariant(View) {
     tag: string = "alpha";

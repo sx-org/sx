@@ -1,6 +1,6 @@
 // (specs: Trailing Blocks): a trailing-block call does not end the postfix
 // chain — dot-led postfix after the closing `}` applies to the call's result.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct {
     n: i64;

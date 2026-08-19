@@ -5,7 +5,7 @@
 // pack-shape spelling used by impl headers like
 // `impl Into(Block) for Closure(..$args) -> $R`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 takes_cb :: (cb: Closure(..$args) -> $R) -> void {}
 

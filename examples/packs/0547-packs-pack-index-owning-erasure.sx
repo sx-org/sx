@@ -6,7 +6,7 @@
 // only gets storage when lowered as a value), so the erasure heap-copies
 // the materialized element rather than taking its address.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 VL :: protocol(T: Type) vtable { get :: (self: *Self) -> T; }
 IntCell :: struct { v: i64; }

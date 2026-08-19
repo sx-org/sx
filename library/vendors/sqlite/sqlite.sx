@@ -55,8 +55,8 @@
 // 64-bit APIs (rowids, changes64, memory accounting, serialize sizes).
 // =====================================================================
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 configure_sqlite :: () {
     inline if OS == .linux {
@@ -65,17 +65,17 @@ configure_sqlite :: () {
 }
 @run configure_sqlite();
 
-sqlib :: #import c {
-    #define "SQLITE_DQS=0";
-    #define "SQLITE_THREADSAFE=1";
-    #define "SQLITE_DEFAULT_MEMSTATUS=0";
-    #define "SQLITE_OMIT_DEPRECATED";
-    #define "SQLITE_OMIT_SHARED_CACHE";
-    #define "SQLITE_LIKE_DOESNT_MATCH_BLOBS";
-    #define "SQLITE_ENABLE_COLUMN_METADATA";
-    #define "SQLITE_ENABLE_FTS5";
-    #flags  "-O2";
-    #source "c/sqlite3.c";
+sqlib :: @import c {
+    @define "SQLITE_DQS=0";
+    @define "SQLITE_THREADSAFE=1";
+    @define "SQLITE_DEFAULT_MEMSTATUS=0";
+    @define "SQLITE_OMIT_DEPRECATED";
+    @define "SQLITE_OMIT_SHARED_CACHE";
+    @define "SQLITE_LIKE_DOESNT_MATCH_BLOBS";
+    @define "SQLITE_ENABLE_COLUMN_METADATA";
+    @define "SQLITE_ENABLE_FTS5";
+    @flags  "-O2";
+    @source "c/sqlite3.c";
 };
 
 // ── FFI: connection lifecycle ─────────────────────────────────────────

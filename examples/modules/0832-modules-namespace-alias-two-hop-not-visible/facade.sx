@@ -1,1 +1,1 @@
-t :: #import "target.sx";
+t :: @import "target.sx";

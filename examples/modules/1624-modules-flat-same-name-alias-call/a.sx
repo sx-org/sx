@@ -1,6 +1,6 @@
 // a.sx is imported first, so its `go` alias owns the name-keyed slot. Its own
 // uses select its own author — the same declaration the winner names.
-#import "consume.sx";
+@import "consume.sx";
 
 target :: (x: i64 = 7) -> i64 { return x; }
 go     :: target;

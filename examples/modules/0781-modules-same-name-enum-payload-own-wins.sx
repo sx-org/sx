@@ -14,7 +14,7 @@
 // `got`'s payload the stdlib `Event`, so `e.code` errors "field 'code' not
 // found on type 'Event'".
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Event :: struct { code: i64; }
 Wrap  :: enum { none; got: Event; }

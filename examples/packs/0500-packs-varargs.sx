@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 sum :: (..args: []i32) -> i32 {
     result := 0;

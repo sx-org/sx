@@ -17,8 +17,8 @@
 //               evaluated for its effects, and its value is stored nowhere
 //   vm          a body the comptime VM runs whose FIRST written return is in
 //               the arm it does not take — the slot exists on every path
-#import "modules/std.sx";
-fmtns :: #import "modules/std/fmt.sx";
+@import "modules/std.sx";
+fmtns :: @import "modules/std/fmt.sx";
 
 Bad :: error { Nope }
 

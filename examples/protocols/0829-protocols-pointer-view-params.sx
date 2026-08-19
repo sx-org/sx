@@ -6,7 +6,7 @@
 //   - `@p` on an owned protocol value lends a plain pointer to it;
 //   - protocol methods dispatch through `*P`, mutating the original.
 // The rvalue case is pinned as a refusal in diagnostics/1251.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Sizable :: protocol vtable { size :: (self: *Self) -> i64; grow :: (self: *Self, by: i64); }
 Widget :: struct { value: i64; }

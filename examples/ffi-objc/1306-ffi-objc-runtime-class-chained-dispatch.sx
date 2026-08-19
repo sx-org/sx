@@ -7,8 +7,8 @@
 // and `*Self` (init). Both must propagate through the chain so the
 // next `.method(...)` finds the runtime-class declaration.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 NSObject :: @ObjcClass("NSObject") extern {
     alloc :: () -> *NSObject;

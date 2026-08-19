@@ -1,6 +1,6 @@
 // A private field cannot be assigned by name from another file.
 
-box :: #import "2200-diagnostics-private-field-write/box.sx";
+box :: @import "2200-diagnostics-private-field-write/box.sx";
 
 main :: () -> i32 {
     x := box.make();

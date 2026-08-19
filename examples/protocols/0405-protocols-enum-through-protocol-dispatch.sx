@@ -1,7 +1,7 @@
 // Sub-32-bit enum variants ride through a protocol-typed receiver's
 // method call without being collapsed to tag=0.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Fmt :: enum { a; b; }
 

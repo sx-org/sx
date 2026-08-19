@@ -5,9 +5,9 @@
 // arguments against ITS OWN author. b.sx's `from_b` passes a local `v` to its
 // pointer-param `apply` via implicit address-of, which is per-source parameter
 // target typing at work.
-#import "modules/std.sx";
-#import "0728-modules-flat-same-name-paramtype/a.sx";
-#import "0728-modules-flat-same-name-paramtype/b.sx";
+@import "modules/std.sx";
+@import "0728-modules-flat-same-name-paramtype/a.sx";
+@import "0728-modules-flat-same-name-paramtype/b.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

@@ -6,7 +6,7 @@
 // scope. The types it answers with are respelled as the element names the
 // cursor substitutes, so the group is written exactly as a literal list's
 // would be, with the same coherence and provenance.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
 

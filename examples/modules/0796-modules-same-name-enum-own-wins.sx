@@ -10,8 +10,8 @@
 // and dep's `Dir` to a single nominal — `.north` resolves against whichever
 // author holds the global slot, with no diagnostic to catch it.
 
-#import "modules/std.sx";
-#import "0796-modules-same-name-enum-own-wins/dep.sx";
+@import "modules/std.sx";
+@import "0796-modules-same-name-enum-own-wins/dep.sx";
 
 Dir :: enum { north; south; }
 

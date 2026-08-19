@@ -1,6 +1,6 @@
 // A for header's captures are positional: one per iterable (or none).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     xs : [2]i64 = .[1, 2];

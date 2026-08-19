@@ -11,7 +11,7 @@
 // A named const whose RHS is an expression folds through the shared
 // `evalConstIntExpr`. An aliased integer constraint resolves to its underlying
 // builtin before range-checking, so `$K: Count` behaves exactly like `$K: u32`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 M     :: 2;          // untyped int const
 N     :: M + 1;      // named const, EXPRESSION RHS  (== 3)

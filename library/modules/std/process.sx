@@ -1,9 +1,9 @@
-#import "modules/std/core.sx";   // @SourceSite
-#import "modules/std/fmt.sx";    // print, concat, substr, alloc_string, to_cstring, from_cstring
-#import "modules/std/mem.sx";
-c :: #import "modules/std/c.sx"; // c.exit (_exit) + the shared libc handle
-posix :: #import "modules/std/posix.sx";
-trace :: #import "modules/std/trace.sx";
+@import "modules/std/core.sx";   // @SourceSite
+@import "modules/std/fmt.sx";    // print, concat, substr, alloc_string, to_cstring, from_cstring
+@import "modules/std/mem.sx";
+c :: @import "modules/std/c.sx"; // c.exit (_exit) + the shared libc handle
+posix :: @import "modules/std/posix.sx";
+trace :: @import "modules/std/trace.sx";
 
 // =====================================================================
 // process.sx — subprocess + environment stdlib (POSIX backend).

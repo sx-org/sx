@@ -4,7 +4,7 @@
 // (`Pair($A, $B)`) and nested heads (`Box(Box($T))`) bind positionally.
 // `extractTypeParam`'s `parameterized_type_expr` arm is what binds `$T` from a
 // generic-struct param.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box  :: struct ($T: Type) { v: T; }
 Pair :: struct ($A: Type, $B: Type) { a: A; b: B; }

@@ -3,7 +3,7 @@
 // struct (fields "0"/"1"/…), and `f(..stored)` re-spreads a struct
 // value field-wise — the `.{}` counterpart of the tuple carrier.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 sum3 :: (a: i64, b: i64, c: f64) -> f64 { (a + b).(f64) + c }
 

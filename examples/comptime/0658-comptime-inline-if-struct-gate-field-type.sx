@@ -5,7 +5,7 @@
 // direct `Enum.variant` value (`E.A`) is a first-class generic-call argument
 // (its type infers to the enum). Compiles + runs for BOTH a struct and an enum
 // instantiation of the same generic.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // (`struct_field_type` needs no declaration or import here — it is an intrinsic, and
 // the compiler dispatches it from its registry. Its source identity lives in

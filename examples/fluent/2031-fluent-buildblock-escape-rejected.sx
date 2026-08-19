@@ -12,8 +12,8 @@
 //
 // A method it does not have is refused by name too, so the operation set stays
 // the three the contract declares.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
 
 Drawable :: protocol constraint {
     draw :: (self: *Self) -> string;

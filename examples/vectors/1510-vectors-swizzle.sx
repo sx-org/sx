@@ -1,6 +1,6 @@
 // Multi-letter shuffle on `@Vector`: read, replicate, colour set, store,
 // and compound store. One letter stays a scalar.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     v : @Vector(4, f32) = .[1.0, 2.0, 3.0, 4.0];

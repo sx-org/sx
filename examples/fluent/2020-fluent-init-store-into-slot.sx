@@ -5,7 +5,7 @@
 // picks the storage, then `value.write(dest)` runs the expression once,
 // directly into it. A callee that never writes never evaluates the expression
 // at all — the explicitly lazy API.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Button :: struct {
     label: string = "";

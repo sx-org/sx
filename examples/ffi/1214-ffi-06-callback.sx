@@ -10,10 +10,10 @@
 // A global side effect makes the firing observable alongside the
 // return value.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #source "1214-ffi-06-callback.c";
+@import c {
+    @source "1214-ffi-06-callback.c";
 };
 
 ffi_apply_callback  :: (cb: (i32) -> i32 abi(.c), value: i32) -> i32 extern;

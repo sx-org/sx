@@ -16,9 +16,9 @@
 // objc_msgSend — round-trips a primitive property and confirms
 // `readonly` skips setter registration.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 class_getInstanceMethod :: (cls: *void, sel: *void) -> *void extern objc;
 

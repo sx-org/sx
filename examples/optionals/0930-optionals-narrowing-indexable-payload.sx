@@ -9,7 +9,7 @@
 // - generic binding, so a `[]$T` ufcs receiver binds `[]i64`.
 // Un-narrowed, `o[i]` stays the optional chain `?Elem`; `q := o` keeps the
 // declared `?[]T` (only guarded locals narrow — spell `q := o!`).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 P :: struct { n: i64 = 0; }
 head :: ufcs (xs: []$T, k: i64) -> $T { return xs[k]; }

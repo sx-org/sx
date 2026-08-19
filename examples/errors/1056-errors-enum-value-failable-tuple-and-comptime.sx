@@ -13,7 +13,7 @@
 // RUNTIME on the success path (cast, bare `if`, `== error.X`) so an undef
 // slot is caught, not masked by the `if !e` proof.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Color :: enum { red; green; blue; }
 E :: error { Nope }

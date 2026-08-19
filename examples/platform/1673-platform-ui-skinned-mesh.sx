@@ -8,15 +8,15 @@
 // bone 1 translating +0.6 in x. The center pixel is clear in the first
 // frame and green in the second, so it is covered only because the palette
 // reached the vertex stage; the bone-0 range stays where it was authored.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "modules/math";
-#import "modules/gpu/types.sx";
-#import "modules/gpu/api.sx";
-#import "modules/gpu/metal.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/render.sx";
-#import "modules/ui/renderer.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/math";
+@import "modules/gpu/types.sx";
+@import "modules/gpu/api.sx";
+@import "modules/gpu/metal.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
+@import "modules/ui/renderer.sx";
 
 W :i32: 64;
 H :i32: 64;

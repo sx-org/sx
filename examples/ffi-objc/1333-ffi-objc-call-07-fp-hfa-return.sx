@@ -6,9 +6,9 @@
 // back. This installs a real IMP returning specific non-zero values and
 // verifies each field comes through the float-register file intact.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 UIEdgeInsets :: struct {
     top: f64;

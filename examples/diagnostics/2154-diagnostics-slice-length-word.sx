@@ -1,7 +1,7 @@
 // A `@Slice` length word is an integer type. A length that does not fit
 // that word does not form the slice.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Bad :: @Slice(u8, bool);
 

@@ -11,7 +11,7 @@
 // method mentioning `Self` past the receiver has no caller-side type on a set value
 // — `Self` denotes the member, and a set value is not any one member — but on the
 // downcast result it is an ordinary call on a concrete type.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 128 }) {
     render :: (self: *Self) -> string;

@@ -90,7 +90,7 @@ pub const SemaResult = struct {
     fn_signatures: std.StringHashMap(FnSignature),
     struct_types: std.StringHashMap(StructTypeInfo),
     enum_types: std.StringHashMap([]const []const u8),
-    /// `#context_extend` field name → declared type. The Context is assembled
+    /// `@context_extend` field name → declared type. The Context is assembled
     /// program-wide, so this is a union across every analyzed document rather
     /// than a member list on one declaration.
     context_members: std.StringHashMap(Type),
@@ -303,7 +303,7 @@ pub const Analyzer = struct {
                     try tp_names.append(self.allocator, p.name);
                 }
                 const tp_slice = try tp_names.toOwnedSlice(self.allocator);
-                // Populate struct_types registry, expanding #using entries
+                // Populate struct_types registry, expanding @using entries
                 if (sd.using_entries.len > 0) {
                     var all_names = std.ArrayList([]const u8).empty;
                     var all_types = std.ArrayList(Type).empty;

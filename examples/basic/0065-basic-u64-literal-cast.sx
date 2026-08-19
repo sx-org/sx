@@ -5,7 +5,7 @@
 //
 // A literal that genuinely overflows the cast's target still errors.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 takes_u64 :: (v: u64) { print("arg={}\n", v); }
 

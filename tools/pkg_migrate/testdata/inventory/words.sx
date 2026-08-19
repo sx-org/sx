@@ -18,7 +18,7 @@ build :: (package: string, lib: string) -> string {
     // member access: 1 hit for `private` (member-access)
     v := obj.private;
     // heredoc: no hits
-    h := #string XML
+    h := @string XML
 <manifest package="demo" import="x" private intrinsic />
 XML;
     return s;

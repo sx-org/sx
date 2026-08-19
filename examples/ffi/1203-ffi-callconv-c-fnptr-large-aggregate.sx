@@ -8,7 +8,7 @@
 // fn-pointer casts (no abi suffix) keep their default calling convention —
 // 1204 pins that arm.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Wide :: struct {
     a: i64;

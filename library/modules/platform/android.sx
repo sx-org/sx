@@ -28,12 +28,12 @@
 // Vulkan-compatible: same ANativeWindow drives `vkCreate*SurfaceKHR`
 // without changing the lifecycle.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/input.sx";
-#import "modules/platform/types.sx";
-#import "modules/platform/api.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/input.sx";
+@import "modules/platform/types.sx";
+@import "modules/platform/api.sx";
 
 // ── Runtime Java types ──────────────────────────────────────────────────
 

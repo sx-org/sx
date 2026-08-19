@@ -2,7 +2,7 @@
 // the results into a closure call. The mapper lambda's params are contextually
 // typed from the `Closure(...)` parameter even though `apply` is a pack-fn.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 VL :: protocol(T: Type) { get :: (self: *Self) -> T; }
 IntCell :: struct { v: i64; }

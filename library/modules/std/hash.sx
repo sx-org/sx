@@ -30,8 +30,8 @@
 //     view := string{ ptr = @d[0], len = 64 };
 // =====================================================================
 
-#import "modules/std/core.sx";     // string
-#import "modules/std/fs.sx";       // open_file, File
+@import "modules/std/core.sx";     // string
+@import "modules/std/fs.sx";       // open_file, File
 
 // Low 32 bits. SHA-256 is defined over 32-bit words; every add/rotate
 // result is masked back through this so the carry never escapes bit 31.

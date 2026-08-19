@@ -16,9 +16,9 @@
 // IMP trampolines and the '+alloc' / '-dealloc' overrides are pinned
 // by the sibling examples.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 class_getInstanceVariable :: (cls: *void, name: [*]u8) -> *void extern objc;
 

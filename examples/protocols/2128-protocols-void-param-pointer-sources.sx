@@ -3,9 +3,9 @@
 // bit-casts a cstring to a pointer value (spec, "cstring"). Only a
 // NON-pointer value is spilled to a stack slot whose address crosses, so the
 // callee reads it back through a typed pointer.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-Take :: protocol vtable #identity {
+Take :: protocol vtable @identity {
     take :: (self: *Self, ptr: *void);
 }
 

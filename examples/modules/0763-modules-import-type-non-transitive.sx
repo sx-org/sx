@@ -9,8 +9,8 @@
 //
 // The bare-TYPE gate is single-hop, so a 2-flat-hop type is not visible.
 
-#import "modules/std.sx";
-#import "0763-modules-import-type-non-transitive/b.sx";
+@import "modules/std.sx";
+@import "0763-modules-import-type-non-transitive/b.sx";
 
 main :: () -> i32 {
     x : COnly = .{ v = 5 };

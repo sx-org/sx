@@ -7,7 +7,7 @@
 //
 // Pins three positions: module-top, struct method, niladic.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 double :: (x: i32) -> i32 => x * 2;
 

@@ -4,7 +4,7 @@
 //
 // A no-`else` `if` used purely as a STATEMENT stays valid and is not exercised
 // here.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     y := if true { 1 };

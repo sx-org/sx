@@ -17,9 +17,9 @@
 // bails LOUDLY on unsupported types per the project's REJECTED PATTERNS
 // rule, so a successful build is the encoding going through cleanly.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 Point :: struct {
     x: f64;

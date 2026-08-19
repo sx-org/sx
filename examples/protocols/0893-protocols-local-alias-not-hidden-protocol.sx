@@ -1,9 +1,9 @@
 // A namespace-only foreign protocol with the same spelling must not hijack a
 // local alias used by an impl. Canonicalization is source-visible, not global.
 
-foreign :: #import "0893-protocols-local-alias-not-hidden-protocol/foreign.sx";
+foreign :: @import "0893-protocols-local-alias-not-hidden-protocol/foreign.sx";
 
-Q :: protocol vtable #identity {
+Q :: protocol vtable @identity {
     value :: (self: *Self) -> i64;
 }
 

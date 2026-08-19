@@ -12,7 +12,7 @@
 // modules/ui/glyph_cache.sx for the reference consumer.
 // =====================================================================
 
-#import c {
-    #include "c/kbts_api.h";
-    #source  "c/kb_text_shape_impl.c";
+@import c {
+    @include "c/kbts_api.h";
+    @source  "c/kb_text_shape_impl.c";
 };

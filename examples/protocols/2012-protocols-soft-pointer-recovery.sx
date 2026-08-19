@@ -5,9 +5,9 @@
 // An erased value answers it by its `Type` word, and what the write is seen
 // through is the ownership class: an identity handle points at the concrete
 // lvalue, an owning one at its own copy.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-Ident :: protocol vtable #identity { area :: (self: *Self) -> i64; }
+Ident :: protocol vtable @identity { area :: (self: *Self) -> i64; }
 Boxed :: protocol vtable { area :: (self: *Self) -> i64; }
 
 Rect :: struct { w: i64; h: i64; }

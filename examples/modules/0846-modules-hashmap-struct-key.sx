@@ -7,8 +7,8 @@
 // The shapes here: padded struct key found after stack churn (both map kinds),
 // struct with a string field (content-hashed), struct with an enum field, a
 // nested struct key, and distinct keys not colliding.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 K :: struct { a: u8; b: i64; }              // size 16: 1 byte + 7 pad + 8
 Color :: enum { Red; Green; Blue; }

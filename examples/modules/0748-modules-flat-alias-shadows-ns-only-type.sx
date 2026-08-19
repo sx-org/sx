@@ -6,7 +6,7 @@
 // alias (`i32`), not poisoned by the invisible same-name struct: the alias is
 // the only flat-visible TYPE author, and the leaf counts an alias (a
 // `const_decl`, not a named type) as one.
-ns :: #import "0748-modules-flat-alias-shadows-ns-only-type/dep.sx";
+ns :: @import "0748-modules-flat-alias-shadows-ns-only-type/dep.sx";
 
 Secret :: i32;
 

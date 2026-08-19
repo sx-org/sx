@@ -6,9 +6,9 @@
 // context, but diagnostics are emitted after source-file restore, so caller spans
 // never render against an imported module's text.
 
-#import "modules/std.sx";
-lib :: #import "1226-diagnostics-qualified-global-store-nonlvalue/lib.sx";
-amb :: #import "1226-diagnostics-qualified-global-store-nonlvalue/amb.sx";
+@import "modules/std.sx";
+lib :: @import "1226-diagnostics-qualified-global-store-nonlvalue/lib.sx";
+amb :: @import "1226-diagnostics-qualified-global-store-nonlvalue/amb.sx";
 
 main :: () -> i32 {
     lib.LIB_C = null;              // target-directed null must not lower

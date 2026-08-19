@@ -8,7 +8,7 @@
 // (void) value.
 //
 // A block body is `|params| { ... }`; `|params| expr` is the expression form.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
   // early returns only — inferred return, no optionals

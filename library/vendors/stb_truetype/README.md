@@ -6,7 +6,7 @@
 - Files: `c/stb_truetype.h` + `c/stb_truetype_impl.c` (the impl .c
   defines `STB_TRUETYPE_IMPLEMENTATION` and includes the header)
 
-`#import "vendors/stb_truetype/stb_truetype.sx"` resolves through the
+`@import "vendors/stb_truetype/stb_truetype.sx"` resolves through the
 stdlib search paths; the decls (`stbtt_InitFont`,
 `stbtt_ScaleForPixelHeight`, `stbtt_GetFontVMetrics`,
 `stbtt_MakeGlyphBitmap`, …) are synthesized from the header, and the

@@ -1,6 +1,6 @@
 // `inline` is not a protocol kind. The kind slot admits `constraint` and
 // `vtable`; the keyword standing there is refused by the head's mandatory `{`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Hasher :: protocol inline {
     sum :: (self: *Self) -> u64;

@@ -22,9 +22,9 @@
 // discipline): scalars carry no heap, string values are views, composites
 // and decoded strings go through `alloc`, and the writer allocates nothing.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
-#import "modules/std/json.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+@import "modules/std/json.sx";
 
 // The writer's EXACT output for the PART A document (insertion order,
 // canonical escaping). Hand-pinned so a writer regression fails loudly in

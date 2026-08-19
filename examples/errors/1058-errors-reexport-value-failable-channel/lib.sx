@@ -1,5 +1,5 @@
 // Implementation module: a generic value-failable `ufcs` fn + its error set.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 LE  :: error { Bad }
 Box :: struct ($R: Type) { v: R; }

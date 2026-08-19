@@ -7,7 +7,7 @@
 // directions. Also exercises a nested optional payload and an optional
 // struct payload (both wrap correctly).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 go   : ?i64        = 5;         // present scalar
 gn   : ?i64        = null;      // absent

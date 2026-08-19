@@ -1,5 +1,5 @@
 // The other package's set — same spelling, its own declaration.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 128, align = 8 }) {
     render :: (self: *Self) -> string;

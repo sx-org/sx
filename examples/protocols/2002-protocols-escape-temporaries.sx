@@ -4,9 +4,9 @@
 // borrow they had at compile time survives the escape. Two objects stay two
 // globals, and two evaluations never deduplicate against each other — their
 // temporaries are distinct objects.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-View :: protocol vtable #identity {
+View :: protocol vtable @identity {
     area :: (self: *Self) -> i64;
     bump :: (self: *Self);
 }

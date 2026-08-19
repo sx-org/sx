@@ -1,13 +1,13 @@
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/opengl.sx";
-#import "modules/math";
-#import "modules/gpu/types.sx";
-#import "modules/gpu/api.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/render.sx";
-#import "modules/ui/glyph_cache.sx";
-#import "modules/ui/font.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/opengl.sx";
+@import "modules/math";
+@import "modules/gpu/types.sx";
+@import "modules/gpu/api.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
+@import "modules/ui/glyph_cache.sx";
+@import "modules/ui/font.sx";
 
 // Vertex: pos(2) + uv(2) + color(4) + params(4) + stroke(4) = 16 floats
 UI_VERTEX_FLOATS :i64: 16;
@@ -580,7 +580,7 @@ create_white_texture :: () -> u32 {
 
 // --- Desktop (Core Profile 3.3) shaders ---
 
-UI_VERT_SRC_CORE :: #string GLSL
+UI_VERT_SRC_CORE :: @string GLSL
 #version 330 core
 layout(location = 0) in vec2 aPos;
 layout(location = 1) in vec2 aUV;
@@ -604,7 +604,7 @@ void main() {
 }
 GLSL;
 
-UI_FRAG_SRC_CORE :: #string GLSL
+UI_FRAG_SRC_CORE :: @string GLSL
 #version 330 core
 in vec2 vUV;
 in vec4 vColor;
@@ -664,7 +664,7 @@ GLSL;
 
 // --- WASM (ES 3.0 / WebGL2) shaders ---
 
-UI_VERT_SRC_ES :: #string GLSL
+UI_VERT_SRC_ES :: @string GLSL
 #version 300 es
 precision mediump float;
 layout(location = 0) in vec2 aPos;
@@ -689,7 +689,7 @@ void main() {
 }
 GLSL;
 
-UI_FRAG_SRC_ES :: #string GLSL
+UI_FRAG_SRC_ES :: @string GLSL
 #version 300 es
 precision mediump float;
 in vec2 vUV;
@@ -761,7 +761,7 @@ GLSL;
 // is the vertex buffer). Texture binding goes through
 // `setFragmentTexture:atIndex:0`.
 
-UI_MSL_SRC :: #string MSL
+UI_MSL_SRC :: @string MSL
 #include <metal_stdlib>
 using namespace metal;
 
@@ -847,7 +847,7 @@ MSL;
 // both GPU backends route. Lighting is a fixed two-lamp studio rig in mesh
 // space, so the tint alone distinguishes parts.
 
-MESH_VERT_SRC_ES :: #string GLSL
+MESH_VERT_SRC_ES :: @string GLSL
 #version 300 es
 precision mediump float;
 layout(location = 0) in vec3 aPos;
@@ -867,7 +867,7 @@ void main() {
 }
 GLSL;
 
-MESH_FRAG_SRC_ES :: #string GLSL
+MESH_FRAG_SRC_ES :: @string GLSL
 #version 300 es
 precision mediump float;
 in vec3 vNormal;
@@ -884,7 +884,7 @@ void main() {
 }
 GLSL;
 
-MESH_MSL_SRC :: #string MSL
+MESH_MSL_SRC :: @string MSL
 #include <metal_stdlib>
 using namespace metal;
 
@@ -929,7 +929,7 @@ MSL;
 // `vec4(position, 1.0)`, the normal against the row's xyz alone so the
 // translation does not reach it.
 
-SKINNED_VERT_SRC_ES :: #string GLSL
+SKINNED_VERT_SRC_ES :: @string GLSL
 #version 300 es
 precision mediump float;
 layout(location = 0) in vec3 aPos;
@@ -966,7 +966,7 @@ void main() {
 }
 GLSL;
 
-SKINNED_FRAG_SRC_ES :: #string GLSL
+SKINNED_FRAG_SRC_ES :: @string GLSL
 #version 300 es
 precision mediump float;
 in vec3 vNormal;
@@ -983,7 +983,7 @@ void main() {
 }
 GLSL;
 
-SKINNED_MSL_SRC :: #string MSL
+SKINNED_MSL_SRC :: @string MSL
 #include <metal_stdlib>
 using namespace metal;
 

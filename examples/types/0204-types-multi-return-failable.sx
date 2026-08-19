@@ -7,7 +7,7 @@
 // Consume it like any failable: `catch` / `or` / a guarded destructure or
 // single bind. The error rides the SEPARATE `!` channel — a bound result holds
 // only the VALUE slots, never the error (so `c.doubled` / `c.big`, no `c.err`).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 CheckErr :: error { Negative }
 

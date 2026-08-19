@@ -52,8 +52,8 @@ error: the allocator argument of an owning erasure must be an LVALUE naming an a
 48 |     d := w.(Sizable, mk_gpa()); // allocator argument must be an lvalue
    |                      ^^^^^^^^
 
-error: '.(IdP, alloc)' on an '#identity' protocol — identity erasure is a borrow and allocates nothing; write '.(IdP)'
+error: '.(IdP, alloc)' on an '@identity' protocol — identity erasure is a borrow and allocates nothing; write '.(IdP)'
   --> examples/diagnostics/1256-diagnostics-ownership-demand.sx:50:10
    |
-50 |     e := w.(IdP, context.allocator); // .(P, alloc) on #identity → refusal
+50 |     e := w.(IdP, context.allocator); // .(P, alloc) on @identity → refusal
    |          ^^^^^^^^^^^^^^^^^^^^^^^^^^

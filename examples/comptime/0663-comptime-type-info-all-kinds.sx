@@ -2,8 +2,8 @@
 // kind reflects into its TypeInfo variant, not just enum/
 // struct/tuple. Also pins StructField.offset (from the same layout
 // walk the field accessors use) and the union arm (arms overlay at 0).
-#import "modules/std.sx";
-meta :: #import "modules/std/meta.sx";
+@import "modules/std.sx";
+meta :: @import "modules/std/meta.sx";
 
 Padded  :: struct { a: u8; b: i64; c: u16; }
 Overlay :: union { as_int: i64; as_bytes: [8]u8; }

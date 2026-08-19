@@ -3,7 +3,7 @@
 // `Set<Type>Field` family at lowering; the colon between name and type is the
 // field-decl indicator (vs the `::` of a method).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: @JniClass("android/graphics/Point") extern {
     x: i32;

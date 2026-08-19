@@ -10,8 +10,8 @@
 // and dep's `Pair` to a single nominal — `p.m` resolves against whichever
 // author holds the global slot, with no diagnostic to catch it.
 
-#import "modules/std.sx";
-#import "0798-modules-same-name-union-own-wins/dep.sx";
+@import "modules/std.sx";
+@import "0798-modules-same-name-union-own-wins/dep.sx";
 
 Pair :: union { m: i32; }
 

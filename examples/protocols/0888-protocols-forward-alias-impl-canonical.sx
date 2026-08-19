@@ -1,7 +1,7 @@
 // An impl may name a protocol through an alias declared later. Registration is
 // retried after the alias fixpoint and keyed by the canonical protocol.
 
-P :: protocol vtable #identity {
+P :: protocol vtable @identity {
     value :: (self: *Self) -> i64;
 }
 

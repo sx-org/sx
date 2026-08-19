@@ -3,7 +3,7 @@
 // returns null → the `.unresolved` sentinel, and the binding's lowering bails on
 // it, so the downstream element store, read and `.len` add no cascade errors and
 // no fabricated length.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 get :: () -> i64 { return 5; }
 

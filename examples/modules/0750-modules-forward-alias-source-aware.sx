@@ -12,12 +12,12 @@
 // under `u64` and would truncate to 44 under `u8`.
 // The direct reference `b : B` already resolves source-aware via the nominal
 // leaf, so it pins the same `u64` for contrast.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 A :: B;
 B :: u64;
 
-ns :: #import "0750-modules-forward-alias-source-aware/dep.sx";
+ns :: @import "0750-modules-forward-alias-source-aware/dep.sx";
 
 main :: () -> i32 {
     n : i64 = 300;

@@ -4,9 +4,9 @@
 // Helvetica collection and pins INVARIANTS only (font versions vary
 // across macOS releases): init succeeds, the pixel-height scale is
 // positive, the ascender is positive and the descender negative.
-#import "modules/std.sx";
-fs :: #import "modules/std/fs.sx";
-tt :: #import "vendors/stb_truetype/stb_truetype.sx";
+@import "modules/std.sx";
+fs :: @import "modules/std/fs.sx";
+tt :: @import "vendors/stb_truetype/stb_truetype.sx";
 
 main :: () -> i32 {
     data := fs.read_file("/System/Library/Fonts/Helvetica.ttc");

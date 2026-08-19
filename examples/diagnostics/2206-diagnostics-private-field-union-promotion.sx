@@ -2,7 +2,7 @@
 // answers to the payload's declaring file — on both union kinds, read and
 // write.
 
-um :: #import "2206-diagnostics-private-field-union-promotion/u.sx";
+um :: @import "2206-diagnostics-private-field-union-promotion/u.sx";
 
 main :: () -> i32 {
     a : um.U = ---;

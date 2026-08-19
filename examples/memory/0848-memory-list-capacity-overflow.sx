@@ -2,7 +2,7 @@
 // `grow_to` aborts instead of multiplying into a wrapped allocation size.
 //
 // aborts (exit 134) after the message — macOS-pinned.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     xs : List(i64) = .{};

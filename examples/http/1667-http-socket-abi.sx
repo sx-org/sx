@@ -7,8 +7,8 @@
 //
 // Imports ONLY socket.sx (libc-only) — no std barrel — so this stays a small,
 // focused run test (mirror of event/1633's self-contained import).
-socket :: #import "modules/std/socket.sx";
-posix   :: #import "modules/std/posix.sx";
+socket :: @import "modules/std/socket.sx";
+posix   :: @import "modules/std/posix.sx";
 
 main :: () -> i32 {
     // sockaddr_in is 16 bytes on both BSD and linux; only the first two bytes'

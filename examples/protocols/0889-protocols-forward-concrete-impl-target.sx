@@ -1,7 +1,7 @@
 // A concrete impl may precede its target type declaration. Registration must
 // wait for the target's nominal TypeId instead of committing name-only state.
 
-P :: protocol vtable #identity {
+P :: protocol vtable @identity {
     value :: (self: *Self) -> i64;
 }
 

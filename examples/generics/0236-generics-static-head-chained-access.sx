@@ -2,7 +2,7 @@
 // `Box(i64).make(1).v` reads a field of the result and `.get()` calls a method
 // on it, with no intermediate binding.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct ($T: Type) {
     v: T;

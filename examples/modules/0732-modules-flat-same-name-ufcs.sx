@@ -3,9 +3,9 @@
 // via free-function UFCS — `v.bump()` lowers to `bump(v)`. The dispatched
 // author is the RESOLVED one for the receiver's source (own-author wins), not
 // the first-wins winner. Per-source free-function UFCS dispatch.
-#import "modules/std.sx";
-#import "0732-modules-flat-same-name-ufcs/a.sx";
-#import "0732-modules-flat-same-name-ufcs/b.sx";
+@import "modules/std.sx";
+@import "0732-modules-flat-same-name-ufcs/a.sx";
+@import "0732-modules-flat-same-name-ufcs/b.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

@@ -3,8 +3,8 @@
 // implementation compiles through the object cache. Decodes a 2x2
 // 24-bit BMP built in memory — fully deterministic: dimensions,
 // channel count, and the top-left pixel (blue) are pinned.
-#import "modules/std.sx";
-stb :: #import "vendors/stb_image/stb_image.sx";
+@import "modules/std.sx";
+stb :: @import "vendors/stb_image/stb_image.sx";
 
 main :: () -> i32 {
     // BITMAPFILEHEADER (14) + BITMAPINFOHEADER (40) + 2 rows of

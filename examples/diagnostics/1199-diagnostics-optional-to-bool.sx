@@ -5,7 +5,7 @@
 // admit `?i64 → bool`, whose payload is not itself a bool. The `if opt {}` presence
 // test is a separate path.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 takes_bool :: (b: bool) { if b { print("true\n"); } else { print("false\n"); } }
 

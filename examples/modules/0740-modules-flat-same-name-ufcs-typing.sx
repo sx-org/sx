@@ -4,9 +4,9 @@
 // authors its OWN `tag -> i64`. In b.sx, `v.tag()` dispatches b.tag (i64), and
 // `CallResolver.plan` selects the SAME author the lowering call-path binds, so
 // plan-typing and dispatch cannot disagree.
-#import "modules/std.sx";
-#import "0740-modules-flat-same-name-ufcs-typing/a.sx";
-#import "0740-modules-flat-same-name-ufcs-typing/b.sx";
+@import "modules/std.sx";
+@import "0740-modules-flat-same-name-ufcs-typing/a.sx";
+@import "0740-modules-flat-same-name-ufcs-typing/b.sx";
 
 main :: () -> i32 {
     show_a();   // a-side: own == winner → string, byte-for-byte unchanged

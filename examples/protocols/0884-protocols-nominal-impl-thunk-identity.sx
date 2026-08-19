@@ -2,9 +2,9 @@
 // concrete nominal TypeId, so same-display-name structs dispatch independently:
 // each `Thing` impl gets its own `Thing.value` body and thunk.
 
-#import "0884-protocols-nominal-impl-thunk-identity/contract.sx";
-a :: #import "0884-protocols-nominal-impl-thunk-identity/a.sx";
-b :: #import "0884-protocols-nominal-impl-thunk-identity/b.sx";
+@import "0884-protocols-nominal-impl-thunk-identity/contract.sx";
+a :: @import "0884-protocols-nominal-impl-thunk-identity/a.sx";
+b :: @import "0884-protocols-nominal-impl-thunk-identity/b.sx";
 
 main :: () -> i32 {
     av := a.make();

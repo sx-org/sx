@@ -3,8 +3,8 @@
 // trips `verifySizes` at codegen. `make_enum` (declare/define) with an all-void
 // variant list produces an ordinary enum, usable like a hand-written one.
 
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 make_suit :: () -> Type {
     return make_enum("Suit", .[

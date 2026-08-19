@@ -3,7 +3,7 @@
 // monomorphises `convert` for the (Source, Target) pair and emits a
 // direct call — no vtable, identical to a hand-written call.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 MyString :: struct { tag: i64 = 0; }
 

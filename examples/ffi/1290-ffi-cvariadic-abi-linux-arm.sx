@@ -6,7 +6,7 @@
 // compile. The import is core-only — `modules/std.sx` carries no clock or errno
 // values for every target here, and none of the shapes below need it.
 
-#import "modules/std/core.sx";
+@import "modules/std/core.sx";
 
 sum_ints :: (n: i32, ..) -> i64 abi(.c) {
     ap: @VaList = ---;

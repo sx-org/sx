@@ -4,8 +4,8 @@
 // The companion module is
 // examples/modules/0708-modules-xx-any-pack-cross-module/fmt.sx.
 
-#import "modules/std.sx";
-#import "0708-modules-xx-any-pack-cross-module/fmt.sx";
+@import "modules/std.sx";
+@import "0708-modules-xx-any-pack-cross-module/fmt.sx";
 
 main :: () -> i32 {
     print("{}", build(3));

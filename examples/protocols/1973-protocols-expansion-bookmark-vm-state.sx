@@ -12,7 +12,7 @@
 // (`n` 2 raised to 5, doubled by the impl, plus the depth 3), 7 would be state
 // lost across the park, and 19 would be the pre-park mutation running a second
 // time.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Draw :: protocol vtable { draw :: (self: *Self) -> i64; }
 
@@ -29,9 +29,9 @@ probe :: () -> i64 {
 SUM :: @run probe();
 
 inline if POINTER_SIZE == 8 {
-    #context_extend depth: i64 = 3;
+    @context_extend depth: i64 = 3;
 } else {
-    #context_extend depth: i64 = 9;
+    @context_extend depth: i64 = 9;
 }
 
 main :: () {

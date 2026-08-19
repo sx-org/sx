@@ -2,7 +2,7 @@
 // at compile time. `shr` is an arithmetic right shift (sign-extending) over an
 // i64 model; the shift amount clamps to 63.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 AND :: 0b1100 & 0b1010; // 0b1000 = 8
 OR  :: 0b1100 | 0b1010; // 0b1110 = 14

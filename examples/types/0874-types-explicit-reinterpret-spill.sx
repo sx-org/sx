@@ -1,6 +1,6 @@
 // Same-size aggregate pun: a string and `@Slice` are the same two words.
 // Aggregate↔scalar reinterpret is a hard error (no spill).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     s := "hi";

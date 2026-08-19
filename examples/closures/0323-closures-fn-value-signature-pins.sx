@@ -6,7 +6,7 @@
 //
 // `one` has a defaulted parameter: the default fills in at a DIRECT call,
 // while the value still occupies a `(i64) -> i64` slot.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 one :: (x: i64 = 5) -> i64 { return x; }
 twice :: (x: i64) -> i64 { return x * 2; }

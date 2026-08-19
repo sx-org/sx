@@ -12,9 +12,9 @@
 // selects ns's author. The qualifier is honoured — the head is not stripped to
 // its bare name and read from the global `struct_template_map`.
 
-#import "modules/std.sx";
-a :: #import "0772-modules-qualified-generic-head-author/a.sx";
-b :: #import "0772-modules-qualified-generic-head-author/b.sx";
+@import "modules/std.sx";
+a :: @import "0772-modules-qualified-generic-head-author/a.sx";
+b :: @import "0772-modules-qualified-generic-head-author/b.sx";
 
 main :: () -> i32 {
     pa : a.Box(i64) = .{ x = 1 };

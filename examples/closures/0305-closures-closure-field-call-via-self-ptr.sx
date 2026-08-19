@@ -2,7 +2,7 @@
 // method whose receiver is `*Self`. The field access must auto-deref
 // the pointer before extracting the closure value.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Holder :: struct {
     cb: Closure() = ---;

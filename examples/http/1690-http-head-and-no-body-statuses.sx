@@ -20,10 +20,10 @@
 // 204 → same; HEAD of a streamed response → Transfer-Encoding: chunked
 // head only, producer never invoked, no terminator; pooled HEAD → CL 11,
 // no body; GPA net-zero after close.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
-libc :: #library "c";
+libc :: @library "c";
 usleep :: (usec: i64) -> i32 extern libc;   // the /hang route's worker stall
 
 PORT_A :: 19002;

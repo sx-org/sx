@@ -2,7 +2,7 @@
 // passed into another function — verifies the boxed payload survives an
 // extra call frame between erasure and dispatch.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Sizable :: protocol vtable {
     size :: (self: *Self) -> i64;

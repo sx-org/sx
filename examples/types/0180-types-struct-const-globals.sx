@@ -4,7 +4,7 @@
 // all serialize. The const is addressable (`@LIT`) and copies stay
 // independent.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Color :: struct { r, g, b: i64; }
 K :: 10;

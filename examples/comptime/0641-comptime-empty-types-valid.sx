@@ -12,8 +12,8 @@
 // The one rejection on this path is a bare `declare("X")` never completed by a
 // matching `define` — an INCOMPLETE forward slot that would panic codegen.
 // examples/diagnostics/1179 pins it.
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 // Explicitly-defined empty types of every kind.
 EmptyStruct :: define(declare("EmptyStruct"), .struct(.{ fields = .[] }));

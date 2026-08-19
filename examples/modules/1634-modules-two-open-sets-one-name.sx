@@ -8,10 +8,10 @@
 // And a declaration reached twice is still one set: this program reaches `alpha`'s
 // set both directly through its components and again through a second module of
 // its own, and what it measures is one layout, not two registrations.
-#import "modules/std.sx";
-a :: #import "1634-modules-two-open-sets-one-name/alpha/components.sx";
-a_mid :: #import "1634-modules-two-open-sets-one-name/alpha/mid.sx";
-b :: #import "1634-modules-two-open-sets-one-name/beta/components.sx";
+@import "modules/std.sx";
+a :: @import "1634-modules-two-open-sets-one-name/alpha/components.sx";
+a_mid :: @import "1634-modules-two-open-sets-one-name/alpha/mid.sx";
+b :: @import "1634-modules-two-open-sets-one-name/beta/components.sx";
 
 main :: () -> i32 {
     // Each package forms and dispatches its own — through a membership bound, and

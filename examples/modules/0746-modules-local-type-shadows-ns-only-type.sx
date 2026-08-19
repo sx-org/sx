@@ -4,7 +4,7 @@
 // block-local `Secret`. The local must resolve to ITS fields (a legitimately-
 // scoped local is never a namespaced-only leak), not be rejected by the bare-TYPE
 // visibility gate just because the namespaced import shares the name.
-dep :: #import "0746-modules-local-type-shadows-ns-only-type/dep.sx";
+dep :: @import "0746-modules-local-type-shadows-ns-only-type/dep.sx";
 
 main :: () -> i32 {
     Secret :: struct { z: i32; }

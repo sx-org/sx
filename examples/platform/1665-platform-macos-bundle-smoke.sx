@@ -6,7 +6,7 @@
 // the `.app` structure (`Contents/MacOS`, `Info.plist`, `_CodeSignature`) and then
 // cleans it up. macOS-host ONLY — the directive skips the example on other hosts.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 configure :: () {
     opts := build_options();

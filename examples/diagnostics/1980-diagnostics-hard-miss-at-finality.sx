@@ -2,7 +2,7 @@
 // operation — a dispatch, an unconsumed conversion, an erasure — takes the
 // ordinary diagnostic at the operation's own site, where the soft probe of
 // 1979 answers `null`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Mark :: protocol vtable { tag :: (self: *Self) -> i64; }
 Show :: protocol vtable { fmt :: (self: *Self) -> i64; }

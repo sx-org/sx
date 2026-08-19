@@ -124,19 +124,18 @@ pub const Tag = enum(u8) {
     // Directives
     at_run, // @run — compile-time evaluation prefix
     at_insert, // @insert — splice a compile-time string as sx
-    hash_error, // unused; `@error` is the compile-time diagnostic
-    hash_import, // #import
-    hash_library, // #library
-    hash_framework, // #framework
-    hash_using, // #using
-    hash_include, // #include (inside #import c { ... })
-    hash_source, // #source (inside #import c { ... })
-    hash_define, // #define (inside #import c { ... })
-    hash_flags, // #flags (inside #import c { ... })
-    hash_identity, // #identity (protocol ownership-class marker: borrow-only values)
-    hash_get, // `name :: (self) -> R #get => expr;` — a no-paren property accessor method (read via field syntax)
-    hash_set, // `name :: (self, value) #set { ... }` — the write counterpart of #get (`obj.name = rhs` dispatches here)
-    hash_context_extend, // `#context_extend name: Type = default;` — top-level Context field declaration
+    at_import, // @import
+    at_library, // @library
+    at_framework, // @framework
+    at_using, // @using
+    at_include, // @include (inside @import c { ... })
+    at_source, // @source (inside @import c { ... })
+    at_define, // @define (inside @import c { ... })
+    at_flags, // @flags (inside @import c { ... })
+    at_identity, // @identity (protocol ownership-class marker: borrow-only values)
+    at_get, // `name :: (self) -> R @get => expr;` — a no-paren property accessor method (read via field syntax)
+    at_set, // `name :: (self, value) @set { ... }` — the write counterpart of @get (`obj.name = rhs` dispatches here)
+    at_context_extend, // `@context_extend name: Type = default;` — top-level Context field declaration
     triple_minus, // ---
     minus_minus,
 
@@ -277,20 +276,19 @@ pub const Tag = enum(u8) {
             .kw_private,
             => .keyword,
             .at_run,
-            .hash_error,
-            .hash_import,
+            .at_import,
             .at_insert,
-            .hash_library,
-            .hash_framework,
-            .hash_using,
-            .hash_include,
-            .hash_source,
-            .hash_define,
-            .hash_flags,
-            .hash_identity,
-            .hash_get,
-            .hash_set,
-            .hash_context_extend,
+            .at_library,
+            .at_framework,
+            .at_using,
+            .at_include,
+            .at_source,
+            .at_define,
+            .at_flags,
+            .at_identity,
+            .at_get,
+            .at_set,
+            .at_context_extend,
             => .directive,
             .plus,
             .minus,
@@ -467,20 +465,19 @@ pub const Tag = enum(u8) {
             .arrow,
             .fat_arrow,
             .at_run,
-            .hash_error,
-            .hash_import,
+            .at_import,
             .at_insert,
-            .hash_library,
-            .hash_framework,
-            .hash_using,
-            .hash_include,
-            .hash_source,
-            .hash_define,
-            .hash_flags,
-            .hash_identity,
-            .hash_get,
-            .hash_set,
-            .hash_context_extend,
+            .at_library,
+            .at_framework,
+            .at_using,
+            .at_include,
+            .at_source,
+            .at_define,
+            .at_flags,
+            .at_identity,
+            .at_get,
+            .at_set,
+            .at_context_extend,
             .triple_minus,
             .minus_minus,
             .eof,

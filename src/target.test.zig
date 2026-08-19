@@ -16,7 +16,7 @@ test "optimization levels select matching LLVM and Clang pipelines" {
 
 test "a native Linux build compiles C imports against the libc it links" {
     // No `--target`: the shape `sx build` takes on a native Linux host, where
-    // the zig backend links a synthesized musl triple. The `#import c` headers
+    // the zig backend links a synthesized musl triple. The `@import c` headers
     // must be musl too — glibc's LFS redirects reference open64/stat64/…,
     // which musl does not define.
     const a = std.testing.allocator;

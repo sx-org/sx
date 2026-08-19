@@ -18,7 +18,7 @@ cb :: (n: i64) -> i64 export "cb" {
 // register (x30) around the `bl` — it was itself reached via `bl`, so the return
 // address must survive the nested call.
 asm {
-    #string ASM
+    @string ASM
 .global _caller
 _caller:
     stp x29, x30, [sp, #-16]!

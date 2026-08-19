@@ -6,8 +6,8 @@
 //
 // Round-trip: `ShapeCopy` is reconstructed purely from `type_info(Shape)` — no
 // literal variant list — and constructs/matches like the original.
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 Shape :: enum {
     circle: f64;

@@ -2,7 +2,7 @@
 // declaration site in every declaration form: a parameter name (`u8`), a typed
 // local (`i64`, `bool`), and a `:=` local (`string`). Such a spelling parses as
 // a `.type_expr` rather than an `.identifier`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 takes_u8 :: (u8: i32) -> i32 { return u8; }
 

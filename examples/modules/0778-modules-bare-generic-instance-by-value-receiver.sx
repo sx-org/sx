@@ -7,8 +7,8 @@
 // The dispatched body's author must be the same author whose layout the
 // receiver has, so `b.Box{x}.dbl()` runs `b.Box.dbl` (`self.x * 2`).
 
-#import "modules/std.sx";
-#import "0778-modules-bare-generic-instance-by-value-receiver/b.sx";
+@import "modules/std.sx";
+@import "0778-modules-bare-generic-instance-by-value-receiver/b.sx";
 
 main :: () -> i32 {
     x := Box(i64).make(5);

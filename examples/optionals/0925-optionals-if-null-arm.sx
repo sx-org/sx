@@ -5,7 +5,7 @@
 // `match` alike, including a match whose value arms are ALL `null` (all-null,
 // or null + diverging arms).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: enum { A; B; }
 

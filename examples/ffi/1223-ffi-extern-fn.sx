@@ -3,7 +3,7 @@
 // C ABI + no sx ctx; the symbol resolves against the default-linked libc at
 // link time. The sx name `abs` IS the C symbol; `extern LIB "csym"` is the
 // rename form.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 abs :: (n: i32) -> i32 extern;
 

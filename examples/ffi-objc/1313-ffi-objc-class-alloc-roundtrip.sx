@@ -13,9 +13,9 @@
 // The full lifecycle — sx-side `SxFoo.alloc().init()` plus method
 // calls — needs `-dealloc` and an open dispatch gate.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 class_getInstanceVariable :: (cls: *void, name: [*]u8) -> *void extern objc;
 

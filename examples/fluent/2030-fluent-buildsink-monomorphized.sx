@@ -14,10 +14,10 @@
 //
 // There is no compiler-global "current sink" either: `run` takes the sink
 // explicitly, so the same block observed twice is just two ordinary calls.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
 
-Drawable :: protocol vtable #identity {
+Drawable :: protocol vtable @identity {
     draw :: (self: *Self) -> string;
 }
 

@@ -17,7 +17,7 @@
 // "ok" iff every comptime-baked checksum equals the runtime-recomputed
 // one. Failure prints which width diverged.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 SENTINEL :u8: 0xAA;       // 170 — neighbor pattern
 BUF_SIZE :i64: 32;

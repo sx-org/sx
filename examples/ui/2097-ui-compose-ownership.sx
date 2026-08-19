@@ -14,11 +14,11 @@
 // text), CommittedUiSnapshot (scene, hit list, focus list), UiRoot (all of
 // those plus its two frame arenas), FrameLoop (the builder closure's
 // environment). FocusRouter holds nothing, so it takes no allocator.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "examples/ui/compose.sx";
-#import "modules/ui/input.sx";
-ui :: #import "modules/ui/types.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "examples/ui/compose.sx";
+@import "modules/ui/input.sx";
+ui :: @import "modules/ui/types.sx";
 
 at :: (x: f32, y: f32) -> Point => .{ x = x, y = y };
 down :: (x: f32, y: f32) -> InputEvent => .pointer_down(.{ pointer = .{ value = 1 }, position = at(x, y) });

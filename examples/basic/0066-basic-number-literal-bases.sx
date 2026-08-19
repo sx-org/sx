@@ -6,7 +6,7 @@
 // `0xNNNN` and `1_000` == `1000`. Separators are permissive: repeated (`1__0`)
 // and trailing (`1000_`) underscores are accepted and stripped.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Generic value-param struct: its `$K` argument is parsed by the type-arg
 // literal parser (parser.zig ~801), a path distinct from the main expression

@@ -12,8 +12,8 @@
 // inside a comptime context (`@run` / `@insert`). The test
 // runs `walk(42, "hi")` at `@run` time and prints the result.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 walk :: (..$args) -> string {
     list := $args;

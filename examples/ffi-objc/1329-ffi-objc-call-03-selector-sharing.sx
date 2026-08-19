@@ -9,8 +9,8 @@
 // a static `@OBJC_SELECTOR_REFERENCES_<sel>` global and loads at
 // the call sites.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 main :: () -> i32 {
     inline if OS == .macos {

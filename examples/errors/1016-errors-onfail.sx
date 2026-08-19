@@ -5,7 +5,7 @@
 // declaration order. `onfail |e| { … }` binds the in-flight error tag.
 // (Per-attempt-`try` gating and `or`-chain absorption are covered in 1028.)
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad }
 

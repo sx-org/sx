@@ -1,6 +1,6 @@
 // Only the three kind words may stand in the kind slot; anything else is a
 // parse error naming them (the body's `{` is the only other legal token).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Ord :: protocol erased {
     less :: (self: *Self, other: Self) -> bool;

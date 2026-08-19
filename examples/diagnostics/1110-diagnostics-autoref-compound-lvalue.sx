@@ -3,7 +3,7 @@
 // mutates the field itself. Plain locals (`bump(x)`) and compound lvalues
 // auto-ref alike.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 S :: struct { v: i32; }
 W :: struct { s: S; }

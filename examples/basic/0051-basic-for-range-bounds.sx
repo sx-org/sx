@@ -5,7 +5,7 @@
 // stops at the range token), and that `<` / `<<` comparisons still lex
 // normally.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     for i in 0<..<5 { print("{} ", i); }

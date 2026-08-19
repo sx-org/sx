@@ -1,7 +1,7 @@
 // A globally unique type two flat-import hops away
 // cannot be revived by using it as the head of a bare static-method call.
 
-#import "0906-modules-unique-hidden-static-not-visible/bridge.sx";
+@import "0906-modules-unique-hidden-static-not-visible/bridge.sx";
 
 main :: () -> i32 {
     value := Hidden.make();

@@ -4,8 +4,8 @@
 // abi(.c) fn-pointer idiom); float-pair HFAs (CGSize shape) stay
 // register-class aggregates. The mixed case pins slot bookkeeping with
 // scalars around the byval arg.
-#import "modules/std.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
 
 ProbeRegion :: struct { a: u64; b: u64; c: u64; d: u64; e: u64; f: u64; }
 ProbeSize   :: struct { w: f64; h: f64; }

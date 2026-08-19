@@ -7,11 +7,11 @@
 //
 // What stays the package's own is the set and the collection style:
 // `compose.View` is this package's set, and a container still TAKES the block.
-#import "modules/std.sx";
-#import "examples/ui/compose.sx";
+@import "modules/std.sx";
+@import "examples/ui/compose.sx";
 
-ui :: #import "modules/ui/types.sx";
-foundation :: #import "modules/ui/render.sx";
+ui :: @import "modules/ui/types.sx";
+foundation :: @import "modules/ui/render.sx";
 
 // A reader written in the foundation's terms, which never mentions compose.
 count_text :: (tree: *foundation.RenderTree) -> i64 {

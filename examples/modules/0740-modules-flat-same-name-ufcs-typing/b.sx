@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 // b.sx authors its OWN `tag` returning i64. `show_b`'s `v.tag()` is both
 // dispatched AND typed as b.tag (i64 = 110), not the first-wins winner from a.sx
 // (string). `print` types each arg from the call plan, so the two must agree.

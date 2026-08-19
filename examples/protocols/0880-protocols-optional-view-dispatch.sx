@@ -5,7 +5,7 @@
 // Both the direct field call and the unwrap-bind spelling work: the
 // optional-receiver dispatch arm reaches a protocol through a pointer child,
 // not only a protocol child.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 P :: protocol vtable {
     n :: (self: *Self) -> i32;

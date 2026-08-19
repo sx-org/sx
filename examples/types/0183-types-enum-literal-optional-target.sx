@@ -1,6 +1,6 @@
 // Enum literals flowing into OPTIONAL destinations resolve against the
 // optional's CHILD type and wrap.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Platform :: enum u8 { ios; android_apk; macos; linux; windows; }
 

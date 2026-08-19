@@ -3,7 +3,7 @@
 // assignment, and a bare scalar const. A local that shadows the const name stays
 // writable (0177/0178 carry the value semantics).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Color :: struct { r, g, b: i64; }
 WHITE :: Color{ r = 255, g = 255, b = 255 };

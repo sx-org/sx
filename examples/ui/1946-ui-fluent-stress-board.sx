@@ -4,14 +4,14 @@
 // built the fluent way: a container is an ordinary value whose child list is an
 // explicit field initializer over `collectViews()`, so interception happens only
 // inside that named block.
-#import "modules/std.sx";
-#import "modules/ui/fluent/geometry.sx";
-#import "modules/ui/fluent/render.sx";
-#import "modules/ui/fluent/view.sx";
-#import "modules/ui/fluent/components.sx";
-#import "modules/ui/fluent/containers.sx";
-#import "modules/ui/fluent/runtime.sx";
-#import "modules/ui/fluent/storage.sx";
+@import "modules/std.sx";
+@import "modules/ui/fluent/geometry.sx";
+@import "modules/ui/fluent/render.sx";
+@import "modules/ui/fluent/view.sx";
+@import "modules/ui/fluent/components.sx";
+@import "modules/ui/fluent/containers.sx";
+@import "modules/ui/fluent/runtime.sx";
+@import "modules/ui/fluent/storage.sx";
 
 BoardViewState :: struct {
     cell_eids: [81]u64 = ---;

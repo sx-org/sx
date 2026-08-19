@@ -4,8 +4,8 @@
 // from the companion module) and declared locally below as an error set: the
 // signature, the body, and the call site all agree on the LOCAL error
 // set, so `f(error.Fault)` takes the `e == error.Fault` arm (r=1).
-#import "modules/std.sx";
-#import "1065-errors-shadowed-error-set-forward-ref/a.sx";
+@import "modules/std.sx";
+@import "1065-errors-shadowed-error-set-forward-ref/a.sx";
 f :: (e: E) -> i32 {
     if e == error.Fault { return 1; }
     return 0;

@@ -5,7 +5,7 @@
 //
 // A borrow is unaffected: a view (`*Show`) and an `#identity` handle are
 // pointers to storage the image already has.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol vtable {
     area :: (self: *Self) -> i64;

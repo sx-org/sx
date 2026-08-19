@@ -3,7 +3,7 @@
 // applies individually — call args, struct-literal fields, decl targets, and
 // returns. The point-free slot idiom (`opt_slot(toolbar)`,
 // `B{ on_tap = toolbar }`) behaves exactly like `opt_slot(|| toolbar())`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 toolbar :: () { print("toolbar\n"); }
 add1 :: (x: i64) -> i64 { x + 1 }

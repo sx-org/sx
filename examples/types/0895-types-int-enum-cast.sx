@@ -11,7 +11,7 @@
 // value-preserving: an integer outside the variant set converts to that
 // raw enum value (a flags enum makes such bit patterns legal anyway),
 // and `n.(?Zone)` is the plain optional wrap, always present.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Zone :: enum { floating; fill; center; top; }
 Small :: enum u8 { a; b; c; }

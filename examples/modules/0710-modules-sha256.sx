@@ -7,8 +7,8 @@
 // The digest is a zero-heap `[64]u8` returned by value; tests build a
 // `string` view over it (no copy) to compare against the pinned hex.
 
-#import "modules/std.sx";
-#import "modules/std/hash.sx";
+@import "modules/std.sx";
+@import "modules/std/hash.sx";
 
 check :: (label: string, got: [64]u8, want: string) {
     view := string{ ptr = *got[0], len = 64 };

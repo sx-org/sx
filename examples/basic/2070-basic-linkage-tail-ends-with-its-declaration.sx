@@ -1,7 +1,7 @@
 // Whitespace is syntax (specs §1), statement termination: `[LIB] ["csym"]`
 // after `extern` / `export` is two optional bare names, and the declaration's
 // `;` is what closes the tail.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Both slots left empty: the `;` closes the tail, and the name below belongs to
 // the declaration below.

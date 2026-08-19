@@ -21,11 +21,11 @@
 // on every alloc/dealloc — so a non-zero alloc_count at the end is a leak.
 // The atomic counter is what makes the pooled gate trustworthy: the loop
 // thread and worker threads bump it concurrently.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
-cstd :: #import "modules/std/c.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
+cstd :: @import "modules/std/c.sx";
 
-clib :: #library "c";
+clib :: @library "c";
 usleep :: (usec: i64) -> i32 extern clib;
 
 PORT :: 18970;

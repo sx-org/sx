@@ -36,7 +36,7 @@ shared across sx modules.
 `issues/0030-extern-global-declarations.sx`:
 
 ```sx
-#import "modules/std.sx";
+@import "modules/std.sx";
 extern g_x : *void;          // want: a reference to a global defined elsewhere
 main :: () -> i32 { 0; }
 ```

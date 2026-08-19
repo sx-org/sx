@@ -1,6 +1,6 @@
 // An unknown name in a capture annotation is reported as an unknown type.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: struct { w: i64; }
 

@@ -4,9 +4,9 @@
 // `*void` source carries no type identity, so neither is a §5.5 view built
 // over a value of some conformer type — the handle is written into the
 // storage afterwards, and dispatch goes through the stored handle.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-Shape :: protocol vtable #identity {
+Shape :: protocol vtable @identity {
     area :: (self: *Self) -> i64;
 }
 

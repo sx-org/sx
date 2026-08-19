@@ -27,4 +27,4 @@ main :: () -> void {
     print("lerp(0, 10, 0.25) = {}\n", result2);
 }
 
-#import "modules/std.sx";
+@import "modules/std.sx";

@@ -9,11 +9,11 @@
 // Layout is stateless: measuring, laying out and rendering walk the children the
 // same way, so a child gets the same frame in every pass without a stack holding
 // one.
-#import "modules/std.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/render.sx";
-#import "examples/ui/compose/view.sx";
-#import "examples/ui/compose/sink.sx";
+@import "modules/std.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
+@import "examples/ui/compose/view.sx";
+@import "examples/ui/compose/sink.sx";
 
 // A leaf with no surface: it holds a minimum along its stack's MAIN axis and
 // takes the slack that stack has left to give. The stack is what spends

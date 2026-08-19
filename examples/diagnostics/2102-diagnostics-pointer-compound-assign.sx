@@ -3,7 +3,7 @@
 // a pointer difference (a count, not an address) back into the pointer, are
 // rejected at compile time.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     ints : [4]i32 = .[1, 2, 3, 4];

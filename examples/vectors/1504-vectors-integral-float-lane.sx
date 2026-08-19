@@ -2,7 +2,7 @@
 // out the same `@Vector(4, f32)` as the literal `4`. The lane resolver shares the
 // const-int evaluator with the array-dim path, so the integral-float rule
 // applies uniformly.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 L : f64 : 4.0;
 

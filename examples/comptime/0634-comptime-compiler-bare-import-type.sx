@@ -2,8 +2,8 @@
 // reached through a BARE import: the minted `Suit` is in scope flat, with
 // qualified variant construction `Suit.spades`. Namespaced form is 0633.
 
-#import "modules/std.sx";
-#import "0633-comptime-compiler-namespaced-type/shapes.sx";
+@import "modules/std.sx";
+@import "0633-comptime-compiler-namespaced-type/shapes.sx";
 
 main :: () {
     x := Suit.spades;

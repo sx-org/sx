@@ -27,7 +27,7 @@
 //
 // aarch64-pinned (per-arch asm + 21-slot save area); runs end-to-end here,
 // ir-only on a mismatch.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // 21 slots: [0..9]=x19..x28 [10]=fp [11]=lr [12]=sp [13..20]=d8..d15.
 FiberCtx :: struct { regs: [21]u64; }
@@ -46,7 +46,7 @@ Fiber :: struct {
 // can reach it by symbol with `bl`.
 swap_context :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) export "swap_context" {
     asm volatile {
-        #string ASM
+        @string ASM
         stp x19, x20, [x0, #0]
         stp x21, x22, [x0, #16]
         stp x23, x24, [x0, #32]
@@ -86,7 +86,7 @@ ASM
 // sp+lr, so execution resumes right after the `bl` on the same frame.
 scribble_verify :: (self_ctx: *FiberCtx, peer: *FiberCtx, base: u64) -> i64 abi(.naked) export "scribble_verify" {
     asm volatile {
-        #string SV
+        @string SV
         sub sp, sp, #176
         stp x19, x20, [sp, #0]
         stp x21, x22, [sp, #16]
@@ -208,7 +208,7 @@ SV
 }
 
 asm {
-    #string T
+    @string T
 .global _fib_tramp
 _fib_tramp:
     mov x0, x19

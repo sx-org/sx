@@ -7,7 +7,7 @@
 // as `<Source>.<method>`, so UFCS — and thus `xs[i].get()` — resolves
 // them.)
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: protocol(T: Type) {
     get :: (self: *Self) -> T;

@@ -1,7 +1,7 @@
 // A match arm naming a variant the subject's enum/tagged-union does not have
 // reports `no variant 'X' on type 'Y'`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Shape :: enum {
     circle: f32;

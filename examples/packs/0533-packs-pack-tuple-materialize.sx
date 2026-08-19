@@ -3,7 +3,7 @@
 // collects the results into a real tuple value, which can then be stored,
 // indexed, and (for `Box(T)`) is heterogeneous per position.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: protocol(T: Type) {
     get :: (self: *Self) -> T;

@@ -11,9 +11,9 @@
 //
 // The source expression is an ordinary expression: calls inside it are typed and
 // converted by ordinary rules before the write decides anything.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-Named :: protocol vtable #identity { name :: (self: *Self) -> string; }
+Named :: protocol vtable @identity { name :: (self: *Self) -> string; }
 
 Round :: struct { s: string = "round"; }
 impl Named for Round { name :: (self: *Round) -> string => self.s; }

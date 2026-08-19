@@ -3,7 +3,7 @@
 // model — scope fns, slots, handlers, `place` writing through
 // `context.<field>` directly, and point-free `?Closure` slots
 // Stubbed View/Ui types; the pin is the SPELLING, end to end.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: struct { tag: string; }
 
@@ -12,7 +12,7 @@ Sink :: struct ($T: Type) {
     emit :: (self: *Sink(T), v: T) { self.items.append(v); }
 }
 
-#context_extend ui_sink: *Sink(View) = null;
+@context_extend ui_sink: *Sink(View) = null;
 
 place :: (v: View) -> View {
     if context.ui_sink != null { context.ui_sink.emit(v); }

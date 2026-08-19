@@ -11,7 +11,7 @@
 //     type for that argument. The method is still perfectly callable through a
 //     membership bound, where `Self` IS a type — which is why this cannot be a
 //     refusal at the member's declaration.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Nothing declares itself into this one.
 Empty :: @OpenSet(.{ max = 64 }) {

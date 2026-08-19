@@ -6,7 +6,7 @@
 //
 // The type-table interning produces `{ {i64,i1}, i1 }` for a genuine nested
 // optional, and the alias spelling reaches the same interned type.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Opt :: ?i64;
 

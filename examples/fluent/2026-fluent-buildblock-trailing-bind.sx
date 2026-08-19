@@ -10,8 +10,8 @@
 //
 // There is no overload resolution and no global reinterpretation of expression
 // statements: the declaration the call already selected decides.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
 
 Drawable :: protocol constraint {
     draw :: (self: *Self) -> string;

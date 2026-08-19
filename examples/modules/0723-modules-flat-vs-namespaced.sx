@@ -2,9 +2,9 @@
 // bare call `value()` binds the FLAT author (10); the namespaced author is
 // reached only through `nm.value()` (20). A namespaced author must NOT make the
 // bare call ambiguous — only flat authors collide.
-#import "modules/std.sx";
-#import "0723-modules-flat-vs-namespaced/flat.sx";
-nm :: #import "0723-modules-flat-vs-namespaced/named.sx";
+@import "modules/std.sx";
+@import "0723-modules-flat-vs-namespaced/flat.sx";
+nm :: @import "0723-modules-flat-vs-namespaced/named.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

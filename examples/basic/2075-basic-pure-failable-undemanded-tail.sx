@@ -11,7 +11,7 @@
 // golden pins the count, so a skipped or twice-lowered tail fails the file),
 // every success `catch` stays cold, and every kind has an error twin whose
 // `catch` observes the declared tag — "discard every tail" cannot pass here.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Failed :: error { Nope }
 

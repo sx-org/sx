@@ -4,7 +4,7 @@
 // of them carries an atomic ordering (volatile is not atomic; see
 // modules/std/core.sx).
 // The intrinsics resolve with no import, like `size_of`; `out` is what needs one.
-#import "modules/std/core.sx";
+@import "modules/std/core.sx";
 
 Point :: struct {
     x: i32;

@@ -5,7 +5,7 @@
 // Single-element `pack[i].(P, alloc)` erasure to a protocol scalar has its own path,
 // distinct from lowering the bare pack as a value.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 VL :: protocol(T: Type) vtable { get :: (self: *Self) -> T; }
 IntCell :: struct { v: i64; }

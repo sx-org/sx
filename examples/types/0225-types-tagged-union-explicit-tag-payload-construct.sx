@@ -10,7 +10,7 @@
 // All FOUR paths agree on the explicit tag encoding: call-shaped
 // construction, struct-literal construction, `match`, and the formatter.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 K :: struct { a: i64; b: i64; }
 

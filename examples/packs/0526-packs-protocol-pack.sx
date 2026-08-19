@@ -13,7 +13,7 @@
 // an error. This file locks the binding and the comptime `xs.len`; 0528 and
 // 0530 pin the interface access itself.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol(T: Type) {
     get :: (self: *Self) -> T;

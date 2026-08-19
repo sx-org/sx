@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 calls : i64 = 0;
 bump :: () -> i64 {

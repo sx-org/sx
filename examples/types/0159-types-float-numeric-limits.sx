@@ -22,7 +22,7 @@
 //
 // `f64.nan != f64.nan` is true — native float `!=`
 // lowers UNORDERED, so a NaN compares unequal to everything including itself.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // `bits` mirrors each float's raw IEEE-754 storage. f64 needs 64 bits, f32 32.
 // The f64 union's `bits` (u64) view reads the all-ones-ish positive patterns as

@@ -3,7 +3,7 @@
 // inside other type-arg slots — e.g. project a generic handle `*Box(A)` to its
 // payload type `A` via `struct_field_type(pointee_type(*Box(A)), 0)`. (Foundation for the
 // `race` result synthesis, which projects `*Task(A)` -> `A`.)
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct ($R: Type) { value: R; tag: i64; }
 

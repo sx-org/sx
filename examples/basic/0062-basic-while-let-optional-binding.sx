@@ -2,7 +2,7 @@
 // condition each iteration and binds the unwrapped payload `v` in the loop
 // body, looping while the expression is non-null (mirrors `if v := opt {}`).
 // Prints v=0 / v=1 / v=2.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 next3 :: (n: *i64) -> ?i64 {
     if n.* >= 3 { return null; }

@@ -1,6 +1,6 @@
 // `tagged` is not a protocol kind. It stands in the kind slot as an ordinary
 // unrecognized word, and the parse error names the kinds that exist.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: protocol tagged {
     area :: (self: *Self) -> i64;

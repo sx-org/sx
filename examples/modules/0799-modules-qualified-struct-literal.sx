@@ -10,7 +10,7 @@
 // an empty-fields struct literally named "m.Cfg", and emit invalid LLVM IR
 // (`call use({} ...)`) in both JIT and AOT.
 
-m :: #import "0799-modules-qualified-struct-literal/lib.sx";
+m :: @import "0799-modules-qualified-struct-literal/lib.sx";
 
 main :: () -> i32 {
     c := m.Cfg{ p = 1, q = 2 };   // qualified Type{} via := → resolves to m.Cfg

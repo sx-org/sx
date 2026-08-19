@@ -6,7 +6,7 @@
 // and the plan-side return type binds from the receiver (structured
 // params like `[]$T` included).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 bump  :: (x: i64) -> i64 { x + 1 }
 bump2 :: ufcs (x: i64) -> i64 { x + 2 }

@@ -1,8 +1,8 @@
-#import "modules/std.sx";
-#import "modules/math";
-#import "modules/build.sx";
-#import "modules/std/test.sx";
-pkg :: #import "tests/fixtures/testpkg";
+@import "modules/std.sx";
+@import "modules/math";
+@import "modules/build.sx";
+@import "modules/std/test.sx";
+pkg :: @import "tests/fixtures/testpkg";
 
 main :: () {
 

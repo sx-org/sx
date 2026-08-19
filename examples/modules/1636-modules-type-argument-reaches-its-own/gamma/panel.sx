@@ -1,6 +1,6 @@
 // The same two names again, in a module the program reaches under a namespace.
-#import "modules/std.sx";
-v :: #import "../view.sx";
+@import "modules/std.sx";
+v :: @import "../view.sx";
 
 Panel :: @OpenVariant(v.View) {
     tag: string = "gamma";

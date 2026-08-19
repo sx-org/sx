@@ -15,8 +15,8 @@
 // static aarch64-linux build under a Linux VM; Android's bionic path rides the
 // APK smoke build.
 
-clib  :: #import "modules/std/c.sx";     // namespace `clib` (not `c` — `c` is a local fd var throughout)
-posix :: #import "modules/std/posix.sx";
+clib  :: @import "modules/std/c.sx";     // namespace `clib` (not `c` — `c` is a local fd var throughout)
+posix :: @import "modules/std/posix.sx";
 libc  :: clib.libc;   // the socket-specific externs below bind through the shared libc handle
 // errno constants live in std/posix.sx — consumers reference `posix.EAGAIN` etc.
 // directly (a cross-module value-const can't be re-aliased at module scope).

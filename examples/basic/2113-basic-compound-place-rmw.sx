@@ -4,8 +4,8 @@
 // load, apply the operator and store back the same slot. The place is resolved
 // ONCE — `xs[bump()] += 5` calls `bump` a single time — and the RHS is
 // evaluated before the index expression.
-#import "modules/std.sx";
-lib :: #import "2113-basic-compound-place-rmw/lib.sx";
+@import "modules/std.sx";
+lib :: @import "2113-basic-compound-place-rmw/lib.sx";
 
 Point :: struct { x, y: i64; }
 

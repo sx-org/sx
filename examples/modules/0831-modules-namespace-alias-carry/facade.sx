@@ -1,1 +1,1 @@
-r :: #import "rich.sx";
+r :: @import "rich.sx";

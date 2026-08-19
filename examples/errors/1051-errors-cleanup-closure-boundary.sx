@@ -13,7 +13,7 @@
 // Also: `try` is legal inside the lambda (it propagates through the lambda's own
 // `!E` channel) even though it is parser-banned in the cleanup body directly.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad }
 

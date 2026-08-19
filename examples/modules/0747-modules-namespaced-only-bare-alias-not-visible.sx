@@ -6,7 +6,7 @@
 // reachable ONLY as `dep.Secret`. A BARE `Secret` in a type position does NOT
 // resolve: bare-TYPE visibility joins over the FLAT import edges, and a namespaced
 // alias is not a flat edge.
-dep :: #import "0747-modules-namespaced-only-bare-alias-not-visible/dep.sx";
+dep :: @import "0747-modules-namespaced-only-bare-alias-not-visible/dep.sx";
 
 main :: () -> i32 {
     x : Secret = 7;

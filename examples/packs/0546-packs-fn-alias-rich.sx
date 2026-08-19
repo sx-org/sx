@@ -1,5 +1,5 @@
 // Companion of 0546: the authoring module for the fn-alias re-exports.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 helper :: () -> i64 { 7 }
 first_of :: (xs: []$T) -> T { xs[0] }

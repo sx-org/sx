@@ -4,7 +4,7 @@
 // (here `string`), so the 4-byte int is not forced through
 // `__pack_string`'s 16-byte fat-pointer ABI.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 build :: (n: i32) -> string {
     result := "items:\n";

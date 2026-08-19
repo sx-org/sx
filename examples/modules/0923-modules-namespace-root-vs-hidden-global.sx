@@ -4,9 +4,9 @@
 // the global keeps using it as a value.
 // An unrelated non-visible global must not suppress a valid
 // namespace root.
-#import "modules/std.sx";
-g :: #import "0923-modules-namespace-root-vs-hidden-global/mid.sx";
-util :: #import "0923-modules-namespace-root-vs-hidden-global/util_mod.sx";
+@import "modules/std.sx";
+g :: @import "0923-modules-namespace-root-vs-hidden-global/mid.sx";
+util :: @import "0923-modules-namespace-root-vs-hidden-global/util_mod.sx";
 
 main :: () -> i32 {
     if util.helper() != 33 { return 1; }

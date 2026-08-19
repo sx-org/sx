@@ -4,7 +4,7 @@
 // methods, ambiguous overloads, JNI internals). It trails the method's return
 // type, before the terminating `;`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Foo :: @JniClass("com/example/Foo") extern {
     weirdMethod :: (self: *Self) -> i32 @JniMethod(descriptor = "()I");

@@ -4,7 +4,7 @@
 // `inline match T` fold, where the category selects `free`'s closure
 // arm. The same category classifies in the type-category match on a
 // runtime `Type` value. Category arms are tag SETS and bind no `|v|`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 describe :: (av: any) -> string {
     match av {

@@ -6,7 +6,7 @@
 // reserved-name struct const still errors with the caret on the name (see
 // examples/1142). The backtick is never part of the name's text. Struct-body
 // const decls thread is_raw and the precise name_span.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Holder :: struct {
     `i2 :: 5;          // untyped raw struct-body const

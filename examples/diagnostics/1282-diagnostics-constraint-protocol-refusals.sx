@@ -3,8 +3,8 @@
 // always the same pair — stay concrete, or bind through `$T/P`. It never suggests
 // respelling the declaration: whether `Ord` should have runtime values is its
 // author's decision, made at the declaration.
-#import "modules/std.sx";
-#import "modules/std/list.sx";
+@import "modules/std.sx";
+@import "modules/std/list.sx";
 
 Ord :: protocol {
     less :: (self: *Self, other: Self) -> bool;

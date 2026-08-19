@@ -6,9 +6,9 @@
 // A global qualified-fn map registering `t.f`
 // first-wins sends both modules to whichever registers first.
 
-#import "modules/std.sx";
-#import "0834-modules-namespace-alias-own-target-pin/a.sx";
-#import "0834-modules-namespace-alias-own-target-pin/b.sx";
+@import "modules/std.sx";
+@import "0834-modules-namespace-alias-own-target-pin/a.sx";
+@import "0834-modules-namespace-alias-own-target-pin/b.sx";
 
 main :: () {
     print("{} {}\n", use_a(), use_b());

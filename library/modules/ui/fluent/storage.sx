@@ -1,6 +1,6 @@
 // `Sink` and `collectViews` — the fluent library's collection boundary,
 // owned by `sink.sx` and published here so `storage.collectViews` is one name.
-#import "modules/std.sx";
-s :: #import "modules/ui/fluent/sink.sx";
+@import "modules/std.sx";
+s :: @import "modules/ui/fluent/sink.sx";
 Sink :: s.Sink;
 collectViews :: s.collectViews;

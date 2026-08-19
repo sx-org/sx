@@ -4,7 +4,7 @@
 // correctly — for both the local-bound form and the direct-call-argument form.
 // The per-element array->slice materialization recurses with the nesting, so
 // every level coerces.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 sum_nested :: (xss: [][]i64) -> i64 {
     total := 0;

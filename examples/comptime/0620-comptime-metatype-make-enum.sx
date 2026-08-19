@@ -8,8 +8,8 @@
 // This exercises `define` decoding a value-arg SLICE (`decodeVariantElements`'s
 // slice-fat-pointer branch), as opposed to the inline `.[ … ]` array the
 // 0614–0618 examples pass directly into `.enum(...)`.
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 build_level :: () -> Type {
     // The variant list lives in a local (not inlined into `define`): a non-

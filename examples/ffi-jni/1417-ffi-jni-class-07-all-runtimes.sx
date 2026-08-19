@@ -7,7 +7,7 @@
 //   @SwiftStruct   — Swift @frozen value-type binding
 //   @SwiftProtocol — Swift @objc-bridgeable protocol binding
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 IFoo :: @JniInterface("com/example/IFoo") extern {
     bar :: (self: *Self) -> i32;

@@ -4,7 +4,7 @@
 // value-producing arms — so no phi operand or fallback `const` is ever
 // emitted into a block that has already terminated.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // All arms diverge — the match is `noreturn`, no merge phi.
 classify :: (n: i32) -> i32 {

@@ -1,6 +1,6 @@
-#import "modules/std.sx";
-#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
-#import "modules/std/json.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+@import "modules/std/json.sx";
 
 // A fixed nonzero seed makes failures reproducible.
 SEED :: 0x2545F4914F6CDD1D;

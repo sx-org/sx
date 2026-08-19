@@ -4,7 +4,7 @@
 // pins the scope of the variant-write guard — only a WHOLE-variant member write
 // (`s.rect = ...`) is rejected; nested sub-field writes keep working.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Shape :: enum {
     circle: f32;

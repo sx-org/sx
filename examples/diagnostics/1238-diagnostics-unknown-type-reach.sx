@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 P1238 :: protocol { f :: (self: *Self) -> i64; }
 S1238 :: struct {
     a: i64 = 0;

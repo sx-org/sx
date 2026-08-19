@@ -7,16 +7,16 @@
 // reaches the center pixel when the palette actually reaches the vertex
 // stage; the red triangle is weighted to bone 0 and stays where it was
 // authored.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "modules/gpu/types.sx";
-#import "modules/gpu/api.sx";
-#import "modules/gpu/metal.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/gpu/types.sx";
+@import "modules/gpu/api.sx";
+@import "modules/gpu/metal.sx";
 
 W :i32: 64;
 H :i32: 64;
 
-MSL_SKIN :: #string MSL
+MSL_SKIN :: @string MSL
 #include <metal_stdlib>
 using namespace metal;
 

@@ -2,8 +2,8 @@
 // be stronger than the SUCCESS ordering. Here failure=.seq_cst (rank 3) is
 // stronger than success=.relaxed (rank 0). The call goes to the intrinsic directly
 // so the diagnostic span is the user file, not the lib forward site.
-#import "modules/std.sx";
-#import "modules/std/atomic.sx";
+@import "modules/std.sx";
+@import "modules/std/atomic.sx";
 
 main :: () {
     n : i64 = 0;

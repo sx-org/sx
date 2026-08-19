@@ -1,8 +1,8 @@
-#import "modules/std.sx";
-#import "modules/math";
-#import "modules/build.sx";
-#import "modules/std/test.sx";
-pkg :: #import "tests/fixtures/testpkg";
+@import "modules/std.sx";
+@import "modules/math";
+@import "modules/build.sx";
+@import "modules/std/test.sx";
+pkg :: @import "tests/fixtures/testpkg";
 
 Point :: struct { x, y: i32; }
 
@@ -176,7 +176,7 @@ sm_first :: (a: i32, b: i32) -> (i32, !) {
 }
 
 // --- Extern function binding ---
-libc :: #library "c";
+libc :: @library "c";
 
 c_abs :: (n: i32) -> i32 extern libc "abs";
 

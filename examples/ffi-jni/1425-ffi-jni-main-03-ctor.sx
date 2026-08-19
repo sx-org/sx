@@ -6,8 +6,8 @@
 // This smoke instantiates a `SurfaceView` from inside the Activity's
 // `onCreate` body.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 Bundle :: @JniClass("android/os/Bundle") extern {}
 JContext :: @JniClass("android/content/Context") extern {}

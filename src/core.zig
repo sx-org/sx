@@ -26,8 +26,8 @@ pub const Compilation = struct {
     import_sources: std.StringHashMap([:0]const u8),
     module_scopes: std.StringHashMap(std.StringHashMap(ast.Visibility)),
     import_graph: std.StringHashMap(std.StringHashMap(void)),
-    /// Flat-only subset of `import_graph` (bare `#import` edges, no namespaced
-    /// `ns :: #import`). Borrowed by `ProgramIndex.flat_import_graph`.
+    /// Flat-only subset of `import_graph` (bare `@import` edges, no namespaced
+    /// `ns :: @import`). Borrowed by `ProgramIndex.flat_import_graph`.
     flat_import_graph: std.StringHashMap(std.StringHashMap(void)),
     /// Per-module scalar raw-decl index (`path → name → RawDeclRef`), built by
     /// `imports.buildImportFacts`. Borrowed by `ProgramIndex.module_decls`.
@@ -261,7 +261,7 @@ pub const Compilation = struct {
         return null;
     }
 
-    /// Collect C import source info — both from user-written `#import c { ... }`
+    /// Collect C import source info — both from user-written `@import c { ... }`
     /// blocks in the AST AND from lowering-time auto-injections (currently:
     /// the JNI env TL runtime when `context.jni` / `@JniCall`-with-omitted-env
     /// is used). The lower-side auto-injections live in
@@ -315,8 +315,8 @@ pub const Compilation = struct {
         lowering.program_index.decl_table = &self.decl_table;
         lowering.program_index.module_cache = &self.module_cache;
         lowering.lowerRoot(root);
-        // Every `extern <ref>` must name a #library constant or a named
-        // `#import c` unit — a typo'd ref otherwise resolves silently through
+        // Every `extern <ref>` must name a @library constant or a named
+        // `@import c` unit — a typo'd ref otherwise resolves silently through
         // whatever image happens to carry the symbol. Runs after `lowerRoot`,
         // which splices each selected module-scope expansion group into
         // `root`, so a declaration written inside one is checked like any

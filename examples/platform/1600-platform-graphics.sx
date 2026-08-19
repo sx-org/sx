@@ -1,4 +1,4 @@
-#import "modules/ffi/raylib.sx";
+@import "modules/ffi/raylib.sx";
 
 main :: () {
     InitWindow(800, 600, "sx - Triangle");

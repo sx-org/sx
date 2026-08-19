@@ -2,7 +2,7 @@
 // mutates the LIVE array slot, not a throwaway copy. `fixupMethodReceiver`
 // takes the real address of `.index_expr`/`.deref_expr` receivers (via
 // `lowerExprAsPtr`), mirroring the explicit-argument path.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 S :: struct {
     flag: bool;

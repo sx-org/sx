@@ -3,10 +3,10 @@
 // (`i64`) as a `placeholder` IR op; the interpreter treats placeholders
 // as undef so the comparison runs through unchanged.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
-libc :: #library "c";
+libc :: @library "c";
 popen :: (cmd: [:0]u8, mode: [:0]u8) -> *void extern libc;
 puts  :: (s: [:0]u8) -> i32 extern libc;
 

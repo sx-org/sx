@@ -7,7 +7,7 @@ without each application rediscovering the same failure modes. It is **not** a
 web framework. See [SECURITY.md](../SECURITY.md) for the security posture.
 
 ```sx
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/healthz" { resp.body = "ok"; return; }
@@ -58,7 +58,7 @@ Three dispatch models, chosen by `Config`:
   stays advisory). Setup:
 
   ```sx
-  fs :: #import "modules/std/http/fiber_sched.sx";   // opt-in: compiles the fiber runtime
+  fs :: @import "modules/std/http/fiber_sched.sx";   // opt-in: compiles the fiber runtime
   …
   runner := fs.SchedRunner.init();                   // must outlive the Server
   cfg : http.Config = .{ …, stream_request_body = true, fibers = runner };
@@ -391,8 +391,8 @@ mbedTLS-backed acceptor. Only a program that imports the provider compiles the
 crypto; plaintext servers link none of it.
 
 ```sx
-http :: #import "modules/std/http.sx";
-tls  :: #import "modules/std/http/tls_mbedtls.sx";
+http :: @import "modules/std/http.sx";
+tls  :: @import "modules/std/http/tls_mbedtls.sx";
 
 main :: () -> i32 {
     server : tls.TlsServer = .{};
@@ -538,7 +538,7 @@ ENTRYPOINT ["/sx-app"]
 - **Cross-compile**: `sx build --target <triple>` (e.g. `x86_64-linux`,
   `aarch64-linux`). See [readme.md](../readme.md) for the cross-compilation
   details.
-- **TLS**: native TLS is vendored (mbedTLS, compiled via `#import c`), so a
+- **TLS**: native TLS is vendored (mbedTLS, compiled via `@import c`), so a
   `--self-contained` build links the crypto statically with no per-target
   archive to ship. See *Native TLS (HTTPS)* above; or terminate TLS at a proxy.
 

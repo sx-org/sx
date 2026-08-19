@@ -13,7 +13,7 @@
 // (`g_swap[0], g_swap[1] = g_swap[1], g_swap[0]`, RHS-before-stores), pinning
 // store ordering.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Color :: enum { red; green; blue; }
 

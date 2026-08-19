@@ -17,12 +17,12 @@
 // also be imported directly for a leaner dependency (e.g. a TLS provider that
 // needs only http/tls.sx, or a client that needs only http/types.sx).
 
-types  :: #import "modules/std/http/types.sx";
-tls    :: #import "modules/std/http/tls.sx";
-fiber  :: #import "modules/std/http/fiber.sx";
-server :: #import "modules/std/http/server.sx";
-router :: #import "modules/std/http/router.sx";
-client :: #import "modules/std/http/client.sx";
+types  :: @import "modules/std/http/types.sx";
+tls    :: @import "modules/std/http/tls.sx";
+fiber  :: @import "modules/std/http/fiber.sx";
+server :: @import "modules/std/http/server.sx";
+router :: @import "modules/std/http/router.sx";
+client :: @import "modules/std/http/client.sx";
 
 // ── shared types + parsing (types.sx) ───────────────────────────────
 Request        :: types.Request;

@@ -2,8 +2,8 @@
 // protocol head with an optional type-argument list; the head may be an `@`
 // name; an argument may introduce a binder carrying its own bounds; and the
 // bound binder may sit under a type constructor.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
 
 Drawable :: protocol constraint {
     draw :: (self: *Self) -> string;

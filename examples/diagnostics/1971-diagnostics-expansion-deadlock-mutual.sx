@@ -5,7 +5,7 @@
 // could publish, and the second on `Tally`'s, which only the first could.
 // Nothing runnable is left, so the one expansion-deadlock diagnostic names both
 // bookmarks and the fact each is down against.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Draw :: protocol vtable { draw :: (self: *Self) -> i64; }
 Tally :: protocol vtable { count :: (self: *Self) -> i64; }

@@ -61,8 +61,8 @@ pub const BuildConfig = struct {
     /// sx bundler can switch on iOS vs. macOS vs. simulator.
     target_triple: ?[]const u8 = null,
 
-    /// C companion object files (`#import c { #source ... }`, compiled to `.o`)
-    /// and `#library` link names, forwarded by main.zig before the post-link
+    /// C companion object files (`@import c { @source ... }`, compiled to `.o`)
+    /// and `@library` link names, forwarded by main.zig before the post-link
     /// callback so the sx-driven build pipeline can read them via the
     /// `c_object_paths()` / `link_libraries()` compiler primitives and pass them
     /// to `link`. Slices reference compiler-owned memory that outlives the

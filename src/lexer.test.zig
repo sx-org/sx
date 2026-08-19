@@ -96,14 +96,41 @@ test "#run is not a directive" {
     try std.testing.expectEqual(Tag.invalid, tl.tags[0]);
 }
 
-test "#import lexes as a directive; #importing does not" {
-    var tl = try lexT("#import \"foo.sx\"");
+test "@import lexes as a directive; @importing is an @-name" {
+    var tl = try lexT("@import \"foo.sx\"");
     defer deinitT(&tl);
-    try std.testing.expectEqualSlices(Tag, &.{ .hash_import, .string_literal, .eof }, tl.tags);
+    try std.testing.expectEqualSlices(Tag, &.{ .at_import, .string_literal, .eof }, tl.tags);
 
-    var tl2 = try lexT("#importing");
+    var tl2 = try lexT("@importing");
     defer deinitT(&tl2);
-    try std.testing.expectEqual(Tag.invalid, tl2.tags[0]);
+    try std.testing.expectEqual(Tag.at_identifier, tl2.tags[0]);
+}
+
+test "former # directives lex as invalid then a word" {
+    const names = [_][]const u8{
+        "import",          "library", "framework", "using", "include", "source",
+        "define",          "flags",   "identity",  "get",   "set",    "context_extend",
+        "string",
+    };
+    for (names) |name| {
+        const src = try std.fmt.allocPrintSentinel(std.testing.allocator, "#{s}", .{name}, 0);
+        defer std.testing.allocator.free(src);
+        var tl = try lexT(src);
+        defer deinitT(&tl);
+        try std.testing.expectEqualSlices(Tag, &.{ .invalid, .identifier, .eof }, tl.tags);
+        try std.testing.expectEqualStrings("#", tl.slice(tl.first()));
+        try std.testing.expectEqualStrings(name, tl.slice(tl.next(tl.first())));
+    }
+}
+
+test "leftover #string is not a heredoc" {
+    var tl = try lexT("#string END\nhello\nEND");
+    defer deinitT(&tl);
+    try std.testing.expectEqualSlices(Tag, &.{
+        .invalid, .identifier, .identifier, .identifier, .identifier, .eof,
+    }, tl.tags);
+    try std.testing.expectEqualStrings("#", tl.slice(tl.first()));
+    try std.testing.expectEqualStrings("string", tl.slice(tl.next(tl.first())));
 }
 
 test "@insert lexes as the splice prefix; @inserting is an @-name" {
@@ -122,14 +149,14 @@ test "#insert is not a directive" {
     try std.testing.expectEqual(Tag.invalid, tl.tags[0]);
 }
 
-test "#library lexes as a directive; #librarypath does not" {
-    var tl = try lexT("#library \"raylib\"");
+test "@library lexes as a directive; @librarypath is an @-name" {
+    var tl = try lexT("@library \"raylib\"");
     defer deinitT(&tl);
-    try std.testing.expectEqualSlices(Tag, &.{ .hash_library, .string_literal, .eof }, tl.tags);
+    try std.testing.expectEqualSlices(Tag, &.{ .at_library, .string_literal, .eof }, tl.tags);
 
-    var tl2 = try lexT("#librarypath");
+    var tl2 = try lexT("@librarypath");
     defer deinitT(&tl2);
-    try std.testing.expectEqual(Tag.invalid, tl2.tags[0]);
+    try std.testing.expectEqual(Tag.at_identifier, tl2.tags[0]);
 }
 
 test "a double-quoted run lexes as one string literal" {
@@ -148,14 +175,14 @@ test "a string literal spans line breaks" {
 }
 
 test "a heredoc's span is its content, excluding the delimiter lines" {
-    var tl = try lexT("#string END\nhello world\nEND");
+    var tl = try lexT("@string END\nhello world\nEND");
     defer deinitT(&tl);
     try std.testing.expectEqual(Tag.raw_string_literal, tl.tags[0]);
     try std.testing.expectEqualStrings("hello world\n", tl.slice(tl.first()));
 }
 
 test "a heredoc keeps every content line" {
-    var tl = try lexT("#string GLSL\n#version 330\nvoid main() {}\nGLSL");
+    var tl = try lexT("@string GLSL\n#version 330\nvoid main() {}\nGLSL");
     defer deinitT(&tl);
     try std.testing.expectEqual(Tag.raw_string_literal, tl.tags[0]);
     try std.testing.expectEqualStrings("#version 330\nvoid main() {}\n", tl.slice(tl.first()));
@@ -247,18 +274,17 @@ test "lex octal / separators: tag + span" {
     }
 }
 
-// `#context_extend` lexes as its dedicated directive token; a longer
-// identifier continuing past the directive spelling stays `.invalid` (the
-// table requires a non-identifier boundary), and the exact-match table keeps
-// `#context_extended` from silently matching the shorter directive.
-test "lex hash_context_extend" {
-    var tl = try lexT("#context_extend ui");
+// `@context_extend` lexes as its dedicated directive token; a longer
+// identifier continuing past the directive spelling stays `.at_identifier`
+// (the table requires a non-identifier boundary).
+test "@context_extend lexes as a directive; @context_extended is an @-name" {
+    var tl = try lexT("@context_extend ui");
     defer deinitT(&tl);
-    try std.testing.expectEqualSlices(Tag, &.{ .hash_context_extend, .identifier, .eof }, tl.tags);
+    try std.testing.expectEqualSlices(Tag, &.{ .at_context_extend, .identifier, .eof }, tl.tags);
 
-    var tl2 = try lexT("#context_extended");
+    var tl2 = try lexT("@context_extended");
     defer deinitT(&tl2);
-    try std.testing.expectEqual(Tag.invalid, tl2.tags[0]);
+    try std.testing.expectEqual(Tag.at_identifier, tl2.tags[0]);
 }
 
 // `private` is the file-local visibility keyword; the backtick escape keeps
@@ -343,9 +369,9 @@ test "a trailing comment with no final newline is owned by the eof row" {
 test "the token after a heredoc terminator is neither glued nor line-separated" {
     const Case = struct { src: [:0]const u8, terminator: Tag };
     const cases = [_]Case{
-        .{ .src = "#string END\ncontent\nEND;", .terminator = .semicolon },
-        .{ .src = "#string END\ncontent\nEND,", .terminator = .comma },
-        .{ .src = "#string END\ncontent\nEND)", .terminator = .r_paren },
+        .{ .src = "@string END\ncontent\nEND;", .terminator = .semicolon },
+        .{ .src = "@string END\ncontent\nEND,", .terminator = .comma },
+        .{ .src = "@string END\ncontent\nEND)", .terminator = .r_paren },
     };
     for (cases) |c| {
         var tl = try lexT(c.src);
@@ -380,7 +406,7 @@ test "unterminated char is reported invalid" {
 }
 
 test "unterminated heredoc is reported invalid" {
-    try expectSingleInvalid("#string END\ncontent\n");
+    try expectSingleInvalid("@string END\ncontent\n");
 }
 
 test "commentsFor attaches leading rows to the following token" {
@@ -515,7 +541,7 @@ test "lone-CR file is one comment row and yields no declaration doc site" {
 }
 
 test "a heredoc content line beginning with // is not a comment row" {
-    const source: [:0]const u8 = "s :: #string END\n// not a comment\nEND;\nx :: 1;";
+    const source: [:0]const u8 = "s :: @string END\n// not a comment\nEND;\nx :: 1;";
     var tl = try lexT(source);
     defer deinitT(&tl);
     try std.testing.expectEqual(@as(usize, 0), tl.comments.len);

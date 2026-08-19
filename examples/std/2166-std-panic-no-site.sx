@@ -3,7 +3,7 @@
 // on when it has none to name.
 //
 // aborts (exit 134) after the message — aarch64-macOS-pinned.
-#import "modules/std/core.sx";
+@import "modules/std/core.sx";
 
 main :: () {
     @panic("no location for this one", @SourceSite{});

@@ -6,9 +6,9 @@
 // target of a downcast, which is the same question asked in another position. A
 // module asking about its own value must not be answered with somebody else's
 // type, however many other modules spell that name.
-#import "modules/std.sx";
-a :: #import "1635-modules-name-reaches-its-own/alpha/panel.sx";
-b :: #import "1635-modules-name-reaches-its-own/beta/panel.sx";
+@import "modules/std.sx";
+a :: @import "1635-modules-name-reaches-its-own/alpha/panel.sx";
+b :: @import "1635-modules-name-reaches-its-own/beta/panel.sx";
 
 main :: () -> i32 {
     // Each module's downcast reaches the `Panel` that module declares — both

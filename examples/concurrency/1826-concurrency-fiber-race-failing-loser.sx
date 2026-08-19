@@ -10,8 +10,8 @@
 //
 // aarch64-pinned (the scheduler's per-arch asm): runs end-to-end on a matching
 // host (macOS + linux), ir-only on a mismatch.
-#import "modules/std.sx";
-sched :: #import "modules/std/sched.sx";
+@import "modules/std.sx";
+sched :: @import "modules/std/sched.sx";
 
 main :: () -> i64 {
     s := sched.Scheduler.init();

@@ -12,8 +12,8 @@
 //     `any`;
 //   - boxing to `any` (`av : any = p`) is a view of the concrete receiver;
 //   - all of it layout-independent (`vtable` AND `inline` protocols).
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Drawable :: protocol vtable { area :: (self: *Self) -> i64; }
 Circle :: struct { r: i64; }

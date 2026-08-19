@@ -5,7 +5,7 @@
 // type position must NOT resolve — bare-TYPE visibility joins over the FLAT
 // import edges, and a namespaced alias is not a flat edge. A
 // bare enum leaks through the global `findByName` first-match otherwise.
-dep :: #import "0744-modules-namespaced-only-bare-enum-not-visible/dep.sx";
+dep :: @import "0744-modules-namespaced-only-bare-enum-not-visible/dep.sx";
 
 main :: () -> i32 {
     c : Color = .green;

@@ -15,12 +15,12 @@
 // CWD-relative from the repo root, the corpus child's cwd). The client sets
 // VERIFY_NONE to accept the self-signed cert (MBEDTLS_SSL_CLI_C is enabled in
 // the vendored config for exactly this in-process test client).
-#import "modules/std.sx";
-socket  :: #import "modules/std/socket.sx";
-posix   :: #import "modules/std/posix.sx";
-mbedtls :: #import "vendors/mbedtls/mbedtls.sx";
-http    :: #import "modules/std/http.sx";
-tlsp    :: #import "modules/std/http/tls_mbedtls.sx";
+@import "modules/std.sx";
+socket  :: @import "modules/std/socket.sx";
+posix   :: @import "modules/std/posix.sx";
+mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
+http    :: @import "modules/std/http.sx";
+tlsp    :: @import "modules/std/http/tls_mbedtls.sx";
 
 PORT :: 18973;
 

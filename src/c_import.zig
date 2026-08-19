@@ -56,9 +56,9 @@ pub fn selectCCompile(
     };
 }
 
-/// Cache key for one compiled `#source` member. Everything that can
+/// Cache key for one compiled `@source` member. Everything that can
 /// change the produced object participates: the source bytes, the
-/// unit's declared `#include` headers BY CONTENT, the source's
+/// unit's declared `@include` headers BY CONTENT, the source's
 /// TRANSITIVE quoted includes BY CONTENT (`dep_bytes` — editing any
 /// header the compile actually reads invalidates), defines / flags /
 /// include dirs in declaration order, the libc header dirs the unit
@@ -346,7 +346,7 @@ fn collectExternRefTargets(valid: *std.StringHashMap(void), decls: []const *Node
         switch (d.data) {
             .library_decl => |ld| try valid.put(ld.name, {}),
             .namespace_decl => |ns| {
-                // A NAMED `#import c` unit lowers to a namespace wrapping
+                // A NAMED `@import c` unit lowers to a namespace wrapping
                 // its c_import_decl — the namespace name is the unit ref.
                 for (ns.decls) |nd| {
                     if (nd.data == .c_import_decl) {
@@ -366,11 +366,11 @@ fn checkExternRefs(valid: *const std.StringHashMap(void), decls: []const *Node, 
         switch (d.data) {
             .fn_decl => |fd| {
                 // A library reference rides on the `extern LIB` keyword
-                // (extern_lib); it must name a declared #library / #import c unit.
+                // (extern_lib); it must name a declared @library / @import c unit.
                 if (fd.extern_export != .extern_) continue;
                 const ref = fd.extern_lib orelse continue;
                 if (!valid.contains(ref)) {
-                    diags.addFmt(.err, d.span, "extern library '{s}' is not declared; expected a #library constant or a named '#import c' unit", .{ref});
+                    diags.addFmt(.err, d.span, "extern library '{s}' is not declared; expected a @library constant or a named '@import c' unit", .{ref});
                 }
             },
             .namespace_decl => |ns| checkExternRefs(valid, ns.decls, diags),
@@ -380,10 +380,10 @@ fn checkExternRefs(valid: *const std.StringHashMap(void), decls: []const *Node, 
 }
 
 /// Validate every `extern <ref>` in the merged program: the ref must
-/// name a `#library` constant or a NAMED `#import c` unit. Refs are
+/// name a `@library` constant or a NAMED `@import c` unit. Refs are
 /// author-side module-local names, but modules merge flat or
 /// namespaced into one tree, so existence is checked program-wide.
-/// Decls synthesized from `#include` headers carry no ref and are
+/// Decls synthesized from `@include` headers carry no ref and are
 /// exempt.
 pub fn validateExternRefs(allocator: std.mem.Allocator, root: *const Node, diags: *@import("errors.zig").DiagnosticList) !void {
     if (root.data != .root) return;
@@ -442,7 +442,7 @@ fn saveCachedObject(allocator: std.mem.Allocator, obj_buf: c.LLVMMemoryBufferRef
 
 /// Compile C sources to native object files (in memory), through a
 /// persistent content-addressed cache (`.sx-cache/c-<key>.o`, default
-/// on). A `#source` unit recompiles only when its cache key changes —
+/// on). A `@source` unit recompiles only when its cache key changes —
 /// see `cSourceCacheKey` for what participates. Any cache-machinery
 /// failure (unreadable input for hashing, corrupt entry) falls back to
 /// a fresh compile; the cache can never fail a build.
@@ -611,7 +611,7 @@ pub fn compileCToObjects(
     }
 
     // Cross-object duplicate exports are diagnosed HERE, before they
-    // surface as an opaque dylib/binary link failure: every `#import c`
+    // surface as an opaque dylib/binary link failure: every `@import c`
     // unit shares one link namespace — there is no per-unit symbol
     // isolation. Scan failures are non-fatal — the linker
     // remains the backstop.
@@ -632,7 +632,7 @@ pub fn compileCToObjects(
             if (gop.found_existing) {
                 if (gop.value_ptr.* != i) {
                     const disp = if (nm.len > 1 and nm[0] == '_') nm[1..] else nm;
-                    std.debug.print("error: C symbol '{s}' is defined by multiple '#import c' sources: '{s}' and '{s}' — all units share one link namespace\n", .{ disp, labels.items[gop.value_ptr.*], labels.items[i] });
+                    std.debug.print("error: C symbol '{s}' is defined by multiple '@import c' sources: '{s}' and '{s}' — all units share one link namespace\n", .{ disp, labels.items[gop.value_ptr.*], labels.items[i] });
                     return error.CompileError;
                 }
             } else {

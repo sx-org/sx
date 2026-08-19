@@ -6,7 +6,7 @@
 // nested-union payloads; the platform stream's real shape
 // (`-> ?PlatformEvent { return .input(.key_up(.{ ... })); }`) is the
 // motivating case.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 P :: struct { a: f32 = 0.0; b: f32 = 0.0; }
 Inner :: enum { one; two: i64; }

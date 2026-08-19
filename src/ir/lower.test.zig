@@ -1795,8 +1795,8 @@ test "lower: shadowed same-name author gets its own FuncId + real body" {
     try tmp.dir.writeFile(io, .{ .sub_path = "a.sx", .data = "greet :: () -> i64 { 1 }\nuse_greet :: () -> i64 { greet() }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "b.sx", .data = "greet :: () -> i64 { 2 }\n" });
     const main_src =
-        \\#import "a.sx";
-        \\#import "b.sx";
+        \\@import "a.sx";
+        \\@import "b.sx";
         \\main :: () -> i64 { use_greet() }
         \\
     ;
@@ -1957,8 +1957,8 @@ test "lower: scan populates source-keyed caches per declaring source" {
     try tmp.dir.writeFile(io, .{ .sub_path = "a.sx", .data = "Color :: *u8;\nK :: 5;\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "b.sx", .data = "Color :: *u16;\nK :: 7;\n" });
     const main_src =
-        \\na :: #import "a.sx";
-        \\nb :: #import "b.sx";
+        \\na :: @import "a.sx";
+        \\nb :: @import "b.sx";
         \\main :: () -> i32 { 0 }
         \\
     ;

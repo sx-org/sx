@@ -6,9 +6,9 @@
 // initializer's target is the fixed `@Init(View)` rather than an open binder.
 //
 // Package-local by design.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
-#import "examples/ui/compose/view.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
+@import "examples/ui/compose/view.sx";
 
 Sink :: struct {
     children: List(View) = .{};

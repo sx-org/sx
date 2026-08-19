@@ -1,5 +1,5 @@
 // One package's publish.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 publish :: ufcs (value: $I/@Init(i64)) -> string {
     slot: i64 = ---;

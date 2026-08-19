@@ -15,7 +15,7 @@
 // A set no generic member can reach settles as soon as the declarations are
 // admitted, and the same `@insert` against it is answered immediately — that is the
 // positive half, pinned in examples/types/0899.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 256, align = 8 }) {
     render :: (self: *Self) -> string;

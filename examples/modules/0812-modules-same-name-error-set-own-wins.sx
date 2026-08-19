@@ -15,8 +15,8 @@
 // Distinct nominal TypeIds — `error.Disk` validates against main's
 // `{ Disk }` and `error.Net` against dep's `{ Net }`, both pass, exit 0.
 
-#import "modules/std.sx";
-#import "0812-modules-same-name-error-set-own-wins/dep.sx";
+@import "modules/std.sx";
+@import "0812-modules-same-name-error-set-own-wins/dep.sx";
 
 IoErr :: error { Disk }
 

@@ -11,8 +11,8 @@ Thing :: struct {
         Thing{ state = .{ a = arg.amount * 2 } }
     }
     reset :: (self: *Thing) { self.state = AState{ a = 2 }; }
-    value :: (self: *Thing) -> i64 #get { self.state.a }
-    value :: (self: *Thing, v: i64) #set { self.state.a = v + 1; }
+    value :: (self: *Thing) -> i64 @get { self.state.a }
+    value :: (self: *Thing, v: i64) @set { self.state.a = v + 1; }
     wrap :: (self: *Thing, $T: Type, v: T) -> AResult {
         AResult{ value = self.state.a + size_of(T) }
     }

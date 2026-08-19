@@ -1,6 +1,6 @@
 // `for *x in xs` binds each element by pointer — no per-element copy.
 // Mutations write back, and a pointer subject matches through the deref.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Shape :: enum {
     circle: f32;

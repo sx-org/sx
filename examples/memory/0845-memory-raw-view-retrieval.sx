@@ -9,8 +9,8 @@
 // that works in ARG POSITION (a reinterpret width-mismatched there).
 // Recovery targets are exempt from the phase-2 downcast refusal; other
 // concrete targets on a protocol receiver go through the downcast.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }

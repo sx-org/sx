@@ -2,7 +2,7 @@
 // annotation, a struct field (stateless registration), a signature, and a
 // typed array literal. `Array` is an ordinary identifier a program may bind.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 N :: 4;
 

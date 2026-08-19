@@ -96,7 +96,7 @@ test "resolver: collectVisibleAuthors — own author, two distinct flat authors,
     try tmp.dir.writeFile(io, .{ .sub_path = "a.sx", .data = "dup :: () -> i64 { 1 }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "b.sx", .data = "dup :: () -> i64 { 2 }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "p.sx", .data = "secret :: () -> i64 { 9 }\n" });
-    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "#import \"a.sx\";\n#import \"b.sx\";\ng :: #import \"p.sx\";\nselfauthored :: () -> i64 { 0 }\nmain :: () -> i32 { 0 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "@import \"a.sx\";\n@import \"b.sx\";\ng :: @import \"p.sx\";\nselfauthored :: () -> i64 { 0 }\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
@@ -128,7 +128,7 @@ test "resolver: collectVisibleAuthors — own author, two distinct flat authors,
     try std.testing.expectEqual(std.meta.Tag(resolver.RawDeclRef).fn_decl, tag(dup_set.flat[1].raw));
     try std.testing.expect(dup_set.flat[0].raw.fn_decl != dup_set.flat[1].raw.fn_decl);
 
-    // `secret` is authored only in p.sx, imported NAMESPACED (`g :: #import`).
+    // `secret` is authored only in p.sx, imported NAMESPACED (`g :: @import`).
     // user_bare_flat must NOT see it (p.sx is not a flat edge).
     const flat_secret = r.collectVisibleAuthors("secret", main_path, .user_bare_flat);
     try std.testing.expect(flat_secret.own == null);
@@ -190,7 +190,7 @@ test "resolver: collectNamespaceAuthors — returns target members, walks no gra
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(io, .{ .sub_path = "point.sx", .data = "Point :: struct { x: i64 }\nhelper :: () -> i64 { 0 }\n" });
-    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "g :: #import \"point.sx\";\nmain :: () -> i32 { 0 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "g :: @import \"point.sx\";\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
@@ -312,9 +312,9 @@ test "resolver: resolveBare — own_wins / single / ambiguous / not_visible / do
     try tmp.dir.writeFile(io, .{ .sub_path = "b.sx", .data = "dup :: () -> i64 { 2 }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "ns.sx", .data = "secret :: () -> i64 { 9 }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data =
-        \\#import "a.sx";
-        \\#import "b.sx";
-        \\g :: #import "ns.sx";
+        \\@import "a.sx";
+        \\@import "b.sx";
+        \\g :: @import "ns.sx";
         \\selfauthored :: () -> i64 { 0 }
         \\main :: () -> i32 { 0 }
         \\
@@ -369,7 +369,7 @@ test "resolver: resolveQualified — single for existing member, domain_filtered
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(io, .{ .sub_path = "point.sx", .data = "Point :: struct { x: i64 }\nhelper :: () -> i64 { 0 }\n" });
-    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "g :: #import \"point.sx\";\nmain :: () -> i32 { 0 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "g :: @import \"point.sx\";\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];

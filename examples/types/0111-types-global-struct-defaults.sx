@@ -1,7 +1,7 @@
 // Global struct initialized with `.{}` (or a partial struct literal) honors
 // the struct's per-field defaults, matching the function-local behavior.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Foo :: struct {
     running: bool = true;

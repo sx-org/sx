@@ -13,9 +13,9 @@
 // socket that still has UNREAD data in its receive queue and the kernel sends
 // RST instead of FIN (POSIX/BSD). So: connect, send a request the server never
 // reads, close the server side — the client's next read sees ECONNRESET.
-#import "modules/std.sx";
-http   :: #import "modules/std/http.sx";
-socket :: #import "modules/std/socket.sx";
+@import "modules/std.sx";
+http   :: @import "modules/std/http.sx";
+socket :: @import "modules/std/socket.sx";
 
 PORT :: 19030;
 
@@ -67,7 +67,7 @@ main :: () -> i32 {
     return 0;
 }
 
-clib :: #library "c";
+clib :: @library "c";
 usleep :: (usec: i64) -> i32 extern clib;
 
 sleep_ms :: (ms: i64) {

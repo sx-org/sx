@@ -3,6 +3,6 @@
 // calc.sx's OWN flat `#import "util.sx"`. The qualified alias `calc.compute`
 // must lower in calc.sx's source context so those own-import callees stay
 // visible.
-#import "util.sx";
+@import "util.sx";
 
 compute :: () -> i64 { return triple(base()); }

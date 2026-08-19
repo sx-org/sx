@@ -1,6 +1,6 @@
 // A range position binds the i64 cursor whatever its bounds are spelled as.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     for i: i32 in 0..3 { _ = i; }

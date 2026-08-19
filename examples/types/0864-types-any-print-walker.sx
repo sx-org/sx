@@ -4,8 +4,8 @@
 // the tag-driven formatter. One erasure at the root; every inner step is view
 // math, zero copies.
 
-#import "modules/std.sx";
-meta :: #import "modules/std/meta.sx";
+@import "modules/std.sx";
+meta :: @import "modules/std/meta.sx";
 
 print_any :: (av: any) {
     ti := type_info(type_of(av));

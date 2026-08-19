@@ -15,8 +15,8 @@
 //   - parameterised call:  `has_impl(Wrap(i64), i32)` — the args
 //     match the impl's protocol type-args exactly.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 // User-defined parameterised protocol + an impl, so has_impl can
 // confirm parameterised matching works with a known-true case.

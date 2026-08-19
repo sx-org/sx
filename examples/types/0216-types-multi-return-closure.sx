@@ -5,7 +5,7 @@
 // multi-return closure parameter. No dedicated ClosureInfo marker is needed —
 // the return slots ride as the reused `.tuple` TypeId, consistent with the
 // function-decl multi-return surface.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 apply :: (cb: Closure() -> (i32, bool)) -> i32 {
     a, b := cb();                 // destructure a multi-return closure result

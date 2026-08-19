@@ -5,7 +5,7 @@
 //
 // `shared` is reached from BOTH, so it does both: evaluated by the comptime VM
 // for `CT`, and emitted into the binary for `main`. The two must agree.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 P :: struct { a: i64; b: i64; }
 

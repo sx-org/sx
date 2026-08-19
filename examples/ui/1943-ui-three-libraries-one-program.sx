@@ -10,11 +10,11 @@
 // `compose.View` and of nothing else. compose and fluent both measure and
 // render through the ui foundation; emit carries its own. The three sets
 // stay distinct either way.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-c :: #import "examples/ui/compose.sx";
-e :: #import "examples/ui/emit.sx";
-f :: #import "modules/ui/fluent.sx";
+c :: @import "examples/ui/compose.sx";
+e :: @import "examples/ui/emit.sx";
+f :: @import "modules/ui/fluent.sx";
 
 main :: () -> i32 {
     // Each library's own component forms its own library's slot.

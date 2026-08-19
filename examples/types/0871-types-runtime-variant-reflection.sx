@@ -11,7 +11,7 @@
 // static `variant_value` for tagged unions with EXPLICIT tags — it answers
 // the declared tag, not the ordinal, matching the inverse `variant_index`
 // which reverse-maps them.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Color :: enum { red; green; blue; }
 Flag :: enum flags { A; B; C; D; }

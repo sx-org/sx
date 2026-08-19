@@ -3,7 +3,7 @@
 // keeping the `.x`/`.y` names addressable on both the success value and the
 // `or` fallback. Exercises the success path, a `raise` path, and an
 // `or .(x=.., y=..)` terminator.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad }
 

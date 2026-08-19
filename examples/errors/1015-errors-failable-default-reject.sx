@@ -4,7 +4,7 @@
 // (use `catch` to absorb the error). The positive cases live in
 // `examples/errors/1014-errors-failable-default.sx`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad }
 

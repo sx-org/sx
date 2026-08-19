@@ -8,8 +8,8 @@
 //       -o /tmp/libsxjnimain.so examples/ffi-jni/1423-ffi-jni-main-01-emit.sx
 //   unzip -l /tmp/sxjnimain.apk | grep classes.dex
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 // `*Bundle` resolves through the class registry to `android.os.Bundle`
 // in the emitted Java — needed for `onCreate`'s @Override to match

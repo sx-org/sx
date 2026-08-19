@@ -22,8 +22,8 @@
 // https scheme accepted; OPTIONS * 200 "|*"; GET * → 400; authority-form
 // GET → 400; CONNECT → 501; ftp scheme → 400; pooled absolute-form
 // rebuild byte-exact; GPA net-zero after close.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 PORT_A :: 18999;
 PORT_B :: 19000;

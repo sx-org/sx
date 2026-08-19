@@ -16,7 +16,7 @@
 // locks the Win64-ABI lowering; on a Windows x86_64 runner it runs end-to-end
 // and prints "0 0 P" — every GP and XMM callee-saved register survived.
 
-kernel32 :: #library "kernel32";
+kernel32 :: @library "kernel32";
 GetStdHandle :: (n: u32) -> *void extern;
 WriteFile    :: (file: *void, buf: *u8, n: u32, written: *u32, overlapped: *void) -> i32 extern;
 ExitProcess  :: (code: u32) -> void extern;
@@ -36,7 +36,7 @@ Fiber :: struct {
 
 swap_good :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) export "swap_good" {
     asm volatile {
-        #string A
+        @string A
         movq %rbx, 0(%rcx)
         movq %rbp, 8(%rcx)
         movq %rdi, 16(%rcx)
@@ -86,7 +86,7 @@ A
 // resume; restores the caller regs; returns.
 scribble_verify :: (self_ctx: *FiberCtx, peer: *FiberCtx, base: u64) -> u64 abi(.naked) export "scribble_verify" {
     asm volatile {
-        #string SV
+        @string SV
         subq $264, %rsp
         movq %r8, 32(%rsp)
         movq %rbx, 40(%rsp)
@@ -267,7 +267,7 @@ SV
 }
 
 asm {
-    #string T
+    @string T
 .global fib_tramp
 fib_tramp:
     movq %rbx, %rcx

@@ -5,8 +5,8 @@
 // and a same-name flat value does NOT make the namespaced-only TYPE bare-visible.
 // The gate reads the author's KIND, not just the name. The type is reachable only
 // as `nst.Secret`.
-#import "0745-modules-flat-value-shadows-ns-only-type/flatval.sx";
-nst :: #import "0745-modules-flat-value-shadows-ns-only-type/nstype.sx";
+@import "0745-modules-flat-value-shadows-ns-only-type/flatval.sx";
+nst :: @import "0745-modules-flat-value-shadows-ns-only-type/nstype.sx";
 
 main :: () -> i32 {
     s : Secret = .{ x = 5, y = 6 };

@@ -5,7 +5,7 @@
 // the bottom). Everything here RUNS.
 //
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Listenable :: struct { value: i64; }      // stand-in element struct
 Combined   :: struct { sources: Tuple(i32, i32); }  // tuple-typed field

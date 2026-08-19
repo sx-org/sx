@@ -2,8 +2,8 @@
 // Mirrors 1306's runtime-class chained dispatch:
 //   Name :: @ObjcClass("X") extern { … }   ==   Name :: @ObjcClass(…) extern("X") { … }
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 NSObject :: @ObjcClass("NSObject") extern {
     alloc :: () -> *NSObject;

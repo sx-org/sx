@@ -8,7 +8,7 @@ runtime value with dynamic dispatch.
 ```
 protocol-decl := Name '::' 'protocol' [ '(' params ')' ] [ kind ] [ attrs ] '{' body '}'
 kind          := 'constraint' | 'vtable'                            (absent ⇒ constraint)
-attrs         := '#identity'*                                       (erased kind)
+attrs         := '@identity'*                                       (erased kind)
 ```
 
 Both kind words are contextual: ordinary identifiers everywhere
@@ -20,7 +20,7 @@ appear. Each attribute may appear at most once.
 | kind | runtime values | dispatch | membership known | ownership |
 |---|---|---|---|---|
 | `constraint` (default) | none | monomorphized per use site | per call site | — |
-| `vtable` | erased, 3 words | vtable pointer | open world | value/own or `#identity` |
+| `vtable` | erased, 3 words | vtable pointer | open world | value/own or `@identity` |
 
 The ladder is ordered by cost. The default is the kind that emits
 nothing; a program opts *into* paying for dynamic dispatch by
@@ -38,7 +38,7 @@ Hasher    :: protocol vtable {
     put :: (self: *Self, bytes: []u8);
     sum :: (self: *Self) -> u64;
 }
-Allocator :: protocol vtable #identity {        // unique stateful conformers
+Allocator :: protocol vtable @identity {        // unique stateful conformers
     alloc_bytes   :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
@@ -268,7 +268,7 @@ each bound instantiation compiles them against the concrete `Self`.
 **Edge cases.**
 - A marker constraint protocol (empty body) is legal; it partitions
   types for overload/bound purposes and costs nothing.
-- `#identity` on a constraint protocol is refused (there are no
+- `@identity` on a constraint protocol is refused (there are no
   values to classify).
 - `Self`-in-signature methods are unrestricted — every use site
   knows the concrete type.
@@ -316,7 +316,7 @@ Every erased protocol belongs to one of two classes:
   an owning shape refuses — an owning erasure names its allocator. The handles over that storage may ALIAS it (§5.3a);
   "owning erasure" names the operation and the storage's discipline,
   not a per-handle claim. `*P` is the borrowed view.
-- **`#identity`**: for protocols whose runtime object *is* unique
+- **`@identity`**: for protocols whose runtime object *is* unique
   state (an allocator, an io runtime). Values only ever borrow, in
   every spelling; there is nothing to free.
 
@@ -370,7 +370,7 @@ free(q);             // releases A; p and q are now invalid
 free(r);             // releases B
 ```
 
-Borrowed representations sit outside this discipline: `#identity`
+Borrowed representations sit outside this discipline: `@identity`
 values and `*P` views copy as borrowed handles over
 storage they never own (§5.2, §5.5) — there is nothing to
 free, and `free` refuses them (§5.4).
@@ -397,13 +397,13 @@ s := w.(Sizable);     // the explicit owning copy — independent of w
 **Shallow-copy caveat.** Owning erasure copies the receiver's BYTES.
 Interior pointers (slices, strings, pointers) are copied as
 pointers; the copy and the source share their referents. Types whose
-deep state must not be shared belong behind `#identity` or a view.
+deep state must not be shared belong behind `@identity` or a view.
 
-**`#identity` erasure** borrows in every spelling — decl targets,
+**`@identity` erasure** borrows in every spelling — decl targets,
 call arguments, struct-literal fields alike:
 
 ```sx
-Rng :: protocol vtable #identity { next :: (self: *Self) -> u64; }
+Rng :: protocol vtable @identity { next :: (self: *Self) -> u64; }
 Xorshift :: struct { state: u64; }
 impl Rng for Xorshift {
     next :: (self: *Xorshift) -> u64 {
@@ -437,7 +437,7 @@ an inline type match. Its protocol arm reads the backing through
 - `free(p, allocator)` pairs the allocator explicitly, immune to
   drift. The protocol value carries no allocator slot; the caller
   supplies it.
-- `free` on an `#identity` value or a `*P` view is
+- `free` on an `@identity` value or a `*P` view is
   a compile error (no owned backing; a view owns nothing).
 
 ### 5.5 Borrowed views — `*P`
@@ -571,7 +571,7 @@ known, so only the compiler can perform it. Semantics:
   non-conforming — the site-local visibility that arbitrates
   ordinary erasure does not exist at a dynamic conversion, and no
   other arbiter would be sound.
-- **`#identity` `Q` refuses at compile time**: identity conformers
+- **`@identity` `Q` refuses at compile time**: identity conformers
   are named objects, and a dynamic conversion cannot prove the
   referent is one.
 - **Result ownership follows `Q`'s class**: value/own `Q` → an
@@ -598,7 +598,7 @@ type may itself be an instantiation
 argument of another protocol (`Series(View)`). Constraint protocols
 are refused in every storable position (§4).
 
-Context fields may be protocol-typed only at an `#identity`
+Context fields may be protocol-typed only at an `@identity`
 protocol: context defaults are mandatory and
 comptime-evaluable, the fold of a protocol-typed default is the
 identity erasure of a named instance global — a borrow, never null
@@ -668,9 +668,9 @@ monomorphizing an impl — evaluates under one dataflow discipline:
   answer it are **final**: no unexpanded `inline if`/`inline for`
   branch can still contribute one. Contribution is judged
   syntactically and conservatively: an unexpanded body mentioning
-  `impl P for …` contributes to `P`, and one holding an `#import`
+  `impl P for …` contributes to `P`, and one holding an `@import`
   contributes the whole surface of the module it names — the impls,
-  declaration names and `#context_extend`s that module authors,
+  declaration names and `@context_extend`s that module authors,
   transitively through its own imports and branches — because
   selecting the branch is what brings them in.
 - **Erased-target conversion facts depend on impl multiplicity**
@@ -684,7 +684,7 @@ monomorphizing an impl — evaluates under one dataflow discipline:
   scope is final — no unexpanded branch can still declare the name.
 - **The program Context is a single layout**, so an evaluation that
   reads it waits for that layout to settle: while any unexpanded
-  branch could still declare a `#context_extend`, the field set is
+  branch could still declare a `@context_extend`, the field set is
   not final, and the evaluation suspends against Context-ready
   exactly as it suspends against an open conformer set.
   Contribution is judged syntactically, like an `impl`'s. Once
@@ -790,7 +790,7 @@ the runtime image resolves per the referent:
 
 - `protocol_kind(P) -> {constraint, vtable}` —
   compile-time only; folds in `inline if`.
-- `is_identity(P)` — true for `#identity` protocols; false for
+- `is_identity(P)` — true for `@identity` protocols; false for
   every other type. Compile-time only.
 - A runtime `Type` value always tags a concrete type, never a bare
   protocol type. Composites *containing* protocol types (`*Show`,
@@ -823,7 +823,7 @@ vtable:  load p.vtable → load slot k → indirect call(ctx, args…)
 
 **`free`.** One function, compile-time kind-dispatched by an inline
 type match: a protocol arm (ctx via `@Protocol`, gated on the
-ownership class — `#identity` refuses), a closure arm, a slice arm;
+ownership class — `@identity` refuses), a closure arm, a slice arm;
 every other argument kind is a compile error.
 
 **The standard `Allocator` is stdlib-owned.** Its declaration —
@@ -850,10 +850,10 @@ requires no compiler change.
 | bare `Self` later parameter | excluded from erased dispatch |
 | `Self` at depth in parameter or return (`[]Self`, `?Self`, `Buffer(Self)`) | excluded from dynamic dispatch on every kind; concrete/bound calls fine |
 | rvalue at `*P` | compile error — nothing durable to borrow |
-| rvalue at `P` (`#identity`) | compile error — identity objects need a name |
+| rvalue at `P` (`@identity`) | compile error — identity objects need a name |
 | `free` on: view / identity / constraint-typed anything | compile error in each case (distinct wordings; constraint has no values at all) |
 | `p.(@Protocol)` | field-wise build per layout |
-| `p.(Q)`, different protocol | direct re-erasure conversion (§6.4); temperaments apply; result ownership per `Q`'s class; `#identity` targets refuse at compile time; the unique-impl table resolves the check — a duplicated pair converts as non-conforming |
+| `p.(Q)`, different protocol | direct re-erasure conversion (§6.4); temperaments apply; result ownership per `Q`'s class; `@identity` targets refuse at compile time; the unique-impl table resolves the check — a duplicated pair converts as non-conforming |
 | `s.(P)`, operand already `P` | value/own: independent owning copy of the receiver |
 | `any` holding a protocol value | never arises from boxing a protocol value (that boxes the receiver); `xx *s` boxes a `*Show` — a concrete composite type with its own tag |
 | `av.(P)` — protocol target on `any` receiver | compile error, every kind with values; constraint refuses as constraint |

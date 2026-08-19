@@ -2,7 +2,7 @@
 // and an array-literal const alias exactly like a scalar one, at any
 // declaration order and chain depth, and members read through the alias,
 // including through an import.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 P :: struct { x: i64; y: i64; }
 

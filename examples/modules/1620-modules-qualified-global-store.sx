@@ -5,8 +5,8 @@
 // emits `global_set`. Resolving the base `lib` as a VALUE expression — a module
 // alias is not one — fails with "unresolved 'lib'".
 
-#import "modules/std.sx";
-lib :: #import "1620-modules-qualified-global-store/lib.sx";
+@import "modules/std.sx";
+lib :: @import "1620-modules-qualified-global-store/lib.sx";
 
 main :: () -> i32 {
     print("{}\n", lib.lib_g);   // read: 0

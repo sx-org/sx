@@ -9,7 +9,7 @@
 // The terminator plays no part: `;` separates statements. 0041 writes the same
 // shapes with `;` and gets the same values.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Implicit return: the body's trailing expression.
 double :: (n: i32) -> i32 { n * 2 }

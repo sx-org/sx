@@ -11,7 +11,7 @@
 // reserved spelling still needs the backtick (`` `i2 :: (self) ``). A bare
 // reserved VALUE binding / declaration name still errors (see examples/1119,
 // 1141, 1142).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Struct fields spelled with reserved type names — bare is legal.
 Holder :: struct {

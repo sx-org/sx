@@ -3,8 +3,8 @@
 // `s.Suit.spades`. The bare-import form is example 0634; in-file minting +
 // reflection is 0631.
 
-#import "modules/std.sx";
-s :: #import "0633-comptime-compiler-namespaced-type/shapes.sx";
+@import "modules/std.sx";
+s :: @import "0633-comptime-compiler-namespaced-type/shapes.sx";
 
 main :: () {
     x := s.Suit.spades;

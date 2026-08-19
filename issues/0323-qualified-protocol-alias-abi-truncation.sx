@@ -1,4 +1,4 @@
-foreign :: #import "0323-qualified-protocol-alias-abi-truncation/protocol.sx";
+foreign :: @import "0323-qualified-protocol-alias-abi-truncation/protocol.sx";
 
 Alias :: foreign.P;
 

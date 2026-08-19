@@ -3,7 +3,7 @@
 // context). No `char` type exists — storage is whatever the context demands
 // (`u8`, `u32`, `i64`, …). Escapes: `\n \t \r \\ \' \0 \xNN \u{XXXX}`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i64 {
     // ASCII — value is the code point.

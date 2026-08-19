@@ -4,7 +4,7 @@
 // or a `?? <value>` terminator. This file shows the accepted forms; the bare
 // (un-absorbed) form is rejected in 1049.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad }
 

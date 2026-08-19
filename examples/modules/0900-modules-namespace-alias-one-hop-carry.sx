@@ -2,8 +2,8 @@
 // exactly one direct flat-import edge. The transitive gate must keep both of
 // these supported forms while rejecting a second flat hop.
 
-internal :: #import "0900-modules-namespace-alias-one-hop-carry/internal.sx";
-bridge :: #import "0900-modules-namespace-alias-one-hop-carry/bridge.sx";
+internal :: @import "0900-modules-namespace-alias-one-hop-carry/internal.sx";
+bridge :: @import "0900-modules-namespace-alias-one-hop-carry/bridge.sx";
 
 main :: () -> i32 {
     if internal.engine_alias.secret() != 9 { return 1; }

@@ -20,7 +20,7 @@
 // nothing.
 // =====================================================================
 
-#import "modules/std/core.sx";
+@import "modules/std/core.sx";
 
 // The IEEE-754 storage of an f64, read as a signed 64-bit pattern (so
 // the sign BIT survives — `-0.0` reads as negative, which `< 0.0` does

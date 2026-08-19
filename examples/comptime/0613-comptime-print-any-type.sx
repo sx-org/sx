@@ -9,7 +9,7 @@
 // mirrors that same `{ .any, tid }` layout — the layout reflection over the
 // same `any` (`type_name`, `is_unsigned`) reads.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 ct_probe :: () {
     print("before\n");

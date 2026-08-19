@@ -4,9 +4,9 @@
 // content. Every field acts at that single wrapper, so the number of fields set
 // does not change how deep the tree gets — and the order is the Mod's, never the
 // order the fields were written in.
-#import "modules/std.sx";
-#import "examples/ui/compose.sx";
-ui :: #import "modules/ui/types.sx";
+@import "modules/std.sx";
+@import "examples/ui/compose.sx";
+ui :: @import "modules/ui/types.sx";
 
 show :: (tree: *RenderTree) {
     for n in tree.nodes {

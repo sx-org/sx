@@ -6,8 +6,8 @@
 // view (no ownership). Tags are per-build values — this "serializer"
 // round-trips within ONE build on purpose.
 
-#import "modules/std.sx";
-c :: #import "modules/std/c.sx";
+@import "modules/std.sx";
+c :: @import "modules/std/c.sx";
 
 Point :: struct { x: i64; y: i64; }
 

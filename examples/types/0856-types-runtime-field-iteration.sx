@@ -5,7 +5,7 @@
 // TypeTable queries), pinned by the parity lines. An index >= the member count
 // is undefined behavior (the caller gates on the counts, exactly like the
 // static forms).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Header  :: struct { magic: u16; flags: u8; }
 Packet  :: struct { header: Header; name: string; kind: i16; }

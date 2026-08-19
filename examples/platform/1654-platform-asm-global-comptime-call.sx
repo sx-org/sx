@@ -6,7 +6,7 @@
 // AOT — see 1648/1653.) The failure is at dlsym resolution, before any asm is
 // assembled, so it is arch-independent — no `.build` target needed.
 asm {
-    #string ASM
+    @string ASM
 .global _my_add
 _my_add:
     add x0, x0, x1

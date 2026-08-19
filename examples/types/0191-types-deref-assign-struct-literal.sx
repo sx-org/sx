@@ -2,7 +2,7 @@
 // struct literal from the POINTEE of the assignment target — never from the
 // enclosing function's return type — and fills omitted fields from the
 // struct's field defaults, exactly like `t : T = .{ x = 5 }`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 T :: struct { x: i64 = 1; y: i64 = 2; }
 U :: struct { a: i64 = 9; }

@@ -9,7 +9,7 @@
 //   call @count__pack_i64_i64_i64(ctx, 1, 2, 3)
 //   call @count__pack_string_bool(ctx, ..)
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 count :: (..$args) -> i64 => args.len;
 

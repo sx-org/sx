@@ -2,7 +2,7 @@
 // an integral float (`4.0`) folds to a count. The dimension follows the unified
 // float→int narrowing rule — the same `floatToIntExact` judgement the typed
 // local/field/param/const sites use.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 N : f64 : 4.5;
 

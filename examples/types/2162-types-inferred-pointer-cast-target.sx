@@ -3,7 +3,7 @@
 // annotated `ann : *i64 = p.(*i64)`, and dereferencing it loads an i64. The
 // family is every address-shaped pair — `*T`, `[*]T`, `cstring`. Implicit
 // same-width pointer assignment (`q : *i64 = p`) stays a plain store.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     x := 42;

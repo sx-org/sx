@@ -5,7 +5,7 @@
 // omits both tags) is rejected — the union is checked against the caller's set
 // even though the call goes through a slot with no static function name.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Small :: error { Unrelated }
 

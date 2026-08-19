@@ -7,7 +7,7 @@
 // length whether it flows through the stateful body-lowering resolver or the
 // stateless registration-time resolver (type_bridge); the alias and
 // union-field paths run on the stateless one, which reads the const table.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 N :: 4;
 M :: 3;

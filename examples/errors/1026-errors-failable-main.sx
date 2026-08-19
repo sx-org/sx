@@ -9,7 +9,7 @@
 // Frame locations are placeholders; the count, the ordering and the tag name
 // carry the meaning.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 ParseErr :: error { Empty, BadDigit };
 

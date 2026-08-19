@@ -9,14 +9,14 @@
 // Pair64 / Quad32 go through emit_llvm.zig's coerceArg, which bridges
 // struct <-> array via the abi.struct2arr / abi.arr2struct branches.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // `#source` only — c_import would rewrite struct-typed params/returns
 // in the .h to *void (its struct/opaque pointer default), losing the
 // by-value ABI. The hand-written extern decls below keep sx's
 // struct types end-to-end.
-#import c {
-    #source "1210-ffi-02-small-struct.c";
+@import c {
+    @source "1210-ffi-02-small-struct.c";
 };
 
 Vec2   :: struct { x: f32; y: f32; }

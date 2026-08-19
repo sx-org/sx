@@ -4,13 +4,13 @@
 // brace written at the header's own depth, so a construction inside the patch
 // juxtaposes like any other nested expression.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Holder :: struct { ctx: Context = .{} }
 
 Box :: struct($T: Type) { v: T }
 
-#context_extend box: Box(i64) = .{ v = 0 };
+@context_extend box: Box(i64) = .{ v = 0 };
 
 main :: () -> i64 {
     push Context{ allocator = context.allocator } {

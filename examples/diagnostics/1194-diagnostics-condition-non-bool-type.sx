@@ -1,7 +1,7 @@
 // A branch condition (`if` / `while` / `and` / `or`) reduces to an i1, so its type
 // must be bool, integer, pointer, or optional. A struct has no truthiness and is a
 // located type error.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 S :: struct { x: i64; }
 

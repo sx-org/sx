@@ -4,7 +4,7 @@
 // these arms reachable rather than falling to `else:` (`case string:` matches
 // by doubling as a category name). Both the inline-constraint form and the
 // leading `$T: Type` form.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 by_inline :: (v: $K) -> i64 {
     n := 0;

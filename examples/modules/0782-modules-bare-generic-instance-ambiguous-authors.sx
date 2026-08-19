@@ -7,9 +7,9 @@
 // here, so a bare `Box` reference has two visible authors and cannot be resolved
 // without qualification. `p.Box(i64)` / `q.Box(i64)` is the qualified form (0779).
 
-#import "modules/std.sx";
-#import "0782-modules-bare-generic-instance-ambiguous-authors/p.sx";
-#import "0782-modules-bare-generic-instance-ambiguous-authors/q.sx";
+@import "modules/std.sx";
+@import "0782-modules-bare-generic-instance-ambiguous-authors/p.sx";
+@import "0782-modules-bare-generic-instance-ambiguous-authors/q.sx";
 
 main :: () -> i32 {
     x := Box(i64).make(7);

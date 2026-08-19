@@ -11,8 +11,8 @@
 // registered) → 200, Content-Length of the GET body, NO body on the
 // wire (pipelined GET behind it proves framing); HEAD on a POST-only
 // path → 405 + Allow: POST; HEAD /nope → 404; GPA net-zero.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 PORT :: 19010;
 

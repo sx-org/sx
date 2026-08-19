@@ -7,8 +7,8 @@
 // preserved through put / overwrite / grow; get / contains; ORDER-PRESERVING
 // remove vs O(1) order-breaking swap_remove; string + int keys; idempotent
 // deinit.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

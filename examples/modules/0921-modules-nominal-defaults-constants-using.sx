@@ -4,13 +4,13 @@
 // concrete TypeId/author, never through the process-global display-name key
 // (last-wins). Also pins the #using default ALIGNMENT: a default declared
 // after a #using embed applies at its flattened position.
-#import "modules/std.sx";
-a :: #import "0921-modules-nominal-defaults-constants-using/wa.sx";
-b :: #import "0921-modules-nominal-defaults-constants-using/wb.sx";
+@import "modules/std.sx";
+a :: @import "0921-modules-nominal-defaults-constants-using/wa.sx";
+b :: @import "0921-modules-nominal-defaults-constants-using/wb.sx";
 
 // Single-module alignment leg: default after #using applies.
 LocalBase :: struct { tag: i64; }
-LocalThing :: struct { #using LocalBase; v: i64 = 42; }
+LocalThing :: struct { @using LocalBase; v: i64 = 42; }
 
 main :: () -> i32 {
     // Defaults select per author (a: x=10; b: x=99, extra=7).

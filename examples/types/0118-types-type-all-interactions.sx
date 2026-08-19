@@ -7,7 +7,7 @@
 // Sections labelled `--- N. <thing> ---` so the diff localises
 // which interaction regressed.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // ── Test fixtures ─────────────────────────────────────────────
 

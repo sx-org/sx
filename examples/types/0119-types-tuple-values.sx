@@ -2,7 +2,7 @@
 // return, and operators. An inferred `:=` tuple literal lowers its elements
 // under their own inferred types, not the enclosing fn's return `target_type`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct { xs: Tuple(i32, i32); }
 

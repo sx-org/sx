@@ -6,7 +6,7 @@
 // which is not in A = {Bar}. The positive case lives in
 // `examples/errors/1006-errors-inferred-error-sets.sx`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 A :: error { Bar }
 

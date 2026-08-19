@@ -4,9 +4,9 @@
 // `export` just makes the "I define this class" intent explicit (the dual of
 // `extern` for "I reference an existing class"). Mirrors 1339's defined class.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 SxBar :: @ObjcClass("SxBar") export {
     counter: i32;

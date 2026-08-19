@@ -2,7 +2,7 @@
 // the `.len`/`.ptr` pseudo-fields belong to the special containers only.
 // Plain and generic structs, method-interior reads, and the untouched
 // container pseudo-fields.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Plain :: struct {
     ptr: *i64;

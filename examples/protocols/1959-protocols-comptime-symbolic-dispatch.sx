@@ -4,9 +4,9 @@
 // carried concrete type, so a `@run` gets the same answers the compiled program
 // does, by a different mechanism. The downcast and `type_of` read the same
 // symbolic word.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-View :: protocol vtable #identity {
+View :: protocol vtable @identity {
     area :: (self: *Self) -> i64;
 }
 

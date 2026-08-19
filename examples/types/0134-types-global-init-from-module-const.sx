@@ -1,7 +1,7 @@
 // Top-level global initialized from a module constant copies the constant's
 // value. `K : A : 42; g : A = K;` resolves the forward alias `A` to `i32`
 // and materializes `g`'s static initializer from `K`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 A :: B;
 B :: i32;

@@ -5,7 +5,7 @@
 // a caller whose named set covers { Negative, Other } type-checks, and the
 // error channel actually carries each closure's own tag at runtime.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 All :: error { Negative, Other }
 

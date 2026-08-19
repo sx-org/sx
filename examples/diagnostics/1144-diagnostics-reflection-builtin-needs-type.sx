@@ -7,7 +7,7 @@
 // Reject cases use `true`/`1.5`, whose types (bool/f64) are stable, so the pinned
 // diagnostics do not move with the int-literal default type.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     print("{}\n", size_of(true));          // bool, not a type

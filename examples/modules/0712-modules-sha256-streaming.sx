@@ -11,9 +11,9 @@
 // digests; the byte/split updates view directly into the input buffer
 // (no `substr`, no copies).
 
-#import "modules/std.sx";
-#import "modules/std/hash.sx";
-#import "modules/std/fs.sx";
+@import "modules/std.sx";
+@import "modules/std/hash.sx";
+@import "modules/std/fs.sx";
 
 // 112-byte NIST multi-block vector — long enough that a 64-byte split is
 // a genuine block boundary and a 30-byte split lands mid-block.

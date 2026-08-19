@@ -4,7 +4,7 @@
 // `GetStaticMethodID` / `CallStatic*` at lowering. No explicit `static`
 // keyword; the param shape carries the signal.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Math :: @JniClass("java/lang/Math") extern {
     abs :: (n: i32) -> i32;  // no `self: *Self` → class method

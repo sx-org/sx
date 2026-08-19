@@ -6,7 +6,7 @@
 // produces the same one): `#intrinsic` is simply not in the directive table. The
 // error text points at the parameter list rather than the offending `#`, a wart of
 // unknown-directive recovery rather than a property of intrinsics.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 foo :: ($T: Type) -> i64 #intrinsic;
 

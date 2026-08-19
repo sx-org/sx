@@ -1,9 +1,9 @@
 // Multi-keyword selector mangling. The sx method
 // name is split on `_`; each piece becomes a keyword with a trailing
 // `:`. `combine_and(a, b)` → `combine:and:` — two keywords, two args.
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 SxProbeMultiKeyword :: @ObjcClass("SxProbeMultiKeyword") extern {
     combine_and :: (self: *Self, a: i32, b: i32) -> i32;

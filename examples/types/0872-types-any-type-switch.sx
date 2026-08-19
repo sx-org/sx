@@ -11,7 +11,7 @@
 // carries the `?i64` tag, never a flattened `i64`. `else:` keeps the
 // subject as `any`. Composes with the optional match for `?any`, and
 // works in value position.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: struct { x: i64; y: i64; }
 Color :: enum { red; green; blue; }

@@ -4,7 +4,7 @@
 // type-param `..$Ts`, so `Combined(i64, ..sources.T)` for a single `VL(i64)`
 // source instantiates `Combined(i64, i64)` (field `sources: (VL(i64))`).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 VL :: protocol(T: Type) vtable { get :: (self: *Self) -> T; }
 IntCell :: struct { v: i64; }

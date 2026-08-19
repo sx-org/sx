@@ -1,7 +1,7 @@
 // `+=` on a global variable loads the current value (not the initializer)
 // before storing — same semantics as the explicit `g = g + 1` form.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g_counter : i64 = 0;
 

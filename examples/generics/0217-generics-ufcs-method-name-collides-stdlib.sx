@@ -5,7 +5,7 @@
 //
 // UFCS dispatch selects the most receiver-specific binding author across all
 // module authors (src/ir/lower/call.zig `selectUfcsGenericByReceiver`).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct ($R: Type) { value: R; flag: i64; }
 

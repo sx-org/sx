@@ -11,10 +11,10 @@
 // startup. The process stays alive because UIApplicationMain drives the iOS
 // run loop.
 
-#import "modules/std.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
 
-#framework "UIKit";
+@framework "UIKit";
 
 UIApplicationMain :: (argc: i32, argv: *void, principal_class: *NSString, delegate_class: *NSString) -> i32 extern;
 

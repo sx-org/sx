@@ -4,8 +4,8 @@
 // runs. (sx `print` writes unbuffered via `write(2)`, so the "starting" line
 // still appears despite `_exit` skipping the stdio flush.)
 
-#import "modules/std.sx";
-proc :: #import "modules/std/process.sx";
+@import "modules/std.sx";
+proc :: @import "modules/std/process.sx";
 
 main :: () -> i32 {
     print("starting\n");

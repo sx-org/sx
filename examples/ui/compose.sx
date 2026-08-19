@@ -7,24 +7,24 @@
 // The geometry, the paint types, the render tree and the text metrics are the ui
 // foundation's, so a compose scene renders into the tree the platform renderer
 // consumes. `compose.View` is this package's open set.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-types :: #import "modules/ui/types.sx";
-render :: #import "modules/ui/render.sx";
-font :: #import "modules/ui/font.sx";
-input :: #import "modules/ui/input.sx";
-view :: #import "examples/ui/compose/view.sx";
-identity :: #import "examples/ui/compose/identity.sx";
-state :: #import "examples/ui/compose/state.sx";
-frame :: #import "examples/ui/compose/frame.sx";
-router :: #import "examples/ui/compose/input.sx";
-focus :: #import "examples/ui/compose/focus.sx";
-loop :: #import "examples/ui/compose/loop.sx";
-components :: #import "examples/ui/compose/components.sx";
-sink :: #import "examples/ui/compose/sink.sx";
-containers :: #import "examples/ui/compose/containers.sx";
-placement :: #import "examples/ui/compose/placement.sx";
-runtime :: #import "examples/ui/compose/runtime.sx";
+types :: @import "modules/ui/types.sx";
+render :: @import "modules/ui/render.sx";
+font :: @import "modules/ui/font.sx";
+input :: @import "modules/ui/input.sx";
+view :: @import "examples/ui/compose/view.sx";
+identity :: @import "examples/ui/compose/identity.sx";
+state :: @import "examples/ui/compose/state.sx";
+frame :: @import "examples/ui/compose/frame.sx";
+router :: @import "examples/ui/compose/input.sx";
+focus :: @import "examples/ui/compose/focus.sx";
+loop :: @import "examples/ui/compose/loop.sx";
+components :: @import "examples/ui/compose/components.sx";
+sink :: @import "examples/ui/compose/sink.sx";
+containers :: @import "examples/ui/compose/containers.sx";
+placement :: @import "examples/ui/compose/placement.sx";
+runtime :: @import "examples/ui/compose/runtime.sx";
 
 // Geometry
 Point :: types.Point;

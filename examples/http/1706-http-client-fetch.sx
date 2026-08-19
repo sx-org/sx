@@ -31,10 +31,10 @@
 //   F. cross-host redirect: server A 302s to server B (different port) —
 //      fetch follows, re-resolves, lands 200 on B.
 //   + net-zero GPA gate.
-#import "modules/std.sx";
-socket :: #import "modules/std/socket.sx";
-http   :: #import "modules/std/http.sx";
-tlsp   :: #import "modules/std/http/tls_mbedtls.sx";
+@import "modules/std.sx";
+socket :: @import "modules/std/socket.sx";
+http   :: @import "modules/std/http.sx";
+tlsp   :: @import "modules/std/http/tls_mbedtls.sx";
 
 PORT_A   :: 19027;   // main plaintext server
 PORT_B   :: 19028;   // cross-host redirect target
@@ -255,7 +255,7 @@ teardown :: (rc: i32, sa: *http.Server, ta: *thread.Thread, sb: *http.Server, tb
     return rc;
 }
 
-clib :: #library "c";
+clib :: @library "c";
 usleep :: (usec: i64) -> i32 extern clib;
 
 sleep_ms :: (ms: i64) {

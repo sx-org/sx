@@ -5,9 +5,9 @@
 // default (own-author wins), not the first-wins winner's — expanding
 // `from_b`'s `cfg()` to the winner a.sx's default (10) returns 10.
 // Per-source default-argument expansion.
-#import "modules/std.sx";
-#import "0730-modules-flat-same-name-default-arg/a.sx";
-#import "0730-modules-flat-same-name-default-arg/b.sx";
+@import "modules/std.sx";
+@import "0730-modules-flat-same-name-default-arg/a.sx";
+@import "0730-modules-flat-same-name-default-arg/b.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

@@ -7,7 +7,7 @@
 // resolving the leaf there — the same path the qualified `: ns.Type`
 // annotation uses.
 
-fac :: #import "0800-modules-reexported-enum-alias/facade.sx";
+fac :: @import "0800-modules-reexported-enum-alias/facade.sx";
 
 classify :: (c: fac.Color) -> i64 {        // param typed via re-exported enum alias
     if c == fac.Color.Green { return 2; }  // comparison against a variant

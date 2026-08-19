@@ -2,7 +2,7 @@
 // NOT `-> Self`) returns the raw pointer to the caller without the
 // dispatch path auto-dereferencing it.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Proto :: protocol vtable {
   get :: (self: *Self) -> *u8;

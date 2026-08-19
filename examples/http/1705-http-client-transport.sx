@@ -33,11 +33,11 @@
 //   F. io timeout: a server that accepts but never responds — recv_on
 //      errors after io_timeout_ms instead of blocking forever.
 //   + net-zero GPA gate.
-#import "modules/std.sx";
-socket :: #import "modules/std/socket.sx";
-fs     :: #import "modules/std/fs.sx";
-http   :: #import "modules/std/http.sx";
-tlsp   :: #import "modules/std/http/tls_mbedtls.sx";
+@import "modules/std.sx";
+socket :: @import "modules/std/socket.sx";
+fs     :: @import "modules/std/fs.sx";
+http   :: @import "modules/std/http.sx";
+tlsp   :: @import "modules/std/http/tls_mbedtls.sx";
 
 PORT_MAIN :: 19023;   // plaintext main server (cases A, C)
 PORT_HOLD :: 19024;   // full-backlog listener, never accepted (case E)

@@ -1,7 +1,7 @@
 // Geometry the fluent library speaks — the ui foundation's types, so a
 // fluent scene lays out in the same coordinate space the renderer draws.
-#import "modules/std.sx";
-types :: #import "modules/ui/types.sx";
+@import "modules/std.sx";
+types :: @import "modules/ui/types.sx";
 
 Point :: types.Point;
 Size :: types.Size;

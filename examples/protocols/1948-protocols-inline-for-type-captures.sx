@@ -3,7 +3,7 @@
 // `Type` — legal in TYPE position at statement scope and at module scope, and
 // legal as the argument of the type-introspection builtins. A trailing open
 // range pairs an index cursor, exactly as in the runtime `for`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Pair  :: struct { a: i64; b: i64; }
 Trip  :: struct { a: i64; b: i64; c: i64; }

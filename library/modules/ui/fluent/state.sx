@@ -7,12 +7,12 @@
 //
 // A `State(T)` borrows its entry's payload. The borrow stands until a committed
 // build stops reaching the site, which is when the entry goes.
-#import "modules/std.sx";
-#import "modules/std/core.sx";
-#import "modules/std/mem.sx";
-#import "modules/ui/fluent/identity.sx";
+@import "modules/std.sx";
+@import "modules/std/core.sx";
+@import "modules/std/mem.sx";
+@import "modules/ui/fluent/identity.sx";
 
-c :: #import "modules/std/c.sx";
+c :: @import "modules/std/c.sx";
 
 State :: struct ($T: Type) {
     ptr: *T
@@ -89,7 +89,7 @@ StateStore :: struct {
     }
 }
 
-#context_extend fluent_state: *StateStore = null;
+@context_extend fluent_state: *StateStore = null;
 
 // Claims the storage this call site owns for the build in progress.
 use_state :: ($T: Type, default: T, site: SiteId = site_of(@caller)) -> State(T) {

@@ -6,7 +6,7 @@
 // the chain-attempt frame, so three all-failing attempts leave six frames
 // (the frames carry placeholder locations, not DWARF).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { A };
 

@@ -1,7 +1,7 @@
 // Named return elements may be given in ANY order — they are matched to the
 // return slots BY NAME and permuted to slot order before lowering. Here `b` is
 // given before `a`; the result still destructures as (a, b).
-#import "modules/std.sx";
+@import "modules/std.sx";
 pair :: (n: i32) -> (a: i32, b: i32) {
     return b = n, a = n + 1;   // out of slot order — reordered by name
 }

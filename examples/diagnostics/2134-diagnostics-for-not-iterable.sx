@@ -1,7 +1,7 @@
 // A for iterable must be a collection or a range; a scalar has no elements
 // and no length to drive the loop.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 f :: (n: i64) -> i64 { n }
 

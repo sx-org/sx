@@ -13,8 +13,8 @@
 // direct-call forms (`free(xs)`, `gfn(xs)`) are unaffected: their
 // defaults splice into the AST args before dispatch.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Tracker :: struct {
     allocs: i64;

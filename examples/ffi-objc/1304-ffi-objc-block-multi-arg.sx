@@ -12,8 +12,8 @@
 // If the impl is missing, the compiler emits a focused diagnostic
 // pointing at modules/ffi/objc_block.sx as the template.
 
-#import "modules/std.sx";
-#import "modules/ffi/objc_block.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc_block.sx";
 
 // Trampoline matching `void (^)(int, void*)` — the C ABI Apple's
 // runtime calls. Forwards through to the sx closure with the

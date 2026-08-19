@@ -11,7 +11,7 @@
 // A bare tag-compare (`if err == error.X`) proves NOTHING about absence — see the
 // rejection in 1047.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad, Empty }
 

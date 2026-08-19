@@ -2,12 +2,12 @@
 // The public module aliases the Method/Entry/options/Source/Sink contracts and
 // wraps these states; miniz-shaped storage/error machinery stays internal.
 
-#import "modules/std/core.sx";
-#import "modules/std/compress.sx";
-#import "modules/std/internal/compress.sx";
-#import "modules/std/internal/zip.sx";
-fs :: #import "modules/std/fs.sx";
-zip_contracts :: #import "modules/std/codecs/zip_contracts.sx";
+@import "modules/std/core.sx";
+@import "modules/std/compress.sx";
+@import "modules/std/internal/compress.sx";
+@import "modules/std/internal/zip.sx";
+fs :: @import "modules/std/fs.sx";
+zip_contracts :: @import "modules/std/codecs/zip_contracts.sx";
 
 StdZipMethod       :: zip_contracts.Method;
 StdZipSource       :: zip_contracts.Source;

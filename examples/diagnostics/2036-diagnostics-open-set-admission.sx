@@ -6,7 +6,7 @@
 //
 // Each refusal names the set, what the set allows, the member, and what the
 // member is — for a size failure, the field that accounts for it.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 32, align = 8 }) {
     render :: (self: *Self) -> string;

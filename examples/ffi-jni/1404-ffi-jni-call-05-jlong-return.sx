@@ -1,7 +1,7 @@
 // `@JniCall(i64)` (jlong return) dispatches through `CallLongMethod`,
 // vtable slot 52.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g_should_call : bool = false;
 

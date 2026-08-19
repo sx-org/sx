@@ -3,7 +3,7 @@
 // value is lowered against the merge's result type, so the phi operands all
 // share one width.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 sign :: (n: i32) -> i32 {
     match n {

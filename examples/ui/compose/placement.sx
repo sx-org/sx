@@ -7,11 +7,11 @@
 //
 // A component that owns a surface owns the padding inside it, so `Mod.padding`
 // is for a box composed at the call site.
-#import "modules/std.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/render.sx";
-#import "examples/ui/compose/view.sx";
-#import "examples/ui/compose/components.sx";
+@import "modules/std.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
+@import "examples/ui/compose/view.sx";
+@import "examples/ui/compose/components.sx";
 
 ModFrames :: struct {
     box: Frame;

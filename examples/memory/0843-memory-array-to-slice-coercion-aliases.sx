@@ -7,7 +7,7 @@
 //
 // Sibling of 0842 (the 0225 explicit-subslice alias).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g : [3]i64 = .[ 1, 2, 3 ];
 

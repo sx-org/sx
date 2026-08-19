@@ -6,7 +6,7 @@
 // variadic pack boxes each arg; the formatter's int arm dispatches per-tag
 // widths).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i64 {
     a : i8  = -8;    aa : any = a;   ra : i8  = xx aa;

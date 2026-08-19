@@ -9,7 +9,7 @@
 // every vector field: wrong reflection offsets, and total-size mismatches that
 // trip emit_llvm's verifySizes assert so most such structs cannot compile.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 V3   :: struct { pre: u16; v: @Vector(3, f32); post: i16; }
 V2   :: struct { pre: u8; v: @Vector(2, f32); }

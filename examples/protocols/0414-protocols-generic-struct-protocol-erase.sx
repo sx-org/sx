@@ -7,7 +7,7 @@
 //     `impl VL($R) for Combined($R, ..$Ts)`: the thunk monomorphizes the
 //     template method for the instance and dispatch works.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 VL :: protocol(T: Type) vtable { get :: (self: *Self) -> T; }
 IntCell :: struct { v: i64; }

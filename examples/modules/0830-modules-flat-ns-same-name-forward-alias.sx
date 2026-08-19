@@ -1,9 +1,9 @@
 // A flat import and a namespaced import both exporting `B :: u8` must not
 // preempt the own module's `A :: B; B :: u64;` forward alias chain.
 
-std :: #import "modules/std.sx";
-#import "0830-modules-flat-ns-same-name-forward-alias/flat.sx";
-ns :: #import "0830-modules-flat-ns-same-name-forward-alias/ns.sx";
+std :: @import "modules/std.sx";
+@import "0830-modules-flat-ns-same-name-forward-alias/flat.sx";
+ns :: @import "0830-modules-flat-ns-same-name-forward-alias/ns.sx";
 A :: B;
 B :: u64;
 

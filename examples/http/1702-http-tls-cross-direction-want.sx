@@ -33,13 +33,13 @@
 //     dispatch (reading parks; a level-triggered writable would spin the
 //     loop for the whole handler run and starve the request).
 //   + net-zero GPA gate across the whole run.
-#import "modules/std.sx";
-#import "modules/std/http/tls.sx";   // TlsConn, TlsAcceptor, TlsStep (flat)
-cstd   :: #import "modules/std/c.sx";
-socket :: #import "modules/std/socket.sx";
-http   :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+@import "modules/std/http/tls.sx";   // TlsConn, TlsAcceptor, TlsStep (flat)
+cstd   :: @import "modules/std/c.sx";
+socket :: @import "modules/std/socket.sx";
+http   :: @import "modules/std/http.sx";
 
-clib :: #library "c";
+clib :: @library "c";
 usleep :: (usec: i64) -> i32 extern clib;
 
 PORT :: 19017;

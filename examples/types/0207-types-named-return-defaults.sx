@@ -2,7 +2,7 @@
 // A defaulted slot is EXEMPT from the must-set rule — if the body never assigns
 // it, the default seeds it at the implicit return. A non-defaulted slot must
 // still be set (see 0206). An explicit assignment overrides the default.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // `sum` defaults to -1; only `good` must be assigned.
 classify :: (n: i32) -> (sum: i32 = -1, good: bool) {

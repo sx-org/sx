@@ -12,7 +12,7 @@
 // `Ord` is the control: a `constraint` partition only grows, so its positive is
 // readable on the spot even though the same driver could add another
 // `impl Ord for Tag`. That driver folds, and never appears in the report.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
 Ord :: protocol constraint { cmp :: (self: *Self, o: *Self) -> i64; }

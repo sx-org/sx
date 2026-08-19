@@ -3,7 +3,7 @@
 // plain enum and for a payloadless variant of a tagged union; a payload-carrying
 // variant keeps its call form (`Shape.circle(2.0)`), unaffected.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Color :: enum { red; green; blue; }
 

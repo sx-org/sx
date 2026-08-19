@@ -1,5 +1,5 @@
-a :: #import "same-name-structs-keep-their-own-methods/a.sx";
-b :: #import "same-name-structs-keep-their-own-methods/b.sx";
+a :: @import "same-name-structs-keep-their-own-methods/a.sx";
+b :: @import "same-name-structs-keep-their-own-methods/b.sx";
 
 main :: () -> i32 {
     if a.use() != 2 { return 1; }

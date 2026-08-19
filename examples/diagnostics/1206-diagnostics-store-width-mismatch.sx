@@ -4,7 +4,7 @@
 // The discriminator is BYTE WIDTH (via `typeSizeBytes`), so a same-width
 // reinterpretation (`*T → [*]T`, a bare fn-ref into a function slot) still passes.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 S :: struct { a: i32; b: i32; }
 

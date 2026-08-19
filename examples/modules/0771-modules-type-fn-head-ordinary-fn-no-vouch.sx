@@ -12,8 +12,8 @@
 // uses to recognize a type-fn head, so an ordinary same-name function — which
 // cannot be the head being instantiated — vouches for nothing.
 
-#import "modules/std.sx";
-#import "0771-modules-type-fn-head-ordinary-fn-no-vouch/b.sx";
+@import "modules/std.sx";
+@import "0771-modules-type-fn-head-ordinary-fn-no-vouch/b.sx";
 
 main :: () -> i32 {
     print("size={}\n", size_of(Make(i64)));

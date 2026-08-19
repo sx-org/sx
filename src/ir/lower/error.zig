@@ -621,7 +621,7 @@ pub fn lowerCallerSite(self: *Lowering, node: *const Node) Ref {
     const tid = self.sourceSiteType() orelse {
         if (self.diagnostics) |d| {
             const contract = contracts.find(source_site.contract_name).?;
-            d.addFmt(.err, node.span, "'@caller' needs '{s}' in scope — #import \"{s}\"", .{ source_site.contract_name, contract.module });
+            d.addFmt(.err, node.span, "'@caller' needs '{s}' in scope — @import \"{s}\"", .{ source_site.contract_name, contract.module });
         }
         return self.builder.constInt(0, .void);
     };

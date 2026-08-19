@@ -4,8 +4,8 @@
 // type leaf diagnoses the imported value-param misuse at the reference, the same
 // way the main-file `UnknownTypeChecker` does, so the field never carries the
 // `.unresolved` sentinel into LLVM emission.
-#import "modules/std.sx";
-#import "0760-modules-imported-generic-value-param-as-field-type/lib.sx";
+@import "modules/std.sx";
+@import "0760-modules-imported-generic-value-param-as-field-type/lib.sx";
 
 main :: () -> i32 {
     b : Bad(3) = .{ x = 1 };

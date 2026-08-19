@@ -2,7 +2,7 @@
 // still a parameter of the value — the default is a call-site convenience the
 // indirect caller never sees — so `one` is `(i64) -> i64` and does not fit a
 // `() -> i64` slot.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 one :: (x: i64 = 5) -> i64 { return x; }
 takes0 :: (f: () -> i64) -> i64 { return f(); }

@@ -4,9 +4,9 @@
 // b.sx's uses must reach b.sx's `target` (body `x + 100`, default 20), never
 // a.sx's first-wins winner. The alias-selected calls run FIRST so the selected
 // author materializes before the winner's own lazy lowering.
-#import "modules/std.sx";
-#import "1624-modules-flat-same-name-alias-call/a.sx";
-#import "1624-modules-flat-same-name-alias-call/b.sx";
+@import "modules/std.sx";
+@import "1624-modules-flat-same-name-alias-call/a.sx";
+@import "1624-modules-flat-same-name-alias-call/b.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

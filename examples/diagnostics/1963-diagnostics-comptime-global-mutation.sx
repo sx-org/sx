@@ -2,7 +2,7 @@
 // cannot mutate globals. The VM reads a global into a VM-local copy and never
 // writes back, so a store to one has nowhere to land and the evaluation is
 // refused — the compile-time world stays sealed off from the image's data.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 counter : i64 = 0;
 

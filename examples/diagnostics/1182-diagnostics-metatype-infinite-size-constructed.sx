@@ -5,8 +5,8 @@
 //
 // Referencing a declared slot BY VALUE inside its own definition is the one
 // self-reference shape that is illegal; a `*L` pointer needs no layout.
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 make :: () -> Type {
     h := declare("L");

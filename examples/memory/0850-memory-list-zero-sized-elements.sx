@@ -2,7 +2,7 @@
 // follows the doubling schedule, but `grow_to` returns before allocating, and
 // `insert` / `remove` shift zero bytes. The GPA's counter stays at 0 — it is
 // passed positionally at each call rather than pushed onto the context.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Nothing :: struct {}
 

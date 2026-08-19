@@ -4,7 +4,7 @@
 // when no param name is close; positional-only zones (the variadic tail); missing
 // required params reported BY NAME with no arity-count cascade; and closure values,
 // which bind positionally only.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 f :: (alpha: i64, beta: i64 = 1, gamma: string = "g") -> i64 { alpha + beta + gamma.len }
 v :: (n: i64, ..rest: []i64) -> i64 { n + rest.len }

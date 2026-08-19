@@ -17,8 +17,8 @@
 //      SAME connection both succeed.
 // The whole run is under a GPA; net-zero alloc_count after close proves
 // no per-chunk / stream-buffer leak.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 PORT :: 18974;
 

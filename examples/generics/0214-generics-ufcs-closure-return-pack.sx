@@ -4,7 +4,7 @@
 // resolve `$R = i64` identically and build `Wrap($R)` correctly. The UFCS path
 // runs the direct path's pack/closure-return binding rather than splicing the
 // receiver as arg 0.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box  :: struct { n: i64; }
 Wrap :: struct ($R: Type) { value: R; }

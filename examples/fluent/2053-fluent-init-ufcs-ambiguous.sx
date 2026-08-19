@@ -6,9 +6,9 @@
 // which one it meant. Flat imports merge names by design, so this is the ordinary
 // answer for a name two modules declare — and it is why a package's spelling is
 // its own.
-#import "modules/std.sx";
-#import "2053-fluent-init-ufcs-ambiguous/left.sx";
-#import "2053-fluent-init-ufcs-ambiguous/right.sx";
+@import "modules/std.sx";
+@import "2053-fluent-init-ufcs-ambiguous/left.sx";
+@import "2053-fluent-init-ufcs-ambiguous/right.sx";
 
 main :: () -> i32 {
     print("{}\n", (7).publish());

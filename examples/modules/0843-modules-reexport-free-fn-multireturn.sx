@@ -9,7 +9,7 @@
 // name (absent from `qualified_fn_source` for an alias re-export) yields a null
 // source, so the tuple's struct member resolves in the CALL SITE's context and
 // is reported "not visible".
-fac :: #import "0843-modules-reexport-free-fn-multireturn/facade.sx";
+fac :: @import "0843-modules-reexport-free-fn-multireturn/facade.sx";
 main :: () -> i32 {
     r, e := fac.make(false);
     if e { return 1; }

@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-#import "modules/std/core.sx";
+@import "modules/std.sx";
+@import "modules/std/core.sx";
 
 Box :: struct { site: @SourceSite; }
 

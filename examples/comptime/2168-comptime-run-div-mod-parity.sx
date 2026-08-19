@@ -1,7 +1,7 @@
 // `/` and `%` truncate toward zero and read their signedness from the operand
 // type. The comptime VM computes what codegen's `sdiv`/`srem`, `udiv`/`urem`
 // and `frem` compute, so one call site spells one answer at both stages.
-#import "modules/std/core.sx";
+@import "modules/std/core.sx";
 
 report :: (stage: string, n: i64, d: i64, un: u64, ud: u64, x: f64, y: f64) -> i64 {
     @printf("{}: {} {} {} {} {}\n", stage, n / d, n % d, un / ud, un % ud, x % y);

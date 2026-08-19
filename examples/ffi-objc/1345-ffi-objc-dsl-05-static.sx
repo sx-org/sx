@@ -12,8 +12,8 @@
 // constructor at module-load — runtime-created test classes wouldn't
 // exist yet when `objc_getClass` runs. NSObject is always available
 // on macOS via libobjc.
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 NSObject :: @ObjcClass("NSObject") extern {
     // `+(Class)class` — niladic, name verbatim, selector = "class".

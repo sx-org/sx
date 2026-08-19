@@ -12,9 +12,9 @@
 // `library/modules/ffi/objc_block.sx` has a single author and keeps the
 // prefix-free path (0504 / 1302 / 1304).
 
-#import "modules/std.sx";
-#import "0829-packs-param-impl-mixed-pack-source-ambiguous/a.sx";
-#import "0829-packs-param-impl-mixed-pack-source-ambiguous/b.sx";
+@import "modules/std.sx";
+@import "0829-packs-param-impl-mixed-pack-source-ambiguous/a.sx";
+@import "0829-packs-param-impl-mixed-pack-source-ambiguous/b.sx";
 
 Block :: struct { tag: i32; }
 

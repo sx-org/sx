@@ -2,9 +2,9 @@
 // identity. Two modules author `Box`, `Mk`, `pick` and `tally`; reaching each
 // author through its own namespace must build that author's layout and call
 // that author's body, whatever the import order.
-#import "modules/std.sx";
-a :: #import "0226-generics-template-author-identity/a.sx";
-b :: #import "0226-generics-template-author-identity/b.sx";
+@import "modules/std.sx";
+a :: @import "0226-generics-template-author-identity/a.sx";
+b :: @import "0226-generics-template-author-identity/b.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

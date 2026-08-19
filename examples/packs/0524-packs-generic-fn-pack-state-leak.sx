@@ -8,7 +8,7 @@
 // `lazyLowerFunction` needs the same isolation on its own lowering
 // path — 0522 pins that side.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 build :: (args: []Type, $ret: Type) -> string {
     return concat("len=", int_to_string(args.len));

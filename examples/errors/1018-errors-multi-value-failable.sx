@@ -8,7 +8,7 @@
 // on failure; `catch` / `??` absorb the failure and merge the value-tuple or the
 // handler/terminator value. Single-value `-> (T, !E)` is examples/228-231.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad, Empty }
 

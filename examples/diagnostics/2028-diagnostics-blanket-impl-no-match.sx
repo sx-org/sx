@@ -2,7 +2,7 @@
 // says: for any `T`, `Buffer(T)` implements `Series(T)` — so a request whose
 // argument disagrees with the instantiation, or whose carrier is a different
 // template, is not covered and the bound is not satisfied.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Series :: protocol(T: Type) constraint {
     count :: (self: *Self) -> i64;

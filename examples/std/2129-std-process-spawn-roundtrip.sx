@@ -1,7 +1,7 @@
 // std.process.spawn hands back a LIVE child: the parent writes into its
 // stdin, reads the echo out of its stdout while it is still running,
 // closes stdin so the child sees EOF, then reaps exit 0.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     child, e := process.spawn(.["cat"], .{ stdin = .pipe, stdout = .pipe });

@@ -10,12 +10,12 @@
 // cwd-relative sibling path are one cache key. The corpus runs relative entry
 // paths only; the abs-vs-rel unification is carried by the `canonicalizePath`
 // unit tests in src/imports.test.zig. This example pins the import SHAPE.
-#import "modules/std.sx";
-#import "1619-modules-multichain-import-identity/mymod";
-#import "1619-modules-multichain-import-identity/document.sx";
-#import "1619-modules-multichain-import-identity/layer.sx";
-#import "1619-modules-multichain-import-identity/toolbar.sx";
-#import "1619-modules-multichain-import-identity/canvas_view.sx";
+@import "modules/std.sx";
+@import "1619-modules-multichain-import-identity/mymod";
+@import "1619-modules-multichain-import-identity/document.sx";
+@import "1619-modules-multichain-import-identity/layer.sx";
+@import "1619-modules-multichain-import-identity/toolbar.sx";
+@import "1619-modules-multichain-import-identity/canvas_view.sx";
 
 main :: () -> i32 {
     d := Document{ layers = List(Layer){}, active = 0 };

@@ -19,9 +19,9 @@
 //   5. FAILURE SURFACING — every malformed input raises the right
 //      `JsonParseError` variant on the error channel, never a bogus value.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
-#import "modules/std/json.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+@import "modules/std/json.sx";
 
 // Canonical document: no insignificant whitespace, escapes in the writer's
 // own form — so re-serializing the parse must reproduce it exactly.

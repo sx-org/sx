@@ -1,8 +1,8 @@
 // The render surface the fluent library paints into — the ui foundation's
 // tree, so the platform renderer consumes a fluent scene as-is.
-#import "modules/std.sx";
-types :: #import "modules/ui/types.sx";
-render :: #import "modules/ui/render.sx";
+@import "modules/std.sx";
+types :: @import "modules/ui/types.sx";
+render :: @import "modules/ui/render.sx";
 
 Color :: types.Color;
 RenderNode :: render.RenderNode;

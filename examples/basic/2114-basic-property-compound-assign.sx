@@ -4,12 +4,12 @@
 // exactly once. A slice's `.len` / `.ptr` are the two header words, so `OP=`
 // retargets the view itself. A comptime tuple or struct index is a
 // heterogeneous member, reached by a typed field GEP rather than a stride.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Temp :: struct {
     raw: i64 = 0;
-    celsius :: (self: *Temp) -> i64 #get => self.raw;
-    celsius :: (self: *Temp, v: i64) #set { self.raw = v * 2; }
+    celsius :: (self: *Temp) -> i64 @get => self.raw;
+    celsius :: (self: *Temp, v: i64) @set { self.raw = v * 2; }
 }
 
 Wide :: struct { a: i64; b: i64; }

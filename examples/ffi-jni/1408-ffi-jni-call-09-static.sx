@@ -2,7 +2,7 @@
 // The target is already a `jclass`, so the lowering skips `GetObjectClass`
 // and uses `GetStaticMethodID` + `CallStatic<Type>Method`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g_should_call : bool = false;
 

@@ -3,9 +3,9 @@
 // filtered-row construction, PNG chunk encoding, and chunk-walking +
 // unfiltering for decode.
 
-#import "modules/std/core.sx";
-#import "modules/std/compress.sx";
-#import "modules/std/internal/compress.sx";
+@import "modules/std/core.sx";
+@import "modules/std/compress.sx";
+@import "modules/std/internal/compress.sx";
 
 private PNG_MAX_CHUNK_LEN : i64 = 0x7fffffff;
 

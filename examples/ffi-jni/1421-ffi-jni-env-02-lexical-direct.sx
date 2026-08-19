@@ -5,7 +5,7 @@
 // value directly as the IR-level env arg. No thread-local read, no per-call
 // lookup; env stays register-resident across loop bodies.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g_should_call : bool = false;
 

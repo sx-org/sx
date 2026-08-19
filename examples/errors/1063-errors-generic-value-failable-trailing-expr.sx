@@ -4,7 +4,7 @@
 // intact across instantiations (i64 / string / struct), and `??` must yield the
 // real value not the fallback. `lowerGenericInstance` takes the same
 // value-failable success routing as the non-generic body.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad }
 

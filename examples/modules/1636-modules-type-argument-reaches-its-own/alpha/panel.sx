@@ -1,6 +1,6 @@
 // This module writes a `Panel` and a `Note`, and asks about its own.
-#import "modules/std.sx";
-v :: #import "../view.sx";
+@import "modules/std.sx";
+v :: @import "../view.sx";
 
 Panel :: @OpenVariant(v.View) {
     tag: string = "alpha";

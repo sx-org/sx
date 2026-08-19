@@ -5,8 +5,8 @@
 // The diagnostic names the mismatch: the keyword count derived from the
 // method name against the arity the call site supplies.
 //
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 SxProbeMismatch :: @ObjcClass("SxProbeMismatch") extern {
     something_extra :: (self: *Self, x: i32) -> i32;

@@ -1,5 +1,5 @@
 // A set only one module declares: its name says which one it is on its own.
-#import "modules/std.sx";
+@import "modules/std.sx";
 Cell :: @OpenSet(.{ max = 64 }) { tag :: (self: *Self) -> string; }
 Number :: @OpenVariant(Cell) { n: i64 = 0; tag :: (self: *Number) -> string => "number"; }
 Plain :: struct { n: i64 = 0; }

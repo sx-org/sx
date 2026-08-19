@@ -9,11 +9,11 @@
 // survive sx's struct-field assignment, List storage, and
 // iteration-then-call cycles.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #include "1217-ffi-09-extern-result-chain.h";
-    #source "1217-ffi-09-extern-result-chain.c";
+@import c {
+    @include "1217-ffi-09-extern-result-chain.h";
+    @source "1217-ffi-09-extern-result-chain.c";
 };
 
 // Struct field hosts an FFI-returned handle.

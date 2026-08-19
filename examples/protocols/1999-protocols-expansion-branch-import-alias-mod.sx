@@ -1,7 +1,7 @@
 // The module the branch aliases. What it contributes is not written at its
 // module scope either — its OWN driver writes it, and that driver folds when
 // the alias's views expand, well after the branch that brought it was taken.
-#import "./1999-protocols-expansion-branch-import-alias-kinds.sx";
+@import "./1999-protocols-expansion-branch-import-alias-kinds.sx";
 
 inline if POINTER_SIZE == 8 {
     impl Mark for Slot { tag :: (self: *Slot) -> i64 { self.n * 7 } }

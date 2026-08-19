@@ -25,10 +25,10 @@
 // 5. GPA leak gate: net-zero after close (the job's single allocation —
 //    header + bytes — is freed in run_handler_job; the discarded late
 //    completion's buffer is freed in drain_completions).
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
-clib :: #library "c";
+clib :: @library "c";
 usleep :: (usec: i64) -> i32 extern clib;
 
 PORT :: 18991;

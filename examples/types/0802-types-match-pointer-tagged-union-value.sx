@@ -4,7 +4,7 @@
 // the match RESULT TYPE is inferred from the arms even when every arm's value
 // depends on its capture — the arms are typed against the DEREFERENCED
 // subject.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Shape :: enum { circle: i64; rect: i64; }
 

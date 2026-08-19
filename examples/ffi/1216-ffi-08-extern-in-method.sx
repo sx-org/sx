@@ -8,12 +8,12 @@
 // 3. closure value body                  (closure { ... })
 // 4. comptime-gated branch               (inline match OS)
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
-#import c {
-    #include "1216-ffi-08-extern-in-method.h";
-    #source "1216-ffi-08-extern-in-method.c";
+@import c {
+    @include "1216-ffi-08-extern-in-method.h";
+    @source "1216-ffi-08-extern-in-method.c";
 };
 
 // ── 1. Struct method calling a #extern fn ───────────────────────────

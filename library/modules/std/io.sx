@@ -21,10 +21,10 @@
 // Worker form: a nullary failable `Closure() -> ($R, !)`, written as a lambda
 // at the call site (`|| -> (i64, !) compute(a, b)`). A named fn does not
 // coerce to a closure, so it is not a worker.
-#import "modules/std/core.sx";
-#import "modules/std/atomic.sx";
-c    :: #import "modules/std/c.sx";
-time :: #import "modules/std/time.sx";
+@import "modules/std/core.sx";
+@import "modules/std/atomic.sx";
+c    :: @import "modules/std/c.sx";
+time :: @import "modules/std/time.sx";
 
 // --- IoErr: the error channel async rides (cancellation = model (a)) ---
 //
@@ -47,7 +47,7 @@ CBlockingIo :: struct {}
 // ordinary `push .{ io = s }`.
 c_blocking_io : CBlockingIo = .{};
 
-#context_extend io: Io = c_blocking_io;
+@context_extend io: Io = c_blocking_io;
 
 impl Io for CBlockingIo {
     // No fiber bootstrap in the blocking model: the generic `async`

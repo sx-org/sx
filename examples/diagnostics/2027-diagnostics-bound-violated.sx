@@ -2,7 +2,7 @@
 // fixed, not against the template — and none of them passes silently: a bound
 // that cannot be satisfied is never treated as satisfied for want of something
 // to look up.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Summable :: protocol constraint {
     val :: (self: *Self) -> i32;

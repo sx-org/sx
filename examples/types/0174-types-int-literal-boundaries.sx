@@ -3,7 +3,7 @@
 // width-64 types accept any representable literal; explicit `xx` / `cast`
 // still truncate on request; literal call args check against param types.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 clamp_i8 :: (v: i8) -> i8 { v }
 

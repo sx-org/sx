@@ -63,8 +63,8 @@
 //
 // NOT a corpus example: it runs for seconds.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 ALLOCS  : i64 : 2000000;
 TRIALS  : i64 : 61;
@@ -556,7 +556,7 @@ fill_handles :: (h: []Allocator, slabs: [*]u8) {
 // The default target is a named global handle, which is what a `*Allocator`
 // field can point at in a static initializer.
 ap_default : Allocator = b00;
-#context_extend ap: *Allocator = *ap_default;
+@context_extend ap: *Allocator = *ap_default;
 
 // ── Lanes ────────────────────────────────────────────────────────────────
 

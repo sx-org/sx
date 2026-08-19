@@ -6,10 +6,10 @@
 // that order and reaches no region, backward under shift and entering at the
 // first when nothing is focused. What the committed frame stops declaring stops
 // being focused.
-#import "modules/std.sx";
-#import "examples/ui/compose.sx";
-#import "modules/ui/input.sx";
-ui :: #import "modules/ui/types.sx";
+@import "modules/std.sx";
+@import "examples/ui/compose.sx";
+@import "modules/ui/input.sx";
+ui :: @import "modules/ui/types.sx";
 
 key :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k });
 shifted :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k, header = .{ modifiers = .{ shift = true } } });

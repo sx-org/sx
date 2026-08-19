@@ -1,7 +1,7 @@
 // The package's members, in a SIBLING module: each names the set through the
 // module that declares it, and joins that declaration.
-#import "modules/std.sx";
-v :: #import "view.sx";
+@import "modules/std.sx";
+v :: @import "view.sx";
 
 Label :: @OpenVariant(v.View) {
     text: string = "";

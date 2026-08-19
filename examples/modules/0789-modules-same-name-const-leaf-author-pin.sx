@@ -5,9 +5,9 @@
 // which is unique to `a.sx`. Folding `K`'s RHS pins `M` to A's source (→ 1),
 // giving `K = 2`, coherently whether `K` is read as a runtime VALUE (`print K`)
 // or used as an array DIMENSION (`[K]u8`) → val=2 len=2.
-#import "modules/std.sx";
-#import "0789-modules-same-name-const-leaf-author-pin/a.sx";
-#import "0789-modules-same-name-const-leaf-author-pin/b.sx";
+@import "modules/std.sx";
+@import "0789-modules-same-name-const-leaf-author-pin/a.sx";
+@import "0789-modules-same-name-const-leaf-author-pin/b.sx";
 
 read_dim :: () -> i64 {
     arr : [K]u8 = ---;

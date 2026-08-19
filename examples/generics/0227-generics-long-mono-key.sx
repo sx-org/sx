@@ -2,9 +2,9 @@
 // arguments whose mangled key runs well past 256 bytes stay distinct all
 // the way to the last byte. Both authors' long spelling is identical, so only
 // the full key separates them.
-#import "modules/std.sx";
-a :: #import "0227-generics-long-mono-key/a.sx";
-b :: #import "0227-generics-long-mono-key/b.sx";
+@import "modules/std.sx";
+a :: @import "0227-generics-long-mono-key/a.sx";
+b :: @import "0227-generics-long-mono-key/b.sx";
 
 Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_ :: struct($T: Type) { value: T; }
 

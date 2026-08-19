@@ -1,7 +1,7 @@
 // Returning a value whose type has NO coercion to the declared return type is a
 // compile error. Both the trailing-expression and the explicit-`return` forms
 // diagnose.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 bad_trailing :: () -> i64 { "not an int" }
 bad_explicit :: () -> i64 { return "also not an int"; }

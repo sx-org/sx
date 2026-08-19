@@ -8,7 +8,7 @@
 //
 // The rejections live in `examples/errors/1076-errors-cross-set-value-reject.sx`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Narrow :: error { Wide }
 Broad  :: error { Wide, Extra }

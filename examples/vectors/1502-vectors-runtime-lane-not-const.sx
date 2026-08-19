@@ -6,7 +6,7 @@
 // build. The diagnostic points at the lane expression, and the process exits
 // non-zero. A non-const lane never produces a vector value.
 //
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 lanes :: () -> u32 { return 3; }
 

@@ -4,7 +4,7 @@
 // - The return-type slot is substituted per-mono, so the inferred caller
 //   type matches what the body returns (string / i64 / bool here).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 third :: (..$args) -> $args[2] => args[2];
 

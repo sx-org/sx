@@ -6,8 +6,8 @@
 // comptime trace prints the same `func at file:line:col` form as a runtime one.
 // The error is caught, and the trace is printed during the build.
 
-#import "modules/std.sx";
-trace :: #import "modules/std/trace.sx";
+@import "modules/std.sx";
+trace :: @import "modules/std/trace.sx";
 
 TErr :: error { Bad };
 

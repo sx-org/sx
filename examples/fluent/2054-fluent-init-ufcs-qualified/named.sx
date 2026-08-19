@@ -1,5 +1,5 @@
 // A module reached BY NAME, whose own `publish` shares that name and is an
 // ordinary function of one argument.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 publish :: (n: i64) -> string => "namespace";

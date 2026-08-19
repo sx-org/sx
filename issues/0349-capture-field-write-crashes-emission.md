@@ -16,7 +16,7 @@ Reproduces for every container shape: fixed array, slice, `List(T)`
 
 ## Repro
 
-    #import "modules/std.sx";
+    @import "modules/std.sx";
     Item :: struct { n: i64 = 0; }
     main :: () {
         arr : [2]Item = .[.{ n = 1 }, .{ n = 2 }];

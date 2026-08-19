@@ -15,9 +15,9 @@
 //
 // Every surface emits the loud "type 'Box' is ambiguous", and the build exits 1.
 
-#import "modules/std.sx";
-#import "0815-route-all-new-surfaces-ambiguous/a.sx";
-#import "0815-route-all-new-surfaces-ambiguous/b.sx";
+@import "modules/std.sx";
+@import "0815-route-all-new-surfaces-ambiguous/a.sx";
+@import "0815-route-all-new-surfaces-ambiguous/b.sx";
 
 BoxPtr :: *Box;
 

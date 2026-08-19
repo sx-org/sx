@@ -1,7 +1,7 @@
 // A type that contains ITSELF by value has no finite size and is rejected; the
 // message suggests a pointer payload (`*Tree`), which breaks the cycle. Source
 // decls and comptime-constructed types are both covered — this is the source form.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Tree :: enum {
     node: Tree;     // by-VALUE self-reference → infinitely sized

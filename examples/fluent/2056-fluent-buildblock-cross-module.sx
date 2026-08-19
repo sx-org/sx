@@ -3,8 +3,8 @@
 // The collector lives in its own module and the block is written here. Each
 // vocabulary is asked of the file that WROTE it: the body names types this file
 // declares, and a block does not inherit the collector's namespace.
-#import "modules/std.sx";
-#import "2056-fluent-buildblock-cross-module/collect.sx";
+@import "modules/std.sx";
+@import "2056-fluent-buildblock-cross-module/collect.sx";
 
 // Declared HERE, named only from the block body — the collector's module has
 // never heard of it.

@@ -3,7 +3,7 @@
 // `s.(*Sizable)` would be a type lie that `*P` dispatch garbage-loads. The concrete
 // recovery (`s.(*Widget)`, `s.(*void)`) and the view spelling (`@s`) are the honest
 // forms.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }

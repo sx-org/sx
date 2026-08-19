@@ -6,10 +6,10 @@
 // consumer of a package writes, having imported it under a name. Both
 // temperaments ask it, and a package with a single author of the name is asked no
 // differently from two packages that both write it: the qualifier says which.
-#import "modules/std.sx";
-s :: #import "1637-modules-qualified-type-argument/solo/panel.sx";
-ta :: #import "1637-modules-qualified-type-argument/twin_a/panel.sx";
-tb :: #import "1637-modules-qualified-type-argument/twin_b/panel.sx";
+@import "modules/std.sx";
+s :: @import "1637-modules-qualified-type-argument/solo/panel.sx";
+ta :: @import "1637-modules-qualified-type-argument/twin_a/panel.sx";
+tb :: @import "1637-modules-qualified-type-argument/twin_b/panel.sx";
 
 main :: () -> i32 {
     // One author: the qualified target is a member of the qualified set.

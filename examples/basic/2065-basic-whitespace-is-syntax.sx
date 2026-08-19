@@ -2,7 +2,7 @@
 // line break is ordinary space, so the gap before a `(` / `[` and after a
 // prefix `-` / `--` / `*` carries no reading of its own: every form below is
 // written spaced and reads exactly as its tight spelling does.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 double :: (n: i64) -> i64 => n * 2;
 

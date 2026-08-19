@@ -3,8 +3,8 @@
 // holds the closure's env pointer; the invoke trampoline restores it
 // before delegating.
 
-#import "modules/std.sx";
-#import "modules/ffi/objc_block.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc_block.sx";
 
 main :: () -> i32 {
   x : i64 = 42;

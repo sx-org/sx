@@ -2,8 +2,8 @@
 // the comptime `format` / `print` pair, and the slice/string allocation
 // helpers they build on. Consumers never import this file directly —
 // std.sx re-exports every public name here.
-#import "modules/std/core.sx";
-c :: #import "modules/std/c.sx";
+@import "modules/std/core.sx";
+c :: @import "modules/std/c.sx";
 
 // --- Slice & string allocation ---
 

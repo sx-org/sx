@@ -3,7 +3,7 @@
 // earns the same `unknown type '<name>'` diagnostic. The unknown-type checker
 // (`semantic_diagnostics.zig` `walkBodyTypes`) validates the literal's `type_expr`
 // head through the `checkTypeNodeForUnknown` walk a declaration annotation uses.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     arr := ([2]?Undefined).[ null, null ];

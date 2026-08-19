@@ -2,7 +2,7 @@
 // `MotionEvent.getX()` / `getY()` return this shape into
 // `sx_android_push_touch`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g_should_call : bool = false;
 

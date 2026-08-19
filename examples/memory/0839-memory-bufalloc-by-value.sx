@@ -2,8 +2,8 @@
 // allocator state and the FULL buffer is usable — a 128-byte buffer serves
 // 128 bytes, including the second 64-byte allocation below.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 main :: () {
     stack_buf : [128]u8 = ---;

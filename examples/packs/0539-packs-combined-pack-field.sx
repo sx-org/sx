@@ -5,7 +5,7 @@
 // Instantiate + whole-tuple store of postfix-erased values + per-element
 // method dispatch all work.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 VL :: protocol(T: Type) vtable { get :: (self: *Self) -> T; }
 IntCell :: struct { v: i64; }

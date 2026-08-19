@@ -11,8 +11,8 @@
 // - hover (no button/contact) is not a move.
 // - every pointer arm carries its pointer id — that continuity is what
 //   the router's capture routes by.
-#import "modules/std.sx";
-#import "modules/ui/types.sx";
+@import "modules/std.sx";
+@import "modules/ui/types.sx";
 
 InputModifiers :: struct {
     shift: bool = false;
@@ -123,7 +123,7 @@ InputQueue :: struct {
         InputQueue{ gpa = gpa }
     }
 
-    len :: (self: *InputQueue) -> i64 #get => self.events.len;
+    len :: (self: *InputQueue) -> i64 @get => self.events.len;
 
     push :: (self: *InputQueue, ev: InputEvent) {
         // Owned payloads: copy on entry, before any queue placement.

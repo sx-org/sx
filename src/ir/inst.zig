@@ -778,13 +778,13 @@ pub const Function = struct {
     /// from `.c`.
     is_naked: bool = false,
 
-    /// `#get` property accessor (ast.FnDecl.is_get). Registered as an ordinary
+    /// `@get` property accessor (ast.FnDecl.is_get). Registered as an ordinary
     /// method, but ALSO reachable via no-paren field syntax (`obj.name`) when no
     /// real field matches — field-access lowering/inference calls it with the
     /// receiver as `self`.
     is_get: bool = false,
 
-    /// `#set` property accessor (ast.FnDecl.is_set). The write counterpart of
+    /// `@set` property accessor (ast.FnDecl.is_set). The write counterpart of
     /// `is_get`: `obj.name = rhs` dispatches to it as `obj.name(rhs)` when no
     /// real field matches.
     is_set: bool = false,

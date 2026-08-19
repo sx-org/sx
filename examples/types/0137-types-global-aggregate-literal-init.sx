@@ -6,7 +6,7 @@
 // genuinely non-constant initializer is rejected loudly rather than silently
 // zeroed.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Pair :: struct { a: i64; b: i64; }
 WithArr :: struct { id: i64; xs: [3]i64; }

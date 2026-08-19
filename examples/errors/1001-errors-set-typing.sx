@@ -5,7 +5,7 @@
 //     (coerce with `xx` to compare the raw id).
 // The positive cases live in `examples/217-error-sets.sx`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 ParseErr :: error { BadDigit, Overflow }
 

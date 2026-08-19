@@ -4,7 +4,7 @@
 // temperaments refuse — checked (unconsumed), soft (`.(?P)`), and the optional
 // chain. The honest spellings are asserting the concrete type, or switching on the
 // tag.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Sizable :: protocol { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }

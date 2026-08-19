@@ -2,7 +2,7 @@
 // repeatedly from `main` after the helper returns. Exercises the heap-copy
 // path for both implicit-erasure-on-append and pre-erased protocol values.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Sizable :: protocol vtable {
     size :: (self: *Self) -> i64;

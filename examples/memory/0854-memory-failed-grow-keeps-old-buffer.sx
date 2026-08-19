@@ -2,8 +2,8 @@
 // `mem_realloc` and `resize` test the allocation before copying, so on failure
 // they hand back null and the old buffer is still live and still owned.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 main :: () {
     stack_buf : [64]u8 = ---;

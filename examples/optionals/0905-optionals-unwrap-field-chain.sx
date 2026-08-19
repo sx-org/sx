@@ -4,7 +4,7 @@
 // has a force_unwrap arm, so the unwrapped value's type flows into the
 // chained access.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Inner :: struct { tag: string; k: i64; }
 

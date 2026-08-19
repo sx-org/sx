@@ -1,7 +1,7 @@
 // A capture annotation is an ordinary type: a brace group in it belongs
 // to the type, not the body.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Pair :: struct($A: Type, $B: Type) { a: A; b: B; }
 

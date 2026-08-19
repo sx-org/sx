@@ -5,7 +5,7 @@
 // `catch` bodies and loops, but NOT through a nested closure (its own function
 // boundary).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad }
 

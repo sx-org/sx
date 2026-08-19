@@ -4,7 +4,7 @@
 // be a compile-time type (size folds to a constant) or a runtime Type
 // (size reads the rt table). Views alias the boxed storage.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i64 {
     arr : [4]i16 = .[10, -20, 30, -40];

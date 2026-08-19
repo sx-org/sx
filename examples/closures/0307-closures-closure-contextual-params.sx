@@ -3,7 +3,7 @@
 // positionally from the expected `Closure(T0, T1, T2) -> R` signature, in both
 // assignment and argument position.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // argument-position: lambda typed from the parameter's closure type.
 apply2 :: (f: Closure(i64, string) -> i64, x: i64, s: string) -> i64 {

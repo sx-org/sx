@@ -5,7 +5,7 @@
 // and the compiler-generated type-dispatch / pack-extraction unboxes are
 // unaffected.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 S :: struct { a: i64; }
 

@@ -6,9 +6,9 @@
 // the `Provider.getp` return `*Box` is an unresolvable collision and the build
 // exits 1.
 
-#import "modules/std.sx";
-#import "0825-protocols-same-name-method-wrapped-ambiguous/a.sx";
-#import "0825-protocols-same-name-method-wrapped-ambiguous/b.sx";
+@import "modules/std.sx";
+@import "0825-protocols-same-name-method-wrapped-ambiguous/a.sx";
+@import "0825-protocols-same-name-method-wrapped-ambiguous/b.sx";
 
 Provider :: protocol {
     getp :: (self: *Self) -> *Box;

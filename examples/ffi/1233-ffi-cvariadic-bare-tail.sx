@@ -23,10 +23,10 @@
 // companion C file, called with the same arguments — the two answers are the
 // differential.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #source "1233-ffi-cvariadic-bare-tail.c";
+@import c {
+    @source "1233-ffi-cvariadic-bare-tail.c";
 };
 
 printf :: (fmt: cstring, ..) -> i32 extern;

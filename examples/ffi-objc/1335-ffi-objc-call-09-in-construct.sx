@@ -10,9 +10,9 @@
 // `inline match OS` gating across targets is covered by
 // `tests/cross_compile.sh`.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 // ── 1. Struct method calling @ObjcCall ─────────────────────────────
 Probe :: struct {

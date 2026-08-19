@@ -1,6 +1,6 @@
 // The same, in another module, with a `Panel` of its own.
-#import "modules/std.sx";
-#import "../view.sx";
+@import "modules/std.sx";
+@import "../view.sx";
 
 Panel :: @OpenVariant(View) {
     tag: string = "beta";

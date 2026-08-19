@@ -10,9 +10,9 @@
 // call shape: `call void @objc_msgSend(ptr sret %slot, ...)` + load. The two
 // halves must agree on the ABI for the round-trip to return the right bytes.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 Triple :: struct { a: i64; b: i64; c: i64; }
 

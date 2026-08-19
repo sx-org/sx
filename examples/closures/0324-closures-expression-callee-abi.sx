@@ -2,7 +2,7 @@
 // read through an index, the result of a call — uses the same ABI as calling a
 // fn-typed local: the implicit context is prepended for a default-convention
 // pointee and arguments coerce to the pointee's parameter types.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 add2 :: (a: i64, b: i64) -> i64 { return a + b; }
 sub2 :: (a: i64, b: i64) -> i64 { return a - b; }

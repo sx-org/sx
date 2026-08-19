@@ -1,6 +1,6 @@
 // Const and function alias chains resolve at ANY acyclic depth — the walk
 // is bounded by the finite declaration set, not a fixed hop budget.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 A00 :: A01;
 A01 :: A02;

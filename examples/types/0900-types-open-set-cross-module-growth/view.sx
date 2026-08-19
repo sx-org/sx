@@ -1,5 +1,5 @@
 // The set, and the only member its own module declares.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 256, align = 8 }) {
     render :: (self: *Self) -> string;

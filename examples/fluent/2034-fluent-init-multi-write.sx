@@ -6,7 +6,7 @@
 // included — straight into that call's destination. There is no write-count
 // diagnostic and no escape analysis; which of these patterns is correct is the
 // library's protocol to document, not the compiler's to enforce.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Drawable :: protocol constraint {
     draw :: (self: *Self) -> string;

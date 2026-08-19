@@ -3,7 +3,7 @@
 // would set the payload but leave the tag stale. The variant is set via
 // construction (`s = .rect(...)`), which writes both tag and payload.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Shape :: enum {
     circle: f32;

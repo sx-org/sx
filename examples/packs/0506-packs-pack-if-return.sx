@@ -18,7 +18,7 @@
 // `maybe()` with zero call-args takes the false branch and falls through to
 // `return -1;`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 maybe :: (..$args) -> i64 {
     if args.len > 0 {

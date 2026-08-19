@@ -1,6 +1,6 @@
-#import "modules/std.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/input.sx";
+@import "modules/std.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/input.sx";
 
 // The one host event stream. INPUT is the normalized InputEvent —
 // consumers push `.input` payloads into their root's InputQueue for

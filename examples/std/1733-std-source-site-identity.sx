@@ -3,9 +3,9 @@
 // constructs sites (a diagnostic-only fake leaves `id = 0`) and computes the
 // canonical id with `source_site_key_id`, whose encoding is normative: the
 // vectors below are the specification, not an observation.
-#import "modules/std.sx";
-#import "modules/std/core.sx";
-#import "modules/std/source_site.sx";
+@import "modules/std.sx";
+@import "modules/std/core.sx";
+@import "modules/std/source_site.sx";
 
 // The contract is an ordinary type: it names parameters and returns.
 relabel :: (site: @SourceSite, declaration: string) -> @SourceSite {

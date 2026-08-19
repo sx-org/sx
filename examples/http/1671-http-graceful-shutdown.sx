@@ -20,8 +20,8 @@
 //   3. NET-ZERO LEAK: the whole thing runs under a GPA whose alloc_count
 //      is bumped on every alloc/dealloc, asserted zero after both servers
 //      are stopped + closed.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 PORT :: 18981;
 

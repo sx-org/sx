@@ -5,7 +5,7 @@
 // site: `Tuple(...)` is a type-position spelling, so `size_of` takes the alias.
 // Same shape as the existing `size_of(i32)` baseline path.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Unambiguous type-form const-decl aliases.
 Ptr   :: *u8;

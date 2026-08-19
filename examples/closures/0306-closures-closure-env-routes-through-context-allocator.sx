@@ -8,7 +8,7 @@
 // — same Tracer, same install via `push Context`, same `Tracer.count = 1`
 // assertion, different allocation site (closure env vs xx-value heap copy).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Tracer :: struct {
     count: i64;

@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Opaque GPU resource handles. Each backend decides what the integer
 // means. Zero is reserved for "no handle".

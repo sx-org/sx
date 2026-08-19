@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-#import "layer.sx";
+@import "modules/std.sx";
+@import "layer.sx";
 
 Document :: struct {
     layers: List(Layer);

@@ -7,9 +7,9 @@
 // sentinel and emits the diagnostic at the reference, rather than letting the
 // type leaf's empty-struct stub fabricate a 0-field type and mis-size `Thing`
 // downstream. Here `lib.sx` references the non-existent type `Coordnate`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import "0759-modules-undeclared-type-in-import/lib.sx";
+@import "0759-modules-undeclared-type-in-import/lib.sx";
 
 main :: () -> i32 {
     print("thing.x = {}\n", make_thing());

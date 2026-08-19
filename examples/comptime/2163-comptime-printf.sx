@@ -2,7 +2,7 @@
 // compiler's stdout. The comptime VM walks the same core.sx primitives the
 // runtime does, so one call site spells one rendering at both stages, with no
 // allocator at either.
-#import "modules/std/core.sx";
+@import "modules/std/core.sx";
 
 render :: (stage: string) -> i64 {
     n: i64 = 4242;

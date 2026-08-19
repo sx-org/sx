@@ -1,7 +1,7 @@
 // std.png: idiomatic image/options surface, exact miniz-compatible bytes for
 // every 8-bit pixel format, signed-stride semantics, validation, ownership,
 // and allocation-failure mapping.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 FailingAllocator :: struct {
     parent: Allocator;

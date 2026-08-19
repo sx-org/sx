@@ -866,7 +866,7 @@ pub fn registerGenericStructAlias(self: *Lowering, alias_name: []const u8, tmpl:
 
 pub const PromotedPrivate = struct { name: types.StringId, source: ?[]const u8 };
 
-/// Note a private field a `#using` promotion is copying out of `used_ty`, so
+/// Note a private field a `@using` promotion is copying out of `used_ty`, so
 /// the promoted copy keeps answering to the base's declaring file.
 pub fn notePromotedPrivate(
     self: *Lowering,
@@ -910,8 +910,8 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
         for (sd.methods) |method_node| {
             if (method_node.data == .fn_decl) {
                 const method_fd = &method_node.data.fn_decl;
-                // A `#set` accessor registers under `name$set` so it never
-                // clobbers a same-name `#get` (issue: get+set coexistence).
+                // A `@set` accessor registers under `name$set` so it never
+                // clobbers a same-name `@get` (issue: get+set coexistence).
                 const eff = self.accessorEffName(method_fd);
                 const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sd.name, eff }) catch continue;
                 self.program_index.fn_ast_map.put(qualified, method_fd) catch {};
@@ -934,10 +934,10 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     const decl_key: *const anyopaque = @ptrCast(sd);
     const nominal_id: u32 = if (table.type_decl_tids.get(decl_key)) |id| nominalIdOf(table.get(id)) else self.shadowNominalId(name_id);
 
-    // Build field list, expanding #using entries. Defaults are built IN THE
+    // Build field list, expanding @using entries. Defaults are built IN THE
     // SAME interleave so they stay aligned with the FLATTENED layout — an
     // embedded base field holds null (base defaults do not flow through
-    // `#using`, matching generic instantiation), and an explicit
+    // `@using`, matching generic instantiation), and an explicit
     // field's declared default lands at its flattened position.
     var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
     var layout_defaults = std.ArrayList(?*const Node).empty;
@@ -947,7 +947,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     const using_authority: ?[]const u8 = source_file orelse self.current_source_file;
     const total_explicit = sd.field_names.len;
     while (field_idx < total_explicit or using_idx < sd.using_entries.len) {
-        // Insert #using fields at their declared positions
+        // Insert @using fields at their declared positions
         while (using_idx < sd.using_entries.len and sd.using_entries[using_idx].insert_index == fields.items.len) {
             const ue = sd.using_entries[using_idx];
             if (self.resolveUsingBase(ue.type_name, using_authority, sd.name)) |used_ty| {
@@ -977,7 +977,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
             field_idx += 1;
         } else break;
     }
-    // Append remaining #using entries after all explicit fields
+    // Append remaining @using entries after all explicit fields
     while (using_idx < sd.using_entries.len) {
         const ue = sd.using_entries[using_idx];
         if (self.resolveUsingBase(ue.type_name, using_authority, sd.name)) |used_ty| {
@@ -1060,7 +1060,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     for (sd.methods) |method_node| {
         if (method_node.data == .fn_decl) {
             const method_fd = &method_node.data.fn_decl;
-            // Build qualified name: StructName.method. A `#set` accessor uses
+            // Build qualified name: StructName.method. A `@set` accessor uses
             // its `name$set` effective name so a get+set pair keeps two distinct
             // fn_ast_map slots and two distinct FuncId stubs (coexistence).
             const eff = self.accessorEffName(method_fd);
@@ -1092,7 +1092,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     }
 }
 
-/// Resolve a `#using` base name from the DECLARING struct's own source
+/// Resolve a `@using` base name from the DECLARING struct's own source
 /// authority (the global `findByName` first/last-match let a
 /// different module's same-name base win). `.resolved` wins; any other
 /// verdict falls back to the global lookup, which covers forward references and
@@ -1109,7 +1109,7 @@ pub fn resolveUsingBase(self: *Lowering, base_name: []const u8, authority: ?[]co
     }
     if (table.findByName(table.internString(base_name))) |ty| return ty;
     if (self.diagnostics) |d|
-        d.addFmt(.err, .{ .start = 0, .end = 0 }, "unknown type '{s}' in #using inside struct '{s}'", .{ base_name, struct_name });
+        d.addFmt(.err, .{ .start = 0, .end = 0 }, "unknown type '{s}' in @using inside struct '{s}'", .{ base_name, struct_name });
     return null;
 }
 

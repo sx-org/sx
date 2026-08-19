@@ -14,8 +14,8 @@
 // A CONSTRAINT protocol has no runtime values, so there is no `*P` for a write to
 // fill: the fixed shape names a target that cannot exist, and the open shape is
 // the one such a sink takes.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
 
 Drawable :: protocol constraint {
     draw :: (self: *Self) -> string;

@@ -5,7 +5,7 @@
 // pointers), and a `u64`-returning function correctly returns
 // the address.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 __stdinp : *void extern;
 

@@ -9,8 +9,8 @@
 // (`struct_field_type(pointee_type(struct_field_type(T, i)), 0)`), and a `struct_field_name(T, i)` folded to
 // a comptime string for a minted variant NAME. All resolve through the same
 // type-call fold as a literal index would.
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 // Stand-in for a task handle: a pointer to a generic box carrying the result.
 Box :: struct ($R: Type) { value: R; }

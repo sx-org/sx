@@ -22,8 +22,8 @@
 // aarch64-macOS-pinned (the scheduler's asm + guard-page mmap constants are
 // per-arch / Apple-specific): runs end-to-end on a matching host, ir-only on a
 // mismatch.
-#import "modules/std.sx";
-sched :: #import "modules/std/sched.sx";
+@import "modules/std.sx";
+sched :: @import "modules/std/sched.sx";
 
 Shared :: struct {
     seq: [16]i64;     // appended interleaving sequence

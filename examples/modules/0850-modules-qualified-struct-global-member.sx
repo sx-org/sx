@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-lib :: #import "0850-modules-qualified-struct-global-member/lib.sx";
+@import "modules/std.sx";
+lib :: @import "0850-modules-qualified-struct-global-member/lib.sx";
 main :: () -> i32 {
     print("{}\n", lib.gp.x);
     lib.gp.x = 9;

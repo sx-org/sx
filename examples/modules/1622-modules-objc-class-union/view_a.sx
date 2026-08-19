@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
 
 // One module's VIEW of NSString — extern @ObjcClass decls are
 // C-header-like; same-name views of one runtime class merge into a

@@ -6,8 +6,8 @@
 // `Box { a }` — rather than an empty-struct stub literally named "a.Box".
 // This holds with a SINGLE namespace import and NO same-name flat author.
 
-#import "modules/std.sx";
-a :: #import "0817-modules-qualified-annotation-single-import-resolve/dep.sx";
+@import "modules/std.sx";
+a :: @import "0817-modules-qualified-annotation-single-import-resolve/dep.sx";
 
 main :: () -> i32 {
     x : a.Box = ---;

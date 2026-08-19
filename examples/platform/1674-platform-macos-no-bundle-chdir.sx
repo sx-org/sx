@@ -3,7 +3,7 @@
 // The `.build` sidecar asserts that on the symbol table — the program's own
 // output cannot show it. `1665` covers the bundled side.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     print("no bundle chdir\n");

@@ -7,8 +7,8 @@
 //   %sel = call ptr @sel_registerName(ptr @"sel:init")
 //   call void @objc_msgSend(ptr null, ptr %sel)
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 main :: () -> i32 {
     inline if OS == .macos {

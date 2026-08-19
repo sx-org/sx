@@ -4,7 +4,7 @@
 // — `CALL.r` may differ between reads and side effects run per use.
 // For evaluate-once semantics use `NAME :: @run f();`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Color :: struct { r, g, b: i64; }
 counter : i64 = 0;

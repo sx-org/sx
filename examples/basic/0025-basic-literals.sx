@@ -1,8 +1,8 @@
-#import "modules/std.sx";
-#import "modules/math";
-#import "modules/build.sx";
-#import "modules/std/test.sx";
-pkg :: #import "tests/fixtures/testpkg";
+@import "modules/std.sx";
+@import "modules/math";
+@import "modules/build.sx";
+@import "modules/std/test.sx";
+pkg :: @import "tests/fixtures/testpkg";
 
 Color :: enum { red; green; blue; }
 
@@ -39,7 +39,7 @@ line2";
     print("multiline: {}\n", ml);
 
     // Heredoc string
-    hd := #string END
+    hd := @string END
 raw heredoc
 END;
     print("heredoc: {}\n", hd);

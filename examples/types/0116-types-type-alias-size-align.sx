@@ -3,7 +3,7 @@
 // resolves through `type_alias_map` when used as a `$T: Type` argument.
 // Covers chains and struct-name aliases, not just structural-type
 // aliases (those land in `examples/182-compound-type-in-expression.sx`).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 MyInt   :: i32;
 MyChain :: MyInt;

@@ -8,7 +8,7 @@
 // Only the ARRAY form is exercised here, keeping one diagnostic per snapshot; the
 // slice / optional / pointer / function / nested shapes are covered by the
 // compiler's unit tests in src/ir/lower.test.zig.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Bad :: [3]NoSuchType;
 

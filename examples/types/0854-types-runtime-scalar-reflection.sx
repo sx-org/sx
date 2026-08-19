@@ -3,7 +3,7 @@
 // tables; type_eq compares tags. Includes the parity pins: for each shape the
 // RUNTIME answer equals the COMPTIME fold (padded, nested, union — the layouts
 // most likely to diverge).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Padded  :: struct { a: u8; b: i64; c: u16; }        // tail+interior padding
 Inner   :: struct { x: u16; }

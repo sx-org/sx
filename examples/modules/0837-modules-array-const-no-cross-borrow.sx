@@ -3,8 +3,8 @@
 // `K : [4]i64 : .[...]` coexist — each module's bare `K` binds its OWN
 // author (h's use_k reads ITS array, main's K stays the scalar 4).
 
-#import "modules/std.sx";
-h :: #import "0837-modules-array-const-no-cross-borrow/h.sx";
+@import "modules/std.sx";
+h :: @import "0837-modules-array-const-no-cross-borrow/h.sx";
 
 K : i64 : 4;
 

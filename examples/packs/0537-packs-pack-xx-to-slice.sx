@@ -3,7 +3,7 @@
 // to `any`; with a `[]P` target each is `xx`-erased to the protocol `P`. This is
 // how you forward a pack to a runtime (`[]any` / `[]P`) helper.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol vtable { show :: (self: *Self) -> string; }
 A :: struct {}

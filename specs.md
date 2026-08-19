@@ -25,7 +25,7 @@ alias / `protocol` / runtime class / ufcs alias / namespaced import). A
 value-spelled-as-type parses as a *type*, not a value, so its address-of /
 autoref paths would mis-lower; a type / const / function / method name spelled as
 a builtin would shadow the builtin. The exemptions are the backtick escape
-(below), `#import c` extern decls, and **member-name positions** (next) — it is
+(below), `@import c` extern decls, and **member-name positions** (next) — it is
 **not** rejected at every place a name appears.
 
 **Member-name positions are exempt.** A struct **field** name, a union **tag**
@@ -217,7 +217,7 @@ to the function when one of that name is in scope; `TypeName(val)` is not a cast
 A backtick may also escape a keyword spelling (`` `for ``, `` `struct ``), yielding
 an identifier with that text.
 
-**`#import c` exemption.** Extern declarations synthesized by an `#import c { … }`
+**`@import c` exemption.** Extern declarations synthesized by an `@import c { … }`
 block are treated as raw automatically: a generated C parameter or function name
 that collides with a reserved type name (e.g. `i1`, `i2`) imports unedited, with no
 backticks and no reserved-name error, and an extern reserved-name function is
@@ -232,7 +232,7 @@ hand-written sx code.
 | Integer   | `0`, `42`, `0xFF`, `0o755`, `0b1010` | `i64`   |
 | Float     | `0.3`, `0.9`        | `f64`   |
 | String    | `"Hello"`, `"z: {z}"` | `string` (may span multiple lines) |
-| Heredoc String | `#string END`...`END` | `string` |
+| Heredoc String | `@string END`...`END` | `string` |
 | Boolean   | `true`, `false`     | `bool`  |
 | Enum      | `.variant1`         | inferred from context |
 | Undefined | `---`               | context-dependent |
@@ -256,9 +256,9 @@ void main() {
 ";
 ```
 
-**Heredoc strings** use `#string DELIMITER` syntax (inspired by Jai). Content is completely raw — no escape processing. The delimiter is any identifier. Content starts after the newline following the delimiter and ends when the delimiter appears at column 0 of a line.
+**Heredoc strings** use `@string DELIMITER` syntax (inspired by Jai). Content is completely raw — no escape processing. The delimiter is any identifier. Content starts after the newline following the delimiter and ends when the delimiter appears at column 0 of a line.
 ```sx
-vert_src := #string GLSL
+vert_src := @string GLSL
 #version 330 core
 void main() {
     gl_Position = vec4(aPos, 1.0);
@@ -440,7 +440,7 @@ print("{}\n", b);
 
 One rule, applied wherever a statement or a declaration ENDS: top-level and
 local bindings, expression statements, assignments, `return` / `raise` /
-`break` / `continue` / `defer` / `onfail`, `#import` / `@insert` / `@error` and
+`break` / `continue` / `defer` / `onfail`, `@import` / `@insert` / `@error` and
 the other directive forms, and a function's `extern` / `intrinsic` / `=> expr`
 body. The value-less spellings take it the same way — a `return` with nothing to
 return, and a `name : Type` declaration with no initializer:
@@ -553,7 +553,7 @@ ended  :: () -> i64 { 41; }   // the `;` separates; the value is still 41
 ```
 
 The rule does not reach inside a fixed form's own list — a runtime class's
-members and the entries of `#import c { … }` each keep the `;` their grammar
+members and the entries of `@import c { … }` each keep the `;` their grammar
 asks for, in every position.
 
 **Statements break, expressions chain.** Whether a `}` can be continued is
@@ -991,21 +991,21 @@ variant bytes are unspecified) or a fixed `[N]T` array field (compare elements
 individually). These mirror the rejection of the same shapes as bare top-level
 `==` operands. `<`, `<=`, `>`, `>=` are not defined on structs.
 
-#### `#using` — Struct Composition
-`#using StructName;` inside a struct declaration embeds all fields from `StructName` at that position. The embedded fields are accessed directly, as if declared inline.
+#### `@using` — Struct Composition
+`@using StructName;` inside a struct declaration embeds all fields from `StructName` at that position. The embedded fields are accessed directly, as if declared inline.
 
 ```sx
 UBase :: struct { x: i32; y: i32; }
-UExt :: struct { #using UBase; z: i32; }
+UExt :: struct { @using UBase; z: i32; }
 e := UExt{x = 1, y = 2, z = 3 };
 print("{}\n", e.x);  // 1
 ```
 
-`#using` may appear at any field position (beginning, middle, end) and multiple `#using` entries are allowed:
+`@using` may appear at any field position (beginning, middle, end) and multiple `@using` entries are allowed:
 ```sx
 UPos :: struct { px: i32; py: i32; }
 UCol :: struct { r: i32; g: i32; }
-USprite :: struct { #using UPos; #using UCol; scale: i32; }
+USprite :: struct { @using UPos; @using UCol; scale: i32; }
 s := USprite{px = 10, py = 20, r = 255, g = 128, scale = 1 };
 ```
 
@@ -1043,7 +1043,7 @@ runtime value with dynamic dispatch.
 ```
 protocol-decl := Name '::' 'protocol' [ '(' params ')' ] [ kind ] [ attrs ] '{' body '}'
 kind          := 'constraint' | 'vtable'                            (absent ⇒ constraint)
-attrs         := '#identity'*                                       (erased kind)
+attrs         := '@identity'*                                       (erased kind)
 ```
 
 Both kind words are contextual: ordinary identifiers everywhere
@@ -1055,7 +1055,7 @@ appear. Each attribute may appear at most once.
 | kind | runtime values | dispatch | membership known | ownership |
 |---|---|---|---|---|
 | `constraint` (default) | none | monomorphized per use site | per call site | — |
-| `vtable` | erased, 3 words | vtable pointer | open world | value/own or `#identity` |
+| `vtable` | erased, 3 words | vtable pointer | open world | value/own or `@identity` |
 
 The ladder is ordered by cost. The default is the kind that emits
 nothing; a program opts *into* paying for dynamic dispatch by
@@ -1073,7 +1073,7 @@ Hasher    :: protocol vtable {
     put :: (self: *Self, bytes: []u8);
     sum :: (self: *Self) -> u64;
 }
-Allocator :: protocol vtable #identity {        // unique stateful conformers
+Allocator :: protocol vtable @identity {        // unique stateful conformers
     alloc_bytes   :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
@@ -1304,7 +1304,7 @@ each bound instantiation compiles them against the concrete `Self`.
 **Edge cases.**
 - A marker constraint protocol (empty body) is legal; it partitions
   types for overload/bound purposes and costs nothing.
-- `#identity` on a constraint protocol is refused (there are no
+- `@identity` on a constraint protocol is refused (there are no
   values to classify).
 - `Self`-in-signature methods are unrestricted — every use site
   knows the concrete type.
@@ -1351,7 +1351,7 @@ Every erased protocol belongs to one of two classes:
   every operand shape. The handles over that storage may ALIAS it
   (§5.3a); "owning erasure" names the operation and the storage's
   discipline, not a per-handle claim. `*P` is the borrowed view.
-- **`#identity`**: for protocols whose runtime object *is* unique
+- **`@identity`**: for protocols whose runtime object *is* unique
   state (an allocator, an io runtime). Values only ever borrow, in
   every spelling; there is nothing to free.
 
@@ -1407,7 +1407,7 @@ free(q, a);             // releases A; p and q are now invalid
 free(r, a);             // releases B
 ```
 
-Borrowed representations sit outside this discipline: `#identity`
+Borrowed representations sit outside this discipline: `@identity`
 values and `*P` views copy as borrowed handles over storage they
 never own (§5.2, §5.5) — there is nothing to free, and `free`
 refuses them (§5.4).
@@ -1438,13 +1438,13 @@ t := Widget{value = 8 }.(Sizable, arena);  // the rvalue's copy through a named 
 **Shallow-copy caveat.** Owning erasure copies the receiver's BYTES.
 Interior pointers (slices, strings, pointers) are copied as
 pointers; the copy and the source share their referents. Types whose
-deep state must not be shared belong behind `#identity` or a view.
+deep state must not be shared belong behind `@identity` or a view.
 
-**`#identity` erasure** borrows in every spelling — decl targets,
+**`@identity` erasure** borrows in every spelling — decl targets,
 call arguments, struct-literal fields alike:
 
 ```sx
-Rng :: protocol vtable #identity { next :: (self: *Self) -> u64; }
+Rng :: protocol vtable @identity { next :: (self: *Self) -> u64; }
 Xorshift :: struct { state: u64; }
 impl Rng for Xorshift {
     next :: (self: *Xorshift) -> u64 {
@@ -1478,7 +1478,7 @@ an inline type match. Its protocol arm reads the backing through
 - `free(p, allocator)` pairs the allocator explicitly, immune to
   drift. The protocol value carries no allocator slot; the caller
   supplies it.
-- `free` on an `#identity` value or a `*P` view is a compile error
+- `free` on an `@identity` value or a `*P` view is a compile error
   (no owned backing; a view owns nothing).
 
 ##### 5.5 Borrowed views — `*P`
@@ -1611,7 +1611,7 @@ known, so only the compiler can perform it. Semantics:
   non-conforming — the site-local visibility that arbitrates
   ordinary erasure does not exist at a dynamic conversion, and no
   other arbiter would be sound.
-- **`#identity` `Q` refuses at compile time**: identity conformers
+- **`@identity` `Q` refuses at compile time**: identity conformers
   are named objects, and a dynamic conversion cannot prove the
   referent is one.
 - **Result ownership follows `Q`'s class**: value/own `Q` → the
@@ -1639,7 +1639,7 @@ type may itself be an instantiation argument of another protocol
 (`Series(View)`). Constraint protocols are refused in every storable
 position (§4).
 
-Context fields may be protocol-typed only at an `#identity`
+Context fields may be protocol-typed only at an `@identity`
 protocol: context defaults are mandatory and
 comptime-evaluable, the fold of a protocol-typed default is the
 identity erasure of a named instance global — a borrow, never null
@@ -1710,9 +1710,9 @@ monomorphizing an impl — evaluates under one dataflow discipline:
   answer it are **final**: no unexpanded `inline if`/`inline for`
   branch can still contribute one. Contribution is judged
   syntactically and conservatively: an unexpanded body mentioning
-  `impl P for …` contributes to `P`, and one holding an `#import`
+  `impl P for …` contributes to `P`, and one holding an `@import`
   contributes the whole surface of the module it names — the impls,
-  declaration names and `#context_extend`s that module authors,
+  declaration names and `@context_extend`s that module authors,
   transitively through its own imports and branches — because
   selecting the branch is what brings them in.
 - **Erased-target conversion facts depend on impl multiplicity**
@@ -1726,7 +1726,7 @@ monomorphizing an impl — evaluates under one dataflow discipline:
   scope is final — no unexpanded branch can still declare the name.
 - **The program Context is a single layout**, so an evaluation that
   reads it waits for that layout to settle: while any unexpanded
-  branch could still declare a `#context_extend`, the field set is
+  branch could still declare a `@context_extend`, the field set is
   not final, and the evaluation suspends against Context-ready
   exactly as it suspends against an open conformer set.
   Contribution is judged syntactically, like an `impl`'s. Once
@@ -1832,7 +1832,7 @@ the runtime image resolves per the referent:
 
 - `protocol_kind(P) -> {constraint, vtable}` —
   compile-time only; folds in `inline if`.
-- `is_identity(P)` — true for `#identity` protocols; false for
+- `is_identity(P)` — true for `@identity` protocols; false for
   every other type. Compile-time only.
 - A runtime `Type` value always tags a concrete type, never a bare
   protocol type. Composites *containing* protocol types (`*Show`,
@@ -1865,7 +1865,7 @@ vtable:  load p.vtable → load slot k → indirect call(ctx, args…)
 
 **`free`.** One function, compile-time kind-dispatched by an inline
 type match: a protocol arm (ctx via `@Protocol`, gated on the
-ownership class — `#identity` refuses), a closure arm, a slice arm;
+ownership class — `@identity` refuses), a closure arm, a slice arm;
 every other argument kind is a compile error.
 
 **The standard `Allocator` is stdlib-owned.** Its declaration —
@@ -1893,10 +1893,10 @@ requires no compiler change.
 | `Self` at depth in parameter or return (`[]Self`, `?Self`, `Buffer(Self)`) | excluded from dynamic dispatch on every kind; concrete/bound calls fine |
 | rvalue at `P` (value/own), implicit / `xx` | compile error — the demand diagnostic; the owning copy is postfix-only (`.(P)` / `.(P, alloc)`) |
 | rvalue at `*P` | compile error — nothing durable to borrow |
-| rvalue at `P` (`#identity`) | compile error — identity objects need a name |
+| rvalue at `P` (`@identity`) | compile error — identity objects need a name |
 | `free` on: view / identity / constraint-typed anything | compile error in each case (distinct wordings; constraint has no values at all) |
 | `p.(@Protocol)` | field-wise build per layout |
-| `p.(Q)`, different protocol | direct re-erasure conversion (§6.4); temperaments apply; result ownership per `Q`'s class; `#identity` targets refuse at compile time; the unique-impl table resolves the check — a duplicated pair converts as non-conforming |
+| `p.(Q)`, different protocol | direct re-erasure conversion (§6.4); temperaments apply; result ownership per `Q`'s class; `@identity` targets refuse at compile time; the unique-impl table resolves the check — a duplicated pair converts as non-conforming |
 | `s.(P)`, operand already `P` | value/own: independent owning copy of the receiver |
 | `any` holding a protocol value | never arises from boxing a protocol value (that boxes the receiver); `xx *s` boxes a `*Show` — a concrete composite type with its own tag |
 | `av.(P)` — protocol target on `any` receiver | compile error, every kind with values; constraint refuses as constraint |
@@ -2524,8 +2524,8 @@ context parameter. They are postfix modifiers, written in the slot after the
 
 ```sx
 // Declare a named library constant
-libc :: #library "c";
-sdl  :: #library "SDL3";
+libc :: @library "c";
+sdl  :: @library "SDL3";
 
 // Functions — `extern` imports, `export` defines + exposes
 socket    :: (domain: i32, type: i32, protocol: i32) -> i32 extern libc;
@@ -2543,13 +2543,13 @@ NSObject  :: @ObjcClass("NSObject") extern { alloc :: () -> *NSObject; }  // ref
 SxFoo     :: @ObjcClass("SxFoo")    export { counter: i32; bump :: (self: *Self) { … } }  // define
 ```
 
-- `#library "name"` must be assigned to a named constant. The library is passed
+- `@library "name"` must be assigned to a named constant. The library is passed
   to the linker (`-lname` on Unix, `name.lib` on Windows).
 - `extern lib_ref` declares a function (or `<name> : <type> extern;` a data
   global) as an external C symbol. The library reference is optional: when present
   it is passed to the linker (`-lname` on Unix); when omitted, the symbol must
   resolve at link time from a framework or an already-linked / auto-detected
-  library. The `#library` declaration + build-flag linking mechanism is a separate
+  library. The `@library` declaration + build-flag linking mechanism is a separate
   axis — `extern` *references* a library, it does not declare one.
 - `extern lib_ref "c_symbol"` (and `export "c_symbol"`) renames the binding: the
   sx name differs from the C symbol. This avoids name collisions (e.g. POSIX
@@ -2666,7 +2666,7 @@ every fn kind: plain, runtime-generic (`[]$T` / `$T: Type`), and
 comptime-pack (`..$args`, e.g. `print` / `format`):
 
 ```sx
-s :: #import "modules/std.sx";
+s :: @import "modules/std.sx";
 my_print :: s.print;          // comptime-pack fn through a namespace
 helper2  :: r.helper;         // renamed plain fn
 my_print("x = {}\n", helper2());
@@ -2789,7 +2789,7 @@ path_join :: (..parts: []string) -> string { ... }
   before packing; `args[i]` reads back the view.
 - For `[]Protocol` (the element type is a protocol, e.g. `..xs: []Show`), each
   trailing arg erases per the protocol's OWNERSHIP CLASS (owning copy for
-  value/own, borrow for `#identity` — see Protocols; a constraint element
+  value/own, borrow for `@identity` — see Protocols; a constraint element
   type is refused as a storable position) and is packed into a
   runtime `[N]Protocol`. `xs[runtime_i].method()`
   then dispatches through the protocol — this is the **runtime** counterpart to
@@ -2816,7 +2816,7 @@ only: a definition carrying `abi(.c)` or `export`, an `extern` declaration, or a
 the LLVM type is exactly what a C compiler builds for the same prototype.
 `abi(.naked)` and a `Closure` literal carry no such shape and refuse the tail.
 
-A C prototype imported by `#import c { #include … }` keeps its tail: a
+A C prototype imported by `@import c { @include … }` keeps its tail: a
 declaration ending in `...` synthesizes an `extern` ending in `..`, over the
 fixed parameters C wrote — none of them where C23 states no named parameter
 before the tail.
@@ -3244,7 +3244,7 @@ erased value/own target `expr.(P)` is the **owning erasure** through
 an LVALUE; pair with `free(p, alloc)`). Concrete receivers (lvalue
 and rvalue alike) heap-copy, a `*Concrete` receiver SNAPSHOTS the
 pointee, a same-protocol `P` value CLONES, and a `*P` view PROMOTES.
-`#identity` targets keep the borrow (`gpa.(Allocator)`) and refuse
+`@identity` targets keep the borrow (`gpa.(Allocator)`) and refuse
 the allocator form. A CONSTRAINT target refuses (no runtime values).
 A soft protocol target on a concrete receiver is the conformance
 PROBE; a protocol-to-protocol conversion is RE-ERASURE — both defined
@@ -5214,43 +5214,43 @@ push .{ allocator = arena.allocator(), logger = *my_logger } {
 
 A `push .{ ... }` literal is spread+patch: fields the literal does NOT name are inherited from the ambient context (never zero-initialized); the named fields are overwritten. Pushing a whole `Context` VALUE (`push some_ctx { … }`) stores it as-is — seed it from `context` first to inherit.
 
-**`Context` struct** — assembled PER PROGRAM, 100% from `#context_extend` declarations. The struct itself is declared EMPTY in `modules/std/core.sx` (the declaration doubles as the implicit-context mode marker); the stdlib's own capabilities are ordinary declarations in their owning modules:
+**`Context` struct** — assembled PER PROGRAM, 100% from `@context_extend` declarations. The struct itself is declared EMPTY in `modules/std/core.sx` (the declaration doubles as the implicit-context mode marker); the stdlib's own capabilities are ordinary declarations in their owning modules:
 ```sx
 // std/mem.sx
 c_allocator : CAllocator = .{};
-#context_extend allocator: Allocator = c_allocator;
+@context_extend allocator: Allocator = c_allocator;
 
 // std/io.sx
 c_blocking_io : CBlockingIo = .{};
-#context_extend io: Io = c_blocking_io;
+@context_extend io: Io = c_blocking_io;
 ```
 Before any `push`, code runs under `__sx_default_context`, a static constant holding every field's folded default. A protocol-typed default like the two above is the identity ERASURE of the named instance global — a BORROW: the constant's receiver is the global's real address, never null (null ctx is the `?Protocol` absent sentinel). The same fold works for any user global (`fallback : Allocator = my_impl_global;` — no `xx` needed, the declared type states the erasure). Threads and fibers inherit by snapshotting the spawner's whole context value.
 
-`push` and `context` require the `Context` type to be declared (import `std.sx` or any module that imports it). In a build without it, both error — and the diagnostic enumerates the program's registered `#context_extend` fields with their declaring modules, so the demand is traceable.
+`push` and `context` require the `Context` type to be declared (import `std.sx` or any module that imports it). In a build without it, both error — and the diagnostic enumerates the program's registered `@context_extend` fields with their declaring modules, so the demand is traceable.
 
-### `#context_extend` — extending the Context
+### `@context_extend` — extending the Context
 
 Any module — stdlib or user — can declare a field the program's Context carries:
 
 ```sx
-#context_extend ui: *Ui = null;      // bare nullable pointer — the default idiom
-#context_extend frame_stats: FrameStats = .{};
+@context_extend ui: *Ui = null;      // bare nullable pointer — the default idiom
+@context_extend frame_stats: FrameStats = .{};
 ```
 
 `?*Ui` works too and opts the field into checked nullability (consumers must
 prove presence before use); the bare spelling keeps null as an unchecked
 sentinel, per the pointer contract.
 
-- **Grammar**: `#context_extend <name> : <type> = <default> ;` at top level only — which includes a top-level `inline if` branch or `inline for` body, whose statements ARE module scope after comptime flattening. A branch that is not selected declares no field; while such a driver is undecided the Context is not final, and comptime that reads it waits (§6.9 scheduling).
+- **Grammar**: `@context_extend <name> : <type> = <default> ;` at top level only — which includes a top-level `inline if` branch or `inline for` body, whose statements ARE module scope after comptime flattening. A branch that is not selected declares no field; while such a driver is undecided the Context is not final, and comptime that reads it waits (§6.9 scheduling).
 - **Assembly**: the compiler assembles the program's `Context` from every declaration in the compilation — there is no builtin prefix — in a deterministic order (sorted by declaring module path, then field name). Field offsets are program-specific — never rely on them across programs.
 - **Access is global and unconditional**: after assembly, `context.field` works in ANY module of the program with no import requirement. Imports gate existence only (an uncompiled module contributes nothing); there is no per-source scoping of context fields.
 - **One flat namespace, loud collisions**: two declarations with the same field name (or colliding with a builtin field) are a hard compile error naming both declaration sites.
-- **Defaults are mandatory and comptime-evaluable**: a declaration without a default — or with one that doesn't fold to a compile-time constant — is a compile error; the default context must be constructible before `main` runs. Defaults fold into `__sx_default_context`. A protocol-typed context field is legal only at an `#identity` protocol — its default folds as the identity erasure of a named instance global; a value/own protocol-typed field is refused at its declaration (an owning constant cannot exist before `main`). `*T = null` is the idiom for handle fields (`?*T = null` where checked absence is wanted); the root `push` in `main` is the idiom for wiring real values.
+- **Defaults are mandatory and comptime-evaluable**: a declaration without a default — or with one that doesn't fold to a compile-time constant — is a compile error; the default context must be constructible before `main` runs. Defaults fold into `__sx_default_context`. A protocol-typed context field is legal only at an `@identity` protocol — its default folds as the identity erasure of a named instance global; a value/own protocol-typed field is refused at its declaration (an owning constant cannot exist before `main`). `*T = null` is the idiom for handle fields (`?*T = null` where checked absence is wanted); the root `push` in `main` is the idiom for wiring real values.
 - **`push` semantics**: added fields patch exactly like builtin ones.
 - **Comptime**: `@run` bodies execute under a VM-LOCAL copy of the assembled default context (see Protocols, compile-time execution): an added field's default is readable at comptime; protocol-typed fields reference VM-owned instances whose mutations are execution-local and discarded — comptime code cannot mutate globals (the VM reads globals into VM-local copies and never writes back).
 - **Cost guideline** (not enforced): reads are a constant-offset load and calls share the pusher's slot — the only growth cost is the spread-copy at `push` (and the per-fiber snapshot). Prefer one POINTER per concern (`*Ui`, `*Logger`) over fat inline values; a 2 KB inline field makes every push a 2 KB memcpy. Small inline value fields are fine.
 
-There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`#context_extend logger: *Logger = null;`).
+There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`@context_extend logger: *Logger = null;`).
 
 ---
 
@@ -5445,7 +5445,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `raw_any_data(av: any) -> *void` / `raw_make_any(tp: Type, data: *void) -> any` — the raw layer over the `any` view's two words. The `{tag, data}` layout itself stays private; these are the stable contract, and `av.(@Any)` retrieves both words as one `{data, type_id}` pair (see Raw-view retrieval, §Postfix Cast). `raw_make_any` is UNCHECKED at runtime — the caller asserts `data` points at a live, aligned value of `tp` covering `size_of(tp)` bytes — but a non-pointer `data` argument is a compile error. Three sharp edges: **tags are per-build values** (a serializer writes type names and re-resolves on load — never raw tags); **byte copies through the data pointer are shallow** (interior pointers — string/slice data, nested views — are not followed; a deep copy walks `type_info`); **a view carries no lifetime** (assembling or copying a view never transfers or extends ownership of the referent).
 - `variant_value($E: Type, idx: i64) -> i64` — the `idx`-th variant's integer value: its explicit value / explicit tag when declared (custom values, flags, tagged-union tags), else its ordinal. Works on enums AND tagged unions. A runtime `Type` reads the `__sx_member_value_ptrs` tables (same master-index pattern as the name/type/offset families, same `memberValue` source as the static fold).
 - `variant_index($E: Type, val: E) -> i64` — a value's sequential variant ordinal (the inverse of `variant_value`; explicit values reverse-map, an unmatched tag answers itself — the identity seed). With a **runtime** `Type` the value travels as an `any` view: `variant_index(t, av)` reads the tag word through the view (a signed backing sign-extends; a layout-struct union loads its narrow tag slot, not the wider header) and scans the value table — a typed second argument is impossible there and is a compile error.
-- `is_flags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `#flags`)
+- `is_flags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
 - `vector_lanes($T: Type) -> i64` — a vector's lane count (`vector_lanes(@Vector(3, f32))` is `3`). The one vector length the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so `size_of / element size` over-counts (3 lanes read as 4). A static non-vector argument is a compile error (`.len` / `struct_field_count` are the right spellings elsewhere); a runtime `Type` reads the `__sx_vector_lanes` table, where a non-vector tag answers 0 (kind discrimination is `type_info`'s job, like the count tables).
 - `type_eq($A: Type, $B: Type) -> bool` — structural TypeId equality (`type_eq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if type_eq(...)` is comptime-decidable
 - `is_unsigned($T: Type) -> bool` — `true` if `T` is an unsigned integer (`u8`/`u16`/`u32`/`u64`/`usize`); used by `{}` formatting to print unsigned integers as unsigned decimal
@@ -5589,7 +5589,7 @@ the compiler where a compiled panic aborts.
 The `BuildOptions` struct (from `modules/build.sx`) provides compile-time build configuration via `@run`. Methods on `BuildOptions` are compiler builtins intercepted during compilation — they have no runtime cost.
 
 ```sx
-#import "modules/build.sx";
+@import "modules/build.sx";
 
 configure_build :: () {
     opts := build_options();
@@ -5649,27 +5649,27 @@ a runtime `if`, where both branches are checked as usual.
 
 ## 9. Modules / Imports
 
-### `#import` Directive
+### `@import` Directive
 
-The `#import` directive brings declarations from another `.sx` file or directory into the current file.
+The `@import` directive brings declarations from another `.sx` file or directory into the current file.
 
 **Flat import** — splices all declarations from the imported file into the current scope:
 ```sx
-#import "modules/std/fs.sx";
+@import "modules/std/fs.sx";
 ```
 
 **Namespaced import** — wraps all declarations under a namespace name:
 ```sx
-std :: #import "modules/std.sx";
+std :: @import "modules/std.sx";
 ```
 
 **Directory import** — when the path refers to a directory, all `.sx` files in that directory are aggregated into a single module:
 ```sx
-pkg :: #import "modules/math";   // namespaced — all .sx files merged under pkg
-#import "modules/math";          // flat — all declarations spliced into scope
+pkg :: @import "modules/math";   // namespaced — all .sx files merged under pkg
+@import "modules/math";          // flat — all declarations spliced into scope
 ```
 
-Directory imports scan only the top level of the specified directory (non-recursive). Files are processed in alphabetical order for deterministic builds. Files within the directory may `#import` each other or external files.
+Directory imports scan only the top level of the specified directory (non-recursive). Files are processed in alphabetical order for deterministic builds. Files within the directory may `@import` each other or external files.
 
 If an extensionless path matches both a file and a sibling directory of the same name (`modules/std.sx` next to `modules/std/`), the import is an error — write the `.sx` path to import the file. Exception: a file importing its own companion directory (`X.sx` importing `X/`) is not ambiguous; the directory is the only sensible target.
 
@@ -5687,10 +5687,10 @@ declaration-like collision semantics.
 
 ```sx
 // facade.sx
-r :: #import "rich.sx";        // an ordinary declaration of `r`
+r :: @import "rich.sx";        // an ordinary declaration of `r`
 
 // main.sx
-#import "facade.sx";           // flat import carries facade's aliases
+@import "facade.sx";           // flat import carries facade's aliases
 
 main :: () {
     r.helper();                // plain fn through the carried alias
@@ -5711,7 +5711,7 @@ sets** (in an annotation, as a type argument, and as a bound head), and
 Collision rules mirror ordinary declarations:
 
 - **Own wins** — a file's own declaration of a name (including its own
-  `ns :: #import`) shadows any same-named alias carried from a flat import.
+  `ns :: @import`) shadows any same-named alias carried from a flat import.
 - **Ambiguity** — two direct flat imports each carrying a distinct alias of
   the same name make a bare use of that alias an error; declare the alias
   locally to disambiguate.
@@ -5719,7 +5719,7 @@ Collision rules mirror ordinary declarations:
   does not surface the inner file's aliases. (The bare `alias.fn()` call path
   does not enforce this gate.)
 
-`#import c { ... }` aliases (`tc :: #import c { ... }`) carry the same way.
+`@import c { ... }` aliases (`tc :: @import c { ... }`) carry the same way.
 
 ### Visibility: `private`
 
@@ -5732,13 +5732,13 @@ private Helper :: (x: i64) -> i64 { return x * 2; }
 private State  :: struct { n: i64; }
 private LIMIT  :: 21;
 private counter : i64 = 0;
-private dep    :: #import "dependency.sx";
+private dep    :: @import "dependency.sx";
 File    :: struct { private fd: i64 = -1; }
 ```
 
 It applies to functions and type functions, structs/enums/unions/error sets,
 protocols, constants and globals, aliases (including UFCS aliases), named
-imports, `#library` handles, runtime classes, `extern`/`export` declarations,
+imports, `@library` handles, runtime classes, `extern`/`export` declarations,
 and `main`.
 
 Semantics:
@@ -5778,7 +5778,7 @@ Semantics:
 - **A promoted union member answers to its payload's file.** A union whose
   variant is a named struct promotes that struct's members; a private one is
   nameable only from the file declaring the payload.
-- **A `#using` promotion carries the base's authority.** A struct that promotes
+- **A `@using` promotion carries the base's authority.** A struct that promotes
   a base with a private field gains the field's storage, not the right to name
   it: only the base's declaring file may.
 
@@ -5787,8 +5787,8 @@ declarations and on the fields of a NAMED struct declaration (a generic
 template included). It is rejected on: anonymous struct fields (a field's
 inline `struct { … }`, a type function's returned `struct { … }`), locals,
 parameters, union and runtime-class fields, enum cases and error tags,
-struct/protocol/impl methods and requirements, flat `#import`, `impl` blocks,
-`#context_extend`, `#using`, standalone `@run`, global `asm`, and `#framework`.
+struct/protocol/impl methods and requirements, flat `@import`, `impl` blocks,
+`@context_extend`, `@using`, standalone `@run`, global `asm`, and `@framework`.
 Top-level `inline if` branches and `inline for` bodies MAY declare private
 globals (their statements are module-scope after comptime flattening); function
 and method bodies may not.
@@ -5800,15 +5800,15 @@ and method bodies may not.
 
 - Imports are resolved after parsing and before code generation.
 - Paths are resolved in three tiers, first hit wins:
-  1. relative to the directory of the file containing the `#import`;
+  1. relative to the directory of the file containing the `@import`;
   2. relative to the working directory (cwd);
   3. relative to each stdlib search path — the `library/` directory discovered
      from the compiler binary's location (dev: `zig-out/bin/sx` →
      `<repo>/library`; install: `<prefix>/library`), overridable with the
      `SX_STDLIB_PATH` environment variable. This is how
-     `#import "modules/std.sx"` resolves from any project.
+     `@import "modules/std.sx"` resolves from any project.
 - If the path resolves to a file, it is imported directly. If it resolves to a directory, all `.sx` files in that directory are aggregated.
-- Nested imports are supported (imported files may themselves contain `#import`).
+- Nested imports are supported (imported files may themselves contain `@import`).
 - Circular imports are detected and silently skipped (each file is imported at most once).
 - Generic functions in namespaced imports are supported (e.g., `std.mul(5, 2)` where `mul` is generic).
 
@@ -5818,10 +5818,10 @@ project/
   modules/std.sx
   modules/math/
     math.sx
-    vector3.sx    ← contains: #import "modules/std.sx";
-  main.sx         ← contains: #import "modules/std.sx";
+    vector3.sx    ← contains: @import "modules/std.sx";
+  main.sx         ← contains: @import "modules/std.sx";
 ```
-When compiling from `project/`, both `main.sx` and `modules/math/vector3.sx` can use `#import "modules/std.sx"` — the root file resolves it relative to its own directory, and the nested file falls back to resolving relative to cwd.
+When compiling from `project/`, both `main.sx` and `modules/math/vector3.sx` can use `@import "modules/std.sx"` — the root file resolves it relative to its own directory, and the nested file falls back to resolving relative to cwd.
 
 ### Intra-module References
 
@@ -5834,8 +5834,8 @@ Functions within a namespaced import can call each other without the namespace p
 parse :: (text: string) -> ?JsonValue { ... }
 
 // main.sx
-std :: #import "modules/std.sx";
-#import "modules/std/json.sx";
+std :: @import "modules/std.sx";
+@import "modules/std/json.sx";
 
 main :: () -> i32 {
     std.print("hello there\n");
@@ -5851,24 +5851,24 @@ modules/std.sx        the prelude — print/format, string ops (concat, substr,
                       path_join, ...), List(T), Context + push, the Allocator
                       protocol; plus the namespace tail: mem / xml / log /
                       fs / process / socket / json / cli / hash / test ::
-                      #import "modules/std/<m>.sx"
+                      @import "modules/std/<m>.sx"
 modules/std/          mem.sx (CAllocator, GPA, Arena, TrackingAllocator),
                       fs.sx, process.sx, socket.sx, json.sx, cli.sx, hash.sx,
                       xml.sx, log.sx, trace.sx, test.sx
 modules/ffi/          objc.sx, objc_block.sx, sdl3.sx, opengl.sx, raylib.sx,
                       stb.sx, stb_truetype.sx, wasm.sx
 modules/math/         scalar.sx, vector2.sx, matrix44.sx — import the
-                      directory: #import "modules/math"
+                      directory: @import "modules/math"
 modules/build.sx      BuildOptions — compile-time build configuration (§10.5)
 modules/platform/     bundle.sx, uikit.sx, android.sx, sdl3.sx, ... —
                       windowing/bundling backends
 modules/gpu/, modules/ui/   GPU protocol + retained UI toolkit
 ```
 
-`#import "modules/std.sx"` gives every prelude name bare, plus `mem.GPA`,
+`@import "modules/std.sx"` gives every prelude name bare, plus `mem.GPA`,
 `json.parse`, `fs.exists`, `hash.sha256_hex`, `log.warn`, ... through the
 carried namespace tail (see Namespace Alias Carry). Direct file imports
-(`#import "modules/std/json.sx"`) remain available for bare access.
+(`@import "modules/std/json.sx"`) remain available for bare access.
 
 ---
 
@@ -5922,8 +5922,8 @@ interpreter post-link.
 Users opt in **explicitly** from their own `@run` block:
 
 ```sx
-#import "modules/build.sx";
-#import "modules/platform/bundle.sx";
+@import "modules/build.sx";
+@import "modules/platform/bundle.sx";
 
 @run {
     opts := build_options();
@@ -6073,7 +6073,7 @@ The Android branch:
 
 ## 11. Program Structure
 
-A program is a sequence of top-level declarations and `#import` directives. Execution begins at `main`.
+A program is a sequence of top-level declarations and `@import` directives. Execution begins at `main`.
 
 ```sx
 main :: () {
@@ -6469,9 +6469,9 @@ program         = top_level*
 end             = ';' | EOF   // §1 Whitespace is Syntax: a line break is
                   // ordinary space; EOF ends the last declaration of a file
 top_level       = decl | import_decl | context_extend
-import_decl     = '#import' STRING end
-                | IDENT '::' '#import' STRING end
-context_extend  = '#context_extend' IDENT ':' type '=' expr end
+import_decl     = '@import' STRING end
+                | IDENT '::' '@import' STRING end
+context_extend  = '@context_extend' IDENT ':' type '=' expr end
 decl            = const_decl | var_decl | fn_decl | at_fn_decl | enum_decl | struct_decl | error_decl
 error_decl      = IDENT '::' 'error' '{' IDENT (',' IDENT)* ','? '}' end
 const_decl      = IDENT '::' expr end
@@ -6491,7 +6491,7 @@ fn_decl         = IDENT '::' '(' params? ')' ('->' ret_type)? block
 ret_type        = type ('!' IDENT?)?    // trailing `!` = failable; channel outside any Tuple
 enum_decl       = IDENT '::' 'enum' '{' (IDENT ';'?)* '}'
 struct_decl     = IDENT '::' 'struct' '{' struct_member* '}'
-struct_member   = field_group | '#using' IDENT ';'?
+struct_member   = field_group | '@using' IDENT ';'?
 field_group     = IDENT (',' IDENT)* ':' type ('=' expr)? ';'?
                   // a member list's `;` is an optional separator, not `end`:
                   // the entry ends where the next one starts

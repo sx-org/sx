@@ -12,13 +12,13 @@
 // A request names an element rather than a position, so a build may focus the
 // element it is about to declare; the commit that follows is what validates it.
 // An element the committed build stopped declaring is no longer focused.
-#import "modules/std.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/render.sx";
-#import "modules/ui/input.sx";
-#import "modules/ui/fluent/view.sx";
-#import "modules/ui/fluent/identity.sx";
-#import "modules/ui/fluent/frame.sx";
+@import "modules/std.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
+@import "modules/ui/input.sx";
+@import "modules/ui/fluent/view.sx";
+@import "modules/ui/fluent/identity.sx";
+@import "modules/ui/fluent/frame.sx";
 
 // A component wrapped in its own focus region. The child is stored inline at
 // its own type, so a focusable element is one value and the calls into it stay
@@ -162,7 +162,7 @@ FocusRouter :: struct {
     }
 }
 
-#context_extend fluent_focus: *FocusRouter = null;
+@context_extend fluent_focus: *FocusRouter = null;
 
 // The focus state a build reads to style an element by whether the keys reach
 // it. With no router in context nothing is focused.

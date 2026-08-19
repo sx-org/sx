@@ -3,8 +3,8 @@
 // `Param` nodes: a protocol default-body method (`u8`) and a `@ObjcClass` method
 // (`i16`). Each method's `param_name_spans` puts the caret on the offending
 // parameter token, not on the enclosing block.
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 Greeter :: protocol {
     greet :: (self: *Self, u8: i64) -> i64 {

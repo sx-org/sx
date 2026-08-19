@@ -1,7 +1,7 @@
 // The for header: captures first, then `in`, then the iterables. Nothing in
 // the iterable list is reserved, so a call iterable is written plainly.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Node :: struct { v: i64; }
 

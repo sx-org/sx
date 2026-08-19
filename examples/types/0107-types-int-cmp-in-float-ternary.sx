@@ -2,7 +2,7 @@
 // even when the comparison is the condition of an `if-then-else` whose result
 // type is `f32`. The comparison must not pick up the outer ternary's type.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> void {
     x : i64 = 42;

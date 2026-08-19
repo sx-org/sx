@@ -8,7 +8,7 @@
 // A `PT{ ... }` value equals the anonymous `.{ ... }` against that type.
 // Named forms keep `:` in the type and `=` in the value.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 PT :: Tuple(i64, i64);
 NP :: Tuple(x: i64, y: i64);

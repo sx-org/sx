@@ -4,7 +4,7 @@
 // them through — the membership check is what rejects them.
 // The positive cases live in `examples/errors/1075-errors-cross-set-value-coercion.sx`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Narrow :: error { Wide }
 Broad  :: error { Wide, Extra }

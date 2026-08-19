@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 quick_sort :: (items: []$T) {
     partition :: (items: []T, lo: i64, hi: i64) -> i64 {

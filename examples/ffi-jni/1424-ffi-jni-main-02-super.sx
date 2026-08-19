@@ -10,8 +10,8 @@
 // is compile-only — runtime correctness is verified by APK install
 // + on-device launch, which is the chess deploy.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 Bundle :: @JniClass("android/os/Bundle") extern {}
 

@@ -6,7 +6,7 @@
 // shared const-int evaluator folds an integral float literal (and a float-typed
 // module const) through `program_index.floatToIntExact`; a non-integral float
 // (`4.5`) is rejected (see 1132).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 N : f64 : 4.0;   // float-typed const
 M :: 4.0;        // untyped float const

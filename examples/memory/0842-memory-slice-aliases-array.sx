@@ -4,7 +4,7 @@
 // visible in the array, and a write to the array is visible through the
 // slice. Covers write-through, read-through, an offset (partial) slice,
 // and a struct-field array — for local, global, and field-array bases.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 S :: struct { v: i64 = 0; }
 

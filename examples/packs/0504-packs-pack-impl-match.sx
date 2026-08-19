@@ -5,8 +5,8 @@
 // concrete closure source type: the `xx` cast at a `Closure(i32, bool) -> bool`
 // source resolves through the pack impl.
 
-#import "modules/std.sx";
-#import "modules/ffi/objc_block.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc_block.sx";
 
 impl Into(Block) for Closure(..$args) -> $R {
     convert :: (self: Closure(..$args) -> $R, alloc: Allocator = context.allocator) -> Block {

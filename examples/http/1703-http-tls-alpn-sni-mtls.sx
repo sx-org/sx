@@ -23,14 +23,14 @@
 // Fixtures under 1703-http-tls-alpn-sni-mtls/ (self-signed RSA, committed):
 // default.test (fallback cert), alt.test (SNI cert, SAN DNS:alt.test),
 // client.test (the client cert; also the server's mTLS trust anchor).
-#import "modules/std.sx";
-clib    :: #import "modules/std/c.sx";
-socket  :: #import "modules/std/socket.sx";
-posix   :: #import "modules/std/posix.sx";
-fs      :: #import "modules/std/fs.sx";
-mbedtls :: #import "vendors/mbedtls/mbedtls.sx";
-http    :: #import "modules/std/http.sx";
-tlsp    :: #import "modules/std/http/tls_mbedtls.sx";
+@import "modules/std.sx";
+clib    :: @import "modules/std/c.sx";
+socket  :: @import "modules/std/socket.sx";
+posix   :: @import "modules/std/posix.sx";
+fs      :: @import "modules/std/fs.sx";
+mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
+http    :: @import "modules/std/http.sx";
+tlsp    :: @import "modules/std/http/tls_mbedtls.sx";
 
 PORT :: 19018;
 

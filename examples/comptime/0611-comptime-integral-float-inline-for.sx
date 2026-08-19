@@ -3,7 +3,7 @@
 // (`evalComptimeInt`) delegates to the shared const-int evaluator, so the
 // integral-float rule applies here
 // too.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 M :: 3.0;
 

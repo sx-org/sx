@@ -10,8 +10,8 @@
 //   5. typed-cast `objc_msgSend` for `void (id, SEL)` and dispatch `hello`.
 // If the IMP ran, the global `g_marker` is non-zero and we return it as exit.
 
-#import "modules/std.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
 
 g_marker : i32 = 0;
 

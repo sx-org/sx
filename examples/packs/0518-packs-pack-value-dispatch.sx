@@ -16,7 +16,7 @@
 // `const_type(arg_types[i])` IR op. The interp materialises a
 // `Value.type_tag(TypeId)`. LLVM emit bails (Type is comptime-only).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 show :: (..$args) -> string => type_name($args[0]);
 

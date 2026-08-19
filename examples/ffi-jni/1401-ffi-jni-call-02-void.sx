@@ -17,8 +17,8 @@
 // verifies that the gated body actually compiles + links against
 // libjvm in the Android sysroot.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 // Android target requires a `main = true` Activity declaration to
 // satisfy the entry-point check. An empty stub class is enough — this

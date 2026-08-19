@@ -2,7 +2,7 @@
 // the same pointer semantics as an ordinary method: the receiver AST is
 // prepended to the pack call's fixed prefix and lowered as a place, so the
 // method mutates `t` itself.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Thing :: struct {
     n: i64;

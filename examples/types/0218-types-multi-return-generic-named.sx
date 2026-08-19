@@ -5,7 +5,7 @@
 // `bindNamedReturnSlots` runs on the generic monomorph path
 // (`monomorphizeFunction`) too, mirroring `lowerFunctionBodyInto` — including
 // with defaults and the failable error channel.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 ErrX :: error { Bad }
 

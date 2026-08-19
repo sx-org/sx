@@ -5,8 +5,8 @@
 // param target, so the erasure keeps its node-aware lvalue-borrow
 // discipline. Mutations made through the protocol value hit the CALLER'S
 // local — never a silent heap copy through the ambient allocator.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Tracker :: struct {
     allocs: i64;

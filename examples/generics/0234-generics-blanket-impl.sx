@@ -9,7 +9,7 @@
 // A concrete impl for a DIFFERENT carrier coexists: the two never cover the same
 // type, so nothing is ambiguous. One carrier covered by both a blanket and a
 // concrete impl is refused instead — see the diagnostics pin.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Series :: protocol(T: Type) constraint {
     count :: (self: *Self) -> i64;

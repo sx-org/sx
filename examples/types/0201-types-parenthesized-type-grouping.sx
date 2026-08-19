@@ -8,7 +8,7 @@
 //   ?(?i64)                        // nested optional
 // without ambiguity — grouping is decoupled from the tuple grammar.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 add :: (a: i64, b: i64) -> i64 { return a + b; }
 

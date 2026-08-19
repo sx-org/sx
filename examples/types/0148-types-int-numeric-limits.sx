@@ -9,7 +9,7 @@
 // directly — `i64.min` (i64::MIN) and the all-ones `u64.max`/`usize.max` — are
 // asserted EXACTLY via comparison and untagged-union bit reinterpret, never via
 // the formatter (which prints i64::MIN as a bare "-" and u64.max as "-1").
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Untagged union for the exact u64.max bit-reinterpret check.
 UU :: union { u: u64; s: i64; }

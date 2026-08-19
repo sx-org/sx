@@ -7,7 +7,7 @@
 //   - a VALUE shadowing nothing: `*arr[i]` / `*s.field` address
 //     elements and fields (postfix binds tighter than prefix);
 //   - infix `*` stays multiplication; `a * *b` mixes both.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Pair :: struct { a: i64 = 0; b: i64 = 0; }
 

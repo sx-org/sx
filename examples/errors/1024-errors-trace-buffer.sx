@@ -6,7 +6,7 @@
 // via the runtime's `sx_trace_len` (linked in for the JIT) — a white-box
 // probe rather than the public formatting surface (1025).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Internal runtime symbol (library/vendors/sx_trace_runtime/sx_trace.c).
 sx_trace_len :: () -> u32 extern;

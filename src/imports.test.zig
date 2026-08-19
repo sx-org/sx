@@ -86,9 +86,9 @@ test "imports: module_decls retains same-name cross-module fns; flat_import_grap
     try tmp.dir.writeFile(io, .{ .sub_path = "b.sx", .data = "greet :: () -> i64 { 2 }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "nsmod.sx", .data = "helper :: () -> i64 { 3 }\n" });
     const main_src =
-        \\#import "a.sx";
-        \\#import "b.sx";
-        \\ns :: #import "nsmod.sx";
+        \\@import "a.sx";
+        \\@import "b.sx";
+        \\ns :: @import "nsmod.sx";
         \\main :: () -> i32 { 0 }
         \\
     ;
@@ -165,8 +165,8 @@ test "imports: module_decls retains same-name cross-module fns; flat_import_grap
     // First-wins: the surviving merged-scope `greet` is a.sx's author.
     try std.testing.expect(merged_greet == a_greet);
 
-    // flat_import_graph carries the two bare `#import` edges, NOT the
-    // namespaced `ns :: #import` edge.
+    // flat_import_graph carries the two bare `@import` edges, NOT the
+    // namespaced `ns :: @import` edge.
     const flat = flat_import_graph.get(main_path) orelse return error.MissingFlatEdges;
     try std.testing.expect(flat.contains(a_path));
     try std.testing.expect(flat.contains(b_path));
@@ -197,8 +197,8 @@ test "imports: mixed non-fn/fn same-name collision stays first-wins in merged sc
     try tmp.dir.writeFile(io, .{ .sub_path = "a.sx", .data = "Widget :: struct { x: i64 }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "b.sx", .data = "Widget :: () -> i64 { 7 }\n" });
     const main_src =
-        \\#import "a.sx";
-        \\#import "b.sx";
+        \\@import "a.sx";
+        \\@import "b.sx";
         \\main :: () -> i32 { 0 }
         \\
     ;
@@ -267,7 +267,7 @@ test "buildImportFacts: flat imports keep same-name fn/struct + value-vs-type pe
     try tmp.dir.writeFile(io, .{ .sub_path = "a.sx", .data = "dup :: () -> i64 { 1 }\nBox :: struct { x: i64 }\nShape :: 7;\n" });
     // b.sx: dup() fn, Box struct, Shape as a TYPE (same spelling as a.sx's value).
     try tmp.dir.writeFile(io, .{ .sub_path = "b.sx", .data = "dup :: () -> i64 { 2 }\nBox :: struct { y: i64 }\nShape :: struct { z: i64 }\n" });
-    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "#import \"a.sx\";\n#import \"b.sx\";\nmain :: () -> i32 { 0 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "@import \"a.sx\";\n@import \"b.sx\";\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
@@ -325,7 +325,7 @@ test "buildImportFacts: directory import unions member-file decls under the dir 
     try tmp.dir.createDirPath(io, "lib");
     try tmp.dir.writeFile(io, .{ .sub_path = "lib/one.sx", .data = "from_one :: () -> i64 { 1 }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "lib/two.sx", .data = "Two :: struct { v: i64 }\n" });
-    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "#import \"lib\";\nmain :: () -> i32 { 0 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "@import \"lib\";\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
@@ -340,7 +340,7 @@ test "buildImportFacts: directory import unions member-file decls under the dir 
     try expectTag(lib_idx.names.get("Two") orelse return error.MissingTwo, .struct_decl);
 }
 
-// Namespaced file import (`g :: #import "point.sx"`): recorded as a namespace
+// Namespaced file import (`g :: @import "point.sx"`): recorded as a namespace
 // edge whose `target_module_path` is the aliased file, AND as a
 // `.namespace_decl` in the importer's scalar index.
 test "buildImportFacts: namespaced file import captures target_module_path" {
@@ -353,7 +353,7 @@ test "buildImportFacts: namespaced file import captures target_module_path" {
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(io, .{ .sub_path = "point.sx", .data = "Point :: struct { x: i64 }\n" });
-    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "g :: #import \"point.sx\";\nmain :: () -> i32 { 0 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "g :: @import \"point.sx\";\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
@@ -387,7 +387,7 @@ test "buildImportFacts: namespaced directory import captures dir path as target"
 
     try tmp.dir.createDirPath(io, "pkg");
     try tmp.dir.writeFile(io, .{ .sub_path = "pkg/m.sx", .data = "helper :: () -> i64 { 9 }\n" });
-    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "pkg :: #import \"pkg\";\nmain :: () -> i32 { 0 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "pkg :: @import \"pkg\";\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
@@ -402,7 +402,7 @@ test "buildImportFacts: namespaced directory import captures dir path as target"
     try std.testing.expectEqualStrings(pkg_path, pkg.target_module_path);
 }
 
-// C-import namespace (`c :: #import c { #include ... }`): recorded as a namespace
+// C-import namespace (`c :: @import c { @include ... }`): recorded as a namespace
 // edge. With no separate sx module, the target is the importing file itself.
 test "buildImportFacts: c-import namespace recorded as an edge" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -414,7 +414,7 @@ test "buildImportFacts: c-import namespace recorded as an edge" {
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(io, .{ .sub_path = "ch.h", .data = "int cm_add(int a, int b);\n" });
-    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "cmod :: #import c {\n    #include \"ch.h\";\n};\nmain :: () -> i32 { 0 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "cmod :: @import c {\n    @include \"ch.h\";\n};\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
@@ -459,7 +459,7 @@ test "buildImportFacts: same-module duplicate top-level name is diagnosed" {
 }
 
 // The duplicate-name invariant also covers NAMESPACE ALIASES. A
-// `dup :: #import "…"` alias colliding with a same-module authored name is a
+// `dup :: @import "…"` alias colliding with a same-module authored name is a
 // duplicate in EITHER order — `addNamespace` (alias second) and `addOwnDecl`
 // (alias first) each refuse the second author and the site diagnoses it.
 // Surviving author is whichever came FIRST.
@@ -473,7 +473,7 @@ test "buildImportFacts: fn-then-namespace-alias same-module collision is diagnos
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(io, .{ .sub_path = "lib.sx", .data = "helper :: () -> i64 { 9 }\n" });
-    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "dup :: () -> i64 { 1 }\ndup :: #import \"lib.sx\";\nmain :: () -> i32 { 0 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "dup :: () -> i64 { 1 }\ndup :: @import \"lib.sx\";\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
@@ -497,7 +497,7 @@ test "buildImportFacts: namespace-alias-then-fn same-module collision is diagnos
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(io, .{ .sub_path = "lib.sx", .data = "helper :: () -> i64 { 9 }\n" });
-    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "dup :: #import \"lib.sx\";\ndup :: () -> i64 { 1 }\nmain :: () -> i32 { 0 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "dup :: @import \"lib.sx\";\ndup :: () -> i64 { 1 }\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];
@@ -599,7 +599,7 @@ test "buildDeclTable: stable DeclId per decl, round-trip, struct keying, namespa
 
     try tmp.dir.writeFile(io, .{ .sub_path = "lib.sx", .data = "helper :: () -> i64 { 9 }\nBox :: struct($T: Type) { v: T; }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "geom.sx", .data = "Point :: struct { x: i64 }\n" });
-    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "#import \"lib.sx\";\ng :: #import \"geom.sx\";\nmain :: () -> i32 { 0 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "@import \"lib.sx\";\ng :: @import \"geom.sx\";\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;
     const absdir = dirbuf[0..try tmp.dir.realPath(io, &dirbuf)];

@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-math :: #import "modules/math";
+@import "modules/std.sx";
+math :: @import "modules/math";
 
 dot :: (a: @Vector(3,f32), b: @Vector(3,f32)) -> f32 {
     a.x*b.x + a.y*b.y + a.z*b.z

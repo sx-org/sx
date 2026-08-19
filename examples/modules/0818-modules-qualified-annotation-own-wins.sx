@@ -6,8 +6,8 @@
 // disjoint, so a cross-binding (`q.m` / `own.a`) is a hard compile error — the
 // example compiling and running pins the two `Box`es as distinct nominals.
 
-#import "modules/std.sx";
-a :: #import "0818-modules-qualified-annotation-own-wins/dep.sx";
+@import "modules/std.sx";
+a :: @import "0818-modules-qualified-annotation-own-wins/dep.sx";
 
 Box :: struct { m: i32; }
 

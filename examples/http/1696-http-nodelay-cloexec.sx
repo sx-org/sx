@@ -17,10 +17,10 @@
 // the peer): a keep-alive request round-trips 200; the accepted conn fd
 // has TCP_NODELAY set, FD_CLOEXEC set, O_NONBLOCK still set; the listener
 // fd has FD_CLOEXEC set; GPA net-zero after close.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
-libc :: #library "c";
+libc :: @library "c";
 getsockopt :: (fd: i32, level: i32, optname: i32, optval: *i32, optlen: *u32) -> i32 extern libc;
 
 PORT :: 19011;

@@ -9,7 +9,7 @@
 // write-through lives in `*P` views (pinned in 0829); the by-REF capture
 // leg below drives one through a view.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 P :: protocol vtable {
     get :: (self: *Self) -> i64;

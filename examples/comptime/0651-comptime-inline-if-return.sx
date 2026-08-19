@@ -4,7 +4,7 @@
 // flag when its taken arm returns; the enclosing runtime `if`'s merge resets
 // that flag to the merge's actual reachability, so the trailing `return -1`
 // still lowers.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // nested inline-if/else with returns, inside an inline-for, under a runtime if:
 classify :: (idx: i64) -> i64 {

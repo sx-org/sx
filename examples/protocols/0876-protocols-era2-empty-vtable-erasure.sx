@@ -7,8 +7,8 @@
 // type_of, the checked downcast, the type switch, the @Protocol view,
 // and free (on an OWNED rvalue erasure) all work with zero dispatchable
 // methods.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Marker :: protocol vtable {}
 

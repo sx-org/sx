@@ -8,7 +8,7 @@
 //
 // The tag word is still there — it is the set's layout, and importing a module
 // with a second member would put the switch back — but no code reads it.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Cell :: @OpenSet(.{ max = 64, align = 8 }) {
     value :: (self: *Self) -> i64;

@@ -26,7 +26,7 @@
 // with `concat` / `int_to_string`; those live in std.sx. A metaprogram body
 // resolves its bare names in its OWN module, so this module must
 // import std.sx itself rather than relying on the call site's visibility.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Standard 32-byte block header plus two trailing slots for the sx closure
 // it wraps. Total = 48 bytes.

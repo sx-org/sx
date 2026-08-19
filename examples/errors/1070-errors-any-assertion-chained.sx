@@ -9,7 +9,7 @@
 //                   (pinned separately, exits 1)
 //     o?.(?T)     → soft: chain-null and mismatch-null CONFLATE
 // An optional TARGET flattens (`ap?.(?i64)` is ?i64, one null level).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 use :: () -> ! {
     // A. typed optional receiver — conversion map + flatten.

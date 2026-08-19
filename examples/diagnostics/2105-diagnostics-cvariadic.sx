@@ -20,7 +20,7 @@
 // argument names a live list — `ap` or `ap.*` — and an incoming list is borrowed
 // already open, so its callee neither starts nor ends it.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 printf :: (fmt: cstring, ..) -> i32 extern;
 c_reader :: (n: i32, ap: @VaList) -> i64 extern;
@@ -28,7 +28,7 @@ c_reader :: (n: i32, ap: @VaList) -> i64 extern;
 // `..name: []U` is the homogeneous constraint: every tail argument takes the
 // ordinary implicit conversion to `U`, and a pair no conversion models is
 // refused exactly as it is at a fixed parameter of that type.
-libc :: #library "c";
+libc :: @library "c";
 sum_ints :: (n: i32, ..args: []i32) -> i64 extern libc;
 flags :: (n: i32, ..args: []bool) -> i64 extern libc;
 texts :: (n: i32, ..args: []string) -> i64 extern libc;

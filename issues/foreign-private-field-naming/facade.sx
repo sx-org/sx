@@ -1,4 +1,4 @@
-#import "internal.sx";
+@import "internal.sx";
 
 Wrapper :: struct {
     private state: Secret;

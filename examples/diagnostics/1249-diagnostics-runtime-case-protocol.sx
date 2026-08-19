@@ -2,7 +2,7 @@
 // bound generic type param). A protocol value carries no runtime type tag to switch
 // on, so a runtime `case protocol:` arm would be silently dead; it is a pointed
 // compile error instead.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     av : any = 5;

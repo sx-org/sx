@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
 
 // A second view of the SAME runtime class under the same sx name,
 // declaring a different method. A last-wins registry would drop one

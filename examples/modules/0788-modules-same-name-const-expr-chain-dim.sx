@@ -8,9 +8,9 @@
 // `M` inside `K :: M + 1`) in the SELECTED author's source context, not through
 // the global last-wins `module_const_map`. Both observables agree per module:
 // a_len=2 a_val=2, b_len=11 b_val=11.
-#import "modules/std.sx";
-#import "0788-modules-same-name-const-expr-chain-dim/a.sx";
-#import "0788-modules-same-name-const-expr-chain-dim/b.sx";
+@import "modules/std.sx";
+@import "0788-modules-same-name-const-expr-chain-dim/a.sx";
+@import "0788-modules-same-name-const-expr-chain-dim/b.sx";
 
 main :: () -> i32 {
     print("a_len={} a_val={} b_len={} b_val={}\n", a_len(), a_val(), b_len(), b_val());

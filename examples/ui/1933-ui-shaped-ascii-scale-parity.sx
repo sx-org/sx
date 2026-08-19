@@ -11,11 +11,11 @@
 // NOT part of the byte-exact corpus (no expected/ files): measuring needs a
 // real font and a GPU-backed atlas, and the suite must pass where neither
 // exists — hence the clean skip.
-#import "modules/std.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/font.sx";
-#import "modules/ui/surface.sx";
-#import "modules/ui/surface_select.sx";
+@import "modules/std.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/font.sx";
+@import "modules/ui/surface.sx";
+@import "modules/ui/surface_select.sx";
 
 main :: () {
     surface := open_pixel_surface(64, 32);

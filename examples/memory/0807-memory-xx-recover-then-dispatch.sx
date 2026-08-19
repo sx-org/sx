@@ -3,8 +3,8 @@
 // subsequent dispatch through the protocol value, regardless of
 // whether the recovery happens BEFORE or AFTER the first dispatch.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+@import "modules/std.sx";
+@import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
 
 main :: () -> i32 {
     gpa := GPA.init();

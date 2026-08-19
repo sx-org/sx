@@ -9,7 +9,7 @@
 // that collapses to 0 is caught, and asserts the error PATH still carries the
 // right tag and `error_name`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Color :: enum { red; green; blue; }
 E :: error { Nope }

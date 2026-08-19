@@ -8,7 +8,7 @@
 // label takes the backtick raw escape and a bare keyword there heads a
 // positional expression. Companion to 0158 (the reserved TYPE-spelling
 // exemption).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 P :: protocol vtable {
     push :: (self: *Self, v: i64) -> i64;

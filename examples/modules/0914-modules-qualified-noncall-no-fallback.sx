@@ -2,7 +2,7 @@
 // callable. The unrelated bare function with the same spelling must never be
 // used as a compatibility fallback for `engine.COUNT()`.
 
-engine :: #import "0910-modules-nested-namespace-noncall-identity/engine_a.sx";
+engine :: @import "0910-modules-nested-namespace-noncall-identity/engine_a.sx";
 
 COUNT :: () -> i64 { 999 }
 

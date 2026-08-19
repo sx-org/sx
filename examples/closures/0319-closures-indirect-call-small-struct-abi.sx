@@ -3,7 +3,7 @@
 // definition uses (≤8-byte non-HFA structs → i64), so every field
 // survives the register handoff. Wide (>8 B) and HFA structs stay
 // unpacked on both sides.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: struct { x: i32; y: i32; }
 Tiny :: struct { a: u8; b: u8; }

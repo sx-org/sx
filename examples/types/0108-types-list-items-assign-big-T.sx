@@ -2,7 +2,7 @@
 // the element type `T` is larger than the pointer (40-byte BigNode here), so
 // a sibling field of the enclosing struct is not corrupted.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // 40-byte element: wider than the items pointer it sits beside.
 BigNode :: struct {

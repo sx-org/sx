@@ -8,7 +8,7 @@
 // value), so an int operand with a float operand promotes to the float in
 // either order.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     n := 2;   // runtime i64

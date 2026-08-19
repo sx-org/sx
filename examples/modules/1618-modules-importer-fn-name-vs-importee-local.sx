@@ -4,8 +4,8 @@
 // before the lexical scope breaks an imported module's own `h := ...; h(...)`
 // sites with "'h' is not visible" whenever the IMPORTER declares a module-scope
 // fn named like that local.
-#import "modules/std.sx";
-lib :: #import "1618-modules-importer-fn-name-vs-importee-local/lib.sx";
+@import "modules/std.sx";
+lib :: @import "1618-modules-importer-fn-name-vs-importee-local/lib.sx";
 
 // Module-scope fn named like the importee's LOCAL `h`.
 h :: (x: i64) -> i64 { return x + 1; }

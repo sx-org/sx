@@ -14,8 +14,8 @@
 //      diagnostic as a named function, instead of returning `undef`.
 //   4. A native `main = true` method cannot be failable: Java has no error
 //      channel to receive the tag.
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 Named :: error { Nope }
 

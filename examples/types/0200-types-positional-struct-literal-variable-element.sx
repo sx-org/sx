@@ -6,7 +6,7 @@
 // definition — whether `x` names a field or is a positional value. Lowering
 // reclassifies a punned name that does NOT match any field as positional, and
 // coerces positional elements from the lowered value's actual type.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 P :: struct { a: i64 = 0; b: i64 = 0; }
 Q :: struct { a: i64 = 0; b: f64 = 0.0; }

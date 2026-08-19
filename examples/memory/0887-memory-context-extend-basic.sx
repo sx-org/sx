@@ -6,11 +6,11 @@
 // - reader_mod reads the field WITHOUT importing its declaring module.
 // - `push .{ field = v }` spread+patches added fields exactly like
 //   builtin ones — unnamed fields inherit, the scope restores on exit.
-#import "modules/std.sx";
-#import "0887-memory-context-extend-basic/decl_mod.sx";
-#import "0887-memory-context-extend-basic/reader_mod.sx";
+@import "modules/std.sx";
+@import "0887-memory-context-extend-basic/decl_mod.sx";
+@import "0887-memory-context-extend-basic/reader_mod.sx";
 
-#context_extend marker: ?*i64 = null;
+@context_extend marker: ?*i64 = null;
 
 main :: () {
     print("default trace_depth = {}\n", context.trace_depth);

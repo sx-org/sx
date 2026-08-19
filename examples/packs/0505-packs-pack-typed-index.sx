@@ -3,7 +3,7 @@
 // boxed `any`, so field access, typed coercion and typed slots reach the
 // element directly: `args[0].x` on a struct-typed call arg reads the field.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: struct { x: i64; y: i64; }
 

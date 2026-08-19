@@ -6,7 +6,7 @@
 // capture-by-value semantics, a `;`-cut scope block, header calls being
 // unaffected, and the parameter header — one param, several, an annotation, an
 // empty body, and a closure ELEMENT parenthesized inside a construction.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 vstack :: (spacing: f32, content: Closure()) -> i64 {
     print("begin {}\n", spacing);

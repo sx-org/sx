@@ -8,8 +8,8 @@
 // Pixel examples live OUTSIDE the byte-exact corpus: the test suite
 // must pass on hosts with no GPU or display, so pixel goldens run as
 // their own explicit gate on machines that render.
-#import "modules/std.sx";
-#import "modules/std/fs.sx";
+@import "modules/std.sx";
+@import "modules/std/fs.sx";
 
 // `actual` is tightly packed RGBA, TOP-DOWN rows (backends normalize
 // their origin before handing pixels over). A pixel counts as differing

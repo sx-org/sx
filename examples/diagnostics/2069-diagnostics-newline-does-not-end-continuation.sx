@@ -2,7 +2,7 @@
 // ordinary space, so the statement below reads on into the next line. This is
 // one statement missing its terminator, and the report names the terminator
 // rather than blaming the `,` it ran into.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     x := 1

@@ -7,7 +7,7 @@
 // `56.(i8)` lexes as a cast, not a float; `0..(5)` stays a range.
 // Type-erased receivers (`any` / protocol values) are the CHECKED
 // assertion regime.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: struct { x: i32; y: i32; }
 Speaker :: protocol vtable { speak :: (self: *Self) -> i64; }

@@ -7,9 +7,9 @@
 // - the identity downcast hands back the borrowed global.
 // The same fold is user-spellable: a protocol-typed global initialized from
 // an impl global (no `xx` needed — the declared type states the erasure).
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "modules/std/io.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/std/io.sx";
 
 fallback : Allocator = c_allocator;
 

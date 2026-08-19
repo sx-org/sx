@@ -2,7 +2,7 @@
 // is a per-position error. `Naked` has no `impl Show`, so passing it to a
 // `..xs: Show` pack is rejected (pointing at the offending argument).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol(T: Type) {
     get :: (self: *Self) -> T;

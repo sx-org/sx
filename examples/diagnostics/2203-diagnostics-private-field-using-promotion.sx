@@ -1,10 +1,10 @@
 // A `#using` promotion carries the base's authority, so the promoting file
 // cannot name a promoted private field — plain or generic.
 
-#import "2203-diagnostics-private-field-using-promotion/box.sx";
+@import "2203-diagnostics-private-field-using-promotion/box.sx";
 
-Peek :: struct { #using Box; }
-Wrap :: struct ($T: Type) { #using Box; t: T = ---; }
+Peek :: struct { @using Box; }
+Wrap :: struct ($T: Type) { @using Box; t: T = ---; }
 
 main :: () -> i32 {
     p := Peek{ secret = 1 };

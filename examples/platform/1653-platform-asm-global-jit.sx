@@ -7,7 +7,7 @@
 // symbol isn't linked yet — see 1654). Sibling of 1648 (which exercises the same
 // feature via AOT). aarch64-macos-pinned; ir-only elsewhere.
 asm {
-    #string ASM
+    @string ASM
 .global _my_sub
 _my_sub:
     sub x0, x0, x1

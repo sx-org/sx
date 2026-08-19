@@ -2,7 +2,7 @@
 // and type-function aliases all begin with the same forbidden nested prefix;
 // declaration scanning must not register any of them through global maps.
 
-facade :: #import "0909-modules-nested-namespace-alias-rhs-hidden/facade.sx";
+facade :: @import "0909-modules-nested-namespace-alias-rhs-hidden/facade.sx";
 
 BadType :: facade.engine_alias.Record;
 BadValue :: facade.engine_alias.COUNT;

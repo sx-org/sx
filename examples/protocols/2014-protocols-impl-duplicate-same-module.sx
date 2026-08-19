@@ -3,7 +3,7 @@
 // them leave every consumer — a concrete `p.show()` as much as an erasure —
 // picking a body by declaration order, so the pair is refused at the impls and
 // the error names both.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol { show :: (self: *Self) -> i64; }
 Draw :: protocol vtable { draw :: (self: *Self) -> i64; }

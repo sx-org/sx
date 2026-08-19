@@ -3,7 +3,7 @@
 //
 // Two shapes legitimately return nothing and are untouched: a `-> void` body,
 // and a PURE failable (`-> !Named`), where `return;` IS the success exit.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Broken :: error { Bad }
 

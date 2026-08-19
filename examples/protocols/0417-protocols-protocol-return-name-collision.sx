@@ -11,7 +11,7 @@
 // `registerProtocolDecl` anchors signature resolution to `pd.source_file`, as
 // the parameterized-protocol and concrete-fn signature paths do.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Keycode :: enum { unknown; escape; enter; }
 KeyData :: struct { key: Keycode; }
