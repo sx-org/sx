@@ -5,8 +5,8 @@
 // size is unknown, and the ambient `target_type` (e.g. the enclosing
 // function's return type) says nothing about it.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 main :: () -> i32 {
     gpa := GPA.init();

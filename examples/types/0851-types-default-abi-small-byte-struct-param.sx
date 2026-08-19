@@ -4,7 +4,7 @@
 // C ABI), so a function taking (pointer, string, Color, Color) receives both
 // `Color` values whole — including the one that spills on AArch64.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Color :: struct { r, g, b, a: u8; }
 

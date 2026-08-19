@@ -1,8 +1,8 @@
 // Compose lane for tests/bench_ui_three_stacks.sx. The build block
 // intercepts Label expressions only when View is this module's name
 // for compose.View, so the lane cannot live in the driver.
-#import "modules/std.sx";
-#import "examples/ui/compose.sx";
+@import "modules/std.sx";
+@import "examples/ui/compose.sx";
 
 slot_bytes :: () -> i64 => size_of(View);
 

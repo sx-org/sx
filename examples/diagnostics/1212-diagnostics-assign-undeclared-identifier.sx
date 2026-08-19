@@ -10,7 +10,7 @@
 // - `_ OP= expr` — the discard has no value to read; only the plain `_ = expr`
 // discard idiom is allowed.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     totl = 42;          // typo of `total` — plain `=` to an undeclared name

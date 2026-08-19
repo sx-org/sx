@@ -30,8 +30,8 @@
 //     view := string{ ptr = @d[0], len = 64 };
 // =====================================================================
 
-#import "modules/std/core.sx";     // string
-#import "modules/std/fs.sx";       // open_file, File
+@import "modules/std/core.sx";     // string
+@import "modules/std/fs.sx";       // open_file, File
 
 // Low 32 bits. SHA-256 is defined over 32-bit words; every add/rotate
 // result is masked back through this so the carry never escapes bit 31.
@@ -268,14 +268,13 @@ fnv1a :: (data: string) -> u64 {
 sha256_file :: (path: [:0]u8) -> ?[64]u8 {
     handle := open_file(path, .read);
     if handle == null { return null; }
-    file := handle!;
-    defer file.close();
+    defer handle.close();
 
     h := init();
     chunk : [65536]u8 = ---;
     reading := true;
     while reading {
-        n := file.read(string{ ptr = *chunk[0], len = 65536 });
+        n := handle.read(string{ ptr = *chunk[0], len = 65536 });
         if n < 0 { return null; }
         if n == 0 { reading = false; }
         if n > 0 { h.update(string{ ptr = *chunk[0], len = n }); }

@@ -4,8 +4,8 @@
 //
 // Implicit erasure (bare operand or dest-inferred opt-in) still refuses —
 // pinned in diagnostics/1256.
-#import "modules/std.sx";
-#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+@import "modules/std.sx";
+@import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
 
 Tracer :: struct {
     count: i64;
@@ -28,7 +28,7 @@ impl Allocator for Tracer {
 }
 
 // The owning-erasure target must be a VALUE/OWN protocol — `Allocator`
-// itself is `#identity` (borrow-only; rvalue erasure to it refuses,
+// itself is `@identity` (borrow-only; rvalue erasure to it refuses,
 // pinned in diagnostics/1255), and erasure is impl-driven,
 // so a small owning protocol impl'd by Tracer stands in.
 Boxed :: protocol vtable { count_of :: (self: *Self) -> i64; }

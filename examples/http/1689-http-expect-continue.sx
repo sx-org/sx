@@ -20,8 +20,8 @@
 // 100; one-shot POST → 200 with no 100; 1.0 two-phase POST → 200 with no
 // 100; Expect: whatever → 417; two-phase chunked POST → one 100 then the
 // 200 echo; GPA net-zero after close.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 PORT :: 19001;
 

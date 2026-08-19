@@ -3,7 +3,7 @@
 // target. `monomorphizePackFn` resolves `$R` against the call's own
 // bindings, so the mono's signature carries the concrete ret_ty.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 first :: (..$args) -> $R => args[0];
 

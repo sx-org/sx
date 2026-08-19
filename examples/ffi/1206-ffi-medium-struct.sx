@@ -10,10 +10,10 @@
 // i64), HFAs at the same total size (Vec4f stays a struct), and
 // >16-byte aggregates (passed via pointer + byval).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #source "1206-ffi-medium-struct.c";
+@import c {
+    @source "1206-ffi-medium-struct.c";
 };
 
 Pair64 :: struct { a: i64; b: i64; }

@@ -4,7 +4,7 @@
 //
 // Args are typed against the closure's params (`resolveCallParamTypes`) AND
 // coerced at the call site (`coerceClosureCallArgs`).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     pick := |p: ?i64| -> i64 {

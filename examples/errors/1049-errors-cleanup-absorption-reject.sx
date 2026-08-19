@@ -4,7 +4,7 @@
 // with `catch` or `?? <value>`. Both a `defer` and an `onfail` bare call are
 // flagged; the program never runs (exit 1).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad }
 

@@ -1,6 +1,6 @@
 // `!` on an operand with no truthiness — neither bool, integer, nor an error
 // binding — is diagnosed.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     s := "text";

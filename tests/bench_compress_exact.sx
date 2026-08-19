@@ -4,7 +4,7 @@
 // corpora. Each record is a 16-byte little-endian header followed by the exact
 // compressed bytes. The shell harness compares the complete file with miniz C.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 EXACT_PATH :: ".sx-tmp/bench-compress/sx-exact.matrix";
 

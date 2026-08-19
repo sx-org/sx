@@ -5,13 +5,13 @@
 // The hoist is what puts them in front of `scanDecls`, which has no
 // `.if_expr` arm.
 //
-// Three patterns covered: a global `var_decl`, an `#import`, and a
+// Three patterns covered: a global `var_decl`, an `@import`, and a
 // nested `inline if` whose else arm fires on host macOS.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 inline if OS == .android {
-    #import "modules/std.sx";
+    @import "modules/std.sx";
     g_value : i64 = 99;
 } else {
     g_value : i64 = 42;

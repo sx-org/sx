@@ -9,7 +9,7 @@
 // variants by position — a separate limitation — so those are asserted by
 // equality, not by their printed name.)
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Color :: enum u8 { red; green; blue; }
 Code :: enum u16 { ok :: 200; not_found :: 404; teapot :: 418; }

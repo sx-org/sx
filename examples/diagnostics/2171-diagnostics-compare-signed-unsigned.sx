@@ -1,6 +1,6 @@
 // Signed vs unsigned integers of the same width do not meet at a comparison
 // type. Write an explicit cast on one side (`a.(u32) < b`).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     a : i32 = -1;

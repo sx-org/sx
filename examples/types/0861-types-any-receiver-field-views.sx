@@ -7,7 +7,7 @@
 // variant_payload composes the same way. The comptime VM mirrors the
 // whole composition (the @run below).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Header :: struct { magic: u16; flags: u8; }
 Packet :: struct { header: Header; name: string; kind: i16; }

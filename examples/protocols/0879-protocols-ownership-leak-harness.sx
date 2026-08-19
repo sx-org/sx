@@ -4,8 +4,8 @@
 // erasures pair with their allocator explicitly (`.(P, a)` + `free(p, a)`)
 // or ride the pushed context; identity borrows (the allocator chain
 // itself) allocate nothing.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Shape :: protocol vtable {
     area :: (self: *Self) -> i64;

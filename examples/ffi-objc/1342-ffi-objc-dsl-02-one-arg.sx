@@ -2,9 +2,9 @@
 // `addObject:` — the sx method name becomes the keyword, a single
 // trailing `:` for the single arg. Selector arity (count of `:`) must
 // equal sx-side arity excluding self.
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 SxProbeOneArg :: @ObjcClass("SxProbeOneArg") extern {
     addObject :: (self: *Self, val: i32) -> i32;

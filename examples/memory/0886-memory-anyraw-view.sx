@@ -6,7 +6,7 @@
 // assert helpers' generic `xx av` depends on that), and the soft form
 // `.(?@Any)` still asserts the boxed payload.
 // `raw_make_any(r.type_id, r.data)` reassembles a view from the pair.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     x := 42;

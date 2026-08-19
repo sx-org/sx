@@ -1,8 +1,8 @@
 // XML helpers. `escape` replaces XML special characters with entity
 // references — used when emitting Info.plist / AndroidManifest content
 // from sx values that may contain user-supplied text.
-#import "modules/std/core.sx";     // string
-#import "modules/std/fmt.sx";      // concat, substr
+@import "modules/std/core.sx";     // string
+@import "modules/std/fmt.sx";      // concat, substr
 
 escape :: (s: string) -> string {
     result := "";

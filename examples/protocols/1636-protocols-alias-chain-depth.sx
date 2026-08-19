@@ -1,7 +1,7 @@
 // A protocol alias chain resolves at any acyclic depth; the impl head may
 // name the deepest alias. The 18-hop chain below binds its impl and `d.say()`
 // resolves.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Speak :: protocol { say :: (self: *Self) -> i64; }
 P01 :: Speak;

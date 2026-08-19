@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // An aggregate (struct) returned from a `@run`
 // initializer must serialize correctly into the static binary, not

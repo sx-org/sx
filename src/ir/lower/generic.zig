@@ -1754,7 +1754,7 @@ pub fn headTypeGate(self: *Lowering, name: []const u8, span: ?ast.Span) HeadType
     if (self.localTypeInSource(from, name)) return .proceed;
     if (!self.nameAuthoredAsTypeAnywhere(name)) return .proceed;
     if (self.diagnostics) |d|
-        d.addFmt(.err, span, "type '{s}' is not visible; #import the module that declares it", .{name});
+        d.addFmt(.err, span, "type '{s}' is not visible; @import the module that declares it", .{name});
     return .not_visible;
 }
 
@@ -1798,7 +1798,7 @@ pub fn headFnLeak(self: *Lowering, name: []const u8, span: ?ast.Span) bool {
     // whose real author is 2 flat hops away.
     if (self.flatFnAuthorVisible(name, from)) return false;
     if (self.diagnostics) |d|
-        d.addFmt(.err, span, "type '{s}' is not visible; #import the module that declares it", .{name});
+        d.addFmt(.err, span, "type '{s}' is not visible; @import the module that declares it", .{name});
     return true;
 }
 
@@ -2247,8 +2247,8 @@ pub fn genericStaticHeadMethod(self: *Lowering, head: *const Node, method: []con
 /// which is the template's defining module (the author's own method node).
 /// Null when the function fails to resolve post-monomorphization.
 pub fn ensureGenericInstanceMethodLowered(self: *Lowering, m: GenericStructMethod) ?FuncId {
-    // A `#set` accessor mangles as `Inst.name$set` so its monomorph never
-    // collides with the same-name `#get`'s `Inst.name` (coexistence).
+    // A `@set` accessor mangles as `Inst.name$set` so its monomorph never
+    // collides with the same-name `@get`'s `Inst.name` (coexistence).
     const mangled = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ m.inst_name, self.accessorEffName(m.fd) }) catch return null;
     if (!self.lowered_functions.contains(mangled)) {
         self.monomorphizeFunction(m.fd, mangled, m.bindings);

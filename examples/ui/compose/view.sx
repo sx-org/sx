@@ -3,9 +3,9 @@
 // A type joins by declaring itself into THIS set. The set speaks the ui
 // foundation's geometry and render context, so a member draws into the same
 // tree the platform renderer consumes.
-#import "modules/std.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/render.sx";
+@import "modules/std.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
 
 // The ceiling is the largest member payload admitted: a `ModBox` carries its
 // child inline, so nested placement is what spends it. The slot itself is sized

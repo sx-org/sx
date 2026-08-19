@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 SPECIAL_VALUE :u8: 42;
 
 resolve :: (x: u8) -> i32 {

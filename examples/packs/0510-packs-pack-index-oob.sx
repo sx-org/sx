@@ -7,7 +7,7 @@
 // detects this in `diagPackIndexOOB` and emits a focused
 // diagnostic at the index span.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 foo :: (..$args) -> $R => args[2];
 

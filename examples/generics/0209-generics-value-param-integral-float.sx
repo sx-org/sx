@@ -6,7 +6,7 @@
 //
 // The bind is range-checked against the declared `u32` (an out-of-range arg is a
 // clean compile error — see 1134); a valid in-range value binds normally.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Vec :: struct ($K: u32, $T: Type) { data: [K]T; }
 

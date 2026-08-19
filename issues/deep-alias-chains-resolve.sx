@@ -1,6 +1,6 @@
 // Module-constant, function, generic-template and protocol alias chains resolve
 // at 20, 12, 10 and 18 hops.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // 20-hop module-const chain, declared head-first (worst fixpoint order).
 A00 :: A01;

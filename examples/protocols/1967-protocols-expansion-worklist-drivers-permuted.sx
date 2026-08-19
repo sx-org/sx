@@ -4,7 +4,7 @@
 // where a protocol, a conformer, or an impl is written cannot change what a
 // driver folds to — and two drivers that contribute to different protocols fold
 // the same either way round. Same output, to the byte.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 inline if POINTER_SIZE == 8 {
     impl View for Panel { area :: (self: *Panel) -> i64 { self.n + 100 } }

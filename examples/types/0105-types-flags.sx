@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Auto power-of-2 values: read=1, write=2, execute=4
 Perms :: enum flags {

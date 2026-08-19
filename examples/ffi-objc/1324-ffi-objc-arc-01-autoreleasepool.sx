@@ -11,9 +11,9 @@
 //
 // macOS-only — libobjc + NSObject must be available at runtime.
 
-#import "modules/std.sx";
-#import "modules/ffi/objc.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
+@import "modules/build.sx";
 
 main :: () -> i32 {
     inline if OS == .macos {

@@ -12,10 +12,10 @@
 // it copied the handle, not the value behind it. The payload is allocator-owned,
 // which is what a handle a sink RETAINS requires: a handle borrowing a
 // caller local would outlive it.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
 
-Drawable :: protocol vtable #identity {
+Drawable :: protocol vtable @identity {
     draw :: (self: *Self) -> string;
 }
 

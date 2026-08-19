@@ -8,8 +8,8 @@
 // and an idle registration costs nothing — the head-of-line-free
 // substrate httpz workers stand on.
 
-c     :: #import "modules/std/c.sx";
-posix :: #import "modules/std/posix.sx";
+c     :: @import "modules/std/c.sx";
+posix :: @import "modules/std/posix.sx";
 libc  :: c.libc;   // kqueue/kevent are module-specific — bind through the shared handle
 
 // darwin 64-bit struct kevent — 32 bytes:

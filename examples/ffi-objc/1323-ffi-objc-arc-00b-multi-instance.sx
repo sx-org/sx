@@ -9,10 +9,10 @@
 // Three instances → three alloc events → three dealloc events. The
 // tracker observes exactly +3 / +3 deltas.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "modules/ffi/objc.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ffi/objc.sx";
+@import "modules/build.sx";
 
 SxMultiProbe :: @ObjcClass("SxMultiProbe", extends = NSObject) {
     a: i32;

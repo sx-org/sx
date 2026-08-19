@@ -130,14 +130,14 @@ pub const Parser = struct {
         if (self.tokens.tag(self.tok) == .kw_private) {
             self.advance();
             switch (self.tokens.tag(self.tok)) {
-                .hash_import => return self.fail("'private' is not allowed on a flat '#import'; only a named import ('name :: #import \"…\"') can be private"),
+                .at_import => return self.fail("'private' is not allowed on a flat '@import'; only a named import ('name :: @import \"…\"') can be private"),
                 .kw_asm => return self.fail("'private' is not allowed on global 'asm'"),
                 .at_run => return self.fail("'private' is not allowed on a standalone '@run'"),
-                .hash_framework => return self.fail("'private' is not allowed on '#framework'"),
+                .at_framework => return self.fail("'private' is not allowed on '@framework'"),
                 .kw_impl => return self.fail("'private' is not allowed on an 'impl' block"),
                 .at_identifier => if (std.mem.eql(u8, self.tokens.slice(self.tok), "@error"))
                     return self.fail("'private' is not allowed on '@error'"),
-                .hash_context_extend => return self.fail("'private' is not allowed on '#context_extend'"),
+                .at_context_extend => return self.fail("'private' is not allowed on '@context_extend'"),
                 .kw_inline => return self.fail("'private' is not allowed on 'inline if'; mark the declarations inside its branches instead"),
                 .kw_private => return self.fail("duplicate 'private'"),
                 else => {},
@@ -150,16 +150,16 @@ pub const Parser = struct {
             return node;
         }
 
-        // Top-level flat import: #import "path"; or #import c { ... };
-        if (self.tokens.tag(self.tok) == .hash_import) {
+        // Top-level flat import: @import "path"; or @import c { ... };
+        if (self.tokens.tag(self.tok) == .at_import) {
             self.advance();
-            // Check for #import c { ... } (C import block)
+            // Check for @import c { ... } (C import block)
             if (self.tokens.tag(self.tok) == .identifier and std.mem.eql(u8, self.tokens.slice(self.tok), "c") and self.peekNext() == .l_brace) {
                 self.advance(); // consume 'c'
                 return self.parseCImportBlock(start, null, false);
             }
             if (self.tokens.tag(self.tok) != .string_literal) {
-                return self.fail("expected string path after '#import'");
+                return self.fail("expected string path after '@import'");
             }
             const raw = self.tokens.slice(self.tok);
             const path = raw[1 .. raw.len - 1];
@@ -183,11 +183,11 @@ pub const Parser = struct {
             return try self.createNode(start, .{ .comptime_expr = .{ .expr = expr } });
         }
 
-        // Top-level #framework directive: link against an Apple framework.
-        if (self.tokens.tag(self.tok) == .hash_framework) {
+        // Top-level @framework directive: link against an Apple framework.
+        if (self.tokens.tag(self.tok) == .at_framework) {
             self.advance();
             if (self.tokens.tag(self.tok) != .string_literal) {
-                return self.fail("expected string after '#framework'");
+                return self.fail("expected string after '@framework'");
             }
             const raw = self.tokens.slice(self.tok);
             const fw_name = raw[1 .. raw.len - 1];
@@ -239,9 +239,9 @@ pub const Parser = struct {
             return self.parseErrorDirective();
         }
 
-        // Top-level `#context_extend name: Type = default;` — declares a field
+        // Top-level `@context_extend name: Type = default;` — declares a field
         // of the program's assembled Context.
-        if (self.tokens.tag(self.tok) == .hash_context_extend) return self.parseContextExtend(start);
+        if (self.tokens.tag(self.tok) == .at_context_extend) return self.parseContextExtend(start);
 
         // All top-level declarations start with an identifier. An `@` name is
         // one too: the compiler-maintained contracts are ordinary stdlib
@@ -293,16 +293,16 @@ pub const Parser = struct {
         // After `::`
         // Could be: @run expr, enum { ... }, (params) -> type { body }, or expr;
 
-        // Namespaced import: name :: #import "path"; or name :: #import c { ... };
-        if (self.tokens.tag(self.tok) == .hash_import) {
+        // Namespaced import: name :: @import "path"; or name :: @import c { ... };
+        if (self.tokens.tag(self.tok) == .at_import) {
             self.advance();
-            // Check for name :: #import c { ... }
+            // Check for name :: @import c { ... }
             if (self.tokens.tag(self.tok) == .identifier and std.mem.eql(u8, self.tokens.slice(self.tok), "c") and self.peekNext() == .l_brace) {
                 self.advance(); // consume 'c'
                 return self.parseCImportBlock(start_pos, name, name_is_raw);
             }
             if (self.tokens.tag(self.tok) != .string_literal) {
-                return self.fail("expected string path after '#import'");
+                return self.fail("expected string path after '@import'");
             }
             const raw = self.tokens.slice(self.tok);
             const path = raw[1 .. raw.len - 1];
@@ -311,11 +311,11 @@ pub const Parser = struct {
             return try self.createNode(start_pos, .{ .import_decl = .{ .path = path, .name = name, .is_raw = name_is_raw } });
         }
 
-        // Named library: name :: #library "libname";
-        if (self.tokens.tag(self.tok) == .hash_library) {
+        // Named library: name :: @library "libname";
+        if (self.tokens.tag(self.tok) == .at_library) {
             self.advance();
             if (self.tokens.tag(self.tok) != .string_literal) {
-                return self.fail("expected string after '#library'");
+                return self.fail("expected string after '@library'");
             }
             const raw = self.tokens.slice(self.tok);
             const lib_name = raw[1 .. raw.len - 1];
@@ -462,36 +462,36 @@ pub const Parser = struct {
         var flags = std.ArrayList([]const u8).empty;
 
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
-            if (self.tokens.tag(self.tok) == .hash_include) {
+            if (self.tokens.tag(self.tok) == .at_include) {
                 self.advance();
-                if (self.tokens.tag(self.tok) != .string_literal) return self.fail("expected string after '#include'");
+                if (self.tokens.tag(self.tok) != .string_literal) return self.fail("expected string after '@include'");
                 const raw = self.tokens.slice(self.tok);
                 try includes.append(self.allocator, raw[1 .. raw.len - 1]);
                 self.advance();
                 try self.expect(.semicolon);
-            } else if (self.tokens.tag(self.tok) == .hash_source) {
+            } else if (self.tokens.tag(self.tok) == .at_source) {
                 self.advance();
-                if (self.tokens.tag(self.tok) != .string_literal) return self.fail("expected string after '#source'");
+                if (self.tokens.tag(self.tok) != .string_literal) return self.fail("expected string after '@source'");
                 const raw = self.tokens.slice(self.tok);
                 try sources.append(self.allocator, raw[1 .. raw.len - 1]);
                 self.advance();
                 try self.expect(.semicolon);
-            } else if (self.tokens.tag(self.tok) == .hash_define) {
+            } else if (self.tokens.tag(self.tok) == .at_define) {
                 self.advance();
-                if (self.tokens.tag(self.tok) != .string_literal) return self.fail("expected string after '#define'");
+                if (self.tokens.tag(self.tok) != .string_literal) return self.fail("expected string after '@define'");
                 const raw = self.tokens.slice(self.tok);
                 try defines.append(self.allocator, raw[1 .. raw.len - 1]);
                 self.advance();
                 try self.expect(.semicolon);
-            } else if (self.tokens.tag(self.tok) == .hash_flags) {
+            } else if (self.tokens.tag(self.tok) == .at_flags) {
                 self.advance();
-                if (self.tokens.tag(self.tok) != .string_literal) return self.fail("expected string after '#flags'");
+                if (self.tokens.tag(self.tok) != .string_literal) return self.fail("expected string after '@flags'");
                 const raw = self.tokens.slice(self.tok);
                 try flags.append(self.allocator, raw[1 .. raw.len - 1]);
                 self.advance();
                 try self.expect(.semicolon);
             } else {
-                return self.fail("unexpected token inside '#import c { ... }'");
+                return self.fail("unexpected token inside '@import c { ... }'");
             }
         }
         try self.expect(.r_brace);
@@ -1386,11 +1386,11 @@ pub const Parser = struct {
         var constants = std.ArrayList(*Node).empty;
 
         while (self.tokens.tag(self.tok) != .r_brace and self.tokens.tag(self.tok) != .eof) {
-            // Check for #using directive
-            if (self.tokens.tag(self.tok) == .hash_using) {
-                self.advance(); // skip #using
+            // Check for @using directive
+            if (self.tokens.tag(self.tok) == .at_using) {
+                self.advance(); // skip @using
                 if (self.tokens.tag(self.tok) != .identifier) {
-                    return self.fail("expected type name after '#using'");
+                    return self.fail("expected type name after '@using'");
                 }
                 const used_type = self.tokens.slice(self.tok);
                 self.advance();
@@ -1442,8 +1442,8 @@ pub const Parser = struct {
                     return self.fail("duplicate 'private'");
                 }
                 self.advance();
-                if (self.tokens.tag(self.tok) == .hash_using) {
-                    return self.fail("'private' is not allowed on '#using'");
+                if (self.tokens.tag(self.tok) == .at_using) {
+                    return self.fail("'private' is not allowed on '@using'");
                 }
                 if (self.isMemberDeclName() and self.peekNext() == .colon_colon) {
                     return self.fail("'private' is not allowed on a struct method or constant");
@@ -1741,10 +1741,10 @@ pub const Parser = struct {
         }
 
         var is_identity = false;
-        while (self.tokens.tag(self.tok) == .hash_identity) {
-            if (is_identity) return self.fail("duplicate #identity on protocol");
+        while (self.tokens.tag(self.tok) == .at_identity) {
+            if (is_identity) return self.fail("duplicate @identity on protocol");
             if (kind == .constraint) {
-                return self.fail("#identity is meaningless on a constraint protocol — there are no runtime values to classify");
+                return self.fail("@identity is meaningless on a constraint protocol — there are no runtime values to classify");
             }
             is_identity = true;
             self.advance();
@@ -2651,25 +2651,25 @@ pub const Parser = struct {
             return_type = try self.parseFnReturnType();
         }
 
-        // Optional `#get` / `#set` property-accessor marker:
-        //   read:  `name :: (self) -> R #get => expr;`   (invoked via `obj.name`)
-        //   write: `name :: (self, value: V) #set { … }` (invoked via `obj.name = rhs`)
-        // The two share the marker slot; a `#set` has no return type (void) and
+        // Optional `@get` / `@set` property-accessor marker:
+        //   read:  `name :: (self) -> R @get => expr;`   (invoked via `obj.name`)
+        //   write: `name :: (self, value: V) @set { … }` (invoked via `obj.name = rhs`)
+        // The two share the marker slot; a `@set` has no return type (void) and
         // takes the receiver plus exactly one value parameter.
         var is_get = false;
         var is_set = false;
-        if (self.tokens.tag(self.tok) == .hash_get) {
+        if (self.tokens.tag(self.tok) == .at_get) {
             is_get = true;
             self.advance();
-        } else if (self.tokens.tag(self.tok) == .hash_set) {
+        } else if (self.tokens.tag(self.tok) == .at_set) {
             is_set = true;
             self.advance();
             if (return_type != null)
-                return self.fail("a '#set' accessor returns void — drop the '-> T' return type");
+                return self.fail("a '@set' accessor returns void — drop the '-> T' return type");
             // self + exactly one value parameter. `params` here are the value/
             // receiver params only (type params `$T` are collected separately).
             if (params.len != 2)
-                return self.fail("a '#set' accessor takes exactly the receiver and one value parameter");
+                return self.fail("a '@set' accessor takes exactly the receiver and one value parameter");
         }
 
         // Optional ABI / calling-convention annotation: `abi(.c)` / `abi(.zig)` /
@@ -2934,16 +2934,16 @@ pub const Parser = struct {
         if (self.isErrorContractCall()) {
             return self.parseErrorDirective();
         }
-        // `#context_extend` is a top-level-only directive: the Context is
+        // `@context_extend` is a top-level-only directive: the Context is
         // assembled once per program, so a function-local declaration is
         // meaningless — reject it here with a placement error rather than
         // letting it fall through to a generic expression-parse failure. A
         // MODULE-SCOPE expansion body is top level, though: its statements
         // become module-scope declarations, and a branch that declares a
         // Context field is exactly what the expansion scheduler weighs.
-        if (self.tokens.tag(self.tok) == .hash_context_extend) {
+        if (self.tokens.tag(self.tok) == .at_context_extend) {
             if (!self.in_module_expansion) {
-                return self.fail("'#context_extend' is only allowed at top level (module scope)");
+                return self.fail("'@context_extend' is only allowed at top level (module scope)");
             }
             return self.parseContextExtend(self.tokens.start(self.tok));
         }
@@ -3176,16 +3176,16 @@ pub const Parser = struct {
             return try self.createNode(start, .{ .insert_expr = .{ .expr = inner } });
         }
 
-        // `#import "path";` / `#framework "Name";` inside a block body.
+        // `@import "path";` / `@framework "Name";` inside a block body.
         // Only meaningful inside an `inline if OS == ... { ... }` arm —
         // the imports.zig flatten pass surfaces those
         // declarations to the top level before resolution. Anywhere else
         // these nodes survive into lowering and produce a clear error.
-        if (self.tokens.tag(self.tok) == .hash_import) {
+        if (self.tokens.tag(self.tok) == .at_import) {
             const start = self.tokens.start(self.tok);
             self.advance();
             if (self.tokens.tag(self.tok) != .string_literal) {
-                return self.fail("expected string path after '#import'");
+                return self.fail("expected string path after '@import'");
             }
             const raw = self.tokens.slice(self.tok);
             const path = raw[1 .. raw.len - 1];
@@ -3193,11 +3193,11 @@ pub const Parser = struct {
             try self.expectStatementEnd();
             return try self.createNode(start, .{ .import_decl = .{ .path = path, .name = null } });
         }
-        if (self.tokens.tag(self.tok) == .hash_framework) {
+        if (self.tokens.tag(self.tok) == .at_framework) {
             const start = self.tokens.start(self.tok);
             self.advance();
             if (self.tokens.tag(self.tok) != .string_literal) {
-                return self.fail("expected string after '#framework'");
+                return self.fail("expected string after '@framework'");
             }
             const raw = self.tokens.slice(self.tok);
             const fw_name = raw[1 .. raw.len - 1];
@@ -3701,7 +3701,7 @@ pub const Parser = struct {
         }
         try self.expect(.l_brace);
 
-        // First element: the template (a comptime string — `"..."` or `#string`).
+        // First element: the template (a comptime string — `"..."` or `@string`).
         const template = try self.parseExpr();
 
         var operands = std.ArrayList(ast.AsmOperand).empty;
@@ -3910,7 +3910,7 @@ pub const Parser = struct {
                 return try self.createNode(start, .{ .string_literal = .{ .raw = raw[1 .. raw.len - 1] } });
             },
             .raw_string_literal => {
-                // #string heredoc — token span is content only, no stripping needed
+                // @string heredoc — token span is content only, no stripping needed
                 const raw = self.tokens.slice(self.tok);
                 self.advance();
                 return try self.createNode(start, .{ .string_literal = .{ .raw = raw, .is_raw = true } });
@@ -4510,12 +4510,12 @@ pub const Parser = struct {
         return try self.createNode(start, .{ .error_directive = .{ .message = message } });
     }
 
-    /// Parse `#context_extend name: Type = default;` — a field of the
+    /// Parse `@context_extend name: Type = default;` — a field of the
     /// program's assembled Context. `current` is the directive token.
     fn parseContextExtend(self: *Parser, start: u32) anyerror!*Node {
         self.advance();
         if (!self.isIdentLike()) {
-            return self.fail("expected field name after '#context_extend'");
+            return self.fail("expected field name after '@context_extend'");
         }
         const field_name = self.tokens.slice(self.tok);
         const field_name_span = ast.Span{ .start = self.tokens.start(self.tok), .end = self.tokens.end(self.tok) };
@@ -4825,9 +4825,9 @@ pub const Parser = struct {
         if (tag == .arrow) return self.hasFnBodyAfterArrow();
         // `kw_extern`/`kw_export`: a postfix linkage modifier (e.g. `f :: () extern;`
         // with no return type) marks a fn decl just like `abi(...)`.
-        // `#set` is a bodied accessor with NO return type, so it sits directly
-        // after `)` (`(self, v) #set { … }`) — a fn-def marker like `{`/`=>`.
-        return tag == .l_brace or tag == .kw_intrinsic or tag == .fat_arrow or tag == .hash_set or tag == .kw_abi or tag == .kw_extern or tag == .kw_export;
+        // `@set` is a bodied accessor with NO return type, so it sits directly
+        // after `)` (`(self, v) @set { … }`) — a fn-def marker like `{`/`=>`.
+        return tag == .l_brace or tag == .kw_intrinsic or tag == .fat_arrow or tag == .at_set or tag == .kw_abi or tag == .kw_extern or tag == .kw_export;
     }
 
     fn hasFnBodyAfterArrow(self: *Parser) bool {
@@ -4861,8 +4861,8 @@ pub const Parser = struct {
             if (self.tokens.tag(self.tok) == .fat_arrow) return true;
             if (self.tokens.tag(self.tok) == .l_brace) return true;
             if (self.tokens.tag(self.tok) == .kw_intrinsic) return true;
-            if (self.tokens.tag(self.tok) == .hash_get) return true; // `-> R #get => …` is a fn def
-            if (self.tokens.tag(self.tok) == .hash_set) return true; // `-> R #set { … }` is a fn def
+            if (self.tokens.tag(self.tok) == .at_get) return true; // `-> R @get => …` is a fn def
+            if (self.tokens.tag(self.tok) == .at_set) return true; // `-> R @set { … }` is a fn def
             // Postfix linkage modifier after the return type: `-> R extern;` /
             // `-> R export { … }` (and `-> R abi(.c) extern`). Marks a fn def.
             if (self.tokens.tag(self.tok) == .kw_extern or self.tokens.tag(self.tok) == .kw_export) return true;
@@ -5073,20 +5073,19 @@ pub const Parser = struct {
             .arrow,
             .fat_arrow,
             .at_run,
-            .hash_error,
-            .hash_import,
+            .at_import,
             .at_insert,
-            .hash_library,
-            .hash_framework,
-            .hash_using,
-            .hash_include,
-            .hash_source,
-            .hash_define,
-            .hash_flags,
-            .hash_identity,
-            .hash_get,
-            .hash_set,
-            .hash_context_extend,
+            .at_library,
+            .at_framework,
+            .at_using,
+            .at_include,
+            .at_source,
+            .at_define,
+            .at_flags,
+            .at_identity,
+            .at_get,
+            .at_set,
+            .at_context_extend,
             .triple_minus,
             .minus_minus,
             .eof,
@@ -5285,20 +5284,19 @@ pub const Parser = struct {
             .arrow,
             .fat_arrow,
             .at_run,
-            .hash_error,
-            .hash_import,
+            .at_import,
             .at_insert,
-            .hash_library,
-            .hash_framework,
-            .hash_using,
-            .hash_include,
-            .hash_source,
-            .hash_define,
-            .hash_flags,
-            .hash_identity,
-            .hash_get,
-            .hash_set,
-            .hash_context_extend,
+            .at_library,
+            .at_framework,
+            .at_using,
+            .at_include,
+            .at_source,
+            .at_define,
+            .at_flags,
+            .at_identity,
+            .at_get,
+            .at_set,
+            .at_context_extend,
             .triple_minus,
             .minus_minus,
             .eof,
@@ -5838,7 +5836,7 @@ test "parse top-level @run" {
 }
 
 test "parse flat import" {
-    const source = "#import \"modules/std/math.sx\";";
+    const source = "@import \"modules/std/math.sx\";";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), source);
@@ -5851,7 +5849,7 @@ test "parse flat import" {
 }
 
 test "parse namespaced import" {
-    const source = "std :: #import \"modules/std/std.sx\";";
+    const source = "std :: @import \"modules/std/std.sx\";";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), source);
@@ -5864,7 +5862,7 @@ test "parse namespaced import" {
 }
 
 test "parse library declaration" {
-    const source = "rl :: #library \"raylib\";";
+    const source = "rl :: @library \"raylib\";";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), source);

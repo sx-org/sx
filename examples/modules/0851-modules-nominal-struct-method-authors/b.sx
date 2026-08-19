@@ -11,8 +11,8 @@ Thing :: struct {
         Thing{ state = .{ b = arg.enabled } }
     }
     reset :: (self: *Thing) { self.state = BState{ b = false }; }
-    value :: (self: *Thing) -> bool #get { self.state.b }
-    value :: (self: *Thing, v: bool) #set { self.state.b = v; }
+    value :: (self: *Thing) -> bool @get { self.state.b }
+    value :: (self: *Thing, v: bool) @set { self.state.b = v; }
     wrap :: (self: *Thing, $T: Type, v: T) -> BResult {
         BResult{ value = self.state.b and size_of(T) > 0 }
     }

@@ -3,7 +3,7 @@
 // consumer must stop at `facade.engine_alias` before a same-spelled global
 // type/template/function/constant can be selected.
 
-facade :: #import "0908-modules-nested-namespace-noncall-hidden/facade.sx";
+facade :: @import "0908-modules-nested-namespace-noncall-hidden/facade.sx";
 
 main :: () -> i32 {
     annotated : facade.engine_alias.Record = ---;

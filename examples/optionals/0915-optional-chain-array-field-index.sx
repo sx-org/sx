@@ -10,7 +10,7 @@
 // has no pointer arm, so the dispatch guard and the typer consult
 // `ptrToArrayElem` first.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Arr3 :: struct { xs: [3]i64; }
 Pt   :: struct { x: i64; y: i64; }

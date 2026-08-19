@@ -66,7 +66,7 @@ cb :: (n: i64) -> i64 export "cb" { return n + 1; }
 
 trampoline :: (n: i64) -> i64 {
     return asm volatile {
-        #string ASM
+        @string ASM
         mov x0, %[arg]
         bl %[fn]            // DIRECT call — `bl _cb` on macOS, `bl cb` on Linux
         mov %[res], x0
@@ -162,7 +162,7 @@ operand becomes a named tuple field:
 // aarch64 — split a value into low/high bytes
 split :: (x: u64) -> (lo: u64, hi: u64) {
     return asm {
-        #string ASM
+        @string ASM
         and %[l], %[x], #0xff
         lsr %[h], %[x], #8
 ASM,
@@ -223,7 +223,7 @@ place's address afterward.
 compute :: () -> i64 {
     other : i64 = 0;
     main_val := asm volatile {
-        #string ASM
+        @string ASM
         mov %[m], #5
         mov %[o], #37
 ASM,
@@ -261,7 +261,7 @@ through it directly (no register round-trip, no return slot):
 poke :: () -> i64 {
     x : i64 = 0;
     asm volatile {
-        #string ASM
+        @string ASM
         mov x9, #42
         str x9, %[out]
 ASM,
@@ -286,14 +286,14 @@ constant has no storage (use a '=' variable or a local copy)
 ## Multi-instruction templates
 
 A single `"…"` string is one fragment. For several instructions, use a
-multi-line string literal or sx's **`#string` heredoc**, which is
+multi-line string literal or sx's **`@string` heredoc**, which is
 delivered **verbatim** — no escape processing — so you write assembly
 exactly as it should appear:
 
 ```sx
 serialize :: () {
     asm volatile {
-        #string ASM
+        @string ASM
         mfence
         lfence
 ASM,
@@ -312,7 +312,7 @@ reached from sx with a **lib-less `extern`** declaration:
 
 ```sx
 asm {
-    #string ASM
+    @string ASM
 .global _my_add
 _my_add:
     add x0, x0, x1

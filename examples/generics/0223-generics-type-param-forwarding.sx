@@ -4,8 +4,8 @@
 // (`inner(struct_field_type(T, i))`). Covers direct forwarding, forwarding
 // into a RECURSIVE comptime walk, and a generic-struct construction from
 // the forwarded param.
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 inner :: ($T: Type) -> i64 { size_of(T) }
 

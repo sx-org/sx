@@ -1,6 +1,6 @@
-// A branch-local `#import` is a contribution, and the ledger counts it (§7.9).
+// A branch-local `@import` is a contribution, and the ledger counts it (§7.9).
 //
-// An `#import` written inside an unexpanded branch names a whole MODULE, and
+// An `@import` written inside an unexpanded branch names a whole MODULE, and
 // selecting that branch would put everything the module authors into this
 // program. So the conservative sweep counts that module's surface exactly as
 // it counts the text of the branch itself: the impl heads it spells are impls
@@ -11,13 +11,13 @@
 // above it asks a negative about that very pair, so it cannot answer until the
 // branch is decided: it waits, the branch is taken, the impl is spliced, and
 // the answer it finally publishes is the one the whole program agrees with.
-#import "modules/std.sx";
-#import "./1990-protocols-expansion-branch-import-shapes.sx";
+@import "modules/std.sx";
+@import "./1990-protocols-expansion-branch-import-shapes.sx";
 
 inline if has_impl(Show, Item) { ADMITTED :: 1; } else { ADMITTED :: 0; }
 
 inline if POINTER_SIZE == 8 {
-    #import "./1990-protocols-expansion-branch-import-impl.sx";
+    @import "./1990-protocols-expansion-branch-import-impl.sx";
 } else {
     NARROW :: 1;
 }

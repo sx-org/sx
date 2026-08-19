@@ -2,7 +2,7 @@
 // diagnosed at the call site rather than monomorphized with the param unbound. A
 // `string` argument at a `[]$T` param is the canonical uninferrable shape.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 first :: (xs: []$T) -> T {
     return xs[0];

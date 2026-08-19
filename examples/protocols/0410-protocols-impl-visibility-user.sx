@@ -1,8 +1,8 @@
 // User file uses xx but only imports the shared types — NOT the impl.
 // The visibility filter rejects the impl from
 // 0410-protocols-impl-visibility-impl.sx.
-#import "modules/std.sx";
-#import "./0410-protocols-impl-visibility-types.sx";
+@import "modules/std.sx";
+@import "./0410-protocols-impl-visibility-types.sx";
 
 run_user :: () -> i32 {
   w : Wrap = xx 7;

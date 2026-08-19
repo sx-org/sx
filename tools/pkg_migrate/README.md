@@ -9,7 +9,7 @@ zig build pkg-migrate -- <subcommand> [options] <paths...>
 It tokenizes through the compiler's own lexer (the `sxlex` module over
 `src/lexer.zig`), so its lexical surface *is* the compiler's: `//` line
 comments, `"..."` strings and `'...'` chars with `\` escapes, backtick raw
-identifiers, the directive table, `#string DELIM ... DELIM` heredocs, and the
+identifiers, the directive table, `@string DELIM ... DELIM` heredocs, and the
 numeric grammar. A word inside a comment, string, char literal, or heredoc can
 never surface as an identifier — that is what makes every subcommand
 syntax-aware rather than grep. Conversely, anything the compiler sees as an
@@ -51,11 +51,11 @@ package name is a hard error (exit 2).
 zig build pkg-migrate -- rewrite-imports --map map.txt [--apply] <files/dirs...>
 ```
 
-Rewrites `#import "old"` path strings per a mapping file with `old=new`
+Rewrites `@import "old"` path strings per a mapping file with `old=new`
 lines (`#` comments and blank lines allowed; a key mapped to two different
-values is an error). Only the string operand of a real `#import` directive
+values is an error). Only the string operand of a real `@import` directive
 token is touched — never comments, never other strings, never named-import
-binders. Both `#import "p";` and `name :: #import "p";` forms match.
+binders. Both `@import "p";` and `name :: @import "p";` forms match.
 
 ### qualify
 

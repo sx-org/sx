@@ -10,7 +10,7 @@
 //
 // The sibling by-REF misuse is `for *x in xs { x = v }`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Shape :: enum { circle: f64; rect: i64; }
 E :: error { Bad, Empty }

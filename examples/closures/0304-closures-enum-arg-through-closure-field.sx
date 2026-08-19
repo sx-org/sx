@@ -1,7 +1,7 @@
 // A closure stored in a struct field receives sub-32-bit enum args
 // with the right tag, same as direct or protocol-dispatched calls.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Fmt :: enum { a; b; }
 

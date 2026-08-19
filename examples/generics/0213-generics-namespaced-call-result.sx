@@ -1,7 +1,7 @@
 // A NAMESPACED call to a generic free function types its result from the
 // call's inferred bindings, exactly as the flat spelling does.
-#import "modules/std.sx";
-m :: #import "0213-generics-namespaced-call-result/m.sx";
+@import "modules/std.sx";
+m :: @import "0213-generics-namespaced-call-result/m.sx";
 
 main :: () {
     print("{}\n", m.pick(3, 9));        // i64 binding

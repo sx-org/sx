@@ -11,8 +11,8 @@
 // 0764/0774/0706). The static-method head `Box(i64).make(7)` must select `b.Box`
 // (size 8) for BOTH the instantiated type layout and the method body.
 
-#import "modules/std.sx";
-#import "0776-modules-bare-generic-static-method-visible-author/b.sx";
+@import "modules/std.sx";
+@import "0776-modules-bare-generic-static-method-visible-author/b.sx";
 
 main :: () -> i32 {
     x := Box(i64).make(7);

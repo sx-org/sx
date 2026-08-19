@@ -1,4 +1,4 @@
-// `#identity` ownership class: protocol values of an identity
+// `@identity` ownership class: protocol values of an identity
 // protocol only ever BORROW a named object's storage — in EVERY erasure
 // spelling. The unmarked default class is value/own. This is the
 // POSITIVE matrix: lvalue borrows via `xx`, the target-explicit postfix
@@ -7,10 +7,10 @@
 // class at compile time; Allocator (std) is adopted — `push .{ allocator = gpa }`
 // borrows. `xx` at a typed identity slot also borrows. The refusals
 // (rvalue erasure, free) are pinned in diagnostics/1255.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
-Counter :: protocol vtable #identity {
+Counter :: protocol vtable @identity {
     bump :: (self: *Self) -> i64;
     read :: (self: *Self) -> i64;
 }

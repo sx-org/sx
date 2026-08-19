@@ -5,8 +5,8 @@
 // `make_plan` are declared right here rather than in stdlib — nothing about
 // them is a language contract. A hybrid accepter asks for the shape, reserves
 // from the plan, then runs.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
 
 Drawable :: protocol constraint {
     draw :: (self: *Self) -> string;

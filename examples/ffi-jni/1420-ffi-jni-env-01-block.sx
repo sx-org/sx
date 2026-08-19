@@ -1,7 +1,7 @@
 // `push .{ jni = env }` installs the JNI handle on `context.jni` for the
 // block. DSL calls and helpers read that field.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     synth_env : *void = null;

@@ -2,7 +2,7 @@
 // The handle is call-carried on the context, so the helper does not take
 // env as a parameter.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g_should_call : bool = false;
 

@@ -9,9 +9,9 @@
 // Plain `Class` is the only form; assignments are not checked against the
 // referent's class hierarchy.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 // Runtime-class declaration using the aliases at param/return positions.
 NSObjectAlias :: @ObjcClass("NSObject") extern {

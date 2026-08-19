@@ -1,7 +1,7 @@
-// Context-ready waits on a `#context_extend` a branch could still IMPORT.
+// Context-ready waits on a `@context_extend` a branch could still IMPORT.
 //
 // The program Context is ONE layout, so an evaluation that reads it must see
-// the one the whole program ends up with. A `#context_extend` written in a
+// the one the whole program ends up with. A `@context_extend` written in a
 // module an unexpanded branch imports is a field that layout may still gain —
 // no differently from one written in the branch itself — so the run below
 // cannot start while the branch is undecided.
@@ -9,14 +9,14 @@
 // Taking the branch splices the field, retires the contribution, and fires
 // Context-ready; the parked driver resumes and reads the depth the program
 // really has.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 DEEP :: @run { context.depth > 2 };
 
 inline if DEEP { MODE :: 1; } else { MODE :: 0; }
 
 inline if POINTER_SIZE == 8 {
-    #import "./1994-protocols-expansion-branch-import-ctx.sx";
+    @import "./1994-protocols-expansion-branch-import-ctx.sx";
 } else {
     NARROW :: 1;
 }

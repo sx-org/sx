@@ -1,0 +1,5 @@
+error: expected identifier at top level
+  --> examples/diagnostics/2178-diagnostics-hash-import-is-not-a-directive.sx:2:1
+   |
+ 2 | #import "foo.sx";
+   | ^

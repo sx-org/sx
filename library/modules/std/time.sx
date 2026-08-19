@@ -14,7 +14,7 @@
 // (ours are module constants) or a bad pointer (ours is a stack slot),
 // so the wrappers are total.
 
-c :: #import "modules/std/c.sx";
+c :: @import "modules/std/c.sx";
 Timespec :: c.Timespec;
 
 inline match OS {

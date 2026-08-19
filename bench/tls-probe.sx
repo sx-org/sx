@@ -10,8 +10,8 @@
 //   ./zig-out/bin/sx build --target aarch64-linux --self-contained \
 //       bench/tls-probe.sx -o .sx-tmp/tlsprobe-l
 //   container run --rm -v "$PWD/.sx-tmp:/work" alpine /work/tlsprobe-l
-#import "modules/std.sx";
-tls :: #import "vendors/mbedtls/mbedtls.sx";
+@import "modules/std.sx";
+tls :: @import "vendors/mbedtls/mbedtls.sx";
 
 main :: () -> i32 {
     entropy : tls.Entropy = .{};

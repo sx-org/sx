@@ -14,8 +14,8 @@
 // Asserts: 1.1 "close, TE" / "TE, close" / "close , TE" (OWS) → close +
 // EOF; 1.0 "Keep-Alive, TE" → kept (two responses); 1.1 "closefoo" →
 // NOT close (two responses); GPA net-zero after close.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 PORT :: 19006;
 

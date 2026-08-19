@@ -28,7 +28,7 @@ cases/e6br5-*.sx + dir/     the nested-pack reproducer (self-contained)
 run_resolver_target.sh      xfail runner (NOT part of the baseline gate)
 ```
 
-The 08xx **source trees** live under `examples/` so their `#import` paths resolve
+The 08xx **source trees** live under `examples/` so their `@import` paths resolve
 exactly as their baseline-green siblings do, but carry **no**
 `examples/<category>/expected/` marker, so they are inert to the corpus runner. Only
 their goldens live here. The nested-pack reproducer lives entirely under `cases/`;

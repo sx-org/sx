@@ -130,7 +130,7 @@ pub const Server = struct {
     }
 
     fn handleInitialize(self: *Server, id: ?std.json.Value, params: ?std.json.Value) !void {
-        // chdir to workspace root so relative paths in #import c work
+        // chdir to workspace root so relative paths in @import c work
         chdir: {
             const p = params orelse break :chdir;
             const root_uri_val = jsonGet(p, "rootUri") orelse break :chdir;
@@ -440,7 +440,7 @@ pub const Server = struct {
             if (try self.sendSymbolLocationWithOrigin(id_json, doc, sym, sym.def_span)) return;
         }
 
-        // 4. #import "path" string → open the file (or directory)
+        // 4. @import "path" string → open the file (or directory)
         if (findImportPathAtOffset(doc.source, offset)) |import_path| {
             const base_dir = sx.imports.dirName(file_path);
             const rp: ?[]const u8 = if (self.root_path.len > 0) self.root_path else null;
@@ -551,7 +551,7 @@ pub const Server = struct {
         }
 
         // Bare `context` identifier — the whole assembled Context in one
-        // hover (builtin prefix + every `#context_extend` field, each with
+        // hover (builtin prefix + every `@context_extend` field, each with
         // its declaring module).
         if (extractIdentAtOffset(doc.source, offset)) |name| {
             if (std.mem.eql(u8, name, "context") and findSymbolByName(sema.symbols, "context") == null) {
@@ -724,7 +724,7 @@ pub const Server = struct {
             .{ .label = "type_eq", .detail = "(A: Type, B: Type) -> bool" },
             .{ .label = "is_unsigned", .detail = "(T | tp: Type) -> bool" },
             .{ .label = "is_flags", .detail = "(T | tp: Type) -> bool" },
-            .{ .label = "is_identity", .detail = "($T: Type) -> bool — is T an #identity protocol (compile-time only)" },
+            .{ .label = "is_identity", .detail = "($T: Type) -> bool — is T an @identity protocol (compile-time only)" },
             .{ .label = "protocol_kind", .detail = "($T: Type) -> ProtocolKind — constraint / vtable (compile-time only)" },
             .{ .label = "is_struct", .detail = "($T: Type) -> bool" },
             .{ .label = "pointee_type", .detail = "($P: Type) -> Type — *X -> X" },
@@ -779,7 +779,7 @@ pub const Server = struct {
         if (extractDotPrefix(doc.source, cursor_offset)) |prefix| {
             if (doc.sema orelse doc.last_good_sema) |sema| {
                 // `context.` — the assembled Context's fields: the builtin
-                // prefix plus every `#context_extend` field in the workspace.
+                // prefix plus every `@context_extend` field in the workspace.
                 if (std.mem.eql(u8, prefix, "context") and findSymbolByName(sema.symbols, "context") == null) {
                     try self.appendContextFieldCompletions(&items, sema, doc);
                     if (items.items.len > 0) {
@@ -2168,14 +2168,14 @@ pub const Server = struct {
     // Context fields are PROGRAM-GLOBAL — no import gating — so every
     // lookup here spans the whole document store — the server's workspace is
     // the editor-side approximation of "the compilation". The heavy lifting
-    // rides sema's (owner, name) member-ref index: `#context_extend` records
+    // rides sema's (owner, name) member-ref index: `@context_extend` records
     // a member DEF owned by "Context", `context.field` reads and push-literal
     // field names record member USES, and references fall out of the existing
     // cross-document member machinery with no code here.
 
     const ContextExtendHit = struct { doc: *const Document, ce: sx.ast.ContextExtendDecl, span: sx.ast.Span };
 
-    /// Find the `#context_extend <name>` declaration across all loaded
+    /// Find the `@context_extend <name>` declaration across all loaded
     /// documents. Deterministic on multi-hit (a compile error anyway): the
     /// lexicographically-smallest declaring path wins.
     fn findContextExtendDecl(store: *DocumentStore, name: []const u8) ?ContextExtendHit {
@@ -2197,7 +2197,7 @@ pub const Server = struct {
         return best;
     }
 
-    /// Every `#context_extend` declaration in the store, in sort order
+    /// Every `@context_extend` declaration in the store, in sort order
     /// (declaring path, field name) — the completion / enumeration source.
     fn collectContextExtendDecls(store: *DocumentStore, allocator: std.mem.Allocator) []ContextExtendHit {
         var hits = std.ArrayList(ContextExtendHit).empty;
@@ -2224,7 +2224,7 @@ pub const Server = struct {
     }
 
     /// The member-ref DEF site for (owner, name) across all loaded documents
-    /// — `#context_extend` decls and struct-decl fields both record one.
+    /// — `@context_extend` decls and struct-decl fields both record one.
     fn findMemberDefAcrossDocs(store: *DocumentStore, owner: []const u8, name: []const u8) ?struct { doc: *const Document, span: sx.ast.Span } {
         var it = store.by_path.iterator();
         while (it.next()) |entry| {
@@ -2251,7 +2251,7 @@ pub const Server = struct {
     }
 
     /// Go-to-definition for a Context field named `member`: the
-    /// `#context_extend` declaration (extension fields) or the builtin field's
+    /// `@context_extend` declaration (extension fields) or the builtin field's
     /// member DEF in core.sx's Context struct.
     fn sendContextFieldDef(self: *Server, id_json: []const u8, origin_doc: *const Document, member: []const u8, origin: sx.ast.Span) !bool {
         self.documents.loadWorkspaceFiles();
@@ -2294,7 +2294,7 @@ pub const Server = struct {
 
     /// Hover for the bare `context` identifier: the WHOLE assembled Context in
     /// one place — the builtin prefix (from the Context struct decl) plus
-    /// every `#context_extend` field, each with its declaring module. The
+    /// every `@context_extend` field, each with its declaring module. The
     /// tooling recovery of the "one visible struct" property the assembled
     /// design trades away in source.
     fn formatContextHover(self: *Server, sema: SemaResult, doc: *const Document) !?[]const u8 {
@@ -2326,7 +2326,7 @@ pub const Server = struct {
     }
 
     /// Append completion items for every Context field: the builtin prefix
-    /// (from the Context struct decl) + all `#context_extend` fields (with
+    /// (from the Context struct decl) + all `@context_extend` fields (with
     /// declared type + declaring file as detail).
     fn appendContextFieldCompletions(self: *Server, items: *std.ArrayList(lsp.CompletionItem), sema: SemaResult, doc: *const Document) !void {
         self.documents.loadWorkspaceFiles();
@@ -2837,7 +2837,7 @@ pub const Server = struct {
 
         var scan = qstart;
         while (scan > 0 and (source[scan - 1] == ' ' or source[scan - 1] == '\t')) : (scan -= 1) {}
-        const kw = "#import";
+        const kw = "@import";
         if (scan < kw.len) return null;
         if (!std.mem.eql(u8, source[scan - kw.len .. scan], kw)) return null;
 
@@ -3091,7 +3091,7 @@ pub const Server = struct {
                     try buf.append(allocator, ' ');
                     try buf.appendSlice(allocator, pd.kind.spelling());
                 }
-                if (pd.is_identity) try buf.appendSlice(allocator, " #identity");
+                if (pd.is_identity) try buf.appendSlice(allocator, " @identity");
                 try buf.appendSlice(allocator, " { ");
                 for (pd.methods, 0..) |method, mi| {
                     if (mi > 0) try buf.appendSlice(allocator, " ");
@@ -3396,7 +3396,7 @@ test "findSymbolByName: returns null for missing" {
 }
 
 test "findImportPathAtOffset: inside import string" {
-    const source = "#import \"modules/std.sx\";";
+    const source = "@import \"modules/std.sx\";";
     // offset inside the string (index 10)
     const result = Server.findImportPathAtOffset(source, 10);
     try std.testing.expect(result != null);
@@ -3442,7 +3442,7 @@ test "analyzeDocument: flat import pre-registers symbols" {
 
     // Load main file with flat import
     const main_src: [:0]const u8 =
-        \\#import "lib.sx";
+        \\@import "lib.sx";
         \\main :: () -> i32 { mul(3, 4); }
     ;
     const main_doc = try store.openOrUpdate("main.sx", main_src, 1);
@@ -3469,7 +3469,7 @@ test "analyzeDocument: namespaced import registers namespace symbol" {
 
     // Load main file with namespaced import
     const main_src: [:0]const u8 =
-        \\pkg :: #import "lib.sx";
+        \\pkg :: @import "lib.sx";
         \\main :: () -> i32 { pkg.add(3, 4); }
     ;
     const main_doc = try store.openOrUpdate("main.sx", main_src, 1);
@@ -3494,7 +3494,7 @@ test "analyzeDocument: namespaced import fn_signatures have prefix" {
     try store.analyzeDocument(lib_doc);
 
     const main_src: [:0]const u8 =
-        \\pkg :: #import "lib.sx";
+        \\pkg :: @import "lib.sx";
         \\main :: () -> i32 { pkg.add(1, 2); }
     ;
     const main_doc = try store.openOrUpdate("main.sx", main_src, 1);
@@ -3603,7 +3603,7 @@ test "lsp/references: a field's uses are found across documents" {
     try store.analyzeDocument(lib_doc);
 
     const main_src: [:0]const u8 =
-        \\#import "lib.sx";
+        \\@import "lib.sx";
         \\use :: (m: *Move) -> i64 { m.flag; }
     ;
     const main_doc = try store.openOrUpdate("main.sx", main_src, 1);
@@ -3677,7 +3677,7 @@ test "lsp/inlayHint: a for-loop capture in a struct method shows its element typ
     try store.analyzeDocument(lib_doc);
 
     const main_src: [:0]const u8 =
-        \\#import "lib.sx";
+        \\@import "lib.sx";
         \\Game :: struct {
         \\    legal: List(Move);
         \\    scan :: (self: *Game) {
@@ -3715,7 +3715,7 @@ test "lsp/inlayHint: a for-loop capture that writes its type gets no hint" {
     try store.analyzeDocument(lib_doc);
 
     const main_src: [:0]const u8 =
-        \\#import "lib.sx";
+        \\@import "lib.sx";
         \\Game :: struct {
         \\    legal: List(Move);
         \\    scan :: (self: *Game) {
@@ -3811,7 +3811,7 @@ test "lsp/project: whole-program check attributes a reachable error to its modul
     try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/mod.sx", .data = "Move :: struct { flag: i64; }\n" ++
         "take :: (m: Move) -> i64 { return m.flag; }\n" ++
         "use :: (p: *Move) -> i64 { return take(p); }\n" });
-    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/main.sx", .data = "#import \"mod.sx\";\n" ++
+    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/main.sx", .data = "@import \"mod.sx\";\n" ++
         "main :: () -> i32 { mv : Move = .{ flag = 1 }; return xx use(*mv); }\n" });
 
     const store = doc_mod.DocumentStore.init(alloc, io, &.{}, alloc);
@@ -3835,7 +3835,7 @@ test "lsp/project: whole-program check attributes a reachable error to its modul
 // ---- Context extension LSP (design/context-extension.md, context-lsp unit) ----
 
 // Definition targets for Context fields resolve program-wide: the
-// `#context_extend` declaration is found across documents, and the reading
+// `@context_extend` declaration is found across documents, and the reading
 // document needs NO import of the declaring module — the LSP twin of the
 // program-global rule.
 test "lsp/context: cross-file field def resolves without an import" {
@@ -3845,11 +3845,11 @@ test "lsp/context: cross-file field def resolves without an import" {
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
-    const decl_src: [:0]const u8 = "#context_extend trace_depth: i64 = 3;";
+    const decl_src: [:0]const u8 = "@context_extend trace_depth: i64 = 3;";
     const decl_doc = try store.openOrUpdate("ctx_decl.sx", decl_src, 1);
     try store.analyzeDocument(decl_doc);
 
-    // Reader: no #import of ctx_decl.sx.
+    // Reader: no @import of ctx_decl.sx.
     const reader_src: [:0]const u8 = "reader :: () -> i64 { return context.trace_depth; }";
     const reader_doc = try store.openOrUpdate("reader.sx", reader_src, 1);
     try store.analyzeDocument(reader_doc);
@@ -3870,7 +3870,7 @@ test "lsp/context: cross-file field def resolves without an import" {
     try std.testing.expectEqualStrings("Context", use.owner);
 }
 
-// Find-all-references from the `#context_extend` declaration lists every
+// Find-all-references from the `@context_extend` declaration lists every
 // `context.field` read and push-literal patch site program-wide.
 test "lsp/context: references span reads and push sites across documents" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -3879,7 +3879,7 @@ test "lsp/context: references span reads and push sites across documents" {
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
-    const decl_src: [:0]const u8 = "#context_extend trace_depth: i64 = 3;";
+    const decl_src: [:0]const u8 = "@context_extend trace_depth: i64 = 3;";
     const decl_doc = try store.openOrUpdate("ctx_decl.sx", decl_src, 1);
     try store.analyzeDocument(decl_doc);
 
@@ -3910,18 +3910,18 @@ test "lsp/context: hover carries type, default, and declaring module" {
     const alloc = arena.allocator();
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
-    const decl_src: [:0]const u8 = "#context_extend ui_scale: f64 = 1.5;";
+    const decl_src: [:0]const u8 = "@context_extend ui_scale: f64 = 1.5;";
     const decl_doc = try store.openOrUpdate("ui_mod.sx", decl_src, 1);
     try store.analyzeDocument(decl_doc);
 
     var server = Server{ .allocator = alloc, .documents = store, .transport = undefined, .io = test_io(), .project_diag_uris = std.StringHashMap(void).init(alloc) };
 
     const hover = (try server.formatContextFieldHover(decl_doc, "ui_scale")) orelse return error.TestUnexpectedResult;
-    try std.testing.expect(std.mem.indexOf(u8, hover, "#context_extend ui_scale: f64 = 1.5;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, hover, "@context_extend ui_scale: f64 = 1.5;") != null);
     try std.testing.expect(std.mem.indexOf(u8, hover, "ui_mod.sx") != null);
 }
 
-// Completion after `context.` includes every `#context_extend` field with its
+// Completion after `context.` includes every `@context_extend` field with its
 // declared type and declaring file.
 test "lsp/context: completion lists extension fields" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -3929,7 +3929,7 @@ test "lsp/context: completion lists extension fields" {
     const alloc = arena.allocator();
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
-    const decl_src: [:0]const u8 = "#context_extend ui_scale: f64 = 1.5;\n#context_extend frame_no: i64 = 0;";
+    const decl_src: [:0]const u8 = "@context_extend ui_scale: f64 = 1.5;\n@context_extend frame_no: i64 = 0;";
     const decl_doc = try store.openOrUpdate("ui_mod.sx", decl_src, 1);
     try store.analyzeDocument(decl_doc);
 
@@ -3977,7 +3977,7 @@ test "lsp/context: bare context hover enumerates the assembled struct" {
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 =
         \\Context :: struct { allocator: i64; }
-        \\#context_extend ui_scale: f64 = 1.5;
+        \\@context_extend ui_scale: f64 = 1.5;
     ;
     const doc = try store.openOrUpdate("main.sx", src, 1);
     try store.analyzeDocument(doc);
@@ -4131,7 +4131,7 @@ test "semantic tokens: a heredoc emits its content lines and not its delimiters"
 
     const src: [:0]const u8 =
         \\f :: () -> i32 {
-        \\    s := #string END
+        \\    s := @string END
         \\alpha
         \\beta
         \\END;
@@ -4151,7 +4151,7 @@ test "semantic tokens: a heredoc emits its content lines and not its delimiters"
     try std.testing.expectEqual(@as(u32, 5), b_run.len);
     try std.testing.expectEqual(@as(usize, 2), countOfType(toks, lsp.SemanticTokenType.string_));
 
-    const directive: u32 = @intCast(std.mem.indexOf(u8, src, "#string").?);
+    const directive: u32 = @intCast(std.mem.indexOf(u8, src, "@string").?);
     try std.testing.expect(semTokenAt(toks, src, directive) == null);
     const closer: u32 = @intCast(std.mem.indexOf(u8, src, "\nEND").? + 1);
     try std.testing.expect(semTokenAt(toks, src, closer) == null);
@@ -4177,7 +4177,7 @@ test "semantic tokens: a directive is a keyword and its path a string" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    const src: [:0]const u8 = "#import \"nowhere.sx\";\nf :: () -> i32 { 0 }";
+    const src: [:0]const u8 = "@import \"nowhere.sx\";\nf :: () -> i32 { 0 }";
     const toks = try semTokens(alloc, src);
 
     const directive = semTokenAt(toks, src, 0) orelse return error.TestUnexpectedResult;
@@ -4425,13 +4425,13 @@ test "lsp/hover: a Context field carries its doc block" {
     const alloc = arena.allocator();
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
-    const src: [:0]const u8 = "// How far to trace.\n#context_extend trace_depth: i64 = 3;";
+    const src: [:0]const u8 = "// How far to trace.\n@context_extend trace_depth: i64 = 3;";
     const doc = try store.openOrUpdate("ctx.sx", src, 1);
     try store.analyzeDocument(doc);
 
     var server = Server{ .allocator = alloc, .documents = store, .transport = undefined, .io = test_io(), .project_diag_uris = std.StringHashMap(void).init(alloc) };
     try std.testing.expectEqualStrings(
-        "// How far to trace.\n\n```sx\n#context_extend trace_depth: i64 = 3;\n```\n\ndeclared by `ctx.sx`",
+        "// How far to trace.\n\n```sx\n@context_extend trace_depth: i64 = 3;\n```\n\ndeclared by `ctx.sx`",
         (try server.formatContextFieldHover(doc, "trace_depth")) orelse return error.TestUnexpectedResult,
     );
 }
@@ -4459,7 +4459,7 @@ test "lsp/hover: an imported struct field and enum variant keep their docs" {
         "    // The warm one.\n" ++
         "    green;\n" ++
         "}\n" });
-    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/main.sx", .data = "#import \"mod.sx\";\n" ++
+    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/main.sx", .data = "@import \"mod.sx\";\n" ++
         "use :: (p: Point) -> f32 { return p.x; }\n" });
 
     var store = doc_mod.DocumentStore.init(alloc, io, &.{}, alloc);

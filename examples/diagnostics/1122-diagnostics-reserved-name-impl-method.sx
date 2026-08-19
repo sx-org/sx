@@ -1,7 +1,7 @@
 // A reserved/builtin type name is rejected as a binding name inside an `impl`
 // block's method — both as a parameter (`u8`) and as a local (`i2`): the
 // binding-name walk descends `impl_block` into each method's `fn_decl`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct { total: i64 = 0; count: i64 = 0; }
 update :: (self: *Box, n: i64) { self.total += n; self.count += 1; }

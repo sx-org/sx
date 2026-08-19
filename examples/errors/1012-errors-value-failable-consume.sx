@@ -6,7 +6,7 @@
 // or the handler body's value on failure, merged through a block parameter.
 // The producer side is `examples/228-value-failable.sx`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad, Empty }
 

@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 // The `on_build` override. A user `@run on_build(build);` replaces the
 // stdlib `default_pipeline` as the build driver; the compiler invokes it after

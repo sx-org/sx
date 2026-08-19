@@ -17,9 +17,9 @@
 // selection, and the `!IoErr` channel reaches it through
 // `resolveErrorType -> resolveTypeName` rather than a global slot.
 
-#import "modules/std.sx";
-#import "0811-modules-same-name-error-set-ambiguous/a.sx";
-#import "0811-modules-same-name-error-set-ambiguous/b.sx";
+@import "modules/std.sx";
+@import "0811-modules-same-name-error-set-ambiguous/a.sx";
+@import "0811-modules-same-name-error-set-ambiguous/b.sx";
 
 describe :: ($T: Type) -> i32 {
     r := match T {

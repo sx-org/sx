@@ -29,7 +29,7 @@ const usage_text =
     \\  insert-package  --name <pkg> [--apply] <files/dirs...>
     \\      Insert `package <pkg>;` after each file's leading comment block.
     \\  rewrite-imports --map <file> [--apply] <files/dirs...>
-    \\      Rewrite #import path strings per `old=new` mapping lines.
+    \\      Rewrite @import path strings per `old=new` mapping lines.
     \\  qualify         --map <file> [--apply] <files/dirs...>
     \\      Convert flat uses of mapped names to `alias.name` per
     \\      `name=alias` mapping lines. Never rewrites ambiguous names.
@@ -409,27 +409,26 @@ pub const Warning = struct {
 
 /// The malformed-literal message for an `.invalid` row, read off the source
 /// spelling at `at`. Compiler `.invalid` rows carry no reason and most of them
-/// are not literals at all — a lone `#` from an unrecognized directive, a
-/// stray backtick or `@`, an unknown byte — so anything but the five literal
-/// spellings warns about nothing.
+/// are not literals at all — a lone `#`, a stray backtick or `@`, an unknown
+/// byte — so anything but the five literal spellings warns about nothing.
 pub fn literalWarning(source: []const u8, at: u32) ?[]const u8 {
     switch (source[at]) {
         '"' => return "unterminated string literal (rest of file skipped as literal)",
         '\'' => return "unterminated char literal (rest of file skipped as literal)",
-        '#' => {},
+        '@' => {},
         else => return null,
     }
-    const kw = "#string";
+    const kw = "@string";
     var j: usize = at;
     if (j + kw.len > source.len or !std.mem.eql(u8, source[j..][0..kw.len], kw)) return null;
     j += kw.len;
     if (j < source.len and isIdentContinue(source[j])) return null;
     while (j < source.len and (source[j] == ' ' or source[j] == '\t')) j += 1;
-    if (j >= source.len or !isIdentStart(source[j])) return "#string without delimiter identifier";
+    if (j >= source.len or !isIdentStart(source[j])) return "@string without delimiter identifier";
     while (j < source.len and isIdentContinue(source[j])) j += 1;
     while (j < source.len and source[j] != '\n') j += 1;
-    if (j >= source.len) return "unterminated #string heredoc";
-    return "unterminated #string heredoc (rest of file skipped as literal)";
+    if (j >= source.len) return "unterminated @string heredoc";
+    return "unterminated @string heredoc (rest of file skipped as literal)";
 }
 
 fn isIdentStart(c: u8) bool {
@@ -637,13 +636,13 @@ fn cmdRewriteImports(
         var edits: std.ArrayList(Edit) = .empty;
         var ti = tl.first();
         while (tl.tag(ti) != .eof) : (ti = tl.next(ti)) {
-            if (tl.tag(ti) != .hash_import) continue;
+            if (tl.tag(ti) != .at_import) continue;
             const n = tl.next(ti);
             if (tl.tag(n) != .string_literal) continue;
             const inner = source[tl.start(n) + 1 .. tl.end(n) - 1];
             const new_path = mapping.entries.get(inner) orelse continue;
             const p = idx.pos(tl.start(n));
-            try w.print("{s}:{d}:{d}: #import \"{s}\" -> \"{s}\"\n", .{ path, p.line, p.col, inner, new_path });
+            try w.print("{s}:{d}:{d}: @import \"{s}\" -> \"{s}\"\n", .{ path, p.line, p.col, inner, new_path });
             try edits.append(allocator, .{
                 .start = tl.start(n) + 1,
                 .end = tl.end(n) - 1,
@@ -868,7 +867,7 @@ fn cmdInventory(
     var warning_count: usize = 0;
 
     try w.writeAll("== D9 collision inventory: `package` / `import` / `private` / `intrinsic` as ordinary identifiers ==\n");
-    try w.writeAll("(comments, string/char literals, and #string heredocs excluded by the scanner)\n\n");
+    try w.writeAll("(comments, string/char literals, and @string heredocs excluded by the scanner)\n\n");
 
     for (files) |path| {
         const source = try readFile(allocator, io, path);

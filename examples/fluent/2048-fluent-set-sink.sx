@@ -10,8 +10,8 @@
 // handle to — a handle borrows storage it does not own, and the sink's own
 // frame is gone by the time the list is read. One sink, two storage stories,
 // decided by whether `T` can carry the value itself.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
 
 View :: @OpenSet(.{ max = 128 }) {
     render :: (self: *Self) -> string;

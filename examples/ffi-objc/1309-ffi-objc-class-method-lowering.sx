@@ -24,8 +24,8 @@
 // calls and that reads the `__sx_state` ivar) happens alongside
 // class-pair init, not here.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 SxFoo :: @ObjcClass("SxFoo") {
     counter: i32;

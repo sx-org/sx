@@ -1,7 +1,7 @@
 // `for` over a `List(T)` (a `{ items: [*]T, len, cap }` struct): value capture,
 // by-ref capture (mutates in place), iterating a `*List`, and a by-ref capture
 // used as a value-receiver method call (auto-deref).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct {
     v: i64;

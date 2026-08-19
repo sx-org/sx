@@ -4,7 +4,7 @@
 // `ffi-jni-call-03` — keeps `read_int` alive so the IR snapshot has
 // the JNI lowering visible, but the dereferences never execute.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g_should_call : bool = false;
 

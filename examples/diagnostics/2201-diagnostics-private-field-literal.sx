@@ -1,6 +1,6 @@
 // A private field cannot be named in a struct literal from another file.
 
-box :: #import "2201-diagnostics-private-field-literal/box.sx";
+box :: @import "2201-diagnostics-private-field-literal/box.sx";
 
 g : box.Box = box.Box{ secret = 1 };
 h : box.Box = .{ secret = 2 };

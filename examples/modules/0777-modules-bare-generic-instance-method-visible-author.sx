@@ -14,8 +14,8 @@
 // runs `c.Box.tag` (returning 7+16=23) on the b instance —
 // `size=8 tag=23`; with body-author ≡ layout-author it runs b's `tag` (7+8=15).
 
-#import "modules/std.sx";
-#import "0777-modules-bare-generic-instance-method-visible-author/b.sx";
+@import "modules/std.sx";
+@import "0777-modules-bare-generic-instance-method-visible-author/b.sx";
 
 main :: () -> i32 {
     x := Box(i64).make(7);

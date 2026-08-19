@@ -1,6 +1,6 @@
 // `*P` view refusals: an RVALUE has no durable storage to borrow, so both the decl
 // form and the argument form are compile errors.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }

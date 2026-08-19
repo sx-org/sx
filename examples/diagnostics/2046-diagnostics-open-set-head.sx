@@ -10,7 +10,7 @@
 //     set may be declared after the template is built. It waits, and what is still
 //     owed when the declarations are done is reported against the member that wrote
 //     it, naming the head it asked for.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 64 }) {
     render :: (self: *Self) -> string;
@@ -31,7 +31,7 @@ Wrong :: @OpenVariant(Plain) {
 }
 
 // A qualified head whose module publishes no such name.
-lib :: #import "modules/std/mem.sx";
+lib :: @import "modules/std/mem.sx";
 
 Absent :: @OpenVariant(lib.View) {
     text: string = "";

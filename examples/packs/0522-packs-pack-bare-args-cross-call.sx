@@ -24,7 +24,7 @@
 // `[]any` (16-byte boxes) reads every element past the first at the
 // wrong stride, which the byte-accurate comptime VM rejects.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 describe :: (args: []Type) -> string {
     s := "[";

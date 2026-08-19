@@ -1,6 +1,6 @@
 // Own-wins for ENUM-PAYLOAD type registration over a NAMESPACED import.
 //
-// `#import "modules/std.sx"` carries the stdlib `event.Event` struct — it is
+// `@import "modules/std.sx"` carries the stdlib `event.Event` struct — it is
 // NAMESPACED (reachable only as `event.Event`), never flat-visible. This file
 // ALSO authors its OWN `Event :: struct { code }`, used as the payload of the
 // enum `Wrap`. The payload type name `Event` must resolve at REGISTRATION to
@@ -14,7 +14,7 @@
 // `got`'s payload the stdlib `Event`, so `e.code` errors "field 'code' not
 // found on type 'Event'".
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Event :: struct { code: i64; }
 Wrap  :: enum { none; got: Event; }

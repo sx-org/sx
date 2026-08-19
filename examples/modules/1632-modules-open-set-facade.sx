@@ -5,8 +5,8 @@
 // a member formed at the facade's spelling is a value of the very set the member
 // joined, so it dispatches, answers `type_of` with the member, measures the same,
 // and satisfies a signature written inside the package in the set's own terms.
-#import "modules/std.sx";
-pkg :: #import "1632-modules-open-set-facade/facade.sx";
+@import "modules/std.sx";
+pkg :: @import "1632-modules-open-set-facade/facade.sx";
 
 // A bound whose head is the facade's own spelling: what it names is the set the
 // facade re-exports, so the bound asks that set's question.

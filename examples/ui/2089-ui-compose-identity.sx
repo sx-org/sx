@@ -5,8 +5,8 @@
 // the SAME ids, and two call sites never share one. The occurrence is what
 // separates the siblings a single site emits, and it restarts at every
 // `begin_build`.
-#import "modules/std.sx";
-#import "examples/ui/compose.sx";
+@import "modules/std.sx";
+@import "examples/ui/compose.sx";
 
 // One site, reached as many times as its callers ask.
 cell :: () -> ElementId => element_id();

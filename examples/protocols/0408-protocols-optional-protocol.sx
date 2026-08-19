@@ -4,7 +4,7 @@
 // a non-null optional protocol auto-unwrap and dispatch through the
 // vtable / inline fn-ptrs as usual.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 GPU :: protocol vtable {
   ping :: (self: *Self) -> i64;

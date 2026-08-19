@@ -4,7 +4,7 @@
 // `xx`-erases into it, and method dispatch uses the bound type-arg
 // (`get -> T` becomes `get -> i64` for `VL(i64)`).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 VL :: protocol(T: Type) vtable { get :: (self: *Self) -> T; }
 IntCell :: struct { v: i64; }

@@ -2,9 +2,9 @@
 // vendors/sqlite — sx bindings over the VENDORED SQLite amalgamation
 // (c/, see README.md for version + provenance + upgrade notes).
 //
-// `#import "vendors/sqlite/sqlite.sx"` gives any sx program SQLite
+// `@import "vendors/sqlite/sqlite.sx"` gives any sx program SQLite
 // with no system SQLite dependency or caller-supplied build flags: the
-// named `#import c` unit below compiles c/sqlite3.c with the pinned
+// named `@import c` unit below compiles c/sqlite3.c with the pinned
 // options (through sx's content-addressed object cache, so it compiles
 // once per machine, not once per run) and every `extern sqlib` decl binds
 // against it. Under `sx run` the unit's dylib is a PRIORITY
@@ -55,8 +55,8 @@
 // 64-bit APIs (rowids, changes64, memory accounting, serialize sizes).
 // =====================================================================
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 configure_sqlite :: () {
     inline if OS == .linux {
@@ -65,17 +65,17 @@ configure_sqlite :: () {
 }
 @run configure_sqlite();
 
-sqlib :: #import c {
-    #define "SQLITE_DQS=0";
-    #define "SQLITE_THREADSAFE=1";
-    #define "SQLITE_DEFAULT_MEMSTATUS=0";
-    #define "SQLITE_OMIT_DEPRECATED";
-    #define "SQLITE_OMIT_SHARED_CACHE";
-    #define "SQLITE_LIKE_DOESNT_MATCH_BLOBS";
-    #define "SQLITE_ENABLE_COLUMN_METADATA";
-    #define "SQLITE_ENABLE_FTS5";
-    #flags  "-O2";
-    #source "c/sqlite3.c";
+sqlib :: @import c {
+    @define "SQLITE_DQS=0";
+    @define "SQLITE_THREADSAFE=1";
+    @define "SQLITE_DEFAULT_MEMSTATUS=0";
+    @define "SQLITE_OMIT_DEPRECATED";
+    @define "SQLITE_OMIT_SHARED_CACHE";
+    @define "SQLITE_LIKE_DOESNT_MATCH_BLOBS";
+    @define "SQLITE_ENABLE_COLUMN_METADATA";
+    @define "SQLITE_ENABLE_FTS5";
+    @flags  "-O2";
+    @source "c/sqlite3.c";
 };
 
 // ── FFI: connection lifecycle ─────────────────────────────────────────
@@ -180,7 +180,7 @@ sqlite3_threadsafe        :: () -> i32 extern sqlib "sqlite3_threadsafe";
 sqlite3_compileoption_used :: (name: cstring) -> i32 extern sqlib "sqlite3_compileoption_used";
 sqlite3_compileoption_get  :: (n: i32) -> ?cstring extern sqlib "sqlite3_compileoption_get";
 sqlite3_complete          :: (sql: cstring) -> i32 extern sqlib "sqlite3_complete";
-sqlite3_free              :: (p: usize) extern sqlib "sqlite3_free";
+sqlite3_free              :: (p: *void) extern sqlib "sqlite3_free";
 sqlite3_malloc64          :: (n: u64) -> usize extern sqlib "sqlite3_malloc64";
 sqlite3_msize             :: (p: usize) -> u64 extern sqlib "sqlite3_msize";
 sqlite3_memory_used       :: () -> i64 extern sqlib "sqlite3_memory_used";
@@ -332,19 +332,21 @@ SqliteErr :: error {
 // `from_cstring` must not escape.
 sq_from_cstr :: (p: ?cstring) -> string {
     if p == null { return ""; }
-    v := from_cstring(p!);
+    v := from_cstring(p);
     if v.len == 0 { return ""; }
     return substr(v, 0, v.len);
 }
 
 // `n` raw bytes at `p` as a context.allocator copy ("" when p is null).
 sq_copy_bytes :: (p: ?*u8, n: i64) -> string {
-    if p == null or n <= 0 { return ""; }
-    cp : [*]u8 = (p!).([*]u8);
-    raw : [*]u8 = (context.allocator.alloc_bytes(n + 1)).([*]u8);
-    c.memcpy(raw, cp, n);
-    raw[n] = 0;
-    return string{ ptr = raw, len = n };
+    if n <= 0 { return ""; }
+    if q := p {
+        raw : [*]u8 = (context.allocator.alloc_bytes(n + 1)).([*]u8);
+        c.memcpy(raw, q, n);
+        raw[n] = 0;
+        return string{ ptr = raw, len = n };
+    }
+    return "";
 }
 
 // ── library-level utilities ───────────────────────────────────────────
@@ -544,7 +546,7 @@ SqliteStmt :: struct {
     expanded_sql :: (self: *SqliteStmt) -> string {
         p := sqlite3_expanded_sql(self.handle);
         s := sq_from_cstr(p);
-        if p != null { sqlite3_free(p!); }
+        if q := p { sqlite3_free(q); }
         return s;
     }
     busy :: (self: *SqliteStmt) -> bool {
@@ -721,10 +723,12 @@ Sqlite :: struct {
     serialize :: (self: *Sqlite) -> (string, !SqliteErr) {
         size : i64 = 0;
         p := sqlite3_serialize(self.handle, to_cstring("main"), *size, 0);
-        if p == null { raise error.Serialize; }
-        out := sq_copy_bytes(p, size);
-        sqlite3_free(p!);
-        return out;
+        if q := p {
+            out := sq_copy_bytes(q, size);
+            sqlite3_free(q);
+            return out;
+        }
+        raise error.Serialize;
     }
     // Replace "main" with the database image in `bytes`. The image is
     // copied into sqlite-owned memory (FREEONCLOSE+RESIZEABLE), so

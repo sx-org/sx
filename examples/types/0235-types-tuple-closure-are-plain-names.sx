@@ -4,7 +4,7 @@
 // called without a backtick escape, in the same file whose signatures spell the
 // type constructors.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 NT :: Tuple(a: i64, b: bool);      // `::` RHS: a tuple alias
 CB :: Closure(i32) -> i32;         // `::` RHS: a closure alias, `-> R` included

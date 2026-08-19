@@ -1,8 +1,8 @@
 // A comptime-constructed enum (declare/define) with two same-named variants is
 // rejected: two `value` variants would make construction (`.value`) and matching
 // ambiguous, so `define` bails naming the duplicate.
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 Bad :: define(declare("Bad"), .enum(.{ variants = .[
     EnumVariant{ name = "value",  payload = i64 },

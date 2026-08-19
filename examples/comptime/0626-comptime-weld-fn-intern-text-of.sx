@@ -9,7 +9,7 @@
 // Round-trip: `raw_text_of(raw_intern(s)) == s` — interning a string yields a handle,
 // and resolving the handle gives the text back.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 
 StringId :: u32;

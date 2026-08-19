@@ -3,7 +3,7 @@
 // remaining type args as the pack, so the field is a tuple of those per-position
 // types. Storing the whole tuple field and reading its elements both work.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct($R: Type, ..$Ts: []Type) {
     r:    $R;

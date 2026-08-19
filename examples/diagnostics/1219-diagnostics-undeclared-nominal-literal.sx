@@ -2,7 +2,7 @@
 // form (`NoSuchType{ a = 1 }`) and the empty form (`NoSuchType{}`): the main-file
 // `UnknownTypeChecker` validates a named struct-literal head just like a
 // declaration annotation.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     a := NoSuchType{ a = 1 };   // unknown type — named-field form

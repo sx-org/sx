@@ -4,7 +4,7 @@
 // child (one table row each, index 0). The master member-type tables and
 // the static type-position fold answer from the same TypeTable query, so
 // the two can never diverge (pinned by the parity lines).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Pair :: struct { a: i32; b: f64; }
 

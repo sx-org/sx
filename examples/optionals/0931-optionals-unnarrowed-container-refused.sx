@@ -3,7 +3,7 @@
 // only a `!= null` proof (or an explicit `!`) reaches it. An index READ is the
 // exception that stays legal — it chains to `?Elem`, so consuming it as the
 // bare element is what refuses.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 head :: ufcs (xs: []$T, k: i64) -> $T { return xs[k]; }
 takes :: (x: i64) -> i64 { return x; }

@@ -19,16 +19,16 @@
 //     it; drive a long-lived client under an arena (or reset per request).
 //   • `method`/`path`/`host`/`extra_headers` are sent verbatim (no CRLF
 //     sanitisation) — pass trusted values.
-#import "modules/std/core.sx";         // Allocator
-#import "modules/std/fmt.sx";          // concat, int_to_string
-#import "modules/std/list.sx";         // List
-#import "modules/std/mem.sx";
-clib :: #import "modules/std/c.sx";    // block ops (`c` is a ClientConn local throughout)
-socket :: #import "modules/std/socket.sx";
-#import "modules/std/http/tls.sx";     // TlsConn, TlsDialer (client TLS seam)
-types :: #import "modules/std/http/types.sx";
-#import "modules/std/compress.sx";     // shared codec Error/Progress contract
-#import "modules/std/http/content_encoding.sx";
+@import "modules/std/core.sx";         // Allocator
+@import "modules/std/fmt.sx";          // concat, int_to_string
+@import "modules/std/list.sx";         // List
+@import "modules/std/mem.sx";
+clib :: @import "modules/std/c.sx";    // block ops (`c` is a ClientConn local throughout)
+socket :: @import "modules/std/socket.sx";
+@import "modules/std/http/tls.sx";     // TlsConn, TlsDialer (client TLS seam)
+types :: @import "modules/std/http/types.sx";
+@import "modules/std/compress.sx";     // shared codec Error/Progress contract
+@import "modules/std/http/content_encoding.sx";
 
 HDR_ACCEPT_ENCODING :: "Accept-Encoding: gzip, deflate\r\n";
 

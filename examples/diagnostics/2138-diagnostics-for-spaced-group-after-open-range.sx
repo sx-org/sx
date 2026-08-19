@@ -1,7 +1,7 @@
 // A spaced `(` group immediately before the body is not a range end, so
 // `0..` stays open and cannot be the first iterable.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 main :: () {
     n := 4;
     for i in 0.. (n) { _ = i; }

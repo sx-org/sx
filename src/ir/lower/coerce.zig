@@ -821,7 +821,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
     var concrete_ty: TypeId = src_ty;
     var is_rvalue = false;
 
-    // Ownership classes split the conversion-mode arms: an #identity
+    // Ownership classes split the conversion-mode arms: an @identity
     // target BORROWS lvalues/pointers; a value/own target OWNS its ctx and
     // an implicit erasure never allocates, so EVERY shape at a value/own
     // target is the DEMAND error. (The owning spelling is the postfix
@@ -912,7 +912,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
     }
 
     if (concrete_type_name) |ctn| {
-        // #identity protocols only ever BORROW: an rvalue has no durable
+        // @identity protocols only ever BORROW: an rvalue has no durable
         // storage to borrow and an owning heap-copy is exactly what the
         // class forbids — refuse instead.
         if (is_rvalue and self.refuseIdentityRvalueErasure(dst_ty, operand_node.span)) {
@@ -923,7 +923,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
     return operand;
 }
 
-/// True when `ty` is an `#identity` protocol (borrow-only ownership class).
+/// True when `ty` is an `@identity` protocol (borrow-only ownership class).
 pub fn protocolIsIdentity(self: *Lowering, ty: TypeId) bool {
     const pi = self.getProtocolInfo(ty) orelse return false;
     return pi.ownership == .identity;
@@ -966,8 +966,8 @@ pub fn demandOwnedErasure(self: *Lowering, dst_ty: TypeId, proto_name: []const u
     return self.builder.emit(.{ .placeholder = self.module.types.internString("protocol-erasure") }, dst_ty);
 }
 
-/// The #identity rvalue-erasure refusal: returns true (diagnostic emitted)
-/// when `dst_ty` is an `#identity` protocol — such values only ever borrow
+/// The @identity rvalue-erasure refusal: returns true (diagnostic emitted)
+/// when `dst_ty` is an `@identity` protocol — such values only ever borrow
 /// a named object's storage, so an owning (heap-copying) erasure of an
 /// rvalue is a compile error.
 pub fn refuseIdentityRvalueErasure(self: *Lowering, dst_ty: TypeId, span: ?ast.Span) bool {
@@ -978,7 +978,7 @@ pub fn refuseIdentityRvalueErasure(self: *Lowering, dst_ty: TypeId, span: ?ast.S
             const cs = self.builder.current_span;
             break :blk ast.Span{ .start = cs.start, .end = cs.end };
         };
-        d.addFmt(.err, s, "cannot erase an rvalue to '#identity' protocol '{s}' — identity objects need a name; bind it first (`x := …;` then `xx x` / `x.({s})` borrows the local)", .{ pi.name, pi.name });
+        d.addFmt(.err, s, "cannot erase an rvalue to '@identity' protocol '{s}' — identity objects need a name; bind it first (`x := …;` then `xx x` / `x.({s})` borrows the local)", .{ pi.name, pi.name });
     }
     return true;
 }

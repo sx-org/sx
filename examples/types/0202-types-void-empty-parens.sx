@@ -2,7 +2,7 @@
 // exactly `f :: () -> void { … }`. The zero-parameter FUNCTION type `() -> R`
 // (a callable taking no args) is unaffected — only an empty `()` in the
 // return-TYPE slot folds to void.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // `-> ()` is void: no value returned.
 greet :: () -> () { print("hi\n"); }

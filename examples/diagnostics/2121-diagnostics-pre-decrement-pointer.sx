@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     xs : [3]i64 = .[1, 2, 3];

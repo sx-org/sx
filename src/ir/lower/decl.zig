@@ -224,7 +224,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // (extern-ref validation, C-import collection) sees the expanded program.
     const decls = self.expandModuleDrivers(source_decls);
     root.data.root.decls = decls;
-    // Pass 0b: collect every `#context_extend` declaration program-wide into
+    // Pass 0b: collect every `@context_extend` declaration program-wide into
     // ProgramIndex (sorted, validated). Runs UNCONDITIONALLY — in a
     // no-context build the declarations are inert but the collected list
     // still powers the registered-field diagnostic.
@@ -236,7 +236,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // layout the admission checks measure.
     admitOpenVariants(self, decls);
     // Pass 1a': assemble the program Context — append the collected
-    // `#context_extend` fields to the registered Context struct. Must run
+    // `@context_extend` fields to the registered Context struct. Must run
     // after `scanDecls` (every named type an extension can reference is
     // registered) and before `emitDefaultContextGlobal` / any body lowering
     // (both consume the assembled layout via findByName("Context")).
@@ -1121,7 +1121,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                 // literal constants carry no annotation to resolve, so they
                 // stay here (their type comes from the literal).
                 if (cd.type_annotation == null) {
-                    // Untyped literal constants (e.g. UI_VERT_SRC :: #string GLSL...GLSL;).
+                    // Untyped literal constants (e.g. UI_VERT_SRC :: @string GLSL...GLSL;).
                     // An aggregate-valued one registers in pass 1c' instead —
                     // its value node is final only once the brace front runs.
                     const lit_ty: ?TypeId = switch (cd.value.data) {
@@ -2419,8 +2419,8 @@ pub fn lowerMainAndComptime(self: *Lowering, decls: []const *const Node) void {
 /// author so existing calls bind first-wins.
 ///
 /// Scoped to DIRECT flat imports of the main file: a `module_decls` entry
-/// whose path is the main file or one of its bare `#import` edges. A
-/// namespaced (`ns :: #import`) author has no bare-name winner and is excluded
+/// whose path is the main file or one of its bare `@import` edges. A
+/// namespaced (`ns :: @import`) author has no bare-name winner and is excluded
 /// both by that flat-edge gate and by the `fn_ast_map` winner lookup below.
 pub fn lowerRetainedSameNameAuthors(self: *Lowering) void {
     const module_decls = self.program_index.module_decls orelse return;
@@ -2542,7 +2542,7 @@ pub const TypeHeadResolution = union(enum) {
     /// querying module ONLY through a namespaced import (or over more than one
     /// flat hop) — not bare-visible over the single-hop direct flat-import set
     /// (the type analog of the bare-call visibility rule). The user must
-    /// qualify it (`ns.Type`) or `#import` the declaring module directly.
+    /// qualify it (`ns.Type`) or `@import` the declaring module directly.
     /// `resolveNominalLeaf` surfaces the "not visible" diagnostic and returns
     /// the `.unresolved` poison sentinel — NEVER the global `findByName` match
     /// (which would leak the type) and NEVER a silent empty-struct stub (which
@@ -2551,7 +2551,7 @@ pub const TypeHeadResolution = union(enum) {
     /// `name` is authored ONLY as `private` declarations in modules other
     /// than the querying source. Same gating strength as `.not_visible`
     /// (loud diagnostic + `.unresolved` poison, never the global registration
-    /// leak), with wording that does not suggest an `#import` that would not
+    /// leak), with wording that does not suggest an `@import` that would not
     /// help.
     private_elsewhere,
     /// ≥2 DISTINCT same-name type authors are flat-visible from the querying
@@ -2616,8 +2616,8 @@ fn selectableFn(fd: *const ast.FnDecl, kinds: CallableKinds) bool {
 ///   the caller's own — the single-author and first-importer cases — `.none`
 ///   lets the existing path bind it.)
 /// - else select among the authors reachable via `caller_file`'s FLAT import
-///   edges (bare `#import` of a file or directory, never a namespaced
-///   `ns :: #import`), deduped by author identity (a diamond import of the
+///   edges (bare `@import` of a file or directory, never a namespaced
+///   `ns :: @import`), deduped by author identity (a diamond import of the
 ///   same module is one author): `≥2 distinct` → `.ambiguous`; exactly one
 ///   that DIFFERS from the winner → select it.
 /// - a visible author that denotes a VALUE (`valueAuthor`) yields
@@ -3147,11 +3147,11 @@ pub fn resolveNominalLeaf(self: *Lowering, name: []const u8, raw: bool, span: ?a
         // "field not found" cascade.
         .not_visible => {
             if (self.diagnostics) |d|
-                d.addFmt(.err, span, "type '{s}' is not visible; #import the module that declares it", .{name});
+                d.addFmt(.err, span, "type '{s}' is not visible; @import the module that declares it", .{name});
             return .unresolved;
         },
         // Same strength as not_visible; wording that doesn't recommend a
-        // futile #import.
+        // futile @import.
         .private_elsewhere => {
             if (self.diagnostics) |d|
                 d.addFmt(.err, span, "type '{s}' is private to its declaring module", .{name});
@@ -3200,8 +3200,8 @@ pub const VisibleStructAuthor = struct {
     source: []const u8,
 };
 
-/// The suffix that distinguishes a `#set` accessor's EFFECTIVE method name from
-/// the read name it shares with a same-name `#get`. `$` can never appear in an
+/// The suffix that distinguishes a `@set` accessor's EFFECTIVE method name from
+/// the read name it shares with a same-name `@get`. `$` can never appear in an
 /// sx identifier (it is the comptime-param sigil), so `len$set` is an
 /// unmistakable, symbol-safe key that cannot collide with any user method name
 /// — yet it keeps the getter under the plain `len`, so registration / mangling /
@@ -3209,8 +3209,8 @@ pub const VisibleStructAuthor = struct {
 /// `accessorEffName` / `accessorNameMatches`.
 pub const setter_eff_suffix = "$set";
 
-/// The name a method is REGISTERED / MANGLED / DISPATCHED under: a `#set`
-/// accessor is keyed as `name$set` so it never clobbers the same-name `#get`
+/// The name a method is REGISTERED / MANGLED / DISPATCHED under: a `@set`
+/// accessor is keyed as `name$set` so it never clobbers the same-name `@get`
 /// (which keeps its plain `name`); every other method keeps its own name.
 pub fn accessorEffName(self: *Lowering, fd: *const ast.FnDecl) []const u8 {
     if (!fd.is_set) return fd.name;
@@ -3218,8 +3218,8 @@ pub fn accessorEffName(self: *Lowering, fd: *const ast.FnDecl) []const u8 {
 }
 
 /// True when method `fd` is the one a name-keyed lookup for `query` should
-/// resolve to. A `name$set` query resolves ONLY the `#set` accessor named
-/// `name`; a plain `name` query resolves any NON-setter (a `#get` accessor or an
+/// resolve to. A `name$set` query resolves ONLY the `@set` accessor named
+/// `name`; a plain `name` query resolves any NON-setter (a `@get` accessor or an
 /// ordinary method), never a setter. This makes get/set coexistence
 /// declaration-order-independent (the read query picks the getter, the
 /// `…$set` write query picks the setter) without an overload table.
@@ -3399,7 +3399,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     // linkage keyword (empty-block placeholder body). C-ABI promotion +
     // declareExtern routing below; the optional `extern LIB "csym"` lib/rename
     // axis is extern_lib/extern_name. (`export` defines take the beginFunction
-    // path, not here.) The `#import c` auto-synthesis also produces this shape.
+    // path, not here.) The `@import c` auto-synthesis also produces this shape.
     // An `evaluate`-mode intrinsic is declared-not-defined for the same reason an
     // `extern` import is: the implementation lives outside the sx body — here, in
     // the VM handler the registry names.
@@ -3606,7 +3606,7 @@ pub fn registerQualifiedFn(self: *Lowering, ns_name: []const u8, fd: *const ast.
     // null-FuncId path (`lowerFunction`), which runs after all types resolve.
 }
 
-/// The unified non-transitive `#import` visibility predicate, parameterized
+/// The unified non-transitive `@import` visibility predicate, parameterized
 /// by `VisibilityMode`. `isNameVisible` / `isCImportVisible` are thin
 /// adapters over it.
 ///
@@ -3663,7 +3663,7 @@ pub fn isCImportVisible(self: *Lowering, fn_name: []const u8) bool {
     return self.isVisible(fn_name, .c_import_bare);
 }
 
-/// Non-transitive `#import` visibility check for top-level decls.
+/// Non-transitive `@import` visibility check for top-level decls.
 /// Byte-identical adapter over `isVisible`.
 pub fn isNameVisible(self: *Lowering, name: []const u8) bool {
     // The `__sx_` prefix is the compiler-reserved namespace: those calls are

@@ -7,7 +7,7 @@
 //
 // The value arg folds through the shared const-int evaluator, and the type function
 // resolves its general return-type expression with bindings active.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 N :: 3;
 M :: 2;

@@ -2,7 +2,7 @@
 // `@is_comptime()` arm takes `c.exit(1)` instead of the abort a compiled panic
 // raises. The build never reaches `main`, so no `--- build done ---` marker and
 // no runtime output follow the message.
-#import "modules/std/core.sx";
+@import "modules/std/core.sx";
 
 widths :: (n: i64) -> i64 {
     if n <= 0 {

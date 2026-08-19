@@ -6,12 +6,12 @@
 // release every earlier allocation. The public client maps decoder
 // allocation failure without leaking or returning a partial response.
 
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
-content :: #import "modules/std/http/content_encoding.sx";
-server_impl :: #import "modules/std/http/server.sx";
-types :: #import "modules/std/http/types.sx";
-event :: #import "modules/std/event.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
+content :: @import "modules/std/http/content_encoding.sx";
+server_impl :: @import "modules/std/http/server.sx";
+types :: @import "modules/std/http/types.sx";
+event :: @import "modules/std/event.sx";
 
 FailingAllocator :: struct {
     parent: Allocator;

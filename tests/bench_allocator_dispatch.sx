@@ -7,7 +7,7 @@
 // share of the cost is the difference between them.
 //
 // It measures the declaration std SHIPS — `Allocator :: protocol vtable
-// #identity` (std/core.sx).
+// @identity` (std/core.sx).
 //
 // The first four lanes hold ONE conformer live per run — the predictable
 // regime, where a dispatch has a single arm to select and the branch
@@ -42,7 +42,7 @@
 //             Isolates switch width from prediction failure.
 //
 // The last six repeat that shape against a Context field that holds a
-// POINTER to a handle (`#context_extend ap: *Allocator`) instead of the
+// POINTER to a handle (`@context_extend ap: *Allocator`) instead of the
 // handle itself — the field shape a stdlib could choose without any
 // compiler change. Each `*`-suffixed lane pays exactly one extra dependent
 // load before the same dispatch:
@@ -63,8 +63,8 @@
 //
 // NOT a corpus example: it runs for seconds.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 ALLOCS  : i64 : 2000000;
 TRIALS  : i64 : 61;
@@ -549,14 +549,14 @@ fill_handles :: (h: []Allocator, slabs: [*]u8) {
 // ── The pointer-shaped Context field ─────────────────────────────────────
 //
 // A second capability slot carrying `*Allocator` rather than `Allocator`.
-// Nothing in the compiler is involved: `#context_extend` takes the field
+// Nothing in the compiler is involved: `@context_extend` takes the field
 // type it is given, and `context.ap.method()` auto-derefs the handle, so
 // this is a shape a stdlib may pick on its own.
 //
 // The default target is a named global handle, which is what a `*Allocator`
 // field can point at in a static initializer.
 ap_default : Allocator = b00;
-#context_extend ap: *Allocator = *ap_default;
+@context_extend ap: *Allocator = *ap_default;
 
 // ── Lanes ────────────────────────────────────────────────────────────────
 

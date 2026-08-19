@@ -3,7 +3,7 @@
 // halts with a non-zero exit — never a segfault (const form) or a silent
 // success (statement form).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad, Empty }
 

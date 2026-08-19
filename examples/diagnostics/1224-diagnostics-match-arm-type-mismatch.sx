@@ -3,7 +3,7 @@
 // offending arm gets a located "match arms have incompatible types" diagnostic.
 // Covers the value-position literal shape, a capture-typed arm against a string
 // arm, and a match whose arm tails are calls.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Color :: enum { red; green; }
 V :: enum { num: f64; other; }

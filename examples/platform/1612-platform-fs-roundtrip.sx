@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-#import "modules/std/fs.sx";
+@import "modules/std.sx";
+@import "modules/std/fs.sx";
 
 // fs.sx smoke test: every primitive the bundling phase needs.
 // Creates a temp tree, writes/reads/copies/renames/chmod/deletes

@@ -11,7 +11,7 @@
 //
 // The same holds through an alias, which names the type it aliases, and a refusal
 // raised inside a generic body names the call that instantiated it.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 128 }) {
     render :: (self: *Self) -> string;

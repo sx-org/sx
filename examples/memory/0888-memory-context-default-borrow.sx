@@ -1,15 +1,15 @@
-// `allocator` and `io` are ordinary `#context_extend`
+// `allocator` and `io` are ordinary `@context_extend`
 // declarations (std/mem.sx, std/io.sx) whose defaults are the erasure of the
-// stdlib's own instance globals — a BORROW per #identity semantics, so the
+// stdlib's own instance globals — a BORROW per @identity semantics, so the
 // default context's receivers are real addresses, never null:
 // - a `?Protocol` wrap of a default capability is PRESENT (null ctx is the
 //   absent sentinel and must never appear in a live protocol value);
 // - the identity downcast hands back the borrowed global.
 // The same fold is user-spellable: a protocol-typed global initialized from
 // an impl global (no `xx` needed — the declared type states the erasure).
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "modules/std/io.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/std/io.sx";
 
 fallback : Allocator = c_allocator;
 

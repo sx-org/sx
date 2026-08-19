@@ -6,15 +6,15 @@
 // seam, not per-function here — touching this host on another target
 // fails at link/JIT with the UIKit symbol named.
 
-#import "modules/std.sx";
-#import "modules/ffi/objc.sx";
-#import "modules/ffi/quartzcore.sx";
-#import "modules/build.sx";
-#import "modules/ffi/opengl.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/input.sx";
-#import "modules/platform/types.sx";
-#import "modules/platform/api.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
+@import "modules/ffi/quartzcore.sx";
+@import "modules/build.sx";
+@import "modules/ffi/opengl.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/input.sx";
+@import "modules/platform/types.sx";
+@import "modules/platform/api.sx";
 
 UIApplicationMain :: (argc: i32, argv: *void, principal_class: *NSString, delegate_class: *NSString) -> i32 extern;
 dlsym             :: (handle: *void, name: [*]u8) -> *void extern;

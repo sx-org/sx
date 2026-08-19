@@ -1,7 +1,7 @@
 // Source-aware forward-alias fixpoint — the INITIAL scan registration.
 // Sibling of 0750, but the namespaced import is placed BEFORE the forward alias:
 //
-//     ns :: #import ".../dep.sx";   // authors a same-name `B :: u8`
+//     ns :: @import ".../dep.sx";   // authors a same-name `B :: u8`
 //     A :: B;                       // forward alias
 //     B :: u64;                     // its LOCAL target, declared later
 //
@@ -15,9 +15,9 @@
 //
 // Observable: a runtime 300 coerced into an `A`-typed slot round-trips as 300
 // under `u64` and would truncate to 44 under `u8`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-ns :: #import "0751-modules-forward-alias-ns-before/dep.sx";
+ns :: @import "0751-modules-forward-alias-ns-before/dep.sx";
 
 A :: B;
 B :: u64;

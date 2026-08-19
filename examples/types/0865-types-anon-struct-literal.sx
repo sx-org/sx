@@ -6,7 +6,7 @@
 // shapes intern to ONE TypeId at any two sites (structural identity);
 // distinct shapes never merge. A spread splices positionally.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i64 {
     // Positional: fields "0"/"1", .N access, comptime index.

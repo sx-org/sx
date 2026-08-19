@@ -7,7 +7,7 @@
 // it to a single name and reaching the value slots by field (`c := f(); c.sum`).
 // A multi-return is return-position-only as a TYPE: a parameter / variable
 // annotation `x: (A, B)` is rejected — use `Tuple(…)` for a tuple value.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Positional multi-return.
 divmod :: (a: i64, b: i64) -> (i64, i64) {

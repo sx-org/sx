@@ -26,10 +26,10 @@
 // 4. /ping on a fresh connection answers (the single worker survived the
 //    aborted stream).
 // 5. GPA leak gate: net-zero after srv.close() (channel, job, scratch).
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
-clib :: #library "c";
+clib :: @library "c";
 pthread_self :: () -> usize extern clib;
 usleep :: (usec: i64) -> i32 extern clib;
 

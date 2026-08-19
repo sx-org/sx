@@ -7,8 +7,8 @@
 // terminator, so lowering emits `unreachable` for any statement whose value
 // type is `noreturn` — which is what keeps the diverging function from looking
 // value-less.
-#import "modules/std.sx";
-proc :: #import "modules/std/process.sx";
+@import "modules/std.sx";
+proc :: @import "modules/std/process.sx";
 
 pick :: () -> i64 {
     inline match OS {

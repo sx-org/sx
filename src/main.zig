@@ -192,7 +192,7 @@ pub fn main(init: std.process.Init) !void {
         printUsage();
         return;
     };
-    // Canonicalize the entry path the same way `#import`-resolved paths are
+    // Canonicalize the entry path the same way `@import`-resolved paths are
     // keyed: an absolute entry that lives under the CWD becomes
     // the cwd-relative spelling, so the entry file's OWN diagnostics display
     // identically to a relative invocation. Identity-guarded — a respelling
@@ -307,8 +307,8 @@ pub fn main(init: std.process.Init) !void {
 
         comp.renderDiagnostics();
 
-        // dlopen #library dependencies so JIT can resolve extern symbols.
-        // Program-owned dylibs (the #import c unit first, then #library
+        // dlopen @library dependencies so JIT can resolve extern symbols.
+        // Program-owned dylibs (the @import c unit first, then @library
         // deps in declaration order) also become PRIORITY search targets
         // for the JIT, consulted before the process-wide fallback.
         const libs = extractLibraries(allocator, root) catch std.process.exit(1);
@@ -363,7 +363,7 @@ pub fn main(init: std.process.Init) !void {
     }
 }
 
-/// Compile C sources from #import c blocks and dlopen them for JIT.
+/// Compile C sources from @import c blocks and dlopen them for JIT.
 fn compileCForJIT(allocator: std.mem.Allocator, io: std.Io, comp: *sx.core.Compilation) !sx.c_import.CImportHandle {
     const c_infos = try comp.collectCImportSources();
     if (c_infos.len == 0) return .{ .allocator = allocator };
@@ -372,7 +372,7 @@ fn compileCForJIT(allocator: std.mem.Allocator, io: std.Io, comp: *sx.core.Compi
     return try sx.c_import.loadCObjectsForJIT(allocator, io, obj_bufs);
 }
 
-/// Compile C sources from #import c blocks to .o files for linking.
+/// Compile C sources from @import c blocks to .o files for linking.
 fn compileCForBuild(allocator: std.mem.Allocator, io: std.Io, comp: *sx.core.Compilation, tmp_dir: []const u8) ![]const []const u8 {
     const c_infos = try comp.collectCImportSources();
     if (c_infos.len == 0) return &.{};
@@ -678,7 +678,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
 
     comp.renderDiagnostics();
 
-    // Compile C sources from #import c blocks to .o files
+    // Compile C sources from @import c blocks to .o files
     timer.mark();
     const c_obj_paths = compileCForBuild(allocator, io, &comp, tmp_dir) catch {
         std.debug.print("error: C import compilation failed\n", .{});
@@ -1000,7 +1000,7 @@ fn extractLibraries(allocator: std.mem.Allocator, root: *const sx.ast.Node) ![]c
     var seen = std.StringHashMap(void).init(allocator);
     // Aliased imports lower to namespace_decl nodes and NEST when a
     // namespaced module aliases its own imports, so the walk must recurse —
-    // a `#library` at any namespace depth belongs on the link line / in the
+    // a `@library` at any namespace depth belongs on the link line / in the
     // JIT dlopen list.
     const walker = struct {
         fn walk(l: *std.ArrayList([]const u8), s: *std.StringHashMap(void), a: std.mem.Allocator, decls: []const *sx.ast.Node) !void {
@@ -1028,7 +1028,7 @@ fn extractLibraries(allocator: std.mem.Allocator, root: *const sx.ast.Node) ![]c
 fn extractFrameworks(allocator: std.mem.Allocator, root: *const sx.ast.Node) ![]const []const u8 {
     var fws = std.ArrayList([]const u8).empty;
     var seen = std.StringHashMap(void).init(allocator);
-    // Same nested-namespace recursion as extractLibraries: `#framework`
+    // Same nested-namespace recursion as extractLibraries: `@framework`
     // declarations behind multiple aliased imports must still be linked.
     const walker = struct {
         fn walk(l: *std.ArrayList([]const u8), s: *std.StringHashMap(void), a: std.mem.Allocator, decls: []const *sx.ast.Node) !void {

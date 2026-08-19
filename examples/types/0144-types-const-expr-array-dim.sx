@@ -7,7 +7,7 @@
 // comptime integer-expression evaluator (`program_index.evalConstIntExpr`), so
 // integer `+ - * /` and parenthesisation over literals and module consts fold
 // on BOTH the stateful (direct) and stateless (alias) paths.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 M :: 4;
 N :: 6;

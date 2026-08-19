@@ -19,9 +19,9 @@
 // 3. A pipelined plain request straight after, same connection → 200
 //    (per-request parse state fully reset).
 // 4. GPA leak gate: net-zero.
-#import "modules/std.sx";
-mem  :: #import "modules/std/mem.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+mem  :: @import "modules/std/mem.sx";
+http :: @import "modules/std/http.sx";
 
 PORT :: 18995;
 N_CHUNKS :: 32;

@@ -7,7 +7,7 @@
 // not statically known at the forward site, so it cannot be proven ⊆ the named
 // set — destructure and re-raise instead.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 MyErr :: error { Boom }
 

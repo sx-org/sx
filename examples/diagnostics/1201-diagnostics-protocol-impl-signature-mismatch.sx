@@ -4,7 +4,7 @@
 // type — against the protocol declaration with `Self` substituted to the concrete
 // type, so the required `*T` / `T` impl form is not flagged.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 P :: protocol vtable { val :: (self: *Self) -> i64; }
 T :: struct { n: i64 = 7; }

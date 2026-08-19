@@ -1,7 +1,7 @@
 // Lowering a QUALIFIED imported function whose
 // body terminates must leave the CALLER's lowering state untouched.
 //
-// `m :: #import …` registers `m.foo` as a module-qualified alias with a unique
+// `m :: @import …` registers `m.foo` as a module-qualified alias with a unique
 // FuncId (example 0719) and lowers it through
 // `lazyLowerFunction`'s null-FuncId `lowerFunction` path. `foo`'s body folds
 // `if true { return helper(); }` to an unconditional return, so its lowering
@@ -11,8 +11,8 @@
 // also lives in m.sx's own flat import, exercising the source-context restore
 // too.)
 
-#import "modules/std.sx";
-m :: #import "0721-modules-qualified-terminating-callee/m.sx";
+@import "modules/std.sx";
+m :: @import "0721-modules-qualified-terminating-callee/m.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

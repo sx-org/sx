@@ -8,10 +8,10 @@
 //                                `[:0]u8` params (string is `{ptr, len}`).
 // 4. Pointer return from C     — round-trips back as `[*]u8` / `*u8`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #source "1213-ffi-05-string-args.c";
+@import c {
+    @source "1213-ffi-05-string-args.c";
 };
 
 ffi_strlen          :: (s: [*]u8)                     -> i32 extern;

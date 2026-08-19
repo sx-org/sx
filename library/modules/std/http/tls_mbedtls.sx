@@ -8,7 +8,7 @@
 // sees an mbedTLS type or error code — the impls below map every
 // `MBEDTLS_ERR_SSL_WANT_*` / `PEER_CLOSE_NOTIFY` onto the abstract `TlsStep`.
 //
-//   tlsp :: #import "modules/std/http/tls_mbedtls.sx";
+//   tlsp :: @import "modules/std/http/tls_mbedtls.sx";
 //   ts : tlsp.TlsServer = .{};
 //   ts.setup(cert_pem, key_pem, alloc);   // cert+key as PEM bytes
 //   cfg.tls = @ts;                       // erased ?TlsAcceptor
@@ -18,15 +18,15 @@
 // onto MBEDTLS_ERR_SSL_WANT_READ/WANT_WRITE, which the handshake/read/write
 // surface back to the server loop as TlsStep.WantRead/WantWrite.
 
-#import "modules/std/core.sx";          // Allocator
-#import "modules/std/list.sx";          // List
-#import "modules/std/mem.sx";
-#import "modules/std/http/tls.sx";      // TlsConn, TlsAcceptor, TlsStep (flat)
-clib    :: #import "modules/std/c.sx";
-socket  :: #import "modules/std/socket.sx";
-posix   :: #import "modules/std/posix.sx";
-fs      :: #import "modules/std/fs.sx";
-mbedtls :: #import "vendors/mbedtls/mbedtls.sx";
+@import "modules/std/core.sx";          // Allocator
+@import "modules/std/list.sx";          // List
+@import "modules/std/mem.sx";
+@import "modules/std/http/tls.sx";      // TlsConn, TlsAcceptor, TlsStep (flat)
+clib    :: @import "modules/std/c.sx";
+socket  :: @import "modules/std/socket.sx";
+posix   :: @import "modules/std/posix.sx";
+fs      :: @import "modules/std/fs.sx";
+mbedtls :: @import "vendors/mbedtls/mbedtls.sx";
 
 // ── BIO bridge (abi(.c) callbacks) ──────────────────────────────────
 // mbedTLS hands each its p_bio ctx = the *TlsSession (set via set_bio); the

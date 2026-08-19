@@ -424,7 +424,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                 if (l.index == sf_index) {
                     var val = l.val;
                     const src_ty = self.builder.getRefType(val);
-                    // An #identity protocol field erases NODE-AWARE, so an
+                    // An @identity protocol field erases NODE-AWARE, so an
                     // lvalue initializer BORROWS (`.{ allocator = gpa }`
                     // aliases `gpa`) — the node-less path would misread the
                     // lvalue as an rvalue and refuse. value/own protocol
@@ -584,7 +584,7 @@ pub fn structDeclaringSource(self: *Lowering, ty: TypeId) ?[]const u8 {
     return author.source;
 }
 
-/// The file that may mention `field` on `ty`. A `#using` promotion carries the
+/// The file that may mention `field` on `ty`. A `@using` promotion carries the
 /// base's authority; every other field answers to the struct's own declaration.
 pub fn fieldDeclaringSource(self: *Lowering, ty: TypeId, field: StringId) ?[]const u8 {
     const owner = self.plainStructOwnerType(ty);
@@ -616,7 +616,7 @@ pub const FieldLookup = union(enum) {
     missing,
     hit: Hit,
     /// The field exists and this file may not name it. Terminal: resolution
-    /// stops rather than falling through to `#get`/`#set`, UFCS, or a method.
+    /// stops rather than falling through to `@get`/`@set`, UFCS, or a method.
     private: Hit,
 
     pub const Hit = struct { index: u32, ty: TypeId, name: StringId };
@@ -847,7 +847,7 @@ pub fn builtinTypeName(ty: TypeId) ?[]const u8 {
 /// to its declared type (the unconditional pseudo arm typed a
 /// struct's own `ptr: *T` as `[*]unresolved` and its `len` as `i64`). For
 /// non-container types with NO matching real member the pseudo typing is
-/// kept as a FALLBACK — `#get len` accessors (e.g. `List.len`) have no
+/// kept as a FALLBACK — `@get len` accessors (e.g. `List.len`) have no
 /// field entry and type through it.
 pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
     const is_special_container = ty == .string or (!ty.isBuiltin() and switch (self.module.types.get(ty)) {
@@ -906,7 +906,7 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
         .missing => {},
     }
     // Pseudo-field fallback for non-containers with no matching real
-    // member (`#get len` accessors type through here).
+    // member (`@get len` accessors type through here).
     if (std.mem.eql(u8, field, "len")) return .i64;
     if (std.mem.eql(u8, field, "ptr")) {
         return self.module.types.manyPtrTo(self.getElementType(ty));
@@ -1199,7 +1199,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
         return self.lowerObjcDefinedStateFieldRead(fa.object, info);
     }
 
-    // `#get` property accessor: `obj.field` where `field` is a `#get` method
+    // `@get` property accessor: `obj.field` where `field` is a `@get` method
     // dispatches as a no-paren method call (`obj.field()`). Detected via type
     // info only (no lowering) so the receiver is not evaluated twice — the
     // synthesized call re-lowers `fa.object` and handles the receiver
@@ -1382,7 +1382,7 @@ pub fn lowerOptionalChain(self: *Lowering, obj: Ref, fa: *const ast.FieldAccess,
         break :blk if (info == .optional) info.optional.child else obj_ty;
     } else obj_ty;
 
-    // `#get` accessor through `?.`: if the unwrapped (and pointer-deref'd)
+    // `@get` accessor through `?.`: if the unwrapped (and pointer-deref'd)
     // receiver has a getter for this field, the some-branch dispatches the
     // getter instead of a struct-field read. A synthetic receiver local (typed
     // `inner_ty`) lets the existing getter intercept in `lowerFieldAccess` do
@@ -1684,14 +1684,14 @@ pub fn lowerSwizzleRead(self: *Lowering, obj: Ref, obj_ty: TypeId, recv: Swizzle
     return self.builder.structInit(elems[0..sw.len], result_ty);
 }
 
-/// A `#get` property accessor for `obj_ty.field`, or null. A `#get` method is a
+/// A `@get` property accessor for `obj_ty.field`, or null. A `@get` method is a
 /// normal method (registered `Type.method`) marked `is_get`; it is reachable via
 /// no-paren field syntax. Handles a generic-struct instance (`List(i64).len`)
 /// and a plain struct (`Foo.bar`). `ty` must be the dereferenced (non-pointer)
 /// receiver type.
 pub fn getAccessorFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const ast.FnDecl {
     if (ty.isBuiltin()) return null;
-    // A REAL field of this name wins over a same-name `#get` (a getter must not
+    // A REAL field of this name wins over a same-name `@get` (a getter must not
     // shadow stored data on the read path). If the struct genuinely declares the
     // field, this is not a property access.
     if (self.lookupField(ty, field) != .missing) return null;
@@ -1719,12 +1719,12 @@ pub fn getAccessorFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const as
     return null;
 }
 
-/// A `#set` property accessor for `obj_ty.field`, or null — the WRITE
-/// counterpart of `getAccessorFor`. A `#set` is registered/dispatched under its
-/// effective `field$set` name (so a same-name `#get` keeps the plain `field`),
-/// and a REAL field of the same name wins over it (parallels the `#get` rule).
+/// A `@set` property accessor for `obj_ty.field`, or null — the WRITE
+/// counterpart of `getAccessorFor`. A `@set` is registered/dispatched under its
+/// effective `field$set` name (so a same-name `@get` keeps the plain `field`),
+/// and a REAL field of the same name wins over it (parallels the `@get` rule).
 /// `ty` must be the dereferenced (non-pointer) receiver type.
-/// The return type of a `#get` accessor named `field` on `deref_ty` (a
+/// The return type of a `@get` accessor named `field` on `deref_ty` (a
 /// dereferenced struct type), or null when there is no such getter (or no scope
 /// to resolve through). Resolves the type the SAME way a real read does — via a
 /// synthetic `*deref_ty` receiver local routed through inference — so a generic
@@ -1753,7 +1753,7 @@ pub fn getterReturnTypeOnDeref(self: *Lowering, deref_ty: TypeId, field: []const
 
 pub fn getSetterFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const ast.FnDecl {
     if (ty.isBuiltin()) return null;
-    // A REAL field of this name wins over a same-name `#set` (a setter must not
+    // A REAL field of this name wins over a same-name `@set` (a setter must not
     // shadow stored data on the write path).
     if (self.lookupField(ty, field) != .missing) return null;
     const eff = std.fmt.allocPrint(self.alloc, "{s}" ++ Lowering.setter_eff_suffix, .{field}) catch return null;
@@ -3452,7 +3452,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     },
                     .not_visible => {
                         if (self.diagnostics) |d|
-                            d.addFmt(.err, node.span, "'{s}' is not visible; #import the module that declares it", .{id.name});
+                            d.addFmt(.err, node.span, "'{s}' is not visible; @import the module that declares it", .{id.name});
                         break :blk self.emitError(id.name, node.span);
                     },
                     .untracked => break :blk self.builder.emit(.{ .global_get = gi.id }, gi.ty),
@@ -3462,7 +3462,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             if (self.program_index.module_const_map.get(id.name)) |ci_global| {
                 if (!self.isNameVisible(id.name)) {
                     if (self.diagnostics) |d|
-                        d.addFmt(.err, node.span, "'{s}' is not visible; #import the module that declares it", .{id.name});
+                        d.addFmt(.err, node.span, "'{s}' is not visible; @import the module that declares it", .{id.name});
                     break :blk self.emitError(id.name, node.span);
                 }
                 // Emit the SOURCE-AWARE author's value (own-wins), not the
@@ -3506,7 +3506,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     !self.isNameVisible(eff_fn_name))
                 {
                     if (self.diagnostics) |d|
-                        d.addFmt(.err, node.span, "'{s}' is not visible; #import the module that declares it", .{eff_fn_name});
+                        d.addFmt(.err, node.span, "'{s}' is not visible; @import the module that declares it", .{eff_fn_name});
                     break :blk self.emitError(eff_fn_name, node.span);
                 }
                 // Type-as-value: a bare function name in a `Type` (`.type_value`)
@@ -4134,7 +4134,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             // Owning erasure `expr.(P)` / `expr.(P, alloc)`: a PROTOCOL
             // target with a CONCRETE (or pointer) receiver OWNS — copy /
             // snapshot / promotion per receiver shape, funded by
-            // context.allocator or the named allocator; #identity targets
+            // context.allocator or the named allocator; @identity targets
             // keep the borrow. Erased receivers (any / protocol) were
             // handled above; a protocol receiver reaching here is the
             // recovery/re-erasure family and stays on lowerXX.
@@ -4199,7 +4199,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 }
                 const alloc_ty = self.module.types.findByName(self.module.types.internString("Allocator")) orelse {
                     if (self.diagnostics) |d|
-                        d.addFmt(.err, an.span, "'.(T, alloc)' needs the 'Allocator' protocol in scope — #import \"modules/std.sx\"", .{});
+                        d.addFmt(.err, an.span, "'.(T, alloc)' needs the 'Allocator' protocol in scope — @import \"modules/std.sx\"", .{});
                     break :blk self.builder.constUndef(dst);
                 };
                 const av = self.lowerExpr(an);
@@ -4456,7 +4456,7 @@ pub fn lowerAsmExpr(self: *Lowering, ae: *const ast.AsmExpr, span: ast.Span) Ref
     const diags = self.diagnostics orelse return self.emitPlaceholder("inline_asm");
 
     // (1) The template must be a compile-time-known string (a `"..."` literal or
-    // a `#string` heredoc), not a runtime expression.
+    // a `@string` heredoc), not a runtime expression.
     const template_is_string = switch (ae.template.data) {
         .string_literal => true,
         else => false,
@@ -4595,7 +4595,7 @@ pub fn lowerAsmExpr(self: *Lowering, ae: *const ast.AsmExpr, span: ast.Span) Ref
         ir_clobbers[i] = self.module.types.internString(cl);
     }
 
-    // Template text RAW — no sx escape processing (matches `#string` literal
+    // Template text RAW — no sx escape processing (matches `@string` literal
     // bytes; the `%[name]`/`%%`/`$` rewrite happens at emit). §II.11.
     const template_text = ae.template.data.string_literal.raw;
 

@@ -1,7 +1,7 @@
 // A comptime `[N]Type` list holds TYPES. A value element is the element-kind
 // error, diagnosed at the element itself — never inferred into a numeric
 // array whose `inline for` then fails somewhere else.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: struct { x: i64; y: i64; }
 

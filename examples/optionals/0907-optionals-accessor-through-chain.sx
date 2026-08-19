@@ -1,4 +1,4 @@
-// A `#get` property accessor is reachable through an optional chain
+// A `@get` property accessor is reachable through an optional chain
 // (`obj?.getter`): the some-branch dispatches the getter and the result is
 // re-wrapped as `?R`; a null receiver short-circuits to null. Works for a value
 // optional (`?T`), a pointer optional (`?*T`), and a generic-instance getter —
@@ -6,11 +6,11 @@
 // is warmed so its return type resolves, not `?unresolved`). Real fields read
 // correctly through `?.` for both `?T` and `?*T` (the pointer is loaded, not
 // reinterpreted). All type correctly without an explicit annotation.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Temp :: struct {
     raw: i64 = 0;
-    doubled :: (self: *Temp) -> i64 #get => self.raw * 2;
+    doubled :: (self: *Temp) -> i64 @get => self.raw * 2;
 }
 
 // A user generic with a type-parameter field, reached ONLY through `?.` (never
@@ -18,8 +18,8 @@ Temp :: struct {
 Cell :: struct ($T: Type) {
     slot: T;           // type-parameter field — the cold-panic trigger
     n: i64;
-    count :: (self: *Cell($T)) -> i64 #get => self.n;
-    head :: (self: *Cell($T)) -> T #get => self.slot;   // returns the type param
+    count :: (self: *Cell($T)) -> i64 @get => self.n;
+    head :: (self: *Cell($T)) -> T @get => self.slot;   // returns the type param
 }
 
 main :: () -> i64 {

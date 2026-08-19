@@ -6,8 +6,8 @@
 // `monomorphizeFunction`: in the CALL-SITE module `LE` is a re-export alias
 // whose TypeId is not `.error_set`, so `errorChannelOf` would see a plain
 // tuple there. Needs BOTH generic + re-export.
-#import "modules/std.sx";
-lib :: #import "1058-errors-reexport-value-failable-channel/lib.sx";
+@import "modules/std.sx";
+lib :: @import "1058-errors-reexport-value-failable-channel/lib.sx";
 
 // Re-export the generic fn AND its error set (the std.sx facade pattern).
 Box :: lib.Box;

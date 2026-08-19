@@ -1,12 +1,12 @@
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "modules/build.sx";
-#import "modules/ffi/opengl.sx";
-#import "modules/ffi/sdl3.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/input.sx";
-#import "modules/platform/types.sx";
-#import "modules/platform/api.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/build.sx";
+@import "modules/ffi/opengl.sx";
+@import "modules/ffi/sdl3.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/input.sx";
+@import "modules/platform/types.sx";
+@import "modules/platform/api.sx";
 
 g_sdl_plat : *SdlPlatform = null;
 

@@ -12,9 +12,9 @@
 // - `@ObjcMethod(selector = "...")` overrides the mangling entirely; the literal
 //   string is used as the selector. Arity is the user's contract.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 SxManglingProbe :: @ObjcClass("SxManglingProbe") extern {
     length                         :: (self: *Self) -> i32;

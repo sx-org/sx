@@ -5,17 +5,17 @@
 // written without `.emit()` does not appear.
 //
 // `emit.View` is this package's open set.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-geometry :: #import "examples/ui/emit/geometry.sx";
-render :: #import "examples/ui/emit/render.sx";
-view :: #import "examples/ui/emit/view.sx";
-modifier :: #import "examples/ui/emit/modifier.sx";
-components :: #import "examples/ui/emit/components.sx";
-sink :: #import "examples/ui/emit/sink.sx";
-containers :: #import "examples/ui/emit/containers.sx";
-emit_mod :: #import "examples/ui/emit/emit.sx";
-runtime :: #import "examples/ui/emit/runtime.sx";
+geometry :: @import "examples/ui/emit/geometry.sx";
+render :: @import "examples/ui/emit/render.sx";
+view :: @import "examples/ui/emit/view.sx";
+modifier :: @import "examples/ui/emit/modifier.sx";
+components :: @import "examples/ui/emit/components.sx";
+sink :: @import "examples/ui/emit/sink.sx";
+containers :: @import "examples/ui/emit/containers.sx";
+emit_mod :: @import "examples/ui/emit/emit.sx";
+runtime :: @import "examples/ui/emit/runtime.sx";
 
 // Geometry
 Point :: geometry.Point;

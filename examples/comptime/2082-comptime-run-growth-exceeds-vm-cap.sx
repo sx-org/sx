@@ -3,7 +3,7 @@
 // for 512 MiB, so the VM bails and the module-scope `@run` initializing `BIG`
 // has no value to install — the bail reason IS the compile error. A body-local
 // `@run` that bails falls through to a runtime call instead.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 grow :: () -> i64 {
     xs : List(i64) = .{};

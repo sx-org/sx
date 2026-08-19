@@ -9,8 +9,8 @@
 // Routes: GET / and /healthz → "ok"; POST /echo → the request body. Pool
 // mode is enabled when SX_HTTP_POOL is set (e.g. SX_HTTP_POOL=4); otherwise
 // the handler runs inline. PORT overrides the listen port.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     if req.path == "/echo" { resp.body = req.body; return; }

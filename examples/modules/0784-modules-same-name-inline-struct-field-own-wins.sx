@@ -2,12 +2,12 @@
 //
 // `Holder.inner` is an inline `struct { e: Event }`. The member type `Event`
 // resolves to THIS file's `Event` (which has `code`), not the namespaced
-// stdlib `event.Event` struct carried by `#import "modules/std.sx"` (reachable
+// stdlib `event.Event` struct carried by `@import "modules/std.sx"` (reachable
 // only as `event.Event`, never bare): inline enum/struct/union decl field
 // types resolve through the visibility-aware `inner` recursion hook, the same
 // own-wins rule top-level decls use.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Event :: struct { code: i64; }
 Holder :: struct { inner: struct { e: Event; }; }

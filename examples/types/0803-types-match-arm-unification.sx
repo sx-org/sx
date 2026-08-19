@@ -7,7 +7,7 @@
 // Arm values coerce to the unified type before the merge, exactly like the
 // if/else-expression merge's `coerceToType` — but joined instead of
 // first-branch-wins.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Color :: enum { red; green; }
 V :: enum { num: f64; other; }

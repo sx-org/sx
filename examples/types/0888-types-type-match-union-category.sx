@@ -5,7 +5,7 @@
 // and a specific user type name claims its tag ahead of the category
 // that contains it. Untagged unions box into `any` and their tags classify
 // like every other registered type.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 TU :: union { i: i64; f: f64; }
 E  :: enum { a; b; }

@@ -5,7 +5,7 @@
 // - value-param overflow via an aliased integer constraint (`$K: Count`),
 // - a non-const value-param arg (`get()`),
 // - an unknown TYPE arg (`NoSuchType`), which still reports the unknown type.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Count :: u32;
 MakeC :: ($K: Count, $T: Type) -> Type { return [K]T; }

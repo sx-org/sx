@@ -8,7 +8,7 @@
 //
 // Results print via out/int_to_string.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 checksum :: () -> i64 {
     buf : [65536]u8 = ---;

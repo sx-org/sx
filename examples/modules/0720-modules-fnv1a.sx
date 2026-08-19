@@ -3,7 +3,7 @@
 // content-hash property (equal bytes → equal hash regardless of buffer
 // identity). Also exercises the u64 offset-basis constant (a literal with
 // the high bit set, `0xcbf29ce484222325`).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     // Canonical 64-bit FNV-1a reference vectors.

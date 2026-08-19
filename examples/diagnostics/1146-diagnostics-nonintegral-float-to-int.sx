@@ -12,7 +12,7 @@
 //
 // The escape hatch stays open: `y : i64 = xx 1.5` (or `(1.5).(i64)` — a float
 // literal needs the parens) truncates, exercised on the POSITIVE side (0168).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 M :: 2;          // int module const, for the INT-const-EXPRESSION cases
 F : f64 : 2.5;   // float module const, for the FLOAT-const-LEAF cases

@@ -4,7 +4,7 @@
 // - Named tuples `Tuple(x: T, y: U)` keep their field names through parsing and
 //   type resolution, so `t.x` reads/writes by name (and `.0` by position).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     // Positional element assignment.

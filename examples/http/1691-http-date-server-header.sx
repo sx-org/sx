@@ -20,8 +20,8 @@
 // no Server: header by default; a malformed request's 400 also carries
 // Date; a pooled server with server_name set stamps both Date and
 // `Server: sx-test/1` (worker serialization path); GPA net-zero.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 PORT_A :: 19004;
 PORT_B :: 19005;

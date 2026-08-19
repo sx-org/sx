@@ -6,7 +6,7 @@
 // position remains the signed-int type (see `add` below) and a bare reserved-
 // name declaration still errors (see examples/1141). The backtick is required
 // to declare or reference these names; it is never part of the name's text.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Type-introducing decls whose NAME is a reserved spelling.
 `i2 :: struct { x: i64; }

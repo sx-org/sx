@@ -12,7 +12,7 @@
 // The tag -> ordinal reverse-map covers tagged unions (`explicit_tag_values`)
 // as it does plain enums.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // A tagged union: `key` carries an i64 payload, so `Ev` is a tagged_union
 // (not a plain enum). Every variant has an explicit tag value.

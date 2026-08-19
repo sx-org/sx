@@ -5,8 +5,8 @@
 // dump frame itself is omitted, and a frame prints its name without a source
 // location.
 
-#import "modules/std.sx";
-trace :: #import "modules/std/trace.sx";
+@import "modules/std.sx";
+trace :: @import "modules/std/trace.sx";
 
 probe :: () {
     trace.print_interpreter_frames();    // dumps the chain: __run_0 → inner → probe

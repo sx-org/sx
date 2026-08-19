@@ -1,7 +1,7 @@
 // Compound assignment operators on global variables: += -= *= /= %= &= |= ^=
 // <<= >>= all do load-modify-store.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g_add : i64 = 10;
 g_sub : i64 = 10;

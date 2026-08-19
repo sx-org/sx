@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-sq :: #import "vendors/sqlite/sqlite.sx";
+@import "modules/std.sx";
+sq :: @import "vendors/sqlite/sqlite.sx";
 
 Hit :: struct {
     rowid: i64;

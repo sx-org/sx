@@ -1,7 +1,7 @@
 // Global array declared with `: [N]T = .[...]` keeps its initializer values
 // (signed-int element type covers negative-literal handling too).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 VALS : [4]i32 = .[-2, -1, 42, 99];
 

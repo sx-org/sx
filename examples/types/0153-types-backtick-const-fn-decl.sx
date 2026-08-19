@@ -6,7 +6,7 @@
 // resolves to the raw fn because its declaration is raw. A *bare*
 // `i2 :: …` / `u8 :: …` declaration is still the reserved-name error (see
 // examples/1140).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Constant whose name is a reserved type spelling.
 `i2 :: 2.5;

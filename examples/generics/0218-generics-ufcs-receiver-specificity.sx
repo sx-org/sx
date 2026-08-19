@@ -2,9 +2,9 @@
 // (`*Box($T)` beats `*$T`), and call planning agrees with lowering on which
 // overload is dispatched — planner and lowering share one receiver-aware,
 // pointer-peeling selection, and specificity is ordered rather than boolean.
-#import "modules/std.sx";
-#import "0218-generics-ufcs-receiver-specificity/0218-shared.sx";
-#import "0218-generics-ufcs-receiver-specificity/anyref.sx";
+@import "modules/std.sx";
+@import "0218-generics-ufcs-receiver-specificity/0218-shared.sx";
+@import "0218-generics-ufcs-receiver-specificity/anyref.sx";
 
 // More-specific receiver than the imported `pick(x: *$T)`.
 pick :: ufcs (b: *Box($T)) -> i64 { return 7; }

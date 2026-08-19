@@ -2,7 +2,7 @@
 // still rejects (a fixed array has none), and two distinct optional types
 // never compare. Optional equality defines `?T == ?T` / `?T == T`; it does
 // not widen what T itself may be.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     a : ?[2]i64 = null;

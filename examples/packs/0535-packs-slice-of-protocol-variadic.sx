@@ -7,7 +7,7 @@
 // This is the type-safe way to iterate a heterogeneous arg list at runtime:
 // concrete per-position types are erased to the constraint protocol.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol vtable { show :: (self: *Self) -> string; }
 A :: struct { x: i64; }

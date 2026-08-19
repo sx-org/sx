@@ -3,7 +3,7 @@
 // names + the assertion's location, exits 1. This is the
 // assertion-scoped carve-out from the unconsumed-failable rule: the
 // implicit handler is `catch { panic }`, never a silent zero.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     av : any = 2.5;

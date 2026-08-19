@@ -14,8 +14,8 @@
 // accidental sharing); 8 sequential connections all get served by the
 // pair (responses name their server; the split is printed nowhere);
 // GPA net-zero after both close.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 PORT :: 19012;
 

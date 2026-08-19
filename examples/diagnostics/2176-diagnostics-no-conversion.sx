@@ -1,5 +1,5 @@
 // A pair with no conversion is a hard error under both spellings.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct { n: i64 }
 

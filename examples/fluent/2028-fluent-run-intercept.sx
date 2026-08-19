@@ -14,8 +14,8 @@
 //
 // The compiler never looks at what a call is NAMED. Only statement role,
 // ordinary type, conformance, and lexical scope matter.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
 
 Drawable :: protocol constraint {
     draw :: (self: *Self) -> string;

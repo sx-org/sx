@@ -6,7 +6,7 @@
 // `struct_field_name(T, i)` read is always in bounds. A member with no name
 // (positional-tuple / array / vector element) reflects as the empty string "" —
 // one slot per member.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 S :: struct { a: i64; b: bool; }
 E :: enum { X; Y; Z; }

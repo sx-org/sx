@@ -3,7 +3,7 @@
 // Body shape, the gap before the `{`, and names — the callee's case, an
 // argument's — decide nothing. A function-local head is settled the same way,
 // where its own scope is in hand.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 pair :: struct { a: i64; b: i64; }
 Move :: struct { d: i64; }

@@ -372,7 +372,7 @@ For explicit, shell-friendly exit codes anywhere in the program, call
 `process.exit`:
 
 ```sx
-process :: #import "modules/process.sx";
+process :: @import "modules/process.sx";
 
 main :: () -> ! {
   if bad_args process.exit(64);    // EX_USAGE — immediate, bypasses the error system

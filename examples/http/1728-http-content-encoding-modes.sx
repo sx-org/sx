@@ -2,13 +2,13 @@
 // Pins same-connection no-body framing, negotiation edge cases, range and
 // validator policy, producer-fault wire semantics, and cooperative progress.
 
-#import "modules/std.sx";
-#import "modules/std/atomic.sx";
-http :: #import "modules/std/http.sx";
-fiber_sched :: #import "modules/std/http/fiber_sched.sx";
-mem :: #import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/atomic.sx";
+http :: @import "modules/std/http.sx";
+fiber_sched :: @import "modules/std/http/fiber_sched.sx";
+mem :: @import "modules/std/mem.sx";
 
-libc :: #library "c";
+libc :: @library "c";
 usleep :: (usec: i64) -> i32 extern libc;
 
 PORT_INLINE :: 19121;

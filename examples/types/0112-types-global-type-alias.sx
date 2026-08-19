@@ -2,7 +2,7 @@
 // position — function signatures, type annotations on globals, and initializer
 // literal coercion.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Handle :: u32;
 

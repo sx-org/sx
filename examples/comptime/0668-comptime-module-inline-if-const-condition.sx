@@ -2,7 +2,7 @@
 // everything an in-function `inline if` folds against — not just the target
 // facts. A module constant, a chain of them, and a constant whose own value is
 // a target comparison all select a group here.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 ENABLED :: true;
 ALIAS   :: ENABLED;

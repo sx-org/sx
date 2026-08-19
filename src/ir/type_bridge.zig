@@ -646,7 +646,7 @@ pub fn buildEnumInfo(ed: *const ast.EnumDecl, table: *TypeTable, inner: anytype)
 /// from `resolveAstType`, or visibility-aware `*Lowering` from
 /// `resolveTypeWithBindings`). The TOP-LEVEL struct path
 /// (`Lowering.registerStructDecl`) builds its own field list directly via
-/// `self.resolveType` (it also expands `#using` and qualifies `__anon` names),
+/// `self.resolveType` (it also expands `@using` and qualifies `__anon` names),
 /// so it does not route through here.
 pub fn resolveInlineStruct(sd: *const ast.StructDecl, table: *TypeTable, inner: anytype) TypeId {
     const alloc = table.alloc;

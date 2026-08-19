@@ -3,7 +3,7 @@
 // float input — including NaN, where `nan == nan` is false (ordered `==`).
 // For all non-NaN operands unordered `!=` matches ordered `!=`, so finite
 // comparisons are unchanged. The native backend agrees with the interpreter.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     // Produce a genuine NaN without any numeric-limit accessor: 0.0 / 0.0.

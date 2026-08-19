@@ -7,7 +7,7 @@
 compute :: () -> i64 {
     other : i64 = 0;
     main_val := asm volatile {
-        #string ASM
+        @string ASM
         mov %[m], #5
         mov %[o], #37
 ASM,

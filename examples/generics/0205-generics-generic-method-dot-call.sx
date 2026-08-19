@@ -5,7 +5,7 @@
 //   2. generic method, explicit type arg: h.sized(i32)
 //   3. generic method, inferred from val: h.taking(99)
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Holder :: struct {
     n: i64;

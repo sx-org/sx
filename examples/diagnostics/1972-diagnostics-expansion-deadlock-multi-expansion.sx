@@ -5,7 +5,7 @@
 // third driver's contribution is traced back to the first. Quiescence is still
 // the test the scheduler applies, and it is still ONE diagnostic: every parked
 // driver, and the fact each awaits, named together.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Draw :: protocol vtable { draw :: (self: *Self) -> i64; }
 Tally :: protocol vtable { count :: (self: *Self) -> i64; }

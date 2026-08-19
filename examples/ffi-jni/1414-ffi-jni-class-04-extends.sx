@@ -3,7 +3,7 @@
 // (the runtime Java path lives in that alias's own `@JniClass(...)`
 // argument). `implements = .[A, B]` records interface conformance.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @JniClass("android/view/View") extern {}
 

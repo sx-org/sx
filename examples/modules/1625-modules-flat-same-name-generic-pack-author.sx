@@ -2,9 +2,9 @@
 // function binds the author visible in the CALLING module, not the first-wins
 // name-keyed winner. Both flat-imported modules author `ident` (generic) and
 // `tally` (comptime pack); each module's bare calls must run its own bodies.
-#import "modules/std.sx";
-#import "1625-modules-flat-same-name-generic-pack-author/a.sx";
-#import "1625-modules-flat-same-name-generic-pack-author/b.sx";
+@import "modules/std.sx";
+@import "1625-modules-flat-same-name-generic-pack-author/a.sx";
+@import "1625-modules-flat-same-name-generic-pack-author/b.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

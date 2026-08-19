@@ -9,7 +9,7 @@
 // The answer itself follows the ordinary rule for an erased kind: an impl read
 // waits while an undecided driver could still write one, and the only driver
 // here declares no impl at all — so the answer is readable on the spot.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
 

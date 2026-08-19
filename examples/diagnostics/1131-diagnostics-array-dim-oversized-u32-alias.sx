@@ -3,7 +3,7 @@
 // route through one shared folder and one shared message map. The message names
 // the u32 bound, since 5_000_000_000 IS a compile-time integer constant — a
 // genuinely non-const alias dim gets the generic message instead (example 1129).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Big :: [5000000000]i64;
 

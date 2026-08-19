@@ -2,15 +2,15 @@
 // live in the part-files (std/core.sx — compiler-coupled primitives,
 // std/fmt.sx — formatting + string helpers, std/list.sx — List); each
 // alias below is an ordinary OWN declaration of this file, so a flat
-// `#import "modules/std.sx"` sees the whole prelude bare, one hop —
+// `@import "modules/std.sx"` sees the whole prelude bare, one hop —
 // visibility never chains, aliases are the re-export mechanism. The
 // part-file namespaces (`core` / `fmt` / `list`) and the namespace tail at
 // the bottom are carried to flat importers the same one level.
 
-core :: #import "modules/std/core.sx";
-fmt  :: #import "modules/std/fmt.sx";
-list :: #import "modules/std/list.sx";
-map  :: #import "modules/std/map.sx";
+core :: @import "modules/std/core.sx";
+fmt  :: @import "modules/std/fmt.sx";
+list :: @import "modules/std/list.sx";
+map  :: @import "modules/std/map.sx";
 
 // --- Compiler-resolved types ---
 // (`string` and `@Vector` have no alias here: they are language primitives the
@@ -94,7 +94,7 @@ IndexMap :: map.IndexMap;
 
 // --- Async / Io capability (impls in std/io.sx) ---
 
-io_mod      :: #import "modules/std/io.sx";
+io_mod      :: @import "modules/std/io.sx";
 CBlockingIo :: io_mod.CBlockingIo;
 Future      :: io_mod.Future;
 FutureState :: io_mod.FutureState;
@@ -105,29 +105,29 @@ cancel      :: io_mod.cancel;
 
 // --- The stdlib namespace tail: flat-importing std.sx carries these ---
 
-c       :: #import "modules/std/c.sx";
-posix   :: #import "modules/std/posix.sx";
-mem     :: #import "modules/std/mem.sx";
+c       :: @import "modules/std/c.sx";
+posix   :: @import "modules/std/posix.sx";
+mem     :: @import "modules/std/mem.sx";
 // Intentional allocator-prelude re-export. Static method heads obey the same
 // one-hop visibility boundary as every other type use; this own alias is what
 // makes bare `GPA.init()` part of the std facade rather than an accidental
 // reach-through into `std/mem.sx`.
 GPA     :: mem.GPA;
-fs      :: #import "modules/std/fs.sx";
-process :: #import "modules/std/process.sx";
-socket  :: #import "modules/std/socket.sx";
-json    :: #import "modules/std/json.sx";
-xml     :: #import "modules/std/xml.sx";
-cli     :: #import "modules/std/cli.sx";
-hash    :: #import "modules/std/hash.sx";
-log     :: #import "modules/std/log.sx";
-test    :: #import "modules/std/test.sx";
-time    :: #import "modules/std/time.sx";
-event   :: #import "modules/std/event.sx";
-thread  :: #import "modules/std/thread.sx";
-compress :: #import "modules/std/compress.sx";
-deflate  :: #import "modules/std/codecs/deflate.sx";
-zlib     :: #import "modules/std/codecs/zlib.sx";
-gzip     :: #import "modules/std/codecs/gzip.sx";
-png      :: #import "modules/std/codecs/png.sx";
-zip      :: #import "modules/std/codecs/zip.sx";
+fs      :: @import "modules/std/fs.sx";
+process :: @import "modules/std/process.sx";
+socket  :: @import "modules/std/socket.sx";
+json    :: @import "modules/std/json.sx";
+xml     :: @import "modules/std/xml.sx";
+cli     :: @import "modules/std/cli.sx";
+hash    :: @import "modules/std/hash.sx";
+log     :: @import "modules/std/log.sx";
+test    :: @import "modules/std/test.sx";
+time    :: @import "modules/std/time.sx";
+event   :: @import "modules/std/event.sx";
+thread  :: @import "modules/std/thread.sx";
+compress :: @import "modules/std/compress.sx";
+deflate  :: @import "modules/std/codecs/deflate.sx";
+zlib     :: @import "modules/std/codecs/zlib.sx";
+gzip     :: @import "modules/std/codecs/gzip.sx";
+png      :: @import "modules/std/codecs/png.sx";
+zip      :: @import "modules/std/codecs/zip.sx";

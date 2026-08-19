@@ -6,7 +6,7 @@
 // `type_bridge.buildEnumInfo` extracts explicit values from a `char_literal`
 // as well as an `int_literal`, so `esc :: '\x1b'` ships tag 27.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Key :: enum {
     esc   :: '\x1b';

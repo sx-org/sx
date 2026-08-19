@@ -2,7 +2,7 @@
 // literal must retain the parameter type authored by the imported nominal
 // method. The enclosing `main -> i32` target must not turn `.{} ` into i32.
 
-api :: #import "0901-modules-qualified-method-typed-default/api.sx";
+api :: @import "0901-modules-qualified-method-typed-default/api.sx";
 
 main :: () -> i32 {
     writer := api.Writer.init();

@@ -9,7 +9,7 @@
 //
 // The hard spellings of the same two misses are the ordinary diagnostics —
 // see 1980.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Mark :: protocol vtable { tag :: (self: *Self) -> i64; }
 Show :: protocol vtable { fmt :: (self: *Self) -> i64; }

@@ -3,7 +3,7 @@
 // global `type_alias_map` (which is last-wins across every module).
 //
 // `main` authors a forward alias `A :: B` and its own `B :: u64`. The namespaced
-// import `ns :: #import ".../dep.sx"` ALSO authors a top-level `B :: u8`; being
+// import `ns :: @import ".../dep.sx"` ALSO authors a top-level `B :: u8`; being
 // scanned after main's `B`, dep's alias is what the GLOBAL `type_alias_map["B"]`
 // ends up holding. The source-aware fixpoint resolves `A` against MAIN's source:
 // the local `B :: u64`.
@@ -12,12 +12,12 @@
 // under `u64` and would truncate to 44 under `u8`.
 // The direct reference `b : B` already resolves source-aware via the nominal
 // leaf, so it pins the same `u64` for contrast.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 A :: B;
 B :: u64;
 
-ns :: #import "0750-modules-forward-alias-source-aware/dep.sx";
+ns :: @import "0750-modules-forward-alias-source-aware/dep.sx";
 
 main :: () -> i32 {
     n : i64 = 300;

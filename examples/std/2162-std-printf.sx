@@ -1,8 +1,8 @@
 // `@printf` renders into stack storage, so it writes with no allocator behind
 // it: every line below is produced inside a context whose allocator refuses
 // every request and counts the attempts. The final count is zero.
-#import "modules/std.sx";
-#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+@import "modules/std.sx";
+@import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
 
 Refusing :: struct {
     calls: i64;

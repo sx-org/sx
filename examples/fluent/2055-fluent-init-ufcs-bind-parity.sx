@@ -8,7 +8,7 @@
 // The third line belongs to neither spelling: two failing calls to one unbindable
 // family report a formation attempt against the family's un-inferred form, and the
 // two ordinary calls alone report it the same way.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Tagged :: struct ($U: Type) {
     u: $U = ---;

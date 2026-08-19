@@ -47,7 +47,7 @@ variant_name :: ($T: Type, idx: i64) -> string intrinsic;
 variant_type :: ($T: Type, idx: i64) -> Type intrinsic;
 variant_payload :: (u: $T, idx: i64) -> any intrinsic;
 is_flags :: ($T: Type) -> bool intrinsic;
-// Is T an `#identity` protocol (borrow-only ownership class)? COMPILE-TIME
+// Is T an `@identity` protocol (borrow-only ownership class)? COMPILE-TIME
 // only — a runtime `Type` value always tags a concrete type, never a
 // protocol, so there is no runtime form.
 is_identity :: ($T: Type) -> bool intrinsic;
@@ -360,10 +360,10 @@ raw_pointer_to        :: (t: Type) -> Type intrinsic;
 
 // Bytes-level primitives carry the `_bytes` suffix so the typed
 // helpers in std/mem.sx own the bare names (`alloc(T, n)`, `free(s)`).
-// `#identity`: an allocator IS its state object — protocol values only
+// `@identity`: an allocator IS its state object — protocol values only
 // ever borrow a named allocator (`gpa`, `gpa.(Allocator)`); rvalue
 // erasure and `free` of the protocol value refuse at compile time.
-Allocator :: protocol vtable #identity {
+Allocator :: protocol vtable @identity {
     alloc_bytes :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
@@ -408,9 +408,9 @@ ParkToken :: struct {
     handle: *void = null;
 }
 
-// `#identity` — like `Allocator`: the runtime object is unique state,
+// `@identity` — like `Allocator`: the runtime object is unique state,
 // borrowed into the protocol value, never owned by it.
-Io :: protocol vtable #identity {
+Io :: protocol vtable @identity {
     spawn_raw :: (self: *Self, entry: *void, arg: *void, opts: SpawnOpts) -> *void;
     // `park` is IN/OUT: a suspending impl records the parked execution context
     // (e.g. the awaiter's fiber) into `park.handle` before parking, so a later
@@ -434,7 +434,7 @@ Io :: protocol vtable #identity {
 // --- Context ---
 //
 // The dynamically-scoped capability bag. The struct is declared EMPTY: the
-// compiler assembles 100% of its fields from the program's `#context_extend`
+// compiler assembles 100% of its fields from the program's `@context_extend`
 // declarations (sorted by declaring module path, then field name) —
 // `allocator` lives in std/mem.sx and `io` in std/io.sx, declared exactly
 // like any user field. `__sx_default_context` is emitted from the assembled
@@ -446,7 +446,7 @@ Io :: protocol vtable #identity {
 // There is no untyped escape slot: a module that wants to carry a payload
 // declares its own typed field:
 //
-//     #context_extend logger: ?*Logger = null;
+//     @context_extend logger: ?*Logger = null;
 //
 // Guideline (not enforced): prefer one POINTER per concern over fat inline
 // values — every `push` copies the whole Context, so a 2 KB inline field
@@ -456,7 +456,7 @@ Context :: struct {}
 
 // The JNIEnv* the JVM hands a native method. `null` is the unchecked
 // sentinel. DSL dispatch and helpers read `context.jni`.
-#context_extend jni: *void = null;
+@context_extend jni: *void = null;
 
 // User-space conversion. Dest-inferred opt-in at a `T` slot, or `val.(T)` /
 // `val.(T, alloc)`, falls through the built-in conversion ladder to an
@@ -496,4 +496,4 @@ Into :: protocol(Target: Type) constraint {
 }
 
 // Raw libc lives in its dependency-free leaf module; core owns no externs.
-c :: #import "modules/std/c.sx";
+c :: @import "modules/std/c.sx";

@@ -5,7 +5,7 @@
 // pack: `tagged :: ($tag: i32, ..$args)` binds `tag` as a value in the body
 // alongside the pack's comptime `args.len`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 tagged :: ($tag: i32, ..$args) -> i64 {
     return tag * 100 + args.len;

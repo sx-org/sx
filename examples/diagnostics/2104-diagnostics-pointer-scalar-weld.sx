@@ -3,7 +3,7 @@
 // different thing from an address, so none of them takes the same-width
 // reinterpretation escape.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Obj :: struct { v: i64 = 1; }
 

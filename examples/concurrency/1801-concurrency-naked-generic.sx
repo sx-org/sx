@@ -10,7 +10,7 @@
 // a matching host, ir-only elsewhere.
 answer :: ($T: Type) -> i64 abi(.naked) {
     asm volatile {
-        #string A
+        @string A
         mov x0, #42
         ret
 A

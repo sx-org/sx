@@ -1,7 +1,7 @@
 // Type-category match recognition covers every runtime category: a match
 // whose ONLY pattern is `optional` or `error_set` is still a TYPE match.
 // The categories themselves classify like any other.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 ParseErr :: error { BadDigit, Overflow };
 

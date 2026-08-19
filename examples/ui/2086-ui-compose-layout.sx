@@ -7,9 +7,9 @@
 //
 // Every pass asks the same question, so a child's frame in `render` is the frame
 // it was laid out in.
-#import "modules/std.sx";
-#import "examples/ui/compose.sx";
-ui :: #import "modules/ui/types.sx";
+@import "modules/std.sx";
+@import "examples/ui/compose.sx";
+ui :: @import "modules/ui/types.sx";
 
 // The frames a scene draws, read back off the tree.
 frames :: (tree: *RenderTree) {

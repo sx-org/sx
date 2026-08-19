@@ -4,8 +4,8 @@
 // `result.ptr` through that same allocator. `Image.pixels` is borrowed only
 // for the duration of the call.
 
-#import "modules/std/core.sx";
-#import "modules/std/internal/png.sx";
+@import "modules/std/core.sx";
+@import "modules/std/internal/png.sx";
 
 Error :: error {
     InvalidDimensions,

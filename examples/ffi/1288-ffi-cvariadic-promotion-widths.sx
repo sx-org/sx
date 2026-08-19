@@ -10,10 +10,10 @@
 // all-ones pattern, an unsigned width's maximum — so a wrong extension changes
 // the number printed instead of hiding in the top bits.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #source "1288-ffi-cvariadic-promotion-widths.c";
+@import c {
+    @source "1288-ffi-cvariadic-promotion-widths.c";
 };
 
 c_probe :: (n: i32, ..) -> i64 extern;

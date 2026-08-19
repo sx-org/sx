@@ -1,7 +1,7 @@
 // Bindingless `while <optional>` tests the optional's has_value flag,
 // exactly like `if <optional>` — not folding the `{T,i1}` aggregate truthy,
 // so the loop observes `null` and stops.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     // Present `?i64` drained to null: the body runs each step until the

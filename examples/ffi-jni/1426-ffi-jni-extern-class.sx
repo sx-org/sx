@@ -2,7 +2,7 @@
 // on macOS (no JVM at runtime), mirroring 1412's runtime-class reference.
 //   View :: @JniClass("…") extern { … }   ==   View :: @JniClass(…) extern("…") { … }
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @JniClass("android/view/View") extern {
     getId :: (self: *Self) -> i32;

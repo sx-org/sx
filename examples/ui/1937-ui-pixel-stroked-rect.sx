@@ -21,12 +21,12 @@
 // NOT part of the byte-exact corpus (no expected/ files), same contract
 // as 1924: where no display or GPU exists, open_pixel_surface returns
 // null and this reports a clean skip.
-#import "modules/std.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/render.sx";
-#import "modules/ui/surface.sx";
-#import "modules/ui/surface_select.sx";
-#import "modules/ui/pixeltest.sx";
+@import "modules/std.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
+@import "modules/ui/surface.sx";
+@import "modules/ui/surface_select.sx";
+@import "modules/ui/pixeltest.sx";
 
 BACKDROP :: Color{ r = 20, g = 20, b = 20, a = 255 };
 

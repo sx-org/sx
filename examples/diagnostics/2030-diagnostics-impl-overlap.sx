@@ -2,7 +2,7 @@
 // carrier, so a concrete impl for one of those instantiations is a second impl
 // for the same type — and neither declaration says which body applies. Refused
 // at the overlap, in either declaration order.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Series :: protocol(T: Type) constraint {
     count :: (self: *Self) -> i64;

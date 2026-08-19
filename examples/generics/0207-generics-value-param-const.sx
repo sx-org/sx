@@ -6,7 +6,7 @@
 //
 // The value-param binder folds through the shared const-int evaluator
 // (`program_index.evalConstIntExpr`).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 N :: 3;
 M :: 2;

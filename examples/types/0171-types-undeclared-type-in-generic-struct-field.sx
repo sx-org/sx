@@ -5,7 +5,7 @@
 // (`$T`) in scope: `good: T` resolves (it IS a param) while `bad: MissingType`
 // is reported. A value-param position (a `@Vector` lane count, a `$N: u32` arg)
 // is skipped, so a valid generic struct keeps compiling.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct($T: Type) {
     good: T;

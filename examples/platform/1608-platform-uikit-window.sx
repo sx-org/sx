@@ -10,10 +10,10 @@
 // `g_window` is a module-level global so the window outlives the IMP scope
 // (no ARC; UIKit retains it as the key window anyway).
 
-#import "modules/std.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
 
-#framework "UIKit";
+@framework "UIKit";
 
 UIApplicationMain :: (argc: i32, argv: *void, principal_class: *NSString, delegate_class: *NSString) -> i32 extern;
 

@@ -3,7 +3,7 @@
 // .stderr from `sx ir --target`); runs the assertions end-to-end (exit 0) on a
 // linux runner. `inline if OS` prunes the linux backend away on any other host,
 // so compiling for linux is what type-checks it.
-cli :: #import "modules/std/cli.sx";
+cli :: @import "modules/std/cli.sx";
 
 main :: () -> i32 {
     argc := cli.os_argc();

@@ -2,7 +2,7 @@
 // value, used as the argument to `List(Container).append` from two distinct
 // container types. Exercises the cross-callsite path of dot-shorthand inference.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Drawable :: protocol vtable {
     draw :: (self: *Self) -> i32;

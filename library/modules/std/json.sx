@@ -38,7 +38,7 @@
 //     Sink/IO/overflow failures surface on the error channel
 //     (`!JsonError`).
 //
-// Building a value (`#import "modules/std/json.sx";` brings these in):
+// Building a value (`@import "modules/std/json.sx";` brings these in):
 //
 //     obj : Object = .{};
 //     obj.put("name", .str(name_view), alloc);   // name_view: a `string`
@@ -61,16 +61,16 @@
 //     f.close();
 // =====================================================================
 
-#import "modules/std/core.sx";     // Allocator, size_of, string
-#import "modules/std/list.sx";     // List
-c :: #import "modules/std/c.sx";
+@import "modules/std/core.sx";     // Allocator, size_of, string
+@import "modules/std/list.sx";     // List
+c :: @import "modules/std/c.sx";
 // `List`/`Object` builders take an explicit `alloc: Allocator`; bare-import
 // visibility is non-transitive, so the module that names the type imports it.
-#import "modules/std/mem.sx";
-#import "modules/std/fs.sx";
+@import "modules/std/mem.sx";
+@import "modules/std/fs.sx";
 // `to_f64` / `shortest` / `float_bits` / `is_non_finite` — the exact
 // decimal <-> binary pair the reader and the writer share.
-#import "modules/std/internal/decimal.sx";
+@import "modules/std/internal/decimal.sx";
 
 // The writer's failure contract: a too-small caller buffer (Overflow), a
 // short/failed file write (Io), or a `float` that JSON cannot spell — a

@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-#import "modules/math";
+@import "modules/std.sx";
+@import "modules/math";
 
 Vec :: struct($N: u32, $T:Type) {
     // <N x T> (LLVM Vector)

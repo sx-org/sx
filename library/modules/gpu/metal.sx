@@ -13,18 +13,18 @@
 // Linking is per-target via the consumer's build.sx:
 //   opts.add_framework("Metal")
 //   opts.add_framework("QuartzCore")   // CAMetalLayer lives here
-// `#framework "Metal"` below adds it to Apple-target link lines
+// `@framework "Metal"` below adds it to Apple-target link lines
 // automatically.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "modules/ffi/objc.sx";
-#import "modules/ffi/quartzcore.sx";
-#import "modules/build.sx";
-#import "modules/gpu/types.sx";
-#import "modules/gpu/api.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ffi/objc.sx";
+@import "modules/ffi/quartzcore.sx";
+@import "modules/build.sx";
+@import "modules/gpu/types.sx";
+@import "modules/gpu/api.sx";
 
-#framework "Metal";
+@framework "Metal";
 
 // MTLCreateSystemDefaultDevice lives in the Metal framework as a plain C
 // function. Returns id<MTLDevice> retained +1; it is intentionally leaked —

@@ -6,7 +6,7 @@
 //
 // Narrowing is the ONLY implicit `?T → concrete` path; everything else is a
 // compile error (see 0920).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 takes_i32 :: (x: i32) { print("i32 {}\n", x); }
 add :: (a: i64, b: i64) -> i64 { return a + b; }

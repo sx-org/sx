@@ -9,9 +9,9 @@
 // false. Both are dispatched through `@ObjcCall(bool)` and the
 // results are checked.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 yes_imp :: (self: *void, _cmd: *void) -> bool abi(.c) { true }
 no_imp  :: (self: *void, _cmd: *void) -> bool abi(.c) { false }

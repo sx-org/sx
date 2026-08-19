@@ -6,8 +6,8 @@
 // (Zig-aligned): assign before reading. TrackingAllocator balances to
 // zero across every pair.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Session :: struct { id: i64; score: i64; }
 

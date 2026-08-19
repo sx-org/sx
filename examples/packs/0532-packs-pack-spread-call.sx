@@ -3,7 +3,7 @@
 //   add2(..xs.get)  ≈  add2(xs[0].get(), xs[1].get())
 // The canonical's `mapper(..sources.value)` is this shape.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: protocol(T: Type) {
     get :: (self: *Self) -> i64;

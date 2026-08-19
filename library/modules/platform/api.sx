@@ -1,13 +1,13 @@
-#import "modules/std.sx";
-#import "modules/ui/types.sx";
-#import "modules/platform/types.sx";
+@import "modules/std.sx";
+@import "modules/ui/types.sx";
+@import "modules/platform/types.sx";
 
-// #identity: a Platform is a named long-lived singleton (an SDL window,
+// @identity: a Platform is a named long-lived singleton (an SDL window,
 // the UIKit app, the Android surface owner) that the app mutates through
 // BOTH the erased value and concrete handles — erasure always borrows
 // the named object's storage, never copies it (a snapshot would fork the
 // live platform state).
-Platform :: protocol vtable #identity {
+Platform :: protocol vtable @identity {
     init :: (self: *Self, title: [:0]u8, w: i32, h: i32) -> bool;
 
     run_frame_loop :: (self: *Self, frame_fn: Closure());

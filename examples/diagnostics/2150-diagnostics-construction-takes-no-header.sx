@@ -1,7 +1,7 @@
 // A construction takes no `|…|` header, and the report names the head as it
 // is WRITTEN — the bare name, and the generic head of a type application.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Label :: struct { text: string = ""; }
 Box :: struct($T: Type) { v: T }

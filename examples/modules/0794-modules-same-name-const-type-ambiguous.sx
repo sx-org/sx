@@ -5,9 +5,9 @@
 // 0787 does. The type-inference change must NOT mask the ambiguity (inferring
 // `.unresolved` for the ambiguous reference) — the emission path still fires the
 // loud author-count diagnostic regardless of the consts' declared types.
-#import "modules/std.sx";
-#import "0794-modules-same-name-const-type-ambiguous/a.sx";
-#import "0794-modules-same-name-const-type-ambiguous/b.sx";
+@import "modules/std.sx";
+@import "0794-modules-same-name-const-type-ambiguous/a.sx";
+@import "0794-modules-same-name-const-type-ambiguous/b.sx";
 
 main :: () -> i32 {
     print("K={}\n", K);

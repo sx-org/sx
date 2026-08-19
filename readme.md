@@ -6,7 +6,7 @@ protocols, and an LLVM backend — compiled to native code.
 ## At a Glance
 
 ```sx
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: struct {
     x, y: i32;
@@ -22,7 +22,7 @@ main :: () {
 - `name :: value` constants, `name := value` variables
 - LLVM native code; `@run` / `@insert` / `@error` at compile time
 - Monomorphized generics, first-class closures, protocol polymorphism
-- Pattern matching, C interop (`extern` / `export` / `#import c`), inline `asm`
+- Pattern matching, C interop (`extern` / `export` / `@import c`), inline `asm`
 - Colorblind async (cooperative fibers, no function coloring)
 - Targets: macOS (ARM64, x86_64), Linux (x86_64, ARM64), Windows (x86_64), WebAssembly
 
@@ -153,7 +153,7 @@ name := node?.name ?? "unknown";
 if n != null { take_i32(n); }    // narrowed; a bare `take_i32(n)` is an error
 ```
 
-`#using` composes structs. Methods live in the body.
+`@using` composes structs. Methods live in the body.
 
 ### Generics and closures
 
@@ -166,7 +166,7 @@ List :: struct ($T: Type) {
     cap: i64 = 0;
     append :: (list: *List(T), item: T, alloc: Allocator = context.allocator,
                site: @SourceSite = @caller) { … }
-    len :: (self: *List(T)) -> i64 #get => self.items.len;
+    len :: (self: *List(T)) -> i64 @get => self.items.len;
 }
 
 make_adder :: (n: i64) -> Closure(i64) -> i64 { return |x: i64| -> i64 x + n; }
@@ -190,7 +190,7 @@ shape.draw(10, 20);
 
 - `constraint` (default): bounds only, no runtime value.
 - `vtable`: erased handle, dynamic dispatch. `type_of(shape)` is the concrete type.
-- `#identity` (e.g. `Allocator`): borrow a named object; rvalue erase and `free` refuse.
+- `@identity` (e.g. `Allocator`): borrow a named object; rvalue erase and `free` refuse.
 - Owning erase is `.(P, alloc)` only. `*P` is a view. `free(shape)` / `free(shape, alloc)`.
 - `Self` past the receiver is not callable on an erased value — use `$T/Eq`.
 
@@ -239,15 +239,15 @@ a, b = b, a;
 FIBONACCI_10 :: @run fib(10);
 @insert @run generate_lookup_table();
 
-libc :: #library "c";
+libc :: @library "c";
 printf :: (fmt: [:0]u8, args: ..any) -> i32 extern libc;
 abs       :: (x: i32) -> i32 extern;
 sx_square :: (x: i32) -> i32 export { x * x }
 __stdinp  : *void extern;
 
-#import c {
-    #include "vendors/mylib/api.h";
-    #source "vendors/mylib/impl.c";
+@import c {
+    @include "vendors/mylib/api.h";
+    @source "vendors/mylib/impl.c";
 };
 ```
 
@@ -264,9 +264,9 @@ add :: (a: i64, b: i64) -> i64 {
 ### Modules
 
 ```sx
-#import "modules/std.sx";              // flat — bare names
-math :: #import "modules/math";        // namespaced — math.name
-r :: #import "rich.sx";
+@import "modules/std.sx";              // flat — bare names
+math :: @import "modules/math";        // namespaced — math.name
+r :: @import "rich.sx";
 helper :: r.helper;                    // re-export
 private helper :: (x: i64) -> i64 { x * 2 }
 Box :: struct { private secret: i64 = 0; }
@@ -274,7 +274,7 @@ Box :: struct { private secret: i64 = 0; }
 
 Visibility does not chain. Two flat imports of the same name are ambiguous; an own declaration wins. `private` is file-local on a top-level identifier or a struct field.
 
-`#import "modules/std.sx"` is the prelude (`print`, `List`, `Context`, …) plus `mem`, `fs`, `process`, `socket`, `json`, `cli`, `hash`, `xml`, `log`, `test`.
+`@import "modules/std.sx"` is the prelude (`print`, `List`, `Context`, …) plus `mem`, `fs`, `process`, `socket`, `json`, `cli`, `hash`, `xml`, `log`, `test`.
 
 ### Implicit Context
 
@@ -286,16 +286,16 @@ main :: () {
 }
 push .{ allocator = my_arena } { do_work(); }
 
-#context_extend logger: ?*Logger = null;
+@context_extend logger: ?*Logger = null;
 push .{ logger = *my_logger } { serve(); }
 ```
 
-`Context` is assembled from every `#context_extend`. Defaults are required and comptime.
+`Context` is assembled from every `@context_extend`. Defaults are required and comptime.
 
 ## Quick Sort Example
 
 ```sx
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 quick_sort :: (items: []$T) {
     partition :: (items: []T, lo: i64, hi: i64) -> i64 {
@@ -352,7 +352,7 @@ print_any(pkt);   // walk with struct_field_value / any_element — no copies
 
 `modules/std.sx`: `print` / `out`, `List($T)`, string helpers, `Allocator` / `GPA` / `Arena`, `sqrt` / `sin` / `cos`, `type_of` / `size_of` / field reflection.
 
-**Atomics** — `#import "modules/std/atomic.sx"`. `Atomic($T)` with `Ordering` (`.relaxed` … `.seq_cst`). `compare_exchange` returns `?T` (`null` = success).
+**Atomics** — `@import "modules/std/atomic.sx"`. `Atomic($T)` with `Ordering` (`.relaxed` … `.seq_cst`). `compare_exchange` returns `?T` (`null` = success).
 
 **Volatile** — `@volatile_load(T, addr)` / `@volatile_store(T, addr, v)` from `core.sx`. Not atomic.
 
@@ -361,8 +361,8 @@ print_any(pkt);   // walk with struct_field_value / any_element — no copies
 **Async** — `context.io.async` / `await` / `sleep`. Default `Io` is blocking. A `Scheduler` as `context.io` is fibers (aarch64, M:1):
 
 ```sx
-#import "modules/std.sx";
-sched :: #import "modules/std/sched.sx";
+@import "modules/std.sx";
+sched :: @import "modules/std/sched.sx";
 
 main :: () {
     s := sched.Scheduler.init();

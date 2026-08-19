@@ -7,8 +7,8 @@
 //
 // Builds a 3-node cons-list (c -> b -> a -> nil), matches through the pointer
 // payload directly (`if p ==`) and via deref (`n.*`), and counts it recursively.
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 make_list :: () -> Type {
     h := declare("List");

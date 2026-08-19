@@ -160,7 +160,7 @@ pub const Root = struct {
 ///   Covers the compiler-API surface (`intern`/`find_type`/`build_options`/… —
 ///   bodiless decls whose Zig/VM handler is the impl) AND user compiler-domain
 ///   functions like post-link callbacks (bodied, but emit-skipped). The ABI alone
-///   marks it — there is no `extern <lib>` and no fake `#library "compiler"`.
+///   marks it — there is no `extern <lib>` and no fake `@library "compiler"`.
 /// - `.naked` — a naked function (inline asm body), no calling-convention
 ///   prologue/epilogue. The body is responsible for its own `ret`; args arrive
 ///   in ABI registers (no frame, no implicit `__sx_ctx`).
@@ -197,11 +197,11 @@ pub const FnDecl = struct {
     extern_lib: ?[]const u8 = null,
     extern_name: ?[]const u8 = null,
     /// Span of the function's name token, for the reserved-type-name decl
-    /// diagnostic. Synthesized decls (e.g. `#import c` extern
+    /// diagnostic. Synthesized decls (e.g. `@import c` extern
     /// functions, lowering-time objc/protocol method synthesis) leave it zero.
     name_span: Span = .{ .start = 0, .end = 0 },
     /// True when the function NAME was written as a backtick raw identifier
-    /// (`` `i2 :: … ``) or synthesized by a `#import c` extern decl. A raw
+    /// (`` `i2 :: … ``) or synthesized by a `@import c` extern decl. A raw
     /// name is exempt from the reserved-type-name binding check.
     /// Every PARSER fn_decl is built through `parseFnDecl`, whose `name_is_raw`
     /// is a REQUIRED parameter, so a parser site cannot drop it; the default
@@ -212,12 +212,12 @@ pub const FnDecl = struct {
     /// OPT-IN: only `is_ufcs` fns and `ufcs` aliases dispatch; a plain
     /// fn is callable only by direct call.
     is_ufcs: bool = false,
-    /// `name :: (self: *T) -> R #get => expr;` — a no-paren property accessor.
+    /// `name :: (self: *T) -> R @get => expr;` — a no-paren property accessor.
     /// Invoked via field syntax (`obj.name`) when no real field matches, rather
     /// than as a `obj.name()` call. Takes only the `self` receiver.
     is_get: bool = false,
-    /// `name :: (self: *T, value: V) #set { ... }` — the WRITE counterpart of a
-    /// `#get` accessor. `obj.name = rhs` dispatches to it as `obj.name(rhs)` when
+    /// `name :: (self: *T, value: V) @set { ... }` — the WRITE counterpart of a
+    /// `@get` accessor. `obj.name = rhs` dispatches to it as `obj.name(rhs)` when
     /// no real field matches. Takes the `self` receiver plus exactly one value
     /// parameter and returns void.
     is_set: bool = false,
@@ -263,7 +263,7 @@ pub const Param = struct {
     /// parameter, lowering substitutes this expression in its place.
     default_expr: ?*Node = null,
     /// True when the param name was written as a backtick raw identifier
-    /// (`` `i2 ``) or synthesized by a `#import c` extern decl. A raw name is
+    /// (`` `i2 ``) or synthesized by a `@import c` extern decl. A raw name is
     /// exempt from the reserved-type-name binding check.
     is_raw: bool = false,
 };
@@ -311,7 +311,7 @@ pub const CharLiteral = struct {
 /// string. The result type is derived in Sema from the `out_value` operands
 /// (0→void, 1→T, N→tuple).
 pub const AsmExpr = struct {
-    /// Template: a string-literal / `#string` heredoc node (a comptime string).
+    /// Template: a string-literal / `@string` heredoc node (a comptime string).
     template: *Node,
     is_volatile: bool = false,
     /// Declaration order preserved (= `%N` indexing).
@@ -346,7 +346,7 @@ pub const AsmOperand = struct {
 /// multiple blocks concatenate in source order. Symbols it defines are reached
 /// with a lib-less `extern` declaration.
 pub const AsmGlobal = struct {
-    template: *Node, // string-literal / `#string` heredoc node
+    template: *Node, // string-literal / `@string` heredoc node
 };
 
 pub const Identifier = struct {
@@ -766,7 +766,7 @@ pub const ErrorDirective = struct {
     message: []const u8,
 };
 
-/// `#context_extend name: Type = default;` — a top-level directive declaring a
+/// `@context_extend name: Type = default;` — a top-level directive declaring a
 /// field the program's assembled Context carries (design/context-extension.md).
 /// It declares no module-scope name (`declName` is null): the field lives in the
 /// program-global Context namespace, collected across all modules.
@@ -794,8 +794,8 @@ pub const ImportDecl = struct {
     path: []const u8,
     name: ?[]const u8,
     /// True when the namespace NAME was a backtick raw identifier
-    /// (`` `i2 :: #import "…" ``) — exempt from the reserved-type-name decl
-    /// check. A flat `#import` (name == null) binds nothing.
+    /// (`` `i2 :: @import "…" ``) — exempt from the reserved-type-name decl
+    /// check. A flat `@import` (name == null) binds nothing.
     is_raw: bool = false,
 };
 
@@ -996,7 +996,7 @@ pub const NamespaceDecl = struct {
     /// same-named function in another module.
     own_decls: []const *Node = &.{},
     /// The resolved path of the module this alias targets — the importing file's
-    /// own path for a `#import c` namespace (its members are synthesized there).
+    /// own path for a `@import c` namespace (its members are synthesized there).
     /// Captured at import-resolution time (the `resolved_path` that is otherwise
     /// not retained on the node) so `buildImportFacts` can record the namespace
     /// edge without re-walking the import graph.
@@ -1132,7 +1132,7 @@ pub const ProtocolDecl = struct {
     name: []const u8,
     methods: []const ProtocolMethodDecl,
     kind: ProtocolKind = .constraint,
-    is_identity: bool = false, // #identity — borrow-only ownership class (values never own their ctx)
+    is_identity: bool = false, // @identity — borrow-only ownership class (values never own their ctx)
     type_params: []const StructTypeParam = &.{}, // for `protocol(Target: Type) { ... }`
     /// True when the declared NAME was a backtick raw identifier — exempt from
     /// the reserved-type-name decl check.

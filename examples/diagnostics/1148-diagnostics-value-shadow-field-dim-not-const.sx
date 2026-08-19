@@ -5,7 +5,7 @@
 // nothing.
 //
 // Negative companion to 0169, the FLOAT-field narrowing half.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 DimBox :: struct { max: i64; }
 

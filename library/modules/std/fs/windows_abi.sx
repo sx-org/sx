@@ -2,8 +2,8 @@
 // kernel32 handle, extern declarations, and numeric constants cannot become
 // authored members of the public std.fs facade.
 
-fs_windows_c :: #import "modules/std/c.sx";
-fs_windows_kernel32 :: #library "kernel32";
+fs_windows_c :: @import "modules/std/c.sx";
+fs_windows_kernel32 :: @library "kernel32";
 
 FsWindowsFileTime :: struct { low: u32; high: u32; }
 FsWindowsWidePath :: struct { ptr: [*]u16 = null; heap: *void = null; }

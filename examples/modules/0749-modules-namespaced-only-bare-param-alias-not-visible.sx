@@ -4,9 +4,9 @@
 // named struct type in the TypeTable; its raw import fact stays `.const_decl`.
 // The unified declaration-fact writer routes the instantiation alias through
 // `type_aliases_by_source`, so the bare-TYPE gate treats it like any other
-// alias: `dep.sx` is imported only as `dep :: #import`, so bare `Secret` is
+// alias: `dep.sx` is imported only as `dep :: @import`, so bare `Secret` is
 // reachable ONLY as `dep.Secret` and does NOT resolve.
-dep :: #import "0749-modules-namespaced-only-bare-param-alias-not-visible/dep.sx";
+dep :: @import "0749-modules-namespaced-only-bare-param-alias-not-visible/dep.sx";
 
 main :: () -> i32 {
     s : Secret = .{ value = 42 };

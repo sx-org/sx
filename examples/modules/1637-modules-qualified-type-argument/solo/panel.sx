@@ -1,5 +1,5 @@
 // One module, one author of every name here: nothing to disambiguate.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Vw :: @OpenSet(.{ max = 64 }) { render :: (self: *Self) -> string; }
 

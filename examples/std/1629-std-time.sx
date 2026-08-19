@@ -1,7 +1,7 @@
 // std.time: the wall clock reads a plausible epoch and
 // the monotonic clock advances and never runs backwards. The `time`
 // alias rides the std.sx namespace tail like its siblings.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     now := time.now_secs();

@@ -5,9 +5,9 @@
 // UFCS dispatch site must emit the loud "qualify the call" diagnostic rather
 // than silently binding the first-wins winner. Mirrors 0724 (the bare-call
 // ambiguity) one site over.
-#import "modules/std.sx";
-#import "0734-modules-flat-same-name-ufcs-ambiguous/a.sx";
-#import "0734-modules-flat-same-name-ufcs-ambiguous/b.sx";
+@import "modules/std.sx";
+@import "0734-modules-flat-same-name-ufcs-ambiguous/a.sx";
+@import "0734-modules-flat-same-name-ufcs-ambiguous/b.sx";
 
 main :: () -> i32 {
     v : i64 = 10;

@@ -1,8 +1,8 @@
 // The compose library's root and rendering entry points.
-#import "modules/std.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/render.sx";
-#import "examples/ui/compose/view.sx";
+@import "modules/std.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
+@import "examples/ui/compose/view.sx";
 
 // Measures the root against the viewport, lays it out, and renders it into a
 // tree the caller owns.

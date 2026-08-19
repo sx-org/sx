@@ -8,7 +8,7 @@
 // The pack-fn variant is covered by the mono path; plain comptime fns stay on
 // the inline path, guarded by the `createComptimeFunction` state save/restore.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 helper :: ($x: i32) -> i64 {
     print("inside\n");

@@ -1,11 +1,11 @@
-// The sx library ships SQLite: `#import "vendors/sqlite/sqlite.sx"`
+// The sx library ships SQLite: `@import "vendors/sqlite/sqlite.sx"`
 // resolves through the stdlib search paths, compiles the vendored
-// amalgamation as a `#import c` unit (cached), and the bindings just
+// amalgamation as a `@import c` unit (cached), and the bindings just
 // work — no system dependency, no flags. Pins the vendored version
 // (an OS libsqlite3 of another version must never shadow the unit)
 // and a typed round trip.
-#import "modules/std.sx";
-sq :: #import "vendors/sqlite/sqlite.sx";
+@import "modules/std.sx";
+sq :: @import "vendors/sqlite/sqlite.sx";
 
 main :: () -> i32 {
     v := sq.sqlite_version();

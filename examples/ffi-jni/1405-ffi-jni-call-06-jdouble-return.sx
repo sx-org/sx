@@ -2,7 +2,7 @@
 // First non-integer return type for JNI — exercises the LLVM
 // `double` ret path through CallDoubleMethod (vtable slot 58).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g_should_call : bool = false;
 

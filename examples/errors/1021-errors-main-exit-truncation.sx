@@ -4,7 +4,7 @@
 // binary agree. Here 1105 & 0xFF == 81, so this program exits 81, not the 1 an
 // "out of 0..255 range -> failure" rule would give.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     print("returning 1105 -> exit {}\n", 1105 & 0xFF);   // 81

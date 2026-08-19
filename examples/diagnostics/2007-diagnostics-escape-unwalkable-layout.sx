@@ -2,7 +2,7 @@
 // walked is refused (specs.md §6.9): a `*void` referent has no layout to read
 // bytes by, and the build fails naming it instead of shipping an address into
 // compile-time memory.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct { p: *void; }
 

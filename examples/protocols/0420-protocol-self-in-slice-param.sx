@@ -3,7 +3,7 @@
 // `[]` wrapper (and the `*Self` receiver), so a correct `[]T` impl is
 // accepted and dispatched — the substitution reaches inside the wrapper,
 // not just the bare leaf and a one-level pointer/optional.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 P :: protocol vtable {
     // `*Self` receiver + `[]Self` slice param + `Self` value param.

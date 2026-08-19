@@ -1,7 +1,7 @@
 // A spaced `(` group before the body ends the iterable list — the loop is
 // then missing its body. Glue still binds a call (`for x in f(n)`).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     xs : [2]i64 = .[1, 2];

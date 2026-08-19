@@ -9,7 +9,7 @@
 // `index_get` on the array VALUE spills a full copy of the array to a stack
 // temp per iteration.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     arr : [4096]i64 = ---;

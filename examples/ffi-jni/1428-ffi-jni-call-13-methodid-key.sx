@@ -10,7 +10,7 @@
 // folds away, taking the `unused_jni` body out of the IR with it; the
 // runtime-readable global keeps the JNI lowering visible to the snapshot.
 
-#import "modules/std/core.sx";
+@import "modules/std/core.sx";
 
 A :: @JniClass("com/example/A") extern {
     getX :: (self: *Self) -> i32;

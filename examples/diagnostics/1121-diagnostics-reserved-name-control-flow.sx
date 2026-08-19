@@ -3,7 +3,7 @@
 // optional binding (`u8`/`i16`), a `for` capture and index name (`bool`/`i32`),
 // and a match-arm capture (`string`). One exhaustive binding-name walk covers
 // every syntactic binding form, so each offending name gets its own error.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 pair :: () -> Tuple(i64, i64) { .{1, 2} }
 maybe :: () -> ?i64 { return null; }

@@ -7,7 +7,7 @@
 //
 // Three bare failables, three rejections; the program never runs (exit 1).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad }
 

@@ -21,9 +21,9 @@
 //    the linger deadline (polled via stats().active_conns == 0).
 // 4. The server stays healthy: a fresh request gets a 200.
 // 5. GPA leak gate: net-zero after close.
-#import "modules/std.sx";
-http  :: #import "modules/std/http.sx";
-posix :: #import "modules/std/posix.sx";
+@import "modules/std.sx";
+http  :: @import "modules/std/http.sx";
+posix :: @import "modules/std/posix.sx";
 
 PORT :: 18994;
 JUNK_LEN :: 65536;

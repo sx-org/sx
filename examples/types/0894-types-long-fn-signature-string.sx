@@ -1,7 +1,7 @@
 // The rendered function-signature string is built in owned dynamic storage:
 // a legal signature whose printed form runs well past 512 bytes must come out
 // complete, byte for byte, with every parameter and the return type intact.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Very_Long_Nominal_Type_Name_Padding_So_The_Rendered_Signature_Runs_Well_Past_Five_Hundred_And_Twelve_Bytes_One :: struct { v: i64; }
 Very_Long_Nominal_Type_Name_Padding_So_The_Rendered_Signature_Runs_Well_Past_Five_Hundred_And_Twelve_Bytes_Two :: struct { v: i64; }

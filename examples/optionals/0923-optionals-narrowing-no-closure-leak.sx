@@ -8,7 +8,7 @@
 // narrowed `Ref` would falsely permit unwrapping a not-proven-present optional
 // inside the closure (`Lowering.NarrowGuard`). The closure could run later when
 // the captured value is null, so the reject is mandatory — write `n!` to assert.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 takes_i64 :: (x: i64) { print("{}\n", x); }
 

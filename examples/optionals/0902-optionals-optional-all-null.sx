@@ -2,7 +2,7 @@
 // into a protocol-dispatched method. Exercises the all-null-payload path through
 // the boxed call.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 ProposedSize :: struct {
     width: ?f32;

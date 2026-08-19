@@ -3,7 +3,7 @@
 // fused onto the call's last parameter — and a statement that ends in one takes
 // `;` after the `}`. `;` is the only cut, so a brace on the next line binds the
 // same way, and a `;` before it makes two statements.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Label :: struct { text: string = ""; }
 

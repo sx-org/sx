@@ -15,8 +15,8 @@
 // non-leaf sites. `dep_sizes` proves dep's distinct types still resolve to
 // THEIR own 16 + 8 = 24 inside dep.
 
-#import "modules/std.sx";
-#import "0768-modules-own-wins-nonleaf-bare-type/dep.sx";
+@import "modules/std.sx";
+@import "0768-modules-own-wins-nonleaf-bare-type/dep.sx";
 
 Widget :: struct { a: i64; }
 Nums :: [2]i64;

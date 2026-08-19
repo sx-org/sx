@@ -7,7 +7,7 @@
 // Int+float promotion, flags-enum bitwise and enum/pointer comparison are
 // legitimate mixes.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     n : i64 = 40;

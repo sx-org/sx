@@ -7,7 +7,7 @@
 poke :: () -> i64 {
     x : i64 = 0;
     asm volatile {
-        #string ASM
+        @string ASM
         mov x9, #42
         str x9, %[out]
 ASM,

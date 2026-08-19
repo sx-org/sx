@@ -7,7 +7,7 @@
 // A. The rejection (a converged tag NOT in the caller's set) lives in
 // `examples/224-inferred-widening-reject.sx`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 A :: error { Foo, Bar }
 

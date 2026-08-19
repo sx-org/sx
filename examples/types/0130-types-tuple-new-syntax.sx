@@ -8,7 +8,7 @@
 // `.(...)` mirrors the inline `(a, b)` tuple_literal, so both self-type
 // structurally and reuse the existing tuple lowering.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 swap :: (a: i64, b: i64) -> Tuple(i64, i64) {
     .{b, a}

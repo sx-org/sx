@@ -4,8 +4,8 @@
 // partial-read resume paths in read_more / try_serve_one; an interleaved
 // plain GET keeps proving liveness. One server serves every iteration under
 // a GPA, so net-zero alloc_count at the end is the leak gate.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 // Any nonzero i64 starts the xorshift; a fixed one keeps the byte stream —
 // and so the golden output — the same on every run.

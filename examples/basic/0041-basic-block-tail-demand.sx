@@ -9,7 +9,7 @@
 // So the two spellings below are the same function. This file writes the
 // `;` one everywhere the value has to flow.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // A `-> T` body ending in `expr;` returns `expr`.
 double :: (n: i32) -> i32 {

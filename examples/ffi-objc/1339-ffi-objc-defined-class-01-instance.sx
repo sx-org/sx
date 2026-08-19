@@ -17,9 +17,9 @@
 // 4. release — synthesized -dealloc frees the state
 //    and chains to [super dealloc].
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 SxFoo :: @ObjcClass("SxFoo") {
     counter: i32;

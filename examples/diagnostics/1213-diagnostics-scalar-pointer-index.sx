@@ -9,7 +9,7 @@
 //
 // Lvalue-through-index shapes (`w.arr[i].a = v`, `ps_arr[i].a = v` for `*[N]S`,
 // `mp[i].a = v` for `[*]S`) are unaffected.
-#import "modules/std.sx";
+@import "modules/std.sx";
 S :: struct { a: i64; }
 main :: () -> i64 {
     x : i64 = 5;

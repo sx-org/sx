@@ -594,7 +594,7 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
                     return false;
                 }
                 if (std.mem.eql(u8, cname, "is_identity") and c.args.len >= 1) {
-                    // is_identity($T) → is T an `#identity` protocol? Folds so
+                    // is_identity($T) → is T an `@identity` protocol? Folds so
                     // `inline if is_identity(T)` drops the dead branch whole
                     // (free's compile_error refusal lives in the taken one).
                     // Non-static arg → null; the lowering arm then reports the

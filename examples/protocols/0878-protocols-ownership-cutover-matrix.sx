@@ -10,8 +10,8 @@
 //   - `free` is legal on every owned P.
 // The demand diagnostics for the implicit/xx lvalue spellings are pinned
 // in diagnostics/1256.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Sizable :: protocol vtable {
     size :: (self: *Self) -> i64;

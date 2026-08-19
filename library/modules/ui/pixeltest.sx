@@ -8,8 +8,8 @@
 // Pixel examples live OUTSIDE the byte-exact corpus: the test suite
 // must pass on hosts with no GPU or display, so pixel goldens run as
 // their own explicit gate on machines that render.
-#import "modules/std.sx";
-#import "modules/std/fs.sx";
+@import "modules/std.sx";
+@import "modules/std/fs.sx";
 
 // `actual` is tightly packed RGBA, TOP-DOWN rows (backends normalize
 // their origin before handing pixels over). A pixel counts as differing
@@ -39,7 +39,7 @@ pixel_golden :: (actual: string, w: i64, h: i64, ref_path: [:0]u8,
         print("pixels FAIL {}: no reference — rerun with SX_UPDATE_PIXELS=1\n", ref_path);
         return false;
     }
-    ref := png.decode(refd!) catch |e| {
+    ref := png.decode(refd) catch |e| {
         print("pixels FAIL {}: reference does not decode\n", ref_path);
         return false;
     };

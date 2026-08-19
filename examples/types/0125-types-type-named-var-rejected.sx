@@ -1,6 +1,6 @@
 // A local declared with a reserved/builtin type-name spelling (`i2` is the
 // arbitrary-width `sN` integer type) is rejected at the declaration site.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     i2 := 42;

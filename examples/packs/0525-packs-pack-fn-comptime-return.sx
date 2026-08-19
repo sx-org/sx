@@ -13,7 +13,7 @@
 // into a result slot, the caller loads it as the inline value, and main
 // prints "42".
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 foo :: (..$args) -> i64 { return 42; }
 

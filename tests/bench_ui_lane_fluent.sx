@@ -1,7 +1,7 @@
 // Fluent lane for tests/bench_ui_three_stacks.sx. `collectViews` intercepts
 // Label expressions only when View is this module's name for fluent.View.
-#import "modules/std.sx";
-#import "modules/ui/fluent.sx";
+@import "modules/std.sx";
+@import "modules/ui/fluent.sx";
 
 slot_bytes :: () -> i64 => size_of(View);
 

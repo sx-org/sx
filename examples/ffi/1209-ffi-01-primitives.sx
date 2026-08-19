@@ -1,16 +1,16 @@
 // Every primitive type passed
-// in/out of a C `extern` fn via `#import c { #include / #source }`.
+// in/out of a C `extern` fn via `@import c { @include / @source }`.
 // Pins the parameter and return ABI of each one.
 //
 // c_import maps `signed char` to sx `u8` (see c_import.zig:541), so the
 // narrow signed-char roundtrips here cross the boundary as an unsigned
 // sx type.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #include "1209-ffi-01-primitives.h";
-    #source "1209-ffi-01-primitives.c";
+@import c {
+    @include "1209-ffi-01-primitives.h";
+    @source "1209-ffi-01-primitives.c";
 };
 
 main :: () -> i32 {

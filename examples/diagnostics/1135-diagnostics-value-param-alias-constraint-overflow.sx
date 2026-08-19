@@ -3,7 +3,7 @@
 // `Count :: u32`, `$K: Small` where `Small :: i8`). The constraint resolves to
 // its underlying builtin before range-checking, at both the struct and type-fn
 // binders.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Count :: u32;
 Small :: i8;

@@ -6,7 +6,7 @@
 // comes back register-coerced and a >16-byte non-HFA return uses the
 // sret hidden out-pointer. Also pins the sret callee body reading its params
 // AFTER the hidden out-pointer slot.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: struct { x: i32; y: i32; }
 Tiny :: struct { a: u8; b: u8; }

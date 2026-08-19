@@ -10,8 +10,8 @@
 //
 // The union field is main's own `Box`, `w.b.m` resolves, exit 0.
 
-#import "modules/std.sx";
-#import "0816-route-all-new-surfaces-own-wins/dep.sx";
+@import "modules/std.sx";
+@import "0816-route-all-new-surfaces-own-wins/dep.sx";
 
 Box :: struct { m: i32; }
 

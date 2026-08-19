@@ -2,7 +2,7 @@
 // and it is the CHILD's failed execvp that exits 127 — which the parent
 // learns only by reaping. `stderr = .null` wires the child's error slot to
 // /dev/null.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     child, e := process.spawn(.["sx-no-such-program-anywhere"], .{ stderr = .null });

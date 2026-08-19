@@ -17,8 +17,8 @@
 // Forward `raw_declare_type` handles + `raw_pointer_to` make the A<->B cycle expressible
 // before either body is filled.
 
-#import "modules/std.sx";
-#import "modules/std/meta.sx";   // raw_declare_type / raw_register_type / Member
+@import "modules/std.sx";
+@import "modules/std/meta.sx";   // raw_declare_type / raw_register_type / Member
 
 
 

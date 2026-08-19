@@ -2,7 +2,7 @@
 // `break`, and `continue` alike (LIFO, including entries from nested blocks
 // between the loop and the jump). Covers `for` ranges and `while`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     for i in 0..3 {

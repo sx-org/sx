@@ -3,9 +3,9 @@
 // Allocating operations return allocator-owned bytes. `_into` operations
 // return the initialized prefix borrowed from the caller's output buffer.
 
-#import "modules/std/core.sx";
-#import "modules/std/compress.sx";
-#import "modules/std/internal/compress.sx";
+@import "modules/std/core.sx";
+@import "modules/std/compress.sx";
+@import "modules/std/internal/compress.sx";
 
 bound :: (source_len: i64) -> (i64, !Error) {
     compress_bound(source_len)

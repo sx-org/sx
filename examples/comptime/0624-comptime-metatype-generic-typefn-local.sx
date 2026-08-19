@@ -3,8 +3,8 @@
 // `make_status` assembles a variant list in a local `vs` (whose `ok` payload is
 // the type parameter `T`), then mints `Status` from it via `make_enum`. 0620 is
 // the same shape in a non-generic builder.
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 make_status :: ($T: Type) -> Type {
     vs := .[

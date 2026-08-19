@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // --- Type declarations ---
 OptNode :: struct { value: i32; next: ?i32; }

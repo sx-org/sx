@@ -1,11 +1,11 @@
 // An `extern LIB "csym"` reference must name something real: `nosuchunit`
-// names neither a #library constant nor a named `#import c` unit, so this is a
+// names neither a @library constant nor a named `@import c` unit, so this is a
 // compile-time diagnostic — the bogus library reference is caught BEFORE the
 // symbol would silently resolve through whatever image happens to carry it.
 //
 // `checkExternRefs` validates the `extern` keyword's `extern_lib` slot and the
 // extern-import-shape `library_ref` through the same path.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 c_abs :: (n: i32) -> i32 extern nosuchunit "abs";
 

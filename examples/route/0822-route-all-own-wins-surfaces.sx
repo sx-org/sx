@@ -8,8 +8,8 @@
 //   - enum body-builder child         `WrapE :: enum { V: Box }`
 //   - inline-anonymous union child    `x : union { b: Box }`
 
-#import "modules/std.sx";
-#import "0822-route-all-own-wins-surfaces/dep.sx";
+@import "modules/std.sx";
+@import "0822-route-all-own-wins-surfaces/dep.sx";
 
 Box :: struct { m: i32; }
 BoxPtr :: *Box;

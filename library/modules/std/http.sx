@@ -11,18 +11,18 @@
 //   http/router.sx  method+path routing, query/form/JSON helpers
 //   http/client.sx  a minimal blocking HTTP/1.1 client (http.Client)
 //
-// A consumer does `#import "modules/std.sx"` (which carries `http`) and reaches
+// A consumer does `@import "modules/std.sx"` (which carries `http`) and reaches
 // the whole API under one namespace: http.Server, http.Request, http.Router,
 // http.TlsAcceptor, … — no separate http_router import. The part-files can
 // also be imported directly for a leaner dependency (e.g. a TLS provider that
 // needs only http/tls.sx, or a client that needs only http/types.sx).
 
-types  :: #import "modules/std/http/types.sx";
-tls    :: #import "modules/std/http/tls.sx";
-fiber  :: #import "modules/std/http/fiber.sx";
-server :: #import "modules/std/http/server.sx";
-router :: #import "modules/std/http/router.sx";
-client :: #import "modules/std/http/client.sx";
+types  :: @import "modules/std/http/types.sx";
+tls    :: @import "modules/std/http/tls.sx";
+fiber  :: @import "modules/std/http/fiber.sx";
+server :: @import "modules/std/http/server.sx";
+router :: @import "modules/std/http/router.sx";
+client :: @import "modules/std/http/client.sx";
 
 // ── shared types + parsing (types.sx) ───────────────────────────────
 Request        :: types.Request;

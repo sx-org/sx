@@ -1,4 +1,4 @@
-// A C prototype keeps its variadicness through `#import c`. The declaration the
+// A C prototype keeps its variadicness through `@import c`. The declaration the
 // block synthesizes from a header ends in the bare `..` tail, so an imported
 // `int printf(const char *, ...)` is callable as one — no hand-written extern
 // beside the import, no fixed-arity stub.
@@ -19,12 +19,12 @@
 // Every imported function has a C caller in the companion file that passes the
 // same arguments; the two answers are the differential.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #include "1237-ffi-cvariadic-c23-import.h";
-    #source  "1237-ffi-cvariadic-c23-import.c";
-    #flags   "-std=c23";
+@import c {
+    @include "1237-ffi-cvariadic-c23-import.h";
+    @source  "1237-ffi-cvariadic-c23-import.c";
+    @flags   "-std=c23";
 };
 
 SumAll   :: (..) -> i64 abi(.c);

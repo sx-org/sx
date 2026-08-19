@@ -1,5 +1,5 @@
 // A generic-struct template alias chain resolves at any acyclic depth.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct($T: Type) { v: T; }
 B01 :: Box;

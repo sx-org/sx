@@ -2,7 +2,7 @@
 // a name that matches NO slot, or a slot named MORE THAN ONCE, is a hard error
 // (rather than a silent positional mismatch). Missing/extra arity is caught
 // separately. Here `c` names no slot and `a` would be duplicated.
-#import "modules/std.sx";
+@import "modules/std.sx";
 bad_unknown :: (n: i32) -> (a: i32, b: i32) {
     return a = n, c = n + 1;   // error: 'c' names no return slot
 }

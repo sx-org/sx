@@ -1,8 +1,8 @@
 // The pixel-golden surface CONTRACT: tests talk to this protocol and the
 // select-at-bind factory (ui/surface_select.sx) — never to a backend.
 // The contract fuses surface + renderer into one seam.
-#import "modules/std.sx";
-#import "modules/ui/render.sx";
+@import "modules/std.sx";
+@import "modules/ui/render.sx";
 
 // One offscreen render target on the machine's real GPU stack.
 PixelSurface :: protocol vtable {

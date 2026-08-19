@@ -6,9 +6,9 @@
 // re-fetches the first-wins AST by name to drive variadic packing packs b.sx's
 // variadic `combine` as if fixed (and its fixed `pick` as if
 // variadic) → wrong lowering.
-#import "modules/std.sx";
-#import "0726-modules-flat-same-name-variadic/a.sx";
-#import "0726-modules-flat-same-name-variadic/b.sx";
+@import "modules/std.sx";
+@import "0726-modules-flat-same-name-variadic/a.sx";
+@import "0726-modules-flat-same-name-variadic/b.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

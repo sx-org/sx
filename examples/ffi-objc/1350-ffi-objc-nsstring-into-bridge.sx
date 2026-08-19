@@ -4,8 +4,8 @@
 // consumer. The impl registers only because objc.sx imports std: an impl
 // whose protocol name is not nameable in its own module is silently
 // dropped.
-#import "modules/std.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
 
 main :: () {
     ns : *NSString = xx "bridge me";

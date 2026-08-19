@@ -6,7 +6,7 @@
 // MATCHING tag just yields the value (the panic temperament only fires
 // on mismatch — pinned separately). Assertions nested in call arguments
 // are NOT consumed by an outer try — they stay in the panic form.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: struct { x: i64; y: i64; }
 

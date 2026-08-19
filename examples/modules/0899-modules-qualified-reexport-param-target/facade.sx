@@ -1,2 +1,2 @@
-backend :: #import "backend.sx";
+backend :: @import "backend.sx";
 take :: backend.take;

@@ -23,7 +23,7 @@
 // aarch64-pinned (the asm + the 13-slot save area are per-arch); runs
 // end-to-end here, ir-only on a mismatch. The x86_64 sibling + `mmap` guard-
 // page stacks are covered by 1809.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Saved context: x19..x28 (10), x29/fp, x30/lr, sp — 13 u64 slots.
 FiberCtx :: struct { regs: [13]u64; }
@@ -45,7 +45,7 @@ Fiber :: struct {
 // naked fn has no frame, so its params are never spilled).
 swap_context :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) {
     asm volatile {
-        #string ASM
+        @string ASM
         stp x19, x20, [x0, #0]
         stp x21, x22, [x0, #16]
         stp x23, x24, [x0, #32]
@@ -70,7 +70,7 @@ ASM
 // First-entry trampoline: a fiber's bootstrapped LR points here. x19 holds the
 // `*Fiber` (preset in the saved context); move it to x0 and call the body.
 asm {
-    #string T
+    @string T
 .global _fib_tramp
 _fib_tramp:
     mov x0, x19

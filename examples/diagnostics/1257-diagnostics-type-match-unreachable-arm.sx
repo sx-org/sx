@@ -4,7 +4,7 @@
 // error, never a silently dead arm. Here `case struct:` claims every
 // struct tag, so the later concrete `case Point:` can never run — the
 // concrete arm must come first.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: struct { x, y: i64; }
 

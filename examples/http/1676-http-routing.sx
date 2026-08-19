@@ -11,8 +11,8 @@
 //   • GET /nope → 404; PUT /hello (registered GET only) → 405 + Allow.
 // The whole run is under a GPA: net-zero allocations after close (the
 // router/param machinery must not leak per request).
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 PORT :: 18980;
 

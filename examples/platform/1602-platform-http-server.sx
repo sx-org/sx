@@ -1,8 +1,8 @@
 // HTTP server example (macOS only)
 
-#import "modules/std.sx";
-#import "modules/std/socket.sx";
-mem :: #import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/socket.sx";
+mem :: @import "modules/std/mem.sx";
 
 // --- Logger ---
 // Carried through the implicit context as a typed field: any handler below
@@ -13,7 +13,7 @@ Logger :: struct {
     count: i64;
 }
 
-#context_extend logger: ?*Logger = null;
+@context_extend logger: ?*Logger = null;
 
 log :: (logger: *Logger, msg: string) {
     logger.count += 1;

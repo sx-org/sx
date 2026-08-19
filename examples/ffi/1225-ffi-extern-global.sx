@@ -4,7 +4,7 @@
 // form (see examples/1205). The optional
 // `extern [LIB] ["csym"]` tail mirrors the fn form; bare here (the sx name
 // IS the C symbol, resolved against the default-linked libSystem).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 __stdinp : *void extern;
 

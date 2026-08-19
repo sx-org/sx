@@ -2,9 +2,9 @@
 // identity too. Two modules author `Q` with different method sets; each
 // module's erasure must build and dispatch through its own vtable rather than
 // the first-registered spelling's.
-#import "modules/std.sx";
-a :: #import "0902-protocols-nullary-protocol-author-identity/a.sx";
-b :: #import "0902-protocols-nullary-protocol-author-identity/b.sx";
+@import "modules/std.sx";
+a :: @import "0902-protocols-nullary-protocol-author-identity/a.sx";
+b :: @import "0902-protocols-nullary-protocol-author-identity/b.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

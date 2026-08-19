@@ -3,8 +3,8 @@
 // `modules/std/core.sx`, but it is not the `modules/std/core.sx` any library
 // root holds, so its `@SourceSite` is refused like any other foreign
 // declaration.
-#import "modules/std.sx";
-#import "2023-diagnostics-at-contract-foreign-module/modules/std/core.sx";
+@import "modules/std.sx";
+@import "2023-diagnostics-at-contract-foreign-module/modules/std/core.sx";
 
 main :: () {
     print("{}\n", 1);

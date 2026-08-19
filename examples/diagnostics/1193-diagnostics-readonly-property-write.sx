@@ -1,16 +1,16 @@
-// Writing to a `#get`-only property (no matching `#set`) reports a "read-only"
+// Writing to a `@get`-only property (no matching `@set`) reports a "read-only"
 // diagnostic rather than the generic "field not found" of the bare struct-store
-// path. A `#set`-only property accepts plain assignment but rejects compound `+=`,
-// since there is no `#get` to read the current value.
-#import "modules/std.sx";
+// path. A `@set`-only property accepts plain assignment but rejects compound `+=`,
+// since there is no `@get` to read the current value.
+@import "modules/std.sx";
 
 Reading :: struct {
     raw: i64 = 0;
-    doubled :: (self: *Reading) -> i64 #get => self.raw * 2;
+    doubled :: (self: *Reading) -> i64 @get => self.raw * 2;
 }
 
 main :: () -> i64 {
     r : Reading = .{ raw = 5 };
-    r.doubled = 10;     // ERROR: property 'doubled' is read-only (no '#set')
+    r.doubled = 10;     // ERROR: property 'doubled' is read-only (no '@set')
     return 0;
 }

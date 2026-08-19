@@ -9,11 +9,11 @@
 // one explicitly, so "capture into this arena" and "count into this tally" are
 // two ordinary calls over one block, and a library never has to reach for a
 // global to learn where it is emitting.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/fluent.sx";
 
-View :: protocol vtable #identity {
+View :: protocol vtable @identity {
     label :: (self: *Self) -> string;
 }
 

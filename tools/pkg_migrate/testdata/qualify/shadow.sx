@@ -1,6 +1,6 @@
 // shadow fixture: this file declares `helper` locally, so NO occurrence of
 // `helper` may be rewritten — every one must be reported as a skip.
-#import "modules/util.sx";
+@import "modules/util.sx";
 
 helper :: (n: int) -> int {
     return n + 1;

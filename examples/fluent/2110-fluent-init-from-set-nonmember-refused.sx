@@ -5,7 +5,7 @@
 // The narrowing belongs to the formation write alone. The same conversion written
 // anywhere else — at top level, or inside a formation's own source expression —
 // is the ordinary refusal, and so is the element of a tuple the write decomposes.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Named :: protocol vtable { name :: (self: *Self) -> string; }
 

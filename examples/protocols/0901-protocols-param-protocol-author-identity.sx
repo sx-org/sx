@@ -2,9 +2,9 @@
 // DECLARATION's identity, not by its spelling. Two modules author `P($T)` with
 // different method sets; each module's own erasure and each qualified `P(i64)`
 // head must reach its own instance type, impl set, thunks and vtable.
-#import "modules/std.sx";
-a :: #import "0901-protocols-param-protocol-author-identity/a.sx";
-b :: #import "0901-protocols-param-protocol-author-identity/b.sx";
+@import "modules/std.sx";
+a :: @import "0901-protocols-param-protocol-author-identity/a.sx";
+b :: @import "0901-protocols-param-protocol-author-identity/b.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

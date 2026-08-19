@@ -2,7 +2,7 @@
 // statement form in its body — including a destructure decl — and yields its
 // trailing expression as the value.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 pair :: () -> Tuple(i32, i32) { .{5, 7} }
 

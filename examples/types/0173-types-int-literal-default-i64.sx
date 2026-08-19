@@ -4,7 +4,7 @@
 // body's declarations), and a large literal initializer keeps its value.
 // Also covers destructure decls (`a, b := ...`), which share the same rule.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 f :: () -> i32 {
     x := 0;

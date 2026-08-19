@@ -2,7 +2,7 @@
 // constant, mirroring `.len` on arrays. A backend `.length` emission with no
 // vector arm falls through to a silent LLVMGetUndef, so `v.len` compiles and
 // returns garbage.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     v : @Vector(3, f32) = .[1.0, 3.0, 2.0];

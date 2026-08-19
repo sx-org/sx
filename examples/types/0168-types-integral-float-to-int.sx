@@ -17,7 +17,7 @@
 // Companion to the negative example 1146 (non-integral floats error). The rule
 // folds an integral float (literal, int-const expr, or float-const leaf) and
 // rejects a non-integral one.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 M :: 2;          // int module const, for the INT-const-EXPRESSION cases
 F : f64 : 2.5;   // float module const, for the FLOAT-const-LEAF cases

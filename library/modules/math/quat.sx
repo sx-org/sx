@@ -1,5 +1,5 @@
-#import "modules/math/vector3.sx";
-#import "modules/math/matrix44.sx";
+@import "modules/math/vector3.sx";
+@import "modules/math/matrix44.sx";
 
 Quat :: struct {
     x, y, z, w: f32;

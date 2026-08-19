@@ -5,8 +5,8 @@
 // ordinary unevaluable-condition path. The same holds one level out: with the
 // named module's scope final, `cfg.ABSENT` in ordinary code is the ordinary
 // namespace diagnostic, at the lookup site.
-#import "modules/std.sx";
-cfg :: #import "./1977-diagnostics-expansion-namespace-final-miss-cfg.sx";
+@import "modules/std.sx";
+cfg :: @import "./1977-diagnostics-expansion-namespace-final-miss-cfg.sx";
 
 inline if ABSENT { A :: 1; } else { A :: 0; }
 

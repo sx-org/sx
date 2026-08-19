@@ -2,7 +2,7 @@
 // pointer, not only a `for *m in xs` loop capture (see 215) — here a `*Move`
 // parameter forwarded into a by-value parameter.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Move :: struct { flag: i64; }
 

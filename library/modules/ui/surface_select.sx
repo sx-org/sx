@@ -5,11 +5,11 @@
 // References stay per-machine either way. Returns null where no display/GPU
 // exists — the caller's graceful skip, which is what keeps the wider test
 // suite host-agnostic.
-#import "modules/std.sx";
-#import "modules/ui/font.sx";
-#import "modules/ui/surface.sx";
-#import "modules/gpu/offscreen_gl.sx";
-#import "modules/gpu/offscreen_metal.sx";
+@import "modules/std.sx";
+@import "modules/ui/font.sx";
+@import "modules/ui/surface.sx";
+@import "modules/gpu/offscreen_gl.sx";
+@import "modules/gpu/offscreen_metal.sx";
 
 open_pixel_surface :: (w: i32, h: i32) -> ?PixelSurface {
     inline if OS == .macos {

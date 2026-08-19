@@ -1,7 +1,7 @@
 // Comparisons meet at a comparison type: a pointer vs an integer uses the
 // integer as an address-sized bit pattern (`region == -1`, `p != 0`), and
 // two pointers of any pointees compare by address.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     x := 1;

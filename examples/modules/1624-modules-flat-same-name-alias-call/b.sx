@@ -1,7 +1,7 @@
 // b.sx reaches its own `target` through a two-hop alias chain. Every use — a
 // call with the trailing default omitted, a function value, a capture, and a
 // generic consumer's argument — must terminate at b.sx's `target`.
-#import "consume.sx";
+@import "consume.sx";
 
 target :: (x: i64 = 20) -> i64 { return x + 100; }
 hop    :: target;

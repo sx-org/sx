@@ -21,8 +21,8 @@
 // per-arch asm + Apple mmap constants. Runs end-to-end on a matching host,
 // ir-only on a mismatch. Like 1809 (mmap), JIT `sx run` resolves the libc
 // extern calls fine — no AOT build needed.
-#import "modules/std.sx";
-sched :: #import "modules/std/sched.sx";
+@import "modules/std.sx";
+sched :: @import "modules/std/sched.sx";
 
 // Raw libc fd primitives. These MUST match the canonical signatures already
 // bound by std (socket.sx / core.sx), or the extern dedupe rejects a divergent

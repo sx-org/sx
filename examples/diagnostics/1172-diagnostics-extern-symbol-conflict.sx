@@ -6,9 +6,9 @@
 // one over the same fixed parameters are different ABIs, so binding both to one
 // symbol disagrees. Two variadic views that match share a registration the way
 // two fixed ones do.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-libc :: #library "c";
+libc :: @library "c";
 // std/process.sx already binds getenv as `-> *u8`; this view disagrees.
 getenv_opt :: (name: [:0]u8) -> ?[:0]u8 extern libc "getenv";
 

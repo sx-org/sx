@@ -2,7 +2,7 @@
 // when it is a registered contract AND this module is the one that owns it.
 // Both halves refuse here — an invented `@` name, and a lookalike standing in
 // for the canonical `@SourceSite` that `modules/std/core.sx` declares.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 @Site :: struct {
     file: string = "";

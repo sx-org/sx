@@ -6,7 +6,7 @@
 //
 // The positional struct-literal path coerces per element for an array target
 // too, so no bare `T`/`null` lands in a `{T,i1}` slot.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Pt :: struct { x: i64; y: i64; }
 

@@ -1,12 +1,12 @@
 // The destination-first ufcs: its first parameter takes the expression, not a
 // value, so a value receiver forms rather than evaluating.
-#import "modules/std.sx";
-#import "modules/std/list.sx";
+@import "modules/std.sx";
+@import "modules/std/list.sx";
 
 View :: @OpenSet(.{ max = 128 }) { render :: (self: *Self) -> string; }
 Label :: @OpenVariant(View) { text: string = ""; render :: (self: *Label) -> string => self.text; }
 
-#context_extend ui_out: *List(View) = null;
+@context_extend ui_out: *List(View) = null;
 
 publish :: ufcs (value: $I/@Init(View)) -> string {
     item: View = ---;

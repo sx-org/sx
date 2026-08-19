@@ -8,7 +8,7 @@
 //
 // The set therefore freezes in a fixpoint that accounts for the growth, and every
 // reader agrees afterwards: the function lowered first, the arm itself, and `main`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Set :: @OpenSet(.{ max = 256, align = 8 }) {
     measure :: (self: *Self) -> i64;

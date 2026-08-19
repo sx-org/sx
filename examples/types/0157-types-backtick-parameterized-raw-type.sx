@@ -7,7 +7,7 @@
 // raw type references).
 // The raw type atom is not a terminal `type_expr` —
 // it reaches the parameterized + wrapper continuations.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 `i2 :: struct($T: Type) {
     x: $T;

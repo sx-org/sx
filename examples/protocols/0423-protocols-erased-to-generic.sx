@@ -9,7 +9,7 @@
 // binds `T = Lerpable` (the erased fat-pointer type) and forwards the value
 // unchanged — no re-erase, no unwrap.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Lerpable :: protocol vtable {
     lerp :: (self: Self, b: f32, t: f32) -> f32;

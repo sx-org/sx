@@ -9,9 +9,9 @@
 //   - malformed/unknown/truncated content coding and framing rejection;
 //   - public std.gzip is sufficient for a .tgs payload (no shell/dependency).
 
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
-socket :: #import "modules/std/socket.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
+socket :: @import "modules/std/socket.sx";
 ClientResponse :: http.ClientResponse;
 
 PORT_INLINE :: 19119;

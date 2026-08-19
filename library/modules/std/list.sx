@@ -1,12 +1,12 @@
 // The growable container of the prelude. Consumers never import this file
 // directly — std.sx re-exports `List`.
-#import "modules/std/core.sx";
-c :: #import "modules/std/c.sx";
+@import "modules/std/core.sx";
+c :: @import "modules/std/c.sx";
 
 // `items` is a `[]T` slice whose `.len` IS the live element count, so a `List`
 // is directly iterable: `for e in xs.items { ... }`. `cap` is the allocated
 // capacity (`>= items.len`); the buffer spans `cap` elements, the slice spans
-// the live `items.len`. The `len` `#get` accessor exposes the live count as
+// the live `items.len`. The `len` `@get` accessor exposes the live count as
 // `xs.len` (read), delegating to `items.len`; writes use `xs.items.len`.
 //
 // `grow_to` is the only path that allocates; every method that needs room
@@ -19,13 +19,13 @@ List :: struct ($T: Type) {
     cap: i64 = 0;
 
     // No-paren read accessor: `xs.len` → the live element count.
-    len :: (self: *List(T)) -> i64 #get => self.items.len;
+    len :: (self: *List(T)) -> i64 @get => self.items.len;
     // Write accessor: `xs.len = n` sets the live count (e.g. `xs.len = 0` to
-    // clear without freeing). Mirrors the `#get` above; the buffer / `cap` are
-    // untouched, so `n` outside `0 ..= cap` panics. A `#set` signature is
+    // clear without freeing). Mirrors the `@get` above; the buffer / `cap` are
+    // untouched, so `n` outside `0 ..= cap` panics. A `@set` signature is
     // `(self, v)` — there is no site parameter to name the assignment, so the
     // panic carries no location.
-    len :: (self: *List(T), v: i64) #set {
+    len :: (self: *List(T), v: i64) @set {
         if v < 0 or v > self.cap { @panic("List len out of range", @SourceSite{}); }
         self.items.len = v;
     }

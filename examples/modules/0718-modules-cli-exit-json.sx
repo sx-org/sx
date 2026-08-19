@@ -16,9 +16,9 @@
 // `exit_usage()`, so the process exits 64 (EX_USAGE). sx `print`/`out` are
 // unbuffered, so the stdout assertion lines still appear despite the `_exit`.
 
-#import "modules/std.sx";
-#import "modules/std/cli.sx";
-log :: #import "modules/std/log.sx";
+@import "modules/std.sx";
+@import "modules/std/cli.sx";
+log :: @import "modules/std/log.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

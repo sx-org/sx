@@ -6,8 +6,8 @@
 // warnings surface because diagnostics render on the success path too. The
 // mismatching-arity ERROR arm (no override) is
 // examples/ffi-objc/1344-ffi-objc-dsl-04-mismatch.sx.
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 NSObject :: @ObjcClass("NSObject") extern {
     // "description" takes no keyword, the call passes one argument.

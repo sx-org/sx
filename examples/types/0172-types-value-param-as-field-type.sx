@@ -9,7 +9,7 @@
 // binder's own rule: a value param named in a type position gets the tailored
 // hint. A value param in a VALUE position (a `[N]u8` array dimension, a
 // `@Vector` lane count) still works (see 0147 / 0201).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Bad :: struct($N: u32) {
     x: N;

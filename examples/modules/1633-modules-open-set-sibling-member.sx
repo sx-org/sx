@@ -6,8 +6,8 @@
 // reaches is a DECLARATION: the member joins that set, and asking whether it is a
 // member is asking about that declaration rather than comparing spellings — a
 // member writing `v.View` and a set declared `View` are the same question.
-#import "modules/std.sx";
-comp :: #import "1633-modules-open-set-sibling-member/pkg/components.sx";
+@import "modules/std.sx";
+comp :: @import "1633-modules-open-set-sibling-member/pkg/components.sx";
 
 main :: () -> i32 {
     // Formed and dispatched through the package's own entry point.

@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 // --- @run build configuration ---
 // build_options() returns a BuildOptions struct at compile time.

@@ -7,9 +7,9 @@
 // every shape) and real-recv paths so the ABI is verified beyond
 // "the runtime no-oped the call."
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 main :: () -> i32 {
     inline if OS == .macos {

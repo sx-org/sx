@@ -5,7 +5,7 @@
 //
 // Two dispatch models over one shared array of concrete conformers:
 //   vtable/own  — `protocol vtable`, value/own erasure.
-//   vtable/id   — `protocol vtable #identity`, borrowing erasure.
+//   vtable/id   — `protocol vtable @identity`, borrowing erasure.
 //
 // Two phases, measured separately:
 //   BUILD — fill an array of protocol values from the conformers. The
@@ -18,15 +18,15 @@
 //
 // NOT a corpus example: it runs for seconds.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 N       : i64 : 20000;
 WALKS   : i64 : 200;
 SAMPLES : i64 : 5;
 
 Vtab   :: protocol vtable { area :: (self: *Self) -> i64; }
-VtabId :: protocol vtable #identity { area :: (self: *Self) -> i64; }
+VtabId :: protocol vtable @identity { area :: (self: *Self) -> i64; }
 
 Sq  :: struct { s: i64; }
 Rc  :: struct { w: i64; h: i64; }

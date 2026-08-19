@@ -10,7 +10,7 @@
 //   - a bound that does not say what a `write` fills: `@Init` names one type
 //     argument, and any other spelling targets nothing.
 //
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Button :: struct { label: string = ""; }
 Label  :: struct { text: string = ""; }

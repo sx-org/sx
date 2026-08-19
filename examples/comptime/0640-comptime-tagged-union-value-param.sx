@@ -7,7 +7,7 @@
 //   * a payload read off the bound value (`s.rect`) resolves to the
 //     compile-time-known payload.
 // Distinct variant args monomorphize the inlined body per value.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Shape :: enum {
     circle: f64;

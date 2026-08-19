@@ -4,9 +4,9 @@
 // first-registration pick. (Each module's own use of its own `t` stays valid —
 // see 0834.)
 
-#import "modules/std.sx";
-#import "0833-modules-namespace-alias-carried-collision-ambiguous/a.sx";
-#import "0833-modules-namespace-alias-carried-collision-ambiguous/b.sx";
+@import "modules/std.sx";
+@import "0833-modules-namespace-alias-carried-collision-ambiguous/a.sx";
+@import "0833-modules-namespace-alias-carried-collision-ambiguous/b.sx";
 
 main :: () {
     print("{} {} {}\n", use_a(), use_b(), t.fx());

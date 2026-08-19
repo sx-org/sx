@@ -9,7 +9,7 @@
 //
 // The escape hatch stays open: `xx (5.0 / 2.0)` truncates and an INTEGRAL float
 // division (`6.0 / 2.0` → 3) folds — both on the POSITIVE side (0168).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // An UNTYPED float-EXPRESSION const carries a placeholder `i64` type, yet its
 // value is float — `ME / 2` is still float division and must reject (judged by

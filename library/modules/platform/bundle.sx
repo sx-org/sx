@@ -1,7 +1,7 @@
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/std/fs.sx";
-#import "modules/std/process.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/std/fs.sx";
+@import "modules/std/process.sx";
 
 // =====================================================================
 // platform.bundle — sx-side Apple `.app` bundler.
@@ -229,7 +229,7 @@ IOS_MIN_OS : string : "14.0";
 build_info_plist :: (opts: BuildOptions, exe_name: string, bundle_id: string) -> string {
     if opts.is_ios() {
         platform_key := if opts.is_ios_simulator() then "iPhoneSimulator" else "iPhoneOS";
-        return format(#string PLIST
+        return format(@string PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -282,7 +282,7 @@ PLIST, xml.escape(bundle_id), xml.escape(exe_name), xml.escape(exe_name), IOS_MI
 
     // macOS (and any non-iOS Apple target) — the minimal plist both
     // launchers will accept.
-    format(#string PLIST
+    format(@string PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -954,7 +954,7 @@ build_android_manifest :: (opts: BuildOptions, package: string, lib_name: string
         runtime_path := opts.jni_main_runtime_path_at(0);
         cls := slash_to_dot(runtime_path);
         cls_esc := xml.escape(cls);
-        return format(#string MANIFEST
+        return format(@string MANIFEST
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="{}"
@@ -978,7 +978,7 @@ build_android_manifest :: (opts: BuildOptions, package: string, lib_name: string
 MANIFEST, pkg_esc, lib_esc, cls_esc, lib_esc);
     }
     // NativeActivity fallback — the .so provides ANativeActivity_onCreate.
-    format(#string MANIFEST
+    format(@string MANIFEST
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="{}"

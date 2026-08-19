@@ -3,8 +3,8 @@
 // thread (a blocking client cannot interleave a same-thread tick loop); the
 // main thread dials in via http.request and asserts the round-trips. Covers
 // GET, POST-with-body echo, a 404, and a header lookup on the response.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 PORT :: 18794;
 

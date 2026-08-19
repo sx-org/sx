@@ -1,7 +1,7 @@
 // A `??` default whose type cannot match a 1-tuple optional payload is a
 // diagnostic at the default. There is no implicit scalar→1-tuple coercion; a
 // 1-tuple value is written `(5,)`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     o : ?Tuple(i32) = null;

@@ -1,7 +1,7 @@
 // A default-conv sx function passed as an `abi(.c)` fn-pointer is rejected with a
 // call-convention mismatch diagnostic: the C caller supplies no `__sx_ctx` slot.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 sx_handler :: (arg: *void) -> *void { return arg; }
 

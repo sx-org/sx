@@ -4,7 +4,7 @@
 // declared before or after the alias that consumes it. Module consts are
 // pre-registered before any alias resolves, and both the stateful and
 // stateless paths share one dimension resolver.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 NT : i64 : 8; // typed const used as a dimension
 

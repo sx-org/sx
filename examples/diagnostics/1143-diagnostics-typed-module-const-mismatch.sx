@@ -7,7 +7,7 @@
 // operand orders: arithmetic inference promotes int+float to the float result
 // (`Lowering.arithResultType`), so an i64 annotation never matches.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 M :: 2;
 

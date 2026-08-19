@@ -4,7 +4,7 @@
 // form, and the two views stay consistent (type-punning still works). A union
 // literal lowers like the `--- `+member-write form: each named member is
 // written into a union-sized slot.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Overlay :: union { f: f32; i: i32; }
 Vec2 :: union { data: [2]f32; struct { x, y: f32; }; }

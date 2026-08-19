@@ -2,11 +2,11 @@
 // of 0743 (bare named type) and 0742 (bare const). A type ALIAS is a `const_decl`
 // whose value resolved to a type, so it never registers a `findByName` named-type
 // entry; the source-aware leaf still treats it as a TYPE author. `dep.sx`
-// is imported only as `dep :: #import`, so its top-level `Secret :: i32` alias is
+// is imported only as `dep :: @import`, so its top-level `Secret :: i32` alias is
 // reachable ONLY as `dep.Secret`. A BARE `Secret` in a type position does NOT
 // resolve: bare-TYPE visibility joins over the FLAT import edges, and a namespaced
 // alias is not a flat edge.
-dep :: #import "0747-modules-namespaced-only-bare-alias-not-visible/dep.sx";
+dep :: @import "0747-modules-namespaced-only-bare-alias-not-visible/dep.sx";
 
 main :: () -> i32 {
     x : Secret = 7;

@@ -9,7 +9,7 @@
 //
 // The layout still follows the members declared, so the set is as big as its
 // largest member and no bigger than that — `max` reserves nothing.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 32, align = 8 }) {
     render :: (self: *Self) -> string;

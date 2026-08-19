@@ -11,11 +11,11 @@
 // out of an `any`. Two more modules write those names again and are reached under
 // namespaces instead, since how the PROGRAM imports a module is not what decides
 // which declaration a name inside it reaches.
-#import "modules/std.sx";
-#import "1636-modules-type-argument-reaches-its-own/alpha/panel.sx";
-#import "1636-modules-type-argument-reaches-its-own/beta/panel.sx";
-g :: #import "1636-modules-type-argument-reaches-its-own/gamma/panel.sx";
-d :: #import "1636-modules-type-argument-reaches-its-own/delta/panel.sx";
+@import "modules/std.sx";
+@import "1636-modules-type-argument-reaches-its-own/alpha/panel.sx";
+@import "1636-modules-type-argument-reaches-its-own/beta/panel.sx";
+g :: @import "1636-modules-type-argument-reaches-its-own/gamma/panel.sx";
+d :: @import "1636-modules-type-argument-reaches-its-own/delta/panel.sx";
 
 main :: () -> i32 {
     print("{} {}\n", alpha_soft(), beta_soft());

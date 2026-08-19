@@ -7,7 +7,7 @@
 // branch it selects. The unroll declaring conformers is moved ahead of the
 // driver too: it contributes nothing to the Context, so it does not hold
 // Context-ready open.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
 

@@ -8,7 +8,7 @@
 // pack, use `inline for i in 0..args.len { ... }`, which unrolls so each
 // `args[i]` is a comptime index.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 count_anys :: (..$args) -> i64 {
     total : i64 = 0;

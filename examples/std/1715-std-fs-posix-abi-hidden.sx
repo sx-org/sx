@@ -1,4 +1,4 @@
-fs :: #import "modules/std/fs.sx";
+fs :: @import "modules/std/fs.sx";
 
 main :: () -> i32 {
     fs.fs_posix_c.close(-1)

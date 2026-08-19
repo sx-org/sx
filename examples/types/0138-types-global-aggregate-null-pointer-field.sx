@@ -8,7 +8,7 @@
 // does) while still rejecting genuinely non-constant fields (see diagnostics
 // 1126).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct { p: *i64; marker: i64; }
 Inner :: struct { q: *i64; tag: i64; }

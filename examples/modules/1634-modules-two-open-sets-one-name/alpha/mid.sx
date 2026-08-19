@@ -1,6 +1,6 @@
 // A second route to the same package: this module reaches the set's module too,
 // so the program holds two paths to one declaration.
-#import "modules/std.sx";
-v :: #import "view.sx";
+@import "modules/std.sx";
+v :: @import "view.sx";
 
 size_via_mid :: () -> i64 => size_of(v.View);

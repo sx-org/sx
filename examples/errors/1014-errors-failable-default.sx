@@ -5,7 +5,7 @@
 // form (`try a ?? try b`) needs fallback-target routing; 1028 covers it.
 // Rejections: `examples/errors/1015-errors-failable-default-reject.sx`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad, Empty }
 

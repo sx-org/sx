@@ -9,12 +9,12 @@
 // registration trips: `duplicate impl 'Into' for source 'i64'`. The flat
 // decl list also dedups by node identity, so this builds and the impl runs
 // exactly once: 7 + 35 = 42.
-#import "modules/std.sx";
+@import "modules/std.sx";
 // `Wrapped` lives in the shared `common.sx`; bare-import visibility is
 // non-transitive, so naming it here means importing it here (not via mid_a/b).
-#import "0709-modules-diamond-param-impl/common.sx";
-#import "0709-modules-diamond-param-impl/mid_a.sx";
-#import "0709-modules-diamond-param-impl/mid_b.sx";
+@import "0709-modules-diamond-param-impl/common.sx";
+@import "0709-modules-diamond-param-impl/mid_a.sx";
+@import "0709-modules-diamond-param-impl/mid_b.sx";
 
 main :: () -> i32 {
     w : Wrapped = xx 7;

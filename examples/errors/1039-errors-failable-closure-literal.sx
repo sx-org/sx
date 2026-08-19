@@ -6,7 +6,7 @@
 // (A capturing closure into a bare `(T)->U` slot, and a failable closure into a
 // non-failable slot, are rejected — see the FFI-boundary rule.)
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Neg }
 

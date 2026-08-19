@@ -3,7 +3,7 @@
 // `impl Into(Block) for Closure() -> void` declarations are registered but
 // unused — resolution is what makes the impl reachable from `xx`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 MyTag :: struct { value: i64 = 0; }
 

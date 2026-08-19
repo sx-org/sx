@@ -4,7 +4,7 @@
 // are. Dot-call diagnostics elide the implicit receiver, while ordinary-call
 // diagnostics count it. Both spellings bind against the same declared parameter
 // list.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 emit :: ufcs (value: $I/@Init(i64)) {
     slot: i64 = ---;

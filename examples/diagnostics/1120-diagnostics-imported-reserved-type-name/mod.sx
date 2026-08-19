@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct { total: i64 = 0; count: i64 = 0; }
 

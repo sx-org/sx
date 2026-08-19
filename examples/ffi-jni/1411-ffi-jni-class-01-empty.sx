@@ -1,7 +1,7 @@
 // The type-introducer `Foo :: @JniClass("java/path/Foo") extern {}` parses;
 // an empty body is an opaque forward declaration. Parse-only.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Foo :: @JniClass("java/path/Foo") extern {}
 

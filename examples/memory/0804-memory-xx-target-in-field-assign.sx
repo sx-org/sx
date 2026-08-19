@@ -1,7 +1,7 @@
 // A field assignment's dest is the field type, not the enclosing function's
 // return type. Covers if-then-else RHS and binary-op RHS variants.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Foo :: struct {
     pixel_w: i32;

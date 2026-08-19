@@ -4,7 +4,7 @@
 // iteration, so `xs[i]` over a heterogeneous pack substitutes the concrete
 // per-position element (this is what drives pack iteration).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol {
     show :: (self: *Self) -> string;

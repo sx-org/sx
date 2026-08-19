@@ -3,15 +3,15 @@
 // desktops (macOS goes through gpu/offscreen_metal.sx — windowless).
 // Readback flips to top-down RGBA so nothing above this module ever
 // learns GL's origin.
-#import "modules/std.sx";
-#import "modules/ffi/sdl3.sx";
-#import "modules/ffi/opengl.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/render.sx";
-#import "modules/ui/glyph_cache.sx";
-#import "modules/ui/font.sx";
-#import "modules/ui/renderer.sx";
-#import "modules/ui/surface.sx";
+@import "modules/std.sx";
+@import "modules/ffi/sdl3.sx";
+@import "modules/ffi/opengl.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
+@import "modules/ui/glyph_cache.sx";
+@import "modules/ui/font.sx";
+@import "modules/ui/renderer.sx";
+@import "modules/ui/surface.sx";
 
 GlOffscreen :: struct {
     window: *void = null;

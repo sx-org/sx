@@ -8,8 +8,8 @@
 // Asserts: 1.1 without Host → 400; 1.1 with duplicate Host → 400; a normal
 // 1.1 request with one Host → 200; a Host-less 1.0 request → 200; GPA
 // net-zero after close.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 PORT :: 18998;
 

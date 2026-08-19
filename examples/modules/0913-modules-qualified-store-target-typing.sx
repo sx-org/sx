@@ -2,10 +2,10 @@
 // deeply nested authors reuse all type/global names with distinct nominal
 // layouts and enum ordinals.
 
-direct :: #import "0913-modules-qualified-store-target-typing/engine_a.sx";
-deep :: #import "0913-modules-qualified-store-target-typing/deep.sx";
-api :: #import "0913-modules-qualified-store-target-typing/engine_a.sx";
-#import "0913-modules-qualified-store-target-typing/hidden_bridge.sx";
+direct :: @import "0913-modules-qualified-store-target-typing/engine_a.sx";
+deep :: @import "0913-modules-qualified-store-target-typing/deep.sx";
+api :: @import "0913-modules-qualified-store-target-typing/engine_a.sx";
+@import "0913-modules-qualified-store-target-typing/hidden_bridge.sx";
 
 main :: () -> i32 {
     direct.OPTION = null;

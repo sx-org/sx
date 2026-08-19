@@ -1,7 +1,7 @@
 // Owning protocol erase funds from `context.allocator`. `dog.(Speaker)` is
 // legal; `dog.(Speaker, alloc)` names another fund.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Speaker :: protocol vtable {
     speak :: (self: *Self) -> i64;

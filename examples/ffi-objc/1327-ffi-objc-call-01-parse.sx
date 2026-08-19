@@ -1,7 +1,7 @@
 // The `@ObjcCall` shape `@ObjcCall(ReturnT, receiver, "selector:", args...)`
 // parses — return type in the first parens, then a normal call. Parse-only.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     // `@ObjcCall(void)` with a null receiver — never executed; the

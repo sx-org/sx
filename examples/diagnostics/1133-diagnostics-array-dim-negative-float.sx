@@ -1,7 +1,7 @@
 // A NEGATIVE integral float (`-2.0`) as an array dimension is a hard error: the
 // integral-float rule folds it to `-2` and the shared u32 dim gate rejects a
 // below-minimum dimension.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     a : [-2.0]i64 = ---;

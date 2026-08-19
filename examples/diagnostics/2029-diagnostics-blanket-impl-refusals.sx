@@ -5,7 +5,7 @@
 // the head, so every binder must reach the other side: a protocol-argument
 // binder needs a carrier instantiation to bind it from, and a generic carrier
 // needs a binder among the protocol arguments to be reached through.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Series :: protocol(T: Type) constraint {
     count :: (self: *Self) -> i64;

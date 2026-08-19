@@ -8,7 +8,7 @@
 // failures clear the trace buffer; `onfail` does not fire for a failure that
 // never leaves its block. This run takes only absorbed paths.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { A, B };
 

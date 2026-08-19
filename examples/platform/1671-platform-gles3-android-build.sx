@@ -4,11 +4,11 @@
 //
 // Compile-only: the Android target cannot execute on the host.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/gpu/types.sx";
-#import "modules/gpu/api.sx";
-#import "modules/gpu/gles3.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/gpu/types.sx";
+@import "modules/gpu/api.sx";
+@import "modules/gpu/gles3.sx";
 
 Bundle :: @JniClass("android/os/Bundle") extern {}
 

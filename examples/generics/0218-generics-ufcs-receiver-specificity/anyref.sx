@@ -1,4 +1,4 @@
 // A fully-generic-receiver overload of `pick` (matches ANY pointer receiver),
 // returning a DIFFERENT type than the specific one.
-#import "0218-shared.sx";
+@import "0218-shared.sx";
 pick :: ufcs (x: *$T) -> string { return "generic"; }

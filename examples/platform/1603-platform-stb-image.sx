@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-stb :: #import "vendors/stb_image/stb_image.sx";
+@import "modules/std.sx";
+stb :: @import "vendors/stb_image/stb_image.sx";
 
 main :: () -> i32 {
     w: i32 = 0;

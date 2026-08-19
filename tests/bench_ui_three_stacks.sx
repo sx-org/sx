@@ -17,11 +17,11 @@
 //
 // NOT a corpus example: it runs for seconds.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-compose :: #import "tests/bench_ui_lane_compose.sx";
-emit    :: #import "tests/bench_ui_lane_emit.sx";
-fluent  :: #import "tests/bench_ui_lane_fluent.sx";
+compose :: @import "tests/bench_ui_lane_compose.sx";
+emit    :: @import "tests/bench_ui_lane_emit.sx";
+fluent  :: @import "tests/bench_ui_lane_fluent.sx";
 
 N       : i64 : 500;
 BUILDS  : i64 : 200;

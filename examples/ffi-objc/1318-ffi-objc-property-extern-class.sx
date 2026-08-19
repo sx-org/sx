@@ -14,9 +14,9 @@
 // synthesized getter/setter trampolines reading/writing the state
 // struct) are pinned by 1319.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 // Build a probe class on the fly: registers two IMPs (`tag` and
 // `setTag:`) that read/write an instance-bound i32 stored in a

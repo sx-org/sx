@@ -4,7 +4,7 @@
 // `return`, `defer` — and pins the four positions that end a statement without
 // one: a statement that IS a block, a declaration whose initializer is a block
 // form, the tail before a `}`, and the end of the file.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 TAU :: 6;
 seed : i64 = 7;

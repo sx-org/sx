@@ -5,9 +5,9 @@
 // RESOLVED author's (own-author wins), not the first-wins winner's: without
 // per-source function-value conversion (closure + func_ref), b.sx's
 // `pick`-as-value spellings both capture a.sx's winner (1).
-#import "modules/std.sx";
-#import "0731-modules-flat-same-name-closure/a.sx";
-#import "0731-modules-flat-same-name-closure/b.sx";
+@import "modules/std.sx";
+@import "0731-modules-flat-same-name-closure/a.sx";
+@import "0731-modules-flat-same-name-closure/b.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

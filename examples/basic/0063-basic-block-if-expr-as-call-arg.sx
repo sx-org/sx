@@ -2,7 +2,7 @@
 // selected branch value — as a call argument, and on the RHS of a `:=` var
 // decl or a `=` assignment — the same as the `then`-form. Every spelling below
 // yields the else branch.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 take :: (x: i64) { print("got {}\n", x); }
 

@@ -2,7 +2,7 @@
 // `name :: (self: *Self, args...) -> Ret;` — semicolon terminated, no body.
 // Parse-only.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // `Self` here refers to the enclosing `View` type — resolved at
 // 2.x sema, not at parse time.

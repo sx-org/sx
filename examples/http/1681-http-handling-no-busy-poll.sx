@@ -16,10 +16,10 @@
 //    IS served — read interest is re-added, so the bytes do not sit in
 //    the kernel until the keepalive deadline kills the conn.
 // 3. GPA leak gate: net-zero after close.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
-clib :: #library "c";
+clib :: @library "c";
 usleep :: (usec: i64) -> i32 extern clib;
 
 PORT :: 18992;

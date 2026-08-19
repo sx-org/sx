@@ -1,7 +1,7 @@
 // A qualified protocol alias must be canonicalized before declaration ABI
 // lowering, independent of source order. Consumers precede the nested alias,
 // its qualified base, and even the namespace declaration. Every spelling
-// preserves the same three-word #identity protocol layout.
+// preserves the same three-word @identity protocol layout.
 
 forward :: (item: Alias) -> i64 { item.bump() }
 roundtrip :: (item: Nested) -> Nested { item }
@@ -13,7 +13,7 @@ ViewHolder :: struct { item: *Alias; optional: ?*Nested; }
 Nested :: Alias;
 Alias :: foreign.P;
 
-foreign :: #import "0898-protocols-qualified-alias-abi/protocol.sx";
+foreign :: @import "0898-protocols-qualified-alias-abi/protocol.sx";
 
 Counter :: struct { n: i64; }
 

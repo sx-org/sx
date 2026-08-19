@@ -3,7 +3,7 @@
 // `.{ 1, 2 }` mints positional fields, `.{ x = 1 }` named ones; a mix
 // has no coherent shape. Name all elements or none.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i64 {
     m := .{ 1, y = 2 };        // error: mixed positional and named

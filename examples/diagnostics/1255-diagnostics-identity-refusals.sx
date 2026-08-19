@@ -1,4 +1,4 @@
-// `#identity` refusals: identity protocol values only ever borrow a
+// `@identity` refusals: identity protocol values only ever borrow a
 // NAMED object's storage —
 //   - erasing an RVALUE (literal, call result; xx or postfix) refuses
 //     with the bind-it-first fixit;
@@ -6,10 +6,10 @@
 //     (there is no owned allocation);
 //   - the std `Allocator` is adopted, so an rvalue erasure to it refuses
 //     the same way.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
-IdP :: protocol vtable #identity {
+IdP :: protocol vtable @identity {
     ping :: (self: *Self) -> i64;
 }
 W :: struct { v: i64; }

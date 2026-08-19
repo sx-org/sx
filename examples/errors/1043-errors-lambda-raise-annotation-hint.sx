@@ -5,7 +5,7 @@
 // function" error — failability is never inferred for a lambda, it must be
 // declared, so a raising lambda with no `!` is a hard error pointing at the fix.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Neg }
 

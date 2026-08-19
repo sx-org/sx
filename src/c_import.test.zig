@@ -131,7 +131,7 @@ fn testIo() std.Io {
     return g_test_threaded.?.io();
 }
 
-/// Parse `header` as the one `#include` of a `#import c` unit and return the
+/// Parse `header` as the one `@include` of an `@import c` unit and return the
 /// synthesized extern decls.
 fn importHeader(
     alloc: std.mem.Allocator,

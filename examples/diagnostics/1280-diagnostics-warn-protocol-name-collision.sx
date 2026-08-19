@@ -4,7 +4,7 @@
 // compile. This one carries no span, so it renders as a bare
 // header line with no source excerpt.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Boxed :: protocol(value: Type) {
     value :: (self: *Self) -> i64;

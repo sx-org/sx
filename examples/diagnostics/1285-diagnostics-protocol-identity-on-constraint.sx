@@ -1,8 +1,8 @@
-// `#identity` names an ownership class for runtime values. A constraint
+// `@identity` names an ownership class for runtime values. A constraint
 // protocol has none, so the attribute is refused at the declaration.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-Ord :: protocol #identity {
+Ord :: protocol @identity {
     less :: (self: *Self, other: Self) -> bool;
 }
 

@@ -6,7 +6,7 @@
 // `@Vector` builtin path) and never reach `selectNominalLeaf`. Parameterized
 // protocols share the same `resolveParameterizedWithBindings` pre-leaf path
 // (covered by 0204/0206). This example pins that all three resolve.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct($T: Type) {
     value: T;

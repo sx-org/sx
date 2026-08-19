@@ -2,7 +2,7 @@
 // file. The public field of the same const still folds, so the refusal is the
 // visibility rule and not a lost const-fold.
 
-#import "2204-diagnostics-private-field-const-dim/c.sx";
+@import "2204-diagnostics-private-field-const-dim/c.sx";
 
 main :: () -> i32 {
     bad : [C.cap]i64 = ---;

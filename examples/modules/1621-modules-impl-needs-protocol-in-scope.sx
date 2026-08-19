@@ -3,8 +3,8 @@
 // `Into` is not nameable in ITS scope and the impl cannot register.
 // The build rejects the dead impl at its declaration rather than letting
 // `xx "abc"` here fall through to a reinterpret spill.
-#import "modules/std.sx";
-#import "1621-modules-impl-needs-protocol-in-scope/dead_impl.sx";
+@import "modules/std.sx";
+@import "1621-modules-impl-needs-protocol-in-scope/dead_impl.sx";
 
 main :: () {
     b : *DeadBox = xx "abc";

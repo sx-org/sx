@@ -4,8 +4,8 @@
 // and trunc/zext's the value at the boundary. (rmw/cmpxchg on a bool is
 // rejected at the sx level — integer-only — so only load/store apply.)
 // `Future.canceled` reaches this shape through the async layer.
-#import "modules/std.sx";
-#import "modules/std/atomic.sx";
+@import "modules/std.sx";
+@import "modules/std/atomic.sx";
 
 main :: () {
     a := Atomic(bool).init(false);

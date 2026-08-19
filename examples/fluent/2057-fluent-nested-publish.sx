@@ -7,8 +7,8 @@
 // Three shapes carry the rule's edges: a void trailing expression has no child
 // to publish, a value-POSITION block's tail is its value rather than a
 // statement, and the body's own top level publishes like any nested statement.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
 
 Drawable :: protocol vtable {
     draw :: (self: *Self) -> string;

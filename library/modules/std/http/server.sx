@@ -5,19 +5,19 @@
 // seam (tls.sx) and reuses the shared types (types.sx), both flat-imported
 // so the server bodies read unqualified. Facade re-exports Server/Config/
 // Stats/EventKind under `http`.
-#import "modules/std/core.sx";         // out, size_of, Allocator, Context
-#import "modules/std/mem.sx";          // Arena
-clib   :: #import "modules/std/c.sx";  // namespace `clib` (not `c` — `c` is a local conn var throughout)
-socket :: #import "modules/std/socket.sx";
-thread :: #import "modules/std/thread.sx";
-event  :: #import "modules/std/event.sx";
-time   :: #import "modules/std/time.sx";
-#import "modules/std/http/types.sx";   // Request, Response, find_header, decode_chunked, reason_for, …
-#import "modules/std/http/tls.sx";     // TlsConn, TlsAcceptor, TlsStep
-#import "modules/std/http/fiber.sx";   // FiberRunner (fiber-handler seam)
-fs :: #import "modules/std/fs.sx";     // unlink for the AF_UNIX listener's socket file
-#import "modules/std/compress.sx";     // shared codec Error/Progress contract
-#import "modules/std/http/content_encoding.sx";
+@import "modules/std/core.sx";         // out, size_of, Allocator, Context
+@import "modules/std/mem.sx";          // Arena
+clib   :: @import "modules/std/c.sx";  // namespace `clib` (not `c` — `c` is a local conn var throughout)
+socket :: @import "modules/std/socket.sx";
+thread :: @import "modules/std/thread.sx";
+event  :: @import "modules/std/event.sx";
+time   :: @import "modules/std/time.sx";
+@import "modules/std/http/types.sx";   // Request, Response, find_header, decode_chunked, reason_for, …
+@import "modules/std/http/tls.sx";     // TlsConn, TlsAcceptor, TlsStep
+@import "modules/std/http/fiber.sx";   // FiberRunner (fiber-handler seam)
+fs :: @import "modules/std/fs.sx";     // unlink for the AF_UNIX listener's socket file
+@import "modules/std/compress.sx";     // shared codec Error/Progress contract
+@import "modules/std/http/content_encoding.sx";
 
 libc :: clib.libc;
 // run()'s backoff between consecutive loop failures (never on the

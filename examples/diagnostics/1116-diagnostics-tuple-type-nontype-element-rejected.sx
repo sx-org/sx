@@ -1,7 +1,7 @@
 // A tuple type lists only types; the non-type element `1` is rejected where it
 // stands, in the annotation that demands the type.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     bad : Tuple(i32, 1) = ---;

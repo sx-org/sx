@@ -1,7 +1,7 @@
-#import "modules/std.sx";
-#import "modules/ffi/sdl3.sx";
-#import "modules/ffi/opengl.sx";
-#import "modules/math";
+@import "modules/std.sx";
+@import "modules/ffi/sdl3.sx";
+@import "modules/ffi/opengl.sx";
+@import "modules/math";
 
 
 WIDTH  :f32: 800;
@@ -238,7 +238,7 @@ main :: () {
     SDL_Quit();
 }
 
-VERT_SHADER_SRC : string = #string GLSL
+VERT_SHADER_SRC : string = @string GLSL
 #version 330 core
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
@@ -253,7 +253,7 @@ void main() {
 }
 GLSL;
 
-FRAG_SHADER_SRC : string = #string GLSL
+FRAG_SHADER_SRC : string = @string GLSL
 #version 330 core
 in vec3 vNormal;
 in vec3 vPos;

@@ -5,7 +5,7 @@
 // nested-array global (recursive lvalue). The indexed lvalue base addresses
 // the global's storage.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g : [3]i64 = .[10, 20, 30];
 

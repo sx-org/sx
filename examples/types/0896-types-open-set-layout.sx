@@ -17,8 +17,8 @@
 // says. A member is checked at its OWN declaration, which is why a type that
 // cannot fit is never a member — and why importing a module with a larger member
 // can grow the set (an accepted, documented cost).
-#import "modules/std.sx";
-#import "modules/std/list.sx";
+@import "modules/std.sx";
+@import "modules/std/list.sx";
 
 View :: @OpenSet(.{ max = 256, align = 8 }) {
     render :: (self: *Self) -> string;

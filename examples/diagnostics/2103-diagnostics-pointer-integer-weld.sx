@@ -2,7 +2,7 @@
 // the destination type. The rule applies to calls, declarations, assignments,
 // and returns, including optional pointer values.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Obj :: struct { v: i64 = 1; flush: i64 = 2; }
 

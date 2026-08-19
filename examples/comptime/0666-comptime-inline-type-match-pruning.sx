@@ -12,8 +12,8 @@
 // SELECTED (the dead-arm case is exactly the OS-match discipline).
 // Value-producing arms use explicit `return` (inline branches lower in
 // statement position, like `inline if OS`).
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }

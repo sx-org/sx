@@ -8,9 +8,9 @@
 // statement — it runs, in source order, and the sink never sees it. That is the
 // same rule a protocol `P` uses for a value that already is a `P`; nothing widens
 // or converts on the way in.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
-#import "modules/std/list.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
+@import "modules/std/list.sx";
 
 Total :: struct {
     n: i32 = 0;

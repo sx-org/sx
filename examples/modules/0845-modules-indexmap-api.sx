@@ -8,8 +8,8 @@
 // "big map", "clone", "pop()", "reIndex" (adapted — no direct array writes).
 // Skipped Zig-only: Adapted/AutoContext variants, allocation-failure injection,
 // sort, store_hash, 0-sized keys.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

@@ -1,7 +1,7 @@
-std :: #import "modules/std.sx";
+std :: @import "modules/std.sx";
 
 //flat
-#import "modules/math";
+@import "modules/math";
 
 main :: () -> i32 {
     {

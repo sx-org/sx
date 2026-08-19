@@ -10,7 +10,7 @@
 // .exit + .ir + .stderr from `sx ir --target`); runtime behavior validates on a
 // linux runner (see the module header's VALIDATION NOTE). The `inline if ARCH`
 // in epoll.sx is resolved by the compiler's flatten pre-pass, so no build.sx.
-ep :: #import "modules/std/net/epoll.sx";
+ep :: @import "modules/std/net/epoll.sx";
 
 main :: () -> i32 {
     epfd := ep.ep_create();

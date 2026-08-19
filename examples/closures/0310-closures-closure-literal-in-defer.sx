@@ -4,7 +4,7 @@
 // entry: it does not inherit the enclosing function's `func_defer_base`, so
 // its own `return` drains only its own defers.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 run :: () {
     defer {

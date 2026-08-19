@@ -7,7 +7,7 @@
 // The Context is VM-LOCAL: the instance the comptime evaluation mutates is the
 // evaluation's own, so its bookkeeping is discarded when the evaluation ends
 // and the runtime call starts from the declared state again.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Counting :: struct { calls: i64; parent: Allocator; }
 impl Allocator for Counting {

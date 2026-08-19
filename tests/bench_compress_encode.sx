@@ -4,7 +4,7 @@
 // not perturb the other measurement. The shell harness compares every output
 // byte with the pinned miniz C -O3 oracle.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 BENCH_WARMUPS : i64 = 3;
 BENCH_SAMPLES : i64 = 15;

@@ -4,7 +4,7 @@
 // - return type: `-> $args[0]`
 // - local var annotation: `x : $args[1] = ...`
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 swap_take :: (..$args) -> $args[0] {
     second : $args[1] = args[1];

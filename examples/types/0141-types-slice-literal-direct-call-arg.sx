@@ -2,7 +2,7 @@
 // identically to binding it to a typed local first: the literal is
 // materialized into addressable storage and a {ptr,len} slice header is built
 // over it, so the callee reads the element CONTENTS correctly.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 count_nope :: (xs: []string) -> i64 {
     n := 0;

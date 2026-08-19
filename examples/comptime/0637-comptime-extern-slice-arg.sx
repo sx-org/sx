@@ -2,7 +2,7 @@
 // parameter is a `[:0]u8` (a `{ptr,len}` fat pointer), not a bare `cstring`. The VM
 // marshals the fat pointer to a NUL-terminated `char*` before the call.
 // (A bare `cstring` arg passes as a word.)
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 strlen :: (s: [:0]u8) -> usize extern libc;
 

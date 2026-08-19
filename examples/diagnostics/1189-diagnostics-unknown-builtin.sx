@@ -3,7 +3,7 @@
 // monomorphization path (monomorphizeFunction's builtin-body branch) reports the
 // unresolved builtin name rather than falling through to `ensureTerminator`'s
 // `constInt(0)`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // `mystery` is not a recognized intrinsic.
 mystery :: ($T: Type, x: T) -> T intrinsic;

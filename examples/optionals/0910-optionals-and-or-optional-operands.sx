@@ -2,7 +2,7 @@
 // has_value flag (presence-as-truth), exactly like `if <optional>`.
 //
 // Truth table below: present `?i64` is "true", absent (null) is "false".
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 yn :: (b: bool) -> string => if b then "T" else "F";
 

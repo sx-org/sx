@@ -3,7 +3,7 @@
 // suggestion. All four categories below fire (the functions are monomorphized
 // when called from main).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol { show :: (self: *Self) -> string; }
 A :: struct {}

@@ -7,8 +7,8 @@
 // the aliased module (diagnostic-free), not only a BARE-identifier enum object
 // (`E.on`), and infers a payloadless variant to that enum — including a
 // payloadless variant of a module-qualified tagged union (`lib.Event.none`).
-#import "modules/std.sx";
-lib :: #import "0847-modules-qualified-enum-variant-generic-arg/lib.sx";
+@import "modules/std.sx";
+lib :: @import "0847-modules-qualified-enum-variant-generic-arg/lib.sx";
 
 id :: (v: $T) -> T { v }
 eq :: (a: $T, b: T) -> bool { a == b }

@@ -4,7 +4,7 @@
 // success and error paths couldn't merge to one value). Diverge instead
 // (`return` / `raise`) or yield a value. Positives: `examples/229-value-failable-consume.sx`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad }
 

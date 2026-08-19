@@ -9,8 +9,8 @@
 // inline type match: a protocol arm (ctx via `x.(@Protocol)` — one body
 // for both layouts, `vtable` and `inline`) and a slice arm; anything else
 // is a compile error.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }
@@ -55,7 +55,7 @@ main :: () {
 
     // An Allocator VALUE (a borrow of a named allocator) works as the
     // explicit-allocator argument. The freed value itself can never be an
-    // Allocator — `Allocator` is `#identity` (borrow-only: rvalue erasure
+    // Allocator — `Allocator` is `@identity` (borrow-only: rvalue erasure
     // and `free` of the value refuse at compile time; diagnostics/1255).
     av : Allocator = ta;
     s3 : Sizable = ---;

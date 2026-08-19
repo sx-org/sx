@@ -10,7 +10,7 @@
 // The routine's switch is written at the freeze, so it covers that member too: the
 // arms are materialized inside the same fixpoint, and lowering one is itself a
 // driver that can admit the next.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Set :: @OpenSet(.{ max = 256, align = 8 }) {
     tell :: (self: *Self) -> i64;

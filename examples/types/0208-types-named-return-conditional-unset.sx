@@ -4,7 +4,7 @@
 // uninitialized value at run time. Here `s` is assigned only inside `if c`, so
 // the `c == false` path would leave it unset. (Assign it on every path — e.g.
 // add an `else`, give it a default, or use an explicit `return`.)
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 pick :: (c: bool) -> (s: i64, y: i64) {
     if c { s = 10; }   // `s` unset on the else path

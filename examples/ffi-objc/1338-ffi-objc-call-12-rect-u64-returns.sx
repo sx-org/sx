@@ -4,9 +4,9 @@
 // LLVM level (the `hash` return from ffi-objc-call-04); this pins both
 // shapes directly rather than transitively.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 CGRect :: struct {
     x: f64;

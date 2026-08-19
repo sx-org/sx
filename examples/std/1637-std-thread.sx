@@ -2,7 +2,7 @@
 // the Pool runs every submitted task exactly once across its workers,
 // a full backlog applies backpressure (submit returns false), and
 // shutdown joins cleanly with queued work finished.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Shared :: struct {
     mu: thread.Mutex = .{};

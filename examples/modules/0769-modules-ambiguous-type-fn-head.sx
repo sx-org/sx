@@ -9,9 +9,9 @@
 // `headFnLeak` runs bare-call ambiguity selection rather than an `isNameVisible`
 // check, which both authors satisfy.
 
-#import "modules/std.sx";
-#import "0769-modules-ambiguous-type-fn-head/a.sx";
-#import "0769-modules-ambiguous-type-fn-head/b.sx";
+@import "modules/std.sx";
+@import "0769-modules-ambiguous-type-fn-head/a.sx";
+@import "0769-modules-ambiguous-type-fn-head/b.sx";
 
 main :: () -> i32 {
     print("size={}\n", size_of(Make(i64)));

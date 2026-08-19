@@ -76,7 +76,7 @@ It lives in a separately-linked C file (not an emitted `thread_local` IR
 global) for the same reason as the JNI env slot: LLVM's ORC JIT doesn't
 initialize TLS for objects added via `AddObjectFile`. The compiler links
 the `.c` so the JIT resolves `sx_trace_*` via `dlsym`; AOT targets pick it
-up as an auto-injected `#source` (gated on `Lowering.needs_trace_runtime`).
+up as an auto-injected `@source` (gated on `Lowering.needs_trace_runtime`).
 
 The buffer neither knows nor cares what a frame *means* — it just stores
 `u64`s. The producer and the formatter agree on the interpretation per
@@ -303,7 +303,7 @@ traces and DWARF can never disagree:
 
 **Buffer (run time)** — `sx_trace.c` stores the `u64`s. Linked into the
 compiler so the JIT resolves `sx_trace_*` via `dlsym`; auto-injected as a
-`#source` for AOT when `needs_trace_runtime` is set.
+`@source` for AOT when `needs_trace_runtime` is set.
 
 **Formatter (run time)** — `trace.sx` `to_string()` loops `sx_trace_len()` / `sx_trace_frame_at(i)` and resolves each `u64` through
 a **read-side context-split primitive** (the mirror of the `.trace_frame` op):

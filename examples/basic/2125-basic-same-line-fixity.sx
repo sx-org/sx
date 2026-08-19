@@ -4,7 +4,7 @@
 // each glyph mean the same thing. A prefix reading needs a slot with no left
 // operand — the right-hand side of an infix operator is such a slot, which is
 // what `a - -b` and `a- -b` write.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     a := 10;

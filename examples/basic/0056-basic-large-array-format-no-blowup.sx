@@ -8,7 +8,7 @@
 // the whole [65536]u8 by value: output is identical (`[a, b, c]`), and a
 // large unrelated array type costs nothing.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 f :: () {
     buf : [65536]u8 = ---;

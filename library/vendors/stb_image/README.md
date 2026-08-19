@@ -9,7 +9,7 @@
   + `c/stb_image_write_impl.c` (each impl .c defines the
   `*_IMPLEMENTATION` macro and includes its header)
 
-`#import "vendors/stb_image/stb_image.sx"` resolves through the stdlib
+`@import "vendors/stb_image/stb_image.sx"` resolves through the stdlib
 search paths; the decls (`stbi_load`, `stbi_load_from_memory`,
 `stbi_image_free`, `stbi_write_png`, …) are synthesized from the
 headers, and the implementation compiles once per machine through sx's

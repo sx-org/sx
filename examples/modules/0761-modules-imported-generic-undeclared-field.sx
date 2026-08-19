@@ -4,8 +4,8 @@
 // template's fields resolve in the TEMPLATE's own source context, not the
 // main-file instantiation context, so the undeclared name surfaces instead of
 // being trusted as a main-file decl.
-#import "modules/std.sx";
-#import "0761-modules-imported-generic-undeclared-field/lib.sx";
+@import "modules/std.sx";
+@import "0761-modules-imported-generic-undeclared-field/lib.sx";
 
 main :: () -> i32 {
     b : Bad(i32) = .{ x = 1, y = 2 };

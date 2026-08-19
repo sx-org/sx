@@ -12,10 +12,10 @@
 // dropped and the weak slot auto-niled. Comparing the read result to
 // null is what makes the auto-nil observable.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "modules/ffi/objc.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ffi/objc.sx";
+@import "modules/build.sx";
 
 SxWeakTarget :: @ObjcClass("SxWeakTarget", extends = NSObject) {
     tag: i32;

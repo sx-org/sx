@@ -2,8 +2,8 @@
 // The ordering is a comptime `$o: Ordering`
 // param (explicit, Rust-style): a.load(.acquire) emits `load atomic … acquire`.
 // An invalid combination (a.load(.release)) is a compile error (see 1131).
-#import "modules/std.sx";
-#import "modules/std/atomic.sx";
+@import "modules/std.sx";
+@import "modules/std/atomic.sx";
 
 main :: () {
     a := Atomic(i64).init(7);

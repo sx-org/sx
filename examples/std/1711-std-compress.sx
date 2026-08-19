@@ -1,7 +1,7 @@
 // Idiomatic std.compress + raw DEFLATE/zlib/gzip facade coverage.
 // The fixtures are byte-for-byte outputs from pinned miniz 3.1.2.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 PLAIN :: "fixed fixed fixed fixed fixed fixed!";
 

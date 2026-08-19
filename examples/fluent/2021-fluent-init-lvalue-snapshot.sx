@@ -2,7 +2,7 @@
 //
 // `store(a)` writes a value copy of `a` into the destination. `a` stays valid
 // and independent afterwards: mutating either side leaves the other alone.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Button :: struct {
     label: string = "";

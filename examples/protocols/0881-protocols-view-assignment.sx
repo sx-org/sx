@@ -3,8 +3,8 @@
 // — local or module-global — materializes the same {ctx, __type_id,
 // vtable} view the decl-position form builds, all three words. The view
 // aliases the pointee; dispatch and mutation work through every shape.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 P :: protocol vtable {
     n :: (self: *Self) -> i32;

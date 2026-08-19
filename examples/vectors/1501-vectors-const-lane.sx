@@ -7,7 +7,7 @@
 // Both fold through the single shared const-int evaluator
 // (`program_index.evalConstIntExpr`) — the same one the array-dimension path
 // uses — so a named-const / const-expr lane is identical to a literal lane.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 N :: 3;
 M :: 3;

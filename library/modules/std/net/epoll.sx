@@ -43,13 +43,13 @@
 // correctness (syscall behavior, the kernel-filled event array, EPOLLRDHUP
 // semantics) needs a linux runner.
 //
-// No `#import "modules/build.sx"` despite the `inline if ARCH` below: a
+// No `@import "modules/build.sx"` despite the `inline if ARCH` below: a
 // top-level `inline if OS/ARCH/POINTER_SIZE` conditional is resolved by the
 // compiler's flatten pre-pass (imports.zig — name-matched against the target),
 // NOT by reading build.sx's `ARCH` global as a value. Skipping the import keeps
 // this module's IR self-contained (libc only) — no std/compiler/bundle baggage.
-c     :: #import "modules/std/c.sx";
-posix :: #import "modules/std/posix.sx";
+c     :: @import "modules/std/c.sx";
+posix :: @import "modules/std/posix.sx";
 libc  :: c.libc;   // epoll_* are module-specific — bind through the shared handle
 
 // struct epoll_event, arch-exact (see the header). Both variants expose the

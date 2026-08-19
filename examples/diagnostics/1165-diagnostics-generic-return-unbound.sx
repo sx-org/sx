@@ -4,7 +4,7 @@
 // top-level fn, a struct-body method, and a non-parameterised impl method — even
 // when the fn is never called.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 make :: () -> $T { 0 }
 

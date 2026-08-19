@@ -4,7 +4,7 @@
 // an AST-substituted call arg, no storage); (3) a trailing pack shorter than
 // the driving iterable; (4) a non-pack, non-range iterable.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol { show :: (self: *Self) -> string; }
 IntBox :: struct { v: i64; }

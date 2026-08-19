@@ -6,13 +6,13 @@
 // program, so the sweep counts it the same way — a contribution two modules
 // away is still a contribution, and the negative below waits for it exactly as
 // it waits for one written in the branch itself.
-#import "modules/std.sx";
-#import "./1996-protocols-expansion-branch-import-kinds.sx";
+@import "modules/std.sx";
+@import "./1996-protocols-expansion-branch-import-kinds.sx";
 
 inline if has_impl(Tag, Cell) { ADMITTED :: 1; } else { ADMITTED :: 0; }
 
 inline if POINTER_SIZE == 8 {
-    #import "./1996-protocols-expansion-branch-import-mid.sx";
+    @import "./1996-protocols-expansion-branch-import-mid.sx";
 } else {
     NARROW :: 1;
 }

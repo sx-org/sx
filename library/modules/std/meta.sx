@@ -4,7 +4,7 @@
 //
 // This is a SEPARATE on-demand module rather than part of the prelude: its data
 // types would otherwise intern into every module's type table and shift every
-// `.ir` snapshot. Import it explicitly:  #import "modules/std/meta.sx";
+// `.ir` snapshot. Import it explicitly:  @import "modules/std/meta.sx";
 //
 // `declare` / `define` are ordinary sx (over the `intrinsic` primitives
 // `raw_declare_type` / `raw_register_type`); `type_info` / `struct_field_type` are comptime-only
@@ -14,9 +14,9 @@
 // it actually needs (`List` + the core builtins, incl. `struct_field_type`), NOT the
 // whole `std.sx` facade. Importing the facade would drag `map`/`fmt`/etc. into
 // every meta importer's type table for no reason.
-#import "modules/std/core.sx";
-#import "modules/std/list.sx";
-c :: #import "modules/std/c.sx";
+@import "modules/std/core.sx";
+@import "modules/std/list.sx";
+c :: @import "modules/std/c.sx";
 
 // One variant of a constructed enum: a name plus an optional payload type.
 // `payload = void` means a tagless variant (e.g. `closed`).

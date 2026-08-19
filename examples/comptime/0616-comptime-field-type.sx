@@ -4,8 +4,8 @@
 // Reflect a struct's fields by name (`struct_field_name`) AND by type (`struct_field_type`),
 // and a tagged-union's variant payloads. It folds at lower time, so it composes
 // inside `type_eq` / `type_name` / any type-arg slot.
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 Point :: struct { x: i64; y: f64; on: bool; }
 

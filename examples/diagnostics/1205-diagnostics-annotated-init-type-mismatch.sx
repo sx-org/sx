@@ -6,7 +6,7 @@
 // The explicit `xx` / `.(T)` escape hatch is unaffected: an explicit
 // reinterpretation (pointer↔int, etc.) still passes through.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i64 {
     x : i32 = "hi";        // error: cannot initialize 'x' (string ↛ i32)

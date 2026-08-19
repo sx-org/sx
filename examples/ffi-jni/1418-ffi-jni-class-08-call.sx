@@ -3,7 +3,7 @@
 // descriptor auto-derived from the sx signature. `push .{ jni = env }`
 // installs the handle on `context.jni` for DSL calls.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Activity :: @JniClass("android/app/Activity") extern {
     getWindow :: (self: *Self) -> *void;

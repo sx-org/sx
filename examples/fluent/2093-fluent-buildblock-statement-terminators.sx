@@ -3,9 +3,9 @@
 // — except the last, which the body's `}` ends. An argument list is closed by
 // its own `)`, so the arity of a published expression decides nothing about its
 // terminator.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
-#import "modules/std/list.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
+@import "modules/std/list.sx";
 
 View :: @OpenSet(.{ max = 128 }) {
     weight :: (self: *Self) -> i64;

@@ -4,8 +4,8 @@
 // The witness is TrackingAllocator: incrementing the parent allocator's
 // counter happens through the Allocator protocol value, and the local sees
 // the increments because they ARE the local's.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 main :: () -> i32 {
     gpa := GPA.init();

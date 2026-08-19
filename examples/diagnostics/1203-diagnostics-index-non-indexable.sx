@@ -11,7 +11,7 @@
 // many-pointer `[*]T`, or dereference first); other non-indexable types get the
 // bare "cannot index a value of type '...'" form.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 S :: struct { a: i64; }
 

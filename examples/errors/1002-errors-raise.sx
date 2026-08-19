@@ -3,7 +3,7 @@
 // `return;` is the success exit (error slot 0). The caller binds the result
 // and inspects it with the enum-like `==`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 ParseErr :: error { BadDigit, Overflow, Empty }
 

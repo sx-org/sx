@@ -1,12 +1,12 @@
 // Dependency-free ZIP32/ZIP64 archive support.
 
-#import "modules/std/core.sx";
-#import "modules/std/list.sx";
-#import "modules/std/fs.sx";
-#import "modules/std/compress.sx";
-#import "modules/std/internal/compress.sx";
-zip_contracts :: #import "modules/std/codecs/zip_contracts.sx";
-time :: #import "modules/std/time.sx";
+@import "modules/std/core.sx";
+@import "modules/std/list.sx";
+@import "modules/std/fs.sx";
+@import "modules/std/compress.sx";
+@import "modules/std/internal/compress.sx";
+zip_contracts :: @import "modules/std/codecs/zip_contracts.sx";
+time :: @import "modules/std/time.sx";
 
 private le16 :: (data: string, at: i64) -> (i64, !Error) {
     if at < 0 or at + 2 > data.len { raise error.UnexpectedEnd; }
@@ -1150,7 +1150,7 @@ private open_zip_file_mode :: (path: [:0]u8, start: i64, size: i64, writable: bo
     }
     maybe_file := if writable then open_file(path, .read_write) else open_file(path, .read);
     if maybe_file == null { raise error.Io; }
-    file := maybe_file!;
+    file : File = maybe_file;
     actual_size := size;
     if actual_size == 0 {
         // mz_zip_reader_init_file_v2() uses the complete physical file size
@@ -1299,7 +1299,7 @@ zip_extract_to_file :: (reader: *ZipReader, index: i64, path: [:0]u8, options: Z
     }
     maybe_file := open_file(path, .write);
     if maybe_file == null { raise error.Io; }
-    file := maybe_file!;
+    file : File = maybe_file;
     made := zip_extract_to_handle(reader, index, *file, options, max_output, alloc) catch |e| {
         file.close();
         raise e;
@@ -1478,7 +1478,7 @@ private ZipExtractIterator :: struct {
             }
         }
         self.deinit();
-        if failure != null { raise failure!; }
+        if failure != null { raise failure; }
     }
 }
 
@@ -2612,7 +2612,7 @@ ZipStreamWriter :: struct {
         }
         maybe_file := open_file(path, .read);
         if maybe_file == null { raise error.Io; }
-        file := maybe_file!;
+        file : File = maybe_file;
         size := file.seek(0, .end);
         if size < 0 { file.close(); raise error.Io; }
         actual_options := options;
@@ -2759,13 +2759,13 @@ open_zip_writer_file_mode :: (path: [:0]u8, reserve: i64, zip64: bool, allow_rea
     if reserve < 0 { raise error.InvalidData; }
     maybe_created := open_file(path, .write);
     if maybe_created == null { raise error.Io; }
-    created := maybe_created!;
+    created : File = maybe_created;
     file := created;
     if allow_reading {
         if !created.close() { raise error.Io; }
         maybe_reopened := open_file(path, .read_write);
         if maybe_reopened == null { raise error.Io; }
-        file = maybe_reopened!;
+        file = maybe_reopened;
     }
     state_raw := alloc.alloc_bytes(size_of(ZipFileWriteState));
     if state_raw == null { file.close(); raise error.AllocationFailed; }

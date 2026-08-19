@@ -1,11 +1,11 @@
-#import "modules/std/core.sx";   // Allocator, size_of
-#import "modules/std/fmt.sx";    // print (TrackingAllocator.report)
+@import "modules/std/core.sx";   // Allocator, size_of
+@import "modules/std/fmt.sx";    // print (TrackingAllocator.report)
 // GPA is the documented thread-safe allocator, so its alloc counter must
 // be updated atomically (pooled HTTP runs alloc/dealloc concurrently across
 // the loop thread and worker threads). atomic.sx has no naked asm — safe to
 // import here.
-#import "modules/std/atomic.sx";
-c :: #import "modules/std/c.sx";
+@import "modules/std/atomic.sx";
+c :: @import "modules/std/c.sx";
 
 // --- Typed allocation helpers ---
 //
@@ -58,7 +58,7 @@ free :: ufcs (x: $T, a: Allocator = context.allocator) {
     inline match T {
         case protocol: {
             inline if is_identity(T) {
-                @error("free on an '#identity' protocol value — identity values only ever borrow a named object's storage; there is no owned allocation to free");
+                @error("free on an '@identity' protocol value — identity values only ever borrow a named object's storage; there is no owned allocation to free");
             }
             a.dealloc_bytes(x.(@Protocol).ctx);
         }
@@ -132,7 +132,7 @@ impl Allocator for CAllocator {
 // `__sx_default_context` is fully built before `main` runs.
 c_allocator : CAllocator = .{};
 
-#context_extend allocator: Allocator = c_allocator;
+@context_extend allocator: Allocator = c_allocator;
 
 // --- GPA: general purpose allocator (malloc/free wrapper) ---
 //

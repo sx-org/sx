@@ -11,8 +11,8 @@
 // (no copy). Repeat vectors are built by streaming an 'a'-filled stack
 // buffer, so even the 1,000,000 case allocates nothing on the heap.
 
-#import "modules/std.sx";
-#import "modules/std/hash.sx";
+@import "modules/std.sx";
+@import "modules/std/hash.sx";
 
 check :: (label: string, got: [64]u8, want: string) {
     view := string{ ptr = *got[0], len = 64 };

@@ -9,8 +9,8 @@
 //
 // A layout pin rather than a shaping run: this belongs in the byte-exact
 // corpus, and shaping needs a font and a GPU-backed atlas.
-#import "modules/std.sx";
-#import "modules/ui/glyph_cache.sx";
+@import "modules/std.sx";
+@import "modules/ui/glyph_cache.sx";
 
 main :: () {
     // c/kb/kb_text_shape.h: kbts_font_info_string_id_enum ends at

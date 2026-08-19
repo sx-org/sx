@@ -19,15 +19,15 @@
 //   xcrun simctl install booted /tmp/SxUIKitBoot.app
 //   xcrun simctl launch booted co.swipelab.sxuikit
 
-#import "modules/std.sx";
-#framework "UIKit";
-#framework "OpenGLES";
-#framework "QuartzCore";
-#import "modules/ffi/opengl.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/input.sx";
-#import "modules/platform/uikit.sx";
-#import "modules/platform/uikit_app.sx";
+@import "modules/std.sx";
+@framework "UIKit";
+@framework "OpenGLES";
+@framework "QuartzCore";
+@import "modules/ffi/opengl.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/input.sx";
+@import "modules/platform/uikit.sx";
+@import "modules/platform/uikit_app.sx";
 
 GL_SCISSOR_TEST :u32: 0x0C11;
 glEnable_  : (u32) -> void = ---;

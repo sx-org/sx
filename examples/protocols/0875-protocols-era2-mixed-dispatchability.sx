@@ -8,7 +8,7 @@
 // The excluded method stays fully usable where Self IS known: concrete
 // receivers and generic bounds ($T: Type/Shape). Conformance still
 // requires impls to provide it. The refusal itself: diagnostics/1253.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Shape :: protocol vtable {
     area :: (self: *Self) -> i64;

@@ -4,7 +4,7 @@
 // escaping error it prints the header + trace to stderr and exits 1 (the same
 // reporter as the pure `-> !` form — see 244). This run takes the success path.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 ParseErr :: error { Empty, BadDigit };
 

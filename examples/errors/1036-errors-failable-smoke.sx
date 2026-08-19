@@ -4,7 +4,7 @@
 // `onfail` cleanup interleaved with `defer`, plus `error.X` as a value and `{}`
 // tag-name interpolation.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 SmokeErr :: error { Empty, BadDigit, Overflow }
 

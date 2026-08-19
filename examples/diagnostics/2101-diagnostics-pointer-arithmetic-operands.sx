@@ -7,7 +7,7 @@
 // - the offset must be an integer
 // - offsets require a sized pointee; differences require a nonzero-sized pointee
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     ints : [4]i32 = .[1, 2, 3, 4];

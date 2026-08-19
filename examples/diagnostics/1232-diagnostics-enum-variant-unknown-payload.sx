@@ -1,7 +1,7 @@
 // A call-shaped enum construction `.Variant(payload)` with an UNKNOWN variant name
 // is a hard error. `hasVariant` gates all three call-shaped construction sites in
 // lower/call.zig, since `resolveVariantIndex` returns 0 for an unknown name.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 V :: enum {
     a;

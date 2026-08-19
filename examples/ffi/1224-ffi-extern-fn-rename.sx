@@ -3,7 +3,7 @@
 // `extern` keyword. The optional `LIB` ident slot
 // (extern_lib) sits before the string; here it's omitted (libc is
 // default-linked).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 c_abs :: (n: i32) -> i32 extern "abs";
 

@@ -12,9 +12,9 @@
 //    reaped — ctx is a caller-owned struct on main's stack, never the
 //    fiber's); 100 KB chunked body de-chunked and verified byte-exact.
 // 4. GPA leak gate net-zero after close + runner.deinit().
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
-fs :: #import "modules/std/http/fiber_sched.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
+fs :: @import "modules/std/http/fiber_sched.sx";
 
 PORT :: 19016;
 SUM_LEN :: 50000;

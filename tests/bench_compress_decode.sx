@@ -3,7 +3,7 @@
 // The encode executable writes the inputs consumed here. Every decoded result
 // is checked outside the timed interval so a fast wrong decoder cannot pass.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 BENCH_WARMUPS : i64 = 3;
 BENCH_SAMPLES : i64 = 15;

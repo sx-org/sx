@@ -6,7 +6,7 @@
 // on is one only this driver could fire. Runnable work runs out with the
 // bookmark down, and sx refuses rather than electing one of the two consistent
 // outcomes (specs.md §6.9).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 inline if SELF {
     A :: 1;

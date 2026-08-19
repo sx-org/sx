@@ -4,7 +4,7 @@
 // `push Context{ … }` around `spawn` invisible inside the fiber.
 // `Scheduler.spawn` snapshots `context` into the fiber and `fib_dispatch`
 // re-pushes it around the body — so a capability installed before `spawn`
-// (here a typed `#context_extend marker` field) is visible to the worker.
+// (here a typed `@context_extend marker` field) is visible to the worker.
 //
 // This is the foundation for folding a fiber scheduler behind `context.io`: a
 // worker's `context.io.*` must resolve to the scheduler that spawned it, not the
@@ -13,12 +13,12 @@
 //
 // aarch64-pinned (the scheduler's per-arch asm): runs end-to-end on a matching
 // host (macOS + linux), ir-only on a mismatch.
-#import "modules/std.sx";
-sched :: #import "modules/std/sched.sx";
+@import "modules/std.sx";
+sched :: @import "modules/std/sched.sx";
 
 Marker :: struct { id: i64; }
 
-#context_extend marker: ?*Marker = null;
+@context_extend marker: ?*Marker = null;
 
 main :: () -> i64 {
     mk := Marker{ id = 7 };

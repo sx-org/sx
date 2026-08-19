@@ -6,9 +6,9 @@
 // `Box` authors and declares none itself, so `impl Into(Marker) for *Box`
 // cannot pick a `Box` and the build exits 1.
 
-#import "modules/std.sx";
-#import "0827-protocols-param-impl-source-wrapped-ambiguous/a.sx";
-#import "0827-protocols-param-impl-source-wrapped-ambiguous/b.sx";
+@import "modules/std.sx";
+@import "0827-protocols-param-impl-source-wrapped-ambiguous/a.sx";
+@import "0827-protocols-param-impl-source-wrapped-ambiguous/b.sx";
 
 Marker :: struct { v: i32; }
 

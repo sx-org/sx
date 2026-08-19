@@ -8,9 +8,9 @@
 // import that reached it, so the set has the same size and the same members either
 // way.
 
-#import "modules/std.sx";
-#import "modules/std/list.sx";
-pkg :: #import "1631-modules-namespaced-open-set/pkg/view.sx";
+@import "modules/std.sx";
+@import "modules/std/list.sx";
+pkg :: @import "1631-modules-namespaced-open-set/pkg/view.sx";
 
 // A membership bound whose head is the set reached by name.
 render_one :: (v: $V/pkg.View) -> string => v.render();

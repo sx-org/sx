@@ -11,7 +11,7 @@
 // scalar), and a NULL-returning `?i64`. The values are read via `!` (unwrap)
 // and `??` (coalesce), which read the has_value flag correctly.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 T :: struct { a: i64 = 0; b: i64 = 0; }
 

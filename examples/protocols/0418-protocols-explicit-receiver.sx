@@ -3,7 +3,7 @@
 // is required; an omitted receiver is a parse error. The receiver
 // annotation is validated then erased, so dispatch and call sites are unchanged:
 // a method with N declared extra args is still called with N args.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Size :: struct { w: i32; h: i32; }
 

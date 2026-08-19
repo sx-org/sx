@@ -3,7 +3,7 @@
 // the build with a located `comptime init of '<name>' failed: <reason>`, the same
 // failure a GLOBAL `@run` const produces. An execution bail (the VM cannot run
 // the body) fails the same way.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 mk :: () -> [2][]i64 {
     a : []i64 = ---;

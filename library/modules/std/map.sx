@@ -29,10 +29,10 @@
 // its owner capture the owning allocator and forward it to `put`/
 // `remove`/`deinit`, per the long-lived-container rule.
 // =====================================================================
-#import "modules/std/core.sx";
-#import "modules/std/hash.sx";
-#import "modules/std/mem.sx";
-c :: #import "modules/std/c.sx";
+@import "modules/std/core.sx";
+@import "modules/std/hash.sx";
+@import "modules/std/mem.sx";
+c :: @import "modules/std/c.sx";
 // `struct_field_type` (used by the structural key hash below) comes from `core.sx`,
 // alongside its sibling reflection builtins `struct_field_count` / `struct_field_value`.
 
@@ -140,7 +140,7 @@ HashMap :: struct ($K: Type, $V: Type) {
     // rehashes (dropping tombstones) before that happens.
 
     // `m.len` → live entry count.
-    len :: (self: *HashMap(K, V)) -> i64 #get => self.count;
+    len :: (self: *HashMap(K, V)) -> i64 @get => self.count;
 
     // Grow (or first-allocate) to `new_cap` buckets and re-insert every
     // live entry. Drops tombstones. `new_cap` must be a power of two.
@@ -517,7 +517,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
     icap:    i64 = 0;    // index slot count; power of two, or 0
 
     // `m.len` → live entry count.
-    len :: (self: *IndexMap(K, V)) -> i64 #get => self.ecount;
+    len :: (self: *IndexMap(K, V)) -> i64 @get => self.ecount;
 
     // Ordered accessors (entries are the insertion-ordered source of truth).
     key_at :: (self: *IndexMap(K, V), i: i64) -> K   => self.entries[i].key;

@@ -1,4 +1,4 @@
-error: type 'Box' is not visible; #import the module that declares it
+error: type 'Box' is not visible; @import the module that declares it
   --> examples/modules/0764-modules-import-generic-head-non-transitive.sx:20:9
    |
 20 |     x : Box(i64) = .{ v = 3 };

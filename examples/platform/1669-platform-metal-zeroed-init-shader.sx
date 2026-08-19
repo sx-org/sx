@@ -4,13 +4,13 @@
 // `init` establishes the layer-mode pixel format explicitly: the memset value 0
 // is MTLPixelFormatInvalid, which every pipeline creation rejects ("No valid
 // pixelFormats set").
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "modules/gpu/types.sx";
-#import "modules/gpu/api.sx";
-#import "modules/gpu/metal.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/gpu/types.sx";
+@import "modules/gpu/api.sx";
+@import "modules/gpu/metal.sx";
 
-MSL_MIN :: #string MSL
+MSL_MIN :: @string MSL
 #include <metal_stdlib>
 using namespace metal;
 vertex float4 vmain(uint vid [[vertex_id]]) { return float4(0.0); }

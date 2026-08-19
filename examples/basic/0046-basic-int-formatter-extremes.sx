@@ -5,7 +5,7 @@
 // never negates the value to print a sign, so i64::MIN (whose magnitude is
 // unrepresentable as a positive i64) and an all-ones u64 both render in full.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     // Signed extreme: magnitude is never negated, so MIN survives.

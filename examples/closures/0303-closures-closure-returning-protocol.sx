@@ -1,7 +1,7 @@
 // Closure whose return type is a `vtable`-kind protocol value — exercises
 // the indirect-call path where the result is a boxed protocol.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 MyProtocol :: protocol vtable {
     get_value :: (self: *Self) -> i64;

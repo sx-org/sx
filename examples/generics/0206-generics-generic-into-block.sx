@@ -8,8 +8,8 @@
 // the same shape the Apple Block runtime calls when a UIKit/Foundation API hands
 // the block back to its registered invoke.
 
-#import "modules/std.sx";
-#import "modules/ffi/objc_block.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc_block.sx";
 
 g_a: i64 = 0;
 g_b: i64 = 0;

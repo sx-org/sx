@@ -2033,7 +2033,7 @@ fn tryLowerQualifiedGlobalStore(
     }
     if (member_not_visible) {
         if (self.diagnostics) |d|
-            d.addFmt(.err, span, "'{s}' is not visible; #import the module that declares it", .{member});
+            d.addFmt(.err, span, "'{s}' is not visible; @import the module that declares it", .{member});
         return .handled;
     }
     // The alias resolved but the member names nothing storable in the target
@@ -2044,7 +2044,7 @@ fn tryLowerQualifiedGlobalStore(
 }
 
 /// Map a compound-assignment op to the binary op it folds with, for the
-/// get-modify-set rewrite of `obj.prop OP= x` (a `#set` property).
+/// get-modify-set rewrite of `obj.prop OP= x` (a `@set` property).
 fn compoundAssignToBinaryOp(op: ast.Assignment.Op) ast.BinaryOp.Op {
     return switch (op) {
         .add_assign => .add,
@@ -2079,7 +2079,7 @@ fn bindSyntheticLocal(self: *Lowering, prefix: []const u8, val: Ref, ty: TypeId,
 }
 
 /// Synthesize and lower `recv_obj.<setter-effective-name>(value_node)` — the
-/// shared tail of every `#set` dispatch.
+/// shared tail of every `@set` dispatch.
 fn emitSetterCall(self: *Lowering, recv_obj: *Node, setter: *const ast.FnDecl, value_node: *Node, span: ast.Span) void {
     const callee = self.alloc.create(Node) catch return;
     callee.* = .{ .span = span, .data = .{ .field_access = .{ .object = recv_obj, .field = self.accessorEffName(setter) } } };
@@ -2089,12 +2089,12 @@ fn emitSetterCall(self: *Lowering, recv_obj: *Node, setter: *const ast.FnDecl, v
     _ = self.lowerCall(&syn_call);
 }
 
-/// `<fa> = <already-lowered val>` where `prop` is a `#set` property and the RHS
+/// `<fa> = <already-lowered val>` where `prop` is a `@set` property and the RHS
 /// `Ref` was computed by the caller (the multi-assign path evaluates ALL RHS
 /// values up front, so re-lowering would double-evaluate and break ordering).
 /// Binds `val` to a synthetic local and dispatches the setter through it.
 /// Returns true when it consumed the store (setter write, or a read-only
-/// diagnostic for a `#get`-only property); false for an ordinary field.
+/// diagnostic for a `@get`-only property); false for an ordinary field.
 fn tryLowerPropertyStore(self: *Lowering, fa: ast.FieldAccess, val: Ref, span: ast.Span) bool {
     var recv_ty = self.inferExprType(fa.object);
     if (!recv_ty.isBuiltin()) {
@@ -2105,7 +2105,7 @@ fn tryLowerPropertyStore(self: *Lowering, fa: ast.FieldAccess, val: Ref, span: a
     const setter = self.getSetterFor(recv_ty, fa.field) orelse {
         if (self.getAccessorFor(recv_ty, fa.field) != null) {
             if (self.diagnostics) |d|
-                d.addFmt(.err, span, "property '{s}' is read-only (no '#set')", .{fa.field});
+                d.addFmt(.err, span, "property '{s}' is read-only (no '@set')", .{fa.field});
             return true;
         }
         return false;
@@ -2117,9 +2117,9 @@ fn tryLowerPropertyStore(self: *Lowering, fa: ast.FieldAccess, val: Ref, span: a
     return true;
 }
 
-/// `obj.prop = rhs` (or `obj.prop OP= rhs`) where `prop` is a `#set` property
+/// `obj.prop = rhs` (or `obj.prop OP= rhs`) where `prop` is a `@set` property
 /// accessor. Dispatches to the setter as `obj.prop$set(rhs)` — the write
-/// counterpart of the `#get` read dispatch in `lowerFieldAccess`. Returns true
+/// counterpart of the `@get` read dispatch in `lowerFieldAccess`. Returns true
 /// when it consumed the assignment (a real setter write, or a clean
 /// read-only/write-only diagnostic); false to let normal field-store lowering
 /// proceed (an ordinary field, or no property at all).
@@ -2141,12 +2141,12 @@ fn tryLowerPropertyAssignment(self: *Lowering, asgn: *const ast.Assignment) bool
     const getter = self.getAccessorFor(recv_ty, fa.field);
 
     if (setter == null) {
-        // No setter. A same-name `#get` (with no real field — getAccessorFor
+        // No setter. A same-name `@get` (with no real field — getAccessorFor
         // guarantees a real field wins) means the property is read-only: reject
         // the write with a clear message rather than "field not found".
         if (getter != null) {
             if (self.diagnostics) |d|
-                d.addFmt(.err, asgn.target.span, "property '{s}' is read-only (no '#set')", .{fa.field});
+                d.addFmt(.err, asgn.target.span, "property '{s}' is read-only (no '@set')", .{fa.field});
             return true;
         }
         return false; // ordinary field, or not a property → normal store path
@@ -2158,8 +2158,8 @@ fn tryLowerPropertyAssignment(self: *Lowering, asgn: *const ast.Assignment) bool
     var recv_obj: *Node = fa.object;
     if (fa.object.data == .deref_expr) recv_obj = fa.object.data.deref_expr.operand;
 
-    // For a compound `OP=`, the receiver is read (via `#get`) AND written (via
-    // `#set`), so it must be evaluated EXACTLY ONCE — otherwise a side-effecting
+    // For a compound `OP=`, the receiver is read (via `@get`) AND written (via
+    // `@set`), so it must be evaluated EXACTLY ONCE — otherwise a side-effecting
     // receiver (`next().prop += 1`) reads one object and writes another. Bind
     // the receiver's `*T` to a synthetic, unspellable local and dispatch both
     // the read and the write on it. (A plain assign's single setter call already
@@ -2167,7 +2167,7 @@ fn tryLowerPropertyAssignment(self: *Lowering, asgn: *const ast.Assignment) bool
     if (asgn.op != .assign) {
         if (getter == null) {
             if (self.diagnostics) |d|
-                d.addFmt(.err, asgn.target.span, "property '{s}' is write-only (no '#get'); compound assignment needs to read the current value", .{fa.field});
+                d.addFmt(.err, asgn.target.span, "property '{s}' is write-only (no '@get'); compound assignment needs to read the current value", .{fa.field});
             return true;
         }
         // Evaluate the receiver once into a synthetic `*T` binding. `*T` receiver
@@ -2185,7 +2185,7 @@ fn tryLowerPropertyAssignment(self: *Lowering, asgn: *const ast.Assignment) bool
     }
 
     // The value the setter receives. For a compound `OP=`: `(recv.prop) OP rhs`
-    // — the read dispatches to the `#get` on the (now single-eval) receiver.
+    // — the read dispatches to the `@get` on the (now single-eval) receiver.
     var value_node: *Node = asgn.value;
     if (asgn.op != .assign) {
         const read_node = self.alloc.create(Node) catch return false;
@@ -2246,7 +2246,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
     // Context-root write guard: the context is immutable within
     // its scope — only pointer-hop chains (pointee writes) may proceed.
     if (diagContextRootWrite(self, asgn.target)) return;
-    // `#set` property accessor: `obj.prop = rhs` (or `OP=`) dispatches to the
+    // `@set` property accessor: `obj.prop = rhs` (or `OP=`) dispatches to the
     // setter as `obj.prop$set(rhs)`. Must run before the RHS is lowered below
     // (the synthesized call lowers it itself). Falls through for ordinary fields.
     if (asgn.target.data == .field_access) {
@@ -3674,7 +3674,7 @@ pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {
             const fval = self.lowerExpr(fi.value);
             self.target_type = saved_target_f;
             const fval_ty = self.builder.getRefType(fval);
-            // An #identity Context field (`allocator`, `io`) erases
+            // An @identity Context field (`allocator`, `io`) erases
             // NODE-AWARE so an lvalue BORROWS (`push .{ allocator = gpa }`
             // aliases `gpa`) — the node-less path would misread the lvalue
             // as an rvalue and refuse. Other fields keep the node-less
@@ -4000,7 +4000,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                     .handled => continue,
                     .not_applicable => {},
                 }
-                // `#set` property target: dispatch to the setter with the
+                // `@set` property target: dispatch to the setter with the
                 // already-lowered RHS value (multi-assign evaluated all RHS up
                 // front). Falls through for an ordinary field.
                 if (tryLowerPropertyStore(self, fa, val, target.span)) continue;

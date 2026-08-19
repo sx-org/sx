@@ -1,7 +1,7 @@
 // An integer literal that does not fit its integer target type is a compile error
 // — no silent wrap. Both faces are diagnosed in one run.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     x : i8 = 300;

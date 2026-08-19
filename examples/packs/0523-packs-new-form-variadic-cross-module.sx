@@ -15,7 +15,7 @@
 // boundary and concatenate the parts with '/'. Empty join (no
 // args) returns "".
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     print("{}\n", path_join());

@@ -267,7 +267,7 @@ fn rankUfcsCand(self: *Lowering, maybe_fd: ?*const ast.FnDecl, args_ast: []const
 ///   equally-specific VISIBLE binders) sets `ambiguous.*` here.
 ///   Tier 2 (only if no visible author binds) — receiver-reachable methods that
 ///   aren't flat-visible (a `*Task($R)` method reached through a `sched ::
-///   #import` namespace). Scan all module authors for the unique most-specific
+///   @import` namespace). Scan all module authors for the unique most-specific
 ///   binder; on a tie among non-visible binders DON'T cry ambiguous — defer to
 ///   `fd0` (the global last-wins) so a transitively-hidden collision never
 ///   surfaces as a false error.
@@ -324,7 +324,7 @@ pub fn selectUfcsGenericByReceiver(self: *Lowering, name: []const u8, args_ast: 
 }
 
 /// True when every module authoring `name` declares it `private` (and at
-/// least one does). Steers the visibility-gate diagnostic: "#import the
+/// least one does). Steers the visibility-gate diagnostic: "@import the
 /// module that declares it" is useless advice for a private name.
 fn nameAuthoredOnlyPrivately(self: *Lowering, name: []const u8) bool {
     const decls = self.program_index.module_decls orelse return false;
@@ -574,14 +574,14 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     var c = c_in;
     // A bare reserved-type-name spelling in call position parses as a
     // `.type_expr` (e.g. `i2(4)`), but if a function of that name is in
-    // scope — a backtick-declared sx fn or a `#import c` extern fn whose C
+    // scope — a backtick-declared sx fn or a `@import c` extern fn whose C
     // name collides with a reserved type spelling — it is a CALL to that
     // function. `TypeName(val)` is not a cast (casts are `cast(T, val)`), so
     // there is no ambiguity. Rewrite the callee to an identifier so the
     // normal call machinery resolves it, symmetric to the bare-value
     // reference that already resolves via scope/globals.
     //
-    // Scoped to RAW provenance: only a backtick (`is_raw`) or `#import c`
+    // Scoped to RAW provenance: only a backtick (`is_raw`) or `@import c`
     // extern fn declaration may legally carry a reserved-name spelling
     // (the decl check rejects every bare reserved-name sx fn). Refusing the
     // rewrite for a non-raw match keeps a genuine reserved type spelling a
@@ -643,7 +643,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         },
         .not_visible => |hidden| {
             if (self.diagnostics) |d|
-                d.addFmt(.err, hidden.span, "namespace '{s}' is not visible; #import the module that declares it", .{hidden.alias});
+                d.addFmt(.err, hidden.span, "namespace '{s}' is not visible; @import the module that declares it", .{hidden.alias});
             return Ref.none;
         },
         .ambiguous => |amb| {
@@ -703,10 +703,10 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // C-import visibility: deny calls to C fn_decls not in the caller's module scope
         if (!self.isCImportVisible(eff_name)) {
             if (self.diagnostics) |d|
-                d.addFmt(.err, c.callee.span, "C function '{s}' not visible; add #import for the module that declares it", .{eff_name});
+                d.addFmt(.err, c.callee.span, "C function '{s}' not visible; add @import for the module that declares it", .{eff_name});
             return Ref.none;
         }
-        // Non-transitive `#import` visibility check. Apply only when the
+        // Non-transitive `@import` visibility check. Apply only when the
         // user-typed name resolved as-is to a top-level fn — local-scope
         // mangling (eff_name != id_name) and UFCS alias rewriting are
         // compiler indirections and stay exempt. A callable LOCAL binding
@@ -729,7 +729,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 if (nameAuthoredOnlyPrivately(self, eff_name))
                     d.addFmt(.err, c.callee.span, "'{s}' is private to its declaring module", .{eff_name})
                 else
-                    d.addFmt(.err, c.callee.span, "'{s}' is not visible; #import the module that declares it", .{eff_name});
+                    d.addFmt(.err, c.callee.span, "'{s}' is not visible; @import the module that declares it", .{eff_name});
             }
             return Ref.none;
         }
@@ -1195,7 +1195,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 }
             }
         }
-        // Concrete lvalue → `#identity` protocol param: erase NODE-AWARE so
+        // Concrete lvalue → `@identity` protocol param: erase NODE-AWARE so
         // the lvalue BORROWS (`free(t, gpa)` aliases gpa) — the node-less
         // coerceCallArgs layer would misread the lvalue as an rvalue and
         // refuse. value/own params keep the node-less owning copy.
@@ -1749,7 +1749,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     .not_visible => {
                         if (self.diagnostics) |d| {
                             const head = self.qualifiedTypeName(fa.object) orelse "<type>";
-                            d.addFmt(.err, fa.object.span, "type '{s}' is not visible; #import the module that declares it", .{head});
+                            d.addFmt(.err, fa.object.span, "type '{s}' is not visible; @import the module that declares it", .{head});
                         }
                         return Ref.none;
                     },
@@ -1819,7 +1819,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         .none => {
                             if (self.aliasDeclaredAnywhere(oname)) {
                                 if (self.diagnostics) |d|
-                                    d.addFmt(.err, fa.object.span, "namespace '{s}' is not visible; #import the module that declares it", .{oname});
+                                    d.addFmt(.err, fa.object.span, "namespace '{s}' is not visible; @import the module that declares it", .{oname});
                                 return Ref.none;
                             }
                         },
@@ -2581,8 +2581,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
 pub fn diagnoseMissingContext(self: *Lowering, what: []const u8) Ref {
     if (self.diagnostics) |d| {
         const span = ast.Span{ .start = 0, .end = 0 };
-        const id = d.addFmtId(.err, span, "{s} requires the Context type — add `#import \"modules/std.sx\";` (or a module that imports it)", .{what});
-        // A no-context build may still COMPILE `#context_extend`
+        const id = d.addFmtId(.err, span, "{s} requires the Context type — add `@import \"modules/std.sx\";` (or a module that imports it)", .{what});
+        // A no-context build may still COMPILE `@context_extend`
         // declarations (they are inert without Context). Show what the
         // program's context would have been, so the demand is traceable.
         self.noteRegisteredContextFields(id);
@@ -2667,7 +2667,7 @@ pub fn prependCtxIfNeeded(self: *Lowering, callee: *const Function, args: []Ref)
 }
 
 /// Concrete arg at a PROTOCOL param target: erase NODE-AWARE so
-/// `buildProtocolErasure` classifies from the AST — an #identity target
+/// `buildProtocolErasure` classifies from the AST — an @identity target
 /// BORROWS lvalues (`free(t, gpa)` aliases `gpa`), a value/own target
 /// DEMANDS the owning spelling for every shape (a literal-with-init-block
 /// materializes through a temp slot, which the node-LESS
@@ -2870,7 +2870,7 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
 
     if (!self.lowered_functions.contains(mangled_name)) {
         // Record this call as the instantiation site for the mono's body:
-        // a surviving `#error` inside it anchors HERE (outermost frame of
+        // a surviving `@error` inside it anchors HERE (outermost frame of
         // the chain), not at the library-internal directive line.
         self.mono_sites.append(self.alloc, .{
             .source = call_node.callee.source_file orelse self.current_source_file,
@@ -3521,7 +3521,7 @@ pub fn tryLowerPrintfIntrinsic(self: *Lowering, name: []const u8, c: *const ast.
     // The expansion calls into core.sx, so the name resolving program-wide is
     // not enough — the module has to be in the program.
     if (!self.program_index.fn_ast_map.contains(PrintfKind.str.primitive())) {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "@printf writes through modules/std/core.sx; #import it", .{});
+        if (self.diagnostics) |d| d.addFmt(.err, span, "@printf writes through modules/std/core.sx; @import it", .{});
         return Ref.none;
     }
     // The format steers the expansion, so it is read at lowering: a literal is
@@ -4018,7 +4018,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         // value always tags a concrete type. Folds to a `ProtocolKind`
         // constant, so `inline if protocol_kind(P) == .vtable` prunes.
         const pk_ty = self.module.types.findByName(self.module.types.internString("ProtocolKind")) orelse {
-            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "protocol_kind needs 'ProtocolKind' in scope — #import \"modules/std.sx\"", .{});
+            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "protocol_kind needs 'ProtocolKind' in scope — @import \"modules/std.sx\"", .{});
             return Ref.none;
         };
         if (c.args.len < 1) return self.builder.enumInit(0, Ref.none, pk_ty);

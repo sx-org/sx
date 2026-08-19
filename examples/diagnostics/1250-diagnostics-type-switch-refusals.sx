@@ -7,7 +7,7 @@
 //      never the scrutinee — matching it is the silently-wrong dispatch).
 // (Protocol values as SUBJECTS type-switch since the RTTI type_id word —
 // pinned positively in types/0873.)
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     av : any = 5;

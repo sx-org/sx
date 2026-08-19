@@ -6,7 +6,7 @@
 // (conformance is the keyed `impl` question), or one of the declaration's OWN
 // type parameters, in which case the question defers to whoever binds that
 // parameter.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Summable :: protocol constraint {
     val :: (self: *Self) -> i32;

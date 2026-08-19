@@ -4,9 +4,9 @@
 // source-aware selection a.sx's `K` reads the array global's address and prints
 // it, while h.sx's reads stay correct only by registration order.
 
-#import "modules/std.sx";
-#import "0835-modules-same-name-global-vs-const-own/a.sx";
-h :: #import "0835-modules-same-name-global-vs-const-own/h.sx";
+@import "modules/std.sx";
+@import "0835-modules-same-name-global-vs-const-own/a.sx";
+h :: @import "0835-modules-same-name-global-vs-const-own/h.sx";
 
 main :: () {
     print("a_k={} use_k={}\n", a_k(), h.use_k());

@@ -24,10 +24,10 @@
 // also opens lists over its OWN tails and hands them to the sx exports, so the
 // boundary is crossed in both directions.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #source "1236-ffi-cvariadic-valist-boundary.c";
+@import c {
+    @source "1236-ffi-cvariadic-valist-boundary.c";
 };
 
 c_sum_ints    :: (n: i32, ap: @VaList) -> i64 extern;

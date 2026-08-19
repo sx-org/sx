@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-#import "modules/math";
+@import "modules/std.sx";
+@import "modules/math";
 
 // --- Lerpable protocol (constraint — static dispatch, no runtime value) ---
 

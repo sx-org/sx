@@ -2,7 +2,7 @@
 // enums, tagged unions, error sets, optionals, integers, bools, or type ids (specs
 // §Pattern Matching). A `string` subject and a float subject have none and are
 // rejected up front with a located diagnostic.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     s : string = "hi";

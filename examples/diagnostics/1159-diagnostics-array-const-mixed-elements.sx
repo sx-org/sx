@@ -3,7 +3,7 @@
 // NON-NUMERIC mix has no unified element type — diagnosed, with the
 // annotation as the fix.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 BAD :: .["alpha", 1];
 

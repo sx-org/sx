@@ -5,7 +5,7 @@
 //
 // Both stages agree: the same intrinsic evaluated behind `@run` and at runtime
 // yields the same answer.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 P :: struct { a: i64; b: f32; }
 

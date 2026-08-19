@@ -2,10 +2,10 @@
 // through defaults, comptime argument typing, result typing and generic mono
 // identity. Both terminal modules reuse every public name.
 
-a :: #import "0911-modules-deep-qualified-call-identity/a.sx";
-b :: #import "0911-modules-deep-qualified-call-identity/b.sx";
-long_a :: #import "0911-modules-deep-qualified-call-identity/long_author_a_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.sx";
-long_b :: #import "0911-modules-deep-qualified-call-identity/long_author_b_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.sx";
+a :: @import "0911-modules-deep-qualified-call-identity/a.sx";
+b :: @import "0911-modules-deep-qualified-call-identity/b.sx";
+long_a :: @import "0911-modules-deep-qualified-call-identity/long_author_a_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.sx";
+long_b :: @import "0911-modules-deep-qualified-call-identity/long_author_b_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.sx";
 
 LOCAL_DEFAULT :: 900;
 

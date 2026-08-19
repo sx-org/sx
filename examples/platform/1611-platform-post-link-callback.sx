@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 // Post-link callback registration. The compiler invokes `post_link`
 // after `target.link()` returns (sx build). Under `sx run` (JIT) the

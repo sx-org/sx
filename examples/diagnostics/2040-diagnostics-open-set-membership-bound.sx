@@ -9,7 +9,7 @@
 //
 // A set is not parameterized either, so a head spelled with type arguments names
 // no set at all.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 64 }) {
     render :: (self: *Self) -> string;

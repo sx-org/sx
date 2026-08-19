@@ -6,7 +6,7 @@
 // These are what the `race` runtime needs to register a waiter on the i-th task
 // handle (`tasks[i].waiter = …`). An out-of-range comptime index is a loud
 // compile error on every one of these paths (no silent `ptrTo(unresolved)` panic).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct ($R: Type) { value: R; }
 

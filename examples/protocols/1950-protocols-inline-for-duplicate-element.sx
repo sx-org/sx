@@ -2,7 +2,7 @@
 // element would expand the same group twice. The repeat is diagnosed at the
 // list with cursor provenance rather than left to surface as a downstream
 // coherence collision.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: struct { x: i64; y: i64; }
 
