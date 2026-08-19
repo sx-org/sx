@@ -2682,16 +2682,12 @@ fn aliasRhsBuiltin(cd: *const ast.ConstDecl, table: *types.TypeTable) ?TypeId {
 fn resolveBuiltinAliasChain(
     self: *Lowering,
     author: resolver_mod.RawAuthor,
-    alias_name: []const u8,
     depth: u8,
 ) ?TypeId {
     if (depth > 32) return null;
     if (author.raw != .const_decl) return null;
     const cd = author.raw.const_decl;
-    if (aliasRhsBuiltin(cd, &self.module.types)) |tid| {
-        self.putTypeAlias(author.source, alias_name, tid);
-        return tid;
-    }
+    if (aliasRhsBuiltin(cd, &self.module.types)) |tid| return tid;
     const hop = switch (cd.value.data) {
         .identifier => |id| id,
         else => return null,
@@ -2700,7 +2696,7 @@ fn resolveBuiltinAliasChain(
     const set = res.collectVisibleAuthors(hop.name, author.source, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
     const next = set.own orelse (if (set.flat.len == 1) set.flat[0] else null) orelse return null;
-    return resolveBuiltinAliasChain(self, next, alias_name, depth + 1);
+    return resolveBuiltinAliasChain(self, next, depth + 1);
 }
 
 /// Resolve an as-yet-unregistered alias author directly to a terminal named
@@ -2715,7 +2711,10 @@ fn resolveBuiltinAliasChain(
 /// here so a signature that names the alias is that primitive. An identifier
 /// chain (`MYB2 :: MYB; MYB :: i8`) walks each hop the same way.
 fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alias_name: []const u8) ?TypeId {
-    if (resolveBuiltinAliasChain(self, author, alias_name, 0)) |tid| return tid;
+    if (resolveBuiltinAliasChain(self, author, 0)) |tid| {
+        self.putTypeAlias(author.source, alias_name, tid);
+        return tid;
+    }
     const terminal = self.followAliasChain(author) orelse return null;
 
     if (terminal.raw == .protocol_decl) {
