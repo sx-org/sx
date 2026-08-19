@@ -14,10 +14,10 @@
 // sx definition and its `<stdarg.h>` twin read the same values through one
 // pointer type.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #source "1235-ffi-cvariadic-function-type.c";
+@import c {
+    @source "1235-ffi-cvariadic-function-type.c";
 };
 
 c_sum_ints :: (n: i32, ..) -> i64 extern;

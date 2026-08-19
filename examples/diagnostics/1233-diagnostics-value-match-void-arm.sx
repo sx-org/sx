@@ -5,7 +5,7 @@
 //
 // A `match` used purely as a STATEMENT, with all arms void, and a diverging arm in
 // a value `match` both stay valid; only the value/void MIX is rejected.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: enum { A; B; }
 

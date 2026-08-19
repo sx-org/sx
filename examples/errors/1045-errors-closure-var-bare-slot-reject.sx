@@ -8,7 +8,7 @@
 // The alternatives are to pass the literal directly, or to type the parameter
 // `Closure(...)` so the environment is carried (the idiomatic form).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Z }
 

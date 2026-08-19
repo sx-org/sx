@@ -1,7 +1,7 @@
 // Emit lane for tests/bench_ui_three_stacks.sx. The terminal `.emit()`
 // and `@Init(View)` bound need emit.View as this module's `View`.
-#import "modules/std.sx";
-#import "examples/ui/emit.sx";
+@import "modules/std.sx";
+@import "examples/ui/emit.sx";
 
 slot_bytes :: () -> i64 => size_of(View);
 

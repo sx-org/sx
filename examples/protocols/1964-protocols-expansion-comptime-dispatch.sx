@@ -6,7 +6,7 @@
 //
 // Publication is monotone rather than once-and-for-all: a conformer declared
 // after an earlier evaluation already dispatched is reached by the next one.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: protocol vtable { area :: (self: *Self) -> i64; }
 

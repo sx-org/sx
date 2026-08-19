@@ -9,7 +9,7 @@
 // representation the payload words are temp addresses, so comparing them could
 // only mean accidental pointer identity.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i64 {
     x : any = 5;

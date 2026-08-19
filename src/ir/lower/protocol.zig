@@ -437,7 +437,7 @@ pub fn refuseValuelessProtocol(self: *Lowering, ty: TypeId, span: ast.Span, what
 /// (specs.md §6.9), applied to the type it escapes AS.
 ///
 /// An OWNING erased value cannot make the trip at all — no runtime allocator
-/// owns a compile-time copy — while a borrow (a view, an `#identity` handle) is
+/// owns a compile-time copy — while a borrow (a view, an `@identity` handle) is
 /// only ever a pointer to storage the image already has.
 pub fn checkComptimeEscape(self: *Lowering, ty: TypeId, span: ast.Span) void {
     var seen = std.ArrayList(TypeId).empty;
@@ -618,12 +618,12 @@ pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Nod
 ///                  ptr @__thunk_CAllocator_Allocator_alloc_bytes,
 ///                  ptr @__thunk_CAllocator_Allocator_dealloc_bytes },
 ///     %Io { … },                                     its protocol's own
-///     <each #context_extend field's evaluated default>   declared layout)
+///     <each @context_extend field's evaluated default>   declared layout)
 ///   }
 ///
 /// The initializer is built by walking the ASSEMBLED Context's fields BY
 /// NAME (`allocator`/`io` get their bespoke thunk-table values; every other
-/// field is a `#context_extend` declaration whose default folds through the
+/// field is a `@context_extend` declaration whose default folds through the
 /// global-initializer serializer in its declaring module's context), so the
 /// constant can never drift positionally from the layout `assembleContext`
 /// produced.
@@ -662,7 +662,7 @@ fn emitDefaultContextGlobalImpl(self: *Lowering, mode: enum { early, final }) vo
     const ctx_ty = tbl.findByName(ctx_name_id) orelse return;
 
     // One ConstantValue per ASSEMBLED field, in field order. EVERY field is a
-    // `#context_extend` declaration (the struct decl itself is empty —
+    // `@context_extend` declaration (the struct decl itself is empty —
     // allocator/io are declared in std/mem.sx and std/io.sx like any user
     // field), so the whole initializer flows through the declaration-default
     // serializer; the stateless thunk tables come from the `xx c_allocator` /
@@ -1220,10 +1220,10 @@ pub fn allocViaAllocatorValue(self: *Lowering, allocator: Ref, size_ref: Ref) Re
 ///     receiver's ctx (rt_size_of(type_id) bytes; vtable / fn words
 ///     reused — well-typed by construction);
 ///   - `*P` (same protocol): PROMOTION — the same, over the pointee;
-///   - `#identity` target: `.(P)` is the borrow; `.(P, alloc)` refuses
+///   - `@identity` target: `.(P)` is the borrow; `.(P, alloc)` refuses
 ///     (a borrow allocates nothing).
 /// `.(P)` funds from `context.allocator`; `.(P, alloc)` names another.
-/// The named allocator must be an LVALUE. `#identity` is a borrow and
+/// The named allocator must be an LVALUE. `@identity` is a borrow and
 /// refuses an allocator argument.
 pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: TypeId, span: ast.Span) Ref {
     if (self.refuseValuelessProtocol(dst_ty, span, "make a value of")) return self.builder.constUndef(dst_ty);
@@ -1233,7 +1233,7 @@ pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: T
     if (dst_pi.ownership == .identity) {
         if (pc.alloc_arg != null) {
             if (self.diagnostics) |d|
-                d.addFmt(.err, span, "'.({s}, alloc)' on an '#identity' protocol — identity erasure is a borrow and allocates nothing; write '.({s})'", .{ dst_pi.name, dst_pi.name });
+                d.addFmt(.err, span, "'.({s}, alloc)' on an '@identity' protocol — identity erasure is a borrow and allocates nothing; write '.({s})'", .{ dst_pi.name, dst_pi.name });
             return self.builder.constUndef(dst_ty);
         }
         const operand = self.lowerExpr(pc.operand);
@@ -1242,7 +1242,7 @@ pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: T
 
     const alloc_ty = self.module.types.findByName(self.module.types.internString("Allocator")) orelse {
         if (self.diagnostics) |d|
-            d.addFmt(.err, span, "'.(P)' needs the 'Allocator' protocol in scope — #import \"modules/std.sx\"", .{});
+            d.addFmt(.err, span, "'.(P)' needs the 'Allocator' protocol in scope — @import \"modules/std.sx\"", .{});
         return self.builder.constUndef(dst_ty);
     };
     const alloc_val = if (pc.alloc_arg) |an| blk: {

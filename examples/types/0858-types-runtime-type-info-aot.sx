@@ -3,8 +3,8 @@
 // [N x ptr] by tag) loaded and MATCHED at runtime — kind-first dispatch with
 // typed per-arm payloads (struct fields carry name+offset; enums their
 // variants).
-#import "modules/std.sx";
-meta :: #import "modules/std/meta.sx";
+@import "modules/std.sx";
+meta :: @import "modules/std/meta.sx";
 Padded :: struct { a: u8; b: i64; c: u16; }
 Color  :: enum { red; green; blue; }
 Overlay :: union { as_int: i64; bytes: [8]u8; }

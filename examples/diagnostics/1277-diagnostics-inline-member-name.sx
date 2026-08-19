@@ -1,7 +1,7 @@
 // `inline` is the ONE keyword excluded from bare member naming: a bare `inline`
 // field rejects with the targeted escape-hint rather than the generic "expected
 // field name".
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Q :: struct {
     inline: i64 = 0;    // error: backtick-only

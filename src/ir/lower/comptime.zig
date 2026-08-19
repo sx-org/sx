@@ -1172,7 +1172,7 @@ fn lowerComptimeRuntimeArg(
         }
     }
 
-    // Concrete -> protocol value keeps the argument AST so #identity
+    // Concrete -> protocol value keeps the argument AST so @identity
     // parameters borrow lvalues and value/own parameters retain ownership.
     if (self.getProtocolInfo(param_ty) != null) {
         const concrete_ty = self.inferExprType(arg);
@@ -1918,7 +1918,7 @@ pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const Cons
 }
 
 /// Resolve a QUALIFIED module const `ns.field` (a namespaced-import member —
-/// `m :: #import "lib.sx"; … m.CAP`) to its authoring source + info.
+/// `m :: @import "lib.sx"; … m.CAP`) to its authoring source + info.
 /// The alias `ns` is resolved in the CURRENT source context — the file
 /// that wrote `ns.field`, since an alias binds in its declaring file, not the
 /// use site — then `field` is read from that target module's per-source const
@@ -2274,7 +2274,7 @@ pub fn resolveGlobalRef(self: *Lowering, name: []const u8, span: ?ast.Span) ?pro
         },
         .not_visible => {
             if (self.diagnostics) |d|
-                d.addFmt(.err, span, "'{s}' is not visible; #import the module that declares it", .{name});
+                d.addFmt(.err, span, "'{s}' is not visible; @import the module that declares it", .{name});
             return null;
         },
         .untracked => return gi,

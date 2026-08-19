@@ -2,8 +2,8 @@
 // registration times out at zero cost, a write makes the peer readable
 // (with the pending byte count in `data` and the registration's udata
 // handed back), and a peer close reports EV_EOF.
-#import "modules/std.sx";
-kq :: #import "modules/std/net/kqueue.sx";
+@import "modules/std.sx";
+kq :: @import "modules/std/net/kqueue.sx";
 
 main :: () -> i32 {
     pair : [2]i32 = ---;

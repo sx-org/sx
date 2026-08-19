@@ -6,7 +6,7 @@ separate `deflate`, `zlib`, `gzip`, `png`, and `zip` namespaces.
 `std.compress` is only their shared contract layer; it is not another codec.
 
 ```sx
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 packed := try gzip.encode("hello");
 defer context.allocator.dealloc_bytes(packed.ptr);
@@ -139,7 +139,7 @@ storage; `_into` variants return borrowed caller-buffer prefixes.
 For bounded random-access input, implement `zip.Source`:
 
 ```sx
-#import "modules/std/compress.sx";
+@import "modules/std/compress.sx";
 
 ArchiveSource :: struct { bytes: string; }
 

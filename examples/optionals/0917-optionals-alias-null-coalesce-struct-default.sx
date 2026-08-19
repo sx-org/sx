@@ -5,7 +5,7 @@
 // struct-literal default against that resolved child,
 // so the present-payload and the default share the merge TypeId. Both the
 // null path (default) and the present path (the payload) are exercised.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 S :: struct { a: i64 = 0; b: i64 = 0; }
 Opt :: ?S;

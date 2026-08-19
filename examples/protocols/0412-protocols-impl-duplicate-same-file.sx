@@ -4,7 +4,7 @@
 // case to `0411-protocols-impl-duplicate.sx`, which covers the
 // cross-module variant.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 MyA :: struct { v: i64 = 0; }
 

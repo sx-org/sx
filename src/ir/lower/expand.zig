@@ -2,7 +2,7 @@
 //! `inline for`.
 //!
 //! Import resolution leaves these drivers OPAQUE — a branch's declarations,
-//! including the modules a branch-local `#import` names, stay inside the node.
+//! including the modules a branch-local `@import` names, stay inside the node.
 //! Lowering owns the evaluation: a driver is folded here against the same
 //! comptime facts an in-function `inline if` folds against, and only the
 //! selected group is SPLICED into module scope, at the driver's own place in
@@ -197,7 +197,7 @@ const Expansion = struct {
 
     /// Register every driver the program's declaration lists hold, so the
     /// contribution ledger is complete before the first fold. A driver reached
-    /// only through a branch-local `#import` registers when that branch is
+    /// only through a branch-local `@import` registers when that branch is
     /// selected; otherwise its contributions are covered by the driver whose
     /// body holds the import.
     fn registerDrivers(ex: *Expansion, decls: []const *Node) void {
@@ -473,7 +473,7 @@ const Expansion = struct {
     /// wrote plus what taken groups have spliced — and, where the program has
     /// one, the implicit Context. The Context is a single program-global
     /// layout, so it cannot be read before it is settled: while any undecided
-    /// driver could still write a `#context_extend`, the fact is not
+    /// driver could still write a `@context_extend`, the fact is not
     /// publishable and the asking driver parks against it exactly as it parks
     /// against an open set whose layout is not final. Once nothing can
     /// contribute, the decided space registers (incrementally — a declaration is
@@ -506,7 +506,7 @@ const Expansion = struct {
     }
 
     /// Register the decided declaration space the way `lowerRoot` registers the
-    /// whole program: the `#context_extend` collection, then the scan. Both are
+    /// whole program: the `@context_extend` collection, then the scan. Both are
     /// incremental — a declaration is registered once, whichever pass reached
     /// it first — so a group spliced since the last evaluation is all that is
     /// added, and the whole-program pass later adds only what expansion never
@@ -1028,7 +1028,7 @@ const Group = struct {
         g.out.append(g.ex.self.alloc, stmt) catch {};
     }
 
-    /// Splice a branch-local `#import`. Its module resolved re-entrantly during
+    /// Splice a branch-local `@import`. Its module resolved re-entrantly during
     /// import resolution and has been waiting in the module cache under the
     /// canonical path the node now carries; selecting the branch is what makes
     /// it a real edge of the importing file.

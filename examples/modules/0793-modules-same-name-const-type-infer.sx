@@ -6,9 +6,9 @@
 // `1` (printed `1`, not `1.000000`), while `b_k` infers B's `f64` and yields
 // `2.500000`. Selection routes through the source-aware `selectModuleConst`, the
 // same author selector emission/folding use — type inference must agree.
-#import "modules/std.sx";
-#import "0793-modules-same-name-const-type-infer/a.sx";
-#import "0793-modules-same-name-const-type-infer/b.sx";
+@import "modules/std.sx";
+@import "0793-modules-same-name-const-type-infer/a.sx";
+@import "0793-modules-same-name-const-type-infer/b.sx";
 
 main :: () -> i32 {
     print("a={} b={}\n", a_k(), b_k());

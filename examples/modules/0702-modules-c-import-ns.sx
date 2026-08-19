@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-tc :: #import "tests/fixtures/test_c.sx";
+@import "modules/std.sx";
+tc :: @import "tests/fixtures/test_c.sx";
 
 main :: () -> i32 {
     a := tc.add_numbers(10, 20);

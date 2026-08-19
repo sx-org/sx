@@ -4,7 +4,7 @@
 // if-else body, and when the literal sits in a call argument (where
 // the enclosing closure-typed target must NOT leak in as the body's
 // destination).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Pol :: enum { a; b; }
 

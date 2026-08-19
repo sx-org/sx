@@ -8,8 +8,8 @@
 //
 // `local_type_names` is keyed by declaring source, so a cross-source
 // block-local cannot leak into another source's resolution.
-#import "modules/std.sx";
-#import "0762-modules-imported-generic-caller-local-field-leak/lib.sx";
+@import "modules/std.sx";
+@import "0762-modules-imported-generic-caller-local-field-leak/lib.sx";
 
 main :: () -> i32 {
     LocalOnly :: struct { v: i32; }

@@ -1,7 +1,7 @@
 // Expansion-generated impls are ordinary impls of the expanded program: two
 // expansions landing on one `(protocol, type)` pair are the ordinary coherence
 // error, and it names both unrolled sites.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: struct { x: i64; y: i64; }
 Rect  :: struct { w: i64; h: i64; }

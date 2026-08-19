@@ -2,8 +2,8 @@
 // omitted trailing defaults of its callee. The head carries no receiver and no
 // type-decl slot, so a parameter index IS an argument index there.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Box :: struct ($T: Type) {
     v: T;

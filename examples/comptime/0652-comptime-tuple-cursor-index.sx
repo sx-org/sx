@@ -6,7 +6,7 @@
 // heterogeneous, so there is no runtime element-indexing op — a comptime index
 // lowers exactly like the `.N` field-access path (a `structGet`). A runtime
 // index into a tuple value is an error (no single element type).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct ($R: Type) { value: R; }
 

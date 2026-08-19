@@ -3,7 +3,7 @@
 // anonymous type (`A.inner` has `x`; `B.inner` has `y, z`) — they do not
 // cross-bind on the shared field spelling. The per-parent anon rename keys
 // each `inner` separately.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 A :: struct { inner: struct { x: i64; }; }
 B :: struct { inner: struct { y: i64; z: i64; }; }

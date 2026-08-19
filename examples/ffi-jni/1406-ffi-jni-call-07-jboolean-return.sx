@@ -4,7 +4,7 @@
 // arg/return coercion path widens it to the byte slot the JNI
 // runtime expects. CallBooleanMethod lives at vtable slot 37.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g_should_call : bool = false;
 

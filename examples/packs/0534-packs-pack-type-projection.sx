@@ -4,7 +4,7 @@
 // `Closure(..xs.T) -> R`. (`T` of each element comes from its
 // `impl Box(T) for <elem>`.)
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: protocol(T: Type) {
     get :: (self: *Self) -> T;

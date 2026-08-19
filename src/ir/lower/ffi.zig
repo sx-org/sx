@@ -1117,7 +1117,7 @@ pub fn getJniEnvTlFids(self: *Lowering) struct { get: FuncId, set: FuncId } {
     return .{ .get = self.jni_env_tl_get_fid.?, .set = self.jni_env_tl_set_fid.? };
 }
 
-/// When a namespaced import (`Ns :: #import "..."`) contains runtime-class
+/// When a namespaced import (`Ns :: @import "..."`) contains runtime-class
 /// declarations, ALSO register them under their qualified name `Ns.Class`
 /// so receiver types like `*Ns.Class` can find the fcd. The recursive
 /// scan/lower already handles bare-name registration; this only adds the

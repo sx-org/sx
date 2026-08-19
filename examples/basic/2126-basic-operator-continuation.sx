@@ -5,8 +5,8 @@
 //
 // A raw identifier is an ordinary operand, backtick and all: `` base -`x ``
 // subtracts `` `x ``.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
 
 `x :: 5;
 

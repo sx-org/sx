@@ -5,7 +5,7 @@
 // conditions, and `inline if` branch elimination.
 // A bare-identifier RHS registers as a module const exactly as an
 // expression spelling (`B :: A + 0`) does.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 C :: B;             // forward chain, declared before its targets
 B :: A;

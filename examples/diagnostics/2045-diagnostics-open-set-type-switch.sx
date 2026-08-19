@@ -16,8 +16,8 @@
 //
 // And `free` is not part of a set's story at all: the active member lives inline
 // in the slot, so there is no allocation the value stands for.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 View :: @OpenSet(.{ max = 128 }) {
     render :: (self: *Self) -> string;

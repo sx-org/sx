@@ -8,9 +8,9 @@
 // runtime. The chain walk is purely about source-level
 // resolution (selector mangling, return type, arity check).
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 NSObjectBase :: @ObjcClass("NSObject") extern {
     alloc :: () -> *NSObjectBase;

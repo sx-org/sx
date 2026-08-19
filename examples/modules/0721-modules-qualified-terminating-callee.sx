@@ -11,8 +11,8 @@
 // also lives in m.sx's own flat import, exercising the source-context restore
 // too.)
 
-#import "modules/std.sx";
-m :: #import "0721-modules-qualified-terminating-callee/m.sx";
+@import "modules/std.sx";
+m :: @import "0721-modules-qualified-terminating-callee/m.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

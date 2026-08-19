@@ -4,7 +4,7 @@
 // an arm with no payload carries no pipes. `==` is a comparison, never a match
 // head. `match` bare-names members and needs a backtick as a value name.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Shape :: enum {
     circle: f32;

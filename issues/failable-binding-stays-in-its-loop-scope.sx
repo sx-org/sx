@@ -1,6 +1,6 @@
 // A failable binding is confined to its own loop scope; a sibling loop
 // redeclares the name.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 f :: () -> (i64, !) { return 1; }
 g :: () -> i64 { return 5; }

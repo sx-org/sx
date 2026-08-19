@@ -4,8 +4,8 @@
 // or `#context_extend`ed — carries through, then the one field is overwritten.
 // Exercises save/restore of the boxed context across the push.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 main :: () -> void {
     arena := Arena.init(context.allocator, 4096);

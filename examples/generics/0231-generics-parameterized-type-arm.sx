@@ -2,7 +2,7 @@
 // type-switch arm (`case Buffer(f32):`, nested `case Buffer(Buffer(f32)):`) and
 // a type-value comparison (`type_of(x) == Buffer(f32)`). An arm that names a
 // DIFFERENT instantiation of the same template does not match.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Series :: protocol(T: Type) vtable { count :: (self: *Self) -> i64; }
 

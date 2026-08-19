@@ -4,9 +4,9 @@
 // module's `Make(i64)` must be its own author's type — proving one visible
 // author and then reading the body from the name-keyed map built the wrong
 // layout (and the alias head was rejected as not visible).
-#import "modules/std.sx";
-#import "1626-modules-flat-same-name-type-fn-author/a.sx";
-#import "1626-modules-flat-same-name-type-fn-author/b.sx";
+@import "modules/std.sx";
+@import "1626-modules-flat-same-name-type-fn-author/a.sx";
+@import "1626-modules-flat-same-name-type-fn-author/b.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

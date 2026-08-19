@@ -4,7 +4,7 @@
 // starts a new statement. An EXPRESSION that merely ends in a block — a
 // trailing-block call, an aggregate literal — is still an expression, and its
 // postfix chain reads on across the line.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Color :: enum { red; green; blue }
 

@@ -4,7 +4,7 @@
 // and a boxed `any` reads the count through the same length word the typed
 // reader uses.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Named :: @Slice(i32, i64);
 Punct :: []i32;

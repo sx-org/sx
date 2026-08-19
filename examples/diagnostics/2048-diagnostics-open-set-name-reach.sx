@@ -6,10 +6,10 @@
 // it is told so rather than handed one. A name this file cannot see at all is told
 // that instead. Both refusals name the module that declares the type they mean, on
 // each side, because a bare spelling could not.
-#import "modules/std.sx";
-#import "2048-diagnostics-open-set-name-reach/view.sx";
-#import "2048-diagnostics-open-set-name-reach/alpha/panel.sx";
-#import "2048-diagnostics-open-set-name-reach/beta/panel.sx";
+@import "modules/std.sx";
+@import "2048-diagnostics-open-set-name-reach/view.sx";
+@import "2048-diagnostics-open-set-name-reach/alpha/panel.sx";
+@import "2048-diagnostics-open-set-name-reach/beta/panel.sx";
 
 main :: () -> i32 {
     v : View = Panel{ tag = "which?" };

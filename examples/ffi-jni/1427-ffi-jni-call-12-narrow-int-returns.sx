@@ -2,7 +2,7 @@
 // i16 → CallShortMethod (jshort), u16 → CallCharMethod (jchar).
 // The `@JniClass` method form uses the same slots.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g_should_call : bool = false;
 

@@ -12,7 +12,7 @@
 // struct/enum/tuple into data — no `intrinsic` needed. All folded at `@run`, all
 // serviced natively by the flat-memory VM.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 
 StringId :: u32;

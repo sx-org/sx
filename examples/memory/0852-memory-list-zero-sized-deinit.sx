@@ -2,7 +2,7 @@
 // set `cap` never allocated, so there is no buffer to hand back. The list is
 // left detached and grows again from the same allocator, and a second `deinit`
 // is a no-op.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Nothing :: struct {}
 

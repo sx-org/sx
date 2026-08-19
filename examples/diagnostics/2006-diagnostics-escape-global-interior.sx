@@ -2,7 +2,7 @@
 // escape (specs.md §6.9). The global relocates as a whole — the image holds its
 // declared initializer, not the VM's copy of it — so an address partway into
 // that copy names nothing the image has.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Inner :: struct { n: i64; }
 Outer :: struct { head: i64; inner: Inner; }

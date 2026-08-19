@@ -13,7 +13,7 @@ ViewHolder :: struct { item: *Alias; optional: ?*Nested; }
 Nested :: Alias;
 Alias :: foreign.P;
 
-foreign :: #import "0898-protocols-qualified-alias-abi/protocol.sx";
+foreign :: @import "0898-protocols-qualified-alias-abi/protocol.sx";
 
 Counter :: struct { n: i64; }
 

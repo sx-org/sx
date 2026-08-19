@@ -4,7 +4,7 @@
 // `error_name` builtin → the always-linked tag-name table indexed by global
 // tag id). Works for a bound tag, a re-raised/caught tag, and inside text.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { BadDigit, Empty, Overflow }
 

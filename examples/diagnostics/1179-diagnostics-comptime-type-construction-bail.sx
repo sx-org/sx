@@ -7,8 +7,8 @@
 // An EXPLICITLY-defined empty type — empty struct/tuple/enum/tagged_union — is
 // valid; see examples/0641. Only the never-defined `declare` placeholder is
 // rejected.
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 // Declared but never `define`d — an incomplete forward slot.
 mk_undefined :: () -> Type {

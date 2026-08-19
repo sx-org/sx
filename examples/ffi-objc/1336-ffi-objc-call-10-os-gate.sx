@@ -10,8 +10,8 @@
 // `inline match OS` form works around `@ObjcCall`
 // sites the same way it does elsewhere.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 // Empty stub class — Android cross-compile requires a `main = true`
 // declaration to satisfy the entry-point check. This file is testing

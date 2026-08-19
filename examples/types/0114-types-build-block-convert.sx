@@ -11,8 +11,8 @@
 // expected output captures the generated source verbatim, so formatting
 // drift surfaces here rather than as a downstream compile error.
 
-#import "modules/std.sx";
-#import "modules/ffi/objc_block.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc_block.sx";
 
 preview_void :: (..$args) -> string {
     return build_block_convert($args, void);

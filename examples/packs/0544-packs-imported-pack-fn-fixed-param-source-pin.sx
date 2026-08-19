@@ -10,8 +10,8 @@
 // (`fd.body.source_file`) — matching the rest of the pack signature/body —
 // rather than in main's context, where it is not visible. The control plain fn
 // `use_plain(n: Needs)` types through the source-pinned call-arg path.
-#import "modules/std.sx";
-#import "0544-packs-imported-pack-fn-fixed-param-source-pin/lib.sx";
+@import "modules/std.sx";
+@import "0544-packs-imported-pack-fn-fixed-param-source-pin/lib.sx";
 
 main :: () -> i32 {
     x := make();

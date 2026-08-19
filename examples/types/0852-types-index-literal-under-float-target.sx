@@ -6,7 +6,7 @@
 // subscript is not a value in that type, so it lowers with the ambient target
 // cleared. Indexing via an i64 local takes the same path.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 first :: (xs: []f32) -> f32 { xs[0] }
 

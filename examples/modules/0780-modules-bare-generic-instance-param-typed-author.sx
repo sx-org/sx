@@ -8,8 +8,8 @@
 // Importing only b.sx, `x.combine(3)` on the visible `b.Box` instance must run
 // b's body (`7 + 3 = 10`), not c's (`7 * 3 + 16 = 37`).
 
-#import "modules/std.sx";
-#import "0780-modules-bare-generic-instance-param-typed-author/b.sx";
+@import "modules/std.sx";
+@import "0780-modules-bare-generic-instance-param-typed-author/b.sx";
 
 main :: () -> i32 {
     x := Box(i64).make(7);

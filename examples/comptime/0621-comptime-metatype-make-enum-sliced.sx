@@ -5,8 +5,8 @@
 //
 // `Axis` is built from only the first two of four directions, so `.south` /
 // `.west` are NOT variants of it.
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 build_axis :: () -> Type {
     dirs := .[

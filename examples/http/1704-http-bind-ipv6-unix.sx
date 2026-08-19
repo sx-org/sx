@@ -28,10 +28,10 @@
 //   F. guards: unix_path+reuse_port and unix_path+bind_addr are
 //      error.Config; bind_addr="not-an-ip" is error.Bind.
 //   + net-zero GPA gate across the whole run.
-#import "modules/std.sx";
-socket :: #import "modules/std/socket.sx";
-fs     :: #import "modules/std/fs.sx";
-http   :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+socket :: @import "modules/std/socket.sx";
+fs     :: @import "modules/std/fs.sx";
+http   :: @import "modules/std/http.sx";
 
 PORT_A :: 19019;
 PORT_B :: 19020;

@@ -1,4 +1,4 @@
-#import "contract.sx";
+@import "contract.sx";
 
 Payload :: struct { enabled: bool; }
 Thing :: struct { n: i64; }

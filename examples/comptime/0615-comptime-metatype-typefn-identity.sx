@@ -4,8 +4,8 @@
 // parameter type) is ONE `TypeId`. A value built at one site is therefore
 // assignable / matchable at the other — nominal identity, which is what makes
 // `consume(build())` type-check.
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 Box :: ($T: Type) -> Type {
     return define(declare("Box"), .enum(.{ variants = .[

@@ -11,7 +11,7 @@
 // pointer (see modules/ui/glyph_cache.sx for the established idiom).
 // =====================================================================
 
-#import c {
-    #include "c/stb_truetype.h";
-    #source  "c/stb_truetype_impl.c";
+@import c {
+    @include "c/stb_truetype.h";
+    @source  "c/stb_truetype_impl.c";
 };

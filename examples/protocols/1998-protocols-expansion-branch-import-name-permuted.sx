@@ -4,10 +4,10 @@
 // waits for the branch to decide; imported first, the name is simply there.
 // Declaration order decides when the question is answerable, never what the
 // answer is.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 inline if POINTER_SIZE == 8 {
-    #import "./1992-protocols-expansion-branch-import-wide.sx";
+    @import "./1992-protocols-expansion-branch-import-wide.sx";
 } else {
     NARROW :: 1;
 }

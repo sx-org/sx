@@ -8,7 +8,7 @@
 // The type-argument list is validated first, against the arity of whatever the
 // sibling landed on — a spelling that cannot be right is malformed whether or
 // not this particular binding would have satisfied it.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Ord :: protocol constraint {
     less :: (self: *Self, o: Self) -> bool;

@@ -9,7 +9,7 @@
 // `o, a = null, 1;` diagnoses.
 //
 // All diagnostics batch.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 P :: struct { x: i64 = 0; y: i64 = 0; }
 CP :: P{ x = 1, y = 2 };

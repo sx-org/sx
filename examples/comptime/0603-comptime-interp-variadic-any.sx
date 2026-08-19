@@ -5,8 +5,8 @@
 // `[N x any]` slice from within a `@run`/post-link callback, not just
 // the first two — and not just via JIT.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 puts :: (s: [:0]u8) -> i32 extern libc;
 

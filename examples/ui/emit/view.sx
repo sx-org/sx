@@ -1,9 +1,9 @@
 // `emit.View` — this example package's open set.
 //
 // A type joins by declaring itself into THIS set.
-#import "modules/std.sx";
-#import "examples/ui/emit/geometry.sx";
-#import "examples/ui/emit/render.sx";
+@import "modules/std.sx";
+@import "examples/ui/emit/geometry.sx";
+@import "examples/ui/emit/render.sx";
 
 View :: @OpenSet(.{ max = 256, align = 8 }) {
     size_that_fits :: (self: *Self, proposal: ProposedSize) -> Size;

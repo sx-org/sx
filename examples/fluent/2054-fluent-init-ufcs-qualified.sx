@@ -12,10 +12,10 @@
 // function is reached by name, because a name declared BOTH here and in a
 // flat-imported module collapses to one winner, and the dot-call would then report
 // whichever declaration won rather than the spelling under test.
-#import "modules/std.sx";
-#import "modules/std/list.sx";
-#import "2054-fluent-init-ufcs-qualified/emitter.sx";
-lib :: #import "2054-fluent-init-ufcs-qualified/named.sx";
+@import "modules/std.sx";
+@import "modules/std/list.sx";
+@import "2054-fluent-init-ufcs-qualified/emitter.sx";
+lib :: @import "2054-fluent-init-ufcs-qualified/named.sx";
 
 Holder :: struct {
     v: i64 = 0;

@@ -2,7 +2,7 @@
 // `unknown type 'NotAType'`. Only a const whose value introduces a type — a
 // declaration or a type-expression alias — counts as a type name.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 NotAType :: 123;
 

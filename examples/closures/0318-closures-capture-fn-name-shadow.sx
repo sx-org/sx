@@ -6,7 +6,7 @@
 // `Scope.lookupNearest` first, which resolves the binding at the nearest
 // declaring depth; the fn-name skip applies only when no binding exists.
 // Here the local is named `out`, which the std prelude also declares.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // `out` collides with the std prelude fn `out :: (str: string) -> void`.
 

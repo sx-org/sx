@@ -6,8 +6,8 @@
 //      struct INTO a `.struct(StructInfo)` value and reconstructs an identical
 //      one — no literal field list.
 // Both constructed structs build + read like any hand-written struct.
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 Vec2 :: define(declare("Vec2"), .struct(.{ fields = .[
     StructField{ name = "x", type = f64 },

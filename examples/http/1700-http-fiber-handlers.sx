@@ -26,11 +26,11 @@
 //      the channels, wakes + drives the fibers to completion).
 //   7. GPA leak gate net-zero after close + runner.deinit() (fiber envs +
 //      structs reaped; channel + job memory reclaimed; List backings freed).
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
-fs :: #import "modules/std/http/fiber_sched.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
+fs :: @import "modules/std/http/fiber_sched.sx";
 
-clib :: #library "c";
+clib :: @library "c";
 pthread_self :: () -> usize extern clib;
 
 PORT :: 19015;

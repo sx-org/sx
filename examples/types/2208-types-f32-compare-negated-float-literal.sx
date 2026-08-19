@@ -2,7 +2,7 @@
 // uses the same width on both sides. A positive literal and a subtracted
 // zero share that rule.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     v : f32 = -0.5;

@@ -4,8 +4,8 @@
 // own field, so a child appends to whichever list is in scope. This is not the
 // generic collect sink: emit has no `@BuildBlock` interception, and a child that
 // does not call `.emit()` does not appear.
-#import "modules/std.sx";
-#import "examples/ui/emit/view.sx";
+@import "modules/std.sx";
+@import "examples/ui/emit/view.sx";
 
 EmitSink :: struct {
     children: *List(View) = null;

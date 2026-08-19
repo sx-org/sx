@@ -15,9 +15,9 @@
 // Each non-leaf site reads the full source-aware author outcome, AMBIGUOUS
 // included, rather than a boolean leak-check.
 
-#import "modules/std.sx";
-#import "0767-modules-ambiguous-bare-type-forms/a.sx";
-#import "0767-modules-ambiguous-bare-type-forms/b.sx";
+@import "modules/std.sx";
+@import "0767-modules-ambiguous-bare-type-forms/a.sx";
+@import "0767-modules-ambiguous-bare-type-forms/b.sx";
 
 describe :: ($T: Type) -> i32 {
     r := match T {

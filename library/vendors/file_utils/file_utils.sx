@@ -6,7 +6,7 @@
 // (modules/platform/android.sx wires that during activity startup).
 // =====================================================================
 
-#import c {
-    #include "c/file_utils.h";
-    #source  "c/file_utils.c";
+@import c {
+    @include "c/file_utils.h";
+    @source  "c/file_utils.c";
 };

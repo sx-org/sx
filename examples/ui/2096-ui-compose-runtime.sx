@@ -12,10 +12,10 @@
 // outlives the frames is the root's and the loop's, and their teardowns hand
 // every byte of it back. A snapshot a caller projects into itself is that
 // caller's instead, reused across projects and released once.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "examples/ui/compose.sx";
-ui :: #import "modules/ui/types.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "examples/ui/compose.sx";
+ui :: @import "modules/ui/types.sx";
 
 at :: (x: f32, y: f32) -> Point => .{ x = x, y = y };
 down :: (x: f32, y: f32) -> InputEvent => .pointer_down(.{ pointer = .{ value = 1 }, position = at(x, y) });

@@ -4,8 +4,8 @@
 // The visibility gate only rejects the 2-hop case (0765), never a
 // directly-imported reference.
 
-#import "modules/std.sx";
-#import "0766-modules-reflection-type-direct-ok/c.sx";
+@import "modules/std.sx";
+@import "0766-modules-reflection-type-direct-ok/c.sx";
 
 main :: () -> i32 {
     print("{}\n", size_of(Nums));

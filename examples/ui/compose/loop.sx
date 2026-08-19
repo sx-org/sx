@@ -21,18 +21,18 @@
 // taken in turn, because the frame that committed is still being routed against
 // while the next one builds: what a frame allocates lives until the frame after
 // next takes its arena back. Frames therefore run at a fixed memory ceiling.
-#import "modules/std.sx";
-#import "modules/std/core.sx";
-#import "modules/std/mem.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/render.sx";
-#import "modules/ui/input.sx";
-#import "examples/ui/compose/view.sx";
-#import "examples/ui/compose/identity.sx";
-#import "examples/ui/compose/state.sx";
-#import "examples/ui/compose/frame.sx";
-#import "examples/ui/compose/input.sx";
-#import "examples/ui/compose/focus.sx";
+@import "modules/std.sx";
+@import "modules/std/core.sx";
+@import "modules/std/mem.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
+@import "modules/ui/input.sx";
+@import "examples/ui/compose/view.sx";
+@import "examples/ui/compose/identity.sx";
+@import "examples/ui/compose/state.sx";
+@import "examples/ui/compose/frame.sx";
+@import "examples/ui/compose/input.sx";
+@import "examples/ui/compose/focus.sx";
 
 // What a frame arena starts with. A reset keeps the largest chunk, so the pair
 // settles at the high-water mark of one frame and allocates nothing after.

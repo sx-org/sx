@@ -1,9 +1,9 @@
-#import "modules/std.sx";
-#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
-#import "modules/math";
-#import "modules/build.sx";
-#import "modules/std/test.sx";
-pkg :: #import "tests/fixtures/testpkg";
+@import "modules/std.sx";
+@import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+@import "modules/math";
+@import "modules/build.sx";
+@import "modules/std/test.sx";
+pkg :: @import "tests/fixtures/testpkg";
 
 Point :: struct { x, y: i32; }
 

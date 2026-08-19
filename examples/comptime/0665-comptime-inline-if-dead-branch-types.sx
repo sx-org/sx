@@ -5,7 +5,7 @@
 // unknown-type checker walks only the live one. Covers the bool-const,
 // `OS ==` binary, and/or, and `inline match OS` forms; the taken
 // branch always runs.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 ENABLED :: false;
 

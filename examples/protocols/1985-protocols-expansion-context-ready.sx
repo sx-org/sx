@@ -13,7 +13,7 @@
 // The untaken branch declares the same field name with a different default —
 // if a dead branch contributed, the program would be a duplicate-field error
 // instead of printing which default is really in the Context.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
 
@@ -38,9 +38,9 @@ inline for T in @run chosen() {
 }
 
 inline if POINTER_SIZE == 8 {
-    #context_extend depth: i64 = 3;
+    @context_extend depth: i64 = 3;
 } else {
-    #context_extend depth: i64 = 9;
+    @context_extend depth: i64 = 9;
 }
 
 main :: () {

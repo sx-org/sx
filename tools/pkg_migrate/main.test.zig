@@ -73,7 +73,7 @@ test "comments, strings, chars and heredocs surface no words" {
     try expectWords("// package import\n", &.{});
     try expectWords("s := \"package import\";\n", &.{"s"});
     try expectWords("c := 'p';\n", &.{"c"});
-    try expectWords("h :: #string END\npackage import\nEND;\n", &.{"h"});
+    try expectWords("h :: @string END\npackage import\nEND;\n", &.{"h"});
 }
 
 test "an escaped quote does not end its literal" {
@@ -100,9 +100,9 @@ test "numbers terminate by the numeric grammar, exposing their identifier tail" 
 test "an unrecognized directive exposes its word; a real one is opaque" {
     try expectWords("#builtin\n", &.{"builtin"});
     try expectWords("#package #private\n", &.{ "package", "private" });
-    try expectWords("#identity #context_extend\n", &.{});
+    try expectWords("@identity @context_extend\n", &.{});
     try expectWords("#expand\n", &.{"expand"});
-    try expectWords("#import \"p\";\n", &.{});
+    try expectWords("@import \"p\";\n", &.{});
     try expectWords("#importing\n", &.{"importing"});
 }
 
@@ -138,18 +138,19 @@ test "a leading package declaration is recognized" {
 test "each malformed literal reports its own message and offset" {
     try expectOneWarning("x := \"abc\n", 5, "unterminated string literal (rest of file skipped as literal)");
     try expectOneWarning("x := 'a\n", 5, "unterminated char literal (rest of file skipped as literal)");
-    try expectOneWarning("h :: #string 123\n", 5, "#string without delimiter identifier");
-    try expectOneWarning("h :: #string END", 5, "unterminated #string heredoc");
-    try expectOneWarning("h :: #string END\nbody\n", 5, "unterminated #string heredoc (rest of file skipped as literal)");
+    try expectOneWarning("h :: @string 123\n", 5, "@string without delimiter identifier");
+    try expectOneWarning("h :: @string END", 5, "unterminated @string heredoc");
+    try expectOneWarning("h :: @string END\nbody\n", 5, "unterminated @string heredoc (rest of file skipped as literal)");
 }
 
 test "an invalid token that is not a literal warns about nothing" {
-    try expectNoWarnings("#builtin\n"); // the lone `#` of an unrecognized directive
+    try expectNoWarnings("#builtin\n"); // the lone `#`
     try expectNoWarnings("#stringy\n");
+    try expectNoWarnings("#string END\nhello\nEND\n");
     try expectNoWarnings("` \n"); // a backtick with no name after it
     try expectNoWarnings("@ \n");
     try expectNoWarnings("\\\n");
-    try expectNoWarnings("h :: #string END\nEND;\n");
+    try expectNoWarnings("h :: @string END\nEND;\n");
 }
 
 test "insertion goes after the last blank line of the leading run" {

@@ -79,9 +79,9 @@ test "parser: comptime type-metaprogramming surface parses" {
     }
 }
 
-// The `compiler`-library binding surface PARSES — `name :: #library "x";` plus
+// The `compiler`-library binding surface PARSES — `name :: @library "x";` plus
 // the postfix `intrinsic` marker, marking a compiler-domain / compiler-API
-// function — no `extern`, no fake `#library`. The
+// function — no `extern`, no fake `@library`. The
 // AST must carry `abi == .compiler`, `extern_export == .none`, `extern_lib ==
 // null`, and a synthesized empty-block (bodiless) body.
 
@@ -376,20 +376,20 @@ test "parser: non-Closure call followed by '->' still fails" {
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-// `#context_extend name: Type = default;` parses at top level to a
+// `@context_extend name: Type = default;` parses at top level to a
 // `.context_extend_decl` node carrying {name, name_span, type_expr,
 // default_expr}; the `= default` clause may be ABSENT (default_expr == null —
 // the collection pass rejects it, not the parser); and it
 // declares no module-scope name (`declName` is null — the field lives in the
 // program-global Context namespace).
-test "parser: #context_extend parses to context_extend_decl" {
+test "parser: @context_extend parses to context_extend_decl" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     const src =
-        \\#context_extend ui: ?*i64 = null;
-        \\#context_extend bare: i64;
+        \\@context_extend ui: ?*i64 = null;
+        \\@context_extend bare: i64;
         \\
     ;
     var parser = try Parser.init(alloc, src);
@@ -410,16 +410,16 @@ test "parser: #context_extend parses to context_extend_decl" {
     try std.testing.expect(bare.default_expr == null);
 }
 
-// `#context_extend` is top-level-only — statement position is a parse error,
+// `@context_extend` is top-level-only — statement position is a parse error,
 // not a generic expression-parse fallthrough.
-test "parser: #context_extend rejected in statement position" {
+test "parser: @context_extend rejected in statement position" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     const src =
         \\f :: () {
-        \\    #context_extend x: i64 = 0;
+        \\    @context_extend x: i64 = 0;
         \\}
         \\
     ;
@@ -521,7 +521,7 @@ test "parser: private stamps module-scope declarations" {
         \\private State :: struct { n: i64; }
         \\private LIMIT :: 21;
         \\private counter : i64 = 0;
-        \\private dep :: #import "dep.sx";
+        \\private dep :: @import "dep.sx";
         \\private lifted :: use_me;
         \\pub_fn :: () -> i64 { return 0; }
         \\
@@ -548,7 +548,7 @@ test "parser: private rejected on locals and directive forms" {
 
     const cases = [_][:0]const u8{
         "f :: () { private x := 1; }",
-        "private #import \"x.sx\";",
+        "private @import \"x.sx\";",
         "private impl P for T {}",
         "private inline if true { a :: 1; }",
         "private @run 1;",
@@ -795,7 +795,7 @@ test "parser: a `;` ends a top-level declaration" {
     const alloc = arena.allocator();
 
     var p = try Parser.init(alloc,
-        \\#import "modules/std.sx";
+        \\@import "modules/std.sx";
         \\TAU :: 6;
         \\seed : i64 = 1;
         \\puts :: (s: *u8) -> i32 extern;
@@ -1465,27 +1465,27 @@ test "parser: a function header reads through a line break" {
     try std.testing.expectEqual(@as(usize, 1), fd.body.data.block.stmts.len);
 }
 
-// `#context_extend`'s default is optional; the `;` is what ends the
+// `@context_extend`'s default is optional; the `;` is what ends the
 // declaration, so a split default still binds.
-test "parser: a #context_extend default reads through a line break" {
+test "parser: a @context_extend default reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     var split = try Parser.init(alloc,
-        \\#context_extend depth: i64
+        \\@context_extend depth: i64
         \\    = 3
     );
     const split_decls = (try split.parse()).data.root.decls;
     try std.testing.expectEqual(@as(usize, 1), split_decls.len);
     try std.testing.expect(split_decls[0].data.context_extend_decl.default_expr != null);
 
-    var same = try Parser.init(alloc, "#context_extend depth: i64 = 3\n");
+    var same = try Parser.init(alloc, "@context_extend depth: i64 = 3\n");
     try std.testing.expect((try same.parse()).data.root.decls[0].data.context_extend_decl.default_expr != null);
 
     // Absent default, and the declaration below is its own.
     var bare = try Parser.init(alloc,
-        \\#context_extend depth: i64;
+        \\@context_extend depth: i64;
         \\LIMIT :: 9;
     );
     const bare_decls = (try bare.parse()).data.root.decls;
@@ -1570,15 +1570,15 @@ test "parser: a fixed form's list still demands its `;`" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // `#import c { … }` entries.
+    // `@import c { … }` entries.
     _ = try parseErrMsg(alloc,
-        \\c :: #import c {
-        \\    #include "stdio.h"
+        \\c :: @import c {
+        \\    @include "stdio.h"
         \\}
     );
     var c_ok = try Parser.init(alloc,
-        \\c :: #import c {
-        \\    #include "stdio.h";
+        \\c :: @import c {
+        \\    @include "stdio.h";
         \\}
     );
     _ = try c_ok.parse();
@@ -2066,13 +2066,13 @@ test "a struct-body typed constant adds no field name start" {
     try expectNameStarts(src, sd.field_names, sd.field_name_starts);
 }
 
-test "'#using' leaves the declaration's name starts in step with its names" {
+test "'@using' leaves the declaration's name starts in step with its names" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const src: [:0]const u8 =
         \\Base :: struct { a: i32; }
         \\Derived :: struct {
-        \\    #using Base;
+        \\    @using Base;
         \\    b: i64;
         \\}
     ;

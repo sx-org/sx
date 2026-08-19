@@ -6,12 +6,12 @@ Box :: struct {
 }
 
 Peek :: struct {
-    #using Box;
+    @using Box;
     doubled :: (self: *Peek) -> i64 { self.secret * 2 }
 }
 
 Wrap :: struct ($T: Type) {
-    #using Box;
+    @using Box;
     t: T = ---;
 }
 

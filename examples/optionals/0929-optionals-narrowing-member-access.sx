@@ -9,7 +9,7 @@
 //   narrowed read gets the field's type).
 // `?.` keeps the optional; `q := p` keeps the static optional type
 // (only guarded locals narrow — spell `q := p!`).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 U :: struct { m: i64 = 3; }
 T :: struct {

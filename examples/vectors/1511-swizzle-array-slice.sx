@@ -1,6 +1,6 @@
 // The same shuffle names on `[N]T` and `[]T`. One letter is the element;
 // two or more yield `[N]T`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     a : [4]i64 = .[10, 20, 30, 40];

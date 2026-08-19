@@ -13,10 +13,10 @@
 // the parent: the child is still alive there (no extra dealloc), and
 // both die once the parent is released.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "modules/ffi/objc.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ffi/objc.sx";
+@import "modules/build.sx";
 
 SxStrongChild :: @ObjcClass("SxStrongChild", extends = NSObject) {
     tag: i32;

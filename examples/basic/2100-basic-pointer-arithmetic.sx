@@ -2,7 +2,7 @@
 // step a pointer by whole pointees and keep the pointer type, the offset may
 // sit on either side of `+`, `+=` / `-=` fold the same way, and `p - q` over
 // one element type yields the signed count of elements between them.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     values : [4]i32 = .[10, 20, 30, 40];

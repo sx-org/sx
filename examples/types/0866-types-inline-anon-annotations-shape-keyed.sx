@@ -3,7 +3,7 @@
 // shapes unify to one TypeId, distinct shapes are distinct types — including
 // across annotation/literal sites and inside anon-enum payload structs.
 // Every inline decl displays as `__anon`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g :: (v: struct { x: i64; }) -> i64 { return v.x; }
 

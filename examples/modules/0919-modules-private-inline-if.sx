@@ -2,7 +2,7 @@
 // so their declarations may be `private`; nested function bodies may not
 // (covered by the diagnostics corpus).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 inline if POINTER_SIZE == 8 {
     private chosen :: () -> i64 { return 1; }

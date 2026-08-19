@@ -3,7 +3,7 @@
 // makes a compound type literal a first-class `Type` value in expression
 // position (`t : Type = *i64;`), mirroring named types (`t : Type = f64;`).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     x := 42;

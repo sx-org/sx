@@ -2,7 +2,7 @@
 // declaration from a same-spelled local enum. It must neither occupy the
 // enum's TypeId nor make `$mode: Mode` look like a protocol/type parameter.
 
-hidden :: #import "0897-protocols-hidden-protocol-local-enum/hidden.sx";
+hidden :: @import "0897-protocols-hidden-protocol-local-enum/hidden.sx";
 
 Mode :: enum { run; }
 

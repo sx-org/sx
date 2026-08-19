@@ -4,7 +4,7 @@
 // binding of an extern C-variadic function carries the C convention, so an
 // indirect call crosses with no implicit context.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 printf :: (fmt: cstring, ..) -> i32 extern;
 

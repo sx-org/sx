@@ -1,1 +1,1 @@
-three :: #import "three.sx";
+three :: @import "three.sx";

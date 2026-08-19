@@ -1,8 +1,8 @@
 // The package's public surface. An import is not transitive — a module that only
 // imports its parts publishes nothing — so a facade names what it re-exports, and
 // one import gets a consumer the package without naming its layout.
-#import "modules/std.sx";
-inner :: #import "pkg/view.sx";
+@import "modules/std.sx";
+inner :: @import "pkg/view.sx";
 
 View :: inner.View;
 Label :: inner.Label;

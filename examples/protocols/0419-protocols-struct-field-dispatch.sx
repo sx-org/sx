@@ -9,7 +9,7 @@
 // nested struct holding a struct holding a protocol field, and passing the
 // holder by value into another function before dispatching.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Speaker :: protocol vtable { greet :: (self: *Self, x: i64) -> i64; }
 

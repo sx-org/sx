@@ -11,7 +11,7 @@
 // Because the arm receives the payload's address, a method that writes through
 // `self` writes the RECEIVER's slot — and the source the slot was formed from is
 // untouched, because the slot is an independent value.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 256, align = 8 }) {
     render :: (self: *Self) -> string;

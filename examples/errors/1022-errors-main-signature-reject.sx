@@ -6,7 +6,7 @@
 // exercised elsewhere (238 integer-exit truncation, 244 `-> !`,
 // 245 `-> (int, !)`).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> string {        // ERROR: return type must be void, an integer, or `!`
     return "not an exit code";

@@ -8,7 +8,7 @@
 // execute (no JVM in the test runtime), while the codegen path still emits
 // the calls.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 MotionEvent :: @JniClass("android/view/MotionEvent") extern {
     getAction :: (self: *Self) -> i32;

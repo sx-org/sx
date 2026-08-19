@@ -4,8 +4,8 @@
 // children, with no terminal marker on the child, no ambient sink, and no
 // collection call at the call site. Interception is a property of the
 // container's own `$B/@BuildBlock(View)` parameter.
-#import "modules/std.sx";
-#import "examples/ui/compose.sx";
+@import "modules/std.sx";
+@import "examples/ui/compose.sx";
 
 main :: () -> i32 {
     stack := vstack(2.0) {

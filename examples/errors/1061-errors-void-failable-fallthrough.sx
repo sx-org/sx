@@ -11,7 +11,7 @@
 // `noop`'s `!` really is redundant, so the "drop the `!`" warning fires and
 // is pinned; the shape under test is exactly that redundant channel.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 noop :: () -> ! { }                 // success by fall-through, no `return;`
 

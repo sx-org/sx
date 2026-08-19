@@ -14,9 +14,9 @@
 // channel resolution — 0813 exercises that leg.) This file holds the lambda
 // `-> !Named` ambiguity reported across both source-aware sites.
 
-#import "modules/std.sx";
-#import "0814-modules-same-name-error-set-lambda-ambiguous/a.sx";
-#import "0814-modules-same-name-error-set-lambda-ambiguous/b.sx";
+@import "modules/std.sx";
+@import "0814-modules-same-name-error-set-lambda-ambiguous/a.sx";
+@import "0814-modules-same-name-error-set-lambda-ambiguous/b.sx";
 
 main :: () -> i32 {
     fail_io := || -> !IoErr { return; };

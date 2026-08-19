@@ -2,7 +2,7 @@
 // It lowers to a zero-width `[0 x i8]` LLVM slot (TypeLowering.fieldLLVMType),
 // and aggregate init skips storing a value into it (emitStructInit), so the
 // struct stays sized and field access past the void field is correct.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Holder :: struct { v: void; ok: bool; }
 

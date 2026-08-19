@@ -10,8 +10,8 @@
 // "multiple removes on same metadata", "put", "putAssumeCapacity", "getOrPut",
 // "rehash", plus iterator. Skipped Zig-only: Adapted/AutoContext variants,
 // allocation-failure injection, removeByPtr pointer arithmetic, 0-sized keys.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

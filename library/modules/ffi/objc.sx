@@ -11,7 +11,7 @@
 // std is required for real: the `impl Into(*NSString) for string` bridge
 // below needs `Into` nameable in THIS module's scope — an impl head whose
 // protocol does not resolve is a compile error.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // ─── Obj-C primitive type aliases ───────────────────────────────────────
 // Named stand-ins for the three opaque Obj-C runtime types. They all
@@ -36,8 +36,8 @@ BOOL :: i8;
 // On macOS libobjc is auto-loaded by libSystem; on iOS it isn't, so we
 // link it explicitly. Foundation registers NSString etc. with the runtime,
 // also auto-loaded on macOS and required as an explicit framework on iOS.
-objc :: #library "objc";
-#framework "Foundation";
+objc :: @library "objc";
+@framework "Foundation";
 
 objc_getClass         :: (name: [*]u8)                  -> *void  extern objc;
 objc_lookUpClass      :: (name: [*]u8)                  -> *void  extern objc;

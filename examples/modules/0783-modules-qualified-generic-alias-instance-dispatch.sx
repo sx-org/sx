@@ -7,9 +7,9 @@
 // The alias name mirrors the author's instance template, bindings, and author
 // entries; that is what makes an alias receiver dispatch its author's method.
 
-#import "modules/std.sx";
-a :: #import "0783-modules-qualified-generic-alias-instance-dispatch/a.sx";
-b :: #import "0783-modules-qualified-generic-alias-instance-dispatch/b.sx";
+@import "modules/std.sx";
+a :: @import "0783-modules-qualified-generic-alias-instance-dispatch/a.sx";
+b :: @import "0783-modules-qualified-generic-alias-instance-dispatch/b.sx";
 
 ABox :: a.Box(i64);
 

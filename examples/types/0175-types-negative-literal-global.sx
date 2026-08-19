@@ -3,7 +3,7 @@
 // integer global (non-integral errors), and boundary values fit exactly.
 // Out-of-range negatives get the literal fits-check, not "non-constant".
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g1 : i64 = -1;
 g2 : i64 = -4.0;

@@ -1,7 +1,7 @@
 // An explicit alias authored by a facade is
 // visible to flat importers and preserves the underlying type's static methods.
 
-#import "0907-modules-explicit-static-reexport/facade.sx";
+@import "0907-modules-explicit-static-reexport/facade.sx";
 
 main :: () -> i32 {
     value : Public = Public.make();

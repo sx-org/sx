@@ -19,10 +19,10 @@
 // whose fills come from an arena calls `discard` first: those buffers are the
 // arena's to reclaim, and reusing them past its reset would hand out released
 // storage.
-#import "modules/std.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/render.sx";
-#import "examples/ui/compose/view.sx";
+@import "modules/std.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
+@import "examples/ui/compose/view.sx";
 
 CommittedUiSnapshot :: struct {
     revision: i64 = 0

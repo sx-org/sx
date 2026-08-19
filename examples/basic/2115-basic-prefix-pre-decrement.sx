@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-lib :: #import "2113-basic-compound-place-rmw/lib.sx";
+@import "modules/std.sx";
+lib :: @import "2113-basic-compound-place-rmw/lib.sx";
 
 Counter :: struct { count: i64; }
 Box :: struct { inner: Counter; }

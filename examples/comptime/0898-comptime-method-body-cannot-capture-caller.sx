@@ -1,6 +1,6 @@
 // A comptime method is still a function boundary. Inlining must not make an
 // undeclared identifier in its body capture a same-named caller local.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Ord :: enum { one; }
 

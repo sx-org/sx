@@ -4,7 +4,7 @@
 // `Buffer(f32)` spelling: `type_eq`, `type_name`, a `case BufF:` arm, a
 // `v.(BufF)` downcast, an `impl … for BufF` head, and a `BufF{ … }` literal.
 // Distinct instantiations stay distinct.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Series :: protocol(T: Type) vtable { count :: (self: *Self) -> i64; }
 

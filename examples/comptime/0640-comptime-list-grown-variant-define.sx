@@ -8,8 +8,8 @@
 // A `[*]T` many-pointer (the List's bare `items` field) carries no length, so it
 // must be sliced with `[0..len]` to form a `[]T`; passing `vs.items` bare is a
 // rejected coercion (see the diagnostic example for that path).
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 make_enum :: (name: string, variants: []EnumVariant) -> Type {
     return define(declare(name), .enum(.{ variants = variants }));

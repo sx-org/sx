@@ -3,7 +3,7 @@
 // runtime code is a build error, not an undefined-symbol link failure. A comptime
 // use inside `@run` or a `::` is fine; see examples/0626.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 
 StringId :: u32;

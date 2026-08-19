@@ -4,7 +4,7 @@
 // dot-receiver spellings. A concrete leaf names the downcast that reads the
 // conformer out; a set destination answers in the terms it decides by,
 // membership.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Boxed :: protocol vtable { name :: (self: *Self) -> string; }
 

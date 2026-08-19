@@ -31,8 +31,8 @@
 //
 // aarch64-macOS-pinned (`.build {"target":"macos"}`, matches host → runs
 // end-to-end): sched.sx's switch asm + the kqueue path are per-arch/Apple.
-#import "modules/std.sx";
-sched :: #import "modules/std/sched.sx";
+@import "modules/std.sx";
+sched :: @import "modules/std/sched.sx";
 
 // Raw libc fd primitives — canonical signatures (the extern dedupe rejects a
 // divergent re-binding of the same C symbol). `close` matches sched.sx's own;

@@ -6,8 +6,8 @@
 //
 // The enum has two variants: `value` carrying an i64 payload, and `closed` with
 // no payload (`payload = void`).
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 E :: define(declare("E"), .enum(.{ variants = .[
     EnumVariant{ name = "value",  payload = i64  },

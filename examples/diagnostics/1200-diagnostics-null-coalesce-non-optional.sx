@@ -3,7 +3,7 @@
 // codegen. An already-`.unresolved` lhs — a prior error, e.g. an undefined name —
 // passes through untouched, so the original diagnostic is not double-reported.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
   x := 5 ?? 7;   // <- left operand of '??' must be an optional, but has type 'i64'

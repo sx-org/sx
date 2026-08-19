@@ -4,7 +4,7 @@
 // [..] is the whole slice; bounds are arbitrary expressions; strings slice
 // through the same path.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 dump :: (s: []i64, tag: string) {
     print("{}: ", tag);

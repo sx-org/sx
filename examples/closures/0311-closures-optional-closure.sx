@@ -10,7 +10,7 @@
 // else-arm in `src/ir/lower/call.zig` dispatches there when the callee
 // expression's static type is a closure, and uses the real return type.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 take :: (g: ?Closure() -> void) {
   if g { g!(); } else { print("param-absent\n"); }

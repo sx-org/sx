@@ -4,11 +4,11 @@
 // importers, and both read the same site — engine's file, engine's declaration
 // path.
 
-#import "modules/std.sx";
-#import "modules/std/core.sx";
+@import "modules/std.sx";
+@import "modules/std/core.sx";
 
-eng :: #import "2088-modules-namespaced-site-names-its-module/engine.sx";
-fac :: #import "2088-modules-namespaced-site-names-its-module/facade.sx";
+eng :: @import "2088-modules-namespaced-site-names-its-module/engine.sx";
+fac :: @import "2088-modules-namespaced-site-names-its-module/facade.sx";
 
 main :: () -> i32 {
     direct := eng.report();

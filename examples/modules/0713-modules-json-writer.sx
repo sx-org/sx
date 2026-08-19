@@ -17,10 +17,10 @@
 // than truncate. The model is built through an explicit Arena allocator
 // and freed in one `deinit`; the writer path allocates nothing.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
-#import "modules/std/json.sx";
-#import "modules/std/fs.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+@import "modules/std/json.sx";
+@import "modules/std/fs.sx";
 
 // The exact document the writer must produce (insertion order, escaping).
 EXPECT :: "{\"name\":\"a\\\"b\\n\",\"tab\":\"x\\ty\",\"bs\":\"c\\\\d\",\"ctrl\":\"\\u0001\",\"n\":-7,\"zero\":0,\"pos\":7,\"min\":-9223372036854775808,\"max\":9223372036854775807,\"ok\":true,\"nil\":null,\"xs\":[1,-2,3],\"nested\":{\"k\":\"v\"}}";

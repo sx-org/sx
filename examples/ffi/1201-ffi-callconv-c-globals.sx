@@ -2,7 +2,7 @@
 // that dispatches through a global pointer to a method on the pointed-to
 // struct reads and writes the struct's real storage, never a corrupted copy.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Pipe :: struct {
     pw: i32;

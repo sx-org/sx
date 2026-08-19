@@ -5,7 +5,7 @@
 // binds `T = f64`. Also covers destructure decls (`a, b := ...`), which
 // share the same rule.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 f :: () -> f32 {
     x := 1.5;

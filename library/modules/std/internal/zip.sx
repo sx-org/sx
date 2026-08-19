@@ -1,12 +1,12 @@
 // Dependency-free ZIP32/ZIP64 archive support.
 
-#import "modules/std/core.sx";
-#import "modules/std/list.sx";
-#import "modules/std/fs.sx";
-#import "modules/std/compress.sx";
-#import "modules/std/internal/compress.sx";
-zip_contracts :: #import "modules/std/codecs/zip_contracts.sx";
-time :: #import "modules/std/time.sx";
+@import "modules/std/core.sx";
+@import "modules/std/list.sx";
+@import "modules/std/fs.sx";
+@import "modules/std/compress.sx";
+@import "modules/std/internal/compress.sx";
+zip_contracts :: @import "modules/std/codecs/zip_contracts.sx";
+time :: @import "modules/std/time.sx";
 
 private le16 :: (data: string, at: i64) -> (i64, !Error) {
     if at < 0 or at + 2 > data.len { raise error.UnexpectedEnd; }

@@ -11,7 +11,7 @@
 // a `@run` a condition names is registered and drained by the same worklist, and
 // an answer stands even while other drivers are still open, because a driver
 // that contributes to a DIFFERENT protocol never held this one open.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: protocol vtable { area :: (self: *Self) -> i64; }
 Tally :: protocol vtable { count :: (self: *Self) -> i64; }

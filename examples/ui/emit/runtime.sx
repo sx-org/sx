@@ -1,8 +1,8 @@
 // The emit library's root and rendering entry points.
-#import "modules/std.sx";
-#import "examples/ui/emit/geometry.sx";
-#import "examples/ui/emit/render.sx";
-#import "examples/ui/emit/view.sx";
+@import "modules/std.sx";
+@import "examples/ui/emit/geometry.sx";
+@import "examples/ui/emit/render.sx";
+@import "examples/ui/emit/view.sx";
 
 // Measures the root against the viewport, lays it out, and renders it into a
 // tree the caller owns.

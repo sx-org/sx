@@ -5,7 +5,7 @@
 // whole optional toolbox: `?? d` coalescing, `if v := … {}` binding
 // with typed narrowing, `== null` tests. A typed receiver keeps the
 // conversion regime (`5.(?i64)` is the xx optional wrap, no check).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: struct { x: i64; y: i64; }
 

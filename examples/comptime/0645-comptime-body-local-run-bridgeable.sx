@@ -2,7 +2,7 @@
 // optional bakes the VM result as a constant. The constructors run only at
 // compile time (`@is_comptime()`). An unbridgeable result (e.g. `[2][]i64`)
 // still fails the build.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Pt :: struct { x: i64; y: i64; }
 

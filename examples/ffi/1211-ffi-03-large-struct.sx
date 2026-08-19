@@ -13,10 +13,10 @@
 //   Big24 — 24 B, three i64
 //   Big48 — 48 B, six i64
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #source "1211-ffi-03-large-struct.c";
+@import c {
+    @source "1211-ffi-03-large-struct.c";
 };
 
 Big24 :: struct { a: i64; b: i64; c: i64; }

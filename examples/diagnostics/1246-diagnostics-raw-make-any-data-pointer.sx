@@ -3,7 +3,7 @@
 // never meaningful, and the runtime contract (data points at a live,
 // aligned value of tp) could not catch it.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i64 {
     x : i64 = 42;

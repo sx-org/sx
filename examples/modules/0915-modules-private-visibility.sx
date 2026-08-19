@@ -2,9 +2,9 @@
 // forward references, every declaration kind, a public alias exposing a
 // private type, and a facade whose private named import stays internal.
 
-#import "modules/std.sx";
-lib :: #import "0915-modules-private-visibility/lib.sx";
-fac :: #import "0915-modules-private-visibility/facade.sx";
+@import "modules/std.sx";
+lib :: @import "0915-modules-private-visibility/lib.sx";
+fac :: @import "0915-modules-private-visibility/facade.sx";
 
 main :: () -> i32 {
     print("{}\n", lib.exposed());

@@ -10,9 +10,9 @@
 // The constant form just reads better for static metadata returns
 // (canonical example: '+layerClass' on UIView subclasses).
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 NSObject :: @ObjcClass("NSObject") extern {
     alloc :: () -> *NSObject;

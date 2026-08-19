@@ -2,7 +2,7 @@
 // comptime `[]Type` slice: the whole pack as data, so a body can walk it and
 // read `.len`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 len_of :: (..$args) -> i64 {
     list := $args;

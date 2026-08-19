@@ -7,9 +7,9 @@
 //
 // `isPlainFreeFn` / `isPlainFreeFnDecl` exclude every `extern` shape, so an
 // empty-block `extern` fn never counts as a plain free-function author.
-#import "modules/std.sx";
-#import "1230-ffi-extern-same-name-authors/a.sx";
-#import "1230-ffi-extern-same-name-authors/b.sx";
+@import "modules/std.sx";
+@import "1230-ffi-extern-same-name-authors/a.sx";
+@import "1230-ffi-extern-same-name-authors/b.sx";
 
 main :: () -> i32 {
     print("absval = {}\n", absval(-7));

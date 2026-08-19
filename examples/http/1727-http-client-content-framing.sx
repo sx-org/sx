@@ -3,10 +3,10 @@
 // are skipped; raw codings are preserved on opt-out/ranges; gzip and zlib are
 // bounded identically across fixed, chunked, and close-delimited framing.
 
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
-socket :: #import "modules/std/socket.sx";
-mem :: #import "modules/std/mem.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
+socket :: @import "modules/std/socket.sx";
+mem :: @import "modules/std/mem.sx";
 
 same :: (a: string, b: string) -> bool {
     if a.len != b.len { return false; }

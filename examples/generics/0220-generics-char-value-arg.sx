@@ -5,7 +5,7 @@
 // The parser's generic type-argument path accepts a char literal in a value
 // position, and the value-mangling half (generics.zig) is char-aware.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Buf :: struct($N: i64) {
     data: [N]u8;

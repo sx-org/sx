@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-#import "modules/std/process.sx";
+@import "modules/std.sx";
+@import "modules/std/process.sx";
 
 // process.sx smoke test: run + env + find_executable, with
 // success-path and failure-path coverage.

@@ -9,8 +9,8 @@
 // LLVM dedupes the named global, the C linker resolves both refs to
 // the one libSystem symbol.
 
-#import "modules/std.sx";
-#import "1205-ffi-extern-global-helper.sx";
+@import "modules/std.sx";
+@import "1205-ffi-extern-global-helper.sx";
 
 __stdinp : *void extern;
 

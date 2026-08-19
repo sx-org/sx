@@ -4,7 +4,7 @@
 // constant — usable both in `if o == .a` comparisons AND as a comptime-readable
 // variant tag during lowering (a downstream lowerer reads it via
 // `comptime_value_bindings`, exercised here as the `[o]i64` array dimension).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Ord :: enum { a; b; c; }
 

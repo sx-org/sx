@@ -8,8 +8,8 @@
 // so own-wins registration and any later lookup agree by construction; this cell
 // locks that the wrapped arg routes through the engine, not the no-author leaf.)
 
-#import "modules/std.sx";
-#import "0828-protocols-param-impl-arg-wrapped-own-wins/dep.sx";
+@import "modules/std.sx";
+@import "0828-protocols-param-impl-arg-wrapped-own-wins/dep.sx";
 
 Box :: struct { m: i32; }
 Holder :: struct { n: i32; }

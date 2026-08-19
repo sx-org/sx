@@ -10,7 +10,7 @@
 // monomorphizes `slice_to_string` per slice tag, and it skips container types
 // built over `.unresolved` — no runtime value can ever have one.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct {
     n: i64;

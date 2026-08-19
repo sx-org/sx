@@ -7,10 +7,10 @@
 // exercised for the import itself and not just for a body that happens to
 // contain declarations.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 inline if OS == .android {
-    #import "modules/std.sx";
+    @import "modules/std.sx";
     g_android_only : i32 = 0;
 }
 

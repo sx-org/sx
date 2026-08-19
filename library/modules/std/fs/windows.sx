@@ -1,8 +1,8 @@
 // Win32 backend for std.fs. Paths are UTF-8 at the sx boundary and converted
 // to UTF-16 for filesystem calls.
-#import "modules/std/core.sx";
-#import "modules/std/fmt.sx";
-#import "modules/std/fs/windows_abi.sx";
+@import "modules/std/core.sx";
+@import "modules/std/fmt.sx";
+@import "modules/std/fs/windows_abi.sx";
 
 // The backend owns only hidden primitive operations. std/fs.sx owns every
 // portable type and method and stores Win32 HANDLE bits in an i64 slot.

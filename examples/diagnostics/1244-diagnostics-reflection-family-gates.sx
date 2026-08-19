@@ -3,7 +3,7 @@
 // unions; arrays/vectors use `.len` + native indexing. Each wrong-kind
 // call is a loud compile error naming the right builtin — never a
 // silently-wrong count/name.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: struct { x: i64; y: i64; }
 Color :: enum { red; green; blue; }

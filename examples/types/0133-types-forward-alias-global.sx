@@ -3,7 +3,7 @@
 // (`A :: B; B :: i32;`) resolve to the alias target, the same as the
 // ordered form. Global/const annotation resolution runs in scan pass 2,
 // after the forward-alias fixpoint.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 A :: B;
 B :: i32;

@@ -14,7 +14,7 @@
 // the emitted asm, not register-save correctness — 1808 covers that.
 answer :: () -> i64 abi(.naked) {
     asm volatile {
-        #string ASM
+        @string ASM
         mov x0, #42
         ret
 ASM

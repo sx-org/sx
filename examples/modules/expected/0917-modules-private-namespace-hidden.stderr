@@ -16,7 +16,7 @@ error: namespace 'fac' has no member 'inner'
 13 |     c := fac.inner.exposed();
    |          ^^^^^^^^^
 
-error: type 'inner' is not visible; #import the module that declares it
+error: type 'inner' is not visible; @import the module that declares it
   --> examples/modules/0917-modules-private-namespace-hidden.sx:14:10
    |
 14 |     d := inner.exposed();

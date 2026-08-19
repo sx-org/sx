@@ -5,10 +5,10 @@
 // evaluated — and a dot-call on such a function is re-read as the ordinary call, so
 // the receiver occupies that first slot. What follows it are ordinary parameters,
 // defaulted ones included, and they bind there as they bind anywhere.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Total :: struct { sum: i64 = 0; n: i64 = 0; }
-#context_extend acc: *Total = null;
+@context_extend acc: *Total = null;
 
 add :: ufcs (value: $I/@Init(i64)) {
     slot: i64 = ---;

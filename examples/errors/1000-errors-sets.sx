@@ -5,7 +5,7 @@
 // with an `error.X` literal or another error-set value. The rejections live in
 // `examples/218-error-set-typing.sx`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 ParseErr :: error { BadDigit, Overflow, Empty }
 

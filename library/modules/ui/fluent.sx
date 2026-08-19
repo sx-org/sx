@@ -7,26 +7,26 @@
 // The geometry, the paint types, the render tree and the text metrics are the ui
 // foundation's, so a fluent scene renders into the tree the platform renderer
 // consumes. `fluent.View` is the library's own open set.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-types :: #import "modules/ui/types.sx";
-render :: #import "modules/ui/render.sx";
-font :: #import "modules/ui/font.sx";
-input :: #import "modules/ui/input.sx";
-view :: #import "modules/ui/fluent/view.sx";
-identity :: #import "modules/ui/fluent/identity.sx";
-state :: #import "modules/ui/fluent/state.sx";
-frame :: #import "modules/ui/fluent/frame.sx";
-router :: #import "modules/ui/fluent/input.sx";
-focus :: #import "modules/ui/fluent/focus.sx";
-loop :: #import "modules/ui/fluent/loop.sx";
-components :: #import "modules/ui/fluent/components.sx";
-sink :: #import "modules/ui/fluent/sink.sx";
-containers :: #import "modules/ui/fluent/containers.sx";
-placement :: #import "modules/ui/fluent/placement.sx";
-runtime :: #import "modules/ui/fluent/runtime.sx";
-modifier :: #import "modules/ui/fluent/modifier.sx";
-storage :: #import "modules/ui/fluent/storage.sx";
+types :: @import "modules/ui/types.sx";
+render :: @import "modules/ui/render.sx";
+font :: @import "modules/ui/font.sx";
+input :: @import "modules/ui/input.sx";
+view :: @import "modules/ui/fluent/view.sx";
+identity :: @import "modules/ui/fluent/identity.sx";
+state :: @import "modules/ui/fluent/state.sx";
+frame :: @import "modules/ui/fluent/frame.sx";
+router :: @import "modules/ui/fluent/input.sx";
+focus :: @import "modules/ui/fluent/focus.sx";
+loop :: @import "modules/ui/fluent/loop.sx";
+components :: @import "modules/ui/fluent/components.sx";
+sink :: @import "modules/ui/fluent/sink.sx";
+containers :: @import "modules/ui/fluent/containers.sx";
+placement :: @import "modules/ui/fluent/placement.sx";
+runtime :: @import "modules/ui/fluent/runtime.sx";
+modifier :: @import "modules/ui/fluent/modifier.sx";
+storage :: @import "modules/ui/fluent/storage.sx";
 
 // Geometry
 Point :: types.Point;

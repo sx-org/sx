@@ -2,7 +2,7 @@
 // no bool, so it is a condition-type error: the default that terminates a
 // failable is `??` (examples/errors/1014-errors-failable-default.sx).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad }
 

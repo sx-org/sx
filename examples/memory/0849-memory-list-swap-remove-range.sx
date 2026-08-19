@@ -2,7 +2,7 @@
 // carries the call site, which the `site` parameter picks up from `@caller`.
 //
 // aborts (exit 134) after the message — macOS-pinned.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     xs : List(i64) = .{};

@@ -1,9 +1,9 @@
 // The 0921 nominal-identity matrix with the IMPORT ORDER FLIPPED (b before
 // a): global-name maps are order-sensitive (last or first registration
 // wins), so both orders must select identically per author.
-#import "modules/std.sx";
-b :: #import "0922-modules-nominal-identity-import-order/wb.sx";
-a :: #import "0922-modules-nominal-identity-import-order/wa.sx";
+@import "modules/std.sx";
+b :: @import "0922-modules-nominal-identity-import-order/wb.sx";
+a :: @import "0922-modules-nominal-identity-import-order/wa.sx";
 
 main :: () -> i32 {
     ta := a.mk();

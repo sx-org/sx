@@ -8,9 +8,9 @@
 // Encryption, multi-disk archives, and compression methods other than store
 // and DEFLATE can be inspected but cannot be extracted or written.
 
-#import "modules/std/core.sx";
-#import "modules/std/compress.sx";
-#import "modules/std/internal/zip_facade.sx";
+@import "modules/std/core.sx";
+@import "modules/std/compress.sx";
+@import "modules/std/internal/zip_facade.sx";
 
 // These flat-imported aliases resolve to declarations authored in the public
 // zip_contracts part-file. The `StdZip*` bridge spellings stay internal and

@@ -363,7 +363,7 @@ raw_pointer_to        :: (t: Type) -> Type intrinsic;
 // `#identity`: an allocator IS its state object — protocol values only
 // ever borrow a named allocator (`gpa`, `gpa.(Allocator)`); rvalue
 // erasure and `free` of the protocol value refuse at compile time.
-Allocator :: protocol vtable #identity {
+Allocator :: protocol vtable @identity {
     alloc_bytes :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
@@ -410,7 +410,7 @@ ParkToken :: struct {
 
 // `#identity` — like `Allocator`: the runtime object is unique state,
 // borrowed into the protocol value, never owned by it.
-Io :: protocol vtable #identity {
+Io :: protocol vtable @identity {
     spawn_raw :: (self: *Self, entry: *void, arg: *void, opts: SpawnOpts) -> *void;
     // `park` is IN/OUT: a suspending impl records the parked execution context
     // (e.g. the awaiter's fiber) into `park.handle` before parking, so a later
@@ -456,7 +456,7 @@ Context :: struct {}
 
 // The JNIEnv* the JVM hands a native method. `null` is the unchecked
 // sentinel. DSL dispatch and helpers read `context.jni`.
-#context_extend jni: *void = null;
+@context_extend jni: *void = null;
 
 // User-space conversion. Dest-inferred opt-in at a `T` slot, or `val.(T)` /
 // `val.(T, alloc)`, falls through the built-in conversion ladder to an
@@ -496,4 +496,4 @@ Into :: protocol(Target: Type) constraint {
 }
 
 // Raw libc lives in its dependency-free leaf module; core owns no externs.
-c :: #import "modules/std/c.sx";
+c :: @import "modules/std/c.sx";

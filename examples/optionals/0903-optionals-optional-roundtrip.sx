@@ -1,7 +1,7 @@
 // Optional `?f32` fields in struct literals — exhaustively combine null/value
 // for both fields, through both direct calls and protocol dispatch.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 ProposedSize :: struct {
     width: ?f32;

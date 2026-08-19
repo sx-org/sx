@@ -1,4 +1,4 @@
-#import "c.sx";
+@import "c.sx";
 
 // b.sx directly imports c.sx, so it CAN name these types in reflection /
 // type-arg / array-literal positions — the type is one flat hop away here,

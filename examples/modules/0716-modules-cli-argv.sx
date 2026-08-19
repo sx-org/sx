@@ -11,8 +11,8 @@
 // `buf` is a stack `[64]string`; `os_args` fills it with zero-copy views
 // over the C runtime's argv block — no heap, no per-arg allocation.
 
-#import "modules/std.sx";
-#import "modules/std/cli.sx";
+@import "modules/std.sx";
+@import "modules/std/cli.sx";
 
 main :: () {
     buf : [64]string = ---;

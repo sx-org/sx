@@ -6,14 +6,14 @@
 // Context-ready fires, and the run executes against the layout the program
 // really has. A contribution that did not come back would leave the run
 // waiting forever — an expansion deadlock instead of an answer.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 DEEP :: @run { budget() > 8 };
 
 inline if DEEP { MODE :: 1; } else { MODE :: 0; }
 
 inline if POINTER_SIZE == 0 {
-    #import "./1994-protocols-expansion-branch-import-ctx.sx";
+    @import "./1994-protocols-expansion-branch-import-ctx.sx";
 } else {
     NARROW :: 1;
 }

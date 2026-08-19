@@ -2,9 +2,9 @@
 // type argument, not by its display name. Two modules author `Thing`; the
 // generic struct, the type function, and the type-pack struct must each build a
 // distinct layout per author instead of reusing the first one's.
-#import "modules/std.sx";
-a :: #import "0225-generics-nominal-arg-identity/a.sx";
-b :: #import "0225-generics-nominal-arg-identity/b.sx";
+@import "modules/std.sx";
+a :: @import "0225-generics-nominal-arg-identity/a.sx";
+b :: @import "0225-generics-nominal-arg-identity/b.sx";
 
 Wrap :: struct($T: Type) { value: T; }
 Make :: ($T: Type) -> Type { return struct { value: T; }; }

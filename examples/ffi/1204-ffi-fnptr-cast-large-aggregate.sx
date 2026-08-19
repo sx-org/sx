@@ -5,7 +5,7 @@
 //
 // 1203 covers the opposite arm (a fn-pointer typed `abi(.c)` does get byval).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Wide :: struct {
     a: i64; b: i64; c: i64; d: i64;

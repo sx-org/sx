@@ -11,8 +11,8 @@
 // nested `*?[]Box` — all resolved through the same `resolveCompound` recursion
 // at protocol-decl registration.
 
-#import "modules/std.sx";
-#import "0824-protocols-same-name-method-wrapped-own-wins/dep.sx";
+@import "modules/std.sx";
+@import "0824-protocols-same-name-method-wrapped-own-wins/dep.sx";
 
 Box :: struct { m: i32; }
 Holder :: struct { b: Box = ---; }

@@ -9,7 +9,7 @@
 // Two degenerate cases are ordinary here: a set with no members at all is just its
 // tag word, and a set whose members are all small stays small however high its
 // ceiling is.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Declared but never populated — every set starts here, and members may arrive
 // from a module this one never sees.

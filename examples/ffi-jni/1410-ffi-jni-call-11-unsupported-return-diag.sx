@@ -1,7 +1,7 @@
 // A JNI method whose return type is not a JNI scalar — unsigned 32/64
 // or an aggregate — is a compile error at the call site.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Buf :: @JniClass("java/nio/ByteBuffer") extern {
     get :: (self: *Self) -> u32;

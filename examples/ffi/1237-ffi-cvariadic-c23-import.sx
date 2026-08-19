@@ -19,12 +19,12 @@
 // Every imported function has a C caller in the companion file that passes the
 // same arguments; the two answers are the differential.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #include "1237-ffi-cvariadic-c23-import.h";
-    #source  "1237-ffi-cvariadic-c23-import.c";
-    #flags   "-std=c23";
+@import c {
+    @include "1237-ffi-cvariadic-c23-import.h";
+    @source  "1237-ffi-cvariadic-c23-import.c";
+    @flags   "-std=c23";
 };
 
 SumAll   :: (..) -> i64 abi(.c);

@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     value : zip.ZipError = ---;

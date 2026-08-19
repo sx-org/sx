@@ -6,7 +6,7 @@
 // destructuring `v, err := f()` (which extracts both slots); the value-carrying
 // `try` / `catch` consumers are exercised in 1012.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad, Empty }
 

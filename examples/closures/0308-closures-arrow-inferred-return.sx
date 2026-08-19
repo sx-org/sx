@@ -4,7 +4,7 @@
 // inference sees them. Covers the arrow (`=>`) and inferred-via-`return`
 // forms, at top level and as locals.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 dbl :: (x: i32) => x * 2;            // top-level arrow, inferred return
 inc :: (x: i32) { return x + 1; }    // top-level block, inferred via `return`

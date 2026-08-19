@@ -2,7 +2,7 @@
 // `grow_to`'s doubling, so `cap` can land above the request. `insert` and
 // `remove` keep order, `pop` yields `null` once the list is empty, and
 // `clear` drops the elements while the buffer and `cap` survive.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     gpa := GPA.init();

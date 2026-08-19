@@ -12,7 +12,7 @@
 //
 // examples/basic/0060-basic-multi-assign-global.sx pins the positive global case.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 GC :: 5;
 g : i64 = 0;

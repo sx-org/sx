@@ -5,8 +5,8 @@
 // `@SourceSite` through an inner call preserves the outermost site, so a
 // logging wrapper reports where IT was called.
 
-#import "modules/std.sx";
-#import "modules/std/core.sx";
+@import "modules/std.sx";
+@import "modules/std/core.sx";
 
 note :: (site: @SourceSite = @caller) {
     print("note from {} (line {})\n", site.declaration, site.line);

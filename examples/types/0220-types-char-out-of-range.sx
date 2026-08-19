@@ -4,7 +4,7 @@
 // truncation. `'🦀'` is U+1F980 = 129408, which does not fit in `u8`
 // (range 0..255).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i64 {
     c : u8 = '🦀';

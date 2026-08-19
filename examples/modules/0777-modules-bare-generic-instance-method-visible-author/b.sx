@@ -13,4 +13,4 @@ Box :: struct($T: Type) {
     }
 }
 
-#import "c.sx";
+@import "c.sx";

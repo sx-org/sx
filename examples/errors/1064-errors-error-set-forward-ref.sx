@@ -6,7 +6,7 @@
 // `adoptsForwardStructStub` covers the error_set kind, so the adoption never
 // falls into `updatePreservingKey`'s kind-stability assert.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Param position: E is not declared yet.
 describe :: (e: E) -> i32 {

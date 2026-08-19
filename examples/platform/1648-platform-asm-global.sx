@@ -5,7 +5,7 @@
 // Built+run via `aot` (a module-asm symbol lives in the final linked binary,
 // not the JIT host); aarch64-macos-pinned, so ir-only on a non-matching host.
 asm {
-    #string ASM
+    @string ASM
 .global _my_add
 _my_add:
     add x0, x0, x1

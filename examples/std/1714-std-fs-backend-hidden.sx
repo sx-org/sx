@@ -1,4 +1,4 @@
-fs :: #import "modules/std/fs.sx";
+fs :: @import "modules/std/fs.sx";
 
 main :: () -> i32 {
     valid := fs.fs_file_is_valid(-1);

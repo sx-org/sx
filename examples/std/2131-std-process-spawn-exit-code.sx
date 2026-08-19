@@ -1,5 +1,5 @@
 // A child's exit code survives the reap: /bin/sh -c "exit 3" decodes to 3.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     child, e := process.spawn(.["/bin/sh", "-c", "exit 3"], .{});

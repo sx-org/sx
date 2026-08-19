@@ -12,7 +12,7 @@
 // `late` after it, and they agree — including with a `@run` written before any
 // member is declared, and with a compile-time evaluation that runs DURING lowering
 // and waits for the answer.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Written before the set's members: a `@run` is answered from the frozen layout,
 // not from the layout as it stands at this line.

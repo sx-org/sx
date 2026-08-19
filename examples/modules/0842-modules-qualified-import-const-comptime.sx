@@ -8,8 +8,8 @@
 // single dotted name. Both resolve through the namespace alias to the target
 // module's per-source const, so the value reaches the const folders rather than
 // only the runtime path.
-#import "modules/std.sx";
-m :: #import "0842-modules-qualified-import-const-comptime/layout.sx";
+@import "modules/std.sx";
+m :: @import "0842-modules-qualified-import-const-comptime/layout.sx";
 
 Box :: struct($N: i64) { data: [N]u8; }
 

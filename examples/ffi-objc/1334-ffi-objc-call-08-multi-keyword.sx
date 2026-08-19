@@ -9,9 +9,9 @@
 // pins that the round-trip works end-to-end via class_addMethod
 // + a real IMP that consumes both keyword args.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 combine_imp :: (self: *void, _cmd: *void, a: i32, b: i32) -> i32 abi(.c) {
     a * 100 + b

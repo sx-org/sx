@@ -4,8 +4,8 @@
 // a carried alias: plain fn, struct static method + instance method, type
 // annotation, enum variant, module const, generic struct.
 
-#import "modules/std.sx";
-#import "0831-modules-namespace-alias-carry/facade.sx";
+@import "modules/std.sx";
+@import "0831-modules-namespace-alias-carry/facade.sx";
 
 main :: () {
     print("{} ", r.helper());          // plain fn (carried)

@@ -2,7 +2,7 @@
 // types. In `probe -> bool`, literal 7 lowers through the extern's `i32` target
 // rather than the ambient bool one.
 
-api :: #import "0848-modules-qualified-extern-reexport/api.sx";
+api :: @import "0848-modules-qualified-extern-reexport/api.sx";
 
 probe :: () -> bool {
     return api.abs(7) == 7;

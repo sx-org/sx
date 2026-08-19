@@ -255,7 +255,7 @@ pub const UnknownTypeChecker = struct {
                 // A function NAME is a binding site too: a bare reserved-name
                 // `i2 :: (…) {…}` (free fn or struct/impl method) is rejected,
                 // exactly like `i2 := …`. Backtick (`` `i2 :: … ``) and
-                // `#import c` extern fns set `is_raw` and are exempt.
+                // `@import c` extern fns set `is_raw` and are exempt.
                 self.checkBindingName(fd.name, fd.name_span, fd.is_raw);
                 self.checkParamNames(fd.params);
                 self.checkBindingNames(fd.body);
@@ -351,7 +351,7 @@ pub const UnknownTypeChecker = struct {
             },
             // ── Container / control-flow / expression nodes: recurse children
             //    so a binding nested anywhere below is still reached. ──
-            // A namespaced import (`mod :: #import "..."`) is wrapped here, its
+            // A namespaced import (`mod :: @import "..."`) is wrapped here, its
             // module decls held inline; descend so an imported module's
             // reserved-name binding is rejected too.
             .namespace_decl => |nd| {
@@ -455,7 +455,7 @@ pub const UnknownTypeChecker = struct {
             // ── Named type / alias / import declarations: a bare reserved
             // spelling as the declared name is rejected. These
             //    have no nested binding sites, so only the name is checked. A
-            //    flat `#import`/`#import c` (name == null) binds nothing. ──
+            //    flat `@import`/`@import c` (name == null) binds nothing. ──
             .enum_decl => |ed| self.checkDeclName(node, ed.name, ed.is_raw),
             .union_decl => |ud| self.checkDeclName(node, ud.name, ud.is_raw),
             .error_set_decl => |esd| self.checkDeclName(node, esd.name, esd.is_raw),
@@ -507,7 +507,7 @@ pub const UnknownTypeChecker = struct {
     /// (a lambda default), so recurse into it.
     fn checkParamNames(self: UnknownTypeChecker, params: []const ast.Param) void {
         for (params) |p| {
-            // A backtick raw param (`` (`i2: T) ``) or a `#import c` extern
+            // A backtick raw param (`` (`i2: T) ``) or a `@import c` extern
             // param is exempt from the reserved-type-name rule —
             // the exemption is honored inside `checkBindingName` via `p.is_raw`.
             self.checkBindingName(p.name, p.name_span, p.is_raw);
@@ -1184,7 +1184,7 @@ pub const UnknownTypeChecker = struct {
     /// correct without any lowering special-case.
     /// `is_raw` is a REQUIRED argument, not a call-site guard: the exemption
     /// lives INSIDE the check so no caller can validate a name without also
-    /// honoring the backtick / `#import c` extern exemption. This is what keeps
+    /// honoring the backtick / `@import c` extern exemption. This is what keeps
     /// the check and the exemption from desyncing — the recurring failure of the
     /// earlier attempts, where each site threaded an `if (!is_raw)` guard
     /// separately and one was forgotten.
@@ -1201,7 +1201,7 @@ pub const UnknownTypeChecker = struct {
     /// token (`createNode(name_start, …)`), so the name's length isolates the
     /// caret onto the name — a single source for the span, no separate stored
     /// field to drift from `node.span`. `is_raw` is REQUIRED, exactly as in
-    /// `checkBindingName`: a backtick raw / `#import c` extern name is exempt
+    /// `checkBindingName`: a backtick raw / `@import c` extern name is exempt
     /// by construction.
     fn checkDeclName(self: UnknownTypeChecker, node: *const Node, name: []const u8, is_raw: bool) void {
         const span = ast.Span{ .start = node.span.start, .end = node.span.start + @as(u32, @intCast(name.len)) };
@@ -1268,7 +1268,7 @@ pub const UnknownTypeChecker = struct {
     }
 
     /// The name a module-scope declaration BINDS, or null for a node that
-    /// binds none (`impl`, a flat `#import`, a statement).
+    /// binds none (`impl`, a flat `@import`, a statement).
     fn declaredName(node: *const Node) ?[]const u8 {
         return switch (node.data) {
             .fn_decl => |fd| fd.name,

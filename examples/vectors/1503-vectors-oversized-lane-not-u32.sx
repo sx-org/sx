@@ -7,7 +7,7 @@
 // destination type". The lane narrows through the single range-checked
 // `program_index.foldDimU32`, which reports an out-of-u32-range lane as this
 // diagnostic and halts the build.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     v : @Vector(5000000000, f32) = ---;

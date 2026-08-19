@@ -5,7 +5,7 @@
 //
 // This is sugar over the multi-return machinery: `b` below is equivalent to
 // `return sum = f1 + f2, good = f1 > f2`, but reads as straight-line setup.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // The slot names `sum` / `good` are locals; assigning them IS the return.
 combine :: (f1: i32, f2: i32) -> (sum: i32, good: bool) {

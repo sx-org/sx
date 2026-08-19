@@ -6,8 +6,8 @@
 // `a`'s (so `error.Net` is valid). The tag sets are disjoint, so a cross-binding
 // (`a.IoErr = error.Disk`) is a hard membership error.
 
-#import "modules/std.sx";
-a :: #import "0819-modules-qualified-annotation-error-set-own-wins/dep.sx";
+@import "modules/std.sx";
+a :: @import "0819-modules-qualified-annotation-error-set-own-wins/dep.sx";
 
 IoErr :: error { Disk }
 

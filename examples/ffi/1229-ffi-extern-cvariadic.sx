@@ -10,10 +10,10 @@
 // The emitted operands therefore carry `T`'s width, not the argument's written
 // one: an integer literal reaches a `[]i32` tail as `i32`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #source "1229-ffi-extern-cvariadic.c";
+@import c {
+    @source "1229-ffi-extern-cvariadic.c";
 };
 
 sx_ext_sum_ints    :: (n: i32, ..args: []i32) -> i64 extern;

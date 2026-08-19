@@ -2,7 +2,7 @@
 // element to the tuple's per-position field type — so an optional field gets a
 // properly wrapped `{T,i1}` value, an int element narrows/widens to a float
 // field, etc.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     // Optional + float fields.

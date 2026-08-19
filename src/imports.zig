@@ -235,7 +235,7 @@ pub fn discoverStdlibPaths(allocator: std.mem.Allocator) ![]const []const u8 {
     const exe_path = selfExePath(allocator) catch return try out.toOwnedSlice(allocator);
     const exe_dir = dirName(exe_path);
     // Stdlib paths are directories containing a `modules/` subdir; the import
-    // directive (e.g. `#import "modules/std.sx"`) supplies the rest.
+    // directive (e.g. `@import "modules/std.sx"`) supplies the rest.
     // Dev: zig-out/bin/sx -> repo-root/library
     try out.append(allocator, try std.fmt.allocPrint(allocator, "{s}/../../library", .{exe_dir}));
     // Install: <prefix>/bin/sx -> <prefix>/library
@@ -462,13 +462,13 @@ pub const ResolvedModule = struct {
                     // The aliased module's resolved path (== the `resolved_path`
                     // computed for this import). Retained for `buildImportFacts`.
                     .target_module_path = other.path,
-                    // Carry the backtick raw escape from the `name :: #import …`
+                    // Carry the backtick raw escape from the `name :: @import …`
                     // form so a reserved-name namespace is exempt from the decl
                     // check, symmetric to every other decl site.
                     .is_raw = is_raw,
                 },
             },
-            // A `private ns :: #import "…"` alias stays usable in this file but
+            // A `private ns :: @import "…"` alias stays usable in this file but
             // is never carried to flat importers nor selectable through this
             // module's namespace surface.
             .visibility = visibility,
@@ -559,7 +559,7 @@ pub const ModuleRawDeclIndex = struct {
 /// resolver's collector will surface.
 pub const ModuleDecls = std.StringHashMap(ModuleRawDeclIndex);
 
-/// One namespace import edge: `alias :: #import "…"` (or `alias :: #import c …`).
+/// One namespace import edge: `alias :: @import "…"` (or `alias :: @import c …`).
 /// `target_module_path` is captured at resolution time (otherwise lost — it is
 /// not derivable from the namespace node alone). Every alias is module surface
 /// under the carry rule — there is no per-edge visibility flag.
@@ -572,7 +572,7 @@ pub const NamespaceTarget = struct {
     /// `buildDeclTable`. Lets a member be addressed by stable
     /// id without re-deriving it from the node pointer.
     member_ids: []const DeclId = &.{},
-    /// The alias declaration's own visibility (`private ns :: #import "…"`).
+    /// The alias declaration's own visibility (`private ns :: @import "…"`).
     /// A private alias resolves only for its `importer_source` file: it is
     /// never carried by flat imports and never traversable through the
     /// importer's namespace surface from another module.
@@ -902,7 +902,7 @@ fn reportDuplicateName(diagnostics: ?*errors.DiagnosticList, added: bool, name: 
 
 /// Build the diagnostic span for a failed import parse, from the parser's
 /// ACTUAL error location INSIDE the imported file (`err_offset`/`err_end`) —
-/// not the importing file's `#import` span. Pair with `addFmtInFile` so the
+/// not the importing file's `@import` span. Pair with `addFmtInFile` so the
 /// caret resolves against the imported file's own source (the source is already
 /// registered in `import_sources`); otherwise it falls back to the root file
 /// and the caret lands on an unrelated line.
@@ -1024,8 +1024,8 @@ pub fn resolveImports(
         }
     }
     // FLAT-only edge set: identical to `import_graph` but records ONLY bare
-    // `#import "…"` edges (`imp.name == null`), never a namespaced
-    // `ns :: #import "…"`. The bare-name disambiguation walks this to
+    // `@import "…"` edges (`imp.name == null`), never a namespaced
+    // `ns :: @import "…"`. The bare-name disambiguation walks this to
     // decide which same-name authors a flat importer can actually reach.
     if (flat_import_graph) |g| {
         if (!g.contains(file_path)) {
@@ -1059,7 +1059,7 @@ pub fn resolveImports(
             // A module-scope `inline if` / comptime `match` / `inline for` is
             // OPAQUE here: its groups stay inside the node until lowering
             // evaluates the driver and splices the taken one. Only the
-            // `#import`s inside its bodies resolve now, re-entrantly and
+            // `@import`s inside its bodies resolve now, re-entrantly and
             // CONTAINED — the windows and posix `std.fs` backends both load,
             // and neither reaches module scope until its branch is selected.
             try resolveBranchImports(allocator, io, decl, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
@@ -1068,8 +1068,8 @@ pub fn resolveImports(
             continue;
         }
         if (decl.data == .c_import_decl) {
-            // Resolve `#source` / `#include` paths through the same chain
-            // as `#import`: importing-file's directory → CWD → stdlib
+            // Resolve `@source` / `@include` paths through the same chain
+            // as `@import`: importing-file's directory → CWD → stdlib
             // search paths. This lets sx-library modules ship their own
             // C helpers (e.g. the Android JNI insets bridge) without
             // forcing every consumer to vendor an identically-named copy.
@@ -1100,7 +1100,7 @@ pub fn resolveImports(
                 ci.flags,
             ) catch |err| {
                 if (diagnostics) |diags| {
-                    diags.addFmt(.err, decl.span, "#import c failed: {}", .{err});
+                    diags.addFmt(.err, decl.span, "@import c failed: {}", .{err});
                 }
                 return error.ImportError;
             };
@@ -1133,7 +1133,7 @@ pub fn resolveImports(
                     },
                 };
                 ns_node.source_file = file_path;
-                // A `private ns :: #import c { … }` namespace stays file-local.
+                // A `private ns :: @import c { … }` namespace stays file-local.
                 ns_node.visibility = decl.visibility;
                 if (mod.scope.contains(ns_name)) {
                     reportDuplicateName(diagnostics, false, ns_name, decl.span);
@@ -1172,8 +1172,8 @@ pub fn resolveImports(
                 set.put(resolved_path, {}) catch {};
             }
         }
-        // The same edge, FLAT-only: recorded only for a bare `#import`
-        // (`imp.name == null`), excluding a namespaced `ns :: #import`. Covers
+        // The same edge, FLAT-only: recorded only for a bare `@import`
+        // (`imp.name == null`), excluding a namespaced `ns :: @import`. Covers
         // both a flat file import and a flat directory import (`resolved_path`
         // is the directory in the latter case).
         if (imp.name == null) {
@@ -1198,7 +1198,7 @@ pub fn resolveImports(
     return mod;
 }
 
-/// Load the module an already-resolved `#import` path names — from the cache,
+/// Load the module an already-resolved `@import` path names — from the cache,
 /// as a file, or as a directory aggregate — and cache it. Null when the path
 /// is on the current chain (a cycle): the caller adds nothing.
 fn loadImport(
@@ -1293,9 +1293,9 @@ pub fn isModuleDriver(decl: *const Node) bool {
     };
 }
 
-/// Resolve every `#import` inside a module-scope driver's bodies, in every
+/// Resolve every `@import` inside a module-scope driver's bodies, in every
 /// branch — the taken one is not known until lowering. Each import's module is
-/// parsed and cached under its canonical path, and the `#import` node's own
+/// parsed and cached under its canonical path, and the `@import` node's own
 /// path is rewritten to that path so the splice can read the module back out
 /// of the cache. Nothing is merged and no edge is recorded: containment is the
 /// point — two backends authoring the same name (`std.fs`'s windows / posix
@@ -1457,8 +1457,8 @@ fn resolveDirectoryImport(
         // Source-order matters: a file's own decls (e.g. `impl Foo` blocks)
         // may reference types defined in OTHER files that THIS file imports.
         // `file_mod.decls` already lists transitive-imported decls before
-        // the file's own decls (resolveImports processes `#import` lines in
-        // source order, and #imports usually come first), so iterating it
+        // the file's own decls (resolveImports processes `@import` lines in
+        // source order, and @imports usually come first), so iterating it
         // directly preserves the scan order the lowering pass needs to
         // register `Event` (a tagged_union) before `handle_event(e: *Event)`
         // triggers the placeholder-struct fallback in `resolveTypeName`.

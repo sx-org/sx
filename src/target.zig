@@ -116,7 +116,7 @@ pub const TargetConfig = struct {
             };
         }
 
-        /// Keep C sources brought in through `#import c` at the same optimization
+        /// Keep C sources brought in through `@import c` at the same optimization
         /// level as the sx translation unit.
         pub fn toClangFlag(self: OptLevel) [:0]const u8 {
             return switch (self) {
@@ -363,8 +363,8 @@ fn emitZigLinkArgv(
 /// Execute a precompiled object file in-process using LLVM's ORC JIT.
 /// Takes ownership of obj_buf. Returns the exit code from main().
 /// `priority_dylibs` are consulted for symbols BEFORE the process-wide
-/// search, in order: dylibs that belong to the program (the `#import c`
-/// unit's linked objects, then `#library` deps in declaration order)
+/// search, in order: dylibs that belong to the program (the `@import c`
+/// unit's linked objects, then `@library` deps in declaration order)
 /// must win over a same-named export of an image the host process
 /// happens to carry (libz via LLVM, libsqlite3 via CoreServices, ...).
 pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const [:0]const u8) !u8 {
@@ -575,7 +575,7 @@ pub fn libcHeaderLayout(link_triple: []const u8) !?LibcHeaderLayout {
     const is_x86_64 = std.mem.startsWith(u8, link_triple, "x86_64") or
         std.mem.startsWith(u8, link_triple, "x86-64");
     if (!is_aarch64 and !is_x86_64) {
-        std.debug.print("error: unsupported Linux arch in link target '{s}' (only aarch64 and x86_64 are wired for #import c)\n", .{link_triple});
+        std.debug.print("error: unsupported Linux arch in link target '{s}' (only aarch64 and x86_64 are wired for @import c)\n", .{link_triple});
         return error.LinkError;
     }
 
@@ -594,7 +594,7 @@ pub const LibcHeaderTarget = struct {
     layout: LibcHeaderLayout,
 };
 
-/// The Linux libc header set a build's `#import c` units compile against, or
+/// The Linux libc header set a build's `@import c` units compile against, or
 /// null when the target carries none (macOS/Windows/wasm/Android).
 ///
 /// Reads the effective link triple, never `tc.triple` — that is null for a
@@ -618,9 +618,9 @@ pub const LinuxLibcHeaders = struct {
     dirs: []const []const u8,
 };
 
-/// The libc headers a `#import c` unit compiles against, plus the target they
+/// The libc headers a `@import c` unit compiles against, plus the target they
 /// belong to. sx's embedded clang carries no target libc headers, so a
-/// `#import c` unit (sqlite, mbedTLS, …) needs these to find `string.h` /
+/// `@import c` unit (sqlite, mbedTLS, …) needs these to find `string.h` /
 /// `stdio.h` at all; the dirs mirror the set `zig cc` searches (arch-abi,
 /// generic-libc, arch-any, any-linux-any) and come from the
 /// bundled/discovered zig's `lib/zig/libc/include`.
@@ -698,7 +698,7 @@ pub fn link(allocator: std.mem.Allocator, io: std.Io, output_obj: []const u8, ex
     } else if (target_config.isIOS()) {
         // iOS: clang driver with -isysroot pointing at the iOS SDK.
         // -l libraries are generally wrong for iOS (Apple ships system code
-        // as frameworks); user-declared #library still pass through.
+        // as frameworks); user-declared @library still pass through.
         const linker = target_config.linker orelse "clang";
         try argv.append(allocator, linker);
         if (target_config.triple) |t| {
@@ -758,7 +758,7 @@ pub fn link(allocator: std.mem.Allocator, io: std.Io, output_obj: []const u8, ex
         //     `-u ANativeActivity_onCreate` keeps the glue's symbol from
         //     being stripped (nothing in our .o references it).
         //
-        // The `libraries` parameter (collected from `#library` directives)
+        // The `libraries` parameter (collected from `@library` directives)
         // and `frameworks` parameter (Apple-only by definition) are
         // intentionally ignored here. On Android, users opt into specific
         // libs via `opts.add_link_flag("-l<name>")` in their build.sx —
@@ -808,7 +808,7 @@ pub fn link(allocator: std.mem.Allocator, io: std.Io, output_obj: []const u8, ex
             try argv.append(allocator, try std.fmt.allocPrint(allocator, "-L{s}", .{lp}));
         }
         // Default libs available on every Android runtime; linker drops
-        // unreferenced ones automatically. `#library` directives are
+        // unreferenced ones automatically. `@library` directives are
         // intentionally NOT auto-emitted here (most assume Apple targets);
         // users opt in per-target via `opts.add_link_flag("-l...")` in
         // their build.sx.

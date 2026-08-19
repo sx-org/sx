@@ -15,8 +15,8 @@
 // SP) with a held-back body → exactly one interim 100 then the 200;
 // X-Echo "  a b\t c  " → body "[a b\t c]" (edges trimmed, interior
 // preserved); GPA net-zero after close.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 PORT :: 19007;
 

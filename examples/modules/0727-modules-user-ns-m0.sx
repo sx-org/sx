@@ -3,10 +3,10 @@
 // FnDecl IDENTITY — there are no synthetic `__m0`-style names to collide with —
 // so a user namespace spelled `__m0` is just an ordinary namespace: `call_a`
 // binds a.ping (1), `call_b` binds b.ping (2), and `__m0.ping` reaches m.ping (99).
-#import "modules/std.sx";
-#import "0727-modules-user-ns-m0/a.sx";
-#import "0727-modules-user-ns-m0/b.sx";
-__m0 :: #import "0727-modules-user-ns-m0/m.sx";
+@import "modules/std.sx";
+@import "0727-modules-user-ns-m0/a.sx";
+@import "0727-modules-user-ns-m0/b.sx";
+__m0 :: @import "0727-modules-user-ns-m0/m.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

@@ -1,7 +1,7 @@
 // A type-category match arm must name a type or a category — a value
 // pattern on a `Type` subject is a pointed compile error, never a
 // silently dead arm (mirrors the any-subject type switch's refusal).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     t := type_of(5);

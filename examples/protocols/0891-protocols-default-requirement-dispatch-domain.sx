@@ -3,7 +3,7 @@
 // inherent value=1. The domain is body-scoped: an explicit impl body lazily
 // reached from the default still uses ordinary inherent-first dispatch.
 
-P :: protocol vtable #identity {
+P :: protocol vtable @identity {
     // Declared first so thunk creation lowers this default before the explicit
     // methods it calls, exercising nested function-body context isolation.
     through_explicit :: (self: *Self) -> i64 {

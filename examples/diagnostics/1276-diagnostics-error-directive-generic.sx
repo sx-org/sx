@@ -4,7 +4,7 @@
 // site — the user call that forced the instantiation — with the directive's
 // own location as a note. The good instantiation on the line above compiles
 // silently; a library-internal anchor would read like a comptime panic.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 pick :: (v: $T) {
     inline match T {

@@ -5,12 +5,12 @@
 // declare a `#context_extend`, so the layout the run would read is one only
 // this driver could finish. The fact never fires, the drain quiesces with the
 // bookmark down, and the expansion is refused with every waiting unit named.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 inline if @run { context.depth > 2 } {
-    #context_extend depth: i64 = 3;
+    @context_extend depth: i64 = 3;
 } else {
-    #context_extend depth: i64 = 9;
+    @context_extend depth: i64 = 9;
 }
 
 main :: () {

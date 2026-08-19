@@ -3,8 +3,8 @@
 // you can gate it with `inline if OS == .ios { ... }` or similar logic,
 // keeping the framework off non-Apple builds.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 configure_build :: () {
     opts := build_options();

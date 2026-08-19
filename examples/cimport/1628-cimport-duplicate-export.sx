@@ -3,13 +3,13 @@
 // JIT dylib link (or the AOT link) with raw linker spew.
 // All units share one link namespace; per-unit symbol isolation is
 // not implemented.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-ua :: #import c {
-    #source "1628-cimport-duplicate-export/a.c";
+ua :: @import c {
+    @source "1628-cimport-duplicate-export/a.c";
 };
-ub :: #import c {
-    #source "1628-cimport-duplicate-export/b.c";
+ub :: @import c {
+    @source "1628-cimport-duplicate-export/b.c";
 };
 
 clash :: () -> i32 extern ua "clash";

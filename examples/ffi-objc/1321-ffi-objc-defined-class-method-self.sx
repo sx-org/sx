@@ -6,9 +6,9 @@
 // @ObjcClass` alias. Every probe round-trips the receiver pointer:
 // truncation reads only the low byte, so the observer pointer
 // appears as e.g. 0xC0 / 0x20 instead of its real 64-bit value.
-#import "modules/std.sx";
-#import "modules/ffi/objc.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
+@import "modules/build.sx";
 
 g_observer : *void = null;
 

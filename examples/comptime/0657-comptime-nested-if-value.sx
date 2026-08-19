@@ -8,7 +8,7 @@
 // is what keeps the inner if's value in `K :: @run { ...; if a {100} else {if b
 // {42} else {0}} }`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Block-form @run — the failing repro. Inner if (b=true) must win → 42.
 K :: @run {

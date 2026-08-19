@@ -1,8 +1,8 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #include "vendors/test_c/test.h";
-    #source "vendors/test_c/test.c";
+@import c {
+    @include "vendors/test_c/test.h";
+    @source "vendors/test_c/test.c";
 };
 
 main :: () -> i32 {

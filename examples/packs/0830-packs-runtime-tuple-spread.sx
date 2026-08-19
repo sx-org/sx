@@ -10,7 +10,7 @@
 //   values into the env as a tuple — the deferred body spreads/indexes that
 //   tuple, never the spawner's frame.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 add2 :: (a: i64, b: i64) -> i64 => a + b;
 join :: (s: string, n: i64) -> string { return format("{}-{}", s, n); }

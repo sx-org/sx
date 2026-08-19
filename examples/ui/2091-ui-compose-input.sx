@@ -5,10 +5,10 @@
 // region taps, and the handler that runs is the one the CURRENT snapshot
 // carries. Between them the element reads as pressed, which is what a build
 // styles on.
-#import "modules/std.sx";
-#import "examples/ui/compose.sx";
-#import "modules/ui/input.sx";
-ui :: #import "modules/ui/types.sx";
+@import "modules/std.sx";
+@import "examples/ui/compose.sx";
+@import "modules/ui/input.sx";
+ui :: @import "modules/ui/types.sx";
 
 at :: (x: f32, y: f32) -> Point => .{ x = x, y = y };
 

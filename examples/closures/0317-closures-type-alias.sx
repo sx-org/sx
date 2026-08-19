@@ -4,7 +4,7 @@
 // return type, and as the target of an `xx` protocol erasure. The RHS of `::`
 // is type position, so the `-> R` tail belongs to the closure type; scanDecls
 // registers the resulting `closure_type_expr` node as a type alias.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 CB   :: Closure(i32) -> i32;      // single-arg alias
 CB2  :: Closure(i32, i32) -> i32; // multi-arg alias

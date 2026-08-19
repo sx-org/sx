@@ -4,7 +4,7 @@
 // only at two hops, so it must NOT win the bare head in the importer.
 Box :: struct($T: Type) { x: T; }
 
-#import "c.sx";
+@import "c.sx";
 
 b_make :: () -> Box(i64) {
     .{ x = 99 }

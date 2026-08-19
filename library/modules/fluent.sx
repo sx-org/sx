@@ -19,7 +19,7 @@
 // the expression straight into its own storage; nothing is materialized, copied,
 // or erased before the sink asks for it. Provenance rides on the initializer:
 // `value.site()`.
-#import "modules/std/list.sx";
+@import "modules/std/list.sx";
 
 // What a sink promises. A compiler-maintained contract, and an ordinary
 // constraint protocol: no vtable, no erasure — `expression` monomorphizes for

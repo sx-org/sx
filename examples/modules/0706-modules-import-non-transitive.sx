@@ -7,8 +7,8 @@
 // `b.sx` ↔ `c.sx` together still compile: `b_only_fn`'s body sees
 // `c_only_fn` / `c_only_const` because b.sx directly imports c.sx.
 
-#import "modules/std.sx";
-#import "0706-modules-import-non-transitive/b.sx";
+@import "modules/std.sx";
+@import "0706-modules-import-non-transitive/b.sx";
 
 main :: () -> i32 {
     print("b_only_fn: {}\n", b_only_fn());

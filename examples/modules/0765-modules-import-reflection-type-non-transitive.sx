@@ -15,8 +15,8 @@
 // sites, so these 2-flat-hop references do not leak through the global
 // `type_alias_map` / `findByName` / `type_bridge` lookup.
 
-#import "modules/std.sx";
-#import "0765-modules-import-reflection-type-non-transitive/b.sx";
+@import "modules/std.sx";
+@import "0765-modules-import-reflection-type-non-transitive/b.sx";
 
 main :: () -> i32 {
     print("{}\n", size_of(Nums));

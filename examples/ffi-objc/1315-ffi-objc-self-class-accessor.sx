@@ -10,9 +10,9 @@
 //   2. (*NSObject).class — runtime class via stdlib. Returns NSObject's
 //      Class.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 NSObjectFwd :: @ObjcClass("NSObject") extern {
     alloc :: () -> *NSObjectFwd;

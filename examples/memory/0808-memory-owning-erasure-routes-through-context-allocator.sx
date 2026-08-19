@@ -4,8 +4,8 @@
 //
 // Implicit erasure (bare operand or dest-inferred opt-in) still refuses —
 // pinned in diagnostics/1256.
-#import "modules/std.sx";
-#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+@import "modules/std.sx";
+@import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
 
 Tracer :: struct {
     count: i64;

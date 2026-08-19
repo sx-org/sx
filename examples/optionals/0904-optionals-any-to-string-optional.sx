@@ -11,7 +11,7 @@
 // table walk — to either the inner value's `any_to_string` representation
 // or the literal `"null"`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 S :: struct {
     a: ?i64;

@@ -13,8 +13,8 @@
 // The bare-head gate is single-hop: the head lookup consults source-aware
 // visibility, not the global `struct_template_map`.
 
-#import "modules/std.sx";
-#import "0764-modules-import-generic-head-non-transitive/b.sx";
+@import "modules/std.sx";
+@import "0764-modules-import-generic-head-non-transitive/b.sx";
 
 main :: () -> i32 {
     x : Box(i64) = .{ v = 3 };

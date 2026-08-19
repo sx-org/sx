@@ -20,14 +20,14 @@
 // no certificate detail is checked in. The profile must allow the bundle id and
 // contain both the target device UDID and the selected signing certificate.
 
-#import "modules/std.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
 
-#framework "UIKit";
+@framework "UIKit";
 
 UIApplicationMain :: (argc: i32, argv: *void, principal_class: *NSString, delegate_class: *NSString) -> i32 extern;
-#import "modules/build.sx";
-#import "modules/platform/bundle.sx";
+@import "modules/build.sx";
+@import "modules/platform/bundle.sx";
 
 configure :: () {
     opts := build_options();

@@ -10,9 +10,9 @@
 // Inside a generic function the site is the TEMPLATE's: both instantiations
 // report the same declaration path and the same ordinal, so an identity built
 // from a site is stable against instantiation order.
-#import "modules/std.sx";
-#import "modules/std/core.sx";
-#import "modules/std/source_site.sx";
+@import "modules/std.sx";
+@import "modules/std/core.sx";
+@import "modules/std/source_site.sx";
 
 Button :: struct { label: string = ""; }
 

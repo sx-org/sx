@@ -8,7 +8,7 @@
 // resolves from its lowered value, never from the diverging arm's void.
 // The "terminator in the middle of a basic block" shape (a block arm ending
 // in `return` getting both the terminator AND a `br` to merge) is covered too.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Return position, ELSE arm diverges.
 r_else :: (c: bool) -> i64 { return if c { 7 } else { return -1; }; }

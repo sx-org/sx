@@ -2,8 +2,8 @@
 // compile time from the same layout walk typeSizeBytes uses (fields
 // aligned to their own alignment, declaration order). Tuples walk
 // element types; parity with type_info's StructField.offset is pinned.
-#import "modules/std.sx";
-meta :: #import "modules/std/meta.sx";
+@import "modules/std.sx";
+meta :: @import "modules/std/meta.sx";
 
 Padded :: struct { a: u8; b: i64; c: u16; }
 PaddedT :: Tuple(u8, i64);

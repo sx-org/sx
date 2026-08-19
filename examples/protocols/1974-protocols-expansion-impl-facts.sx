@@ -11,7 +11,7 @@
 //
 // Every answer below is asked while the unroll that could change it is still
 // undecided, and folded only once that unroll retired.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
 Ord :: protocol constraint { cmp :: (self: *Self, o: *Self) -> i64; }

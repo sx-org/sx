@@ -13,10 +13,10 @@
 // with NOTHING else allocating in between: `print` allocates strings
 // (NSString-backed), which route through tracker and pollute the deltas.
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "modules/ffi/objc.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ffi/objc.sx";
+@import "modules/build.sx";
 
 SxAllocProbe :: @ObjcClass("SxAllocProbe", extends = NSObject) {
     counter: i32;

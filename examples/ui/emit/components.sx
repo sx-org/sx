@@ -2,11 +2,11 @@
 //
 // Each declares itself into `emit.View` and answers the three methods the set
 // declares, at the types the set declares them.
-#import "modules/std.sx";
-#import "examples/ui/emit/geometry.sx";
-#import "examples/ui/emit/render.sx";
-#import "examples/ui/emit/view.sx";
-#import "examples/ui/emit/modifier.sx";
+@import "modules/std.sx";
+@import "examples/ui/emit/geometry.sx";
+@import "examples/ui/emit/render.sx";
+@import "examples/ui/emit/view.sx";
+@import "examples/ui/emit/modifier.sx";
 
 Label :: @OpenVariant(View) {
     text: string = "";

@@ -13,8 +13,8 @@
 //
 // The diagnostic is the pinned result.
 
-#import "modules/std.sx";
-#import "./0410-protocols-impl-visibility-impl.sx";
-#import "./0410-protocols-impl-visibility-user.sx";
+@import "modules/std.sx";
+@import "./0410-protocols-impl-visibility-impl.sx";
+@import "./0410-protocols-impl-visibility-user.sx";
 
 main :: () -> i32 { run_user() }

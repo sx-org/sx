@@ -5,7 +5,7 @@
 //
 // The caller returns a distinctive 37 so the exit code alone proves it ran to
 // its own end, and the three lines pin the statements on both sides of the call.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 speak :: ($tag: string) {
     print("before\n");

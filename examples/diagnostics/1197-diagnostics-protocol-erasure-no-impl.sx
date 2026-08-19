@@ -3,7 +3,7 @@
 // receiver does not satisfy the protocol: erasure is impl-driven, not structural
 // (specs.md §"Storage and protocol conformance").
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Speaker :: protocol vtable { speak :: (self: *Self) -> i64; }
 Dog :: struct { n: i64 = 0; }

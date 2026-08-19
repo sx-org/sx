@@ -2,7 +2,7 @@
 // so the element stays callable inside the monomorph. Two
 // different signatures in one pack each keep their own, and a fn element mixes
 // freely with ordinary value elements.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 p :: (..$args) -> i64 { return args[0](); }
 some_fn :: () -> i64 { return 7; }

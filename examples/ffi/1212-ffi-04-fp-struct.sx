@@ -7,10 +7,10 @@
 // FQuad — 16 B, four f32     (same slot as ffi-02's Vec4f)
 // DQuad — 32 B, four f64     (UIEdgeInsets-shape HFA)
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #source "1212-ffi-04-fp-struct.c";
+@import c {
+    @source "1212-ffi-04-fp-struct.c";
 };
 
 FQuad :: struct { a: f32; b: f32; c: f32; d: f32; }

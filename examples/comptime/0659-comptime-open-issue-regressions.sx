@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 S0659 :: struct { a: i64 = 0; }
 gs0659 : S0659 = .{ a = 7 };

@@ -10,15 +10,15 @@
 // A tap is what this router recognizes. A point whose policy is `.fail` is
 // transparent there, so the probe continues down the paint-ordered stack; any
 // other non-`.tap` policy takes the point without taps.
-#import "modules/std.sx";
-#import "modules/std/core.sx";
-#import "modules/std/mem.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/render.sx";
-#import "modules/ui/input.sx";
-#import "examples/ui/compose/view.sx";
-#import "examples/ui/compose/identity.sx";
-#import "examples/ui/compose/frame.sx";
+@import "modules/std.sx";
+@import "modules/std/core.sx";
+@import "modules/std/mem.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
+@import "modules/ui/input.sx";
+@import "examples/ui/compose/view.sx";
+@import "examples/ui/compose/identity.sx";
+@import "examples/ui/compose/frame.sx";
 
 // A component wrapped in its own hit region. The child is stored inline at its
 // own type, so an interactive element is one value and the calls into it stay
@@ -199,7 +199,7 @@ Router :: struct {
     }
 }
 
-#context_extend compose_input: *Router = null;
+@context_extend compose_input: *Router = null;
 
 // The press state a build reads to style an element by what the pointer is
 // doing to it. With no router in context nothing is pressed.

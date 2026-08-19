@@ -14,9 +14,9 @@
 // `type_bridge.resolveInlineUnion` routes through the source-aware author
 // selection rather than a stateless `findByName` short-circuit.
 
-#import "modules/std.sx";
-#import "0797-modules-same-name-union-ambiguous/a.sx";
-#import "0797-modules-same-name-union-ambiguous/b.sx";
+@import "modules/std.sx";
+@import "0797-modules-same-name-union-ambiguous/a.sx";
+@import "0797-modules-same-name-union-ambiguous/b.sx";
 
 describe :: ($T: Type) -> i32 {
     r := match T {

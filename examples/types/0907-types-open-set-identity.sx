@@ -12,7 +12,7 @@
 //
 // The numbering exists only once the sets freeze, so a `@run` that asks waits for
 // it and gets the same answer the run-time program gets.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 128 }) {
     render :: (self: *Self) -> string;

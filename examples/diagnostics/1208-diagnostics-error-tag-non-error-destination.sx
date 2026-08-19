@@ -4,7 +4,7 @@
 // untyped / integer context; an aggregate destination is neither. The integer
 // context stays valid: `id : u32 = error.X`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 S :: struct { x: i32; }
 

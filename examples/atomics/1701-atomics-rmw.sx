@@ -2,8 +2,8 @@
 // Each returns the OLD value. Single-thread.
 // Also covers signed min/max with NEGATIVES at BOTH comptime (@run) and runtime —
 // they must agree — a comptime unsigned compare would diverge from runtime.
-#import "modules/std.sx";
-#import "modules/std/atomic.sx";
+@import "modules/std.sx";
+@import "modules/std/atomic.sx";
 
 // comptime (@run) signed min/max with a negative — must match runtime.
 c_max :: () -> i64 { a := Atomic(i64).init(-5); _ := a.fetch_max(3, .seq_cst); return a.load(.seq_cst); }

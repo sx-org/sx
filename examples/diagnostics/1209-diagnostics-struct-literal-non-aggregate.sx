@@ -4,7 +4,7 @@
 // the scalar child. Aggregate targets — struct / tuple / array / vector / slice /
 // `string`, the two {ptr,len} fat-pointer forms — are unaffected.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     x : i64 = .{ a = 1 };     // error: named literal against a scalar

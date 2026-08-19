@@ -1,6 +1,6 @@
 // Companion module for 1618: declares a LOCAL `h := <fn-ptr field>` inside a
 // function body — the importer declares a module-scope fn also named `h`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Cfg :: struct {
     on_event: (x: i64) -> void = null;

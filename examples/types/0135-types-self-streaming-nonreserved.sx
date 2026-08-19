@@ -3,7 +3,7 @@
 // address-of `update(*h, ...)` and autoref `h.update(...)` — across multiple
 // mutating calls. Address-of lowering is `.identifier`-only, with no
 // type-shaped-name special case.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Hasher :: struct { total: i64 = 0; count: i64 = 0; }
 

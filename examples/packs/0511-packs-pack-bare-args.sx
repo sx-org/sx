@@ -6,7 +6,7 @@
 // declare it as the *slice* variadic `..args: []any` — then `args` is a real
 // `[]any` slice that passes straight through.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 log_count :: (items: []any) -> i64 {
     return items.len;

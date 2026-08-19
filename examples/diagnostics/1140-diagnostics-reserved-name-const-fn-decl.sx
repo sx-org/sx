@@ -3,7 +3,7 @@
 // with the caret on the declared name. The backtick escape
 // (`` `i2 :: … ``, examples/0153) is the only way to spell these names;
 // `#import c` extern decls remain exempt (examples/1220).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 i2 :: 5;
 u8 :: (n: i64) -> i64 { return n + 7; }

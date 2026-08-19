@@ -9,8 +9,8 @@
 // The test runner merges stderr+stdout; the log lines (stderr) precede the
 // single stdout line.
 
-#import "modules/std.sx";
-log :: #import "modules/std/log.sx";
+@import "modules/std.sx";
+log :: @import "modules/std/log.sx";
 
 probe :: () -> i32 {
     if @is_comptime() { return 1; }      // comptime interpreter path

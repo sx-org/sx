@@ -371,7 +371,7 @@ pub fn lowerVariadicArgs(self: *Lowering, param_name: []const u8, call_args: []c
 /// Detects variadic params in the function decl, packs remaining args into a typed slice,
 /// and replaces the args list with [fixed_args..., slice_ref].
 pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const ast.Call, args: *std.ArrayList(Ref)) void {
-    // A lib-less C-import variadic via the `extern` keyword (or `#import c`
+    // A lib-less C-import variadic via the `extern` keyword (or `@import c`
     // `extern` keyword — uses the C calling convention's `...` tail: extras are
     // passed through directly with default argument promotion (handled at the
     // call site), not packed into an sx slice. Mirrors the `is_variadic` drop
@@ -870,7 +870,7 @@ fn lowerPackPrefixArg(self: *Lowering, arg: *const Node, param_ty: TypeId, is_re
         }
     }
 
-    // Concrete -> protocol value: preserve the AST so #identity parameters
+    // Concrete -> protocol value: preserve the AST so @identity parameters
     // borrow lvalues while value/own parameters keep owning semantics.
     if (self.getProtocolInfo(param_ty) != null) {
         const concrete_ty = self.inferExprType(arg);

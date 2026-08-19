@@ -10,7 +10,7 @@
   only the bound surface, so decl synthesis never parses the full
   upstream header.
 
-`#import "vendors/kb_text_shape/kb_text_shape.sx"` resolves through
+`@import "vendors/kb_text_shape/kb_text_shape.sx"` resolves through
 the stdlib search paths; the implementation compiles once per machine
 through sx's object cache. Shape contexts, fonts, runs, and glyphs are
 opaque pointers on the sx side (modules/ui/glyph_cache.sx is the

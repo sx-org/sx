@@ -249,7 +249,7 @@ pub const ExprTyper = struct {
                 }
                 // `.len`/`.ptr` pseudo-fields belong to the special containers
                 // only — a struct/union/tuple member named `len`/`ptr` resolves
-                // below to its DECLARED type (`#get` accessors also
+                // below to its DECLARED type (`@get` accessors also
                 // resolve below, via getAccessorFor).
                 const is_special_container = obj_ty == .string or (!obj_ty.isBuiltin() and switch (self.l.module.types.get(obj_ty)) {
                     .slice, .array, .vector => true,
@@ -318,7 +318,7 @@ pub const ExprTyper = struct {
                         .hit, .private => |h| return if (is_opt_chain) self.l.optionalOfFlattened(h.ty) else h.ty,
                         .missing => {},
                     }
-                    // `#get` property accessor through an optional chain
+                    // `@get` property accessor through an optional chain
                     // (`obj?.getter`): resolve the getter on the dereferenced
                     // inner type via a synthetic `*T` receiver, so a value
                     // optional (`?T`) — whose receiver would otherwise be the
@@ -331,7 +331,7 @@ pub const ExprTyper = struct {
                         if (self.l.getterReturnTypeOnDeref(deref_inner, fa.field)) |rt|
                             return self.l.optionalOfFlattened(rt);
                     }
-                    // `#get` property accessor: type as the accessor's return
+                    // `@get` property accessor: type as the accessor's return
                     // type. Resolve via the synthesized no-arg call so generic
                     // bindings (e.g. a `List(T)` getter returning `T`) resolve
                     // exactly as the lowering path's call does.

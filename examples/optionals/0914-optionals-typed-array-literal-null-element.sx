@@ -3,7 +3,7 @@
 // type head, so `null` lowers as `const_null(?T)`. The array-literal type-head
 // resolver carries the `array_type_expr` / `slice_type_expr` arms that keep
 // the `?T` element type.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Pt :: struct { x: i64 = 0; y: i64 = 0; }
 

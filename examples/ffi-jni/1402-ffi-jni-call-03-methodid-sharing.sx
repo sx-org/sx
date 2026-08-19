@@ -11,7 +11,7 @@
 // IR with it; the runtime-readable global keeps the call alive so
 // the JNI lowering is visible to the IR snapshot.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g_should_call : bool = false;
 

@@ -11,8 +11,8 @@
 // The errno slot binds __errno_location (vs darwin __error) — the .ir snapshot
 // captures the symbol. Imports ONLY socket.sx (libc-only) so the IR stays small
 // (mirror of event/1633).
-socket :: #import "modules/std/socket.sx";
-posix   :: #import "modules/std/posix.sx";
+socket :: @import "modules/std/socket.sx";
+posix   :: @import "modules/std/posix.sx";
 
 main :: () -> i32 {
     if size_of(socket.SockAddr) != 16 { return 1; }

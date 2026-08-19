@@ -2,7 +2,7 @@
 // constant); a sibling field initialized from a runtime call still reports
 // `global 'boxes' must be initialized by a compile-time constant`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 runtime_marker :: () -> i64 { return 7; }
 

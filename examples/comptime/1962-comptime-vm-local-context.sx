@@ -4,7 +4,7 @@
 // growing `List`, a formatted string, an arena's chunks — comes from the
 // allocator on that VM-local Context, so the bookkeeping it mutates is
 // execution-local and is discarded when the evaluation completes.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // `List.append` grows through `context.allocator`.
 sum_list :: () -> i64 {

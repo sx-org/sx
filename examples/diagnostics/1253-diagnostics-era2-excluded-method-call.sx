@@ -6,7 +6,7 @@
 // - a `-> Self` return excludes too, with the return-position wording;
 // - conformance is unchanged: an impl missing the excluded method still fails
 // erasure, since the vtable losing the slot does not relax `impl`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Eq :: protocol vtable {
     eq :: (self: *Self, other: Self) -> bool;   // excluded: Self param

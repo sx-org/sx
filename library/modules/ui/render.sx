@@ -1,7 +1,7 @@
-#import "modules/std.sx";
-#import "modules/math";
-#import "modules/ui/types.sx";
-#import "modules/ui/input.sx";
+@import "modules/std.sx";
+@import "modules/math";
+@import "modules/ui/types.sx";
+@import "modules/ui/input.sx";
 
 RenderNodeType :: enum {
     rect;

@@ -2,8 +2,8 @@
 // int syntax) is rejected at its declaration site inside an IMPORTED module too:
 // the reserved-name binding diagnostic covers every compiled module, and the
 // caret lands on that module's `i2 := ...`.
-#import "modules/std.sx";
-mod :: #import "1120-diagnostics-imported-reserved-type-name/mod.sx";
+@import "modules/std.sx";
+mod :: @import "1120-diagnostics-imported-reserved-type-name/mod.sx";
 
 main :: () -> i32 {
     return mod.run_imported_reserved_name();

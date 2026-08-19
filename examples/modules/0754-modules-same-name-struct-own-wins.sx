@@ -3,8 +3,8 @@
 // reference in `main` resolves to `main`'s OWN author, not the flat-imported one
 // (the querying source's author wins outright — no ambiguity), so `Widget{ m }`
 // builds `main`'s type while `dep_widget()` returns `dep`'s distinct `Widget`.
-#import "modules/std.sx";
-#import "0754-modules-same-name-struct-own-wins/dep.sx";
+@import "modules/std.sx";
+@import "0754-modules-same-name-struct-own-wins/dep.sx";
 
 Widget :: struct { m: i64; }
 

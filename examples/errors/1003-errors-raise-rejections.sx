@@ -7,7 +7,7 @@
 // (`raise` in expression position / inside `defer` / `onfail`) are covered by
 // the inline parser tests.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 ParseErr :: error { BadDigit, Overflow }
 OtherErr :: error { Weird }

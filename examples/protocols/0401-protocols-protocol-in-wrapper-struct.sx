@@ -4,7 +4,7 @@
 // under the ownership model the copy is EXPLICIT: `p.(Sizable, alloc)` owns
 // (an implicit `view = p` is the demand error, pinned in 1256).
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Sizable :: protocol vtable {
     size :: (self: *Self) -> i64;

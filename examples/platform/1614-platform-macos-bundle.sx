@@ -1,6 +1,6 @@
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/platform/bundle.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/platform/bundle.sx";
 
 // Register the sx-side `.app` bundler. Under `sx build` on macOS, the
 // post-link callback runs and writes a real `.app` next to the

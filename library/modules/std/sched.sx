@@ -25,30 +25,30 @@
 // MAP_ANON flag (`MAP_AP`) and the fd-readiness backend (kqueue on darwin,
 // epoll on linux). Runs end-to-end on a matching aarch64 host, ir-only on an
 // arch mismatch.
-#import "modules/std/core.sx";
-#import "modules/std/fmt.sx";
-#import "modules/std/list.sx";
-#import "modules/std/mem.sx";
-c :: #import "modules/std/c.sx";
+@import "modules/std/core.sx";
+@import "modules/std/fmt.sx";
+@import "modules/std/list.sx";
+@import "modules/std/mem.sx";
+c :: @import "modules/std/c.sx";
 // True cancellation: `suspend_raw` reads the spawned fiber's cancel
 // flag — a `*Atomic(bool)` back-ref to the `Future.canceled` — to decide whether
 // to raise `error.Canceled` on resume. atomic.sx has no naked asm, so it is safe
 // to pull in here (no fib_tramp re-emit).
-#import "modules/std/atomic.sx";
+@import "modules/std/atomic.sx";
 // `race` synthesizes its result type (a tagged-union mirroring the input tuple's
 // labels) and constructs the winner variant by runtime index — both need the
 // metatype WRITE side (`make_enum`/`make_variant`/`EnumVariant`/`struct_field_type`).
 // meta.sx imports only std.sx (no naked asm, no cycle back into sched), so it is
 // safe to pull in here.
-#import "modules/std/meta.sx";
-kqb :: #import "modules/std/net/kqueue.sx";
+@import "modules/std/meta.sx";
+kqb :: @import "modules/std/net/kqueue.sx";
 // The fd-readiness backend is per-OS: kqueue (kqb, above) on darwin, epoll on
 // linux. The epoll import is scoped to the linux branch so darwin never pulls
 // epoll's types into the concurrency examples' type tables (the same
 // std-barrel-drift rule std.event.Loop follows); `block_on_fd` / the run loop
 // reference `ep` only inside their own `inline if OS == .linux` arms.
 inline if OS == .linux {
-    ep :: #import "modules/std/net/epoll.sx";
+    ep :: @import "modules/std/net/epoll.sx";
 }
 
 // --- mmap stack primitives (mmap/mprotect/munmap/close/abort via `c`) ------
@@ -772,7 +772,7 @@ impl Io for Scheduler {
 // frame, so its params are never spilled). SP-in ≠ SP-out by design.
 swap_context :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) {
     asm volatile {
-        #string ASM
+        @string ASM
         stp x19, x20, [x0, #0]
         stp x21, x22, [x0, #16]
         stp x23, x24, [x0, #32]
@@ -808,7 +808,7 @@ ASM
 // symbol entirely, which is cleaner regardless.
 fib_tramp :: () abi(.naked) {
     asm volatile {
-        #string T
+        @string T
     mov x0, x19
     br x20
 T

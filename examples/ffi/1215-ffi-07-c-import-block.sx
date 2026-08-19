@@ -11,11 +11,11 @@
 // object list. Together they let the sx side call the C functions
 // by their declared names with no manual decls.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #include "vendors/sx_ffi_resolve_test/sx_ffi_resolve_test.h";
-    #source "vendors/sx_ffi_resolve_test/sx_ffi_resolve_test.c";
+@import c {
+    @include "vendors/sx_ffi_resolve_test/sx_ffi_resolve_test.h";
+    @source "vendors/sx_ffi_resolve_test/sx_ffi_resolve_test.c";
 };
 
 main :: () -> i32 {

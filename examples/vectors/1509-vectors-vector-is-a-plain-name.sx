@@ -2,7 +2,7 @@
 // program may bind — here a struct and a local — in the same file whose
 // signatures spell the constructor.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Vector :: struct { tag: string; }
 

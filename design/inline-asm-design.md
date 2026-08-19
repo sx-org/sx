@@ -342,13 +342,13 @@ sp :: () -> u64 {
 }
 ```
 
-Multi-instruction templates use the **`#string` heredoc**
+Multi-instruction templates use the **`@string` heredoc**
 (`src/lexer.zig:402`) or a multi-line `"..."` literal:
 
 ```sx
 serialize :: () {
     asm volatile {
-        #string ATT
+        @string ATT
         mfence
         lfence
 ATT,
@@ -389,7 +389,7 @@ q, r := divmod(17, 5);                // q = 3, r = 2
 * **[DEVIATION 1 — brace block, not `( … )`.]** The asm body is `asm { … }`, a
   comma-separated brace block (trailing comma allowed, per `specs.md:226,501`),
   not Zig's parenthesised form. Braces read as "a block of code," which is what an
-  asm template is; `#string` heredoc templates especially benefit. `asm` is a
+  asm template is; `@string` heredoc templates especially benefit. `asm` is a
   keyword, so `asm {` / `asm volatile {` is unambiguous.
 
 * **[DEVIATION 2 — `->`/`=` operand markers, not `:` sections.]** Zig groups
@@ -431,7 +431,7 @@ q, r := divmod(17, 5);                // q = 3, r = 2
 
   ```sx
   asm {
-      #string ATT
+      @string ATT
       .global my_func
       .type my_func, @function
       my_func:
@@ -471,7 +471,7 @@ asm_expr: AsmExpr,
 
 // alongside the other expression node defs:
 pub const AsmExpr = struct {
-    template: *Node,                  // string-literal / #string node (comptime string)
+    template: *Node,                  // string-literal / @string node (comptime string)
     is_volatile: bool = false,
     operands: []const AsmOperand,     // declaration order preserved (= %N indexing)
     clobbers: []const []const u8,     // dot-names from clobbers(.…): "rcx","cc","memory"
@@ -730,7 +730,7 @@ safe.
 ## II.8 Surface coverage
 
 The surface covers the `asm { … }` block, `asm volatile`, string-literal and
-`#string` templates, `= expr` inputs, `-> Type` value outputs including
+`@string` templates, `= expr` inputs, `-> Type` value outputs including
 N→tuple multi-return, `-> @place` write-through outputs, read-write
 (`"+r" -> @place`) and indirect-memory (`"=*m"`) outputs, symbol operands
 (`"s"`), the `clobbers(.…)` dot-name list, `%[name]`/`%%`/`%=` substitution,
@@ -772,7 +772,7 @@ regenerate with `zig build test -Dupdate-goldens` and review the diff.
 * **A wrong constraint or template miscompiles silently** — LLVM accepts a bad
   constraint string without a diagnostic. Zig's assembler and rewriter are ported
   verbatim rather than paraphrased, and the IR snapshots lock their output.
-* **`#string` heredoc + AT&T `%`/`$`**: the heredoc delivers the template bytes
+* **`@string` heredoc + AT&T `%`/`$`**: the heredoc delivers the template bytes
   literally, with no sx-level escape processing of `%`/`$`, so the rewrite stage
   sees exactly what the source wrote.
 * **Target gating:** an asm example declares its target via `.build`, otherwise it
@@ -805,7 +805,7 @@ void LLVMAppendModuleInlineAsm(LLVMModuleRef M, const char *Asm, size_t Len);  /
 (LLVM) · `doc/langref/inline_assembly.zig`, `doc/langref/test_global_assembly.zig`
 (syntax) · `doc/langref.html.in:4217-4300` (spec).
 
-**sx (`~/projects/sx`):** `src/token.zig` · `src/lexer.zig` (`#string`) ·
+**sx (`~/projects/sx`):** `src/token.zig` · `src/lexer.zig` (`@string`) ·
 `src/ast.zig` (`AsmExpr`/`AsmGlobal`) · `src/parser.zig` (`parseAsmExpr`), the
 optional `extern` library tail · `src/ir/expr_typer.zig` · `src/ir/inst.zig`
 (`InlineAsm`) · `src/ir/lower/expr.zig` (`lowerAsmExpr`) · `src/ir/module.zig`
@@ -853,7 +853,7 @@ load_idx :: (arr: *i64, i: u64) -> i64 {
 // CPUID AVX probe — immediates, heavy clobber set, single value-result
 has_avx :: () -> bool {
     return asm volatile {
-        #string ATT
+        @string ATT
         movl    $1, %%eax
         cpuid
         andl    $0x10000000, %%ecx
@@ -867,7 +867,7 @@ ATT,
 // SSE packed add — xmm regs, no outputs ⇒ volatile
 vadd4 :: (a: *f32, b: *f32, out: *f32) {
     asm volatile {
-        #string ATT
+        @string ATT
         movups  (%[a]), %%xmm0
         movups  (%[b]), %%xmm1
         addps   %%xmm1, %%xmm0
@@ -914,7 +914,7 @@ cpuid :: (leaf: u32, subleaf: u32) -> (eax: u32, ebx: u32, ecx: u32, edx: u32) {
 // add-with-carry → (sum, carry): value-output + tied input + flag capture
 add_carry :: (a: u64, b: u64) -> (sum: u64, carry: u8) {
     return asm {
-        #string ATT
+        @string ATT
         addq    %[b], %[sum]
         setc    %[carry]
 ATT,
@@ -931,7 +931,7 @@ ATT,
 memcpy_bytes :: (dst: [*]u8, src: [*]u8, n: u64) {
     d := dst;  s := src;  c := n;
     asm volatile {
-        #string ATT
+        @string ATT
         testq   %[c], %[c]
         jz      2f
     1:  movb    (%[s]), %%al
@@ -951,7 +951,7 @@ ATT,
 cas :: (ptr: *i64, expected: i64, desired: i64) -> bool {
     old := expected;  ok: bool = ---;
     asm volatile {
-        #string ATT
+        @string ATT
         lock cmpxchgq %[desired], (%[ptr])
         sete    %[ok]
 ATT,
@@ -979,7 +979,7 @@ Global asm + extern:
 
 ```sx
 asm {
-    #string ATT
+    @string ATT
     .global my_add
     my_add:
       lea (%rdi,%rsi,1), %eax

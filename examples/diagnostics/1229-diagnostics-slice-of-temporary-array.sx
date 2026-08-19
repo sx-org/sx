@@ -3,7 +3,7 @@
 // here the result of a call returning `[3]i64` — has none, so the view would
 // dangle the moment the statement ends. The diagnostic steers the user to bind the
 // array to a local first.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 make_arr :: () -> [3]i64 {
     a : [3]i64 = ---;

@@ -5,11 +5,11 @@
 // `main` drives it via `call_triple`. Runs in AOT mode (see the `.aot`
 // marker) because a C->sx-by-name call cannot link against a JIT-resident
 // symbol.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#import c {
-    #include "1227-ffi-export-fn-rename.h";
-    #source "1227-ffi-export-fn-rename.c";
+@import c {
+    @include "1227-ffi-export-fn-rename.h";
+    @source "1227-ffi-export-fn-rename.c";
 };
 
 // sx-defined, exported to C under the C symbol `triple_c`.

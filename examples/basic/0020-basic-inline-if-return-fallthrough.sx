@@ -3,8 +3,8 @@
 // and the trailing expression must NOT also be emitted into the same LLVM
 // block (only one terminator per block).
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 do_it :: () -> bool {
     inline if OS != .ios { return false; }

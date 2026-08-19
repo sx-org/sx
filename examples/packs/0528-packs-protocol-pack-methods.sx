@@ -6,7 +6,7 @@
 // as each conforms to Greeter — this is the protocol-interface access the
 // pack is for. (Protocol method decls omit the implicit `self`; impls list it.)
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Greeter :: protocol {
     greet :: (self: *Self) -> i64;

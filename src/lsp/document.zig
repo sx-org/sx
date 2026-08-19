@@ -67,7 +67,7 @@ pub const DocumentStore = struct {
     /// Workspace root path (from initialize). Used to absolutify CWD-relative import paths.
     root_path: []const u8 = "",
     /// Install-discovered stdlib search paths. Mirrors the compiler's
-    /// `--lib-path` resolution so `#import "modules/std.sx"` etc. find the
+    /// `--lib-path` resolution so `@import "modules/std.sx"` etc. find the
     /// shipped library files even when the workspace is something other
     /// than the sx repo (e.g. /Users/agra/projects/game).
     stdlib_paths: []const []const u8 = &.{},
@@ -229,7 +229,7 @@ pub const DocumentStore = struct {
         return doc;
     }
 
-    /// Collect `#import`s from a decl list, descending into module drivers
+    /// Collect `@import`s from a decl list, descending into module drivers
     /// (`inline if` / comptime `match` / `inline for`). Every branch
     /// contributes, whichever one the driver would select: the editor answers
     /// for the whole file, including the arms this target does not compile.
@@ -276,7 +276,7 @@ pub const DocumentStore = struct {
             doc.root = p.parse() catch return;
         }
 
-        // Expand root with synthetic fn_decls from #import c { ... } declarations.
+        // Expand root with synthetic fn_decls from @import c { ... } declarations.
         // This makes C functions visible to sema, completions, and hover.
         doc.c_source_locations = std.StringHashMap(sx.c_import.CSourceLocation).init(self.allocator);
         if (doc.root) |parsed_root| {

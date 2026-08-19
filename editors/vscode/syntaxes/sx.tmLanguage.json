@@ -31,7 +31,7 @@
     "heredocs": {
       "patterns": [
         {
-          "begin": "(#string)[ \\t]+(GLSL|VERT|FRAG|VERTEX|FRAGMENT)(?![A-Za-z0-9_])",
+          "begin": "(@string)[ \\t]+(GLSL|VERT|FRAG|VERTEX|FRAGMENT)(?![A-Za-z0-9_])",
           "end": "^(\\2)(?![A-Za-z0-9_])",
           "beginCaptures": {
             "1": { "name": "keyword.other.directive.sx" },
@@ -46,7 +46,7 @@
           ]
         },
         {
-          "begin": "(#string)[ \\t]+(SQL)(?![A-Za-z0-9_])",
+          "begin": "(@string)[ \\t]+(SQL)(?![A-Za-z0-9_])",
           "end": "^(\\2)(?![A-Za-z0-9_])",
           "beginCaptures": {
             "1": { "name": "keyword.other.directive.sx" },
@@ -61,7 +61,7 @@
           ]
         },
         {
-          "begin": "(#string)[ \\t]+(HTML)(?![A-Za-z0-9_])",
+          "begin": "(@string)[ \\t]+(HTML)(?![A-Za-z0-9_])",
           "end": "^(\\2)(?![A-Za-z0-9_])",
           "beginCaptures": {
             "1": { "name": "keyword.other.directive.sx" },
@@ -76,7 +76,7 @@
           ]
         },
         {
-          "begin": "(#string)[ \\t]+(JSON)(?![A-Za-z0-9_])",
+          "begin": "(@string)[ \\t]+(JSON)(?![A-Za-z0-9_])",
           "end": "^(\\2)(?![A-Za-z0-9_])",
           "beginCaptures": {
             "1": { "name": "keyword.other.directive.sx" },
@@ -91,7 +91,7 @@
           ]
         },
         {
-          "begin": "(#string)[ \\t]+(XML|PLIST|MANIFEST)(?![A-Za-z0-9_])",
+          "begin": "(@string)[ \\t]+(XML|PLIST|MANIFEST)(?![A-Za-z0-9_])",
           "end": "^(\\2)(?![A-Za-z0-9_])",
           "beginCaptures": {
             "1": { "name": "keyword.other.directive.sx" },
@@ -106,7 +106,7 @@
           ]
         },
         {
-          "begin": "(#string)[ \\t]+([A-Za-z_][A-Za-z0-9_]*)",
+          "begin": "(@string)[ \\t]+([A-Za-z_][A-Za-z0-9_]*)",
           "end": "^(\\2)(?![A-Za-z0-9_])",
           "beginCaptures": {
             "1": { "name": "keyword.other.directive.sx" },
@@ -176,10 +176,6 @@
     "directives": {
       "patterns": [
         {
-          "name": "keyword.other.directive.sx",
-          "match": "#(?:context_extend|jni_method_descriptor|jni_static_call|jni_interface|jni_class|jni_call|jni_env|jni_main|objc_call|objc_class|objc_protocol|swift_class|swift_struct|swift_protocol|import|error|library|framework|using|include|source|define|flags|identity|extends|implements|selector|property|get|set|string)(?![A-Za-z0-9_])"
-        },
-        {
           "name": "invalid.illegal.directive.sx",
           "match": "#[A-Za-z_][A-Za-z0-9_]*"
         }
@@ -204,7 +200,7 @@
       "patterns": [
         {
           "name": "keyword.other.directive.sx",
-          "match": "@(?:run|insert)(?![A-Za-z0-9_])"
+          "match": "@(?:run|insert|import|library|framework|using|include|source|define|flags|identity|get|set|context_extend)(?![A-Za-z0-9_])"
         },
         {
           "name": "support.type.sx",

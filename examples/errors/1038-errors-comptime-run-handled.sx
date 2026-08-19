@@ -3,7 +3,7 @@
 // value (error channel stripped), and an `onfail` in the evaluated body still
 // runs during comptime unwinding.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad, Empty }
 

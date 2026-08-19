@@ -3,7 +3,7 @@
 // `S` and stores it — the target type propagates to a union-member lvalue
 // exactly as it does to a struct field.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 S :: struct { code: i64; }
 U :: union { a: i64; b: S; }

@@ -2,8 +2,8 @@
 //
 // A render pass collects commands into a tree; the library's own runtime walks
 // them.
-#import "modules/std.sx";
-#import "examples/ui/emit/geometry.sx";
+@import "modules/std.sx";
+@import "examples/ui/emit/geometry.sx";
 
 Color :: struct {
     r: f32 = 0.0;

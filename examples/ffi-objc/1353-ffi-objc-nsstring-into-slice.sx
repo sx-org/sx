@@ -1,9 +1,9 @@
 // `impl Into(*NSString) for string` is total over `string`: it copies exactly
 // `self.len` bytes, so a slice of a larger buffer — which has no NUL at
 // `len` — converts to just its own bytes.
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 cstr_len :: (p: [*]u8) -> i64 {
     n := 0;

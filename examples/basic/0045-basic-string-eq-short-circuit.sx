@@ -4,7 +4,7 @@
 // operand finishes in a later basic block than the one the short-circuit
 // started in. The `and`/`or` merge PHI takes that actual block as the
 // incoming predecessor.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Json :: enum {
     str: string;

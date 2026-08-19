@@ -1,5 +1,5 @@
 // Declares a context field. NOT imported by reader_mod.sx: imports gate
 // existence, never visibility.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-#context_extend trace_depth: i64 = 3;
+@context_extend trace_depth: i64 = 3;

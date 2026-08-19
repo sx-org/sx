@@ -1,7 +1,7 @@
 // A capture annotation is the element type and must name it exactly — it is
 // not a conversion site, and `*` does not belong in it.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: struct { w: i64; }
 

@@ -1,7 +1,7 @@
 // An atomic load with an ordering LLVM forbids (.release / .acq_rel) is rejected
 // with an sx diagnostic.
-#import "modules/std.sx";
-#import "modules/std/atomic.sx";
+@import "modules/std.sx";
+@import "modules/std/atomic.sx";
 
 main :: () {
     n : i64 = 0;

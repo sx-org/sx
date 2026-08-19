@@ -2,7 +2,7 @@
 // instantiation, type), so one protocol over two types, two protocols over one
 // type, and two instantiations of one templated protocol over one source type
 // are three distinct pairs and all coexist in a single module.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol { show :: (self: *Self) -> i64; }
 Rank :: protocol { rank :: (self: *Self) -> i64; }

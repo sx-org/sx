@@ -10,8 +10,8 @@
 // through a typed fn-pointer is the only correct way to land args in the
 // right registers.
 
-#import "modules/std.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
 
 main :: () -> i32 {
     ns_class      := objc_getClass("NSString".ptr);

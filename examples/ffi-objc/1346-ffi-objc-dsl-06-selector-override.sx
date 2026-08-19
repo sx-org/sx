@@ -6,8 +6,8 @@
 //
 // Surface form mirrors `@JniMethod(descriptor = "(Sig)Ret")` — sits
 // after the optional `-> ReturnType` and before the body / terminator.
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 NSObject :: @ObjcClass("NSObject") extern {
     // Default mangling would yield selector "gimme" — NSObject has no

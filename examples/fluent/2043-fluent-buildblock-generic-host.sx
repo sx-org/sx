@@ -5,8 +5,8 @@
 //
 // A block parameter does not force the whole call through comptime inlining,
 // which never monomorphizes the generic parameter.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
 
 Drawable :: protocol constraint {
     draw :: (self: *Self) -> string;

@@ -3,7 +3,7 @@
 // marshal properly, and a failable field (`Closure(..) -> (T, !)`) is `try`/
 // `catch`-able. The call-type resolver mirrors the lowering dispatch: a
 // closure/fn-ptr field is called directly (and shadows a same-named method).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 CB :: struct {
     add: Closure(i64, i64) -> i64;   // closure field, with args

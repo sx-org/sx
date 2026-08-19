@@ -1,7 +1,7 @@
 // std intentionally authors a GPA alias, so
 // bare `GPA.init()` remains part of the supported prelude surface.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     gpa := GPA.init();

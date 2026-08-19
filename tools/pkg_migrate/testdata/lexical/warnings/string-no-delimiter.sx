@@ -1,2 +1,2 @@
-package :: #string 123
+package :: @string 123
 import();

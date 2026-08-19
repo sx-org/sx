@@ -5,7 +5,7 @@
 // group: a body statement stays one statement, however many arguments,
 // subscripts or postfix links it spans. Everywhere else types settle the
 // reading and the body's shape says nothing.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 pair :: ufcs (a: i64, b: i64) -> i64 => a + b;
 

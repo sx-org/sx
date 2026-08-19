@@ -1,7 +1,7 @@
 // A blanket impl covers the carrier SHAPE it spelled, concrete slots included.
 // `for Map2(i64, $W)` says the first argument is `i64`; an instantiation whose
 // first argument is something else is a different shape and is not covered.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Series :: protocol(T: Type) constraint {
     count :: (self: *Self) -> i64;

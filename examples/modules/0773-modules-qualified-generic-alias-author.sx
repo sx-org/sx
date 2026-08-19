@@ -10,9 +10,9 @@
 // stripping the head to its bare name — the alias-registration sibling of the
 // annotation head sites.
 
-#import "modules/std.sx";
-a :: #import "0773-modules-qualified-generic-alias-author/a.sx";
-b :: #import "0773-modules-qualified-generic-alias-author/b.sx";
+@import "modules/std.sx";
+a :: @import "0773-modules-qualified-generic-alias-author/a.sx";
+b :: @import "0773-modules-qualified-generic-alias-author/b.sx";
 
 ABox :: a.Box(i64);
 BBox :: b.Box(i64);

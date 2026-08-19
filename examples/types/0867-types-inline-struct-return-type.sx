@@ -6,7 +6,7 @@
 // shape matches is assignable to it.
 // isFunctionDef's after-arrow scan walks past the inline decl's brace group
 // to find the real body `{`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 make :: () -> struct { x: i64; y: i64; } { .{ x = 3, y = 4 } }
 make_p :: () -> (struct { a: i64; }) { .{ a = 9 } }

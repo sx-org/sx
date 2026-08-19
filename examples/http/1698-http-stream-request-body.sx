@@ -29,10 +29,10 @@
 //      the server stays healthy (fresh /ping conn → 200 pong).
 //   6. GPA leak gate: net-zero after srv.close() (channel, job, wbuf all
 //      reclaimed; the discarded /count completion freed).
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
-clib :: #library "c";
+clib :: @library "c";
 usleep :: (usec: i64) -> i32 extern clib;
 
 PORT :: 19013;

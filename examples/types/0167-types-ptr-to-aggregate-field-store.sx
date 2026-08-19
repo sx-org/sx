@@ -6,7 +6,7 @@
 // (`Pair`). All three lvalue sites share that resolver, so the convention
 // applies uniformly.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Pair :: struct { a: *i64; b: *i64; }
 Holder :: struct { pr: *Pair; sentinel: i64; }

@@ -5,8 +5,8 @@
 // Ports the behaviour of Zig's hash_map tests: basic usage + iteration, grow
 // across many rehashes, clear-retaining-capacity, remove (+ tombstone reuse),
 // overwrite-on-existing-key, contains, string keys, and idempotent deinit.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

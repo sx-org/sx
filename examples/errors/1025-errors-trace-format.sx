@@ -8,8 +8,8 @@
 // The trace goes to stderr, and the test runner merges stderr+stdout, so the
 // snapshot shows the trace lines interleaved with the `print` (stdout) lines.
 
-#import "modules/std.sx";
-trace :: #import "modules/std/trace.sx";
+@import "modules/std.sx";
+trace :: @import "modules/std/trace.sx";
 
 // Buffer length probe (the runtime symbol; public read API is the trace module).
 sx_trace_len :: () -> u32 extern;

@@ -3,7 +3,7 @@
 // per call: `return try f()` propagates the closure's error, and each
 // monomorphization's success value flows through as the concrete `T`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad }
 

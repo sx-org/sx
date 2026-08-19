@@ -124,7 +124,7 @@ pub fn protocolMethodSelfOccurrence(method: ast.ProtocolMethodDecl) ?SelfOccurre
 }
 
 /// Protocol ownership class ("P owns, *P views" model). The unmarked
-/// default is value/own; `#identity` marks borrow-only protocols — their
+/// default is value/own; `@identity` marks borrow-only protocols — their
 /// values only ever BORROW the ctx (rvalue erasure refuses, free refuses).
 pub const ProtocolOwnership = enum {
     value_own,
@@ -766,7 +766,7 @@ pub fn intTypeRange(name: []const u8) ?IntRange {
 
 pub const GlobalInfo = struct { id: inst.GlobalId, ty: TypeId };
 
-/// One `#context_extend` declaration, collected program-wide by
+/// One `@context_extend` declaration, collected program-wide by
 /// `collectContextExtensions` (design/context-extension.md). Three consumers
 /// read these entries: Context assembly, the no-context registered-field
 /// diagnostic, and LSP per-field provenance — so each entry keeps its spans
@@ -780,7 +780,7 @@ pub const ContextFieldDecl = struct {
     type_expr: *const ast.Node,
     /// Declared default value; null = missing, which the collection pass rejects.
     default_expr: ?*const ast.Node,
-    /// Span of the whole `#context_extend … ;` declaration.
+    /// Span of the whole `@context_extend … ;` declaration.
     span: ast.Span,
     /// Declaring source file — `Node.source_file` as stamped by import
     /// resolution. This is the same normalized spelling the program index
@@ -821,8 +821,8 @@ pub const ProgramIndex = struct {
     /// filter). Borrowed view.
     import_graph: ?*std.StringHashMap(std.StringHashMap(void)) = null,
     /// Module path → set of directly FLAT-imported paths — the subset of
-    /// `import_graph` edges from a bare `#import` (never a namespaced
-    /// `ns :: #import`). The bare-name disambiguation walks this to
+    /// `import_graph` edges from a bare `@import` (never a namespaced
+    /// `ns :: @import`). The bare-name disambiguation walks this to
     /// decide which same-name authors a flat importer can reach. Borrowed view.
     flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)) = null,
     /// Per-module scalar raw-decl index (`path → name → RawDeclRef`), built by
@@ -837,7 +837,7 @@ pub const ProgramIndex = struct {
     /// in parallel with the import facts. Borrowed view; nothing in lowering
     /// consumes it for selection.
     decl_table: ?*imports.DeclTable = null,
-    /// Every resolved module keyed by canonical path. A `#import` written
+    /// Every resolved module keyed by canonical path. A `@import` written
     /// inside a module-scope expansion body resolves re-entrantly but stays
     /// contained; the splice reads its module back out of here. Borrowed view.
     module_cache: ?*const imports.ModuleCache = null,
@@ -892,7 +892,7 @@ pub const ProgramIndex = struct {
     globals_by_source: std.StringHashMap(std.StringHashMap(GlobalInfo)),
 
     // ── Context extension (design/context-extension.md) ──
-    /// Every `#context_extend` declaration in the compilation, sorted by
+    /// Every `@context_extend` declaration in the compilation, sorted by
     /// (declaring module path, field name). Collected UNCONDITIONALLY —
     /// also in no-context builds, where the declarations are inert but the
     /// list still powers the registered-field diagnostic. Set once by

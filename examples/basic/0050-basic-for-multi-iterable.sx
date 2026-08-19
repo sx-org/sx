@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 pair_sum :: (xs: []i64, ys: []i64) -> i64 {
     total := 0;

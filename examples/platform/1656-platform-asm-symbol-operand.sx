@@ -9,7 +9,7 @@ cb :: (n: i64) -> i64 export "cb" { return n + 1; }
 
 tramp :: (n: i64) -> i64 {
     return asm volatile {
-        #string ASM
+        @string ASM
         stp x29, x30, [sp, #-16]!
         mov x0, %[arg]
         bl %[fn]

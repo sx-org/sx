@@ -8,8 +8,8 @@
 // The receiver side of the same shape: `hold(...)` returns a VALUE, so a
 // method call on its result is an ordinary method call — never a type
 // instantiation over its arguments.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Box :: struct ($V: Type) {
     inner: V;

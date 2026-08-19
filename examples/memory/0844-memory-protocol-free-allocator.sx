@@ -9,8 +9,8 @@
 // inline type match: a protocol arm (ctx via `x.(@Protocol)` — one body
 // for both layouts, `vtable` and `inline`) and a slice arm; anything else
 // is a compile error.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }

@@ -2,7 +2,7 @@
 // `(*void, $args[0]) -> $args[1]` gets both its param slot and its return
 // slot substituted per mono.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Two concrete handlers that match the per-mono fn-pointer shape.
 double_i64 :: (env: *void, x: i64) -> i64 => x * 2;

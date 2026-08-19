@@ -3,7 +3,7 @@
 // break is the prefix `not`. Every other postfix carries one reading — a `{`
 // juxtaposes and `.` / `?.` / `catch` chain — so each binds wherever the
 // statement is still open and only a `;` cuts it off.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Pair :: struct { a: i64; b: i64 }
 

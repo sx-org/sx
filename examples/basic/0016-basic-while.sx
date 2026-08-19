@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 sumOf10 :: () -> i32 {
     i:= 1;

@@ -5,8 +5,8 @@
 // macOS — invokes the block's invoke fn directly via a typed fn
 // pointer instead of going through the Obj-C runtime.
 
-#import "modules/std.sx";
-#import "modules/ffi/objc_block.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc_block.sx";
 
 main :: () -> i32 {
   cl := || { print("noop block ran\n"); };

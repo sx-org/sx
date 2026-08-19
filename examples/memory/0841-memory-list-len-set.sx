@@ -2,7 +2,7 @@
 // element count (delegating to `items.len`), and `xs.len = n` sets it (e.g.
 // `xs.len = 0` to clear the list without freeing its buffer — `cap` and the
 // backing allocation are untouched, so appends reuse the same storage).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i64 {
     xs : List(i64) = .{};

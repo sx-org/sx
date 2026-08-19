@@ -10,7 +10,7 @@
 // composites: that silently violates the C ABI promise whenever sx-emitted
 // C-callable code interoperates with a real C caller.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Wide :: struct {
     a: i64;

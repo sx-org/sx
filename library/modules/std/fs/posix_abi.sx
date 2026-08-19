@@ -2,8 +2,8 @@
 // implementation so its libc namespace and ABI constants are not authored by
 // the public std.fs facade.
 
-fs_posix_c :: #import "modules/std/c.sx";
-fs_posix_libc :: #library "c";
+fs_posix_c :: @import "modules/std/c.sx";
+fs_posix_libc :: @library "c";
 
 FsPosixTimespec :: fs_posix_c.Timespec;
 fs_posix_utimensat :: (directory: i32, path: [:0]u8, times: *void, flags: i32) -> i32 extern fs_posix_libc "utimensat";

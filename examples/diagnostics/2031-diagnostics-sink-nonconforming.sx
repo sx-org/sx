@@ -6,9 +6,9 @@
 //
 // The pointer requirement is separate and reported on its own: a sink recorded
 // through a copy would record nothing.
-#import "modules/std.sx";
-#import "modules/std/list.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/std/list.sx";
+@import "modules/fluent.sx";
 
 Drawable :: protocol vtable {
     draw :: (self: *Self) -> string;

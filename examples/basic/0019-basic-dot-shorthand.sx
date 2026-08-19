@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Dot-shorthand `.identifier(args)` resolves against the expected type, both
 // for tagged-enum payload construction and for struct static methods.

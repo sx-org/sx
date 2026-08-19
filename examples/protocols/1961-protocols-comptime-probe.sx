@@ -8,9 +8,9 @@
 // whether the site could erase at all — so a protocol nothing implements
 // anywhere answers `null` rather than the value-consuming "nothing implements
 // it" error.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-Series :: protocol(T: Type) vtable #identity { count :: (self: *Self) -> i64; }
+Series :: protocol(T: Type) vtable @identity { count :: (self: *Self) -> i64; }
 Buffer :: struct($T: Type) { items: []$T; }
 impl Series($T) for Buffer($T) { count :: (self: *Buffer) -> i64 { self.items.len } }
 
@@ -18,9 +18,9 @@ impl Series($T) for Buffer($T) { count :: (self: *Buffer) -> i64 { self.items.le
 Loose :: struct { n: i64; }
 
 // Nothing implements `Nobody` anywhere in the program.
-Nobody :: protocol vtable #identity { ping :: (self: *Self) -> i64; }
+Nobody :: protocol vtable @identity { ping :: (self: *Self) -> i64; }
 
-Show :: protocol vtable #identity { text :: (self: *Self) -> i64; }
+Show :: protocol vtable @identity { text :: (self: *Self) -> i64; }
 impl Show for Loose { text :: (self: *Loose) -> i64 { self.n } }
 
 in_set :: () -> bool {

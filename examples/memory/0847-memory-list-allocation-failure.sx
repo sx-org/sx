@@ -2,7 +2,7 @@
 // allocator aborts inside `grow_to`, before any list field is written.
 //
 // aborts (exit 134) after the message — macOS-pinned.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 FailingAllocator :: struct {}
 

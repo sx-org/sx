@@ -3,8 +3,8 @@
 // One product story: an ambient child list plus an explicit terminal `.emit()`.
 // There is no interception here — a child written WITHOUT `.emit()` is an
 // ordinary statement that produces nothing.
-#import "modules/std.sx";
-#import "examples/ui/emit.sx";
+@import "modules/std.sx";
+@import "examples/ui/emit.sx";
 
 main :: () -> i32 {
     // The container rebinds the ambient sink to its own child list, so every

@@ -30,8 +30,8 @@
 // collision-free correctness stores and compares `SourceSiteKey` plus its own
 // dynamic key fields.
 // =====================================================================
-#import "modules/std/core.sx";
-hash :: #import "modules/std/hash.sx";
+@import "modules/std/core.sx";
+hash :: @import "modules/std/hash.sx";
 
 // The source fields `id` is computed from — the whole of a site's identity.
 // `line` and `column` are diagnostics, so they are deliberately absent.

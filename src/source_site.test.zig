@@ -618,7 +618,7 @@ test "distinct top-level sites in one module take distinct ordinals" {
     try std.testing.expect(s[0].id != s[1].id);
 }
 
-/// A resolved `alias :: #import "…"` node over `members`, shaped as import
+/// A resolved `alias :: @import "…"` node over `members`, shaped as import
 /// resolution builds it: the alias carries the target module's whole decl list.
 fn aliasOver(alloc: std.mem.Allocator, name: []const u8, members: []const *const Node, authored_in: ?[]const u8) !*const Node {
     var list = std.ArrayList(*Node).empty;

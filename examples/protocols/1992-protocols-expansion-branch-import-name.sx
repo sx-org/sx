@@ -8,12 +8,12 @@
 //
 // `WIDE` is written in no line of this file. The driver reading it is above
 // the driver that can import it, and folds only once that one has decided.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 inline if WIDE { A :: 1; } else { A :: 0; }
 
 inline if POINTER_SIZE == 8 {
-    #import "./1992-protocols-expansion-branch-import-wide.sx";
+    @import "./1992-protocols-expansion-branch-import-wide.sx";
 } else {
     NARROW :: 1;
 }

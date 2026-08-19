@@ -14,7 +14,7 @@
 //
 // A bare `!` (the void failable channel) and a DECLARED `!E` in return position
 // stay valid — exercised in examples/errors.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 S :: struct { a: i32; }
 g : S = .{ a = 1 };

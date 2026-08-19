@@ -1,6 +1,6 @@
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/platform/bundle.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/platform/bundle.sx";
 
 // Cross-compile of the iOS-simulator branch of `platform.bundle`.
 // On a host with the iPhoneSimulator SDK installed,

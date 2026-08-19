@@ -3,7 +3,7 @@
 // (`u8 : i64 : 9`) forms — as it is for a top-level const (examples/1140) or a
 // type decl (examples/1141). The caret lands on the constant's name. The
 // backtick escape (examples/0156) is the only way to spell these names.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Holder :: struct {
     i2 :: 5;

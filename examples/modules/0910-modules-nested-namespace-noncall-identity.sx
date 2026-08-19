@@ -4,8 +4,8 @@
 // layouts/values/variant ordinals, so every surface keeps the exact inner
 // target rather than collapsing through a global name or monomorph cache.
 
-direct :: #import "0910-modules-nested-namespace-noncall-identity/direct.sx";
-carried :: #import "0910-modules-nested-namespace-noncall-identity/carried.sx";
+direct :: @import "0910-modules-nested-namespace-noncall-identity/direct.sx";
+carried :: @import "0910-modules-nested-namespace-noncall-identity/carried.sx";
 
 ARecord :: direct.engine_alias.Record;
 BRecord :: carried.engine_alias.Record;

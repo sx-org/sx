@@ -6,7 +6,7 @@
 // TypeId with a truthful layout. Alias registration covers `.tuple_type_expr`,
 // with a deferred fixpoint for forward elements, stateful element resolution
 // (a real `List(i64)` instantiation), and stub/cycle poisoning.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 NT :: Tuple(a: i64, b: bool);   // named tuple alias
 PT :: Tuple(i64, bool);          // positional tuple alias

@@ -10,7 +10,7 @@
 // enum/union kind — mirroring how a self-ref struct adopts its own forward stub
 // — so `*Node`/`*Tree`/`*B`/`*A` resolve to the genuine 8-byte-pointer nominal
 // types and the recursive walks read through.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Node :: union { next: *Node; value: i32; }
 Tree :: enum { leaf: i32; branch: *Tree; }

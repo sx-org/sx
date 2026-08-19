@@ -8,7 +8,7 @@
 //     write → the expression runs once, subexpressions in source order
 // so every effect inside the initializer expression happens after the callee
 // has chosen its storage, exactly once, left to right.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Button :: struct {
     label: string = "";

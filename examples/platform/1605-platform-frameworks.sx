@@ -2,7 +2,7 @@
 // linking; `extern` declarations can omit the library identifier (frameworks
 // resolve symbols by global namespace at link time).
 
-#framework "CoreFoundation";
+@framework "CoreFoundation";
 
 CFAbsoluteTimeGetCurrent :: () -> f64 extern;
 

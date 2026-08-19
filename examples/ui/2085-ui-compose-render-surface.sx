@@ -4,9 +4,9 @@
 // rect whose ring rides ON its fill, and text carrying its own size AND colour.
 // They are the foundation's node kinds, and a member reaches them through the
 // render context the set hands it.
-#import "modules/std.sx";
-#import "examples/ui/compose.sx";
-ui :: #import "modules/ui/types.sx";
+@import "modules/std.sx";
+@import "examples/ui/compose.sx";
+ui :: @import "modules/ui/types.sx";
 
 show :: (n: RenderNode) {
     if n.type == .text {

@@ -13,7 +13,7 @@
 // consts). This example exercises all three: a GLOBAL `` `f32 ``, a MODULE-CONST
 // `` `i16 ``, and LOCAL `` `f64 ``/`` `i32 ``/`` `u8 `` — each reads its field,
 // and the bare spelling of each STILL folds.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 FBox :: struct { epsilon: i64; max: i64; min_positive: i64; }
 IBox :: struct { max: i64; min: i64; }

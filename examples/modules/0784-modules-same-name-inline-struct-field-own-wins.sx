@@ -7,7 +7,7 @@
 // types resolve through the visibility-aware `inner` recursion hook, the same
 // own-wins rule top-level decls use.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Event :: struct { code: i64; }
 Holder :: struct { inner: struct { e: Event; }; }

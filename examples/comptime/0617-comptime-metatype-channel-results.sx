@@ -5,8 +5,8 @@
 // three states a bool can't express. This locks that they construct and match
 // like any enum, and that `RecvResult(i64)` is one nominal type across sites
 // (the type-fn identity path).
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 main :: () -> i32 {
     r := RecvResult(i64).value(42);

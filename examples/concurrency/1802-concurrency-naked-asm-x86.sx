@@ -9,7 +9,7 @@
 // target-independent; only the asm string differs from the aarch64 1800.
 answer :: () -> i64 abi(.naked) {
     asm volatile {
-        #string A
+        @string A
         movl $42, %eax
         ret
 A

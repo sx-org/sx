@@ -7,7 +7,7 @@
 // is an intrinsic because std/core.sx declares it, not because the name is
 // magic. This example pins the parse + the layout/reflection intrinsics that
 // fold at lowering.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 P :: struct { a: i64; b: f32; }
 E :: enum { X; Y; }

@@ -7,11 +7,11 @@
 //
 // A component that owns a surface owns the padding inside it; what a caller puts
 // around that surface is placement.
-#import "modules/std.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/render.sx";
-#import "modules/ui/font.sx";
-#import "examples/ui/compose/view.sx";
+@import "modules/std.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
+@import "modules/ui/font.sx";
+@import "examples/ui/compose/view.sx";
 
 // One box, one command: a stroke rides ON the fill, a radius rounds what is
 // drawn, and a plain fill is the unrounded rect.

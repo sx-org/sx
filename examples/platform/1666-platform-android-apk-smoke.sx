@@ -18,8 +18,8 @@
 // Shape mirrors 1424 (a `main = true` Activity whose `onCreate` calls
 // `super.onCreate(b)`, so the app is well-formed).
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 Bundle :: @JniClass("android/os/Bundle") extern {}
 

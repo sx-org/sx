@@ -15,9 +15,9 @@
 // selection rather than a stateless `findByName` short-circuit, which would
 // intern ONE global last-wins `Dir` for every bare form.
 
-#import "modules/std.sx";
-#import "0795-modules-same-name-enum-ambiguous/a.sx";
-#import "0795-modules-same-name-enum-ambiguous/b.sx";
+@import "modules/std.sx";
+@import "0795-modules-same-name-enum-ambiguous/a.sx";
+@import "0795-modules-same-name-enum-ambiguous/b.sx";
 
 describe :: ($T: Type) -> i32 {
     r := match T {

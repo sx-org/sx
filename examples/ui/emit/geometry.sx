@@ -1,5 +1,5 @@
 // Geometry owned by the emit example library.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: struct {
     x: f32 = 0.0;

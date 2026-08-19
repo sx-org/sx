@@ -3,11 +3,11 @@
 // class sits in a taken `inline if` and the alias module is also imported
 // at the enclosing module.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 inline if true {
-    #import "modules/ffi/objc.sx";
-    #import "2210-ffi-objc-chained-alias-return/aliases.sx";
+    @import "modules/ffi/objc.sx";
+    @import "2210-ffi-objc-chained-alias-return/aliases.sx";
     ChainAliasHost :: @ObjcClass("ChainAliasHost", extends = NSObject) export {
         yes :: (self: *Self) -> MYB2 {
             return 1;
@@ -15,7 +15,7 @@ inline if true {
     }
 }
 
-#import "2210-ffi-objc-chained-alias-return/aliases.sx";
+@import "2210-ffi-objc-chained-alias-return/aliases.sx";
 
 main :: () {
     print("ok\n");

@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 pair :: () -> Tuple(i64, i64) { .{1, 2} }
 

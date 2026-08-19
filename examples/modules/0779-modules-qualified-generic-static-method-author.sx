@@ -11,9 +11,9 @@
 // `qualifiedStructTemplate`, so `a.Box(i64).make(7)` resolves to nothing
 // (unresolved, exit 1).
 
-#import "modules/std.sx";
-a :: #import "0779-modules-qualified-generic-static-method-author/a.sx";
-b :: #import "0779-modules-qualified-generic-static-method-author/b.sx";
+@import "modules/std.sx";
+a :: @import "0779-modules-qualified-generic-static-method-author/a.sx";
+b :: @import "0779-modules-qualified-generic-static-method-author/b.sx";
 
 main :: () -> i32 {
     xa := a.Box(i64).make(7);

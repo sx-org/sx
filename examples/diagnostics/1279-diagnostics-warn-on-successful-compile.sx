@@ -4,7 +4,7 @@
 // pass warns about the redundant `!`; the program still compiles, runs,
 // and exits 0. The warning's excerpt points at `alpha`'s own module.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 alpha :: () -> ! { return; }
 

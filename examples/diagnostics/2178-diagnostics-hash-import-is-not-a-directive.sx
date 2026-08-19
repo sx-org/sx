@@ -1,0 +1,4 @@
+// `#import` is not a directive.
+#import "foo.sx";
+
+main :: () {}

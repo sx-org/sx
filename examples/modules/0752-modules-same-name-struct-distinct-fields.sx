@@ -4,9 +4,9 @@
 // `Box`) prints both. Each value resolves against its declaring module's type,
 // so the formatter shows A's `{x}` and B's `{p, q}` — proving the two `Box`
 // types are distinct nominal identities, not a single last-wins collapse.
-#import "modules/std.sx";
-#import "0752-modules-same-name-struct-distinct-fields/a.sx";
-#import "0752-modules-same-name-struct-distinct-fields/b.sx";
+@import "modules/std.sx";
+@import "0752-modules-same-name-struct-distinct-fields/a.sx";
+@import "0752-modules-same-name-struct-distinct-fields/b.sx";
 
 main :: () -> i32 {
     print("a={} b={}\n", a_box(), b_box());

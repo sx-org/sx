@@ -10,7 +10,7 @@
 // type reached LLVM emission"). The store path resolves the lane index via the
 // same shared `vectorLaneIndex` resolver the read path uses and GEPs a typed
 // pointer to the lane, so the two paths cannot diverge.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     // `.[…]`-init, then write each lane of a 4-lane vector.

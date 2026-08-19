@@ -3,8 +3,8 @@
 // The visibility filter accepts the impl because the user file
 // transitively imports the impl's defining module.
 
-#import "modules/std.sx";
-#import "./0703-modules-into-impl-helper.sx";
+@import "modules/std.sx";
+@import "./0703-modules-into-impl-helper.sx";
 
 main :: () -> i32 {
   w : Wrap = xx 3;

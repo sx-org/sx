@@ -19,7 +19,7 @@
 // `is_raw` guard as `isFloatValuedExpr`, so the whole const-folding cluster
 // agrees: a raw receiver is a field read, only a bare type receiver folds a
 // limit.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 FBox :: struct { epsilon: f64; }
 

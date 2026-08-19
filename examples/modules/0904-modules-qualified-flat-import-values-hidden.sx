@@ -2,7 +2,7 @@
 // bare lookup in the facade's source context, where its flat imports are
 // legitimately visible to its own implementation.
 
-facade :: #import "0904-modules-qualified-flat-import-values-hidden/facade.sx";
+facade :: @import "0904-modules-qualified-flat-import-values-hidden/facade.sx";
 
 main :: () -> i32 {
     constant := facade.HIDDEN_CONST;

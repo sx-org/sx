@@ -6,7 +6,7 @@
 // (1) omitting the error slot entirely (fewer names than slots), and
 // (2) binding it to `_`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad, Empty }
 

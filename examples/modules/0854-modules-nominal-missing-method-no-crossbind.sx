@@ -2,8 +2,8 @@
 // same-display-name struct's global compatibility entry, for either instance
 // or static dispatch.
 
-a :: #import "0854-modules-nominal-missing-method-no-crossbind/a.sx";
-b :: #import "0854-modules-nominal-missing-method-no-crossbind/b.sx";
+a :: @import "0854-modules-nominal-missing-method-no-crossbind/a.sx";
+b :: @import "0854-modules-nominal-missing-method-no-crossbind/b.sx";
 
 main :: () -> i32 {
     av := a.Thing.make();

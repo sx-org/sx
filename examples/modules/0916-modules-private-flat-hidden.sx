@@ -2,8 +2,8 @@
 // dedicated private diagnostic, the type reads as private, and the
 // public surface stays reachable.
 
-#import "modules/std.sx";
-#import "0916-modules-private-flat-hidden/lib.sx";
+@import "modules/std.sx";
+@import "0916-modules-private-flat-hidden/lib.sx";
 
 main :: () -> i32 {
     ok := exposed();

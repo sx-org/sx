@@ -1,8 +1,8 @@
 // AOT gives this example its own process argv.
 // argv[0] is normalized to presence because its value varies by invocation.
 
-#import "modules/std.sx";
-#import "modules/std/cli.sx";
+@import "modules/std.sx";
+@import "modules/std/cli.sx";
 
 main :: () {
     buf : [64]string = ---;

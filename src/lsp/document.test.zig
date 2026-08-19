@@ -206,16 +206,16 @@ fn findMemberRef(sema: *const sx.sema.SemaResult, name: []const u8, owner: []con
     return null;
 }
 
-// A `#context_extend` declaration records a member DEF owned by "Context",
+// A `@context_extend` declaration records a member DEF owned by "Context",
 // with the span of the field-name token — the anchor definition/references
 // resolve to.
-test "analyzeDocument: #context_extend records a Context member def" {
+test "analyzeDocument: @context_extend records a Context member def" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
-    const src: [:0]const u8 = "#context_extend trace_depth: i64 = 3;";
+    const src: [:0]const u8 = "@context_extend trace_depth: i64 = 3;";
     const doc = try store.openOrUpdate("ctx_decl.sx", src, 1);
     try store.analyzeDocument(doc);
 
@@ -502,9 +502,9 @@ test "analyzeDocument: imports inside a module driver register from every branch
 
     const main_src: [:0]const u8 =
         \\inline if OS == .macos {
-        \\    #import "driver_a.sx";
+        \\    @import "driver_a.sx";
         \\} else {
-        \\    #import "driver_b.sx";
+        \\    @import "driver_b.sx";
         \\}
         \\main :: () { }
     ;
@@ -559,7 +559,7 @@ test "analyzeDocument: a protocol-typed local owns its method uses" {
     try store.analyzeDocument(lib_doc);
 
     const main_src: [:0]const u8 =
-        \\#import "proto_lib.sx";
+        \\@import "proto_lib.sx";
         \\main :: (b: *Box) {
         \\    s : Shape = b.(Shape);
         \\    _ = s.area();
@@ -589,7 +589,7 @@ test "analyzeDocument: a re-export alias carries its target type to importers" {
     try store.analyzeDocument(inner_doc);
 
     const facade_src: [:0]const u8 =
-        \\core :: #import "alias_inner.sx";
+        \\core :: @import "alias_inner.sx";
         \\
         \\Shape :: core.Shape;
         \\Box   :: core.Box;
@@ -598,7 +598,7 @@ test "analyzeDocument: a re-export alias carries its target type to importers" {
     try store.analyzeDocument(facade_doc);
 
     const main_src: [:0]const u8 =
-        \\#import "alias_facade.sx";
+        \\@import "alias_facade.sx";
         \\main :: (b: *Box) {
         \\    s : Shape = b.(Shape);
         \\    _ = s.area();
@@ -611,7 +611,7 @@ test "analyzeDocument: a re-export alias carries its target type to importers" {
     try std.testing.expect(findMemberRef(&sema, "area", "Shape", false) != null);
 }
 
-test "analyzeDocument: a #context_extend member's type owns its method uses" {
+test "analyzeDocument: a @context_extend member's type owns its method uses" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -624,13 +624,13 @@ test "analyzeDocument: a #context_extend member's type owns its method uses" {
         \\    area :: (self: *Self) -> i64;
         \\}
         \\
-        \\#context_extend shape: Shape;
+        \\@context_extend shape: Shape;
     ;
     const lib_doc = try store.openOrUpdate("ctx_lib.sx", lib_src, 1);
     try store.analyzeDocument(lib_doc);
 
     const main_src: [:0]const u8 =
-        \\#import "ctx_lib.sx";
+        \\@import "ctx_lib.sx";
         \\main :: () {
         \\    _ = context.shape.area();
         \\}

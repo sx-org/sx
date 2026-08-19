@@ -1,6 +1,6 @@
-#import "modules/std.sx";
-#import "document.sx";
-#import "layer.sx";
+@import "modules/std.sx";
+@import "document.sx";
+@import "layer.sx";
 
 CanvasView :: struct {
     doc: *Document;

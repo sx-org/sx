@@ -5,8 +5,8 @@
 // allocated, nothing crashes). Both pairing forms work: `free(cl)` uses
 // the context allocator current AT THE FREE, `free(cl, a)` pairs the
 // allocator explicitly and is immune to context drift.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 main :: () {
     gpa := GPA.init();

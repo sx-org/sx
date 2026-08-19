@@ -10,10 +10,10 @@
 // machine, not once per run.
 // =====================================================================
 
-#import c {
-    #include "c/stb_image.h";
-    #source  "c/stb_image_impl.c";
+@import c {
+    @include "c/stb_image.h";
+    @source  "c/stb_image_impl.c";
 
-    #include "c/stb_image_write.h";
-    #source  "c/stb_image_write_impl.c";
+    @include "c/stb_image_write.h";
+    @source  "c/stb_image_write_impl.c";
 };

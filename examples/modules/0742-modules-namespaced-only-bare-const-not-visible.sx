@@ -6,7 +6,7 @@
 // joins over the FLAT import edges (`flat_import_graph`), and a namespaced
 // alias is not a flat edge — the global `module_const_map` first-match does not
 // reach the `[VAL]i32` dimension.
-dep :: #import "0742-modules-namespaced-only-bare-const-not-visible/dep.sx";
+dep :: @import "0742-modules-namespaced-only-bare-const-not-visible/dep.sx";
 
 main :: () -> i32 {
     arr : [DEP_LEN]i32 = ---;

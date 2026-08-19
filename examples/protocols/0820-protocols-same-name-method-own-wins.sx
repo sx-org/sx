@@ -5,8 +5,8 @@
 // `p.get()` types the result as MAIN's `Box`, so `b.m` resolves and the build
 // exits 0.
 
-#import "modules/std.sx";
-#import "0820-protocols-same-name-method-own-wins/dep.sx";
+@import "modules/std.sx";
+@import "0820-protocols-same-name-method-own-wins/dep.sx";
 
 Box :: struct { m: i32; }
 

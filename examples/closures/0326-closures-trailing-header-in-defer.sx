@@ -1,7 +1,7 @@
 // A trailing header is the same function boundary as a `|…|` literal.
 // `each(xs) { |x| return; }` inside `defer` is `each(xs, |x| { return; })`.
 // The `return` leaves the closure, not the deferred scope.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 each :: (xs: []i64, body: Closure(i64)) { for v in xs { body(v); } }
 

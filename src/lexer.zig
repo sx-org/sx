@@ -201,24 +201,56 @@ pub const Lexer = struct {
             return self.makeToken(.invalid, start, self.index);
         }
 
-        // `@run` / `@insert` are compile-time prefixes. Every other `@Name` is
-        // a compiler-formed type / contract token — the `@` is part of the
-        // name, so the token spans it; the tag keeps it out of every
-        // identifier position.
+        // `@string` opens a heredoc. Named `@` directives take the exact-match
+        // table with an ident-continue boundary; every other `@Name` is a
+        // compiler-formed type / contract token — the `@` is part of the name,
+        // so the token spans it; the tag keeps it out of every identifier
+        // position.
         if (c == '@') {
             const id_start = start + 1;
             if (id_start < self.source.len and isIdentStart(self.source[id_start])) {
+                const str_kw = "@string";
+                const str_len: u32 = str_kw.len;
+                if (self.source.len >= start + str_len and
+                    std.mem.eql(u8, self.source[start .. start + str_len], str_kw) and
+                    (start + str_len >= self.source.len or !isIdentContinue(self.source[start + str_len])))
+                {
+                    self.index = start + str_len;
+                    return self.lexHeredoc(start);
+                }
+
+                const directives = .{
+                    .{ "@run", Tag.at_run },
+                    .{ "@insert", Tag.at_insert },
+                    .{ "@import", Tag.at_import },
+                    .{ "@library", Tag.at_library },
+                    .{ "@framework", Tag.at_framework },
+                    .{ "@using", Tag.at_using },
+                    .{ "@include", Tag.at_include },
+                    .{ "@source", Tag.at_source },
+                    .{ "@define", Tag.at_define },
+                    .{ "@flags", Tag.at_flags },
+                    .{ "@identity", Tag.at_identity },
+                    .{ "@get", Tag.at_get },
+                    .{ "@set", Tag.at_set },
+                    .{ "@context_extend", Tag.at_context_extend },
+                };
+                inline for (directives) |d| {
+                    const keyword = d[0];
+                    const tag = d[1];
+                    const len: u32 = keyword.len;
+                    if (self.source.len >= start + len and
+                        std.mem.eql(u8, self.source[start .. start + len], keyword) and
+                        (start + len >= self.source.len or !isIdentContinue(self.source[start + len])))
+                    {
+                        self.index = start + len;
+                        return self.makeToken(tag, start, self.index);
+                    }
+                }
+
                 self.index = id_start;
                 var tok = self.lexIdentifier(id_start);
                 tok.loc.start = start;
-                if (std.mem.eql(u8, self.source[tok.loc.start..tok.loc.end], "@run")) {
-                    tok.tag = .at_run;
-                    return tok;
-                }
-                if (std.mem.eql(u8, self.source[tok.loc.start..tok.loc.end], "@insert")) {
-                    tok.tag = .at_insert;
-                    return tok;
-                }
                 tok.tag = .at_identifier;
                 return tok;
             }
@@ -226,45 +258,7 @@ pub const Lexer = struct {
             return self.makeToken(.invalid, start, self.index);
         }
 
-        // Directives: #import, #library, #string
         if (c == '#') {
-            // #string needs special handling (heredoc)
-            const str_kw = "#string";
-            const str_len: u32 = str_kw.len;
-            if (self.source.len >= start + str_len and
-                std.mem.eql(u8, self.source[start .. start + str_len], str_kw) and
-                (start + str_len >= self.source.len or !isIdentContinue(self.source[start + str_len])))
-            {
-                self.index = start + str_len;
-                return self.lexHeredoc(start);
-            }
-
-            const directives = .{
-                .{ "#import", Tag.hash_import },
-                .{ "#library", Tag.hash_library },
-                .{ "#framework", Tag.hash_framework },
-                .{ "#using", Tag.hash_using },
-                .{ "#include", Tag.hash_include },
-                .{ "#source", Tag.hash_source },
-                .{ "#define", Tag.hash_define },
-                .{ "#flags", Tag.hash_flags },
-                .{ "#identity", Tag.hash_identity },
-                .{ "#get", Tag.hash_get },
-                .{ "#set", Tag.hash_set },
-                .{ "#context_extend", Tag.hash_context_extend },
-            };
-            inline for (directives) |d| {
-                const keyword = d[0];
-                const tag = d[1];
-                const len: u32 = keyword.len;
-                if (self.source.len >= start + len and
-                    std.mem.eql(u8, self.source[start .. start + len], keyword) and
-                    (start + len >= self.source.len or !isIdentContinue(self.source[start + len])))
-                {
-                    self.index = start + len;
-                    return self.makeToken(tag, start, self.index);
-                }
-            }
             self.index += 1;
             return self.makeToken(.invalid, start, self.index);
         }
@@ -562,8 +556,8 @@ pub const Lexer = struct {
         return self.makeToken(.invalid, start, self.index);
     }
 
-    /// Lex a #string heredoc. Called after "#string" has been matched.
-    /// Syntax: #string DELIM\n...content...\nDELIM
+    /// Lex an `@string` heredoc. Called after `@string` has been matched.
+    /// Syntax: `@string DELIM\n...content...\nDELIM`
     fn lexHeredoc(self: *Lexer, directive_start: u32) Token {
         // Skip spaces/tabs to find delimiter identifier
         while (self.index < self.source.len and (self.source[self.index] == ' ' or self.source[self.index] == '\t')) {

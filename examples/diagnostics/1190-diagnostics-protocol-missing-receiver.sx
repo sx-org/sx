@@ -1,6 +1,6 @@
 // A protocol method that omits the explicit receiver is a parse error: the
 // receiver `self: *Self`/`self: Self` is the required first parameter.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol {
     show :: () -> string;        // ERROR: missing `self` receiver

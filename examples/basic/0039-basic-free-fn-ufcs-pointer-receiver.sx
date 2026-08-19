@@ -5,7 +5,7 @@
 // via UFCS is lazily lowered — declared-but-never-emitted is an undefined
 // symbol at link.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Counter :: struct { n: i32; }
 

@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-#import "modules/math";
+@import "modules/std.sx";
+@import "modules/math";
 
 Point :: struct {
     x, y: f32;
@@ -210,7 +210,7 @@ align_v :: (alignment: VAlignment, child_height: f32, container_height: f32) -> 
 
 // --- Lerpable implementations ---
 
-#import "modules/ui/animation.sx";
+@import "modules/ui/animation.sx";
 
 impl Lerpable for Point {
     lerp :: (self: Point, b: Point, t: f32) -> Point {

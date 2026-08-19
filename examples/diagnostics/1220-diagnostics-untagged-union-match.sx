@@ -4,7 +4,7 @@
 // is not supported on unions"). The gate is subject-level, so it fires with or
 // without payload bindings (1211 covers the binding forms) and for a POINTER to an
 // untagged union.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Shape :: union { circle: i64; rect: i64; }
 

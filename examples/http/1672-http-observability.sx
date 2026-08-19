@@ -17,8 +17,8 @@
 // on_event hook actually fired for the fault events (recorded into a
 // fixed array reached through the ctx word — NO heap alloc in the hook,
 // so this stays leak-clean).
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 PORT :: 18972;
 NCONN :: 8;
@@ -278,7 +278,7 @@ main :: () -> i32 {
     return 0;
 }
 
-clib :: #library "c";
+clib :: @library "c";
 usleep :: (usec: i64) -> i32 extern clib;
 
 // Slow handler: pins the single pool worker long enough that the backlog

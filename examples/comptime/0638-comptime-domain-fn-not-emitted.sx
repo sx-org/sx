@@ -6,7 +6,7 @@
 // The `absent_symbols` directive holds that to account against the real symbol
 // table, since the printed output would be identical either way.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 double :: (x: i64) -> i64 { x * 2 }
 

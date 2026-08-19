@@ -1,7 +1,7 @@
 // A many-pointer `[*]T` carries NO length, so it does not coerce to a slice `[]T`
 // implicitly — an 8-byte pointer where a 16-byte `{ptr,len}` fat pointer is
 // expected. The diagnostic asks for the length via `ptr[0..len]`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 sum :: (s: []i64) -> i64 {
     total := 0;

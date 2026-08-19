@@ -10,7 +10,7 @@
 // `[2][2]`, a direct `[N]T` return, and the `?Arr` optional payload (composes
 // with the optional bridge arm) unwrapped via `!`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Arr3 :: struct { xs: [3]i64; }
 Pt   :: struct { x: i64; y: i64; }

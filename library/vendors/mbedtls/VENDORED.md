@@ -7,7 +7,7 @@
 ## Layout (sqlite-vendor convention)
 
 ```
-mbedtls.sx                          # sx bindings + the `#import c` compile unit
+mbedtls.sx                          # sx bindings + the `@import c` compile unit
 c/library/*.c                       # 109 upstream library sources
 c/library/*.h                       # upstream INTERNAL headers (common.h, ssl_misc.h, …)
 c/library/sx_mbedtls_lib_anchor.h   # sx-added: anchors -Ic/library (see below)
@@ -17,23 +17,23 @@ c/include/psa/*.h                   # PSA crypto headers (23)
 c/include/sx_mbedtls_anchor.h       # sx-added: anchors -Ic/include (see below)
 ```
 
-`#import "vendors/mbedtls/mbedtls.sx"` compiles `c/library/*.c` through sx's
+`@import "vendors/mbedtls/mbedtls.sx"` compiles `c/library/*.c` through sx's
 content-addressed C-object cache and binds every `extern mbedtls` decl against
 it — no system mbedTLS, no `zig cc`. A program that never imports it compiles
 none of it.
 
-## The `#import c` wiring (mbedtls.sx)
+## The `@import c` wiring (mbedtls.sx)
 
 ```
-mbedtls :: #import c {
+mbedtls :: @import c {
     #include "c/include/sx_mbedtls_anchor.h";       // -> -Ic/include
     #include "c/library/sx_mbedtls_lib_anchor.h";   // -> -Ic/library
-    #flags  "-Os";
-    #source "c/library/<each>.c";                   // x109
+    @flags  "-Os";
+    @source "c/library/<each>.c";                   // x109
 };
 ```
 
-The two **anchor headers** are an sx idiom: a `#import c` `#include "x"` adds
+The two **anchor headers** are an sx idiom: a `@import c` `#include "x"` adds
 `dirName(x)` to `-I` (and parses `x` for FFI decls — the anchors are empty, so
 no decls). We need `-Ic/include` (so the sources find `<mbedtls/*.h>` and the
 default `mbedtls/mbedtls_config.h`) and `-Ic/library` (so they find their
@@ -41,7 +41,7 @@ sibling private headers like `common.h`). There is no header directly in
 `c/include` / `c/library`, so we add an empty anchor in each.
 
 **Config:** we do NOT use `MBEDTLS_CONFIG_FILE` (the `#define` value would reach
-clang with literal backslash-quotes — `#import c` doesn't unescape — and
+clang with literal backslash-quotes — `@import c` doesn't unescape — and
 `#include MBEDTLS_CONFIG_FILE` fails). Instead the sx-owned trimmed config simply
 REPLACES the stock `c/include/mbedtls/mbedtls_config.h`; mbedTLS includes that by
 default (`build_info.h`: `#if !defined(MBEDTLS_CONFIG_FILE) #include
@@ -57,7 +57,7 @@ family (+ DTLS anti-replay / hello-verify / client-port-reuse / connection-id),
 `MBEDTLS_PSA_CRYPTO_STORAGE_C`, `MBEDTLS_DEBUG_C`.
 
 `MBEDTLS_SSL_CLI_C` is **enabled**: the client `.c` sources are already in
-the `#import c` `#source` list, so this only ACTIVATES them — a server-only
+the `@import c` `@source` list, so this only ACTIVATES them — a server-only
 deployment never references the client code and the linker strips it. Enabling
 lets the in-process loopback TLS test run a self-contained client (no
 external openssl, corpus/sandbox-friendly).
@@ -78,4 +78,4 @@ external openssl, corpus/sandbox-friendly).
 Re-clone the tag, copy `library/*.{c,h}` → `c/library/`, `include/{mbedtls,psa}`
 → `c/include/`, re-apply the 13-option config trim onto the new stock
 `mbedtls_config.h` (keep it at `c/include/mbedtls/mbedtls_config.h`), keep the two
-anchor headers, refresh the `#source` list in `mbedtls.sx`.
+anchor headers, refresh the `@source` list in `mbedtls.sx`.

@@ -1,9 +1,9 @@
 // Extern `-> [:0]u8` / `-> ?[:0]u8` returns: C hands back ONE `char *`;
 // the fat sx string is synthesized at the call boundary ({ptr, strlen};
 // NULL maps to the optional's null / an empty string).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-libc :: #library "c";
+libc :: @library "c";
 err_text :: (code: i32) -> [:0]u8 extern libc "strerror";
 sig_text :: (sig: i32) -> ?[:0]u8 extern libc "strsignal";
 dlerror  :: () -> ?[:0]u8 extern libc;

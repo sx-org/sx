@@ -5,7 +5,7 @@
 // Lowering owns the fold, so target facts (OS / ARCH / POINTER_SIZE) AND module
 // constants both select a group (example 0668). `flag1236` is a mutable global
 // — a runtime value — so there is nothing to fold and the group is refused.
-#import "modules/std.sx";
+@import "modules/std.sx";
 flag1236 : bool = true;
 inline if flag1236 { helper1236 :: () -> i64 { return 1; } }
 main :: () {}

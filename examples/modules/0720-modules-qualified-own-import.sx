@@ -11,8 +11,8 @@
 // calc.sx's own `#import "util.sx"` — as "not visible". The rule
 // carries the alias's declaring source so it lowers in calc.sx's context.
 
-#import "modules/std.sx";
-calc :: #import "0720-modules-qualified-own-import/calc.sx";
+@import "modules/std.sx";
+calc :: @import "0720-modules-qualified-own-import/calc.sx";
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

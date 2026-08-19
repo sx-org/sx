@@ -7,8 +7,8 @@
 // received. An ordinary value is neither, and supplying both at once is
 // ambiguous — each is refused at the argument. A build block is replayed
 // against a sink rather than called, so it takes no parameter header. An empty `| |` is a header.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
 
 Drawable :: protocol constraint {
     draw :: (self: *Self) -> string;

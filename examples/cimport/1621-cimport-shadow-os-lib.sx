@@ -5,11 +5,11 @@
 // fallback. The unit's zlibCompileFlags answers 0xDEADBEEF; the OS
 // one answers real flag bits, so `true` proves the unit won.
 //
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-zshadow :: #import c {
-    #include "1621-cimport-shadow-os-lib/shadow.h";
-    #source  "1621-cimport-shadow-os-lib/shadow.c";
+zshadow :: @import c {
+    @include "1621-cimport-shadow-os-lib/shadow.h";
+    @source  "1621-cimport-shadow-os-lib/shadow.c";
 };
 
 main :: () -> i32 {

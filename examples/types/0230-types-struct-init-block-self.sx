@@ -3,7 +3,7 @@
 // with no leading dot does not stack: the `;` ends the construction and the
 // group after it is a scope of its own.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Button :: struct {
     label: string = "";

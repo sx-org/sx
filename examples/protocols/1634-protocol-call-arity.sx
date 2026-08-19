@@ -1,7 +1,7 @@
 // A protocol method call must arity-check like a
 // plain call. `Allocator.dealloc_bytes` declares (ptr); calling it with
 // an extra argument must not compile and drop the extra.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     gpa := GPA.init();

@@ -1,6 +1,6 @@
 // Killing a live child: the WNOHANG probe reports "still running", SIGTERM
 // ends it, and the blocking reap folds the signal death to 128 + SIGTERM.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     child, e := process.spawn(.["sleep", "60"], .{});

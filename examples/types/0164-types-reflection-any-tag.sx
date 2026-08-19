@@ -11,7 +11,7 @@
 // `type_name` / `is_unsigned` read the runtime tag, not the any's payload as a
 // TypeId index.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     // any holding a VALUE — reflection names the value's type.

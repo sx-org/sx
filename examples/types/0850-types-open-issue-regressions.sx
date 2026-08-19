@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 P0850 :: protocol vtable { get :: (self: *Self) -> i64; }
 S0850 :: struct { v: i64 = 0; }
@@ -10,7 +10,7 @@ next_0850 :: () -> i64 { g_ix_0850 += 1; return 0; }
 
 freefn_0850 :: (a: i64, b: i64) -> i64 => a + b;
 Base0850 :: struct { bx: i64 = 1; }
-Box0850 :: struct($T: Type) { item: T; #using Base0850; }
+Box0850 :: struct($T: Type) { item: T; @using Base0850; }
 pair_0850 :: (a: $T, b: T) -> T => a + b;
 f_diverge_0850 :: (c: bool) -> i64 { x := if c { 1 } else { return 7; }; return x; }
 Color0850 :: enum { red; green; }

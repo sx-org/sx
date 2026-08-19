@@ -1,1 +1,1 @@
-one :: #import "a_one.sx";
+one :: @import "a_one.sx";

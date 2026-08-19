@@ -4,7 +4,7 @@
 // An optional source routes through the presence-preserving
 // `.optional_to_optional` coercion (the general trailing coerce); the
 // wrap-present path handles only a genuine non-optional `T → ?T` wrap.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Shape :: protocol vtable { area :: (self: *Self) -> i64; }
 Sq :: struct { s: i64; }

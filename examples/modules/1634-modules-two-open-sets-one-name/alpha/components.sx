@@ -1,6 +1,6 @@
 // Its members, in a sibling module, naming the set through the module that owns it.
-#import "modules/std.sx";
-v :: #import "view.sx";
+@import "modules/std.sx";
+v :: @import "view.sx";
 
 Label :: @OpenVariant(v.View) {
     text: string = "";

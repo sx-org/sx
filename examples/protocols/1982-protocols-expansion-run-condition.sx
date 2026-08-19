@@ -14,7 +14,7 @@
 // allocation below therefore runs on the
 // VM's own heap, through the real thunks of the real default context — no
 // provisional layout, no shadow context, and no second evaluator.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 budget :: () -> i64 {
     p := context.allocator.alloc_bytes(64);

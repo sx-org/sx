@@ -1,7 +1,7 @@
 // The collector: its set, its sink, its collection boundary. Nothing here knows
 // what a caller's block will name.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
 
 V :: @OpenSet(.{ max = 64 }) {
     tag :: (self: *Self) -> string;

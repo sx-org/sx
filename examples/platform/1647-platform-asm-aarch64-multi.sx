@@ -5,7 +5,7 @@
 // reflects lo+hi), ir-only elsewhere.
 split :: (x: u64) -> Tuple(lo: u64, hi: u64) {
     return asm {
-        #string ASM
+        @string ASM
         and %[l], %[x], #0xff
         lsr %[h], %[x], #8
 ASM,

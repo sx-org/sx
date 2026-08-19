@@ -3,7 +3,7 @@
 // dimension, exactly like a plain `K :: 3` const.
 // (This is what lets a `($T) -> Type` builder loop `inline for 0..struct_field_count(T)`
 // to assemble a variant list from a type's members — the `race` result synthesis.)
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 S :: struct { a: i64; b: bool; c: f64; }
 E :: enum { X; Y; Z; W; }

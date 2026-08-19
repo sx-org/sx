@@ -5,7 +5,7 @@
 // LLVM only reclaims allocas at `ret`, so a per-iteration alloca exhausts
 // the stack.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     sum := 0;

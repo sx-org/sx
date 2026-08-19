@@ -5,7 +5,7 @@
 // discrimination is type_info's job, like the count tables); a static
 // non-vector is a compile error. Comptime VM answers from the same
 // TypeTable query, so static/dynamic/VM can never diverge.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     // static fold

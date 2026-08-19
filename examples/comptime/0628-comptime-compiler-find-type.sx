@@ -12,7 +12,7 @@
 // Comptime-only: they run inside `@run`, folding to plain int constants the
 // runtime `main` prints. Chains `raw_intern` → `raw_find_type` → `raw_field_count`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 
 StringId :: u32;

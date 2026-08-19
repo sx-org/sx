@@ -4,7 +4,7 @@
 // declaration, an `if` condition, a `bool` declaration, a `bool` argument and a
 // `bool` return — each agreeing with the hoisted `t : <peer> = xx b; a == t`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 take :: (cond: bool) -> bool => cond;
 ret :: (a: i32, b: i64) -> bool { a == b }

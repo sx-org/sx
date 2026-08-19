@@ -4,16 +4,16 @@
 //
 // The near triangle is drawn FIRST and the far one second, so the far
 // triangle only loses the overlap if the depth test is really running.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "modules/gpu/types.sx";
-#import "modules/gpu/api.sx";
-#import "modules/gpu/metal.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/gpu/types.sx";
+@import "modules/gpu/api.sx";
+@import "modules/gpu/metal.sx";
 
 W :i32: 64;
 H :i32: 64;
 
-MSL_MESH :: #string MSL
+MSL_MESH :: @string MSL
 #include <metal_stdlib>
 using namespace metal;
 

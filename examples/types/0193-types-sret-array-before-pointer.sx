@@ -3,7 +3,7 @@
 // lowering its body): `needs_target` in lowerAssignment covers null and undef
 // literals. The array-before-pointer field order puts the pointer at a non-zero
 // offset.
-#import "modules/std.sx";
+@import "modules/std.sx";
 S :: struct {
     arr: [2]u64;   // fixed-array field FIRST
     p:   *i64;     // pointer field AFTER the array

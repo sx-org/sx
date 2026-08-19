@@ -11,8 +11,8 @@
 // The param_impl_map key is name-based (`Into\0Marker\0*Box`), so registration and
 // `tryUserConversion` agree by construction.
 
-#import "modules/std.sx";
-#import "0826-protocols-param-impl-source-wrapped-own-wins/dep.sx";
+@import "modules/std.sx";
+@import "0826-protocols-param-impl-source-wrapped-own-wins/dep.sx";
 
 Box :: struct { m: i32; }
 Marker :: struct { v: i32; }

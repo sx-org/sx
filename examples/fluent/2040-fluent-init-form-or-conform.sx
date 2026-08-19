@@ -11,8 +11,8 @@
 // recipe in a second one. Provenance is the proof: a forwarded initializer still
 // reports the site of the expression it was formed from, which a wrapper could
 // not do.
-#import "modules/std.sx";
-#import "modules/std/core.sx";
+@import "modules/std.sx";
+@import "modules/std/core.sx";
 
 Button :: struct {
     label: string = "";

@@ -3,8 +3,8 @@
 // and copy. A spread, an index, and reflection read the layout rather than the
 // name, so all three stay legal on a foreign value.
 
-#import "modules/std.sx";
-box :: #import "2198-modules-private-struct-fields/box.sx";
+@import "modules/std.sx";
+box :: @import "2198-modules-private-struct-fields/box.sx";
 
 first :: (v: i64) -> i64 { v }
 

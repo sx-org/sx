@@ -9,7 +9,7 @@
 //   inline for i, x in 0..xs.len, xs — range driver, trailing pack
 //   inline for xs {}            — captureless; N=0 unrolls nothing
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Show :: protocol { show :: (self: *Self) -> string; }
 IntBox :: struct { v: i64; }

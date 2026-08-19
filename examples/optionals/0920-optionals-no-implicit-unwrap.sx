@@ -4,7 +4,7 @@
 //
 // The legal extractions are `!` / `??` / binding / `case` / a `!= null` guard
 // (see 0919); everything else is rejected.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 takes_i32 :: (x: i32) { print("got {}\n", x); }
 

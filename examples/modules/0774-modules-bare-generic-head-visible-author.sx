@@ -10,8 +10,8 @@
 // (NOT bare-visible, mirrors 0764/0706). The bare head `Box(i64)` and the bare
 // alias `ABox :: Box(i64)` must both select `b.Box` (size 8).
 
-#import "modules/std.sx";
-#import "0774-modules-bare-generic-head-visible-author/b.sx";
+@import "modules/std.sx";
+@import "0774-modules-bare-generic-head-visible-author/b.sx";
 
 ABox :: Box(i64);
 

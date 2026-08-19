@@ -2,9 +2,9 @@
 // sx through a `abi(.c)` entry (which has NO implicit context),
 // fabricates its own Context via `push .{ allocator = gpa }`,
 // and calls default-conv sx code that allocates through it.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-clib :: #library "c";
+clib :: @library "c";
 pthread_create :: (thread: *usize, attr: *void, start: (*void) -> *void abi(.c), arg: *void) -> i32 extern clib;
 pthread_join   :: (thread: usize, retval: **void) -> i32 extern clib;
 

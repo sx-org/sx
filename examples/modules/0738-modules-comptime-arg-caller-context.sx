@@ -14,7 +14,7 @@
 // Comptime-ONLY: `caller_name()` is evaluated at compile time and its value is
 // embedded as a literal in the generated `print(...)` statement — it is never
 // materialized at runtime.
-m :: #import "0738-modules-comptime-arg-caller-context/emit.sx";
+m :: @import "0738-modules-comptime-arg-caller-context/emit.sx";
 
 caller_name :: () -> string { return "world"; }
 

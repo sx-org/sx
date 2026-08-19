@@ -12,19 +12,19 @@
 //   xcrun simctl install booted /tmp/MetalClear.app
 //   xcrun simctl launch --terminate-running-process booted co.swipelab.metalclear
 
-#import "modules/std.sx";
-#import "modules/ffi/objc.sx";
-#import "modules/build.sx";
-#import "modules/platform/api.sx";
-#import "modules/platform/uikit.sx";
-#import "modules/platform/uikit_app.sx";
-#import "modules/gpu/types.sx";
-#import "modules/gpu/api.sx";
-#import "modules/gpu/metal.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
+@import "modules/build.sx";
+@import "modules/platform/api.sx";
+@import "modules/platform/uikit.sx";
+@import "modules/platform/uikit_app.sx";
+@import "modules/gpu/types.sx";
+@import "modules/gpu/api.sx";
+@import "modules/gpu/metal.sx";
 
-#framework "UIKit";
-#framework "QuartzCore";
-#framework "OpenGLES";
+@framework "UIKit";
+@framework "QuartzCore";
+@framework "OpenGLES";
 
 // Pass-through vertex + fragment shader for a colored triangle. Vertex
 // layout is { packed_float2 pos; packed_float4 color; } = 24 bytes —
@@ -32,7 +32,7 @@
 // padded between fields (a plain `float4` would force 16-byte alignment
 // and pad the struct out to 32 bytes per vertex). Entry-point names
 // (vmain / fmain) match what MetalGPU.create_shader looks up.
-TRI_MSL :: #string MSL
+TRI_MSL :: @string MSL
 #include <metal_stdlib>
 using namespace metal;
 

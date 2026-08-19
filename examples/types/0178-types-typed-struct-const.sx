@@ -3,7 +3,7 @@
 // independent copies. (Both shapes carry inline re-lowering semantics rather
 // than const-global storage.)
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Color :: struct { r, g, b: i64; }
 W : Color : Color{ r = 1, g = 2, b = 3 };

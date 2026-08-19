@@ -3,5 +3,5 @@
 // (where the real `Make` type-fn lives, two hops from a file that imports b.sx).
 // A same-name ordinary function must not vouch for the 2-hop type-fn head: it has
 // zero `$`-params, so it cannot be the type head `Make(i64)` is instantiating.
-#import "c.sx";
+@import "c.sx";
 Make :: () -> i32 { return 7; }

@@ -89,7 +89,7 @@ pub const PlainStructAuthor = struct {
     source: ?[]const u8,
 };
 
-/// A private field reached through `#using` promotion, keyed on the PROMOTING
+/// A private field reached through `@using` promotion, keyed on the PROMOTING
 /// struct's TypeId. The promoting struct copies the base's field verbatim, so
 /// only this record still names the file that may mention it.
 pub const PromotedField = struct {
@@ -584,7 +584,7 @@ pub const Lowering = struct {
     /// author here lets method dispatch select the body from that identity rather
     /// than from the global last-wins `fn_ast_map["Struct.method"]` entry.
     plain_struct_authors: std.AutoHashMap(TypeId, PlainStructAuthor),
-    /// Declaring file of each private field a struct gained through `#using`.
+    /// Declaring file of each private field a struct gained through `@using`.
     promoted_field_authority: std.AutoHashMap(PromotedField, ?[]const u8),
     /// Explicit nullary-protocol impl methods, addressed by protocol + nominal
     /// concrete TypeId + method. The `Type.method` AST map cannot distinguish
@@ -714,7 +714,7 @@ pub const Lowering = struct {
     /// True while emitting the compiler-synthesized default-Context global
     /// (`emitDefaultContextGlobal`). The built-in allocator infrastructure
     /// (`CAllocator`/`Allocator`/`Context`) is resolved as compiler internals,
-    /// independent of the user program's import STYLE (a `std :: #import` puts
+    /// independent of the user program's import STYLE (a `std :: @import` puts
     /// `CAllocator` behind a namespace edge from `main`, so the user-visibility
     /// gate would reject it) — so the bare TYPE leaf falls open here.
     emitting_default_context: bool = false,
@@ -749,8 +749,8 @@ pub const Lowering = struct {
     local_type_names: std.StringHashMap(std.StringHashMap(void)),
     struct_defaults_map: std.StringHashMap([]const ?*const Node), // struct name → field defaults
     /// Concrete plain-struct TypeId → field defaults ALIGNED WITH THE
-    /// FLATTENED layout (a `#using`-embedded base field holds null — base
-    /// defaults do not flow through `#using`, matching generic instantiation).
+    /// FLATTENED layout (a `@using`-embedded base field holds null — base
+    /// defaults do not flow through `@using`, matching generic instantiation).
     /// Literal lowering selects
     /// through this identity first; the display-name map above stays only as
     /// the generic-instance / alias fallback, because its name key is
@@ -2187,7 +2187,7 @@ pub const Lowering = struct {
                 const ty_name = self.formatTypeName(obj_ty);
                 const id = diags.addFmtId(.err, span, "field '{s}' not found on type '{s}'", .{ field, ty_name });
                 // An unknown field on the CONTEXT enumerates the program's
-                // registered `#context_extend` fields (shared enumeration helper) —
+                // registered `@context_extend` fields (shared enumeration helper) —
                 // covers both `context.typo` reads and `push .{ typo = … }`.
                 if (self.module.types.findByName(self.module.types.internString("Context"))) |ctx_ty| {
                     if (obj_ty == ctx_ty) self.noteRegisteredContextFields(id);
@@ -2444,7 +2444,7 @@ pub const Lowering = struct {
     };
 
     /// Resolve a namespace alias visible from the current source file under
-    /// the carry rule: the file's OWN `ns :: #import` edge wins; otherwise an
+    /// the carry rule: the file's OWN `ns :: @import` edge wins; otherwise an
     /// alias declared by a DIRECT flat import is carried (one level — flat
     /// edges of flat edges do not chain). Two distinct carried targets for
     /// the same alias are ambiguous.
@@ -2561,8 +2561,8 @@ pub const Lowering = struct {
     }
 
     /// True when the target authors a named compiler-special declaration that
-    /// intentionally does not enter `RawDeclRef` (currently `#library`,
-    /// `#framework`, C-import metadata, or a UFCS alias). These names belong to
+    /// intentionally does not enter `RawDeclRef` (currently `@library`,
+    /// `@framework`, C-import metadata, or a UFCS alias). These names belong to
     /// their existing non-type/value resolution domains; the dotted selector
     /// must fall back rather than misdiagnose them as a missing namespace
     /// member. In particular stdlib's `libc :: c.libc` re-export is a library

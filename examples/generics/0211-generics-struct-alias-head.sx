@@ -4,8 +4,8 @@
 // the facade's OWN declaration, so it carries one flat-import level exactly
 // like a plain-struct alias (companion files: -rich.sx authors the decls,
 // -facade.sx re-exports them through a namespace alias).
-#import "modules/std.sx";
-#import "0211-generics-struct-alias-head-facade.sx";
+@import "modules/std.sx";
+@import "0211-generics-struct-alias-head-facade.sx";
 
 LocalBox :: struct ($T: Type) {
     item: T;

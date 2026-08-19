@@ -8,7 +8,7 @@
 // `findByName` first-match (the leaf answering ahead of the visibility check)
 // lets `s.x` compile and run. The qualified form `dep.Secret` is the supported
 // spelling.
-dep :: #import "0743-modules-namespaced-only-bare-type-not-visible/dep.sx";
+dep :: @import "0743-modules-namespaced-only-bare-type-not-visible/dep.sx";
 
 main :: () -> i32 {
     s : Secret = .{ x = 5, y = 6 };

@@ -8,7 +8,7 @@
 // any statement: the arm's last statement sits before the match's `}`, a
 // statement that IS a block ends at its own `}`, and so does a declaration
 // whose initializer is a block form.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Color :: enum {
     Red

@@ -14,8 +14,8 @@
 // and never upgrades the placeholder to the real tagged_union, surfacing as
 // "cannot infer enum type for '.b'" at the `return .b(42)` site.
 
-#import "modules/std.sx";
-#import "0707-modules-import-dir-scan-order";
+@import "modules/std.sx";
+@import "0707-modules-import-dir-scan-order";
 
 main :: () -> i32 {
     e := make_my();

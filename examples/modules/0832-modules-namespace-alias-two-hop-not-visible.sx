@@ -7,8 +7,8 @@
 // A bare `alias.fn()` call path served from the
 // global qualified registration resolves this at any import depth.
 
-#import "modules/std.sx";
-#import "0832-modules-namespace-alias-two-hop-not-visible/facade2.sx";
+@import "modules/std.sx";
+@import "0832-modules-namespace-alias-two-hop-not-visible/facade2.sx";
 
 main :: () {
     print("{}\n", t.helper());

@@ -7,7 +7,7 @@
 // `K :: 7` inside an enum body is an explicit-valued variant (specs.md §7,
 // `esc :: '\x1b'`), not an associated constant.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Mix of auto (A=0, B=1) and explicit (K=7) values.
 E :: enum { A; B; K :: 7; }

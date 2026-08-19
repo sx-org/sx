@@ -9,7 +9,7 @@
 //
 // The capture is what makes the pointer field constant-emittable: the interp's
 // host-address `.int` value has no `ptr` form `LLVMConstInt` can lower.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 build_greeting :: () -> string {
     return concat("hello", " world");

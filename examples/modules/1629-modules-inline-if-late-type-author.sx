@@ -8,9 +8,9 @@
 // 1630 is the same program with the two imports permuted; both print the same
 // three sizes, because identity comes from the authoring module, not from the
 // order the authors happen to register in.
-#import "modules/std.sx";
-#import "1629-modules-inline-if-late-type-author/plain.sx";
-gated :: #import "1629-modules-inline-if-late-type-author/gated.sx";
+@import "modules/std.sx";
+@import "1629-modules-inline-if-late-type-author/plain.sx";
+gated :: @import "1629-modules-inline-if-late-type-author/gated.sx";
 
 main :: () -> i32 {
     print("{} {} {}\n", plain_size(), gated.gated_size(), size_of(gated.Slot));

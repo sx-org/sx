@@ -1,7 +1,7 @@
 // A type-list cursor binds a type, not a value of one, so it takes no type
 // annotation.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 TYPES :: .[i32, i64];
 

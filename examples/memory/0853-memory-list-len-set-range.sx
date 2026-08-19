@@ -3,7 +3,7 @@
 // the message carries no `file:line:` prefix.
 //
 // aborts (exit 134) after the message — macOS-pinned.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     xs : List(i64) = .{};

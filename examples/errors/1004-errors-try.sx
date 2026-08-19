@@ -5,7 +5,7 @@
 // failable (`-> !E`). The error-channel tuple ABI for value-carrying
 // `-> (T, !)` and `try` in an `or` chain are covered by 1012 and 1028.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad, Worse }
 

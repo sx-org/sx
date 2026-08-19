@@ -3,7 +3,7 @@
 // resolves to `T`. Covers both runtime paths: default TAKEN (lhs null) and
 // NOT taken (lhs present), plus a nested struct-literal default and an
 // all-defaulted `.{}`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Inner :: struct { x: i64 = 0; }
 T :: struct { a: i64 = 7; b: i64 = 3; inner: Inner; }

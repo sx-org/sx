@@ -1,5 +1,5 @@
-error: #identity is meaningless on a constraint protocol — there are no runtime values to classify
+error: @identity is meaningless on a constraint protocol — there are no runtime values to classify
   --> examples/diagnostics/1285-diagnostics-protocol-identity-on-constraint.sx:5:17
    |
- 5 | Ord :: protocol #identity {
+ 5 | Ord :: protocol @identity {
    |                 ^^^^^^^^^

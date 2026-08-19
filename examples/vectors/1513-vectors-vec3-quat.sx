@@ -1,5 +1,5 @@
-#import "modules/std.sx";
-#import "modules/math";
+@import "modules/std.sx";
+@import "modules/math";
 
 main :: () -> i32 {
     a := Vec3{ x = 1.0, y = 0.0, z = 0.0 };

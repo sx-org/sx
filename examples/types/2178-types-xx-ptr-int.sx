@@ -1,6 +1,6 @@
 // Dest-inferred `xx` reinterprets pointer ↔ integer. Arithmetic that
 // produces a number writes the dest on the value: `p.(i64)`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     n := 1;

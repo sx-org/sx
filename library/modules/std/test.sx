@@ -1,4 +1,4 @@
-#import "modules/std/core.sx";     // out
+@import "modules/std/core.sx";     // out
 
 assert :: (condition: bool) {
     if !condition {

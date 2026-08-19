@@ -3,7 +3,7 @@
 // A range cursor is `i64`; an `inline for` over a pack checks the annotation
 // against every unrolled element.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: struct { w: i64; }
 Pair :: struct($A: Type, $B: Type) { a: A; b: B; }

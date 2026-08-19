@@ -3,7 +3,7 @@
 // algebra — bytes, WouldBlock, Closed — on a unix socketpair, plus
 // accept_nb on a nonblocking TCP listener (WouldBlock with an empty
 // backlog, a connection after a loopback connect).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 PORT :: 18931;
 

@@ -1,5 +1,5 @@
 // The module that declares the structs, and the names their defaults reach.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Ink :: struct {
     name: string = "";

@@ -9,10 +9,10 @@
 //
 // The occurrence is POSITIONAL: a site's n-th element keeps its id only while
 // that site keeps producing its siblings in the same order.
-#import "modules/std.sx";
-#import "modules/std/core.sx";
-#import "modules/std/mem.sx";
-#import "modules/std/source_site.sx";
+@import "modules/std.sx";
+@import "modules/std/core.sx";
+@import "modules/std/mem.sx";
+@import "modules/std/source_site.sx";
 
 // A call site reduced to what identity needs, plus the position a diagnostic
 // prints. `key` is `@SourceSite.id`, so two sites collide only where their
@@ -80,7 +80,7 @@ Identity :: struct {
     }
 }
 
-#context_extend fluent_ui: *Identity = null;
+@context_extend fluent_ui: *Identity = null;
 
 // The id of the element being built at THIS call site. A component mints it
 // while the tree is built and carries it into render, where it names the hit

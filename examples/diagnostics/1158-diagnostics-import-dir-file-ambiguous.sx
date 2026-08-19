@@ -4,7 +4,7 @@
 // canonical collision: `modules/std.sx` (the prelude) sits next to
 // `modules/std/` (mem/fs/process/...).
 
-#import "modules/std";
+@import "modules/std";
 
 main :: () -> i32 {
     0

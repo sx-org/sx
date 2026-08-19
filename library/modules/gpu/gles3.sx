@@ -26,12 +26,12 @@
 //     a GLES vertex + fragment pair (NOT the Metal MSL combined source
 //     the Metal backend takes — caller branches on OS).
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "modules/build.sx";
-#import "modules/ffi/opengl.sx";
-#import "modules/gpu/types.sx";
-#import "modules/gpu/api.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/build.sx";
+@import "modules/ffi/opengl.sx";
+@import "modules/gpu/types.sx";
+@import "modules/gpu/api.sx";
 
 // EGL bootstrap helper — used to populate opengl.sx's fn pointers once
 // the EGL context is current. We declare only the loader here; EGL

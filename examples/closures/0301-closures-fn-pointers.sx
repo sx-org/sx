@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 add :: (a: i32, b: i32) -> i32 { a + b }
 mul :: (a: i32, b: i32) -> i32 { a * b }

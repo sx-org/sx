@@ -2,7 +2,7 @@
 // the integer word it is carried in ('i64') and never the bare 'function' tag. Both
 // coercion error paths are pinned: the central unmodeled-coercion guard (call arg)
 // and the return-path guard.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 toolbar :: () { print("t\n"); }
 add1 :: (x: i64) -> i64 { x + 1 }

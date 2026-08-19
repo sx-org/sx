@@ -4,7 +4,7 @@
 // dispatch, and every downstream rule apply to the expanded program unchanged.
 // The cursor binds in type position exactly like a `$T: Type` binding, so the
 // reflection builtins supply the field-wise body.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point  :: struct { x: i64; y: i64; }
 Rect   :: struct { w: i64; h: i64; }

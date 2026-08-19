@@ -1,6 +1,6 @@
-#import "modules/std.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/glyph_cache.sx";
+@import "modules/std.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/glyph_cache.sx";
 
 // Global glyph cache pointer for views (Label, Button) to access
 g_font : *GlyphCache = null;

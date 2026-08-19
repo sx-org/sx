@@ -7,7 +7,7 @@
 // `intrinsic` declarations recognized by the intrinsic registry
 // (`tryLowerAtomicIntrinsic`, src/ir/lower/call.zig) and emitted as dedicated
 // atomic IR ops; the `Ordering` argument MUST be a constant enum literal.
-#import "modules/std/core.sx";
+@import "modules/std/core.sx";
 
 Ordering :: enum {
     relaxed;   // → LLVM Monotonic

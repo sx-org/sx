@@ -10,8 +10,8 @@
 // Note what the emitter does NOT need: no allocator, no list, no erasure, no
 // identity table. A sink that renders immediately needs none of them, and the
 // same block would drive a retaining sink without changing a character.
-#import "modules/std.sx";
-#import "modules/fluent.sx";
+@import "modules/std.sx";
+@import "modules/fluent.sx";
 
 Cell :: protocol constraint {
     render :: (self: *Self, out: *Ascii);

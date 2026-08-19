@@ -1,7 +1,7 @@
 // `lowerVarDecl` at the top level mirrors the local-scope path: explicit
 // annotation → resolveType; no annotation → infer from the initializer's
 // type, exactly as `:=` does for locals.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 g_count := 42;        // inferred i64
 g_pi    := 3.14;      // inferred f64 — never i64

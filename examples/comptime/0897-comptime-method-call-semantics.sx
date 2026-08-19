@@ -3,7 +3,7 @@
 // targets contextually type them, pointer args borrow caller storage, and the
 // body has a hygienic scope. Covers static, instance, target shorthand,
 // method-generic, and generic-struct-instance composition.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Ord :: enum { one; two; }
 

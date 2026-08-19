@@ -1,1 +1,1 @@
-#import "bridge.sx";
+@import "bridge.sx";

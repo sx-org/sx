@@ -1,6 +1,6 @@
 // `#inline` is not a protocol attribute. It is recognized nowhere; it fails
 // through the ordinary parse path, with no hint arm.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Hasher :: protocol #inline {
     sum :: (self: *Self) -> u64;

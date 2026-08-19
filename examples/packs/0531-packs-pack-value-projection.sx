@@ -5,7 +5,7 @@
 //
 //   xs.get  ≈  (xs[0].get(), xs[1].get())
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: protocol(T: Type) {
     get :: (self: *Self) -> T;

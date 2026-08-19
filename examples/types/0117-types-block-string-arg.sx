@@ -7,8 +7,8 @@
 // `[2 x i64]` at the LLVM signature site and matches the caller's
 // two-register pass on AArch64.
 
-#import "modules/std.sx";
-#import "modules/ffi/objc_block.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc_block.sx";
 
 g_s: string = "";
 

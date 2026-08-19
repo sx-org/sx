@@ -2,7 +2,7 @@
 // backing storage, exactly like a call-result rvalue (1229), and specs.md
 // §Subslicing names an array literal as a compile error. The literal base types as
 // `.unresolved`, so the rvalue guard cannot key on `== .array` alone.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     sl : []i64 = .[ 1, 2, 3 ][0..2];   // error: cannot slice a temporary array

@@ -3,7 +3,7 @@
 // compare — `lowerBinaryOp` coerces each operand to the promoted float
 // type for the ordering/equality arms, as the arithmetic arms do, so the
 // cast materializes and LLVM gets a well-typed fcmp.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // i32 < f32: the comparison meets at f32, so the int side widens.
 ceil_half :: (v: f32) -> i32 {

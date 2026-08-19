@@ -10,7 +10,7 @@
 // An `else:` arm is REQUIRED. A set is open: a member declared elsewhere in the
 // program, or in a module this one never sees, carries a tag no arm here names, so
 // the arms are never the whole of the set.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 128, align = 8 }) {
     render :: (self: *Self) -> string;

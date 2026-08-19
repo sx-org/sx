@@ -3,7 +3,7 @@
 // param; a header whose arity misses the parameter's `Closure(…)`, in both
 // directions; the block-bound param also named; and a callee without a known
 // declaration, where closure values bind explicitly.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 vstack :: (spacing: f32, content: Closure()) -> i64 { content(); 7 }
 plain :: (a: i64, b: i64) -> i64 { a + b }

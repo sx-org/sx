@@ -7,9 +7,9 @@
 // The qualified static head `a.Box(i64).make(7)` reports that `a` has no member
 // `Box`.
 
-#import "modules/std.sx";
-a :: #import "0785-modules-qualified-generic-static-missing-member/a.sx";
-b :: #import "0785-modules-qualified-generic-static-missing-member/b.sx";
+@import "modules/std.sx";
+a :: @import "0785-modules-qualified-generic-static-missing-member/a.sx";
+b :: @import "0785-modules-qualified-generic-static-missing-member/b.sx";
 
 main :: () -> i32 {
     x := a.Box(i64).make(7);

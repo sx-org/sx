@@ -13,7 +13,7 @@
 // small (its standalone import drops from ~16k to ~50 lines of IR). Works
 // because core.sx self-declares its `libc`, so list.sx → core.sx resolves
 // standalone.
-#import "modules/std/list.sx";
+@import "modules/std/list.sx";
 
 // The C companion object files for this build (`#import c { #source ... }`,
 // compiled to `.o`) and the `#library` link names. The sx driver passes them to

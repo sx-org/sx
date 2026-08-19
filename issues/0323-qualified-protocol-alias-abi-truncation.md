@@ -16,7 +16,7 @@
 Given a protocol authored in another module:
 
 ```sx
-P :: protocol vtable #identity {
+P :: protocol vtable @identity {
     value :: (self: *Self) -> i64;
 }
 ```
@@ -24,7 +24,7 @@ P :: protocol vtable #identity {
 this qualified alias compiles but crashes:
 
 ```sx
-foreign :: #import ".../protocol.sx";
+foreign :: @import ".../protocol.sx";
 Alias :: foreign.P;
 
 S :: struct { n: i64; }
@@ -74,7 +74,7 @@ parameter directly as `zip.Source` emits the correct aggregate ABI and works.
 - Parameters, returns, struct fields, optionals, pointers/views, and nested
   aliases must agree on that canonical type.
 - `impl Alias for T` and erasure to `Alias` must use the qualified protocol's
-  implementation and diagnostics, including `#identity` borrowing semantics.
+  implementation and diagnostics, including `@identity` borrowing semantics.
 - Direct aliases and direct qualified protocol annotations must remain green.
 - Verify opt 0 and opt 3, add focused module/protocol regressions, and run the
   compiler unit plus full example corpus.

@@ -4,8 +4,8 @@
 // is namespaced-only and the call diagnoses "type 'Failure' is not
 // visible" even though the caller never names it bare.
 
-#import "modules/std.sx";
-m :: #import "0840-modules-imported-fn-param-type-source-pin/m.sx";
+@import "modules/std.sx";
+m :: @import "0840-modules-imported-fn-param-type-source-pin/m.sx";
 
 main :: () {
     f : m.Failure = .{ code = 7, message = "boom" };

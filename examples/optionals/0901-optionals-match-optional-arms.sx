@@ -1,7 +1,7 @@
 // Match expression with both `null` arms and concrete struct value arms
 // produces an optional type (?T) and correctly wraps non-null values.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 HAlignment :: enum { leading; center; trailing; }
 VAlignment :: enum { top; center; bottom; }

@@ -1,1 +1,1 @@
-engine :: #import "engine_a.sx";
+engine :: @import "engine_a.sx";

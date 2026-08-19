@@ -5,7 +5,7 @@
 // too, via the shared field-lvalue resolver. A member that is NOT at offset 0
 // (`v.y`) resolves to its own slot.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Vec2 :: union {
     data: [2]i64;

@@ -7,7 +7,7 @@
 // block, a `match` over the binding, and the selective handle + re-raise
 // pattern. Value-carrying `-> (T, !)` catch is exercised in 1012.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Bad, Empty }
 

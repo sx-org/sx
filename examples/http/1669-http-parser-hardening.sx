@@ -5,8 +5,8 @@
 // version → 505, over-long or too-many headers → 431 — while a
 // well-formed request still returns 200 (no false positives). Mirrors
 // the 1633 single-thread tick harness.
-#import "modules/std.sx";
-http :: #import "modules/std/http.sx";
+@import "modules/std.sx";
+http :: @import "modules/std/http.sx";
 
 PORT :: 18937;
 

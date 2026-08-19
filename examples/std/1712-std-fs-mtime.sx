@@ -1,11 +1,11 @@
-#import "modules/std/core.sx";
-#import "modules/std/target.sx";
+@import "modules/std/core.sx";
+@import "modules/std/target.sx";
 
-fs :: #import "modules/std/fs.sx";
-c :: #import "modules/std/c.sx";
+fs :: @import "modules/std/fs.sx";
+c :: @import "modules/std/c.sx";
 
 inline if OS != .windows {
-    posix_abi :: #import "modules/std/fs/posix_abi.sx";
+    posix_abi :: @import "modules/std/fs/posix_abi.sx";
 
     read_times :: (file: *fs.File) -> (i64, i64, bool) {
         raw : [256]u8 = .{};

@@ -11,7 +11,7 @@
 // `Self` in a required method denotes the MEMBER, so it is substituted before
 // comparing: `(self: *Self, other: Self) -> Self` is answered by
 // `(self: *Ok, other: Ok) -> Ok`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 128 }) {
     render :: (self: *Self) -> string;

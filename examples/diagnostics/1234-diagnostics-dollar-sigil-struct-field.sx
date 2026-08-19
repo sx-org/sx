@@ -2,7 +2,7 @@
 // struct declares its type params in the header (`struct ($T: Type)`) and
 // references them WITHOUT `$` in fields, so `$T` as a field type leaves `T`
 // unbound. One located error.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Gen :: struct { v: $T; }
 

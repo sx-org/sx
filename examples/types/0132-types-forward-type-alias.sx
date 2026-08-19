@@ -3,7 +3,7 @@
 // appears before `MyInt :: i32;`, yet `MyChain` resolves to `i32` and a
 // forward chain (`A :: B; B :: C; C :: u8;`) converges too. A fixpoint pass
 // over the scanned decls resolves them.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 MyChain :: MyInt;
 MyInt   :: i32;

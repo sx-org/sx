@@ -2,7 +2,7 @@
 // nothing, read readiness carries the registration's udata, write
 // interest reports an empty send buffer immediately, EOF is a flag not
 // an errno, and the deadline helpers do monotonic timeout math.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     pair : [2]i32 = ---;

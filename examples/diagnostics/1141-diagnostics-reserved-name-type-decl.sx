@@ -4,7 +4,7 @@
 // The backtick escape (`` `i2 :: struct{…} ``, examples/0154) is the only way to
 // spell these names in handwritten sx; `#import c` extern decls stay exempt
 // (examples/1220).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 i8 :: struct { v: i64; }
 i16 :: enum { A; B; }

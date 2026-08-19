@@ -7,9 +7,9 @@
 // invokes it (returns 1) BEFORE consuming the selected author — so plan-selected
 // author and lowered+dispatched author disagree. The early dispatch reads
 // the SAME `SelectedFunc` the main dispatch binds.
-#import "modules/std.sx";
-#import "0741-modules-flat-same-name-bare-pack-winner/a.sx";
-#import "0741-modules-flat-same-name-bare-pack-winner/b.sx";
+@import "modules/std.sx";
+@import "0741-modules-flat-same-name-bare-pack-winner/a.sx";
+@import "0741-modules-flat-same-name-bare-pack-winner/b.sx";
 
 main :: () -> i32 {
     show_a();   // a-side: own == winner (the pack) → returns 1, byte-for-byte unchanged

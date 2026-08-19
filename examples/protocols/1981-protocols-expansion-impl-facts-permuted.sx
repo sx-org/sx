@@ -4,7 +4,7 @@
 // The scheduler is what makes the answers order-independent — each read is
 // folded at the instant its fact stopped being able to change, never at the
 // instant it was written — so the output is byte-identical to 1974's.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 SHAPES :: .[Item];
 

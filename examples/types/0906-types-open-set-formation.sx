@@ -10,7 +10,7 @@
 //
 // A set value is an ordinary value of its size, so copying one copies the SLOT.
 // Two set values never share the member they carry.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 View :: @OpenSet(.{ max = 128, align = 8 }) {
     render :: (self: *Self) -> string;

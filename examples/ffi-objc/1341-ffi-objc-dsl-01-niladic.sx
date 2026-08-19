@@ -8,9 +8,9 @@
 // declare the sx-side `@ObjcClass` against the same name, then invoke
 // the DSL form. On macOS this exercises the real Obj-C runtime; on
 // other platforms the test skips.
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 SxProbeNiladic :: @ObjcClass("SxProbeNiladic") extern {
     length :: (self: *Self) -> i32;

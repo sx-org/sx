@@ -3,10 +3,10 @@
 // module's member calls resolve, in whichever order the decls
 // register. (The gpu/metal.sx vs platform/uikit.sx CAMetalLayer race
 // was this, observed as "unresolved 'class'".)
-#import "modules/std.sx";
-#import "modules/ffi/objc.sx";
-#import "1622-modules-objc-class-union/view_a.sx";
-#import "1622-modules-objc-class-union/view_b.sx";
+@import "modules/std.sx";
+@import "modules/ffi/objc.sx";
+@import "1622-modules-objc-class-union/view_a.sx";
+@import "1622-modules-objc-class-union/view_b.sx";
 
 main :: () {
     ns : *NSString = xx "hello union";

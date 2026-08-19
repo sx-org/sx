@@ -8,7 +8,7 @@
 // (`|| -> (i64, !) compute(a, b)`) — the colorblind shape that also works when
 // the worker is deferred onto a fiber (a captured variadic pack can't cross the
 // fiber boundary).
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     // Inputs captured at the call site. The worker is FAILABLE

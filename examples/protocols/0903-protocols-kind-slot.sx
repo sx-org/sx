@@ -3,8 +3,8 @@
 // `constraint` / `vtable` are CONTEXTUAL words: kinds only in that slot,
 // ordinary identifiers everywhere else. `protocol_kind(P)` reports both and
 // folds in `inline if`; `is_identity(P)` reports the ownership class.
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Ord :: protocol {                              // no slot ⇒ constraint
     less :: (self: *Self, other: Self) -> bool;
@@ -16,8 +16,8 @@ Into2 :: protocol(Target: Type) constraint {   // parameterized + explicit kind
 }
 
 Show :: protocol vtable { fmt :: (self: *Self) -> string; }
-Rng :: protocol vtable #identity { next :: (self: *Self) -> u64; }
-Slot :: protocol(T: Type) vtable #identity { get :: (self: *Self) -> T; }
+Rng :: protocol vtable @identity { next :: (self: *Self) -> u64; }
+Slot :: protocol(T: Type) vtable @identity { get :: (self: *Self) -> T; }
 
 Point :: struct { x: i64; }
 impl Show for Point { fmt :: (self: *Point) -> string { "pt" } }

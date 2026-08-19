@@ -3,7 +3,7 @@
 // protocol slot. The pack `..sources: VL` holds concrete cells; `.(..sources)`
 // into a `Tuple(..VL(Ts))` field `xx`-erases each to its `VL(Ti)` value.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 VL :: protocol(T: Type) vtable { get :: (self: *Self) -> T; }
 IntCell :: struct { v: i64; }

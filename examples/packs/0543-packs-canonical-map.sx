@@ -10,7 +10,7 @@
 //     generic-struct instance to `VL(i64)` via the generic impl's monomorphized
 //     thunk.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 VL :: protocol(T: Type) vtable { get :: (self: *Self) -> T; }
 IntCell :: struct { v: i64; }

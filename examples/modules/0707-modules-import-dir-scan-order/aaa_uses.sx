@@ -4,7 +4,7 @@
 // is scanned, or `MyEnum` falls back to a placeholder struct and
 // `return .b(42)` fails with "cannot infer enum type".
 
-#import "types.sx";
+@import "types.sx";
 
 make_my :: () -> MyEnum {
     return .b(42);

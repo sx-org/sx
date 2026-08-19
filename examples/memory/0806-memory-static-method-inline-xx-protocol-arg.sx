@@ -7,8 +7,8 @@
 // 2. Free function with inline xx: `make_t(xx p, ...)`
 // 3. Static method with inline xx: `T.init(xx p, ...)`
 
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
 
 Box :: struct {
     parent: Allocator;

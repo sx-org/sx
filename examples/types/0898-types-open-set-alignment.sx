@@ -11,7 +11,7 @@
 //
 // A member's own alignment is checked against the same effective value, which is
 // what makes the promise to members real.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 // Above the floor: 16-byte payload alignment, delivered.
 Wide :: @OpenSet(.{ max = 64, align = 16 }) {

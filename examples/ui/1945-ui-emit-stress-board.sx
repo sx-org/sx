@@ -4,14 +4,14 @@
 // screen as 1944, so the two can be compared side by side, but every child here
 // reaches its container through the terminal `.emit()` — there is no
 // interception, and a child written without it does not appear.
-#import "modules/std.sx";
-#import "examples/ui/emit/geometry.sx";
-#import "examples/ui/emit/render.sx";
-#import "examples/ui/emit/view.sx";
-#import "examples/ui/emit/components.sx";
-#import "examples/ui/emit/containers.sx";
-#import "examples/ui/emit/runtime.sx";
-#import "examples/ui/emit/emit.sx";
+@import "modules/std.sx";
+@import "examples/ui/emit/geometry.sx";
+@import "examples/ui/emit/render.sx";
+@import "examples/ui/emit/view.sx";
+@import "examples/ui/emit/components.sx";
+@import "examples/ui/emit/containers.sx";
+@import "examples/ui/emit/runtime.sx";
+@import "examples/ui/emit/emit.sx";
 
 BoardViewState :: struct {
     cell_eids: [81]u64 = ---;

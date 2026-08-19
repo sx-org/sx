@@ -5,7 +5,7 @@
 // The binding is a real type: `type_of` answers it inside the instance, it
 // compares equal to the written signature, and the value passes on to a
 // further generic unchanged.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 apply :: (f: $F) -> i64 { return f(); }
 some_fn :: () -> i64 { return 7; }

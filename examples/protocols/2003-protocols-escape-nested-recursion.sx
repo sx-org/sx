@@ -4,9 +4,9 @@
 // recurse, and function references relocate to their symbols. An ERASED handle
 // resolves the same way: its `ctx` per its referent, its type id as stamped,
 // and its impl's vtable to the symbol it was erased with.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-View :: protocol vtable #identity {
+View :: protocol vtable @identity {
     area :: (self: *Self) -> i64;
 }
 

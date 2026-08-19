@@ -286,10 +286,10 @@ test "exact-start lookup distinguishes raw names, heredoc interiors and the eof 
     try std.testing.expectEqual(@as(u32, 1), raw.writtenStart(@enumFromInt(1)));
     try std.testing.expectEqual(null, raw.tokenAtStart(1));
 
-    // `#string END\ncontent\nEND;` — the heredoc row starts at its content;
+    // `@string END\ncontent\nEND;` — the heredoc row starts at its content;
     // offsets inside the body match no row.
     const heredoc = TokenList{
-        .source = "#string END\ncontent\nEND;",
+        .source = "@string END\ncontent\nEND;",
         .tags = &.{ .raw_string_literal, .semicolon, .eof },
         .starts = &.{ 12, 23, 24 },
         .ends = &.{ 20, 24, 24 },

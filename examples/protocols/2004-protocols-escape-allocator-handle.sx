@@ -4,7 +4,7 @@
 // instance, and the escaped handle relocates to that global's symbol with its
 // method words resolved to their thunks. Allocating through the escaped handle
 // at runtime is allocating through the real allocator.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Holder :: struct { a: Allocator; k: i64; }
 

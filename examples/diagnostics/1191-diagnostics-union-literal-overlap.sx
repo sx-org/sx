@@ -2,7 +2,7 @@
 // promoted members of the same anonymous-struct arm. Naming two members that
 // overlay the same storage is a compile error. examples/types/0194 covers the
 // valid forms.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Overlay :: union { f: f32; i: i32; }
 

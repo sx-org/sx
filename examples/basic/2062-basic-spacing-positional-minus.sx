@@ -1,7 +1,7 @@
 // Spacing rule (specs: Whitespace is Syntax): on one line, position decides.
 // `a` is a completed operand, so the `-` after it is infix whatever the gaps
 // around it are — `a -b` subtracts exactly as `a - b` and `a-b` do.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     a := 10;

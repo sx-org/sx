@@ -1,4 +1,4 @@
-#import "modules/std.sx";
+@import "modules/std.sx";
 Vec4 :: struct {
     x, y, z, w: f32;    
 }

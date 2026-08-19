@@ -1,6 +1,6 @@
-#import "modules/std/core.sx";   // string
-#import "modules/std/fmt.sx";    // concat, format
-c :: #import "modules/std/c.sx"; // libc write
+@import "modules/std/core.sx";   // string
+@import "modules/std/fmt.sx";    // concat, format
+c :: @import "modules/std/c.sx"; // libc write
 
 // =====================================================================
 // trace.sx — error return-trace formatting.

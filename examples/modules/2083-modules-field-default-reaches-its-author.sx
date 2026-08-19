@@ -10,8 +10,8 @@
 // Every evaluator of a default agrees: ordinary lowering, the float→int fold
 // that runs ahead of it, and the compile-time serialization of a top-level
 // constant.
-#import "modules/std.sx";
-p :: #import "2083-modules-field-default-reaches-its-author/paint.sx";
+@import "modules/std.sx";
+p :: @import "2083-modules-field-default-reaches-its-author/paint.sx";
 
 // The consumer's own names, shadowing the ones the author's defaults reach.
 HAIRLINE :: 9.0;

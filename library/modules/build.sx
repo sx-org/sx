@@ -1,13 +1,13 @@
 // `List` (for the default build script) + the compiler-API build primitives
 // (`emit_object`/`link`/`c_object_paths`/…). The std↔build import cycle (std's
 // tail imports cli.sx which imports this file) is handled by the resolver.
-#import "modules/std.sx";
-#import "modules/compiler.sx";
+@import "modules/std.sx";
+@import "modules/compiler.sx";
 // The sx-side `.app`/`.apk` bundler. `default_pipeline` delegates to its
 // `bundle_main` when a bundle was requested. The bundler is compile-time-only
 // (comptime-only, never emitted into the binary), and the build↔bundle import
 // cycle resolves like the std↔build one.
-#import "modules/platform/bundle.sx";
+@import "modules/platform/bundle.sx";
 // The target facts — OS / ARCH / POINTER_SIZE + the OperatingSystem /
 // Architecture enums — live in a dependency-free module (std/target.sx) so
 // low-level code can name the enum TYPES without the build/std baggage.
@@ -19,7 +19,7 @@
 // / POINTER_SIZE by name (comptime constants, for both `inline if` and value
 // reads); a module that names OperatingSystem / Architecture imports
 // std/target.sx directly.
-#import "modules/std/target.sx";
+@import "modules/std/target.sx";
 
 // An opaque compile-time build-configuration handle. `build_options()` hands one
 // back; its real state lives on the compiler's threaded `BuildConfig`. The handle

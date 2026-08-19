@@ -2,7 +2,7 @@
 // concrete type. A protocol pointee is the type lie the hard recovery refuses,
 // and `void` names nothing to test.
 // The diagnostics are the success criterion.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Boxed :: protocol vtable { area :: (self: *Self) -> i64; }
 

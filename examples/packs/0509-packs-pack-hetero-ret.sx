@@ -12,7 +12,7 @@
 // - `pack_arg_types` type-only binding, which is what carries the element
 //   type into `inferExprType` before the mono scope exists.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 foo :: (..$args) -> $R => args[2];
 

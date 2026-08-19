@@ -5,8 +5,8 @@
 // element must bind main's own `Box`, observed by a `.m` access (disjoint field
 // sets → a wrong-author binding is a hard compile error).
 
-#import "modules/std.sx";
-#import "0823-route-all-own-wins-subform-wrappers/dep.sx";
+@import "modules/std.sx";
+@import "0823-route-all-own-wins-subform-wrappers/dep.sx";
 
 Box :: struct { m: i32; }
 

@@ -7,9 +7,9 @@
   and the loadable-extension SDK header `sqlite3ext.h` are not vendored)
 - License: public domain (<https://sqlite.org/copyright.html>)
 
-`#import "vendors/sqlite/sqlite.sx"` gives any sx program SQLite with
+`@import "vendors/sqlite/sqlite.sx"` gives any sx program SQLite with
 no system SQLite dependency or caller-supplied build flags. The bindings
-declare the amalgamation as a named `#import c` unit carrying the pinned
+declare the amalgamation as a named `@import c` unit carrying the pinned
 compile options (`SQLITE_DQS=0`, `SQLITE_THREADSAFE=1`,
 `SQLITE_DEFAULT_MEMSTATUS=0`, `SQLITE_OMIT_DEPRECATED`,
 `SQLITE_OMIT_SHARED_CACHE`, `SQLITE_LIKE_DOESNT_MATCH_BLOBS`,

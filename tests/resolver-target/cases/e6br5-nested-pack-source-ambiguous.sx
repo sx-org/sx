@@ -17,9 +17,9 @@
 // bytes are stated as a spec in
 // ../expected/e6br5-nested-pack-source-ambiguous.target.md.
 
-#import "modules/std.sx";
-#import "e6br5-nested-pack-source-ambiguous/a.sx";
-#import "e6br5-nested-pack-source-ambiguous/b.sx";
+@import "modules/std.sx";
+@import "e6br5-nested-pack-source-ambiguous/a.sx";
+@import "e6br5-nested-pack-source-ambiguous/b.sx";
 
 Block :: struct { tag: i32; }
 

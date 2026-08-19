@@ -7,7 +7,7 @@
 // The async completion closure
 // `() { f.value = worker() catch {…} }` captures a `Closure() -> ($R, !)`
 // worker and consumes its error channel — exactly this shape.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct { run: Closure() -> void; }
 

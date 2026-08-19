@@ -1,7 +1,7 @@
 // An array dimension that folds to a valid compile-time integer but exceeds a
 // `u32` (`[5_000_000_000]i64`) is a hard error. Every dim/lane fold narrows
 // through the range-checked `program_index.foldDimU32`.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     a : [5000000000]i64 = ---;

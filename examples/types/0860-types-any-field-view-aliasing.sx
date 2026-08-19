@@ -4,7 +4,7 @@
 // between taking the view and reading it stay VISIBLE through the view.
 // Boxing a copy of the field at call time would break that aliasing.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Point :: struct { x: i64; y: i16; }
 

@@ -5,7 +5,7 @@
 //
 // `checkExternRefs` validates the `extern` keyword's `extern_lib` slot and the
 // extern-import-shape `library_ref` through the same path.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 c_abs :: (n: i32) -> i32 extern nosuchunit "abs";
 

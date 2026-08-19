@@ -3,8 +3,8 @@
 // `@caller` default param) and exits 1; a true condition is a no-op.
 // Built on `process.exit`.
 
-#import "modules/std.sx";
-proc :: #import "modules/std/process.sx";
+@import "modules/std.sx";
+proc :: @import "modules/std/process.sx";
 
 main :: () -> i32 {
     proc.assert(2 + 2 == 4, "arithmetic");                 // passes → no-op

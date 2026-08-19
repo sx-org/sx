@@ -11,8 +11,8 @@
 // module-scope NAME predicate (`isNameVisible`) that the visible non-fn
 // `Make :: 123` satisfies.
 
-#import "modules/std.sx";
-#import "0770-modules-type-fn-head-non-transitive/b.sx";
+@import "modules/std.sx";
+@import "0770-modules-type-fn-head-non-transitive/b.sx";
 
 main :: () -> i32 {
     print("size={}\n", size_of(Make(i64)));

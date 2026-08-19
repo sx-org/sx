@@ -6,9 +6,9 @@
 // `a.sx` authors only `Other` (no `Box`); `b.sx` authors a generic `Box($T)`.
 // The qualified reference `a.Box(i64)` reports that `a` has no member `Box`.
 
-#import "modules/std.sx";
-a :: #import "0775-modules-qualified-generic-missing-member/a.sx";
-b :: #import "0775-modules-qualified-generic-missing-member/b.sx";
+@import "modules/std.sx";
+a :: @import "0775-modules-qualified-generic-missing-member/a.sx";
+b :: @import "0775-modules-qualified-generic-missing-member/b.sx";
 
 main :: () -> i32 {
     x : a.Box(i64) = .{ x = 1, y = 2 };

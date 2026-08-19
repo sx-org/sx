@@ -1,13 +1,13 @@
-#import "modules/std.sx";
-#import "modules/std/mem.sx";
-#import "modules/ffi/opengl.sx";
-#import "modules/gpu/types.sx";
-#import "modules/gpu/api.sx";
-#import "vendors/stb_truetype/stb_truetype.sx";
-#import "vendors/kb_text_shape/kb_text_shape.sx";
-#import "vendors/file_utils/file_utils.sx";
-#import "vendors/stb_image/stb_image.sx";
-#import "modules/ui/types.sx";
+@import "modules/std.sx";
+@import "modules/std/mem.sx";
+@import "modules/ffi/opengl.sx";
+@import "modules/gpu/types.sx";
+@import "modules/gpu/api.sx";
+@import "vendors/stb_truetype/stb_truetype.sx";
+@import "vendors/kb_text_shape/kb_text_shape.sx";
+@import "vendors/file_utils/file_utils.sx";
+@import "vendors/stb_image/stb_image.sx";
+@import "modules/ui/types.sx";
 
 // Cached glyph data with UV coordinates into the atlas texture
 CachedGlyph :: struct {

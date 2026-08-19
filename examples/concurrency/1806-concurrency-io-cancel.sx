@@ -3,7 +3,7 @@
 // subsequent `f.await()` raises `error.Canceled` out of its value-failable
 // `($R, !IoErr)` — caught here with `or`. A future that is NOT canceled
 // awaits its value normally.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     // Not canceled → await yields the value. The worker is FAILABLE

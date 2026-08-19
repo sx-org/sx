@@ -5,7 +5,7 @@
 // `inline if false` suppresses sema/codegen; this file pins the parse
 // surface only.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () -> i32 {
     inline if false {

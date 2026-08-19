@@ -14,7 +14,7 @@
 // even the lowest-level modules (core, map, io) can depend on this with no
 // import cycle.
 
-libc :: #library "c";
+libc :: @library "c";
 
 // ── memory ────────────────────────────────────────────────────────────────
 // Raw libc allocation + block ops. The Allocator protocol (std/mem.sx) is the

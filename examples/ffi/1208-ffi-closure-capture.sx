@@ -6,9 +6,9 @@
 // expression capture); `passthrough_via_objc_call` exercises the same
 // capture through an FFI intrinsic call's arg list.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
-#import "modules/ffi/objc.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
+@import "modules/ffi/objc.sx";
 
 passthrough_works :: (recv: *void) -> Closure(i32) -> *void {
     return |d: i32| -> *void recv;  // captures `recv` — fine

@@ -4,9 +4,9 @@
 // come from the curated c/kbts_api.h). Pins INVARIANTS only: a shape
 // context constructs, the system Helvetica loads as a shaping font,
 // and teardown is clean.
-#import "modules/std.sx";
-fs :: #import "modules/std/fs.sx";
-kb :: #import "vendors/kb_text_shape/kb_text_shape.sx";
+@import "modules/std.sx";
+fs :: @import "modules/std/fs.sx";
+kb :: @import "vendors/kb_text_shape/kb_text_shape.sx";
 
 main :: () -> i32 {
     data := fs.read_file("/System/Library/Fonts/Helvetica.ttc");

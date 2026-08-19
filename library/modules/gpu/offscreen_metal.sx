@@ -3,16 +3,16 @@
 // targets an offscreen MTLTexture (MetalGPU.init_offscreen); readback
 // blits into a shared texture and reads with getBytes. Metal's texture
 // origin is top-left, so rows come back top-down with no flip.
-#import "modules/std.sx";
-#import "modules/gpu/types.sx";
-#import "modules/gpu/api.sx";
-#import "modules/gpu/metal.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/render.sx";
-#import "modules/ui/glyph_cache.sx";
-#import "modules/ui/font.sx";
-#import "modules/ui/renderer.sx";
-#import "modules/ui/surface.sx";
+@import "modules/std.sx";
+@import "modules/gpu/types.sx";
+@import "modules/gpu/api.sx";
+@import "modules/gpu/metal.sx";
+@import "modules/ui/types.sx";
+@import "modules/ui/render.sx";
+@import "modules/ui/glyph_cache.sx";
+@import "modules/ui/font.sx";
+@import "modules/ui/renderer.sx";
+@import "modules/ui/surface.sx";
 
 MetalOffscreen :: struct {
     gpu: MetalGPU;

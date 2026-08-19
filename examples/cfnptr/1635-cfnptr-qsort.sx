@@ -1,8 +1,8 @@
 // An sx `abi(.c)` function passes by name as a
 // typed C function pointer — libc qsort drives an sx comparator.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-clib :: #library "c";
+clib :: @library "c";
 qsort :: (base: [*]u8, nel: usize, width: usize, compar: (*void, *void) -> i32 abi(.c)) extern clib;
 
 cmp_i32 :: (a: *void, b: *void) -> i32 abi(.c) {

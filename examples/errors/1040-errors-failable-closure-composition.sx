@@ -8,7 +8,7 @@
 // the bare-fn slot. Passing a pre-bound closure *variable* into a bare-fn slot
 // is a separate coercion-site path, not handled.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 E :: error { Neg }
 

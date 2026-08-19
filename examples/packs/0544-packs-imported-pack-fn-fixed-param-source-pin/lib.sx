@@ -2,8 +2,8 @@
 // imports only `lib.sx` cannot see `Needs` (non-transitive). The pack fn's
 // fixed-prefix param `n: Needs` must therefore resolve in this module's
 // context, not the caller's.
-#import "modules/std.sx";
-#import "dep.sx";
+@import "modules/std.sx";
+@import "dep.sx";
 
 make :: () -> Needs => Needs{ v = 7 };
 

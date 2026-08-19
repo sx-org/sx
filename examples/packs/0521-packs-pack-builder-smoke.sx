@@ -9,8 +9,8 @@
 //      `callBuiltin(.type_name, ...)` whose interp arm reads the runtime
 //      `Value.type_tag(TypeId)` and returns the per-position name.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 // Generic "describe pack" builder. Receives the pack as
 // []Type, returns a joined string with each type's name.

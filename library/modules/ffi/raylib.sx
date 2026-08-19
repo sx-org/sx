@@ -1,4 +1,4 @@
-raylib :: #library "raylib";
+raylib :: @library "raylib";
 
 Color :: struct {
     r, g, b, a: u8;

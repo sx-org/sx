@@ -2,7 +2,7 @@
 // the loop cursor is a compile-time integer, so only an integral float (`4.0`,
 // `-2.0`) folds. Range bounds accept negative endpoints; only the
 // must-be-integer requirement applies.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 main :: () {
     s := 0;

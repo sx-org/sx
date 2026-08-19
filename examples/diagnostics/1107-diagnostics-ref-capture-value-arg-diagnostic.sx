@@ -2,7 +2,7 @@
 // where a `T` value is expected is reported at the call site with a fix-it:
 // write `m.*`.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Move :: struct { flag: i64; }
 

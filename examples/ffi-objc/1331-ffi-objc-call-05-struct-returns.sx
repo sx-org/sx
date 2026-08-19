@@ -9,8 +9,8 @@
 // zero-initialized struct of the return type. Lets us pin the
 // ABI without constructing a real object graph.
 
-#import "modules/std.sx";
-#import "modules/build.sx";
+@import "modules/std.sx";
+@import "modules/build.sx";
 
 // 16 B HFA (Apple ARM64 — 2×f64 stays in v0/v1, SysV AMD64 — in xmm0/xmm1).
 NSPoint :: struct { x: f64; y: f64; }

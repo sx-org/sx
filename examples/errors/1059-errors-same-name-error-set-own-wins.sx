@@ -4,7 +4,7 @@
 // declarations get per-decl nominal identity, so `raise error.Boom` and
 // `r == error.Boom` check against the LOCAL set and its `Boom` tag.
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 EventErr :: error { Boom }
 

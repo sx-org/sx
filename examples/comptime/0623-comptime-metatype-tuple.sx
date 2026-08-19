@@ -6,8 +6,8 @@
 //   2. Round-trip: `define(declare("TripleCopy"), type_info(Triple))` reflects a
 //      source tuple type INTO a `.tuple(TupleInfo)` value and reconstructs it —
 //      no literal element list.
-#import "modules/std.sx";
-#import "modules/std/meta.sx";
+@import "modules/std.sx";
+@import "modules/std/meta.sx";
 
 Pair :: define(declare("Pair"), .tuple(.{ elements = .[ i64, f64 ] }));
 

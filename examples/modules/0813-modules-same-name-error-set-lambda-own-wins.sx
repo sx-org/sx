@@ -14,8 +14,8 @@
 // `resolveTypeWithBindings` (same path as the regular function-return channel),
 // main's own `IoErr` wins, `error.Disk` validates, exit 0.
 
-#import "modules/std.sx";
-#import "0813-modules-same-name-error-set-lambda-own-wins/dep.sx";
+@import "modules/std.sx";
+@import "0813-modules-same-name-error-set-lambda-own-wins/dep.sx";
 
 IoErr :: error { Disk }
 

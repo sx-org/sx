@@ -5,7 +5,7 @@
 //
 // A const-FOLDABLE expression dimension such as `[M + 1]` folds instead — see
 // examples/types/0144-types-const-expr-array-dim.sx.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 get :: () -> i64 { return 5; }
 BadArr :: [get()]i64;

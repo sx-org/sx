@@ -11,7 +11,7 @@
 // macos`, so ir-only on a non-matching host.
 inline match OS {
     case .linux: asm {
-        #string ASM
+        @string ASM
 .global wrapped_add
 wrapped_add:
     add x0, x0, x1
@@ -19,7 +19,7 @@ wrapped_add:
 ASM,
     };
     case .macos: asm {
-        #string ASM
+        @string ASM
 .global _wrapped_add
 _wrapped_add:
     add x0, x0, x1

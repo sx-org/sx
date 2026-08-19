@@ -3,9 +3,9 @@
 // `?cstring` is the nullable case (null pointer = absent); string
 // LITERALS coerce implicitly (terminated constants); arbitrary strings
 // materialize via to_cstring; from_cstring is the zero-copy view back.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
-libc :: #library "c";
+libc :: @library "c";
 strerror_c :: (code: i32) -> cstring extern libc "strerror";
 getenv_c   :: (name: cstring) -> ?cstring extern libc "getenv";
 dlerror_c  :: () -> ?cstring extern libc "dlerror";

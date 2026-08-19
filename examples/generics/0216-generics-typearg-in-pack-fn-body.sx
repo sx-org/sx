@@ -8,7 +8,7 @@
 // `resolveTypeWithBindings` mirrors `resolveTypeArg`'s arm for it — look up
 // `type_bindings`, else a loud "pack used where a single type is required"
 // diagnostic, never a silent default type.
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 Box :: struct ($R: Type) { v: R; }
 

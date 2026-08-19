@@ -5,7 +5,7 @@
 // with a generated adapter. Both block and arrow bodies. (The working contrast
 // where the param is a `Closure(...)` type is examples/0302.)
 
-#import "modules/std.sx";
+@import "modules/std.sx";
 
 apply :: (f: (i64) -> i64) -> i64 { return f(5); }
 twice :: (f: (i64) -> i64, x: i64) -> i64 { return f(f(x)); }
