@@ -376,7 +376,7 @@ pub const Parser = struct {
             }
         }
 
-        // Runtime-class binding: `Name :: @JniClass("path", extends = Super, main = true) extern { … }`
+        // Runtime-class binding: `Name :: @JniClass("path", extends = Super, implements = .[I], main = true) extern { … }`
         if (self.tokens.tag(self.tok) == .at_identifier) {
             if (self.runtimeKindForAtName(self.tokens.slice(self.tok))) |kind| {
                 return self.parseRuntimeClassDecl(name, start_pos, kind, name_is_raw);
@@ -1776,30 +1776,34 @@ pub const Parser = struct {
         } });
     }
 
-    fn parseRuntimeAliasList(self: *Parser, out: *std.ArrayList([]const u8)) !void {
-        if (self.tokens.tag(self.tok) == .dot) {
-            self.advance();
-            try self.expect(.l_bracket);
-            while (self.tokens.tag(self.tok) != .r_bracket and self.tokens.tag(self.tok) != .eof) {
-                if (out.items.len > 0) {
-                    try self.expect(.comma);
-                    if (self.tokens.tag(self.tok) == .r_bracket) break;
-                }
-                if (self.tokens.tag(self.tok) != .identifier) {
-                    return self.fail("expected type alias in the implements/extends list");
-                }
-                try out.append(self.allocator, self.tokens.slice(self.tok));
-                self.advance();
-            }
-            try self.expect(.r_bracket);
-            if (out.items.len == 0) return self.fail("expected at least one type alias in '.[…]'");
-            return;
-        }
+    fn parseRuntimeAlias(self: *Parser) ![]const u8 {
         if (self.tokens.tag(self.tok) != .identifier) {
             return self.fail("expected a type alias after '='");
         }
-        try out.append(self.allocator, self.tokens.slice(self.tok));
+        const alias = self.tokens.slice(self.tok);
         self.advance();
+        return alias;
+    }
+
+    fn parseRuntimeAliasPack(self: *Parser, out: *std.ArrayList([]const u8)) !void {
+        if (self.tokens.tag(self.tok) != .dot) {
+            return self.fail("expected '.[…]' after 'implements ='");
+        }
+        self.advance();
+        try self.expect(.l_bracket);
+        while (self.tokens.tag(self.tok) != .r_bracket and self.tokens.tag(self.tok) != .eof) {
+            if (out.items.len > 0) {
+                try self.expect(.comma);
+                if (self.tokens.tag(self.tok) == .r_bracket) break;
+            }
+            if (self.tokens.tag(self.tok) != .identifier) {
+                return self.fail("expected type alias in '.[…]'");
+            }
+            try out.append(self.allocator, self.tokens.slice(self.tok));
+            self.advance();
+        }
+        try self.expect(.r_bracket);
+        if (out.items.len == 0) return self.fail("expected at least one type alias in '.[…]'");
     }
 
     const ObjcPropertyParsed = struct { payload: *Node, modifiers: []const []const u8 };
@@ -1913,8 +1917,9 @@ pub const Parser = struct {
         self.advance();
 
         var is_main = false;
-        var extends_aliases = std.ArrayList([]const u8).empty;
+        var extends_alias: ?[]const u8 = null;
         var implements_aliases = std.ArrayList([]const u8).empty;
+        var saw_implements = false;
         while (self.tokens.tag(self.tok) == .comma) {
             self.advance();
             if (self.tokens.tag(self.tok) == .r_paren) break;
@@ -1935,18 +1940,22 @@ pub const Parser = struct {
                     return self.fail("expected true or false after 'main ='");
                 }
             } else if (std.mem.eql(u8, arg_name, "extends")) {
-                try self.parseRuntimeAliasList(&extends_aliases);
+                if (extends_alias != null) {
+                    return self.fail("'extends' takes one type");
+                }
+                extends_alias = try self.parseRuntimeAlias();
             } else if (std.mem.eql(u8, arg_name, "implements")) {
-                try self.parseRuntimeAliasList(&implements_aliases);
+                if (saw_implements) {
+                    return self.fail("'implements' takes one '.[…]' list");
+                }
+                saw_implements = true;
+                try self.parseRuntimeAliasPack(&implements_aliases);
             } else {
                 return self.fail("expected named argument 'extends', 'implements', or 'main'");
             }
         }
         try self.expect(.r_paren);
 
-        if (extends_aliases.items.len > 1 and (runtime == .jni_class or runtime == .objc_class or runtime == .swift_class)) {
-            return self.fail("a class takes one 'extends' type");
-        }
         if (implements_aliases.items.len > 0 and (runtime == .jni_interface or runtime == .objc_protocol or runtime == .swift_protocol)) {
             return self.fail("'implements' is only legal on a class");
         }
@@ -1966,7 +1975,7 @@ pub const Parser = struct {
         try self.expect(.l_brace);
 
         var members = std.ArrayList(ast.RuntimeClassMember).empty;
-        for (extends_aliases.items) |alias| {
+        if (extends_alias) |alias| {
             try members.append(self.allocator, .{ .extends = alias });
         }
         for (implements_aliases.items) |alias| {

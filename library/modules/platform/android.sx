@@ -204,8 +204,9 @@ AndroidPlatform :: struct {
 
 // ── User-facing helpers for the consumer's `main = true` Activity ────────
 //
-// The consumer (chess, etc.) writes their own `SxApp :: // @JniClass("...")` declaration with `implements = SurfaceHolderCallback`
-// and the standard lifecycle methods. This file provides the primitives
+// The consumer (chess, etc.) writes their own `SxApp :: @JniClass("...")`
+// declaration with `implements = .[SurfaceHolderCallback]` and the
+// standard lifecycle methods. This file provides the primitives
 // those methods call:
 //
 //   - `sx_android_forward_assets(env, activity)` from onCreate.

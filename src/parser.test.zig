@@ -478,6 +478,37 @@ test "parser: private rejected on anonymous struct fields, methods, constants, u
     }
 }
 
+test "parser: @JniClass extends is one alias; implements is a pack" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = try Parser.init(alloc, "C :: @JniClass(\"pkg/C\", extends = Super, implements = .[A, B]) {}\n");
+    const rc = (try p.parse()).data.root.decls[0].data.runtime_class_decl;
+    try std.testing.expectEqual(@as(usize, 3), rc.members.len);
+    try std.testing.expectEqualStrings("Super", rc.members[0].extends);
+    try std.testing.expectEqualStrings("A", rc.members[1].implements);
+    try std.testing.expectEqualStrings("B", rc.members[2].implements);
+
+    var one = try Parser.init(alloc, "C :: @JniClass(\"pkg/C\", implements = .[A]) {}\n");
+    const rc1 = (try one.parse()).data.root.decls[0].data.runtime_class_decl;
+    try std.testing.expectEqual(@as(usize, 1), rc1.members.len);
+    try std.testing.expectEqualStrings("A", rc1.members[0].implements);
+
+    const cases = [_]struct { src: [:0]const u8, want: []const u8 }{
+        .{ .src = "C :: @JniClass(\"pkg/C\", implements = A) {}", .want = "'.[…]'" },
+        .{ .src = "C :: @JniClass(\"pkg/C\", extends = .[A]) {}", .want = "type alias" },
+        .{ .src = "C :: @JniClass(\"pkg/C\", extends = A, extends = B) {}", .want = "'extends' takes one type" },
+        .{ .src = "C :: @JniClass(\"pkg/C\", implements = .[A], implements = .[B]) {}", .want = "'implements' takes one" },
+    };
+    for (cases) |c| {
+        var fail = try Parser.init(alloc, c.src);
+        try std.testing.expectError(error.ParseError, fail.parse());
+        try std.testing.expect(fail.err_msg != null);
+        try std.testing.expect(std.mem.indexOf(u8, fail.err_msg.?, c.want) != null);
+    }
+}
+
 // `private` prefixes an identifier-headed module-scope declaration and stamps
 // the node's visibility; every declaration kind takes it uniformly.
 test "parser: private stamps module-scope declarations" {

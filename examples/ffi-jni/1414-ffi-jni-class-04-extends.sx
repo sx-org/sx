@@ -1,8 +1,7 @@
-// The `extends =` and `implements =` body items inside a `@JniClass`
-// declaration. `extends = Alias;` declares a single-inheritance superclass
-// reference using the sx-side alias name (not the runtime Java path — that
-// lives in the alias's own `@JniClass(...)` directive arg). `implements =
-// Alias;` is repeatable and records interface conformance.
+// Named `extends = Alias` and `implements = .[A, B]` arguments on `@JniClass`.
+// `extends = Alias` names a single superclass via the sx-side alias
+// (the runtime Java path lives in that alias's own `@JniClass(...)`
+// argument). `implements = .[A, B]` records interface conformance.
 
 #import "modules/std.sx";
 
@@ -11,6 +10,11 @@ View :: @JniClass("android/view/View") extern {}
 Window :: @JniClass("android/view/Window", extends = View) extern {
     getDecorView :: (self: *Self) -> *View;
 }
+
+Callback :: @JniClass("android/view/SurfaceHolder$Callback") extern {}
+Runnable :: @JniClass("java/lang/Runnable") extern {}
+
+App :: @JniClass("pkg/App", implements = .[Callback, Runnable]) extern {}
 
 main :: () -> i32 {
     print("parse-only ok\n");

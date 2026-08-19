@@ -120,10 +120,11 @@ pub fn emitJavaSource(
     try buf.appendSlice(allocator, " extends ");
     try buf.appendSlice(allocator, parent);
 
-    // `implements = Alias;` body items become Java `implements` clauses on the
-    // class header. Aliases resolve through the class registry the same way
-    // `extends =` does — an unmapped alias passes through verbatim (useful for
-    // referring to built-in JVM interfaces without declaring them).
+    // Named `implements = .[…]` on `@JniClass` becomes Java `implements`
+    // clauses on the class header. Aliases resolve through the class registry
+    // the same way `extends =` does — an unmapped alias passes through
+    // verbatim (useful for referring to built-in JVM interfaces without
+    // declaring them).
     var first_iface = true;
     for (fcd.members) |m| switch (m) {
         .implements => |alias| {

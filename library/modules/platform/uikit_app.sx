@@ -56,11 +56,12 @@ SxAppDelegate :: @ObjcClass("SxAppDelegate", extends = UIResponder) export {
     init  :: (self: *SxAppDelegate) -> *SxAppDelegate;
 }
 
-// SxSceneDelegate — iOS 13+ scene-based lifecycle delegate. Two
-// `implements =` declarations formally conform to the scene-delegate
-// protocols — iOS rejects the class otherwise. The delegate allocates
-// the GL/Metal view (the shell owns the view classes) and hands it to
-// the platform; iOS reads the window back through `-window`.
+// SxSceneDelegate — iOS 13+ scene-based lifecycle delegate.
+// `implements = .[UISceneDelegate, UIWindowSceneDelegate]` formally
+// conforms to the scene-delegate protocols — iOS rejects the class
+// otherwise. The delegate allocates the GL/Metal view (the shell owns
+// the view classes) and hands it to the platform; iOS reads the window
+// back through `-window`.
 SxSceneDelegate :: @ObjcClass("SxSceneDelegate", extends = UIResponder, implements = .[UISceneDelegate, UIWindowSceneDelegate]) export {
 
     scene_willConnectToSession_options :: (self: *Self, scene: *void, session: *void, options: *void) {
