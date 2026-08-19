@@ -49,12 +49,11 @@ const corpus_paths = @import("corpus_paths");
 // Snapshots are regenerated in-build with `zig build test -Dupdate-goldens`
 // (see the update-mode branch below) — no shell script needed.
 
-/// Per-example wall-clock cap. This budgets COMPILE + run, and compile
-/// dominates: the http-client examples spend ~5-7s of it in the compiler and
-/// <0.5s actually running. At 10s the slowest example sat at 71% of budget on an
-/// idle machine and tipped over under the suite's parallel load — a flake, not a
-/// slow test. Sized for headroom against compile-time variance while still
-/// catching a genuine hang.
+/// Per-example wall-clock cap covering compile + run. Compile dominates:
+/// HTTP servers ~1.2s, HTTP clients ~5-6s (almost all LLVM emit of a ~14MB
+/// -O0 image); run is <0.6s. A Debug compiler and the suite's parallel load
+/// both inflate this. 30s is headroom against that variance while still
+/// catching a hang.
 const TIMEOUT_SECS = 30;
 const MAX_OUTPUT = 16 * 1024 * 1024;
 
