@@ -1,0 +1,10 @@
+// A field group is semicolon-terminated, including the last field before `}`.
+@import "modules/std.sx";
+
+Point :: struct {
+    x: i64
+}
+
+main :: () -> i32 {
+    return 0;
+}

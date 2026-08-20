@@ -31,7 +31,7 @@ main :: () -> i32 {
     ev := we.V.m;
 
     // inline-anonymous union child own-wins
-    x : union { b: Box; n: i32 } = ---;
+    x : union { b: Box; n: i32; } = ---;
     x.b.m = 13;
 
     print("bp={} t={} ev={} x={} dep={}\n", bp.m, t.0.m, ev, x.b.m, dep_box());

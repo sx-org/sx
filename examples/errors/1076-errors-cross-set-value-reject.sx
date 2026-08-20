@@ -13,7 +13,7 @@ broad_src :: () -> (i32, !Broad) { raise error.Extra; }
 
 take_narrow :: (n: Narrow) -> void { print("{}\n", n); }
 
-Holder :: struct { e: Narrow }
+Holder :: struct { e: Narrow; }
 
 main :: () -> i32 {
     v, be := broad_src();

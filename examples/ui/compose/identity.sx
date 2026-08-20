@@ -18,9 +18,9 @@
 // prints. `key` is `@SourceSite.id`, so two sites collide only where their
 // fingerprints do.
 SiteId :: struct {
-    key: u64 = 0
-    file: string = ""
-    line: i32 = 0
+    key: u64 = 0;
+    file: string = "";
+    line: i32 = 0;
 }
 
 // Written as a parameter default — `site: SiteId = site_of(@caller)` — which
@@ -28,7 +28,7 @@ SiteId :: struct {
 // site the one a component records.
 site_of :: (site: @SourceSite) -> SiteId => .{ key = site.id, file = site.file, line = site.line };
 
-ElementId :: struct { value: u64 = 0 }
+ElementId :: struct { value: u64 = 0; }
 
 // The domain separates compose element ids from every other key space built
 // on the same source-site state.
@@ -43,15 +43,15 @@ site_hasher :: (site: SiteId, domain: string) -> SourceSiteHasher {
 
 // One site's tally within the build in progress.
 SiteCount :: struct {
-    key: u64 = 0
-    count: i64 = 0
+    key: u64 = 0;
+    count: i64 = 0;
 }
 
 // The per-root identity carrier. It outlives every build, so its tally list is
 // the root's memory, never the frame's.
 Identity :: struct {
-    counts: List(SiteCount) = .{}
-    gpa: Allocator
+    counts: List(SiteCount) = .{};
+    gpa: Allocator;
 
     init :: (gpa: Allocator) -> Identity => .{ gpa = gpa };
 

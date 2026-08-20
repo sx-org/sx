@@ -5,9 +5,9 @@
 // statement is still open and only a `;` cuts it off.
 @import "modules/std.sx";
 
-Pair :: struct { a: i64; b: i64 }
+Pair :: struct { a: i64; b: i64; }
 
-Box :: struct($T: Type) { v: T }
+Box :: struct($T: Type) { v: T; }
 
 mk :: () -> i64 { 1 }
 

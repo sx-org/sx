@@ -18,7 +18,7 @@ broad_src  :: () -> (i32, !Broad)  { raise error.Extra; }
 
 take_broad :: (b: Broad) -> void { print("param: {}\n", b); }
 
-Holder :: struct { e: Broad }
+Holder :: struct { e: Broad; }
 
 main :: () -> i32 {
     // Narrow ⊆ Broad — every widening position is legal.
