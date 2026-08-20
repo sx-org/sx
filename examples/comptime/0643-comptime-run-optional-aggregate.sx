@@ -8,7 +8,7 @@
 // `{T, i1}` = absent).
 //
 // Exercises: present `?T` (optional of struct), present `?i64` (optional of
-// scalar), and a NULL-returning `?i64`. The values are read via `!` (unwrap)
+// scalar), and a NULL-returning `?i64`. The values are read via `?!` (unwrap)
 // and `??` (coalesce), which read the has_value flag correctly.
 
 @import "modules/std.sx";

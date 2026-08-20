@@ -2314,7 +2314,7 @@ wrap :: (n: i32) -> ?i32 {
 
 The reverse is **not** implicit: a `?T` never silently unwraps to its payload
 `T` in a value position (call argument, field initializer, `return`, assignment).
-Such a use is a compile error — extract the payload explicitly with `!` / `??` /
+Such a use is a compile error — extract the payload explicitly with `?!` / `??` /
 a binding (`if v := opt`) / a `case` match, or rely on flow-sensitive narrowing
 after a `!= null` guard (below). Unwrapping a null optional implicitly would
 yield its zero payload with no diagnostic, so the conversion is rejected rather

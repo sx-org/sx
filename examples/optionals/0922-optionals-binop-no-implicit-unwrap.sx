@@ -1,5 +1,5 @@
 // An un-narrowed `?T` used directly as a binary-op operand is a compile error
-// — it does not implicitly unwrap. The legal forms are `!` / `??` / a
+// — it does not implicitly unwrap. The legal forms are `?!` / `??` / a
 // `!= null` guard (see 0921).
 @import "modules/std.sx";
 

@@ -1825,7 +1825,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         // `?T` unconditionally would yield the zero payload of a null optional
         // with no diagnostic — a silent miscompile across the whole
         // `?T → concrete` family. Per spec the
-        // only legal extractions are `!` / `??` / binding / match / a `!= null`
+        // only legal extractions are `?!` / `??` / binding / match / a `!= null`
         // guard; reject everything else loudly. `lowerIdentifier` tags the
         // loaded `Ref` of a guard-narrowed local into `narrowed_refs`.
         .optional_unwrap => {

@@ -8,7 +8,7 @@
 //
 // The shapes here: struct-with-array-field, array-of-structs, nested array
 // `[2][2]`, a direct `[N]T` return, and the `?Arr` optional payload (composes
-// with the optional bridge arm) unwrapped via `!`.
+// with the optional bridge arm) unwrapped via `?!`.
 
 @import "modules/std.sx";
 

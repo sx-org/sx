@@ -2,7 +2,7 @@
 // `opt?.xs[i]`. The `?.` makes the whole expression optional — it short-
 // circuits to null when the receiver is null, else unwraps and indexes —
 // so `opt?.xs[i]` is `?ElemType`, coalesced/unwrapped at the use site. This
-// is the `?.`-chain analogue of the `!`-unwrap form.
+// is the `?.`-chain analogue of the `?!`-unwrap form.
 //
 // Also covers the `?*[N]T` shape — a `?.` field that is a POINTER to an
 // array. Indexing auto-derefs (GEP the pointee array element through the

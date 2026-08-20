@@ -2,7 +2,7 @@
 // value position — it is a compile error pointing at the explicit forms. The
 // rule covers the whole `?T → concrete` family, incl. `?bool → bool`.
 //
-// The legal extractions are `!` / `??` / binding / `case` / a `!= null` guard
+// The legal extractions are `?!` / `??` / binding / `case` / a `!= null` guard
 // (see 0919); everything else is rejected.
 @import "modules/std.sx";
 
