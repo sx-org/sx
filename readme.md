@@ -147,7 +147,7 @@ Perms :: enum flags { read; write; execute; }
 
 x: ?i32 = 42;
 val := x ?? 0;
-forced := x!;
+forced := x?!;
 if v := x { print("{}\n", v); }
 name := node?.name ?? "unknown";
 if n != null { take_i32(n); }    // narrowed; a bare `take_i32(n)` is an error

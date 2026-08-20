@@ -40,6 +40,6 @@ main :: () {
     print("N={}\n", N);
     print("S={} {}\n", S.x, S.y);
     print("A={} {} {}\n", A[0], A[1], A[2]);
-    v := O!;
+    v := O?!;
     print("O={}\n", v[1]);
 }

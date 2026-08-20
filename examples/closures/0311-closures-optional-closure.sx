@@ -6,14 +6,14 @@
 // call-through (with and without captures), `??` coalesce, pass-as-param,
 // return, and args + non-void return.
 //
-// `g!()` where `g : ?Closure(...)` lowers through `call_closure`: the
+// `g?!()` where `g : ?Closure(...)` lowers through `call_closure`: the
 // else-arm in `src/ir/lower/call.zig` dispatches there when the callee
 // expression's static type is a closure, and uses the real return type.
 
 @import "modules/std.sx";
 
 take :: (g: ?Closure() -> void) {
-  if g { g!(); } else { print("param-absent\n"); }
+  if g { g?!(); } else { print("param-absent\n"); }
 }
 
 give :: () -> ?Closure() -> void {
@@ -25,11 +25,11 @@ main :: () {
   n := 7;
   a : ?Closure() -> void = || print("a n={}\n", n);
   if a { print("a-present\n"); } else { print("a-absent\n"); }
-  a!();
+  a?!();
 
   // Without captures.
   b : ?Closure() -> void = || { print("b-called\n"); };
-  if b { b!(); }
+  if b { b?!(); }
 
   // Null tests absent; == / != null.
   c : ?Closure() -> void = null;
@@ -39,7 +39,7 @@ main :: () {
 
   // Reassign: null -> value -> null.
   c = || { print("c-reassigned\n"); };
-  if c { c!(); }
+  if c { c?!(); }
   c = null;
   if c { print("c2-present\n"); } else { print("c2-absent\n"); }
 
@@ -55,9 +55,9 @@ main :: () {
 
   // Return an optional closure.
   r := give();
-  if r { r!(); }
+  if r { r?!(); }
 
   // Args + non-void return.
   add : ?Closure(i64, i64) -> i64 = |x: i64, y: i64| x + y;
-  if add { print("add: {}\n", add!(3, 4)); }
+  if add { print("add: {}\n", add?!(3, 4)); }
 }

@@ -244,7 +244,7 @@ exact_capacity_decodes :: (plain: string, packed: string) -> bool {
     if storage == null { socket.close(pair[0]); return false; }
     response, e := http.Client.recv(pair[0], xx storage, cap);
     socket.close(pair[0]);
-    ok := !e and response.decoded_from != null and response.decoded_from! == http.ContentCoding.gzip
+    ok := !e and response.decoded_from != null and response.decoded_from?! == http.ContentCoding.gzip
         and response.header("content-encoding").len == 0
         and same(response.body, plain);
     context.allocator.dealloc_bytes(storage);
@@ -287,7 +287,7 @@ run_server_cases :: (app: *App, pool_count: i64, port: i64) -> bool {
 
     // The default client advertises both codings; the server tie-breaks gzip.
     fixed, fe := request_on(*conn, "/fixed", "", storage, BODY_LEN + 4096);
-    if fe or fixed.status != 200 or fixed.decoded_from == null or fixed.decoded_from! != http.ContentCoding.gzip
+    if fe or fixed.status != 200 or fixed.decoded_from == null or fixed.decoded_from?! != http.ContentCoding.gzip
         or fixed.header("content-encoding").len != 0
         or fixed.header("content-length").len != 0
         or fixed.header("vary") != "Accept-Encoding"
@@ -303,7 +303,7 @@ run_server_cases :: (app: *App, pool_count: i64, port: i64) -> bool {
     // Explicit weights select RFC 9110 `deflate` (zlib framing).
     deflated, de := request_on(*conn, "/fixed",
         "Accept-Encoding: deflate, gzip;q=0.5\r\n", storage, BODY_LEN + 4096);
-    if de or deflated.decoded_from == null or deflated.decoded_from! != http.ContentCoding.deflate
+    if de or deflated.decoded_from == null or deflated.decoded_from?! != http.ContentCoding.deflate
         or deflated.header("content-encoding").len != 0
         or !same(deflated.body, app.body[..FIXED_LEN]) { ok = false; }
 
@@ -351,7 +351,7 @@ run_server_cases :: (app: *App, pool_count: i64, port: i64) -> bool {
         or !same(strong.body, app.body[..FIXED_LEN]) { ok = false; }
 
     weak, wee := request_on(*conn, "/weak-etag", "", storage, BODY_LEN + 4096);
-    if wee or weak.decoded_from == null or weak.decoded_from! != http.ContentCoding.gzip
+    if wee or weak.decoded_from == null or weak.decoded_from?! != http.ContentCoding.gzip
         or weak.header("etag") != "W/\"semantic-v1\""
         or !same(weak.body, app.body[..FIXED_LEN]) { ok = false; }
 
@@ -383,7 +383,7 @@ run_server_cases :: (app: *App, pool_count: i64, port: i64) -> bool {
         or !same(coded_unsat.body, app.packed) { ok = false; }
 
     existing, exe := request_on(*conn, "/existing", "", storage, BODY_LEN + 4096);
-    if exe or existing.decoded_from == null or existing.decoded_from! != http.ContentCoding.gzip
+    if exe or existing.decoded_from == null or existing.decoded_from?! != http.ContentCoding.gzip
         or !same(existing.body, app.body) { ok = false; }
 
     refused, re := request_on(*conn, "/fixed",
@@ -412,7 +412,7 @@ run_server_cases :: (app: *App, pool_count: i64, port: i64) -> bool {
     streamed, stre := request_on(*conn, "/stream", "", storage, BODY_LEN + 4096);
     if stre or streamed.header("transfer-encoding") != "chunked"
         or streamed.header("content-encoding").len != 0
-        or streamed.decoded_from == null or streamed.decoded_from! != http.ContentCoding.gzip
+        or streamed.decoded_from == null or streamed.decoded_from?! != http.ContentCoding.gzip
         or !same(streamed.body, app.body) { ok = false; }
 
     // The entire compressed transfer was consumed; keep-alive remains clean.

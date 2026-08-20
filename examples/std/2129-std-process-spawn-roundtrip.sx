@@ -22,6 +22,6 @@ main :: () -> i32 {
     code := child.wait(true);
     child.stdout_close();
     if code == null { print("wait produced no status\n"); return 1; }
-    print("exit: {}\n", code!);
+    print("exit: {}\n", code?!);
     return 0;
 }

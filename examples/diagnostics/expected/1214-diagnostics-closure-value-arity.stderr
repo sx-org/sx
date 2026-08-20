@@ -31,8 +31,8 @@ error: 'f' expects 2 arguments, but 3 were given
 error: this closure expects 1 argument, but 2 were given
   --> examples/diagnostics/1214-diagnostics-closure-value-arity.sx:38:19
    |
-38 |     print("{}\n", g!(4, 5));
-   |                   ^^
+38 |     print("{}\n", g?!(4, 5));
+   |                   ^^^
 
 error: cannot spread this value into a closure — a runtime slice/array has no statically-known length to expand into positional arguments
   --> examples/diagnostics/1214-diagnostics-closure-value-arity.sx:43:23

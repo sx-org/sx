@@ -585,7 +585,7 @@ test_prefix_and_duplicates :: (alloc: Allocator) -> bool {
         reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false;
     }
     unsafe := reader.entry(2) catch { reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false; };
-    if unsafe.safe_path or unsafe.modified_seconds == null or unsafe.modified_seconds! != 1700000000 {
+    if unsafe.safe_path or unsafe.modified_seconds == null or unsafe.modified_seconds?! != 1700000000 {
         reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false;
     }
     reader.validate(false, alloc) catch { reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false; };
@@ -636,7 +636,7 @@ test_files :: (alloc: Allocator) -> bool {
     file_entry := reader.entry(1) catch {
         reader.deinit(); fs.delete_file(archive_path); fs.delete_file(input_path); return false;
     };
-    if file_entry.modified_seconds == null or file_entry.modified_seconds! != 1700000000 {
+    if file_entry.modified_seconds == null or file_entry.modified_seconds?! != 1700000000 {
         reader.deinit(); fs.delete_file(archive_path); fs.delete_file(input_path); return false;
     }
     made := reader.extract_file(2, extracted_path, 64, alloc) catch {
@@ -647,7 +647,7 @@ test_files :: (alloc: Allocator) -> bool {
     if maybe_file == null {
         fs.delete_file(archive_path); fs.delete_file(input_path); fs.delete_file(extracted_path); return false;
     }
-    file := maybe_file!;
+    file := maybe_file?!;
     buffer : [16]u8 = ---;
     read := file.read(buffer[..]);
     closed := file.close();
@@ -868,13 +868,13 @@ test_add_from_failures :: (alloc: Allocator) -> bool {
     control_len := -1;
     maybe_file := fs.open_file(file_path, .read);
     if maybe_file != null {
-        handle := maybe_file!;
+        handle := maybe_file?!;
         file_len = handle.read(file_buf[..]);
         handle.close();
     }
     maybe_control := fs.open_file(control_path, .read);
     if maybe_control != null {
-        handle := maybe_control!;
+        handle := maybe_control?!;
         control_len = handle.read(control_buf[..]);
         handle.close();
     }

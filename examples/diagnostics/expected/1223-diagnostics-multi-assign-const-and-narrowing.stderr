@@ -10,7 +10,7 @@ error: cannot assign through constant 'CARR' — constants are immutable (use a 
 21 |     a, CARR[1], b = 1, 9, 2;   // error: index target rooted at array const
    |        ^^^^^^^
 
-error: cannot use a value of type '?i64' as an operand: an optional does not implicitly unwrap; force-unwrap with '!', supply a fallback with '?? <default>', or guard with '!= null'
+error: cannot use a value of type '?i64' as an operand: an optional does not implicitly unwrap; force-unwrap with '?!', supply a fallback with '?? <default>', or guard with '!= null'
   --> examples/diagnostics/1223-diagnostics-multi-assign-const-and-narrowing.sx:26:14
    |
 26 |         v := o + 1;            // error: stale-narrowed use rejected

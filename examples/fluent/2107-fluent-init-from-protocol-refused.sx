@@ -32,7 +32,7 @@ form_Round :: ufcs (value: $I/@Init(Round)) {
 form_opt_Round :: ufcs (value: $I/@Init(?Round)) {
     slot: ?Round = ---;
     value.write(*slot);
-    print("?Round {}\n", slot!.s);
+    print("?Round {}\n", slot?!.s);
 }
 
 form_View :: ufcs (value: $I/@Init(View)) {
@@ -44,7 +44,7 @@ form_View :: ufcs (value: $I/@Init(View)) {
 form_opt_View :: ufcs (value: $I/@Init(?View)) {
     slot: ?View = ---;
     value.write(*slot);
-    print("?View {}\n", slot!.render());
+    print("?View {}\n", slot?!.render());
 }
 
 form_Wide :: ufcs (value: $I/@Init(Wide)) {

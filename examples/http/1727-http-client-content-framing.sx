@@ -117,7 +117,7 @@ decode_case :: (packed: string, plain: string, coding: string, framing: i64, one
     if one_short { ok = ok and e == error.TooLarge; }
     else {
         wanted := if coding == "gzip" then http.ContentCoding.gzip else http.ContentCoding.deflate;
-        ok = ok and !e and response.decoded_from != null and response.decoded_from! == wanted
+        ok = ok and !e and response.decoded_from != null and response.decoded_from?! == wanted
             and same(response.body, plain);
     }
     context.allocator.dealloc_bytes(storage);

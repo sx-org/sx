@@ -46,7 +46,7 @@ main :: () -> i32 {
     sh := Holder{ e = .Extra };
     print("shorthand field: {}\n", sh.e);
     opt : ?Broad = .Wide;
-    print("shorthand optional: {}\n", opt!);
+    print("shorthand optional: {}\n", opt?!);
     if short == error.Extra { print("spellings agree: {}\n", short == .Extra); }
     raises_shorthand() catch |e| { print("shorthand return: {}\n", e); };
     raises_wide() catch |e| { print("shorthand raise: {}\n", e); };

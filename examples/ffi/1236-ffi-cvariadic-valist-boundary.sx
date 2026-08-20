@@ -209,7 +209,7 @@ main :: () -> i32 {
     print("twice own={} c={}\n", own_twice(3, a, b, c), c_twice_tail(3, a, b, c));
     print("twice_borrowed sx={} c={}\n", own_forward_twice(3, a, b, c), c_calls_sx_twice(3, a, b, c));
 
-    print("mprintf={}\n", from_cstring(format_direct("%d-%s", 42, one)!));
+    print("mprintf={}\n", from_cstring(format_direct("%d-%s", 42, one)?!));
     buf: [64]u8 = ---;
     print("snprint={}\n", from_cstring(xx into_direct(buf, "%d/%d", a, b)));
     s: sqlite3_str = .{};
@@ -218,7 +218,7 @@ main :: () -> i32 {
     print("appendf={}\n", from_cstring(xx *s.text[0]));
 
     api := Api{ mprintf = vmprintf, snprint = xvsnprintf, appendf = str_vappendf };
-    print("field_mprintf={}\n", from_cstring(format_field(*api, "%s+%d", two, a)!));
+    print("field_mprintf={}\n", from_cstring(format_field(*api, "%s+%d", two, a)?!));
     print("field_snprint={}\n", from_cstring(xx into_field(*api, buf, "%d*%d", b, c)));
     t: sqlite3_str = .{};
     append_field(*api, *t, "%d", a);

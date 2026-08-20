@@ -17,17 +17,17 @@ gst  : ?S          = S{ a = 1, b = 2 };  // present struct payload
 
 main :: () -> i32 {
     // Non-null init reads its payload back.
-    if go != null { print("go={}\n", go!); }
+    if go != null { print("go={}\n", go?!); }
     // Null init reads back as absent.
     if gn == null { print("gn is null\n"); }
     // Nested optional present.
-    if gnst != null { print("gnst={}\n", gnst!!); }
+    if gnst != null { print("gnst={}\n", gnst?!?!); }
     // Struct payload present.
-    if gst != null { print("gst.a={} gst.b={}\n", gst!.a, gst!.b); }
+    if gst != null { print("gst.a={} gst.b={}\n", gst?!.a, gst?!.b); }
 
     // Runtime set the initially-null global.
     gn = 42;
-    if gn != null { print("gn set to {}\n", gn!); }
+    if gn != null { print("gn set to {}\n", gn?!); }
 
     // Runtime clear the initially-present global.
     go = null;

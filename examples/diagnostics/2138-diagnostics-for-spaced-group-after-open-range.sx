@@ -1,8 +1,10 @@
-// A spaced `(` group immediately before the body is not a range end, so
-// `0..` stays open and cannot be the first iterable.
+// A spaced `(` after `..` is the range end, same as a glued `(`.
 
 @import "modules/std.sx";
-main :: () {
+main :: () -> i32 {
     n := 4;
-    for i in 0.. (n) { _ = i; }
+    c := 0;
+    for i in 0.. (n) { c += 1; }
+    print("{}\n", c);
+    0
 }

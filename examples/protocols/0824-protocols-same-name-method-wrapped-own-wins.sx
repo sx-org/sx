@@ -38,7 +38,7 @@ impl Provider for Holder {
     gett :: (self: *Holder) -> (Box, Box) { return self.b, self.b; }
     geta :: (self: *Holder) -> [2]Box { r : [2]Box = ---; r[0] = self.b; r[1] = self.b; r }
     sump :: (self: *Holder, p: *Box) -> i32 { p.m }
-    sumo :: (self: *Holder, o: ?Box) -> i32 { o!.m }
+    sumo :: (self: *Holder, o: ?Box) -> i32 { o?!.m }
     sums :: (self: *Holder, s: []Box) -> i32 { s[0].m }
     suma :: (self: *Holder, a: [2]Box) -> i32 { a[0].m }
     sumt :: (self: *Holder, t: struct { a: Box; b: Box }) -> i32 { t.a.m }
@@ -71,6 +71,6 @@ main :: () -> i32 {
     sn := p.sumn(*osl);
 
     print("p={} o={} t={} a={} | sp={} so={} ss={} sa={} st={} sn={} dep={}\n",
-        bp.m, bo!.m, bt.0.m, ba[0].m, sp, so, ss, sa, st, sn, dep_box());
+        bp.m, bo?!.m, bt.0.m, ba[0].m, sp, so, ss, sa, st, sn, dep_box());
     0
 }

@@ -29,7 +29,7 @@ form_Label :: ufcs (value: $I/@Init(Label)) {
 form_opt_Label :: ufcs (value: $I/@Init(?Label)) {
     slot: ?Label = ---;
     value.write(*slot);
-    if slot != null { print("?Label {}\n", slot!.text); } else { print("?Label null\n"); }
+    if slot != null { print("?Label {}\n", slot?!.text); } else { print("?Label null\n"); }
 }
 
 form_View :: ufcs (value: $I/@Init(View)) {
@@ -41,7 +41,7 @@ form_View :: ufcs (value: $I/@Init(View)) {
 form_opt_View :: ufcs (value: $I/@Init(?View)) {
     slot: ?View = ---;
     value.write(*slot);
-    print("?View {}\n", slot!.render());
+    print("?View {}\n", slot?!.render());
 }
 
 form_any :: ufcs (value: $I/@Init(any)) {
@@ -55,7 +55,7 @@ form_any :: ufcs (value: $I/@Init(any)) {
 }
 
 need_View :: ufcs (v: View) { print("need View {}\n", v.render()); }
-need_opt_View :: ufcs (v: ?View) { print("need ?View {}\n", v!.render()); }
+need_opt_View :: ufcs (v: ?View) { print("need ?View {}\n", v?!.render()); }
 need_any :: ufcs (a: any) { print("need any {}\n", type_name(type_of(a))); }
 
 echo_View :: (v: View) -> View => v;

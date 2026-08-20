@@ -20,7 +20,7 @@ main :: () -> i32 {
     // ?cstring: present, absent, and null-returning C call
     p := getenv_c("PATH");
     if p == null { print("BUG: PATH null\n"); return 2; }
-    if cstring_len(p!) < 1 { print("BUG: PATH empty\n"); return 3; }
+    if cstring_len(p?!) < 1 { print("BUG: PATH empty\n"); return 3; }
     q := getenv_c("NO_SUCH_VAR_ZZZ");
     if q != null { print("BUG: missing not null\n"); return 4; }
     d := dlerror_c();

@@ -32,7 +32,7 @@ main :: () {
         m.val_at(2) == 3 and m.val_at(3) == 4);
 
     // ── get / contains ───────────────────────────────────────────────────
-    report("get", m.get("three")! == 3);
+    report("get", m.get("three")?! == 3);
     report("contains-hit", m.contains("two"));
     report("contains-miss", !m.contains("nope"));
     absent := if x := m.get("nope") { false } else { true };
@@ -40,13 +40,13 @@ main :: () {
 
     // ── overwrite keeps the entry's ORIGINAL position ────────────────────
     m.put("two", 22, gpa);
-    report("overwrite-val", m.get("two")! == 22);
+    report("overwrite-val", m.get("two")?! == 22);
     report("overwrite-len", m.len == 4);
     report("overwrite-pos", m.key_at(1) == "two" and m.val_at(1) == 22);
 
     // get_ptr: mutate in place
     if p := m.get_ptr("one") { p.* = 111; }
-    report("get-ptr", m.get("one")! == 111);
+    report("get-ptr", m.get("one")?! == 111);
 
     // ── ORDER-PRESERVING remove: drop "two", order stays one/three/four ──
     report("remove-hit", m.remove("two", gpa));
@@ -54,7 +54,7 @@ main :: () {
     report("remove-len", m.len == 3);
     report("remove-order",
         m.key_at(0) == "one" and m.key_at(1) == "three" and m.key_at(2) == "four");
-    report("remove-lookup", m.get("four")! == 4 and !m.contains("two"));
+    report("remove-lookup", m.get("four")?! == 4 and !m.contains("two"));
     m.deinit(gpa);
 
     // ── swap_remove: O(1) but BREAKS order (last moves into the hole) ─────
@@ -66,7 +66,7 @@ main :: () {
     report("sr-len", s.len == 4);
     report("sr-swapped", s.key_at(1) == 4);             // order broken by design
     report("sr-gone", !s.contains(1));
-    report("sr-others", s.get(0)! == 0 and s.get(4)! == 40 and s.get(2)! == 20);
+    report("sr-others", s.get(0)?! == 0 and s.get(4)?! == 40 and s.get(2)?! == 20);
     s.deinit(gpa);
 
     // ── grow: order held across many rehashes ────────────────────────────
@@ -83,7 +83,7 @@ main :: () {
     // lookup still works
     all := true;
     i = 0;
-    while i < N { if g.get(i)! != i * 2 { all = false; } i += 1; }
+    while i < N { if g.get(i)?! != i * 2 { all = false; } i += 1; }
     report("grow-get-all", all);
     g.deinit(gpa);
 
@@ -95,7 +95,7 @@ main :: () {
     report("clear-len", c.len == 0);
     report("clear-gone", !c.contains(7));
     c.put(9, 9, gpa);
-    report("clear-reuse", c.get(9)! == 9 and c.key_at(0) == 9);
+    report("clear-reuse", c.get(9)?! == 9 and c.key_at(0) == 9);
     c.deinit(gpa);
     c.deinit(gpa);
     report("deinit-idem", c.len == 0);

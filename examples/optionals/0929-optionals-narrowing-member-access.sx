@@ -8,7 +8,7 @@
 // - inference agrees with lowering (a local declared from a
 //   narrowed read gets the field's type).
 // `?.` keeps the optional; `q := p` keeps the static optional type
-// (only guarded locals narrow — spell `q := p!`).
+// (only guarded locals narrow — spell `q := p?!`).
 @import "modules/std.sx";
 
 U :: struct { m: i64 = 3; }
@@ -83,7 +83,7 @@ main :: () {
     process.assert(value_optional(V{}) == 9 and value_optional(null) == 0, "value optional");
 
     c := still_chains(*t);
-    process.assert(c != null and c! == 43, "?. chain preserved");
+    process.assert(c != null and c?! == 43, "?. chain preserved");
 
     v := V{};
     process.assert(guard_or(*t, *v) == 52, "or-guard narrows both");

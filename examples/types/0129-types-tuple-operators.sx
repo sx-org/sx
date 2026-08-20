@@ -160,7 +160,7 @@ main :: () {
     // Force unwrap
     {
         x: ?i32 = 10;
-        val := x!;
+        val := x?!;
         print("unwrap: {}\n", val);                         // unwrap: 10
     }
 

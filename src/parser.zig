@@ -3433,7 +3433,7 @@ pub const Parser = struct {
         var expr = try self.parsePrimary(pipe);
 
         while (true) {
-            if (self.tokens.tag(self.tok) == .l_paren and !self.spacedGroupEndsHeader()) {
+            if (self.tokens.tag(self.tok) == .l_paren) {
                 self.advance();
                 var args = std.ArrayList(*Node).empty;
                 while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
@@ -3636,11 +3636,8 @@ pub const Parser = struct {
                         } });
                     }
                 }
-            } else if (self.tokens.tag(self.tok) == .bang and !self.tokens.flagsOf(self.tok).newline_left) {
-                // Force unwrap: expr! — postfix on the expression's own line.
-                // `!` is also the prefix `not`, which is what a `!` opening the
-                // line below spells.
-                // Only if it's not != (bang_equal would have been lexed as a single token)
+            } else if (self.tokens.tag(self.tok) == .question_bang) {
+                // Force unwrap: expr?!
                 self.advance();
                 expr = try self.createNode(expr.span.start, .{ .force_unwrap = .{ .operand = expr } });
             } else if (self.tokens.tag(self.tok) == .kw_catch) {
@@ -4353,11 +4350,9 @@ pub const Parser = struct {
                 it.end_inclusive = rt.end_inclusive;
                 self.advance();
                 // End expression — absent for the open range `a..`: the
-                // header continues (`,`), the body starts (`{` / `=>`), or a
-                // spaced group ends the header.
+                // header continues (`,`) or the body starts (`{` / `=>`).
                 const open = switch (self.tokens.tag(self.tok)) {
                     .comma, .l_brace, .fat_arrow => true,
-                    .l_paren => self.spacedGroupEndsHeader(),
                     else => false,
                 };
                 if (open) {
@@ -4966,6 +4961,7 @@ pub const Parser = struct {
             .question,
             .question_question,
             .question_dot,
+            .question_bang,
             .tilde,
             .less_less,
             .greater_greater,
@@ -5177,6 +5173,7 @@ pub const Parser = struct {
             .question,
             .question_question,
             .question_dot,
+            .question_bang,
             .tilde,
             .less_less_equal,
             .greater_greater_equal,
@@ -5402,17 +5399,6 @@ pub const Parser = struct {
             }
             idx = self.tokens.next(idx);
         }
-    }
-
-    /// A SPACED top-level `(` group immediately followed by `{` or `=>` is
-    /// not a call and not a range end: parsePostfix leaves it, an open
-    /// range stays open, and the header ends.
-    fn spacedGroupEndsHeader(self: *Parser) bool {
-        const h = self.headerAtCursor() orelse return false;
-        if (h.kind != .for_header) return false;
-        if (self.tokens.flagsOf(self.tok).glued_left) return false;
-        const after = self.tagAfterParenGroup();
-        return after == .l_brace or after == .fat_arrow;
     }
 
     const RangeTokenInfo = struct {

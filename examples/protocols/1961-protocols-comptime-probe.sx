@@ -44,7 +44,7 @@ through_probe :: () -> i64 {
     ia : [4]i64 = .[9, 8, 7, 6];
     b := Buffer(i64){ items = ia[0..] };
     s := b.(?Series(i64));
-    if s { return s!.count(); }
+    if s { return s?!.count(); }
     return -1;
 }
 

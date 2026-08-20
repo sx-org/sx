@@ -1,0 +1,8 @@
+// Postfix `!` is not force-unwrap. Unwrap is `?!`.
+
+@import "modules/std.sx";
+
+main :: () {
+    x: ?i64 = 1;
+    print("{}\n", x!);
+}

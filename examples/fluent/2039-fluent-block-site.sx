@@ -30,8 +30,8 @@ Tally :: struct {
 panel :: (tag: string, content: $B/@BuildBlock(Drawable)) -> i32 {
     s := content.site();
     if s != null {
-        print("{} block {}:{} in {} parity={}\n", tag, s!.file, s!.line, s!.declaration,
-            s!.id == source_site_key_id(source_site_key(s!)));
+        print("{} block {}:{} in {} parity={}\n", tag, s?!.file, s?!.line, s?!.declaration,
+            s?!.id == source_site_key_id(source_site_key(s?!)));
     }
     sink := Tally{};
     content.run(*sink);

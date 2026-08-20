@@ -178,20 +178,20 @@ policy_cases :: (app: *App, port: i64, storage: [*]u8, cap: i64) -> bool {
     wildcard, we := request_on(*conn, "GET", "/fixed",
         "Accept-Encoding: *;q=0.7, identity;q=0\r\n", storage, cap);
     if we or wildcard.decoded_from == null
-        or wildcard.decoded_from! != http.ContentCoding.gzip
+        or wildcard.decoded_from?! != http.ContentCoding.gzip
         or !same(wildcard.body, app.body) { ok = false; }
 
     duplicate, de := request_on(*conn, "GET", "/fixed",
         "Accept-Encoding: gzip;q=1, identity;q=0\r\nAccept-Encoding: gzip;q=0, deflate;q=0.5\r\n",
         storage, cap);
     if de or duplicate.decoded_from == null
-        or duplicate.decoded_from! != http.ContentCoding.deflate
+        or duplicate.decoded_from?! != http.ContentCoding.deflate
         or !same(duplicate.body, app.body) { ok = false; }
 
     duplicate_q, dqe := request_on(*conn, "GET", "/fixed",
         "Accept-Encoding: gzip;q=1;q=0, deflate;q=0.4, identity;q=0\r\n", storage, cap);
     if dqe or duplicate_q.decoded_from == null
-        or duplicate_q.decoded_from! != http.ContentCoding.deflate { ok = false; }
+        or duplicate_q.decoded_from?! != http.ContentCoding.deflate { ok = false; }
 
     malformed, me := request_on(*conn, "GET", "/fixed",
         "Accept-Encoding: gzip;q=1.1, deflate;q=bogus, identity;q=0\r\n", storage, cap);

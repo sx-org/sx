@@ -35,7 +35,7 @@ main :: () {
 
     // callee expression (force-unwrapped optional closure): extra arg
     g : ?Closure(i64) -> i64 = |x: i64| -> i64 x * 3;
-    print("{}\n", g!(4, 5));
+    print("{}\n", g?!(4, 5));
 
     // runtime SLICE spread (no static length): rejected into a closure value…
     arr := .[10, 20];

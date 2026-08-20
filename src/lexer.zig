@@ -403,6 +403,10 @@ pub const Lexer = struct {
                     self.index += 1;
                     return self.makeToken(.question_dot, start, self.index);
                 }
+                if (self.peek() == '!') {
+                    self.index += 1;
+                    return self.makeToken(.question_bang, start, self.index);
+                }
                 return self.makeToken(.question, start, self.index);
             },
             '!' => {

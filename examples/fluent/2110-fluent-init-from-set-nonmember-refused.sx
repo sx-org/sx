@@ -46,7 +46,7 @@ form_Tuple :: ufcs (value: $I/@Init(LabelI64)) {
 }
 
 need_Label :: ufcs (l: Label) { print("need Label {}\n", l.text); }
-need_opt_Label :: ufcs (l: ?Label) { print("need ?Label {}\n", l!.text); }
+need_opt_Label :: ufcs (l: ?Label) { print("need ?Label {}\n", l?!.text); }
 
 echo_Label :: (l: Label) -> Label => l;
 

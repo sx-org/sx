@@ -13,18 +13,18 @@ classify :: (n: i64) -> ?Platform {
 main :: () -> i32 {
     p := classify(1);
     if p == null { print("BUG: null\n"); return 1; }
-    if p! != .android_apk { print("BUG: wrong variant\n"); return 2; }
+    if p?! != .android_apk { print("BUG: wrong variant\n"); return 2; }
 
     w := classify(2);
-    if w == null or w! != .windows { print("BUG: windows\n"); return 3; }
+    if w == null or w?! != .windows { print("BUG: windows\n"); return 3; }
 
     if classify(9) != null { print("BUG: not null\n"); return 4; }
 
     // assignment + reassignment: literal into a ?Platform slot
     q : ?Platform = .macos;
-    if q == null or q! != .macos { print("BUG: assign\n"); return 5; }
+    if q == null or q?! != .macos { print("BUG: assign\n"); return 5; }
     q = .linux;
-    if q! != .linux { print("BUG: reassign\n"); return 6; }
+    if q?! != .linux { print("BUG: reassign\n"); return 6; }
 
     print("ok\n");
     return 0;

@@ -16,7 +16,7 @@ main :: () -> i32 {
 
     // ?Named element own-wins
     opt : ?Box = seed;
-    o := opt!;
+    o := opt?!;
 
     // [N]Named element own-wins
     arr : [2]Box = ---;

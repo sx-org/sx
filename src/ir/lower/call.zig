@@ -2517,7 +2517,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         },
         else => {
             // Indirect call through expression. The callee can be a plain
-            // function pointer OR a closure value (e.g. `g!()` where
+            // function pointer OR a closure value (e.g. `g?!()` where
             // `g : ?Closure(...)` — the force-unwrap yields the closure
             // struct). Inspect the callee's static type so we emit the
             // right op: `call_closure` splits `{fn_ptr, env}` and threads

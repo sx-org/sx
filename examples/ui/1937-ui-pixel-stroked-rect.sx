@@ -56,7 +56,7 @@ main :: () {
         print("pixels skipped: no display/GPU on this host\n");
         return;
     }
-    s := surface!;
+    s := surface?!;
 
     tree := RenderTree.init();
     ctx := RenderContext.init(*tree);

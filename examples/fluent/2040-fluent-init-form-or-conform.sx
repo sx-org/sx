@@ -54,7 +54,7 @@ forward :: (value: $I/@Init($T), into: *T) -> i32 {
 
 line_of :: (value: $I/@Init($T)) -> i32 {
     s := value.site();
-    if s != null { s!.line } else { 0 }
+    if s != null { s?!.line } else { 0 }
 }
 
 main :: () -> i32 {

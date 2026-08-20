@@ -21,7 +21,7 @@ main :: () -> i32 {
     print("y = {}\n", y);
 
     // Force unwrap
-    print("x! = {}\n", x!);
+    print("x?! = {}\n", x?!);
 
     // Null coalescing
     print("x ?? 0 = {}\n", x ?? 0);

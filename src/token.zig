@@ -103,6 +103,7 @@ pub const Tag = enum(u8) {
     question, // ?
     question_question, // ??
     question_dot, // ?.
+    question_bang, // ?!
     tilde, // ~
     less_less, // <<
     less_less_equal, // <<=
@@ -188,6 +189,7 @@ pub const Tag = enum(u8) {
             .question => "?",
             .question_question => "??",
             .question_dot => "?.",
+            .question_bang => "?!",
             .tilde => "~",
             .less_less => "<<",
             .less_less_equal => "<<=",
@@ -317,6 +319,7 @@ pub const Tag = enum(u8) {
             .question,
             .question_question,
             .question_dot,
+            .question_bang,
             .tilde,
             .less_less,
             .less_less_equal,
@@ -451,6 +454,7 @@ pub const Tag = enum(u8) {
             .question,
             .question_question,
             .question_dot,
+            .question_bang,
             .tilde,
             .less_less,
             .less_less_equal,

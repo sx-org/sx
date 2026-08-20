@@ -2713,7 +2713,7 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
         if (self.diagnostics) |d| {
             const name = self.formatTypeName(obj_ty);
             if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .optional) {
-                d.addFmt(.err, se.object.span, "cannot slice a value of type '{s}' — an optional does not implicitly unwrap; force-unwrap with '!', bind it (`if v := ...`), or guard with '!= null'", .{name});
+                d.addFmt(.err, se.object.span, "cannot slice a value of type '{s}' — an optional does not implicitly unwrap; force-unwrap with '?!', bind it (`if v := ...`), or guard with '!= null'", .{name});
             } else {
                 d.addFmt(.err, se.object.span, "cannot slice a value of type '{s}' — a slice views an array, a slice, a many-pointer or a string", .{name});
             }
@@ -3071,7 +3071,7 @@ pub fn lowerDerefExpr(self: *Lowering, de: *const ast.DerefExpr) Ref {
 /// the optional does not implicitly unwrap; steer the user to an explicit form.
 pub fn diagOptionalOperand(self: *Lowering, opt_ty: TypeId, span: ast.Span) void {
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "cannot use a value of type '{s}' as an operand: an optional does not implicitly unwrap; force-unwrap with '!', supply a fallback with '?? <default>', or guard with '!= null'", .{self.formatTypeName(opt_ty)});
+        d.addFmt(.err, span, "cannot use a value of type '{s}' as an operand: an optional does not implicitly unwrap; force-unwrap with '?!', supply a fallback with '?? <default>', or guard with '!= null'", .{self.formatTypeName(opt_ty)});
     }
 }
 

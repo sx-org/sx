@@ -1832,7 +1832,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             if (!self.narrowed_refs.contains(val)) {
                 if (self.diagnostics) |d| {
                     const cs = self.builder.current_span;
-                    d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot use a value of type '{s}' where '{s}' is expected: an optional does not implicitly unwrap; force-unwrap with '!', supply a fallback with '?? <default>', bind it (`if v := ...`), or guard with '!= null'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
+                    d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot use a value of type '{s}' where '{s}' is expected: an optional does not implicitly unwrap; force-unwrap with '?!', supply a fallback with '?? <default>', bind it (`if v := ...`), or guard with '!= null'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
                 }
                 return val; // hasErrors() aborts before codegen
             }

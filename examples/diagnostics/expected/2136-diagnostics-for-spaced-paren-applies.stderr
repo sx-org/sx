@@ -1,0 +1,5 @@
+error: cannot iterate this expression
+  --> examples/diagnostics/2136-diagnostics-for-spaced-paren-applies.sx:8:9
+   |
+ 8 |     for xs (n) { }
+   |         ^^^^^^

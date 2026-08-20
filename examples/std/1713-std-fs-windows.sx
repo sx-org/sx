@@ -9,7 +9,7 @@ main :: () -> i32 {
     if fs.exists("C:\\definitely-missing") { return 3; }
     maybe := fs.open_file("C:\\sx-stdlib-fs-definitely-missing", .read);
     if maybe != null {
-        file := maybe!;
+        file := maybe?!;
         file.seek(0, .set);
         file.read("");
         file.write("");

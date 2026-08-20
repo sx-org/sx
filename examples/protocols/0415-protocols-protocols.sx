@@ -104,7 +104,7 @@ ct_opt_coalesce :: () -> i32 {
 
 ct_opt_unwrap :: () -> i32 {
     x: ?i32 = 77;
-    return x!;
+    return x?!;
 }
 
 ct_opt_guard :: () -> i32 {

@@ -91,8 +91,8 @@ pub const ExprTyper = struct {
                 if (op_ty == channel) break :blk .void;
                 break :blk self.l.failableSuccessType(op_ty);
             },
-            // `opt!` force-unwraps an optional to its child type. Without this
-            // arm a chained `opt!.field` / `opt![i]` / `opt!.method()` would
+            // `opt?!` force-unwraps an optional to its child type. Without this
+            // arm a chained `opt?!.field` / `opt?![i]` / `opt?!.method()` would
             // type its receiver as `.unresolved` (the `else` below) and fail to
             // resolve — even though `lowerForceUnwrap` produces a correctly
             // typed value. Mirrors lowerForceUnwrap's resolveOptionalInner.

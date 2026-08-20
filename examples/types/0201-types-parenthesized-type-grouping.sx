@@ -20,7 +20,7 @@ main :: () {
 
     // `?(?i64)` is a genuine nested optional (grouping).
     no : ?(?i64) = 5;
-    print("{}\n", no!!);              // 5
+    print("{}\n", no?!?!);              // 5
 
     // Parenthesized closure element type → array of callable closures.
     fns : [1](Closure(i64, i64) -> i64) = .[ add ];

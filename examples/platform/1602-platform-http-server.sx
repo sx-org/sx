@@ -81,6 +81,6 @@ Content-Length: {}\r
 \r\n{}", body.len, body);
 
     write(client, to_cstring(response), response.len);
-    logger := context.logger!;
+    logger := context.logger?!;
     log(logger, format("served request #{}", logger.count + 1));
 }

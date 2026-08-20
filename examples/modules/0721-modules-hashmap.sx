@@ -29,12 +29,12 @@ main :: () {
 
     got_all := true;
     i = 0;
-    while i < 5 { if m.get(i)! != i * 10 { got_all = false; } i += 1; }
+    while i < 5 { if m.get(i)?! != i * 10 { got_all = false; } i += 1; }
     report("basic-get-all", got_all);
 
     // ── overwrite on existing key: value replaced, count unchanged ────────
     m.put(2, 999, gpa);
-    report("overwrite-val", m.get(2)! == 999);
+    report("overwrite-val", m.get(2)?! == 999);
     report("overwrite-len", m.len == 5);
 
     // ── contains / absent ────────────────────────────────────────────────
@@ -51,10 +51,10 @@ main :: () {
 
     // tombstone reuse: re-insert the removed key, then a churn loop
     m.put(3, 30, gpa);
-    report("reinsert", m.get(3)! == 30 and m.len == 5);
+    report("reinsert", m.get(3)?! == 30 and m.len == 5);
     j := 0;
     while j < 200 { m.put(1000 + j, j, gpa); m.remove(1000 + j, gpa); j += 1; }
-    report("churn-stable", m.len == 5 and m.get(0)! == 0 and m.get(4)! == 40);
+    report("churn-stable", m.len == 5 and m.get(0)?! == 0 and m.get(4)?! == 40);
 
     m.deinit(gpa);
 
@@ -78,14 +78,14 @@ main :: () {
 
     all := true;
     i = 0;
-    while i < N { if g.get(i)! != i { all = false; } i += 1; }
+    while i < N { if g.get(i)?! != i { all = false; } i += 1; }
     report("grow-get-all", all);
     g.deinit(gpa);
 
     // ── clearRetainingCapacity: buffer kept, entries dropped ──────────────
     c : HashMap(i64, i64) = .{};
     c.put(1, 1, gpa);
-    report("clear-pre", c.get(1)! == 1 and c.len == 1);
+    report("clear-pre", c.get(1)?! == 1 and c.len == 1);
     cap_before := c.cap;
     report("clear-cap-pos", cap_before > 0);
     c.clear();
@@ -94,7 +94,7 @@ main :: () {
     report("clear-cap-kept", c.cap == cap_before);
     report("clear-gone", !c.contains(1));
     c.put(2, 2, gpa);                                  // reuse after clear
-    report("clear-reuse", c.get(2)! == 2);
+    report("clear-reuse", c.get(2)?! == 2);
     c.deinit(gpa);
 
     // ── string keys (content hash) ───────────────────────────────────────
@@ -102,13 +102,13 @@ main :: () {
     s.put("alpha", 1, gpa);
     s.put("beta", 2, gpa);
     s.put("gamma", 3, gpa);
-    report("str-get", s.get("beta")! == 2);
+    report("str-get", s.get("beta")?! == 2);
     report("str-miss", !s.contains("delta"));
     s.put("beta", 20, gpa);
-    report("str-overwrite", s.get("beta")! == 20 and s.len == 3);
+    report("str-overwrite", s.get("beta")?! == 20 and s.len == 3);
     // get_ptr: mutate in place
     if p := s.get_ptr("alpha") { p.* = 111; }
-    report("str-get-ptr", s.get("alpha")! == 111);
+    report("str-get-ptr", s.get("alpha")?! == 111);
     s.deinit(gpa);
     s.deinit(gpa);                                     // idempotent
     report("str-deinit-len", s.len == 0);

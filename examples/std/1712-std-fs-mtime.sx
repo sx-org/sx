@@ -56,7 +56,7 @@ main :: () -> i32 {
 
         maybe := fs.open_file(path, .read);
         if maybe == null { fs.delete_file(path); return 4; }
-        file := maybe!;
+        file := maybe?!;
         public_modified, public_ok := fs.modified_seconds(*file);
         access, modified, raw_ok := read_times(*file);
         close_ok := file.close();

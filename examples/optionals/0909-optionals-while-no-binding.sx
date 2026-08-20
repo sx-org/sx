@@ -10,7 +10,7 @@ main :: () {
     runs := 0;
     while countdown {
         runs = runs + 1;
-        v := countdown!;          // unwrap the present value
+        v := countdown?!;          // unwrap the present value
         if v <= 1 {
             countdown = null;     // drain → loop must STOP next header eval
         } else {

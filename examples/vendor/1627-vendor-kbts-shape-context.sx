@@ -14,7 +14,7 @@ main :: () -> i32 {
         print("font missing\n");
         return 1;
     }
-    bytes := data!;
+    bytes := data?!;
 
     ctx := kb.kbts_CreateShapeContext((0).(*void), (0).(*void));
     print("context created: {}\n", ctx != 0);

@@ -30,13 +30,24 @@ test "a leading comment produces no token row" {
 }
 
 test "lex the compound operator spellings" {
-    var tl = try lexT(":= : :: += -= *= /= -> => == != <= >=");
+    var tl = try lexT(":= : :: += -= *= /= -> => == != <= >= ?? ?. ?!");
     defer deinitT(&tl);
     try std.testing.expectEqualSlices(Tag, &.{
-        .colon_equal, .colon,       .colon_colon,   .plus_equal, .minus_equal,
-        .star_equal,  .slash_equal, .arrow,         .fat_arrow,  .equal_equal,
-        .bang_equal,  .less_equal,  .greater_equal, .eof,
+        .colon_equal, .colon,       .colon_colon,     .plus_equal,   .minus_equal,
+        .star_equal,  .slash_equal, .arrow,           .fat_arrow,    .equal_equal,
+        .bang_equal,  .less_equal,  .greater_equal,   .question_question, .question_dot,
+        .question_bang, .eof,
     }, tl.tags);
+}
+
+test "`?!` is one token and `? !` is two" {
+    var glued = try lexT("?!");
+    defer deinitT(&glued);
+    try std.testing.expectEqualSlices(Tag, &.{ .question_bang, .eof }, glued.tags);
+
+    var spaced = try lexT("? !");
+    defer deinitT(&spaced);
+    try std.testing.expectEqualSlices(Tag, &.{ .question, .bang, .eof }, spaced.tags);
 }
 
 test "a `.` between digits lexes as one float literal" {

@@ -71,7 +71,7 @@ main :: () -> i32 {
     // sink stored the handle itself, not a copy of the label behind it.
     owned.text = "mutated after publish";
     if kept != null {
-        print("through the kept handle: {}\n", kept!.draw());
+        print("through the kept handle: {}\n", kept?!.draw());
     }
     0
 }

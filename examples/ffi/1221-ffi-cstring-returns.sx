@@ -18,7 +18,7 @@ main :: () -> i32 {
     // optional, non-null branch
     o := sig_text(2);
     if o == null { print("BUG: strsignal null\n"); return 2; }
-    if o!.len < 3 { print("BUG: strsignal too short\n"); return 3; }
+    if o?!.len < 3 { print("BUG: strsignal too short\n"); return 3; }
     print("optional non-null ok\n");
 
     // optional, NULL branch: dlerror() with no pending error is NULL

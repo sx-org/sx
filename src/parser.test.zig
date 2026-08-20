@@ -533,7 +533,7 @@ test "parser: private inside top-level inline if" {
     try std.testing.expectError(error.ParseError, p2.parse());
 }
 
-// ---- Whitespace is syntax (specs §1) ----
+// ---- Spacing and terminators (specs §1) ----
 //
 // A `(` applies, a `[` indexes, and a prefix `-` / `--` / `*` binds its operand
 // across any gap — space and line break alike.
@@ -667,7 +667,7 @@ test "parser: a pack index binds across a space" {
     }
 }
 
-// ---- Statement termination (specs §1: Whitespace is Syntax) ----
+// ---- Statement termination (specs §1: Spacing and terminators) ----
 //
 // `;` ends a statement; a line break is ordinary space. These pin the
 // positions that end a statement on their own — the `}` that closes the
@@ -1180,14 +1180,25 @@ test "parser: an assignment operator below a target continues it" {
 
 // ---- The binding layer ----
 //
-// `!` attaches to what precedes it only on that expression's own line, because
-// across a break it is the prefix `not`. Every other postfix — `{`, `.`, `?.`,
-// `catch` — carries one reading and binds wherever the statement is still open,
-// so only a `;` cuts it off.
+// `?!` is postfix force-unwrap. `{`, `.`, `?.`, `catch` — and `?!` — bind
+// wherever the statement is still open; only a `;` cuts them off. Prefix `!`
+// is `not`.
 
-// `!` is postfix force-unwrap and prefix `not`, so which one a leading `!`
-// spells is decided by the line it sits on.
-test "parser: a postfix `!` binds only on its own line" {
+test "parser: `?!` force-unwraps across a gap and a break" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for ([_][:0]const u8{
+        "f :: (a: ?i64) -> i64 { a?! }",
+        "f :: (a: ?i64) -> i64 { a ?! }",
+        "f :: (a: ?i64) -> i64 { a\n?! }",
+    }) |src| {
+        try std.testing.expect((try parseOne(alloc, src)).data == .force_unwrap);
+    }
+}
+
+test "parser: after `;` a following `!a` is prefix `not`" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1202,14 +1213,20 @@ test "parser: a postfix `!` binds only on its own line" {
     try std.testing.expectEqual(@as(usize, 3), split.data.block.stmts.len);
     try std.testing.expect(split.data.block.stmts[0].data == .identifier);
     try std.testing.expectEqual(ast.UnaryOp.Op.not, split.data.block.stmts[1].data.unary_op.op);
+}
 
-    const same = try parseBody(alloc,
-        \\f :: (a: ?i64) -> i64 {
-        \\    a!
-        \\}
-    );
-    try std.testing.expectEqual(@as(usize, 1), same.data.block.stmts.len);
-    try std.testing.expect(same.data.block.stmts[0].data == .force_unwrap);
+test "parser: `a!` is a parse error" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    _ = try parseErrMsg(alloc, "f :: (a: ?i64) -> i64 { a! }");
+}
+
+test "parser: `a ? !` is not unwrap" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    _ = try parseErrMsg(alloc, "f :: (a: ?i64) -> i64 { a ? ! }");
 }
 
 // The `;` is what makes the head a statement of its own and the brace group

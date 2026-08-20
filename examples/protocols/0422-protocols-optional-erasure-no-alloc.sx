@@ -72,7 +72,7 @@ main :: () -> i32 {
         // The owned copies share ONE backing (op1/h1/h3 all wrap `p`):
         // free it once, plus the two direct erasures.
         free(p);
-        free(op2!);
+        free(op2?!);
         if gpa.alloc_count != base + 1 { print("frees: wrong count\n"); fails = fails + 1; }
     }
     if fails != 0 { print("FAIL {}\n", fails); return 1; }

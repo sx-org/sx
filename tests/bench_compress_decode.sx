@@ -53,7 +53,7 @@ median_sample :: (samples: *[15]i64) -> i64 {
 run_case :: (label: string, data: string, level: i64, alloc: Allocator) -> bool {
     maybe_packed := fs.read_file(artifact_path(label, level));
     if maybe_packed == null { return false; }
-    packed := maybe_packed!;
+    packed := maybe_packed?!;
 
     warmup := 0;
     while warmup < BENCH_WARMUPS {

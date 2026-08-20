@@ -1,8 +1,6 @@
-// Whitespace is syntax (specs §1), the binding layer: a postfix `!` attaches to
-// what precedes it only on that expression's own line, because a `!` across the
-// break is the prefix `not`. Every other postfix carries one reading — a `{`
-// juxtaposes and `.` / `?.` / `catch` chain — so each binds wherever the
-// statement is still open and only a `;` cuts it off.
+// Spacing and terminators (specs §1), the binding layer: `{` juxtaposes and
+// `.` / `?.` / `?!` / `catch` chain wherever the statement is still open; only
+// a `;` cuts them off. Prefix `!` is `not`.
 @import "modules/std.sx";
 
 Pair :: struct { a: i64; b: i64; }
@@ -28,9 +26,9 @@ main :: () -> i32 {
     Box(i64);
     { print("after a type application\n") }
 
-    // `!` is force-unwrap behind its operand and `not` in front of one.
+    // `?!` is force-unwrap; prefix `!` is `not`.
     maybe : ?i64 = 4;
-    print("unwrapped={}\n", maybe!);
+    print("unwrapped={}\n", maybe?!);
 
     ready := false;
     ready;

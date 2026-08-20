@@ -32,7 +32,7 @@ Roster :: struct {
         value.write(dest);
         s := value.site();
         if s != null {
-            print("  line {} ordinal {} occurrence {} -> {}\n", s!.line, s!.ordinal, self.seen, dest.draw());
+            print("  line {} ordinal {} occurrence {} -> {}\n", s?!.line, s?!.ordinal, self.seen, dest.draw());
         }
         self.seen += 1;
         context.allocator.destroy(dest);

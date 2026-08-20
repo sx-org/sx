@@ -25,8 +25,8 @@ N :: @run mk_null();    // null ?i64
 
 main :: () {
     // Present optional-of-struct: payload bridged field-by-field.
-    print("X.a = {}\n", X!.a);
-    print("X.b = {}\n", X!.b);
+    print("X.a = {}\n", X?!.a);
+    print("X.b = {}\n", X?!.b);
     // Present optional-of-scalar.
     print("Y   = {}\n", Y ?? -1);
     // Null optional: coalesce takes the default.

@@ -39,7 +39,7 @@ Roster :: struct {
 // because the site belongs to the block, not to whoever is holding it.
 collect :: (content: $B/@BuildBlock(Drawable)) -> i32 {
     s := content.site();
-    if s != null { print("  block written at {}:{}\n", s!.file, s!.line); }
+    if s != null { print("  block written at {}:{}\n", s?!.file, s?!.line); }
     sink := Roster{};
     content.run(*sink);
     sink.n

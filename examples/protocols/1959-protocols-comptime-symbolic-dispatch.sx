@@ -32,7 +32,7 @@ narrowed :: () -> i64 {
     u : View = n;
     if u.(?Widget) { return -1; }
     got := u.(?Native);
-    if got { return got!.n; }
+    if got { return got?!.n; }
     return -2;
 }
 

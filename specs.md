@@ -298,6 +298,8 @@ GLSL;
 | `and`    | logical AND (short-circuit) |
 | `or`     | logical OR (short-circuit)  |
 | `??`     | default: optional payload or failable success |
+| `?!`     | force-unwrap optional |
+| `!`      | logical NOT (prefix) |
 | `in`     | membership test (tuples)    |
 | `+=`     | add-assign       |
 | `-=`     | sub-assign       |
@@ -337,12 +339,12 @@ ordinary comparisons. Native codegen and the comptime interpreter agree on this.
 | `\|…\|` | closure literal parameters           |
 | `{}`   | blocks / bodies                      |
 
-### Whitespace is Syntax
+### Spacing and terminators
 
-`!` is postfix force-unwrap on its expression's own line and prefix `not`
-across a break. `{` juxtaposes with the expression before it wherever that
-statement is open. Everywhere else whitespace is free. `;` is what ends a
-statement, and a line break is ordinary space.
+`!` is prefix `not`. `?!` is postfix force-unwrap. `{` juxtaposes with the
+expression before it wherever that statement is open. Everywhere else
+whitespace is free. `;` is what ends a statement, and a line break is ordinary
+space.
 
 **Free — `(`, `[`, and a prefix `-` / `--` / `*` take any spacing.** A `(`
 applies arguments and a `[` indexes however much space stands between it and
@@ -400,17 +402,19 @@ and `-- b` both decrement `b` and yield the new value, while `a--b` and `a --b`
 have no reading at all — the operand `a` is complete and `--` is no infix
 operator.
 
-**Postfix — `!` binds only on its expression's own line.** A postfix `!` has a
-second reading waiting on the other side of a break — the prefix `not`:
+**Postfix — `?!` is force-unwrap.** It is one token (`? !` is not the symbol)
+and binds wherever the statement is still open, across a gap or a break; the
+`;` is what cuts. Prefix `!` is `not`:
 
 ```sx
-print("{}\n", maybe!);        // same line — force unwrap
+print("{}\n", maybe?!);
+print("{}\n", maybe ?!);
 ready;
-!ready;                       // across the break — the prefix `not`
+!ready;                       // prefix `not`
 ```
 
-A `{` is not in that camp. It juxtaposes with the expression before it wherever
-that statement is still open, across a break included; the `;` is what cuts:
+A `{` juxtaposes with the expression before it wherever that statement is still
+open, across a break included; the `;` is what cuts:
 
 ```sx
 p := Pair
@@ -2344,11 +2348,11 @@ b == null     // true
 a == 1.5      // true — mixed compare, no unwrap spelling needed
 ```
 
-#### Force Unwrap (`!`)
+#### Force Unwrap (`?!`)
 Extracts the payload, traps at runtime if null:
 ```sx
 x: ?i32 = 42;
-val := x!;             // val : i32 = 42
+val := x?!;            // val : i32 = 42
 ```
 
 #### Default (`??`)
@@ -4400,9 +4404,10 @@ Everything in `sx` is expression-oriented where possible.
 | 1 (lowest) | `??` | default: optional payload (§2) / failable success (§12); right-associative |
 
 `try` is a unary prefix in the same tier as `xx` / `*` / `-` / `!` / `~`
-(tighter than every binary operator, including `??`); `catch` is a postfix
-attached to a failable expression. So `try foo() ?? try boo()` parses as
-`(try foo()) ?? (try boo())`. See [§12 Error Handling](#12-error-handling).
+(tighter than every binary operator, including `??`); `?!` is postfix
+force-unwrap and `catch` is a postfix attached to a failable expression. So
+`try foo() ?? try boo()` parses as `(try foo()) ?? (try boo())`. See
+[§12 Error Handling](#12-error-handling).
 
 ### Arithmetic
 Standard infix: `+`, `-`, `*`, `/` with usual precedence (`*`/`/` before `+`/`-`).
@@ -4706,13 +4711,8 @@ a function body.
 **The iterables are ordinary expressions.** Nothing in the header is
 reserved for captures, so a call iterable is written as it is anywhere else
 (`for x in f(n) { }`, `for x, y in zip(a, b) { }`) — no parenthesizing and
-no intermediate binding.
-
-A spaced `(` group at the header's top level, immediately followed by `{`
-or `=>`, is neither a call nor a range end — the header has already
-closed. `for xs (x) { }` is a `for` whose body is missing; in
-`for i in 0.. (n) { }` the range stays open, and an open range cannot be
-the first iterable.
+no intermediate binding. A `(` applies arguments across any gap, so
+`for x in f (n) { }` is the same call and `for xs (x) { }` iterates `xs(x)`.
 
 **By-value captures are immutable.** This rule is not
 specific to for-loop element captures — it holds for *every* by-value
@@ -5110,7 +5110,7 @@ The enum type is inferred from context (expected type from declaration or parame
 ## 5. Statements
 
 Statements are terminated by `;` (§1
-[Whitespace is Syntax](#whitespace-is-syntax)). A statement that IS a block ends
+[Spacing and terminators](#spacing-and-terminators)). A statement that IS a block ends
 at its `}` instead, and the last expression or declaration before a `}` may drop
 its terminator.
 
@@ -6389,7 +6389,7 @@ implicit `context`.
 
 ```
 program         = top_level*
-end             = ';' | EOF   // §1 Whitespace is Syntax: a line break is
+end             = ';' | EOF   // §1 Spacing and terminators: a line break is
                   // ordinary space; EOF ends the last declaration of a file
 top_level       = decl | import_decl | context_extend
 import_decl     = '@import' STRING end
@@ -6456,7 +6456,7 @@ binop_expr      = catch_expr (binop catch_expr)*
 catch_expr      = unary ('catch' ('|' IDENT '|')? (block | match_expr | unary))?
 unary           = ('-' | '--' | '*' | '!' | '~' | 'xx' | 'try') unary | postfix
                   // right-recursive, so prefixes stack (`xx try f()`, `!!ok`)
-postfix         = primary ('(' args? ')' | '[' expr ']' | '.' IDENT)* juxt? self_block?
+postfix         = primary ('(' args? ')' | '[' expr ']' | '.' IDENT | '?!')* juxt? self_block?
 juxt            = brace_group       // `expr { … }` — two adjacent expressions;
                   // types settle construction vs trailing block. An if / match /
                   // for / while value, a block, a `.{ … }` primary, and a

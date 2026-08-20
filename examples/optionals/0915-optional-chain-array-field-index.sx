@@ -56,7 +56,7 @@ main :: () {
     // Result is `?ElemType` — bind it, then unwrap.
     x := mk_arr(true)?.xs[1];                                // ?i64
     print("bound:      {}\n", x ?? 0);                       // 2
-    print("unwrap:     {}\n", mk_arr(true)?.xs[2]!);         // 3
+    print("unwrap:     {}\n", mk_arr(true)?.xs[2]?!);         // 3
 
     // Struct-element array `[2]Pt`: indexing yields `?Pt`.
     p := mk_holder(.[])?.ps[1];                              // ?Pt

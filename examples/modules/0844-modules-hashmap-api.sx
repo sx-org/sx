@@ -25,24 +25,24 @@ main :: () {
     fp1 := if x := m.fetch_put(1, 11, gpa) { false } else { true };
     fp2 := if x := m.fetch_put(2, 22, gpa) { false } else { true };
     report("fp-fresh-null", fp1 and fp2);
-    report("fp-old", m.fetch_put(1, 111, gpa)! == 11);   // overwrite returns old
+    report("fp-old", m.fetch_put(1, 111, gpa)?! == 11);   // overwrite returns old
 
     gop := m.get_or_put(1, gpa);
     report("gop-found", gop.found_existing and gop.value_ptr.* == 111);
     gop.value_ptr.* = 1000;
-    report("gop-mut", m.get(1)! == 1000);
+    report("gop-mut", m.get(1)?! == 1000);
 
     gop2 := m.get_or_put(99, gpa);
     report("gop-new", !gop2.found_existing);
     gop2.value_ptr.* = 42;
-    report("gop-new-set", m.get(99)! == 42);
+    report("gop-new-set", m.get(99)?! == 42);
 
     gv := m.get_or_put_value(1, 5, gpa);
     report("gopv-exist", gv.value_ptr.* == 1000);           // not overwritten
     gv2 := m.get_or_put_value(7, 77, gpa);
     report("gopv-new", gv2.value_ptr.* == 77);
 
-    report("fr-hit", m.fetch_remove(2, gpa)! == 22);
+    report("fr-hit", m.fetch_remove(2, gpa)?! == 22);
     frmiss := if x := m.fetch_remove(2, gpa) { false } else { true };
     report("fr-miss", frmiss and !m.contains(2));
     m.deinit(gpa);
@@ -90,7 +90,7 @@ main :: () {
     c.clear();
     report("clr-len", c.len == 0 and c.capacity() == cap_c);
     c.put_assume_capacity(1, 1);
-    report("clr-reuse", c.get(1)! == 1 and c.len == 1);
+    report("clr-reuse", c.get(1)?! == 1 and c.len == 1);
     c.deinit(gpa);
 
     // ── clone: empty, populated, independent ─────────────────────────────
@@ -103,10 +103,10 @@ main :: () {
     cp := o.clone(gpa);
     all_c := true;
     i = 0;
-    while i < 10 { if cp.get(i)! != i * 10 { all_c = false; } i += 1; }
+    while i < 10 { if cp.get(i)?! != i * 10 { all_c = false; } i += 1; }
     report("clone-vals", all_c and cp.len == 10);
     cp.put(0, 999, gpa);                                  // mutate clone only
-    report("clone-indep", o.get(0)! == 0 and cp.get(0)! == 999);
+    report("clone-indep", o.get(0)?! == 0 and cp.get(0)?! == 999);
     o.deinit(gpa);
     cp.deinit(gpa);
 
@@ -120,7 +120,7 @@ main :: () {
     i = 0;
     while i < 16 {
         if i % 3 == 0 { if r16.contains(i) { rm_ok = false; } }
-        else { if r16.get(i)! != i { rm_ok = false; } }
+        else { if r16.get(i)?! != i { rm_ok = false; } }
         i += 1;
     }
     report("remove", rm_ok);
@@ -136,7 +136,7 @@ main :: () {
         rr.remove(i - 1, gpa);
         if rr.contains(i - 1) { rev_ok = false; }
         j := 0;
-        while j < i - 1 { if rr.get(j)! != j { rev_ok = false; } j += 1; }
+        while j < i - 1 { if rr.get(j)?! != j { rev_ok = false; } j += 1; }
         i -= 1;
     }
     report("reverse-removes", rev_ok and rr.len == 0);
@@ -158,7 +158,7 @@ main :: () {
     mm.put(7, 7, gpa);
     all_mm := true;
     i = 0;
-    while i < 16 { if mm.get(i)! != i { all_mm = false; } i += 1; }
+    while i < 16 { if mm.get(i)?! != i { all_mm = false; } i += 1; }
     report("multi-rm-reinsert", all_mm);
     mm.deinit(gpa);
 
@@ -170,7 +170,7 @@ main :: () {
     while i < 16 { p.put(i, i * 16 + 1, gpa); i += 1; }
     all_p := true;
     i = 0;
-    while i < 16 { if p.get(i)! != i * 16 + 1 { all_p = false; } i += 1; }
+    while i < 16 { if p.get(i)?! != i * 16 + 1 { all_p = false; } i += 1; }
     report("put-overwrite", all_p);
     p.deinit(gpa);
 
@@ -181,13 +181,13 @@ main :: () {
     while i < 20 { pac.put_assume_capacity(i, i); i += 1; }
     sum_pac := 0;
     i = 0;
-    while i < 20 { sum_pac += pac.get_ptr(i)!.*; i += 1; }
+    while i < 20 { sum_pac += pac.get_ptr(i)?!.*; i += 1; }
     report("pac-sum", sum_pac == 190);
     i = 0;
     while i < 20 { pac.put_assume_capacity(i, 1); i += 1; }
     sum_pac2 := 0;
     i = 0;
-    while i < 20 { sum_pac2 += pac.get(i)!; i += 1; }
+    while i < 20 { sum_pac2 += pac.get(i)?!; i += 1; }
     report("pac-overwrite", sum_pac2 == 20);
     pac.deinit(gpa);
 
@@ -199,7 +199,7 @@ main :: () {
     while i < 20 { g.get_or_put_value(i, 1, gpa); i += 1; }
     sum_g := 0;
     i = 0;
-    while i < 20 { sum_g += g.get(i)!; i += 1; }
+    while i < 20 { sum_g += g.get(i)?!; i += 1; }
     report("gop-accum", sum_g == 30);                        // 10*2 + 10*1
     g.deinit(gpa);
 
@@ -212,7 +212,7 @@ main :: () {
     i = 0;
     while i < 100 {
         if i % 3 == 0 { if rh.contains(i) { rehash_ok = false; } }
-        else { if rh.get(i)! != i { rehash_ok = false; } }
+        else { if rh.get(i)?! != i { rehash_ok = false; } }
         i += 1;
     }
     report("rehash", rehash_ok);
@@ -244,12 +244,12 @@ main :: () {
     t1.remove(1, gpa);                                // head  → tombstone @bucket 4
     t1.remove(9, gpa);                                // middle→ tombstone @bucket 5
     report("g1-tail-after-tomb",
-           t1.get(17)! == 170 and t1.get(25)! == 250 and t1.contains(17) and t1.contains(25));
+           t1.get(17)?! == 170 and t1.get(25)?! == 250 and t1.contains(17) and t1.contains(25));
     report("g1-head-mid-gone", !t1.contains(1) and !t1.contains(9) and t1.len == 2);
     t1.put(1, 111, gpa);                              // recycles a tombstone, no dup
-    report("g1-reinsert-no-dup", t1.get(1)! == 111 and t1.len == 3);
+    report("g1-reinsert-no-dup", t1.get(1)?! == 111 and t1.len == 3);
     t1.put(9, 999, gpa);
-    report("g1-reinsert2", t1.get(9)! == 999 and t1.len == 4 and t1.capacity() == 8);
+    report("g1-reinsert2", t1.get(9)?! == 999 and t1.len == 4 and t1.capacity() == 8);
     t1.deinit(gpa);
 
     // ── iterate a map holding LIVE tombstones — only live entries seen ─
@@ -276,7 +276,7 @@ main :: () {
     report("g4-reserved", uc_cap >= 200);
     i = 0; while i < 200 { uc.put_assume_capacity(i, i * 3); i += 1; }
     uc_all := true;
-    i = 0; while i < 200 { if uc.get(i)! != i * 3 { uc_all = false; } i += 1; }
+    i = 0; while i < 200 { if uc.get(i)?! != i * 3 { uc_all = false; } i += 1; }
     report("g4-all-retrievable", uc_all and uc.len == 200 and uc.capacity() == uc_cap);
     uc.deinit(gpa);
 
@@ -292,10 +292,10 @@ main :: () {
     c5.remove(1, gpa); c5.remove(9, gpa);
     report("g5-src", c5.tombstones == 2 and c5.len == 2);
     c5g := c5.clone(gpa);
-    report("g5-clone-live-across-tomb", c5g.get(17)! == 170 and c5g.get(25)! == 250);
+    report("g5-clone-live-across-tomb", c5g.get(17)?! == 170 and c5g.get(25)?! == 250);
     report("g5-clone-removed-rejected", !c5g.contains(1) and !c5g.contains(9) and c5g.len == 2);
     c5g.put(17, 1717, gpa);                           // independence
-    report("g5-clone-indep", c5.get(17)! == 170 and c5g.get(17)! == 1717);
+    report("g5-clone-indep", c5.get(17)?! == 170 and c5g.get(17)?! == 1717);
     c5.deinit(gpa);
     c5g.deinit(gpa);
 
@@ -306,12 +306,12 @@ main :: () {
     g6c := c6.clone(gpa);
     i = 100; while i < 200 { g6c.put(i, i, gpa); i += 1; }   // force the CLONE to grow/rehash
     report("g6-grow-clone-orig-unchanged",
-           c6.len == 3 and c6.capacity() == c6cap and c6.get(1)! == 1 and !c6.contains(150));
-    report("g6-grow-clone-has-new", g6c.get(150)! == 150 and g6c.get(1)! == 1 and g6c.len == 103);
+           c6.len == 3 and c6.capacity() == c6cap and c6.get(1)?! == 1 and !c6.contains(150));
+    report("g6-grow-clone-has-new", g6c.get(150)?! == 150 and g6c.get(1)?! == 1 and g6c.len == 103);
     g6b := c6.clone(gpa);
     i = 300; while i < 400 { c6.put(i, i, gpa); i += 1; }    // now grow the ORIGINAL
     report("g6-grow-orig-clone-unchanged",
-           g6b.len == 3 and !g6b.contains(300) and g6b.get(2)! == 2);
+           g6b.len == 3 and !g6b.contains(300) and g6b.get(2)?! == 2);
     c6.deinit(gpa);
     g6c.deinit(gpa);
     g6b.deinit(gpa);
@@ -353,7 +353,7 @@ main :: () {
     f11.ensure_total_capacity(10, gpa);
     f11.put_assume_capacity(5, 50);
     old11 := f11.fetch_put_assume_capacity(5, 500);      // existing key → returns 50
-    report("g11-old-returned", old11! == 50 and f11.get(5)! == 500 and f11.len == 1);
+    report("g11-old-returned", old11?! == 50 and f11.get(5)?! == 500 and f11.len == 1);
     f11.deinit(gpa);
 
     // ── iterate a never-allocated (cap 0) map — no crash, zero ──────

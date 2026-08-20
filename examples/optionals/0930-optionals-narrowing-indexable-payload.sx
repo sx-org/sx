@@ -8,7 +8,7 @@
 // - subslices (`o[0..n]` is `[]T`, viewing the payload's own storage);
 // - generic binding, so a `[]$T` ufcs receiver binds `[]i64`.
 // Un-narrowed, `o[i]` stays the optional chain `?Elem`; `q := o` keeps the
-// declared `?[]T` (only guarded locals narrow — spell `q := o!`).
+// declared `?[]T` (only guarded locals narrow — spell `q := o?!`).
 @import "modules/std.sx";
 
 P :: struct { n: i64 = 0; }
@@ -111,11 +111,11 @@ main :: () {
     process.assert(len_through_guard(a[0..4]) == 4, "len");
 
     c := still_chains(a[0..4]);
-    process.assert(c != null and c! == 100, "un-narrowed index chains");
+    process.assert(c != null and c?! == 100, "un-narrowed index chains");
     process.assert(still_chains(null) == null, "null receiver chains to null");
 
     q := keeps_static_type(a[0..4]);
-    process.assert(q != null and q!.len == 4, "declared type preserved");
+    process.assert(q != null and q?!.len == 4, "declared type preserved");
 
     print("ok\n");
 }

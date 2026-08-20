@@ -55,7 +55,7 @@
 //
 // Streaming straight to a file (no whole-document string):
 //
-//     f := open_file("db.json\0", .write)!;
+//     f := open_file("db.json\0", .write)?!;
 //     stage : [4096]u8 = ---;
 //     try write_to_file(root, @f, string{ ptr = @stage[0], len = 4096 });
 //     f.close();
@@ -447,7 +447,7 @@ write_to_file :: (v: Value, file: *File, staging: []u8) -> !JsonError {
 //     gpa   := GPA.init();
 //     arena := Arena.init(gpa, 4096);
 //     defer arena.deinit();
-//     root  := parse(src, arena)!;   // composites + decoded strings in arena
+//     root  := parse(src, arena)?!;   // composites + decoded strings in arena
 
 // The reader's failure contract. Meaningful variants so a caller can tell
 // a truncated document from a bad escape from trailing junk.

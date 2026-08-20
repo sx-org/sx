@@ -367,7 +367,7 @@
         },
         {
           "name": "keyword.operator.optional.sx",
-          "match": "\\?\\?|\\?\\.|\\?"
+          "match": "\\?\\?|\\?\\.|\\?!|\\?"
         },
         {
           "name": "keyword.operator.sx",

@@ -258,7 +258,7 @@ spawn :: (argv: []string, opts: SpawnOpts = .{}) -> (Child, !) {
         i += 1;
     }
     vec[argv.len] = null;
-    file := vec[0]!;
+    file := vec[0]?!;
 
     // Per-slot fds, indexed by the standard slot they serve. `child` is
     // the end the child dup2s onto slot 0/1/2; `parent` is the end the
