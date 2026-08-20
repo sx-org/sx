@@ -24,10 +24,10 @@
 // own type, so an interactive element is one value and the calls into it stay
 // static.
 Tappable :: @OpenVariant(View) ($V: Type) {
-    child: V
-    id: ElementId = .{}
-    on_tap: ?Closure() = null
-    policy: ?Closure(Point) -> HitPolicy = null
+    child: V;
+    id: ElementId = .{};
+    on_tap: ?Closure() = null;
+    policy: ?Closure(Point) -> HitPolicy = null;
 
     size_that_fits :: (self: *Tappable(V), proposal: ProposedSize) -> Size {
         self.child.size_that_fits(proposal)
@@ -53,24 +53,24 @@ tappable :: (v: $V/View, on_tap: ?Closure() = null, policy: ?Closure(Point) -> H
 
 // Which region owns a point, and what it allows there.
 HitTarget :: struct {
-    id: u64 = 0
-    policy: HitPolicy = .tap
+    id: u64 = 0;
+    policy: HitPolicy = .tap;
 }
 
 // One live pointer. `inside` follows the pointer off and back onto its captured
 // region, and only an up taken inside taps.
 PointerSequence :: struct {
-    pointer: PointerId = .{ value = 0 }
-    element: u64 = 0
-    down: Point = .{ x = 0.0, y = 0.0 }
-    inside: bool = true
+    pointer: PointerId = .{ value = 0 };
+    element: u64 = 0;
+    down: Point = .{ x = 0.0, y = 0.0 };
+    inside: bool = true;
 }
 
 Router :: struct {
     // The surface every resolution runs against; null until a frame commits.
-    snap: *CommittedUiSnapshot = null
-    sequences: List(PointerSequence) = .{}
-    gpa: Allocator
+    snap: *CommittedUiSnapshot = null;
+    sequences: List(PointerSequence) = .{};
+    gpa: Allocator;
 
     init :: (gpa: Allocator) -> Router => .{ gpa = gpa };
 

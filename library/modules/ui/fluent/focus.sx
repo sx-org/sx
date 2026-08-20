@@ -24,11 +24,11 @@
 // its own type, so a focusable element is one value and the calls into it stay
 // static.
 Focusable :: @OpenVariant(View) ($V: Type) {
-    child: V
-    id: ElementId = .{}
-    on_key: ?Closure(*KeyEvent) = null
-    on_text: ?Closure(string) = null
-    wants_keyboard: bool = false
+    child: V;
+    id: ElementId = .{};
+    on_key: ?Closure(*KeyEvent) = null;
+    on_text: ?Closure(string) = null;
+    wants_keyboard: bool = false;
 
     size_that_fits :: (self: *Focusable(V), proposal: ProposedSize) -> Size {
         self.child.size_that_fits(proposal)
@@ -54,8 +54,8 @@ focusable :: (v: $V/View, on_key: ?Closure(*KeyEvent) = null, on_text: ?Closure(
 // it takes no allocator and has nothing to hand back.
 FocusRouter :: struct {
     // The surface every resolution runs against; null until a frame commits.
-    snap: *CommittedUiSnapshot = null
-    focused: ?u64 = null
+    snap: *CommittedUiSnapshot = null;
+    focused: ?u64 = null;
 
     init :: () -> FocusRouter => .{};
 

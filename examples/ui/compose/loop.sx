@@ -39,16 +39,16 @@
 FRAME_ARENA_BYTES :: 8192;
 
 UiRoot :: struct {
-    id: UiRootId = .{ value = 0 }
-    viewport: Size = .{ width = 0.0, height = 0.0 }
-    identity: Identity
-    store: StateStore
-    taps: Router
-    focus: FocusRouter = .{}
-    queue: InputQueue
-    snapshot: CommittedUiSnapshot
-    arenas: [2]Arena
-    parity: i64 = 0
+    id: UiRootId = .{ value = 0 };
+    viewport: Size = .{ width = 0.0, height = 0.0 };
+    identity: Identity;
+    store: StateStore;
+    taps: Router;
+    focus: FocusRouter = .{};
+    queue: InputQueue;
+    snapshot: CommittedUiSnapshot;
+    arenas: [2]Arena;
+    parity: i64 = 0;
 
     // The snapshot starts on `gpa` holding nothing; the first commit is what
     // points it at a frame arena.
@@ -102,10 +102,10 @@ UiRoot :: struct {
 // The builder runs under the root's context, so `use_state`, `element_id` and
 // the press/focus queries all reach this root's carriers.
 FrameLoop :: struct {
-    root: *UiRoot
-    build: Closure() -> View
-    build_allocator: Allocator
-    frames: i64 = 0
+    root: *UiRoot;
+    build: Closure() -> View;
+    build_allocator: Allocator;
+    frames: i64 = 0;
 
     // `build_allocator` is the allocator that made `build`'s environment — the
     // one ambient where the literal is written, which need not be the one

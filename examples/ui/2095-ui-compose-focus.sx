@@ -22,11 +22,11 @@ send :: (f: *FocusRouter, ev: InputEvent) {
 }
 
 Log :: struct {
-    a: i64 = 0
-    b: i64 = 0
-    c: i64 = 0
-    last: LogicalKey = .unknown
-    typed: i64 = 0
+    a: i64 = 0;
+    b: i64 = 0;
+    c: i64 = 0;
+    last: LogicalKey = .unknown;
+    typed: i64 = 0;
 }
 
 main :: () -> i32 {

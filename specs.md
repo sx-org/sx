@@ -657,7 +657,7 @@ n      := u64.max;   // 18446744073709551615 (all-ones)
   `print("{}", u64.max)` renders the full unsigned decimal
   `18446744073709551615` (and any unsigned value across all 64 bits), while a
   signed value — including `i64.min` — prints with all its digits. A bit
-  reinterpret (`union { u: u64; s: i64 }`) is still a valid way to inspect the
+  reinterpret (`union { u: u64; s: i64; }`) is still a valid way to inspect the
   raw bits, but is not needed merely to print the value.
 - **Non-numeric receivers.** `.min` / `.max` on a non-numeric type (`bool`,
   `string`, a pointer, a `struct`, `void`, an `enum`) is a compile error, never
@@ -714,7 +714,7 @@ qn  := f64.nan;           // a quiet NaN
 - **Pinning the values.** The lexer has no exponent notation and the default
   float formatter is crude, so float limits can be asserted neither
   by literal comparison nor by printing. Reinterpret the bits through an untagged
-  union (`union { f: f64; bits: u64 }`) and compare against the exact IEEE-754
+  union (`union { f: f64; bits: u64; }`) and compare against the exact IEEE-754
   pattern — `f64.max = 0x7FEFFFFFFFFFFFFF`, `min = 0xFFEFFFFFFFFFFFFF`,
   `epsilon = 0x3CB0000000000000`, `min_positive = 0x0010000000000000`,
   `true_min = 0x0000000000000001`, `inf = 0x7FF0000000000000`; the `f32` set is
@@ -861,7 +861,7 @@ Vec4 :: struct {
   x, y, z, w: f32;
 }
 ```
-Fields are declared as `name1, name2: type;` (comma-separated names sharing a type, semicolon-terminated).
+Fields are declared as `name1, name2: type;` (comma-separated names sharing a type, semicolon-terminated, including the last field before `}`).
 
 #### Field Defaults
 Fields may have default values. Fields without an explicit default have a zero-value default. `---` marks a field as explicitly undefined.
@@ -4768,11 +4768,11 @@ type — what the position yields — and `*` is orthogonal to it:
 for c: View in children { }      // c : View
 for *c: View in children { }     // c : *View — the element type is still View
 for x, i: i64 in xs, 0.. { }     // a range cursor is i64
-for x: struct { a: i64 } in items { }  // a brace group belongs to the type
+for x: struct { a: i64; } in items { }  // a brace group belongs to the type
 ```
 
-The type is an ordinary `type`, so a brace group in it (`struct { a: i64 }`,
-`Pair(struct { a: i64 }, i64)`) belongs to the annotation, not the body.
+The type is an ordinary `type`, so a brace group in it (`struct { a: i64; }`,
+`Pair(struct { a: i64; }, i64)`) belongs to the annotation, not the body.
 The annotation restates the type; it never converts. It must name the
 element type exactly — a range cursor is `i64` whatever its bounds are
 spelled as, and an `inline for` over a pack checks the annotation against
@@ -6472,7 +6472,7 @@ top_level       = decl | import_decl | context_extend
 import_decl     = '@import' STRING end
                 | IDENT '::' '@import' STRING end
 context_extend  = '@context_extend' IDENT ':' type '=' expr end
-decl            = const_decl | var_decl | fn_decl | at_fn_decl | enum_decl | struct_decl | error_decl
+decl            = const_decl | var_decl | fn_decl | at_fn_decl | enum_decl | struct_decl | union_decl | error_decl
 error_decl      = IDENT '::' 'error' '{' IDENT (',' IDENT)* ','? '}' end
 const_decl      = IDENT '::' expr end
                 | IDENT ':' type ':' expr end
@@ -6491,10 +6491,10 @@ fn_decl         = IDENT '::' '(' params? ')' ('->' ret_type)? block
 ret_type        = type ('!' IDENT?)?    // trailing `!` = failable; channel outside any Tuple
 enum_decl       = IDENT '::' 'enum' '{' (IDENT ';'?)* '}'
 struct_decl     = IDENT '::' 'struct' '{' struct_member* '}'
-struct_member   = field_group | '@using' IDENT ';'?
-field_group     = IDENT (',' IDENT)* ':' type ('=' expr)? ';'?
-                  // a member list's `;` is an optional separator, not `end`:
-                  // the entry ends where the next one starts
+struct_member   = field_group | '@using' IDENT ';'
+field_group     = IDENT (',' IDENT)* ':' type ('=' expr)? ';'
+union_decl      = IDENT '::' 'union' '{' union_member* '}'
+union_member    = IDENT ':' type ';' | 'struct' '{' struct_member* '}' ';'
 params          = param (',' param)* (',' c_tail)? ','?
                 | c_tail ','?
 c_tail          = '..'              // the C-variadic tail; binds no name and no

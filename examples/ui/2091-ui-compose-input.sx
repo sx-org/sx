@@ -22,8 +22,8 @@ send :: (r: *Router, ev: InputEvent) {
 }
 
 Tally :: struct {
-    top: i64 = 0
-    bottom: i64 = 0
+    top: i64 = 0;
+    bottom: i64 = 0;
 }
 
 main :: () -> i32 {

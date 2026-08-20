@@ -4,7 +4,7 @@
 @import "modules/std.sx";
 
 Label :: struct { text: string = ""; }
-Box :: struct($T: Type) { v: T }
+Box :: struct($T: Type) { v: T; }
 
 main :: () {
     l := Label { |x| 1; };
