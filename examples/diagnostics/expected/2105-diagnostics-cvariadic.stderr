@@ -16,11 +16,11 @@ error: cannot declare a field of type '[1]@VaList' — it holds a '@VaList', whi
 51 |     row: [1]@VaList;
    |          ^^^^^^^^^^
 
-error: cannot declare a field of type '(@VaList, i64)' — it holds a '@VaList', which has no value form
+error: cannot declare a field of type '__anon' — it holds a '@VaList', which has no value form
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:52:11
    |
-52 |     pair: Tuple(@VaList, i64);
-   |           ^^^^^^^^^^^^^^^^^^^
+52 |     pair: struct { a: @VaList; b: i64 };
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: cannot declare a field of type '?@VaList' — it holds a '@VaList', which has no value form
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:53:12
@@ -33,6 +33,12 @@ error: cannot declare a field of type '[2]*@VaList' — it addresses a '@VaList'
    |
 54 |     lent: [2]*@VaList;
    |           ^^^^^^^^^^^
+
+error: cannot declare a field of type '@VaList' — a C-variadic cursor has no value form; declare it as a local and pass '*name'
+  --> examples/diagnostics/2105-diagnostics-cvariadic.sx:57:23
+   |
+57 | VaPair :: struct { a: @VaList; b: i64 };
+   |                       ^^^^^^^
 
 error: cannot declare a return of type '[1]@VaList' — it holds a '@VaList', which has no value form
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:62:41
@@ -208,7 +214,7 @@ error: '?@VaList' holds a '@VaList', whose storage is the target's — it has no
 160 |     printf("%d %d %d\n", size_of([1]@VaList), align_of(?@VaList), struct_field_count(VaPair));
     |                                                        ^^^^^^^^
 
-error: '(@VaList, i64)' holds a '@VaList', whose storage is the target's — it has no published layout
+error: 'VaPair' holds a '@VaList', whose storage is the target's — it has no published layout
   --> examples/diagnostics/2105-diagnostics-cvariadic.sx:160:86
     |
 160 |     printf("%d %d %d\n", size_of([1]@VaList), align_of(?@VaList), struct_field_count(VaPair));

@@ -53,9 +53,9 @@ test "generics: mangleTypeName encodes the mono-key fragment per type shape" {
     const pt = tt.intern(.{ .@"struct" = .{ .name = tt.internString("Point"), .fields = &.{} } });
     try std.testing.expectEqualStrings("Point", gr.mangleTypeName(pt));
 
-    // Tuple: "tu" + "_<frag>" per field.
-    const tup = tt.intern(.{ .tuple = .{ .fields = &[_]TypeId{ .i64, .bool }, .names = null } });
-    try std.testing.expectEqualStrings("tu_i64_bool", gr.mangleTypeName(tup));
+    // Anonymous product mangles as its interned `__anon` struct name.
+    const tup = tt.internProduct(&[_]TypeId{ .i64, .bool }, null);
+    try std.testing.expectEqualStrings("__anon", gr.mangleTypeName(tup));
 
     // The `Lowering` wrapper delegates here — same result.
     try std.testing.expectEqualStrings("ptr_i64", l.mangleTypeName(tt.ptrTo(.i64)));

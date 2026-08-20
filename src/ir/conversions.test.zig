@@ -72,10 +72,10 @@ test "conversions: classify covers the built-in coercion ladder" {
     const opt_bool = tt.optionalOf(.bool);
     try std.testing.expectEqual(Plan.optional_unwrap, cr.classify(opt_bool, .bool));
 
-    // Tuple → tuple, same arity.
-    const t_ss = tt.intern(.{ .tuple = .{ .fields = &[_]TypeId{ .i64, .i64 }, .names = null } });
-    const t_ii = tt.intern(.{ .tuple = .{ .fields = &[_]TypeId{ .i32, .i32 }, .names = null } });
-    try std.testing.expectEqual(Plan.tuple_elementwise, cr.classify(t_ss, t_ii));
+    // Anonymous products of the same arity coerce element-wise.
+    const t_ss = tt.internProduct(&[_]TypeId{ .i64, .i64 }, null);
+    const t_ii = tt.internProduct(&[_]TypeId{ .i32, .i32 }, null);
+    try std.testing.expectEqual(Plan.struct_elementwise, cr.classify(t_ss, t_ii));
 
     // Closure value → bare fn-ptr: rejected.
     const clo = tt.closureType(&.{}, .void);

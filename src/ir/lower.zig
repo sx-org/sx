@@ -1372,13 +1372,14 @@ pub const Lowering = struct {
 
     /// A bare-paren `(A, B)` multi-return SIGNATURE is valid only as a
     /// function/closure return type — never as a VALUE type (a parameter /
-    /// variable / field annotation), where a tuple value uses `Tuple(…)`. Emits a
-    /// diagnostic and returns true when `node` is a `ReturnTypeExpr`. (`what` names
-    /// the offending position, e.g. "parameter" / "variable" / "field".)
+    /// variable / field annotation). A positional product is `.{ … }`; a named
+    /// product is `struct { x: A; y: B }`. Emits a diagnostic and returns true
+    /// when `node` is a `ReturnTypeExpr`. (`what` names the offending
+    /// position, e.g. "parameter" / "variable" / "field".)
     pub fn rejectMultiReturnValueType(self: *Lowering, node: *const ast.Node, what: []const u8) bool {
         if (node.data != .return_type_expr) return false;
         if (self.diagnostics) |d| {
-            d.addFmt(.err, node.span, "a bare-paren `(A, B)` is a multi-return signature, valid only as a return type; a tuple-valued {s} uses `Tuple(…)`", .{what});
+            d.addFmt(.err, node.span, "a bare-paren `(A, B)` is a multi-return signature, valid only as a return type; a {s} uses a named struct or a positional `.{{ … }}`", .{what});
         }
         return true;
     }
@@ -1397,7 +1398,7 @@ pub const Lowering = struct {
             return .unresolved;
         }
         // A bare-paren `(A, B)` is a MULTI-RETURN signature, valid only as a
-        // return type — not a parameter value type (use `Tuple(…)`).
+        // return type — not a parameter value type.
         if (self.rejectMultiReturnValueType(p.type_expr, "parameter")) return .unresolved;
         const declared_ty = self.resolveTypeWithBindings(p.type_expr);
         // A `$I/@Init(T)` parameter whose binder is not yet bound resolves to
@@ -1499,6 +1500,11 @@ pub const Lowering = struct {
     /// bindings / aliases in element position keep their resolution.
     pub fn resolveInner(self: *Lowering, node: *const Node) TypeId {
         return self.resolveTypeWithBindings(node);
+    }
+
+    pub fn expandTypeSpread(self: *Lowering, node: *const Node) ?[]TypeId {
+        if (node.data != .spread_expr) return null;
+        return self.packResolver().packTypeElems(node.data.spread_expr.operand);
     }
 
     /// Bare TYPE-NAME twin of `resolveInner` for callers holding a name rather
@@ -1778,18 +1784,14 @@ pub const Lowering = struct {
                 }
             }
         }
-        // A `Tuple(...)` element must denote a TYPE; a VALUE-literal element —
-        // e.g. the `1` in `Tuple(i32, 1)` — is a user error. Diagnose it loudly
-        // here (the same message the `.( ... )`-in-type path emits) BEFORE
-        // `resolveCompound` would intern a tuple carrying an `.unresolved`
-        // field. Only the unambiguous value literals are rejected: an
-        // `error_type_expr` element (`-> Tuple(A, B) !` desugaring), names,
-        // and the structural type shapes are all legitimate tuple elements.
+        // A parenthesized type-list element (`-> (T, !)`, `-> (A, B)`) must
+        // denote a TYPE; a VALUE-literal element — e.g. the `1` in `-> (i32, 1)`
+        // — is a user error. Diagnose it BEFORE `resolveCompound` would intern
+        // a product carrying an `.unresolved` field. Only the unambiguous value
+        // literals are rejected: an `error_type_expr` element, names, and the
+        // structural type shapes are all legitimate.
         if (node.data == .tuple_type_expr) {
             for (node.data.tuple_type_expr.field_types) |ft| {
-                // A signed numeric literal (`Tuple(i32, -1)`) arrives as a
-                // `negate` unary over an int/float literal — reject it as the
-                // literal it wraps, not as a generic non-type.
                 const probe = if (ft.data == .unary_op and ft.data.unary_op.op == .negate)
                     ft.data.unary_op.operand
                 else
@@ -1803,7 +1805,7 @@ pub const Lowering = struct {
                     .null_literal,
                     => {
                         if (self.diagnostics) |diags| {
-                            diags.addFmt(.err, ft.span, "tuple type element is not a type (found `{s}`); a tuple used as a type must list only types, e.g. `Tuple(i32, i32)`", .{@tagName(probe.data)});
+                            diags.addFmt(.err, ft.span, "parenthesized type-list element is not a type (found `{s}`)", .{@tagName(probe.data)});
                         }
                         return .unresolved;
                     },
@@ -1812,7 +1814,7 @@ pub const Lowering = struct {
             }
         }
         // Structural type shapes — `*T`, `[*]T`, `[]T`, `?T`, `[N]T`, functions,
-        // PLAIN closures, and PLAIN tuples — are owned by
+        // PLAIN closures, and parenthesized type lists — are owned by
         // `TypeResolver.resolveCompound`. Element types recurse through
         // the full stateful resolver (`resolveInner` → here) so generic structs
         // / bindings keep their resolution. resolveCompound returns null only
@@ -3805,9 +3807,6 @@ pub const Lowering = struct {
     pub const lowerPointerArith = lower_expr.lowerPointerArith;
     pub const lowerBoolCondition = lower_expr.lowerBoolCondition;
     pub const checkConditionType = lower_expr.checkConditionType;
-    pub const lowerTupleOp = lower_expr.lowerTupleOp;
-    pub const lowerTupleLexCompare = lower_expr.lowerTupleLexCompare;
-    pub const lowerTupleMembership = lower_expr.lowerTupleMembership;
     pub const lowerStructEquality = lower_expr.lowerStructEquality;
     pub const lowerFieldEquality = lower_expr.lowerFieldEquality;
     pub const lowerOptionalEquality = lower_expr.lowerOptionalEquality;

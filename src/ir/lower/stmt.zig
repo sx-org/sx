@@ -317,9 +317,7 @@ pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty: TypeId) voi
                 // the compiler must append the success error slot (0). Mirror the
                 // explicit-`return EXPR;` path; a plain `coerceToType` would leave
                 // the error-tag slot uninitialized (phantom catch on success).
-                if (!ret_ty.isBuiltin() and
-                    self.module.types.get(ret_ty) == .tuple and
-                    self.errorChannelOf(ret_ty) != null)
+                if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .failable)
                 {
                     self.lowerFailableSuccessReturn(val, ret_ty, span);
                     return;
@@ -510,10 +508,7 @@ pub fn bindNamedReturnSlots(self: *Lowering, fd: *const ast.FnDecl, ret_ty: Type
     const names = rt.data.return_type_expr.field_names orelse return; // positional → no locals
     const defaults = rt.data.return_type_expr.field_defaults;
     if (ret_ty.isBuiltin()) return;
-    const ti = self.module.types.get(ret_ty);
-    if (ti != .tuple) return;
-    const fields = ti.tuple.fields;
-    const value_count = if (self.errorChannelOf(ret_ty) != null) fields.len - 1 else fields.len;
+    const value_count = multiReturnValueCount(self, ret_ty) orelse return;
     var i: usize = 0;
     while (i < value_count and i < names.len) : (i += 1) {
         const nm = names[i];
@@ -527,7 +522,11 @@ pub fn bindNamedReturnSlots(self: *Lowering, fd: *const ast.FnDecl, ret_ty: Type
                 }
             }
         }
-        const fty = fields[i];
+        const fty = switch (self.module.types.get(ret_ty)) {
+            .failable => |f| self.module.types.failableValueSlotType(f, i),
+            .@"struct" => |s| s.fields[i].ty,
+            else => unreachable,
+        };
         const slot = self.builder.alloca(fty);
         // Seed the slot. A slot with a DEFAULT gets it (type-checked, lowered,
         // coerced). Otherwise zero/default-init for ANY type (a deterministic
@@ -569,13 +568,10 @@ pub fn bindNamedReturnSlots(self: *Lowering, fd: *const ast.FnDecl, ret_ty: Type
 /// over the slot locals — reusing the ordinary return path (tuple build +
 /// value-carrying-failable assembly), so failable named multi-returns work too.
 pub fn synthesizeNamedReturn(self: *Lowering, body: *const Node, ret_ty: TypeId, names: []const []const u8) void {
-    const ti = self.module.types.get(ret_ty);
-    if (ti != .tuple) {
+    const value_count = multiReturnValueCount(self, ret_ty) orelse {
         self.ensureTerminator(ret_ty);
         return;
-    }
-    const fields = ti.tuple.fields;
-    const value_count = if (self.errorChannelOf(ret_ty) != null) fields.len - 1 else fields.len;
+    };
 
     var elems = std.ArrayList(ast.TupleElement).empty;
     defer elems.deinit(self.alloc);
@@ -730,22 +726,6 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         if (vd.value) |val| {
             if (val.data == .undef_literal and !ty.isBuiltin()) {
                 const ti = self.module.types.get(ty);
-                // = --- (undef_literal) on tuple types: zero-initialize
-                if (ti == .tuple) {
-                    var field_vals = std.ArrayList(Ref).empty;
-                    defer field_vals.deinit(self.alloc);
-                    for (ti.tuple.fields) |f| {
-                        field_vals.append(self.alloc, self.builder.constInt(0, f)) catch unreachable;
-                    }
-                    const zero = self.builder.emit(.{
-                        .tuple_init = .{ .fields = self.alloc.dupe(Ref, field_vals.items) catch unreachable },
-                    }, ty);
-                    self.builder.store(slot, zero);
-                    if (self.scope) |scope| {
-                        scope.put(vd.name, .{ .ref = slot, .ty = ty, .is_alloca = true });
-                    }
-                    return;
-                }
                 // `---` on an array: explicitly uninitialized — no store.
                 // A whole-array undef store is a store of nothing that
                 // LLVM's legalizer scalarizes into one DAG node per
@@ -834,11 +814,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
                             const cs = self.builder.current_span;
                             // Only mention the `(T)`-is-a-1-tuple gotcha when the
                             // payload actually IS a tuple (the `?(?T)` typo).
-                            const note: []const u8 = if (self.module.types.get(child) == .tuple)
-                                " (note: '(T,)' with a trailing comma is a 1-tuple; '(T)' without a comma groups to the inner type)"
-                            else
-                                "";
-                            d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot assign a value of type '{s}' to optional '{s}': its payload type is '{s}'{s}", .{ self.formatTypeName(post_rt), self.formatTypeName(ty), self.formatTypeName(child), note });
+                            d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot assign a value of type '{s}' to optional '{s}': its payload type is '{s}'", .{ self.formatTypeName(post_rt), self.formatTypeName(ty), self.formatTypeName(child) });
                         }
                         // Already diagnosed — store the value as-is and bail. The
                         // trailing coerce below would re-diagnose the same mismatch
@@ -1146,32 +1122,58 @@ pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
 /// (named return elements must be IN SLOT ORDER; a mismatch is an error, never
 /// a silent wrong result).
 /// A single-value or single-failable return is left to the existing path.
+fn multiReturnValueCount(self: *Lowering, ret_ty: TypeId) ?usize {
+    if (ret_ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ret_ty)) {
+        .failable => |f| self.module.types.failableValueSlotCount(f),
+        .@"struct" => |s| if (self.module.types.isAnonStruct(ret_ty)) s.fields.len else null,
+        else => null,
+    };
+}
+
+fn productSlotNames(self: *Lowering, ret_ty: TypeId) ?[]const types.StringId {
+    if (ret_ty.isBuiltin()) return null;
+    return switch (self.module.types.get(ret_ty)) {
+        .failable => |f| blk: {
+            if (f.value.isBuiltin()) break :blk null;
+            const vi = self.module.types.get(f.value);
+            if (vi != .@"struct") break :blk null;
+            const names = self.alloc.alloc(types.StringId, vi.@"struct".fields.len) catch break :blk null;
+            for (vi.@"struct".fields, 0..) |fld, i| names[i] = fld.name;
+            break :blk names;
+        },
+        .@"struct" => |s| blk: {
+            const names = self.alloc.alloc(types.StringId, s.fields.len) catch break :blk null;
+            for (s.fields, 0..) |fld, i| names[i] = fld.name;
+            break :blk names;
+        },
+        else => null,
+    };
+}
+
 pub fn validateMultiReturn(self: *Lowering, value_node: *const Node, ret_ty: TypeId) void {
     const diags = self.diagnostics orelse return;
-    const ret_is_tuple = !ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .tuple;
-    // A comma list / multi-element literal returned from a SINGLE-value
-    // (non-tuple) function would silently drop the extra values — reject it.
-    if (!ret_is_tuple and value_node.data == .tuple_literal) {
-        const els = value_node.data.tuple_literal.elements;
-        if (els.len > 1) {
-            for (els) |e| if (e.value.data == .spread_expr) return; // can't count a spread
-            diags.addFmt(.err, value_node.span, "this function returns a single value, but a list of {d} was given", .{els.len});
+    const value_count = multiReturnValueCount(self, ret_ty) orelse {
+        // A comma list / multi-element literal returned from a SINGLE-value
+        // function would silently drop the extra values — reject it.
+        if (value_node.data == .tuple_literal) {
+            const els = value_node.data.tuple_literal.elements;
+            if (els.len > 1) {
+                for (els) |e| if (e.value.data == .spread_expr) return; // can't count a spread
+                diags.addFmt(.err, value_node.span, "this function returns a single value, but a list of {d} was given", .{els.len});
+            }
         }
         return;
-    }
-    if (!ret_is_tuple) return;
-    const ti = self.module.types.get(ret_ty);
-    const fields = ti.tuple.fields;
-    const is_failable = self.errorChannelOf(ret_ty) != null;
-    const value_count = if (is_failable) fields.len - 1 else fields.len;
+    };
     if (value_count < 2) return; // single value / single failable — not multi-return
+    const abi_len = if (self.errorChannelOf(ret_ty) != null) value_count + 1 else value_count;
     if (value_node.data == .tuple_literal) {
         const els = value_node.data.tuple_literal.elements;
         // A spread (`..xs`) can expand to any arity — can't check statically.
         for (els) |e| if (e.value.data == .spread_expr) return;
         // The value-only list (n == value_count) is the bare-comma form; the full
-        // failable tuple (n == fields, including the error slot) is also allowed.
-        if (els.len != value_count and els.len != fields.len) {
+        // failable aggregate (n == abi_len, including the error slot) is also allowed.
+        if (els.len != value_count and els.len != abi_len) {
             diags.addFmt(.err, value_node.span, "this function returns {d} values, but {d} {s} given", .{ value_count, els.len, if (els.len == 1) @as([]const u8, "is") else @as([]const u8, "are") });
             return;
         }
@@ -1186,8 +1188,9 @@ pub fn validateMultiReturn(self: *Lowering, value_node: *const Node, ret_ty: Typ
         // value qualifies (names may differ from the slots); a non-tuple scalar
         // does not — that is the `return 5` for `-> (i64, i64)` garbage case.
         const vty = self.inferExprType(value_node);
-        const v_is_tuple = vty != .unresolved and !vty.isBuiltin() and self.module.types.get(vty) == .tuple;
-        if (vty != .unresolved and !v_is_tuple) {
+        const v_is_product = vty != .unresolved and !vty.isBuiltin() and self.module.types.productLen(vty) != null;
+        const v_is_failable = vty != .unresolved and !vty.isBuiltin() and self.module.types.get(vty) == .failable;
+        if (vty != .unresolved and !v_is_product and !v_is_failable) {
             diags.addFmt(.err, value_node.span, "this function returns {d} values — return them as `return a, b`, not a single value", .{value_count});
         }
     }
@@ -1203,15 +1206,16 @@ pub fn validateMultiReturn(self: *Lowering, value_node: *const Node, ret_ty: Typ
 fn reorderNamedReturn(self: *Lowering, value_node: *const Node, ret_ty: TypeId) *const Node {
     if (value_node.data != .tuple_literal) return value_node;
     if (ret_ty.isBuiltin()) return value_node;
-    const ti = self.module.types.get(ret_ty);
-    if (ti != .tuple) return value_node;
-    const slot_names = ti.tuple.names orelse return value_node;
+    const slot_names = productSlotNames(self, ret_ty) orelse return value_node;
     const els = value_node.data.tuple_literal.elements;
     if (els.len == 0) return value_node;
     // Reorder only a FULLY-named list; positional/mixed keeps positional order.
     for (els) |e| if (e.name == null) return value_node;
     const is_failable = self.errorChannelOf(ret_ty) != null;
-    const fields_len = ti.tuple.fields.len;
+    const fields_len = if (is_failable)
+        (multiReturnValueCount(self, ret_ty) orelse return value_node) + 1
+    else
+        (multiReturnValueCount(self, ret_ty) orelse return value_node);
     const value_count = if (is_failable) fields_len - 1 else fields_len;
     // Two accepted shapes (anything else is an arity error diagnosed by
     // `validateMultiReturn` — pass through): the VALUE-ONLY list (one element per
@@ -1282,7 +1286,9 @@ fn tupleFormOfBareBraceLiteral(self: *Lowering, node: *const Node, ret_ty: TypeI
     if (node.data != .struct_literal) return node;
     const sl = node.data.struct_literal;
     if (sl.struct_name != null or sl.type_expr != null or sl.init_block != null) return node;
-    if (ret_ty.isBuiltin() or self.module.types.get(ret_ty) != .tuple) return node;
+    if (ret_ty.isBuiltin()) return node;
+    const rinfo = self.module.types.get(ret_ty);
+    if (rinfo != .failable and !(rinfo == .@"struct" and self.module.types.isAnonStruct(ret_ty))) return node;
     const elems = self.alloc.alloc(ast.TupleElement, sl.field_inits.len) catch return node;
     for (sl.field_inits, 0..) |fi, i| elems[i] = .{ .name = fi.name, .value = fi.value };
     const n = self.alloc.create(Node) catch return node;
@@ -1391,7 +1397,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
         if (exit_ty == .void) {
             // The value expression was evaluated for its side effects.
             emitBodyExit(self, null, exit_ty, .return_like);
-        } else if (!exit_ty.isBuiltin() and self.module.types.get(exit_ty) == .tuple and self.errorChannelOf(exit_ty) != null) {
+        } else if (!exit_ty.isBuiltin() and self.module.types.get(exit_ty) == .failable) {
             // Value-carrying failable `-> (T..., !)`: the user returns the
             // value part; the compiler appends the success error slot (0).
             self.lowerFailableSuccessReturn(ref, exit_ty, rs.value.?.span);
@@ -2613,7 +2619,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment, formation_t
             // panics at LLVM emit). Mirrors the read path in `lowerIndexExpr`; an
             // out-of-range comptime index diagnoses loudly here too rather than
             // falling through to that panic.
-            if (!obj_ty.isBuiltin() and (self.module.types.get(obj_ty) == .tuple or self.module.types.get(obj_ty) == .@"struct")) {
+            if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
                 // Struct parity (aggregate ladder): `s[comptime i] = v` is the
                 // i-th field store, exactly like tuples.
                 const nfields: usize = @intCast(self.module.types.memberCount(obj_ty) orelse 0);
@@ -2794,7 +2800,7 @@ pub fn resolveMutablePlace(self: *Lowering, target: *const Node) ?Place {
             const narrowed_child = self.narrowedContainerChild(ie.object);
             const obj_ty = narrowed_child orelse self.inferExprType(ie.object);
             if (!obj_ty.isBuiltin() and
-                (self.module.types.get(obj_ty) == .tuple or self.module.types.get(obj_ty) == .@"struct") and
+                self.module.types.get(obj_ty) == .@"struct" and
                 self.comptimeIndexOf(ie.index) != null) return null;
 
             const idx = self.lowerIndexOperand(ie.index);
@@ -2961,28 +2967,6 @@ pub fn fieldLvalueResolve(self: *Lowering, obj_ty: TypeId, field: []const u8) ?F
                 .hit, .private => |h| return .{ .union_promoted = .{ .variant_index = @intCast(i), .variant_ty = f.ty, .member_index = h.index, .ty = h.ty } },
                 .missing => {},
             }
-        }
-        return null;
-    }
-
-    // Tuple element: `.0` (numeric) or `.name`.
-    if (type_info == .tuple) {
-        const tup = type_info.tuple;
-        var elem_idx: ?usize = null;
-        if (std.fmt.parseInt(usize, field, 10)) |n| {
-            if (n < tup.fields.len) elem_idx = n;
-        } else |_| {
-            if (tup.names) |names| {
-                for (names, 0..) |nm, i| {
-                    if (nm == field_name_id and i < tup.fields.len) {
-                        elem_idx = i;
-                        break;
-                    }
-                }
-            }
-        }
-        if (elem_idx) |idx| {
-            return .{ .indexed = .{ .index = @intCast(idx), .ty = tup.fields[idx] } };
         }
         return null;
     }
@@ -3355,7 +3339,7 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
             // with a `ptrTo(.unresolved)` result panics at LLVM emit). Needed for
             // `tasks[i].waiter = …` in the `race` runtime, where the i-th element
             // is read back as a pointer to GEP into its pointee.
-            if (!obj_ty.isBuiltin() and (self.module.types.get(obj_ty) == .tuple or self.module.types.get(obj_ty) == .@"struct")) {
+            if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
                 // Struct parity (aggregate ladder): `s[comptime i]` is the
                 // i-th field's address, exactly like tuples.
                 const nfields: usize = @intCast(self.module.types.memberCount(obj_ty) orelse 0);
@@ -3942,7 +3926,7 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 // elements → a typed `structGep` of field `i`, never an `index_gep`
                 // (a uniform-element op whose `ptrTo(.unresolved)` element type would
                 // panic at LLVM emit).
-                if (!obj_ty.isBuiltin() and (self.module.types.get(obj_ty) == .tuple or self.module.types.get(obj_ty) == .@"struct")) {
+                if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
                     // Struct parity (aggregate ladder): comptime-index stores
                     // apply to struct values too.
                     const nfields: usize = @intCast(self.module.types.memberCount(obj_ty) orelse 0);
@@ -4087,45 +4071,33 @@ pub fn lowerDestructureDecl(self: *Lowering, dd: *const ast.DestructureDecl) voi
         }
         return;
     }
-    if (ti != .tuple) return;
-    const tuple = ti.tuple;
-    if (dd.names.len > tuple.fields.len) return;
-
-    // Discard rejection: when the RHS is a value-carrying failable,
-    // the error slot (always the LAST tuple field) cannot be dropped. It is
-    // dropped when the destructure omits it (fewer names than fields, so the
-    // trailing error slot is never reached) or binds it to `_`. The `try` /
-    // `catch` / `?? value` consumer forms all strip the error channel (their
-    // result type is non-failable), so this fires only on a BARE failable
-    // destructure — exactly the case that would let an error vanish silently.
-    if (self.errorChannelOf(ty) != null) {
-        const err_dropped = dd.names.len < tuple.fields.len or
+    if (ti == .failable) {
+        const f = ti.failable;
+        const n_vals = self.module.types.failableValueSlotCount(f);
+        const abi_len = n_vals + 1;
+        if (dd.names.len > abi_len) return;
+        const err_dropped = dd.names.len < abi_len or
             std.mem.eql(u8, dd.names[dd.names.len - 1], "_");
         if (err_dropped) {
             if (self.diagnostics) |diags| {
                 diags.addFmt(.err, dd.value.span, "the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`", .{});
             }
         }
-    }
-
-    // Extract each field and bind to a new variable
-    for (dd.names, 0..) |name, i| {
-        if (std.mem.eql(u8, name, "_")) continue; // discard
-        const field_ty = tuple.fields[i];
-        const field_val = self.builder.emit(.{ .tuple_get = .{
-            .base = ref,
-            .field_index = @intCast(i),
-            .base_type = ty,
-        } }, field_ty);
-        const slot = self.builder.alloca(field_ty);
-        self.builder.store(slot, field_val);
-        if (self.scope) |scope| {
-            scope.put(name, .{ .ref = slot, .ty = field_ty, .is_alloca = true });
+        for (dd.names, 0..) |name, i| {
+            if (std.mem.eql(u8, name, "_")) continue;
+            const field_ty = if (i < n_vals) self.module.types.failableValueSlotType(f, i) else f.err;
+            const field_val = self.builder.emit(.{ .struct_get = .{
+                .base = ref,
+                .field_index = @intCast(i),
+                .base_type = ty,
+            } }, field_ty);
+            const slot = self.builder.alloca(field_ty);
+            self.builder.store(slot, field_val);
+            if (self.scope) |scope| {
+                scope.put(name, .{ .ref = slot, .ty = field_ty, .is_alloca = true });
+            }
         }
+        self.emitTraceClear();
+        return;
     }
-
-    // Destructuring a failable's result binds the error slot to a variable:
-    // the user now owns the error explicitly, so the trace is absorbed
-    // A plain (non-failable) tuple destructure clears nothing.
-    if (self.errorChannelOf(ty) != null) self.emitTraceClear();
 }

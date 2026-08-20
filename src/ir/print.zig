@@ -308,17 +308,6 @@ fn printInst(instruction: *const Inst, ref_idx: u32, tt: *const TypeTable, write
         .subslice => |s| try writer.print("subslice %{d}[%{d}..%{d}] : ", .{ s.base.index(), s.lo.index(), s.hi.index() }),
         .array_to_slice => |u| try writer.print("array_to_slice %{d} : ", .{u.operand.index()}),
 
-        // ── Tuple ops ───────────────────────────────────────────
-        .tuple_init => |agg| {
-            try writer.writeAll("tuple_init [");
-            for (agg.fields, 0..) |f, i| {
-                if (i > 0) try writer.writeAll(", ");
-                try writer.print("%{d}", .{f.index()});
-            }
-            try writer.writeAll("] : ");
-        },
-        .tuple_get => |fa| try writer.print("tuple_get %{d}, {d} : ", .{ fa.base.index(), fa.field_index }),
-
         // ── Optional ops ────────────────────────────────────────
         .optional_wrap => |u| try writer.print("optional_wrap %{d} : ", .{u.operand.index()}),
         .optional_unwrap => |u| try writer.print("optional_unwrap %{d} : ", .{u.operand.index()}),
@@ -540,14 +529,6 @@ fn writeType(id: TypeId, tt: *const TypeTable, writer: Writer) !void {
             }
             try writer.writeAll(") -> ");
             try writeType(c.ret, tt, writer);
-        },
-        .tuple => |t| {
-            try writer.writeByte('(');
-            for (t.fields, 0..) |f, i| {
-                if (i > 0) try writer.writeAll(", ");
-                try writeType(f, tt, writer);
-            }
-            try writer.writeByte(')');
         },
         else => try writer.writeAll(tt.typeName(id)),
     }

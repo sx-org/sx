@@ -4,7 +4,7 @@
 
 @import "modules/std.sx";
 
-pair :: () -> Tuple(i32, i32) { .{5, 7} }
+pair :: () -> (i32, i32) { return 5, 7; }
 
 main :: () -> i32 {
     // destructure decl inside a value-bound block

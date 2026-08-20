@@ -894,7 +894,7 @@ pub const LLVMEmitter = struct {
             const info = self.ir_mod.types.get(ty);
             // Only verify aggregate types where sizing is non-trivial
             switch (info) {
-                .@"struct", .@"union", .tagged_union, .tuple => {},
+                .@"struct", .@"union", .tagged_union, .failable => {},
                 else => continue,
             }
             const llvm_ty = self.toLLVMType(ty);
@@ -910,18 +910,13 @@ pub const LLVMEmitter = struct {
     }
 
     /// The error-set channel of a (possibly failable) type: the set itself for
-    /// a pure `-> !` result, or the last tuple slot for `-> (T..., !)`. null if
+    /// a pure `-> !` result, or `.failable.err` for `-> (T..., !)`. null if
     /// the type carries no error channel. Mirror of lower.errorChannelOf.
     fn comptimeErrChannel(self: *LLVMEmitter, ty: TypeId) ?TypeId {
         if (ty.isBuiltin()) return null;
         switch (self.ir_mod.types.get(ty)) {
             .error_set => return ty,
-            .tuple => |t| {
-                if (t.fields.len == 0) return null;
-                const last = t.fields[t.fields.len - 1];
-                if (last.isBuiltin()) return null;
-                return if (self.ir_mod.types.get(last) == .error_set) last else null;
-            },
+            .failable => |f| return f.err,
             else => return null,
         }
     }
@@ -1947,10 +1942,6 @@ pub const LLVMEmitter = struct {
             // ── Call extensions ───────────────────────────────────────
             .call_builtin => |bi| self.ops().emitCallBuiltin(instruction, bi),
             .call_closure => |call_op| self.ops().emitCallClosure(instruction, call_op),
-
-            // ── Tuple ops ────────────────────────────────────────────
-            .tuple_init => |agg| self.ops().emitTupleInit(instruction, agg),
-            .tuple_get => |fa| self.ops().emitTupleGet(fa),
 
             // ── Optional ops ─────────────────────────────────────────
             .optional_wrap => |un| self.ops().emitOptionalWrap(instruction, un),

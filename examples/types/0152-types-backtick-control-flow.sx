@@ -9,7 +9,7 @@
 // these as values.
 @import "modules/std.sx";
 
-pair :: () -> Tuple(i64, i64) { .{1, 2} }
+pair :: () -> (i64, i64) { return 1, 2; }
 maybe :: () -> ?i64 { return 42; }
 
 // Function named with a reserved spelling — bare-callable (no backtick at call).

@@ -87,7 +87,7 @@ main :: () {
 
     // Destructure from function return
     {
-        dswap :: (a: i64, b: i64) -> Tuple(i64, i64) { .{b, a} }
+        dswap :: (a: i64, b: i64) -> (i64, i64) { return b, a; }
         dx, dy := dswap(1, 2);
         print("fn: {} {}\n", dx, dy);
     }

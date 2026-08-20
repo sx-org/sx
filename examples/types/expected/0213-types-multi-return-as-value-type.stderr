@@ -1,5 +1,5 @@
-error: a bare-paren `(A, B)` is a multi-return signature, valid only as a return type; a tuple-valued field uses `Tuple(…)`
-  --> examples/types/0213-types-multi-return-as-value-type.sx:5:27
+error: a bare-paren `(A, B)` is a multi-return signature, valid only as a return type; a field uses a named struct or a positional `.{ … }`
+  --> examples/types/0213-types-multi-return-as-value-type.sx:4:27
    |
- 5 | Point :: struct { coords: (i64, i64); }   // field value type — rejected
+ 4 | Point :: struct { coords: (i64, i64); }   // field value type — rejected
    |                           ^^^^^^^^^^

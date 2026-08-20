@@ -383,18 +383,15 @@ pub fn isStaticTypeRef(self: *Lowering, node: *const Node) bool {
     }
 }
 
-/// Resolve a tuple LITERAL used in a type position (`(i32, i32)` reinterpreted
-/// as a tuple type at a type-demanding site such as `size_of`). Every element
-/// must itself denote a type; a non-type element — e.g. the `1` in
+/// Resolve a parenthesized type list used in a type-demanding site. Every
+/// element must itself denote a type; a non-type element — e.g. the `1` in
 /// `(i32, 1)` — is a user error. Emit a diagnostic pointing at the offending
-/// element and return `.unresolved`; never fabricate a tuple with a bogus
-/// field. type_bridge.resolveAstType builds the tuple only after
-/// this validation passes.
+/// element and return `.unresolved`.
 pub fn resolveTupleLiteralTypeArg(self: *Lowering, node: *const Node) TypeId {
     for (node.data.tuple_literal.elements) |el| {
         if (!type_bridge.isTypeShapedAstNode(el.value, &self.module.types)) {
             if (self.diagnostics) |diags| {
-                diags.addFmt(.err, el.value.span, "tuple type element is not a type (found `{s}`); a tuple used as a type must list only types, e.g. `Tuple(i32, i32)`", .{@tagName(el.value.data)});
+                diags.addFmt(.err, el.value.span, "parenthesized type-list element is not a type (found `{s}`)", .{@tagName(el.value.data)});
             }
             return .unresolved;
         }
@@ -467,10 +464,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         return self.module.types.ptrTo(inner);
     }
     // A bare-paren `(A, B)` is a MULTI-RETURN signature — valid only as a
-    // function/closure return type, never as a generic type argument (a
-    // tuple-valued arg uses `Tuple(…)`). Without this it silently resolves to a
-    // reused tuple TypeId (`List((A, B))` ≡ `List(Tuple(A, B))`), eroding the
-    // "multi-return is not a tuple, return-position-only" rule.
+    // function/closure return type, never as a generic type argument.
     if (self.rejectMultiReturnValueType(node, "generic type argument")) return .unresolved;
     // Pack-index access in a type-arg slot (e.g. `type_name($args[0])`
     // or `type_eq($args[i], i64)`). Same shape as the
@@ -722,27 +716,6 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
         .vector => |v| blk: {
             const inner = self.formatTypeName(v.element);
             break :blk std.fmt.allocPrint(self.alloc, "@Vector({d},{s})", .{ v.length, inner }) catch "vector";
-        },
-        .tuple => |t| blk: {
-            var buf = std.ArrayList(u8).empty;
-            buf.append(self.alloc, '(') catch break :blk "tuple";
-            for (t.fields, 0..) |f, i| {
-                if (i > 0) buf.appendSlice(self.alloc, ", ") catch break :blk "tuple";
-                // Render the field name for named tuples: `(x: i64, y: i64)`.
-                if (t.names) |ns| {
-                    if (i < ns.len) {
-                        buf.appendSlice(self.alloc, self.module.types.getString(ns[i])) catch break :blk "tuple";
-                        buf.appendSlice(self.alloc, ": ") catch break :blk "tuple";
-                    }
-                }
-                buf.appendSlice(self.alloc, self.formatTypeName(f)) catch break :blk "tuple";
-            }
-            // A 1-tuple renders with the trailing comma `(T,)` — `(T)` means
-            // a grouping (the inner type), so the comma is required to spell a
-            // 1-tuple unambiguously (and keeps diagnostics self-consistent).
-            if (t.fields.len == 1) buf.append(self.alloc, ',') catch break :blk "tuple";
-            buf.append(self.alloc, ')') catch break :blk "tuple";
-            break :blk buf.toOwnedSlice(self.alloc) catch "tuple";
         },
         // A function TYPE renders as its signature (same spelling as the
         // TypeTable formatter: `-> void` omitted) — a diagnostic naming a
@@ -996,17 +969,23 @@ pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId,
             //     value field against the whole arg type.
             if (!arg_ty.isBuiltin()) {
                 const info = self.module.types.get(arg_ty);
-                if (info == .tuple) {
-                    const at = info.tuple;
+                if (info == .failable) {
+                    const n = self.module.types.failableValueSlotCount(info.failable);
                     for (tt.field_types, 0..) |ft, i| {
-                        if (i >= at.fields.len) break;
-                        if (self.extractTypeParam(ft, at.fields[i], tp_name)) |ety| break :blk ety;
+                        const aty = if (i < n) self.module.types.failableValueSlotType(info.failable, i) else info.failable.err;
+                        if (self.extractTypeParam(ft, aty, tp_name)) |ety| break :blk ety;
+                    }
+                    break :blk null;
+                }
+                if (info == .@"struct") {
+                    for (tt.field_types, 0..) |ft, i| {
+                        if (i >= info.@"struct".fields.len) break;
+                        if (self.extractTypeParam(ft, info.@"struct".fields[i].ty, tp_name)) |ety| break :blk ety;
                     }
                     break :blk null;
                 }
             }
-            // arg is a bare value type (builtin or single non-tuple): bind it to
-            // the tuple's first (value) field.
+            // arg is a bare value type: bind it to the first (value) field.
             if (tt.field_types.len > 0) break :blk self.extractTypeParam(tt.field_types[0], arg_ty, tp_name);
             break :blk null;
         },
@@ -1918,7 +1897,6 @@ pub fn fieldTypeOf(self: *Lowering, t: TypeId, idx: usize, span: ?ast.Span) Type
         .@"struct" => |s| if (idx < s.fields.len) s.fields[idx].ty else oob.err(self, span, idx, s.fields.len),
         .tagged_union => |u| if (idx < u.fields.len) u.fields[idx].ty else oob.err(self, span, idx, u.fields.len),
         .@"union" => |u| if (idx < u.fields.len) u.fields[idx].ty else oob.err(self, span, idx, u.fields.len),
-        .tuple => |tup| if (idx < tup.fields.len) tup.fields[idx] else oob.err(self, span, idx, tup.fields.len),
         .array => |a| if (idx < a.length) a.element else oob.err(self, span, idx, a.length),
         .vector => |v| if (idx < v.length) v.element else oob.err(self, span, idx, v.length),
         .slice => |sl| if (idx == 0) sl.element else oob.err(self, span, idx, 1),
@@ -2391,7 +2369,7 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
 
         if (tp.is_type_param) {
             // A bare-paren `(A, B)` multi-return signature is return-position-only,
-            // never a generic type argument (`List((A,B))` — use `Tuple(…)`).
+            // never a generic type argument.
             if (self.rejectMultiReturnValueType(args[i], "generic type argument")) return .unresolved;
             const ty = self.resolveTypeWithBindings(args[i]);
             tb.put(tp.name, ty) catch {};
@@ -2666,12 +2644,31 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     if (findStructInBody(fd.body)) |struct_decl| {
         // Resolve struct fields with type bindings active
         var struct_fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
+        var pos: usize = 0;
         for (struct_decl.field_names, struct_decl.field_types) |fname, ftype_node| {
+            if (ftype_node.data == .spread_expr) {
+                if (self.expandTypeSpread(ftype_node)) |tys| {
+                    for (tys) |ty| {
+                        const n = std.fmt.allocPrint(self.alloc, "{d}", .{pos}) catch unreachable;
+                        struct_fields.append(self.alloc, .{
+                            .name = table.internString(n),
+                            .ty = ty,
+                        }) catch {};
+                        pos += 1;
+                    }
+                    continue;
+                }
+            }
             const field_ty = self.resolveTypeWithBindings(ftype_node);
+            const name = if (fname.len == 0)
+                table.internString(std.fmt.allocPrint(self.alloc, "{d}", .{pos}) catch unreachable)
+            else
+                table.internString(fname);
             struct_fields.append(self.alloc, .{
-                .name = table.internString(fname),
+                .name = name,
                 .ty = field_ty,
             }) catch {};
+            pos += 1;
         }
 
         // Always register under mangled name

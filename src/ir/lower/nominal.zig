@@ -963,6 +963,21 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
             using_idx += 1;
         }
         if (field_idx < total_explicit) {
+            if (sd.field_types[field_idx].data == .spread_expr) {
+                if (self.expandTypeSpread(sd.field_types[field_idx])) |tys| {
+                    for (tys) |ty| {
+                        const n = std.fmt.allocPrint(self.alloc, "{d}", .{fields.items.len}) catch unreachable;
+                        fields.append(self.alloc, .{
+                            .name = table.internString(n),
+                            .ty = ty,
+                            .visibility = if (field_idx < sd.field_visibilities.len) sd.field_visibilities[field_idx] else .public,
+                        }) catch unreachable;
+                        layout_defaults.append(self.alloc, null) catch unreachable;
+                    }
+                    field_idx += 1;
+                    continue;
+                }
+            }
             _ = self.rejectMultiReturnValueType(sd.field_types[field_idx], "field");
             const field_ty = self.resolveType(sd.field_types[field_idx]);
             _ = self.refuseValuelessProtocol(field_ty, sd.field_types[field_idx].span, "declare a field of type");

@@ -8,7 +8,7 @@ b :: @import "0225-generics-nominal-arg-identity/b.sx";
 
 Wrap :: struct($T: Type) { value: T; }
 Make :: ($T: Type) -> Type { return struct { value: T; }; }
-Tup :: struct(..$Ts: []Type) { fields: Tuple(..$Ts); }
+Tup :: struct(..$Ts: []Type) { fields: struct { ..$Ts }; }
 
 report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }

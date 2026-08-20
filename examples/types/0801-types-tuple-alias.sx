@@ -1,34 +1,30 @@
-// Tuple-type aliases: a `::` alias of a structural tuple type behaves exactly
-// like the inline `Tuple(...)` form — field access, comptime reflection
-// (struct_field_count / struct_field_name), use as a fn param / return type, alias-of-alias,
-// forward-declared element aliases, generic-instantiation elements, and
-// forward tuple-in-tuple chains all resolve to the same structural tuple
-// TypeId with a truthful layout. Alias registration covers `.tuple_type_expr`,
-// with a deferred fixpoint for forward elements, stateful element resolution
-// (a real `List(i64)` instantiation), and stub/cycle poisoning.
+// Structural product aliases: a `::` alias of an anonymous named struct
+// behaves like the inline `struct { … }` form — field access, comptime
+// reflection (struct_field_count / struct_field_name), use as a fn param /
+// return type, alias-of-alias, forward-declared element aliases, and
+// generic-instantiation elements all resolve to the same structural TypeId.
 @import "modules/std.sx";
 
-NT :: Tuple(a: i64, b: bool);   // named tuple alias
-PT :: Tuple(i64, bool);          // positional tuple alias
-NT2 :: NT;                       // alias-of-alias
+NT :: struct { a: i64; b: bool };
+NT2 :: NT;
 
 // Element referencing an alias declared LATER: registration is
 // deferred past the forward-alias fixpoint, so FwdB binds i64 — never a stub.
-FwdT :: Tuple(a: FwdB, c: bool);
+FwdT :: struct { a: FwdB; c: bool };
 FwdB :: i64;
 
 // Generic-instantiation element: List(i64) instantiates for REAL (the same
 // stateful resolver the inline annotation form uses).
-TL :: Tuple(a: List(i64), b: string);
+TL :: struct { a: List(i64); b: string };
 
 // The same two shapes spelled with their elements written directly — layout
 // equality against these pins the deferred and stateful element resolutions.
-FwdDirect :: Tuple(a: i64, c: bool);
-TLDirect  :: Tuple(a: List(i64), b: string);
+FwdDirect :: struct { a: i64; c: bool };
+TLDirect  :: struct { a: List(i64); b: string };
 
-// Forward tuple-in-tuple chain: Inner is itself a tuple alias declared later.
-Outer :: Tuple(a: Inner, c: bool);
-Inner :: Tuple(d: i64);
+// Forward product-in-product chain: Inner is itself a product alias declared later.
+Outer :: struct { a: Inner; c: bool };
+Inner :: struct { d: i64 };
 
 // Alias as fn param type.
 sum_nt :: (t: NT) -> i64 {
@@ -38,8 +34,8 @@ sum_nt :: (t: NT) -> i64 {
 }
 
 // Alias as fn param AND return type.
-bump_pt :: (p: PT) -> PT {
-    return .{p.0 + 1, p.1};
+bump_nt :: (p: NT) -> NT {
+    return .{a = p.a + 1, b = p.b};
 }
 
 main :: () -> i32 {
@@ -50,16 +46,12 @@ main :: () -> i32 {
     // Reflection through the named alias.
     print("fcNT={} n0={} n1={}\n", struct_field_count(NT), struct_field_name(NT, 0), struct_field_name(NT, 1));
 
-    // Positional alias: construction + positional field access + reflection.
-    p : PT = .{2, false};
-    print("p.0={} p.1={} fcPT={}\n", p.0, p.1, struct_field_count(PT));
-
     // Alias as fn param / return type.
     print("sum={}\n", sum_nt(x));
-    q := bump_pt(p);
-    print("q.0={} q.1={}\n", q.0, q.1);
+    q := bump_nt(x);
+    print("q.a={} q.b={}\n", q.a, q.b);
 
-    // Alias-of-alias resolves to the same structural tuple.
+    // Alias-of-alias resolves to the same structural product.
     y : NT2 = .{a = 9, b = false};
     print("y.a={} fcNT2={}\n", y.a, struct_field_count(NT2));
 
@@ -76,7 +68,7 @@ main :: () -> i32 {
     t.b = "hi";
     print("t.a0={} t.b={} fcTL={} tl_so_eq={}\n", t.a.items[0], t.b, struct_field_count(TL), size_of(TL) == size_of(TLDirect));
 
-    // Forward tuple-in-tuple chain.
+    // Forward product-in-product chain.
     n : Outer = .{a = .{d = 3}, c = true};
     print("n.a.d={} fcOuter={}\n", n.a.d, struct_field_count(Outer));
     return 0;

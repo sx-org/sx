@@ -469,10 +469,10 @@ pub const ErrorFlow = struct {
         if (self.l.errorChannelOf(ty) == null) return;
         if (ty.isBuiltin()) return;
         const ti = self.l.module.types.get(ty);
-        if (ti != .tuple) return;
-        const fields = ti.tuple.fields;
-        if (dd.names.len != fields.len) return;
-        const err_name = dd.names[fields.len - 1];
+        if (ti != .failable) return;
+        const n = self.l.module.types.failableValueSlotCount(ti.failable);
+        if (dd.names.len != n + 1) return;
+        const err_name = dd.names[n];
         if (std.mem.eql(u8, err_name, "_")) return;
         ctx.err_vars.put(err_name, {}) catch {};
         var i: usize = 0;

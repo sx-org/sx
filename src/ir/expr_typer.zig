@@ -299,20 +299,6 @@ pub const ExprTyper = struct {
                             else => {},
                         }
                     }
-                    // Tuple field access: numeric `t.0` or named `t.x`.
-                    if (info == .tuple) {
-                        const tup = info.tuple;
-                        if (std.fmt.parseInt(usize, fa.field, 10)) |idx| {
-                            if (idx < tup.fields.len)
-                                return if (is_opt_chain) self.l.optionalOfFlattened(tup.fields[idx]) else tup.fields[idx];
-                        } else |_| {}
-                        if (tup.names) |names| {
-                            for (names, 0..) |nm, i| {
-                                if (nm == field_name_id and i < tup.fields.len)
-                                    return if (is_opt_chain) self.l.optionalOfFlattened(tup.fields[i]) else tup.fields[i];
-                            }
-                        }
-                    }
                     // Check struct fields
                     switch (self.l.lookupField(obj_ty, fa.field)) {
                         .hit, .private => |h| return if (is_opt_chain) self.l.optionalOfFlattened(h.ty) else h.ty,
@@ -545,7 +531,7 @@ pub const ExprTyper = struct {
                     const usable = if (tt.isBuiltin())
                         tt == .string
                     else switch (self.l.module.types.get(tt)) {
-                        .@"struct", .tuple, .array, .vector, .slice, .closure, .@"union", .tagged_union, .optional => true,
+                        .@"struct", .array, .vector, .slice, .closure, .@"union", .tagged_union, .optional, .failable => true,
                         else => false,
                     };
                     if (usable) return tt;
@@ -584,7 +570,7 @@ pub const ExprTyper = struct {
                 }
             },
             .tuple_literal => |tl| {
-                // Explicitly-typed `Tuple(A, B).( ... )`: the literal's type is
+                // Explicitly-typed construction with a type prefix: the literal's type is
                 // the carried tuple type (preserves field names for the named
                 // form), exactly like `Name{ ... }` infers to `Name`.
                 if (tl.type_expr) |te| {
@@ -613,10 +599,10 @@ pub const ExprTyper = struct {
                         names.append(self.l.alloc, self.l.module.types.internString("")) catch unreachable;
                     }
                 }
-                return self.l.module.types.intern(.{ .tuple = .{
-                    .fields = self.l.alloc.dupe(TypeId, field_types.items) catch unreachable,
-                    .names = if (has_names) self.l.alloc.dupe(types.StringId, names.items) catch unreachable else null,
-                } });
+                return self.l.module.types.internFieldsAsProductOrFailable(
+                    self.l.alloc.dupe(TypeId, field_types.items) catch unreachable,
+                    if (has_names) self.l.alloc.dupe(types.StringId, names.items) catch unreachable else null,
+                );
             },
             .index_expr => |ie| {
                 // Pack-arg type lookup: `<pack_name>[<int_literal>]`.
@@ -651,7 +637,7 @@ pub const ExprTyper = struct {
                 // method / comparison on it could not resolve (the `race` runtime's
                 // `tasks[i].state == .ready`). A runtime index falls through to the
                 // generic element-type path below.
-                if (!obj_ty.isBuiltin() and (self.l.module.types.get(obj_ty) == .tuple or self.l.module.types.get(obj_ty) == .@"struct")) {
+                if (!obj_ty.isBuiltin() and self.l.module.types.get(obj_ty) == .@"struct") {
                     // Struct parity (aggregate ladder): `s[comptime i]` types
                     // as the i-th field, exactly like tuples.
                     if (self.l.comptimeIndexOf(ie.index)) |ci| {

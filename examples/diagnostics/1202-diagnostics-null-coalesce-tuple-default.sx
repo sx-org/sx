@@ -1,10 +1,9 @@
-// A `??` default whose type cannot match a 1-tuple optional payload is a
-// diagnostic at the default. There is no implicit scalar→1-tuple coercion; a
-// 1-tuple value is written `(5,)`.
+// A `??` default whose type cannot match an optional product payload is a
+// diagnostic at the default. There is no implicit scalar→product coercion.
 @import "modules/std.sx";
 
 main :: () {
-    o : ?Tuple(i32) = null;
-    x := o ?? 5; // default 'i64' vs payload '(i32,)' -> diagnostic
-    print("{}\n", x.0);
+    o : ?struct { a: i32 } = null;
+    x := o ?? 5; // default 'i64' vs payload struct → diagnostic
+    print("{}\n", x.a);
 }

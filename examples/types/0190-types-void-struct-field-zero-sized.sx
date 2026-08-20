@@ -16,8 +16,8 @@ main :: () -> i32 {
     b : Box(void) = .{ tag = 7 };
     print("tag={}\n", b.tag);
 
-    // A tuple with a void element.
-    t : Tuple(void, i32) = .{ {}, 9 };
+    // A product with a void element.
+    t := .{ {}, 9 };
     print("t1={}\n", t.1);
     return 0;
 }

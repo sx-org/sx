@@ -1052,7 +1052,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // A STRUCT value spreads field-wise like a tuple — the
                 // materialized-pack carrier is an anonymous positional
                 // struct (`stored := .{ ..xs };` → `f(..stored)`).
-                if (op_info != .tuple and op_info != .array and op_info != .@"struct") break :expand;
+                if (op_info != .array and op_info != .@"struct") break :expand;
                 if (op_info == .array and calleeMayHaveVariadicParam(self, c, sel_author, if (qualified_callable) |cv| cv.global else null)) break :expand;
                 if (self.valueSpreadRefs(arg.data.spread_expr.operand, arg.span)) |elems| {
                     defer self.alloc.free(elems);
@@ -3874,7 +3874,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         if (info) |i| switch (i) {
             .@"struct" => |s| return self.builder.constInt(@intCast(s.fields.len), .i64),
             .@"union" => |u| return self.builder.constInt(@intCast(u.fields.len), .i64),
-            .tuple => |t| return self.builder.constInt(@intCast(t.fields.len), .i64),
             .@"enum", .tagged_union => {
                 if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "struct_field_count expects a struct or tuple type; '{s}' is an enum — use variant_count", .{self.formatTypeName(ty)});
                 return self.builder.constInt(0, .i64);
@@ -4124,7 +4123,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             const kind_ok = if (is_variant_fam)
                 ti == .@"enum" or ti == .tagged_union
             else
-                ti == .@"struct" or ti == .tuple or ti == .@"union";
+                ti == .@"struct" or ti == .@"union";
             if (!kind_ok) {
                 if (self.diagnostics) |d| {
                     if (ti == .slice or ti == .array or ti == .vector) {
@@ -4299,7 +4298,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         if (!ty.isBuiltin() and ty != .unresolved) {
             const info = self.module.types.get(ty);
             switch (info) {
-                .@"struct", .tuple, .@"union" => {
+                .@"struct", .@"union" => {
                     // Fold from the shared walk (`memberOffsetBytes`) — the
                     // same source the runtime tables and the VM answer from.
                     if (self.module.types.memberOffsetBytes(ty, @intCast(idx))) |off| {
@@ -5439,9 +5438,6 @@ fn spreadArgWidth(self: *Lowering, operand: *const Node) ?usize {
     if (op_ty.isBuiltin()) return null;
     const info = self.module.types.get(op_ty);
     return switch (info) {
-        .tuple => |t| t.fields.len,
-        // A struct value spreads field-wise (the anonymous positional
-        // struct is the tuple's successor) — its width is its field count.
         .@"struct" => |s| s.fields.len,
         .array => |a| a.length,
         else => null,

@@ -124,7 +124,6 @@ pub const Reflection = struct {
                     if (!tid.isBuiltin()) switch (tt.get(tid)) {
                         .@"struct" => |st| break :blk @intCast(st.fields.len),
                         .@"union" => |u| break :blk @intCast(u.fields.len),
-                        .tuple => |t| break :blk @intCast(t.fields.len),
                         else => {},
                     };
                     break :blk 0;
@@ -458,15 +457,7 @@ pub const Reflection = struct {
                 vname = "optional";
                 placed.append(self.e.alloc, .{ .off = P, .val = self.tyWord(o.child), .size = 8 }) catch unreachable;
             },
-            .tuple => |t| {
-                vname = "tuple";
-                var words = std.ArrayList(c.LLVMValueRef).empty;
-                defer words.deinit(self.e.alloc);
-                for (t.fields) |ety| words.append(self.e.alloc, self.tyWord(ety)) catch unreachable;
-                const arr = self.makeI64Array(words.items, "ti.tuple");
-                placed.append(self.e.alloc, .{ .off = P, .val = arr, .size = 8 }) catch unreachable;
-                placed.append(self.e.alloc, .{ .off = P + 8, .val = c.LLVMConstInt(self.e.cached_i64, @intCast(t.fields.len), 0), .size = 8 }) catch unreachable;
-            },
+            .failable => vname = "void",
             .@"enum" => |e| {
                 vname = "enum";
                 const arr = self.memberElems(tt, ti, "enum", tid, e.variants.len);

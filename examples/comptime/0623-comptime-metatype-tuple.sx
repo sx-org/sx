@@ -1,24 +1,24 @@
-// Comptime TUPLE metaprogramming — `define` constructs a tuple and `type_info`
-// reflects one, completing the reflect/construct triad (enum 0619, struct 0622,
-// tuple here). Tuples are POSITIONAL, so `TupleInfo` is just a `[]Type` (no field
-// names). Two paths:
-//   1. Programmatic build: `define(declare("Pair"), .tuple(.{ elements = … }))`.
-//   2. Round-trip: `define(declare("TripleCopy"), type_info(Triple))` reflects a
-//      source tuple type INTO a `.tuple(TupleInfo)` value and reconstructs it —
-//      no literal element list.
+// Comptime STRUCT metaprogramming for a positional product — `define`
+// constructs a struct whose fields are named `"0"` / `"1"`, and `type_info`
+// reflects it. Same two paths as 0622:
+//   1. Programmatic build: `define(declare("Pair"), .struct(.{ fields = … }))`.
+//   2. Round-trip: `define(declare("TripleCopy"), type_info(Triple))`.
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
-Pair :: define(declare("Pair"), .tuple(.{ elements = .[ i64, f64 ] }));
+Pair :: define(declare("Pair"), .struct(.{ fields = .[
+    StructField{ name = "0", type = i64 },
+    StructField{ name = "1", type = f64 },
+] }));
 
-Triple :: Tuple(i64, bool, f64);
+Triple :: struct { a: i64; b: bool; c: f64 };
 TripleCopy :: define(declare("TripleCopy"), type_info(Triple));
 
 main :: () -> i32 {
     p : Pair = .{ 3, 2.5 };
     print("p = {} {}\n", p.0, p.1);
 
-    t : TripleCopy = .{ 7, true, 1.5 };
-    print("t = {} {} {}\n", t.0, t.1, t.2);
+    t : TripleCopy = .{ a = 7, b = true, c = 1.5 };
+    print("t = {} {} {}\n", t.a, t.b, t.c);
     return 0;
 }

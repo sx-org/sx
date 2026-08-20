@@ -153,71 +153,15 @@ test "parser: plain struct leaves abi == .default, extern_lib == null" {
     try std.testing.expect(sd.extern_lib == null);
 }
 
-// ── Tuple syntax (the inline `(a, b)` type forms are valid alongside it) ──
-
-// `Tuple(A, B)` magic type id → positional tuple_type_expr, mirroring `(A, B)`.
-// Exercised in a genuine type position (a fn return type), since a `::` RHS is
-// an EXPRESSION position where `Tuple(...)` is an ordinary call.
-test "parser: Tuple(A, B) type parses to positional tuple_type_expr" {
+// `Tuple(` is not a type constructor. In type position it parses as an
+// ordinary parameterized name, not a `tuple_type_expr`.
+test "parser: Tuple(A, B) in type position is not a tuple_type_expr" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), "f :: () -> Tuple(i64, i32) { 0 }");
     const root = try parser.parse();
     const rt = root.data.root.decls[0].data.fn_decl.return_type.?;
-    try std.testing.expect(rt.data == .tuple_type_expr);
-    const t = rt.data.tuple_type_expr;
-    try std.testing.expectEqual(@as(usize, 2), t.field_types.len);
-    try std.testing.expect(t.field_names == null);
-}
-
-// `Tuple(x: A, y: B)` keeps `:` and stores field names.
-test "parser: named Tuple(x: A, y: B) stores field names" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "f :: () -> Tuple(x: i64, y: i32) { 0 }");
-    const root = try parser.parse();
-    const t = root.data.root.decls[0].data.fn_decl.return_type.?.data.tuple_type_expr;
-    try std.testing.expectEqual(@as(usize, 2), t.field_types.len);
-    try std.testing.expect(t.field_names != null);
-    try std.testing.expectEqualStrings("x", t.field_names.?[0]);
-    try std.testing.expectEqualStrings("y", t.field_names.?[1]);
-}
-
-// 1-tuple `Tuple(T)` and empty `Tuple()`. A `Tuple(T)` stays a 1-tuple — unlike
-// the inline `(T)`, which is a grouping.
-test "parser: Tuple(T) is a 1-tuple, Tuple() is empty" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var p1 = try Parser.init(arena.allocator(), "f :: () -> Tuple(i64) { 0 }");
-    const r1 = try p1.parse();
-    const t1 = r1.data.root.decls[0].data.fn_decl.return_type.?.data.tuple_type_expr;
-    try std.testing.expectEqual(@as(usize, 1), t1.field_types.len);
-
-    var p2 = try Parser.init(arena.allocator(), "f :: () -> Tuple() { 0 }");
-    const r2 = try p2.parse();
-    const t2 = r2.data.root.decls[0].data.fn_decl.return_type.?.data.tuple_type_expr;
-    try std.testing.expectEqual(@as(usize, 0), t2.field_types.len);
-}
-
-// `Tuple(..Ts)` reuses the spread/pack machinery (spread_expr field). Checked
-// in a PARAM type position (the inline `(..Ts)` form parses there too; neither
-// spelling parses in bare RETURN position).
-test "parser: Tuple(..Ts) pack field is a spread_expr" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "f :: (t: Tuple(..Ts)) { }");
-    const root = try parser.parse();
-    const t = root.data.root.decls[0].data.fn_decl.params[0].type_expr.data.tuple_type_expr;
-    try std.testing.expectEqual(@as(usize, 1), t.field_types.len);
-    try std.testing.expect(t.field_types[0].data == .spread_expr);
-}
-
-// A trailing `->` after `Tuple(...)` is a hard error (no return type).
-test "parser: Tuple(A, B) -> C is rejected" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "f :: () -> Tuple(i64, i64) -> i64 { 0 }");
-    try std.testing.expectError(error.ParseError, parser.parse());
+    try std.testing.expect(rt.data != .tuple_type_expr);
 }
 
 // A bare `Tuple` not followed by `(` stays an ordinary identifier.
@@ -320,7 +264,7 @@ test "parser: -> (T, !) is a single-value failable, not multi-return" {
 }
 
 // A bare-paren list with ≥2 VALUE slots is a MULTI-RETURN signature: it PARSES
-// to its OWN `return_type_expr` node (a distinct thing from a `Tuple(…)` value).
+// to its OWN `return_type_expr` node (a distinct thing from a positional product value).
 // Its rejection OUTSIDE a return position is a RESOLVE-time diagnostic (see the
 // corpus), not a parse error.
 test "parser: bare-paren (A, B) parses to a return_type_expr" {

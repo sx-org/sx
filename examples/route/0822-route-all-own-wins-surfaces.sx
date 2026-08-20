@@ -4,7 +4,7 @@
 // `.m` access (disjoint field sets → a wrong-author binding is a hard compile
 // error). Complements 0816 (which covered only the union body-builder child):
 //   - pointer wrapper-alias element   `BoxPtr :: *Box`
-//   - tuple element                   `(Box, i32)`
+//   - struct field                    `struct { a: Box; b: i32 }`
 //   - enum body-builder child         `WrapE :: enum { V: Box }`
 //   - inline-anonymous union child    `x : union { b: Box }`
 
@@ -22,9 +22,9 @@ main :: () -> i32 {
     // *Named wrapper-alias element own-wins
     bp : BoxPtr = *own;
 
-    // tuple element own-wins
-    t : Tuple(Box, i32) = ---;
-    t.0.m = 12;
+    // product element own-wins
+    t : struct { a: Box; b: i32 } = ---;
+    t.a.m = 12;
 
     // enum body-builder child own-wins (payload must be main's `Box`)
     we : WrapE = .V(own);
@@ -34,6 +34,6 @@ main :: () -> i32 {
     x : union { b: Box; n: i32; } = ---;
     x.b.m = 13;
 
-    print("bp={} t={} ev={} x={} dep={}\n", bp.m, t.0.m, ev, x.b.m, dep_box());
+    print("bp={} t={} ev={} x={} dep={}\n", bp.m, t.a.m, ev, x.b.m, dep_box());
     0
 }

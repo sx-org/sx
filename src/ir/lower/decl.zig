@@ -165,8 +165,9 @@ fn typeCarriesUnresolved(table: *const types.TypeTable, tid: TypeId) bool {
     if (tid == .unresolved) return true;
     if (tid.isBuiltin()) return false;
     return switch (table.get(tid)) {
-        .tuple => |t| blk: {
-            for (t.fields) |f| if (typeCarriesUnresolved(table, f)) break :blk true;
+        .@"struct" => |s| blk: {
+            if (!std.mem.eql(u8, table.getString(s.name), "__anon")) break :blk false;
+            for (s.fields) |f| if (typeCarriesUnresolved(table, f.ty)) break :blk true;
             break :blk false;
         },
         .array => |a| typeCarriesUnresolved(table, a.element),
@@ -391,7 +392,9 @@ pub fn validateMainSignature(self: *Lowering) void {
         // or a non-integer value slot stays rejected — there's no single
         // integer exit code to map it to.
         const ti = self.module.types.get(rt);
-        if (ti == .tuple and ti.tuple.fields.len == 2 and self.isIntEx(ti.tuple.fields[0])) {
+        if (ti == .failable and self.module.types.failableValueSlotCount(ti.failable) == 1 and
+            self.isIntEx(self.module.types.failableValueSlotType(ti.failable, 0)))
+        {
             self.needs_trace_runtime = true;
             return;
         }

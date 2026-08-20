@@ -29,6 +29,9 @@ const PrimInner = struct {
             else => null,
         };
     }
+    pub fn expandTypeSpread(_: PrimInner, _: *const Node) ?[]TypeId {
+        return null;
+    }
 };
 
 test "TypeResolver.resolvePrimitive maps builtin keywords, null otherwise" {
@@ -91,7 +94,7 @@ test "TypeResolver.resolveCompound builds structural compound types" {
     // Plain positional tuple `(i64, bool)` — owned here.
     const tfields = [_]*Node{ &s64n, &booln };
     var tnode = Node{ .span = .{ .start = 0, .end = 0 }, .data = .{ .tuple_type_expr = .{ .field_types = &tfields, .field_names = null } } };
-    const want_tuple = table.intern(.{ .tuple = .{ .fields = &[_]TypeId{ .i64, .bool }, .names = null } });
+    const want_tuple = table.internProduct(&[_]TypeId{ .i64, .bool }, null);
     try std.testing.expectEqual(@as(?TypeId, want_tuple), TypeResolver.resolveCompound(&table, &tnode, inner));
 
     // Pack-shaped `Closure(..p)` → null (needs caller pack state → PackResolver).

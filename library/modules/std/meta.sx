@@ -47,12 +47,6 @@ StructInfo :: struct {
     fields: []StructField;
 }
 
-// The element types of a tuple being reflected or constructed. Tuples are
-// POSITIONAL (no field names), so this is just an ordered list of types.
-TupleInfo :: struct {
-    elements: []Type;
-}
-
 // Per-kind payload shapes for the reflect side. `elem`/`pointee`/
 // `inner` carry the component type; sizes are NOT stored here — `size_of(tp)`
 // answers that for any tag.
@@ -68,15 +62,14 @@ UnionInfo    :: struct { arms: []StructField; }
 
 // The reflected/constructed type shape — a tagged union EXHAUSTIVE over the
 // type table's kinds (a kind the compiler adds fails the record builder until
-// classified; no catch-all). Only `.enum` / `.struct` / `.tuple` can be
-// MINTED via `define`; every other variant is reflect-only. The first
-// three variants are ordinal-pinned (the write side keys on them).
+// classified; no catch-all). Only `.enum` / `.struct` can be MINTED via
+// `define`; every other variant is reflect-only. The first two variants
+// are ordinal-pinned (the write side keys on them).
 // Keyword-colliding variant names declare bare, like every other member
 // position.
 TypeInfo :: enum {
     enum: EnumInfo;
     struct: StructInfo;
-    tuple: TupleInfo;
     union: UnionInfo;
     int: IntInfo;
     float: FloatInfo;
@@ -115,7 +108,7 @@ TypeInfo :: enum {
 // `raw_register_type`'s `Member` is the shared `{ name, ty }` shape it decodes (an
 // `EnumVariant`/`StructField` has the same two-field `{name, type}` layout). The
 // `kind` codes match the read-side `raw_type_kind`:
-//   1 struct · 2 enum (payloadless) · 3 tagged_union · 4 tuple.
+//   1 struct · 2 enum (payloadless) · 3 tagged_union.
 Member :: struct { name: string; ty: Type; }
 
 raw_declare_type  :: (name: string) -> Type intrinsic;
@@ -124,7 +117,6 @@ raw_register_type :: (handle: Type, kind: i64, members: []Member) -> Type intrin
 KIND_STRUCT       :: 1;
 KIND_ENUM         :: 2; // an ACTUAL payloadless enum
 KIND_TAGGED_UNION :: 3; // a payload-carrying enum
-KIND_TUPLE        :: 4;
 
 // ── The metatype DSL: `declare` / `define` (sx); `type_info`/`struct_field_type` (builtins)
 //
@@ -189,17 +181,10 @@ define :: (handle: Type, info: TypeInfo) -> Type {
             }
             return raw_register_type(handle, KIND_STRUCT, mems.items[0..mems.len]);
         }
-        case .tuple: |t| {
-            mems : List(Member) = .{};
-            for ety in t.elements {
-                mems.append(Member{ name = "", ty = ety });
-            }
-            return raw_register_type(handle, KIND_TUPLE, mems.items[0..mems.len]);
-        }
         else: {
             // Reflect-only shapes (int/float/array/union/...) cannot be minted:
             // there is nothing nominal to register. Loud, not silent.
-            msg := "define: only struct/enum/tuple TypeInfo shapes can be minted\n";
+            msg := "define: only struct/enum TypeInfo shapes can be minted\n";
             c.write(2, msg.ptr, msg.len);
         }
     }

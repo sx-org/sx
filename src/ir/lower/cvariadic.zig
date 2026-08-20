@@ -218,9 +218,6 @@ fn refuseSignatureWithin(self: *Lowering, ty: TypeId, span: ?ast.Span, path: ?*c
         .@"struct" => |s| anyFieldRefusesSignature(self, s.fields, span, &here),
         .@"union" => |u| anyFieldRefusesSignature(self, u.fields, span, &here),
         .tagged_union => |u| anyFieldRefusesSignature(self, u.fields, span, &here),
-        .tuple => |t| for (t.fields) |f| {
-            if (refuseSignatureWithin(self, f, span, &here)) break true;
-        } else false,
         .array => |a| refuseSignatureWithin(self, a.element, span, &here),
         .vector => |v| refuseSignatureWithin(self, v.element, span, &here),
         .optional => |o| refuseSignatureWithin(self, o.child, span, &here),

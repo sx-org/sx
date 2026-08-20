@@ -160,17 +160,12 @@ pub fn effectiveReturnType(self: *Lowering) ?TypeId {
 
 /// If `ret_ty` belongs to a failable function, the TypeId of its error
 /// channel; else null. `-> !Named` / `-> !` resolve the error set directly;
-/// `-> (T..., !)` carries it as the last tuple field (the locked ABI).
+/// `-> (T..., !)` is a `.failable` whose `err` is the channel.
 pub fn errorChannelOf(self: *Lowering, ret_ty: TypeId) ?TypeId {
     if (ret_ty.isBuiltin()) return null;
     switch (self.module.types.get(ret_ty)) {
         .error_set => return ret_ty,
-        .tuple => |t| {
-            if (t.fields.len == 0) return null;
-            const last = t.fields[t.fields.len - 1];
-            if (last.isBuiltin()) return null;
-            return if (self.module.types.get(last) == .error_set) last else null;
-        },
+        .failable => |f| return f.err,
         else => return null,
     }
 }
@@ -297,11 +292,12 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
         const tag_ty = self.builder.getRefType(tag_ref);
         const coerced_tag = if (tag_ty != err_set) self.coerceExplicit(tag_ref, tag_ty, err_set) else tag_ref;
         self.emitErrorCleanup(self.func_defer_base, coerced_tag);
-        const fields = self.module.types.get(ret_ty).tuple.fields;
+        const f = self.module.types.get(ret_ty).failable;
+        const n = self.module.types.failableValueSlotCount(f);
         var slots = std.ArrayList(Ref).empty;
         defer slots.deinit(self.alloc);
-        for (fields[0 .. fields.len - 1]) |vty| {
-            slots.append(self.alloc, self.builder.constUndef(vty)) catch unreachable;
+        for (0..n) |i| {
+            slots.append(self.alloc, self.builder.constUndef(self.module.types.failableValueSlotType(f, i))) catch unreachable;
         }
         const tup = self.buildFailableTuple(ret_ty, slots.items, coerced_tag);
         self.emitTupleRet(ret_ty, tup);
@@ -315,95 +311,55 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
 /// lone value; multi-value `-> (T1, ..., !)` takes `ref` as a value-tuple
 /// `(T1, ...)` and re-assembles its slots alongside the success error slot.
 pub fn lowerFailableSuccessReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, span: ast.Span) void {
-    const fields = self.module.types.get(ret_ty).tuple.fields;
-    const err_ty = fields[fields.len - 1];
+    const f = self.module.types.get(ret_ty).failable;
+    const n_vals = self.module.types.failableValueSlotCount(f);
+    const err_ty = f.err;
     const val_ty = self.builder.getRefType(ref);
     if (val_ty == ret_ty) {
-        // The expression already IS the full failable tuple (forwarding).
         self.emitTupleRet(ret_ty, ref);
         return;
     }
-    // Cross-set forward: `return callee(...)` where the callee is ALSO
-    // failable but its type differs from the caller's because the ERROR
-    // SETS differ (`(T, !Concrete)` forwarded through `(T, !)`, or concrete
-    // → concrete). Without this arm the whole callee result falls into the
-    // scalar/value paths below and gets packed as element 0 of the caller's
-    // own tuple — invalid IR.
-    // `val_ty == fields[0]` is NOT a forward: the lone value slot's type is
-    // itself this failable type, so the user is returning the value.
-    if (val_ty != fields[0] and !val_ty.isBuiltin()) {
+    if (!val_ty.isBuiltin()) {
         switch (self.module.types.get(val_ty)) {
-            .tuple => |vt| {
-                // ARITY TIE-BREAK: a returned tuple whose field count matches
-                // the caller's VALUE arity AND whose elements fit the value
-                // slots is the value list itself (`return v, e` where a value
-                // slot happens to be error-set-typed — a bang-less
-                // `(T, ErrSet)` is structurally indistinguishable from a
-                // failable result). The VALUE interpretation wins on that
-                // exact fit; a tuple that does NOT fit the value slots and
-                // DOES carry an error channel is a forward (whose own arity /
-                // set rules then diagnose a bad one — never invalid IR).
-                // "Fits" = per-slot error-set-ness matches: an error-set
-                // element in a non-error-set slot (or vice versa) has no
-                // implicit conversion, so that shape can only be a forward.
-                const fits = vt.fields.len == fields.len - 1 and blk: {
-                    for (vt.fields, fields[0 .. fields.len - 1]) |a, b| {
-                        if (a == b) continue;
-                        const a_es = !a.isBuiltin() and self.module.types.get(a) == .error_set;
-                        const b_es = !b.isBuiltin() and self.module.types.get(b) == .error_set;
-                        if (a_es != b_es) break :blk false;
-                    }
-                    break :blk true;
-                };
-                if (!fits) {
-                    if (self.errorChannelOf(val_ty)) |src_err| {
-                        lowerFailableForwardReturn(self, ref, ret_ty, val_ty, src_err, span);
-                        return;
-                    }
-                }
+            .failable => |vf| {
+                lowerFailableForwardReturn(self, ref, ret_ty, val_ty, vf.err, span);
+                return;
             },
-            // A PURE-failable callee (`-> !E`, result IS the error set)
-            // forwarded through a value-carrying caller: 0 value slots where
-            // ≥1 are required. Without the diagnostic the raw tag would land
-            // in the scalar path below as the VALUE.
             .error_set => {
-                if (self.diagnostics) |d| d.addFmt(.err, span, "cannot forward this failable result: it carries 0 value slots, but the function returns {d}", .{fields.len - 1});
+                if (self.diagnostics) |d| d.addFmt(.err, span, "cannot forward this failable result: it carries 0 value slots, but the function returns {d}", .{n_vals});
                 return;
             },
             else => {},
         }
     }
-    const n_vals = fields.len - 1;
     if (n_vals == 1) {
-        // An un-coercible success value must not be bit-welded
-        // into the declared value slot — a 16-byte string into an i64 slot
-        // corrupts the error tag, giving a phantom `catch` on success.
-        const cv = if (self.checkReturnable(ref, val_ty, fields[0], span))
-            self.coerceToType(ref, val_ty, fields[0])
+        const slot = self.module.types.failableValueSlotType(f, 0);
+        const cv = if (self.checkReturnable(ref, val_ty, slot, span))
+            self.coerceToType(ref, val_ty, slot)
         else
             ref;
         const tup = self.buildFailableTuple(ret_ty, &.{cv}, self.builder.constInt(0, err_ty));
         self.emitTupleRet(ret_ty, tup);
         return;
     }
-    // Multi-value: `ref` must be a value-tuple `(T1, ..., Tn)`. Extract
-    // each value slot, coerce to the declared field type, and re-assemble
-    // with the success error slot (0).
-    if (val_ty.isBuiltin() or self.module.types.get(val_ty) != .tuple or self.module.types.get(val_ty).tuple.fields.len != n_vals) {
+    const prod = if (val_ty.isBuiltin()) null else switch (self.module.types.get(val_ty)) {
+        .@"struct" => |s| s.fields,
+        else => null,
+    };
+    if (prod == null or prod.?.len != n_vals) {
         if (self.diagnostics) |diags| {
             diags.addFmt(.err, span, "a multi-value failable function (`-> (T1, ..., !)`) must `return` a {d}-tuple of its value types", .{n_vals});
         }
         return;
     }
-    const vfields = self.module.types.get(val_ty).tuple.fields;
     var vals = std.ArrayList(Ref).empty;
     defer vals.deinit(self.alloc);
     for (0..n_vals) |i| {
-        const fv = self.builder.emit(.{ .tuple_get = .{ .base = ref, .field_index = @intCast(i), .base_type = val_ty } }, vfields[i]);
-        // Per-slot coercibility — an un-coercible element is
-        // diagnosed instead of bit-welded into the declared slot.
-        const cf = if (self.checkReturnable(fv, vfields[i], fields[i], span))
-            self.coerceToType(fv, vfields[i], fields[i])
+        const vty = prod.?[i].ty;
+        const slot = self.module.types.failableValueSlotType(f, i);
+        const fv = emitProductGet(self, ref, val_ty, i, vty);
+        const cf = if (self.checkReturnable(fv, vty, slot, span))
+            self.coerceToType(fv, vty, slot)
         else
             fv;
         vals.append(self.alloc, cf) catch unreachable;
@@ -423,30 +379,29 @@ pub fn lowerFailableSuccessReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, spa
 /// statically-known tag set (its placeholder TypeId carries no tags), so it
 /// cannot be proven ⊆ a named set — rejected, destructure + re-raise instead.
 fn lowerFailableForwardReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, val_ty: TypeId, src_err: TypeId, span: ast.Span) void {
-    const fields = self.module.types.get(ret_ty).tuple.fields;
-    const err_ty = fields[fields.len - 1];
-    const vfields = self.module.types.get(val_ty).tuple.fields;
-    if (vfields.len != fields.len) {
-        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot forward this failable result: it carries {d} value slot{s}, but the function returns {d}", .{ vfields.len - 1, if (vfields.len == 2) @as([]const u8, "") else @as([]const u8, "s"), fields.len - 1 });
+    const dst = self.module.types.get(ret_ty).failable;
+    const src = self.module.types.get(val_ty).failable;
+    const err_ty = dst.err;
+    const dn = self.module.types.failableValueSlotCount(dst);
+    const sn = self.module.types.failableValueSlotCount(src);
+    if (sn != dn) {
+        if (self.diagnostics) |d| d.addFmt(.err, span, "cannot forward this failable result: it carries {d} value slot{s}, but the function returns {d}", .{ sn, if (sn == 1) @as([]const u8, "") else @as([]const u8, "s"), dn });
         return;
     }
     if (!checkForwardSetCompat(self, src_err, err_ty, span)) return;
-    const n_vals = fields.len - 1;
     var vals = std.ArrayList(Ref).empty;
     defer vals.deinit(self.alloc);
-    for (0..n_vals) |i| {
-        const fv = self.builder.emit(.{ .tuple_get = .{ .base = ref, .field_index = @intCast(i), .base_type = val_ty } }, vfields[i]);
-        // A forwarded value slot with NO modeled coercion to the
-        // caller's slot type is diagnosed, not bit-welded.
-        const cf = if (self.checkReturnable(fv, vfields[i], fields[i], span))
-            self.coerceToType(fv, vfields[i], fields[i])
+    for (0..dn) |i| {
+        const vty = self.module.types.failableValueSlotType(src, i);
+        const slot = self.module.types.failableValueSlotType(dst, i);
+        const fv = self.builder.emit(.{ .struct_get = .{ .base = ref, .field_index = @intCast(i), .base_type = val_ty } }, vty);
+        const cf = if (self.checkReturnable(fv, vty, slot, span))
+            self.coerceToType(fv, vty, slot)
         else
             fv;
         vals.append(self.alloc, cf) catch unreachable;
     }
-    // The error slot, extracted typed as the CALLER's set: tags are global
-    // ids in one shared u32 repr, so the re-type IS the whole coercion.
-    const tag = self.builder.emit(.{ .tuple_get = .{ .base = ref, .field_index = @intCast(fields.len - 1), .base_type = val_ty } }, err_ty);
+    const tag = self.builder.emit(.{ .struct_get = .{ .base = ref, .field_index = @intCast(dn), .base_type = val_ty } }, err_ty);
     const tup = self.buildFailableTuple(ret_ty, vals.items, tag);
     self.emitTupleRet(ret_ty, tup);
 }
@@ -493,11 +448,10 @@ pub fn coercePureFailableReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, span:
                 }
                 return self.coerceToType(ref, val_ty, ret_ty);
             },
-            .tuple => |vt| {
-                if (self.errorChannelOf(val_ty) != null) {
-                    if (self.diagnostics) |d| d.addFmt(.err, span, "cannot forward this failable result: it carries {d} value slot{s}, but the function returns 0", .{ vt.fields.len - 1, if (vt.fields.len == 2) @as([]const u8, "") else @as([]const u8, "s") });
-                    return self.builder.constInt(0, ret_ty);
-                }
+            .failable => |vf| {
+                const n = self.module.types.failableValueSlotCount(vf);
+                if (self.diagnostics) |d| d.addFmt(.err, span, "cannot forward this failable result: it carries {d} value slot{s}, but the function returns 0", .{ n, if (n == 1) @as([]const u8, "") else @as([]const u8, "s") });
+                return self.builder.constInt(0, ret_ty);
             },
             else => {},
         }
@@ -511,36 +465,25 @@ pub fn coercePureFailableReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, span:
     return self.coerceToType(ref, val_ty, ret_ty);
 }
 
-/// Build a failable return tuple `{value_refs..., tag}` typed `ret_ty`.
+fn emitProductGet(self: *Lowering, base: Ref, ty: TypeId, i: usize, fty: TypeId) Ref {
+    return self.builder.emit(.{ .struct_get = .{ .base = base, .field_index = @intCast(i), .base_type = ty } }, fty);
+}
+
+/// Build a failable return `{value_refs..., tag}` typed `ret_ty`.
 pub fn buildFailableTuple(self: *Lowering, ret_ty: TypeId, value_refs: []const Ref, tag: Ref) Ref {
     var fields = std.ArrayList(Ref).empty;
     defer fields.deinit(self.alloc);
     fields.appendSlice(self.alloc, value_refs) catch unreachable;
     fields.append(self.alloc, tag) catch unreachable;
-    return self.builder.emit(.{ .tuple_init = .{ .fields = self.alloc.dupe(Ref, fields.items) catch unreachable } }, ret_ty);
+    return self.builder.emit(.{ .struct_init = .{ .fields = self.alloc.dupe(Ref, fields.items) catch unreachable } }, ret_ty);
 }
 
-/// The success (value-part) type of a value-carrying failable tuple
+/// The success (value-part) type of a value-carrying failable
 /// `op_ty` (`-> (T..., !)`): the lone value type for a single-value
-/// failable, or a synthesized value-tuple `(T1, ..., Tn)` (error slot
-/// dropped) for a multi-value one. Callers must pass a value-carrying
-/// tuple — a pure `-> !`'s success type is `void`, handled separately.
+/// failable, or the anonymous product of the value slots for a multi-value
+/// one. A pure `-> !`'s success type is `void`, handled separately.
 pub fn failableSuccessType(self: *Lowering, op_ty: TypeId) TypeId {
-    const tup = self.module.types.get(op_ty).tuple;
-    const fields = tup.fields;
-    const n_vals = fields.len - 1;
-    if (n_vals == 1) return fields[0];
-    // Carry the value-field names through, dropping the trailing error-slot
-    // name, so a named failable tuple `-> Tuple(x: A, y: B) !` yields a value
-    // type `(x: A, y: B)` whose `.x`/`.y` fields stay addressable.
-    const succ_names: ?[]const types.StringId = if (tup.names) |ns|
-        self.alloc.dupe(types.StringId, ns[0..n_vals]) catch unreachable
-    else
-        null;
-    return self.module.types.intern(.{ .tuple = .{
-        .fields = self.alloc.dupe(TypeId, fields[0..n_vals]) catch unreachable,
-        .names = succ_names,
-    } });
+    return self.module.types.get(op_ty).failable.value;
 }
 
 /// The `target_type` to lower a returned expression against. For a
@@ -552,11 +495,12 @@ pub fn failableSuccessType(self: *Lowering, op_ty: TypeId) TypeId {
 /// as-is. Every other return type passes through unchanged.
 pub fn failableReturnTarget(self: *Lowering, ret_ty: TypeId, value_node: ?*const Node) TypeId {
     if (ret_ty.isBuiltin()) return ret_ty;
-    if (self.module.types.get(ret_ty) != .tuple) return ret_ty;
-    if (self.errorChannelOf(ret_ty) == null) return ret_ty;
+    if (self.module.types.get(ret_ty) != .failable) return ret_ty;
+    const f = self.module.types.get(ret_ty).failable;
+    const n = self.module.types.failableValueSlotCount(f);
     if (value_node) |vn| {
         if (vn.data == .tuple_literal and
-            vn.data.tuple_literal.elements.len == self.module.types.get(ret_ty).tuple.fields.len)
+            vn.data.tuple_literal.elements.len == n + 1)
             return ret_ty;
     }
     return self.failableSuccessType(ret_ty);
@@ -566,24 +510,25 @@ pub fn failableReturnTarget(self: *Lowering, ret_ty: TypeId, value_node: ?*const
 /// tuple `result` (type `op_ty`): the lone value slot for single-value,
 /// or an assembled value-tuple (typed `succ_ty`) for multi-value.
 pub fn extractSuccessValue(self: *Lowering, result: Ref, op_ty: TypeId, succ_ty: TypeId) Ref {
-    const fields = self.module.types.get(op_ty).tuple.fields;
-    const n_vals = fields.len - 1;
+    const f = self.module.types.get(op_ty).failable;
+    const n_vals = self.module.types.failableValueSlotCount(f);
     if (n_vals == 1) {
-        return self.builder.emit(.{ .tuple_get = .{ .base = result, .field_index = 0, .base_type = op_ty } }, fields[0]);
+        return self.builder.emit(.{ .struct_get = .{ .base = result, .field_index = 0, .base_type = op_ty } }, self.module.types.failableValueSlotType(f, 0));
     }
     var vals = std.ArrayList(Ref).empty;
     defer vals.deinit(self.alloc);
     for (0..n_vals) |i| {
-        vals.append(self.alloc, self.builder.emit(.{ .tuple_get = .{ .base = result, .field_index = @intCast(i), .base_type = op_ty } }, fields[i])) catch unreachable;
+        vals.append(self.alloc, self.builder.emit(.{ .struct_get = .{ .base = result, .field_index = @intCast(i), .base_type = op_ty } }, self.module.types.failableValueSlotType(f, i))) catch unreachable;
     }
-    return self.builder.emit(.{ .tuple_init = .{ .fields = self.alloc.dupe(Ref, vals.items) catch unreachable } }, succ_ty);
+    return self.builder.structInit(self.alloc.dupe(Ref, vals.items) catch unreachable, succ_ty);
 }
 
 /// Extract the error slot (always the last field) of an evaluated
 /// value-carrying failable tuple `result`, typed as `err_set`.
 pub fn extractErrorSlot(self: *Lowering, result: Ref, op_ty: TypeId, err_set: TypeId) Ref {
-    const fields = self.module.types.get(op_ty).tuple.fields;
-    return self.builder.emit(.{ .tuple_get = .{ .base = result, .field_index = @intCast(fields.len - 1), .base_type = op_ty } }, err_set);
+    const f = self.module.types.get(op_ty).failable;
+    const n = self.module.types.failableValueSlotCount(f);
+    return self.builder.emit(.{ .struct_get = .{ .base = result, .field_index = @intCast(n), .base_type = op_ty } }, err_set);
 }
 
 /// Emit a return of an already-assembled failable tuple.
@@ -807,11 +752,12 @@ pub fn emitErrorReturn(self: *Lowering, caller_ret: TypeId, caller_set: TypeId, 
     if (caller_ret == caller_set) {
         self.emitBodyExit(coerced, caller_set, .return_like);
     } else {
-        const fields = self.module.types.get(caller_ret).tuple.fields;
+        const f = self.module.types.get(caller_ret).failable;
+        const n = self.module.types.failableValueSlotCount(f);
         var undefs = std.ArrayList(Ref).empty;
         defer undefs.deinit(self.alloc);
-        for (fields[0 .. fields.len - 1]) |vty| {
-            undefs.append(self.alloc, self.builder.constUndef(vty)) catch unreachable;
+        for (0..n) |i| {
+            undefs.append(self.alloc, self.builder.constUndef(self.module.types.failableValueSlotType(f, i))) catch unreachable;
         }
         const tup = self.buildFailableTuple(caller_ret, undefs.items, coerced);
         self.emitTupleRet(caller_ret, tup);

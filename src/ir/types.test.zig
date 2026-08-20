@@ -325,9 +325,13 @@ test "pack type: distinct element lists are distinct types" {
     try std.testing.expect(a != b);
     try std.testing.expect(a != c);
     try std.testing.expect(b != c);
-    // A pack is distinct from the tuple of the same elements.
-    const tup = table.intern(.{ .tuple = .{ .fields = &[_]TypeId{ .bool, .i32 }, .names = null } });
-    try std.testing.expect(a != tup);
+    // A pack is distinct from an anonymous product of the same elements.
+    const flds = [_]TypeInfo.StructInfo.Field{
+        .{ .name = table.internString("0"), .ty = .bool },
+        .{ .name = table.internString("1"), .ty = .i32 },
+    };
+    const prod = table.intern(.{ .@"struct" = .{ .name = table.internString("__anon"), .fields = &flds } });
+    try std.testing.expect(a != prod);
 }
 
 test "pack type: formatTypeName" {
@@ -343,6 +347,30 @@ test "pack type: formatTypeName" {
 
     const empty = table.packType(&.{});
     try std.testing.expectEqualStrings("pack()", table.formatTypeName(arena.allocator(), empty));
+}
+
+test "failable value slots: named struct is one slot, anon product flattens" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var table = TypeTable.init(arena.allocator());
+
+    const err = table.errorSetType(table.internString("E"), &[_]u32{table.internTag("Bad")});
+    const box_fields = [_]TypeInfo.StructInfo.Field{
+        .{ .name = table.internString("n"), .ty = .i64 },
+        .{ .name = table.internString("k"), .ty = .i64 },
+    };
+    const box = table.intern(.{ .@"struct" = .{ .name = table.internString("Box"), .fields = &box_fields } });
+    const named = table.internFailable(box, err);
+    const nf = table.get(named).failable;
+    try std.testing.expectEqual(@as(usize, 1), table.failableValueSlotCount(nf));
+    try std.testing.expectEqual(box, table.failableValueSlotType(nf, 0));
+
+    const prod = table.internProduct(&[_]TypeId{ .i64, .i64 }, null);
+    const multi = table.internFailable(prod, err);
+    const mf = table.get(multi).failable;
+    try std.testing.expectEqual(@as(usize, 2), table.failableValueSlotCount(mf));
+    try std.testing.expectEqual(TypeId.i64, table.failableValueSlotType(mf, 0));
+    try std.testing.expectEqual(TypeId.i64, table.failableValueSlotType(mf, 1));
 }
 
 // ── error sets + tag registry ──

@@ -41,6 +41,9 @@ const StatelessInner = struct {
     pub fn resolveInner(self: StatelessInner, node: *const Node) TypeId {
         return resolveAstType(node, self.table, self.alias_map, self.consts);
     }
+    pub fn expandTypeSpread(_: StatelessInner, _: *const Node) ?[]TypeId {
+        return null;
+    }
     /// Bare TYPE-NAME twin of `resolveInner`, for callers that hold a name
     /// rather than an AST node (an error-set reference `!Named`). Flat:
     /// registered name → alias → stub, no visibility scoping.
@@ -309,10 +312,7 @@ fn resolveTupleSpreadShape(tt: *const ast.TupleTypeExpr, table: *TypeTable, alia
         }
         name_ids = ids.items;
     }
-    return table.intern(.{ .tuple = .{
-        .fields = field_ids.items,
-        .names = name_ids,
-    } });
+    return table.internFieldsAsProductOrFailable(field_ids.items, name_ids);
 }
 
 // Treat a tuple value literal as the corresponding tuple TYPE — valid only when
@@ -341,10 +341,7 @@ fn resolveTupleLiteralAsType(tl: *const ast.TupleLiteral, table: *TypeTable, ali
         }
     }
     const names: ?[]const StringId = if (any_named) name_ids_list.items else null;
-    return table.intern(.{ .tuple = .{
-        .fields = field_ids.items,
-        .names = names,
-    } });
+    return table.internFieldsAsProductOrFailable(field_ids.items, names);
 }
 
 // Returns true when this AST node, on its own, denotes a type rather than a
@@ -663,12 +660,31 @@ pub fn resolveInlineStruct(sd: *const ast.StructDecl, table: *TypeTable, inner: 
     }
 
     var fields = std.ArrayList(TypeInfo.StructInfo.Field).empty;
+    var pos: usize = 0;
     for (sd.field_names, sd.field_types) |fname, ftype_node| {
+        if (ftype_node.data == .spread_expr) {
+            if (inner.expandTypeSpread(ftype_node)) |tys| {
+                for (tys) |ty| {
+                    const n = std.fmt.allocPrint(alloc, "{d}", .{pos}) catch unreachable;
+                    fields.append(alloc, .{
+                        .name = table.internString(n),
+                        .ty = ty,
+                    }) catch unreachable;
+                    pos += 1;
+                }
+                continue;
+            }
+        }
         const field_ty = inner.resolveInner(ftype_node);
+        const name = if (fname.len == 0)
+            table.internString(std.fmt.allocPrint(alloc, "{d}", .{pos}) catch unreachable)
+        else
+            table.internString(fname);
         fields.append(alloc, .{
-            .name = table.internString(fname),
+            .name = name,
             .ty = field_ty,
         }) catch unreachable;
+        pos += 1;
     }
     const info: TypeInfo = .{ .@"struct" = .{
         .name = name_id,

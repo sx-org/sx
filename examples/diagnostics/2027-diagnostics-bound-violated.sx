@@ -54,8 +54,8 @@ relay :: ($P: Type, v: $V/P) -> i32 { 1 }
 // `V` has to be `Summable`.
 nested :: (value: $I/@Init($V/Summable)) -> i32 { 1 }
 
-Pair :: Tuple(i64, i64);
-pair :: () -> Pair { Pair{ 1, 2 } }
+Pair :: struct { a: i64; b: i64 };
+pair :: () -> Pair { Pair{ a = 1, b = 2 } }
 
 main :: () {
     print("{}\n", total(Plain{ n = 1 }));

@@ -22,7 +22,7 @@ warmup :: (n: i64) -> i64 {
     command_count(*tree)
 }
 
-sample :: (n: i64, builds: i64, walks: i64) -> Tuple(i64, i64, i64) {
+sample :: (n: i64, builds: i64, walks: i64) -> (i64, i64, i64) {
     t0 := time.mono_ns();
     b := 0;
     built := 0;

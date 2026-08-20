@@ -1,20 +1,17 @@
-// `Tuple` and `Closure` build a type only where a type is demanded — an
-// annotation, a parameter, a return, or the RHS of `::`. In expression position
-// they are ordinary identifiers, so a function may carry either name and is
-// called without a backtick escape, in the same file whose signatures spell the
-// type constructors.
+// `Closure` builds a type only where a type is demanded — an annotation, a
+// parameter, a return, or the RHS of `::`. `Tuple` is an ordinary identifier
+// everywhere: a function may carry that name and is called without a backtick
+// escape.
 
 @import "modules/std.sx";
 
-NT :: Tuple(a: i64, b: bool);      // `::` RHS: a tuple alias
+NT :: struct { a: i64; b: bool };
 CB :: Closure(i32) -> i32;         // `::` RHS: a closure alias, `-> R` included
 
 Closure :: (n: i32) -> i32 { n * 2 }
 Tuple   :: (n: i64) -> i64 { n + 1 }
 
-// Parameter and return position keep the constructors while the same-named
-// functions are in scope.
-swap :: (t: Tuple(i64, bool)) -> Tuple(bool, i64) { .{t.1, t.0} }
+swap :: (t: NT) -> (bool, i64) { return t.b, t.a; }
 
 apply :: (f: CB, x: i32) -> i32 { return f(x); }
 
@@ -24,7 +21,7 @@ main :: () -> i32 {
     x : NT = .{a = 1, b = true};
     print("x.a={} x.b={}\n", x.a, x.b);
 
-    s := swap(.{7, false});
+    s := swap(x);
     print("s.0={} s.1={}\n", s.0, s.1);
 
     dbl := |v: i32| -> i32 v * 2;

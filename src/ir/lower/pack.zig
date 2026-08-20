@@ -49,12 +49,9 @@ pub fn lowerPackValueProjection(self: *Lowering, pack_name: []const u8, method: 
     var tys = std.ArrayList(TypeId).empty;
     defer tys.deinit(self.alloc);
     for (refs) |r| tys.append(self.alloc, self.builder.getRefType(r)) catch {};
-    const tuple_ty = self.module.types.intern(.{ .tuple = .{
-        .fields = self.alloc.dupe(TypeId, tys.items) catch return self.builder.constInt(0, .void),
-        .names = null,
-    } });
+    const tuple_ty = self.module.types.internProduct(tys.items, null);
     const owned = self.alloc.dupe(Ref, refs) catch return self.builder.constInt(0, .void);
-    return self.builder.emit(.{ .tuple_init = .{ .fields = owned } }, tuple_ty);
+    return self.builder.structInit(owned, tuple_ty);
 }
 
 /// If `operand` is a pack spread — `..xs` (bare pack) or `..xs.method`
@@ -89,17 +86,6 @@ pub fn valueSpreadRefs(self: *Lowering, operand: *const Node, span: ast.Span) ?[
     const ty = self.inferExprType(operand);
     if (ty.isBuiltin()) return null;
     switch (self.module.types.get(ty)) {
-        .tuple => |t| {
-            const obj = self.lowerExpr(operand);
-            var refs = std.ArrayList(Ref).empty;
-            for (t.fields, 0..) |fty, i| {
-                refs.append(self.alloc, self.builder.structGet(obj, @intCast(i), fty)) catch break;
-            }
-            return refs.toOwnedSlice(self.alloc) catch &.{};
-        },
-        // A struct value spreads field-wise, same as a tuple — this is what
-        // lets a materialized pack (`stored := .{ ..xs };`, an anonymous
-        // positional struct) re-spread with `f(..stored)`.
         .@"struct" => |s| {
             const obj = self.lowerExpr(operand);
             var refs = std.ArrayList(Ref).empty;
@@ -144,12 +130,9 @@ pub fn materializePackTuple(self: *Lowering, pack_name: []const u8, span: ast.Sp
     var tys = std.ArrayList(TypeId).empty;
     defer tys.deinit(self.alloc);
     for (refs) |r| tys.append(self.alloc, self.builder.getRefType(r)) catch {};
-    const tuple_ty = self.module.types.intern(.{ .tuple = .{
-        .fields = self.alloc.dupe(TypeId, tys.items) catch &.{},
-        .names = null,
-    } });
+    const tuple_ty = self.module.types.internProduct(tys.items, null);
     const owned = self.alloc.dupe(Ref, refs) catch &.{};
-    return .{ .ref = self.builder.emit(.{ .tuple_init = .{ .fields = owned } }, tuple_ty), .ty = tuple_ty };
+    return .{ .ref = self.builder.structInit(owned, tuple_ty), .ty = tuple_ty };
 }
 
 /// Detect `<pack_name>[<int_literal>]` where the literal exceeds
@@ -314,7 +297,7 @@ pub fn lowerVariadicArgs(self: *Lowering, param_name: []const u8, call_args: []c
                 source_ty = ref_ty;
             } else if (!ref_ty.isBuiltin()) {
                 const ri = self.module.types.get(ref_ty);
-                if (ri == .@"struct" or ri == .slice or ri == .optional or ri == .closure or ri == .tuple) {
+                if (ri == .@"struct" or ri == .slice or ri == .optional or ri == .closure) {
                     source_ty = ref_ty;
                 }
             }
@@ -453,7 +436,7 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
                 args.append(self.alloc, slice_val) catch unreachable;
                 return;
             }
-            if (arr_info == null or arr_info.? != .tuple) {
+            if (arr_info == null or arr_info.? != .@"struct") {
                 // Not spreadable at all (scalar / struct / …): the arg loop
                 // left a `Ref.none` placeholder that must never reach the
                 // backend — diagnose, drop it, and pack zero variadic args
@@ -805,7 +788,6 @@ fn spreadElemNodes(self: *Lowering, operand: *const Node, span: ast.Span) ?[]*No
     // an index, never a name, so no synthesized node can read as a mention of a
     // field a human never wrote.
     switch (self.module.types.get(ty)) {
-        .tuple => |t| return spreadIndexNodes(self, operand, span, t.fields.len),
         .@"struct" => |st| return spreadIndexNodes(self, operand, span, st.fields.len),
         .array => |a| return spreadIndexNodes(self, operand, span, a.length),
         else => return null,

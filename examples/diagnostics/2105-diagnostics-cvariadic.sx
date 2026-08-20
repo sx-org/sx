@@ -49,12 +49,12 @@ Keeps :: struct {
 // query each refuse the wrapper exactly as they refuse the bare spelling.
 Wraps :: struct {
     row: [1]@VaList;
-    pair: Tuple(@VaList, i64);
+    pair: struct { a: @VaList; b: i64 };
     maybe: ?@VaList;
     lent: [2]*@VaList;
 }
 
-VaPair :: Tuple(@VaList, i64);
+VaPair :: struct { a: @VaList; b: i64 };
 
 wrapped_global: [1]@VaList;
 wrapped_borrows: []*@VaList;

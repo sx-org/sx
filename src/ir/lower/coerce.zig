@@ -244,7 +244,7 @@ fn refuseUnusedIntoAlloc(self: *Lowering, dst_ty: TypeId) Ref {
 
 fn isGlyphFreeImplicit(plan: @import("../conversions.zig").CoercionResolver.CoercionPlan) bool {
     return switch (plan) {
-        .widen, .int_to_float, .array_to_slice, .optional_wrap, .void_to_optional, .member_to_open_set, .ptr_to_void, .string_to_cstring, .optional_to_optional, .tuple_elementwise, .struct_to_tuple, .slice_len_convert => true,
+        .widen, .int_to_float, .array_to_slice, .optional_wrap, .void_to_optional, .member_to_open_set, .ptr_to_void, .string_to_cstring, .optional_to_optional, .struct_elementwise, .slice_len_convert => true,
         else => false,
     };
 }
@@ -1157,18 +1157,7 @@ fn isNarrowIntTag(self: *Lowering, tid: TypeId) bool {
 pub fn buildDefaultValue(self: *Lowering, ty: TypeId) Ref {
     if (ty.isBuiltin()) return self.builder.constInt(0, ty);
     const info = self.module.types.get(ty);
-    if (info != .@"struct" and info != .tuple) return self.zeroValue(ty);
-    // For tuples, build a zero-initialized tuple
-    if (info == .tuple) {
-        var field_vals = std.ArrayList(Ref).empty;
-        defer field_vals.deinit(self.alloc);
-        for (info.tuple.fields) |f| {
-            field_vals.append(self.alloc, self.zeroValue(f)) catch unreachable;
-        }
-        return self.builder.emit(.{
-            .tuple_init = .{ .fields = self.alloc.dupe(Ref, field_vals.items) catch unreachable },
-        }, ty);
-    }
+    if (info != .@"struct") return self.zeroValue(ty);
     // Check for struct defaults — TypeId identity first; for an
     // author-tracked type a tid-map miss means "no defaults".
     const struct_name_str = self.module.types.getString(info.@"struct".name);
@@ -1214,7 +1203,7 @@ pub fn zeroValue(self: *Lowering, ty: TypeId) Ref {
         // Arbitrary-width integer types (u1, u2, i4, ...) interned as
         // `.signed`/`.unsigned` variants — fall through `isBuiltin()`.
         .signed, .unsigned => self.builder.constInt(0, ty),
-        .pointer, .tuple, .optional => self.builder.constNull(ty),
+        .pointer, .optional => self.builder.constNull(ty),
         .@"struct", .array, .slice, .many_pointer => self.builder.constNull(ty),
         else => self.builder.constUndef(ty),
     };
@@ -1647,7 +1636,7 @@ fn isAggregateValueKind(self: *Lowering, ty: TypeId) bool {
     if (ty == .string or ty == .any) return true;
     if (ty.isBuiltin()) return false;
     return switch (self.module.types.get(ty)) {
-        .@"struct", .@"union", .tagged_union, .array, .tuple, .slice, .closure => true,
+        .@"struct", .@"union", .tagged_union, .array, .slice, .closure, .failable => true,
         else => false,
     };
 }
@@ -1820,33 +1809,16 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
             return val;
         },
-        // Tuple → Tuple element-wise coercion (e.g. a `(i64, i64)` literal
-        // flowing into a `(i32, i32)` slot — the multi-value failable success
-        // tuple). Same arity: extract each slot, coerce it, rebuild.
-        .tuple_elementwise => {
+        .struct_elementwise => {
             const si = self.module.types.get(src_ty);
             const di = self.module.types.get(dst_ty);
             var elems = std.ArrayList(Ref).empty;
             defer elems.deinit(self.alloc);
-            for (si.tuple.fields, di.tuple.fields, 0..) |sf, df, i| {
-                const fv = self.builder.emit(.{ .tuple_get = .{ .base = val, .field_index = @intCast(i), .base_type = src_ty } }, sf);
-                elems.append(self.alloc, self.coerceMode(fv, sf, df, mode)) catch unreachable;
-            }
-            return self.builder.emit(.{ .tuple_init = .{ .fields = self.alloc.dupe(Ref, elems.items) catch unreachable } }, dst_ty);
-        },
-        // Anonymous/positional STRUCT → tuple of the same arity, element-wise
-        // (the untyped `.{ }` literal is an anon struct; its values flow into
-        // tuple slots).
-        .struct_to_tuple => {
-            const si = self.module.types.get(src_ty);
-            const di = self.module.types.get(dst_ty);
-            var elems = std.ArrayList(Ref).empty;
-            defer elems.deinit(self.alloc);
-            for (si.@"struct".fields, di.tuple.fields, 0..) |sf, df, i| {
+            for (si.@"struct".fields, di.@"struct".fields, 0..) |sf, df, i| {
                 const fv = self.builder.structGet(val, @intCast(i), sf.ty);
-                elems.append(self.alloc, self.coerceMode(fv, sf.ty, df, mode)) catch unreachable;
+                elems.append(self.alloc, self.coerceMode(fv, sf.ty, df.ty, mode)) catch unreachable;
             }
-            return self.builder.emit(.{ .tuple_init = .{ .fields = self.alloc.dupe(Ref, elems.items) catch unreachable } }, dst_ty);
+            return self.builder.structInit(self.alloc.dupe(Ref, elems.items) catch unreachable, dst_ty);
         },
         // Optional → Concrete unwrapping — ONLY when the value is PROVEN
         // present by flow narrowing. Unwrapping an un-narrowed
@@ -1959,11 +1931,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                     // Only mention the `(T)`-is-a-1-tuple gotcha when the payload
                     // actually IS a tuple (the `?(?T)` typo); for any other
                     // mismatch the parens note would be misleading.
-                    const note: []const u8 = if (self.module.types.get(child_ty) == .tuple)
-                        " (note: '(T,)' with a trailing comma is a 1-tuple; '(T)' without a comma groups to the inner type)"
-                    else
-                        "";
-                    d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot wrap a value of type '{s}' into optional '{s}': its payload type is '{s}'{s}", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), self.formatTypeName(child_ty), note });
+                    d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot wrap a value of type '{s}' into optional '{s}': its payload type is '{s}'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), self.formatTypeName(child_ty) });
                 }
                 return val;
             }

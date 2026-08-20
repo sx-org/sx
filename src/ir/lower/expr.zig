@@ -274,30 +274,39 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // would leave the error slot uninitialized). An exact-arity literal
     // keeps the struct-literal path below, which owns void-slot skipping
     // and named-against-tuple-names resolution.
-    if (sl.struct_name == null and sl.type_expr == null and !ty.isBuiltin() and self.module.types.get(ty) == .tuple) {
+    if (sl.struct_name == null and sl.type_expr == null and !ty.isBuiltin()) {
+        const tgt = self.module.types.get(ty);
+        const route_len: ?usize = if (self.module.types.isAnonStruct(ty))
+            tgt.@"struct".fields.len
+        else if (tgt == .failable)
+            self.module.types.failableValueSlotCount(tgt.failable) + 1
+        else
+            null;
         var has_spread = false;
         for (sl.field_inits) |fi| {
             if (fi.value.data == .spread_expr) has_spread = true;
         }
-        if (has_spread or sl.field_inits.len != self.module.types.get(ty).tuple.fields.len) {
-            var elems = std.ArrayList(ast.TupleElement).empty;
-            defer elems.deinit(self.alloc);
-            for (sl.field_inits) |fi| {
-                elems.append(self.alloc, .{ .name = fi.name, .value = fi.value }) catch unreachable;
+        if (route_len) |n| {
+            if (has_spread or sl.field_inits.len != n) {
+                var elems = std.ArrayList(ast.TupleElement).empty;
+                defer elems.deinit(self.alloc);
+                for (sl.field_inits) |fi| {
+                    elems.append(self.alloc, .{ .name = fi.name, .value = fi.value }) catch unreachable;
+                }
+                const tl = ast.TupleLiteral{ .elements = elems.items };
+                const saved_tt2 = self.target_type;
+                self.target_type = ty;
+                const r = self.lowerTupleLiteral(&tl);
+                self.target_type = saved_tt2;
+                return r;
             }
-            const tl = ast.TupleLiteral{ .elements = elems.items };
-            const saved_tt2 = self.target_type;
-            self.target_type = ty;
-            const r = self.lowerTupleLiteral(&tl);
-            self.target_type = saved_tt2;
-            return r;
         }
     }
 
     const aggregate_ok = if (ty.isBuiltin())
         ty == .string
     else switch (self.module.types.get(ty)) {
-        .@"struct", .tuple, .array, .vector, .slice, .closure => true,
+        .@"struct", .array, .vector, .slice, .closure, .failable => true,
         else => false,
     };
     if (!aggregate_ok) {
@@ -482,16 +491,14 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         else => .unresolved,
     } else .unresolved;
 
-    // A TUPLE target `(T0, T1, …)` is neither a struct (so `struct_fields` is
-    // empty) nor an array/vector (so `array_elem_ty` is `.unresolved`) — yet a
-    // positional `.{ a, b }` against it must still coerce element `i` to the
-    // tuple's per-position field type, exactly as a struct positional element
-    // is coerced to `struct_fields[i].ty`. Without this a bare element flows
-    // into the field slot with the wrong shape (e.g. a bare `i64` into a
-    // `{i64,i1}` optional slot — the present optional reads back as absent).
-    // `TupleInfo.fields[i]` is the i-th tuple field type.
-    const tuple_fields: []const TypeId = if (!ty.isBuiltin()) switch (self.module.types.get(ty)) {
-        .tuple => |t| t.fields,
+    const failable_fields: []const TypeId = if (!ty.isBuiltin()) switch (self.module.types.get(ty)) {
+        .failable => |f| blk: {
+            const n = self.module.types.failableValueSlotCount(f);
+            const tmp = self.alloc.alloc(TypeId, n + 1) catch break :blk &.{};
+            for (0..n) |i| tmp[i] = self.module.types.failableValueSlotType(f, i);
+            tmp[n] = f.err;
+            break :blk tmp;
+        },
         else => &.{},
     } else &.{};
 
@@ -507,8 +514,8 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         // still happens in `coerceToType` below.
         const elem_target: TypeId = if (i < struct_fields.len)
             struct_fields[i].ty
-        else if (i < tuple_fields.len)
-            tuple_fields[i]
+        else if (i < failable_fields.len)
+            failable_fields[i]
         else
             array_elem_ty;
         if (elem_target != .unresolved) self.target_type = elem_target;
@@ -880,25 +887,6 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
                     .missing => {},
                 }
             }
-        }
-    }
-    // Check tuple fields
-    if (!ty.isBuiltin()) {
-        const ti = self.module.types.get(ty);
-        if (ti == .tuple) {
-            const tuple = ti.tuple;
-            // Try named fields
-            if (tuple.names) |names| {
-                for (names, 0..) |name_id, i| {
-                    if (name_id == field_name_id) return tuple.fields[i];
-                }
-            }
-            // Try numeric index
-            const idx = std.fmt.parseInt(usize, field, 10) catch {
-                return .unresolved;
-            };
-            if (idx < tuple.fields.len) return tuple.fields[idx];
-            return .unresolved;
         }
     }
     switch (self.lookupField(ty, field)) {
@@ -1849,30 +1837,6 @@ pub fn lowerFieldAccessOnType(self: *Lowering, obj: Ref, obj_ty: TypeId, field: 
         }
     }
 
-    // Tuple field access: .0, .1, etc. or named fields
-    if (!obj_ty.isBuiltin()) {
-        const tinfo = self.module.types.get(obj_ty);
-        if (tinfo == .tuple) {
-            const tuple = tinfo.tuple;
-            // Try named fields first
-            if (tuple.names) |names| {
-                for (names, 0..) |name_id, i| {
-                    if (name_id == field_name_id) {
-                        return self.builder.structGet(obj, @intCast(i), tuple.fields[i]);
-                    }
-                }
-            }
-            // Try numeric index (e.g., "0", "1")
-            const idx = std.fmt.parseInt(u32, field, 10) catch {
-                return self.emitFieldError(obj_ty, field, span);
-            };
-            if (idx < tuple.fields.len) {
-                return self.builder.structGet(obj, idx, tuple.fields[idx]);
-            }
-            return self.emitFieldError(obj_ty, field, span);
-        }
-    }
-
     // Resolve struct field index and type
     switch (self.mentionField(obj_ty, field, span)) {
         .hit => |h| return self.builder.structGet(obj, h.index, h.ty),
@@ -2573,28 +2537,6 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     // *runtime* index into a tuple value falls through to the generic guard
     // below ("cannot index a value of type '(...)'") — there is no single
     // element type to index by at runtime.
-    if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .tuple) {
-        const tinfo = self.module.types.get(obj_ty).tuple;
-        if (self.comptimeIndexOf(ie.index)) |ci| {
-            if (ci >= 0 and @as(usize, @intCast(ci)) < tinfo.fields.len) {
-                const fi: u32 = @intCast(ci);
-                const obj = self.lowerExpr(ie.object);
-                return self.builder.structGet(obj, fi, tinfo.fields[fi]);
-            }
-            // Comptime index is out of range — diagnose loudly rather than
-            // letting it fall through to the generic "cannot index" message,
-            // which would obscure the real cause (a bad constant index).
-            if (self.diagnostics) |d| {
-                d.addFmt(.err, ie.index.span, "tuple index {} out of bounds — tuple '{s}' has {} field{s}", .{
-                    ci,
-                    self.formatTypeName(obj_ty),
-                    tinfo.fields.len,
-                    if (tinfo.fields.len == 1) "" else "s",
-                });
-            }
-            return self.builder.constInt(0, .i64); // placeholder — hasErrors() aborts before codegen
-        }
-    }
     // Comptime-constant index into a STRUCT value — `s[i]` where `i` folds
     // (exact parity with the tuple path above — the field itself, typed; a
     // runtime index does NOT apply to structs, use `struct_field_value(s, j)`).
@@ -2970,7 +2912,7 @@ pub fn lowerTupleLiteral(self: *Lowering, tl: *const ast.TupleLiteral) Ref {
         if (elem.value.data == .spread_expr) has_spread = true;
     }
 
-    // Explicitly-typed construction `Tuple(A, B).( ... )`: the literal carries
+    // Explicitly-typed construction with a type prefix: the literal carries
     // its tuple type, exactly like `Name{ ... }` for structs. Resolve it and
     // drive element lowering through it as the target tuple — the produced
     // value equals what the anonymous `.( ... )` form yields against that type.
@@ -2998,8 +2940,18 @@ pub fn lowerTupleLiteral(self: *Lowering, tl: *const ast.TupleLiteral) Ref {
     if (self.target_type) |tt| {
         if (!tt.isBuiltin()) {
             const tinfo = self.module.types.get(tt);
-            if (tinfo == .tuple and (has_spread or tinfo.tuple.fields.len == tl.elements.len)) {
-                target_fields = tinfo.tuple.fields;
+            if (tinfo == .@"struct" and (has_spread or tinfo.@"struct".fields.len == tl.elements.len)) {
+                const tmp = self.alloc.alloc(TypeId, tinfo.@"struct".fields.len) catch unreachable;
+                for (tinfo.@"struct".fields, 0..) |f, i| tmp[i] = f.ty;
+                target_fields = tmp;
+            } else if (tinfo == .failable) {
+                const n = self.module.types.failableValueSlotCount(tinfo.failable);
+                if (has_spread or n == tl.elements.len or n + 1 == tl.elements.len) {
+                    const tmp = self.alloc.alloc(TypeId, n + 1) catch unreachable;
+                    for (0..n) |i| tmp[i] = self.module.types.failableValueSlotType(tinfo.failable, i);
+                    tmp[n] = tinfo.failable.err;
+                    target_fields = tmp;
+                }
             }
         }
     }
@@ -3085,13 +3037,13 @@ pub fn lowerTupleLiteral(self: *Lowering, tl: *const ast.TupleLiteral) Ref {
     const tuple_ty = if (target_fields != null and self.target_type != null)
         self.target_type.?
     else
-        self.module.types.intern(.{ .tuple = .{
-            .fields = self.alloc.dupe(TypeId, field_type_ids.items) catch unreachable,
-            .names = if (has_names) self.alloc.dupe(types.StringId, name_ids.items) catch unreachable else null,
-        } });
+        self.module.types.internFieldsAsProductOrFailable(
+            self.alloc.dupe(TypeId, field_type_ids.items) catch unreachable,
+            if (has_names) self.alloc.dupe(types.StringId, name_ids.items) catch unreachable else null,
+        );
 
     const owned = self.alloc.dupe(Ref, elems.items) catch unreachable;
-    return self.builder.emit(.{ .tuple_init = .{ .fields = owned } }, tuple_ty);
+    return self.builder.structInit(owned, tuple_ty);
 }
 
 pub fn lowerDerefExpr(self: *Lowering, de: *const ast.DerefExpr) Ref {
@@ -3204,11 +3156,7 @@ pub fn lowerNullCoalesce(self: *Lowering, nc: *const ast.NullCoalesce) Ref {
     const coerced_ty = self.builder.getRefType(rhs);
     if (coerced_ty != inner_ty and coerced_ty != .void and inner_ty != .void) {
         if (self.diagnostics) |d| {
-            const note: []const u8 = if (!inner_ty.isBuiltin() and self.module.types.get(inner_ty) == .tuple)
-                " (note: a 1-tuple value is written '(x,)' with a trailing comma)"
-            else
-                "";
-            d.addFmt(.err, nc.rhs.span, "'??' default has type '{s}', but the optional's payload is '{s}'{s}", .{ self.formatTypeName(coerced_ty), self.formatTypeName(inner_ty), note });
+            d.addFmt(.err, nc.rhs.span, "'??' default has type '{s}', but the optional's payload is '{s}'", .{ self.formatTypeName(coerced_ty), self.formatTypeName(inner_ty) });
         }
         rhs = self.builder.constNull(inner_ty); // typed placeholder — keeps the PHI well-formed
     }
@@ -3711,7 +3659,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 // i-th field, never an `index_gep` (whose `ptrTo(.unresolved)`
                 // element type panics at LLVM emit). Out-of-range diagnoses loudly,
                 // mirroring the read path.
-                if (!obj_ty.isBuiltin() and (self.module.types.get(obj_ty) == .tuple or self.module.types.get(obj_ty) == .@"struct")) {
+                if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
                     // Struct parity (aggregate ladder): `@s[comptime i]` is the
                     // i-th field's address, exactly like tuples.
                     const nfields: usize = @intCast(self.module.types.memberCount(obj_ty) orelse 0);
@@ -4442,10 +4390,10 @@ pub fn asmResultType(self: *Lowering, ae: *const ast.AsmExpr) TypeId {
     }
     if (fields.items.len == 0) return .void;
     if (fields.items.len == 1) return fields.items[0];
-    return self.module.types.intern(.{ .tuple = .{
-        .fields = self.alloc.dupe(TypeId, fields.items) catch unreachable,
-        .names = if (has_names) self.alloc.dupe(types.StringId, names.items) catch unreachable else null,
-    } });
+    return self.module.types.internProduct(
+        self.alloc.dupe(TypeId, fields.items) catch unreachable,
+        if (has_names) self.alloc.dupe(types.StringId, names.items) catch unreachable else null,
+    );
 }
 
 /// Inline assembly lowering: validate the asm shape with specific named
@@ -5024,24 +4972,6 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         }
     }
 
-    // Tuple operators
-    if (!ty.isBuiltin()) {
-        const lhs_info = self.module.types.get(ty);
-        if (lhs_info == .tuple) {
-            return self.lowerTupleOp(bop, lhs, rhs, ty);
-        }
-    }
-    // Tuple membership: value in (tuple)
-    if (bop.op == .in_op) {
-        const rhs_ty_raw = self.inferExprType(bop.rhs);
-        if (!rhs_ty_raw.isBuiltin()) {
-            const rhs_info_raw = self.module.types.get(rhs_ty_raw);
-            if (rhs_info_raw == .tuple) {
-                return self.lowerTupleMembership(lhs, rhs, rhs_info_raw.tuple);
-            }
-        }
-    }
-
     // The RHS type the operand rules see: a narrowed optional shows its payload.
     const eff_rhs_ty = blk: {
         if (!rhs_ty.isBuiltin()) {
@@ -5224,145 +5154,6 @@ fn lowerPointerDistance(self: *Lowering, lhs: Ref, rhs: Ref, elem: TypeId, span:
     return self.builder.div(bytes, self.builder.constInt(@intCast(stride), .isize), .isize);
 }
 
-/// Handle tuple binary ops: concat (+), repeat (*), comparison (==, !=, <, <=, >, >=)
-pub fn lowerTupleOp(self: *Lowering, bop: *const ast.BinaryOp, lhs: Ref, rhs: Ref, lhs_ty: TypeId) Ref {
-    const lhs_info = self.module.types.get(lhs_ty);
-    const lhs_fields = lhs_info.tuple.fields;
-
-    switch (bop.op) {
-        .add => {
-            // Tuple concatenation: (a, b) + (c, d) → (a, b, c, d)
-            const rhs_ty = self.inferExprType(bop.rhs);
-            const rhs_fields = if (!rhs_ty.isBuiltin()) blk: {
-                const ri = self.module.types.get(rhs_ty);
-                break :blk if (ri == .tuple) ri.tuple.fields else &[_]TypeId{};
-            } else &[_]TypeId{};
-
-            var all_fields = std.ArrayList(TypeId).empty;
-            defer all_fields.deinit(self.alloc);
-            var all_vals = std.ArrayList(Ref).empty;
-            defer all_vals.deinit(self.alloc);
-
-            for (lhs_fields, 0..) |f, i| {
-                all_fields.append(self.alloc, f) catch unreachable;
-                all_vals.append(self.alloc, self.builder.structGet(lhs, @intCast(i), f)) catch unreachable;
-            }
-            for (rhs_fields, 0..) |f, i| {
-                all_fields.append(self.alloc, f) catch unreachable;
-                all_vals.append(self.alloc, self.builder.structGet(rhs, @intCast(i), f)) catch unreachable;
-            }
-
-            const result_ty = self.module.types.intern(.{ .tuple = .{
-                .fields = self.alloc.dupe(TypeId, all_fields.items) catch unreachable,
-                .names = null,
-            } });
-            const owned = self.alloc.dupe(Ref, all_vals.items) catch unreachable;
-            return self.builder.emit(.{ .tuple_init = .{ .fields = owned } }, result_ty);
-        },
-        .mul => {
-            // Tuple repeat: (a, b) * 3 → (a, b, a, b, a, b)
-            const count: usize = switch (bop.rhs.data) {
-                .int_literal => |il| @intCast(@as(u64, @bitCast(il.value))),
-                .char_literal => |cl| @intCast(@as(u64, @bitCast(cl.value))),
-                else => 1,
-            };
-
-            var all_fields = std.ArrayList(TypeId).empty;
-            defer all_fields.deinit(self.alloc);
-            var all_vals = std.ArrayList(Ref).empty;
-            defer all_vals.deinit(self.alloc);
-
-            for (0..count) |_| {
-                for (lhs_fields, 0..) |f, i| {
-                    all_fields.append(self.alloc, f) catch unreachable;
-                    all_vals.append(self.alloc, self.builder.structGet(lhs, @intCast(i), f)) catch unreachable;
-                }
-            }
-
-            const result_ty = self.module.types.intern(.{ .tuple = .{
-                .fields = self.alloc.dupe(TypeId, all_fields.items) catch unreachable,
-                .names = null,
-            } });
-            const owned = self.alloc.dupe(Ref, all_vals.items) catch unreachable;
-            return self.builder.emit(.{ .tuple_init = .{ .fields = owned } }, result_ty);
-        },
-        .eq, .neq => {
-            // Element-wise equality (or single-element tuple vs scalar)
-            const rhs_is_tuple = blk: {
-                const rt = self.inferExprType(bop.rhs);
-                if (!rt.isBuiltin()) {
-                    break :blk self.module.types.get(rt) == .tuple;
-                }
-                break :blk false;
-            };
-            if (!rhs_is_tuple and lhs_fields.len == 1) {
-                // Single-element tuple vs scalar: unwrap and compare
-                const lf = self.builder.structGet(lhs, 0, lhs_fields[0]);
-                const eq = self.builder.cmpEq(lf, rhs);
-                return if (bop.op == .neq) self.builder.emit(.{ .bool_not = .{ .operand = eq } }, .bool) else eq;
-            }
-            var result = self.builder.constBool(true);
-            for (lhs_fields, 0..) |f, i| {
-                const lf = self.builder.structGet(lhs, @intCast(i), f);
-                const rf = self.builder.structGet(rhs, @intCast(i), f);
-                const eq = self.builder.cmpEq(lf, rf);
-                result = self.builder.emit(.{ .bool_and = .{ .lhs = result, .rhs = eq } }, .bool);
-            }
-            return if (bop.op == .neq) self.builder.emit(.{ .bool_not = .{ .operand = result } }, .bool) else result;
-        },
-        .lt, .lte, .gt, .gte => {
-            // Lexicographic comparison
-            return self.lowerTupleLexCompare(bop.op, lhs, rhs, lhs_fields);
-        },
-        else => return self.builder.constInt(0, .i64),
-    }
-}
-
-pub fn lowerTupleLexCompare(self: *Lowering, op: ast.BinaryOp.Op, lhs: Ref, rhs: Ref, fields: []const TypeId) Ref {
-    // Lexicographic comparison using boolean logic.
-    // (a0,a1) < (b0,b1) = (a0 < b0) || (a0 == b0 && a1 < b1)
-    // (a0,a1) <= (b0,b1) = (a0 < b0) || (a0 == b0 && a1 <= b1)
-    if (fields.len == 0) return self.builder.constBool(op == .lte or op == .gte);
-
-    const n = fields.len;
-    // Start with the last field using the actual op
-    const lf_last = self.builder.structGet(lhs, @intCast(n - 1), fields[n - 1]);
-    const rf_last = self.builder.structGet(rhs, @intCast(n - 1), fields[n - 1]);
-    var result = switch (op) {
-        .lt => self.builder.cmpLt(lf_last, rf_last),
-        .lte => self.builder.emit(.{ .cmp_le = .{ .lhs = lf_last, .rhs = rf_last } }, .bool),
-        .gt => self.builder.cmpGt(lf_last, rf_last),
-        .gte => self.builder.emit(.{ .cmp_ge = .{ .lhs = lf_last, .rhs = rf_last } }, .bool),
-        else => unreachable,
-    };
-
-    // Work backwards: result = (a[i] < b[i]) || (a[i] == b[i] && result)
-    if (n > 1) {
-        var i: usize = n - 1;
-        while (i > 0) {
-            i -= 1;
-            const lf = self.builder.structGet(lhs, @intCast(i), fields[i]);
-            const rf = self.builder.structGet(rhs, @intCast(i), fields[i]);
-            const strict = if (op == .lt or op == .lte) self.builder.cmpLt(lf, rf) else self.builder.cmpGt(lf, rf);
-            const eq = self.builder.cmpEq(lf, rf);
-            const eq_and_rest = self.builder.emit(.{ .bool_and = .{ .lhs = eq, .rhs = result } }, .bool);
-            result = self.builder.emit(.{ .bool_or = .{ .lhs = strict, .rhs = eq_and_rest } }, .bool);
-        }
-    }
-    return result;
-}
-
-pub fn lowerTupleMembership(self: *Lowering, value: Ref, tuple: Ref, tuple_info: anytype) Ref {
-    // value in (a, b, c) → value == a || value == b || value == c
-    var result = self.builder.constBool(false);
-    for (tuple_info.fields, 0..) |f, i| {
-        const elem = self.builder.structGet(tuple, @intCast(i), f);
-        const eq = self.builder.cmpEq(value, elem);
-        result = self.builder.emit(.{ .bool_or = .{ .lhs = result, .rhs = eq } }, .bool);
-    }
-    return result;
-}
-
 /// Struct value equality: recursive field-wise `==` / `!=`.
 ///
 /// Emits a per-field comparison against each field's OWN type, AND-reduces for
@@ -5486,23 +5277,6 @@ pub fn lowerFieldEquality(self: *Lowering, lf: Ref, rf: Ref, field_ty: TypeId, s
                 const nlf = self.builder.structGet(lf, @intCast(j), nf.ty);
                 const nrf = self.builder.structGet(rf, @intCast(j), nf.ty);
                 const sub = self.lowerFieldEquality(nlf, nrf, nf.ty, span) orelse {
-                    bad = true;
-                    continue;
-                };
-                acc = if (acc) |a| self.builder.emit(.{ .bool_and = .{ .lhs = a, .rhs = sub } }, .bool) else sub;
-            }
-            if (bad) break :blk null;
-            break :blk acc.?;
-        },
-        .tuple => blk: {
-            const elems = fi.tuple.fields;
-            if (elems.len == 0) break :blk self.builder.constBool(true);
-            var acc: ?Ref = null;
-            var bad = false;
-            for (elems, 0..) |et, j| {
-                const nlf = self.builder.structGet(lf, @intCast(j), et);
-                const nrf = self.builder.structGet(rf, @intCast(j), et);
-                const sub = self.lowerFieldEquality(nlf, nrf, et, span) orelse {
                     bad = true;
                     continue;
                 };

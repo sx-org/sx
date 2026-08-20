@@ -1,9 +1,8 @@
 // Compound type literals in expression position — `size_of` /
 // `align_of` accept pointer (`*T`), optional (`?T`), array (`[N]T`), and
 // function (`(A) -> B`) types directly. Also const-decl RHS aliases through
-// the same forms (`Ptr :: *u8;` etc), which is how a tuple type reaches the
-// site: `Tuple(...)` is a type-position spelling, so `size_of` takes the alias.
-// Same shape as the existing `size_of(i32)` baseline path.
+// the same forms (`Ptr :: *u8;` etc). A named product alias reaches `size_of`
+// the same way. Same shape as the existing `size_of(i32)` baseline path.
 
 @import "modules/std.sx";
 
@@ -12,7 +11,7 @@ Ptr   :: *u8;
 Maybe :: ?u8;
 Arr   :: [3]u8;
 Cb    :: (i32) -> i32;
-Pair  :: Tuple(i32, i32);
+Pair  :: struct { a: i32; b: i32 };
 
 main :: () -> i32 {
   // Direct: parser fix for *T, ?T  + existing [N]T path.

@@ -93,7 +93,7 @@ N :: K[0] + K[3];        // folds
 
 ### Multiple return values
 
-`-> (A, B)` or `-> (x: A, y: B)`. Not a tuple (`Tuple(…)` is the value type). Trailing `!` is the error channel: `-> (A, B, !)`.
+`-> (A, B)` or `-> (x: A, y: B)`. A multi-return is only a return signature — a parameter or field uses a named `struct { x: A; y: B }` or a positional `.{1, 2}`. Trailing `!` is the error channel: `-> (A, B, !)`.
 
 ```sx
 divmod :: (a: i64, b: i64) -> (i64, i64) { return a / b, a % b; }
@@ -253,7 +253,7 @@ __stdinp  : *void extern;
 
 ### Inline assembly
 
-`asm { template, [name] "constraint" -> Type | = expr, clobbers(.…) }`. Zero outputs → `void` (`volatile`); one → that type; N → a `Tuple`. See [docs/inline-assembly.md](docs/inline-assembly.md).
+`asm { template, [name] "constraint" -> Type | = expr, clobbers(.…) }`. Zero outputs → `void` (`volatile`); one → that type; N → multi-return `-> (T0, T1, …)`. See [docs/inline-assembly.md](docs/inline-assembly.md).
 
 ```sx
 add :: (a: i64, b: i64) -> i64 {

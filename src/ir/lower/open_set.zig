@@ -535,12 +535,6 @@ fn containsByValue(self: *Lowering, ty: TypeId, set: TypeId, depth: u32) bool {
             }
             break :blk false;
         },
-        .tuple => |t| blk: {
-            for (t.fields) |f| {
-                if (containsByValue(self, f, set, depth + 1)) break :blk true;
-            }
-            break :blk false;
-        },
         .array => |a| containsByValue(self, a.element, set, depth + 1),
         .optional => |o| containsByValue(self, o.child, set, depth + 1),
         .@"union" => |u| blk: {
@@ -735,7 +729,6 @@ fn collectSetsByValue(self: *Lowering, ty: TypeId, out: *std.AutoHashMap(TypeId,
     }
     switch (self.module.types.get(ty)) {
         .@"struct" => |st| for (st.fields) |f| collectSetsByValue(self, f.ty, out, depth + 1),
-        .tuple => |t| for (t.fields) |f| collectSetsByValue(self, f, out, depth + 1),
         .array => |a| collectSetsByValue(self, a.element, out, depth + 1),
         .optional => |o| collectSetsByValue(self, o.child, out, depth + 1),
         .@"union" => |u| for (u.fields) |f| collectSetsByValue(self, f.ty, out, depth + 1),

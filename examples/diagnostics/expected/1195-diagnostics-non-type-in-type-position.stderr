@@ -5,12 +5,6 @@ error: unknown error set 'Nonexistent'
    |         ^^^^^^^^^^^^
 
 error: unknown error set 'Nonexistent'
-  --> examples/diagnostics/1195-diagnostics-non-type-in-type-position.sx:26:20
-   |
-26 |     w : Tuple(i32, !Nonexistent) = ---;       // nested in a tuple
-   |                    ^^^^^^^^^^^^
-
-error: unknown error set 'Nonexistent'
   --> examples/diagnostics/1195-diagnostics-non-type-in-type-position.sx:27:17
    |
 27 |     v : Closure(!Nonexistent) -> i32 = ---;   // nested in a closure param
@@ -23,7 +17,7 @@ error: expected a type, found a value 'g.a' in type position
    |         ^^^
 
 error: expected a type, found a value 'g.a' in type position
-  --> examples/diagnostics/1195-diagnostics-non-type-in-type-position.sx:24:20
+  --> examples/diagnostics/1195-diagnostics-non-type-in-type-position.sx:24:29
    |
-24 |     y : Tuple(i32, g.a) = ---;     // same, as a tuple element
-   |                    ^^^
+24 |     y : struct { a: i32; b: g.a } = ---;     // same, as a product field
+   |                             ^^^

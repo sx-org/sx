@@ -2040,7 +2040,10 @@ pub const Ops = struct {
             // is already the correct zero-width value.
             const field_is_void = switch (self.e.ir_mod.types.get(instruction.ty)) {
                 .@"struct" => |s| i < s.fields.len and s.fields[i].ty == .void,
-                .tuple => |t| i < t.fields.len and t.fields[i] == .void,
+                .failable => |f| blk: {
+                    const n = self.e.ir_mod.types.failableValueSlotCount(f);
+                    break :blk i < n and self.e.ir_mod.types.failableValueSlotType(f, i) == .void;
+                },
                 else => false,
             };
             if (field_is_void) continue;
@@ -2496,22 +2499,6 @@ pub const Ops = struct {
         }
     }
 
-    // ── Tuple ops ────────────────────────────────────────────
-    pub fn emitTupleInit(self: Ops, instruction: *const Inst, agg: Aggregate) void {
-        const tuple_ty = self.e.toLLVMType(instruction.ty);
-        var result = c.LLVMGetUndef(tuple_ty);
-        for (agg.fields, 0..) |field_ref, i| {
-            const field_val = self.e.resolveRef(field_ref);
-            result = c.LLVMBuildInsertValue(self.e.builder, result, field_val, @intCast(i), "ti");
-        }
-        self.e.mapRef(result);
-    }
-
-    pub fn emitTupleGet(self: Ops, fa: FieldAccess) void {
-        const base = self.e.resolveRef(fa.base);
-        self.e.mapRef(c.LLVMBuildExtractValue(self.e.builder, base, @intCast(fa.field_index), "tg"));
-    }
-
     // ── Optional ops ─────────────────────────────────────────
     pub fn emitOptionalWrap(self: Ops, instruction: *const Inst, un: UnaryOp) void {
         var val = self.e.resolveRef(un.operand);
@@ -2636,9 +2623,7 @@ pub const Ops = struct {
                 self.e.advanceRefCounter();
                 return;
             }
-            if (rinfo == .tuple and rinfo.tuple.fields.len == 2 and
-                self.e.ir_mod.types.get(rinfo.tuple.fields[1]) == .error_set)
-            {
+            if (rinfo == .failable and self.e.ir_mod.types.failableValueSlotCount(rinfo.failable) == 1) {
                 const value = c.LLVMBuildExtractValue(self.e.builder, val, 0, "main.ret.val");
                 const tag = c.LLVMBuildExtractValue(self.e.builder, val, 1, "main.ret.tag");
                 self.e.emitFailableMainRet(value, tag);

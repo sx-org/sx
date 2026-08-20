@@ -28,7 +28,7 @@ ResultOf :: ($T: Type) -> Type {
     return make_enum("ResultOf", vs[0..struct_field_count(T)]);
 }
 
-Handles :: Tuple(a: *Box(i64), b: *Box(bool), c: *Box(f64));
+Handles :: struct { a: *Box(i64); b: *Box(bool); c: *Box(f64) };
 R :: ResultOf(Handles);
 
 use :: (r: R) {

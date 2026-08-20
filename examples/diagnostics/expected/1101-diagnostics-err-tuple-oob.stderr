@@ -1,4 +1,4 @@
-error: field '42' not found on type '(i64, i64)'
+error: field '42' not found on type '__anon'
   --> examples/diagnostics/1101-diagnostics-err-tuple-oob.sx:5:15
    |
  5 |     return xx t.42;

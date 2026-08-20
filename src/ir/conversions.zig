@@ -32,8 +32,7 @@ pub const CoercionResolver = struct {
         unbox_any, // any → concrete
         box_any, // concrete → any
         closure_to_fn_reject, // closure value → bare fn-ptr (diagnostic, returns operand)
-        tuple_elementwise, // (A,B) → (C,D), same arity
-        struct_to_tuple, // anon/positional struct → tuple, same arity, element-wise
+        struct_elementwise, // anon struct → anon struct, same arity, element-wise
         optional_unwrap, // ?T → concrete (narrowing)
         optional_to_bool_reject, // ?T → bool (no presence-test coercion; diagnostic)
         void_to_optional, // void (null literal) → ?T
@@ -92,18 +91,15 @@ pub const CoercionResolver = struct {
             }
         }
 
-        // Tuple → Tuple, same arity. A STRUCT source of the same arity
-        // coerces element-wise too — an untyped `.{ }` literal self-types as
-        // an anonymous struct, and its values flow into tuple slots (a catch
-        // fallback for a multi-value failable, a tuple-typed field).
+        // Anonymous positional products of the same arity coerce element-wise
+        // (`.{1, 1}` into a `(i32, i32)` multi-return success type).
         if (!src_ty.isBuiltin() and !dst_ty.isBuiltin()) {
             const si = self.l.module.types.get(src_ty);
             const di = self.l.module.types.get(dst_ty);
-            if (si == .tuple and di == .tuple and si.tuple.fields.len == di.tuple.fields.len) {
-                return .tuple_elementwise;
-            }
-            if (si == .@"struct" and di == .tuple and si.@"struct".fields.len == di.tuple.fields.len) {
-                return .struct_to_tuple;
+            if (si == .@"struct" and di == .@"struct" and si.@"struct".fields.len == di.@"struct".fields.len and
+                self.l.module.types.isAnonStruct(src_ty) and self.l.module.types.isAnonStruct(dst_ty))
+            {
+                return .struct_elementwise;
             }
         }
 

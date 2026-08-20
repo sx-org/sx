@@ -58,16 +58,13 @@ and `T { … }` a keyword label takes the backtick raw escape
 expression, so `.{ if x > 1 then 10 else 20, 2 }` is an if-expression element.
 Value-binding positions (locals, params, function names) reject keywords.
 
-**`Tuple(` and `Closure(` build a type in type position only.** The type
-constructors `Tuple(...)` and `Closure(...) -> R` are read wherever the grammar
-demands a type — an annotation, a parameter, a field, a return, a type argument
-— and directly after `::`, where the exact token pair `Tuple`+`(` /
-`Closure`+`(` opens a type alias (`NT :: Tuple(a: i64)`,
-`CB :: Closure(i32) -> i32`). Everywhere else `Tuple` and `Closure` are
-ordinary identifiers: a function named `Closure` is called as `Closure(5)`
-with no escape, and `Tuple(1, 2)` in a value position is a call to whatever
-`Tuple` names there. A tuple type reaches a type-demanding builtin
-(`size_of(T)`, `type_info(T)`) as an alias.
+**`Closure(` builds a type in type position only.** The type constructor
+`Closure(...) -> R` is read wherever the grammar demands a type — an
+annotation, a parameter, a field, a return, a type argument — and directly
+after `::`, where the exact token pair `Closure`+`(` opens a type alias
+(`CB :: Closure(i32) -> i32`). Everywhere else `Closure` is an ordinary
+identifier: a function named `Closure` is called as `Closure(5)` with no
+escape. `Tuple` is an ordinary identifier in every position.
 
 Every reserved spelling except `inline` bare-names member slots — the
 identifier-classified spellings (`i1`..`i64`, `u1`..`u64`, `bool`, `string`,
@@ -1921,53 +1918,37 @@ Design rationale, measured trade-offs, and rejected directions:
 `design/protocols.md` (appendix).
 
 
-### Tuple Types
-Anonymous product types with optional field names. Tuples are first-class values — they can be stored in variables, passed to functions, and returned. A **named tuple** `Tuple(x: A, y: B)` is sx's anonymous *structural* record — it carries field names but has no nominal identity (distinct from a `struct`, which is nominal). Tuples also support **spread** (`..tuple` / `.{..tuple}`) and **field projection** (`tuple.field` across all elements) — see "Variadic Heterogeneous Type Packs".
+### Anonymous products
 
-The tuple TYPE is always written `Tuple(...)`; a tuple VALUE is built with the
-ONE aggregate literal `.{ ... }` against a tuple-typed target — an annotation,
-a typed prefix, a call slot, or a return slot. An UNTYPED `.{ ... }` is NOT a tuple — it
-self-types as an anonymous structural STRUCT (see "Struct Literals"); tuples
-are explicit-target-only. Bare parentheses `(...)` are **grouping only,
-everywhere** — a comma inside bare parens is a hard error naming the tuple spelling.
+A positional anonymous product is the type of `.{1, 2}`: an anonymous
+structural struct whose fields are named `"0"`, `"1"`, …. Field access is
+`t.0` / `t.1`. `type_info` on it is `.struct`. There is no writable type
+spelling for a positional product other than `struct { ..P(Ts) }` (a pack
+spread as the struct's one field — see "Variadic Heterogeneous Type Packs").
+Named products are ordinary structs: `struct { x: A; y: B }`, accessed by
+name only (`.x`, not `.0`).
 
-#### Construction
+`.{ … }` is the one aggregate literal. Untyped `.{1, 2}` infers the positional
+product. Named `.{x = 10, y = 20}` against `struct { x: i64; y: i64 }` is a
+named-struct value. Bare parentheses `(...)` are grouping only — a comma
+inside bare parens is a hard error.
+
 ```sx
-pair   : Tuple(i64, i64) = .{40, 2};           // positional tuple value
-named  : Tuple(x: i64, y: i64) = .{x = 10, y = 20};  // named tuple value
-single : Tuple(i64) = .{42};                   // 1-tuple value
-empty  : Tuple() = .{};                        // empty tuple value
-zeroed : Tuple(i32, i32) = ---;                // zero-initialized tuple
+pair := .{40, 2};
+pair.0;              // 40
+pair.1;              // 2
 
-// Explicitly typed value (like `Point{...}`), through a tuple alias:
-PT :: Tuple(i64, i64);
-NT :: Tuple(x: i64, y: i64);
-p := PT{40, 2};
-n := NT{x = 10, y = 20};
+named : struct { x: i64; y: i64 } = .{x = 10, y = 20};
+named.x;             // 10
+
+zeroed : struct { a: i32; b: i32 } = ---;
 ```
 
-A named tuple value uses `=` for its fields (`.{x = a, y = b}`); a named tuple
-type keeps `:` (`Tuple(x: A, y: B)`).
+Equality on a positional product is field-wise `==` / `!=` (same as a struct).
+There is no product concatenation, repetition, lexicographic compare, or
+membership operator.
 
-#### Type Syntax
-The tuple type is `Tuple(...)`:
-```sx
-Tuple(i64)          // 1-tuple type
-Tuple(i64, i64)     // 2-tuple type
-Tuple(x: i64, y: i64)  // named tuple type
-Tuple()             // empty tuple type
-Tuple(..F(Ts))      // pack-spread tuple type (see Variadic Heterogeneous Type Packs)
-```
-`Tuple(...)` is a **type-position** spelling: an annotation, a parameter, a
-field, a return, a type argument, or a `::` alias. A type-demanding builtin
-(`size_of`, `type_info`) takes an alias — `T :: Tuple(A, B); size_of(T)` — since
-its argument sits in expression position, where `Tuple` is an ordinary name. A
-tuple **value** comes only from a `.{ ... }` literal against a tuple-typed
-target (`t : Tuple(A, B) = .{a, b}`) or the typed prefix on an alias
-(`T{a, b}`); a tuple type with non-type elements (`Tuple(i32, 1)`) is rejected
-where the type is demanded.
-
-Bare parentheses are grouping and never a tuple:
+Bare parentheses are grouping:
 ```sx
 (i64)            // grouping: resolves to i64
 (i64) -> i64     // function type: takes i64, returns i64
@@ -1975,38 +1956,18 @@ Bare parentheses are grouping and never a tuple:
 ?(?i64)          // grouping → a genuine nested optional
 [1](Closure(i64,i64) -> i64)  // grouping → array of one closure
 ```
-Grouping lets a closure/optional/function type be parenthesized for readability.
-Function types `(A, B) -> R`, parameter lists and `match` bindings keep using
-bare parens — they are unaffected by the tuple grammar.
-
-#### Field Access
-```sx
-pair.0;      // 40 — numeric index
-pair.1;      // 2
-named.x;     // 10 — named field
-named.0;     // 10 — numeric index also works on named tuples
-```
-
-#### As Return Type
-```sx
-swap :: (a: i64, b: i64) -> Tuple(i64, i64) { .{b, a} }
-wrap :: (x: i64) -> Tuple(i64) { .{x} }   // 1-tuple return
-
-s := swap(1, 2);  // s.0 = 2, s.1 = 1
-t := wrap(42);    // t.0 = 42
-```
 
 #### Multiple Return Values (bare-paren return signature)
 
 A function may return **multiple values** with a bare-paren return signature
 (≥2 value slots) — positional `-> (A, B)` or named `-> (x: A, y: B)`, with an
 optional trailing `!` error channel as the **last** slot (`-> (A, B, !)`). The
-empty `-> ()` is `void`. A multi-return is a DISTINCT construct from a `Tuple(…)`
-VALUE: it is represented internally by a reused tuple TypeId (same ABI), but it
-is valid ONLY in a function/closure return position — a parameter, field, or
-variable annotation `x: (A, B)` is rejected (use `Tuple(…)` for a tuple value).
-A single-value `-> (T, !)` (one value + error) is NOT a multi-return; it is
-exactly the failable `-> (T, !)`.
+empty `-> ()` is `void`. A multi-return is interned as an anonymous structural
+struct (fields `"0"` / `"1"`, or the named slots). It is valid ONLY as a
+function/closure return type — a parameter, field, or variable annotation
+`x: (A, B)` is rejected. A single-value `-> (T, !)` (one value + error) is NOT
+a multi-return; it is the failable `-> (T, !)`, a dedicated kind, not a product
+whose last field is an error set.
 
 ```sx
 divmod :: (a: i64, b: i64) -> (i64, i64) { return a / b, a % b; }
@@ -2029,47 +1990,9 @@ stats  :: (a: i32, b: i32) -> (sum: i32, big: bool) { return sum = a + b, big = 
   non-diverging path and has no default is a compile error (definite assignment),
   and a slot name may not collide with a parameter name.
 
-#### Representation
-Tuples are represented as anonymous LLVM struct types (same layout as named structs). A tuple `Tuple(i64, i64)` has LLVM type `{ i64, i64 }`.
-
-#### Tuple Operators
-
-**Equality and inequality** — element-wise comparison, both sides must have the same field count:
-```sx
-P2 :: Tuple(i64, i64);
-a : P2 = .{1, 2};
-b : P2 = .{1, 3};
-a == a   // true
-a != b   // true
-```
-
-**Concatenation** (`+`) — creates a new tuple with fields from both sides:
-```sx
-c := a + P2{3, 4};   // c : Tuple(i64, i64, i64, i64)
-c.0;                       // 1
-c.3;                       // 4
-```
-
-**Repetition** (`*`) — repeats a tuple N times (N must be a compile-time integer literal):
-```sx
-r := a * 3;   // r : Tuple(i64, i64, i64, i64, i64, i64)
-r.0;                 // 1
-r.5;                 // 2
-```
-
-**Lexicographic comparison** (`<`, `<=`, `>`, `>=`) — compares element-by-element left to right:
-```sx
-a < b                            // true  (first fields equal, 2 < 3)
-P2{2, 0} > P2{1, 9}              // true  (2 > 1, rest ignored)
-a <= a                           // true  (all equal, <= allows tie)
-```
-
-**Membership** (`in`) — checks if a value exists in a tuple:
-```sx
-m : Tuple(i64, i64, i64) = .{1, 2, 3};
-3 in m     // true
-5 in m     // false
-```
+A multi-return is represented as an anonymous LLVM struct (same layout as a
+named struct). `-> (i64, i64)` has LLVM type `{ i64, i64 }`. A value-carrying
+failable `-> (T, !)` is a dedicated `{ value-slots…, u32 tag }` layout.
 
 ### Array Types
 Fixed-size arrays with element type and length.
@@ -3028,8 +2951,8 @@ may do, regardless of the concrete arg types at any particular call site.
 | Comptime unroll (element + index) | `inline for x, i in xs, 0.. { ... }` | multi-iterable parity with the runtime `for`: position 0 drives the count, a trailing open range pairs the cursor |
 | Projection | `xs.field` | see "Pack projection" |
 | Spread → call args | `..xs` / `..xs.field` | expands to N positional args |
-| Spread → aggregate value | `.{..xs}` / `.{..xs.field}` | materializes the pack (anonymous positional struct; a tuple against a `Tuple(…)` target) |
-| Spread → tuple type | `Tuple(..F(Ts))` / `Tuple(..F(Ts.Arg))` | tuple type with per-element type application |
+| Spread → aggregate value | `.{..xs}` / `.{..xs.field}` | materializes the pack as an anonymous positional struct |
+| Spread → struct type | `struct { ..F(Ts) }` / `struct { ..F(Ts.Arg) }` | anonymous struct whose one field is the pack-spread product |
 | Spread → callable sig | `Closure(..Ts) -> R` / `Closure(..Ts.Arg) -> R` | positional params of the callable |
 
 #### Pack projection
@@ -3041,21 +2964,21 @@ Resolution is **position-driven** (no cross-namespace shadowing):
   **type-arg** namespace. `ValueListenable :: protocol($T: Type) { ... }` declares
   type-arg `T`, so `..xs.T` is the pack of element value-types.
 - In **value** position, `xs.field` looks `field` up among the constraint's
-  **methods** and yields a *tuple* of the projected values
+  **methods** and yields a positional product of the projected values
   (e.g. `xs.value` → `.{xs[0].value(), xs[1].value(), ...}`).
 
 A protocol that declares a type-arg and a method with the **same name**
 compiles, but emits a soft warning at the protocol declaration (the human is
 alerted; resolution still proceeds by position).
 
-#### Tuple parallels
+#### Product parallels
 
-The same spread/projection syntax applies to a **tuple value** whose source is a
-tuple rather than a pack:
+The same spread/projection syntax applies to a **positional product** whose
+source is a materialized pack rather than the pack itself:
 
-- `..tuple` / `..tuple.field` spreads a tuple's fields into call args.
-- `tuple.field` projects `field` out of every element (when all elements have a
-  same-named field), returning a tuple of the projected values.
+- `..stored` / `..stored.field` spreads the product's fields into call args.
+- `stored.field` projects `field` out of every element (when all elements have
+  a same-named field), returning a positional product of the projected values.
 
 This lets a pack be materialized once (`stored := .{..xs}`) and later re-spread
 (`f(..stored)`) or re-projected (`stored.value`).
@@ -3076,8 +2999,8 @@ suggestion:
 - storing/binding it (`x := xs;`, `self.f = xs;`) → materialize it (`.{..xs}`);
 - passing it to a runtime call (`f(xs)`) → declare the parameter as a *slice*
   variadic `..xs: []P` (a runtime slice) instead of a pack `..xs: P`;
-- returning it (`return xs;`) → return a materialized `.{..xs}` (and make the return
-  type that tuple);
+- returning it (`return xs;`) → return a materialized `.{..xs}` (and make the
+  return a multi-return of those slots, or a `struct { ..P(Ts) }` field);
 - iterating it (`for x in xs`, `xs[runtime_i]`) → `inline for x in xs` (or
   `inline for i in 0..xs.len` for the index) for a comptime unroll, or take
   `..xs: []P` for a runtime loop.
@@ -3090,23 +3013,23 @@ place.
 
 #### Storage and protocol conformance
 
-To **store** a pack, materialize a tuple: a pack-shaped struct field is
-tuple-typed, `sources: Tuple(..ValueListenable(Ts))`, assigned `self.sources =
-.{..sources}`. To **return** a struct as a protocol value, `xx` requires an
-explicit impl (protocol erasure is impl-driven, not structural) — e.g.
-`impl ValueListenable($R) for Combined($R, ..$Ts) { ... }`.
+To **store** a pack, put it in one ordinary field whose type is an anonymous
+struct of the spread: `sources: struct { ..ValueListenable(Ts) }`, assigned
+`self.sources = .{..sources}`. To **return** a struct as a protocol value,
+`xx` requires an explicit impl (protocol erasure is impl-driven, not
+structural) — e.g. `impl ValueListenable($R) for Combined($R, ..$Ts) { ... }`.
 
 #### Canonical example
 
 ```sx
 Combined :: struct($R: Type, ..$Ts: []Type) {
-  sources:       Tuple(..ValueListenable(Ts));   // pack-spread in tuple type position
+  sources:       struct { ..ValueListenable(Ts) };   // one field; pack-spread product
   mapper:        Closure(..Ts) -> $R;       // pack-spread in callable sig
   value:         $R;
   own_allocator: Allocator;
 
   recompute :: (self: *Combined) {
-    new_val := self.mapper(..self.sources.value);  // tuple projection + spread
+    new_val := self.mapper(..self.sources.value);  // product projection + spread
     if new_val == self.value  return;
     self.value = new_val;
   }
@@ -3535,7 +3458,7 @@ name :: (params) -> return_type {
 ```
 
 - Parameters: `name: type` separated by commas
-- Return type: `-> type` (omit for void). A multi-value return is a tuple: `-> Tuple(T1, T2)`.
+- Return type: `-> type` (omit for void). A multi-value return is `-> (T1, T2)`.
 - Body: a block whose **value** is its last statement when that statement is an
   expression (see [Block values](#block-values)). That value is the implicit
   return; an explicit `return` works too.
@@ -3641,7 +3564,7 @@ c := { f(); x := 1 };  // error: this block is used as a value but produces none
 ```
 
 An EMPTY block is exempt — `{}` is how the void value itself is written, as in
-`.{ {}, 9 }` for a `Tuple(void, i32)`.
+`.{ {}, 9 }` for a positional product of `void` and `i32`.
 
 An arm's last expression is the arm's value. Every arm statement takes its `;`;
 the last statement of the last arm sits before the match's `}` and may drop it:
@@ -6488,7 +6411,7 @@ linkage_tail    = IDENT? STRING?    // `[LIB] ["csym"]`; the declaration's
                   // `end` closes the tail
 fn_decl         = IDENT '::' '(' params? ')' ('->' ret_type)? block
                 | IDENT '::' block
-ret_type        = type ('!' IDENT?)?    // trailing `!` = failable; channel outside any Tuple
+ret_type        = type ('!' IDENT?)?    // trailing `!` = failable; channel as last `-> (…, !)` slot
 enum_decl       = IDENT '::' 'enum' '{' (IDENT ';'?)* '}'
 struct_decl     = IDENT '::' 'struct' '{' struct_members '}'
 struct_members  = (struct_member (';' struct_member)* ';'? )?
@@ -6569,8 +6492,7 @@ closure         = '|' params? '|' ('->' type)? (expr | block)
 args            = expr (',' expr)* ','?
 type            = '$' IDENT | 'i32' | 'f32' | 'f64' | 'bool' | 'string'
                 | 'any' | 'Type' | '..' type | '[' expr ']' type | IDENT
-                | 'Tuple' '(' tuple_type_list? ')'           // tuple type: Tuple(A, B) / Tuple(x: A) / Tuple() / Tuple(..F(Ts))
-                | '(' type ')'                               // grouping (bare parens never form a tuple)
+                | '(' type ')'                               // grouping (bare parens never form a product)
                 | '(' fn_type_list? ')' '->' type ('!' IDENT?)?  // function type (params optional; optional error channel)
                 | '!' IDENT?                                  // pure failable (`!` / `!Named`)
 fn_type_list    = type (',' type)* (',' c_tail)? ','?

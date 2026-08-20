@@ -32,7 +32,7 @@ main :: () -> i32 {
     }
 
     // Legal: `{}` is the void value, and the slot's type asks for one.
-    t : Tuple(void, i32) = .{ {}, 9 };
+    t := .{ {}, 9 };
 
     print("a={} b={} c={} d={}\n", a, b, c, d);
     t.1

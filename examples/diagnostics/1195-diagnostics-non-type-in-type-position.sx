@@ -2,7 +2,7 @@
 //
 // 1. A dotted `type_expr` / field-access (`g.a`, `g` a runtime VALUE, `a` a
 // field) in type position — both the bare annotation `x : g.a = ---;` and
-// the `Tuple(i32, g.a)` element form hit the same `resolveTypeWithBindings`
+// a product field type `g.a` hits the same `resolveTypeWithBindings`
 // dotted-name guard. A dotted name whose prefix is not a namespace alias is a
 // value field access, not a qualified `pkg.Type` path → "expected a type,
 // found a value".
@@ -21,9 +21,9 @@ g : S = .{ a = 1 };
 
 main :: () -> i32 {
     x : g.a = ---;                 // field-access value in type position
-    y : Tuple(i32, g.a) = ---;     // same, as a tuple element
+    y : struct { a: i32; b: g.a } = ---;     // same, as a product field
     z : !Nonexistent = ---;        // `!` of an undeclared name
-    w : Tuple(i32, !Nonexistent) = ---;       // nested in a tuple
+    w : struct { a: i32; b: !Nonexistent } = ---;       // nested in a product
     v : Closure(!Nonexistent) -> i32 = ---;   // nested in a closure param
     0
 }
