@@ -861,7 +861,7 @@ Vec4 :: struct {
   x, y, z, w: f32;
 }
 ```
-Fields are declared as `name1, name2: type;` (comma-separated names sharing a type, semicolon-terminated, including the last field before `}`).
+Fields are declared as `name1, name2: type` (comma-separated names sharing a type; members are `;`-separated, trailing `;` optional).
 
 #### Field Defaults
 Fields may have default values. Fields without an explicit default have a zero-value default. `---` marks a field as explicitly undefined.
@@ -6490,11 +6490,14 @@ fn_decl         = IDENT '::' '(' params? ')' ('->' ret_type)? block
                 | IDENT '::' block
 ret_type        = type ('!' IDENT?)?    // trailing `!` = failable; channel outside any Tuple
 enum_decl       = IDENT '::' 'enum' '{' (IDENT ';'?)* '}'
-struct_decl     = IDENT '::' 'struct' '{' struct_member* '}'
-struct_member   = field_group | '@using' IDENT ';'
-field_group     = IDENT (',' IDENT)* ':' type ('=' expr)? ';'
-union_decl      = IDENT '::' 'union' '{' union_member* '}'
-union_member    = IDENT ':' type ';' | 'struct' '{' struct_member* '}' ';'
+struct_decl     = IDENT '::' 'struct' '{' struct_members '}'
+struct_members  = (struct_member (';' struct_member)* ';'? )?
+                  // members are `;`-separated; a trailing `;` before `}` is optional
+struct_member   = field_group | '@using' IDENT
+field_group     = IDENT (',' IDENT)* ':' type ('=' expr)?
+union_decl      = IDENT '::' 'union' '{' union_members '}'
+union_members   = (union_member (';' union_member)* ';'? )?
+union_member    = IDENT ':' type | 'struct' '{' struct_members '}'
 params          = param (',' param)* (',' c_tail)? ','?
                 | c_tail ','?
 c_tail          = '..'              // the C-variadic tail; binds no name and no
