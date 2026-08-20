@@ -29,6 +29,6 @@ BoxPair :: Tuple(Box, i32);
 
 main :: () -> i32 {
     sz := size_of(BoxPair);
-    x : union { b: Box; n: i32 } = ---;
+    x : union { b: Box; n: i32; } = ---;
     0
 }

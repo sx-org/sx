@@ -23,8 +23,8 @@ offset :: () -> i64 {
 }
 
 Cursor :: struct {
-    row: i64 = 0
-    col: i64 = 0
+    row: i64 = 0;
+    col: i64 = 0;
 }
 
 frame :: (ui: *Identity, store: *StateStore, with_offset: bool) -> (a: i64, b: i64, c: i64) {

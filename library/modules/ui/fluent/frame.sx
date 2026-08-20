@@ -25,13 +25,13 @@
 @import "modules/ui/fluent/view.sx";
 
 CommittedUiSnapshot :: struct {
-    revision: i64 = 0
-    root: UiRootId = .{ value = 0 }
-    scene: RenderTree = .{}
-    hit_list: List(HitRegion) = .{}
-    focus_list: List(FocusRegion) = .{}
+    revision: i64 = 0;
+    root: UiRootId = .{ value = 0 };
+    scene: RenderTree = .{};
+    hit_list: List(HitRegion) = .{};
+    focus_list: List(FocusRegion) = .{};
     // What made the buffers the three lists hold, and what they go back to.
-    buffers: Allocator
+    buffers: Allocator;
 
     init :: (buffers: Allocator) -> CommittedUiSnapshot => .{ buffers = buffers };
 

@@ -11,9 +11,9 @@ pair :: ufcs (a: i64, b: i64) -> i64 => a + b;
 
 show :: ufcs (xs: []i64) { for x in xs { print("{}", x) } }
 
-Box :: struct ($T: Type) { v: T = 0; w: T = 0 }
+Box :: struct ($T: Type) { v: T = 0; w: T = 0; }
 
-Holder :: struct { ctx: Context = .{} }
+Holder :: struct { ctx: Context = .{}; }
 
 run :: (label: string, body: Closure()) {
     print("{}: ", label);

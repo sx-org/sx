@@ -31,7 +31,7 @@ clamp :: (v: i64) -> i64 {
     v
 }
 
-Point :: struct { x: i64; y: i64 }
+Point :: struct { x: i64; y: i64; }
 
 add :: (a: i64, b: i64) -> i64 => a + b;
 

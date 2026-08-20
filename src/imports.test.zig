@@ -194,7 +194,7 @@ test "imports: mixed non-fn/fn same-name collision stays first-wins in merged sc
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    try tmp.dir.writeFile(io, .{ .sub_path = "a.sx", .data = "Widget :: struct { x: i64 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "a.sx", .data = "Widget :: struct { x: i64; }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "b.sx", .data = "Widget :: () -> i64 { 7 }\n" });
     const main_src =
         \\@import "a.sx";
@@ -264,9 +264,9 @@ test "buildImportFacts: flat imports keep same-name fn/struct + value-vs-type pe
     defer tmp.cleanup();
 
     // a.sx: dup() fn, Box struct, Shape as a VALUE const.
-    try tmp.dir.writeFile(io, .{ .sub_path = "a.sx", .data = "dup :: () -> i64 { 1 }\nBox :: struct { x: i64 }\nShape :: 7;\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "a.sx", .data = "dup :: () -> i64 { 1 }\nBox :: struct { x: i64; }\nShape :: 7;\n" });
     // b.sx: dup() fn, Box struct, Shape as a TYPE (same spelling as a.sx's value).
-    try tmp.dir.writeFile(io, .{ .sub_path = "b.sx", .data = "dup :: () -> i64 { 2 }\nBox :: struct { y: i64 }\nShape :: struct { z: i64 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "b.sx", .data = "dup :: () -> i64 { 2 }\nBox :: struct { y: i64; }\nShape :: struct { z: i64; }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "@import \"a.sx\";\n@import \"b.sx\";\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;
@@ -324,7 +324,7 @@ test "buildImportFacts: directory import unions member-file decls under the dir 
 
     try tmp.dir.createDirPath(io, "lib");
     try tmp.dir.writeFile(io, .{ .sub_path = "lib/one.sx", .data = "from_one :: () -> i64 { 1 }\n" });
-    try tmp.dir.writeFile(io, .{ .sub_path = "lib/two.sx", .data = "Two :: struct { v: i64 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "lib/two.sx", .data = "Two :: struct { v: i64; }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "@import \"lib\";\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;
@@ -352,7 +352,7 @@ test "buildImportFacts: namespaced file import captures target_module_path" {
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    try tmp.dir.writeFile(io, .{ .sub_path = "point.sx", .data = "Point :: struct { x: i64 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "point.sx", .data = "Point :: struct { x: i64; }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "g :: @import \"point.sx\";\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;
@@ -598,7 +598,7 @@ test "buildDeclTable: stable DeclId per decl, round-trip, struct keying, namespa
     defer tmp.cleanup();
 
     try tmp.dir.writeFile(io, .{ .sub_path = "lib.sx", .data = "helper :: () -> i64 { 9 }\nBox :: struct($T: Type) { v: T; }\n" });
-    try tmp.dir.writeFile(io, .{ .sub_path = "geom.sx", .data = "Point :: struct { x: i64 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "geom.sx", .data = "Point :: struct { x: i64; }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "@import \"lib.sx\";\ng :: @import \"geom.sx\";\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;

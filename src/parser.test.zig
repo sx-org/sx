@@ -2083,6 +2083,79 @@ test "'@using' leaves the declaration's name starts in step with its names" {
     try expectNameStarts(src, sd.field_names, sd.field_name_starts);
 }
 
+test "parser: a struct field group without `;` is refused" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for ([_][:0]const u8{
+        "S :: struct { x: i64 }",
+        "S :: struct { x: i64 y: i64; }",
+        "S :: struct { x, y: i64 }",
+        "S :: struct { x: i64 = 1 }",
+    }) |src| {
+        const msg = try parseErrMsg(alloc, src);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
+    }
+}
+
+test "parser: `@using` without `;` is refused" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const msg = try parseErrMsg(alloc, "S :: struct { @using Base }");
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
+}
+
+test "parser: a struct-body constant without `;` is refused" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for ([_][:0]const u8{
+        "S :: struct { N :: 1 }",
+        "S :: struct { N: i64: 1 }",
+    }) |src| {
+        const msg = try parseErrMsg(alloc, src);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
+    }
+}
+
+test "parser: a union field without `;` is refused" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for ([_][:0]const u8{
+        "U :: union { a: i64 }",
+        "U :: union { a: i64 b: i32; }",
+        "U :: union { struct { x: i64; } }",
+    }) |src| {
+        const msg = try parseErrMsg(alloc, src);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
+    }
+}
+
+test "parser: enum variants without `;` still parse" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = try Parser.init(arena.allocator(), "E :: enum { a b c }");
+    const root = try parser.parse();
+    const ed = root.data.root.decls[0].data.enum_decl;
+    try std.testing.expectEqual(@as(usize, 3), ed.variant_names.len);
+}
+
+test "parser: struct literals stay comma-separated" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const body = try parseBody(alloc, "f :: () { p := .{ a = 1, b = 2 }; }");
+    try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
+    try std.testing.expect(body.data.block.stmts[0].data == .var_decl);
+}
+
 test "parser: a for-capture type may contain a brace group" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -2090,8 +2163,8 @@ test "parser: a for-capture type may contain a brace group" {
 
     const body = try parseBody(alloc,
         \\f :: () {
-        \\    for x: struct { a: i64 } in items { }
-        \\    for p: Pair(struct { a: i64 }, i64) in ps { }
+        \\    for x: struct { a: i64; } in items { }
+        \\    for p: Pair(struct { a: i64; }, i64) in ps { }
         \\}
     );
     try std.testing.expectEqual(@as(usize, 2), body.data.block.stmts.len);

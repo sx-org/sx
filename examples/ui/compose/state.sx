@@ -15,7 +15,7 @@
 c :: @import "modules/std/c.sx";
 
 State :: struct ($T: Type) {
-    ptr: *T
+    ptr: *T;
 
     get :: (self: State(T)) -> T => self.ptr.*;
     set :: (self: State(T), value: T) {
@@ -29,19 +29,19 @@ STATE_DOMAIN :: "ui.compose.state.v1";
 // One site's persistent storage. `ty` is compared on every rebind, so a site
 // whose payload type changes is refused rather than reinterpreted.
 StateEntry :: struct {
-    key: u64 = 0
-    ty: Type
-    size: i64 = 0
-    data: [*]u8
-    claimed: bool = false
+    key: u64 = 0;
+    ty: Type;
+    size: i64 = 0;
+    data: [*]u8;
+    claimed: bool = false;
 }
 
 // The per-root store. Entries are individually allocated, so a claim's pointer
 // stands while the entries list grows around it.
 StateStore :: struct {
-    entries: List(*StateEntry) = .{}
-    gpa: Allocator
-    in_build: bool = false
+    entries: List(*StateEntry) = .{};
+    gpa: Allocator;
+    in_build: bool = false;
 
     init :: (gpa: Allocator) -> StateStore => .{ gpa = gpa };
 

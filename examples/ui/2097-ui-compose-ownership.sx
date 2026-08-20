@@ -26,8 +26,8 @@ up :: (x: f32, y: f32) -> InputEvent => .pointer_up(.{ pointer = .{ value = 1 },
 key :: (k: LogicalKey) -> InputEvent => .key_down(.{ logical = k });
 
 Cursor :: struct {
-    row: i64 = 0
-    col: i64 = 0
+    row: i64 = 0;
+    col: i64 = 0;
 }
 
 main :: () -> i32 {

@@ -6,9 +6,9 @@
 
 @import "modules/std.sx";
 
-Holder :: struct { ctx: Context = .{} }
+Holder :: struct { ctx: Context = .{}; }
 
-Box :: struct($T: Type) { v: T }
+Box :: struct($T: Type) { v: T; }
 
 @context_extend box: Box(i64) = .{ v = 0 };
 

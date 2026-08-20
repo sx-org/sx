@@ -6,9 +6,9 @@
 Pair :: struct($A: Type, $B: Type) { a: A; b: B; }
 
 main :: () {
-    items : [2]struct { a: i64 } = .[.{ a = 1 }, .{ a = 2 }];
-    for x: struct { a: i64 } in items { print("{}\n", x.a); }
+    items : [2]struct { a: i64; } = .[.{ a = 1 }, .{ a = 2 }];
+    for x: struct { a: i64; } in items { print("{}\n", x.a); }
 
-    ps : [1]Pair(struct { a: i64 }, i64) = .[Pair(struct { a: i64 }, i64){ a = .{ a = 1 }, b = 2 }];
-    for p: Pair(struct { a: i64 }, i64) in ps { print("{}\n", p.b); }
+    ps : [1]Pair(struct { a: i64; }, i64) = .[Pair(struct { a: i64; }, i64){ a = .{ a = 1 }, b = 2 }];
+    for p: Pair(struct { a: i64; }, i64) in ps { print("{}\n", p.b); }
 }

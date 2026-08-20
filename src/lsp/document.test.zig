@@ -495,9 +495,9 @@ test "analyzeDocument: imports inside a module driver register from every branch
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
 
-    const a_doc = try store.openOrUpdate("driver_a.sx", "Alpha :: struct { x: i32 }", 1);
+    const a_doc = try store.openOrUpdate("driver_a.sx", "Alpha :: struct { x: i32; }", 1);
     try store.analyzeDocument(a_doc);
-    const b_doc = try store.openOrUpdate("driver_b.sx", "Beta :: struct { y: i32 }", 1);
+    const b_doc = try store.openOrUpdate("driver_b.sx", "Beta :: struct { y: i32; }", 1);
     try store.analyzeDocument(b_doc);
 
     const main_src: [:0]const u8 =

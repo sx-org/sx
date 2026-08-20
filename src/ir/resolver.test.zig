@@ -189,7 +189,7 @@ test "resolver: collectNamespaceAuthors — returns target members, walks no gra
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    try tmp.dir.writeFile(io, .{ .sub_path = "point.sx", .data = "Point :: struct { x: i64 }\nhelper :: () -> i64 { 0 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "point.sx", .data = "Point :: struct { x: i64; }\nhelper :: () -> i64 { 0 }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "g :: @import \"point.sx\";\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;
@@ -368,7 +368,7 @@ test "resolver: resolveQualified — single for existing member, domain_filtered
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
 
-    try tmp.dir.writeFile(io, .{ .sub_path = "point.sx", .data = "Point :: struct { x: i64 }\nhelper :: () -> i64 { 0 }\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "point.sx", .data = "Point :: struct { x: i64; }\nhelper :: () -> i64 { 0 }\n" });
     try tmp.dir.writeFile(io, .{ .sub_path = "main.sx", .data = "g :: @import \"point.sx\";\nmain :: () -> i32 { 0 }\n" });
 
     var dirbuf: [4096]u8 = undefined;

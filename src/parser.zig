@@ -1273,9 +1273,7 @@ pub const Parser = struct {
                 try field_names.append(self.allocator, anon_field);
                 try field_name_starts.append(self.allocator, ast.no_source_start);
                 try field_types.append(self.allocator, struct_node);
-                if (self.tokens.tag(self.tok) == .semicolon) {
-                    self.advance();
-                }
+                try self.expect(.semicolon);
                 continue;
             }
             if (self.tokens.tag(self.tok) != .identifier) {
@@ -1290,9 +1288,7 @@ pub const Parser = struct {
             self.advance();
             const ftype = try self.parseTypeExpr();
             try field_types.append(self.allocator, ftype);
-            if (self.tokens.tag(self.tok) == .semicolon) {
-                self.advance();
-            }
+            try self.expect(.semicolon);
         }
         try self.expect(.r_brace);
         return try self.createNode(start_pos, .{ .union_decl = .{
@@ -1398,7 +1394,7 @@ pub const Parser = struct {
                     .insert_index = @intCast(field_names.items.len),
                     .type_name = used_type,
                 });
-                if (self.tokens.tag(self.tok) == .semicolon) self.advance();
+                try self.expect(.semicolon);
                 continue;
             }
 
@@ -1415,7 +1411,7 @@ pub const Parser = struct {
                 } else {
                     // Non-function constant: name :: value;
                     const value = try self.parseExpr();
-                    if (self.tokens.tag(self.tok) == .semicolon) self.advance();
+                    try self.expect(.semicolon);
                     try constants.append(self.allocator, try self.createNode(method_start, .{ .const_decl = .{
                         .name = method_name,
                         .type_annotation = null,
@@ -1492,7 +1488,7 @@ pub const Parser = struct {
                 }
                 self.advance(); // skip second ':'
                 const value = try self.parseExpr();
-                if (self.tokens.tag(self.tok) == .semicolon) self.advance();
+                try self.expect(.semicolon);
                 try constants.append(self.allocator, try self.createNode(field_start, .{ .const_decl = .{
                     .name = group_names.items[0],
                     .type_annotation = field_type,
@@ -1524,9 +1520,7 @@ pub const Parser = struct {
                 try field_visibilities.append(self.allocator, field_vis);
             }
 
-            if (self.tokens.tag(self.tok) == .semicolon) {
-                self.advance();
-            }
+            try self.expect(.semicolon);
         }
         try self.expect(.r_brace);
 
