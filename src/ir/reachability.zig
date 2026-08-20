@@ -132,9 +132,6 @@ fn escapeCarriesFunction(m: *const Module, ty: types_mod.TypeId, seen: *std.Arra
         .optional => |o| try escapeCarriesFunction(m, o.child, seen, alloc),
         .slice => |sl| try escapeCarriesFunction(m, sl.element, seen, alloc),
         .array => |a| try escapeCarriesFunction(m, a.element, seen, alloc),
-        .tuple => |t| for (t.fields) |f| {
-            if (try escapeCarriesFunction(m, f, seen, alloc)) break true;
-        } else false,
         .@"struct" => |s| blk: {
             if (s.is_protocol)
                 break :blk !(s.fields.len >= 2 and std.mem.eql(u8, m.types.getString(s.fields[1].name), "__tag"));

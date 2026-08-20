@@ -449,7 +449,6 @@ fn nominalIdentOf(info: types.TypeInfo) ?struct { name: types.StringId, nominal_
         .tagged_union => |u| .{ .name = u.name, .nominal_id = u.nominal_id },
         .@"enum" => |e| .{ .name = e.name, .nominal_id = e.nominal_id },
         .@"struct" => |s| .{ .name = s.name, .nominal_id = s.nominal_id },
-        .tuple => .{ .name = types.StringId.empty, .nominal_id = 0 }, // structural; name vestigial
         else => null,
     };
 }
@@ -673,9 +672,12 @@ pub const Vm = struct {
                         if (i >= s.fields.len) break;
                         try self.layoutConst(table, fv, s.fields[i].ty, addr + fieldOffset(table, ty, @intCast(i)));
                     },
-                    .tuple => |t| for (fields, 0..) |fv, i| {
-                        if (i >= t.fields.len) break;
-                        try self.layoutConst(table, fv, t.fields[i], addr + tupleFieldOffset(table, ty, @intCast(i)));
+                    .failable => |f| {
+                        const n = table.failableValueSlotCount(f);
+                        for (fields, 0..) |fv, i| {
+                            const fty = if (i < n) table.failableValueSlotType(f, i) else f.err;
+                            try self.layoutConst(table, fv, fty, addr + fieldOffset(table, ty, @intCast(i)));
+                        }
                     },
                     .array => |a| for (fields, 0..) |fv, i| {
                         try self.layoutConst(table, fv, a.element, addr + @as(Addr, @intCast(i)) * @as(Addr, @intCast(table.typeSizeBytes(a.element))));
@@ -1087,9 +1089,12 @@ pub const Vm = struct {
                         const esz: Addr = @intCast(table.typeSizeBytes(a.element));
                         for (agg.fields, 0..) |fr, i| try self.writeField(table, addr + @as(Addr, @intCast(i)) * esz, a.element, frame.get(fr.index()));
                     },
-                    .tuple => |t| for (t.fields, 0..) |fty, i| {
-                        if (i >= agg.fields.len) break;
-                        try self.writeField(table, addr + tupleFieldOffset(table, sty, @intCast(i)), fty, frame.get(agg.fields[i].index()));
+                    .failable => |f| {
+                        const n = table.failableValueSlotCount(f);
+                        for (agg.fields, 0..) |fr, i| {
+                            const fty = if (i < n) table.failableValueSlotType(f, i) else f.err;
+                            try self.writeField(table, addr + fieldOffset(table, sty, @intCast(i)), fty, frame.get(fr.index()));
+                        }
                     },
                     else => return self.failMsg("comptime VM: struct_init at a non-aggregate result type"),
                 }
@@ -1111,25 +1116,6 @@ pub const Vm = struct {
                 const table = try self.requireTable();
                 const sty = try self.aggType(table, fa, ref_types);
                 return .{ .value = frame.get(fa.base.index()) + fieldOffset(table, sty, fa.field_index) };
-            },
-
-            // ── Tuples (positional aggregates) ──────────────────
-            .tuple_init => |agg| {
-                const table = try self.requireTable();
-                const tty = ins.ty;
-                const addr = self.machine.allocBytes(table.typeSizeBytes(tty), table.typeAlignBytes(tty));
-                const elems = table.get(tty).tuple.fields;
-                for (elems, 0..) |fty, i| {
-                    if (i >= agg.fields.len) break;
-                    try self.writeField(table, addr + tupleFieldOffset(table, tty, @intCast(i)), fty, frame.get(agg.fields[i].index()));
-                }
-                return .{ .value = addr };
-            },
-            .tuple_get => |fa| {
-                const table = try self.requireTable();
-                const tty = try self.aggType(table, fa, ref_types);
-                const fty = table.get(tty).tuple.fields[fa.field_index];
-                return .{ .value = try self.readField(table, frame.get(fa.base.index()) + tupleFieldOffset(table, tty, fa.field_index), fty) };
             },
 
             // ── Arrays (contiguous, elem-size stride) ───────────
@@ -2343,11 +2329,6 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             return self.failMsg("comptime register_type: handle is not a declare_type'd nominal slot");
 
         switch (kind) {
-            4 => { // tuple — positional element types (names ignored)
-                const tys = self.gpa.alloc(TypeId, members.items.len) catch return self.failMsg("comptime register_type: out of memory");
-                for (members.items, 0..) |m, i| tys[i] = m.ty;
-                tbl.replaceKeyedInfo(handle, .{ .tuple = .{ .fields = tys, .names = null } });
-            },
             2 => { // actual (payloadless) enum — members are variant NAMES; payload must be void
                 const names = self.gpa.alloc(types.StringId, members.items.len) catch return self.failMsg("comptime register_type: out of memory");
                 for (members.items, 0..) |m, i| {
@@ -2488,7 +2469,6 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                         if (!tid.isBuiltin()) switch (table.get(tid)) {
                             .@"struct" => |st| break :blk @as(Reg, @intCast(st.fields.len)),
                             .@"union" => |u| break :blk @as(Reg, @intCast(u.fields.len)),
-                            .tuple => |t| break :blk @as(Reg, @intCast(t.fields.len)),
                             else => {},
                         };
                         break :blk 0;
@@ -2594,12 +2574,9 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             one_type: TypeId, // slice/pointer/many_pointer/optional
             named2: []const NamedMember, // EnumVariant {name, payload}
             named3: []const NamedMember, // StructField {name, type, offset}
-            tuple: []const TypeId,
         };
         var pairs = std.ArrayList(NamedMember).empty;
         defer pairs.deinit(self.gpa);
-        var tup = std.ArrayList(TypeId).empty;
-        defer tup.deinit(self.gpa);
         const oom = "comptime type_info: out of memory";
 
         var vname: []const u8 = undefined;
@@ -2679,11 +2656,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 for (u.fields) |f| pairs.append(self.gpa, .{ .name = f.name, .ty = f.ty }) catch return self.failMsg(oom);
                 payload = .{ .named3 = pairs.items };
             },
-            .tuple => |t| {
-                vname = "tuple";
-                for (t.fields) |ety| tup.append(self.gpa, ety) catch return self.failMsg(oom);
-                payload = .{ .tuple = tup.items };
-            },
+            .failable => vname = "void",
             .array => |a| {
                 vname = "array";
                 payload = .{ .elem_len = .{ .elem = a.element, .len = @intCast(a.length) } };
@@ -2746,9 +2719,6 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             .one_type => |t| {
                 pinfo = try self.allocZeroed(table, payload_ty);
                 try self.writePayloadField(table, payload_ty, pinfo, 0, @as(Reg, t.index()));
-            },
-            .tuple => |elems| {
-                pinfo = try self.buildMembersPayload(table, payload_ty, .bare_types, elems, &.{}, tid);
             },
             .named2 => |mems| {
                 pinfo = try self.buildMembersPayload(table, payload_ty, .name_ty, &.{}, mems, tid);
@@ -2878,15 +2848,17 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     }
                     return .{ .aggregate = out };
                 }
-                if (info == .tuple) {
-                    // A failable `(value…, error_tag)` is a tuple; the host's
-                    // `checkComptimeFailable` reads the last field as the tag.
-                    const elems = info.tuple.fields;
-                    const out = alloc.alloc(Value, elems.len) catch return self.failMsg("reg→value: out of memory (tuple)");
-                    for (elems, 0..) |ety, i| {
-                        const fr = try self.readField(table, reg + tupleFieldOffset(table, ty, @intCast(i)), ety);
-                        out[i] = try self.regToValue(alloc, table, fr, ety);
+                if (info == .failable) {
+                    const f = info.failable;
+                    const n = table.failableValueSlotCount(f);
+                    const out = alloc.alloc(Value, n + 1) catch return self.failMsg("reg→value: out of memory (failable)");
+                    for (0..n) |i| {
+                        const fty = table.failableValueSlotType(f, i);
+                        const fr = try self.readField(table, reg + fieldOffset(table, ty, @intCast(i)), fty);
+                        out[i] = try self.regToValue(alloc, table, fr, fty);
                     }
+                    const er = try self.readField(table, reg + fieldOffset(table, ty, @intCast(n)), f.err);
+                    out[n] = try self.regToValue(alloc, table, er, f.err);
                     return .{ .aggregate = out };
                 }
                 if (info == .array) {
@@ -3052,7 +3024,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             .error_set => .word, // the error channel is a u32 tag id — a word
             // A tagged union is a `{ tag@0, [N x i8] payload@tag_size }` value held
             // by-address (like a struct) — same as the `enum_init` write path.
-            .@"struct", .array, .tuple, .slice, .tagged_union => .aggregate,
+            .@"struct", .array, .slice, .tagged_union, .failable => .aggregate,
             // `?T`: a pointer child is null-as-0 (word); else `{T, i1}` by-address.
             .optional => |o| if (optChildIsPtr(table, o.child)) .word else .aggregate,
             else => .unsupported,
@@ -3195,6 +3167,19 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // share the same two-8-byte-field layout.
         if (sty == .string or sty == .any or (!sty.isBuiltin() and table.get(sty) == .slice))
             return if (idx == 0) 0 else 8;
+        if (!sty.isBuiltin() and table.get(sty) == .failable) {
+            const f = table.get(sty).failable;
+            const n = table.failableValueSlotCount(f);
+            var off: usize = 0;
+            var i: usize = 0;
+            while (i < n + 1) : (i += 1) {
+                const fty = if (i < n) table.failableValueSlotType(f, i) else f.err;
+                off = std.mem.alignForward(usize, off, table.typeAlignBytes(fty));
+                if (i == idx) return @intCast(off);
+                off += table.typeSizeBytes(fty);
+            }
+            return @intCast(off);
+        }
         const fields = structFields(table, sty);
         var off: usize = 0;
         for (fields, 0..) |f, i| {
@@ -3230,19 +3215,6 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         const raw = fa.base_type orelse (try self.refTy(ref_types, fa.base));
         if (!raw.isBuiltin() and table.get(raw) == .pointer) return table.get(raw).pointer.pointee;
         return raw;
-    }
-
-    /// The byte offset of tuple element `idx` — the positional analogue of
-    /// `fieldOffset` (each element aligned to its own alignment, in order).
-    fn tupleFieldOffset(table: *const types.TypeTable, tty: TypeId, idx: u32) Addr {
-        const fields = table.get(tty).tuple.fields;
-        var off: usize = 0;
-        for (fields, 0..) |fty, i| {
-            off = std.mem.alignForward(usize, off, table.typeAlignBytes(fty));
-            if (i == idx) return @intCast(off);
-            off += table.typeSizeBytes(fty);
-        }
-        return @intCast(off);
     }
 
     /// The pointee of a single-element pointer type (the result of `index_gep` is

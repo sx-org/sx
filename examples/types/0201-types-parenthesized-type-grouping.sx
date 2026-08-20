@@ -1,12 +1,10 @@
 // Parenthesized type grouping: bare parens `(T)` are GROUPING ONLY (in every
-// position) and resolve to the inner type. A tuple type is `Tuple(...)`:
-// `Tuple(T)` is a 1-tuple, `Tuple(A, B)` a 2-tuple. Bare parens never form a
-// tuple.
+// position) and resolve to the inner type. Bare parens never form a product.
 //
 // This lets a closure/optional type be parenthesized for readability:
 //   [1](Closure(i64,i64) -> i64)   // array of closures (grouped element type)
 //   ?(?i64)                        // nested optional
-// without ambiguity — grouping is decoupled from the tuple grammar.
+// without ambiguity — grouping is decoupled from multi-return `-> (A, B)`.
 
 @import "modules/std.sx";
 
@@ -20,7 +18,7 @@ main :: () {
     gg : ((i64)) = 8;
     print("{}\n", gg);                // 8
 
-    // `?(?i64)` is a genuine nested optional (grouping, not a 1-tuple).
+    // `?(?i64)` is a genuine nested optional (grouping).
     no : ?(?i64) = 5;
     print("{}\n", no!!);              // 5
 
@@ -28,11 +26,11 @@ main :: () {
     fns : [1](Closure(i64, i64) -> i64) = .[ add ];
     print("{}\n", fns[0](3, 4));      // 7
 
-    // A 1-tuple type is `Tuple(i64)`.
-    one : Tuple(i64) = .{9};
+    // A 1-element positional product is inferred `.{9}`.
+    one := .{9};
     print("{}\n", one.0);             // 9
 
-    // A 2-tuple is unaffected.
-    two : Tuple(i64, i64) = .{40, 2};
+    // A 2-element positional product.
+    two := .{40, 2};
     print("{}\n", two.0 + two.1);     // 42
 }

@@ -2736,18 +2736,13 @@ test "lower: closure-value call with wrong arity is diagnosed, extras not silent
     try std.testing.expect(found);
 }
 
-test "type alias: tuple-type alias registers the structural tuple TypeId" {
-    // `NT :: Tuple(a: i64, b: bool)` / `PT :: Tuple(i64, bool)` must land in
-    // `type_alias_map` as the STRUCTURAL tuple TypeId (fields + names), not an
-    // opaque nominal placeholder — field access (`x.a` / `x.0`) and comptime
-    // reflection (`field_count(NT)`) both key off the tuple TypeInfo.
+test "type alias: named-product alias registers the structural struct TypeId" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     const src =
-        \\NT :: Tuple(a: i64, b: bool);
-        \\PT :: Tuple(i64, bool);
+        \\NT :: struct { a: i64; b: bool };
         \\main :: () {}
         \\
     ;
@@ -2763,23 +2758,14 @@ test "type alias: tuple-type alias registers the structural tuple TypeId" {
     lowering.lowerRoot(root);
     try std.testing.expect(!diagnostics.hasErrors());
 
-    // Named alias: 2 fields (i64, bool), names a/b preserved.
-    const nt = lowering.program_index.type_alias_map.get("NT").?;
+    const nt = module.types.findByName(module.types.internString("NT")).?;
     const nt_info = module.types.get(nt);
-    try std.testing.expect(nt_info == .tuple);
-    try std.testing.expectEqual(@as(usize, 2), nt_info.tuple.fields.len);
-    try std.testing.expectEqual(TypeId.i64, nt_info.tuple.fields[0]);
-    try std.testing.expectEqual(TypeId.bool, nt_info.tuple.fields[1]);
-    const names = nt_info.tuple.names.?;
-    try std.testing.expectEqualStrings("a", module.types.getString(names[0]));
-    try std.testing.expectEqualStrings("b", module.types.getString(names[1]));
-
-    // Positional alias: same fields, no names.
-    const pt = lowering.program_index.type_alias_map.get("PT").?;
-    const pt_info = module.types.get(pt);
-    try std.testing.expect(pt_info == .tuple);
-    try std.testing.expectEqual(@as(usize, 2), pt_info.tuple.fields.len);
-    try std.testing.expect(pt_info.tuple.names == null);
+    try std.testing.expect(nt_info == .@"struct");
+    try std.testing.expectEqual(@as(usize, 2), nt_info.@"struct".fields.len);
+    try std.testing.expectEqual(TypeId.i64, nt_info.@"struct".fields[0].ty);
+    try std.testing.expectEqual(TypeId.bool, nt_info.@"struct".fields[1].ty);
+    try std.testing.expectEqualStrings("a", module.types.getString(nt_info.@"struct".fields[0].name));
+    try std.testing.expectEqualStrings("b", module.types.getString(nt_info.@"struct".fields[1].name));
 }
 
 test "`@volatile_load` / `@volatile_store` reach the volatile ops" {
@@ -2923,88 +2909,13 @@ test "the unprefixed spelling is an ordinary call, not a volatile access" {
     }
 }
 
-test "type alias: pack-spread tuple alias poisons to .unresolved with a diagnostic" {
-    // `Bad :: Tuple(..Ts)` has no pack binding at a top-level alias; the
-    // stateless resolver preserves the pack SHAPE as a tuple carrying an
-    // `.unresolved` field. Registering that tuple would panic the LLVM
-    // `.unresolved` tripwire at emission — it must poison to `.unresolved`
-    // with a clean located diagnostic instead.
+test "type alias: Tuple( in type position is an unresolved name" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     const src =
-        \\Bad :: Tuple(..Ts);
-        \\main :: () {}
-        \\
-    ;
-    const source = try alloc.dupeZ(u8, src);
-    var p = try parser.Parser.init(alloc, source);
-    const root = p.parse() catch return error.ParseFailed;
-
-    var module = ir_mod.Module.init(alloc);
-    defer module.deinit();
-    var diagnostics = errors.DiagnosticList.init(alloc, source, "test.sx");
-    var lowering = Lowering.init(&module);
-    lowering.diagnostics = &diagnostics;
-    lowering.lowerRoot(root);
-
-    try std.testing.expectEqual(TypeId.unresolved, lowering.program_index.type_alias_map.get("Bad").?);
-    var saw = false;
-    for (diagnostics.items.items) |d| {
-        if (d.level != .err) continue;
-        if (std.mem.indexOf(u8, d.message, "type alias 'Bad' could not be resolved") != null) saw = true;
-    }
-    try std.testing.expect(saw);
-}
-
-test "type alias: tuple element referencing a LATER-declared alias resolves via the deferred fixpoint" {
-    // `A :: Tuple(a: B, c: bool); B :: i64;` — aliases never adopt stubs, so
-    // the deferred fixpoint registers A only after B is known and the element
-    // binds the real i64.
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    const src =
-        \\A :: Tuple(a: B, c: bool);
-        \\B :: i64;
-        \\main :: () {}
-        \\
-    ;
-    const source = try alloc.dupeZ(u8, src);
-    var p = try parser.Parser.init(alloc, source);
-    const root = p.parse() catch return error.ParseFailed;
-
-    var module = ir_mod.Module.init(alloc);
-    defer module.deinit();
-    var diagnostics = errors.DiagnosticList.init(alloc, source, "test.sx");
-    var lowering = Lowering.init(&module);
-    lowering.main_file = "test.sx";
-    lowering.diagnostics = &diagnostics;
-    lowering.lowerRoot(root);
-    try std.testing.expect(!diagnostics.hasErrors());
-
-    const a = lowering.program_index.type_alias_map.get("A").?;
-    const a_info = module.types.get(a);
-    try std.testing.expect(a_info == .tuple);
-    try std.testing.expectEqual(@as(usize, 2), a_info.tuple.fields.len);
-    try std.testing.expectEqual(TypeId.i64, a_info.tuple.fields[0]); // NOT a stub
-    try std.testing.expectEqual(TypeId.bool, a_info.tuple.fields[1]);
-}
-
-test "type alias: tuple alias referenced ABOVE its declaration diagnoses instead of an LLVM dump" {
-    // `use_it :: (t: NT) …` above `NT :: Tuple(…)`: the fn signature resolves
-    // eagerly at scan and binds a stub that no alias registration ever adopts.
-    // That must be a clean located diagnostic at the alias decl, not an LLVM
-    // "call parameter type mismatch" verifier dump.
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    const src =
-        \\use_it :: (t: NT) -> i64 { return t.a; }
-        \\NT :: Tuple(a: i64, b: bool);
+        \\use_it :: (t: Tuple(i64, bool)) -> i64 { return 0; }
         \\main :: () {}
         \\
     ;
@@ -3020,49 +2931,7 @@ test "type alias: tuple alias referenced ABOVE its declaration diagnoses instead
     lowering.diagnostics = &diagnostics;
     lowering.lowerRoot(root);
 
-    var saw = false;
-    for (diagnostics.items.items) |d| {
-        if (d.level != .err) continue;
-        if (std.mem.indexOf(u8, d.message, "tuple alias 'NT' is referenced above its declaration") != null) saw = true;
-    }
-    try std.testing.expect(saw);
-}
-
-test "type alias: mutually-recursive tuple aliases diagnose a reference cycle and poison" {
-    // `T1 :: Tuple(a: T2); T2 :: Tuple(b: T1);` can never converge — resolving
-    // either member would mint a stub of its peer that the unresolved-check
-    // cannot tell from a real empty struct. Both must poison with the cycle
-    // diagnostic, never register a lying layout.
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    const src =
-        \\T1 :: Tuple(a: T2);
-        \\T2 :: Tuple(b: T1);
-        \\main :: () {}
-        \\
-    ;
-    const source = try alloc.dupeZ(u8, src);
-    var p = try parser.Parser.init(alloc, source);
-    const root = p.parse() catch return error.ParseFailed;
-
-    var module = ir_mod.Module.init(alloc);
-    defer module.deinit();
-    var diagnostics = errors.DiagnosticList.init(alloc, source, "test.sx");
-    var lowering = Lowering.init(&module);
-    lowering.main_file = "test.sx";
-    lowering.diagnostics = &diagnostics;
-    lowering.lowerRoot(root);
-
-    try std.testing.expectEqual(TypeId.unresolved, lowering.program_index.type_alias_map.get("T1").?);
-    try std.testing.expectEqual(TypeId.unresolved, lowering.program_index.type_alias_map.get("T2").?);
-    var cycle_count: usize = 0;
-    for (diagnostics.items.items) |d| {
-        if (d.level != .err) continue;
-        if (std.mem.indexOf(u8, d.message, "composite-alias reference cycle") != null) cycle_count += 1;
-    }
-    try std.testing.expectEqual(@as(usize, 2), cycle_count);
+    try std.testing.expect(diagnostics.hasErrors());
 }
 
 test "type alias: array element referencing a LATER-declared alias resolves via the deferred fixpoint" {
@@ -3561,12 +3430,6 @@ test "inline exit: every inlined body form exits to its own destination, never t
         .{ .name = "Nret", .dest = .diverges, .divergent_path = true, .call = "if 1 > 2 { c(\"n\", 1); } 11", .body = "c :: ($t: string, n: i64) -> noreturn { if n > 0 { return; } spin(); }" },
         .{ .name = "NretD", .dest = .diverges, .divergent_path = true, .call = "if 1 > 2 { c(\"n\", 1); } 11", .body = "c :: ($t: string, n: i64) -> noreturn { if n > 0 { return spin(); } spin(); }" },
 
-        // A return type that never resolved: the originating diagnostic stands,
-        // and no unresolved slot is ever allocated or loaded.
-        .{ .name = "U00", .dest = .poison, .divergent_path = false, .unresolved_ret = true, .call = "x := c(\"u\", 1); 11", .body = "Poison :: Tuple(..Ts);\nc :: ($t: string, n: i64) -> Poison { n }" },
-        .{ .name = "U10", .dest = .poison, .divergent_path = false, .unresolved_ret = true, .call = "x := c(\"u\", 1); 11", .body = "Poison :: Tuple(..Ts);\nc :: ($t: string, n: i64) -> Poison { if n > 0 { return n; } n }" },
-        .{ .name = "U01", .dest = .poison, .divergent_path = true, .unresolved_ret = true, .call = "x := c(\"u\", 1); 11", .body = "Poison :: Tuple(..Ts);\nc :: ($t: string, n: i64) -> Poison { if n > 5 { spin(); } n }" },
-        .{ .name = "U11", .dest = .poison, .divergent_path = true, .unresolved_ret = true, .call = "x := c(\"u\", 1); 11", .body = "Poison :: Tuple(..Ts);\nc :: ($t: string, n: i64) -> Poison { if n > 5 { spin(); } if n > 0 { return n; } n }" },
     };
 
     for (cells) |cell| {

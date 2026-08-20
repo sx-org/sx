@@ -234,8 +234,7 @@ test "resolveAstType: `(i32, !Named)` result list is a tuple ending in the error
 
     const id = type_bridge.resolveAstType(tuple, &table, null, null);
     const info = table.get(id);
-    try std.testing.expect(info == .tuple);
-    try std.testing.expectEqual(@as(usize, 2), info.tuple.fields.len);
-    try std.testing.expectEqual(TypeId.i32, info.tuple.fields[0]);
-    try std.testing.expectEqual(set, info.tuple.fields[1]); // error channel = last slot
+    try std.testing.expect(info == .failable);
+    try std.testing.expectEqual(TypeId.i32, info.failable.value);
+    try std.testing.expectEqual(set, info.failable.err);
 }

@@ -7,7 +7,7 @@
 
 Box :: struct($R: Type, ..$Ts: []Type) {
     r:    $R;
-    pair: Tuple(..$Ts);   // tuple of the pack's element types
+    pair: struct { ..$Ts };
 }
 
 main :: () -> i32 {

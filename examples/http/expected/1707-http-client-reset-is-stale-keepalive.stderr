@@ -1,0 +1,239 @@
+error: this function returns 4 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/client.sx:120:12
+    |
+120 |     return c;
+    |            ^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1707-http-client-reset-is-stale-keepalive.sx:35:14
+   |
+35 |     c, oe := http.Client.open("127.0.0.1", PORT, opts);
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:450:20
+    |
+450 |             return result;
+    |                    ^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:454:20
+    |
+454 |             return result;
+    |                    ^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3858:24
+     |
+3858 |                 return Progress{ consumed = consumed, produced = produced, status = .done };
+     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3866:24
+     |
+3866 |                 return Progress{ consumed = consumed, produced = produced, status = .need_input };
+     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3878:48
+     |
+3878 |                 if self.fixed_at < 10 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3895:54
+     |
+3895 |                 if self.extra_length_at < 2 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3908:54
+     |
+3908 |                 if self.extra_remaining > 0 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3921:36
+     |
+3921 |                 if !found { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3931:52
+     |
+3931 |                 if self.header_crc_at < 2 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:2943:24
+     |
+2943 |                 return Progress{ consumed = consumed, produced = produced, status = .done };
+     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:2948:40
+     |
+2948 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:2981:40
+     |
+2981 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:2988:40
+     |
+2988 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3012:52
+     |
+3012 |                 if produced >= output.len { return Progress{ consumed = consumed, produced = produced, status = .need_output }; }
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3013:51
+     |
+3013 |                 if consumed >= input.len { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3049:40
+     |
+3049 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3063:44
+     |
+3063 |                     if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3088:40
+     |
+3088 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3114:40
+     |
+3114 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3364:40
+     |
+3364 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3381:52
+     |
+3381 |                 if produced >= output.len { return Progress{ consumed = consumed, produced = produced, status = .need_output }; }
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3388:40
+     |
+3388 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3397:40
+     |
+3397 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3410:40
+     |
+3410 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3418:52
+     |
+3418 |                 if produced >= output.len { return Progress{ consumed = consumed, produced = produced, status = .need_output }; }
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3952:24
+     |
+3952 |                 return Progress{ consumed = consumed, produced = produced, status = progress.status };
+     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3960:49
+     |
+3960 |                 if self.trailer_at < 8 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3970:24
+     |
+3970 |                 return Progress{ consumed = consumed, produced = produced, status = .need_input };
+     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3536:45
+     |
+3536 |             if self.phase == .done { return Progress{ consumed = consumed, produced = produced, status = .done }; }
+     |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3543:48
+     |
+3543 |                 if self.header_at < 2 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3578:24
+     |
+3578 |                 return Progress{ consumed = consumed, produced = produced, status = progress.status };
+     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3586:49
+     |
+3586 |                 if self.trailer_at < 4 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 5 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/client.sx:1004:12
+     |
+1004 |     return ClientResponse{
+     |            ^^^^^^^^^^^^^^^
+1005 |         status = final_status,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1006 |         reason = final_reason,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1007 |         headers_raw = string{ ptr = *buf[header_start], len = if normalized_headers_len >= 0 then normalized_headers_len else head_end - 2 - header_start },
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1008 |         body = string{ ptr = *buf[head_end], len = body_len },
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1009 |         decoded_from = decoded_from,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1010 |     };
+     | ^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1707-http-client-reset-is-stale-keepalive.sx:51:14
+   |
+51 |     r, re := http.Client.recv_on(*c, *buf[0], 4096);
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: '!' needs a bool, integer, or error operand; got 'string'
+  --> examples/http/1707-http-client-reset-is-stale-keepalive.sx:53:8
+   |
+53 |     if !re {
+   |        ^^^
+
+error: an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id
+  --> examples/http/1707-http-client-reset-is-stale-keepalive.sx:57:8
+   |
+57 |     if re != error.Closed {
+   |        ^^

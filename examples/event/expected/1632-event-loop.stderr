@@ -1,1 +1,136 @@
+error: cannot return a value of type 'Loop' where 'i32' is expected
+  --> library/modules/std/event.sx:252:16
+    |
+252 |         return Loop{ kq = q };
+    |                ^^^^^^^^^^^^^^
 
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> examples/event/1632-event-loop.sx:19:5
+   |
+19 |     loop.add_read(a, 41) catch { are = true; };
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'wait' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:26:14
+   |
+26 |     n, we := loop.wait(.{ ptr = *evs[0], len = 8 }, 40);
+   |              ^^^^^^^^^
+
+error: unresolved 'we' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:27:8
+   |
+27 |     if we { print("wait failed\n"); return 1; }
+   |        ^^
+
+error: unresolved 'n' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:28:8
+   |
+28 |     if n != 0 { print("idle wait: expected 0 events, got {}\n", n); return 1; }
+   |        ^
+
+error: unresolved 'n' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:28:65
+   |
+28 |     if n != 0 { print("idle wait: expected 0 events, got {}\n", n); return 1; }
+   |                                                                 ^
+
+error: unresolved 'wait' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:35:16
+   |
+35 |     n2, we2 := loop.wait(.{ ptr = *evs[0], len = 8 }, 1000);
+   |                ^^^^^^^^^
+
+error: unresolved 'we2' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:36:8
+   |
+36 |     if we2 { print("wait failed\n"); return 1; }
+   |        ^^^
+
+error: unresolved 'n2' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:37:8
+   |
+37 |     if n2 != 1 { print("after write: expected 1 event, got {}\n", n2); return 1; }
+   |        ^^
+
+error: unresolved 'n2' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:37:67
+   |
+37 |     if n2 != 1 { print("after write: expected 1 event, got {}\n", n2); return 1; }
+   |                                                                   ^^
+
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> examples/event/1632-event-loop.sx:46:5
+   |
+46 |     loop.add_write(b, 42) catch { awe = true; };
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'wait' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:50:16
+   |
+50 |     n3, we3 := loop.wait(.{ ptr = *evs[0], len = 8 }, 1000);
+   |                ^^^^^^^^^
+
+error: unresolved 'we3' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:51:8
+   |
+51 |     if we3 { print("wait failed\n"); return 1; }
+   |        ^^^
+
+error: unresolved 'n3' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:52:8
+   |
+52 |     if n3 != 1 { print("write interest: expected 1 event, got {}\n", n3); return 1; }
+   |        ^^
+
+error: unresolved 'n3' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:52:70
+   |
+52 |     if n3 != 1 { print("write interest: expected 1 event, got {}\n", n3); return 1; }
+   |                                                                      ^^
+
+error: unresolved 'del_write' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:56:5
+   |
+56 |     loop.del_write(b);
+   |     ^^^^^^^^^^^^^^
+
+error: unresolved 'wait' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:60:16
+   |
+60 |     n4, we4 := loop.wait(.{ ptr = *evs[0], len = 8 }, 1000);
+   |                ^^^^^^^^^
+
+error: unresolved 'we4' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:61:8
+   |
+61 |     if we4 { print("wait failed\n"); return 1; }
+   |        ^^^
+
+error: unresolved 'n4' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:62:8
+   |
+62 |     if n4 != 1 { print("after close: expected 1 event, got {}\n", n4); return 1; }
+   |        ^^
+
+error: unresolved 'n4' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:62:67
+   |
+62 |     if n4 != 1 { print("after close: expected 1 event, got {}\n", n4); return 1; }
+   |                                                                   ^^
+
+error: unresolved 'del_read' (in examples/event/1632-event-loop.sx fn main)
+  --> examples/event/1632-event-loop.sx:66:5
+   |
+66 |     loop.del_read(a);
+   |     ^^^^^^^^^^^^^
+
+error: 'close' is not a ufcs function — a plain function does not dispatch via dot-call
+  --> examples/event/1632-event-loop.sx:68:5
+   |
+68 |     loop.close();
+   |     ^^^^^^^^^^
+
+help: call it directly (`close(receiver, ...)`) or declare it `close :: ufcs (...) { ... }`
+   |
+68 |     loop.close();
+   |     ^^^^^^^^^^

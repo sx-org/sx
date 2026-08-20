@@ -38,53 +38,17 @@ Chained :: protocol {
 
 main :: () {
 
-    // --- Tuple Operators ---
+    // --- Product equality ---
     {
-        print("=== Tuple Operators ===\n");
+        print("=== Product equality ===\n");
 
-        // Tuple operands must be TUPLE-typed: an untyped `.{}` literal is an
-        // anonymous struct, and the exotic tuple operators (`+`/`*`/`<`/`in`)
-        // exist on tuples only.
-        t12 : Tuple(i64, i64) = .{1, 2};
-        t13 : Tuple(i64, i64) = .{1, 3};
-        t34 : Tuple(i64, i64) = .{3, 4};
-        t20 : Tuple(i64, i64) = .{2, 0};
-        t19 : Tuple(i64, i64) = .{1, 9};
-        t123 : Tuple(i64, i64, i64) = .{1, 2, 3};
+        t12 := .{1, 2};
+        t13 := .{1, 3};
 
-        // Equality
         print("{}\n", t12 == t12);     // true
         print("{}\n", t12 == t13);     // false
         print("{}\n", t12 != t13);     // true
         print("{}\n", t12 != t12);     // false
-
-        // Concatenation
-        c := t12 + t34;
-        print("{}\n", c.0);    // 1
-        print("{}\n", c.1);    // 2
-        print("{}\n", c.2);    // 3
-        print("{}\n", c.3);    // 4
-
-        // Repetition
-        r := t12 * 3;
-        print("{}\n", r.0);    // 1
-        print("{}\n", r.1);    // 2
-        print("{}\n", r.2);    // 1
-        print("{}\n", r.3);    // 2
-        print("{}\n", r.4);    // 1
-        print("{}\n", r.5);    // 2
-
-        // Lexicographic comparison
-        print("{}\n", t12 < t13);      // true
-        print("{}\n", t13 < t12);      // false
-        print("{}\n", t12 < t12);      // false
-        print("{}\n", t12 <= t12);     // true
-        print("{}\n", t20 > t19);      // true
-        print("{}\n", t12 >= t12);     // true
-
-        // Membership
-        print("{}\n", 2 in t123);      // true
-        print("{}\n", 5 in t123);      // false
     }
 
     // --- Directory imports ---
@@ -178,23 +142,6 @@ main :: () {
         print("buf overflow: {}\n", b3_i);                  // buf overflow: 0
         buf.reset();
         print("buf reset: {}\n", buf.pos);                  // buf reset: 0
-    }
-
-    {
-        // Scalar ↔ 1-tuple equivalence needs the TUPLE type spelled out
-        // (an untyped `.{1}` is an anonymous struct).
-        t1 : Tuple(i64) = .{1};
-        if 1 == t1 {
-            print("1 == (1)\n");
-        }
-
-        if t1 == (1) {
-            print("(1) == 1\n");
-        }
-
-        if t1 == 1 {
-            print("1 == 1\n");
-        }
     }
 
     // ========================================================

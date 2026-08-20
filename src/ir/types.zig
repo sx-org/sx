@@ -95,7 +95,7 @@ pub const TypeInfo = union(enum) {
     function: FunctionInfo,
     closure: ClosureInfo,
     optional: OptionalInfo,
-    tuple: TupleInfo,
+    failable: FailableInfo,
     pack: PackInfo,
     any,
     protocol: ProtocolInfo,
@@ -239,9 +239,14 @@ pub const TypeInfo = union(enum) {
         child: TypeId,
     };
 
-    pub const TupleInfo = struct {
-        fields: []const TypeId,
-        names: ?[]const StringId,
+    /// Value-carrying failable `-> (T, !)` / `-> (A, B, !)`. `value` is the
+    /// success type (`T`, or an anonymous product struct for ≥2 slots). `err`
+    /// is the error-set. Not a product whose last field happens to be an
+    /// error set — a distinct kind, illegal as a field/param/variable type.
+    /// LLVM layout is flat `{ value-slots..., u32 tag }`.
+    pub const FailableInfo = struct {
+        value: TypeId,
+        err: TypeId,
     };
 
     /// A heterogeneous variadic pack as a first-class type-system value: an
@@ -509,6 +514,97 @@ pub const TypeTable = struct {
         } });
     }
 
+    /// Anonymous positional (or named) product — the type of `.{a, b}` and of
+    /// a multi-return `-> (A, B)`. Field names are `names[i]` when present and
+    /// non-empty, else `"0"`, `"1"`, … Shape-interned.
+    pub fn internProduct(self: *TypeTable, field_tys: []const TypeId, names: ?[]const StringId) TypeId {
+        const fields = self.alloc.alloc(TypeInfo.StructInfo.Field, field_tys.len) catch unreachable;
+        for (field_tys, 0..) |ty, i| {
+            const name = blk: {
+                if (names) |ns| {
+                    if (i < ns.len) {
+                        const s = self.getString(ns[i]);
+                        if (s.len > 0 and !std.mem.eql(u8, s, "!")) break :blk ns[i];
+                    }
+                }
+                var buf: [16]u8 = undefined;
+                break :blk self.internString(std.fmt.bufPrint(&buf, "{d}", .{i}) catch unreachable);
+            };
+            fields[i] = .{ .name = name, .ty = ty };
+        }
+        return self.internAnonStruct(fields);
+    }
+
+    pub fn internFailable(self: *TypeTable, value: TypeId, err: TypeId) TypeId {
+        return self.intern(.{ .failable = .{ .value = value, .err = err } });
+    }
+
+    /// Product of `field_ids`, or a failable when the last field is an error set.
+    pub fn isAnonStruct(self: *const TypeTable, id: TypeId) bool {
+        if (id.isBuiltin()) return false;
+        const info = self.get(id);
+        if (info != .@"struct") return false;
+        return std.mem.eql(u8, self.getString(info.@"struct".name), "__anon");
+    }
+
+    pub fn productLen(self: *const TypeTable, id: TypeId) ?usize {
+        if (!self.isAnonStruct(id)) return null;
+        return self.get(id).@"struct".fields.len;
+    }
+
+    pub fn productFieldType(self: *const TypeTable, id: TypeId, i: usize) TypeId {
+        return self.get(id).@"struct".fields[i].ty;
+    }
+
+    pub fn productFieldName(self: *const TypeTable, id: TypeId, i: usize) ?StringId {
+        if (!self.isAnonStruct(id)) return null;
+        const s = self.get(id).@"struct";
+        return if (i < s.fields.len) s.fields[i].name else null;
+    }
+
+    pub fn internFieldsAsProductOrFailable(self: *TypeTable, field_ids: []const TypeId, names: ?[]const StringId) TypeId {
+        const n = field_ids.len;
+        if (n > 0 and !field_ids[n - 1].isBuiltin() and self.get(field_ids[n - 1]) == .error_set) {
+            const err = field_ids[n - 1];
+            const n_vals = n - 1;
+            const value: TypeId = if (n_vals == 0)
+                .void
+            else if (n_vals == 1)
+                field_ids[0]
+            else
+                self.internProduct(field_ids[0..n_vals], if (names) |ns| ns[0..n_vals] else null);
+            return self.internFailable(value, err);
+        }
+        return self.internProduct(field_ids, names);
+    }
+
+    pub fn failableValueSlotCount(self: *const TypeTable, f: TypeInfo.FailableInfo) usize {
+        if (f.value == .void) return 0;
+        if (!f.value.isBuiltin()) {
+            const vi = self.get(f.value);
+            if (vi == .@"struct") return vi.@"struct".fields.len;
+        }
+        return 1;
+    }
+
+    pub fn failableValueSlotType(self: *const TypeTable, f: TypeInfo.FailableInfo, i: usize) TypeId {
+        if (!f.value.isBuiltin()) {
+            const vi = self.get(f.value);
+            if (vi == .@"struct") return vi.@"struct".fields[i].ty;
+        }
+        std.debug.assert(i == 0);
+        return f.value;
+    }
+
+    /// Flat ABI field types of a failable: value slots then the error set.
+    pub fn failableAbiTypes(self: *const TypeTable, f: TypeInfo.FailableInfo, alloc: Allocator) []TypeId {
+        const n = self.failableValueSlotCount(f);
+        const out = alloc.alloc(TypeId, n + 1) catch unreachable;
+        for (0..n) |i| out[i] = self.failableValueSlotType(f, i);
+        out[n] = f.err;
+        return out;
+    }
+
     /// Intern an anonymous (`__anon`) nominal TypeInfo by SHAPE, not by
     /// display name. The nominal intern map keys these kinds by name, and
     /// every anonymous decl displays as `__anon`, so routing them through
@@ -703,14 +799,10 @@ pub const TypeTable = struct {
             .@"struct" => |s| self.fieldsCursorReach(s.fields, crossed, &here),
             .@"union" => |u| self.fieldsCursorReach(u.fields, crossed, &here),
             .tagged_union => |u| self.fieldsCursorReach(u.fields, crossed, &here),
-            .tuple => |t| blk: {
-                var found: CursorReach = .none;
-                for (t.fields) |f| {
-                    found = strongerReach(found, self.cursorReachOf(f, crossed, &here));
-                    if (found == .owned) break;
-                }
-                break :blk found;
-            },
+            .failable => |f| strongerReach(
+                self.cursorReachOf(f.value, crossed, &here),
+                self.cursorReachOf(f.err, crossed, &here),
+            ),
             .array => |a| self.cursorReachOf(a.element, crossed, &here),
             .vector => |v| self.cursorReachOf(v.element, crossed, &here),
             .optional => |o| self.cursorReachOf(o.child, crossed, &here),
@@ -752,7 +844,6 @@ pub const TypeTable = struct {
             .@"union" => |u| @intCast(u.fields.len),
             .tagged_union => |u| @intCast(u.fields.len),
             .@"enum" => |e| @intCast(e.variants.len),
-            .tuple => |t| @intCast(t.fields.len),
             .array => |a| @intCast(a.length),
             .vector => |v| @intCast(v.length),
             else => null,
@@ -779,9 +870,8 @@ pub const TypeTable = struct {
     }
 
     /// Name of member `idx` of an aggregate: a struct/union/tagged-union field
-    /// name, an enum variant name, or a named-tuple element name. Null for a
-    /// negative / out-of-range `idx`, an unnamed tuple element, or a type with no
-    /// named members. Backs the `type_field_name` reader.
+    /// name or an enum variant name. Null for a negative / out-of-range `idx`
+    /// or a type with no named members. Backs the `type_field_name` reader.
     pub fn memberName(self: *const TypeTable, id: TypeId, idx: i64) ?StringId {
         if (idx < 0 or id.index() >= self.infos.items.len) return null;
         const i: usize = @intCast(idx);
@@ -790,17 +880,15 @@ pub const TypeTable = struct {
             .@"union" => |u| if (i < u.fields.len) u.fields[i].name else null,
             .tagged_union => |u| if (i < u.fields.len) u.fields[i].name else null,
             .@"enum" => |e| if (i < e.variants.len) e.variants[i] else null,
-            .tuple => |t| if (t.names) |ns| (if (i < ns.len) ns[i] else null) else null,
             else => null,
         };
     }
 
     /// Type of member `idx` of an aggregate: a struct/union/tagged-union field
-    /// type, a tuple element type, an array/vector element type, a slice's
-    /// element (row 0 — the static length doesn't exist), or an optional's
-    /// child (row 0). Null for a negative / out-of-range `idx` or a type with
-    /// no member types (e.g. a payloadless enum). Backs the `type_field_type`
-    /// reader.
+    /// type, an array/vector element type, a slice's element (row 0 — the
+    /// static length doesn't exist), or an optional's child (row 0). Null for
+    /// a negative / out-of-range `idx` or a type with no member types (e.g. a
+    /// payloadless enum). Backs the `type_field_type` reader.
     pub fn memberType(self: *const TypeTable, id: TypeId, idx: i64) ?TypeId {
         if (idx < 0 or id.index() >= self.infos.items.len) return null;
         const i: usize = @intCast(idx);
@@ -808,7 +896,6 @@ pub const TypeTable = struct {
             .@"struct" => |s| if (i < s.fields.len) s.fields[i].ty else null,
             .@"union" => |u| if (i < u.fields.len) u.fields[i].ty else null,
             .tagged_union => |u| if (i < u.fields.len) u.fields[i].ty else null,
-            .tuple => |t| if (i < t.fields.len) t.fields[i] else null,
             .array => |a| if (i < a.length) a.element else null,
             .vector => |v| if (i < v.length) v.element else null,
             .slice => |sl| if (i == 0) sl.element else null,
@@ -834,7 +921,7 @@ pub const TypeTable = struct {
     /// Byte offset of member `idx` inside a value of type `id` — the single
     /// source of truth behind `struct_field_offset` (static fold, the runtime
     /// `__sx_field_offset_ptrs` tables, and the VM's `rt_field_offset`), so
-    /// the three can never drift. Struct/tuple members use the same aligned
+    /// the three can never drift. Struct members use the same aligned
     /// walk `typeSizeBytes` lays out. A tagged union answers its PAYLOAD
     /// offset (the header size — identical for every variant); an untagged
     /// union's arms all overlay at 0. Null for a type without addressable
@@ -850,16 +937,6 @@ pub const TypeTable = struct {
                     off = std.mem.alignForward(usize, off, self.typeAlignBytes(f.ty));
                     if (m == i) return off;
                     off += self.typeSizeBytes(f.ty);
-                }
-                unreachable;
-            },
-            .tuple => |t| {
-                if (i >= t.fields.len) return null;
-                var off: usize = 0;
-                for (t.fields[0 .. i + 1], 0..) |fty, m| {
-                    off = std.mem.alignForward(usize, off, self.typeAlignBytes(fty));
-                    if (m == i) return off;
-                    off += self.typeSizeBytes(fty);
                 }
                 unreachable;
             },
@@ -892,7 +969,7 @@ pub const TypeTable = struct {
     /// enum's declaration order; the sx side maps them. Backs the `type_kind`
     /// reader. (A `tagged_union` is a payload-carrying enum; the sx metatype folds
     /// codes 2 and 3 onto its single `.enum` TypeInfo variant.)
-    ///   0 other · 1 struct · 2 enum · 3 tagged_union · 4 tuple
+    ///   0 other · 1 struct · 2 enum · 3 tagged_union
     ///   5 union · 6 array · 7 vector · 8 error_set
     pub fn kindCode(self: *const TypeTable, id: TypeId) i64 {
         if (id.index() >= self.infos.items.len) return 0;
@@ -900,7 +977,6 @@ pub const TypeTable = struct {
             .@"struct" => 1,
             .@"enum" => 2,
             .tagged_union => 3,
-            .tuple => 4,
             .@"union" => 5,
             .array => 6,
             .vector => 7,
@@ -1318,11 +1394,7 @@ pub const TypeTable = struct {
                 if (e.backing_type) |bt| return self.sizeOf(bt);
                 return 8;
             },
-            .tuple => |t| {
-                var total: u32 = 0;
-                for (t.fields) |f| total += @max(self.sizeOf(f), 8);
-                return if (total == 0) 8 else total;
-            },
+            .failable => |f| self.sizeOf(f.value) + self.sizeOf(f.err),
             .protocol => 24, // {ctx, type_id, vtable}
             .error_set => 4, // u32 tag id on the error channel
             .usize, .isize => 8, // pointer-sized (this path is not target-aware; see typeSizeBytes)
@@ -1460,12 +1532,15 @@ pub const TypeTable = struct {
                 // LLVM vectors round ABI size up to next power of 2
                 break :blk std.math.ceilPowerOfTwo(usize, raw) catch raw;
             },
-            .tuple => |t| blk: {
+            .failable => |f| blk: {
                 var offset: usize = 0;
                 var max_a: usize = 1;
-                for (t.fields) |f| {
-                    const fs = self.typeSizeBytes(f);
-                    const fa = self.typeAlignBytes(f);
+                const n = self.failableValueSlotCount(f);
+                var i: usize = 0;
+                while (i < n + 1) : (i += 1) {
+                    const fty = if (i < n) self.failableValueSlotType(f, i) else f.err;
+                    const fs = self.typeSizeBytes(fty);
+                    const fa = self.typeAlignBytes(fty);
                     if (fa > max_a) max_a = fa;
                     offset = (offset + fa - 1) & ~(fa - 1);
                     offset += fs;
@@ -1542,14 +1617,7 @@ pub const TypeTable = struct {
                 const raw = self.typeSizeBytes(v.element) * @as(usize, @intCast(v.length));
                 break :blk std.math.ceilPowerOfTwo(usize, raw) catch raw;
             },
-            .tuple => |t| blk: {
-                var max_a: usize = 1;
-                for (t.fields) |f| {
-                    const fa = self.typeAlignBytes(f);
-                    if (fa > max_a) max_a = fa;
-                }
-                break :blk max_a;
-            },
+            .failable => |f| @max(self.typeAlignBytes(f.value), self.typeAlignBytes(f.err)),
             .signed => |w| intAbiBytes(w),
             .unsigned => |w| intAbiBytes(w),
             else => 8,
@@ -1607,8 +1675,8 @@ pub const TypeTable = struct {
     }
 
     /// Like `typeName` but produces structural names for compound
-    /// types (`*T`, `[]T`, `[N]T`, `?T`, `@Vector(N,T)`, function and
-    /// tuple types) instead of returning `"?"`. Compound names are
+    /// types (`*T`, `[]T`, `[N]T`, `?T`, `@Vector(N,T)`, function types)
+    /// instead of returning `"?"`. Compound names are
     /// freshly allocated via `alloc`; builtin and named user types
     /// return borrowed slices.
     pub fn formatTypeName(self: *const TypeTable, alloc: std.mem.Allocator, id: TypeId) []const u8 {
@@ -1689,16 +1757,17 @@ pub const TypeTable = struct {
                 }
                 break :blk buf.toOwnedSlice(alloc) catch "Closure(?)";
             },
-            .tuple => |tu| blk: {
+            .failable => |f| blk: {
                 var buf = std.ArrayList(u8).empty;
                 defer buf.deinit(alloc);
                 buf.append(alloc, '(') catch break :blk "(?)";
-                for (tu.fields, 0..) |f, i| {
+                const n = self.failableValueSlotCount(f);
+                for (0..n) |i| {
                     if (i > 0) buf.appendSlice(alloc, ", ") catch break :blk "(?)";
-                    buf.appendSlice(alloc, self.formatTypeName(alloc, f)) catch break :blk "(?)";
+                    buf.appendSlice(alloc, self.formatTypeName(alloc, self.failableValueSlotType(f, i))) catch break :blk "(?)";
                 }
-                // 1-tuple renders `(T,)` — `(T)` now spells a grouping.
-                if (tu.fields.len == 1) buf.append(alloc, ',') catch break :blk "(?)";
+                if (n > 0) buf.appendSlice(alloc, ", ") catch break :blk "(?)";
+                buf.appendSlice(alloc, "!") catch break :blk "(?)";
                 buf.append(alloc, ')') catch break :blk "(?)";
                 break :blk buf.toOwnedSlice(alloc) catch "(?)";
             },
@@ -1809,9 +1878,9 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
             h.update(std.mem.asBytes(&e.name));
             if (e.nominal_id != 0) h.update(std.mem.asBytes(&e.nominal_id));
         },
-        .tuple => |t| {
-            for (t.fields) |f| h.update(std.mem.asBytes(&f));
-            if (t.names) |ns| for (ns) |n| h.update(std.mem.asBytes(&n));
+        .failable => |f| {
+            h.update(std.mem.asBytes(&f.value));
+            h.update(std.mem.asBytes(&f.err));
         },
         .pack => |p| {
             for (p.elements) |e| h.update(std.mem.asBytes(&e));
@@ -1872,20 +1941,7 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
         .tagged_union => |u| u.name == b.tagged_union.name and u.nominal_id == b.tagged_union.nominal_id,
         .protocol => |p| p.name == b.protocol.name,
         .error_set => |e| e.name == b.error_set.name and e.nominal_id == b.error_set.nominal_id,
-        .tuple => |t| {
-            const u = b.tuple;
-            if (t.fields.len != u.fields.len) return false;
-            for (t.fields, u.fields) |tf, uf| {
-                if (tf != uf) return false;
-            }
-            if ((t.names == null) != (u.names == null)) return false;
-            if (t.names) |tn| {
-                const un = u.names.?;
-                if (tn.len != un.len) return false;
-                for (tn, un) |tna, una| if (tna != una) return false;
-            }
-            return true;
-        },
+        .failable => |f| f.value == b.failable.value and f.err == b.failable.err,
         .pack => |p| {
             const q = b.pack;
             if (p.elements.len != q.elements.len) return false;

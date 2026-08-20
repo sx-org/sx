@@ -325,9 +325,13 @@ test "pack type: distinct element lists are distinct types" {
     try std.testing.expect(a != b);
     try std.testing.expect(a != c);
     try std.testing.expect(b != c);
-    // A pack is distinct from the tuple of the same elements.
-    const tup = table.intern(.{ .tuple = .{ .fields = &[_]TypeId{ .bool, .i32 }, .names = null } });
-    try std.testing.expect(a != tup);
+    // A pack is distinct from an anonymous product of the same elements.
+    const flds = [_]TypeInfo.StructInfo.Field{
+        .{ .name = table.internString("0"), .ty = .bool },
+        .{ .name = table.internString("1"), .ty = .i32 },
+    };
+    const prod = table.intern(.{ .@"struct" = .{ .name = table.internString("__anon"), .fields = &flds } });
+    try std.testing.expect(a != prod);
 }
 
 test "pack type: formatTypeName" {

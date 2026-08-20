@@ -477,7 +477,7 @@ fn spellType(alloc: std.mem.Allocator, node: *const Node) anyerror![]const u8 {
         },
         .tuple_type_expr => |t| {
             var out = std.ArrayList(u8).empty;
-            try out.appendSlice(alloc, "Tuple(");
+            try out.append(alloc, '(');
             for (t.field_types, 0..) |f, i| {
                 if (i > 0) try out.append(alloc, ',');
                 if (t.field_names) |names| {

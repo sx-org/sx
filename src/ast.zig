@@ -1050,13 +1050,13 @@ pub const TupleTypeExpr = struct {
 
 /// A bare-paren MULTI-RETURN signature `(A, B)` / `(x: A, y: B)` / `(A, B, !)`
 /// (≥2 value slots, error always the LAST slot). A function with this return
-/// returns MULTIPLE VALUES — a DISTINCT thing from one `Tuple(…)` value: it
-/// reuses the tuple ABI under the hood (resolves to a `.tuple` TypeId), but is
-/// valid ONLY as a function/closure return type (the general type resolver
-/// rejects it anywhere else), and its result is consumed only by destructuring
-/// (`a, b := f()`), never bound to a single value. Same shape as a tuple type so
-/// the resolver can reuse the field-resolution path. The single-value `(T, !)`
-/// (one value + error) is NOT this — it is a plain failable.
+/// returns MULTIPLE VALUES — interned as an anonymous structural struct, valid
+/// ONLY as a function/closure return type (the general type resolver rejects
+/// it anywhere else). The result is consumed by destructuring (`a, b := f()`)
+/// or as a positional product (`s.0`). Same AST shape as a parenthesized
+/// failable `(T, !)` list so the resolver can reuse the field-resolution path.
+/// The single-value `(T, !)` (one value + error) is NOT this — it is a
+/// dedicated failable kind.
 pub const ReturnTypeExpr = struct {
     field_types: []const *Node,
     field_names: ?[]const []const u8, // null for positional
@@ -1069,9 +1069,8 @@ pub const ReturnTypeExpr = struct {
 
 pub const TupleLiteral = struct {
     elements: []const TupleElement,
-    // Explicit tuple type for the `Tuple(...).( ... )` typed-construction form
-    // (mirrors `StructLiteral.type_expr` for `Name{ ... }`). null for the
-    // anonymous, contextually-typed `.( ... )` form.
+    // Explicit type prefix on a product literal, when present. null for the
+    // anonymous, contextually-typed form.
     type_expr: ?*Node = null,
 };
 

@@ -1,1 +1,112 @@
+error: cannot return a value of type 'Loop' where 'i32' is expected
+  --> library/modules/std/event.sx:252:16
+    |
+252 |         return Loop{ kq = q };
+    |                ^^^^^^^^^^^^^^
 
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> library/modules/std/http/server.sx:1666:9
+     |
+1666 |         lp.add_read(lfd, LISTENER_UDATA) catch { are = true; };
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> library/modules/std/http/server.sx:1674:9
+     |
+1674 |         lp.add_wake(WAKE_UDATA) catch { swe = true; };
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 30 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/server.sx:1735:16
+     |
+1735 |         return Server{
+     |                ^^^^^^^
+1736 |             cfg = cfg, loop = lp, lfd = lfd, conns = slots,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1737 |             own_alloc = oa, handler = handler, ctx = ctx, ps = ps,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1738 |             free_head = 0, dheap = dh, dheap_cap = dcap,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1739 |         };
+     | ^^^^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1673-http-handler-timeout.sx:128:20
+    |
+128 |         srv, se := http.Server.init(cfg, route, 0);
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: condition must be a bool, integer, pointer, or optional, but has type 'Loop'
+  --> examples/http/1673-http-handler-timeout.sx:129:12
+    |
+129 |         if se { print("init failed\n"); return 1; }
+    |            ^^
+
+error: 'close' is not a ufcs function — a plain function does not dispatch via dot-call
+  --> examples/http/1673-http-handler-timeout.sx:133:47
+    |
+133 |         if ca < 0 { print("dial A failed\n"); srv.close(); return 1; }
+    |                                               ^^^^^^^^^
+
+help: call it directly (`close(receiver, ...)`) or declare it `close :: ufcs (...) { ... }`
+    |
+133 |         if ca < 0 { print("dial A failed\n"); srv.close(); return 1; }
+    |                                               ^^^^^^^^^
+
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> examples/http/1673-http-handler-timeout.sx:144:13
+    |
+144 |             srv.tick(1) catch {};
+    |             ^^^^^^^^^^^^^^^^^^^^
+
+error: 'close' is not a ufcs function — a plain function does not dispatch via dot-call
+  --> examples/http/1673-http-handler-timeout.sx:170:47
+    |
+170 |         if cb < 0 { print("dial B failed\n"); srv.close(); return 1; }
+    |                                               ^^^^^^^^^
+
+help: call it directly (`close(receiver, ...)`) or declare it `close :: ufcs (...) { ... }`
+    |
+170 |         if cb < 0 { print("dial B failed\n"); srv.close(); return 1; }
+    |                                               ^^^^^^^^^
+
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> examples/http/1673-http-handler-timeout.sx:177:13
+    |
+177 |             srv.tick(1) catch {};
+    |             ^^^^^^^^^^^^^^^^^^^^
+
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> examples/http/1673-http-handler-timeout.sx:200:13
+    |
+200 |             srv.tick(1) catch {};
+    |             ^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'stats' (in examples/http/1673-http-handler-timeout.sx fn main)
+  --> examples/http/1673-http-handler-timeout.sx:205:15
+    |
+205 |         st := srv.stats();
+    |               ^^^^^^^^^
+
+error: field 'timeouts' not found on type 'i64'
+  --> examples/http/1673-http-handler-timeout.sx:206:12
+    |
+206 |         if st.timeouts < 1 {
+    |            ^^^^^^^^^^^
+
+error: field 'timeouts' not found on type 'i64'
+  --> examples/http/1673-http-handler-timeout.sx:207:61
+    |
+207 |             print("expected stats.timeouts >= 1, got {}\n", st.timeouts);
+    |                                                             ^^^^^^^^^^^
+
+error: 'close' is not a ufcs function — a plain function does not dispatch via dot-call
+  --> examples/http/1673-http-handler-timeout.sx:213:9
+    |
+213 |         srv.close();   // joins the slow worker; its late completion (if any
+    |         ^^^^^^^^^
+
+help: call it directly (`close(receiver, ...)`) or declare it `close :: ufcs (...) { ... }`
+    |
+213 |         srv.close();   // joins the slow worker; its late completion (if any
+    |         ^^^^^^^^^

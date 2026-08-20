@@ -89,10 +89,10 @@ pub const PackResolver = struct {
                 }
             }
         }
-        return self.l.module.types.intern(.{ .tuple = .{
-            .fields = self.l.alloc.dupe(TypeId, field_ids.items) catch return .unresolved,
-            .names = name_ids,
-        } });
+        return self.l.module.types.internFieldsAsProductOrFailable(
+            self.l.alloc.dupe(TypeId, field_ids.items) catch return .unresolved,
+            name_ids,
+        );
     }
 
     /// Resolve a tuple LITERAL used in a type position whose elements include a
@@ -121,10 +121,10 @@ pub const PackResolver = struct {
             }
             field_ids.append(self.l.alloc, self.l.resolveTypeWithBindings(el.value)) catch return .unresolved;
         }
-        return self.l.module.types.intern(.{ .tuple = .{
-            .fields = self.l.alloc.dupe(TypeId, field_ids.items) catch return .unresolved,
-            .names = null,
-        } });
+        return self.l.module.types.internFieldsAsProductOrFailable(
+            self.l.alloc.dupe(TypeId, field_ids.items) catch return .unresolved,
+            null,
+        );
     }
 
     /// TYPE-position pack expansion: given a spread operand, return the

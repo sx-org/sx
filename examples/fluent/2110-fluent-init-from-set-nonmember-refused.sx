@@ -4,7 +4,7 @@
 //
 // The narrowing belongs to the formation write alone. The same conversion written
 // anywhere else — at top level, or inside a formation's own source expression —
-// is the ordinary refusal, and so is the element of a tuple the write decomposes.
+// is the ordinary refusal, and so is the element of a product the write decomposes.
 @import "modules/std.sx";
 
 Named :: protocol vtable { name :: (self: *Self) -> string; }
@@ -38,8 +38,10 @@ form_Label :: ufcs (value: $I/@Init(Label)) {
     value.write(*slot);
 }
 
-form_Tuple :: ufcs (value: $I/@Init(Tuple(Label, i64))) {
-    slot: Tuple(Label, i64) = ---;
+ViewI64 :: struct { a: View; b: i64 };
+LabelI64 :: struct { a: Label; b: i64 };
+form_Tuple :: ufcs (value: $I/@Init(LabelI64)) {
+    slot: LabelI64 = ---;
     value.write(*slot);
 }
 
@@ -63,7 +65,7 @@ main :: () -> i32 {
     form_Label(echo_Label(v));
     echo_Label(v).form_Label();
 
-    t : Tuple(View, i64) = .{v, 3};
+    t : ViewI64 = .{a = v, b = 3};
     form_Tuple(t);
 
     label : Label = v;

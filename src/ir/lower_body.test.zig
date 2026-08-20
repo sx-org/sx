@@ -25,7 +25,7 @@ test "lower: bodyDemand maps a declared return type to one demand" {
     try std.testing.expect(l.bodyDemand(.i32) == .return_value);
     try std.testing.expectEqual(TypeId.i32, l.bodyDemand(.i32).return_value);
     try std.testing.expect(l.bodyDemand(.string) == .return_value);
-    const point = tt.intern(.{ .tuple = .{ .fields = &[_]TypeId{ .i64, .i64 }, .names = null } });
+    const point = tt.internProduct(&[_]TypeId{ .i64, .i64 }, null);
     try std.testing.expect(l.bodyDemand(point) == .return_value);
 
     // PURE failable (`-> !Named`): only an ERROR tail is the return.
@@ -36,7 +36,7 @@ test "lower: bodyDemand maps a declared return type to one demand" {
 
     // A VALUE-carrying failable (`-> (i32, !Failed)`) still returns a value —
     // its tail is the success value, not the error channel.
-    const carrying = tt.intern(.{ .tuple = .{ .fields = &[_]TypeId{ .i32, failed }, .names = null } });
+    const carrying = tt.internFailable(.i32, failed);
     try std.testing.expect(l.bodyDemand(carrying) == .return_value);
 
     // The classifier never invents an expression position.

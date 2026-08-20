@@ -79,7 +79,7 @@ fn constructionHeadName(head: *const Node) []const u8 {
         .type_expr => |te| te.name,
         .parameterized_type_expr => |pte| pte.name,
         .call => |c| constructionHeadName(c.callee),
-        .tuple_type_expr => "Tuple",
+        .tuple_type_expr => "this head",
         else => "this head",
     };
 }

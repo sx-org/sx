@@ -1,0 +1,77 @@
+error: cannot return a value of type 'Loop' where 'i32' is expected
+  --> library/modules/std/event.sx:252:16
+    |
+252 |         return Loop{ kq = q };
+    |                ^^^^^^^^^^^^^^
+
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> library/modules/std/http/server.sx:1666:9
+     |
+1666 |         lp.add_read(lfd, LISTENER_UDATA) catch { are = true; };
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> library/modules/std/http/server.sx:1674:9
+     |
+1674 |         lp.add_wake(WAKE_UDATA) catch { swe = true; };
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 30 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/server.sx:1735:16
+     |
+1735 |         return Server{
+     |                ^^^^^^^
+1736 |             cfg = cfg, loop = lp, lfd = lfd, conns = slots,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1737 |             own_alloc = oa, handler = handler, ctx = ctx, ps = ps,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1738 |             free_head = 0, dheap = dh, dheap_cap = dcap,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1739 |         };
+     | ^^^^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1681-http-handling-no-busy-poll.sx:79:20
+   |
+79 |         srv, se := http.Server.init(cfg, route, 0);
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: condition must be a bool, integer, pointer, or optional, but has type 'Loop'
+  --> examples/http/1681-http-handling-no-busy-poll.sx:80:12
+   |
+80 |         if se { print("init failed\n"); return 1; }
+   |            ^^
+
+error: 'close' is not a ufcs function — a plain function does not dispatch via dot-call
+  --> examples/http/1681-http-handling-no-busy-poll.sx:83:45
+   |
+83 |         if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
+   |                                             ^^^^^^^^^
+
+help: call it directly (`close(receiver, ...)`) or declare it `close :: ufcs (...) { ... }`
+   |
+83 |         if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
+   |                                             ^^^^^^^^^
+
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> examples/http/1681-http-handling-no-busy-poll.sx:89:23
+   |
+89 |         while t < 5 { srv.tick(2) catch {}; t += 1; }   // accept + dispatch
+   |                       ^^^^^^^^^^^^^^^^^^^^
+
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> examples/http/1681-http-handling-no-busy-poll.sx:105:13
+    |
+105 |             srv.tick(30) catch {};
+    |             ^^^^^^^^^^^^^^^^^^^^^
+
+error: 'close' is not a ufcs function — a plain function does not dispatch via dot-call
+  --> examples/http/1681-http-handling-no-busy-poll.sx:127:9
+    |
+127 |         srv.close();
+    |         ^^^^^^^^^
+
+help: call it directly (`close(receiver, ...)`) or declare it `close :: ufcs (...) { ... }`
+    |
+127 |         srv.close();
+    |         ^^^^^^^^^

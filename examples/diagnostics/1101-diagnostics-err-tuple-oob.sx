@@ -1,6 +1,6 @@
-// An out-of-range tuple index reports `field 'N' not found on type '(i64, i64)'`.
+// An out-of-range positional-product index reports `field 'N' not found`.
 
 main :: () -> i32 {
-    t : Tuple(i64, i64) = .{10, 20};
+    t := .{10, 20};
     return xx t.42;
 }

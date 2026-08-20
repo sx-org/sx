@@ -190,13 +190,15 @@ pub const TypeLowering = struct {
                 };
                 return c.LLVMStructTypeInContext(self.e.context, &field_types, 2, 0);
             },
-            .tuple => |t| {
-                const n: c_uint = @intCast(t.fields.len);
-                const field_llvm_types = self.e.alloc.alloc(c.LLVMTypeRef, t.fields.len) catch unreachable;
+            .failable => |f| {
+                const n_vals = self.e.ir_mod.types.failableValueSlotCount(f);
+                const n: c_uint = @intCast(n_vals + 1);
+                const field_llvm_types = self.e.alloc.alloc(c.LLVMTypeRef, n_vals + 1) catch unreachable;
                 defer self.e.alloc.free(field_llvm_types);
-                for (t.fields, 0..) |f, j| {
-                    field_llvm_types[j] = self.fieldLLVMType(f);
+                for (0..n_vals) |j| {
+                    field_llvm_types[j] = self.fieldLLVMType(self.e.ir_mod.types.failableValueSlotType(f, j));
                 }
+                field_llvm_types[n_vals] = self.fieldLLVMType(f.err);
                 return c.LLVMStructTypeInContext(self.e.context, field_llvm_types.ptr, n, 0);
             },
             .protocol => {

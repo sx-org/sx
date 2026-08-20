@@ -1,0 +1,1318 @@
+error: cannot return a value of type 'Loop' where 'i32' is expected
+  --> library/modules/std/event.sx:252:16
+    |
+252 |         return Loop{ kq = q };
+    |                ^^^^^^^^^^^^^^
+
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> library/modules/std/http/server.sx:1666:9
+     |
+1666 |         lp.add_read(lfd, LISTENER_UDATA) catch { are = true; };
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> library/modules/std/http/server.sx:1674:9
+     |
+1674 |         lp.add_wake(WAKE_UDATA) catch { swe = true; };
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 30 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/server.sx:1735:16
+     |
+1735 |         return Server{
+     |                ^^^^^^^
+1736 |             cfg = cfg, loop = lp, lfd = lfd, conns = slots,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1737 |             own_alloc = oa, handler = handler, ctx = ctx, ps = ps,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1738 |             free_head = 0, dheap = dh, dheap_cap = dcap,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1739 |         };
+     | ^^^^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:118:16
+    |
+118 |     srv, se := http.Server.init(cfg, handler, 0);
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: condition must be a bool, integer, pointer, or optional, but has type 'Loop'
+  --> examples/http/1705-http-client-transport.sx:119:8
+    |
+119 |     if se { return 2; }
+    |        ^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:408:20
+    |
+408 |             return result;
+    |                    ^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:412:20
+    |
+412 |             return result;
+    |                    ^^^^^^
+
+error: named return element 'n' does not name any return slot
+  --> library/modules/std/http/server.sx:691:16
+    |
+691 |         return .{n, status};
+    |                ^^^^^^^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:531:35
+    |
+531 |         if self.finished { return EncodedProduceStep{ status = EncodedProduceStatus.done }; }
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:537:47
+    |
+537 |             if progress.produced > 0 { return EncodedProduceStep{ produced = progress.produced, status = EncodedProduceStatus.data }; }
+    |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:538:39
+    |
+538 |             if self.finished { return EncodedProduceStep{ status = EncodedProduceStatus.done }; }
+    |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:539:47
+    |
+539 |             if progress.consumed > 0 { return EncodedProduceStep{ status = EncodedProduceStatus.pending }; }
+    |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:550:24
+    |
+550 |                 return EncodedProduceStep{ status = EncodedProduceStatus.pending };
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:557:43
+    |
+557 |         if progress.produced > 0 { return EncodedProduceStep{ produced = progress.produced, status = EncodedProduceStatus.data }; }
+    |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:558:35
+    |
+558 |         if self.finished { return EncodedProduceStep{ status = EncodedProduceStatus.done }; }
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 4 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/client.sx:120:12
+    |
+120 |     return c;
+    |            ^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:125:19
+    |
+125 |     conn_a, ea := http.Client.open("localhost", PORT_MAIN, opts_plain);
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:126:13
+    |
+126 |     if ea { srv.stop(); t.join(); return 10; }
+    |             ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:126:25
+    |
+126 |     if ea { srv.stop(); t.join(); return 10; }
+    |                         ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:129:46
+    |
+129 |     if sa { http.Client.close_conn(*conn_a); srv.stop(); t.join(); return 11; }
+    |                                              ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:129:58
+    |
+129 |     if sa { http.Client.close_conn(*conn_a); srv.stop(); t.join(); return 11; }
+    |                                                          ^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:450:20
+    |
+450 |             return result;
+    |                    ^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:454:20
+    |
+454 |             return result;
+    |                    ^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3858:24
+     |
+3858 |                 return Progress{ consumed = consumed, produced = produced, status = .done };
+     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3866:24
+     |
+3866 |                 return Progress{ consumed = consumed, produced = produced, status = .need_input };
+     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3878:48
+     |
+3878 |                 if self.fixed_at < 10 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3895:54
+     |
+3895 |                 if self.extra_length_at < 2 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3908:54
+     |
+3908 |                 if self.extra_remaining > 0 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3921:36
+     |
+3921 |                 if !found { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3931:52
+     |
+3931 |                 if self.header_crc_at < 2 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:2943:24
+     |
+2943 |                 return Progress{ consumed = consumed, produced = produced, status = .done };
+     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:2948:40
+     |
+2948 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:2981:40
+     |
+2981 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:2988:40
+     |
+2988 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3012:52
+     |
+3012 |                 if produced >= output.len { return Progress{ consumed = consumed, produced = produced, status = .need_output }; }
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3013:51
+     |
+3013 |                 if consumed >= input.len { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3049:40
+     |
+3049 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3063:44
+     |
+3063 |                     if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3088:40
+     |
+3088 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3114:40
+     |
+3114 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3364:40
+     |
+3364 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3381:52
+     |
+3381 |                 if produced >= output.len { return Progress{ consumed = consumed, produced = produced, status = .need_output }; }
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3388:40
+     |
+3388 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3397:40
+     |
+3397 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3410:40
+     |
+3410 |                 if !available { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3418:52
+     |
+3418 |                 if produced >= output.len { return Progress{ consumed = consumed, produced = produced, status = .need_output }; }
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3952:24
+     |
+3952 |                 return Progress{ consumed = consumed, produced = produced, status = progress.status };
+     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3960:49
+     |
+3960 |                 if self.trailer_at < 8 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3970:24
+     |
+3970 |                 return Progress{ consumed = consumed, produced = produced, status = .need_input };
+     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3536:45
+     |
+3536 |             if self.phase == .done { return Progress{ consumed = consumed, produced = produced, status = .done }; }
+     |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3543:48
+     |
+3543 |                 if self.header_at < 2 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3578:24
+     |
+3578 |                 return Progress{ consumed = consumed, produced = produced, status = progress.status };
+     |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 3 values — return them as `return a, b`, not a single value
+  --> library/modules/std/internal/compress.sx:3586:49
+     |
+3586 |                 if self.trailer_at < 4 { return Progress{ consumed = consumed, produced = produced, status = .need_input }; }
+     |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 5 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/client.sx:1004:12
+     |
+1004 |     return ClientResponse{
+     |            ^^^^^^^^^^^^^^^
+1005 |         status = final_status,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1006 |         reason = final_reason,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1007 |         headers_raw = string{ ptr = *buf[header_start], len = if normalized_headers_len >= 0 then normalized_headers_len else head_end - 2 - header_start },
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1008 |         body = string{ ptr = *buf[head_end], len = body_len },
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1009 |         decoded_from = decoded_from,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1010 |     };
+     | ^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:130:16
+    |
+130 |     ra, rae := http.Client.recv_on(*conn_a, *ba[0], 4096);
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: condition must be a bool, integer, pointer, or optional, but has type 'string'
+  --> examples/http/1705-http-client-transport.sx:131:8
+    |
+131 |     if rae { http.Client.close_conn(*conn_a); srv.stop(); t.join(); return 12; }
+    |        ^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:131:47
+    |
+131 |     if rae { http.Client.close_conn(*conn_a); srv.stop(); t.join(); return 12; }
+    |                                               ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:131:59
+    |
+131 |     if rae { http.Client.close_conn(*conn_a); srv.stop(); t.join(); return 12; }
+    |                                                           ^^^^^^
+
+error: field 'status' not found on type 'i64'
+  --> examples/http/1705-http-client-transport.sx:132:8
+    |
+132 |     if ra.status != 200 or ra.body != "pong" {
+    |        ^^^^^^^^^
+
+error: field 'body' not found on type 'i64'
+  --> examples/http/1705-http-client-transport.sx:132:28
+    |
+132 |     if ra.status != 200 or ra.body != "pong" {
+    |                            ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:133:42
+    |
+133 |         http.Client.close_conn(*conn_a); srv.stop(); t.join(); return 12;
+    |                                          ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:133:54
+    |
+133 |         http.Client.close_conn(*conn_a); srv.stop(); t.join(); return 12;
+    |                                                      ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:139:19
+    |
+139 |     conn_c, ec := http.Client.open("127.0.0.1", PORT_MAIN, opts_plain);
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:140:50
+    |
+140 |     if ec { context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 13; }
+    |                                                  ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:140:62
+    |
+140 |     if ec { context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 13; }
+    |                                                              ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:142:83
+    |
+142 |     if sc { http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 14; }
+    |                                                                                   ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:142:95
+    |
+142 |     if sc { http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 14; }
+    |                                                                                               ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:143:17
+    |
+143 |     rvc, rce := http.Client.recv_on(*conn_c, bc, CHUNK_TOTAL + 8192);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: condition must be a bool, integer, pointer, or optional, but has type 'string'
+  --> examples/http/1705-http-client-transport.sx:144:8
+    |
+144 |     if rce { http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 15; }
+    |        ^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:144:84
+    |
+144 |     if rce { http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 15; }
+    |                                                                                    ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:144:96
+    |
+144 |     if rce { http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 15; }
+    |                                                                                                ^^^^^^
+
+error: field 'status' not found on type 'i64'
+  --> examples/http/1705-http-client-transport.sx:145:8
+    |
+145 |     if rvc.status != 200 or !check_body(rvc.body) {
+    |        ^^^^^^^^^^
+
+error: field 'body' not found on type 'i64'
+  --> examples/http/1705-http-client-transport.sx:145:41
+    |
+145 |     if rvc.status != 200 or !check_body(rvc.body) {
+    |                                         ^^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:146:79
+    |
+146 |         http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 15;
+    |                                                                               ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:146:91
+    |
+146 |         http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 15;
+    |                                                                                           ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:151:84
+    |
+151 |     if sc2 { http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 16; }
+    |                                                                                    ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:151:96
+    |
+151 |     if sc2 { http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 16; }
+    |                                                                                                ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:152:18
+    |
+152 |     rc2, rc2e := http.Client.recv_on(*conn_c, bc, 4096);
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: condition must be a bool, integer, pointer, or optional, but has type 'string'
+  --> examples/http/1705-http-client-transport.sx:153:8
+    |
+153 |     if rc2e { http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 17; }
+    |        ^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:153:85
+    |
+153 |     if rc2e { http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 17; }
+    |                                                                                     ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:153:97
+    |
+153 |     if rc2e { http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 17; }
+    |                                                                                                 ^^^^^^
+
+error: field 'status' not found on type 'i64'
+  --> examples/http/1705-http-client-transport.sx:154:8
+    |
+154 |     if rc2.status != 200 or rc2.body != "pong" {
+    |        ^^^^^^^^^^
+
+error: field 'body' not found on type 'i64'
+  --> examples/http/1705-http-client-transport.sx:154:29
+    |
+154 |     if rc2.status != 200 or rc2.body != "pong" {
+    |                             ^^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:155:79
+    |
+155 |         http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 17;
+    |                                                                               ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:155:91
+    |
+155 |         http.Client.close_conn(*conn_c); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 17;
+    |                                                                                           ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:161:21
+    |
+161 |     conn_c2, ec2 := http.Client.open("127.0.0.1", PORT_MAIN, opts_plain);
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:162:51
+    |
+162 |     if ec2 { context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 18; }
+    |                                                   ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:162:63
+    |
+162 |     if ec2 { context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 18; }
+    |                                                               ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:164:85
+    |
+164 |     if sc3 { http.Client.close_conn(*conn_c2); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 18; }
+    |                                                                                     ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:164:97
+    |
+164 |     if sc3 { http.Client.close_conn(*conn_c2); context.allocator.dealloc_bytes(bc); srv.stop(); t.join(); return 18; }
+    |                                                                                                 ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:165:16
+    |
+165 |     _, rce2 := http.Client.recv_on(*conn_c2, bc, 4096);
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id
+  --> examples/http/1705-http-client-transport.sx:168:8
+    |
+168 |     if rce2 != error.TooLarge { srv.stop(); t.join(); return 19; }
+    |        ^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:168:33
+    |
+168 |     if rce2 != error.TooLarge { srv.stop(); t.join(); return 19; }
+    |                                 ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:168:45
+    |
+168 |     if rce2 != error.TooLarge { srv.stop(); t.join(); return 19; }
+    |                                             ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:173:19
+    |
+173 |     usrv, use_ := http.Server.init(ucfg, handler, 0);
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: condition must be a bool, integer, pointer, or optional, but has type 'Loop'
+  --> examples/http/1705-http-client-transport.sx:174:8
+    |
+174 |     if use_ { srv.stop(); t.join(); return 20; }
+    |        ^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:174:15
+    |
+174 |     if use_ { srv.stop(); t.join(); return 20; }
+    |               ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:174:27
+    |
+174 |     if use_ { srv.stop(); t.join(); return 20; }
+    |                           ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:176:14
+    |
+176 |     if ute { srv.stop(); t.join(); return 21; }
+    |              ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:176:26
+    |
+176 |     if ute { srv.stop(); t.join(); return 21; }
+    |                          ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:178:15
+    |
+178 |     if !uok { usrv.stop(); ut.join(); srv.stop(); t.join(); return 22; }
+    |               ^^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:178:28
+    |
+178 |     if !uok { usrv.stop(); ut.join(); srv.stop(); t.join(); return 22; }
+    |                            ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:178:39
+    |
+178 |     if !uok { usrv.stop(); ut.join(); srv.stop(); t.join(); return 22; }
+    |                                       ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:178:51
+    |
+178 |     if !uok { usrv.stop(); ut.join(); srv.stop(); t.join(); return 22; }
+    |                                                   ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:179:19
+    |
+179 |     conn_u, eu := http.Client.open_addr(*uaddr, opts_plain);
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:180:13
+    |
+180 |     if eu { usrv.stop(); ut.join(); srv.stop(); t.join(); return 23; }
+    |             ^^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:180:26
+    |
+180 |     if eu { usrv.stop(); ut.join(); srv.stop(); t.join(); return 23; }
+    |                          ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:180:37
+    |
+180 |     if eu { usrv.stop(); ut.join(); srv.stop(); t.join(); return 23; }
+    |                                     ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:180:49
+    |
+180 |     if eu { usrv.stop(); ut.join(); srv.stop(); t.join(); return 23; }
+    |                                                 ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:183:16
+    |
+183 |     ru, rue := http.Client.recv_on(*conn_u, *bu[0], 4096);
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:185:5
+    |
+185 |     usrv.stop();
+    |     ^^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:186:5
+    |
+186 |     ut.join();
+    |     ^^^^^^^
+
+error: 'close' is not a ufcs function — a plain function does not dispatch via dot-call
+  --> examples/http/1705-http-client-transport.sx:187:5
+    |
+187 |     usrv.close();
+    |     ^^^^^^^^^^
+
+help: call it directly (`close(receiver, ...)`) or declare it `close :: ufcs (...) { ... }`
+    |
+187 |     usrv.close();
+    |     ^^^^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:188:13
+    |
+188 |     if su { srv.stop(); t.join(); return 24; }
+    |             ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:188:25
+    |
+188 |     if su { srv.stop(); t.join(); return 24; }
+    |                         ^^^^^^
+
+error: condition must be a bool, integer, pointer, or optional, but has type 'string'
+  --> examples/http/1705-http-client-transport.sx:189:8
+    |
+189 |     if rue { srv.stop(); t.join(); return 24; }
+    |        ^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:189:14
+    |
+189 |     if rue { srv.stop(); t.join(); return 24; }
+    |              ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:189:26
+    |
+189 |     if rue { srv.stop(); t.join(); return 24; }
+    |                          ^^^^^^
+
+error: field 'status' not found on type 'i64'
+  --> examples/http/1705-http-client-transport.sx:190:8
+    |
+190 |     if ru.status != 200 or ru.body != "pong" { srv.stop(); t.join(); return 24; }
+    |        ^^^^^^^^^
+
+error: field 'body' not found on type 'i64'
+  --> examples/http/1705-http-client-transport.sx:190:28
+    |
+190 |     if ru.status != 200 or ru.body != "pong" { srv.stop(); t.join(); return 24; }
+    |                            ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:190:48
+    |
+190 |     if ru.status != 200 or ru.body != "pong" { srv.stop(); t.join(); return 24; }
+    |                                                ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:190:60
+    |
+190 |     if ru.status != 200 or ru.body != "pong" { srv.stop(); t.join(); return 24; }
+    |                                                            ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:196:45
+    |
+196 |                        context.allocator) { srv.stop(); t.join(); return 30; }
+    |                                             ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:196:57
+    |
+196 |                        context.allocator) { srv.stop(); t.join(); return 30; }
+    |                                                         ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:199:18
+    |
+199 |     tsrv, tse := http.Server.init(tcfg, handler, 0);
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: condition must be a bool, integer, pointer, or optional, but has type 'Loop'
+  --> examples/http/1705-http-client-transport.sx:200:8
+    |
+200 |     if tse { srv.stop(); t.join(); return 31; }
+    |        ^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:200:14
+    |
+200 |     if tse { srv.stop(); t.join(); return 31; }
+    |              ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:200:26
+    |
+200 |     if tse { srv.stop(); t.join(); return 31; }
+    |                          ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:202:14
+    |
+202 |     if tte { srv.stop(); t.join(); return 32; }
+    |              ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:202:26
+    |
+202 |     if tte { srv.stop(); t.join(); return 32; }
+    |                          ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:206:9
+    |
+206 |         tsrv.stop(); tt.join(); srv.stop(); t.join(); return 33;
+    |         ^^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:206:22
+    |
+206 |         tsrv.stop(); tt.join(); srv.stop(); t.join(); return 33;
+    |                      ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:206:33
+    |
+206 |         tsrv.stop(); tt.join(); srv.stop(); t.join(); return 33;
+    |                                 ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:206:45
+    |
+206 |         tsrv.stop(); tt.join(); srv.stop(); t.join(); return 33;
+    |                                             ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:210:19
+    |
+210 |     conn_t, et := http.Client.open("127.0.0.1", PORT_TLS, opts_tls);
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:211:27
+    |
+211 |     if et { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 34; }
+    |                           ^^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:211:40
+    |
+211 |     if et { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 34; }
+    |                                        ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:211:51
+    |
+211 |     if et { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 34; }
+    |                                                   ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:211:63
+    |
+211 |     if et { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 34; }
+    |                                                               ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:214:16
+    |
+214 |     rt, rte := http.Client.recv_on(*conn_t, *bt[0], 4096);
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:216:27
+    |
+216 |     if st { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 35; }
+    |                           ^^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:216:40
+    |
+216 |     if st { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 35; }
+    |                                        ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:216:51
+    |
+216 |     if st { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 35; }
+    |                                                   ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:216:63
+    |
+216 |     if st { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 35; }
+    |                                                               ^^^^^^
+
+error: condition must be a bool, integer, pointer, or optional, but has type 'string'
+  --> examples/http/1705-http-client-transport.sx:217:8
+    |
+217 |     if rte { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 35; }
+    |        ^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:217:28
+    |
+217 |     if rte { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 35; }
+    |                            ^^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:217:41
+    |
+217 |     if rte { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 35; }
+    |                                         ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:217:52
+    |
+217 |     if rte { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 35; }
+    |                                                    ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:217:64
+    |
+217 |     if rte { tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 35; }
+    |                                                                ^^^^^^
+
+error: field 'status' not found on type 'i64'
+  --> examples/http/1705-http-client-transport.sx:218:8
+    |
+218 |     if rt.status != 200 or rt.body != "pong" {
+    |        ^^^^^^^^^
+
+error: field 'body' not found on type 'i64'
+  --> examples/http/1705-http-client-transport.sx:218:28
+    |
+218 |     if rt.status != 200 or rt.body != "pong" {
+    |                            ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:219:23
+    |
+219 |         tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 35;
+    |                       ^^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:219:36
+    |
+219 |         tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 35;
+    |                                    ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:219:47
+    |
+219 |         tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 35;
+    |                                               ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:219:59
+    |
+219 |         tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 35;
+    |                                                           ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:224:23
+    |
+224 |         tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 36;
+    |                       ^^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:224:36
+    |
+224 |         tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 36;
+    |                                    ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:224:47
+    |
+224 |         tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 36;
+    |                                               ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:224:59
+    |
+224 |         tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 36;
+    |                                                           ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:228:19
+    |
+228 |     conn_w, ew := http.Client.open("127.0.0.1", PORT_TLS, opts_bad);
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: '!' needs a bool, integer, or error operand; got '?TlsConn'
+  --> examples/http/1705-http-client-transport.sx:229:8
+    |
+229 |     if !ew { http.Client.close_conn(*conn_w); wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 37; }
+    |        ^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:229:75
+    |
+229 |     if !ew { http.Client.close_conn(*conn_w); wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 37; }
+    |                                                                           ^^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:229:88
+    |
+229 |     if !ew { http.Client.close_conn(*conn_w); wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 37; }
+    |                                                                                        ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:229:99
+    |
+229 |     if !ew { http.Client.close_conn(*conn_w); wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 37; }
+    |                                                                                                   ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:229:111
+    |
+229 |     if !ew { http.Client.close_conn(*conn_w); wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 37; }
+    |                                                                                                               ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:235:19
+    |
+235 |     conn_i, ei := http.Client.open("127.0.0.1", PORT_TLS, opts_ins);
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:236:55
+    |
+236 |     if ei { icc.deinit(); wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 38; }
+    |                                                       ^^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:236:68
+    |
+236 |     if ei { icc.deinit(); wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 38; }
+    |                                                                    ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:236:79
+    |
+236 |     if ei { icc.deinit(); wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 38; }
+    |                                                                               ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:236:91
+    |
+236 |     if ei { icc.deinit(); wcc.deinit(); tcc.deinit(); tsrv.stop(); tt.join(); srv.stop(); t.join(); return 38; }
+    |                                                                                           ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:238:16
+    |
+238 |     ri, rie := http.Client.recv_on(*conn_i, *bt[0], 4096);
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:240:5
+    |
+240 |     tsrv.stop();
+    |     ^^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:241:5
+    |
+241 |     tt.join();
+    |     ^^^^^^^
+
+error: 'close' is not a ufcs function — a plain function does not dispatch via dot-call
+  --> examples/http/1705-http-client-transport.sx:242:5
+    |
+242 |     tsrv.close();
+    |     ^^^^^^^^^^
+
+help: call it directly (`close(receiver, ...)`) or declare it `close :: ufcs (...) { ... }`
+    |
+242 |     tsrv.close();
+    |     ^^^^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:247:13
+    |
+247 |     if si { srv.stop(); t.join(); return 39; }
+    |             ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:247:25
+    |
+247 |     if si { srv.stop(); t.join(); return 39; }
+    |                         ^^^^^^
+
+error: condition must be a bool, integer, pointer, or optional, but has type 'string'
+  --> examples/http/1705-http-client-transport.sx:248:8
+    |
+248 |     if rie { srv.stop(); t.join(); return 39; }
+    |        ^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:248:14
+    |
+248 |     if rie { srv.stop(); t.join(); return 39; }
+    |              ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:248:26
+    |
+248 |     if rie { srv.stop(); t.join(); return 39; }
+    |                          ^^^^^^
+
+error: field 'status' not found on type 'i64'
+  --> examples/http/1705-http-client-transport.sx:249:8
+    |
+249 |     if ri.status != 200 { srv.stop(); t.join(); return 39; }
+    |        ^^^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:249:27
+    |
+249 |     if ri.status != 200 { srv.stop(); t.join(); return 39; }
+    |                           ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:249:39
+    |
+249 |     if ri.status != 200 { srv.stop(); t.join(); return 39; }
+    |                                       ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:253:21
+    |
+253 |     if hold_l < 0 { srv.stop(); t.join(); return 40; }
+    |                     ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:253:33
+    |
+253 |     if hold_l < 0 { srv.stop(); t.join(); return 40; }
+    |                                 ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:255:69
+    |
+255 |     if socket.bind(hold_l, *haddr, 16) != 0 { socket.close(hold_l); srv.stop(); t.join(); return 41; }
+    |                                                                     ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:255:81
+    |
+255 |     if socket.bind(hold_l, *haddr, 16) != 0 { socket.close(hold_l); srv.stop(); t.join(); return 41; }
+    |                                                                                 ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:256:62
+    |
+256 |     if socket.listen(hold_l, 1) != 0 { socket.close(hold_l); srv.stop(); t.join(); return 42; }
+    |                                                              ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:256:74
+    |
+256 |     if socket.listen(hold_l, 1) != 0 { socket.close(hold_l); srv.stop(); t.join(); return 42; }
+    |                                                                          ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:269:19
+    |
+269 |     conn_e, ee := http.Client.open("127.0.0.1", PORT_HOLD, opts_ct);
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: '!' needs a bool, integer, or error operand; got '?TlsConn'
+  --> examples/http/1705-http-client-transport.sx:270:8
+    |
+270 |     if !ee { http.Client.close_conn(*conn_e); }   // connected anyway — kernel fudge; not a failure of the TIMEOUT machinery
+    |        ^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:279:21
+    |
+279 |     if mute_l < 0 { srv.stop(); t.join(); return 50; }
+    |                     ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:279:33
+    |
+279 |     if mute_l < 0 { srv.stop(); t.join(); return 50; }
+    |                                 ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:281:69
+    |
+281 |     if socket.bind(mute_l, *maddr, 16) != 0 { socket.close(mute_l); srv.stop(); t.join(); return 51; }
+    |                                                                     ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:281:81
+    |
+281 |     if socket.bind(mute_l, *maddr, 16) != 0 { socket.close(mute_l); srv.stop(); t.join(); return 51; }
+    |                                                                                 ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:282:62
+    |
+282 |     if socket.listen(mute_l, 4) != 0 { socket.close(mute_l); srv.stop(); t.join(); return 52; }
+    |                                                              ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:282:74
+    |
+282 |     if socket.listen(mute_l, 4) != 0 { socket.close(mute_l); srv.stop(); t.join(); return 52; }
+    |                                                                          ^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:285:36
+    |
+285 |     if mte { socket.close(mute_l); srv.stop(); t.join(); return 53; }
+    |                                    ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:285:48
+    |
+285 |     if mte { socket.close(mute_l); srv.stop(); t.join(); return 53; }
+    |                                                ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:287:19
+    |
+287 |     conn_f, ef := http.Client.open("127.0.0.1", PORT_MUTE, opts_io);
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:291:35
+    |
+291 |     if ef { socket.close(mute_l); srv.stop(); t.join(); return 54; }
+    |                                   ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:291:47
+    |
+291 |     if ef { socket.close(mute_l); srv.stop(); t.join(); return 54; }
+    |                                               ^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:294:68
+    |
+294 |     if sf { http.Client.close_conn(*conn_f); socket.close(mute_l); mt.join(); srv.stop(); t.join(); return 55; }
+    |                                                                    ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:294:79
+    |
+294 |     if sf { http.Client.close_conn(*conn_f); socket.close(mute_l); mt.join(); srv.stop(); t.join(); return 55; }
+    |                                                                               ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:294:91
+    |
+294 |     if sf { http.Client.close_conn(*conn_f); socket.close(mute_l); mt.join(); srv.stop(); t.join(); return 55; }
+    |                                                                                           ^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1705-http-client-transport.sx:295:16
+    |
+295 |     rf, rfe := http.Client.recv_on(*conn_f, *bf[0], 512);
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: '!' needs a bool, integer, or error operand; got 'string'
+  --> examples/http/1705-http-client-transport.sx:297:8
+    |
+297 |     if !rfe { http.Client.close_conn(*conn_f); socket.close(mute_l); mt.join(); srv.stop(); t.join(); return 56; }   // MUST time out, not hang
+    |        ^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:297:70
+    |
+297 |     if !rfe { http.Client.close_conn(*conn_f); socket.close(mute_l); mt.join(); srv.stop(); t.join(); return 56; }   // MUST time out, not hang
+    |                                                                      ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:297:81
+    |
+297 |     if !rfe { http.Client.close_conn(*conn_f); socket.close(mute_l); mt.join(); srv.stop(); t.join(); return 56; }   // MUST time out, not hang
+    |                                                                                 ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:297:93
+    |
+297 |     if !rfe { http.Client.close_conn(*conn_f); socket.close(mute_l); mt.join(); srv.stop(); t.join(); return 56; }   // MUST time out, not hang
+    |                                                                                             ^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:301:5
+    |
+301 |     mt.join();
+    |     ^^^^^^^
+
+error: unresolved 'stop' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:303:5
+    |
+303 |     srv.stop();
+    |     ^^^^^^^^
+
+error: unresolved 'join' (in examples/http/1705-http-client-transport.sx fn run)
+  --> examples/http/1705-http-client-transport.sx:304:5
+    |
+304 |     t.join();
+    |     ^^^^^^
+
+error: 'close' is not a ufcs function — a plain function does not dispatch via dot-call
+  --> examples/http/1705-http-client-transport.sx:305:5
+    |
+305 |     srv.close();
+    |     ^^^^^^^^^
+
+help: call it directly (`close(receiver, ...)`) or declare it `close :: ufcs (...) { ... }`
+    |
+305 |     srv.close();
+    |     ^^^^^^^^^

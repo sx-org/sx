@@ -1,24 +1,6 @@
-=== Tuple Operators ===
+=== Product equality ===
 true
 false
-true
-false
-1
-2
-3
-4
-1
-2
-1
-2
-1
-2
-true
-false
-false
-true
-true
-true
 true
 false
 --- directory imports ---
@@ -43,9 +25,6 @@ arena deinit: 0
 buf pos: 48
 buf overflow: 0
 buf reset: 0
-1 == (1)
-(1) == 1
-1 == 1
 --- optionals ---
 opt x: 42
 opt y: null

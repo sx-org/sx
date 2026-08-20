@@ -455,7 +455,6 @@ fn walkEscape(self: *Lowering, ty: TypeId, span: ast.Span, by_value: bool, seen:
         .optional => |o| walkEscape(self, o.child, span, by_value, seen),
         .slice => |sl| walkEscape(self, sl.element, span, false, seen),
         .array => |a| walkEscape(self, a.element, span, by_value, seen),
-        .tuple => |t| for (t.fields) |f| walkEscape(self, f, span, by_value, seen),
         .@"struct" => |s| {
             if (!s.is_protocol) {
                 for (s.fields) |f| walkEscape(self, f.ty, span, by_value, seen);

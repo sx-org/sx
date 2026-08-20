@@ -114,15 +114,6 @@ pub const GenericResolver = struct {
                 }
                 break :blk self.mangleParamList(head.items, f.params, f.ret);
             },
-            .tuple => |t| blk: {
-                var buf = std.ArrayList(u8).empty;
-                buf.appendSlice(self.l.alloc, "tu") catch @panic("out of memory while mangling type");
-                for (t.fields) |fid| {
-                    buf.append(self.l.alloc, '_') catch @panic("out of memory while mangling type");
-                    buf.appendSlice(self.l.alloc, self.mangleTypeName(fid)) catch @panic("out of memory while mangling type");
-                }
-                break :blk buf.items;
-            },
             else => @tagName(info),
         };
     }

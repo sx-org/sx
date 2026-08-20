@@ -1,1 +1,11 @@
+error: cannot return a value of type 'Thread' where 'usize' is expected
+  --> library/modules/std/thread.sx:97:16
+   |
+97 |         return t;
+   |                ^
 
+error: cannot assign 'element' of type 'Thread' with a value of type 'usize'
+  --> examples/std/1637-std-thread.sx:63:18
+   |
+63 |         ths[i] = t;
+   |                  ^

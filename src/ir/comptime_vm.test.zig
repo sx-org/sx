@@ -324,23 +324,26 @@ test "comptime_vm exec: nested struct (aggregate field copy + nested read)" {
     try std.testing.expectEqual(@as(i64, 5), toI64(try v.run(&fb.func, &.{})));
 }
 
-test "comptime_vm exec: tuple_init + tuple_get (mixed i64/f64)" {
+test "comptime_vm exec: struct_init + struct_get (mixed i64/f64 product)" {
     const alloc = std.testing.allocator;
     var table = types.TypeTable.init(alloc);
     defer table.deinit();
-    const tfields = [_]TypeId{ .i64, .f64 };
-    const tup = table.intern(.{ .tuple = .{ .fields = &tfields, .names = null } });
+    const flds = [_]types.TypeInfo.StructInfo.Field{
+        .{ .name = table.internString("0"), .ty = .i64 },
+        .{ .name = table.internString("1"), .ty = .f64 },
+    };
+    const tup = table.intern(.{ .@"struct" = .{ .name = table.internString("__anon"), .fields = &flds } });
 
-    // t := (5, 2.5); return t.0 + int(t.1)  → 5 + 2 = 7
+    // t := .{5, 2.5}; return t.0 + int(t.1)  → 5 + 2 = 7
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});
     const a = fb.add(b0, inst(.{ .const_int = 5 }, .i64));
     const b = fb.add(b0, inst(.{ .const_float = 2.5 }, .f64));
     const tinit = [_]Ref{ ref(a), ref(b) };
-    const t = fb.add(b0, inst(.{ .tuple_init = .{ .fields = &tinit } }, tup));
-    const t0 = fb.add(b0, inst(.{ .tuple_get = .{ .base = ref(t), .field_index = 0, .base_type = tup } }, .i64));
-    const t1 = fb.add(b0, inst(.{ .tuple_get = .{ .base = ref(t), .field_index = 1, .base_type = tup } }, .f64));
+    const t = fb.add(b0, inst(.{ .struct_init = .{ .fields = &tinit } }, tup));
+    const t0 = fb.add(b0, inst(.{ .struct_get = .{ .base = ref(t), .field_index = 0, .base_type = tup } }, .i64));
+    const t1 = fb.add(b0, inst(.{ .struct_get = .{ .base = ref(t), .field_index = 1, .base_type = tup } }, .f64));
     const t1i = fb.add(b0, inst(.{ .float_to_int = .{ .operand = ref(t1), .from = .f64, .to = .i64 } }, .i64));
     const s = fb.add(b0, inst(.{ .add = .{ .lhs = ref(t0), .rhs = ref(t1i) } }, .i64));
     _ = fb.add(b0, inst(.{ .ret = .{ .operand = ref(s) } }, .void));

@@ -253,10 +253,11 @@ pub const TypeResolver = struct {
         };
     }
 
-    /// Intern a `.tuple` TypeId from a list of field-type nodes (+ optional
+    /// Intern a product or failable from a list of field-type nodes (+ optional
     /// names) — the shared body of the `tuple_type_expr` and `return_type_expr`
-    /// resolution arms. Returns null to defer a spread to the (stateful)
-    /// PackResolver, `.unresolved` if any field is non-type, else the tuple.
+    /// resolution arms. A trailing error-set field is a failable; otherwise
+    /// an anonymous product struct. Returns null to defer a spread to the
+    /// (stateful) PackResolver, `.unresolved` if any field is non-type.
     fn internTupleLike(table: *TypeTable, field_types: []const *Node, field_names: ?[]const []const u8, inner: anytype) ?TypeId {
         // A spread field `(..xs)` expands to many fields via the pack state —
         // defer to PackResolver by returning null.
@@ -266,15 +267,13 @@ pub const TypeResolver = struct {
         for (field_types) |ft| {
             const fid = inner.resolveInner(ft);
             // A non-type element (e.g. the `1` in `Tuple(i32, 1)`) resolves to
-            // `.unresolved`; never intern a tuple carrying it — that bogus type
+            // `.unresolved`; never intern a product carrying it — that bogus type
             // would reach LLVM emission and panic. The user-facing diagnostic is
             // emitted by the literal-rejection arm in `resolveTypeArg`; here we
             // just refuse to fabricate the type, propagating the sentinel up.
             if (fid == .unresolved) return .unresolved;
             field_ids.append(table.alloc, fid) catch return .unresolved;
         }
-        // Preserve field names for a named tuple `(x: T, y: U)` when the name and
-        // field counts agree (so `t.x` resolves).
         var name_ids: ?[]const StringId = null;
         if (field_names) |names| {
             if (names.len == field_ids.items.len) {
@@ -283,10 +282,19 @@ pub const TypeResolver = struct {
                 name_ids = ids.toOwnedSlice(table.alloc) catch null;
             }
         }
-        return table.intern(.{ .tuple = .{
-            .fields = table.alloc.dupe(TypeId, field_ids.items) catch return .unresolved,
-            .names = name_ids,
-        } });
+        const last_is_err = field_types.len > 0 and field_types[field_types.len - 1].data == .error_type_expr;
+        if (last_is_err) {
+            const err = field_ids.items[field_ids.items.len - 1];
+            const n_vals = field_ids.items.len - 1;
+            const value: TypeId = if (n_vals == 0)
+                .void
+            else if (n_vals == 1)
+                field_ids.items[0]
+            else
+                table.internProduct(field_ids.items[0..n_vals], if (name_ids) |ns| ns[0..n_vals] else null);
+            return table.internFailable(value, err);
+        }
+        return table.internFieldsAsProductOrFailable(field_ids.items, name_ids);
     }
 
     /// Generic type-param binding lookup (`$T`, or a bare return-type `T`).

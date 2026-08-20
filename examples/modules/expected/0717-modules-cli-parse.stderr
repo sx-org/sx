@@ -1,1 +1,125 @@
+error: this function returns 7 values — return them as `return a, b`, not a single value
+  --> library/modules/std/cli.sx:464:12
+    |
+464 |     return result;
+    |            ^^^^^^
 
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/modules/0717-modules-cli-parse.sx:38:13
+   |
+38 |     _, e := parse(args, cmds, *d);
+   |             ^^^^^^^^^^^^^^^^^^^^^
+
+error: an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id
+  --> examples/modules/0717-modules-cli-parse.sx:39:12
+   |
+39 |     return e == want;
+   |            ^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/modules/0717-modules-cli-parse.sx:172:14
+    |
+172 |     _, ue := parse(a_unknown_flag, cmds, *de);
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id
+  --> examples/modules/0717-modules-cli-parse.sx:173:33
+    |
+173 |     report("diag-flag-tag",     ue == error.UnknownFlag);
+    |                                 ^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/modules/0717-modules-cli-parse.sx:177:14
+    |
+177 |     _, ce := parse(a_unknown_cmd, cmds, *dc);
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id
+  --> examples/modules/0717-modules-cli-parse.sx:178:33
+    |
+178 |     report("diag-cmd-tag",      ce == error.UnknownCommand);
+    |                                 ^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/modules/0717-modules-cli-parse.sx:182:14
+    |
+182 |     _, ge := parse(a_unknown_group, cmds, *dg);
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id
+  --> examples/modules/0717-modules-cli-parse.sx:183:33
+    |
+183 |     report("diag-group-tag",    ge == error.UnknownCommand);
+    |                                 ^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/modules/0717-modules-cli-parse.sx:187:14
+    |
+187 |     _, fe := parse(a_too_few, cmds, *df);
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id
+  --> examples/modules/0717-modules-cli-parse.sx:188:34
+    |
+188 |     report("diag-too-few-tag",   fe == error.UnknownCommand);
+    |                                  ^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/modules/0717-modules-cli-parse.sx:192:15
+    |
+192 |     _, z0e := parse(a_zero_args, cmds, *d0);
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id
+  --> examples/modules/0717-modules-cli-parse.sx:193:36
+    |
+193 |     report("diag-zero-args-tag",   z0e == error.UnknownCommand);
+    |                                    ^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/modules/0717-modules-cli-parse.sx:197:14
+    |
+197 |     _, ve := parse(a_missing_value, cmds, *dv);
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id
+  --> examples/modules/0717-modules-cli-parse.sx:198:40
+    |
+198 |     report("diag-missing-value-tag",   ve == error.MissingValue);
+    |                                        ^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/modules/0717-modules-cli-parse.sx:202:14
+    |
+202 |     _, ze := parse(a_value_eats, cmds, *dz);
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id
+  --> examples/modules/0717-modules-cli-parse.sx:203:37
+    |
+203 |     report("diag-value-eats-tag",   ze == error.MissingValue);
+    |                                     ^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/modules/0717-modules-cli-parse.sx:207:14
+    |
+207 |     _, me := parse(a_missing_req, cmds, *dm);
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id
+  --> examples/modules/0717-modules-cli-parse.sx:208:31
+    |
+208 |     report("diag-req-tag",    me == error.MissingRequired);
+    |                               ^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/modules/0717-modules-cli-parse.sx:213:14
+    |
+213 |     _, te := parse(over_args, over_cmds, *dt);
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id
+  --> examples/modules/0717-modules-cli-parse.sx:214:35
+    |
+214 |     report("diag-too-many-tag",   te == error.TooManyFlags);
+    |                                   ^^

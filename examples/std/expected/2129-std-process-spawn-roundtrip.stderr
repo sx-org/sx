@@ -1,1 +1,59 @@
+error: this function returns 5 values — return them as `return a, b`, not a single value
+  --> library/modules/std/process.sx:355:12
+    |
+355 |     return Child{ pid = pid, stdin = parent[0], stdout = parent[1], stderr = parent[2] };
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/std/2129-std-process-spawn-roundtrip.sx:7:17
+   |
+ 7 |     child, e := process.spawn(.["cat"], .{ stdin = .pipe, stdout = .pipe });
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'stdin_write' (in examples/std/2129-std-process-spawn-roundtrip.sx fn main)
+  --> examples/std/2129-std-process-spawn-roundtrip.sx:11:14
+   |
+11 |     wrote := child.stdin_write(xx msg);
+   |              ^^^^^^^^^^^^^^^^^
+
+error: already 'i64'
+  --> examples/std/2129-std-process-spawn-roundtrip.sx:12:17
+   |
+12 |     if wrote != xx msg.len { print("write: {}\n", wrote); return 1; }
+   |                 ^^^^^^^^^^
+
+error: unresolved 'stdout_read' (in examples/std/2129-std-process-spawn-roundtrip.sx fn main)
+  --> examples/std/2129-std-process-spawn-roundtrip.sx:15:12
+   |
+15 |     got := child.stdout_read(xx buf);
+   |            ^^^^^^^^^^^^^^^^^
+
+error: already 'i64'
+  --> examples/std/2129-std-process-spawn-roundtrip.sx:17:40
+   |
+17 |     print("echoed: {}", substr(buf, 0, xx got));
+   |                                        ^^^^^^
+
+error: unresolved 'wait' (in examples/std/2129-std-process-spawn-roundtrip.sx fn main)
+  --> examples/std/2129-std-process-spawn-roundtrip.sx:19:8
+   |
+19 |     if child.wait(false) != null { print("cat exited before EOF\n"); return 1; }
+   |        ^^^^^^^^^^
+
+error: unresolved 'stdin_close' (in examples/std/2129-std-process-spawn-roundtrip.sx fn main)
+  --> examples/std/2129-std-process-spawn-roundtrip.sx:21:5
+   |
+21 |     child.stdin_close();
+   |     ^^^^^^^^^^^^^^^^^
+
+error: unresolved 'wait' (in examples/std/2129-std-process-spawn-roundtrip.sx fn main)
+  --> examples/std/2129-std-process-spawn-roundtrip.sx:22:13
+   |
+22 |     code := child.wait(true);
+   |             ^^^^^^^^^^
+
+error: unresolved 'stdout_close' (in examples/std/2129-std-process-spawn-roundtrip.sx fn main)
+  --> examples/std/2129-std-process-spawn-roundtrip.sx:23:5
+   |
+23 |     child.stdout_close();
+   |     ^^^^^^^^^^^^^^^^^^

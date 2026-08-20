@@ -16,7 +16,7 @@ defining whole routines in assembly.
 `asm` is an **expression**. It drops to the machine: you write a
 template of real instructions, declare which sx values feed registers
 going in and which come back out, and the block evaluates to the
-output value (or a tuple of them).
+output value (or a multi-return of them).
 
 ```sx
 add :: (a: i64, b: i64) -> i64 {
@@ -33,7 +33,7 @@ Three things to know up front:
    existing storage. The list is flat and order-independent — there are
    no positional `:` sections.
 3. **The outputs decide the result.** Zero outputs → `void` (and the
-   block must be `volatile`); one → that type; many → a tuple.
+   block must be `volatile`); one → that type; many → a multi-return.
 
 Templates are **AT&T syntax** (lowered through LLVM), **target-specific**,
 and **never run at compile time** — see [When it runs](#when-it-runs).
@@ -153,10 +153,10 @@ The number of **value** outputs (`-> Type`) decides the block's type:
 |---|---|---|
 | 0 | `void` — must be `volatile` | `asm volatile { "dmb ish" }` |
 | 1 | that type `T` | `x := asm { …, "=r" -> i64 }` |
-| N | a **tuple**, fields named by each operand's name | `lo, hi := asm { … }` |
+| N | a multi-return, slots named by each operand's name | `lo, hi := asm { … }` |
 
 With multiple outputs you get real multiple return values — a named
-operand becomes a named tuple field:
+operand becomes a named multi-return slot:
 
 ```sx
 // aarch64 — split a value into low/high bytes
@@ -211,7 +211,7 @@ and `.cc` means "the condition flags are modified."
 
 Sometimes the asm should write into existing storage (a local, a struct
 field) rather than *return* a value. `-> @place` does that: the place
-output does **not** join the result tuple. There are three forms,
+output does **not** join the result. There are three forms,
 distinguished by the constraint.
 
 ### Write-through — `= …` constraint
@@ -235,7 +235,7 @@ ASM,
 ```
 
 A value output and one or more place outputs can mix freely; only the
-value outputs build the returned tuple.
+value outputs build the returned multi-return.
 
 ### Read-write — `+` constraint
 
@@ -386,7 +386,7 @@ sys_write :: (fd: i64, buf: *u8, count: i64) -> i64 {
 }
 ```
 
-**x86_64 divmod** — one instruction, two outputs, returned as a tuple:
+**x86_64 divmod** — one instruction, two outputs, returned as a multi-return:
 
 ```sx
 divmod :: (n: u64, d: u64) -> (quot: u64, rem: u64) {
@@ -406,7 +406,7 @@ q, r := divmod(17, 5);              // (3, 2)
 ## Rules of thumb
 
 - **`asm` yields a value.** Bind it (`x := asm { … }`), `return` it, or
-  destructure a multi-output tuple (`a, b := asm { … }`). A block with no
+  destructure a multi-output (`a, b := asm { … }`). A block with no
   value outputs must be `volatile`.
 - **Pinned operands name themselves.** `"{rdi}"` is `%[rdi]`; only add
   `[name]` for register-class operands or to rename. Don't echo a pin
@@ -430,7 +430,7 @@ q, r := divmod(17, 5);              // (3, 2)
 - [inline-asm-design.md](../design/inline-asm-design.md) — the design rationale and
   LLVM mapping.
 - `examples/16xx-platform-asm-*` — the full, runnable example matrix
-  (basic in/out, tuples, the three `-> @place` forms, global asm, the
+  (basic in/out, multi-return, the three `-> @place` forms, global asm, the
   x86_64 syscall, and the comptime-boundary guard).
 - The "Inline Assembly" section of [readme.md](../readme.md) for a
   one-screen overview.

@@ -11,9 +11,9 @@ tv1 :: () => .{..xs};
 tv2 :: () => .{..xs.value};
 tv3 :: () => .{a, ..xs, b};            // mixed positional + spread
 
-// 2. Tuple type position — `Tuple(..F(Ts))` / `Tuple(..F(Ts.Arg))`:
-tt1 :: (x: Tuple(..ValueListenable(Ts)))       => x;
-tt2 :: (x: Tuple(..ValueListenable(Ts.Arg)))   => x;
+// 2. Product type position — `struct { ..F(Ts) }` / `struct { ..F(Ts.Arg) }`:
+tt1 :: (x: struct { ..ValueListenable(Ts) })       => x;
+tt2 :: (x: struct { ..ValueListenable(Ts.Arg) })   => x;
 
 // 3. Call-arg position — `..pack` / `..pack.field` (reuses spread_expr):
 ca1 :: () => f(..xs);

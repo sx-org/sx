@@ -11,7 +11,7 @@ IntCell :: struct { v: i64; }
 impl VL(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
 
 Combined :: struct($R: Type, ..$Ts: []Type) {
-    sources: Tuple(..VL(Ts));
+    sources: struct { ..VL(Ts) };
     value:   $R;
 }
 

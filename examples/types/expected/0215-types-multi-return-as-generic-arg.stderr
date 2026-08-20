@@ -1,5 +1,5 @@
-error: a bare-paren `(A, B)` is a multi-return signature, valid only as a return type; a tuple-valued generic type argument uses `Tuple(…)`
-  --> examples/types/0215-types-multi-return-as-generic-arg.sx:9:15
+error: a bare-paren `(A, B)` is a multi-return signature, valid only as a return type; a generic type argument uses a named struct or a positional `.{ … }`
+  --> examples/types/0215-types-multi-return-as-generic-arg.sx:8:15
    |
- 9 |     xs : List((i32, bool)) = ---;   // error: multi-return signature, not a type
+ 8 |     xs : List((i32, bool)) = ---;   // error: multi-return signature, not a type
    |               ^^^^^^^^^^^

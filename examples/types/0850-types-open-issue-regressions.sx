@@ -23,14 +23,14 @@ target_0850 : i64 = 42;
 main :: () -> i32 {
     p := make_arr_0850()[next_0850()].(P0850, context.allocator);
     f := freefn_0850;
-    list : List(Tuple(a: i64, b: bool)) = .{};
+    list : List(struct { a: i64; b: bool }) = .{};
     list.append(.{a = 1, b = true});
     a : [3]i64 = .[ 10, 20, 30 ];
     sl : []i64 = a[0..3];
     psl := *sl;
     psl[1] = 99;
     box : Box0850(i64) = .{ item = 5, bx = 1 };
-    tup : Tuple(i64, i64) = .{1, 2};
+    tup := .{1, 2};
     ne := false;
     if tup != .{ 9, 9 } { ne = true; }
     spread := .{40, 2};

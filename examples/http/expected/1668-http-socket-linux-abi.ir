@@ -42,9 +42,9 @@ or.merge.47:                                      ; preds = %or.rhs.46, %entry
 
 if.then.48:                                       ; preds = %or.merge.47
   %loadN = load { [128 x i8], i32 }, ptr %allocaN, align 4
-  %ti = insertvalue { { [128 x i8], i32 }, i1 } undef, { [128 x i8], i32 } %loadN, 0
-  %tiN = insertvalue { { [128 x i8], i32 }, i1 } %ti, i1 false, 1
-  ret { { [128 x i8], i32 }, i1 } %tiN
+  %si = insertvalue { { [128 x i8], i32 }, i1 } undef, { [128 x i8], i32 } %loadN, 0
+  %siN = insertvalue { { [128 x i8], i32 }, i1 } %si, i1 false, 1
+  ret { { [128 x i8], i32 }, i1 } %siN
 
 if.merge.49:                                      ; preds = %or.merge.47
   %loadN = load { ptr, i64 }, ptr %alloca, align 8
@@ -95,9 +95,9 @@ while.exit.52:                                    ; preds = %while.hdr.50
   %gepN = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %allocaN, i32 0, i32 1
   store i32 %truncN, ptr %gepN, align 4
   %loadN = load { [128 x i8], i32 }, ptr %allocaN, align 4
-  %tiN = insertvalue { { [128 x i8], i32 }, i1 } undef, { [128 x i8], i32 } %loadN, 0
-  %tiN = insertvalue { { [128 x i8], i32 }, i1 } %tiN, i1 true, 1
-  ret { { [128 x i8], i32 }, i1 } %tiN
+  %siN = insertvalue { { [128 x i8], i32 }, i1 } undef, { [128 x i8], i32 } %loadN, 0
+  %siN = insertvalue { { [128 x i8], i32 }, i1 } %siN, i1 true, 1
+  ret { { [128 x i8], i32 }, i1 } %siN
 }
 
 ; Function Attrs: nounwind
@@ -388,10 +388,10 @@ if.then.44:                                       ; preds = %if.merge.43
 
 if.merge.45:                                      ; preds = %if.merge.43
   %callN = call { { [128 x i8], i32 }, i1 } @addr_unix({ ptr, i64 } { ptr @str, i64 11 })
-  %tg = extractvalue { { [128 x i8], i32 }, i1 } %callN, 0
-  store { [128 x i8], i32 } %tg, ptr %allocaN, align 4
-  %tgN = extractvalue { { [128 x i8], i32 }, i1 } %callN, 1
-  store i1 %tgN, ptr %allocaN, align 1
+  %sgN = extractvalue { { [128 x i8], i32 }, i1 } %callN, 0
+  store { [128 x i8], i32 } %sgN, ptr %allocaN, align 4
+  %sgN = extractvalue { { [128 x i8], i32 }, i1 } %callN, 1
+  store i1 %sgN, ptr %allocaN, align 1
   %loadN = load i1, ptr %allocaN, align 1
   %lnotN = xor i1 %loadN, true
   br i1 %lnotN, label %if.then.53, label %if.merge.54

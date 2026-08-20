@@ -1,1 +1,17 @@
+error: this function returns 5 values — return them as `return a, b`, not a single value
+  --> library/modules/std/process.sx:355:12
+    |
+355 |     return Child{ pid = pid, stdin = parent[0], stdout = parent[1], stderr = parent[2] };
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/std/2131-std-process-spawn-exit-code.sx:5:17
+   |
+ 5 |     child, e := process.spawn(.["/bin/sh", "-c", "exit 3"], .{});
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'wait' (in examples/std/2131-std-process-spawn-exit-code.sx fn main)
+  --> examples/std/2131-std-process-spawn-exit-code.sx:8:13
+   |
+ 8 |     code := child.wait(true);
+   |             ^^^^^^^^^^

@@ -22,16 +22,16 @@ main :: () {
         print("{}\n", compute(1, 2, 3, 4));    // 1+2*3-4 = 3
         print("{}\n", calc(1, 2, 3, 4));       // same = 3 — alias direct call
 
-        // Tuple return type
-        swap :: (a: i64, b: i64) -> Tuple(i64, i64) { .{b, a} }
+        // Multi-return
+        swap :: (a: i64, b: i64) -> (i64, i64) { return b, a; }
         s := swap(1, 2);
         a := s.0;
         b := s.1;
         print("{}\n", a);                // 2
         print("{}\n", b);                // 1
 
-        wrap :: (x: i64) -> Tuple(i64) { .{x} }   // 1-tuple type `Tuple(i64)`; bare `(i64)` groups
+        wrap :: (x: i64) -> i64 { x }
         t := wrap(99);
-        print("{}\n", t.0);             // 99
+        print("{}\n", t);             // 99
     }
 }

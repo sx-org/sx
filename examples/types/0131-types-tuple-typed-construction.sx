@@ -1,41 +1,37 @@
-// Explicitly-typed tuple construction `PT{ ... }` — a tuple TYPE followed by an
-// initializer, exactly like `Point{ ... }` for structs. `Tuple(...)` is a
-// type-position spelling, so the explicit type is a tuple alias.
-// Symmetric trio (mirrors structs `Point` / `Point{ ... }` / `.{ ... }`):
-//   - tuple TYPE      `Tuple(A, B)`  (alias / annotation / return / param)
-//   - anonymous VALUE `.{a, b}`      (contextually typed)
-//   - typed VALUE     `PT{a, b}`     (explicit type + initializer)
-// A `PT{ ... }` value equals the anonymous `.{ ... }` against that type.
+// Explicitly-typed product construction `PT{ ... }` — a struct TYPE followed
+// by an initializer, exactly like `Point{ ... }`. Symmetric trio:
+//   - named TYPE      `struct { a: i64; b: i64 }` (alias / annotation / param)
+//   - anonymous VALUE `.{a, b}` (contextually typed / inferred positional)
+//   - typed VALUE     `PT{a, b}` (explicit type + initializer)
 // Named forms keep `:` in the type and `=` in the value.
 
 @import "modules/std.sx";
 
-PT :: Tuple(i64, i64);
-NP :: Tuple(x: i64, y: i64);
+PT :: struct { a: i64; b: i64 };
+NP :: struct { x: i64; y: i64 };
 
-// A `-> Tuple(i64, i64)` return type with a `.{b, a}` body.
-swap :: (a: i64, b: i64) -> Tuple(i64, i64) {
+swap :: (a: i64, b: i64) -> (i64, i64) {
     .{b, a}
 }
 
 main :: () -> i32 {
-    // Annotation + anonymous value.
-    t : Tuple(i64, i64) = .{1, 2};
+    // Inferred positional product.
+    t := .{1, 2};
     print("t = {} {}\n", t.0, t.1);                // t = 1 2
 
-    // Explicitly-typed construction — same value as `.{3, 4}` against the type.
-    u := PT{ 3, 4};
-    print("u = {} {}\n", u.0, u.1);                // u = 3 4
+    // Explicitly-typed construction.
+    u := PT{ a = 3, b = 4};
+    print("u = {} {}\n", u.a, u.b);                // u = 3 4
 
     // Named: annotation + value uses `=` for the value fields.
-    p : Tuple(x: i64, y: i64) = .{x = 5, y = 6};
+    p : NP = .{x = 5, y = 6};
     print("p = {} {}\n", p.x, p.y);                // p = 5 6
 
     // Named: explicitly-typed construction.
     q := NP{ x = 7, y = 8};
     print("q = {} {}\n", q.x, q.y);                // q = 7 8
 
-    // Function returning a tuple via a `.{b, a}` body.
+    // Function returning a product via a `.{b, a}` body.
     s := swap(10, 20);
     print("s = {} {}\n", s.0, s.1);                // s = 20 10
 

@@ -225,10 +225,6 @@ pub const Op = union(enum) {
     subslice: Subslice, // arr[lo..hi]
     array_to_slice: UnaryOp, // [N]T → []T
 
-    // ── Tuple ops ───────────────────────────────────────────────────
-    tuple_init: Aggregate, // construct tuple from values
-    tuple_get: FieldAccess, // read tuple element by index
-
     // ── Optional ops ────────────────────────────────────────────────
     optional_wrap: UnaryOp, // T → ?T
     optional_unwrap: UnaryOp, // ?T → T (UB if null)

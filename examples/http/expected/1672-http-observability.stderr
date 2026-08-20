@@ -1,1 +1,269 @@
+error: cannot return a value of type 'Loop' where 'i32' is expected
+  --> library/modules/std/event.sx:252:16
+    |
+252 |         return Loop{ kq = q };
+    |                ^^^^^^^^^^^^^^
 
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> library/modules/std/http/server.sx:1666:9
+     |
+1666 |         lp.add_read(lfd, LISTENER_UDATA) catch { are = true; };
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> library/modules/std/http/server.sx:1674:9
+     |
+1674 |         lp.add_wake(WAKE_UDATA) catch { swe = true; };
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 30 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/server.sx:1735:16
+     |
+1735 |         return Server{
+     |                ^^^^^^^
+1736 |             cfg = cfg, loop = lp, lfd = lfd, conns = slots,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1737 |             own_alloc = oa, handler = handler, ctx = ctx, ps = ps,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1738 |             free_head = 0, dheap = dh, dheap_cap = dcap,
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1739 |         };
+     | ^^^^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1672-http-observability.sx:158:16
+    |
+158 |     srv, se := http.Server.init(cfg, handler, 0);
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: condition must be a bool, integer, pointer, or optional, but has type 'Loop'
+  --> examples/http/1672-http-observability.sx:159:8
+    |
+159 |     if se { print("server init failed\n"); return 1; }
+    |        ^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:408:20
+    |
+408 |             return result;
+    |                    ^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:412:20
+    |
+412 |             return result;
+    |                    ^^^^^^
+
+error: named return element 'n' does not name any return slot
+  --> library/modules/std/http/server.sx:691:16
+    |
+691 |         return .{n, status};
+    |                ^^^^^^^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:531:35
+    |
+531 |         if self.finished { return EncodedProduceStep{ status = EncodedProduceStatus.done }; }
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:537:47
+    |
+537 |             if progress.produced > 0 { return EncodedProduceStep{ produced = progress.produced, status = EncodedProduceStatus.data }; }
+    |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:538:39
+    |
+538 |             if self.finished { return EncodedProduceStep{ status = EncodedProduceStatus.done }; }
+    |                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:539:47
+    |
+539 |             if progress.consumed > 0 { return EncodedProduceStep{ status = EncodedProduceStatus.pending }; }
+    |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:550:24
+    |
+550 |                 return EncodedProduceStep{ status = EncodedProduceStatus.pending };
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:557:43
+    |
+557 |         if progress.produced > 0 { return EncodedProduceStep{ produced = progress.produced, status = EncodedProduceStatus.data }; }
+    |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> library/modules/std/http/content_encoding.sx:558:35
+    |
+558 |         if self.finished { return EncodedProduceStep{ status = EncodedProduceStatus.done }; }
+    |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'stats' (in examples/http/1672-http-observability.sx fn main)
+  --> examples/http/1672-http-observability.sx:191:15
+    |
+191 |         s0 := srv.stats();
+    |               ^^^^^^^^^
+
+error: field 'closed_total' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:192:12
+    |
+192 |         if s0.closed_total == 2 and s0.active_conns == 0 { break; }
+    |            ^^^^^^^^^^^^^^^
+
+error: field 'active_conns' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:192:37
+    |
+192 |         if s0.closed_total == 2 and s0.active_conns == 0 { break; }
+    |                                     ^^^^^^^^^^^^^^^
+
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> examples/http/1672-http-observability.sx:193:9
+    |
+193 |         srv.tick(5) catch {};
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'stats' (in examples/http/1672-http-observability.sx fn main)
+  --> examples/http/1672-http-observability.sx:198:10
+    |
+198 |     s := srv.stats();
+    |          ^^^^^^^^^
+
+error: field 'accepted_total' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:201:8
+    |
+201 |     if s.accepted_total != 2 { print("stats: accepted_total != 2\n"); return 1; }
+    |        ^^^^^^^^^^^^^^^^
+
+error: field 'requests_served' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:204:8
+    |
+204 |     if s.requests_served != 3 { print("stats: requests_served != 3\n"); return 1; }
+    |        ^^^^^^^^^^^^^^^^^
+
+error: field 'errors_4xx' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:207:8
+    |
+207 |     if s.errors_4xx != 1 { print("stats: errors_4xx != 1\n"); return 1; }
+    |        ^^^^^^^^^^^^
+
+error: field 'errors_5xx' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:208:8
+    |
+208 |     if s.errors_5xx != 0 { print("stats: errors_5xx != 0\n"); return 1; }
+    |        ^^^^^^^^^^^^
+
+error: field 'rejected_503' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:209:8
+    |
+209 |     if s.rejected_503 != 0 { print("stats: rejected_503 != 0\n"); return 1; }
+    |        ^^^^^^^^^^^^^^
+
+error: field 'active_conns' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:211:8
+    |
+211 |     if s.active_conns != 0 { print("stats: active_conns != 0\n"); return 1; }
+    |        ^^^^^^^^^^^^^^
+
+error: field 'closed_total' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:212:8
+    |
+212 |     if s.closed_total != 2 { print("stats: closed_total != 2\n"); return 1; }
+    |        ^^^^^^^^^^^^^^
+
+error: field 'bytes_in' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:214:8
+    |
+214 |     if s.bytes_in <= 0 { print("stats: bytes_in not positive\n"); return 1; }
+    |        ^^^^^^^^^^
+
+error: field 'bytes_out' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:215:8
+    |
+215 |     if s.bytes_out <= 0 { print("stats: bytes_out not positive\n"); return 1; }
+    |        ^^^^^^^^^^^
+
+error: 'close' is not a ufcs function — a plain function does not dispatch via dot-call
+  --> examples/http/1672-http-observability.sx:224:5
+    |
+224 |     srv.close();
+    |     ^^^^^^^^^
+
+help: call it directly (`close(receiver, ...)`) or declare it `close :: ufcs (...) { ... }`
+    |
+224 |     srv.close();
+    |     ^^^^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/http/1672-http-observability.sx:241:18
+    |
+241 |     psrv, pse := http.Server.init(pcfg, slow_handler, 0);
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: condition must be a bool, integer, pointer, or optional, but has type 'Loop'
+  --> examples/http/1672-http-observability.sx:242:8
+    |
+242 |     if pse { print("pooled init failed\n"); return 1; }
+    |        ^^^
+
+error: unresolved 'stats' (in examples/http/1672-http-observability.sx fn main)
+  --> examples/http/1672-http-observability.sx:262:16
+    |
+262 |         ps0 := psrv.stats();
+    |                ^^^^^^^^^^
+
+error: field 'requests_served' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:263:12
+    |
+263 |         if ps0.requests_served + ps0.rejected_503 >= NCONN { break; }
+    |            ^^^^^^^^^^^^^^^^^^^
+
+error: field 'rejected_503' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:263:34
+    |
+263 |         if ps0.requests_served + ps0.rejected_503 >= NCONN { break; }
+    |                                  ^^^^^^^^^^^^^^^^
+
+error: `catch` requires a failable expression; operand has type 'unresolved'
+  --> examples/http/1672-http-observability.sx:264:9
+    |
+264 |         psrv.tick(5) catch {};
+    |         ^^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'stats' (in examples/http/1672-http-observability.sx fn main)
+  --> examples/http/1672-http-observability.sx:268:11
+    |
+268 |     ps := psrv.stats();
+    |           ^^^^^^^^^^
+
+error: field 'rejected_503' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:269:8
+    |
+269 |     if ps.rejected_503 < 1 { print("pooled: expected at least one 503 shed\n"); return 1; }
+    |        ^^^^^^^^^^^^^^^
+
+error: field 'errors_5xx' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:270:8
+    |
+270 |     if ps.errors_5xx < ps.rejected_503 { print("pooled: 5xx must include the sheds\n"); return 1; }
+    |        ^^^^^^^^^^^^^
+
+error: field 'rejected_503' not found on type 'i64'
+  --> examples/http/1672-http-observability.sx:270:24
+    |
+270 |     if ps.errors_5xx < ps.rejected_503 { print("pooled: 5xx must include the sheds\n"); return 1; }
+    |                        ^^^^^^^^^^^^^^^
+
+error: 'close' is not a ufcs function — a plain function does not dispatch via dot-call
+  --> examples/http/1672-http-observability.sx:275:5
+    |
+275 |     psrv.close();
+    |     ^^^^^^^^^^
+
+help: call it directly (`close(receiver, ...)`) or declare it `close :: ufcs (...) { ... }`
+    |
+275 |     psrv.close();
+    |     ^^^^^^^^^^

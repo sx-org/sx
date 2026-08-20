@@ -1,5 +1,5 @@
-error: '??' default has type 'i64', but the optional's payload is '(i32,)' (note: a 1-tuple value is written '(x,)' with a trailing comma)
-  --> examples/diagnostics/1202-diagnostics-null-coalesce-tuple-default.sx:8:15
+error: '??' default has type 'i64', but the optional's payload is '__anon'
+  --> examples/diagnostics/1202-diagnostics-null-coalesce-tuple-default.sx:7:15
    |
- 8 |     x := o ?? 5; // default 'i64' vs payload '(i32,)' -> diagnostic
+ 7 |     x := o ?? 5; // default 'i64' vs payload struct → diagnostic
    |               ^

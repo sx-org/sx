@@ -345,7 +345,9 @@ pub const Parser = struct {
 
         // Enum declaration
         if (self.tokens.tag(self.tok) == .kw_enum) {
-            return self.parseEnumDecl(name, start_pos, name_is_raw);
+            const node = try self.parseEnumDecl(name, start_pos, name_is_raw);
+            if (self.tokens.tag(self.tok) == .semicolon) self.advance();
+            return node;
         }
 
         // Error-set declaration: name :: error { TagA, TagB }
@@ -355,7 +357,9 @@ pub const Parser = struct {
 
         // Struct declaration
         if (self.tokens.tag(self.tok) == .kw_struct) {
-            return self.parseStructDecl(name, start_pos, name_is_raw);
+            const node = try self.parseStructDecl(name, start_pos, name_is_raw);
+            if (self.tokens.tag(self.tok) == .semicolon) self.advance();
+            return node;
         }
 
         // Protocol declaration
@@ -385,7 +389,9 @@ pub const Parser = struct {
 
         // C-style union declaration
         if (self.tokens.tag(self.tok) == .kw_union) {
-            return self.parseUnionDecl(name, start_pos, name_is_raw);
+            const node = try self.parseUnionDecl(name, start_pos, name_is_raw);
+            if (self.tokens.tag(self.tok) == .semicolon) self.advance();
+            return node;
         }
 
         // UFCS forms:
@@ -432,8 +438,8 @@ pub const Parser = struct {
         }
 
         // A type-constructor head after `::` opens a type ALIAS
-        // (`NT :: Tuple(a: i64);`, `CB :: Closure(i32) -> i32;`), so the RHS
-        // parses with the type grammar; anything else is a constant expression.
+        // (`CB :: Closure(i32) -> i32;`), so the RHS parses with the type
+        // grammar; anything else is a constant expression.
         const value = if (self.atTypeConstructorHead())
             try self.parseTypeExpr()
         else
@@ -566,7 +572,7 @@ pub const Parser = struct {
     /// channel is the last slot. A bare `-> !` (error-only, no value) is parsed
     /// by `parseTypeExpr` as an `error_type_expr` and is unaffected.
     ///
-    /// A trailing `!` after the value type (`-> T !`, `-> Tuple(A, B) !`) is
+    /// A trailing `!` after the value type (`-> T !`) is
     /// REJECTED; the error channel is only ever a slot in the parens.
     fn parseFnReturnType(self: *Parser) anyerror!*Node {
         const ty = try self.parseTypeExpr();
@@ -708,7 +714,7 @@ pub const Parser = struct {
             return try self.createNode(start, .{ .type_expr = .{ .name = name, .is_generic = true, .protocol_constraints = pc } });
         }
         // Function type: (ParamTypes) -> ReturnType
-        // Tuple type: (T1, T2) or (T1) — no '->' after ')'
+        // Parenthesized type list: (T, !) failable / grouping
         // Named params (documentation only): (name: Type, ...) -> ReturnType
         if (self.tokens.tag(self.tok) == .l_paren) {
             // A bare `..` tail belongs to a function TYPE. Without a `->` these
@@ -846,12 +852,11 @@ pub const Parser = struct {
             // minus a trailing error channel — the error is ALWAYS the last slot):
             //   - ≥2 value slots → a MULTI-RETURN signature `(A, B)` /
             //     `(x: A, y: B)` / `(A, B, !)`: its OWN node (`return_type_expr`),
-            //     a DISTINCT thing from a `Tuple(…)` value (not a tuple,
-            //     return-only, destructure-only).
+            //     a DISTINCT thing from a positional product value (return-only).
             //   - 1 value slot + error `(T, !)` → a SINGLE-value failable, exactly
-            //     `-> T !` (NOT multi-return): the failable `tuple_type_expr`.
-            //   - anything else (a `(T,)` 1-tuple, a stray spread) → rejected;
-            //     a real tuple VALUE type uses `Tuple(…)`.
+            //     the failable `tuple_type_expr`.
+            //   - anything else (a `(T,)` 1-product, a stray spread) → rejected;
+            //     a product VALUE is `.{ … }` or a named struct.
             const last_is_err = param_types.items.len > 0 and
                 param_types.items[param_types.items.len - 1].data == .error_type_expr;
             const value_count = param_types.items.len - @as(usize, if (last_is_err) 1 else 0);
@@ -883,9 +888,9 @@ pub const Parser = struct {
                     .field_names = fnames,
                 } });
             }
-            // Anything else (a `(T,)` 1-tuple, a spread): the bare-paren tuple
-            // grammar is gone — tuple VALUE types are written `Tuple( … )`.
-            return self.fail("tuple types use `Tuple( … )` (e.g. `Tuple(A, B)`)");
+            // Anything else (a `(T,)` 1-product, a spread): a product VALUE
+            // is `.{ … }` or a named struct.
+            return self.fail("a product value type is a named struct or `struct { ..P(Ts) }`; bare `(A, B)` is only a multi-return signature");
         }
 
         if (self.tokens.tag(self.tok).isTypeKeyword() or self.isIdentLike()) {
@@ -915,12 +920,8 @@ pub const Parser = struct {
                 }
             }
 
-            // Only a `Tuple` / `Closure` IMMEDIATELY followed by `(` builds the
-            // type; a bare one is an ordinary name.
-            if (std.mem.eql(u8, name, "Tuple") and self.tokens.tag(self.tok) == .l_paren) {
-                return self.parseTupleTypeBody(start);
-            }
-
+            // Only a `Closure` IMMEDIATELY followed by `(` builds the type; a
+            // bare one is an ordinary name.
             if (std.mem.eql(u8, name, "Closure") and self.tokens.tag(self.tok) == .l_paren) {
                 return self.parseClosureTypeBody(start);
             }
@@ -1450,6 +1451,19 @@ pub const Parser = struct {
             var group_names = std.ArrayList([]const u8).empty;
             var group_starts = std.ArrayList(u32).empty;
 
+            if (self.tokens.tag(self.tok) == .dot_dot) {
+                const sp_start = self.tokens.start(self.tok);
+                self.advance();
+                const operand = try self.parseTypeExpr();
+                const spread = try self.createNode(sp_start, .{ .spread_expr = .{ .operand = operand } });
+                try field_names.append(self.allocator, "");
+                try field_name_starts.append(self.allocator, sp_start);
+                try field_types.append(self.allocator, spread);
+                try field_defaults.append(self.allocator, null);
+                try field_visibilities.append(self.allocator, field_vis);
+                try self.expectMemberSemicolon();
+                continue;
+            }
             if (!self.isMemberDeclName()) {
                 return self.failMemberDeclName(if (field_vis == .private)
                     "expected field name after 'private'"
@@ -3977,7 +3991,7 @@ pub const Parser = struct {
                 // literal is `.{ … }`. The spelling is reserved for the
                 // postfix cast.
                 if (self.tokens.tag(self.tok) == .l_paren) {
-                    return self.fail("'.( )' was removed — the aggregate literal is '.{ … }' (an untyped '.{ … }' self-types as an anonymous struct; annotate with 'Tuple(…)' for a tuple)");
+                    return self.fail("'.( )' is not an aggregate literal — write '.{ … }'");
                 }
                 // Enum literal: .variant_name. A reserved keyword is a valid
                 // variant name here — the leading dot disambiguates (`.enum`,
@@ -3995,24 +4009,24 @@ pub const Parser = struct {
                 }
                 self.advance(); // skip '('
 
-                // Bare `(...)` is GROUPING ONLY. Tuple VALUES are written
-                // `.{ … }` with a `Tuple(…)` annotation, so a named element, an
-                // empty group, a leading spread, or a top-level comma is an error.
+                // Bare `(...)` is GROUPING ONLY. Product VALUES are written
+                // `.{ … }`, so a named element, an empty group, a leading
+                // spread, or a top-level comma is an error.
                 if (self.tokens.tag(self.tok) == .identifier and self.peekNext() == .colon) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)");
+                    return self.fail("product values use `.{ … }` (e.g. `t := .{a, b}`)");
                 }
                 if (self.tokens.tag(self.tok) == .r_paren) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)");
+                    return self.fail("product values use `.{ … }` (e.g. `t := .{a, b}`)");
                 }
                 if (self.tokens.tag(self.tok) == .dot_dot) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)");
+                    return self.fail("product values use `.{ … }` (e.g. `t := .{a, b}`)");
                 }
 
                 const first = try self.parseExpr();
 
-                // A top-level comma is an error — tuples need the annotated form.
+                // A top-level comma is an error — products use `.{ … }`.
                 if (self.tokens.tag(self.tok) == .comma) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)");
+                    return self.fail("product values use `.{ … }` (e.g. `t := .{a, b}`)");
                 }
 
                 // No comma → grouping
@@ -4530,42 +4544,14 @@ pub const Parser = struct {
         } });
     }
 
-    /// A token that can only begin a VALUE literal, never a type. Used to give
-    /// `Tuple(...)` a precise lowering-time "element is not a type" diagnostic
-    /// (instead of a generic parse error) when a literal is supplied as a tuple
-    /// element.
-    fn atValueLiteral(self: *Parser) bool {
-        switch (self.tokens.tag(self.tok)) {
-            .int_literal,
-            .float_literal,
-            .string_literal,
-            .raw_string_literal,
-            .char_literal,
-            .kw_true,
-            .kw_false,
-            .kw_null,
-            => return true,
-            // A signed numeric literal — `Tuple(i32, -1)` / `Tuple(i32, +2)` —
-            // is value-shaped too, so the precise "tuple type element is not a
-            // type" diagnostic fires instead of the generic "expected type
-            // name" parse error. Only a leading sign DIRECTLY before a number
-            // counts (not `-T`, which is never a valid type anyway).
-            .minus, .plus => {
-                const next = self.peekNext();
-                return next == .int_literal or next == .float_literal;
-            },
-            else => return false,
-        }
-    }
-
-    /// The exact token pair `Tuple`+`(` / `Closure`+`(` that opens a type
-    /// constructor. A backtick-raw spelling is an ordinary identifier.
+    /// The exact token pair `Closure`+`(` that opens a type constructor. A
+    /// backtick-raw spelling is an ordinary identifier.
     fn atTypeConstructorHead(self: *Parser) bool {
         if (self.tokens.tag(self.tok) != .identifier) return false;
         if (self.tokens.flagsOf(self.tok).is_raw) return false;
         if (self.peekNext() != .l_paren) return false;
         const name = self.tokens.slice(self.tok);
-        return std.mem.eql(u8, name, "Tuple") or std.mem.eql(u8, name, "Closure");
+        return std.mem.eql(u8, name, "Closure");
     }
 
     /// Closure type body: `(params...) -> R` after a `Closure` head; `current`
@@ -4635,81 +4621,6 @@ pub const Parser = struct {
             .return_type = return_type,
             .pack_name = pack_name,
             .pack_projection = pack_projection,
-        } });
-    }
-
-    /// Tuple type body after a `Tuple` head; `current` must be at the opening
-    /// `(`. `Tuple(A, B)` / `Tuple(T)` / `Tuple()` / named `Tuple(x: A, y: B)` /
-    /// pack `Tuple(..Ts)` / `Tuple(..F(Ts))` lower to the SAME `tuple_type_expr`
-    /// the inline `(A, B)` / `(x: A, y: B)` / `(..Ts)` forms produce. Unlike
-    /// `Closure`, a trailing `->` is REJECTED.
-    fn parseTupleTypeBody(self: *Parser, start: u32) anyerror!*Node {
-        self.advance(); // skip '('
-        var field_types = std.ArrayList(*Node).empty;
-        var field_name_opt = std.ArrayList(?[]const u8).empty;
-        var has_names = false;
-        while (self.tokens.tag(self.tok) != .r_paren and self.tokens.tag(self.tok) != .eof) {
-            if (field_types.items.len > 0) {
-                try self.expect(.comma);
-                if (self.tokens.tag(self.tok) == .r_paren) break; // trailing comma ok
-            }
-            // Pack-spread field: `Tuple(..Ts)` / `Tuple(..F(Ts))` /
-            // `Tuple(..Ts.Arg)`. Reuses `spread_expr` (same machinery as
-            // the inline tuple-type and Closure pack paths).
-            if (self.tokens.tag(self.tok) == .dot_dot) {
-                const sp_start = self.tokens.start(self.tok);
-                self.advance(); // skip '..'
-                const operand = try self.parseTypeExpr();
-                try field_name_opt.append(self.allocator, null);
-                try field_types.append(self.allocator, try self.createNode(sp_start, .{ .spread_expr = .{ .operand = operand } }));
-                continue;
-            }
-            // Named field: `name: Type` (keeps `:`).
-            if (self.isIdentLike() and self.peekNext() == .colon) {
-                const fname = self.tokens.slice(self.tok);
-                self.advance(); // skip name
-                self.advance(); // skip ':'
-                try field_name_opt.append(self.allocator, fname);
-                has_names = true;
-            } else {
-                try field_name_opt.append(self.allocator, null);
-            }
-            // A literal element (`Tuple(i32, 1)`) is NOT a type. Parse it as a
-            // value expression so the lowering type-arg check rejects it with
-            // the precise "tuple type element is not a type" diagnostic, rather
-            // than `parseTypeExpr` bailing here with a generic "expected type
-            // name" parse error. Type-shaped elements still go through the type
-            // parser (so `*T`, `[N]T`, `Tuple(...)`, names all parse).
-            if (self.atValueLiteral()) {
-                // A leading `+` on a signed literal (`Tuple(i32, +1)`) has no
-                // unary-op parse; consume it so the number parses as a bare
-                // value literal. `parseUnary` handles the `-` case and falls
-                // through to `parsePrimary` for an unsigned literal.
-                if (self.tokens.tag(self.tok) == .plus) self.advance();
-                try field_types.append(self.allocator, try self.parseUnary(.bit_or));
-            } else {
-                try field_types.append(self.allocator, try self.parseTypeExpr());
-            }
-        }
-        try self.expect(.r_paren);
-        // A `Tuple(...)` has NO return type — reject `-> R` loudly rather
-        // than silently swallowing it the way `Closure` consumes it.
-        if (self.tokens.tag(self.tok) == .arrow) {
-            return self.fail("`Tuple` has no return type — remove the `->`");
-        }
-        // Per-slot field names are non-optional in the AST; synthesize
-        // `_<i>` for any unnamed slot (mirrors the inline named-tuple path).
-        var field_names: ?[]const []const u8 = null;
-        if (has_names) {
-            var fns = std.ArrayList([]const u8).empty;
-            for (field_name_opt.items, 0..) |fn_opt, i| {
-                try fns.append(self.allocator, fn_opt orelse try std.fmt.allocPrint(self.allocator, "_{d}", .{i}));
-            }
-            field_names = try fns.toOwnedSlice(self.allocator);
-        }
-        return try self.createNode(start, .{ .tuple_type_expr = .{
-            .field_types = try field_types.toOwnedSlice(self.allocator),
-            .field_names = field_names,
         } });
     }
 
@@ -6359,16 +6270,16 @@ test "parse pack expansion: brace value projection .{..xs.value}" {
     try std.testing.expectEqualStrings("xs", op.data.field_access.object.data.identifier.name);
 }
 
-test "parse pack expansion: tuple type Tuple(..F(Ts))" {
-    const source = "g :: (x: Tuple(..F(Ts))) => x;";
+test "parse pack expansion: struct spread field struct { ..F(Ts) }" {
+    const source = "g :: (x: struct { ..F(Ts) }) => x;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = try Parser.init(arena.allocator(), source);
     const root = try parser.parse();
     const ty = root.data.root.decls[0].data.fn_decl.params[0].type_expr;
-    try std.testing.expect(ty.data == .tuple_type_expr);
-    try std.testing.expectEqual(@as(usize, 1), ty.data.tuple_type_expr.field_types.len);
-    const field = ty.data.tuple_type_expr.field_types[0];
+    try std.testing.expect(ty.data == .struct_decl);
+    try std.testing.expectEqual(@as(usize, 1), ty.data.struct_decl.field_types.len);
+    const field = ty.data.struct_decl.field_types[0];
     try std.testing.expect(field.data == .spread_expr);
     const op = field.data.spread_expr.operand;
     try std.testing.expect(op.data == .parameterized_type_expr);
@@ -7638,8 +7549,8 @@ fn expectParseErrorAt(src: [:0]const u8, msg: []const u8, offset: u32) !void {
 test "unterminated paren in grouping position fails as tuple" {
     // isFunctionTypeExprAtLParen sees no closer and declines; the grouping
     // parse then runs into EOF.
-    try expectParseErrorAt("x := (a, b\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)", 7);
-    try expectParseErrorAt("x := ((a, b)\n", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)", 8);
+    try expectParseErrorAt("x := (a, b\n", "product values use `.{ … }` (e.g. `t := .{a, b}`)", 7);
+    try expectParseErrorAt("x := ((a, b)\n", "product values use `.{ … }` (e.g. `t := .{a, b}`)", 8);
 }
 
 test "crossed delimiters report missing closer at the unexpected token" {
@@ -7651,7 +7562,7 @@ test "crossed delimiters report missing closer at the unexpected token" {
 test "function-type path without closer fails as tuple" {
     // tagAfterParenGroup finds no `)` before EOF, so the `->` never counts as
     // a function type and the tuple refusal fires.
-    try expectParseErrorAt("F :: (i32, i32 -> i32;", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)", 9);
+    try expectParseErrorAt("F :: (i32, i32 -> i32;", "product values use `.{ … }` (e.g. `t := .{a, b}`)", 9);
 }
 
 test "return-type inline struct without closer reports missing brace" {
@@ -7665,7 +7576,7 @@ test "unterminated aggregate reports missing brace" {
 }
 
 test "param list missing closer fails as tuple" {
-    try expectParseErrorAt("f :: (a: i32 { 1 }", "tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}`)", 6);
+    try expectParseErrorAt("f :: (a: i32 { 1 }", "product values use `.{ … }` (e.g. `t := .{a, b}`)", 6);
 }
 
 test "peekTag saturates at the eof row for any runtime offset" {
