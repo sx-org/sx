@@ -1,5 +1,5 @@
 error: expected ';'
-  --> examples/diagnostics/2208-diagnostics-missing-field-semicolon.sx:6:1
+  --> examples/diagnostics/2208-diagnostics-missing-field-semicolon.sx:6:5
    |
- 6 | }
-   | ^
+ 6 |     y: i64
+   |     ^

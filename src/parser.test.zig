@@ -2083,58 +2083,110 @@ test "'@using' leaves the declaration's name starts in step with its names" {
     try expectNameStarts(src, sd.field_names, sd.field_name_starts);
 }
 
-test "parser: a struct field group without `;` is refused" {
+test "parser: last struct member may omit `;`" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     for ([_][:0]const u8{
-        "S :: struct { x: i64 }",
-        "S :: struct { x: i64 y: i64; }",
-        "S :: struct { x, y: i64 }",
-        "S :: struct { x: i64 = 1 }",
+        "S :: struct { y: i32 }",
+        "S :: struct { y: i32; }",
     }) |src| {
-        const msg = try parseErrMsg(alloc, src);
-        try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
+        var parser = try Parser.init(alloc, src);
+        const root = try parser.parse();
+        try std.testing.expectEqual(@as(usize, 1), root.data.root.decls[0].data.struct_decl.field_names.len);
     }
 }
 
-test "parser: `@using` without `;` is refused" {
+test "parser: missing `;` between struct members is `expected ';'`" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    const msg = try parseErrMsg(alloc, "S :: struct { @using Base }");
+    const msg = try parseErrMsg(alloc, "S :: struct { x: i32 y: i32 }");
     try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
 }
 
-test "parser: a struct-body constant without `;` is refused" {
+test "parser: last `@using` may omit `;`" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for ([_][:0]const u8{
+        "S :: struct { @using Base }",
+        "S :: struct { @using Base; }",
+    }) |src| {
+        var parser = try Parser.init(alloc, src);
+        const root = try parser.parse();
+        try std.testing.expectEqual(@as(usize, 1), root.data.root.decls[0].data.struct_decl.using_entries.len);
+    }
+}
+
+test "parser: missing `;` between `@using` members is `expected ';'`" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const msg = try parseErrMsg(alloc, "S :: struct { @using Base @using Other }");
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
+}
+
+test "parser: last struct-body constant may omit `;`" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     for ([_][:0]const u8{
         "S :: struct { N :: 1 }",
+        "S :: struct { N :: 1; }",
         "S :: struct { N: i64: 1 }",
+        "S :: struct { N: i64: 1; }",
+    }) |src| {
+        var parser = try Parser.init(alloc, src);
+        const root = try parser.parse();
+        try std.testing.expectEqual(@as(usize, 1), root.data.root.decls[0].data.struct_decl.constants.len);
+    }
+}
+
+test "parser: missing `;` between struct-body constants is `expected ';'`" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for ([_][:0]const u8{
+        "S :: struct { N :: 1 M :: 2 }",
+        "S :: struct { N: i64: 1 M: i64: 2 }",
     }) |src| {
         const msg = try parseErrMsg(alloc, src);
         try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
     }
 }
 
-test "parser: a union field without `;` is refused" {
+test "parser: last union field may omit `;`" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     for ([_][:0]const u8{
         "U :: union { a: i64 }",
-        "U :: union { a: i64 b: i32; }",
+        "U :: union { a: i64; }",
+        "U :: union { struct { x: i64 } }",
         "U :: union { struct { x: i64; } }",
+        "U :: union { struct { x: i64; }; }",
     }) |src| {
-        const msg = try parseErrMsg(alloc, src);
-        try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
+        var parser = try Parser.init(alloc, src);
+        const root = try parser.parse();
+        try std.testing.expectEqual(@as(usize, 1), root.data.root.decls[0].data.union_decl.field_names.len);
     }
+}
+
+test "parser: missing `;` between union fields is `expected ';'`" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const msg = try parseErrMsg(alloc, "U :: union { a: i64 b: i32; }");
+    try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
 }
 
 test "parser: enum variants without `;` still parse" {
