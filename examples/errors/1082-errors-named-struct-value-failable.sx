@@ -1,0 +1,21 @@
+// A named struct as the single success value of `-> (T, !E)` is one slot.
+// `return Box{ … }` yields that struct; destructure and `??` consume it as T.
+@import "modules/std.sx";
+
+E :: error { Bad }
+Box :: struct { n: i64; k: i64; }
+
+make :: (n: i64) -> (Box, !E) {
+    if n < 0 { raise error.Bad; }
+    return Box{ n = n, k = n + 1 };
+}
+
+main :: () -> i32 {
+    b, err := make(5);
+    if err { print("unexpected\n"); return 1; }
+    print("{} {}\n", b.n, b.k);
+
+    d := make(-1) ?? Box{ n = 0, k = 0 };
+    print("{} {}\n", d.n, d.k);
+    0
+}

@@ -1,17 +1,1 @@
-error: this function returns 5 values — return them as `return a, b`, not a single value
-  --> library/modules/std/process.sx:355:12
-    |
-355 |     return Child{ pid = pid, stdin = parent[0], stdout = parent[1], stderr = parent[2] };
-    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
-  --> examples/std/2132-std-process-spawn-exec-failure.sx:8:17
-   |
- 8 |     child, e := process.spawn(.["sx-no-such-program-anywhere"], .{ stderr = .null });
-   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-error: unresolved 'wait' (in examples/std/2132-std-process-spawn-exec-failure.sx fn main)
-  --> examples/std/2132-std-process-spawn-exec-failure.sx:11:13
-   |
-11 |     code := child.wait(true);
-   |             ^^^^^^^^^^

@@ -539,7 +539,7 @@ pub const TypeTable = struct {
         return self.intern(.{ .failable = .{ .value = value, .err = err } });
     }
 
-    /// Product of `field_ids`, or a failable when the last field is an error set.
+    /// Anonymous product: `internProduct` / untyped `.{ … }`. Display name `__anon`.
     pub fn isAnonStruct(self: *const TypeTable, id: TypeId) bool {
         if (id.isBuiltin()) return false;
         const info = self.get(id);
@@ -562,6 +562,7 @@ pub const TypeTable = struct {
         return if (i < s.fields.len) s.fields[i].name else null;
     }
 
+    /// Product of `field_ids`, or a failable when the last field is an error set.
     pub fn internFieldsAsProductOrFailable(self: *TypeTable, field_ids: []const TypeId, names: ?[]const StringId) TypeId {
         const n = field_ids.len;
         if (n > 0 and !field_ids[n - 1].isBuiltin() and self.get(field_ids[n - 1]) == .error_set) {
@@ -578,20 +579,17 @@ pub const TypeTable = struct {
         return self.internProduct(field_ids, names);
     }
 
+    /// Value slots of a failable: an anonymous product (`-> (A, B, !)`)
+    /// flattens to its fields; a named struct or any other success type is
+    /// one slot.
     pub fn failableValueSlotCount(self: *const TypeTable, f: TypeInfo.FailableInfo) usize {
         if (f.value == .void) return 0;
-        if (!f.value.isBuiltin()) {
-            const vi = self.get(f.value);
-            if (vi == .@"struct") return vi.@"struct".fields.len;
-        }
+        if (self.isAnonStruct(f.value)) return self.get(f.value).@"struct".fields.len;
         return 1;
     }
 
     pub fn failableValueSlotType(self: *const TypeTable, f: TypeInfo.FailableInfo, i: usize) TypeId {
-        if (!f.value.isBuiltin()) {
-            const vi = self.get(f.value);
-            if (vi == .@"struct") return vi.@"struct".fields[i].ty;
-        }
+        if (self.isAnonStruct(f.value)) return self.get(f.value).@"struct".fields[i].ty;
         std.debug.assert(i == 0);
         return f.value;
     }

@@ -1,11 +1,1 @@
-error: cannot return a value of type 'Thing' where 'i64' is expected
-  --> examples/modules/0843-modules-reexport-free-fn-multireturn/inner.sx:6:12
-   |
- 6 |     return Thing{ x = 42 };
-   |            ^^^^^^^^^^^^^^^
 
-error: field 'x' not found on type 'i64'
-  --> examples/modules/0843-modules-reexport-free-fn-multireturn.sx:16:15
-   |
-16 |     return xx r.x;             // expect 42
-   |               ^^^

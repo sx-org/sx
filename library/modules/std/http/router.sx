@@ -173,7 +173,7 @@ RouteCtx :: struct {
         v, e := json.parse(self.req.body, context.allocator);
         if e {
             nv : json.Value = .null;
-            return .{nv, false};
+            return nv, false;
         }
         return v, true;
     }

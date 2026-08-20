@@ -688,7 +688,7 @@ OutChan :: struct {
             else { status = .pending; self.hungry = true; }
         }
         self.mu.unlock();
-        return .{n, status};
+        return n, status;
     }
 
     // Loop side (or Server.close): the connection is gone — wake and stop

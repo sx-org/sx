@@ -1,5 +1,1 @@
-error: this function returns 2 values — return them as `return a, b`, not a single value
-  --> library/modules/std/fmt.sx:601:12
-    |
-601 |     return av.(@Any).data.(*T).*;
-    |            ^^^^^^^^^^^^^^^^^^^^^
+

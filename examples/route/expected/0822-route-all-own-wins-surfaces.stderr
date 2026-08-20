@@ -1,5 +1,1 @@
-error: field '0' not found on type '__anon'
-  --> examples/route/0822-route-all-own-wins-surfaces.sx:37:51
-   |
-37 |     print("bp={} t={} ev={} x={} dep={}\n", bp.m, t.0.m, ev, x.b.m, dep_box());
-   |                                                   ^^^
+

@@ -1,5 +1,1 @@
-error: this function returns 7 values — return them as `return a, b`, not a single value
-  --> library/modules/std/cli.sx:464:12
-    |
-464 |     return result;
-    |            ^^^^^^
+

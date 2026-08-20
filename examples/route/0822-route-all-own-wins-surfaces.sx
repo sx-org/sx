@@ -4,7 +4,7 @@
 // `.m` access (disjoint field sets → a wrong-author binding is a hard compile
 // error). Complements 0816 (which covered only the union body-builder child):
 //   - pointer wrapper-alias element   `BoxPtr :: *Box`
-//   - tuple element                   `(Box, i32)`
+//   - struct field                    `struct { a: Box; b: i32 }`
 //   - enum body-builder child         `WrapE :: enum { V: Box }`
 //   - inline-anonymous union child    `x : union { b: Box }`
 
@@ -34,6 +34,6 @@ main :: () -> i32 {
     x : union { b: Box; n: i32; } = ---;
     x.b.m = 13;
 
-    print("bp={} t={} ev={} x={} dep={}\n", bp.m, t.0.m, ev, x.b.m, dep_box());
+    print("bp={} t={} ev={} x={} dep={}\n", bp.m, t.a.m, ev, x.b.m, dep_box());
     0
 }

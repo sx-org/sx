@@ -1,17 +1,1 @@
-error: this function returns 7 values — return them as `return a, b`, not a single value
-  --> library/modules/std/cli.sx:464:12
-    |
-464 |     return result;
-    |            ^^^^^^
-
-error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
-  --> examples/modules/0718-modules-cli-exit-json.sx:64:13
-   |
-64 |     _, e := parse(bad, cmds, *d);
-   |             ^^^^^^^^^^^^^^^^^^^^
-
-error: an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id
-  --> examples/modules/0718-modules-cli-exit-json.sx:65:34
-   |
-65 |     report("usage-error-raised", e == error.UnknownCommand);
-   |                                  ^
+ERROR: unknown command 'deploy' (argv index 1)

@@ -1,11 +1,1 @@
-error: cannot return a value of type 'Sqlite' where 'usize' is expected
-  --> library/vendors/sqlite/sqlite.sx:591:16
-    |
-591 |         return Sqlite{ handle = h };
-    |                ^^^^^^^^^^^^^^^^^^^^
 
-error: this function returns 2 values — return them as `return a, b`, not a single value
-  --> library/vendors/sqlite/sqlite.sx:627:16
-    |
-627 |         return SqliteStmt{ handle = sh, db = self.handle };
-    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
