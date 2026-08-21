@@ -1112,6 +1112,9 @@ pub const ProtocolMethodDecl = struct {
     /// identifier — exempt from the reserved-type-name check.
     /// Empty for synthesized methods (treated as all-false).
     param_name_is_raw: []const bool = &.{},
+    /// The stripped receiver's form: the declaration wrote `self: *Self` rather
+    /// than `self: Self`.
+    receiver_is_pointer: bool = true,
     return_type: ?*Node, // null = void return
     default_body: ?*Node, // null = required method, non-null = default implementation
 };

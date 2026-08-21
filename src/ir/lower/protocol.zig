@@ -1,6 +1,6 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const ast = @import("../../ast.zig");
+const print = @import("../../print.zig");
 const Node = ast.Node;
 const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
@@ -93,57 +93,33 @@ pub fn boundNonConformance(self: *Lowering, proto_ty: TypeId, concrete_type_name
     return .{ .nc = nc, .impl_visible = self.protocolResolver().hasConcreteImplDecl(identity_ty, pd.name, concrete_ty) };
 }
 
-/// The required method as a bound help names it: `name :: (self: *Self[, p: T…])[ -> R]`.
-/// `ProtocolMethodDecl` stores extra params only, so the printed form always writes the receiver.
+/// The required method as a bound help names it, spelled as the protocol
+/// declared it: `name :: (self: Self|*Self[, p: T…])[ -> R]`.
+/// `ProtocolMethodDecl` stores extra params only, so the receiver is rebuilt
+/// from its recorded form. Falls back to the bare method name when any part
+/// fails to print.
 pub fn requiredMethodSignature(self: *Lowering, proto_ty: TypeId, method: []const u8) []const u8 {
     const pd = self.protocol_ast_by_type.get(proto_ty) orelse return method;
     const mast = methodAst(pd, method) orelse return method;
-    var out = std.ArrayList(u8).empty;
-    out.appendSlice(self.alloc, method) catch return method;
-    out.appendSlice(self.alloc, " :: (self: *Self") catch return method;
-    for (mast.param_names, mast.params) |name, ty| {
-        out.appendSlice(self.alloc, ", ") catch return method;
-        out.appendSlice(self.alloc, name) catch return method;
-        out.appendSlice(self.alloc, ": ") catch return method;
-        appendTypeNode(&out, self.alloc, ty) catch return method;
-    }
-    out.append(self.alloc, ')') catch return method;
-    if (mast.return_type) |rt| {
-        out.appendSlice(self.alloc, " -> ") catch return method;
-        appendTypeNode(&out, self.alloc, rt) catch return method;
-    }
-    return out.items;
+    var aw = std.Io.Writer.Allocating.init(self.alloc);
+    writeMethodSignature(&aw.writer, method, mast) catch return method;
+    return aw.writer.toArrayList().items;
 }
 
-fn appendTypeNode(out: *std.ArrayList(u8), alloc: Allocator, node: *const Node) error{ OutOfMemory, Unsupported }!void {
-    switch (node.data) {
-        .type_expr => |te| try out.appendSlice(alloc, te.name),
-        .pointer_type_expr => |p| {
-            try out.append(alloc, '*');
-            try appendTypeNode(out, alloc, p.pointee_type);
-        },
-        .optional_type_expr => |o| {
-            try out.append(alloc, '?');
-            try appendTypeNode(out, alloc, o.inner_type);
-        },
-        .slice_type_expr => |s| {
-            try out.appendSlice(alloc, "[]");
-            try appendTypeNode(out, alloc, s.element_type);
-        },
-        .many_pointer_type_expr => |m| {
-            try out.appendSlice(alloc, "[*]");
-            try appendTypeNode(out, alloc, m.element_type);
-        },
-        .parameterized_type_expr => |pt| {
-            try out.appendSlice(alloc, pt.name);
-            try out.append(alloc, '(');
-            for (pt.args, 0..) |arg, i| {
-                if (i > 0) try out.appendSlice(alloc, ", ");
-                try appendTypeNode(out, alloc, arg);
-            }
-            try out.append(alloc, ')');
-        },
-        else => return error.Unsupported,
+fn writeMethodSignature(w: *std.Io.Writer, method: []const u8, mast: ast.ProtocolMethodDecl) anyerror!void {
+    try w.writeAll(method);
+    try w.writeAll(" :: (self: ");
+    try w.writeAll(if (mast.receiver_is_pointer) "*Self" else "Self");
+    for (mast.param_names, mast.params) |name, ty| {
+        try w.writeAll(", ");
+        try w.writeAll(name);
+        try w.writeAll(": ");
+        try print.printType(ty, w);
+    }
+    try w.writeByte(')');
+    if (mast.return_type) |rt| {
+        try w.writeAll(" -> ");
+        try print.printType(rt, w);
     }
 }
 

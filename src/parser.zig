@@ -1674,7 +1674,7 @@ pub const Parser = struct {
             if (param_names.items.len == 0 or !std.mem.eql(u8, param_names.items[0], "self")) {
                 return self.fail("protocol method must declare its receiver as the first parameter: `self: *Self` (or `self: Self`)");
             }
-            {
+            const receiver_is_pointer = blk: {
                 const rtype = param_types.items[0];
                 const is_self_val = rtype.data == .type_expr and std.mem.eql(u8, rtype.data.type_expr.name, "Self");
                 const is_self_ptr = rtype.data == .pointer_type_expr and
@@ -1683,7 +1683,8 @@ pub const Parser = struct {
                 if (!is_self_val and !is_self_ptr) {
                     return self.fail("protocol method receiver must be typed `*Self` or `Self`");
                 }
-            }
+                break :blk is_self_ptr;
+            };
 
             // Optional return type
             var return_type: ?*Node = null;
@@ -1717,6 +1718,7 @@ pub const Parser = struct {
                 .param_names = all_param_names[1..],
                 .param_name_spans = all_param_name_spans[1..],
                 .param_name_is_raw = all_param_name_is_raw[1..],
+                .receiver_is_pointer = receiver_is_pointer,
                 .return_type = return_type,
                 .default_body = default_body,
             });

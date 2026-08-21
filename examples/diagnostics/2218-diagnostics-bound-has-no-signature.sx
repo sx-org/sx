@@ -1,0 +1,22 @@
+// The bound's `has no` help names the required method by the signature the
+// protocol DECLARED: the receiver keeps the form it was written with, and every
+// extra param and the return print in their written spelling.
+@import "modules/std.sx";
+
+Box :: struct($T: Type) { v: $T; }
+
+ByVal :: constraint { name :: (self: Self) -> string; }
+
+Rich :: constraint {
+    mix :: (self: *Self, n: i64, tail: []u8, opt: ?*i32, arr: [4]i64, b: Box(i32)) -> (i64, i64);
+}
+
+Plain :: struct { n: i64; }
+
+byval :: (v: $T/ByVal) -> i64 { 1 }
+rich :: (v: $T/Rich) -> i64 { 1 }
+
+main :: () {
+    print("{}\n", byval(Plain{ n = 1 }));
+    print("{}\n", rich(Plain{ n = 2 }));
+}
