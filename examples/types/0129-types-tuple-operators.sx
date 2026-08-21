@@ -26,7 +26,7 @@ apply :: (f: (i32, i32) -> i32, x: i32, y: i32) -> i32 {
     f(x, y)
 }
 
-Chained :: protocol {
+Chained :: constraint {
     base :: (self: *Self, msg: string) -> i32;
     wrap :: (self: *Self, msg: string) -> i32 {
         self.base(msg) + 1

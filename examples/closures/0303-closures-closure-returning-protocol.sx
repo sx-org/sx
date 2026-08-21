@@ -3,7 +3,7 @@
 
 @import "modules/std.sx";
 
-MyProtocol :: protocol vtable {
+MyProtocol :: interface {
     get_value :: (self: *Self) -> i64;
 }
 

@@ -9,7 +9,7 @@
 @import "modules/std.sx";
 
 Draw :: @OpenSet(.{ max = 64, align = 8 }) { draw :: (self: *Self) -> i64; }
-Mark :: protocol vtable { mark :: (self: *Self) -> i64; }
+Mark :: interface { mark :: (self: *Self) -> i64; }
 
 Dot :: struct { n: i64; }
 impl Mark for Dot { mark :: (self: *Dot) -> i64 { self.n * 3 } }

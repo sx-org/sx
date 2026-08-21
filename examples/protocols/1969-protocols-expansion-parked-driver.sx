@@ -15,8 +15,8 @@
 // after its answer stopped being able to change.
 @import "modules/std.sx";
 
-View :: protocol vtable { area :: (self: *Self) -> i64; }
-Tally :: protocol vtable { count :: (self: *Self) -> i64; }
+View :: interface { area :: (self: *Self) -> i64; }
+Tally :: interface { count :: (self: *Self) -> i64; }
 
 Widget :: struct { n: i64; }
 Panel :: struct { n: i64; }

@@ -118,6 +118,82 @@ fn implFactWaits(self: *Lowering, proto_ty: ?TypeId, proto_name: []const u8, ty:
     return true;
 }
 
+/// The conformance table of `contract`, minted on first read with a single
+/// non-conforming row so the site has a symbol to index; `fillConformanceTables`
+/// writes the rows once every impl is registered. Null while the table's own
+/// facts are not utterable: a table publishes negative rows, so it waits on the
+/// contract's impls in the same way a negative answer does.
+pub fn conformanceTable(self: *Lowering, contract: TypeId) ?inst_mod.GlobalId {
+    if (self.conformance_tables.get(contract)) |gid| return gid;
+    const pd = self.getProtocolInfo(contract) orelse return null;
+    if (self.expansion.scheduled() and self.expansion.mayImpl(pd.name)) {
+        const fact = std.fmt.allocPrint(self.alloc, "'{s}' impls to be final before its conformance table is built", .{pd.name});
+        self.expansion.awaitFact(fact catch "an impl set to be final");
+        return null;
+    }
+    const row_ty: TypeId = if (pd.isErased()) self.module.types.ptrTo(.void) else .bool;
+    const name = std.fmt.allocPrint(self.alloc, "__{s}__conformance", .{protocolRuntimeDispatchName(self, pd.name, contract)}) catch @panic("out of memory");
+    const gid = self.module.addGlobal(.{
+        .name = self.module.types.internString(name),
+        .ty = self.module.types.arrayOf(row_ty, 1),
+        .init_val = .{ .zeroinit = {} },
+        .is_const = true,
+    });
+    self.conformance_tables.put(self.alloc, contract, gid) catch @panic("out of memory");
+    return gid;
+}
+
+/// Write every requested table's rows. Runs once the declaration space is final,
+/// so the rows answer over program-unique pairs: a pair implemented in more than
+/// one module has no arbiter at a dynamic conversion and stays non-conforming.
+pub fn fillConformanceTables(self: *Lowering) void {
+    var it = self.conformance_tables.iterator();
+    while (it.next()) |entry| fillOneTable(self, entry.key_ptr.*, entry.value_ptr.*);
+}
+
+fn fillOneTable(self: *Lowering, contract: TypeId, gid: inst_mod.GlobalId) void {
+    const pd = self.getProtocolInfo(contract) orelse return;
+    const erased = pd.isErased();
+    const row_ty: TypeId = if (erased) self.module.types.ptrTo(.void) else .bool;
+    const n: u32 = @intCast(self.module.types.infos.items.len);
+    const rows = self.alloc.alloc(inst_mod.ConstantValue, @max(n, 1)) catch return;
+    for (rows) |*r| r.* = if (erased) .{ .null_val = {} } else .{ .boolean = false };
+
+    var sites = self.protocol_impl_sites.iterator();
+    while (sites.next()) |site| {
+        const key = site.key_ptr.*;
+        if (!std.mem.eql(u8, self.module.types.strings.get(key.protocol_name), pd.name)) continue;
+        if (key.protocol != .unresolved and key.protocol != contract) continue;
+        const conformer = key.concrete;
+        if (conformer == .unresolved or conformer.index() >= n) continue;
+        if (!programUnique(site.value_ptr.items)) continue;
+        const cname = self.resolveConcreteTypeName(conformer) orelse continue;
+        if (firstUnimplementedMethod(self, contract, cname, conformer) != null) continue;
+        if (!erased) {
+            rows[conformer.index()] = .{ .boolean = true };
+            continue;
+        }
+        const thunks = getOrCreateThunks(self, contract, cname, conformer);
+        const vt = getOrCreateVtableGlobal(self, contract, pd.name, cname, conformer, thunks) orelse continue;
+        rows[conformer.index()] = .{ .global_ref = vt };
+    }
+
+    const g = &self.module.globals.items[@intFromEnum(gid)];
+    g.ty = self.module.types.arrayOf(row_ty, @max(n, 1));
+    g.init_val = .{ .aggregate = rows };
+}
+
+/// Is the pair implemented in exactly one import scope? Visibility-disjoint
+/// duplicates have no arbiter at a dynamic conversion, so they read as absent.
+fn programUnique(sites: []const ImplSite) bool {
+    if (sites.len <= 1) return true;
+    const first = sites[0].source orelse "";
+    for (sites[1..]) |s| {
+        if (!std.mem.eql(u8, s.source orelse "", first)) return false;
+    }
+    return true;
+}
+
 /// Does `proto_ty` carry a VALUE that stamps the impl it was erased with —
 /// the kind whose conversion facts depend on multiplicity?
 fn erasedKind(self: *Lowering, proto_ty: ?TypeId) bool {

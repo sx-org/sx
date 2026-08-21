@@ -63,7 +63,7 @@ fn selectedDispatchName(self: *Lowering, sf: *const SelectedFunc) []const u8 {
     return out.toOwnedSlice(self.alloc) catch @panic("out of memory while mangling selected function");
 }
 
-/// The ufcs function a dot-call resolves to when its FIRST parameter is
+/// The ufcs function a dot-call resolves to when ANY of its parameters is
 /// destination-first (`$I/@Init(T)`), or null when the dot-call is anything else.
 /// Answers the same questions the ufcs dispatch arm asks, in the same order — the
 /// receiver's own type answers first, an alias names its target, and a generic
@@ -110,8 +110,11 @@ fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: 
         if (fd != fd0) return null;
     }
     if (fd.params.len == 0) return null;
-    if (init_plan.boundTargetNode(fd.params[0].type_expr) == null) return null;
-    return .{ .fd = fd, .name = eff_field };
+    for (fd.params) |p| {
+        if (init_plan.boundTargetNode(p.type_expr) != null)
+            return .{ .fd = fd, .name = eff_field };
+    }
+    return null;
 }
 
 
@@ -720,6 +723,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // intrinsic reachable on the same terms.
         if (std.mem.eql(u8, eff_name, id_name) and
             self.ufcsAliasTarget(id_name) == null and
+            !self.respelled_ufcs_callees.contains(c.callee) and
             self.program_index.fn_ast_map.contains(eff_name) and
             !callableLocalShadow(self, id_name) and
             intrinsics.findByName(eff_name) == null and
@@ -988,6 +992,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 syn_args[0] = @constCast(fa.object);
                 @memcpy(syn_args[1..], args);
                 const callee = self.synthNode(.{ .identifier = .{ .name = target.name } }, c.callee.span, c.callee.source_file);
+                self.respelled_ufcs_callees.put(self.alloc, callee, {}) catch {};
                 const syn_call = ast.Call{ .callee = callee, .args = syn_args };
                 return self.lowerCall(&syn_call);
             }

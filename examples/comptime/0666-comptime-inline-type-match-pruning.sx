@@ -15,7 +15,7 @@
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
-Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
+Sizable :: interface { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }
 impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
 

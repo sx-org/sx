@@ -23,7 +23,7 @@
 
 Block :: struct { tag: i32; }
 
-Sink :: protocol(T: Type) {
+Sink :: constraint(T: Type) {
     convert :: (self: Self) -> T;
 }
 

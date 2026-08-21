@@ -5,7 +5,7 @@
 // not just the bare leaf and a one-level pointer/optional.
 @import "modules/std.sx";
 
-P :: protocol vtable {
+P :: interface {
     // `*Self` receiver + `[]Self` slice param + `Self` value param.
     total :: (self: *Self, xs: []Self, extra: Self) -> i64;
 }

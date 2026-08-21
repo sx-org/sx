@@ -6,7 +6,7 @@
 // Distinct instantiations stay distinct.
 @import "modules/std.sx";
 
-Series :: protocol(T: Type) vtable { count :: (self: *Self) -> i64; }
+Series :: interface(T: Type) { count :: (self: *Self) -> i64; }
 
 Buffer :: struct($T: Type) { n: i64; }
 impl Series($T) for Buffer($T) { count :: (self: *Buffer) -> i64 { self.n } }
@@ -15,7 +15,7 @@ BufF  :: Buffer(f32);
 BufF2 :: BufF;             // an alias of an alias resolves through
 BufI  :: Buffer(i64);
 
-Show :: protocol vtable { show :: (self: *Self) -> i64; }
+Show :: interface { show :: (self: *Self) -> i64; }
 Box  :: struct($T: Type) { v: i64; }
 BoxI :: Box(i64);
 // The impl head names the alias; the conformance it registers is the

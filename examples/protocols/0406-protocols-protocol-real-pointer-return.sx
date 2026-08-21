@@ -4,7 +4,7 @@
 
 @import "modules/std.sx";
 
-Proto :: protocol vtable {
+Proto :: interface {
   get :: (self: *Self) -> *u8;
 }
 

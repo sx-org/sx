@@ -4,8 +4,8 @@
 // 1979 answers `null`.
 @import "modules/std.sx";
 
-Mark :: protocol vtable { tag :: (self: *Self) -> i64; }
-Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
+Mark :: interface { tag :: (self: *Self) -> i64; }
+Show :: interface { fmt :: (self: *Self) -> i64; }
 
 Widget :: struct { n: i64; }
 Loose :: struct { n: i64; }

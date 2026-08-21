@@ -6,7 +6,7 @@
 
 @import "modules/std.sx";
 
-Boxed :: protocol(value: Type) {
+Boxed :: constraint(value: Type) {
     value :: (self: *Self) -> i64;
 }
 

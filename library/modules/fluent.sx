@@ -13,7 +13,7 @@
 //
 //     content.run(*sink);
 //
-// Each standalone expression in the block whose type conforms to the protocol
+// Each standalone expression in the block whose type conforms to the contract
 // becomes one `sink.expression(initializer)` call. The initializer is an
 // `@Init(V)` over the CONCRETE `V`, so the sink reserves `size_of(V)` and writes
 // the expression straight into its own storage; nothing is materialized, copied,
@@ -22,9 +22,9 @@
 @import "modules/std/list.sx";
 
 // What a sink promises. A compiler-maintained contract, and an ordinary
-// constraint protocol: no vtable, no erasure — `expression` monomorphizes for
-// each concrete `V` the block reaches, which is what lets the sink see `V`'s
-// size, alignment, and methods.
+// constraint: no vtable, no erasure — `expression` monomorphizes for each
+// concrete `V` the block reaches, which is what lets the sink see `V`'s size,
+// alignment, and methods.
 //
 // There is no site parameter: the initializer is the single source of expression
 // provenance, so a sink that wants it asks `value.site()` and cannot be handed a
@@ -32,7 +32,7 @@
 //
 // A sink that returns without writing leaves the source expression unevaluated.
 // One that must materialize everything simply writes unconditionally.
-@BuildSink :: protocol(P: Type) constraint {
+@BuildSink :: constraint(P: Type) {
     expression :: (self: *Self, value: $I/@Init($V/P));
 }
 
@@ -40,8 +40,8 @@
 // contract: the compiler synthesizes these values, so the field set is a
 // compiler + stdlib contract. Produced only when `content.shape()` is called —
 // capturing-only programs do not pay for it. Counts and sizes are
-// protocol-independent; association with a block protocol is by use site, not by
-// a monomorphic type argument (constraint protocols are not runtime type args).
+// contract-independent; association with a block contract is by use site, not by
+// a monomorphic type argument (constraints are not runtime type args).
 @BuildShape :: struct {
     static_expressions: i32 = 0;
     dynamic_regions: i32 = 0;
@@ -61,7 +61,7 @@
 // `T` is the interception type and what the list holds. Where `T` carries its own
 // storage — an open set, a plain data type — an element IS the published value,
 // held inline, and nothing is allocated. Where `T` is a handle into storage it does
-// not own — a `vtable` protocol — the payload must outlive this call, so the sink
+// not own — an interface handle — the payload must outlive this call, so the sink
 // funds it from `context.allocator` and the elements live as long as that allocator
 // does: an arena or frame allocator resets them all at once, which is the
 // recommended lifetime for collected children.
@@ -72,11 +72,18 @@ Sink :: struct ($T: Type) {
 impl @BuildSink($T) for Sink($T) {
     expression :: (self: *Sink($T), value: $I/@Init($V/T)) {
         inline match T {
-            case protocol: {
-                payload := context.allocator.create(V);
-                value.write(payload);
-                handle : T = payload;
-                self.children.append(handle);
+            case interface: {
+                // `V == T` is type identity, not conformance: a published
+                // element that already IS a handle keeps the caller's referent,
+                // and every concrete element is funded here so its referent
+                // outlives this call.
+                inline if V == T {
+                    held : T = ---;
+                    value.write(*held);
+                    self.children.append(held);
+                } else {
+                    self.children.append(context.allocator.make(value));
+                }
             }
             else: {
                 item : V = ---;

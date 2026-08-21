@@ -8,9 +8,9 @@
 // declared type states the conversion) and the explicit `xx`.
 @import "modules/std.sx";
 
-Sink :: protocol vtable @identity { emit :: (self: *Self, n: i64) -> i64; }
-Mark :: protocol vtable @identity { mark :: (self: *Self) -> i64; }
-Plain :: protocol vtable { plain :: (self: *Self) -> i64; }
+Sink :: interface { emit :: (self: *Self, n: i64) -> i64; }
+Mark :: interface { mark :: (self: *Self) -> i64; }
+Plain :: interface { plain :: (self: *Self) -> i64; }
 
 Doubler :: struct { k: i64; }
 impl Sink for Doubler { emit :: (self: *Doubler, n: i64) -> i64 { n * self.k } }

@@ -512,6 +512,10 @@ pub const Lowering = struct {
     /// The site id minted for a source expression, so two monomorphizations of
     /// one enclosing generic function form at the SAME site (§4.2).
     init_site_ids: std.AutoHashMapUnmanaged(*const Node, u32) = .empty,
+    /// Callee identifiers the destination-first re-spell minted. A dot-call on a
+    /// `ufcs` function is reachable on any receiver, so the ordinary-call
+    /// visibility gate must not fire on the spelling that replaces it.
+    respelled_ufcs_callees: std.AutoHashMapUnmanaged(*const Node, void) = .empty,
     target_type: ?TypeId = null, // target type for struct/enum literals without explicit names
     /// Synthetic call-default roots keyed by node identity. Unlike caller-owned
     /// comptime substitutions (which also carry `Node.source_file`), a declared
@@ -600,6 +604,10 @@ pub const Lowering = struct {
     /// module that already declared one. Cross-module overlaps stay legal here
     /// and are decided at a use site that sees both.
     protocol_impl_sites: std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_protocol.ImplSite)),
+    /// One tag-indexed conformance table per contract a RUNTIME question
+    /// reached: an interface's `(type_id, Q) → vtable-or-null`, a constraint's
+    /// conformer bits. Minted on first read, filled when the impls are final.
+    conformance_tables: std.AutoArrayHashMapUnmanaged(TypeId, inst_mod.GlobalId) = .empty,
     /// Exact receiver type recorded when a nullary-protocol impl method is
     /// declared. Synthesized default methods are authored in the protocol's
     /// module, where re-resolving their synthetic `self: *Target` annotation
@@ -3523,6 +3531,8 @@ pub const Lowering = struct {
     pub const protocolKindOf = lower_protocol.protocolKindOf;
     pub const staticIsAnswer = lower_protocol.staticIsAnswer;
     pub const classifyIsTarget = lower_protocol.classifyIsTarget;
+    pub const conformanceTable = lower_protocol.conformanceTable;
+    pub const fillConformanceTables = lower_protocol.fillConformanceTables;
 
     pub const lowerProtocolProbe = lower_protocol.lowerProtocolProbe;
     pub const protocolTypeIdWord = lower_protocol.protocolTypeIdWord;

@@ -13,7 +13,7 @@
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
-Sizable :: protocol vtable {
+Sizable :: interface {
     size :: (self: *Self) -> i64;
     bump :: (self: *Self);
 }

@@ -4,7 +4,7 @@
 
 @import "modules/std.sx";
 
-Drawable :: protocol vtable {
+Drawable :: interface {
     draw :: (self: *Self) -> i32;
     name :: (self: *Self) -> string;
     layout :: (self: *Self, x: i32) -> i32;

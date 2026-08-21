@@ -15,7 +15,7 @@
 // instead of printing which default is really in the Context.
 @import "modules/std.sx";
 
-Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
+Show :: interface { fmt :: (self: *Self) -> i64; }
 
 Deep :: struct { n: i64; }
 Flat :: struct { n: i64; }

@@ -15,7 +15,7 @@
 
 Failed :: error { Nope }
 
-Drawable :: protocol vtable {
+Drawable :: interface {
     draw :: (self: *Self) -> string;
 }
 

@@ -8,12 +8,12 @@
 // erasure, since the vtable losing the slot does not relax `impl`.
 @import "modules/std.sx";
 
-Eq :: protocol vtable {
+Eq :: interface {
     eq :: (self: *Self, other: Self) -> bool;   // excluded: Self param
     id :: (self: *Self) -> i64;                 // dispatchable
 }
 
-Cloneable :: protocol vtable {
+Cloneable :: interface {
     clone :: (self: *Self) -> Self;             // excluded: Self return
 }
 

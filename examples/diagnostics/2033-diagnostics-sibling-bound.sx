@@ -10,7 +10,7 @@
 // not this particular binding would have satisfied it.
 @import "modules/std.sx";
 
-Ord :: protocol constraint {
+Ord :: constraint {
     less :: (self: *Self, o: Self) -> bool;
 }
 

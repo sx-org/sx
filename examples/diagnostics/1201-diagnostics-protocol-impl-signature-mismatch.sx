@@ -6,7 +6,7 @@
 
 @import "modules/std.sx";
 
-P :: protocol vtable { val :: (self: *Self) -> i64; }
+P :: interface { val :: (self: *Self) -> i64; }
 T :: struct { n: i64 = 7; }
 impl P for T { val :: (self: *T) -> bool { return true; } }   // return bool != i64
 

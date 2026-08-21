@@ -3,7 +3,7 @@
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
-Speaker :: protocol vtable {
+Speaker :: interface {
     speak :: (self: *Self) -> i64;
 }
 

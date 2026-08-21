@@ -8,13 +8,13 @@
 Size :: struct { w: i32; h: i32; }
 
 // `self: *Self` receiver; one no-arg method and one with extra args.
-Measurable :: protocol vtable {
+Measurable :: interface {
     measure :: (self: *Self) -> Size;
     scaled  :: (self: *Self, factor: i32) -> Size;
 }
 
 // `self: Self` (by-value) receiver is also accepted.
-Named :: protocol vtable {
+Named :: interface {
     name :: (self: Self) -> string;
 }
 

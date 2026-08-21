@@ -10,13 +10,13 @@
 // requires impls to provide it. The refusal itself: diagnostics/1253.
 @import "modules/std.sx";
 
-Shape :: protocol vtable {
+Shape :: interface {
     area :: (self: *Self) -> i64;
     combine :: (self: *Self, other: Self) -> i64;  // excluded: Self param
     name :: (self: *Self) -> string;
 }
 
-Adopted :: protocol vtable {
+Adopted :: interface {
     area :: (self: *Self) -> i64;
     combine :: (self: *Self, other: Self) -> i64;  // excluded: Self param
     name :: (self: *Self) -> string;

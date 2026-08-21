@@ -135,6 +135,10 @@ pub const Op = union(enum) {
     /// assigns rather than the member's own type word, so neither world can
     /// read the answer off the tag itself.
     open_set_type_id: OpenSetTypeId,
+    /// One indexed load out of a contract's conformance table, at a runtime
+    /// type tag: the interface's vtable-or-null, or a constraint's conformance
+    /// bit. A tag outside the table's rows reads as non-conforming.
+    conformance_lookup: ConformanceLookup,
 
     // ── Arithmetic ──────────────────────────────────────────────────
     add: BinOp,
@@ -325,6 +329,20 @@ pub const OpenSetTypeId = struct {
     set: TypeId,
     tag: Ref,
     table: GlobalId,
+};
+
+/// One row of a contract's conformance table, selected by a runtime type tag.
+/// An interface row is its vtable address or null; a constraint row is a
+/// conformance bit. The rows are written once every impl is registered, so the
+/// table answers over program-unique pairs (specs §6.4).
+pub const ConformanceLookup = struct {
+    contract: TypeId,
+    tag: Ref,
+    table: GlobalId,
+    /// The width of one row, which is also what the result means.
+    row: Row,
+
+    pub const Row = enum { vtable, bit };
 };
 
 /// Which measurement of `measured` the frozen layout answers.

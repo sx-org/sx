@@ -7,7 +7,7 @@
 // not only a protocol child.
 @import "modules/std.sx";
 
-P :: protocol vtable {
+P :: interface {
     n :: (self: *Self) -> i32;
     bump :: (self: *Self);
 }

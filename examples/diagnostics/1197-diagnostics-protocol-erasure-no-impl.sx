@@ -5,7 +5,7 @@
 
 @import "modules/std.sx";
 
-Speaker :: protocol vtable { speak :: (self: *Self) -> i64; }
+Speaker :: interface { speak :: (self: *Self) -> i64; }
 Dog :: struct { n: i64 = 0; }
 speak :: (self: *Dog) -> i64 { return self.n; }   // free fn — NOT an impl
 Holder :: struct { s: Speaker; b: i64 = 0; }

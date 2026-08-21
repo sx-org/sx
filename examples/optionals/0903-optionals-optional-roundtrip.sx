@@ -15,7 +15,7 @@ direct_size :: (proposal: ProposedSize) -> f32 {
     w + h
 }
 
-Sizable :: protocol vtable {
+Sizable :: interface {
     size :: (self: *Self, proposal: ProposedSize) -> f32;
 }
 

@@ -7,7 +7,7 @@
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
-Shape :: protocol vtable {
+Shape :: interface {
     area :: (self: *Self) -> i64;
     grow :: (self: *Self);
 }

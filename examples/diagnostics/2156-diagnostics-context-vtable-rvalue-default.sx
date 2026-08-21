@@ -4,8 +4,8 @@
 // refuses it.
 @import "modules/std.sx";
 
-Sink :: protocol vtable @identity { emit :: (self: *Self, n: i64) -> i64; }
-Chirp :: protocol vtable @identity { chirp :: (self: *Self) -> i64; }
+Sink :: interface { emit :: (self: *Self, n: i64) -> i64; }
+Chirp :: interface { chirp :: (self: *Self) -> i64; }
 
 Doubler :: struct { k: i64; }
 impl Sink for Doubler { emit :: (self: *Doubler, n: i64) -> i64 { n * self.k } }

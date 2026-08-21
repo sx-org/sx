@@ -5,8 +5,8 @@
 // the concrete receiver — on both ownership classes.
 @import "modules/std.sx";
 
-Sized :: protocol vtable { size :: (self: *Self) -> i64; }
-Noted :: protocol vtable @identity { size :: (self: *Self) -> i64; }
+Sized :: interface { size :: (self: *Self) -> i64; }
+Noted :: interface { size :: (self: *Self) -> i64; }
 
 Cube :: struct { side: i64; }
 impl Sized for Cube { size :: (self: *Cube) -> i64 { self.side } }

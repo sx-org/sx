@@ -44,7 +44,7 @@ counted :: () -> Label {
 
 // --- What answers before a free function ---
 
-Drawable :: protocol constraint { draw :: (self: *Self) -> string; }
+Drawable :: constraint { draw :: (self: *Self) -> string; }
 
 // An impl contributes the method — it is not in the struct's body.
 Box :: struct { v: i64 = 0; }
@@ -87,7 +87,7 @@ deliver :: ufcs (value: $I/@Init(i64)) -> string {
 send :: ufcs deliver;
 
 // A protocol value dispatches to its conformer.
-Shape :: protocol vtable { name :: (self: *Self) -> string; }
+Shape :: interface { name :: (self: *Self) -> string; }
 Round :: struct { s: string = "round"; }
 impl Shape for Round { name :: (self: *Round) -> string => self.s; }
 

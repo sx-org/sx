@@ -1,3 +1,3 @@
-P :: protocol vtable @identity {
+P :: interface {
     other :: (self: *Self) -> bool;
 }

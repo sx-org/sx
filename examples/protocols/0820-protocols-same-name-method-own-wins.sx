@@ -10,7 +10,7 @@
 
 Box :: struct { m: i32; }
 
-Provider :: protocol vtable {
+Provider :: interface {
     get :: (self: *Self) -> Box;
 }
 

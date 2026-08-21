@@ -10,7 +10,7 @@
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
-P :: protocol vtable {
+P :: interface {
     ping :: (self: *Self) -> i64;
     bump :: (self: *Self);
 }

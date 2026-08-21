@@ -9,7 +9,7 @@ add :: (a: i32, b: i32) -> i32 { a + b }
 mul :: (a: i32, b: i32) -> i32 { a * b }
 
 // edge: Chained default→default calls
-Chained :: protocol {
+Chained :: constraint {
     base :: (self: *Self, msg: string) -> i32;
     wrap :: (self: *Self, msg: string) -> i32 {
         self.base(msg) + 1

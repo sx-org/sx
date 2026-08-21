@@ -32,7 +32,17 @@ create :: ufcs (a: Allocator, $T: Type) -> *T {
     a.alloc_bytes(size_of(T)).(*T)
 }
 
-// Free a *T obtained from `create`.
+// Allocate one T and write `value` straight into it. The argument is an
+// initializer, so the expression runs against the fresh storage rather than
+// into a frame temporary — this is the spelling that gives an rvalue a
+// lifetime past the frame that wrote it.
+make :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T {
+    p := a.alloc_bytes(size_of(T)).(*T);
+    value.write(p);
+    p
+}
+
+// Free a *T obtained from `create` or `make`.
 destroy :: ufcs (a: Allocator, ptr: *$T) {
     a.dealloc_bytes(ptr);
 }
@@ -45,9 +55,6 @@ alloc :: ufcs (a: Allocator, $T: Type, count: i64) -> []T {
 
 // THE free: releases what `x` owns, kind-dispatched at compile time.
 //   - a SLICE from `alloc` / `clone` / `resize` → frees the backing;
-//   - a PROTOCOL value from an owning erasure (`<rvalue>`) → frees the
-//     heap-copied ctx (borrow-mode values own no backing — do not free
-//     them);
 //   - a CLOSURE → frees the heap `env` captured at the literal (a
 //     capture-free closure has a null env — free is a no-op).
 // `free(x)` pairs with `context.allocator` — the allocator current AT THE
@@ -56,18 +63,14 @@ alloc :: ufcs (a: Allocator, $T: Type, count: i64) -> []T {
 // Anything else is a compile error.
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
     inline match T {
-        case protocol: {
-            inline if is_identity(T) {
-                @error("free on an '@identity' protocol value — identity values only ever borrow a named object's storage; there is no owned allocation to free");
-            }
-            a.dealloc_bytes(x.(@Protocol).ctx);
-        }
+        case interface:
+            @error("free on an interface handle — a handle borrows its referent and owns nothing; free the referent where it lives ('Allocator.destroy' for one made by 'Allocator.make')");
         case closure: {
             env := x.(@Closure).env;
             if env != null { a.dealloc_bytes(env); }
         }
         case slice:    a.dealloc_bytes(x.ptr);
-        else:          @error("free expects a protocol value, a closure, or a slice");
+        else:          @error("free expects a closure or a slice");
     }
 }
 

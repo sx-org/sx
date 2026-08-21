@@ -1,6 +1,6 @@
 @import "modules/std.sx";
 
-P0850 :: protocol vtable { get :: (self: *Self) -> i64; }
+P0850 :: interface { get :: (self: *Self) -> i64; }
 S0850 :: struct { v: i64 = 0; }
 impl P0850 for S0850 { get :: (self: *S0850) -> i64 { return self.v; } }
 g_mk_0850 : i64 = 0;

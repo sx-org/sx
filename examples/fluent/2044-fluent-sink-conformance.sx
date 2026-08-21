@@ -21,7 +21,7 @@
 @import "modules/std/list.sx";
 @import "modules/fluent.sx";
 
-Drawable :: protocol vtable @identity {
+Drawable :: interface {
     draw :: (self: *Self) -> string;
 }
 

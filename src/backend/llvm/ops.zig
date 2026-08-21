@@ -27,6 +27,7 @@ const GlobalSet = ir_inst.GlobalSet;
 const SetLayoutOf = ir_inst.SetLayoutOf;
 const SetMemberOf = ir_inst.SetMemberOf;
 const OpenSetTypeId = ir_inst.OpenSetTypeId;
+const ConformanceLookup = ir_inst.ConformanceLookup;
 const FuncId = ir_inst.FuncId;
 const Call = ir_inst.Call;
 const CallIndirect = ir_inst.CallIndirect;
@@ -186,6 +187,33 @@ pub const Ops = struct {
         var idx = [_]c.LLVMValueRef{tag};
         const slot = c.LLVMBuildInBoundsGEP2(self.e.builder, self.e.cached_i64, llvm_global, &idx, 1, "set.tid.slot");
         self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, self.e.cached_i64, slot, "set.tid"));
+    }
+
+    /// One row of a contract's conformance table. A tag past the last row reads
+    /// as non-conforming: the table is sized to the type space at the freeze,
+    /// and a wider tag names nothing the program declared.
+    pub fn emitConformanceLookup(self: Ops, instruction: *const Inst, t: ConformanceLookup) void {
+        const result_ty = self.e.toLLVMType(instruction.ty);
+        const llvm_global = self.e.global_map.get(t.table.index()) orelse {
+            self.e.mapRef(c.LLVMConstNull(result_ty));
+            return;
+        };
+        const rows = self.e.ir_mod.globals.items[t.table.index()].ty;
+        const n: u64 = switch (self.e.ir_mod.types.get(rows)) {
+            .array => |a| a.length,
+            else => 0,
+        };
+        const row_ty = if (t.row == .vtable) self.e.cached_ptr else self.e.cached_i1;
+        const tag = self.e.resolveRef(t.tag);
+        const in_range = c.LLVMBuildICmp(self.e.builder, c.LLVMIntULT, tag, c.LLVMConstInt(self.e.cached_i64, n, 0), "conf.in.range");
+        // A GEP past the end is poison even when its load is never used, so the
+        // index is clamped and the range test selects the answer.
+        const zero = c.LLVMConstInt(self.e.cached_i64, 0, 0);
+        const safe = c.LLVMBuildSelect(self.e.builder, in_range, tag, zero, "conf.idx");
+        var idx = [_]c.LLVMValueRef{safe};
+        const slot = c.LLVMBuildInBoundsGEP2(self.e.builder, row_ty, llvm_global, &idx, 1, "conf.slot");
+        const row = c.LLVMBuildLoad2(self.e.builder, row_ty, slot, "conf.row");
+        self.e.mapRef(c.LLVMBuildSelect(self.e.builder, in_range, row, c.LLVMConstNull(row_ty), "conf"));
     }
 
     // ── Arithmetic ─────────────────────────────────────────

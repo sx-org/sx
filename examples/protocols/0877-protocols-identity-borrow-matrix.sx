@@ -10,7 +10,7 @@
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
-Counter :: protocol vtable @identity {
+Counter :: interface {
     bump :: (self: *Self) -> i64;
     read :: (self: *Self) -> i64;
 }

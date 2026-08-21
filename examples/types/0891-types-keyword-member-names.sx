@@ -10,7 +10,7 @@
 // exemption).
 @import "modules/std.sx";
 
-P :: protocol vtable {
+P :: interface {
     push :: (self: *Self, v: i64) -> i64;
 }
 

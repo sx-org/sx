@@ -127,6 +127,15 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         },
         // Concrete → Protocol: build protocol value.
         .erase_protocol => return self.buildProtocolErasure(operand, operand_node, src_ty, dst_ty),
+        // Interface → interface: one row of the target's conformance table
+        // supplies the new dispatch word; ctx and type_id ride across unchanged.
+        // An absent row panics here — the consumed temperaments read it as a
+        // value instead.
+        .reerase_protocol => return reeraseHandle(self, operand, src_ty, dst_ty, .panic),
+        .reerase_protocol_wrap => {
+            const child = self.module.types.get(dst_ty).optional.child;
+            return self.builder.optionalWrap(reeraseHandle(self, operand, src_ty, child, .absent), dst_ty);
+        },
         // Concrete → ?Protocol: erase to the protocol CHILD first — node-aware,
         // so the operand's shape classifies from the AST exactly like the
         // plain `s : P` position (borrow-class targets borrow lvalues; the
@@ -807,6 +816,63 @@ pub fn arrayToSliceView(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeI
         .hi = hi,
         .base_ty = self.module.types.manyPtrTo(elem_ty),
     } }, slice_ty);
+}
+
+/// `p.(Q)` between interfaces (§6.4). The conformance check and the result's
+/// dispatch word are one runtime read: the result reuses `p`'s ctx and type_id
+/// and takes the table's vtable-or-null. `on_absent` is what a null row means
+/// here — the unconsumed form panics, the soft form answers the null handle,
+/// whose ctx is the `?Q` absent sentinel.
+fn reeraseHandle(self: *Lowering, operand: Ref, src_ty: TypeId, dst_ty: TypeId, on_absent: enum { panic, absent }) Ref {
+    const void_ptr = self.module.types.ptrTo(.void);
+    const ctx = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 0 } }, void_ptr);
+    const tid = self.protocolTypeIdWord(operand);
+    const table = self.conformanceTable(dst_ty) orelse return self.builder.constUndef(dst_ty);
+    const vt = self.builder.emit(.{ .conformance_lookup = .{
+        .contract = dst_ty,
+        .tag = tid,
+        .table = table,
+        .row = .vtable,
+    } }, void_ptr);
+    const present = self.builder.emit(.{ .cmp_ne = .{ .lhs = vt, .rhs = self.builder.constNull(void_ptr) } }, .bool);
+    const eff_ctx = switch (on_absent) {
+        .panic => blk: {
+            refuseAbsentReerasure(self, present, tid, dst_ty);
+            break :blk ctx;
+        },
+        .absent => blk: {
+            const some_bb = self.freshBlock("reerase.some");
+            const none_bb = self.freshBlock("reerase.none");
+            const merge_bb = self.freshBlockWithParams("reerase.merge", &.{void_ptr});
+            self.builder.condBr(present, some_bb, &.{}, none_bb, &.{});
+            self.builder.switchToBlock(some_bb);
+            self.builder.br(merge_bb, &.{ctx});
+            self.builder.switchToBlock(none_bb);
+            self.builder.br(merge_bb, &.{self.builder.constNull(void_ptr)});
+            self.builder.switchToBlock(merge_bb);
+            break :blk self.builder.blockParam(merge_bb, 0, void_ptr);
+        },
+    };
+    _ = src_ty;
+    var fields = [3]Ref{ eff_ctx, tid, vt };
+    return self.builder.structInit(&fields, dst_ty);
+}
+
+/// Stop the program when a re-erasure finds no row. The message names the
+/// referent's concrete type, which only the running program knows.
+fn refuseAbsentReerasure(self: *Lowering, present: Ref, tid: Ref, dst_ty: TypeId) void {
+    const name = "__sx_reerase_or_panic";
+    self.lazyLowerFunction(name);
+    const fid = self.resolveFuncByName(name) orelse return;
+    const has_ctx = self.module.functions.items[@intFromEnum(fid)].has_implicit_ctx;
+    var a = [_]Ref{ present, tid, self.builder.constType(dst_ty) };
+    const args: []Ref = if (!has_ctx) &a else blk: {
+        const wide = self.alloc.alloc(Ref, a.len + 1) catch break :blk &a;
+        wide[0] = self.current_ctx_ref;
+        @memcpy(wide[1..], &a);
+        break :blk wide;
+    };
+    _ = self.builder.call(fid, args, .void);
 }
 
 pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const Node, src_ty: TypeId, dst_ty: TypeId) Ref {

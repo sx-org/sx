@@ -10,7 +10,7 @@ Point  :: struct { x: i64; y: i64; }
 Rect   :: struct { w: i64; h: i64; }
 Color  :: struct { r: i64; g: i64; b: i64; }
 
-Serialize :: protocol vtable {
+Serialize :: interface {
     write :: (self: *Self);
 }
 

@@ -49,6 +49,7 @@ format :: fmt.format;
 // caller's own set (or an inferred `!`) absorbs it.
 __sx_cast_assert         :: fmt.__sx_cast_assert;
 __sx_cast_or_panic       :: fmt.__sx_cast_or_panic;
+__sx_reerase_or_panic    :: fmt.__sx_reerase_or_panic;
 __sx_cast_maybe          :: fmt.__sx_cast_maybe;
 __sx_chain_cast_assert   :: fmt.__sx_chain_cast_assert;
 __sx_chain_cast_or_panic :: fmt.__sx_chain_cast_or_panic;

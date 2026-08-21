@@ -5,8 +5,8 @@
 // the error names both.
 @import "modules/std.sx";
 
-Show :: protocol { show :: (self: *Self) -> i64; }
-Draw :: protocol vtable { draw :: (self: *Self) -> i64; }
+Show :: constraint { show :: (self: *Self) -> i64; }
+Draw :: interface { draw :: (self: *Self) -> i64; }
 
 Point :: struct { v: i64 = 0; }
 

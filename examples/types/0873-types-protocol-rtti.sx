@@ -15,7 +15,7 @@
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
-Drawable :: protocol vtable { area :: (self: *Self) -> i64; }
+Drawable :: interface { area :: (self: *Self) -> i64; }
 Circle :: struct { r: i64; }
 Rect :: struct { w: i64; h: i64; }
 impl Drawable for Circle { area :: (self: *Circle) -> i64 { 3 * self.r * self.r } }

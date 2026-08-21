@@ -5,7 +5,7 @@
 @import "modules/std.sx";
 @import "modules/fluent.sx";
 
-Drawable :: protocol constraint {
+Drawable :: constraint {
     draw :: (self: *Self) -> string;
 }
 
@@ -26,8 +26,8 @@ impl @BuildSink(Drawable) for Tally {
 
 // Marker protocols so `Eq` / `Hashable` below name something: a bound head must
 // resolve. An empty body partitions types and costs nothing.
-Eq :: protocol constraint {}
-Hashable :: protocol constraint {}
+Eq :: constraint {}
+Hashable :: constraint {}
 
 count_into :: (sink: *$S/@BuildSink(Drawable), n: i32) -> i32 {
     sink.seen += n;

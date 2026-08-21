@@ -8,11 +8,11 @@
 // after an earlier evaluation already dispatched is reached by the next one.
 @import "modules/std.sx";
 
-View :: protocol vtable { area :: (self: *Self) -> i64; }
+View :: interface { area :: (self: *Self) -> i64; }
 
 // Lowering `Widget.area` writes a body that erases into ANOTHER protocol, so
 // the on-demand lowering reaches `Label`'s impls too.
-Label :: protocol vtable { text :: (self: *Self) -> i64; }
+Label :: interface { text :: (self: *Self) -> i64; }
 Name :: struct { id: i64; }
 impl Label for Name { text :: (self: *Name) -> i64 { self.id } }
 

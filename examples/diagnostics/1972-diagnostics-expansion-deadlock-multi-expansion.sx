@@ -7,9 +7,9 @@
 // driver, and the fact each awaits, named together.
 @import "modules/std.sx";
 
-Draw :: protocol vtable { draw :: (self: *Self) -> i64; }
-Tally :: protocol vtable { count :: (self: *Self) -> i64; }
-Name :: protocol vtable { label :: (self: *Self) -> i64; }
+Draw :: interface { draw :: (self: *Self) -> i64; }
+Tally :: interface { count :: (self: *Self) -> i64; }
+Name :: interface { label :: (self: *Self) -> i64; }
 
 Widget :: struct { n: i64; }
 Panel :: struct { n: i64; }

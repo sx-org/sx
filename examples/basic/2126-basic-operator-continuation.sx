@@ -10,7 +10,7 @@
 
 `x :: 5;
 
-Drawable :: protocol constraint {
+Drawable :: constraint {
     weight :: (self: *Self) -> i64;
 }
 

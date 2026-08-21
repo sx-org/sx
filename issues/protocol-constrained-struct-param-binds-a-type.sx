@@ -1,6 +1,6 @@
 @import "modules/std.sx";
 
-Combines :: protocol vtable {
+Combines :: interface {
     combine :: (self: *Self, other: Self) -> Self;
 }
 

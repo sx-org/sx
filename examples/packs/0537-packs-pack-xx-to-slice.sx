@@ -5,7 +5,7 @@
 
 @import "modules/std.sx";
 
-Show :: protocol vtable { show :: (self: *Self) -> string; }
+Show :: interface { show :: (self: *Self) -> string; }
 A :: struct {}
 B :: struct { s: string; }
 impl Show for A { show :: (self: *A) -> string => "A"; }

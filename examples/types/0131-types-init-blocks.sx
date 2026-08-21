@@ -8,12 +8,12 @@ Point :: struct { x, y: i32; }
 
 add :: (a: i32, b: i32) -> i32 { a + b }
 
-Counter :: protocol vtable {
+Counter :: interface {
     inc :: (self: *Self);
     get :: (self: *Self) -> i32;
 }
 
-Summable :: protocol {
+Summable :: constraint {
     sum :: (self: *Self) -> i32;
 }
 

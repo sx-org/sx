@@ -14,8 +14,8 @@
 // `impl Ord for Tag`. That driver folds, and never appears in the report.
 @import "modules/std.sx";
 
-Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
-Ord :: protocol constraint { cmp :: (self: *Self, o: *Self) -> i64; }
+Show :: interface { fmt :: (self: *Self) -> i64; }
+Ord :: constraint { cmp :: (self: *Self, o: *Self) -> i64; }
 
 Item :: struct { n: i64; }
 Tag :: struct { n: i64; }

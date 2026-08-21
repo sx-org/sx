@@ -6,7 +6,7 @@
 
 @import "modules/std.sx";
 
-Sizable :: protocol vtable {
+Sizable :: interface {
     size :: (self: *Self) -> i64;
 }
 

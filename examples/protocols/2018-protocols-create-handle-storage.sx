@@ -6,11 +6,11 @@
 // storage afterwards, and dispatch goes through the stored handle.
 @import "modules/std.sx";
 
-Shape :: protocol vtable @identity {
+Shape :: interface {
     area :: (self: *Self) -> i64;
 }
 
-Tally :: protocol vtable {
+Tally :: interface {
     push :: (self: *Self, n: i64) -> i64;
 }
 

@@ -21,9 +21,9 @@
 //!   * Language primitives (`string`, `@Vector`) — resolved by name by the type
 //!     system (`type_resolver` / `type_bridge`) like `int` / `bool` / `f64`.
 //!     They are declared nowhere and are not call-dispatched.
-//!   * Keywords (`cast`, `type_eq`, `compile_error`,
-//!     `__interp_print_frames`, `__trace_resolve_frame`) — bare names the
-//!     compiler recognizes without any declaration.
+//!   * Keywords (`cast`, `type_eq`, `compile_error`, `__interp_print_frames`,
+//!     `__trace_resolve_frame`) — bare names the compiler recognizes without
+//!     any declaration.
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -375,7 +375,7 @@ pub fn find(name: []const u8, source_file: ?[]const u8) ?*const Entry {
 ///
 /// Returns null for any name that is not a registered intrinsic, including the
 /// bare names the compiler recognizes without a declaration (`cast`, `type_eq`,
-/// `type_eq`, …). Those are keywords, handled by their own recognizers.
+/// `compile_error`, …). Those are keywords, handled by their own recognizers.
 pub fn findByName(name: []const u8) ?Id {
     for (&entries) |*e| {
         if (std.mem.eql(u8, e.name, name)) return e.id;

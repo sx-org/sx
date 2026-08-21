@@ -11,7 +11,7 @@
 
 @import "modules/std.sx";
 
-Lerpable :: protocol vtable {
+Lerpable :: interface {
     lerp :: (self: Self, b: f32, t: f32) -> f32;
     name :: (self: Self) -> string;
 }

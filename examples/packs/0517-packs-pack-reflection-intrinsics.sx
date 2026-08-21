@@ -20,7 +20,7 @@
 
 // User-defined parameterised protocol + an impl, so has_impl can
 // confirm parameterised matching works with a known-true case.
-Wrap :: protocol(Target: Type) {
+Wrap :: constraint(Target: Type) {
     wrap :: (self: *Self) -> Target;
 }
 

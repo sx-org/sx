@@ -3,7 +3,7 @@
 // mentions `Self` beyond the receiver, which a constraint protocol carries
 // freely: the bound keeps Self known at every use site.
 
-Lerpable :: protocol constraint {
+Lerpable :: constraint {
     lerp :: (self: *Self, b: Self, t: f32) -> Self;
 }
 

@@ -6,18 +6,18 @@
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
-Ord :: protocol {                              // no slot ⇒ constraint
+Ord :: constraint {                              // no slot ⇒ constraint
     less :: (self: *Self, other: Self) -> bool;
 }
 impl Ord for i64 { less :: (self: *i64, other: i64) -> bool { self.* < other } }
 
-Into2 :: protocol(Target: Type) constraint {   // parameterized + explicit kind
+Into2 :: constraint(Target: Type) {   // parameterized + explicit kind
     convert :: (self: *Self) -> Target;
 }
 
-Show :: protocol vtable { fmt :: (self: *Self) -> string; }
-Rng :: protocol vtable @identity { next :: (self: *Self) -> u64; }
-Slot :: protocol(T: Type) vtable @identity { get :: (self: *Self) -> T; }
+Show :: interface { fmt :: (self: *Self) -> string; }
+Rng :: interface { next :: (self: *Self) -> u64; }
+Slot :: interface(T: Type) { get :: (self: *Self) -> T; }
 
 Point :: struct { x: i64; }
 impl Show for Point { fmt :: (self: *Point) -> string { "pt" } }

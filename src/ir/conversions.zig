@@ -225,6 +225,8 @@ pub const CoercionResolver = struct {
         no_op, // src == dst
         erase_protocol, // dst is a protocol → buildProtocolErasure
         erase_protocol_wrap, // dst is ?P (protocol child) → node-aware erase to P, then wrap
+        reerase_protocol, // both are interfaces → one row of the target's conformance table
+        reerase_protocol_wrap, // dst is ?Q, both interfaces → the same row, answered as an optional
         protocol_to_pointer, // src is a protocol, dst is a pointer → recover ctx
         protocol_to_raw, // src is a protocol, dst is @Protocol → build {ctx, type_id} field-wise
         protocol_to_any, // src is a protocol, dst is any → the {ctx, type_id} prefix view
@@ -275,6 +277,11 @@ pub const CoercionResolver = struct {
     pub fn classifyXX(self: CoercionResolver, src_ty: TypeId, dst_ty: TypeId) XXPlan {
         if (src_ty == .any) return .unbox_any;
         if (src_ty == dst_ty) return .no_op;
+        // Re-erasure precedes the ordinary erasure: the concrete type behind an
+        // interface handle is not statically known, so the conversion is a
+        // runtime table read rather than a coercion of the operand (§6.4).
+        if (self.l.isErasedProtocolType(src_ty) and self.l.isErasedProtocolType(dst_ty) and src_ty != dst_ty)
+            return .reerase_protocol;
         if (self.l.getProtocolInfo(dst_ty) != null) return .erase_protocol;
         // dst is `?P` with a protocol child: erase to the child with the
         // operand NODE in hand (borrow-mode for lvalue sources, exactly like
@@ -288,6 +295,8 @@ pub const CoercionResolver = struct {
         if (!dst_ty.isBuiltin() and self.l.module.types.get(dst_ty) == .optional) {
             const child = self.l.module.types.get(dst_ty).optional.child;
             const src_is_optional = !src_ty.isBuiltin() and self.l.module.types.get(src_ty) == .optional;
+            if (self.l.isErasedProtocolType(src_ty) and self.l.isErasedProtocolType(child) and src_ty != child)
+                return .reerase_protocol_wrap;
             if (self.l.getProtocolInfo(child) != null and src_ty != child and
                 src_ty != .void and !src_is_optional) return .erase_protocol_wrap;
         }

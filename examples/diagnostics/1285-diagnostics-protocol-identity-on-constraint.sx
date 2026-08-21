@@ -2,7 +2,7 @@
 // protocol has none, so the attribute is refused at the declaration.
 @import "modules/std.sx";
 
-Ord :: protocol @identity {
+Ord :: constraint {
     less :: (self: *Self, other: Self) -> bool;
 }
 

@@ -7,7 +7,7 @@
 // is the ordinary refusal, and so is the element of a product the write decomposes.
 @import "modules/std.sx";
 
-Named :: protocol vtable { name :: (self: *Self) -> string; }
+Named :: interface { name :: (self: *Self) -> string; }
 
 View :: @OpenSet(.{ max = 128 }) { render :: (self: *Self) -> string; }
 

@@ -4,7 +4,7 @@
 // DIFFERENT instantiation of the same template does not match.
 @import "modules/std.sx";
 
-Series :: protocol(T: Type) vtable { count :: (self: *Self) -> i64; }
+Series :: interface(T: Type) { count :: (self: *Self) -> i64; }
 
 Buffer :: struct($T: Type) { n: i64; }
 impl Series($T) for Buffer($T) { count :: (self: *Buffer) -> i64 { self.n } }

@@ -13,7 +13,7 @@ Foo :: struct {
     weird :: (self: *Foo) -> $T { 0 }
 }
 
-Show2 :: protocol { show2 :: (self: *Self) -> string; }
+Show2 :: constraint { show2 :: (self: *Self) -> string; }
 IntBox :: struct { v: i64; }
 impl Show2 for IntBox {
     show2 :: (self: *IntBox) -> string { "x" }

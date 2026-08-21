@@ -25,8 +25,8 @@ N       : i64 : 20000;
 WALKS   : i64 : 200;
 SAMPLES : i64 : 5;
 
-Vtab   :: protocol vtable { area :: (self: *Self) -> i64; }
-VtabId :: protocol vtable @identity { area :: (self: *Self) -> i64; }
+Vtab   :: interface { area :: (self: *Self) -> i64; }
+VtabId :: interface { area :: (self: *Self) -> i64; }
 
 Sq  :: struct { s: i64; }
 Rc  :: struct { w: i64; h: i64; }

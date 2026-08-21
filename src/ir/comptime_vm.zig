@@ -919,6 +919,25 @@ pub const Vm = struct {
                 }
                 return self.failFmt("comptime VM: '{s}' has no member numbered {d}", .{ module.types.typeName(t.set), tag });
             },
+            // A conformance row. The table's rows are written once the impls are
+            // final, and the VM runs before that, so the answer comes from the
+            // recorded rows rather than from the global's storage.
+            .conformance_lookup => |t| {
+                const module = self.module orelse return self.failMsg("comptime VM: a conformance row needs a module");
+                const tag: i64 = @bitCast(frame.get(t.tag.index()));
+                const g = module.globals.items[t.table.index()];
+                const init_val = g.init_val orelse return .{ .value = 0 };
+                const rows = switch (init_val) {
+                    .aggregate => |a| a,
+                    else => return .{ .value = 0 },
+                };
+                if (tag < 0 or @as(usize, @intCast(tag)) >= rows.len) return .{ .value = 0 };
+                return .{ .value = switch (rows[@intCast(tag)]) {
+                    .boolean => |b| @intFromBool(b),
+                    .null_val => 0,
+                    else => 1,
+                } };
+            },
 
             // ── Arithmetic ──────────────────────────────────────
             .add, .sub, .mul, .div, .mod => |b| return .{
