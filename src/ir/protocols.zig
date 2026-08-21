@@ -22,6 +22,16 @@ pub const ResolvedProtocol = struct {
     decl: *const ast.ProtocolDecl,
 };
 
+fn protocolMethodSelfSpan(method: ast.ProtocolMethodDecl) ?ast.Span {
+    for (method.params) |p| {
+        if (program_index_mod.typeNodeContainsSelf(p)) return p.span;
+    }
+    if (method.return_type) |rt| {
+        if (program_index_mod.typeNodeContainsSelf(rt)) return rt.span;
+    }
+    return null;
+}
+
 fn typeExprHasGeneric(node: *const Node) bool {
     return switch (node.data) {
         .type_expr => |te| te.is_generic,
@@ -504,6 +514,18 @@ pub const ProtocolResolver = struct {
             }
         }
 
+        // An interface body refuses Self past the receiver: a vtable slot must
+        // be typable with Self unknown. Constraint heads carry those signatures.
+        if (pd.kind == .erased) {
+            for (pd.methods) |method| {
+                if (program_index_mod.protocolMethodSelfOccurrence(method) != null) {
+                    if (self.l.diagnostics) |d| {
+                        d.addFmt(.err, protocolMethodSelfSpan(method), "'{s}' mentions 'Self' past the receiver, so an interface cannot carry it — declare '{s}' as a constraint and bind through it ('$T/{s}')", .{ method.name, pd.name, pd.name });
+                    }
+                }
+            }
+        }
+
         // Parameterised protocols are compile-time-only — no vtable, no boxed
         // instance struct. Methods reference unbound type params (e.g.
         // `convert :: () -> Target`) that only get a concrete TypeId per
@@ -706,10 +728,12 @@ pub const ProtocolResolver = struct {
             if (!cty.isBuiltin() and self.l.module.types.get(cty) == .@"struct" and
                 self.l.module.types.get(cty).@"struct".is_protocol)
             {
-                if (self.l.diagnostics) |d|
-                    d.addFmt(.err, decl.span, "'{s}' is a protocol, not a concrete type — an impl target names a type", .{ib.target_type});
-                self.l.registered_protocol_impls.put(ib, {}) catch @panic("out of memory");
-                return;
+                if (proto.decl.kind == .erased) {
+                    if (self.l.diagnostics) |d|
+                        d.addFmt(.err, decl.span, "'{s}' is an interface handle, not a concrete conformer — 'p.({s})' is the conversion", .{ ib.target_type, proto_name });
+                    self.l.registered_protocol_impls.put(ib, {}) catch @panic("out of memory");
+                    return;
+                }
             }
             const key = self.protocolConcreteKey(proto.ty, proto_name, cty);
             if (self.recordConcreteImplSite(key, proto_name, cty, decl.span, source)) {

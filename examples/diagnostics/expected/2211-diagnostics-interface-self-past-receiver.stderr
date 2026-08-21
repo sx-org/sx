@@ -1,0 +1,5 @@
+error: 'eq' mentions 'Self' past the receiver, so an interface cannot carry it — declare 'Eq' as a constraint and bind through it ('$T/Eq')
+  --> examples/diagnostics/2211-diagnostics-interface-self-past-receiver.sx:5:46
+   |
+ 5 | Eq :: interface { eq :: (self: *Self, other: Self) -> bool; }
+   |                                              ^^^^

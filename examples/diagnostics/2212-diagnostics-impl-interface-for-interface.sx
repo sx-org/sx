@@ -1,0 +1,12 @@
+// An interface head takes concrete conformers. `impl Q for I` with both
+// interfaces is refused; `impl C for I` with C a constraint is recorded.
+@import "modules/std.sx";
+
+Show :: interface { show :: (self: *Self) -> string; }
+View :: interface { draw :: (self: *Self) -> i64; }
+Ord :: constraint { show :: (self: *Self) -> string; }
+
+impl View for Show {}
+impl Ord for Show {}
+
+main :: () { print("unreachable\n"); }

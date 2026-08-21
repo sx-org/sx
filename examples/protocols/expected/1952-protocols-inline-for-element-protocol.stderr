@@ -1,4 +1,4 @@
-error: 'Show' is a protocol, not a concrete type — an impl target names a type
+error: 'Show' is an interface handle, not a concrete conformer — 'p.(Show)' is the conversion
   --> examples/protocols/1952-protocols-inline-for-element-protocol.sx:11:5
    |
 11 |     impl Show for T {

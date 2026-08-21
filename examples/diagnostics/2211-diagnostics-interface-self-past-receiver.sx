@@ -1,0 +1,7 @@
+// An interface body refuses a signature that mentions Self past the receiver.
+// The constraint form carries those signatures.
+@import "modules/std.sx";
+
+Eq :: interface { eq :: (self: *Self, other: Self) -> bool; }
+
+main :: () { print("unreachable\n"); }

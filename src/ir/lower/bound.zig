@@ -257,6 +257,20 @@ fn checkOne(
     // identity case, and asking whether `View` implements `View` would ask the
     // protocol to impl itself.
     if (bound_ty == pty) return;
+    // A different interface handle conforms only through `impl Head for Handle`.
+    if (self.protocolKindOf(bound_ty) == .erased) {
+        const concrete_name = self.resolveConcreteTypeName(bound_ty) orelse {
+            reportViolation(self, bound, p.name, param, bound_ty,
+                "'{s}' is a structural type and can carry no 'impl'", .{self.formatTypeName(bound_ty)});
+            return;
+        };
+        if (self.firstUnimplementedProtocolMethod(pty, concrete_name, bound_ty) == null) return;
+        const d = self.diagnostics orelse return;
+        d.addFmt(.err, bound.span, "'{s}' does not conform to the bound '{s}' — a handle conforms through 'impl {s} for {s}', and none is visible here", .{
+            self.formatTypeName(bound_ty), p.name, p.name, self.formatTypeName(bound_ty),
+        });
+        return;
+    }
     // Only a NOMINAL type can carry an impl. A structural binding — slice,
     // closure, tuple, function — has nowhere to hang one, so it fails the bound
     // rather than escaping the check for want of a name to look up.

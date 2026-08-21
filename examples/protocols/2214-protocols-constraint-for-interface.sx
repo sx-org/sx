@@ -1,0 +1,18 @@
+// A constraint head takes an interface type as a conformer. The interface's
+// own methods satisfy exact-signature members, so the impl body is empty.
+@import "modules/std.sx";
+
+Show :: interface { show :: (self: *Self) -> string; }
+Shown :: constraint { show :: (self: *Self) -> string; }
+impl Shown for Show {}
+
+W :: struct { n: i64; }
+impl Show for W { show :: (self: *W) -> string { "w" } }
+
+through :: (x: $T/Shown) -> string { x.show() }
+
+main :: () {
+    w := W{ n = 1 };
+    h : Show = w;
+    print("{}\n", through(h));
+}

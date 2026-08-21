@@ -2492,7 +2492,7 @@ test "sema: method-return slice + .ptr index + tagged-enum element" {
     const source =
         "Event :: enum { none; click: i64; }" ++
         "Plat :: constraint { poll :: (self: *Self) -> []Event; }" ++
-        "go :: (p: *Plat) { evs := p.poll(); e := evs.ptr[0]; }";
+        "go :: (p: Plat) { evs := p.poll(); e := evs.ptr[0]; }";
     var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
     var an = Analyzer.init(alloc);

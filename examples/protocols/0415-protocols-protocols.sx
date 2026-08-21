@@ -488,11 +488,8 @@ main :: () {
         print("P5.5: {} {}\n", r1, r2);
     }
 
-    // Self-typed argument via a generic bound. Calling `eq` through
-    // an ERASED `Eq` value is a compile error (per-method
-    // erasability: `other: Self` has no expressible type through erasure, so
-    // an erased form would pass it UNCHECKED); the generic bound keeps
-    // Self known. The refusal itself is pinned in diagnostics/1253.
+    // Self-typed argument via a generic bound. Eq mentions Self past the
+    // receiver, so it is a constraint; the bound keeps Self known.
     {
         p1 := Point{ x = 1, y = 2 };
         p2 := Point{ x = 1, y = 2 };
