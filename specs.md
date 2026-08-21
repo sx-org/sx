@@ -4390,7 +4390,7 @@ the right. It is a reserved infix keyword at comparison precedence, and it does
 ```sx
 n : i64 = 5;
 n is int          // true
-n is unsigned     // false — a literal binding defaults to i64
+n is unsigned     // false
 i64 is signed     // true
 []u8 is slice     // true
 Wrap(i64) is Wrap(i64)   // true
@@ -5436,7 +5436,7 @@ formatter reads to print unsigned integers as unsigned decimal; it lowers to
 `__sx_type_is_unsigned` over a runtime `Type` and folds outright over a static
 one.
 
-The type-only builtins — `size_of`, `align_of`, `struct_field_count`, `variant_count`, `type_name`, `type_eq`, `is_flags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`type_of(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `type_name` (its original runtime path), plus `size_of`, `align_of`, `struct_field_count`, `variant_count`, `is_flags`, and `vector_lanes` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_struct_field_counts` / `_variant_counts` / `_flag_bits` / `_vector_lanes`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `type_eq`, which compares tags directly (no table). At runtime the kind gates do not apply: a wrong-kind tag reads its table row (0 for the other family) — runtime kind discrimination is `type_info`'s job. Passing a non-Type VALUE (`size_of(6)`, `is_flags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
+The type-only builtins — `size_of`, `align_of`, `struct_field_count`, `variant_count`, `type_name`, `type_eq`, `is_flags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`type_of(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `type_name`, plus `size_of`, `align_of`, `struct_field_count`, `variant_count`, `is_flags`, and `vector_lanes` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_struct_field_counts` / `_variant_counts` / `_flag_bits` / `_vector_lanes`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `type_eq`, which compares tags directly (no table). At runtime the kind gates do not apply: a wrong-kind tag reads its table row (0 for the other family) — runtime kind discrimination is `type_info`'s job. Passing a non-Type VALUE (`size_of(6)`, `is_flags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
 
 An `any` is accepted because it can hold either a value or a `Type`. `type_name` consults the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `type_name(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `type_of(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `type_name(av)` agree on what `av` is. `is` reads that tag rather than peeling it: `at is type` is true for a `Type`-holding `any`, and classifying the held type unboxes first (`at.(?Type)`).
 
