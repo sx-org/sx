@@ -1415,9 +1415,12 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 .type_expr => |te| te.name,
                 else => "",
             };
-            if (std.mem.eql(u8, cat_name, "protocol")) {
+            // Boxing peels to the referent, so the tag of an `any` or of an
+            // interface handle names a concrete type and never an interface:
+            // the arm could only ever be dead.
+            if (std.mem.eql(u8, cat_name, "interface")) {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, pat.span, "'case protocol:' needs a compile-time subject — use `inline if` over a generic type param (a protocol value carries no runtime type tag)", .{});
+                    d.addFmt(.err, pat.span, "'case interface:' needs a 'Type' subject — this subject's tag names the referent's concrete type, so the arm can never run", .{});
                 arm_tag_values.append(self.alloc, &.{}) catch unreachable;
                 continue;
             }
@@ -1464,7 +1467,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             }
             if (raw_tags.len > 0 and eff.items.len == 0) {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, pat.span, "this arm is unreachable — earlier arms already claim every type it names (a concrete arm must come BEFORE the category that contains it)", .{});
+                    d.addFmt(.err, pat.span, "this arm is unreachable — earlier arms already claim every type it names (the narrower arm must come BEFORE the category that contains it)", .{});
             }
             arm_tag_values.append(self.alloc, eff.items) catch unreachable;
             for (eff.items) |tag| {
@@ -1484,16 +1487,6 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 .type_expr => |te| te.name,
                 else => "",
             };
-            // The `protocol` category exists only in the STATIC fold (an
-            // `inline if` over a bound generic type param) — a protocol
-            // value carries no runtime tag to switch on, so a runtime arm
-            // would be silently dead.
-            if (std.mem.eql(u8, name, "protocol")) {
-                if (self.diagnostics) |d|
-                    d.addFmt(.err, pat.span, "'case protocol:' needs a compile-time subject — use `inline if` over a generic type param (a protocol value carries no runtime type tag)", .{});
-                arm_tag_values.append(self.alloc, &.{}) catch unreachable;
-                continue;
-            }
             // Single-hop visibility + ambiguity gate: a SPECIFIC 2-flat-hop
             // type name in a type-match arm (`case COnly:`) is not bare-visible
             // (consistent with annotations / 0763); ≥2 direct flat same-name
@@ -1562,7 +1555,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             }
             if (raw_tv.len > 0 and eff_tv.items.len == 0) {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, pat.span, "this arm is unreachable — earlier arms already claim every type it names (a concrete arm must come BEFORE the category that contains it)", .{});
+                    d.addFmt(.err, pat.span, "this arm is unreachable — earlier arms already claim every type it names (the narrower arm must come BEFORE the category that contains it)", .{});
             }
             arm_tag_values.append(self.alloc, eff_tv.items) catch unreachable;
             for (eff_tv.items) |tag| {

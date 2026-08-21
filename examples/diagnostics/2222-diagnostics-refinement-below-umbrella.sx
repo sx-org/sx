@@ -1,0 +1,27 @@
+// The umbrella above its refinement leaves the refinement with no tags: `int`
+// claims every integer, so `case unsigned:` beneath it can never run and is
+// the armless-arm error. Both subject shapes answer alike.
+@import "modules/std.sx";
+
+by_tag :: (av: any) -> string {
+    match av {
+        case int:      return "int";
+        case unsigned: return "unsigned";
+        else:          return "other";
+    }
+    "unreached"
+}
+
+by_type :: (t: Type) -> string {
+    match t {
+        case int:      return "int";
+        case unsigned: return "unsigned";
+        else:          return "other";
+    }
+    "unreached"
+}
+
+main :: () {
+    u : u32 = 7;
+    print("{} {}\n", by_tag(u), by_type(u32));
+}

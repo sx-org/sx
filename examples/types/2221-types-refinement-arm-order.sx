@@ -1,0 +1,30 @@
+// A refinement above its umbrella splits by first-wins: `case unsigned:`
+// claims the unsigned tags, and `case int:` keeps what is left. Both an `any`
+// subject and a `Type` subject follow the one rule.
+@import "modules/std.sx";
+
+by_tag :: (av: any) -> string {
+    match av {
+        case unsigned: return "unsigned";
+        case int:      return "int";
+        else:          return "other";
+    }
+    "unreached"
+}
+
+by_type :: (t: Type) -> string {
+    match t {
+        case unsigned: return "unsigned";
+        case int:      return "int";
+        else:          return "other";
+    }
+    "unreached"
+}
+
+main :: () {
+    u : u32 = 7;
+    i : i32 = -7;
+    f : f64 = 1.5;
+    print("tag:  {} {} {}\n", by_tag(u), by_tag(i), by_tag(f));
+    print("type: {} {} {}\n", by_type(u32), by_type(i32), by_type(f64));
+}

@@ -20,8 +20,8 @@ const Lowering = lower.Lowering;
 const ProtocolImplMethod = lower.ProtocolImplMethod;
 const ProtocolDefaultDispatchDomain = lower.ProtocolDefaultDispatchDomain;
 
-/// Shared implementation for the `has_impl(P, T)` builtin and its
-/// `tryConstBoolCondition` arm. The protocol expression is either:
+/// Shared implementation for the conformance `T is P` question and its
+/// `tryConstBoolCondition` arm. The contract expression is either:
 /// - Plain `Hash` (identifier / type_expr) → `protocol_thunk_map["Hash\x00<T>"]`.
 /// - Parameterised `Into(Block)` (call) → `param_impl_map` keyed by
 ///   `"<P>\x00<arg_mangled>\x00<T_mangled>"`.
@@ -242,7 +242,7 @@ fn erasedKind(self: *Lowering, proto_ty: ?TypeId) bool {
     return kind == .erased;
 }
 
-/// The protocol a `has_impl`-shaped spelling names, whatever its kind.
+/// The contract a conformance right operand names, whatever its kind.
 fn protocolTypeOf(self: *Lowering, proto_node: *const Node) ?TypeId {
     const name = spelledProtocolName(proto_node) orelse return null;
     const p = self.protocolResolver().resolveProtocol(name, self.current_source_file) orelse return null;
@@ -824,7 +824,7 @@ pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Nod
     if (operand.data == .field_access) {
         if (self.diagnostics) |d| {
             const pname = self.formatTypeName(proto_ty);
-            d.addFmt(.err, v.span, "'{s}' is a '{s}' value, which borrows its receiver — its initializer must NAME a global instance to borrow ('{s} : {s} = the_instance;'), and this expression has no address to point at", .{ vd.name, pname, vd.name, pname });
+            d.addFmt(.err, v.span, "'{s}' is a '{s}' value, which borrows a global's own symbol — this path is rooted at a global VALUE ('g.field'), which has no symbol of its own", .{ vd.name, pname });
         }
         return .refused;
     }
@@ -1487,9 +1487,8 @@ pub fn refuseProtocolAssertTargetOnAny(self: *Lowering, type_node: *const Node, 
     return true;
 }
 
-/// Allocate `size_ref` bytes through an ALLOCATOR VALUE — the `.(P, alloc)`
-/// owning erasure's allocation. Goes through the ordinary method dispatch,
-/// so the allocator protocol's kind stays a property of its declaration.
+/// Allocate `size_ref` bytes through an ALLOCATOR VALUE. Goes through the
+/// ordinary method dispatch, so `Allocator`'s declaration stays the stdlib's.
 pub fn allocViaAllocatorValue(self: *Lowering, allocator: Ref, size_ref: Ref) Ref {
     const alloc_ty = self.builder.getRefType(allocator);
     const pd = self.getProtocolInfo(alloc_ty) orelse return self.emitError("allocator", null);

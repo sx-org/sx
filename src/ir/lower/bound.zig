@@ -246,7 +246,7 @@ fn checkOne(
         return;
     }
     // A parameterized head names an instantiation, whose conformance is the
-    // keyed impl question `has_impl` already answers.
+    // keyed impl question.
     if (p.params > 0) {
         if (self.computeHasImpl(bound, bound_ty)) return;
         reportViolation(self, bound, spelledHead(self, bound, p.name), param, bound_ty,

@@ -1208,8 +1208,8 @@ fn lowerComptimeRuntimeArg(
         }
     }
 
-    // Concrete -> protocol value keeps the argument AST so @identity
-    // parameters borrow lvalues and value/own parameters retain ownership.
+    // Concrete -> handle keeps the argument AST so the parameter borrows
+    // the lvalue it is given.
     if (self.getProtocolInfo(param_ty) != null) {
         const concrete_ty = self.inferExprType(arg);
         if (concrete_ty != .unresolved and concrete_ty != param_ty and concrete_ty != .any and

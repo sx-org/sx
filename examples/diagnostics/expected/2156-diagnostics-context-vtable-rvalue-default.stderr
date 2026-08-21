@@ -1,11 +1,11 @@
 error: 'note' is a 'Chirp' value, which borrows its receiver — its initializer must NAME a global instance to borrow ('note : Chirp = the_instance;'), and this expression has no address to point at
-  --> examples/diagnostics/2156-diagnostics-context-vtable-rvalue-default.sx:17:31
+  --> examples/diagnostics/2156-diagnostics-context-vtable-rvalue-default.sx:16:31
    |
-17 | @context_extend note: Chirp = made();
+16 | @context_extend note: Chirp = made();
    |                               ^^^^^^
 
 error: 'sink' is a 'Sink' value, which borrows its receiver — its initializer must NAME a global instance to borrow ('sink : Sink = the_instance;'), and this expression has no address to point at
-  --> examples/diagnostics/2156-diagnostics-context-vtable-rvalue-default.sx:16:30
+  --> examples/diagnostics/2156-diagnostics-context-vtable-rvalue-default.sx:15:30
    |
-16 | @context_extend sink: Sink = Doubler{ k = 3 };
+15 | @context_extend sink: Sink = Doubler{ k = 3 };
    |                              ^^^^^^^^^^^^^^^^

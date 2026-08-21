@@ -1,0 +1,7 @@
+umbrella:   true true
+refinement: true false
+float:      false false
+value:      false true false
+param head: false true
+any tag:    true false
+unboxed:    false true

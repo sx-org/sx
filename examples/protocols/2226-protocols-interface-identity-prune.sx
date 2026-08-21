@@ -1,0 +1,21 @@
+// `inline if V == T` is an identity question, not a classification: it prunes
+// at BOTH instantiations, so each monomorph carries only its own arm. The
+// interface instantiation reaches the handle's dispatch; the concrete one
+// reaches a body that would not even type-check against a handle.
+@import "modules/std.sx";
+
+Sink :: interface { emit :: (self: *Self, n: i64) -> i64; }
+
+W :: struct { k: i64; }
+impl Sink for W { emit :: (self: *W, n: i64) -> i64 { n * self.k } }
+
+feed :: ($T: Type, v: T, n: i64) -> i64 {
+    inline if T == Sink { return v.emit(n); }
+    return v + n;
+}
+
+main :: () {
+    w := W{ k = 3 };
+    h : Sink = w;
+    print("{} {}\n", feed(Sink, h, 5), feed(i64, 100, 5));
+}

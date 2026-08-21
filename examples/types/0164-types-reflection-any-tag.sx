@@ -8,7 +8,7 @@
 // - holds a value   → report the type OF that value (the tag).
 // - holds a Type     → name the held type (the payload).
 //
-// `type_name` / `is_unsigned` read the runtime tag, not the any's payload as a
+// `type_name` and `is` read the runtime tag, not the any's payload as a
 // TypeId index.
 
 @import "modules/std.sx";

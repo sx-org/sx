@@ -1227,10 +1227,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 }
             }
         }
-        // Concrete lvalue → `@identity` protocol param: erase NODE-AWARE so
-        // the lvalue BORROWS (`free(t, gpa)` aliases gpa) — the node-less
-        // coerceCallArgs layer would misread the lvalue as an rvalue and
-        // refuse. value/own params keep the node-less owning copy.
+        // Concrete lvalue → interface param: erase NODE-AWARE so the lvalue
+        // BORROWS (`free(t, gpa)` aliases gpa) — the node-less coerceCallArgs
+        // layer would misread the lvalue as an rvalue and refuse.
         if (ai < param_types.len) {
             if (protocolArgErasure(self, arg, param_types[ai])) |r| {
                 args.append(self.alloc, r) catch unreachable;
@@ -2698,14 +2697,12 @@ pub fn prependCtxIfNeeded(self: *Lowering, callee: *const Function, args: []Ref)
     return new_args;
 }
 
-/// Concrete arg at a PROTOCOL param target: erase NODE-AWARE so
-/// `buildProtocolErasure` classifies from the AST — an @identity target
-/// BORROWS lvalues (`free(t, gpa)` aliases `gpa`), a value/own target
-/// DEMANDS the owning spelling for every shape (a literal-with-init-block
-/// materializes through a temp slot, which the node-LESS
-/// refStorageAddress heuristic would misread as an lvalue). Returns null
-/// when the shape doesn't apply (caller falls through to its normal
-/// path).
+/// Concrete arg at an INTERFACE param target: erase NODE-AWARE so
+/// `buildProtocolErasure` classifies from the AST and BORROWS lvalues
+/// (`free(t, gpa)` aliases `gpa`). A literal-with-init-block materializes
+/// through a temp slot, which the node-LESS refStorageAddress heuristic
+/// would misread as an lvalue. Returns null when the shape doesn't apply
+/// (caller falls through to its normal path).
 fn protocolArgErasure(self: *Lowering, arg: *const Node, pt: TypeId) ?Ref {
     if (self.getProtocolInfo(pt) == null) return null;
     const cty = self.inferExprType(arg);
@@ -3620,7 +3617,7 @@ fn rmwKindFromName(name: []const u8) ?inst_mod.RmwKind {
 
 /// Is `name` dispatched by `tryLowerReflectionCall`? Either a registered
 /// reflection intrinsic, or one of the bare KEYWORDS the compiler recognizes with
-/// no declaration at all (`type_eq`, `has_impl`, …). The two are listed apart
+/// no declaration at all (`type_eq`, …). The two are listed apart
 /// because only the first group answers to the registry; conflating them makes a
 /// name with no declaration look like an intrinsic.
 fn isReflectionCall(name: []const u8) bool {

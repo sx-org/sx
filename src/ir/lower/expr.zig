@@ -4097,13 +4097,11 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     d.addFmt(.err, pc.type_expr.span, "unknown type in postfix cast '.(T)'", .{});
                 break :blk self.builder.constUndef(.unresolved);
             }
-            // Owning erasure `expr.(P)` / `expr.(P, alloc)`: a PROTOCOL
-            // target with a CONCRETE (or pointer) receiver OWNS — copy /
-            // snapshot / promotion per receiver shape, funded by
-            // context.allocator or the named allocator; @identity targets
-            // keep the borrow. Erased receivers (any / protocol) were
-            // handled above; a protocol receiver reaching here is the
-            // recovery/re-erasure family and stays on lowerXX.
+            // `expr.(I)`: an INTERFACE target over a CONCRETE (or pointer)
+            // receiver builds the handle that borrows that receiver's
+            // storage. Erased receivers (any / handle) were handled above; a
+            // handle reaching here is the recovery/re-erasure family and
+            // stays on lowerXX.
             {
                 const recv_t = self.inferExprType(pc.operand);
                 const recv_erased = recv_t == .any or self.getProtocolInfo(recv_t) != null;
@@ -4129,8 +4127,8 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     break :blk self.builder.constUndef(dst);
             }
             if (pc.alloc_arg != null) {
-                // Same-protocol CLONE `p.(P, alloc)`: an erased value/own
-                // receiver duplicated through the named allocator.
+                // Same-interface `p.(I, alloc)`: routed through the erasure
+                // so one place refuses the allocating spelling.
                 if (self.getProtocolInfo(dst) != null and self.inferExprType(pc.operand) == dst) {
                     break :blk self.lowerOwningErasure(&pc, dst, node.span);
                 }
@@ -4649,6 +4647,7 @@ pub fn lowerBoolCondition(self: *Lowering, node: *const Node) Ref {
 /// a static type reference (folded), an interface handle (a handle's referent
 /// is behind `type_of`, so the handle itself answers about the interface it
 /// carries), an `any` box (its tag, unpeeled), and a runtime `Type` value.
+/// Anything else is a statically-typed value and folds through its own type.
 pub fn lowerIs(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     if (self.staticIsCondition(bop.lhs, bop.rhs)) |answer| return self.builder.constBool(answer);
 
@@ -4657,26 +4656,24 @@ pub fn lowerIs(self: *Lowering, bop: *const ast.BinaryOp) Ref {
 
     // An interface HANDLE classifies as the interface it carries: the referent
     // is reached through `type_of(h)`, not through the handle.
-    if (self.getProtocolInfo(subject_ty)) |_| return self.builder.constBool(handleIsAnswer(self, subject_ty, bop.rhs));
+    if (self.getProtocolInfo(subject_ty)) |_| return self.builder.constBool(staticAnswerOrFalse(self, subject_ty, bop.rhs));
 
     const tag: Ref = if (subject_ty == .type_value)
         subject
     else if (subject_ty == .any)
         self.builder.emit(.{ .struct_get = .{ .base = subject, .field_index = 1 } }, .type_value)
-    else {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, bop.lhs.span, "'is' classifies a TYPE — '{s}' is a value; write 'type_of(…) is …' to ask about its type", .{self.formatTypeName(subject_ty)});
-        return self.builder.constBool(false);
-    };
+    else
+        return self.builder.constBool(staticAnswerOrFalse(self, subject_ty, bop.rhs));
 
     return runtimeIsAnswer(self, tag, bop.rhs, bop.lhs.span);
 }
 
-/// The static answer for an interface HANDLE subject: the handle IS its own
-/// interface, is no other interface and no concrete type, and satisfies a
-/// constraint exactly when a bridge `impl C for I` is visible.
-fn handleIsAnswer(self: *Lowering, handle_ty: TypeId, rhs: *const Node) bool {
-    return self.staticIsAnswer(handle_ty, rhs) orelse false;
+/// The static answer for a subject whose TYPE is the classified thing: an
+/// interface handle (it is its own interface, no other interface and no
+/// concrete type, and satisfies a constraint exactly when a bridge
+/// `impl C for I` is visible) or an ordinary value (its static type).
+fn staticAnswerOrFalse(self: *Lowering, subject_ty: TypeId, rhs: *const Node) bool {
+    return self.staticIsAnswer(subject_ty, rhs) orelse false;
 }
 
 /// The runtime answer over a `Type`-valued tag: an OR-reduction over the tag

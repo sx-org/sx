@@ -1,13 +1,13 @@
 // The simplest expansion deadlock: a driver that depends on impls it feeds.
 //
-// An erased protocol reads impl multiplicity, which a later impl can move in
-// either direction, so `has_impl` is utterable only once nothing can still write
-// one — and here the very branch the answer would select declares an impl of
-// the queried protocol. The driver therefore parks against `Serialize`'s impls
-// being final — and it is the only thing that could ever publish that. Runnable
-// work is exhausted with the bookmark still down, and a state admitting more
-// than one consistent outcome is genuinely ambiguous, so sx refuses rather than
-// electing a fixpoint (specs.md §6.9).
+// An erased contract reads impl multiplicity, which a later impl can move in
+// either direction, so a conformance `is` is utterable only once nothing can
+// still write one — and here the very branch the answer would select declares
+// an impl of the queried contract. The driver therefore parks against
+// `Serialize`'s impls being final — and it is the only thing that could ever
+// publish that. Runnable work is exhausted with the bookmark still down, and a
+// state admitting more than one consistent outcome is genuinely ambiguous, so
+// sx refuses rather than electing a fixpoint (specs.md §6.9).
 @import "modules/std.sx";
 
 Serialize :: interface { write :: (self: *Self) -> i64; }

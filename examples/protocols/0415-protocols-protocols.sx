@@ -425,7 +425,7 @@ main :: () {
         print("P3.1: {}\n", c.get());
     }
 
-    // vtable protocol passed to function
+    // interface handle passed to function
     {
         use_counter :: (c: Counter) -> i32 {
             c.inc();
@@ -562,14 +562,14 @@ main :: () {
         print("P2.6: {} {}\n", adders[0].value(), adders[1].value());
     }
 
-    // postfix owning copy of an inline struct literal (no intermediate variable)
+    // postfix erasure of an inline struct literal (no intermediate variable)
     {
         use_adder :: (a: Adder) -> i32 { a.add(10); a.value() }
         result := use_adder(Accumulator{ total = 5 }.(Adder));
         print("P2.7: {}\n", result);
     }
 
-    // postfix owning copy of a struct literal at a vtable protocol
+    // postfix erasure of a struct literal at an interface target
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
         result := use_counter(SimpleCounter{ val = 100 }.(Counter));

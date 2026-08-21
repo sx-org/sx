@@ -1,0 +1,45 @@
+// A directly reified `Type` may name an interface or a constraint, and the two
+// classify apart: `interface` and `struct` are disjoint categories, and a
+// constraint matches neither. A `match` over the same `Type` answers the same
+// way at either arm order — a category names a tag set, and the sets are
+// disjoint, so first-wins never splits them.
+@import "modules/std.sx";
+
+P :: interface { a :: (self: *Self) -> i64; }
+Ord :: constraint { less :: (self: *Self, other: Self) -> bool; }
+S :: struct { v: i64; }
+impl P for S { a :: (self: *S) -> i64 { self.v } }
+
+interface_first :: (t: Type) -> string {
+    match t {
+        case interface: return "interface";
+        case struct:    return "struct";
+        else:           return "neither";
+    }
+    "unreached"
+}
+
+struct_first :: (t: Type) -> string {
+    match t {
+        case struct:    return "struct";
+        case interface: return "interface";
+        else:           return "neither";
+    }
+    "unreached"
+}
+
+main :: () {
+    tv : Type = P;
+    cv : Type = Ord;
+    sv : Type = S;
+
+    print("P:   interface={} struct={}\n", tv is interface, tv is struct);
+    print("Ord: interface={} struct={}\n", cv is interface, cv is struct);
+    print("S:   interface={} struct={}\n", sv is interface, sv is struct);
+
+    print("iface-first:  {} {} {}\n", interface_first(tv), interface_first(cv), interface_first(sv));
+    print("struct-first: {} {} {}\n", struct_first(tv), struct_first(cv), struct_first(sv));
+
+    // The static spellings agree with the reified ones.
+    print("static: {} {} {}\n", P is interface, Ord is interface, S is struct);
+}

@@ -1,7 +1,6 @@
-// A protocol-typed Context default is a BORROW (specs.md §6.6) at every borrow
-// kind, `vtable @identity` included: it must name a global instance to borrow.
-// An rvalue — a struct literal, a call — has no address, so the declaration
-// refuses it.
+// An interface-typed Context default is a BORROW (specs.md §6.6): it must name
+// a global instance to borrow. An rvalue — a struct literal, a call — has no
+// address, so the declaration refuses it.
 @import "modules/std.sx";
 
 Sink :: interface { emit :: (self: *Self, n: i64) -> i64; }

@@ -495,7 +495,7 @@ fn intoConvertArgs(self: *Lowering, operand: Ref, operand_node: *const Node, fun
 /// True for expression shapes that name an addressable storage location
 /// (variables, fields, array elements, dereferenced pointers). Used by
 /// `xx <struct-typed expr>` to decide between the borrow arms (lvalue →
-/// take the address) and the rvalue arms (value/own → the demand error).
+/// take the address) and the rvalue arms (a frame temporary to borrow).
 pub fn isLvalueExpr(self: *Lowering, node: *const Node) bool {
     return switch (node.data) {
         .identifier, .deref_expr => true,
