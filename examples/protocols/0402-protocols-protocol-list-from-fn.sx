@@ -14,8 +14,8 @@ impl Sizable for Leaf {
 }
 
 add :: (items: *List(Sizable), w: Leaf) {
-    p := w;
-    items.append(p.(Sizable));  // explicit owning copy — survives this frame
+    // The handle borrows, so the referent is funded here to outlive the frame.
+    items.append(context.allocator.make(w));
 }
 
 main :: () -> void {

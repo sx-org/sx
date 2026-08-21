@@ -24,8 +24,8 @@ Container :: struct {
     items: List(Item);
 
     add :: (self: *Container, w: Widget) {
-        p := w;  // local copy
-        self.items.append(Item{ view = p.(Sizable) });  // explicit owning copy
+        // The handle borrows, so the referent is funded here to outlive the frame.
+        self.items.append(Item{ view = context.allocator.make(w) });
 
         // Works here: stack local `p` is still alive
         out("inside add: ");

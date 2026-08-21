@@ -1,0 +1,22 @@
+error: cannot return a 'P' handle over a temporary — the handle borrows a frame slot the caller outlives; bind the value where it lives, or write it through 'Allocator.make' and return the handle over that
+  --> examples/diagnostics/2210-diagnostics-interface-return-spine-refusals.sx:12:28
+   |
+12 | rvalue_direct :: () -> P { return W{ v = 1 }; }
+   |                            ^^^^^^^^^^^^^^^^^^
+
+error: cannot return a 'P' handle over a temporary — the handle borrows a frame slot the caller outlives; bind the value where it lives, or write it through 'Allocator.make' and return the handle over that
+  --> examples/diagnostics/2210-diagnostics-interface-return-spine-refusals.sx:13:50
+   |
+13 | rvalue_in_literal :: () -> S { return S{ inner = W{ v = 2 } }; }
+   |                                                  ^^^^^^^^^^
+
+error: '.{ }' is the zero handle, and a 'P' return has no absence to carry it
+  --> examples/diagnostics/2210-diagnostics-interface-return-spine-refusals.sx:14:33
+   |
+14 | zero_handle :: () -> P { return .{}; }
+   |                                 ^^^
+
+help: return '?P', where '.{ }' is the absent sentinel
+   |
+14 | zero_handle :: () -> P { return .{}; }
+   |                                 ^^^

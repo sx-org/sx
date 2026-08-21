@@ -406,7 +406,26 @@ pub const IsTarget = union(enum) {
     interface: TypeId,
     /// An ordinary type — the question is tag identity.
     concrete: TypeId,
+    /// A parameterized constraint (`Wrap(i64)`), which mints no type: the
+    /// question is whether an impl of that instantiation covers the subject.
+    param_constraint: *const Node,
 };
+
+/// The written node when it heads a PARAMETERIZED contract whose family is
+/// declared, else null.
+fn paramContractHead(self: *Lowering, node: *const Node) ?*const Node {
+    const head: []const u8 = switch (node.data) {
+        .parameterized_type_expr => |pte| pte.name,
+        .call => |c| switch (c.callee.data) {
+            .identifier => |id| id.name,
+            .type_expr => |te| te.name,
+            else => return null,
+        },
+        else => return null,
+    };
+    if (self.protocolResolver().resolveParamProtocolHead(head, null) == null) return null;
+    return node;
+}
 
 /// Classify the target a written `is` RHS names. A category word WINS over a
 /// same-spelled type name, so a program that declares `Struct` cannot capture
@@ -425,6 +444,9 @@ pub fn classifyIsTarget(self: *Lowering, node: *const Node) ?IsTarget {
             return if (decl_kind == .erased) .{ .interface = ty } else .{ .constraint = ty };
         }
     }
+    // A parameterized CONSTRAINT head mints no type, so it is named by its
+    // written head and arguments rather than by a TypeId.
+    if (paramContractHead(self, node)) |head| return .{ .param_constraint = head };
     const ty = self.resolveTypeArg(node);
     if (ty == .unresolved) return null;
     if (self.getProtocolInfo(ty)) |pi|
@@ -462,6 +484,11 @@ pub fn staticIsAnswer(self: *Lowering, subject: TypeId, node: *const Node) ?bool
         .constraint => |ty| {
             if (ty == .unresolved) return null;
             return conformanceAnswer(self, ty, subject);
+        },
+        .param_constraint => |head| {
+            const answer = plainHasImpl(self, head, subject);
+            if (implFactWaits(self, null, spelledProtocolName(head) orelse "", subject, answer)) return null;
+            return answer;
         },
     }
 }

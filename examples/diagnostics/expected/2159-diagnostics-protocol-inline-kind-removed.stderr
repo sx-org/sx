@@ -1,5 +1,0 @@
-error: expected '{'
-  --> examples/diagnostics/2159-diagnostics-protocol-inline-kind-removed.sx:5:20
-   |
- 5 | Hasher :: protocol inline {
-   |                    ^^^^^^

@@ -964,7 +964,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
 pub fn refuseReturnedRvalueErasure(self: *Lowering, dst_ty: TypeId, proto_name: []const u8, span: ast.Span) bool {
     if (!self.return_component) return false;
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "cannot return an '{s}' handle over a temporary — the handle borrows a frame slot the caller outlives; bind the value where it lives, or write it through 'Allocator.make' and return the handle over that", .{proto_name});
+        d.addFmt(.err, span, "cannot return a '{s}' handle over a temporary — the handle borrows a frame slot the caller outlives; bind the value where it lives, or write it through 'Allocator.make' and return the handle over that", .{proto_name});
     }
     _ = dst_ty;
     return true;

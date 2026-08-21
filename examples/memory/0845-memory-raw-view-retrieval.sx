@@ -32,14 +32,13 @@ main :: () {
     t := "hey";
     print("string: {}\n", t.(@Slice).len);
 
-    // protocol (default layout) -> @Protocol, both spellings. The value
-    // OWNS its ctx: the recovered pointer is the heap copy — a
-    // faithful Widget that is NOT w's address.
+    // interface handle -> @Protocol, both spellings. The handle BORROWS, so
+    // the recovered pointer IS w's address.
     w := Widget{ value = 7 };
     sz := w.(Sizable);
     pr : @Protocol = xx sz;
     wc : *Widget = xx sz.(@Protocol).ctx;
-    print("default: {} {}\n", wc.value == 7 and sz.(@Protocol).ctx != *w, pr.ctx == sz.(@Protocol).ctx);
+    print("default: {} {}\n", wc.value == 7 and sz.(@Protocol).ctx == *w, pr.ctx == sz.(@Protocol).ctx);
     print("default type_id: {}\n", sz.(@Protocol).type_id == type_of(sz));
 
     // protocol (`inline` layout, Allocator) — correct ctx, no layout lie

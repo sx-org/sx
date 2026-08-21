@@ -14,7 +14,7 @@ Serialize :: interface { write :: (self: *Self) -> i64; }
 
 GPA :: struct { n: i64; }
 
-inline if !GPA is Serialize {
+inline if !(GPA is Serialize) {
     impl Serialize for GPA { write :: (self: *GPA) -> i64 { self.n } }
 }
 

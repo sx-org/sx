@@ -1,11 +1,11 @@
 // `inline match T { case <category|Type>: … }` over a BOUND generic type
 // param selects its arm at LOWER time and drops the siblings whole — each
 // kind arm only type-checks for its own kind (`x.len` on slices,
-// `x.(@Protocol)` on protocol values), so pruning is the only way a
+// `x.(@Protocol)` on handles), so pruning is the only way a
 // mixed-kind generic body can compile for every instantiation. Categories
 // mirror the runtime tag switch arm for arm (int incl. arb-width, float,
 // bool, string, struct, enum, slice, array, pointer, vector, optional) —
-// plus `protocol`, which exists ONLY in this static form (a protocol value
+// plus `interface`, which exists ONLY in this static form (a handle
 // carries no runtime tag; the runtime spelling is a pointed error, and the
 // dedicated diagnostics pin covers it). Specific type names and `else:`
 // select as in any match; a `@error(…)` arm fires only when
@@ -21,7 +21,7 @@ impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
 
 describe :: (x: $T) -> string {
     inline match T {
-        case protocol: { p := x.(@Protocol); if p.ctx != null { return "protocol"; } return "null-proto"; }
+        case interface: { p := x.(@Protocol); if p.ctx != null { return "interface"; } return "null-handle"; }
         case slice:    { if x.len >= 0 { return "slice"; } return "?"; }
         case int:      return "int";
         case Widget:   return "widget";      // specific type beats the struct category below
@@ -40,7 +40,7 @@ main :: () {
     xs : []i64 = .[1, 2, 3];
     o : ?i64 = 5;
     ga := GPA.init();
-    a : Allocator = ga;    // `inline`-kind protocol — classifies as protocol too
+    a : Allocator = ga;    // an interface handle classifies as `interface`
     print("{} {} {} {}\n", describe(s), describe(xs), describe(5), describe(w));
     print("{} {} {} {}\n", describe(Pt{ x = 1 }), describe(o), describe(a), describe(1.5));
 }

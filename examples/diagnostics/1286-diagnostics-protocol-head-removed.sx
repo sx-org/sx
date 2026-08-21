@@ -1,0 +1,10 @@
+// `protocol` is an ordinary identifier, so the removed declaration head has no
+// recognizer of its own: it fails through the ordinary parse path, exactly as
+// any other identifier standing where a declaration's value belongs.
+@import "modules/std.sx";
+
+Ord :: protocol erased {
+    less :: (self: *Self, other: Self) -> bool;
+}
+
+main :: () { print("unreachable\n"); }

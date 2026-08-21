@@ -595,6 +595,12 @@ fn lowerComptimePlainStructMethod(
 }
 
 pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
+    // An argument list CLEARS the return spine (§5.2): the callee decides what
+    // its result borrows, so `return f(Widget{})` is legal where
+    // `return S{ inner = Widget{} }` is not.
+    const saved_spine = self.return_component;
+    self.return_component = false;
+    defer self.return_component = saved_spine;
     var c = c_in;
     // A bare reserved-type-name spelling in call position parses as a
     // `.type_expr` (e.g. `i2(4)`), but if a function of that name is in

@@ -1,11 +1,11 @@
 type_name(av)=i64
-is_unsigned(av)=false
+av is unsigned=false
 print(av)=6
 type_name(au)=u32
-is_unsigned(au)=true
+au is unsigned=true
 print(au)=7
 type_name(sv)=string
 type_name(at)=u64
-is_unsigned(at)=true
+at is unsigned=false
 print(at)=u64
-is_unsigned(type_of(x))=true
+type_of(x) is unsigned=true

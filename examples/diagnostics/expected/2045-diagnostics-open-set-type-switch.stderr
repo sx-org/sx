@@ -81,14 +81,14 @@ help: name the members this code handles and let 'else:' answer for the rest —
 51 |     match v {
    |           ^
 
-error: free expects a protocol value, a closure, or a slice
+error: free expects a closure or a slice
   --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:91:5
    |
 91 |     free(v);
    |     ^^^^
 
 note: raised by '@error' here
-  --> library/modules/std/mem.sx:70:24
+  --> library/modules/std/mem.sx:73:24
    |
-70 |         else:          @error("free expects a protocol value, a closure, or a slice");
-   |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+73 |         else:          @error("free expects a closure or a slice");
+   |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

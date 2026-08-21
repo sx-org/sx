@@ -29,6 +29,28 @@ const headNameOfCallee = Lowering.headNameOfCallee;
 const StructConstInfo = Lowering.StructConstInfo;
 
 pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: ast.Span) Ref {
+    // `.{ }` at an interface target is the ZERO handle, whose null ctx is the
+    // `?I` absent sentinel. On the return spine of a non-optional `-> I` there
+    // is no absence to express, so the spelling is refused there.
+    if (sl.type_expr == null and sl.field_inits.len == 0 and self.return_component) {
+        // An optional exit carries the absence, so the sentinel is what it
+        // wants; the target may already have been narrowed to the child here,
+        // which is why the EXIT type is what decides.
+        const optional_exit = if (self.effectiveReturnType()) |r|
+            !r.isBuiltin() and self.module.types.get(r) == .optional
+        else
+            false;
+        if (self.target_type) |t| {
+            if (!optional_exit and self.isErasedProtocolType(t)) {
+                if (self.diagnostics) |d| {
+                    const shown = self.formatTypeName(t);
+                    const id = d.addFmtId(.err, span, "'.{{ }}' is the zero handle, and a '{s}' return has no absence to carry it", .{shown});
+                    d.addHelpFmt(id, span, null, "return '?{s}', where '.{{ }}' is the absent sentinel", .{shown});
+                }
+                return self.builder.constUndef(t);
+            }
+        }
+    }
     // Check for tagged enum construction: .Variant{ payload_fields }
     // This happens when type_expr is an enum_literal and target_type is a union
     if (sl.type_expr) |te| {
@@ -4647,7 +4669,7 @@ pub fn lowerIs(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         return self.builder.constBool(false);
     };
 
-    return runtimeIsAnswer(self, tag, bop.rhs);
+    return runtimeIsAnswer(self, tag, bop.rhs, bop.lhs.span);
 }
 
 /// The static answer for an interface HANDLE subject: the handle IS its own
@@ -4659,7 +4681,7 @@ fn handleIsAnswer(self: *Lowering, handle_ty: TypeId, rhs: *const Node) bool {
 
 /// The runtime answer over a `Type`-valued tag: an OR-reduction over the tag
 /// set the target denotes.
-fn runtimeIsAnswer(self: *Lowering, tag: Ref, rhs: *const Node) Ref {
+fn runtimeIsAnswer(self: *Lowering, tag: Ref, rhs: *const Node, span: ast.Span) Ref {
     const target = self.classifyIsTarget(rhs) orelse return self.builder.constBool(false);
     // Signedness reads the tag-indexed table rather than an OR over the tag
     // set: the set is only complete once every type is registered, and the
@@ -4676,6 +4698,13 @@ fn runtimeIsAnswer(self: *Lowering, tag: Ref, rhs: *const Node) Ref {
             break :blk one;
         },
         .interface, .constraint => |contract| return conformanceAsk(self, tag, contract),
+        // A parameterized constraint instantiation mints no type, so it keys no
+        // conformance table; only the static fold answers for one.
+        .param_constraint => {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, span, "a parameterized constraint has no runtime conformer set — ask it of a type expression, where it folds", .{});
+            return self.builder.constBool(false);
+        },
     };
     if (tags.len == 0) return self.builder.constBool(false);
     var acc: ?Ref = null;

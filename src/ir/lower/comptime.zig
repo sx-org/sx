@@ -53,6 +53,11 @@ pub fn constArrayLiteral(self: *Lowering, elements: []const *const Node, array_t
 pub fn constExprValue(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?inst_mod.ConstantValue {
     const author = Lowering.AuthorScope.enter(self, expr);
     defer author.leave();
+    // An interface-typed leaf is a STATIC position (§6.6): the one operand that
+    // coerces names a module-scope global, because a relocatable symbol is what
+    // the image can hold. Serializing anything else here would lay the operand's
+    // own bytes into the handle's three words.
+    if (self.isErasedProtocolType(expected_ty)) return staticInterfaceLeaf(self, expr, expected_ty);
     return switch (expr.data) {
         // An int element in a FLOAT destination converts exactly (the
         // int+float promotion rule, element-wise — `[2]f64 : .[1, 2.5]`).
@@ -194,6 +199,25 @@ pub fn constStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Typ
         }
     }
     return .{ .aggregate = vals };
+}
+
+/// The handle a static interface-typed position folds to. Null after a
+/// located refusal: the position is judged on the written shape, so an operand
+/// that is not a module-scope global's path never reaches the image.
+fn staticInterfaceLeaf(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?inst_mod.ConstantValue {
+    var operand = expr;
+    while (operand.data == .unary_op and operand.data.unary_op.op == .xx) operand = operand.data.unary_op.operand;
+    if (self.protocolErasureConst(operand, expected_ty)) |folded| return folded;
+    const d = self.diagnostics orelse return null;
+    const shown = self.formatTypeName(expected_ty);
+    if (operand.data == .struct_literal and operand.data.struct_literal.field_inits.len == 0) {
+        const id = d.addFmtId(.err, expr.span, "'.{{ }}' is refused at a static '{s}' position — a null ctx is the '?{s}' absent sentinel, and this position must hold a live handle", .{ shown, shown });
+        d.addHelpFmt(id, expr.span, null, "name a module-scope global of a conforming type", .{});
+        return null;
+    }
+    const id = d.addFmtId(.err, expr.span, "a static '{s}' position takes a module-scope global, and this operand is not one", .{shown});
+    d.addHelpFmt(id, expr.span, null, "the handle borrows the global's own symbol, which is what the image can hold; a path rooted at a global VALUE ('g.field') is refused for the same reason", .{});
+    return null;
 }
 
 /// Evaluate a compile-time condition for `inline if`.
