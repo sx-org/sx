@@ -1,7 +1,7 @@
 # sx
 
 A programming language with compile-time execution, generics, closures,
-protocols, and an LLVM backend — compiled to native code.
+interfaces, and an LLVM backend — compiled to native code.
 
 ## At a Glance
 
@@ -21,7 +21,7 @@ main :: () {
 
 - `name :: value` constants, `name := value` variables
 - LLVM native code; `@run` / `@insert` / `@error` at compile time
-- Monomorphized generics, first-class closures, protocol polymorphism
+- Monomorphized generics, first-class closures, interface polymorphism
 - Pattern matching, C interop (`extern` / `export` / `@import c`), inline `asm`
 - Colorblind async (cooperative fibers, no function coloring)
 - Targets: macOS (ARM64, x86_64), Linux (x86_64, ARM64), Windows (x86_64), WebAssembly
@@ -69,7 +69,7 @@ sx lsp                   # start language server
 
 `[N]T` coerces to `[]T`. A `[*]T` has no length — slice it with `ptr[0..len]`.
 
-A typed store needs a coercion. Different width with no coercion (`x : i32 = "hi"`) is an error. Same-width reinterpret (`*T → [*]T`) is allowed. `xx` / `x.(T)` is the explicit ladder: `1000.(i8)` truncates; `dog.(Speaker, alloc)` is the owning protocol erasure (plain `dog.(Speaker)` refuses). On `any`: `try av.(i64)` / `av.(i64)` / `av.(?i64)`. `o?.(T)` maps over an optional.
+A typed store needs a coercion. Different width with no coercion (`x : i32 = "hi"`) is an error. Same-width reinterpret (`*T → [*]T`) is allowed. `xx` / `x.(T)` is the explicit ladder: `1000.(i8)` truncates; `dog.(Speaker)` builds an interface handle over `dog`. On `any`: `try av.(i64)` / `av.(i64)` / `av.(?i64)`. `o?.(T)` maps over an optional.
 
 Limits fold: `i64.max`, `u8.min`, `f64.inf`. See specs → Numeric Limits.
 
@@ -175,24 +175,24 @@ add5 := make_adder(5);
 
 Closures capture by value. Bare fns promote. A capturing literal allocates through `context.allocator`; `free(cl)` / `free(cl, alloc)` releases it.
 
-### Protocols
+### Constraints and interfaces
 
 ```sx
-Drawable :: protocol vtable {
+Drawable :: interface {
     draw :: (self: *Self, x: i32, y: i32);
 }
 impl Drawable for Circle {
     draw :: (self: *Circle, x: i32, y: i32) { … }
 }
-shape := my_circle.(Drawable, context.allocator);
+shape : Drawable = my_circle;
 shape.draw(10, 20);
 ```
 
-- `constraint` (default): bounds only, no runtime value.
-- `vtable`: erased handle, dynamic dispatch. `type_of(shape)` is the concrete type.
-- `@identity` (e.g. `Allocator`): borrow a named object; rvalue erase and `free` refuse.
-- Owning erase is `.(P, alloc)` only. `*P` is a view. `free(shape)` / `free(shape, alloc)`.
-- `Self` past the receiver is not callable on an erased value — use `$T/Eq`.
+- `constraint`: bounds only, no runtime value.
+- `interface`: an erased `{ctx, type_id, vtable}` handle, dynamic dispatch. `type_of(shape)` is the concrete type.
+- A handle borrows its referent: copies alias it, nothing owns it, and `free` refuses one.
+- An interface-typed target coerces an lvalue in place, a `*T` to its pointee, and an rvalue to a frame temporary; `a.make(v)` gives a value a longer life.
+- `Self` past the receiver belongs to a `constraint` — bind through `$T/Eq`.
 
 ### Open Sets
 
@@ -332,7 +332,7 @@ main :: () {
 
 ## Runtime Reflection
 
-`Type` is a runtime tag (`type_of(x)`). `size_of` / `type_info` / field tables are emitted only if used. `any` is `{tag, pointer}` — a borrow of the referent.
+`Type` is a runtime tag (`type_of(x)`). `size_of` / `type_info` / field tables are emitted only if used. `any` is `{tag, pointer}` — a borrow of the referent. `is` classifies a type or a value's type — `x is int`, `t is unsigned`, `t is struct`, `h is Drawable` — while `==` / `type_eq` ask identity.
 
 ```sx
 describe :: (tp: Type) {
@@ -350,7 +350,7 @@ print_any(pkt);   // walk with struct_field_value / any_element — no copies
 
 ## Standard Library
 
-`modules/std.sx`: `print` / `out`, `List($T)`, string helpers, `Allocator` / `GPA` / `Arena`, `sqrt` / `sin` / `cos`, `type_of` / `size_of` / field reflection.
+`modules/std.sx`: `print` / `out`, `List($T)`, string helpers, the `Allocator` interface / `GPA` / `Arena`, `sqrt` / `sin` / `cos`, `type_of` / `size_of` / field reflection.
 
 **Atomics** — `@import "modules/std/atomic.sx"`. `Atomic($T)` with `Ordering` (`.relaxed` … `.seq_cst`). `compare_exchange` returns `?T` (`null` = success).
 

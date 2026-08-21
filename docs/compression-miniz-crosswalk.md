@@ -50,7 +50,7 @@ word is involved, in which case it names the replacement or says there is none.
 | `mz_zip_get_error_string` | Numeric ZIP error strings are replaced by the shared typed `compress.Error` channel |
 | `mz_zip_get_last_error` | The failing operation returns its error directly; there is no global archive error state to read or clear |
 | `mz_zip_get_mode` | Separate `Reader` and `Writer` types make the C runtime mode enum unnecessary |
-| `mz_zip_get_type` | Storage backends are protocol values/factories, not a public Miniz storage-type enum |
+| `mz_zip_get_type` | Storage backends are interface handles and factories, not a public Miniz storage-type enum |
 | `mz_zip_is_zip64` | `zip.Reader.is_zip64()` and `zip.Writer.is_zip64()` |
 | `mz_zip_peek_last_error` | Direct typed errors remove the last-error observation side channel |
 | `mz_zip_read_archive_data` | bounded archive-relative `zip.Reader.read_at`; readable writers use `zip.Writer.read_at` |
@@ -137,7 +137,7 @@ word is involved, in which case it names the replacement or says there is none.
 
 ## Compile-time configuration
 
-SX uses modules, explicit allocators and protocols, and dead-code elimination
+SX uses modules, explicit allocators and interfaces, and dead-code elimination
 where Miniz uses the preprocessor.
 
 | Miniz macro | SX equivalent |
@@ -152,7 +152,7 @@ where Miniz uses the preprocessor.
 | `MINIZ_NO_DEFLATE_APIS` | Module imports/dead-code elimination replace compile-time removal of public DEFLATE declarations |
 | `MINIZ_NO_INFLATE_APIS` | Module imports/dead-code elimination replace compile-time removal of public inflate declarations |
 | `MINIZ_NO_MALLOC` | Every allocating SX operation accepts an explicit `Allocator`; caller-buffer and streaming APIs avoid owned results, so no global malloc mode exists |
-| `MINIZ_NO_STDIO` | Core codecs and protocol-backed ZIP are filesystem-independent; path operations enter through `std.fs` |
+| `MINIZ_NO_STDIO` | Core codecs and interface-backed ZIP are filesystem-independent; path operations enter through `std.fs` |
 | `MINIZ_NO_TIME` | Timestamps are typed optional metadata and file-time behavior lives in `std.fs`; callers can omit it without rebuilding the codec |
 | `MINIZ_NO_ZLIB_APIS` | Raw DEFLATE and zlib are separate modules; importing raw DEFLATE does not require a preprocessor variant |
 | `MINIZ_NO_ZLIB_COMPATIBLE_NAME` | SX introduces no ambient zlib-compatible C aliases; names stay within typed modules |
