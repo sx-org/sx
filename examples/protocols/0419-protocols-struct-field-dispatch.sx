@@ -30,17 +30,17 @@ main :: () {
 
   // struct-literal init: two protocol fields straddling a non-protocol one
   // (explicit owning copies — the spelling for lvalue sources).
-  h : Holder = .{ s = d.(Speaker, context.allocator), b = 7, t = c.(Speaker, context.allocator) };
+  h : Holder = .{ s = d.(Speaker), b = 7, t = c.(Speaker) };
   print("lit: {} {} {}\n", h.s.greet(10), h.b, h.t.greet(3));   // 52 7 15
 
   // field-assign init, then reassign each field to a DIFFERENT concrete impl.
-  h2 : Holder = .{ s = d.(Speaker, context.allocator), b = 0, t = c.(Speaker, context.allocator) };
-  h2.s = c.(Speaker, context.allocator);
-  h2.t = d.(Speaker, context.allocator);
+  h2 : Holder = .{ s = d.(Speaker), b = 0, t = c.(Speaker) };
+  h2.s = c.(Speaker);
+  h2.t = d.(Speaker);
   print("reassign: {} {}\n", h2.s.greet(4), h2.t.greet(8));     // 20 50
 
   // nested struct holding a struct holding a protocol field.
-  o : Outer = .{ h = .{ s = d.(Speaker, context.allocator), b = 1, t = c.(Speaker, context.allocator) } };
+  o : Outer = .{ h = .{ s = d.(Speaker), b = 1, t = c.(Speaker) } };
   print("nested: {} {}\n", o.h.s.greet(0), o.h.t.greet(2));     // 42 10
 
   // pass the holder by value into a function, dispatch there.

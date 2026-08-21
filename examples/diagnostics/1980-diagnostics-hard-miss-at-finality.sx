@@ -17,9 +17,9 @@ main :: () {
     l := Loose{ n = 1 };
 
     // No visible impl for this concrete type.
-    unshown := l.(Show, context.allocator);
+    unshown := l.(Show);
     // Final-empty — nothing implements `Mark` in this program.
-    empty := w.(Mark, context.allocator);
+    empty := w.(Mark);
 
     print("{} {}\n", unshown.fmt(), empty.tag());
 }

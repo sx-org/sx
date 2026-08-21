@@ -30,42 +30,42 @@ main :: () {
     w := W{ v = 10 };
 
     // postfix rvalue erasure owns (heap copy via context.allocator).
-    r := make().(Sizable, context.allocator);
+    r := make().(Sizable);
     print("rvalue:   {}\n", r.size());
     free(r);
 
     // postfix lvalue → independent owning copy.
-    s := w.(Sizable, context.allocator);
+    s := w.(Sizable);
     s.bump();
     print("lvalue:   {} {} (copy independent)\n", w.v, s.size());
     free(s);
 
     // postfix *Concrete → snapshot of the pointee.
     pw : *W = *w;
-    snap := pw.(Sizable, context.allocator);
+    snap := pw.(Sizable);
     snap.bump();
     print("snapshot: {} {}\n", w.v, snap.size());
     free(snap);
 
     // postfix *P → promotion (view becomes an owned, independent value).
-    o := w.(Sizable, context.allocator);
+    o := w.(Sizable);
     pv : *Sizable = *o;
-    prom := pv.(Sizable, context.allocator);
+    prom := pv.(Sizable);
     prom.bump();
     print("promote:  {} {}\n", o.size(), prom.size());
     free(prom);
     free(o);
 
     // postfix P value → CLONE (independent owned copy of the receiver).
-    c0 := w.(Sizable, context.allocator);
-    cl := c0.(Sizable, context.allocator);
+    c0 := w.(Sizable);
+    cl := c0.(Sizable);
     cl.bump();
     print("clone:    {} {}\n", c0.size(), cl.size());
     free(cl);
     free(c0);
 
     // named allocator: .(P, gpa) pairs with free(p, gpa).
-    n := w.(Sizable, gpa);
+    n := w.(Sizable);
     print("named:    {} gpa={}\n", n.size(), gpa.alloc_count);
     free(n, gpa);
     print("freed:    gpa={}\n", gpa.alloc_count);

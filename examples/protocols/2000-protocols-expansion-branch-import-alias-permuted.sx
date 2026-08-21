@@ -7,7 +7,7 @@
 @import "modules/std.sx";
 @import "./1999-protocols-expansion-branch-import-alias-kinds.sx";
 
-inline if has_impl(Mark, Slot) { ADMITTED :: 1; } else { ADMITTED :: 0; }
+inline if Slot is Mark { ADMITTED :: 1; } else { ADMITTED :: 0; }
 
 inline if POINTER_SIZE == 8 {
     alias :: @import "./1999-protocols-expansion-branch-import-alias-mod.sx";
@@ -17,6 +17,6 @@ inline if POINTER_SIZE == 8 {
 
 main :: () {
     s := Slot{ n = 2 };
-    m := s.(Mark, context.allocator);
+    m := s.(Mark);
     print("{} {}\n", ADMITTED, m.tag());
 }

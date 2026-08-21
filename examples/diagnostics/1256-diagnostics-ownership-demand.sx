@@ -45,8 +45,8 @@ main :: () {
     _ = r2;
     _ = use_val(mk_w());        // implicit rvalue call arg → demand
 
-    d := w.(Sizable, mk_gpa()); // allocator argument must be an lvalue
+    d := w.(Sizable); // allocator argument must be an lvalue
     _ = d;
-    e := w.(IdP, context.allocator); // .(P, alloc) on @identity → refusal
+    e := w.(IdP); // .(P, alloc) on @identity → refusal
     _ = e;
 }

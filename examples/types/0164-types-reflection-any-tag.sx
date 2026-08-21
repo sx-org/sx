@@ -17,13 +17,13 @@ main :: () {
     // any holding a VALUE — reflection names the value's type.
     av : any = 6;                 // 6 is i64
     print("type_name(av)={}\n", type_name(av));
-    print("is_unsigned(av)={}\n", is_unsigned(av));
+    print("av is unsigned={}\n", av is unsigned);
     print("print(av)={}\n", av);  // formatter already used the tag
 
     u : u32 = 7;
     au : any = u;
     print("type_name(au)={}\n", type_name(au));
-    print("is_unsigned(au)={}\n", is_unsigned(au));
+    print("au is unsigned={}\n", au is unsigned);
     print("print(au)={}\n", au);
 
     sv : any = "hi";
@@ -33,9 +33,9 @@ main :: () {
     x : u64 = 9;
     at : any = type_of(x);
     print("type_name(at)={}\n", type_name(at));
-    print("is_unsigned(at)={}\n", is_unsigned(at));
+    print("at is unsigned={}\n", at is unsigned);
     print("print(at)={}\n", at);
 
     // A direct runtime Type value is unchanged.
-    print("is_unsigned(type_of(x))={}\n", is_unsigned(type_of(x)));
+    print("type_of(x) is unsigned={}\n", type_of(x) is unsigned);
 }

@@ -41,11 +41,11 @@ main :: () {
     sq := Sq{ side = 4 };
 
     // Dispatchable methods through an owned P.
-    s := sq.(Shape, context.allocator);
+    s := sq.(Shape);
     print("owned:  {} {}\n", s.area(), s.name());
 
     // The adopting empty impl fills the same filtered slots.
-    i := sq.(Adopted, context.allocator);
+    i := sq.(Adopted);
     print("adopt:  {} {}\n", i.area(), i.name());
 
     // *P view dispatch over the same filtered slots.

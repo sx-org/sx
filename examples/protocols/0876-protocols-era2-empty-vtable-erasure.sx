@@ -25,11 +25,11 @@ impl Eqish for Sq {
 main :: () {
     sq := Sq{ side = 4 };
 
-    m := sq.(Marker, context.allocator);
+    m := sq.(Marker);
     print("marker type: {}\n", type_of(m) == Sq);
     print("marker raw:  {}\n", m.(@Protocol).type_id == Sq);
 
-    e := sq.(Eqish, context.allocator);
+    e := sq.(Eqish);
     print("eqish type:  {}\n", type_of(e) == Sq);
 
     // Checked downcast through the {ctx, __type_id} prefix.
@@ -42,11 +42,8 @@ main :: () {
         else: { print("switch:      miss\n"); }
     }
 
-    // free is legal on an OWNED (postfix-erased, heap-copied) value even
-    // with an empty vtable.
-    mo := Sq{ side = 9 }.(Marker, context.allocator);
-    eo := Sq{ side = 9 }.(Eqish, context.allocator);
-    free(mo);
-    free(eo);
-    print("freed\n");
+    // An empty vtable erases like any other, over a frame temporary.
+    mo := Sq{ side = 9 }.(Marker);
+    eo := Sq{ side = 9 }.(Eqish);
+    print("erased {} {}\n", type_of(mo) is Marker, type_of(eo) is Eqish);
 }

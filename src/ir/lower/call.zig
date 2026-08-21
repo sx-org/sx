@@ -110,11 +110,32 @@ fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: 
         if (fd != fd0) return null;
     }
     if (fd.params.len == 0) return null;
-    for (fd.params) |p| {
-        if (init_plan.boundTargetNode(p.type_expr) != null)
-            return .{ .fd = fd, .name = eff_field };
+    if (init_plan.boundTargetNode(fd.params[0].type_expr) != null)
+        return .{ .fd = fd, .name = eff_field };
+    // A destination-first parameter PAST the receiver re-spells only when the
+    // receiver is what that first parameter takes. The name alone does not
+    // settle it: the map's winner may be an unrelated declaration that happens
+    // to share the name, and re-spelling for it would hand the receiver to a
+    // parameter it does not fit.
+    for (fd.params[1..]) |p| {
+        if (init_plan.boundTargetNode(p.type_expr) == null) continue;
+        if (!receiverFitsFirstParam(self, fd, self.inferExprType(fa.object))) return null;
+        return .{ .fd = fd, .name = eff_field };
     }
     return null;
+}
+
+/// Would `recv_ty` be accepted at `fd`'s first parameter? A parameter whose
+/// type is not resolvable here is left to the ordinary call to judge.
+fn receiverFitsFirstParam(self: *Lowering, fd: *const ast.FnDecl, recv_ty: TypeId) bool {
+    if (recv_ty == .unresolved) return false;
+    const want = self.resolveTypeArg(fd.params[0].type_expr);
+    if (want == .unresolved) return true;
+    if (want == recv_ty) return true;
+    const pi = self.getProtocolInfo(want) orelse return false;
+    if (!pi.isErased()) return false;
+    const cname = self.resolveConcreteTypeName(recv_ty) orelse return false;
+    return self.firstUnimplementedProtocolMethod(want, cname, recv_ty) == null;
 }
 
 

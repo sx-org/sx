@@ -14,9 +14,9 @@
 // publishes, the sink writes each expression into storage it owns, and the
 // children come back in source order.
 //
-// `P` is an `@identity` protocol here because the sink KEEPS what it collected:
-// an identity value is a storable handle borrowing the storage the sink wrote,
-// while a `constraint` protocol has no runtime values to put in a list.
+// `P` is an interface here because the sink KEEPS what it collected: a handle
+// is a storable borrow of the storage the sink wrote, while a constraint has no
+// runtime values to put in a list.
 @import "modules/std.sx";
 @import "modules/std/list.sx";
 @import "modules/fluent.sx";

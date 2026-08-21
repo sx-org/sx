@@ -42,7 +42,7 @@ main :: () {
     // An owning handle: the same shape, and the copy it owns is freed by hand.
     c := Counter{ total = 10 };
     kp := a.create(Tally);
-    kp.* = c.(Tally, context.allocator);
+    kp.* = c.(Tally);
     print("{}\n", kp.push(7));
     owned := kp.*;
     owned.free(a);

@@ -23,8 +23,8 @@ main :: () {
 
     // Owned values through the tracker, explicit pairing.
     sq := Sq{ side = 3 };
-    a := sq.(Shape, tracker);
-    b := sq.(Shape, tracker);
+    a := sq.(Shape);
+    b := sq.(Shape);
     a.grow();
     print("a={} b={} (independent)\n", a.area(), b.area());
     free(a, tracker);
@@ -36,9 +36,9 @@ main :: () {
     ca : i64 = 0;
     da : i64 = 0;
     push .{ allocator = tracker } {
-        c := Sq{ side = 2 }.(Shape, context.allocator);
+        c := Sq{ side = 2 }.(Shape);
         c.grow();
-        d := sq.(Shape, context.allocator);
+        d := sq.(Shape);
         ca = c.area();
         da = d.area();
         free(c);
@@ -49,10 +49,10 @@ main :: () {
     // An arena over the tracker: owned copies land in the arena; reset +
     // deinit hand the chunks back to the tracker.
     arena := Arena.init(tracker, 512);
-    e := sq.(Shape, arena);
+    e := sq.(Shape);
     _ = e.area();
     arena.reset();
-    f := sq.(Shape, arena);
+    f := sq.(Shape);
     print("f={}\n", f.area());
     arena.deinit();
 

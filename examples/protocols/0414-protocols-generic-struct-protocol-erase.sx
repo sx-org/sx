@@ -23,7 +23,7 @@ make :: (..sources: VL) -> VL(i64) {
     c : Combined(i64, ..sources.T) = ---;
     c.value = 99;
     c.sources = .{..sources};
-    return c.(VL(i64), context.allocator);          // owning copy — escapes this frame
+    return c.(VL(i64));          // owning copy — escapes this frame
 }
 
 main :: () -> i32 {

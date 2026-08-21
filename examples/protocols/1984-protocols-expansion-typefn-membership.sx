@@ -23,7 +23,7 @@ Chosen :: pick();
 
 impl Show for Wide { fmt :: (self: *Wide) -> i64 { self.n * 2 } }
 
-inline if has_impl(Show, Chosen) {
+inline if Chosen is Show {
     OK :: 1;
 } else {
     OK :: 0;

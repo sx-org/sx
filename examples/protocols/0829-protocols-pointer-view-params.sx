@@ -41,7 +41,7 @@ main :: () {
     print("field: {}\n", h.inner.value);
 
     // owned protocol value lends a view via plain @
-    s := w.(Sizable, context.allocator);
+    s := w.(Sizable);
     print("owned-view: {}\n", measure(*s));
 
     // a mutating method through *P writes back into the original

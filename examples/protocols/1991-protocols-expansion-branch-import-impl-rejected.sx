@@ -8,7 +8,7 @@
 @import "modules/std.sx";
 @import "./1990-protocols-expansion-branch-import-shapes.sx";
 
-inline if has_impl(Show, Item) { ADMITTED :: 1; } else { ADMITTED :: 0; }
+inline if Item is Show { ADMITTED :: 1; } else { ADMITTED :: 0; }
 
 inline if POINTER_SIZE == 0 {
     @import "./1990-protocols-expansion-branch-import-impl.sx";

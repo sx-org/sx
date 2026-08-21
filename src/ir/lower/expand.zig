@@ -652,6 +652,11 @@ const Expansion = struct {
                     if (lhs) return true;
                     return ex.driveCondition(bo.rhs, src, depth + 1);
                 }
+                // A conformance or category question is the driver's own fact:
+                // its answer parks against the impl set exactly as a body-level
+                // one does, so it is asked here rather than through the
+                // constant folder, which knows only `==` over module constants.
+                if (bo.op == .is_op) return ex.driveIsCondition(bo.lhs, bo.rhs, src);
                 return ex.self.evalComptimeCondition(node);
             },
             .identifier => |id| {
@@ -672,7 +677,7 @@ const Expansion = struct {
                 if (ex.self.expansion.awaited != null) return null;
                 return ex.driveRun(node, ce.expr, src);
             },
-            .call => return ex.driveMembershipCondition(node, src),
+            .call => return null,
             else => return ex.self.evalComptimeCondition(node),
         }
     }
@@ -716,36 +721,32 @@ const Expansion = struct {
         ex.self.expansion.awaitFact(fact catch "a module scope to be final");
     }
 
-    /// `has_impl(P, T)` as a driver condition. The question is answerable only
+    /// `T is <target>` as a driver condition. The question is answerable only
     /// against real declarations, so the names it spells are registered first;
     /// the answer itself comes from the one canonical source for the kind, and
     /// waits on whatever an undecided driver could still change about it.
-    fn driveMembershipCondition(ex: *Expansion, node: *const Node, src: ?[]const u8) ?bool {
-        const c = node.data.call;
-        const callee = ast.bareName(c.callee) orelse return null;
-        if (!std.mem.eql(u8, callee, "has_impl") or c.args.len < 2) return null;
-        const proto_name = ast.bareName(protocolHead(c.args[0])) orelse return null;
-        ex.primeMembershipFacts(proto_name, c.args[1], src);
+    fn driveIsCondition(ex: *Expansion, lhs: *const Node, rhs: *const Node, src: ?[]const u8) ?bool {
+        ex.primeMembershipFacts(ast.bareName(protocolHead(rhs)), lhs, src);
         // A name still waiting on a fact is not yet a spelling anything resolves;
         // reading it here would freeze the miss into an unresolved answer.
         if (ex.self.expansion.awaited != null) return null;
-        const target = ex.self.resolveTypeArg(c.args[1]);
-        if (target == .unresolved) return null;
-        // A protocol kind asks site-local impl VISIBILITY. Impls are
-        // declarations, so what an undecided driver could still write is what
-        // the read waits on — in the polarities that kind owes (§7.9).
-        const visible = ex.self.computeHasImpl(c.args[0], target);
-        return if (ex.self.expansion.awaited != null) null else visible;
+        // Conformance asks site-local impl VISIBILITY. Impls are declarations,
+        // so what an undecided driver could still write is what the read waits
+        // on — in the polarities the contract's kind owes (§6.9).
+        const answer = ex.self.staticIsCondition(lhs, rhs);
+        return if (ex.self.expansion.awaited != null) null else answer;
     }
 
-    /// Register what a membership question names: the protocol, the queried
-    /// type, and every impl of that protocol the program declares. The search
+    /// Register what a membership question names: the contract, the queried
+    /// type, and every impl of that contract the program declares. The search
     /// spans the whole root list rather than what registration has reached, so
     /// the answer does not depend on where the driver sits among the
-    /// declarations it asks about.
-    fn primeMembershipFacts(ex: *Expansion, proto_name: []const u8, target: *const Node, src: ?[]const u8) void {
-        ex.primeDecl(proto_name);
+    /// declarations it asks about. A category target names no contract, and
+    /// only the subject is registered.
+    fn primeMembershipFacts(ex: *Expansion, contract: ?[]const u8, target: *const Node, src: ?[]const u8) void {
         if (ast.bareName(protocolHead(target))) |tname| ex.primeDecl(tname);
+        const proto_name = contract orelse return;
+        ex.primeDecl(proto_name);
         var it = ex.decidedDecls();
         while (it.next()) |decl| {
             if (decl.data != .impl_block) continue;

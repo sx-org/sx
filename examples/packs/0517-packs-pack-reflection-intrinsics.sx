@@ -3,7 +3,7 @@
 //
 //   type_name(T)     -> string  // display name of T
 //   type_eq(T1, T2)  -> bool    // structural TypeId equality
-//   has_impl(P, T)   -> bool    // T has a reachable impl for P
+//   T is P   -> bool    // T has a reachable impl for P
 //
 // All three fold to compile-time constants and are accepted by
 // `tryConstBoolCondition`, so `inline if type_eq(...)` /
@@ -11,8 +11,8 @@
 // time — no runtime cost.
 //
 // `has_impl`'s protocol arg accepts both shapes:
-//   - plain protocol name: `has_impl(Allocator, CAllocator)`.
-//   - parameterised call:  `has_impl(Wrap(i64), i32)` — the args
+//   - plain protocol name: `CAllocator is Allocator`.
+//   - parameterised call:  `i32 is Wrap(i64)` — the args
 //     match the impl's protocol type-args exactly.
 
 @import "modules/std.sx";
@@ -47,13 +47,13 @@ main :: () -> i32 {
     }
 
     // has_impl — plain protocol (Allocator is unary).
-    print("Allocator/CAllocator: {}\n", has_impl(Allocator, CAllocator));
-    print("Allocator/i64: {}\n", has_impl(Allocator, i64));
+    print("Allocator/CAllocator: {}\n", CAllocator is Allocator);
+    print("Allocator/i64: {}\n", i64 is Allocator);
 
     // has_impl — parameterised protocol (Wrap takes a Target type arg).
-    print("Wrap(i64)/i32: {}\n", has_impl(Wrap(i64), i32));
-    print("Wrap(i64)/bool: {}\n", has_impl(Wrap(i64), bool));
-    print("Wrap(bool)/i32: {}\n", has_impl(Wrap(bool), i32));
+    print("Wrap(i64)/i32: {}\n", i32 is Wrap(i64));
+    print("Wrap(i64)/bool: {}\n", bool is Wrap(i64));
+    print("Wrap(bool)/i32: {}\n", i32 is Wrap(bool));
 
     return 0;
 }

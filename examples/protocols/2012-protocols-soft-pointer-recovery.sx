@@ -35,7 +35,7 @@ main :: () {
     r.w = 2;
 
     // --- vtable: the erasure owns a copy, the recovery points INTO it ---
-    b := r.(Boxed, context.allocator);
+    b := r.(Boxed);
     print("vtable hard {}\n", b.(*Rect).w);
     if v := b.(?Rect) { print("vtable value {}\n", v.w); }
     if p := b.(?*Rect) { print("vtable ptr {}\n", p.w); } else { print("vtable ptr null\n"); }

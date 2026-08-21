@@ -2,4 +2,4 @@
 Q :: interface { tag :: (self: *Self) -> i64; }
 Holder :: struct { v: i64; }
 impl Q for Holder { tag :: (self: *Holder) -> i64 => 100 + self.v; }
-own_tag :: () -> i64 { x := Holder{ v = 1 }.(Q, context.allocator); return x.tag(); }
+own_tag :: () -> i64 { x := Holder{ v = 1 }.(Q); return x.tag(); }

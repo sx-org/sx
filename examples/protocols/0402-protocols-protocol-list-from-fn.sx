@@ -15,14 +15,14 @@ impl Sizable for Leaf {
 
 add :: (items: *List(Sizable), w: Leaf) {
     p := w;
-    items.append(p.(Sizable, context.allocator));  // explicit owning copy — survives this frame
+    items.append(p.(Sizable));  // explicit owning copy — survives this frame
 }
 
 main :: () -> void {
     // Works: protocol value created in main, appended to list
     out("=== Created in main ===\n");
     list_a : List(Sizable) = .{};
-    s := Leaf{ value = 42 }.(Sizable, context.allocator);
+    s := Leaf{ value = 42 }.(Sizable);
     list_a.append(s);
     r1 := list_a.items[0].size();
     print("first:  {} (expected 42)\n", r1);

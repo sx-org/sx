@@ -26,7 +26,7 @@ main :: () {
     // `total` itself is not dispatchable through the erased value (Era-2:
     // `xs: []Self` past the receiver — refusal pinned in diagnostics/1253),
     // so the call below is the static one.
-    p := t.(P, context.allocator);
+    p := t.(P);
     _ = p;
     arr : [3]T = .{ T{ n = 1 }, T{ n = 2 }, T{ n = 3 } };
     // 10 (self) + 1+2+3 (slice) + 100 (extra) = 116

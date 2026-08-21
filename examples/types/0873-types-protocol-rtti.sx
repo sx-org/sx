@@ -24,8 +24,8 @@ impl Drawable for Rect { area :: (self: *Rect) -> i64 { self.w * self.h } }
 main :: () {
     c := Circle{ r = 2 };
     q := Rect{ w = 3, h = 4 };
-    s := c.(Drawable, context.allocator);
-    t := q.(Drawable, context.allocator);
+    s := c.(Drawable);
+    t := q.(Drawable);
 
     // type_of(p) — concrete, both values; dispatch unaffected
     print("{} {}\n", type_name(type_of(s)), type_name(type_of(t)));

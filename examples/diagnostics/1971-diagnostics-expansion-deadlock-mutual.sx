@@ -13,11 +13,11 @@ Tally :: interface { count :: (self: *Self) -> i64; }
 Widget :: struct { n: i64; }
 Panel :: struct { n: i64; }
 
-inline if !has_impl(Draw, Widget) {
+inline if !Widget is Draw {
     impl Tally for Panel { count :: (self: *Panel) -> i64 { self.n } }
 }
 
-inline if !has_impl(Tally, Panel) {
+inline if !Panel is Tally {
     impl Draw for Widget { draw :: (self: *Widget) -> i64 { self.n } }
 }
 

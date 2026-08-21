@@ -18,7 +18,7 @@ named :: (a: f32 = 0.0, b: f32 = 0.0) { print("named {} {}\n", a, b); }
 block :: (x: f32, body: Closure()) { print("block {}\n", x); body(); }
 
 erase_in_closure :: (side: f32) {
-    run(|| { put(Box{ w = side }.(Shape, context.allocator)); });
+    run(|| { put(Box{ w = side }.(Shape)); });
 }
 
 named_arg_in_closure :: (side: f32) {
@@ -34,7 +34,7 @@ all_at_once :: (side: f32) {
     run(|| {
         for i in 0..2 {
             n := i;
-            block(side) { put(Box{ w = side + n.(f32) }.(Shape, context.allocator)); };
+            block(side) { put(Box{ w = side + n.(f32) }.(Shape)); };
         }
     });
 }

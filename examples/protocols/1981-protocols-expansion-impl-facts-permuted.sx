@@ -8,20 +8,20 @@
 
 SHAPES :: .[Item];
 
-inline if has_impl(Ord, Note) { PARTITION :: 1; } else { PARTITION :: 0; }
+inline if Note is Ord { PARTITION :: 1; } else { PARTITION :: 0; }
 
 inline for T in SHAPES {
     impl Ord for T { cmp :: (self: *T, o: *T) -> i64 { self.n - o.n } }
     impl Show for T { fmt :: (self: *T) -> i64 { self.n * 3 } }
 }
 
-inline if has_impl(Show, Note) { UNIQUE :: 1; } else { UNIQUE :: 0; }
+inline if Note is Show { UNIQUE :: 1; } else { UNIQUE :: 0; }
 
 impl Ord for Note { cmp :: (self: *Note, o: *Note) -> i64 { self.n - o.n } }
 
 Note :: struct { n: i64; }
 
-inline if has_impl(Show, Item) { REPAIRED :: 1; } else { REPAIRED :: 0; }
+inline if Item is Show { REPAIRED :: 1; } else { REPAIRED :: 0; }
 
 impl Show for Note { fmt :: (self: *Note) -> i64 { self.n } }
 
@@ -32,6 +32,6 @@ Show :: interface { fmt :: (self: *Self) -> i64; }
 
 main :: () {
     i := Item{ n = 2 };
-    s := i.(Show, context.allocator);
+    s := i.(Show);
     print("{} {} {} {}\n", REPAIRED, UNIQUE, PARTITION, s.fmt());
 }

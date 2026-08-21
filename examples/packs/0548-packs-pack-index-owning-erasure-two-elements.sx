@@ -14,8 +14,8 @@ Doubler :: struct { n: i64; }
 impl VL(i64) for Doubler { get :: (self: *Doubler) -> i64 => self.n * 2; }
 
 sum_two :: (..sources: VL) -> i64 {
-    a := sources[0].(VL(i64), context.allocator);   // own element 0
-    b := sources[1].(VL(i64), context.allocator);   // own element 1
+    a := sources[0].(VL(i64));   // own element 0
+    b := sources[1].(VL(i64));   // own element 1
     return a.get() + b.get();
 }
 

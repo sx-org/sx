@@ -31,7 +31,7 @@ zip_map :: (mapper: Closure(..sources.T) -> $R, ..sources: VL) -> VL($R) {
     c.value = mapper(..sources.get);
     // Owning copy — the erased value escapes this frame (`xx c` borrows
     // the local and returns a dangle).
-    return c.(VL(R), context.allocator);
+    return c.(VL(R));
 }
 
 main :: () -> i32 {

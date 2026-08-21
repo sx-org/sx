@@ -21,7 +21,7 @@ main :: () {
     c := Cube{ side = 4 };
 
     // Each handle, boxed by a plain declaration.
-    v := c.(Sized, context.allocator);
+    v := c.(Sized);
     n : Noted = c;
 
     av : any = v;

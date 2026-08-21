@@ -13,7 +13,7 @@ IntCell :: struct { v: i64; }
 impl VL(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
 
 first :: (..sources: VL) -> i64 {
-    x := sources[0].(VL(i64), context.allocator);   // own element 0 as VL(i64)
+    x := sources[0].(VL(i64));   // own element 0 as VL(i64)
     return x.get();
 }
 

@@ -11,7 +11,7 @@ impl Boxed for Rect { area :: (self: *Rect) -> i64 { self.w * self.h } }
 
 main :: () {
     r := Rect{ w = 2, h = 6 };
-    b := r.(Boxed, context.allocator);
+    b := r.(Boxed);
 
     if p := b.(?*Boxed) { print("{}\n", p.area()); }
     if p := b.(?*void) { print("raw\n"); }

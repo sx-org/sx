@@ -96,9 +96,9 @@ main :: () {
         i = 0;
         while i < N {
             m := i % 3;
-            if m == 0 { vv[i] = sqs[i].(Vtab, context.allocator); }
-            else if m == 1 { vv[i] = rcs[i].(Vtab, context.allocator); }
-            else { vv[i] = tris[i].(Vtab, context.allocator); }
+            if m == 0 { vv[i] = sqs[i].(Vtab); }
+            else if m == 1 { vv[i] = rcs[i].(Vtab); }
+            else { vv[i] = tris[i].(Vtab); }
             i = i + 1;
         }
         t1 := mono_ns();

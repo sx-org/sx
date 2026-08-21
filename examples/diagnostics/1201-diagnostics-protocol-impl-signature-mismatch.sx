@@ -12,6 +12,6 @@ impl P for T { val :: (self: *T) -> bool { return true; } }   // return bool != 
 
 main :: () {
   t := T{ n = 7 };
-  p := t.(P, context.allocator);                 // <- 'T' does not implement 'P' (return type)
+  p := t.(P);                 // <- 'T' does not implement 'P' (return type)
   print("{}\n", p.val());
 }

@@ -18,7 +18,7 @@ Holder :: struct { s: Show; }
 
 make :: () -> Holder {
     w := Widget{ n = 4 };
-    return Holder{ s = w.(Show, context.allocator) };
+    return Holder{ s = w.(Show) };
 }
 
 H :: @run make();
