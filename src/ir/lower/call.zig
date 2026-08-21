@@ -2728,7 +2728,6 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         // must decide here rather than fall through a catch-all.
         .type_of,
         .type_name,
-        .is_unsigned,
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -2742,8 +2741,6 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .is_identity,
-        .protocol_kind,
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
@@ -2981,7 +2978,6 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .align_of,
         .type_of,
         .type_name,
-        .is_unsigned,
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -2995,8 +2991,6 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .is_identity,
-        .protocol_kind,
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
@@ -3264,7 +3258,6 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .align_of,
         .type_of,
         .type_name,
-        .is_unsigned,
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -3278,8 +3271,6 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .is_identity,
-        .protocol_kind,
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
@@ -3602,9 +3593,7 @@ fn rmwKindFromName(name: []const u8) ?inst_mod.RmwKind {
 /// name with no declaration look like an intrinsic.
 fn isReflectionCall(name: []const u8) bool {
     const keywords = [_][]const u8{
-        "type_eq",               "has_impl",
-        "is_struct",             "__interp_print_frames",
-        "__trace_resolve_frame",
+        "type_eq", "__interp_print_frames", "__trace_resolve_frame",
     };
     for (keywords) |k| {
         if (std.mem.eql(u8, name, k)) return true;
@@ -3615,7 +3604,6 @@ fn isReflectionCall(name: []const u8) bool {
         .align_of,
         .type_of,
         .type_name,
-        .is_unsigned,
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -3629,8 +3617,6 @@ fn isReflectionCall(name: []const u8) bool {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .is_identity,
-        .protocol_kind,
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
@@ -3934,37 +3920,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const b = self.resolveTypeArg(c.args[1]);
         return self.builder.constBool(a == b);
     }
-    if (std.mem.eql(u8, name, "is_unsigned")) {
-        // type_is_unsigned(T) → bool. Static arg (a spelled type or
-        // generic binding) folds to const_bool at lower time. A
-        // dynamic arg — the runtime `type_of(x)` value queried by
-        // `any_to_string` — emits a `callBuiltin`: the interp reads
-        // the boxed TypeId, LLVM GEPs a per-type signedness table.
-        // Mirrors `type_name`'s static/dynamic split; the same split
-        // avoids `resolveTypeArg`'s silent `.i64` default lying about
-        // a runtime Type value.
-        if (c.args.len < 1) return self.builder.constBool(false);
-        if (self.isStaticTypeArg(c.args[0])) {
-            const ty = self.resolveTypeArg(c.args[0]);
-            return self.builder.constBool(self.module.types.isUnsignedInt(ty));
-        }
-        const arg_ref = self.lowerExpr(c.args[0]);
-        const args_owned = self.alloc.dupe(Ref, &.{arg_ref}) catch return self.builder.constBool(false);
-        return self.builder.callBuiltin(.is_unsigned, args_owned, .bool);
-    }
-    if (std.mem.eql(u8, name, "has_impl")) {
-        // has_impl(P, T) → const_bool. Returns true when type T has
-        // a reachable impl for protocol P. P is either:
-        // - plain protocol name (`Hash`, `Eq`) for unary protocols;
-        // - parameterised call like `Into(Block)` — for protocols
-        //   with type args, the args must be fully spelled.
-        // Delegates to `computeHasImpl` (shared with the
-        // `tryConstBoolCondition` arm so `inline if has_impl(...)`
-        // folds at compile time).
-        if (c.args.len < 2) return self.builder.constBool(false);
-        const ty = self.resolveTypeArg(c.args[1]);
-        return self.builder.constBool(self.computeHasImpl(c.args[0], ty));
-    }
     if (std.mem.eql(u8, name, "vector_lanes")) {
         // vector_lanes(T) → the lane COUNT. The one vector length the flat
         // size tables cannot answer (ABI size is pow2-rounded — 3 lanes
@@ -3998,50 +3953,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             if (info == .@"enum") return self.builder.constBool(info.@"enum".is_flags);
         }
         return self.builder.constBool(false);
-    }
-    if (std.mem.eql(u8, name, "is_identity")) {
-        // STATIC-ONLY (like the `protocol` category in inline type match): a
-        // runtime Type value is always a CONCRETE type's tag — a protocol
-        // type never appears as a runtime tag, so a runtime form would be
-        // constant false. Demand the static spelling instead of lying.
-        if (!self.isStaticTypeArg(c.args[0])) {
-            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "is_identity expects a compile-time type — a runtime 'Type' value always tags a concrete type, never a protocol", .{});
-            return self.builder.constBool(false);
-        }
-        const ty = self.resolveTypeArg(c.args[0]);
-        if (self.getProtocolInfo(ty)) |pi| return self.builder.constBool(pi.ownership == .identity);
-        return self.builder.constBool(false);
-    }
-    if (std.mem.eql(u8, name, "protocol_kind")) {
-        // Static-only for the same reason `is_identity` is: a runtime `Type`
-        // value always tags a concrete type. Folds to a `ProtocolKind`
-        // constant, so `inline if protocol_kind(P) == .vtable` prunes.
-        const pk_ty = self.module.types.findByName(self.module.types.internString("ProtocolKind")) orelse {
-            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "protocol_kind needs 'ProtocolKind' in scope — @import \"modules/std.sx\"", .{});
-            return Ref.none;
-        };
-        if (c.args.len < 1) return self.builder.enumInit(0, Ref.none, pk_ty);
-        if (!self.isStaticTypeArg(c.args[0])) {
-            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "protocol_kind expects a compile-time type — a runtime 'Type' value always tags a concrete type, never a protocol", .{});
-            return self.builder.enumInit(0, Ref.none, pk_ty);
-        }
-        const ty = self.resolveTypeArg(c.args[0]);
-        const kind = self.protocolKindOf(ty) orelse {
-            if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "protocol_kind expects a protocol; '{s}' is not one", .{self.formatTypeName(ty)});
-            return self.builder.enumInit(0, Ref.none, pk_ty);
-        };
-        return self.builder.enumInit(self.resolveVariantValue(pk_ty, kind.spelling()), Ref.none, pk_ty);
-    }
-    if (std.mem.eql(u8, name, "is_struct")) {
-        // is_struct(T) → const_bool: true iff T is a nominal `struct`. A
-        // comptime type-kind predicate that folds at lower time (mirrors the
-        // `tryConstBoolCondition` arm so `inline if is_struct(T)` gates
-        // field-wise reflection). Any non-struct (enum, scalar, pointer, …) is
-        // false — routing an enum key to a leaf byte-hash.
-        if (c.args.len < 1) return self.builder.constBool(false);
-        const ty = self.resolveTypeArg(c.args[0]);
-        if (ty.isBuiltin() or ty == .unresolved) return self.builder.constBool(false);
-        return self.builder.constBool(self.module.types.get(ty) == .@"struct");
     }
     if (std.mem.eql(u8, name, "struct_field_name") or std.mem.eql(u8, name, "variant_name")) {
         if (c.args.len < 2) return self.builder.constString(self.module.types.internString(""));
@@ -4543,9 +4454,7 @@ pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.C
         std.mem.eql(u8, name, "struct_field_count") or
         std.mem.eql(u8, name, "variant_count") or
         std.mem.eql(u8, name, "type_name") or
-        std.mem.eql(u8, name, "is_unsigned") or
-        std.mem.eql(u8, name, "is_flags") or
-        std.mem.eql(u8, name, "is_struct"))
+        std.mem.eql(u8, name, "is_flags"))
         1
     else
         return null;
@@ -4588,10 +4497,7 @@ pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.C
 pub fn reflectionErrorSentinel(self: *Lowering, name: []const u8) Ref {
     if (std.mem.eql(u8, name, "type_name"))
         return self.builder.constString(self.module.types.internString(""));
-    if (std.mem.eql(u8, name, "type_eq") or
-        std.mem.eql(u8, name, "is_unsigned") or
-        std.mem.eql(u8, name, "is_flags") or
-        std.mem.eql(u8, name, "is_struct"))
+    if (std.mem.eql(u8, name, "type_eq") or std.mem.eql(u8, name, "is_flags"))
         return self.builder.constBool(false);
     return self.builder.constInt(0, .i64);
 }

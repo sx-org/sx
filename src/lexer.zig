@@ -230,7 +230,6 @@ pub const Lexer = struct {
                     .{ "@source", Tag.at_source },
                     .{ "@define", Tag.at_define },
                     .{ "@flags", Tag.at_flags },
-                    .{ "@identity", Tag.at_identity },
                     .{ "@get", Tag.at_get },
                     .{ "@set", Tag.at_set },
                     .{ "@context_extend", Tag.at_context_extend },

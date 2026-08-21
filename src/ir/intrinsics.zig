@@ -21,7 +21,7 @@
 //!   * Language primitives (`string`, `@Vector`) — resolved by name by the type
 //!     system (`type_resolver` / `type_bridge`) like `int` / `bool` / `f64`.
 //!     They are declared nowhere and are not call-dispatched.
-//!   * Keywords (`cast`, `type_eq`, `has_impl`, `is_struct`, `compile_error`,
+//!   * Keywords (`cast`, `type_eq`, `compile_error`,
 //!     `__interp_print_frames`, `__trace_resolve_frame`) — bare names the
 //!     compiler recognizes without any declaration.
 
@@ -53,7 +53,6 @@ pub const Id = enum(u16) {
     // ── std/core.sx — reflection ────────────────────────────────────────────
     type_of,
     type_name,
-    is_unsigned,
     struct_field_count,
     variant_count,
     struct_field_name,
@@ -67,8 +66,6 @@ pub const Id = enum(u16) {
     variant_index,
     pointee_type,
     is_flags,
-    is_identity,
-    protocol_kind,
     error_name,
     vector_lanes,
     @"__sx_variant_tag_width",
@@ -220,8 +217,6 @@ pub const entries = [_]Entry{
     .{ .id = .variant_index, .module = core, .name = "variant_index", .mode = .lower, .arity = 2, .ret = .i64 },
     .{ .id = .pointee_type, .module = core, .name = "pointee_type", .mode = .lower, .arity = 1, .ret = .type_value },
     .{ .id = .is_flags, .module = core, .name = "is_flags", .mode = .lower, .arity = 1, .ret = .bool },
-    .{ .id = .is_identity, .module = core, .name = "is_identity", .mode = .lower, .arity = 1, .ret = .bool },
-    .{ .id = .protocol_kind, .module = core, .name = "protocol_kind", .mode = .lower, .arity = 1 },
     .{ .id = .error_name, .module = core, .name = "error_name", .mode = .lower, .arity = 1, .ret = .string },
     .{ .id = .vector_lanes, .module = core, .name = "vector_lanes", .mode = .lower, .arity = 1, .ret = .i64 },
     .{ .id = .@"__sx_variant_tag_width", .module = core, .name = "__sx_variant_tag_width", .mode = .lower, .arity = 1, .ret = .i64 },
@@ -246,7 +241,6 @@ pub const entries = [_]Entry{
     // ── reflection with a VM arm: the type arg may only be known at eval time
     // (e.g. `args[i]` inside a builder body, carrying a `.type_tag(TypeId)`).
     .{ .id = .type_name, .module = core, .name = "type_name", .mode = .dual, .arity = 1, .ret = .string },
-    .{ .id = .is_unsigned, .module = core, .name = "is_unsigned", .mode = .dual, .arity = 1, .ret = .bool },
     .{ .id = .type_info, .module = meta, .name = "type_info", .mode = .dual, .arity = 1 },
 
     // ── evaluate-only: the comptime VM services these itself (no lowering, no
@@ -381,7 +375,7 @@ pub fn find(name: []const u8, source_file: ?[]const u8) ?*const Entry {
 ///
 /// Returns null for any name that is not a registered intrinsic, including the
 /// bare names the compiler recognizes without a declaration (`cast`, `type_eq`,
-/// `has_impl`, …). Those are keywords, handled by their own recognizers.
+/// `type_eq`, …). Those are keywords, handled by their own recognizers.
 pub fn findByName(name: []const u8) ?Id {
     for (&entries) |*e| {
         if (std.mem.eql(u8, e.name, name)) return e.id;

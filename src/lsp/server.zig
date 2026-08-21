@@ -722,11 +722,7 @@ pub const Server = struct {
             .{ .label = "type_name", .detail = "(T | tp: Type) -> string" },
             .{ .label = "type_info", .detail = "(T | tp: Type) -> TypeInfo — kind-first reflection (needs std/meta)" },
             .{ .label = "type_eq", .detail = "(A: Type, B: Type) -> bool" },
-            .{ .label = "is_unsigned", .detail = "(T | tp: Type) -> bool" },
             .{ .label = "is_flags", .detail = "(T | tp: Type) -> bool" },
-            .{ .label = "is_identity", .detail = "($T: Type) -> bool — is T an @identity protocol (compile-time only)" },
-            .{ .label = "protocol_kind", .detail = "($T: Type) -> ProtocolKind — constraint / vtable (compile-time only)" },
-            .{ .label = "is_struct", .detail = "($T: Type) -> bool" },
             .{ .label = "pointee_type", .detail = "($P: Type) -> Type — *X -> X" },
             .{ .label = "struct_field_count", .detail = "(T | tp: Type) -> i64 — struct/tuple fields" },
             .{ .label = "struct_field_name", .detail = "(T | tp: Type, idx: i64) -> string" },
@@ -746,7 +742,6 @@ pub const Server = struct {
             .{ .label = "error_name", .detail = "(e: $T) -> string" },
             .{ .label = "size_of", .detail = "(T | tp: Type) -> i64" },
             .{ .label = "align_of", .detail = "(T | tp: Type) -> i64" },
-            .{ .label = "has_impl", .detail = "(P, T: Type) -> bool" },
             .{ .label = "malloc", .detail = "(size: i64) -> *void" },
             .{ .label = "memcpy", .detail = "(dst: *void, src: *void, size: i64) -> *void" },
             .{ .label = "memset", .detail = "(dst: *void, val: i64, size: i64) -> void" },
@@ -1237,7 +1232,6 @@ pub const Server = struct {
             .{ .name = "raw_make_any", .label = "raw_make_any(tp: Type, data: *void) -> any", .params = &.{ "tp: Type", "data: *void" } },
             .{ .name = "type_info", .label = "type_info(T: Type) -> TypeInfo", .params = &.{"T: Type"} },
             .{ .name = "pointee_type", .label = "pointee_type(P: Type) -> Type", .params = &.{"P: Type"} },
-            .{ .name = "is_unsigned", .label = "is_unsigned(T: Type) -> bool", .params = &.{"T: Type"} },
             .{ .name = "error_name", .label = "error_name(e: $T) -> string", .params = &.{"e: $T"} },
             .{ .name = "size_of", .label = "size_of($T: Type) -> i64", .params = &.{"$T: Type"} },
             .{ .name = "align_of", .label = "align_of($T: Type) -> i64", .params = &.{"$T: Type"} },
@@ -3086,13 +3080,7 @@ pub const Server = struct {
             },
             .protocol_decl => |pd| {
                 try buf.appendSlice(allocator, pd.name);
-                try buf.appendSlice(allocator, " :: protocol");
-                if (pd.kind != .constraint) {
-                    try buf.append(allocator, ' ');
-                    try buf.appendSlice(allocator, pd.kind.spelling());
-                }
-                if (pd.is_identity) try buf.appendSlice(allocator, " @identity");
-                try buf.appendSlice(allocator, " { ");
+                try buf.appendSlice(allocator, if (pd.kind == .constraint) " :: constraint { " else " :: interface { ");
                 for (pd.methods, 0..) |method, mi| {
                     if (mi > 0) try buf.appendSlice(allocator, " ");
                     try buf.appendSlice(allocator, method.name);

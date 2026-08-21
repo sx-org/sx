@@ -123,7 +123,7 @@ fn implFactWaits(self: *Lowering, proto_ty: ?TypeId, proto_name: []const u8, ty:
 fn erasedKind(self: *Lowering, proto_ty: ?TypeId) bool {
     const pty = proto_ty orelse return false;
     const kind = protocolKindOf(self, pty) orelse return false;
-    return kind == .vtable;
+    return kind == .erased;
 }
 
 /// The protocol a `has_impl`-shaped spelling names, whatever its kind.
@@ -229,7 +229,6 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
     const protocol_info: ProtocolDeclInfo = .{
         .name = owned,
         .kind = pd.kind,
-        .ownership = if (pd.is_identity) .identity else .value_own,
         .methods = self.alloc.dupe(ProtocolMethodInfo, method_infos.items) catch unreachable,
     };
     self.program_index.protocol_decl_map.put(owned, protocol_info) catch {};
@@ -316,6 +315,92 @@ pub fn protocolKindOf(self: *Lowering, ty: TypeId) ?ast.ProtocolKind {
     if (info != .@"struct" or !info.@"struct".is_protocol) return null;
     const pd = self.getProtocolInfo(ty) orelse return null;
     return pd.kind;
+}
+
+/// The `is` RHS, classified. A bare name in the target slot can be a category
+/// word, a contract head, or an ordinary type; which one it is decides what the
+/// operator asks, so every `is` path resolves the target through here.
+pub const IsTarget = union(enum) {
+    /// A category word (`int`, `struct`, `interface`, `signed`, …).
+    category: []const u8,
+    /// A `constraint` head — the question is conformance.
+    constraint: TypeId,
+    /// An `interface` head — the question is conformance, and identity when
+    /// the subject already IS that interface.
+    interface: TypeId,
+    /// An ordinary type — the question is tag identity.
+    concrete: TypeId,
+};
+
+/// Classify the target a written `is` RHS names. A category word WINS over a
+/// same-spelled type name, so a program that declares `Struct` cannot capture
+/// `struct`. Null when the node is not a name the operator can read.
+pub fn classifyIsTarget(self: *Lowering, node: *const Node) ?IsTarget {
+    const name: ?[]const u8 = switch (node.data) {
+        .identifier => |id| id.name,
+        .type_expr => |te| te.name,
+        else => null,
+    };
+    if (name) |n| {
+        if (isCategoryWord(n)) return .{ .category = n };
+        if (self.protocolResolver().resolveProtocol(n, self.current_source_file)) |p| {
+            const decl_kind = p.decl.kind;
+            const ty = p.ty orelse return .{ .constraint = .unresolved };
+            return if (decl_kind == .erased) .{ .interface = ty } else .{ .constraint = ty };
+        }
+    }
+    const ty = self.resolveTypeArg(node);
+    if (ty == .unresolved) return null;
+    if (self.getProtocolInfo(ty)) |pi|
+        return if (pi.isErased()) .{ .interface = ty } else .{ .constraint = ty };
+    return .{ .concrete = ty };
+}
+
+/// The words the target slot reads as a CATEGORY rather than as a type name.
+/// `Type` is absent: the metatype is a type, and `at is type` reads the
+/// lowercase word.
+pub fn isCategoryWord(name: []const u8) bool {
+    const words = [_][]const u8{
+        "int",      "signed",  "unsigned", "float",  "bool",     "string",
+        "void",     "type",    "struct",   "interface", "enum",  "union",
+        "slice",    "array",   "pointer",  "vector", "optional", "error_set",
+        "closure",
+    };
+    for (words) |w| if (std.mem.eql(u8, name, w)) return true;
+    return false;
+}
+
+/// The STATIC answer for `<type> is <target>`, or null when the pair cannot be
+/// decided here. Conformance reads the impl set, so both polarities wait on an
+/// undecided driver exactly as an erasure does.
+pub fn staticIsAnswer(self: *Lowering, subject: TypeId, node: *const Node) ?bool {
+    const target = classifyIsTarget(self, node) orelse return null;
+    switch (target) {
+        .category => |word| return self.staticTypeMatchesCategory(subject, word),
+        .concrete => |ty| return subject == ty,
+        .interface => |ty| {
+            // An interface names itself.
+            if (subject == ty) return true;
+            return conformanceAnswer(self, ty, subject);
+        },
+        .constraint => |ty| {
+            if (ty == .unresolved) return null;
+            return conformanceAnswer(self, ty, subject);
+        },
+    }
+}
+
+/// Does `concrete_ty` satisfy the contract `proto_ty` declares? Waits on the
+/// impl-contribution discipline in both polarities before publishing.
+fn conformanceAnswer(self: *Lowering, proto_ty: TypeId, concrete_ty: TypeId) ?bool {
+    const pd = self.getProtocolInfo(proto_ty) orelse return null;
+    const cname = self.resolveConcreteTypeName(concrete_ty) orelse {
+        if (implFactWaits(self, proto_ty, pd.name, concrete_ty, false)) return null;
+        return false;
+    };
+    const answer = firstUnimplementedMethod(self, proto_ty, cname, concrete_ty) == null;
+    if (implFactWaits(self, proto_ty, pd.name, concrete_ty, answer)) return null;
+    return answer;
 }
 
 /// One declared `impl P for T` site, for the coherence checks that name every
@@ -431,43 +516,6 @@ pub fn refuseValuelessProtocol(self: *Lowering, ty: TypeId, span: ast.Span, what
     // author's decision, made at the declaration.
     d.addFmt(.err, span, "cannot {s} '{s}' — a constraint protocol has no runtime values; use the concrete type, or a generic bound ('$T/{s}') where polymorphism is needed", .{ what, name, name });
     return true;
-}
-
-/// The escape rules for a comptime result that lands in the runtime image
-/// (specs.md §6.9), applied to the type it escapes AS.
-///
-/// An OWNING erased value cannot make the trip at all — no runtime allocator
-/// owns a compile-time copy — while a borrow (a view, an `@identity` handle) is
-/// only ever a pointer to storage the image already has.
-pub fn checkComptimeEscape(self: *Lowering, ty: TypeId, span: ast.Span) void {
-    var seen = std.ArrayList(TypeId).empty;
-    defer seen.deinit(self.alloc);
-    walkEscape(self, ty, span, true, &seen);
-}
-
-fn walkEscape(self: *Lowering, ty: TypeId, span: ast.Span, by_value: bool, seen: *std.ArrayList(TypeId)) void {
-    if (ty.isBuiltin() or ty == .unresolved) return;
-    for (seen.items) |s| if (s == ty) return;
-    seen.append(self.alloc, ty) catch @panic("out of memory");
-    switch (self.module.types.get(ty)) {
-        .pointer => |p| walkEscape(self, p.pointee, span, false, seen),
-        .many_pointer => |p| walkEscape(self, p.element, span, false, seen),
-        .optional => |o| walkEscape(self, o.child, span, by_value, seen),
-        .slice => |sl| walkEscape(self, sl.element, span, false, seen),
-        .array => |a| walkEscape(self, a.element, span, by_value, seen),
-        .@"struct" => |s| {
-            if (!s.is_protocol) {
-                for (s.fields) |f| walkEscape(self, f.ty, span, by_value, seen);
-                return;
-            }
-            const pd = self.getProtocolInfo(ty) orelse return;
-            if (!by_value or pd.kind == .constraint or pd.ownership == .identity) return;
-            if (self.diagnostics) |d| {
-                d.addFmt(.err, span, "a '{s}' value owns its storage and cannot escape a `@run` — no runtime allocator owns a compile-time copy; bind the concrete value, and let the owning erasure happen at runtime", .{self.formatTypeName(ty)});
-            }
-        },
-        else => {},
-    }
 }
 
 /// Get or create thunks for a (protocol, concrete_type) pair.
@@ -1211,120 +1259,20 @@ pub fn allocViaAllocatorValue(self: *Lowering, allocator: Ref, size_ref: Ref) Re
     return emitProtocolDispatch(self, allocator, pd, "alloc_bytes", &.{size_ref}, .{ .start = cs.start, .end = cs.end });
 }
 
-/// Postfix OWNING erasure `expr.(P, alloc)` — the ownership model's only
-/// allocating spelling (P values own their ctx). Receiver shapes:
-///   - concrete VALUE (lvalue or rvalue — both copy): heap-copy the data;
-///   - `*Concrete`: SNAPSHOT — heap-copy the pointee;
-///   - `P` (same protocol, value): CLONE — an independent copy of the
-///     receiver's ctx (rt_size_of(type_id) bytes; vtable / fn words
-///     reused — well-typed by construction);
-///   - `*P` (same protocol): PROMOTION — the same, over the pointee;
-///   - `@identity` target: `.(P)` is the borrow; `.(P, alloc)` refuses
-///     (a borrow allocates nothing).
-/// `.(P)` funds from `context.allocator`; `.(P, alloc)` names another.
-/// The named allocator must be an LVALUE. `@identity` is a borrow and
-/// refuses an allocator argument.
+/// Postfix erasure `expr.(I)` — an interface handle BORROWS its referent, so
+/// there is no allocating spelling: an allocator argument is refused.
 pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: TypeId, span: ast.Span) Ref {
     if (self.refuseValuelessProtocol(dst_ty, span, "make a value of")) return self.builder.constUndef(dst_ty);
     const dst_pi = self.getProtocolInfo(dst_ty) orelse return self.builder.constUndef(dst_ty);
-    const void_ptr_ty = self.module.types.ptrTo(.void);
 
-    if (dst_pi.ownership == .identity) {
-        if (pc.alloc_arg != null) {
-            if (self.diagnostics) |d|
-                d.addFmt(.err, span, "'.({s}, alloc)' on an '@identity' protocol — identity erasure is a borrow and allocates nothing; write '.({s})'", .{ dst_pi.name, dst_pi.name });
-            return self.builder.constUndef(dst_ty);
-        }
-        const operand = self.lowerExpr(pc.operand);
-        return self.buildProtocolErasure(operand, pc.operand, self.builder.getRefType(operand), dst_ty);
+    if (pc.alloc_arg != null) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "'.({s}, alloc)' allocates, but an '{s}' handle borrows its referent — write '.({s})'", .{ dst_pi.name, dst_pi.name, dst_pi.name });
+        return self.builder.constUndef(dst_ty);
     }
-
-    const alloc_ty = self.module.types.findByName(self.module.types.internString("Allocator")) orelse {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, span, "'.(P)' needs the 'Allocator' protocol in scope — @import \"modules/std.sx\"", .{});
-        return self.builder.constUndef(dst_ty);
-    };
-    const alloc_val = if (pc.alloc_arg) |an| blk: {
-        if (!self.isLvalueExpr(an)) {
-            if (self.diagnostics) |d|
-                d.addFmt(.err, an.span, "the allocator argument of an owning erasure must be an LVALUE naming an allocator — bind it first (the value must outlive the erasure so `free(p, a)` can pair with it)", .{});
-            return self.builder.constUndef(dst_ty);
-        }
-        const av = self.lowerExpr(an);
-        const avt = self.builder.getRefType(av);
-        break :blk if (avt == alloc_ty) av else self.coerceOrErase(av, avt, alloc_ty, an);
-    } else self.ambientAllocator() orelse {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, span, "'.({s})' funds from context.allocator — import std or write '.({s}, <alloc>)'", .{ dst_pi.name, dst_pi.name });
-        return self.builder.constUndef(dst_ty);
-    };
 
     const operand = self.lowerExpr(pc.operand);
-    const src_ty = self.builder.getRefType(operand);
-
-    if (!src_ty.isBuiltin()) {
-        const si = self.module.types.get(src_ty);
-        // CLONE (`p.(P, alloc)`, same-protocol value) and PROMOTION
-        // (`pv.(P, alloc)`, `*P`) share one body: the receiver protocol
-        // value with its ctx replaced by a fresh heap copy of
-        // rt_size_of(type_id) bytes; vtable / fn words reused.
-        const proto_recv: ?Ref = if (src_ty == dst_ty)
-            operand
-        else if (si == .pointer and si.pointer.pointee == dst_ty)
-            self.builder.load(operand, dst_ty)
-        else
-            null;
-        if (proto_recv) |pv| {
-            const old_ctx = self.builder.structGet(pv, 0, void_ptr_ty);
-            const tid = self.builder.structGet(pv, 1, .type_value);
-            const sz_args = self.alloc.dupe(Ref, &.{tid}) catch unreachable;
-            const size_ref = self.builder.callBuiltin(.rt_size_of, sz_args, .i64);
-            const heap = allocViaAllocatorValue(self, alloc_val, size_ref);
-            _ = self.callExtern("memcpy", &.{ heap, old_ctx, size_ref }, void_ptr_ty);
-            const dfields = self.module.types.get(dst_ty).@"struct".fields;
-            var out = std.ArrayList(Ref).empty;
-            defer out.deinit(self.alloc);
-            out.append(self.alloc, heap) catch unreachable;
-            for (dfields[1..], 1..) |f, i| {
-                out.append(self.alloc, self.builder.structGet(pv, @intCast(i), f.ty)) catch unreachable;
-            }
-            const owned = self.alloc.dupe(Ref, out.items) catch unreachable;
-            return self.builder.emit(.{ .struct_init = .{ .fields = owned } }, dst_ty);
-        }
-        if (si == .pointer) {
-            const pointee = si.pointer.pointee;
-            if (self.getProtocolInfo(pointee) != null) {
-                if (self.diagnostics) |d|
-                    d.addFmt(.err, span, "cannot promote a '*{s}' view to owned '{s}' — promotion requires the same protocol", .{ self.formatTypeName(pointee), dst_pi.name });
-                return self.builder.constUndef(dst_ty);
-            }
-            // SNAPSHOT: *Concrete → owned P (heap-copy the pointee).
-            const ctn = self.resolveConcreteTypeName(pointee) orelse {
-                if (self.diagnostics) |d|
-                    d.addFmt(.err, span, "cannot erase a value of type '{s}' to protocol '{s}'", .{ self.formatTypeName(src_ty), dst_pi.name });
-                return self.builder.constUndef(dst_ty);
-            };
-            const psize: i64 = @intCast(self.module.types.typeSizeBytes(pointee));
-            const size_ref = self.builder.constInt(psize, .i64);
-            const heap = allocViaAllocatorValue(self, alloc_val, size_ref);
-            _ = self.callExtern("memcpy", &.{ heap, operand, size_ref }, void_ptr_ty);
-            return self.buildProtocolValue(heap, dst_pi.name, ctn, dst_ty, pointee);
-        }
-    }
-
-    // Concrete VALUE receiver — lvalue and rvalue alike OWN-COPY.
-    const ctn = self.resolveConcreteTypeName(src_ty) orelse {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, span, "cannot erase a value of type '{s}' to protocol '{s}'", .{ self.formatTypeName(src_ty), dst_pi.name });
-        return self.builder.constUndef(dst_ty);
-    };
-    const slot = self.builder.alloca(src_ty);
-    self.builder.store(slot, operand);
-    const vsize: i64 = @intCast(self.module.types.typeSizeBytes(src_ty));
-    const size_ref = self.builder.constInt(vsize, .i64);
-    const heap = allocViaAllocatorValue(self, alloc_val, size_ref);
-    _ = self.callExtern("memcpy", &.{ heap, slot, size_ref }, void_ptr_ty);
-    return self.buildProtocolValue(heap, dst_pi.name, ctn, dst_ty, src_ty);
+    return self.buildProtocolErasure(operand, pc.operand, self.builder.getRefType(operand), dst_ty);
 }
 
 /// Number of Era-2 dispatchable methods — the slot count of the protocol's

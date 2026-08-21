@@ -695,6 +695,12 @@ pub const Lowering = struct {
     /// `narrowed_refs`.
     xx_passthrough_refs: std.AutoHashMap(Ref, void) = undefined,
     force_block_value: bool = false, // set by lowerDemandedBody for a demand that wants a value, to extract if-else values
+    /// Set while lowering the expression a `return` (or a trailing-expression
+    /// body exit) hands back. An interface handle borrows a frame temp, which
+    /// the frame outlives — so an rvalue erasure on this spine is refused. The
+    /// flag is cleared wherever the value stops being the returned one: call
+    /// arguments, assignments, bindings, push fields, and nested bodies.
+    return_component: bool = false,
     // Set while lowering a NAMED multi-return function body (`-> (x: A, y: B)`):
     // the slot names (1:1 with the return tuple's fields; a trailing "!" marks
     // the failable error slot). The slots are bound as in-scope assignable locals;
@@ -1025,6 +1031,7 @@ pub const Lowering = struct {
         defer_base: usize,
         block_terminated: bool,
         force_block_value: bool,
+        return_component: bool,
         source_file: ?[]const u8,
         jni_env_base: usize,
         pack_arg_nodes: ?std.StringHashMap([]const *const Node),
@@ -1049,6 +1056,7 @@ pub const Lowering = struct {
                 .defer_base = l.func_defer_base,
                 .block_terminated = l.block_terminated,
                 .force_block_value = l.force_block_value,
+                .return_component = l.return_component,
                 .source_file = l.current_source_file,
                 .jni_env_base = l.jni_env_stack_base,
                 .pack_arg_nodes = l.pack_arg_nodes,
@@ -1088,6 +1096,7 @@ pub const Lowering = struct {
             l.func_defer_base = l.defer_stack.items.len;
             l.block_terminated = false;
             l.force_block_value = false;
+            l.return_component = false;
             return g;
         }
 
@@ -1098,6 +1107,7 @@ pub const Lowering = struct {
             l.func_defer_base = g.defer_base;
             l.block_terminated = g.block_terminated;
             l.force_block_value = g.force_block_value;
+            l.return_component = g.return_component;
             l.builder.func = g.func;
             l.builder.current_block = g.block;
             l.builder.inst_counter = g.counter;
@@ -3111,6 +3121,7 @@ pub const Lowering = struct {
             .shl => "<<",
             .shr => ">>",
             .in_op => "in",
+            .is_op => "is",
         };
     }
 
@@ -3212,6 +3223,7 @@ pub const Lowering = struct {
     pub const evalComptimeMatch = lower_comptime.evalComptimeMatch;
     pub const evalStaticTypeMatch = lower_comptime.evalStaticTypeMatch;
     pub const staticTypeMatchesCategory = lower_comptime.staticTypeMatchesCategory;
+    pub const isErasedProtocolType = lower_comptime.isErasedProtocolType;
     pub const evalComptimeInt = lower_comptime.evalComptimeInt;
     pub const evalComptimeString = lower_comptime.evalComptimeString;
     pub const evalComptimeType = lower_comptime.evalComptimeType;
@@ -3338,6 +3350,7 @@ pub const Lowering = struct {
     pub const narrowRestore = lower_control_flow.narrowRestore;
     pub const applyNarrowing = lower_control_flow.applyNarrowing;
     pub const tryConstBoolCondition = lower_control_flow.tryConstBoolCondition;
+    pub const staticIsCondition = lower_control_flow.staticIsCondition;
     pub const lowerWhile = lower_control_flow.lowerWhile;
     pub const listView = lower_control_flow.listView;
     pub const lowerFor = lower_control_flow.lowerFor;
@@ -3508,7 +3521,8 @@ pub const Lowering = struct {
     pub const resolveDeclaredTypeSubSelf = lower_protocol.resolveProtoTypeSubSelf;
     pub const typesClearlyDiffer = lower_protocol.typesClearlyDiffer;
     pub const protocolKindOf = lower_protocol.protocolKindOf;
-    pub const checkComptimeEscape = lower_protocol.checkComptimeEscape;
+    pub const staticIsAnswer = lower_protocol.staticIsAnswer;
+    pub const classifyIsTarget = lower_protocol.classifyIsTarget;
 
     pub const lowerProtocolProbe = lower_protocol.lowerProtocolProbe;
     pub const protocolTypeIdWord = lower_protocol.protocolTypeIdWord;
@@ -3521,9 +3535,7 @@ pub const Lowering = struct {
 
     // --- lower/coerce.zig (lower_coerce) ---
     pub const lowerXX = lower_coerce.lowerXX;
-    pub const refuseIdentityRvalueErasure = lower_coerce.refuseIdentityRvalueErasure;
-    pub const protocolIsIdentity = lower_coerce.protocolIsIdentity;
-    pub const demandOwnedErasure = lower_coerce.demandOwnedErasure;
+    pub const refuseReturnedRvalueErasure = lower_coerce.refuseReturnedRvalueErasure;
     pub const isClosureToBlockCast = lower_coerce.isClosureToBlockCast;
     pub const tryPackImplMatch = lower_coerce.tryPackImplMatch;
     pub const tryUserConversion = lower_coerce.tryUserConversion;
@@ -3804,6 +3816,7 @@ pub const Lowering = struct {
     pub const asmResultType = lower_expr.asmResultType;
     pub const refCapturePointee = lower_expr.refCapturePointee;
     pub const lowerBinaryOp = lower_expr.lowerBinaryOp;
+    pub const lowerIs = lower_expr.lowerIs;
     pub const lowerPointerArith = lower_expr.lowerPointerArith;
     pub const lowerBoolCondition = lower_expr.lowerBoolCondition;
     pub const checkConditionType = lower_expr.checkConditionType;

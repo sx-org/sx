@@ -1402,10 +1402,10 @@ test "parser: a protocol kind word reads through a line break" {
         \\    { fmt :: (self: *Self) -> string; }
     );
     const pd = (try p.parse()).data.root.decls[0].data.protocol_decl;
-    try std.testing.expectEqual(ast.ProtocolKind.vtable, pd.kind);
+    try std.testing.expectEqual(ast.ProtocolKind.erased, pd.kind);
 
     var same = try Parser.init(alloc, "Show :: protocol vtable { fmt :: (self: *Self) -> string; }\n");
-    try std.testing.expectEqual(ast.ProtocolKind.vtable, (try same.parse()).data.root.decls[0].data.protocol_decl.kind);
+    try std.testing.expectEqual(ast.ProtocolKind.erased, (try same.parse()).data.root.decls[0].data.protocol_decl.kind);
 }
 
 // A function header's optional slots all sit in front of a mandatory body.

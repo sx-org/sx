@@ -316,12 +316,19 @@ pub fn evalStaticTypeMatch(self: *Lowering, me: *const ast.MatchExpr) ?StaticTyp
     return .none_matched;
 }
 
+/// The interface-kind membership answer: is `tid` a directly-reified interface
+/// type? A Type derived from an instance carries the concrete's tag and is not
+/// one; a constraint mints no type at all.
+pub fn isErasedProtocolType(self: *Lowering, tid: TypeId) bool {
+    if (tid.isBuiltin()) return false;
+    const pi = self.getProtocolInfo(tid) orelse return false;
+    return pi.isErased();
+}
+
 /// Does the STATIC type `tid` belong to category `name` (or equal the
 /// specific type `name` denotes)? Mirrors `resolveTypeCategoryTags`'s
 /// runtime classification arm for arm so the static fold and the runtime
-/// tag switch can never disagree on what a category means — plus the
-/// `protocol` category, which exists ONLY here (a protocol value carries
-/// no runtime tag to switch on).
+/// tag switch can never disagree on what a category means.
 pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8) bool {
     const tt = &self.module.types;
     if (std.mem.eql(u8, name, "int")) {
@@ -336,6 +343,11 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
             }
         }
         return false;
+    }
+    // `signed` / `unsigned` partition `int`; neither reaches a float.
+    if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "unsigned")) {
+        if (!staticTypeMatchesCategory(self, tid, "int")) return false;
+        return tt.isUnsignedInt(tid) == std.mem.eql(u8, name, "unsigned");
     }
     if (std.mem.eql(u8, name, "float")) return tid == .f32 or tid == .f64;
     if (std.mem.eql(u8, name, "bool")) return tid == .bool;
@@ -352,7 +364,10 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
         return false;
     }
     const info = tt.get(tid);
-    if (std.mem.eql(u8, name, "struct")) return info == .@"struct";
+    // `interface` and `struct` are disjoint: an interface handle is backed by a
+    // struct in the type table, and only the interface word names it.
+    if (std.mem.eql(u8, name, "interface")) return isErasedProtocolType(self, tid);
+    if (std.mem.eql(u8, name, "struct")) return info == .@"struct" and !info.@"struct".is_protocol;
     if (std.mem.eql(u8, name, "enum")) return info == .@"enum" or info == .tagged_union;
     if (std.mem.eql(u8, name, "union")) return info == .@"union" or info == .tagged_union;
     if (std.mem.eql(u8, name, "slice")) return info == .slice;
@@ -362,8 +377,6 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
     if (std.mem.eql(u8, name, "optional")) return info == .optional;
     if (std.mem.eql(u8, name, "error_set")) return info == .error_set;
     if (std.mem.eql(u8, name, "closure")) return info == .closure;
-    if (std.mem.eql(u8, name, "protocol"))
-        return info == .protocol or (info == .@"struct" and info.@"struct".is_protocol);
     // A specific type name: generic bindings, then aliases, then the table.
     if (self.type_bindings) |tb| {
         if (tb.get(name)) |bound| return bound == tid;
@@ -474,7 +487,6 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
     const global_ty: TypeId = if (is_failable) self.failableSuccessType(expr_ty) else func_ret;
     // The result crosses into the runtime image, which is what makes this an
     // escape site (specs.md §6.9).
-    self.checkComptimeEscape(global_ty, expr.span);
     const func_id = self.createComptimeFunction(name, .ordinary, expr, func_ret);
 
     // Add a global constant whose initializer will be filled by the interpreter.

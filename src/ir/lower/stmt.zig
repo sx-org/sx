@@ -3658,14 +3658,11 @@ pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {
             const fval = self.lowerExpr(fi.value);
             self.target_type = saved_target_f;
             const fval_ty = self.builder.getRefType(fval);
-            // An @identity Context field (`allocator`, `io`) erases
-            // NODE-AWARE so an lvalue BORROWS (`push .{ allocator = gpa }`
-            // aliases `gpa`) — the node-less path would misread the lvalue
-            // as an rvalue and refuse. Other fields keep the node-less
-            // coercion (value/own protocol fields own their copy).
-            const fl_pi = self.getProtocolInfo(fl.ty);
+            // An interface Context field (`allocator`, `io`) erases NODE-AWARE
+            // so an lvalue BORROWS (`push .{ allocator = gpa }` aliases `gpa`);
+            // the node-less path cannot tell the lvalue from an rvalue.
             const store_val = if (fval_ty != fl.ty and fval_ty != .void and fl.ty != .void)
-                (if (fl_pi != null and fl_pi.?.ownership == .identity)
+                (if (self.getProtocolInfo(fl.ty) != null)
                     self.coerceOrErase(fval, fval_ty, fl.ty, fi.value)
                 else
                     self.coerceToType(fval, fval_ty, fl.ty))

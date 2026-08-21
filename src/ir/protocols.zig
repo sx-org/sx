@@ -603,8 +603,7 @@ pub const ProtocolResolver = struct {
         const protocol_info: ProtocolDeclInfo = .{
             .name = identity_name,
             .kind = pd.kind,
-            .ownership = if (pd.is_identity) .identity else .value_own,
-            .methods = self.l.alloc.dupe(ProtocolMethodInfo, method_infos.items) catch unreachable,
+                .methods = self.l.alloc.dupe(ProtocolMethodInfo, method_infos.items) catch unreachable,
         };
         self.l.protocol_info_by_type.put(protocol_ty, protocol_info) catch @panic("out of memory");
         self.l.protocol_ast_by_type.put(protocol_ty, pd) catch @panic("out of memory");

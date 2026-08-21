@@ -46,9 +46,9 @@ pub const Tag = enum(u8) {
     kw_push, // push
     kw_ufcs, // ufcs
     kw_in, // in
-    kw_protocol, // protocol
+    kw_is, // is (type-classification infix)
     kw_impl, // impl
-    kw_Self, // Self (in protocol declarations)
+    kw_Self, // Self (in interface/constraint declarations)
     kw_inline, // inline (compile-time if/for/while)
     kw_abi, // abi (ABI / calling-convention annotation: abi(.c)/abi(.zig)/abi(.naked))
     kw_extern, // extern (import: external linkage, C ABI, no body)
@@ -133,7 +133,6 @@ pub const Tag = enum(u8) {
     at_source, // @source (inside @import c { ... })
     at_define, // @define (inside @import c { ... })
     at_flags, // @flags (inside @import c { ... })
-    at_identity, // @identity (protocol ownership-class marker: borrow-only values)
     at_get, // `name :: (self) -> R @get => expr;` — a no-paren property accessor method (read via field syntax)
     at_set, // `name :: (self, value) @set { ... }` — the write counterpart of @get (`obj.name = rhs` dispatches here)
     at_context_extend, // `@context_extend name: Type = default;` — top-level Context field declaration
@@ -267,7 +266,7 @@ pub const Tag = enum(u8) {
             .kw_push,
             .kw_ufcs,
             .kw_in,
-            .kw_protocol,
+            .kw_is,
             .kw_impl,
             .kw_inline,
             .kw_abi,
@@ -287,7 +286,6 @@ pub const Tag = enum(u8) {
             .at_source,
             .at_define,
             .at_flags,
-            .at_identity,
             .at_get,
             .at_set,
             .at_context_extend,
@@ -393,7 +391,7 @@ pub const Tag = enum(u8) {
             .kw_push,
             .kw_ufcs,
             .kw_in,
-            .kw_protocol,
+            .kw_is,
             .kw_impl,
             .kw_Self,
             .kw_inline,
@@ -478,7 +476,6 @@ pub const Tag = enum(u8) {
             .at_source,
             .at_define,
             .at_flags,
-            .at_identity,
             .at_get,
             .at_set,
             .at_context_extend,
@@ -543,7 +540,7 @@ pub const keywords = std.StaticStringMap(Tag).initComptime(.{
     .{ "push", .kw_push },
     .{ "ufcs", .kw_ufcs },
     .{ "in", .kw_in },
-    .{ "protocol", .kw_protocol },
+    .{ "is", .kw_is },
     .{ "impl", .kw_impl },
     .{ "Self", .kw_Self },
     .{ "inline", .kw_inline },

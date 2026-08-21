@@ -433,15 +433,11 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                 if (l.index == sf_index) {
                     var val = l.val;
                     const src_ty = self.builder.getRefType(val);
-                    // An @identity protocol field erases NODE-AWARE, so an
-                    // lvalue initializer BORROWS (`.{ allocator = gpa }`
-                    // aliases `gpa`) — the node-less path would misread the
-                    // lvalue as an rvalue and refuse. value/own protocol
-                    // fields keep the node-less OWNING copy: the literal may
-                    // escape the frame (0401 pins the List-append case), so
-                    // a borrow would dangle.
-                    const dst_pi = self.getProtocolInfo(sf.ty);
-                    val = if (dst_pi != null and dst_pi.?.ownership == .identity)
+                    // An interface field erases NODE-AWARE, so an lvalue
+                    // initializer BORROWS (`.{ allocator = gpa }` aliases
+                    // `gpa`); the node-less path cannot tell the lvalue from
+                    // an rvalue.
+                    val = if (self.getProtocolInfo(sf.ty) != null)
                         self.coerceOrErase(val, src_ty, sf.ty, l.node)
                     else
                         self.coerceToType(val, src_ty, sf.ty);
@@ -4626,7 +4622,73 @@ pub fn lowerBoolCondition(self: *Lowering, node: *const Node) Ref {
     return v;
 }
 
+/// `subject is target`. The target is a TYPE, so the answer is a
+/// classification, never a value comparison. Four subject shapes reach here:
+/// a static type reference (folded), an interface handle (a handle's referent
+/// is behind `type_of`, so the handle itself answers about the interface it
+/// carries), an `any` box (its tag, unpeeled), and a runtime `Type` value.
+pub fn lowerIs(self: *Lowering, bop: *const ast.BinaryOp) Ref {
+    if (self.staticIsCondition(bop.lhs, bop.rhs)) |answer| return self.builder.constBool(answer);
+
+    const subject = self.lowerExpr(bop.lhs);
+    const subject_ty = self.builder.getRefType(subject);
+
+    // An interface HANDLE classifies as the interface it carries: the referent
+    // is reached through `type_of(h)`, not through the handle.
+    if (self.getProtocolInfo(subject_ty)) |_| return self.builder.constBool(handleIsAnswer(self, subject_ty, bop.rhs));
+
+    const tag: Ref = if (subject_ty == .type_value)
+        subject
+    else if (subject_ty == .any)
+        self.builder.emit(.{ .struct_get = .{ .base = subject, .field_index = 1 } }, .type_value)
+    else {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, bop.lhs.span, "'is' classifies a TYPE — '{s}' is a value; write 'type_of(…) is …' to ask about its type", .{self.formatTypeName(subject_ty)});
+        return self.builder.constBool(false);
+    };
+
+    return runtimeIsAnswer(self, tag, bop.rhs, bop.lhs.span);
+}
+
+/// The static answer for an interface HANDLE subject: the handle IS its own
+/// interface, is no other interface and no concrete type, and satisfies a
+/// constraint exactly when a bridge `impl C for I` is visible.
+fn handleIsAnswer(self: *Lowering, handle_ty: TypeId, rhs: *const Node) bool {
+    return self.staticIsAnswer(handle_ty, rhs) orelse false;
+}
+
+/// The runtime answer over a `Type`-valued tag: an OR-reduction over the tag
+/// set the target denotes.
+fn runtimeIsAnswer(self: *Lowering, tag: Ref, rhs: *const Node, span: ast.Span) Ref {
+    const target = self.classifyIsTarget(rhs) orelse return self.builder.constBool(false);
+    const tags: []const u64 = switch (target) {
+        .category => |word| self.resolveTypeCategoryTags(word),
+        .concrete => |ty| blk: {
+            const one = self.alloc.alloc(u64, 1) catch break :blk &.{};
+            one[0] = ty.index();
+            break :blk one;
+        },
+        .interface, .constraint => {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, span, "asking a runtime 'Type' whether it conforms to a contract is not supported yet — ask the static form ('inline if T is …') instead", .{});
+            return self.builder.constBool(false);
+        },
+    };
+    if (tags.len == 0) return self.builder.constBool(false);
+    var acc: ?Ref = null;
+    for (tags) |t| {
+        const want = self.builder.emit(.{ .const_type = TypeId.fromIndex(@intCast(t)) }, .type_value);
+        const args = self.alloc.dupe(Ref, &.{ tag, want }) catch continue;
+        const eq = self.builder.callBuiltin(.rt_type_eq, args, .bool);
+        acc = if (acc) |a| self.builder.emit(.{ .bit_or = .{ .lhs = a, .rhs = eq } }, .bool) else eq;
+    }
+    return acc orelse self.builder.constBool(false);
+}
+
 pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
+    // `is` reads its RHS as a TYPE, so it is answered before either operand is
+    // lowered as a value.
+    if (bop.op == .is_op) return self.lowerIs(bop);
     // Short-circuit: `a and b` → if a then b else false
     if (bop.op == .and_op) {
         const lhs = self.lowerBoolCondition(bop.lhs);
@@ -5060,6 +5122,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         .shl => self.builder.emit(.{ .shl = .{ .lhs = lhs, .rhs = rhs } }, ty),
         .shr => self.builder.emit(.{ .shr = .{ .lhs = lhs, .rhs = rhs } }, ty),
         .in_op => self.emitError("in_op", bop.lhs.span),
+        .is_op => unreachable, // intercepted at the head of lowerBinaryOp
     };
 }
 

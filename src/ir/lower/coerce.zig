@@ -815,60 +815,39 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
     if (self.refuseValuelessProtocol(dst_ty, operand_node.span, "make a value of")) return self.builder.constUndef(dst_ty);
     const proto_name = self.module.types.getString(dst_info.@"struct".name);
 
-    // Determine concrete type name and type — resolve through pointer if needed
+    // An interface handle IS the target already; copy it.
+    if (src_ty == dst_ty) return operand;
+
     var concrete_ptr = operand;
     var concrete_type_name: ?[]const u8 = null;
     var concrete_ty: TypeId = src_ty;
     var is_rvalue = false;
 
-    // Ownership classes split the conversion-mode arms: an @identity
-    // target BORROWS lvalues/pointers; a value/own target OWNS its ctx and
-    // an implicit erasure never allocates, so EVERY shape at a value/own
-    // target is the DEMAND error. (The owning spelling is the postfix
-    // `.(P, alloc)` — lowerOwningErasure.)
-    const dst_borrows = self.protocolIsIdentity(dst_ty);
-
     if (!src_ty.isBuiltin()) {
         const src_info = self.module.types.get(src_ty);
+        if (src_info == .pointer and src_info.pointer.pointee == dst_ty) {
+            // `*I` at an `I` target: the handle is the pointee, so LOAD it.
+            // This arm stands ahead of the pointer-erasure arm, which would
+            // otherwise erase the handle's own storage as a concrete value.
+            return self.builder.load(operand, dst_ty);
+        }
         if (src_info == .pointer) {
-            // Pointer operand (`xx @acc`): identity borrows the pointee;
-            // value/own demands the snapshot or a view.
-            if (!dst_borrows) return self.demandOwnedErasure(dst_ty, proto_name, operand_node, .pointer);
             const pointee = src_info.pointer.pointee;
             concrete_type_name = self.resolveConcreteTypeName(pointee);
             concrete_ty = pointee;
-            is_rvalue = false;
         } else if (src_info == .@"struct") {
-            // Struct-typed operand. Split on lvalue-ness:
-            //   - lvalue (identifier, field, index, deref): identity
-            //     borrows the storage the operand names; value/own
-            //     DEMANDS the explicit owning spelling.
-            //   - rvalue (struct literal, call result, etc.): value/own
-            //     DEMANDS too — an implicit erasure never allocates, so
-            //     the owning copy exists only under postfix `.(P, alloc)`;
-            //     identity refuses — no name.
             concrete_type_name = self.module.types.getString(src_info.@"struct".name);
             concrete_ty = src_ty;
             if (self.isLvalueExpr(operand_node)) {
-                // Compiler-materialized pack temps (`__pack_*`) are exempt
-                // from the demand: the binding is a fresh COPY with
-                // call-duration lifetime — the erasure borrows the pack's
-                // own materialization, no user storage is aliased, and no
-                // user spelling exists to respell it.
-                const is_pack_temp = operand_node.data == .identifier and
-                    std.mem.startsWith(u8, operand_node.data.identifier.name, "__pack_");
-                if (!dst_borrows and !is_pack_temp) return self.demandOwnedErasure(dst_ty, proto_name, operand_node, .lvalue);
                 if (self.isByValueBindingIdent(operand_node)) {
                     // A by-VALUE SSA binding (`for x in arr`, a match/catch
                     // capture, a `::` const) is semantically a COPY of the
                     // element it was read from. Deriving the borrow address
                     // through `refStorageAddress` would see through the
                     // binding's defining load to the CONTAINER's storage —
-                    // making `xx x` alias the original element and mutate it
-                    // through the protocol, indistinguishable from the
-                    // by-ref `*x` form. Materialize the copy instead: a
-                    // fresh stack slot holds the already-lowered value and
-                    // the protocol borrows THAT, so mutations land in the
+                    // making the handle alias the original element and mutate
+                    // it, indistinguishable from the by-ref `*x` form.
+                    // Materialize the copy instead so mutations land in the
                     // per-iteration copy. By-ref captures never reach here —
                     // their binding is pointer-typed, handled by the pointer
                     // arm above.
@@ -884,102 +863,44 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
                     // `lowerExprAsPtr` remains as the fallback when no
                     // address is derivable from the defining instruction
                     // (e.g. a struct param bound directly to its SSA ref) —
-                    // NOTE that fallback still re-lowers the AST, so it is
-                    // only safe for shapes whose re-lowering has no side
-                    // effects; every effectful lvalue shape (loads, global
-                    // reads, field/index chains over them) is covered by
-                    // refStorageAddress above.
+                    // that fallback re-lowers the AST, so it is only safe for
+                    // shapes whose re-lowering has no side effects; every
+                    // effectful lvalue shape (loads, global reads, field/index
+                    // chains over them) is covered by refStorageAddress above.
                     concrete_ptr = self.refStorageAddress(operand) orelse self.lowerExprAsPtr(operand_node);
                 }
-                is_rvalue = false;
             } else {
-                if (!dst_borrows) return self.demandOwnedErasure(dst_ty, proto_name, operand_node, .rvalue);
                 is_rvalue = true;
-                const slot = self.builder.alloca(src_ty);
-                self.builder.store(slot, operand);
-                concrete_ptr = slot;
             }
         }
     }
 
-    // Also try from the operand node for struct literals: xx Accumulator{ total = 0 }
     if (concrete_type_name == null) {
         concrete_type_name = self.inferConcreteTypeName(operand_node);
-        if (concrete_type_name != null) {
-            is_rvalue = true;
-            if (!dst_borrows) return self.demandOwnedErasure(dst_ty, proto_name, operand_node, .rvalue);
-        }
+        if (concrete_type_name != null) is_rvalue = true;
     }
 
     if (concrete_type_name) |ctn| {
-        // @identity protocols only ever BORROW: an rvalue has no durable
-        // storage to borrow and an owning heap-copy is exactly what the
-        // class forbids — refuse instead.
-        if (is_rvalue and self.refuseIdentityRvalueErasure(dst_ty, operand_node.span)) {
-            return self.builder.emit(.{ .placeholder = self.module.types.internString("identity-erasure") }, dst_ty);
+        if (is_rvalue) {
+            if (self.refuseReturnedRvalueErasure(dst_ty, proto_name, operand_node.span))
+                return self.builder.emit(.{ .placeholder = self.module.types.internString("protocol-erasure") }, dst_ty);
+            const slot = self.builder.alloca(concrete_ty);
+            self.builder.store(slot, operand);
+            concrete_ptr = slot;
         }
         return self.buildProtocolValue(concrete_ptr, proto_name, ctn, dst_ty, concrete_ty);
     }
     return operand;
 }
 
-/// True when `ty` is an `@identity` protocol (borrow-only ownership class).
-pub fn protocolIsIdentity(self: *Lowering, ty: TypeId) bool {
-    const pi = self.getProtocolInfo(ty) orelse return false;
-    return pi.ownership == .identity;
-}
-
-/// The operand shape a demanded owning erasure was refused for — picks the
-/// demand diagnostic's wording.
-pub const ErasureOperandShape = enum { lvalue, pointer, rvalue };
-
-/// The DEMAND diagnostic: a value/own protocol value always OWNS its ctx,
-/// and only the explicit postfix spelling `.(P)` / `.(P, alloc)` may fund
-/// that copy — an implicit erasure (a bare operand at a `P` target, or
-/// `xx`, the conversion operator) would silently heap-allocate. Demand
-/// the explicit spelling instead, for every operand shape.
-/// `subject` is the operand's source name when known (identifier), else a
-/// generic subject. Emits and returns a protocol-typed placeholder.
-pub fn demandOwnedErasure(self: *Lowering, dst_ty: TypeId, proto_name: []const u8, operand_node: ?*const Node, shape: ErasureOperandShape) Ref {
+/// The return-spine refusal: an rvalue erased at an interface target borrows a
+/// frame temp, so handing the handle back outlives the storage it names.
+pub fn refuseReturnedRvalueErasure(self: *Lowering, dst_ty: TypeId, proto_name: []const u8, span: ast.Span) bool {
+    if (!self.return_component) return false;
     if (self.diagnostics) |d| {
-        const span: ?ast.Span = if (operand_node) |n| n.span else blk: {
-            const cs = self.builder.current_span;
-            break :blk ast.Span{ .start = cs.start, .end = cs.end };
-        };
-        const named: ?[]const u8 = if (operand_node) |n| (if (n.data == .identifier) n.data.identifier.name else null) else null;
-        if (shape == .rvalue) {
-            d.addFmt(.err, span, "the operand is an rvalue and '{s}' values own their storage — an implicit erasure here would silently heap-allocate the copy; write the owning copy (postfix '.({s})' or '.({s}, <alloc>)')", .{ proto_name, proto_name, proto_name });
-        } else if (shape == .pointer) {
-            if (named) |nm| {
-                d.addFmt(.err, span, "'{s}' is a pointer and '{s}' values own their storage — an implicit erasure here would silently alias or copy the pointee; write the snapshot ('{s}.({s})' copies the pointee through context.allocator) or pass a view ('*{s}' parameter) for transient use", .{ nm, proto_name, nm, proto_name, proto_name });
-            } else {
-                d.addFmt(.err, span, "the operand is a pointer and '{s}' values own their storage — an implicit erasure here would silently alias or copy the pointee; write the snapshot (postfix '.({s})') or pass a view ('*{s}' parameter) for transient use", .{ proto_name, proto_name, proto_name });
-            }
-        } else {
-            if (named) |nm| {
-                d.addFmt(.err, span, "'{s}' is an lvalue and '{s}' values own their storage — an implicit erasure here would silently heap-copy it; write the copy ('{s}.({s})') or pass a view ('*{s}' parameter) for transient use", .{ nm, proto_name, nm, proto_name, proto_name });
-            } else {
-                d.addFmt(.err, span, "the operand is an lvalue and '{s}' values own their storage — an implicit erasure here would silently heap-copy it; write the copy (postfix '.({s})') or pass a view ('*{s}' parameter) for transient use", .{ proto_name, proto_name, proto_name });
-            }
-        }
+        d.addFmt(.err, span, "cannot return an '{s}' handle over a temporary — the handle borrows a frame slot the caller outlives; bind the value where it lives, or write it through 'Allocator.make' and return the handle over that", .{proto_name});
     }
-    return self.builder.emit(.{ .placeholder = self.module.types.internString("protocol-erasure") }, dst_ty);
-}
-
-/// The @identity rvalue-erasure refusal: returns true (diagnostic emitted)
-/// when `dst_ty` is an `@identity` protocol — such values only ever borrow
-/// a named object's storage, so an owning (heap-copying) erasure of an
-/// rvalue is a compile error.
-pub fn refuseIdentityRvalueErasure(self: *Lowering, dst_ty: TypeId, span: ?ast.Span) bool {
-    const pi = self.getProtocolInfo(dst_ty) orelse return false;
-    if (pi.ownership != .identity) return false;
-    if (self.diagnostics) |d| {
-        const s = span orelse blk: {
-            const cs = self.builder.current_span;
-            break :blk ast.Span{ .start = cs.start, .end = cs.end };
-        };
-        d.addFmt(.err, s, "cannot erase an rvalue to '@identity' protocol '{s}' — identity objects need a name; bind it first (`x := …;` then `xx x` / `x.({s})` borrows the local)", .{ pi.name, pi.name });
-    }
+    _ = dst_ty;
     return true;
 }
 
@@ -1941,48 +1862,22 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         .erase_protocol => {
             const proto_name = self.module.types.getString(self.module.types.get(dst_ty).@"struct".name);
             const ctn = self.resolveConcreteTypeName(src_ty).?;
-            const node_less_borrows = self.protocolIsIdentity(dst_ty);
-            // If src is a pointer, use directly; otherwise alloca+store + heap-copy
             var concrete_ptr = val;
             var concrete_ty = src_ty;
-            var is_rvalue = false;
             if (!src_ty.isBuiltin() and self.module.types.get(src_ty) == .pointer) {
-                // Pointer operand: identity borrows the pointee (the user
-                // owns its lifetime); value/own demands the explicit
-                // snapshot/view spelling.
-                if (!node_less_borrows) return self.demandOwnedErasure(dst_ty, proto_name, null, .pointer);
                 concrete_ty = self.module.types.get(src_ty).pointer.pointee;
-                is_rvalue = false;
+            } else if (self.refStorageAddress(val)) |addr| {
+                // This node-less layer serves call paths that lowered the arg
+                // before its param target was known (UFCS/generic routes), so
+                // lvalue-ness is proved from the defining instruction rather
+                // than the AST: a READ of named storage borrows that storage.
+                concrete_ptr = addr;
             } else {
-                // A VALUE — a builtin scalar (`f32`, `i64`, …) OR a struct /
-                // aggregate rvalue, with no address of its own.
-                //
-                // This node-less layer serves call paths that lowered the
-                // arg before its param target was known (UFCS/generic
-                // routes). `refStorageAddress` proves from the defining
-                // instruction whether the value is a READ of named storage:
-                //   - identity target: storage → borrow it; genuine rvalue
-                //     → refusal (identity objects need a name).
-                //   - value/own target: the DEMAND error for every shape —
-                //     an implicit erasure never allocates, so the owning
-                //     copy exists only under postfix `.(P, alloc)`.
-                if (node_less_borrows) {
-                    if (self.refStorageAddress(val)) |addr| {
-                        concrete_ptr = addr;
-                        is_rvalue = false;
-                    } else if (self.refuseIdentityRvalueErasure(dst_ty, null)) {
-                        return self.builder.emit(.{ .placeholder = self.module.types.internString("identity-erasure") }, dst_ty);
-                    } else {
-                        const slot = self.builder.alloca(src_ty);
-                        self.builder.store(slot, val);
-                        concrete_ptr = slot;
-                        is_rvalue = true;
-                    }
-                } else {
-                    if (self.refStorageAddress(val) != null)
-                        return self.demandOwnedErasure(dst_ty, proto_name, null, .lvalue);
-                    return self.demandOwnedErasure(dst_ty, proto_name, null, .rvalue);
-                }
+                if (self.refuseReturnedRvalueErasure(dst_ty, proto_name, .{ .start = self.builder.current_span.start, .end = self.builder.current_span.end }))
+                    return self.builder.emit(.{ .placeholder = self.module.types.internString("protocol-erasure") }, dst_ty);
+                const slot = self.builder.alloca(src_ty);
+                self.builder.store(slot, val);
+                concrete_ptr = slot;
             }
             return self.buildProtocolValue(concrete_ptr, proto_name, ctn, dst_ty, concrete_ty);
         },
