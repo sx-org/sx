@@ -280,7 +280,7 @@ fn checkProtocolBinding(
         return;
     };
     const b = self.boundNonConformance(proto_ty, concrete_name, bound_ty) orelse return;
-    reportBoundNonConformance(self, bound, proto_name, param, bound_ty, b);
+    reportBoundNonConformance(self, bound, proto_ty, proto_name, param, bound_ty, b);
 }
 
 /// A handle reaches a foreign head only through `impl Head for Handle`. With no
@@ -291,6 +291,7 @@ fn checkProtocolBinding(
 fn reportBoundNonConformance(
     self: *Lowering,
     bound: *const Node,
+    proto_ty: TypeId,
     proto_name: []const u8,
     param: []const u8,
     bound_ty: TypeId,
@@ -318,7 +319,7 @@ fn reportBoundNonConformance(
         }
     }
     reportViolation(self, bound, proto_name, param, bound_ty,
-        "'{s}' has no '{s}' for '{s}'", .{ self.formatTypeName(bound_ty), b.nc.method, proto_name });
+        "'{s}' has no '{s}' for '{s}'", .{ self.formatTypeName(bound_ty), lower_protocol.requiredMethodSignature(self, proto_ty, b.nc.method), proto_name });
 }
 
 /// A compiler-formed bound. There is no impl to look up: the binding satisfies

@@ -4,7 +4,7 @@ error: 'Show' does not satisfy the bound 'Miss' on '$T'
 36 | miss :: (v: $T/Miss) -> i64 { 1 }
    |                ^^^^
 
-help: 'Show' has no 'tag' for 'Miss'
+help: 'Show' has no 'tag :: (self: *Self) -> i64' for 'Miss'
    |
 36 | miss :: (v: $T/Miss) -> i64 { 1 }
    |                ^^^^
@@ -59,7 +59,7 @@ error: 'U' does not satisfy the bound 'Show' on '$T'
 41 | concrete :: (v: $T/Show) -> i64 { 1 }
    |                    ^^^^
 
-help: 'U' has no 'show' for 'Show'
+help: 'U' has no 'show :: (self: *Self) -> string' for 'Show'
    |
 41 | concrete :: (v: $T/Show) -> i64 { 1 }
    |                    ^^^^
@@ -70,7 +70,7 @@ error: 'Wb' does not satisfy the bound 'Show' on '$T'
 41 | concrete :: (v: $T/Show) -> i64 { 1 }
    |                    ^^^^
 
-help: 'Wb' has no 'show' for 'Show'
+help: 'Wb' has no 'show :: (self: *Self) -> string' for 'Show'
    |
 41 | concrete :: (v: $T/Show) -> i64 { 1 }
    |                    ^^^^
