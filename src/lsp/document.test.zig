@@ -524,7 +524,7 @@ test "analyzeDocument: protocol and impl methods are member defs owned by their 
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const src: [:0]const u8 =
-        \\Shape :: protocol vtable {
+        \\Shape :: interface {
         \\    area :: (self: *Self) -> i64;
         \\}
         \\
@@ -549,7 +549,7 @@ test "analyzeDocument: a protocol-typed local owns its method uses" {
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const lib_src: [:0]const u8 =
-        \\Shape :: protocol vtable {
+        \\Shape :: interface {
         \\    area :: (self: *Self) -> i64;
         \\}
         \\
@@ -579,7 +579,7 @@ test "analyzeDocument: a re-export alias carries its target type to importers" {
 
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{}, alloc);
     const inner_src: [:0]const u8 =
-        \\Shape :: protocol vtable {
+        \\Shape :: interface {
         \\    area :: (self: *Self) -> i64;
         \\}
         \\
@@ -620,7 +620,7 @@ test "analyzeDocument: a @context_extend member's type owns its method uses" {
     const lib_src: [:0]const u8 =
         \\Context :: struct { }
         \\
-        \\Shape :: protocol vtable {
+        \\Shape :: interface {
         \\    area :: (self: *Self) -> i64;
         \\}
         \\

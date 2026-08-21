@@ -546,7 +546,7 @@ test "protocol default bodies number in their own method scope" {
     defer arena.deinit();
     const a = arena.allocator();
     const decls = try parse(a,
-        \\Ord :: protocol constraint {
+        \\Ord :: constraint {
         \\    less :: (self: *Self, other: Self) -> bool { one(); }
         \\    more :: (self: *Self, other: Self) -> bool { two(); }
         \\}

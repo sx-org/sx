@@ -629,7 +629,7 @@ pub const Server = struct {
                 .constant => @intFromEnum(lsp.SymbolKindLsp.Constant),
                 .enum_type => @intFromEnum(lsp.SymbolKindLsp.Enum),
                 .struct_type => @intFromEnum(lsp.SymbolKindLsp.Struct),
-                .protocol_type => @intFromEnum(lsp.SymbolKindLsp.Interface),
+                .constraint_type, .interface_type => @intFromEnum(lsp.SymbolKindLsp.Interface),
                 .type_alias => @intFromEnum(lsp.SymbolKindLsp.Class),
                 .param => @intFromEnum(lsp.SymbolKindLsp.Variable),
                 .namespace => @intFromEnum(lsp.SymbolKindLsp.Namespace),
@@ -695,7 +695,7 @@ pub const Server = struct {
                 .constant => @intFromEnum(lsp.CompletionItemKind.Constant),
                 .enum_type => @intFromEnum(lsp.CompletionItemKind.Enum),
                 .struct_type => @intFromEnum(lsp.CompletionItemKind.Struct),
-                .protocol_type => @intFromEnum(lsp.CompletionItemKind.Interface),
+                .constraint_type, .interface_type => @intFromEnum(lsp.CompletionItemKind.Interface),
                 .type_alias => @intFromEnum(lsp.CompletionItemKind.Class),
                 .param => @intFromEnum(lsp.CompletionItemKind.Variable),
                 .namespace => @intFromEnum(lsp.CompletionItemKind.Module),
@@ -1831,7 +1831,7 @@ pub const Server = struct {
             .param => ST.parameter,
             .enum_type => ST.enum_,
             .struct_type => ST.struct_,
-            .protocol_type => ST.interface,
+            .constraint_type, .interface_type => ST.interface,
             .type_alias => ST.type_,
             .namespace => ST.namespace,
         };
@@ -2106,7 +2106,8 @@ pub const Server = struct {
     fn findTypeDeclNode(self: *Server, sema: SemaResult, doc: *const Document, type_name: []const u8) ?TypeDeclLookup {
         for (sema.symbols) |sym| {
             if (!std.mem.eql(u8, sym.name, type_name)) continue;
-            if (sym.kind != .struct_type and sym.kind != .enum_type and sym.kind != .protocol_type) continue;
+            if (sym.kind != .struct_type and sym.kind != .enum_type and
+                sym.kind != .constraint_type and sym.kind != .interface_type) continue;
 
             const lookup_doc = self.resolveSymbolDoc(doc, sym);
             const lookup_root = lookup_doc.root orelse return null;
@@ -3214,9 +3215,13 @@ pub const Server = struct {
                 try buf.appendSlice(allocator, sym.name);
                 try buf.appendSlice(allocator, " :: struct { ... }");
             },
-            .protocol_type => {
+            .constraint_type => {
                 try buf.appendSlice(allocator, sym.name);
-                try buf.appendSlice(allocator, " :: protocol { ... }");
+                try buf.appendSlice(allocator, " :: constraint { ... }");
+            },
+            .interface_type => {
+                try buf.appendSlice(allocator, sym.name);
+                try buf.appendSlice(allocator, " :: interface { ... }");
             },
             .type_alias => {
                 try buf.appendSlice(allocator, sym.name);
