@@ -76,11 +76,21 @@ fn plainHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool {
     }
 }
 
-/// The name of the first protocol method `concrete_ty` fails to provide, or null
-/// when it satisfies the protocol. The bound checker wants the name only.
-pub fn firstUnimplementedProtocolMethod(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) ?[]const u8 {
+/// A bound's failure, with the one fact that separates a MISSING bridge from a
+/// non-conforming one: whether an `impl` for this pair was declared at all.
+pub const BoundNonConformance = struct {
+    nc: NonConformance,
+    impl_visible: bool,
+};
+
+/// How the binding fails `proto_ty`, or null when it satisfies it. `impl_visible`
+/// is the DECLARATION ledger alone: a bound is answered at a monomorphization,
+/// against the impl set as it stands there.
+pub fn boundNonConformance(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) ?BoundNonConformance {
     const nc = firstUnimplementedMethod(self, proto_ty, concrete_type_name, concrete_ty) orelse return null;
-    return nc.method;
+    const pd = self.getProtocolInfo(proto_ty) orelse return .{ .nc = nc, .impl_visible = false };
+    const identity_ty: ?TypeId = if (self.protocol_ast_by_type.get(proto_ty) != null) proto_ty else null;
+    return .{ .nc = nc, .impl_visible = self.protocolResolver().hasConcreteImplDecl(identity_ty, pd.name, concrete_ty) };
 }
 
 /// The name an `impl` head would spell to reach the protocol `proto_node`
@@ -1089,7 +1099,7 @@ fn ensureProtocolImplMethodLowered(self: *Lowering, proto_ty: TypeId, proto_name
 
 /// Why a concrete type fails to conform to a protocol method, named at the
 /// specific method that fails. `kind` drives the diagnostic wording.
-const NonConformance = struct {
+pub const NonConformance = struct {
     method: []const u8,
     kind: enum {
         /// No `impl`/struct-method body resolves for `<Type>.<method>` at all.
@@ -1140,7 +1150,7 @@ const NonConformance = struct {
 /// type params are bound by the instance, not introduced by the method, and
 /// `monomorphizeFunction` always registers it. Conformance is IMPL-DRIVEN, so a
 /// type satisfying the method only via a free / `ufcs` function does NOT conform.
-fn firstUnimplementedMethod(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) ?NonConformance {
+pub fn firstUnimplementedMethod(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) ?NonConformance {
     const pd = self.getProtocolInfo(proto_ty) orelse return null;
     const proto_name = pd.name;
     // AST of the protocol (carries each method's raw param/return type nodes +
@@ -1168,7 +1178,7 @@ fn firstUnimplementedMethod(self: *Lowering, proto_ty: TypeId, concrete_type_nam
         }
         // An explicit `impl C for I` with I itself a protocol: I's declared
         // methods satisfy exact-signature members, Self standing for I.
-        if (self.protocol_impl_decls.contains(self.protocolResolver().protocolConcreteKey(identity_ty, proto_name, concrete_ty))) {
+        if (self.protocolResolver().hasConcreteImplDecl(identity_ty, proto_name, concrete_ty)) {
             if (self.protocol_ast_by_type.get(concrete_ty)) |cpd| {
                 if (methodAst(cpd, m.name)) |provided| {
                     if (pd_ast) |pda| {

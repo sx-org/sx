@@ -1,18 +1,26 @@
 // A constraint head takes an interface type as a conformer. The interface's
 // own methods satisfy exact-signature members, so the impl body is empty.
+// A head the handle IS satisfies it by identity, and a head that asks for no
+// method at all is satisfied by anything.
 @import "modules/std.sx";
 
 Show :: interface { show :: (self: *Self) -> string; }
 Shown :: constraint { show :: (self: *Self) -> string; }
 impl Shown for Show {}
 
+Marker :: interface {}
+
 W :: struct { n: i64; }
 impl Show for W { show :: (self: *W) -> string { "w" } }
 
 through :: (x: $T/Shown) -> string { x.show() }
+same :: (x: $T/Show) -> string { x.show() }
+marked :: (x: $T/Marker) -> i64 { 1 }
 
 main :: () {
     w := W{ n = 1 };
     h : Show = w;
     print("{}\n", through(h));
+    print("{}\n", same(h));
+    print("{}\n", marked(h));
 }

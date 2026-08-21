@@ -1,0 +1,55 @@
+// A handle whose bridge onto the head IS written fails at the bridge's methods.
+// Only a MISSING bridge is reported as one; every other way the handle fails
+// names the method that failed. A concrete conformer has no bridge to miss, so
+// a signature that does not match is a method it does not implement.
+@import "modules/std.sx";
+
+Show :: interface { show :: (self: *Self) -> string; }
+View :: interface { draw :: (self: *Self) -> i64; }
+
+Miss :: constraint {
+    show :: (self: *Self) -> string;
+    tag :: (self: *Self) -> i64;
+}
+impl Miss for Show {}
+
+Bad :: constraint { show :: (self: *Self) -> i64; }
+impl Bad for Show {}
+
+Ret :: constraint { show :: (self: *Self) -> string; }
+impl Ret for Show { show :: (self: *Show) -> i64 { 1 } }
+
+Arity :: constraint { show :: (self: *Self, n: i64) -> string; }
+impl Arity for Show {}
+
+Gen :: constraint { show :: (self: *Self) -> string; }
+impl Gen for Show { show :: (self: *Show, $T: Type) -> string { "g" } }
+
+W :: struct { n: i64; }
+impl Show for W { show :: (self: *W) -> string { "w" } }
+
+U :: struct { n: i64; }
+
+Wb :: struct { n: i64; }
+impl Show for Wb { show :: (self: *Wb) -> i64 { 1 } }
+
+miss :: (v: $T/Miss) -> i64 { 1 }
+bad :: (v: $T/Bad) -> i64 { 1 }
+ret :: (v: $T/Ret) -> i64 { 1 }
+arity :: (v: $T/Arity) -> i64 { 1 }
+gen :: (v: $T/Gen) -> i64 { 1 }
+concrete :: (v: $T/Show) -> i64 { 1 }
+relay :: ($P: Type, v: $V/P) -> i64 { 1 }
+
+main :: () {
+    h : Show = W{ n = 1 };
+    print("{}\n", miss(h));
+    print("{}\n", bad(h));
+    print("{}\n", ret(h));
+    print("{}\n", arity(h));
+    print("{}\n", gen(h));
+    print("{}\n", concrete(U{ n = 2 }));
+    print("{}\n", concrete(Wb{ n = 3 }));
+    print("{}\n", relay(View, h));
+    print("{}\n", relay(Bad, h));
+}

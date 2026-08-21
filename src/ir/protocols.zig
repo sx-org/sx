@@ -129,6 +129,13 @@ pub const ProtocolResolver = struct {
         };
     }
 
+    /// Is an `impl <p_name> for <ty>` DECLARATION recorded for this pair? The
+    /// declaration is a separate fact from conformance: an impl may be written
+    /// and still fail the protocol's methods.
+    pub fn hasConcreteImplDecl(self: ProtocolResolver, proto_ty: ?TypeId, p_name: []const u8, ty: TypeId) bool {
+        return self.l.protocol_impl_decls.contains(self.protocolConcreteKey(proto_ty, p_name, ty));
+    }
+
     fn protocolImplKey(self: ProtocolResolver, proto_ty: ?TypeId, p_name: []const u8, ty: TypeId, method: []const u8) lower.ProtocolImplMethodKey {
         return .{
             .protocol = proto_ty orelse .unresolved,
@@ -175,7 +182,7 @@ pub const ProtocolResolver = struct {
     /// `Type.method` selection without cross-binding display-name collisions.
     pub fn protocolDispatchMethod(self: ProtocolResolver, proto_ty: ?TypeId, p_name: []const u8, ty: TypeId, method: []const u8) ?ProtocolImplMethod {
         if (self.protocolImplMethod(proto_ty, p_name, ty, method)) |exact| return exact;
-        if (!self.l.protocol_impl_decls.contains(self.protocolConcreteKey(proto_ty, p_name, ty))) return null;
+        if (!self.hasConcreteImplDecl(proto_ty, p_name, ty)) return null;
         const adopted = self.l.plainStructAdoptableMethod(ty, method) orelse return null;
         return .{ .fd = adopted.fd, .concrete = ty, .source = adopted.source, .is_synthesized_default = false };
     }
@@ -723,8 +730,8 @@ pub const ProtocolResolver = struct {
         // exact impl maps.
         if (ib.target_type_params.len == 0 and ib.target_type.len > 0 and concrete_ty == null) return;
         if (concrete_ty) |cty| {
-            // Protocols are not concrete types, so they never conform (§10).
-            // A curated `inline for` list that names one lands here.
+            // An interface head takes concrete conformers; a constraint head
+            // takes interface types too.
             if (!cty.isBuiltin() and self.l.module.types.get(cty) == .@"struct" and
                 self.l.module.types.get(cty).@"struct".is_protocol)
             {

@@ -135,7 +135,7 @@ fn receiverFitsFirstParam(self: *Lowering, fd: *const ast.FnDecl, recv_ty: TypeI
     const pi = self.getProtocolInfo(want) orelse return false;
     if (!pi.isErased()) return false;
     const cname = self.resolveConcreteTypeName(recv_ty) orelse return false;
-    return self.firstUnimplementedProtocolMethod(want, cname, recv_ty) == null;
+    return self.firstUnimplementedMethod(want, cname, recv_ty) == null;
 }
 
 

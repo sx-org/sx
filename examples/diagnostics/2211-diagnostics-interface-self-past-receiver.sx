@@ -1,7 +1,9 @@
-// An interface body refuses a signature that mentions Self past the receiver.
-// The constraint form carries those signatures.
+// An interface body refuses a signature that mentions Self past the receiver,
+// both as an extra parameter and as a return. The constraint form carries those
+// signatures.
 @import "modules/std.sx";
 
 Eq :: interface { eq :: (self: *Self, other: Self) -> bool; }
+Cloneable :: interface { clone :: (self: *Self) -> Self; }
 
 main :: () { print("unreachable\n"); }
