@@ -1410,8 +1410,8 @@ test "parser: a contract head word reads through a line break" {
     try std.testing.expectEqual(ast.ProtocolKind.constraint, (try bound.parse()).data.root.decls[0].data.protocol_decl.kind);
 }
 
-// `protocol` is an ordinary identifier, so a declaration spelling the removed
-// head is a plain binding of that name — never a contract.
+// `protocol` is an ordinary identifier, so a declaration spelling it in the
+// head slot is a plain binding of that name — never a contract.
 test "parser: 'protocol' in the head slot is an ordinary identifier" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
