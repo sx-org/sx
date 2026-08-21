@@ -61,14 +61,14 @@ main :: () {
     }
     print("generic: {}/{} ambient {}\n", t2.allocs, t2.deallocs, amb.n);
 
-    // free(s, xx local) — the explicit-allocator pairing
+    // A coercion under a pushed allocator still allocates nothing: the handle
+    // borrows the temporary the frame holds.
     t3 := Tracker{ allocs = 0, deallocs = 0 };
     s : Sizable = ---;
     push .{ allocator = t3 } {
         s = Widget{ value = 5 }.(Sizable);
     }
-    free(s, xx t3);
-    print("free pairing: {}/{}\n", t3.allocs, t3.deallocs);
+    print("no fund: {}/{} size {}\n", t3.allocs, t3.deallocs, s.size());
 
     // generic $T param unaffected
     print("id: {}\n", gen_id(42));

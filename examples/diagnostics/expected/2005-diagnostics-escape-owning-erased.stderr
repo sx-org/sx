@@ -1,5 +1,0 @@
-error: a 'Show' value owns its storage and cannot escape a `@run` — no runtime allocator owns a compile-time copy; bind the concrete value, and let the owning erasure happen at runtime
-  --> examples/diagnostics/2005-diagnostics-escape-owning-erased.sx:24:11
-   |
-24 | H :: @run make();
-   |           ^^^^^^

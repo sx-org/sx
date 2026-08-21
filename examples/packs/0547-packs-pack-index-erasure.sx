@@ -1,10 +1,9 @@
-// `<pack>[i].(P, alloc)` — a pack element owned into a protocol-typed local.
+// `<pack>[i].(I)` — a pack element coerced into an interface-typed local.
 //
-// Erasing a single comptime-pack element to a protocol scalar routes through
-// the postfix owning erasure. A pack index is a comptime rvalue (a pack has
-// no runtime storage — `sources[i]` resolves to the call-site arg, which
-// only gets storage when lowered as a value), so the erasure heap-copies
-// the materialized element rather than taking its address.
+// A pack index is a comptime rvalue: a pack has no runtime storage, and
+// `sources[i]` resolves to the call-site argument, which gets storage only
+// when it is lowered as a value. So the coercion takes the rvalue arm — a
+// frame-scoped temporary the handle borrows.
 
 @import "modules/std.sx";
 
