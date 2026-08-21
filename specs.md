@@ -1517,12 +1517,14 @@ can perform it.
 
 The conformance check and the result's vtable word are one runtime read
 of a link-time `(type_id, Q) → vtable-or-null` table over the pairs with
-a **program-unique** impl. A pair with visibility-disjoint duplicate
-impls (§3) is absent from the table and reads null: the site-local
-visibility that arbitrates an ordinary coercion does not exist at a
-dynamic conversion. The table is built per `Q` on demand — the first
-re-erasure to `Q` in the program emits it — and its construction waits
-on the impl facts of §6.9.
+a **program-unique** impl. The result handle reuses `p`'s ctx and
+type_id and takes the table's vtable-or-null (same referent, new
+dispatch word). A pair with visibility-disjoint duplicate impls (§3) is
+absent from the table and reads null: the site-local visibility that
+arbitrates an ordinary coercion does not exist at a dynamic conversion.
+The table is built per `Q` when a re-erasure to `Q`, a runtime
+conformance `is` against `Q`, or a `p.(?Q)` probe on an erased
+receiver exists; construction waits on the impl facts of §6.9.
 
 All three temperaments read the same null: unconsumed `p.(Q)` panics,
 `try p.(Q)` raises, `p.(?Q)` answers null. `Q == I` is the identity
@@ -1583,7 +1585,8 @@ thread when the ambient one does not.
   temporary is scoped to the **call**.
 - `..xs: I` and `..xs: C` (comptime heterogeneous pack): each element
   keeps its concrete type and calls monomorphize. A pack head may be
-  either declaration.
+  either declaration. An element already typed as the head interface
+  copies (identity); it does not require `impl I for I`.
 
 ##### 6.8 UFCS
 
@@ -1754,7 +1757,11 @@ display-name truncation participates in any symbol or cache key.
 
 **Emission points.** Vtables emit on first use of a pair. Marker/empty
 vtables are emitted like any other. The `(type_id, Q) → vtable-or-null`
-re-erasure table of §6.4 emits per target interface, on demand.
+re-erasure table of §6.4 emits per target interface when a re-erasure
+to `Q`, a runtime conformance `is` against `Q`, or a `p.(?Q)` probe on
+an erased receiver exists. The result handle reuses `p`'s ctx and
+type_id and takes the table's vtable-or-null (same referent, new
+dispatch word).
 
 Coherence (§3) is diagnosed before codegen, so every conformance
 diagnostic is an ordinary compile error, never a link error.
@@ -2854,9 +2861,10 @@ pack monomorphizes per call shape and each element has a known concrete type,
 projections `xs.T` / `xs.value` are accessible. Reaching a concrete member the
 head does not declare — e.g. `xs[i].v` where `v` is a field of the concrete
 `IntBox` but not declared on `Show` — is an error, exactly as it would be for a
-bound generic `$T/Show`. The head is enforced (each trailing arg must conform)
-and bounds what the body may do, regardless of the concrete arg types at any
-particular call site.
+bound generic `$T/Show`. The head is enforced (each trailing arg must conform;
+an element already typed as the head interface copies (identity); it does not
+require `impl I for I`) and bounds what the body may do, regardless of the
+concrete arg types at any particular call site.
 
 #### Pack operations
 

@@ -104,10 +104,13 @@ constraint form carries those signatures.
 
 `p.(Q)` between interfaces is one runtime read of a link-time
 `(type_id, Q) → vtable-or-null` table over the pairs with a program-unique impl.
-A pair with visibility-disjoint duplicate impls is absent and reads null. The
-table is built per `Q` on demand and waits on the same impl facts the comptime
-scheduler waits on. All three temperaments read that null: unconsumed panics,
-`try` raises, `.(?Q)` answers null.
+The result handle reuses `p`'s ctx and type_id and takes the table's
+vtable-or-null (same referent, new dispatch word). A pair with visibility-disjoint
+duplicate impls is absent and reads null. The table is built per `Q` when a
+re-erasure to `Q`, a runtime conformance `is` against `Q`, or a `p.(?Q)` probe
+on an erased receiver exists; construction waits on the same impl facts the
+comptime scheduler waits on. All three temperaments read that null: unconsumed
+panics, `try` raises, `.(?Q)` answers null.
 
 ## Classification
 
