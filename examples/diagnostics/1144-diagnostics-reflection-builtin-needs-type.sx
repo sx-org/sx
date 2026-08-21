@@ -15,6 +15,6 @@ main :: () {
     print("{}\n", struct_field_count(true));      // bool, not a type
     print("{}\n", type_name(1.5));         // f64, not a type
     print("{}\n", type_eq(true, false));   // both bool — both rejected
-    print("{}\n", is_unsigned(true)); // bool, not a type
+    print("{}\n", true is unsigned); // bool, not a type
     print("{}\n", is_flags(1.5));          // f64, not a type
 }

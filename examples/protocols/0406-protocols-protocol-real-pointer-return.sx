@@ -4,7 +4,7 @@
 
 @import "modules/std.sx";
 
-Proto :: protocol vtable {
+Proto :: interface {
   get :: (self: *Self) -> *u8;
 }
 
@@ -20,7 +20,7 @@ impl Proto for Impl {
 
 main :: () -> i32 {
   imp : Impl = .{};
-  p := imp.(Proto, context.allocator);   // owning snapshot of the lvalue
+  p := imp.(Proto);   // owning snapshot of the lvalue
   raw : *u8 = p.get();
   addr_word : u64 = xx raw;
   print("got pointer: {}\n", addr_word != 0);

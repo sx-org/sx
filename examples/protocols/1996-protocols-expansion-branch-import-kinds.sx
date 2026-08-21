@@ -1,4 +1,4 @@
 // The protocol and the target the chain's far end authors an impl over.
-Tag :: protocol vtable { id :: (self: *Self) -> i64; }
+Tag :: interface { id :: (self: *Self) -> i64; }
 
 Cell :: struct { n: i64; }

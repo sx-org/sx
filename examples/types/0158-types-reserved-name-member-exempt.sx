@@ -26,7 +26,7 @@ Tag :: union {
 }
 
 // Protocol method SIGNATURE spelled with a reserved type name — bare is legal.
-Speaker :: protocol vtable {
+Speaker :: interface {
     i2 :: (self: *Self) -> i64;
 }
 
@@ -48,7 +48,7 @@ main :: () -> i32 {
     print("union       = {} {}\n", t.i1, t.`i1);      // bare + backtick — same tag
 
     items : List(Speaker) = .{};
-    items.append(Dog{ n = 7 }.(Speaker, context.allocator));
+    items.append(Dog{ n = 7 }.(Speaker));
     print("dispatch    = {}\n", items.items[0].i2()); // bare reserved-name method call
     return 0;
 }

@@ -1,52 +1,29 @@
-// Era-2: EMPTY-VTABLE erasure is legal, with no special case. Two
-// shapes reach a zero-slot vtable:
-//   - a MARKER protocol (no methods at all), and
-//   - an all-excluded protocol (every method mentions `Self` past the
-//     receiver — the Eq shape).
-// Both erase; the erased value still carries {ctx, __type_id}, so
-// type_of, the checked downcast, the type switch, the @Protocol view,
-// and free (on an OWNED rvalue erasure) all work with zero dispatchable
-// methods.
+// An empty-vtable interface (no methods) erases. The handle carries
+// {ctx, __type_id}, so type_of, the checked downcast, the type switch, and
+// the @Protocol view all work with zero dispatchable methods.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
-Marker :: protocol vtable {}
-
-Eqish :: protocol vtable {
-    eq :: (self: *Self, other: Self) -> bool;   // excluded: Self param
-}
+Marker :: interface {}
 
 Sq :: struct { side: i64; }
 impl Marker for Sq {}
-impl Eqish for Sq {
-    eq :: (self: *Sq, other: Sq) -> bool { return self.side == other.side; }
-}
 
 main :: () {
     sq := Sq{ side = 4 };
 
-    m := sq.(Marker, context.allocator);
+    m := sq.(Marker);
     print("marker type: {}\n", type_of(m) == Sq);
     print("marker raw:  {}\n", m.(@Protocol).type_id == Sq);
 
-    e := sq.(Eqish, context.allocator);
-    print("eqish type:  {}\n", type_of(e) == Sq);
-
-    // Checked downcast through the {ctx, __type_id} prefix.
-    back := e.(Sq);
+    back := m.(Sq);
     print("downcast:    {}\n", back.side);
 
-    // Type switch on a protocol subject.
-    match e {
+    match m {
         case Sq: |v| { print("switch:      {}\n", v.side); }
         else: { print("switch:      miss\n"); }
     }
 
-    // free is legal on an OWNED (postfix-erased, heap-copied) value even
-    // with an empty vtable.
-    mo := Sq{ side = 9 }.(Marker, context.allocator);
-    eo := Sq{ side = 9 }.(Eqish, context.allocator);
-    free(mo);
-    free(eo);
-    print("freed\n");
+    mo := Sq{ side = 9 }.(Marker);
+    print("erased {}\n", type_of(mo) is Marker);
 }

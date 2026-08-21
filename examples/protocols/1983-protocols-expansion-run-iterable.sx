@@ -8,7 +8,7 @@
 // would be, with the same coherence and provenance.
 @import "modules/std.sx";
 
-Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
+Show :: interface { fmt :: (self: *Self) -> i64; }
 
 Dot :: struct { n: i64; }
 Bar :: struct { n: i64; }

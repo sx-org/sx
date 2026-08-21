@@ -1,6 +1,6 @@
 // The other author of `Q` — same spelling, a two-slot vtable.
-Q :: protocol vtable { first :: (self: *Self) -> i64; tag :: (self: *Self) -> i64; }
+Q :: interface { first :: (self: *Self) -> i64; tag :: (self: *Self) -> i64; }
 Holder :: struct { v: i64; }
 impl Q for Holder { first :: (self: *Holder) -> i64 => 7; tag :: (self: *Holder) -> i64 => 200 + self.v; }
-own_first :: () -> i64 { x := Holder{ v = 1 }.(Q, context.allocator); return x.first(); }
-own_tag :: () -> i64 { x := Holder{ v = 1 }.(Q, context.allocator); return x.tag(); }
+own_first :: () -> i64 { x := Holder{ v = 1 }.(Q); return x.first(); }
+own_tag :: () -> i64 { x := Holder{ v = 1 }.(Q); return x.tag(); }

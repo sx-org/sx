@@ -1,6 +1,6 @@
 @import "modules/std.sx";
 
-P0850 :: protocol vtable { get :: (self: *Self) -> i64; }
+P0850 :: interface { get :: (self: *Self) -> i64; }
 S0850 :: struct { v: i64 = 0; }
 impl P0850 for S0850 { get :: (self: *S0850) -> i64 { return self.v; } }
 g_mk_0850 : i64 = 0;
@@ -21,7 +21,7 @@ goptptr_0850 : ?*i64 = *target_0850;
 target_0850 : i64 = 42;
 
 main :: () -> i32 {
-    p := make_arr_0850()[next_0850()].(P0850, context.allocator);
+    p := make_arr_0850()[next_0850()].(P0850);
     f := freefn_0850;
     list : List(struct { a: i64; b: bool }) = .{};
     list.append(.{a = 1, b = true});

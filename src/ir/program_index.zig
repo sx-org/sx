@@ -123,23 +123,14 @@ pub fn protocolMethodSelfOccurrence(method: ast.ProtocolMethodDecl) ?SelfOccurre
     return null;
 }
 
-/// Protocol ownership class ("P owns, *P views" model). The unmarked
-/// default is value/own; `@identity` marks borrow-only protocols — their
-/// values only ever BORROW the ctx (rvalue erasure refuses, free refuses).
-pub const ProtocolOwnership = enum {
-    value_own,
-    identity,
-};
-
 pub const ProtocolDeclInfo = struct {
     name: []const u8,
     kind: ast.ProtocolKind,
-    ownership: ProtocolOwnership = .value_own,
     methods: []const ProtocolMethodInfo,
 
     /// True for the kind whose values are erased ({ctx, type_id, vtable}).
     pub fn isErased(self: ProtocolDeclInfo) bool {
-        return self.kind == .vtable;
+        return self.kind == .erased;
     }
 };
 

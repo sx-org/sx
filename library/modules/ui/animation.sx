@@ -3,7 +3,7 @@
 
 // --- Lerpable protocol (constraint — static dispatch, no runtime value) ---
 
-Lerpable :: protocol constraint {
+Lerpable :: constraint {
     lerp :: (self: *Self, b: Self, t: f32) -> Self;
 }
 

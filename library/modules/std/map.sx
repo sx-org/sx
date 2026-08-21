@@ -84,7 +84,7 @@ map_hash_key :: (key: $K) -> u64 {
 
 // Fold value `v` into running FNV state `h`. The string arm reads fields off a
 // `*string` REINTERPRET of `@v`, never off a `T`-typed value, so it compiles
-// for every `T` regardless of dead-branch pruning. The `inline if is_struct`
+// for every `T` regardless of dead-branch pruning. The `inline if T is struct`
 // branch is comptime-elided for non-struct `T` (so `struct_field_type`/`struct_field_count`
 // never lower on an enum/scalar); struct/tuple `T` recurses per field. Enums,
 // bools, pointers and integers are non-struct, so they take the raw-byte leaf.
@@ -93,7 +93,7 @@ map_hash_into :: (v: $T, h: u64) -> u64 {
         sv : *string = (*v).(*string);
         return fnv1a_fold(h, sv.ptr, sv.len);
     }
-    inline if is_struct(T) {
+    inline if T is struct {
         hh := h;
         inline for i in 0..struct_field_count(T) {
             hh = map_hash_into(struct_field_value(v, i).(struct_field_type(T, i)), hh);

@@ -6,7 +6,7 @@
 
 @import "modules/std.sx";
 
-Show :: protocol {
+Show :: constraint {
     show :: (self: *Self) -> string;
 }
 A :: struct { x: i64; }

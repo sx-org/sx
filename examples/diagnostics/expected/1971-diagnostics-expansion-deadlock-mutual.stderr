@@ -1,22 +1,22 @@
 error: expansion deadlock — nothing can run: every compile-time unit still waiting needs a fact only another waiting unit could publish, so the expansion depends negatively on a set it feeds
   --> examples/diagnostics/1971-diagnostics-expansion-deadlock-mutual.sx:16:11
    |
-16 | inline if !has_impl(Draw, Widget) {
-   |           ^^^^^^^^^^^^^^^^^^^^^^^
+16 | inline if !(Widget is Draw) {
+   |           ^^^^^^^^^^^^^^^^^
 
 note: this `inline if` awaits 'Draw' impls to be final before 'Widget' is judged a non-conformer
   --> examples/diagnostics/1971-diagnostics-expansion-deadlock-mutual.sx:16:11
    |
-16 | inline if !has_impl(Draw, Widget) {
-   |           ^^^^^^^^^^^^^^^^^^^^^^^
+16 | inline if !(Widget is Draw) {
+   |           ^^^^^^^^^^^^^^^^^
 
 note: this `inline if` awaits 'Tally' impls to be final before 'Panel' is judged a non-conformer
   --> examples/diagnostics/1971-diagnostics-expansion-deadlock-mutual.sx:20:11
    |
-20 | inline if !has_impl(Tally, Panel) {
-   |           ^^^^^^^^^^^^^^^^^^^^^^^
+20 | inline if !(Panel is Tally) {
+   |           ^^^^^^^^^^^^^^^^^
 
 help: decide the declaration outside the set it queries — a question whose answer changes what it asks about has no single answer
    |
-16 | inline if !has_impl(Draw, Widget) {
-   |           ^^^^^^^^^^^^^^^^^^^^^^^
+16 | inline if !(Widget is Draw) {
+   |           ^^^^^^^^^^^^^^^^^

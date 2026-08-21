@@ -8,12 +8,12 @@ Point :: struct { x, y: i32; }
 
 add :: (a: i32, b: i32) -> i32 { a + b }
 
-Counter :: protocol vtable {
+Counter :: interface {
     inc :: (self: *Self);
     get :: (self: *Self) -> i32;
 }
 
-Summable :: protocol {
+Summable :: constraint {
     sum :: (self: *Self) -> i32;
 }
 
@@ -107,7 +107,7 @@ main :: () {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
         result := use_counter(SimpleCounter{ val = 0 }.{
             self.val = 50;
-        }.(Counter, context.allocator));
+        }.(Counter));
         print("IB5: {}\n", result);
     }
 

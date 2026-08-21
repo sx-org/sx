@@ -6,7 +6,7 @@
 // symbolic word.
 @import "modules/std.sx";
 
-View :: protocol vtable @identity {
+View :: interface {
     area :: (self: *Self) -> i64;
 }
 

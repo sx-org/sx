@@ -48,7 +48,7 @@ pub const ExprTyper = struct {
                     }
                     break :blk .bool;
                 },
-                .and_op, .or_op, .in_op => .bool,
+                .and_op, .or_op, .in_op, .is_op => .bool,
                 // Arithmetic / bitwise / shift ops: infer the PROMOTED result
                 // of (lhs, rhs), not the LHS alone — `Lowering.arithResultType`
                 // is the same rule `lowerBinaryOp` applies, so `M + 0.5` types

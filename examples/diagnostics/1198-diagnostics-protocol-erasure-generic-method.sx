@@ -7,12 +7,12 @@
 
 @import "modules/std.sx";
 
-Speaker :: protocol vtable { speak :: (self: *Self) -> i64; }
+Speaker :: interface { speak :: (self: *Self) -> i64; }
 Dog :: struct { n: i64 = 0; }
 impl Speaker for Dog { speak :: (self: *Dog, $T: Type) -> i64 { return self.n; } }
 
 main :: () {
   d := Dog{ n = 42 };
-  s := d.(Speaker, context.allocator);   // <- 'Dog.speak' has a mismatched signature
+  s := d.(Speaker);   // <- 'Dog.speak' has a mismatched signature
   print("{}\n", s.speak());
 }

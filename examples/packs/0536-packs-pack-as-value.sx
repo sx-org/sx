@@ -5,7 +5,7 @@
 
 @import "modules/std.sx";
 
-Show :: protocol { show :: (self: *Self) -> string; }
+Show :: constraint { show :: (self: *Self) -> string; }
 A :: struct {}
 impl Show for A { show :: (self: *A) -> string => "A"; }
 

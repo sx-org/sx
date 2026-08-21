@@ -10,10 +10,10 @@
 @import "modules/std/list.sx";
 @import "modules/fluent.sx";
 
-Drawable :: protocol vtable {
+Drawable :: interface {
     draw :: (self: *Self) -> string;
 }
-Other :: protocol vtable {
+Other :: interface {
     tag :: (self: *Self) -> i32;
 }
 

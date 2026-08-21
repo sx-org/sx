@@ -1,0 +1,93 @@
+error: 'Show' does not satisfy the bound 'Miss' on '$T'
+  --> examples/diagnostics/2217-diagnostics-interface-bound-impl-nonconforming.sx:36:16
+   |
+36 | miss :: (v: $T/Miss) -> i64 { 1 }
+   |                ^^^^
+
+help: 'Show' has no 'tag :: (self: *Self) -> i64' for 'Miss'
+   |
+36 | miss :: (v: $T/Miss) -> i64 { 1 }
+   |                ^^^^
+
+error: 'Show' does not satisfy the bound 'Bad' on '$T'
+  --> examples/diagnostics/2217-diagnostics-interface-bound-impl-nonconforming.sx:37:15
+   |
+37 | bad :: (v: $T/Bad) -> i64 { 1 }
+   |               ^^^
+
+help: method 'show' has a mismatched signature — return type: protocol declares 'i64', impl declares 'string'
+   |
+37 | bad :: (v: $T/Bad) -> i64 { 1 }
+   |               ^^^
+
+error: 'Show' does not satisfy the bound 'Ret' on '$T'
+  --> examples/diagnostics/2217-diagnostics-interface-bound-impl-nonconforming.sx:38:15
+   |
+38 | ret :: (v: $T/Ret) -> i64 { 1 }
+   |               ^^^
+
+help: method 'show' has a mismatched signature — return type: protocol declares 'string', impl declares 'i64'
+   |
+38 | ret :: (v: $T/Ret) -> i64 { 1 }
+   |               ^^^
+
+error: 'Show' does not satisfy the bound 'Arity' on '$T'
+  --> examples/diagnostics/2217-diagnostics-interface-bound-impl-nonconforming.sx:39:17
+   |
+39 | arity :: (v: $T/Arity) -> i64 { 1 }
+   |                 ^^^^^
+
+help: method 'show' expects 1 parameter (after self), but the impl declares 0
+   |
+39 | arity :: (v: $T/Arity) -> i64 { 1 }
+   |                 ^^^^^
+
+error: 'Show' does not satisfy the bound 'Gen' on '$T'
+  --> examples/diagnostics/2217-diagnostics-interface-bound-impl-nonconforming.sx:40:15
+   |
+40 | gen :: (v: $T/Gen) -> i64 { 1 }
+   |               ^^^
+
+help: method 'show' has a mismatched signature — a protocol-method impl must not introduce its own type parameters (e.g. '$T: Type'); it must match the protocol's signature exactly
+   |
+40 | gen :: (v: $T/Gen) -> i64 { 1 }
+   |               ^^^
+
+error: 'U' does not satisfy the bound 'Show' on '$T'
+  --> examples/diagnostics/2217-diagnostics-interface-bound-impl-nonconforming.sx:41:20
+   |
+41 | concrete :: (v: $T/Show) -> i64 { 1 }
+   |                    ^^^^
+
+help: 'U' has no 'show :: (self: *Self) -> string' for 'Show'
+   |
+41 | concrete :: (v: $T/Show) -> i64 { 1 }
+   |                    ^^^^
+
+error: 'Wb' does not satisfy the bound 'Show' on '$T'
+  --> examples/diagnostics/2217-diagnostics-interface-bound-impl-nonconforming.sx:41:20
+   |
+41 | concrete :: (v: $T/Show) -> i64 { 1 }
+   |                    ^^^^
+
+help: 'Wb' has no 'show :: (self: *Self) -> string' for 'Show'
+   |
+41 | concrete :: (v: $T/Show) -> i64 { 1 }
+   |                    ^^^^
+
+error: 'Show' does not conform to the bound 'View' — a handle conforms through 'impl View for Show', and none is visible here
+  --> examples/diagnostics/2217-diagnostics-interface-bound-impl-nonconforming.sx:42:27
+   |
+42 | relay :: ($P: Type, v: $V/P) -> i64 { 1 }
+   |                           ^
+
+error: 'Show' does not satisfy the bound 'Bad' on '$V'
+  --> examples/diagnostics/2217-diagnostics-interface-bound-impl-nonconforming.sx:42:27
+   |
+42 | relay :: ($P: Type, v: $V/P) -> i64 { 1 }
+   |                           ^
+
+help: method 'show' has a mismatched signature — return type: protocol declares 'i64', impl declares 'string'
+   |
+42 | relay :: ($P: Type, v: $V/P) -> i64 { 1 }
+   |                           ^

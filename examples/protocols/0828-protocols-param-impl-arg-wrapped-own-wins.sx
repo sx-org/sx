@@ -14,7 +14,7 @@
 Box :: struct { m: i32; }
 Holder :: struct { n: i32; }
 
-Tagged :: protocol(T: Type) {
+Tagged :: constraint(T: Type) {
     tag :: (self: *Self) -> i32;
 }
 

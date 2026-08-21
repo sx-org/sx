@@ -53,6 +53,11 @@ pub fn constArrayLiteral(self: *Lowering, elements: []const *const Node, array_t
 pub fn constExprValue(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?inst_mod.ConstantValue {
     const author = Lowering.AuthorScope.enter(self, expr);
     defer author.leave();
+    // An interface-typed leaf is a STATIC position (§6.6): the one operand that
+    // coerces names a module-scope global, because a relocatable symbol is what
+    // the image can hold. Serializing anything else here would lay the operand's
+    // own bytes into the handle's three words.
+    if (self.isErasedProtocolType(expected_ty)) return staticInterfaceLeaf(self, expr, expected_ty);
     return switch (expr.data) {
         // An int element in a FLOAT destination converts exactly (the
         // int+float promotion rule, element-wise — `[2]f64 : .[1, 2.5]`).
@@ -196,6 +201,25 @@ pub fn constStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Typ
     return .{ .aggregate = vals };
 }
 
+/// The handle a static interface-typed position folds to. Null after a
+/// located refusal: the position is judged on the written shape, so an operand
+/// that is not a module-scope global's path never reaches the image.
+fn staticInterfaceLeaf(self: *Lowering, expr: *const Node, expected_ty: TypeId) ?inst_mod.ConstantValue {
+    var operand = expr;
+    while (operand.data == .unary_op and operand.data.unary_op.op == .xx) operand = operand.data.unary_op.operand;
+    if (self.protocolErasureConst(operand, expected_ty)) |folded| return folded;
+    const d = self.diagnostics orelse return null;
+    const shown = self.formatTypeName(expected_ty);
+    if (operand.data == .struct_literal and operand.data.struct_literal.field_inits.len == 0) {
+        const id = d.addFmtId(.err, expr.span, "'.{{ }}' is refused at a static '{s}' position — a null ctx is the '?{s}' absent sentinel, and this position must hold a live handle", .{ shown, shown });
+        d.addHelpFmt(id, expr.span, null, "name a module-scope global of a conforming type", .{});
+        return null;
+    }
+    const id = d.addFmtId(.err, expr.span, "a static '{s}' position takes a module-scope global, and this operand is not one", .{shown});
+    d.addHelpFmt(id, expr.span, null, "the handle borrows the global's own symbol, which is what the image can hold; a path rooted at a global VALUE ('g.field') is refused for the same reason", .{});
+    return null;
+}
+
 /// Evaluate a compile-time condition for `inline if`.
 /// Handles target/value comparisons and short-circuit `and` / `or` chains.
 pub fn evalComptimeCondition(self: *Lowering, node: *const Node) ?bool {
@@ -316,12 +340,19 @@ pub fn evalStaticTypeMatch(self: *Lowering, me: *const ast.MatchExpr) ?StaticTyp
     return .none_matched;
 }
 
+/// The interface-kind membership answer: is `tid` a directly-reified interface
+/// type? A Type derived from an instance carries the concrete's tag and is not
+/// one; a constraint mints no type at all.
+pub fn isErasedProtocolType(self: *Lowering, tid: TypeId) bool {
+    if (tid.isBuiltin()) return false;
+    const pi = self.getProtocolInfo(tid) orelse return false;
+    return pi.isErased();
+}
+
 /// Does the STATIC type `tid` belong to category `name` (or equal the
 /// specific type `name` denotes)? Mirrors `resolveTypeCategoryTags`'s
 /// runtime classification arm for arm so the static fold and the runtime
-/// tag switch can never disagree on what a category means — plus the
-/// `protocol` category, which exists ONLY here (a protocol value carries
-/// no runtime tag to switch on).
+/// tag switch can never disagree on what a category means.
 pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8) bool {
     const tt = &self.module.types;
     if (std.mem.eql(u8, name, "int")) {
@@ -336,6 +367,11 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
             }
         }
         return false;
+    }
+    // `signed` / `unsigned` partition `int`; neither reaches a float.
+    if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "unsigned")) {
+        if (!staticTypeMatchesCategory(self, tid, "int")) return false;
+        return tt.isUnsignedInt(tid) == std.mem.eql(u8, name, "unsigned");
     }
     if (std.mem.eql(u8, name, "float")) return tid == .f32 or tid == .f64;
     if (std.mem.eql(u8, name, "bool")) return tid == .bool;
@@ -352,7 +388,10 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
         return false;
     }
     const info = tt.get(tid);
-    if (std.mem.eql(u8, name, "struct")) return info == .@"struct";
+    // `interface` and `struct` are disjoint: an interface handle is backed by a
+    // struct in the type table, and only the interface word names it.
+    if (std.mem.eql(u8, name, "interface")) return isErasedProtocolType(self, tid);
+    if (std.mem.eql(u8, name, "struct")) return info == .@"struct" and !info.@"struct".is_protocol;
     if (std.mem.eql(u8, name, "enum")) return info == .@"enum" or info == .tagged_union;
     if (std.mem.eql(u8, name, "union")) return info == .@"union" or info == .tagged_union;
     if (std.mem.eql(u8, name, "slice")) return info == .slice;
@@ -362,8 +401,6 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
     if (std.mem.eql(u8, name, "optional")) return info == .optional;
     if (std.mem.eql(u8, name, "error_set")) return info == .error_set;
     if (std.mem.eql(u8, name, "closure")) return info == .closure;
-    if (std.mem.eql(u8, name, "protocol"))
-        return info == .protocol or (info == .@"struct" and info.@"struct".is_protocol);
     // A specific type name: generic bindings, then aliases, then the table.
     if (self.type_bindings) |tb| {
         if (tb.get(name)) |bound| return bound == tid;
@@ -474,7 +511,6 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
     const global_ty: TypeId = if (is_failable) self.failableSuccessType(expr_ty) else func_ret;
     // The result crosses into the runtime image, which is what makes this an
     // escape site (specs.md §6.9).
-    self.checkComptimeEscape(global_ty, expr.span);
     const func_id = self.createComptimeFunction(name, .ordinary, expr, func_ret);
 
     // Add a global constant whose initializer will be filled by the interpreter.

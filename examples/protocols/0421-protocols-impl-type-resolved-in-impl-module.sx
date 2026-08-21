@@ -11,7 +11,7 @@
 inner :: @import "0421-protocols-impl-type-resolved-in-impl-module/inner.sx";
 main :: () -> i32 {
     im : inner.Impl = .{};
-    p := im.(inner.P, context.allocator);
+    p := im.(inner.P);
     if g := p.get() { return xx g.v; }   // expect 42
     return 1;
 }

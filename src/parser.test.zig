@@ -1390,22 +1390,53 @@ test "parser: a struct type-parameter list reads through a line break" {
     try std.testing.expectEqual(@as(usize, 1), (try same.parse()).data.root.decls[0].data.struct_decl.type_params.len);
 }
 
-// A protocol's kind word sits in front of a mandatory `{`.
-test "parser: a protocol kind word reads through a line break" {
+// The head word is contextual: the body brace after the optional parameter
+// list is what marks it, across a line break like every other header slot.
+test "parser: a contract head word reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
     var p = try Parser.init(alloc,
-        \\Show :: protocol
-        \\    vtable
-        \\    { fmt :: (self: *Self) -> string; }
+        \\Show :: interface
+        \\    (T: Type)
+        \\    { fmt :: (self: *Self) -> T; }
     );
     const pd = (try p.parse()).data.root.decls[0].data.protocol_decl;
-    try std.testing.expectEqual(ast.ProtocolKind.vtable, pd.kind);
+    try std.testing.expectEqual(ast.ProtocolKind.erased, pd.kind);
+    try std.testing.expectEqual(@as(usize, 1), pd.type_params.len);
 
-    var same = try Parser.init(alloc, "Show :: protocol vtable { fmt :: (self: *Self) -> string; }\n");
-    try std.testing.expectEqual(ast.ProtocolKind.vtable, (try same.parse()).data.root.decls[0].data.protocol_decl.kind);
+    var bound = try Parser.init(alloc, "Ord :: constraint { less :: (self: *Self, other: Self) -> bool; }\n");
+    try std.testing.expectEqual(ast.ProtocolKind.constraint, (try bound.parse()).data.root.decls[0].data.protocol_decl.kind);
+}
+
+// `protocol` is an ordinary identifier, so a declaration spelling it in the
+// head slot is a plain binding of that name — never a contract.
+test "parser: 'protocol' in the head slot is an ordinary identifier" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = try Parser.init(alloc, "protocol :: 7;\nn :: protocol;\n");
+    const decls = (try p.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 2), decls.len);
+    try std.testing.expect(decls[0].data != .protocol_decl);
+    try std.testing.expect(decls[1].data != .protocol_decl);
+
+    var dead = try Parser.init(alloc, "Show :: protocol vtable { fmt :: (self: *Self) -> string; }\n");
+    try std.testing.expectError(error.ParseError, dead.parse());
+}
+
+// Both head words are ordinary identifiers outside the `::`-head slot.
+test "parser: the head words are ordinary identifiers elsewhere" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = try Parser.init(alloc, "constraint :: 1;\ninterface :: constraint + 1;\n");
+    const decls = (try p.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 2), decls.len);
+    for (decls) |d| try std.testing.expect(d.data != .protocol_decl);
 }
 
 // A function header's optional slots all sit in front of a mandatory body.

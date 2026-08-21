@@ -1,0 +1,17 @@
+// A static interface-typed position takes a module-scope global. Serializing
+// any other operand field-wise would lay the operand's own bytes into the
+// handle's three words, so every other shape is refused where it is written.
+@import "modules/std.sx";
+
+P :: interface { a :: (self: *Self) -> i64; }
+W :: struct { v: i64; }
+impl P for W { a :: (self: *W) -> i64 { self.v } }
+S :: struct { inner: P; }
+
+// A conformer LITERAL: no symbol for the handle to borrow.
+g : S = .{ inner = W{ v = 4 } };
+
+// The zero handle: a null ctx is the `?P` absent sentinel, never a live handle.
+z : S = .{ inner = .{} };
+
+main :: () { print("unreachable\n"); }

@@ -1,0 +1,21 @@
+error: 'Plain' does not satisfy the bound 'ByVal' on '$T'
+  --> examples/diagnostics/2218-diagnostics-bound-has-no-signature.sx:16:17
+   |
+16 | byval :: (v: $T/ByVal) -> i64 { 1 }
+   |                 ^^^^^
+
+help: 'Plain' has no 'name :: (self: Self) -> string' for 'ByVal'
+   |
+16 | byval :: (v: $T/ByVal) -> i64 { 1 }
+   |                 ^^^^^
+
+error: 'Plain' does not satisfy the bound 'Rich' on '$T'
+  --> examples/diagnostics/2218-diagnostics-bound-has-no-signature.sx:17:16
+   |
+17 | rich :: (v: $T/Rich) -> i64 { 1 }
+   |                ^^^^
+
+help: 'Plain' has no 'mix :: (self: *Self, n: i64, tail: []u8, opt: ?*i32, arr: [4]i64, b: Box(i32)) -> (i64, i64)' for 'Rich'
+   |
+17 | rich :: (v: $T/Rich) -> i64 { 1 }
+   |                ^^^^

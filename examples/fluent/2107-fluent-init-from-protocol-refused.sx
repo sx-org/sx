@@ -6,7 +6,7 @@
 // membership.
 @import "modules/std.sx";
 
-Boxed :: protocol vtable { name :: (self: *Self) -> string; }
+Boxed :: interface { name :: (self: *Self) -> string; }
 
 Round :: struct { s: string = "round"; }
 impl Boxed for Round { name :: (self: *Round) -> string => self.s; }
@@ -54,8 +54,8 @@ form_Wide :: ufcs (value: $I/@Init(Wide)) {
 }
 
 main :: () -> i32 {
-    b := Round{ s = "vtable" }.(Boxed, context.allocator);
-    x := Wide{ a = 1, b = 2 }.(Boxed, context.allocator);
+    b := Round{ s = "vtable" }.(Boxed);
+    x := Wide{ a = 1, b = 2 }.(Boxed);
 
     form_Round(b);
     b.form_Round();

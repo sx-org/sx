@@ -1,0 +1,33 @@
+error: a static 'P' position takes a module-scope global, and this operand is not one
+  --> examples/diagnostics/2209-diagnostics-interface-static-leaf-refusals.sx:12:20
+   |
+12 | g : S = .{ inner = W{ v = 4 } };
+   |                    ^^^^^^^^^^
+
+help: the handle borrows the global's own symbol, which is what the image can hold; a path rooted at a global VALUE ('g.field') is refused for the same reason
+   |
+12 | g : S = .{ inner = W{ v = 4 } };
+   |                    ^^^^^^^^^^
+
+error: global 'g' must be initialized by a compile-time constant
+  --> examples/diagnostics/2209-diagnostics-interface-static-leaf-refusals.sx:12:9
+   |
+12 | g : S = .{ inner = W{ v = 4 } };
+   |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: '.{ }' is refused at a static 'P' position — a null ctx is the '?P' absent sentinel, and this position must hold a live handle
+  --> examples/diagnostics/2209-diagnostics-interface-static-leaf-refusals.sx:15:20
+   |
+15 | z : S = .{ inner = .{} };
+   |                    ^^^
+
+help: name a module-scope global of a conforming type
+   |
+15 | z : S = .{ inner = .{} };
+   |                    ^^^
+
+error: global 'z' must be initialized by a compile-time constant
+  --> examples/diagnostics/2209-diagnostics-interface-static-leaf-refusals.sx:15:9
+   |
+15 | z : S = .{ inner = .{} };
+   |         ^^^^^^^^^^^^^^^^

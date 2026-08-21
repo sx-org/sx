@@ -6,7 +6,7 @@
 
 @import "modules/std.sx";
 
-GPU :: protocol vtable {
+GPU :: interface {
   ping :: (self: *Self) -> i64;
 }
 
@@ -23,7 +23,7 @@ main :: () -> i32 {
     print("g initially null\n");
   }
 
-  g = Impl{}.(GPU, context.allocator);
+  g = Impl{}.(GPU);
   if g != null {
     n := g.ping();
     print("after assign: g.ping() = {}\n", n);

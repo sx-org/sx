@@ -362,9 +362,11 @@ pub const Parser = struct {
             return node;
         }
 
-        // Protocol declaration
-        if (self.tokens.tag(self.tok) == .kw_protocol) {
-            return self.parseProtocolDecl(name, start_pos, name_is_raw);
+        // Constraint / interface declaration. Both head words are CONTEXTUAL:
+        // ordinary identifiers everywhere but this slot, where an opening body
+        // (after the optional parameter list) is what marks the head.
+        if (self.protocolHeadKind()) |kind| {
+            return self.parseProtocolDecl(name, start_pos, name_is_raw, kind);
         }
 
         // Open-set declaration heads. Both are `@` names with an argument list,
@@ -585,6 +587,22 @@ pub const Parser = struct {
             return self.fail("a failable return is written `(T, !)` — or `(A, B, !)` for multiple values — not `T !`");
         }
         return ty;
+    }
+
+    /// The RHS of `is` — a TYPE, never a value expression. `struct` / `enum` /
+    /// `union` are reserved words, so the category slot spells them here; every
+    /// other target (including the lowercase category words) is the ordinary
+    /// type grammar.
+    fn parseIsTarget(self: *Parser) anyerror!*Node {
+        switch (self.tokens.tag(self.tok)) {
+            .kw_struct, .kw_enum, .kw_union => {
+                const start = self.tokens.start(self.tok);
+                const word = self.tokens.slice(self.tok);
+                self.advance();
+                return try self.createNode(start, .{ .type_expr = .{ .name = word } });
+            },
+            else => return self.parseTypeExpr(),
+        }
     }
 
     fn parseTypeExpr(self: *Parser) anyerror!*Node {
@@ -1656,7 +1674,7 @@ pub const Parser = struct {
             if (param_names.items.len == 0 or !std.mem.eql(u8, param_names.items[0], "self")) {
                 return self.fail("protocol method must declare its receiver as the first parameter: `self: *Self` (or `self: Self`)");
             }
-            {
+            const receiver_is_pointer = blk: {
                 const rtype = param_types.items[0];
                 const is_self_val = rtype.data == .type_expr and std.mem.eql(u8, rtype.data.type_expr.name, "Self");
                 const is_self_ptr = rtype.data == .pointer_type_expr and
@@ -1665,7 +1683,8 @@ pub const Parser = struct {
                 if (!is_self_val and !is_self_ptr) {
                     return self.fail("protocol method receiver must be typed `*Self` or `Self`");
                 }
-            }
+                break :blk is_self_ptr;
+            };
 
             // Optional return type
             var return_type: ?*Node = null;
@@ -1699,18 +1718,20 @@ pub const Parser = struct {
                 .param_names = all_param_names[1..],
                 .param_name_spans = all_param_name_spans[1..],
                 .param_name_is_raw = all_param_name_is_raw[1..],
+                .receiver_is_pointer = receiver_is_pointer,
                 .return_type = return_type,
                 .default_body = default_body,
             });
         }
     }
 
-    fn parseProtocolDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
-        self.advance(); // skip 'protocol'
+    fn parseProtocolDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool, kind: ast.ProtocolKind) anyerror!*Node {
+        const head_word = self.tokens.slice(self.tok);
+        self.advance(); // skip the head word
 
-        // Optional type params: protocol(Target: Type, U: Type) { ... }
+        // Optional type params: `constraint(Target: Type, U: Type) { ... }`.
         // Names are introduced without a `$` sigil (unlike struct's $T) because
-        // the parens after `protocol` already mark this as a parameter list.
+        // the parens after the head word already mark this as a parameter list.
         var type_params = std.ArrayList(ast.StructTypeParam).empty;
         if (self.tokens.tag(self.tok) == .l_paren) {
             self.advance(); // skip '('
@@ -1720,7 +1741,7 @@ pub const Parser = struct {
                     if (self.tokens.tag(self.tok) == .r_paren) break;
                 }
                 if (self.tokens.tag(self.tok) != .identifier) {
-                    return self.fail("expected type parameter name in protocol header");
+                    return self.failFmt("expected type parameter name in the '{s}' header", .{head_word});
                 }
                 const param_name = self.tokens.slice(self.tok);
                 self.advance();
@@ -1729,33 +1750,6 @@ pub const Parser = struct {
                 try type_params.append(self.allocator, .{ .name = param_name, .constraint = constraint });
             }
             try self.expect(.r_paren);
-        }
-
-        // The kind slot, after the parameter list and before the attributes.
-        // `constraint` / `vtable` are CONTEXTUAL here — ordinary identifiers
-        // everywhere else. Absent ⇒ constraint. Nothing but a kind word or
-        // `{` may stand here, so an identifier is unambiguously a kind.
-        var kind: ast.ProtocolKind = .constraint;
-        if (self.tokens.tag(self.tok) == .identifier and !self.tokens.flagsOf(self.tok).is_raw) {
-            const word = self.tokens.slice(self.tok);
-            if (std.mem.eql(u8, word, "constraint")) {
-                kind = .constraint;
-            } else if (std.mem.eql(u8, word, "vtable")) {
-                kind = .vtable;
-            } else {
-                return self.fail("expected a protocol kind ('constraint', 'vtable') or '{' after the protocol head");
-            }
-            self.advance();
-        }
-
-        var is_identity = false;
-        while (self.tokens.tag(self.tok) == .at_identity) {
-            if (is_identity) return self.fail("duplicate @identity on protocol");
-            if (kind == .constraint) {
-                return self.fail("@identity is meaningless on a constraint protocol — there are no runtime values to classify");
-            }
-            is_identity = true;
-            self.advance();
         }
 
         try self.expect(.l_brace);
@@ -1778,7 +1772,6 @@ pub const Parser = struct {
             .name = name,
             .methods = try methods.toOwnedSlice(self.allocator),
             .kind = kind,
-            .is_identity = is_identity,
             .type_params = try type_params.toOwnedSlice(self.allocator),
             .is_raw = name_is_raw,
         } });
@@ -1900,6 +1893,29 @@ pub const Parser = struct {
 
     fn peekTag(self: *Parser, offset: usize) Tag {
         return self.tokens.tag(self.tokens.peek(self.tok, @intCast(offset)));
+    }
+
+    /// With `current` on the token after `::`: which protocol head this is, or
+    /// null when the slot holds anything else. The head word is contextual, so
+    /// the body brace — after the optional parameter list — is what decides.
+    fn protocolHeadKind(self: *Parser) ?ast.ProtocolKind {
+        if (self.tokens.tag(self.tok) != .identifier) return null;
+        if (self.tokens.flagsOf(self.tok).is_raw) return null;
+        const word = self.tokens.slice(self.tok);
+        const kind: ast.ProtocolKind = if (std.mem.eql(u8, word, "constraint"))
+            .constraint
+        else if (std.mem.eql(u8, word, "interface"))
+            .erased
+        else
+            return null;
+        const after = self.tokens.next(self.tok);
+        const body = switch (self.tokens.tag(after)) {
+            .l_brace => after,
+            .l_paren => self.tokens.next(self.tokens.scanBalanced(after, .l_paren, .r_paren) orelse return null),
+            else => return null,
+        };
+        if (self.tokens.tag(body) != .l_brace) return null;
+        return kind;
     }
 
     fn runtimeKindForAtName(_: *Parser, at_name: []const u8) ?ast.RuntimeKind {
@@ -3339,7 +3355,10 @@ pub const Parser = struct {
             const op = info.op;
             self.advance();
 
-            const rhs = try self.parseBinary(info.prec + 1, pipe);
+            const rhs = if (op == .is_op)
+                try self.parseIsTarget()
+            else
+                try self.parseBinary(info.prec + 1, pipe);
 
             // Chained comparison detection: if op is a comparison and the next
             // token is also a comparison at the same precedence, accumulate
@@ -3956,7 +3975,7 @@ pub const Parser = struct {
                 self.advance();
                 return try self.createNode(start, .{ .identifier = .{ .name = name, .is_raw = is_raw } });
             },
-            .kw_protocol, .kw_impl, .kw_ufcs => {
+            .kw_impl, .kw_ufcs => {
                 // Contextual keywords used as identifiers in expressions
                 const name = self.tokens.slice(self.tok);
                 self.advance();
@@ -4710,10 +4729,10 @@ pub const Parser = struct {
 
     /// Returns true if the current token can be used as an identifier name.
     /// Includes actual identifiers plus contextual keywords that are only
-    /// keywords in specific syntactic positions (e.g., `protocol`, `impl`).
+    /// keywords in specific syntactic positions (e.g., `impl`, `ufcs`).
     fn isIdentLike(self: *const Parser) bool {
         return switch (self.tokens.tag(self.tok)) {
-            .identifier, .kw_protocol, .kw_impl, .kw_ufcs => true,
+            .identifier, .kw_impl, .kw_ufcs => true,
             else => false,
         };
     }
@@ -4917,7 +4936,7 @@ pub const Parser = struct {
             .kw_push,
             .kw_ufcs,
             .kw_in,
-            .kw_protocol,
+            .kw_is,
             .kw_impl,
             .kw_Self,
             .kw_inline,
@@ -4983,7 +5002,6 @@ pub const Parser = struct {
             .at_source,
             .at_define,
             .at_flags,
-            .at_identity,
             .at_get,
             .at_set,
             .at_context_extend,
@@ -5067,7 +5085,7 @@ pub const Parser = struct {
         const bit_or: u8 = 4; // |
         const bit_xor: u8 = 5; // ^
         const bit_and: u8 = 6; // &
-        const comparison: u8 = 7; // == != < <= > >= in
+        const comparison: u8 = 7; // == != < <= > >= in is
         const shift: u8 = 8; // << >>
         const additive: u8 = 9; // + -
         const multiplicative: u8 = 10; // * / %
@@ -5076,8 +5094,8 @@ pub const Parser = struct {
     const BinaryInfo = struct { prec: u8, op: ast.BinaryOp.Op, comparison: bool };
 
     /// One lookup per infix token: precedence tier, AST operator, and whether
-    /// the token joins a comparison chain (`in` shares the tier but never
-    /// chains).
+    /// the token joins a comparison chain (`in` and `is` share the tier but
+    /// never chain).
     fn binaryInfo(tag: Tag) ?BinaryInfo {
         return switch (tag) {
             .kw_or => .{ .prec = Prec.logical_or, .op = .or_op, .comparison = false },
@@ -5092,6 +5110,7 @@ pub const Parser = struct {
             .greater => .{ .prec = Prec.comparison, .op = .gt, .comparison = true },
             .greater_equal => .{ .prec = Prec.comparison, .op = .gte, .comparison = true },
             .kw_in => .{ .prec = Prec.comparison, .op = .in_op, .comparison = false },
+            .kw_is => .{ .prec = Prec.comparison, .op = .is_op, .comparison = false },
             .less_less => .{ .prec = Prec.shift, .op = .shl, .comparison = false },
             .greater_greater => .{ .prec = Prec.shift, .op = .shr, .comparison = false },
             .plus => .{ .prec = Prec.additive, .op = .add, .comparison = false },
@@ -5134,7 +5153,6 @@ pub const Parser = struct {
             .kw_null,
             .kw_push,
             .kw_ufcs,
-            .kw_protocol,
             .kw_impl,
             .kw_Self,
             .kw_inline,
@@ -5195,7 +5213,6 @@ pub const Parser = struct {
             .at_source,
             .at_define,
             .at_flags,
-            .at_identity,
             .at_get,
             .at_set,
             .at_context_extend,

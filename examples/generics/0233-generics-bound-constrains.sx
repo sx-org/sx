@@ -8,7 +8,7 @@
 // parameter.
 @import "modules/std.sx";
 
-Summable :: protocol constraint {
+Summable :: constraint {
     val :: (self: *Self) -> i32;
 }
 
@@ -44,7 +44,7 @@ exact :: ($P: Type, v: $V/P) -> i32 { 1 }
 
 // TWO bounds on one binder, spelled across two parameters. Both are the
 // declaration's, so a binding must satisfy both.
-Showable :: protocol constraint {
+Showable :: constraint {
     show :: (self: *Self) -> string;
 }
 impl Showable for Pair {

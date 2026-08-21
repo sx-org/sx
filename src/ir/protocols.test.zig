@@ -67,7 +67,7 @@ test "protocols: packArgConformsTo at the impl-declaration level (non-parameteri
     var l = Lowering.init(&module);
     const pr = ProtocolResolver{ .l = &l };
 
-    // Shape :: protocol { draw :: (); }  (non-parameterised, one required method)
+    // Shape :: constraint { draw :: (); }  (non-parameterised, one required method)
     const methods = [_]ast.ProtocolMethodDecl{protoMethodReq("draw")};
     const pd = ast.ProtocolDecl{ .name = "Shape", .methods = &methods };
     l.registerProtocolDecl(&pd);
@@ -103,7 +103,7 @@ test "protocols: registerImplBlock records <Target>.<method> in fn_ast_map" {
     var l = Lowering.init(&module);
     const pr = ProtocolResolver{ .l = &l };
 
-    // Drawable :: protocol { draw :: (); }  +  impl Drawable for Circle { draw :: (){} }
+    // Drawable :: constraint { draw :: (); }  +  impl Drawable for Circle { draw :: (){} }
     const proto_methods = [_]ast.ProtocolMethodDecl{protoMethodReq("draw")};
     const pd = ast.ProtocolDecl{ .name = "Drawable", .methods = &proto_methods };
     l.registerProtocolDecl(&pd);

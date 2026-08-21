@@ -29,6 +29,28 @@ const headNameOfCallee = Lowering.headNameOfCallee;
 const StructConstInfo = Lowering.StructConstInfo;
 
 pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: ast.Span) Ref {
+    // `.{ }` at an interface target is the ZERO handle, whose null ctx is the
+    // `?I` absent sentinel. On the return spine of a non-optional `-> I` there
+    // is no absence to express, so the spelling is refused there.
+    if (sl.type_expr == null and sl.field_inits.len == 0 and self.return_component) {
+        // An optional exit carries the absence, so the sentinel is what it
+        // wants; the target may already have been narrowed to the child here,
+        // which is why the EXIT type is what decides.
+        const optional_exit = if (self.effectiveReturnType()) |r|
+            !r.isBuiltin() and self.module.types.get(r) == .optional
+        else
+            false;
+        if (self.target_type) |t| {
+            if (!optional_exit and self.isErasedProtocolType(t)) {
+                if (self.diagnostics) |d| {
+                    const shown = self.formatTypeName(t);
+                    const id = d.addFmtId(.err, span, "'.{{ }}' is the zero handle, and a '{s}' return has no absence to carry it", .{shown});
+                    d.addHelpFmt(id, span, null, "return '?{s}', where '.{{ }}' is the absent sentinel", .{shown});
+                }
+                return self.builder.constUndef(t);
+            }
+        }
+    }
     // Check for tagged enum construction: .Variant{ payload_fields }
     // This happens when type_expr is an enum_literal and target_type is a union
     if (sl.type_expr) |te| {
@@ -433,15 +455,11 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                 if (l.index == sf_index) {
                     var val = l.val;
                     const src_ty = self.builder.getRefType(val);
-                    // An @identity protocol field erases NODE-AWARE, so an
-                    // lvalue initializer BORROWS (`.{ allocator = gpa }`
-                    // aliases `gpa`) — the node-less path would misread the
-                    // lvalue as an rvalue and refuse. value/own protocol
-                    // fields keep the node-less OWNING copy: the literal may
-                    // escape the frame (0401 pins the List-append case), so
-                    // a borrow would dangle.
-                    const dst_pi = self.getProtocolInfo(sf.ty);
-                    val = if (dst_pi != null and dst_pi.?.ownership == .identity)
+                    // An interface field erases NODE-AWARE, so an lvalue
+                    // initializer BORROWS (`.{ allocator = gpa }` aliases
+                    // `gpa`); the node-less path cannot tell the lvalue from
+                    // an rvalue.
+                    val = if (self.getProtocolInfo(sf.ty) != null)
                         self.coerceOrErase(val, src_ty, sf.ty, l.node)
                     else
                         self.coerceToType(val, src_ty, sf.ty);
@@ -4055,7 +4073,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     if (self.lowerSoftPointerRecovery(&pc, full_dst)) |answer|
                         break :blk answer;
                     switch (self.coercionResolver().classifyXX(recv_ty, full_dst)) {
-                        .protocol_to_pointer, .protocol_to_raw, .protocol_to_any, .no_op, .erase_protocol, .erase_protocol_wrap => {},
+                        .protocol_to_pointer, .protocol_to_raw, .protocol_to_any, .no_op, .erase_protocol, .erase_protocol_wrap, .reerase_protocol, .reerase_protocol_wrap => {},
                         else => {
                             const xx_node = self.alloc.create(Node) catch unreachable;
                             xx_node.* = Node{ .data = .{ .unary_op = .{ .op = .xx, .operand = pc.operand } }, .span = pc.operand.span, .source_file = pc.operand.source_file };
@@ -4626,7 +4644,107 @@ pub fn lowerBoolCondition(self: *Lowering, node: *const Node) Ref {
     return v;
 }
 
+/// `subject is target`. The target is a TYPE, so the answer is a
+/// classification, never a value comparison. Four subject shapes reach here:
+/// a static type reference (folded), an interface handle (a handle's referent
+/// is behind `type_of`, so the handle itself answers about the interface it
+/// carries), an `any` box (its tag, unpeeled), and a runtime `Type` value.
+pub fn lowerIs(self: *Lowering, bop: *const ast.BinaryOp) Ref {
+    if (self.staticIsCondition(bop.lhs, bop.rhs)) |answer| return self.builder.constBool(answer);
+
+    const subject = self.lowerExpr(bop.lhs);
+    const subject_ty = self.builder.getRefType(subject);
+
+    // An interface HANDLE classifies as the interface it carries: the referent
+    // is reached through `type_of(h)`, not through the handle.
+    if (self.getProtocolInfo(subject_ty)) |_| return self.builder.constBool(handleIsAnswer(self, subject_ty, bop.rhs));
+
+    const tag: Ref = if (subject_ty == .type_value)
+        subject
+    else if (subject_ty == .any)
+        self.builder.emit(.{ .struct_get = .{ .base = subject, .field_index = 1 } }, .type_value)
+    else {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, bop.lhs.span, "'is' classifies a TYPE — '{s}' is a value; write 'type_of(…) is …' to ask about its type", .{self.formatTypeName(subject_ty)});
+        return self.builder.constBool(false);
+    };
+
+    return runtimeIsAnswer(self, tag, bop.rhs, bop.lhs.span);
+}
+
+/// The static answer for an interface HANDLE subject: the handle IS its own
+/// interface, is no other interface and no concrete type, and satisfies a
+/// constraint exactly when a bridge `impl C for I` is visible.
+fn handleIsAnswer(self: *Lowering, handle_ty: TypeId, rhs: *const Node) bool {
+    return self.staticIsAnswer(handle_ty, rhs) orelse false;
+}
+
+/// The runtime answer over a `Type`-valued tag: an OR-reduction over the tag
+/// set the target denotes.
+fn runtimeIsAnswer(self: *Lowering, tag: Ref, rhs: *const Node, span: ast.Span) Ref {
+    const target = self.classifyIsTarget(rhs) orelse return self.builder.constBool(false);
+    // Signedness reads the tag-indexed table rather than an OR over the tag
+    // set: the set is only complete once every type is registered, and the
+    // `{}` formatter asks this of types that register after it lowers.
+    if (target == .category and std.mem.eql(u8, target.category, "unsigned")) {
+        const args = self.alloc.dupe(Ref, &.{tag}) catch return self.builder.constBool(false);
+        return self.builder.callBuiltin(.is_unsigned, args, .bool);
+    }
+    const tags: []const u64 = switch (target) {
+        .category => |word| self.resolveTypeCategoryTags(word),
+        .concrete => |ty| blk: {
+            const one = self.alloc.alloc(u64, 1) catch break :blk &.{};
+            one[0] = ty.index();
+            break :blk one;
+        },
+        .interface, .constraint => |contract| return conformanceAsk(self, tag, contract),
+        // A parameterized constraint instantiation mints no type, so it keys no
+        // conformance table; only the static fold answers for one.
+        .param_constraint => {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, span, "a parameterized constraint has no runtime conformer set — ask it of a type expression, where it folds", .{});
+            return self.builder.constBool(false);
+        },
+    };
+    if (tags.len == 0) return self.builder.constBool(false);
+    var acc: ?Ref = null;
+    for (tags) |t| {
+        const want = self.builder.emit(.{ .const_type = TypeId.fromIndex(@intCast(t)) }, .type_value);
+        const args = self.alloc.dupe(Ref, &.{ tag, want }) catch continue;
+        const eq = self.builder.callBuiltin(.rt_type_eq, args, .bool);
+        acc = if (acc) |a| self.builder.emit(.{ .bit_or = .{ .lhs = a, .rhs = eq } }, .bool) else eq;
+    }
+    return acc orelse self.builder.constBool(false);
+}
+
+/// `tag is <contract>` over a runtime `Type`: one row of the contract's
+/// conformance table. An interface's row is its vtable-or-null, so the question
+/// is whether that word is present; a constraint's row is the answer itself.
+fn conformanceAsk(self: *Lowering, tag: Ref, contract: TypeId) Ref {
+    const table = self.conformanceTable(contract) orelse return self.builder.constBool(false);
+    if (self.protocolKindOf(contract)) |kind| {
+        if (kind == .erased) {
+            const vt = self.builder.emit(.{ .conformance_lookup = .{
+                .contract = contract,
+                .tag = tag,
+                .table = table,
+                .row = .vtable,
+            } }, self.module.types.ptrTo(.void));
+            return self.builder.emit(.{ .cmp_ne = .{ .lhs = vt, .rhs = self.builder.constNull(self.module.types.ptrTo(.void)) } }, .bool);
+        }
+    }
+    return self.builder.emit(.{ .conformance_lookup = .{
+        .contract = contract,
+        .tag = tag,
+        .table = table,
+        .row = .bit,
+    } }, .bool);
+}
+
 pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
+    // `is` reads its RHS as a TYPE, so it is answered before either operand is
+    // lowered as a value.
+    if (bop.op == .is_op) return self.lowerIs(bop);
     // Short-circuit: `a and b` → if a then b else false
     if (bop.op == .and_op) {
         const lhs = self.lowerBoolCondition(bop.lhs);
@@ -5060,6 +5178,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
         .shl => self.builder.emit(.{ .shl = .{ .lhs = lhs, .rhs = rhs } }, ty),
         .shr => self.builder.emit(.{ .shr = .{ .lhs = lhs, .rhs = rhs } }, ty),
         .in_op => self.emitError("in_op", bop.lhs.span),
+        .is_op => unreachable, // intercepted at the head of lowerBinaryOp
     };
 }
 

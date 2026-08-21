@@ -11,7 +11,7 @@ Trip  :: struct { a: i64; b: i64; c: i64; }
 SHAPES  :: .[Pair, Trip];
 ALSO    :: SHAPES;                 // an alias of the list iterates the same set
 
-Sized :: protocol vtable {
+Sized :: interface {
     footprint :: (self: *Self) -> i64;
 }
 

@@ -15,7 +15,7 @@
 
 @import "modules/std.sx";
 
-Show :: protocol(T: Type) {
+Show :: constraint(T: Type) {
     get :: (self: *Self) -> T;
 }
 

@@ -4,15 +4,15 @@
 // to look up.
 @import "modules/std.sx";
 
-Summable :: protocol constraint {
+Summable :: constraint {
     val :: (self: *Self) -> i32;
 }
 
-Show :: protocol constraint {
+Show :: constraint {
     show :: (self: *Self) -> string;
 }
 
-Into2 :: protocol(T: Type) constraint {
+Into2 :: constraint(T: Type) {
     conv :: (self: *Self) -> T;
 }
 

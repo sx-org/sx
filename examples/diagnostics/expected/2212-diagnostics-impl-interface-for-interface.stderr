@@ -1,0 +1,5 @@
+error: 'Show' is an interface handle, not a concrete conformer — 'p.(View)' is the conversion
+  --> examples/diagnostics/2212-diagnostics-impl-interface-for-interface.sx:9:1
+   |
+ 9 | impl View for Show {}
+   | ^^^^^^^^^^^^^^^^^^^^^

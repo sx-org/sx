@@ -1,5 +1,5 @@
 @import "modules/std.sx";
-P1238 :: protocol { f :: (self: *Self) -> i64; }
+P1238 :: constraint { f :: (self: *Self) -> i64; }
 S1238 :: struct {
     a: i64 = 0;
     bad: i64 = BadFieldDefault1238{};

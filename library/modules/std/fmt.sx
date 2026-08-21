@@ -359,7 +359,7 @@ any_to_string :: (val: any) -> string {
     match type {
         case void: result = "";
         case int: {
-            if is_unsigned(type) { result = uint_to_string(any_uint(val)); }
+            if type is unsigned { result = uint_to_string(any_uint(val)); }
             else { result = int_to_string(any_int(val)); }
         }
         case string: { s : string = val.(@Any).data.(*string).*; result = s; }
@@ -607,6 +607,16 @@ __sx_cast_or_panic :: (av: any, $T: Type, site: @SourceSite = @caller) -> T {
         c.exit(1);
     }
     return av.(@Any).data.(*T).*;
+}
+
+// `p.(Q)` between interfaces, unconsumed: an absent row stops the program. The
+// referent's concrete type is only known to the running program, so the message
+// reads it off the handle rather than off the site.
+__sx_reerase_or_panic :: (conforms: bool, concrete: Type, target: Type) {
+    if !conforms {
+        print("re-erasure failed: '{}' does not conform to '{}'\n", type_name(concrete), type_name(target));
+        c.exit(1);
+    }
 }
 
 // The SOFT assertion form `av.(?T)`: mismatch is a value (`null`), never a

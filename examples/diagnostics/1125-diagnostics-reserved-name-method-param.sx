@@ -6,7 +6,7 @@
 @import "modules/std.sx";
 @import "modules/build.sx";
 
-Greeter :: protocol {
+Greeter :: constraint {
     greet :: (self: *Self, u8: i64) -> i64 {
         return u8;
     }

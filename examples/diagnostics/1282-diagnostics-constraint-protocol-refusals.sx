@@ -6,7 +6,7 @@
 @import "modules/std.sx";
 @import "modules/std/list.sx";
 
-Ord :: protocol {
+Ord :: constraint {
     less :: (self: *Self, other: Self) -> bool;
 }
 impl Ord for i64 { less :: (self: *i64, other: i64) -> bool { self.* < other } }

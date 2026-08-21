@@ -8,7 +8,7 @@
     target: i64 = 0;
 }
 
-@BuildSink :: protocol(P: Type) constraint {
+@BuildSink :: constraint(P: Type) {
     expression :: (self: *Self);
 }
 

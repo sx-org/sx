@@ -327,10 +327,13 @@ pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty: TypeId) voi
                 // slot (a `string` body "returning" i64 would ship the pointer
                 // as the int). Diagnose; on failure skip the coerce (the build
                 // aborts via hasErrors before this ret could run).
+                const saved_spine = self.return_component;
+                self.return_component = true;
                 const coerced = if (self.checkReturnable(val, val_ty, ret_ty, span))
                     self.coerceToType(val, val_ty, ret_ty)
                 else
                     val;
+                self.return_component = saved_spine;
                 emitBodyExit(self, coerced, ret_ty, .fallthrough);
                 return;
             }
@@ -699,6 +702,11 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
 }
 
 pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
+    // A binding clears the return spine: the handle names storage the binding
+    // owns, not the value handed back.
+    const saved_spine = self.return_component;
+    self.return_component = false;
+    defer self.return_component = saved_spine;
     if (vd.value) |val| {
         if (val.data == .identifier and self.isPackName(val.data.identifier.name)) {
             const ph = self.diagPackAsValue(val.data.identifier.name, val.span, .storage);
@@ -1367,7 +1375,10 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     // lowering — `reorderNamedReturn` is a no-op for positional / non-tuple
     // returns and for the inline-comptime case (ret_ty_for_target carries the
     // right tuple either way).
+    const saved_spine = self.return_component;
+    self.return_component = true;
     const ret_val = if (rs_value) |val| self.lowerExpr(reorderNamedReturn(self, val, ret_ty_for_target)) else null;
+    self.return_component = saved_spine;
     if (ret_val) |rv| {
         // `return proc.exit(0);` never returns: the operand took control where
         // it stands, so no defer, coercion or exit follows it.
@@ -1414,10 +1425,13 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
             // it into the return slot; on failure skip the coerce (the build
             // aborts via hasErrors before this ret could run).
             const val_ty = self.builder.getRefType(ref);
+            const saved_ret_spine = self.return_component;
+            self.return_component = true;
             const coerced = if (self.checkReturnable(ref, val_ty, exit_ty, rs.value.?.span))
                 self.coerceToType(ref, val_ty, exit_ty)
             else
                 ref;
+            self.return_component = saved_ret_spine;
             emitBodyExit(self, coerced, exit_ty, .return_like);
         }
     } else {
@@ -3658,14 +3672,11 @@ pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {
             const fval = self.lowerExpr(fi.value);
             self.target_type = saved_target_f;
             const fval_ty = self.builder.getRefType(fval);
-            // An @identity Context field (`allocator`, `io`) erases
-            // NODE-AWARE so an lvalue BORROWS (`push .{ allocator = gpa }`
-            // aliases `gpa`) — the node-less path would misread the lvalue
-            // as an rvalue and refuse. Other fields keep the node-less
-            // coercion (value/own protocol fields own their copy).
-            const fl_pi = self.getProtocolInfo(fl.ty);
+            // An interface Context field (`allocator`, `io`) erases NODE-AWARE
+            // so an lvalue BORROWS (`push .{ allocator = gpa }` aliases `gpa`);
+            // the node-less path cannot tell the lvalue from an rvalue.
             const store_val = if (fval_ty != fl.ty and fval_ty != .void and fl.ty != .void)
-                (if (fl_pi != null and fl_pi.?.ownership == .identity)
+                (if (self.getProtocolInfo(fl.ty) != null)
                     self.coerceOrErase(fval, fval_ty, fl.ty, fi.value)
                 else
                     self.coerceToType(fval, fval_ty, fl.ty))

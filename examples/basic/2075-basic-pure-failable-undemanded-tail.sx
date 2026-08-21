@@ -15,7 +15,7 @@
 
 Failed :: error { Nope }
 
-Drawable :: protocol vtable {
+Drawable :: interface {
     draw :: (self: *Self) -> string;
 }
 
@@ -69,7 +69,7 @@ forwards_arrow :: () -> !Failed => fails();
 
 // An erased protocol handle is a tail like any other: built, then dropped.
 erase_tail :: () -> !Failed {
-    Label{ text = "hi" }.(Drawable, context.allocator);
+    Label{ text = "hi" }.(Drawable);
 }
 
 // The tail's EFFECT still happens; only its value is dropped.

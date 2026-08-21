@@ -4,7 +4,7 @@ error: 'Plain' does not satisfy the bound 'Summable' on '$T'
 29 | total :: (x: $T/Summable) -> i32 { 1 }
    |                 ^^^^^^^^
 
-help: 'Plain' has no 'val' for 'Summable'
+help: 'Plain' has no 'val :: (self: *Self) -> i32' for 'Summable'
    |
 29 | total :: (x: $T/Summable) -> i32 { 1 }
    |                 ^^^^^^^^
@@ -70,7 +70,7 @@ error: 'Pair' does not satisfy the bound 'Summable' on '$T'
 43 | structural :: (v: $T/Summable) -> i32 { 1 }
    |                      ^^^^^^^^
 
-help: 'Pair' has no 'val' for 'Summable'
+help: 'Pair' has no 'val :: (self: *Self) -> i32' for 'Summable'
    |
 43 | structural :: (v: $T/Summable) -> i32 { 1 }
    |                      ^^^^^^^^
@@ -81,7 +81,7 @@ error: 'Half' does not satisfy the bound 'Show' on '$T'
 46 | both :: (a: $T/Summable, b: $T/Show) -> i32 { 1 }
    |                                ^^^^
 
-help: 'Half' has no 'show' for 'Show'
+help: 'Half' has no 'show :: (self: *Self) -> string' for 'Show'
    |
 46 | both :: (a: $T/Summable, b: $T/Show) -> i32 { 1 }
    |                                ^^^^
@@ -92,7 +92,7 @@ error: 'i64' does not satisfy the bound 'Summable' on '$V'
 50 | relay :: ($P: Type, v: $V/P) -> i32 { 1 }
    |                           ^
 
-help: 'i64' has no 'val' for 'Summable'
+help: 'i64' has no 'val :: (self: *Self) -> i32' for 'Summable'
    |
 50 | relay :: ($P: Type, v: $V/P) -> i32 { 1 }
    |                           ^
@@ -103,7 +103,7 @@ error: 'Plain' does not satisfy the bound 'Summable' on '$V'
 55 | nested :: (value: $I/@Init($V/Summable)) -> i32 { 1 }
    |                               ^^^^^^^^
 
-help: 'Plain' has no 'val' for 'Summable'
+help: 'Plain' has no 'val :: (self: *Self) -> i32' for 'Summable'
    |
 55 | nested :: (value: $I/@Init($V/Summable)) -> i32 { 1 }
    |                               ^^^^^^^^

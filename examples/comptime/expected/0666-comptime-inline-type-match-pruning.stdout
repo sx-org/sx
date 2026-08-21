@@ -1,2 +1,2 @@
-protocol slice int widget
-struct optional protocol other
+interface slice int widget
+struct optional interface other

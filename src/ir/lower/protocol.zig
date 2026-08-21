@@ -1,6 +1,6 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const ast = @import("../../ast.zig");
+const print = @import("../../print.zig");
 const Node = ast.Node;
 const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
@@ -76,11 +76,51 @@ fn plainHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool {
     }
 }
 
-/// The name of the first protocol method `concrete_ty` fails to provide, or null
-/// when it satisfies the protocol. The bound checker wants the name only.
-pub fn firstUnimplementedProtocolMethod(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) ?[]const u8 {
+/// A bound's failure, with the one fact that separates a MISSING bridge from a
+/// non-conforming one: whether an `impl` for this pair was declared at all.
+pub const BoundNonConformance = struct {
+    nc: NonConformance,
+    impl_visible: bool,
+};
+
+/// How the binding fails `proto_ty`, or null when it satisfies it. `impl_visible`
+/// is the DECLARATION ledger alone: a bound is answered at a monomorphization,
+/// against the impl set as it stands there.
+pub fn boundNonConformance(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) ?BoundNonConformance {
     const nc = firstUnimplementedMethod(self, proto_ty, concrete_type_name, concrete_ty) orelse return null;
-    return nc.method;
+    const pd = self.getProtocolInfo(proto_ty) orelse return .{ .nc = nc, .impl_visible = false };
+    const identity_ty: ?TypeId = if (self.protocol_ast_by_type.get(proto_ty) != null) proto_ty else null;
+    return .{ .nc = nc, .impl_visible = self.protocolResolver().hasConcreteImplDecl(identity_ty, pd.name, concrete_ty) };
+}
+
+/// The required method as a bound help names it, spelled as the protocol
+/// declared it: `name :: (self: Self|*Self[, p: T…])[ -> R]`.
+/// `ProtocolMethodDecl` stores extra params only, so the receiver is rebuilt
+/// from its recorded form. Falls back to the bare method name when any part
+/// fails to print.
+pub fn requiredMethodSignature(self: *Lowering, proto_ty: TypeId, method: []const u8) []const u8 {
+    const pd = self.protocol_ast_by_type.get(proto_ty) orelse return method;
+    const mast = methodAst(pd, method) orelse return method;
+    var aw = std.Io.Writer.Allocating.init(self.alloc);
+    writeMethodSignature(&aw.writer, method, mast) catch return method;
+    return aw.writer.toArrayList().items;
+}
+
+fn writeMethodSignature(w: *std.Io.Writer, method: []const u8, mast: ast.ProtocolMethodDecl) anyerror!void {
+    try w.writeAll(method);
+    try w.writeAll(" :: (self: ");
+    try w.writeAll(if (mast.receiver_is_pointer) "*Self" else "Self");
+    for (mast.param_names, mast.params) |name, ty| {
+        try w.writeAll(", ");
+        try w.writeAll(name);
+        try w.writeAll(": ");
+        try print.printType(ty, w);
+    }
+    try w.writeByte(')');
+    if (mast.return_type) |rt| {
+        try w.writeAll(" -> ");
+        try print.printType(rt, w);
+    }
 }
 
 /// The name an `impl` head would spell to reach the protocol `proto_node`
@@ -118,12 +158,88 @@ fn implFactWaits(self: *Lowering, proto_ty: ?TypeId, proto_name: []const u8, ty:
     return true;
 }
 
+/// The conformance table of `contract`, minted on first read with a single
+/// non-conforming row so the site has a symbol to index; `fillConformanceTables`
+/// writes the rows once every impl is registered. Null while the table's own
+/// facts are not utterable: a table publishes negative rows, so it waits on the
+/// contract's impls in the same way a negative answer does.
+pub fn conformanceTable(self: *Lowering, contract: TypeId) ?inst_mod.GlobalId {
+    if (self.conformance_tables.get(contract)) |gid| return gid;
+    const pd = self.getProtocolInfo(contract) orelse return null;
+    if (self.expansion.scheduled() and self.expansion.mayImpl(pd.name)) {
+        const fact = std.fmt.allocPrint(self.alloc, "'{s}' impls to be final before its conformance table is built", .{pd.name});
+        self.expansion.awaitFact(fact catch "an impl set to be final");
+        return null;
+    }
+    const row_ty: TypeId = if (pd.isErased()) self.module.types.ptrTo(.void) else .bool;
+    const name = std.fmt.allocPrint(self.alloc, "__{s}__conformance", .{protocolRuntimeDispatchName(self, pd.name, contract)}) catch @panic("out of memory");
+    const gid = self.module.addGlobal(.{
+        .name = self.module.types.internString(name),
+        .ty = self.module.types.arrayOf(row_ty, 1),
+        .init_val = .{ .zeroinit = {} },
+        .is_const = true,
+    });
+    self.conformance_tables.put(self.alloc, contract, gid) catch @panic("out of memory");
+    return gid;
+}
+
+/// Write every requested table's rows. Runs once the declaration space is final,
+/// so the rows answer over program-unique pairs: a pair implemented in more than
+/// one module has no arbiter at a dynamic conversion and stays non-conforming.
+pub fn fillConformanceTables(self: *Lowering) void {
+    var it = self.conformance_tables.iterator();
+    while (it.next()) |entry| fillOneTable(self, entry.key_ptr.*, entry.value_ptr.*);
+}
+
+fn fillOneTable(self: *Lowering, contract: TypeId, gid: inst_mod.GlobalId) void {
+    const pd = self.getProtocolInfo(contract) orelse return;
+    const erased = pd.isErased();
+    const row_ty: TypeId = if (erased) self.module.types.ptrTo(.void) else .bool;
+    const n: u32 = @intCast(self.module.types.infos.items.len);
+    const rows = self.alloc.alloc(inst_mod.ConstantValue, @max(n, 1)) catch return;
+    for (rows) |*r| r.* = if (erased) .{ .null_val = {} } else .{ .boolean = false };
+
+    var sites = self.protocol_impl_sites.iterator();
+    while (sites.next()) |site| {
+        const key = site.key_ptr.*;
+        if (!std.mem.eql(u8, self.module.types.strings.get(key.protocol_name), pd.name)) continue;
+        if (key.protocol != .unresolved and key.protocol != contract) continue;
+        const conformer = key.concrete;
+        if (conformer == .unresolved or conformer.index() >= n) continue;
+        if (!programUnique(site.value_ptr.items)) continue;
+        const cname = self.resolveConcreteTypeName(conformer) orelse continue;
+        if (firstUnimplementedMethod(self, contract, cname, conformer) != null) continue;
+        if (!erased) {
+            rows[conformer.index()] = .{ .boolean = true };
+            continue;
+        }
+        const thunks = getOrCreateThunks(self, contract, cname, conformer);
+        const vt = getOrCreateVtableGlobal(self, contract, pd.name, cname, conformer, thunks) orelse continue;
+        rows[conformer.index()] = .{ .global_ref = vt };
+    }
+
+    const g = &self.module.globals.items[@intFromEnum(gid)];
+    g.ty = self.module.types.arrayOf(row_ty, @max(n, 1));
+    g.init_val = .{ .aggregate = rows };
+}
+
+/// Is the pair implemented in exactly one import scope? Visibility-disjoint
+/// duplicates have no arbiter at a dynamic conversion, so they read as absent.
+fn programUnique(sites: []const ImplSite) bool {
+    if (sites.len <= 1) return true;
+    const first = sites[0].source orelse "";
+    for (sites[1..]) |s| {
+        if (!std.mem.eql(u8, s.source orelse "", first)) return false;
+    }
+    return true;
+}
+
 /// Does `proto_ty` carry a VALUE that stamps the impl it was erased with —
 /// the kind whose conversion facts depend on multiplicity?
 fn erasedKind(self: *Lowering, proto_ty: ?TypeId) bool {
     const pty = proto_ty orelse return false;
     const kind = protocolKindOf(self, pty) orelse return false;
-    return kind == .vtable;
+    return kind == .erased;
 }
 
 /// The protocol a `has_impl`-shaped spelling names, whatever its kind.
@@ -229,7 +345,6 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
     const protocol_info: ProtocolDeclInfo = .{
         .name = owned,
         .kind = pd.kind,
-        .ownership = if (pd.is_identity) .identity else .value_own,
         .methods = self.alloc.dupe(ProtocolMethodInfo, method_infos.items) catch unreachable,
     };
     self.program_index.protocol_decl_map.put(owned, protocol_info) catch {};
@@ -316,6 +431,119 @@ pub fn protocolKindOf(self: *Lowering, ty: TypeId) ?ast.ProtocolKind {
     if (info != .@"struct" or !info.@"struct".is_protocol) return null;
     const pd = self.getProtocolInfo(ty) orelse return null;
     return pd.kind;
+}
+
+/// The `is` RHS, classified. A bare name in the target slot can be a category
+/// word, a contract head, or an ordinary type; which one it is decides what the
+/// operator asks, so every `is` path resolves the target through here.
+pub const IsTarget = union(enum) {
+    /// A category word (`int`, `struct`, `interface`, `signed`, …).
+    category: []const u8,
+    /// A `constraint` head — the question is conformance.
+    constraint: TypeId,
+    /// An `interface` head — the question is conformance, and identity when
+    /// the subject already IS that interface.
+    interface: TypeId,
+    /// An ordinary type — the question is tag identity.
+    concrete: TypeId,
+    /// A parameterized constraint (`Wrap(i64)`), which mints no type: the
+    /// question is whether an impl of that instantiation covers the subject.
+    param_constraint: *const Node,
+};
+
+/// The written node when it heads a PARAMETERIZED contract whose family is
+/// declared, else null.
+fn paramContractHead(self: *Lowering, node: *const Node) ?*const Node {
+    const head: []const u8 = switch (node.data) {
+        .parameterized_type_expr => |pte| pte.name,
+        .call => |c| switch (c.callee.data) {
+            .identifier => |id| id.name,
+            .type_expr => |te| te.name,
+            else => return null,
+        },
+        else => return null,
+    };
+    if (self.protocolResolver().resolveParamProtocolHead(head, null) == null) return null;
+    return node;
+}
+
+/// Classify the target a written `is` RHS names. A category word WINS over a
+/// same-spelled type name, so a program that declares `Struct` cannot capture
+/// `struct`. Null when the node is not a name the operator can read.
+pub fn classifyIsTarget(self: *Lowering, node: *const Node) ?IsTarget {
+    const name: ?[]const u8 = switch (node.data) {
+        .identifier => |id| id.name,
+        .type_expr => |te| te.name,
+        else => null,
+    };
+    if (name) |n| {
+        if (isCategoryWord(n)) return .{ .category = n };
+        if (self.protocolResolver().resolveProtocol(n, self.current_source_file)) |p| {
+            const decl_kind = p.decl.kind;
+            const ty = p.ty orelse return .{ .constraint = .unresolved };
+            return if (decl_kind == .erased) .{ .interface = ty } else .{ .constraint = ty };
+        }
+    }
+    // A parameterized CONSTRAINT head mints no type, so it is named by its
+    // written head and arguments rather than by a TypeId.
+    if (paramContractHead(self, node)) |head| return .{ .param_constraint = head };
+    const ty = self.resolveTypeArg(node);
+    if (ty == .unresolved) return null;
+    if (self.getProtocolInfo(ty)) |pi|
+        return if (pi.isErased()) .{ .interface = ty } else .{ .constraint = ty };
+    return .{ .concrete = ty };
+}
+
+/// The words the target slot reads as a CATEGORY rather than as a type name.
+/// `Type` is absent: the metatype is a type, and `at is type` reads the
+/// lowercase word.
+pub fn isCategoryWord(name: []const u8) bool {
+    const words = [_][]const u8{
+        "int",      "signed",  "unsigned", "float",  "bool",     "string",
+        "void",     "type",    "struct",   "interface", "enum",  "union",
+        "slice",    "array",   "pointer",  "vector", "optional", "error_set",
+        "closure",
+    };
+    for (words) |w| if (std.mem.eql(u8, name, w)) return true;
+    return false;
+}
+
+/// The STATIC answer for `<type> is <target>`, or null when the pair cannot be
+/// decided here. Conformance reads the impl set, so both polarities wait on an
+/// undecided driver exactly as an erasure does.
+pub fn staticIsAnswer(self: *Lowering, subject: TypeId, node: *const Node) ?bool {
+    const target = classifyIsTarget(self, node) orelse return null;
+    switch (target) {
+        .category => |word| return self.staticTypeMatchesCategory(subject, word),
+        .concrete => |ty| return subject == ty,
+        .interface => |ty| {
+            // An interface names itself.
+            if (subject == ty) return true;
+            return conformanceAnswer(self, ty, subject);
+        },
+        .constraint => |ty| {
+            if (ty == .unresolved) return null;
+            return conformanceAnswer(self, ty, subject);
+        },
+        .param_constraint => |head| {
+            const answer = plainHasImpl(self, head, subject);
+            if (implFactWaits(self, null, spelledProtocolName(head) orelse "", subject, answer)) return null;
+            return answer;
+        },
+    }
+}
+
+/// Does `concrete_ty` satisfy the contract `proto_ty` declares? Waits on the
+/// impl-contribution discipline in both polarities before publishing.
+fn conformanceAnswer(self: *Lowering, proto_ty: TypeId, concrete_ty: TypeId) ?bool {
+    const pd = self.getProtocolInfo(proto_ty) orelse return null;
+    const cname = self.resolveConcreteTypeName(concrete_ty) orelse {
+        if (implFactWaits(self, proto_ty, pd.name, concrete_ty, false)) return null;
+        return false;
+    };
+    const answer = firstUnimplementedMethod(self, proto_ty, cname, concrete_ty) == null;
+    if (implFactWaits(self, proto_ty, pd.name, concrete_ty, answer)) return null;
+    return answer;
 }
 
 /// One declared `impl P for T` site, for the coherence checks that name every
@@ -433,43 +661,6 @@ pub fn refuseValuelessProtocol(self: *Lowering, ty: TypeId, span: ast.Span, what
     return true;
 }
 
-/// The escape rules for a comptime result that lands in the runtime image
-/// (specs.md §6.9), applied to the type it escapes AS.
-///
-/// An OWNING erased value cannot make the trip at all — no runtime allocator
-/// owns a compile-time copy — while a borrow (a view, an `@identity` handle) is
-/// only ever a pointer to storage the image already has.
-pub fn checkComptimeEscape(self: *Lowering, ty: TypeId, span: ast.Span) void {
-    var seen = std.ArrayList(TypeId).empty;
-    defer seen.deinit(self.alloc);
-    walkEscape(self, ty, span, true, &seen);
-}
-
-fn walkEscape(self: *Lowering, ty: TypeId, span: ast.Span, by_value: bool, seen: *std.ArrayList(TypeId)) void {
-    if (ty.isBuiltin() or ty == .unresolved) return;
-    for (seen.items) |s| if (s == ty) return;
-    seen.append(self.alloc, ty) catch @panic("out of memory");
-    switch (self.module.types.get(ty)) {
-        .pointer => |p| walkEscape(self, p.pointee, span, false, seen),
-        .many_pointer => |p| walkEscape(self, p.element, span, false, seen),
-        .optional => |o| walkEscape(self, o.child, span, by_value, seen),
-        .slice => |sl| walkEscape(self, sl.element, span, false, seen),
-        .array => |a| walkEscape(self, a.element, span, by_value, seen),
-        .@"struct" => |s| {
-            if (!s.is_protocol) {
-                for (s.fields) |f| walkEscape(self, f.ty, span, by_value, seen);
-                return;
-            }
-            const pd = self.getProtocolInfo(ty) orelse return;
-            if (!by_value or pd.kind == .constraint or pd.ownership == .identity) return;
-            if (self.diagnostics) |d| {
-                d.addFmt(.err, span, "a '{s}' value owns its storage and cannot escape a `@run` — no runtime allocator owns a compile-time copy; bind the concrete value, and let the owning erasure happen at runtime", .{self.formatTypeName(ty)});
-            }
-        },
-        else => {},
-    }
-}
-
 /// Get or create thunks for a (protocol, concrete_type) pair.
 /// Returns a slice of FuncIds, one per protocol method.
 pub fn getOrCreateThunks(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) []const FuncId {
@@ -529,15 +720,13 @@ pub fn getOrCreateVtableGlobal(
     return gid;
 }
 
-/// Fold `<global>` / `xx <global>` at a `vtable` protocol-typed static
-/// initializer into the constant `{ ctx, __type_id, &vtable }`. Only an
-/// IDENTIFIER naming a registered top-level global qualifies: the erasure
-/// BORROWS the global's stable storage (identity semantics), so ctx is the
-/// global's address — ALWAYS, stateless impls included: there is no
-/// null-receiver shortcut,
-/// because a null ctx is the `?Protocol` "absent" sentinel and must never
-/// appear in a live protocol value. Null result = not this shape / not
-/// resolvable; the caller falls through to its non-const diagnostic.
+/// Fold a module-scope global — a bare identifier, or a field_access whose
+/// root is a module namespace and whose member is a registered global — at a
+/// `vtable` protocol-typed static initializer into `{ ctx, __type_id, &vtable }`.
+/// The erasure borrows the global's stable storage, so ctx is the global's
+/// address. A path rooted at a global VALUE (`g.field`) does not qualify.
+/// Null result = not this shape / not resolvable; the caller falls through
+/// to its non-const diagnostic.
 pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: TypeId) ?inst_mod.ConstantValue {
     const tbl = &self.module.types;
     if (proto_ty.isBuiltin()) return null;
@@ -545,13 +734,7 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
     if (proto_ti != .@"struct" or !proto_ti.@"struct".is_protocol) return null;
     const pd = self.getProtocolInfo(proto_ty) orelse return null;
     if (pd.kind == .constraint) return null;
-    if (operand.data != .identifier) return null;
-    const gname = operand.data.identifier.name;
-    const g: program_index_mod.GlobalInfo = switch (self.selectGlobalAuthor(gname)) {
-        .resolved => |sel| sel,
-        .untracked => self.program_index.global_names.get(gname) orelse return null,
-        else => return null,
-    };
+    const g = staticInterfaceGlobal(self, operand) orelse return null;
     const concrete_name = self.formatTypeName(g.ty);
     const thunks = self.getOrCreateThunks(proto_ty, concrete_name, g.ty);
     const want = dispatchableCount(pd.methods);
@@ -564,6 +747,34 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
     return .{ .aggregate = fields };
 }
 
+fn staticInterfaceGlobal(self: *Lowering, operand: *const Node) ?program_index_mod.GlobalInfo {
+    switch (operand.data) {
+        .identifier => |id| return switch (self.selectGlobalAuthor(id.name)) {
+            .resolved => |sel| sel,
+            .untracked => self.program_index.global_names.get(id.name),
+            else => null,
+        },
+        .field_access => {
+            const path = self.qualifiedTypeName(operand) orelse return null;
+            defer self.alloc.free(path);
+            return switch (self.qualifiedMemberVerdict(path)) {
+                .selected => |sel| selectedNamespaceGlobal(self, sel),
+                else => null,
+            };
+        },
+        else => return null,
+    }
+}
+
+fn selectedNamespaceGlobal(self: *Lowering, sel: Lowering.QualifiedMember) ?program_index_mod.GlobalInfo {
+    if (self.program_index.globals_by_source.get(sel.author.source)) |inner| {
+        if (inner.get(sel.member)) |g| return g;
+    }
+    if (sel.author.raw == .var_decl)
+        return self.program_index.global_names.get(sel.member);
+    return null;
+}
+
 /// What the protocol-typed arm of the global-initializer serializer decided.
 pub const ProtocolGlobalInit = union(enum) {
     /// Not a borrow-kind protocol-typed global — the ordinary serializer owns it.
@@ -574,12 +785,13 @@ pub const ProtocolGlobalInit = union(enum) {
 };
 
 /// The static initializer of a borrow-kind protocol-typed global (§7.6): the
-/// identity erasure of a NAMED global instance, written `g` or `xx g`. A
-/// protocol value in static data is a borrow, and only a global has an
-/// address to borrow — so every other initializer shape is refused HERE,
-/// before the shape dispatch serializes it field-wise against the handle's
-/// layout and builds a value whose ctx word is a payload byte. `null` / `---`
-/// keep their own meaning and never reach this arm.
+/// identity erasure of a NAMED global instance, written `g`, `m.g`, or `xx`
+/// of either. A protocol value in static data is a borrow, and only a global
+/// has an address to borrow — so every other initializer shape is refused
+/// HERE, before the shape dispatch serializes it field-wise against the
+/// handle's layout and builds a value whose ctx word is a payload byte.
+/// `null` / `---` keep their own meaning and never reach this arm. A
+/// qualified path that names no global is refused.
 pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Node, proto_ty: TypeId) ProtocolGlobalInit {
     if (proto_ty.isBuiltin()) return .not_applicable;
     const proto_ti = self.module.types.get(proto_ty);
@@ -588,8 +800,14 @@ pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Nod
     if (pd.kind == .constraint) return .not_applicable;
 
     const named: ?*const Node = switch (v.data) {
-        .identifier => v,
-        .unary_op => |u| if (u.op == .xx and u.operand.data == .identifier) u.operand else null,
+        .identifier, .field_access => v,
+        .unary_op => |u| blk: {
+            if (u.op != .xx) break :blk null;
+            break :blk switch (u.operand.data) {
+                .identifier, .field_access => u.operand,
+                else => null,
+            };
+        },
         else => null,
     };
     const operand = named orelse {
@@ -599,14 +817,17 @@ pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Nod
         }
         return .refused;
     };
-    const gname = operand.data.identifier.name;
-    const g: program_index_mod.GlobalInfo = switch (self.selectGlobalAuthor(gname)) {
-        .resolved => |sel| sel,
-        .untracked => self.program_index.global_names.get(gname) orelse return .not_applicable,
-        else => return .not_applicable,
-    };
-    if (refuseNonConformer(self, proto_ty, self.formatTypeName(g.ty), g.ty, v.span)) return .refused;
+    if (staticInterfaceGlobal(self, operand)) |g| {
+        if (refuseNonConformer(self, proto_ty, self.formatTypeName(g.ty), g.ty, v.span)) return .refused;
+    }
     if (protocolErasureConst(self, operand, proto_ty)) |cv| return .{ .folded = cv };
+    if (operand.data == .field_access) {
+        if (self.diagnostics) |d| {
+            const pname = self.formatTypeName(proto_ty);
+            d.addFmt(.err, v.span, "'{s}' is a '{s}' value, which borrows its receiver — its initializer must NAME a global instance to borrow ('{s} : {s} = the_instance;'), and this expression has no address to point at", .{ vd.name, pname, vd.name, pname });
+        }
+        return .refused;
+    }
     return .not_applicable;
 }
 
@@ -908,7 +1129,7 @@ fn ensureProtocolImplMethodLowered(self: *Lowering, proto_ty: TypeId, proto_name
 
 /// Why a concrete type fails to conform to a protocol method, named at the
 /// specific method that fails. `kind` drives the diagnostic wording.
-const NonConformance = struct {
+pub const NonConformance = struct {
     method: []const u8,
     kind: enum {
         /// No `impl`/struct-method body resolves for `<Type>.<method>` at all.
@@ -959,7 +1180,7 @@ const NonConformance = struct {
 /// type params are bound by the instance, not introduced by the method, and
 /// `monomorphizeFunction` always registers it. Conformance is IMPL-DRIVEN, so a
 /// type satisfying the method only via a free / `ufcs` function does NOT conform.
-fn firstUnimplementedMethod(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) ?NonConformance {
+pub fn firstUnimplementedMethod(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) ?NonConformance {
     const pd = self.getProtocolInfo(proto_ty) orelse return null;
     const proto_name = pd.name;
     // AST of the protocol (carries each method's raw param/return type nodes +
@@ -984,6 +1205,20 @@ fn firstUnimplementedMethod(self: *Lowering, proto_ty: TypeId, concrete_type_nam
                 }
             }
             continue;
+        }
+        // An explicit `impl C for I` with I itself a protocol: I's declared
+        // methods satisfy exact-signature members, Self standing for I.
+        if (self.protocolResolver().hasConcreteImplDecl(identity_ty, proto_name, concrete_ty)) {
+            if (self.protocol_ast_by_type.get(concrete_ty)) |cpd| {
+                if (methodAst(cpd, m.name)) |provided| {
+                    if (pd_ast) |pda| {
+                        if (methodAst(pda, m.name)) |required| {
+                            if (conformerProtocolMethodMismatch(self, required, m, pda.source_file, provided, cpd.source_file, concrete_ty)) |nc| return nc;
+                        }
+                    }
+                    continue;
+                }
+            }
         }
         // Concrete parameterized-protocol impls are identity-registered and
         // must have matched above. The only valid lazy route is a generic
@@ -1143,6 +1378,57 @@ fn signatureMismatch(self: *Lowering, mast: ast.ProtocolMethodDecl, m: ProtocolM
     return null;
 }
 
+fn conformerProtocolMethodMismatch(
+    self: *Lowering,
+    required: ast.ProtocolMethodDecl,
+    m: ProtocolMethodInfo,
+    required_src: ?[]const u8,
+    provided: ast.ProtocolMethodDecl,
+    provided_src: ?[]const u8,
+    concrete_ty: TypeId,
+) ?NonConformance {
+    const value_ty: TypeId = blk: {
+        if (!concrete_ty.isBuiltin()) {
+            const info = self.module.types.get(concrete_ty);
+            if (info == .pointer) break :blk info.pointer.pointee;
+        }
+        break :blk concrete_ty;
+    };
+    if (required.params.len != provided.params.len) {
+        const detail = std.fmt.allocPrint(self.alloc, "expects {d} parameter{s} (after self), but the impl declares {d}", .{
+            required.params.len, if (required.params.len == 1) "" else "s", provided.params.len,
+        }) catch "";
+        return .{ .method = m.name, .kind = .arity_mismatch, .detail = detail };
+    }
+    for (required.params, provided.params) |req_node, prov_node| {
+        const req_ty = resolveProtoTypeSubSelf(self, req_node, value_ty, required_src);
+        const prov_ty = resolveProtoTypeSubSelf(self, prov_node, value_ty, provided_src);
+        if (typesClearlyDiffer(self, req_ty, prov_ty)) {
+            const req_name = self.formatTypeName(req_ty);
+            const prov_name = self.formatTypeName(prov_ty);
+            const detail = std.fmt.allocPrint(self.alloc, "parameter: protocol declares '{s}', impl declares '{s}'{s}", .{
+                req_name,
+                prov_name,
+                if (std.mem.eql(u8, req_name, prov_name)) " (same spelling, distinct nominal declarations)" else "",
+            }) catch "";
+            return .{ .method = m.name, .kind = .type_mismatch, .detail = detail };
+        }
+    }
+    const req_ret: TypeId = if (required.return_type) |rt| resolveProtoTypeSubSelf(self, rt, value_ty, required_src) else .void;
+    const prov_ret: TypeId = if (provided.return_type) |rt| resolveProtoTypeSubSelf(self, rt, value_ty, provided_src) else .void;
+    if (typesClearlyDiffer(self, req_ret, prov_ret)) {
+        const req_name = self.formatTypeName(req_ret);
+        const prov_name = self.formatTypeName(prov_ret);
+        const detail = std.fmt.allocPrint(self.alloc, "return type: protocol declares '{s}', impl declares '{s}'{s}", .{
+            req_name,
+            prov_name,
+            if (std.mem.eql(u8, req_name, prov_name)) " (same spelling, distinct nominal declarations)" else "",
+        }) catch "";
+        return .{ .method = m.name, .kind = .type_mismatch, .detail = detail };
+    }
+    return null;
+}
+
 /// True when `ty` is `.unresolved` OR wraps an `.unresolved` leaf at ANY depth
 /// (`[]unresolved`, `?*unresolved`, `[2]unresolved`, …). The outer TypeId of a
 /// compound built over an unresolved element is itself a real `.slice` /
@@ -1211,120 +1497,20 @@ pub fn allocViaAllocatorValue(self: *Lowering, allocator: Ref, size_ref: Ref) Re
     return emitProtocolDispatch(self, allocator, pd, "alloc_bytes", &.{size_ref}, .{ .start = cs.start, .end = cs.end });
 }
 
-/// Postfix OWNING erasure `expr.(P, alloc)` — the ownership model's only
-/// allocating spelling (P values own their ctx). Receiver shapes:
-///   - concrete VALUE (lvalue or rvalue — both copy): heap-copy the data;
-///   - `*Concrete`: SNAPSHOT — heap-copy the pointee;
-///   - `P` (same protocol, value): CLONE — an independent copy of the
-///     receiver's ctx (rt_size_of(type_id) bytes; vtable / fn words
-///     reused — well-typed by construction);
-///   - `*P` (same protocol): PROMOTION — the same, over the pointee;
-///   - `@identity` target: `.(P)` is the borrow; `.(P, alloc)` refuses
-///     (a borrow allocates nothing).
-/// `.(P)` funds from `context.allocator`; `.(P, alloc)` names another.
-/// The named allocator must be an LVALUE. `@identity` is a borrow and
-/// refuses an allocator argument.
+/// Postfix erasure `expr.(I)` — an interface handle BORROWS its referent, so
+/// there is no allocating spelling: an allocator argument is refused.
 pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: TypeId, span: ast.Span) Ref {
     if (self.refuseValuelessProtocol(dst_ty, span, "make a value of")) return self.builder.constUndef(dst_ty);
     const dst_pi = self.getProtocolInfo(dst_ty) orelse return self.builder.constUndef(dst_ty);
-    const void_ptr_ty = self.module.types.ptrTo(.void);
 
-    if (dst_pi.ownership == .identity) {
-        if (pc.alloc_arg != null) {
-            if (self.diagnostics) |d|
-                d.addFmt(.err, span, "'.({s}, alloc)' on an '@identity' protocol — identity erasure is a borrow and allocates nothing; write '.({s})'", .{ dst_pi.name, dst_pi.name });
-            return self.builder.constUndef(dst_ty);
-        }
-        const operand = self.lowerExpr(pc.operand);
-        return self.buildProtocolErasure(operand, pc.operand, self.builder.getRefType(operand), dst_ty);
+    if (pc.alloc_arg != null) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "'.({s}, alloc)' allocates, but an '{s}' handle borrows its referent — write '.({s})'", .{ dst_pi.name, dst_pi.name, dst_pi.name });
+        return self.builder.constUndef(dst_ty);
     }
-
-    const alloc_ty = self.module.types.findByName(self.module.types.internString("Allocator")) orelse {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, span, "'.(P)' needs the 'Allocator' protocol in scope — @import \"modules/std.sx\"", .{});
-        return self.builder.constUndef(dst_ty);
-    };
-    const alloc_val = if (pc.alloc_arg) |an| blk: {
-        if (!self.isLvalueExpr(an)) {
-            if (self.diagnostics) |d|
-                d.addFmt(.err, an.span, "the allocator argument of an owning erasure must be an LVALUE naming an allocator — bind it first (the value must outlive the erasure so `free(p, a)` can pair with it)", .{});
-            return self.builder.constUndef(dst_ty);
-        }
-        const av = self.lowerExpr(an);
-        const avt = self.builder.getRefType(av);
-        break :blk if (avt == alloc_ty) av else self.coerceOrErase(av, avt, alloc_ty, an);
-    } else self.ambientAllocator() orelse {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, span, "'.({s})' funds from context.allocator — import std or write '.({s}, <alloc>)'", .{ dst_pi.name, dst_pi.name });
-        return self.builder.constUndef(dst_ty);
-    };
 
     const operand = self.lowerExpr(pc.operand);
-    const src_ty = self.builder.getRefType(operand);
-
-    if (!src_ty.isBuiltin()) {
-        const si = self.module.types.get(src_ty);
-        // CLONE (`p.(P, alloc)`, same-protocol value) and PROMOTION
-        // (`pv.(P, alloc)`, `*P`) share one body: the receiver protocol
-        // value with its ctx replaced by a fresh heap copy of
-        // rt_size_of(type_id) bytes; vtable / fn words reused.
-        const proto_recv: ?Ref = if (src_ty == dst_ty)
-            operand
-        else if (si == .pointer and si.pointer.pointee == dst_ty)
-            self.builder.load(operand, dst_ty)
-        else
-            null;
-        if (proto_recv) |pv| {
-            const old_ctx = self.builder.structGet(pv, 0, void_ptr_ty);
-            const tid = self.builder.structGet(pv, 1, .type_value);
-            const sz_args = self.alloc.dupe(Ref, &.{tid}) catch unreachable;
-            const size_ref = self.builder.callBuiltin(.rt_size_of, sz_args, .i64);
-            const heap = allocViaAllocatorValue(self, alloc_val, size_ref);
-            _ = self.callExtern("memcpy", &.{ heap, old_ctx, size_ref }, void_ptr_ty);
-            const dfields = self.module.types.get(dst_ty).@"struct".fields;
-            var out = std.ArrayList(Ref).empty;
-            defer out.deinit(self.alloc);
-            out.append(self.alloc, heap) catch unreachable;
-            for (dfields[1..], 1..) |f, i| {
-                out.append(self.alloc, self.builder.structGet(pv, @intCast(i), f.ty)) catch unreachable;
-            }
-            const owned = self.alloc.dupe(Ref, out.items) catch unreachable;
-            return self.builder.emit(.{ .struct_init = .{ .fields = owned } }, dst_ty);
-        }
-        if (si == .pointer) {
-            const pointee = si.pointer.pointee;
-            if (self.getProtocolInfo(pointee) != null) {
-                if (self.diagnostics) |d|
-                    d.addFmt(.err, span, "cannot promote a '*{s}' view to owned '{s}' — promotion requires the same protocol", .{ self.formatTypeName(pointee), dst_pi.name });
-                return self.builder.constUndef(dst_ty);
-            }
-            // SNAPSHOT: *Concrete → owned P (heap-copy the pointee).
-            const ctn = self.resolveConcreteTypeName(pointee) orelse {
-                if (self.diagnostics) |d|
-                    d.addFmt(.err, span, "cannot erase a value of type '{s}' to protocol '{s}'", .{ self.formatTypeName(src_ty), dst_pi.name });
-                return self.builder.constUndef(dst_ty);
-            };
-            const psize: i64 = @intCast(self.module.types.typeSizeBytes(pointee));
-            const size_ref = self.builder.constInt(psize, .i64);
-            const heap = allocViaAllocatorValue(self, alloc_val, size_ref);
-            _ = self.callExtern("memcpy", &.{ heap, operand, size_ref }, void_ptr_ty);
-            return self.buildProtocolValue(heap, dst_pi.name, ctn, dst_ty, pointee);
-        }
-    }
-
-    // Concrete VALUE receiver — lvalue and rvalue alike OWN-COPY.
-    const ctn = self.resolveConcreteTypeName(src_ty) orelse {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, span, "cannot erase a value of type '{s}' to protocol '{s}'", .{ self.formatTypeName(src_ty), dst_pi.name });
-        return self.builder.constUndef(dst_ty);
-    };
-    const slot = self.builder.alloca(src_ty);
-    self.builder.store(slot, operand);
-    const vsize: i64 = @intCast(self.module.types.typeSizeBytes(src_ty));
-    const size_ref = self.builder.constInt(vsize, .i64);
-    const heap = allocViaAllocatorValue(self, alloc_val, size_ref);
-    _ = self.callExtern("memcpy", &.{ heap, slot, size_ref }, void_ptr_ty);
-    return self.buildProtocolValue(heap, dst_pi.name, ctn, dst_ty, src_ty);
+    return self.buildProtocolErasure(operand, pc.operand, self.builder.getRefType(operand), dst_ty);
 }
 
 /// Number of Era-2 dispatchable methods — the slot count of the protocol's
@@ -1566,10 +1752,15 @@ pub fn resolveConcreteTypeName(self: *Lowering, ty: TypeId) ?[]const u8 {
         // *ConcreteType → resolve pointee
         const pointee = info.pointer.pointee;
         if (pointee.isBuiltin()) return self.module.types.typeName(pointee);
-        const pi = self.module.types.get(pointee);
-        if (pi == .@"struct") return self.module.types.getString(pi.@"struct".name);
-        return null;
+        return nominalConformerName(self, self.module.types.get(pointee));
     }
-    if (info == .@"struct") return self.module.types.getString(info.@"struct".name);
-    return null;
+    return nominalConformerName(self, info);
+}
+
+fn nominalConformerName(self: *Lowering, info: types.TypeInfo) ?[]const u8 {
+    return switch (info) {
+        .@"struct" => |s| self.module.types.getString(s.name),
+        .@"union" => |u| self.module.types.getString(u.name),
+        else => null,
+    };
 }

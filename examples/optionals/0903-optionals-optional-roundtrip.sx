@@ -15,7 +15,7 @@ direct_size :: (proposal: ProposedSize) -> f32 {
     w + h
 }
 
-Sizable :: protocol vtable {
+Sizable :: interface {
     size :: (self: *Self, proposal: ProposedSize) -> f32;
 }
 
@@ -44,7 +44,7 @@ main :: () -> void {
     // Test 2: Protocol dispatch
     print("=== Protocol dispatch ===\n");
     w := Widget{};
-    s := w.(Sizable, context.allocator);
+    s := w.(Sizable);
     r1 := s.size(ProposedSize{ width = 50.0, height = null });
     print("r1 = {}\n", r1);
     r2 := s.size(ProposedSize{ width = null, height = 50.0 });

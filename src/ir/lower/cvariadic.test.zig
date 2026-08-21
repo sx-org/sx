@@ -297,15 +297,15 @@ test "a protocol method meets the boundary rules on every kind" {
     defer arena.deinit();
     var lowered: Lowered = undefined;
     try lower(arena.allocator(),
-        \\Reader :: protocol vtable {
+        \\Reader :: interface {
         \\    read :: (self: *Self, ap: @VaList) -> i64;
         \\}
-        \\Templated :: protocol (T: Type) vtable {
+        \\Templated :: interface(T: Type) {
         \\    read :: (self: *Self, ap: @VaList) -> T;
         \\    take :: (self: *Self, cb: (@VaList) -> i64) -> i64;
         \\    hand :: (self: *Self) -> Closure(i32) -> *@VaList;
         \\}
-        \\LegalBorrow :: protocol vtable {
+        \\LegalBorrow :: interface {
         \\    read :: (self: *Self, ap: *@VaList) -> i64;
         \\}
         \\holds: Reader;

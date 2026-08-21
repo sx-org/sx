@@ -80,7 +80,6 @@ test "calls: builtin and reflection result types, unknown fallthrough" {
         // pack-fn caller boxes the value with the right type.
         .{ .name = "type_name", .want = .string },
         .{ .name = "type_eq", .want = .bool },
-        .{ .name = "has_impl", .want = .bool },
         .{ .name = "struct_field_count", .want = .i64 },
         .{ .name = "variant_index", .want = .i64 },
         .{ .name = "struct_field_name", .want = .string },
@@ -300,7 +299,7 @@ test "plan: protocol dispatch selects method index + prepends receiver" {
     var l = Lowering.init(&module);
     const cr = CallResolver{ .l = &l };
 
-    // Drawable :: protocol { measure :: () -> i64; draw :: () -> bool; }
+    // Drawable :: constraint { measure :: () -> i64; draw :: () -> bool; }
     const methods = [_]ast.ProtocolMethodDecl{
         .{ .name = "measure", .params = &.{}, .param_names = &.{}, .return_type = typeExpr(alloc, "i64"), .default_body = null },
         .{ .name = "draw", .params = &.{}, .param_names = &.{}, .return_type = typeExpr(alloc, "bool"), .default_body = null },

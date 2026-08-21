@@ -6,7 +6,7 @@
 // temporaries are distinct objects.
 @import "modules/std.sx";
 
-View :: protocol vtable @identity {
+View :: interface {
     area :: (self: *Self) -> i64;
     bump :: (self: *Self);
 }

@@ -1,0 +1,2 @@
+W :: struct { v: i64; }
+the_w : W = .{ v = 4 };

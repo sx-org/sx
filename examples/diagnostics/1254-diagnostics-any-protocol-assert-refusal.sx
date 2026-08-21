@@ -6,7 +6,7 @@
 // tag.
 @import "modules/std.sx";
 
-Sizable :: protocol { size :: (self: *Self) -> i64; }
+Sizable :: constraint { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }
 impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
 

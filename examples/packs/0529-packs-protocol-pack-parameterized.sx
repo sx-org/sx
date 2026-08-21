@@ -9,7 +9,7 @@
 
 @import "modules/std.sx";
 
-Box :: protocol(T: Type) {
+Box :: constraint(T: Type) {
     get :: (self: *Self) -> T;
 }
 

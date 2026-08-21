@@ -1,11 +1,11 @@
 // `Self` nested inside a SLICE in a protocol-method param resolves
 // correctly: the conformance gate substitutes `Self → T` THROUGH the
 // `[]` wrapper (and the `*Self` receiver), so a correct `[]T` impl is
-// accepted and dispatched — the substitution reaches inside the wrapper,
-// not just the bare leaf and a one-level pointer/optional.
+// accepted — the substitution reaches inside the wrapper, not just the
+// bare leaf and a one-level pointer/optional.
 @import "modules/std.sx";
 
-P :: protocol vtable {
+P :: constraint {
     // `*Self` receiver + `[]Self` slice param + `Self` value param.
     total :: (self: *Self, xs: []Self, extra: Self) -> i64;
 }
@@ -22,12 +22,6 @@ impl P for T {
 
 main :: () {
     t := T{ n = 10 };
-    // The ERASURE runs the conformance gate;
-    // `total` itself is not dispatchable through the erased value (Era-2:
-    // `xs: []Self` past the receiver — refusal pinned in diagnostics/1253),
-    // so the call below is the static one.
-    p := t.(P, context.allocator);
-    _ = p;
     arr : [3]T = .{ T{ n = 1 }, T{ n = 2 }, T{ n = 3 } };
     // 10 (self) + 1+2+3 (slice) + 100 (extra) = 116
     print("{}\n", t.total(arr[..], T{ n = 100 }));

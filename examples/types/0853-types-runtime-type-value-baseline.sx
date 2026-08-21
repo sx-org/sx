@@ -10,7 +10,7 @@ describe :: (tp: Type) -> string { type_name(tp) }
 main :: () {
     x : u16 = 9;
     tp := type_of(x);                       // runtime Type value
-    print("local:  {} unsigned={}\n", type_name(tp), is_unsigned(tp));
+    print("local:  {} unsigned={}\n", type_name(tp), tp is unsigned);
     print("param:  {}\n", describe(tp));
 
     p := Point{ x = 1, y = 2 };

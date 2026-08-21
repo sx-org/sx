@@ -2,7 +2,7 @@
 // empty one names nothing — the bare head is spelled without the parens.
 @import "modules/std.sx";
 
-Eq :: protocol constraint {
+Eq :: constraint {
     eq :: (self: *Self, other: Self) -> bool;
 }
 

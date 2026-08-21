@@ -150,6 +150,7 @@ fn printInst(instruction: *const Inst, ref_idx: u32, tt: *const TypeTable, write
         .const_type => |tid| try writer.print("const type({s}) : ", .{tt.typeName(tid)}),
         .open_set_tag_of => |t| try writer.print("set_tag_of({s}, {s}) : ", .{ tt.typeName(t.set), tt.typeName(t.member) }),
         .open_set_type_id => |t| try writer.print("set_type_id({s}) %{d}, @{d} : ", .{ tt.typeName(t.set), t.tag.index(), t.table.index() }),
+        .conformance_lookup => |t| try writer.print("conformance_lookup({s}) %{d}, @{d} : ", .{ tt.typeName(t.contract), t.tag.index(), t.table.index() }),
         .open_set_layout => |q| try writer.print("{s}({s}) : ", .{
             switch (q.query) {
                 .size => "set_size_of",

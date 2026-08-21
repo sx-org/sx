@@ -8,7 +8,7 @@
 
 Fmt :: enum { rgba8; bgra8; }
 
-P :: protocol vtable {
+P :: interface {
     make :: (self: *Self, w: i64, fmt: Fmt) -> i64;
 }
 
@@ -23,8 +23,8 @@ main :: () {
     print("view: {}\n", v.make(10, .bgra8));
     ov : ?*P = v;
     print("opt:  {}\n", ov.make(20, .bgra8));
-    op : ?P = c.(P, context.allocator);
+    op : ?P = c.(P);
     print("optP: {}\n", op.make(25, .bgra8));
-    o := c.(P, context.allocator);
+    o := c.(P);
     print("own:  {}\n", o.make(30, .bgra8));
 }

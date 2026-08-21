@@ -2,7 +2,7 @@
 // the concrete value first.
 @import "modules/std.sx";
 
-Speaker :: protocol vtable @identity {
+Speaker :: interface {
     speak :: (self: *Self) -> i64;
 }
 

@@ -17,7 +17,7 @@ ct_probe :: () {
     t : Type = type_of(x);
     at : any = t;
     print("name={}\n", type_name(at));
-    print("unsigned={}\n", is_unsigned(at));
+    print("unsigned={}\n", at is unsigned);
     print("value={}\n", at);
     print("after\n");
 }

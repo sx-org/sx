@@ -1,5 +1,0 @@
-error: expected a protocol kind ('constraint', 'vtable') or '{' after the protocol head
-  --> examples/diagnostics/1286-diagnostics-protocol-unknown-kind.sx:5:17
-   |
- 5 | Ord :: protocol erased {
-   |                 ^^^^^^

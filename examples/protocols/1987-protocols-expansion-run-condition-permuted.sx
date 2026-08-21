@@ -9,7 +9,7 @@
 // Context-ready open.
 @import "modules/std.sx";
 
-Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
+Show :: interface { fmt :: (self: *Self) -> i64; }
 
 Cell :: struct { n: i64; }
 

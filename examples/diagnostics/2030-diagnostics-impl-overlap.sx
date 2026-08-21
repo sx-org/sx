@@ -4,7 +4,7 @@
 // at the overlap, in either declaration order.
 @import "modules/std.sx";
 
-Series :: protocol(T: Type) constraint {
+Series :: constraint(T: Type) {
     count :: (self: *Self) -> i64;
 }
 

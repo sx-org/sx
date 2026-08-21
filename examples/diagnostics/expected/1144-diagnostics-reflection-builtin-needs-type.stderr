@@ -34,11 +34,11 @@ error: type_eq expects a type, got 'bool'
 17 |     print("{}\n", type_eq(true, false));   // both bool — both rejected
    |                                 ^^^^^
 
-error: is_unsigned expects a type, got 'bool'
-  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:18:31
+error: 'is' classifies a TYPE — 'bool' is a value; write 'type_of(…) is …' to ask about its type
+  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:18:19
    |
-18 |     print("{}\n", is_unsigned(true)); // bool, not a type
-   |                               ^^^^
+18 |     print("{}\n", true is unsigned); // bool, not a type
+   |                   ^^^^
 
 error: is_flags expects a type, got 'f64'
   --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:19:28

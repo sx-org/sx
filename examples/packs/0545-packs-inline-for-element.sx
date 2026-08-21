@@ -11,7 +11,7 @@
 
 @import "modules/std.sx";
 
-Show :: protocol { show :: (self: *Self) -> string; }
+Show :: constraint { show :: (self: *Self) -> string; }
 IntBox :: struct { v: i64; }
 StrBox :: struct { s: string; }
 impl Show for IntBox { show :: (self: *IntBox) -> string { int_to_string(self.v) } }

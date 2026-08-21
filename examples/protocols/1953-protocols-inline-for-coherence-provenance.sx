@@ -6,7 +6,7 @@
 Point :: struct { x: i64; y: i64; }
 Rect  :: struct { w: i64; h: i64; }
 
-Show :: protocol vtable { show :: (self: *Self) -> i64; }
+Show :: interface { show :: (self: *Self) -> i64; }
 
 inline for T in .[Point, Rect] {
     impl Show for T { show :: (self: *T) -> i64 { 1 } }

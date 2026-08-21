@@ -9,7 +9,7 @@
 
 @import "modules/std.sx";
 
-Show :: protocol vtable { show :: (self: *Self) -> string; }
+Show :: interface { show :: (self: *Self) -> string; }
 A :: struct { x: i64; }
 B :: struct { s: string; }
 impl Show for A { show :: (self: *A) -> string => "A"; }
@@ -25,7 +25,7 @@ each :: (..xs: []Show) -> void {
 }
 
 main :: () -> i32 {
-    each(A{ x = 1 }.(Show, context.allocator), B{ s = "hi" }.(Show, context.allocator), A{ x = 3 }.(Show, context.allocator));   // heterogeneous, owned Show copies
+    each(A{ x = 1 }.(Show), B{ s = "hi" }.(Show), A{ x = 3 }.(Show));
     each();                                            // empty is fine (len 0)
     0
 }

@@ -151,7 +151,7 @@ test "collectDecls takes an `@` function by its signature and leaves `@` type co
         \\@VaList :: struct {
         \\}
         \\@va_start :: (list: *@VaList);
-        \\@BuildSink :: protocol(P: Type) constraint {
+        \\@BuildSink :: constraint(P: Type) {
         \\}
         \\@va_arg :: ($T: Type, list: *@VaList) -> T;
     , &out);

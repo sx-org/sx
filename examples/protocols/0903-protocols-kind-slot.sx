@@ -1,23 +1,21 @@
-// The protocol KIND slot: `protocol [(params)] constraint|vtable [attrs]`.
-// An empty slot means `constraint` — the kind that emits nothing.
-// `constraint` / `vtable` are CONTEXTUAL words: kinds only in that slot,
-// ordinary identifiers everywhere else. `protocol_kind(P)` reports both and
-// folds in `inline if`; `is_identity(P)` reports the ownership class.
+// The two declaration heads. `constraint` and `interface` are CONTEXTUAL
+// words: heads only in the `::`-head slot, ordinary identifiers everywhere
+// else. `P is interface` reports which one a contract is, and folds.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
-Ord :: protocol {                              // no slot ⇒ constraint
+Ord :: constraint {
     less :: (self: *Self, other: Self) -> bool;
 }
 impl Ord for i64 { less :: (self: *i64, other: i64) -> bool { self.* < other } }
 
-Into2 :: protocol(Target: Type) constraint {   // parameterized + explicit kind
+Into2 :: constraint(Target: Type) {   // parameterized
     convert :: (self: *Self) -> Target;
 }
 
-Show :: protocol vtable { fmt :: (self: *Self) -> string; }
-Rng :: protocol vtable @identity { next :: (self: *Self) -> u64; }
-Slot :: protocol(T: Type) vtable @identity { get :: (self: *Self) -> T; }
+Show :: interface { fmt :: (self: *Self) -> string; }
+Rng :: interface { next :: (self: *Self) -> u64; }
+Slot :: interface(T: Type) { get :: (self: *Self) -> T; }
 
 Point :: struct { x: i64; }
 impl Show for Point { fmt :: (self: *Point) -> string { "pt" } }
@@ -27,29 +25,28 @@ Xorshift :: struct { state: u64; }
 impl Rng for Xorshift { next :: (self: *Xorshift) -> u64 { self.state + 1 } }
 
 kind_name :: ($P: Type) -> string {
-    inline if protocol_kind(P) == .constraint { return "constraint"; }
-    "vtable"
+    inline if P is interface { return "interface"; }
+    "constraint"
 }
 
 smaller :: (a: $T/Ord, b: T) -> T { if a.less(b) { a } else { b } }
 
 main :: () {
     print("{} {}\n", kind_name(Ord), kind_name(Show));
-    print("{} {} {}\n", is_identity(Ord), is_identity(Show), is_identity(Rng));
+    print("{} {} {}\n", Ord is struct, Show is struct, Rng is interface);
 
     // A constraint protocol still bounds generics — that is its whole job.
     print("{}\n", smaller(3, 7));
 
-    // A parameterized head carries its kind and attribute into every
-    // instantiation: `Slot(i64)` erases and borrows, like any identity vtable.
+    // A parameterized head carries its kind into every instantiation:
+    // `Slot(i64)` erases and borrows, like any interface.
     p := Point{ x = 5 };
     sl : Slot(i64) = p;
     print("{}\n", sl.get());
 
-    // The unparameterized vtable kind, owning erasure and all.
-    s := p.(Show, context.allocator);
+    // The unparameterized interface head, borrowing `p` in place.
+    s := p.(Show);
     print("{}\n", s.fmt());
-    free(s);
 
     r := Xorshift{ state = 41 };
     rng : Rng = r;

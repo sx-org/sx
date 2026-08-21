@@ -18,7 +18,7 @@ Button :: struct {
     label: string = "";
 }
 
-Drawable :: protocol constraint {
+Drawable :: constraint {
     draw :: (self: *Self) -> string;
 }
 impl Drawable for Button {
