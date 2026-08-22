@@ -1088,9 +1088,26 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
         }
         return tags.items;
     }
+    // `signed` / `unsigned` partition `int`; neither reaches a float.
+    if (std.mem.eql(u8, name, "signed") or std.mem.eql(u8, name, "unsigned")) {
+        const want_unsigned = std.mem.eql(u8, name, "unsigned");
+        for (resolveTypeCategoryTags(self, "int")) |t| {
+            if (self.module.types.isUnsignedInt(TypeId.fromIndex(@intCast(t))) == want_unsigned)
+                tags.append(self.alloc, t) catch {};
+        }
+        return tags.items;
+    }
     if (std.mem.eql(u8, name, "float")) {
         tags.append(self.alloc, TypeId.f32.index()) catch {};
         tags.append(self.alloc, TypeId.f64.index()) catch {};
+        return tags.items;
+    }
+    // Interface-kind membership: the directly-reified interface types.
+    if (std.mem.eql(u8, name, "interface")) {
+        for (self.module.types.infos.items, 0..) |_, idx| {
+            const tid = TypeId.fromIndex(@intCast(idx));
+            if (self.isErasedProtocolType(tid)) tags.append(self.alloc, @intCast(idx)) catch {};
+        }
         return tags.items;
     }
     if (std.mem.eql(u8, name, "bool")) {
@@ -1140,7 +1157,10 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
     if (cat) |c| {
         for (self.module.types.infos.items, 0..) |info, idx| {
             const matches = switch (c) {
-                .@"struct" => info == .@"struct",
+                // Disjoint from `interface`: an interface handle is backed by
+                // a struct in the type table, and only the interface word
+                // names it.
+                .@"struct" => info == .@"struct" and !info.@"struct".is_protocol,
                 .@"enum" => info == .@"enum" or info == .tagged_union,
                 .@"union" => info == .@"union" or info == .tagged_union,
                 .slice => info == .slice,
@@ -1344,9 +1364,9 @@ pub fn unifyValueArmTypes(self: *Lowering, a: TypeId, b: TypeId) ?TypeId {
 /// `type`/`Type` stay set-style (a Type-holding `any` is dispatch-only).
 pub fn isRuntimeCategoryName(name: []const u8) bool {
     const cats = [_][]const u8{
-        "int",   "float",   "struct", "enum",     "union",     "slice",
-        "array", "pointer", "vector", "optional", "error_set", "closure",
-        "type",  "Type",
+        "int",       "signed",  "unsigned", "float",     "struct",  "interface",
+        "enum",      "union",   "slice",    "array",     "pointer", "vector",
+        "optional",  "error_set", "closure", "type",     "Type",
     };
     for (cats) |c| if (std.mem.eql(u8, name, c)) return true;
     return false;
@@ -1365,9 +1385,9 @@ pub fn isTypeCategoryMatch(me: *const ast.MatchExpr) bool {
                 else => continue,
             };
             const categories = [_][]const u8{
-                "int",     "float",    "bool",      "string", "void",  "type",    "Type",
-                "struct",  "enum",     "union",     "slice",  "array", "pointer", "vector",
-                "closure", "optional", "error_set",
+                "int",      "signed",    "unsigned",  "float",  "bool",  "string",  "void",
+                "type",     "Type",      "struct",    "interface", "enum", "union", "slice",
+                "array",    "pointer",   "vector",    "closure", "optional", "error_set",
             };
             for (categories) |cat| {
                 if (std.mem.eql(u8, name, cat)) return true;

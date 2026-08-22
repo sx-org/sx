@@ -2,12 +2,12 @@
 // could ever select them.
 //
 // A blanket impl is selected by matching the carrier's instantiation against
-// the head, so every binder must reach the other side: a protocol-argument
+// the head, so every binder must reach the other side: a type-argument
 // binder needs a carrier instantiation to bind it from, and a generic carrier
-// needs a binder among the protocol arguments to be reached through.
+// needs a binder among the type arguments to be reached through.
 @import "modules/std.sx";
 
-Series :: protocol(T: Type) constraint {
+Series :: constraint(T: Type) {
     count :: (self: *Self) -> i64;
 }
 

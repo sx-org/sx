@@ -1,11 +1,11 @@
-error: 'Loose' does not implement protocol 'Show': no `impl Show for Loose` provides method 'fmt' (protocol erasure is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy a protocol)
+error: 'Loose' does not implement interface 'Show': no `impl Show for Loose` provides method 'fmt' (handle coercion is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy an interface)
   --> examples/diagnostics/1980-diagnostics-hard-miss-at-finality.sx:20:16
    |
-20 |     unshown := l.(Show, context.allocator);
-   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+20 |     unshown := l.(Show);
+   |                ^^^^^^^^
 
-error: 'Widget' does not implement protocol 'Mark': no `impl Mark for Widget` provides method 'tag' (protocol erasure is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy a protocol)
+error: 'Widget' does not implement interface 'Mark': no `impl Mark for Widget` provides method 'tag' (handle coercion is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy an interface)
   --> examples/diagnostics/1980-diagnostics-hard-miss-at-finality.sx:22:14
    |
-22 |     empty := w.(Mark, context.allocator);
-   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+22 |     empty := w.(Mark);
+   |              ^^^^^^^^

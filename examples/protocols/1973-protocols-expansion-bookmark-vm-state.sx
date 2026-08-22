@@ -14,7 +14,7 @@
 // time.
 @import "modules/std.sx";
 
-Draw :: protocol vtable { draw :: (self: *Self) -> i64; }
+Draw :: interface { draw :: (self: *Self) -> i64; }
 
 Dot :: struct { n: i64; }
 impl Draw for Dot { draw :: (self: *Dot) -> i64 { self.n * 2 } }

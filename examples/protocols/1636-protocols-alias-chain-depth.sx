@@ -3,7 +3,7 @@
 // resolves.
 @import "modules/std.sx";
 
-Speak :: protocol { say :: (self: *Self) -> i64; }
+Speak :: constraint { say :: (self: *Self) -> i64; }
 P01 :: Speak;
 P02 :: P01;
 P03 :: P02;

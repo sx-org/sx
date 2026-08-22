@@ -1,17 +1,17 @@
-// A protocol-method impl with the right NAME but a mismatched RETURN or parameter
-// type is reported at the erasure site. The conformance gate validates each impl
+// An interface-method impl with the right NAME but a mismatched RETURN or parameter
+// type is reported at the coercion site. The conformance gate validates each impl
 // method's signature — arity after `self`, each parameter type, and the return
-// type — against the protocol declaration with `Self` substituted to the concrete
+// type — against the interface declaration with `Self` substituted to the concrete
 // type, so the required `*T` / `T` impl form is not flagged.
 
 @import "modules/std.sx";
 
-P :: protocol vtable { val :: (self: *Self) -> i64; }
+P :: interface { val :: (self: *Self) -> i64; }
 T :: struct { n: i64 = 7; }
 impl P for T { val :: (self: *T) -> bool { return true; } }   // return bool != i64
 
 main :: () {
   t := T{ n = 7 };
-  p := t.(P, context.allocator);                 // <- 'T' does not implement 'P' (return type)
+  p := t.(P);                 // <- 'T' does not implement 'P' (return type)
   print("{}\n", p.val());
 }

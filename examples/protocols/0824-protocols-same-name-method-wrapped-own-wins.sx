@@ -17,7 +17,7 @@
 Box :: struct { m: i32; }
 Holder :: struct { b: Box = ---; }
 
-Provider :: protocol vtable {
+Provider :: interface {
     // discriminating wrapped/compound RETURNS
     getp :: (self: *Self) -> *Box;
     geto :: (self: *Self) -> ?Box;
@@ -48,7 +48,7 @@ impl Provider for Holder {
 main :: () -> i32 {
     h : Holder = ---;
     h.b.m = 7;
-    p := h.(Provider, context.allocator);
+    p := h.(Provider);
 
     // discriminating returns — `.m` only resolves if each binds main's `Box`
     bp := p.getp();

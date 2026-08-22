@@ -1,0 +1,5 @@
+error: 'Show' does not conform to the bound 'View' — a handle conforms through 'impl View for Show', and none is visible here
+  --> examples/diagnostics/2213-diagnostics-cross-interface-bound.sx:10:16
+   |
+10 | draw :: (v: $T/View) -> i64 { 1 }
+   |                ^^^^

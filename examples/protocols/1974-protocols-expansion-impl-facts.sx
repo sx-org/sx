@@ -13,8 +13,8 @@
 // undecided, and folded only once that unroll retired.
 @import "modules/std.sx";
 
-Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
-Ord :: protocol constraint { cmp :: (self: *Self, o: *Self) -> i64; }
+Show :: interface { fmt :: (self: *Self) -> i64; }
+Ord :: constraint { cmp :: (self: *Self, o: *Self) -> i64; }
 
 Item :: struct { n: i64; }
 Note :: struct { n: i64; }
@@ -23,12 +23,12 @@ impl Show for Note { fmt :: (self: *Note) -> i64 { self.n } }
 impl Ord for Note { cmp :: (self: *Note, o: *Note) -> i64 { self.n - o.n } }
 
 // Erased, a MISS right now — the unroll repairs it.
-inline if has_impl(Show, Item) { REPAIRED :: 1; } else { REPAIRED :: 0; }
+inline if Item is Show { REPAIRED :: 1; } else { REPAIRED :: 0; }
 // Erased, a program-unique HIT right now — still held until nothing can add a
 // second `impl Show for Note`.
-inline if has_impl(Show, Note) { UNIQUE :: 1; } else { UNIQUE :: 0; }
+inline if Note is Show { UNIQUE :: 1; } else { UNIQUE :: 0; }
 // Constraint, a HIT: answered immediately, though `Ord` is just as open.
-inline if has_impl(Ord, Note) { PARTITION :: 1; } else { PARTITION :: 0; }
+inline if Note is Ord { PARTITION :: 1; } else { PARTITION :: 0; }
 
 SHAPES :: .[Item];
 inline for T in SHAPES {
@@ -38,6 +38,6 @@ inline for T in SHAPES {
 
 main :: () {
     i := Item{ n = 2 };
-    s := i.(Show, context.allocator);
+    s := i.(Show);
     print("{} {} {} {}\n", REPAIRED, UNIQUE, PARTITION, s.fmt());
 }

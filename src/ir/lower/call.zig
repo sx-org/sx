@@ -63,7 +63,7 @@ fn selectedDispatchName(self: *Lowering, sf: *const SelectedFunc) []const u8 {
     return out.toOwnedSlice(self.alloc) catch @panic("out of memory while mangling selected function");
 }
 
-/// The ufcs function a dot-call resolves to when its FIRST parameter is
+/// The ufcs function a dot-call resolves to when ANY of its parameters is
 /// destination-first (`$I/@Init(T)`), or null when the dot-call is anything else.
 /// Answers the same questions the ufcs dispatch arm asks, in the same order — the
 /// receiver's own type answers first, an alias names its target, and a generic
@@ -110,8 +110,32 @@ fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: 
         if (fd != fd0) return null;
     }
     if (fd.params.len == 0) return null;
-    if (init_plan.boundTargetNode(fd.params[0].type_expr) == null) return null;
-    return .{ .fd = fd, .name = eff_field };
+    if (init_plan.boundTargetNode(fd.params[0].type_expr) != null)
+        return .{ .fd = fd, .name = eff_field };
+    // A destination-first parameter PAST the receiver re-spells only when the
+    // receiver is what that first parameter takes. The name alone does not
+    // settle it: the map's winner may be an unrelated declaration that happens
+    // to share the name, and re-spelling for it would hand the receiver to a
+    // parameter it does not fit.
+    for (fd.params[1..]) |p| {
+        if (init_plan.boundTargetNode(p.type_expr) == null) continue;
+        if (!receiverFitsFirstParam(self, fd, self.inferExprType(fa.object))) return null;
+        return .{ .fd = fd, .name = eff_field };
+    }
+    return null;
+}
+
+/// Would `recv_ty` be accepted at `fd`'s first parameter? A parameter whose
+/// type is not resolvable here is left to the ordinary call to judge.
+fn receiverFitsFirstParam(self: *Lowering, fd: *const ast.FnDecl, recv_ty: TypeId) bool {
+    if (recv_ty == .unresolved) return false;
+    const want = self.resolveTypeArg(fd.params[0].type_expr);
+    if (want == .unresolved) return true;
+    if (want == recv_ty) return true;
+    const pi = self.getProtocolInfo(want) orelse return false;
+    if (!pi.isErased()) return false;
+    const cname = self.resolveConcreteTypeName(recv_ty) orelse return false;
+    return self.firstUnimplementedMethod(want, cname, recv_ty) == null;
 }
 
 
@@ -571,6 +595,12 @@ fn lowerComptimePlainStructMethod(
 }
 
 pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
+    // An argument list CLEARS the return spine (§5.2): the callee decides what
+    // its result borrows, so `return f(Widget{})` is legal where
+    // `return S{ inner = Widget{} }` is not.
+    const saved_spine = self.return_component;
+    self.return_component = false;
+    defer self.return_component = saved_spine;
     var c = c_in;
     // A bare reserved-type-name spelling in call position parses as a
     // `.type_expr` (e.g. `i2(4)`), but if a function of that name is in
@@ -720,6 +750,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // intrinsic reachable on the same terms.
         if (std.mem.eql(u8, eff_name, id_name) and
             self.ufcsAliasTarget(id_name) == null and
+            !self.respelled_ufcs_callees.contains(c.callee) and
             self.program_index.fn_ast_map.contains(eff_name) and
             !callableLocalShadow(self, id_name) and
             intrinsics.findByName(eff_name) == null and
@@ -800,8 +831,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // type-param slots). Each resolvable param supplies its arg's
                 // target exactly like the direct-call path: without it, an
                 // `xx local` arg to a protocol param lowers node-lessly and
-                // the later value-wise coercion HEAP-COPIES the local through
-                // context.allocator instead of borrowing it. An
+                // the later value-wise coercion copies the local into a frame
+                // temp and borrows THAT instead of the local. An
                 // unresolvable param slot keeps a null target (the ambient
                 // target must still not leak into the arg).
                 const early_param_types = astCalleeParamTypes(self, fd, c.args);
@@ -988,6 +1019,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 syn_args[0] = @constCast(fa.object);
                 @memcpy(syn_args[1..], args);
                 const callee = self.synthNode(.{ .identifier = .{ .name = target.name } }, c.callee.span, c.callee.source_file);
+                self.respelled_ufcs_callees.put(self.alloc, callee, {}) catch {};
                 const syn_call = ast.Call{ .callee = callee, .args = syn_args };
                 return self.lowerCall(&syn_call);
             }
@@ -1195,10 +1227,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 }
             }
         }
-        // Concrete lvalue → `@identity` protocol param: erase NODE-AWARE so
-        // the lvalue BORROWS (`free(t, gpa)` aliases gpa) — the node-less
-        // coerceCallArgs layer would misread the lvalue as an rvalue and
-        // refuse. value/own params keep the node-less owning copy.
+        // Concrete lvalue → interface param: erase NODE-AWARE so the lvalue
+        // BORROWS (`free(t, gpa)` aliases gpa) — the node-less coerceCallArgs
+        // layer would misread the lvalue as an rvalue and refuse.
         if (ai < param_types.len) {
             if (protocolArgErasure(self, arg, param_types[ai])) |r| {
                 args.append(self.alloc, r) catch unreachable;
@@ -2591,11 +2622,10 @@ pub fn diagnoseMissingContext(self: *Lowering, what: []const u8) Ref {
 }
 
 /// Emit `context.allocator.alloc(size)` dispatch — used by internal
-/// compiler-driven heap copies (e.g. the `xx value` protocol-erasure
-/// path in `buildProtocolValue`). Routes through whatever allocator is
-/// currently installed in `context`, so a surrounding
-/// `push Context{ allocator = my_alloc, ... })` actually backs every
-/// allocation including the ones the compiler inserts.
+/// compiler-driven allocations (the closure env buffer in `lowerLambda`).
+/// Routes through whatever allocator is currently installed in `context`,
+/// so a surrounding `push Context{ allocator = my_alloc, ... })` actually
+/// backs every allocation including the ones the compiler inserts.
 ///
 /// If `Context` isn't registered (the program doesn't import std.sx),
 /// emits a diagnostic and returns a placeholder. It deliberately does
@@ -2629,7 +2659,7 @@ pub fn allocViaContext(self: *Lowering, size_ref: Ref) Ref {
     const allocator = self.builder.structGet(ctx, af.index, af.ty);
     // Through the same dispatch every `a.alloc_bytes(n)` in sx goes through,
     // so the allocator protocol's KIND is a property of its declaration and
-    // not something the compiler-driven heap copies re-encode.
+    // not something the compiler-driven allocations re-encode.
     const cs = self.builder.current_span;
     const dispatched = self.emitProtocolDispatch(
         allocator,
@@ -2666,14 +2696,12 @@ pub fn prependCtxIfNeeded(self: *Lowering, callee: *const Function, args: []Ref)
     return new_args;
 }
 
-/// Concrete arg at a PROTOCOL param target: erase NODE-AWARE so
-/// `buildProtocolErasure` classifies from the AST — an @identity target
-/// BORROWS lvalues (`free(t, gpa)` aliases `gpa`), a value/own target
-/// DEMANDS the owning spelling for every shape (a literal-with-init-block
-/// materializes through a temp slot, which the node-LESS
-/// refStorageAddress heuristic would misread as an lvalue). Returns null
-/// when the shape doesn't apply (caller falls through to its normal
-/// path).
+/// Concrete arg at an INTERFACE param target: erase NODE-AWARE so
+/// `buildProtocolErasure` classifies from the AST and BORROWS lvalues
+/// (`free(t, gpa)` aliases `gpa`). A literal-with-init-block materializes
+/// through a temp slot, which the node-LESS refStorageAddress heuristic
+/// would misread as an lvalue. Returns null when the shape doesn't apply
+/// (caller falls through to its normal path).
 fn protocolArgErasure(self: *Lowering, arg: *const Node, pt: TypeId) ?Ref {
     if (self.getProtocolInfo(pt) == null) return null;
     const cty = self.inferExprType(arg);
@@ -2728,7 +2756,6 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         // must decide here rather than fall through a catch-all.
         .type_of,
         .type_name,
-        .is_unsigned,
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -2742,8 +2769,6 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .is_identity,
-        .protocol_kind,
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
@@ -2981,7 +3006,6 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .align_of,
         .type_of,
         .type_name,
-        .is_unsigned,
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -2995,8 +3019,6 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .is_identity,
-        .protocol_kind,
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
@@ -3264,7 +3286,6 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .align_of,
         .type_of,
         .type_name,
-        .is_unsigned,
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -3278,8 +3299,6 @@ fn isVolatileIntrinsic(name: []const u8) bool {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .is_identity,
-        .protocol_kind,
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
@@ -3597,14 +3616,12 @@ fn rmwKindFromName(name: []const u8) ?inst_mod.RmwKind {
 
 /// Is `name` dispatched by `tryLowerReflectionCall`? Either a registered
 /// reflection intrinsic, or one of the bare KEYWORDS the compiler recognizes with
-/// no declaration at all (`type_eq`, `has_impl`, …). The two are listed apart
+/// no declaration at all (`type_eq`, …). The two are listed apart
 /// because only the first group answers to the registry; conflating them makes a
 /// name with no declaration look like an intrinsic.
 fn isReflectionCall(name: []const u8) bool {
     const keywords = [_][]const u8{
-        "type_eq",               "has_impl",
-        "is_struct",             "__interp_print_frames",
-        "__trace_resolve_frame",
+        "type_eq", "__interp_print_frames", "__trace_resolve_frame",
     };
     for (keywords) |k| {
         if (std.mem.eql(u8, name, k)) return true;
@@ -3615,7 +3632,6 @@ fn isReflectionCall(name: []const u8) bool {
         .align_of,
         .type_of,
         .type_name,
-        .is_unsigned,
         .struct_field_count,
         .variant_count,
         .struct_field_name,
@@ -3629,8 +3645,6 @@ fn isReflectionCall(name: []const u8) bool {
         .variant_index,
         .pointee_type,
         .is_flags,
-        .is_identity,
-        .protocol_kind,
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
@@ -3934,37 +3948,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const b = self.resolveTypeArg(c.args[1]);
         return self.builder.constBool(a == b);
     }
-    if (std.mem.eql(u8, name, "is_unsigned")) {
-        // type_is_unsigned(T) → bool. Static arg (a spelled type or
-        // generic binding) folds to const_bool at lower time. A
-        // dynamic arg — the runtime `type_of(x)` value queried by
-        // `any_to_string` — emits a `callBuiltin`: the interp reads
-        // the boxed TypeId, LLVM GEPs a per-type signedness table.
-        // Mirrors `type_name`'s static/dynamic split; the same split
-        // avoids `resolveTypeArg`'s silent `.i64` default lying about
-        // a runtime Type value.
-        if (c.args.len < 1) return self.builder.constBool(false);
-        if (self.isStaticTypeArg(c.args[0])) {
-            const ty = self.resolveTypeArg(c.args[0]);
-            return self.builder.constBool(self.module.types.isUnsignedInt(ty));
-        }
-        const arg_ref = self.lowerExpr(c.args[0]);
-        const args_owned = self.alloc.dupe(Ref, &.{arg_ref}) catch return self.builder.constBool(false);
-        return self.builder.callBuiltin(.is_unsigned, args_owned, .bool);
-    }
-    if (std.mem.eql(u8, name, "has_impl")) {
-        // has_impl(P, T) → const_bool. Returns true when type T has
-        // a reachable impl for protocol P. P is either:
-        // - plain protocol name (`Hash`, `Eq`) for unary protocols;
-        // - parameterised call like `Into(Block)` — for protocols
-        //   with type args, the args must be fully spelled.
-        // Delegates to `computeHasImpl` (shared with the
-        // `tryConstBoolCondition` arm so `inline if has_impl(...)`
-        // folds at compile time).
-        if (c.args.len < 2) return self.builder.constBool(false);
-        const ty = self.resolveTypeArg(c.args[1]);
-        return self.builder.constBool(self.computeHasImpl(c.args[0], ty));
-    }
     if (std.mem.eql(u8, name, "vector_lanes")) {
         // vector_lanes(T) → the lane COUNT. The one vector length the flat
         // size tables cannot answer (ABI size is pow2-rounded — 3 lanes
@@ -3998,50 +3981,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             if (info == .@"enum") return self.builder.constBool(info.@"enum".is_flags);
         }
         return self.builder.constBool(false);
-    }
-    if (std.mem.eql(u8, name, "is_identity")) {
-        // STATIC-ONLY (like the `protocol` category in inline type match): a
-        // runtime Type value is always a CONCRETE type's tag — a protocol
-        // type never appears as a runtime tag, so a runtime form would be
-        // constant false. Demand the static spelling instead of lying.
-        if (!self.isStaticTypeArg(c.args[0])) {
-            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "is_identity expects a compile-time type — a runtime 'Type' value always tags a concrete type, never a protocol", .{});
-            return self.builder.constBool(false);
-        }
-        const ty = self.resolveTypeArg(c.args[0]);
-        if (self.getProtocolInfo(ty)) |pi| return self.builder.constBool(pi.ownership == .identity);
-        return self.builder.constBool(false);
-    }
-    if (std.mem.eql(u8, name, "protocol_kind")) {
-        // Static-only for the same reason `is_identity` is: a runtime `Type`
-        // value always tags a concrete type. Folds to a `ProtocolKind`
-        // constant, so `inline if protocol_kind(P) == .vtable` prunes.
-        const pk_ty = self.module.types.findByName(self.module.types.internString("ProtocolKind")) orelse {
-            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "protocol_kind needs 'ProtocolKind' in scope — @import \"modules/std.sx\"", .{});
-            return Ref.none;
-        };
-        if (c.args.len < 1) return self.builder.enumInit(0, Ref.none, pk_ty);
-        if (!self.isStaticTypeArg(c.args[0])) {
-            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "protocol_kind expects a compile-time type — a runtime 'Type' value always tags a concrete type, never a protocol", .{});
-            return self.builder.enumInit(0, Ref.none, pk_ty);
-        }
-        const ty = self.resolveTypeArg(c.args[0]);
-        const kind = self.protocolKindOf(ty) orelse {
-            if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "protocol_kind expects a protocol; '{s}' is not one", .{self.formatTypeName(ty)});
-            return self.builder.enumInit(0, Ref.none, pk_ty);
-        };
-        return self.builder.enumInit(self.resolveVariantValue(pk_ty, kind.spelling()), Ref.none, pk_ty);
-    }
-    if (std.mem.eql(u8, name, "is_struct")) {
-        // is_struct(T) → const_bool: true iff T is a nominal `struct`. A
-        // comptime type-kind predicate that folds at lower time (mirrors the
-        // `tryConstBoolCondition` arm so `inline if is_struct(T)` gates
-        // field-wise reflection). Any non-struct (enum, scalar, pointer, …) is
-        // false — routing an enum key to a leaf byte-hash.
-        if (c.args.len < 1) return self.builder.constBool(false);
-        const ty = self.resolveTypeArg(c.args[0]);
-        if (ty.isBuiltin() or ty == .unresolved) return self.builder.constBool(false);
-        return self.builder.constBool(self.module.types.get(ty) == .@"struct");
     }
     if (std.mem.eql(u8, name, "struct_field_name") or std.mem.eql(u8, name, "variant_name")) {
         if (c.args.len < 2) return self.builder.constString(self.module.types.internString(""));
@@ -4543,9 +4482,7 @@ pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.C
         std.mem.eql(u8, name, "struct_field_count") or
         std.mem.eql(u8, name, "variant_count") or
         std.mem.eql(u8, name, "type_name") or
-        std.mem.eql(u8, name, "is_unsigned") or
-        std.mem.eql(u8, name, "is_flags") or
-        std.mem.eql(u8, name, "is_struct"))
+        std.mem.eql(u8, name, "is_flags"))
         1
     else
         return null;
@@ -4588,10 +4525,7 @@ pub fn reflectionTypeArgGuard(self: *Lowering, name: []const u8, c: *const ast.C
 pub fn reflectionErrorSentinel(self: *Lowering, name: []const u8) Ref {
     if (std.mem.eql(u8, name, "type_name"))
         return self.builder.constString(self.module.types.internString(""));
-    if (std.mem.eql(u8, name, "type_eq") or
-        std.mem.eql(u8, name, "is_unsigned") or
-        std.mem.eql(u8, name, "is_flags") or
-        std.mem.eql(u8, name, "is_struct"))
+    if (std.mem.eql(u8, name, "type_eq") or std.mem.eql(u8, name, "is_flags"))
         return self.builder.constBool(false);
     return self.builder.constInt(0, .i64);
 }
@@ -4847,7 +4781,7 @@ const NamedCallee = struct {
 /// static-struct/enum-literal callees) and adds the value-receiver dot-call
 /// shapes (plain-struct method, ufcs fn — an alias resolves names against the
 /// TARGET's declared params). Null when no declaration is known (closure /
-/// fn-pointer values, builtins, protocol methods) — those bind positionally
+/// fn-pointer values, builtins, interface methods) — those bind positionally
 /// only.
 fn namedCalleeDecl(
     self: *Lowering,
@@ -5021,7 +4955,7 @@ pub fn mapNamedArgs(
             if (has_block) {
                 d.addFmt(.err, c.callee.span, "cannot use a trailing block here — '{s}' has no known declaration (closure and function-pointer values bind their arguments explicitly)", .{callee_name});
             } else {
-                d.addFmt(.err, c.callee.span, "cannot use named arguments here — '{s}' has no known parameter names (closure and function-pointer values, builtins, and protocol methods bind positionally)", .{callee_name});
+                d.addFmt(.err, c.callee.span, "cannot use named arguments here — '{s}' has no known parameter names (closure and function-pointer values, builtins, and interface methods bind positionally)", .{callee_name});
             }
         }
         return stripNamedArgs(self, c);

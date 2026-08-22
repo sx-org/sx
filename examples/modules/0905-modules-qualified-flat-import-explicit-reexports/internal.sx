@@ -6,7 +6,7 @@ InternalStruct :: struct {
 InternalKind :: enum { zero; one; }
 InternalUnion :: union { number: i64; byte: u8; }
 InternalError :: error { Bad }
-InternalProtocol :: protocol vtable { read :: (self: *Self) -> i64; }
+InternalProtocol :: interface { read :: (self: *Self) -> i64; }
 InternalAlias :: InternalStruct;
 
 internal_fn :: () -> i64 { 44 }

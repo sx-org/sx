@@ -1,0 +1,19 @@
+// An interface-typed default takes the symbol of a module-scope global, reached
+// bare or through a module namespace. A path rooted at a global VALUE has no
+// symbol of its own, so it is refused at the Context field and at a static
+// aggregate field alike.
+@import "modules/std.sx";
+
+P :: interface { a :: (self: *Self) -> i64; }
+W :: struct { v: i64; }
+impl P for W { a :: (self: *W) -> i64 { self.v } }
+
+Box :: struct { w: W; }
+the_box : Box = .{ w = .{ v = 9 } };
+
+S :: struct { inner: P; }
+holder : S = .{ inner = the_box.w };
+
+@context_extend probe: P = the_box.w;
+
+main :: () { print("{}\n", holder.inner.a()); }

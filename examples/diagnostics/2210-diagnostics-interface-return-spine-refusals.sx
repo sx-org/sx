@@ -1,0 +1,28 @@
+// The return-value spine refuses the rvalue arm and the zero handle: the
+// temporary dies at the return, and a non-optional return has no absence to
+// carry. An argument list and a binding CLEAR the spine, so both forms below
+// the refusals compile.
+@import "modules/std.sx";
+
+P :: interface { a :: (self: *Self) -> i64; }
+W :: struct { v: i64; }
+impl P for W { a :: (self: *W) -> i64 { self.v } }
+S :: struct { inner: P; }
+
+rvalue_direct :: () -> P { return W{ v = 1 }; }
+rvalue_in_literal :: () -> S { return S{ inner = W{ v = 2 } }; }
+zero_handle :: () -> P { return .{}; }
+
+take :: (v: P) -> P { v }
+through_argument :: () -> P { return take(W{ v = 3 }); }
+through_binding :: () -> P { r : P = ---; r = W{ v = 4 }; return r; }
+absent :: () -> ?P { return .{}; }
+
+main :: () {
+    _ = rvalue_direct();
+    _ = rvalue_in_literal();
+    _ = zero_handle();
+    _ = through_argument();
+    _ = through_binding();
+    _ = absent();
+}

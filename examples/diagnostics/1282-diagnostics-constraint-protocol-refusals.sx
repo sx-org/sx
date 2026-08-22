@@ -1,4 +1,4 @@
-// A constraint protocol (the default kind) has NO runtime values. Every erasure
+// A constraint has NO runtime values. Every erasure
 // spelling and every storable position refuses at the USE site, and the guidance is
 // always the same pair — stay concrete, or bind through `$T/P`. It never suggests
 // respelling the declaration: whether `Ord` should have runtime values is its
@@ -6,7 +6,7 @@
 @import "modules/std.sx";
 @import "modules/std/list.sx";
 
-Ord :: protocol {
+Ord :: constraint {
     less :: (self: *Self, other: Self) -> bool;
 }
 impl Ord for i64 { less :: (self: *i64, other: i64) -> bool { self.* < other } }

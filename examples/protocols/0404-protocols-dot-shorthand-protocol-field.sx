@@ -4,7 +4,7 @@
 
 @import "modules/std.sx";
 
-Drawable :: protocol vtable {
+Drawable :: interface {
     draw :: (self: *Self) -> i32;
     name :: (self: *Self) -> string;
     layout :: (self: *Self, x: i32) -> i32;
@@ -64,11 +64,11 @@ main :: () -> void {
     s := Square{ side = 5 };
 
     a : StackA = .{};
-    a.add(c.(Drawable, context.allocator));
+    a.add(c.(Drawable));
     print("StackA: draw={}\n", a.children.items[0].child.draw());
 
     b : StackB = .{};
-    b.add(s.(Drawable, context.allocator));
+    b.add(s.(Drawable));
     print("StackB: draw={}\n", b.children.items[0].child.draw());
 
     print("OK\n");

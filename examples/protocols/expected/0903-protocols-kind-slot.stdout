@@ -1,4 +1,4 @@
-constraint vtable
+constraint interface
 false false true
 3
 5

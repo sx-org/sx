@@ -11,7 +11,7 @@
 // concrete impl is refused instead — see the diagnostics pin.
 @import "modules/std.sx";
 
-Series :: protocol(T: Type) constraint {
+Series :: constraint(T: Type) {
     count :: (self: *Self) -> i64;
 }
 

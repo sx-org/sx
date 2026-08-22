@@ -27,7 +27,7 @@ Counter :: struct {
 }
 
 // ── 2. Protocol impl method calling a #extern fn ────────────────────
-Doubler :: protocol {
+Doubler :: constraint {
     doubled :: (self: *Self) -> i32;
 }
 

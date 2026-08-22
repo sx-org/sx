@@ -27,7 +27,7 @@ TlsStep :: enum {
 // (which holds the TLS-library session state + the fd); http.sx stores the
 // erased value on the Conn and drives it through the transport seam. The
 // concrete value owns its own heap state and frees it in `close`.
-TlsConn :: protocol vtable @identity {
+TlsConn :: interface {
     // Drive the handshake one step: Done (complete), WantRead/WantWrite (retry
     // on readiness), or Fatal/Closed (drop).
     handshake :: (self: *Self) -> TlsStep;
@@ -44,7 +44,7 @@ TlsConn :: protocol vtable @identity {
 // Server-side TLS provider: mints a per-connection session for each accepted
 // fd. The concrete value holds the shared cert/key/config/DRBG and MUST
 // outlive the Server (Config.tls borrows it).
-TlsAcceptor :: protocol vtable @identity {
+TlsAcceptor :: interface {
     // Create a TLS session bound to `fd`; null = per-connection setup failure
     // → the connection is dropped, never served in the clear.
     accept :: (self: *Self, fd: i32) -> ?TlsConn;
@@ -57,6 +57,6 @@ TlsAcceptor :: protocol vtable @identity {
 // setup failure OR a failed handshake — a verification refusal included —
 // and the caller closes the fd, never speaking in the clear. The concrete
 // value MUST outlive every connection it minted (ClientOpts.tls borrows it).
-TlsDialer :: protocol vtable @identity {
+TlsDialer :: interface {
     connect :: (self: *Self, fd: i32, host: string) -> ?TlsConn;
 }

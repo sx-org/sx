@@ -1,0 +1,4 @@
+C :: constraint { c :: (self: *Self) -> i64; }
+I :: interface { a :: (self: *Self) -> i64; }
+W :: struct { v: i64; }
+impl I for W { a :: (self: *W) -> i64 { self.v } }

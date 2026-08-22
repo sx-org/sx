@@ -8,12 +8,12 @@ Point :: struct { x, y: i32; }
 
 add :: (a: i32, b: i32) -> i32 { a + b }
 
-Counter :: protocol vtable {
+Counter :: interface {
     inc :: (self: *Self);
     get :: (self: *Self) -> i32;
 }
 
-Summable :: protocol {
+Summable :: constraint {
     sum :: (self: *Self) -> i32;
 }
 
@@ -28,8 +28,7 @@ impl Summable for Point {
     sum :: (self: *Point) -> i32 { self.x + self.y }
 }
 
-// `vtable`-kind protocol for dynamic dispatch
-Adder :: protocol vtable {
+Adder :: interface {
     add :: (self: *Self, n: i32);
     value :: (self: *Self) -> i32;
 }
@@ -48,37 +47,35 @@ main :: () {
     // --- Auto type erasure (AE) ---
     print("=== Auto Type Erasure ===\n");
 
-    // AE1: function argument — explicit owning copy of an lvalue (an
-    // implicit `use_counter(sc)` is the demand error)
+    // AE1: function argument, lvalue source
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
         sc := SimpleCounter{ val = 10 };
-        result := use_counter(sc.(Counter, context.allocator));
+        result := use_counter(sc.(Counter));
         print("AE1: {}\n", result);
     }
 
-    // AE2: protocol variable from an lvalue — the postfix owning copy
+    // AE2: interface variable, lvalue source
     {
         acc := Accumulator{ total = 0 };
-        a := acc.(Adder, context.allocator);
+        a := acc.(Adder);
         a.add(5);
         a.add(3);
         print("AE2: {}\n", a.value());
     }
 
-    // AE3: struct-literal argument — the postfix owning copy (an
-    // implicit `use_counter(SimpleCounter{...})` is the demand error)
+    // AE3: struct-literal argument, rvalue source
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
-        result := use_counter(SimpleCounter{ val = 100 }.(Counter, context.allocator));
+        result := use_counter(SimpleCounter{ val = 100 }.(Counter));
         print("AE3: {}\n", result);
     }
 
-    // AE4: call-result receiver — the postfix owning copy of an rvalue
+    // AE4: call-result receiver, rvalue source
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.get() }
         mk :: () -> SimpleCounter { SimpleCounter{ val = 50 } }
-        result := use_counter(mk().(Counter, context.allocator));
+        result := use_counter(mk().(Counter));
         print("AE4: {}\n", result);
     }
 

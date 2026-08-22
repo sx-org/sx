@@ -1,16 +1,16 @@
-// A protocol handle is an ordinary copyable value (§5.3a), so heap storage
-// FOR one is ordinary storage: `create(P)` reinterprets the allocator's raw
-// `*void` as `*P` exactly like `alloc(P, n)` reinterprets it as `[]P`. The
-// `*void` source carries no type identity, so neither is a §5.5 view built
-// over a value of some conformer type — the handle is written into the
-// storage afterwards, and dispatch goes through the stored handle.
+// An interface handle is an ordinary copyable value, so heap storage FOR one
+// is ordinary storage: `create(I)` reinterprets the allocator's raw `*void`
+// as `*I` exactly like `alloc(I, n)` reinterprets it as `[]I`. The `*void`
+// source carries no type identity, so neither is a handle built over a value
+// of some conformer type — the handle is written into the storage afterwards,
+// and dispatch goes through the stored handle.
 @import "modules/std.sx";
 
-Shape :: protocol vtable @identity {
+Shape :: interface {
     area :: (self: *Self) -> i64;
 }
 
-Tally :: protocol vtable {
+Tally :: interface {
     push :: (self: *Self, n: i64) -> i64;
 }
 
@@ -39,13 +39,12 @@ main :: () {
     print("{}\n", sp.area());
     a.destroy(sp);
 
-    // An owning handle: the same shape, and the copy it owns is freed by hand.
+    // A handle over a local: the storage holding the handle is what is freed;
+    // the referent outlives it on the frame.
     c := Counter{ total = 10 };
     kp := a.create(Tally);
-    kp.* = c.(Tally, context.allocator);
+    kp.* = c.(Tally);
     print("{}\n", kp.push(7));
-    owned := kp.*;
-    owned.free(a);
     a.destroy(kp);
 
     // The slice path stays working, and a handle copied out of a slice element

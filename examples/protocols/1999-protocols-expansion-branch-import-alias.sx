@@ -15,10 +15,10 @@ inline if POINTER_SIZE == 8 {
     NARROW :: 1;
 }
 
-inline if has_impl(Mark, Slot) { ADMITTED :: 1; } else { ADMITTED :: 0; }
+inline if Slot is Mark { ADMITTED :: 1; } else { ADMITTED :: 0; }
 
 main :: () {
     s := Slot{ n = 2 };
-    m := s.(Mark, context.allocator);
+    m := s.(Mark);
     print("{} {}\n", ADMITTED, m.tag());
 }

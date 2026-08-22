@@ -1,0 +1,11 @@
+error: this arm is unreachable — earlier arms already claim every type it names (the narrower arm must come BEFORE the category that contains it)
+  --> examples/diagnostics/2222-diagnostics-refinement-below-umbrella.sx:9:14
+   |
+ 9 |         case unsigned: return "unsigned";
+   |              ^^^^^^^^
+
+error: this arm is unreachable — earlier arms already claim every type it names (the narrower arm must come BEFORE the category that contains it)
+  --> examples/diagnostics/2222-diagnostics-refinement-below-umbrella.sx:18:14
+   |
+18 |         case unsigned: return "unsigned";
+   |              ^^^^^^^^

@@ -21,7 +21,8 @@ is reserved. A bare reserved spelling is rejected at **value-binding and
 declaration-name sites**: a value binding (`:=` / typed local / parameter), a
 `::` **constant** or **function** declaration, an `impl` method **definition**,
 and a `::` **type** declaration (`struct` / `enum` / `union` / `error` / type
-alias / `protocol` / runtime class / ufcs alias / namespaced import). A
+alias / `constraint` / `interface` / runtime class / ufcs alias / namespaced
+import). A
 value-spelled-as-type parses as a *type*, not a value, so its address-of /
 autoref paths would mis-lower; a type / const / function / method name spelled as
 a builtin would shadow the builtin. The exemptions are the backtick escape
@@ -29,7 +30,8 @@ a builtin would shadow the builtin. The exemptions are the backtick escape
 **not** rejected at every place a name appears.
 
 **Member-name positions are exempt.** A struct **field** name, a union **tag**
-name, and a protocol **method-signature** name may be a bare reserved spelling.
+name, and a **method-signature** name in a `constraint` or `interface` body may
+be a bare reserved spelling.
 These sit in a member slot (`name: T` / `name :: (…)`) and are reached only via
 `obj.name` (or dispatched by string), so they are never type-classified and never
 mis-lower. The backtick form is optional there and names the same member — `obj.i2`
@@ -41,15 +43,17 @@ slot), so a reserved-spelled impl method still needs the backtick
 **Statement keywords are member names too.**
 Every keyword except `inline` — `if`, `push`, `while`, `for`, `case`, `return`,
 `f32`, `f64`, `try`, `defer`, … — may bare-name a struct **field**, a struct
-**method or constant**, a protocol **method**, and an enum/tagged-union
+**method or constant**, a `constraint` or `interface` **method**, and an
+enum/tagged-union
 **variant** (`enum { struct: StructInfo; bool; }` — std/meta.sx's `TypeInfo`
 is the canonical case), and is reached bare after a dot: field access
 (`q.push(…)`, `q.for`), enum literals and case patterns (`.enum`,
 `case .struct:`), and optional chaining (`o?.if`). Declaration position
-is unambiguous — struct, protocol, and `impl` bodies hold only declarations —
+is unambiguous — struct, `constraint`, `interface`, and `impl` bodies hold only
+declarations —
 and access is dot-disambiguated. Unlike the type-spelling rule above, keyword
 names are bare-legal in `impl` method **definitions** as well: a keyword-named
-protocol method must be implementable without ceremony, and a keyword has no
+interface method must be implementable without ceremony, and a keyword has no
 builtin to shadow. The one exception is **`inline`**, which stays
 backtick-only (`` `inline ``); a bare `inline` in member position rejects with
 a targeted escape-hint. A **literal field label** is an identifier: in `.{ … }`
@@ -70,7 +74,7 @@ Every reserved spelling except `inline` bare-names member slots — the
 identifier-classified spellings (`i1`..`i64`, `u1`..`u64`, `bool`, `string`,
 `cstring`, `void`, `usize`, `isize`, `any`) and the keyword-classified `f32` /
 `f64` alike: `` struct { f32: i64; } `` and
-`` protocol { f32 :: (self: *Self) -> i64; } `` are legal as written; the
+`` interface { f32 :: (self: *Self) -> i64; } `` are legal as written; the
 backtick forms remain available but are never required for them.
 
 ```sx
@@ -179,7 +183,8 @@ x : i2 = 3;                          // bare `i2` is still the 2-bit signed int
 
 **Declaration position.** A *bare* reserved-name declaration of every kind still
 errors (a value binding, a `::` constant / function, and a `::` type / alias /
-protocol / runtime-class / ufcs / namespaced-import name); the backtick form is
+constraint / interface / runtime-class / ufcs / namespaced-import name); the
+backtick form is
 exempt. The escape works in **every identifier position** — local, global,
 parameter, struct field, union tag, function name, type/alias/import name, a later
 reference, and every control-flow / capture / binding form (destructure name,
@@ -202,7 +207,8 @@ x catch |`i2| { }                   // catch tag binding
 ```
 
 In the **member-name positions** among these — struct field, union tag, and
-protocol method signature — the backtick is *optional*: the bare reserved
+method signature in a `constraint` or `interface` body — the backtick is
+*optional*: the bare reserved
 spelling is already legal there (see "Member-name positions are exempt" above).
 Everywhere else (value bindings and declaration names, including an `impl` method
 definition) the backtick is *required* to spell a reserved name.
@@ -264,7 +270,7 @@ GLSL;
 ```
 
 ### Keywords
-`if`, `else`, `then`, `while`, `for`, `break`, `continue`, `true`, `false`, `enum`, `struct`, `union`, `case`, `return`, `defer`, `push`, `ufcs`, `in`, `xx`, `and`, `or`, `raise`, `try`, `catch`, `onfail`, `error`, `private`
+`if`, `else`, `then`, `while`, `for`, `break`, `continue`, `true`, `false`, `enum`, `struct`, `union`, `case`, `return`, `defer`, `push`, `ufcs`, `in`, `is`, `xx`, `and`, `or`, `raise`, `try`, `catch`, `onfail`, `error`, `private`
 
 > Note: `enum` is used for both payload-less and payload-bearing sum types (tagged unions). `union` is reserved for C-style untagged unions (memory overlays).
 
@@ -301,6 +307,7 @@ GLSL;
 | `?!`     | force-unwrap optional |
 | `!`      | logical NOT (prefix) |
 | `in`     | membership test (tuples)    |
+| `is`     | type classification (§The `is` Operator) |
 | `+=`     | add-assign       |
 | `-=`     | sub-assign       |
 | `*=`     | mul-assign       |
@@ -362,7 +369,8 @@ xs[0]       xs [0]       // both an index
 The same holds in every type position that applies arguments (annotation, return
 type, parameter type, struct field type, type alias, constant annotation, `.(T)`
 cast target, type argument to a builtin, match-arm type pattern, an `impl`'s
-protocol arguments) and in the fixed forms whose argument list the grammar
+constraint or interface arguments) and in the fixed forms whose argument list
+the grammar
 mandates — `Closure(i64) -> i64`, `@Init(P)` / `@BuildBlock(P)` (including in a
 bound, `$B/@BuildBlock(Drawable)`), `@OpenVariant(View)`, `@OpenSet(.{ … })`. A
 bracket that opens something *new* is free in the same way — grouping
@@ -373,7 +381,7 @@ bracket that opens something *new* is free in the same way — grouping
 add    :: (a: i64, b: i64) -> i64 => a + b;   // fn declaration
 scaled :: ufcs (v: i64) -> i64 => v * 2;      // ufcs declaration
 Pair   :: struct ($T: Type) { a: $T; b: $T; } // struct type params
-Show   :: protocol (T) { render :: (self: *Self) -> T; }
+Show   :: interface (T) { render :: (self: *Self) -> T; }
 Padded :: @OpenVariant(View) ($T: Type) { … } // generic open-set member
 v := risky() catch |e| -1;                    // catch binding
 onfail |e| { … }                              // onfail binding
@@ -593,7 +601,7 @@ c := vstack(1.0) {
 - `f64` — 64-bit floating point
 - `bool` — boolean (`true` / `false`)
 - `string` — string of characters
-- `any` — type-erased BORROW, represented as `{ data: pointer, type_id: i64 }` — the data word (word 0) is the ADDRESS of the value, the type_id word (word 1) its runtime type tag (Odin `Raw_Any` `{data, id}`, same order; the `{pointer, type_id}` prefix is shared with erased protocol values — see Protocols), never a copy of its bits. Used for variadic arguments, runtime type dispatch, and reflection views. Boxing an addressable lvalue points at its storage (zero copy — mutations of the source stay visible through a live view); boxing an rvalue materializes a temporary scoped to the enclosing frame. An `any` is valid only while the referenced value lives: do not store an `any` beyond its referent. Unboxing via `xx` is an UNCHECKED typed load through the view — the target must be the boxed type (`data` covers exactly `size_of(tag)` bytes; a wider target overreads); the checked forms are the postfix assertions (`av.(T)` / `try av.(T)` / `av.(?T)`). `==`/`!=` are NOT defined on `any` (compile error): unbox first, or compare `type_of(av)`.
+- `any` — type-erased BORROW, represented as `{ data: pointer, type_id: i64 }` — the data word (word 0) is the ADDRESS of the value, the type_id word (word 1) its runtime type tag (Odin `Raw_Any` `{data, id}`, same order; the `{pointer, type_id}` prefix is shared with interface handles — see Constraints and Interfaces), never a copy of its bits. Used for variadic arguments, runtime type dispatch, and reflection views. Boxing an addressable lvalue points at its storage (zero copy — mutations of the source stay visible through a live view); boxing an rvalue materializes a temporary scoped to the enclosing frame. An `any` is valid only while the referenced value lives: do not store an `any` beyond its referent. Unboxing via `xx` is an UNCHECKED typed load through the view — the target must be the boxed type (`data` covers exactly `size_of(tag)` bytes; a wider target overreads); the checked forms are the postfix assertions (`av.(T)` / `try av.(T)` / `av.(?T)`). `==`/`!=` are NOT defined on `any` (compile error): unbox first, or compare `type_of(av)`.
 - `Type` — compile-time type value. At runtime, represented as an `i64` type tag (same tag space as `any`).
 
 ### Char Literals
@@ -1034,108 +1042,109 @@ print("{}\n", p.sum());  // 7
 
 Methods receive the struct (typically as a pointer) as their first parameter. Dot-call syntax `obj.method(args)` resolves struct methods — it is **not** UFCS for arbitrary free functions. A free function becomes dot-callable only by opting in with `ufcs`.
 
-### Protocols
+### Constraints and Interfaces
 
-A protocol names a set of method signatures. A type conforms by
-providing those methods in an `impl` block; the protocol then serves
-as a generic constraint, and — depending on its **kind** — as a
-runtime value with dynamic dispatch.
+A **constraint** and an **interface** each name a set of method
+signatures. A type conforms by providing those methods in an `impl`
+block. A constraint bounds generic binders and has no runtime values; an
+interface is additionally a runtime handle with dynamic dispatch.
 
 ```
-protocol-decl := Name '::' 'protocol' [ '(' params ')' ] [ kind ] [ attrs ] '{' body '}'
-kind          := 'constraint' | 'vtable'                            (absent ⇒ constraint)
-attrs         := '@identity'*                                       (erased kind)
+decl := Name '::' ( 'constraint' | 'interface' ) [ '(' params ')' ] '{' body '}'
 ```
 
-Both kind words are contextual: ordinary identifiers everywhere
-else, read as kinds only in this position. Exactly one kind may
-appear. Each attribute may appear at most once.
+Both head words are contextual: ordinary identifiers everywhere else,
+read as declaration heads only in this `::`-head slot. `protocol` is an
+ordinary identifier.
 
-#### 1. The kind ladder
+#### 1. The two declarations
 
-| kind | runtime values | dispatch | membership known | ownership |
-|---|---|---|---|---|
-| `constraint` (default) | none | monomorphized per use site | per call site | — |
-| `vtable` | erased, 3 words | vtable pointer | open world | value/own or `@identity` |
-
-The ladder is ordered by cost. The default is the kind that emits
-nothing; a program opts *into* paying for dynamic dispatch by
-naming the erased kind. Both kinds support the full
-constraint-position vocabulary (`$T/P` bounds, UFCS fall-through,
-default methods); they differ only in what a protocol-typed
-**value** is and costs.
+| declaration | runtime values | dispatch | conformance |
+|---|---|---|---|
+| `constraint` | none | monomorphized per use site | `impl` |
+| `interface` | erased handle, 3 words, borrow-only | vtable pointer | `impl` |
 
 ```sx
-Into      :: protocol(Target: Type) constraint {
+Ord   :: constraint { less :: (self: *Self, other: Self) -> bool; }
+Into  :: constraint(Target: Type) {
     convert :: (self: *Self, alloc: Allocator) -> Target;
 }
-Show      :: protocol vtable   { fmt :: (self: *Self) -> string; }
-Hasher    :: protocol vtable {
+Show      :: interface { fmt :: (self: *Self) -> string; }
+Hasher    :: interface {
     put :: (self: *Self, bytes: []u8);
     sum :: (self: *Self) -> u64;
 }
-Allocator :: protocol vtable @identity {        // unique stateful conformers
+Allocator :: interface {
     alloc_bytes   :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
-View      :: protocol vtable {
+View      :: interface {
     size_that_fits :: (self: *Self, proposal: ProposedSize) -> Size;
     layout         :: (self: *Self, bounds: Frame);
     render         :: (self: *Self, ctx: *RenderContext, frame: Frame);
 }
-Series    :: protocol(T: Type) vtable {
+Series    :: interface(T: Type) {
     count :: (self: *Self) -> i64;
     at    :: (self: *Self, i: i64) -> T;
 }
 ```
 
-The examples throughout describe one notional program built from
-the protocols above; every snippet restates the declarations it
-touches, so each reads in place.
+The examples throughout describe one notional program built from the
+declarations above; every snippet restates the declarations it touches,
+so each reads in place.
 
 #### 2. Declaration
 
-**Body.** A protocol body holds method signatures and default-method
-bodies — nothing else (no fields, no constants).
+**Body.** A body holds method signatures and default-method bodies —
+nothing else (no fields, no constants).
 
-**Receiver.** Every method declares its receiver explicitly as the
-first parameter, `self: *Self` or `self: Self`. A first parameter of
-any other shape is a parse error. An impl's receiver spelling must
-match the protocol's declaration. Dispatch passes the receiver as
-the context pointer in the ABI regardless of spelling; a `self:
-Self` receiver reached through dynamic dispatch receives a **copy**
-of the referent (made by the dispatch thunk or switch arm before the
-body runs), so by-value semantics are preserved — mutations of a
-by-value receiver are never visible through the protocol value, on
-any kind, matching the concrete call.
+**Receiver.** Every method declares its receiver explicitly as the first
+parameter, `self: *Self` or `self: Self`. A first parameter of any other
+shape is a parse error. An impl's receiver spelling must match the
+declaration. Dispatch passes the receiver as the context pointer in the
+ABI regardless of spelling; a `self: Self` receiver reached through
+dynamic dispatch receives a **copy** of the referent (made by the
+dispatch thunk or switch arm before the body runs), so mutations of a
+by-value receiver are never visible through the handle, matching the
+concrete call.
 
-**`Self`.** A contextual keyword naming the conforming type. It may
-appear at any depth in later parameters and returns (`Self`, `*Self`,
-`?Self`, `[]Self`, `Buffer(Self)`); what that does to dispatch is
-§5.6.
+**`Self`.** A contextual keyword naming the conforming type. A
+constraint method may mention it at any depth in later parameters and
+returns (`Self`, `*Self`, `?Self`, `[]Self`, `Buffer(Self)`). An
+**interface** body refuses such a signature at the declaration.
 
-**Keyword member names.** Every reserved word except `inline` is a
-legal *bare* method name — including the keyword-classified type
-names (`f32`, `f64`); `inline` alone is spellable only in backtick
-form (`` `inline ``).
+```sx
+Eq :: interface { eq :: (self: *Self, other: Self) -> bool; }
+```
+```
+error: 'eq' mentions 'Self' past the receiver, so an interface cannot
+       carry it — declare 'Eq' as a constraint and bind through it
+       ('$T/Eq')
+```
 
-**Default methods.** A method with a body is a default; impls may
-omit it (or override it by providing their own). Default bodies are
-compiled **per conformer**, against the concrete `Self` — for every
-kind. A call `self.method(…)` inside a default body therefore
-resolves statically against the conformer, which means a default may
-freely call methods that are excluded from erased dispatch (§5.6):
-exclusion constrains call sites *through erased values*, and inside
-a default the receiver is concrete. Dynamic dispatch happens at the
-outer call site only — the vtable slot for a defaulted method points
-at that conformer's compiled instance.
+An interface with an empty body is legal and erases with an empty
+vtable. Slots index the methods in declaration order. Non-receiver
+parameters keep their declared concrete types; only the receiver erases.
 
-**Parameterized protocols.** The head may declare type and value
-parameters, exactly as generic structs do (`protocol(T: Type) …`,
-`protocol(N: u32) …`). Parameters are in scope throughout the body.
-A parameterized protocol is a *family*; each canonical argument
-tuple names one protocol. Canonicalization resolves type aliases and
-folds value arguments to comparable constants.
+**Keyword member names.** Every reserved word except `inline` is a legal
+*bare* method name — including the keyword-classified type names (`f32`,
+`f64`); `inline` alone is spellable only in backtick form
+(`` `inline ``).
+
+**Default methods.** A method with a body is a default; impls may omit
+it (or override it by providing their own). Default bodies are compiled
+**per conformer**, against the concrete `Self`, so a call
+`self.method(…)` inside a default body resolves statically against the
+conformer. Dynamic dispatch happens at the outer call site only — the
+vtable slot for a defaulted method points at that conformer's compiled
+instance.
+
+**Parameters.** The head may declare type and value parameters, exactly
+as generic structs do (`constraint(T: Type) …`, `interface(N: u32) …`).
+Parameters are in scope throughout the body. A parameterized declaration
+is a *family*; each canonical argument tuple names one constraint or one
+interface. Canonicalization resolves type aliases and folds value
+arguments to comparable constants.
 
 #### 3. Conformance — `impl`
 
@@ -1163,34 +1172,57 @@ impl Series($T) for Buffer(T) {            // blanket: one impl, a family of con
 }
 ```
 
-- `impl` blocks are top-level declarations. Conformance is
-  retroactive: any module may implement any protocol for any type
-  with canonical identity — nominal types, and structural composites
-  of them (`[]T`, `[N]T`, fn types). Conformer identity is canonical
-  type identity; structural types canonicalize structurally.
-- In a blanket impl, `$T` introduces the parameter at its first
-  mention; later mentions are bare references.
+- `impl` blocks are top-level declarations. Conformance is retroactive:
+  any module may implement any constraint or interface for any type with
+  canonical identity. Conformer identity is canonical type identity;
+  structural types canonicalize structurally.
+- A **constraint** head takes structs, untagged unions, enums, builtins,
+  structural composites (`[]T`, `[N]T`, fn types), **and interface
+  types** as conformers.
+- An **interface** head takes concrete conformers. `impl Q for I` with
+  both `Q` and `I` interfaces is refused — an interface handle is not a
+  concrete type, and re-erasure (§6.4) is the conversion between them.
+- In a blanket impl, `$T` introduces the parameter at its first mention;
+  later mentions are bare references.
 - Impl methods also register as ordinary methods of the type
   (`Point.fmt`), so concrete calls never pay dispatch. If the type
-  already declares a member (method or field) with the same name:
-  a method with the exact protocol signature satisfies conformance
-  and the impl may omit it (providing it anyway is a duplicate
-  definition error); any other same-name member is a compile error
-  at the impl — sx does not build overload sets across impl
-  registration.
-- An impl must provide every non-default method not already
-  satisfied by an exact-signature existing method.
-- **Coherence.** Duplicate `(protocol-instantiation, concrete type)`
-  pairs follow import-scoped visibility: a duplicate within one
-  compilation unit is an error at the impls, naming both; duplicates
-  across modules are diagnosed at a use site that sees both.
-  Colliding blankets are not diagnosed (nothing exists to collide
-  at).
+  already declares a member (method or field) with the same name: a
+  method with the exact signature satisfies conformance and the impl may
+  omit it (providing it anyway is a duplicate definition error); any
+  other same-name member is a compile error at the impl — sx does not
+  build overload sets across impl registration.
+- An impl must provide every non-default method not already satisfied by
+  an exact-signature existing method.
+- **Coherence.** Duplicate `(instantiation, conformer)` pairs follow
+  import-scoped visibility: a duplicate within one compilation unit is
+  an error at the impls, naming both; duplicates across modules are
+  diagnosed at a use site that sees both. Colliding blankets are not
+  diagnosed (nothing exists to collide at).
+
+**An interface type as a conformer.** An interface's own methods are
+members, so exact-signature satisfaction covers them: where the
+constraint's signatures are the interface's, the impl body is empty.
+
+```sx
+Sized :: constraint { size :: (self: *Self) -> i64; }
+Boxed :: interface { size :: (self: *Self) -> i64; }
+
+impl Sized for Boxed { }                   // 'size' is already a member
+```
+
+A constraint method mentioning `Self` past the receiver is not an
+interface member, so it needs a real body in the impl:
+
+```sx
+impl Ord for Boxed {
+    less :: (self: *Boxed, other: Boxed) -> bool { self.size() < other.size() }
+}
+```
 
 **Comptime-expanded conformance.** `impl` blocks participate in the
 ordinary top-level comptime declaration forms. An `inline if` gates
-conformance on comptime facts — the dead branch's impl never
-exists, joins no set, and emits nothing:
+conformance on comptime facts — the dead branch's impl never exists,
+joins no set, and emits nothing:
 
 ```sx
 inline if OS == .ios {
@@ -1200,10 +1232,10 @@ inline if OS == .ios {
 
 A top-level `inline for` unrolls one declaration group per comptime
 element — enumerated conformance over a curated list, with the
-reflection builtins supplying field-wise bodies. The iterable here
-is a comptime array of types; the capture binds each element as a
-comptime `Type` constant, usable in type position (the impl head,
-the receiver spelling) exactly like a `$T: Type` binding:
+reflection builtins supplying field-wise bodies. The iterable here is a
+comptime array of types; the capture binds each element as a comptime
+`Type` constant, usable in type position (the impl head, the receiver
+spelling) exactly like a `$T: Type` binding:
 
 ```sx
 Point  :: struct { x, y: f64; }
@@ -1214,7 +1246,7 @@ Widget :: struct { value: i64; }
 Buf :: struct { … }
 write_field :: (out: *Buf, name: string, v: any) { … }
 
-Serialize :: protocol vtable {
+Serialize :: interface {
     write :: (self: *Self, out: *Buf);
 }
 
@@ -1233,30 +1265,28 @@ inline for T in SERIALIZABLE {
 ```
 
 Each unrolled iteration is an ordinary impl with a concrete `T`:
-membership, coherence (two iterations landing on one `(P, T)` pair
-are the ordinary duplicate error, naming the unrolled sites), and
-every downstream rule apply to the expanded program unchanged. The
-curated-list form is the supported spelling for "one body, a chosen
-set of types" — the bound-blanket (`impl Show for $T/Ord`) is
-refused precisely because a list keeps the set explicit.
+membership, coherence (two iterations landing on one pair are the
+ordinary duplicate error, naming the unrolled sites), and every
+downstream rule apply to the expanded program unchanged. The
+bound-blanket (`impl Show for $T/Ord`) is not a supported form — the
+`for` target names a type constructor.
 
 **Expansion is monotone and deterministic.** Expansion only *adds*
-conformances — nothing retracts. Expansion-driving comptime may
-consult per-pair conformance facts (a probe, `has_impl`, a
-conversion), under the scheduling discipline of §6.9: positive
-facts answer immediately, negative answers wait for the impls that
-could answer them to be final, and an expansion that depends
-negatively on a fact it can still feed is the expansion-deadlock
-error. No reflection enumerates a protocol's conformers, at comptime
-or runtime — conformances are unobservable as collections.
+conformances — nothing retracts. Expansion-driving comptime may consult
+per-pair conformance facts (a probe, `T is C`, a conversion), under the
+scheduling discipline of §6.9: positive facts answer immediately,
+negative answers wait for the impls that could answer them to be final,
+and an expansion that depends negatively on a fact it can still feed is
+the expansion-deadlock error. No reflection enumerates a conformer set,
+at comptime or runtime — conformances are unobservable as collections.
 
-#### 4. Constraint protocols (the default kind)
+#### 4. Constraints
 
-A constraint protocol has **no runtime values**. It exists to bound
-generics and to serve as a compiler-recognized customization point.
+A constraint has **no runtime values**. It bounds generics and serves as
+a compiler-recognized customization point.
 
 ```sx
-Ord :: protocol {                             // constraint — the default kind
+Ord :: constraint {
     less :: (self: *Self, other: Self) -> bool;
 }
 impl Ord for i64 {
@@ -1266,7 +1296,7 @@ impl Ord for i64 {
 largest :: (xs: []$T/Ord) -> T { … }          // bound: any T conforming to Ord
 
 // Into, restated from §1:
-Into :: protocol(Target: Type) constraint {
+Into :: constraint(Target: Type) {
     convert :: (self: *Self, alloc: Allocator) -> Target;
 }
 // Dest-inferred `xx val` at a `T` slot, or `val.(T)` / `val.(T, alloc)`,
@@ -1275,484 +1305,370 @@ Into :: protocol(Target: Type) constraint {
 // pair and emits a direct call. `.(T)` funds from `context.allocator`.
 ```
 
-**Erasure refuses.** Every erasure spelling — implicit at a
-protocol-typed position, `xx`, postfix `.(P)` — is a compile error:
+**A constraint makes no value.** Every value spelling — a
+constraint-typed position, `xx`, postfix `.(C)` — is a compile error:
 
 ```sx
 o : Ord = 5;      // i64 conforms — but Ord has no values to make
 ```
 ```
-error: cannot make a value of 'Ord' — a constraint protocol has no
-       runtime values; use the concrete type, or a generic bound
-       ('$T/Ord') where polymorphism is needed
+error: cannot make a value of 'Ord' — a constraint has no runtime
+       values; use the concrete type, a generic bound ('$T/Ord'), or an
+       interface where a handle is needed
 ```
 
-The diagnostic guides the use site only: the ordinary fixes are
-staying concrete or binding through a constraint. It never suggests
-respelling the protocol's kind — whether `Ord` should have runtime
-values is its author's design decision, made at the declaration; a
-use site cannot judge it. The same refusal, with the same guidance,
-applies wherever a constraint protocol is used as a *storable*
-type: a field, array element, or generic type argument of a
-constraint-protocol type diagnoses at the declaration or
-instantiation site.
+The same refusal applies wherever a constraint is used as a *storable*
+type: a field, array element, or generic type argument of a constraint
+type diagnoses at the declaration or instantiation site.
 
-**Emission: none.** A constraint protocol produces no vtables, no
-tables, no metadata. Its methods exist only as monomorphized direct
-calls at use sites. Default methods are shared code in source only;
-each bound instantiation compiles them against the concrete `Self`.
+**Emission: none.** A constraint produces no vtables, no tables, no
+metadata. Its methods exist only as monomorphized direct calls at use
+sites. Default methods are shared code in source only; each bound
+instantiation compiles them against the concrete `Self`.
 
 **Edge cases.**
-- A marker constraint protocol (empty body) is legal; it partitions
-  types for overload/bound purposes and costs nothing.
-- `@identity` on a constraint protocol is refused (there are no
-  values to classify).
-- `Self`-in-signature methods are unrestricted — every use site
-  knows the concrete type.
-- `protocol_kind(P) == .constraint` (§7) lets a generic body reject
-  or specialize kinds via `inline if`.
+- A marker constraint (empty body) is legal; it partitions types for
+  overload/bound purposes and costs nothing.
+- `Self`-in-signature methods are unrestricted — every use site knows
+  the concrete type.
+- A constraint is a legal comptime `is` left operand: `Ord is interface`
+  and `Ord is struct` are both false, and a constraint matches no
+  category (§The `is` Operator).
 
-#### 5. Erased protocols — `vtable`
+#### 5. Interfaces
 
-##### 5.1 Value layout
+##### 5.1 Handle layout
 
 ```
-vtable:   { ctx: *void, __type_id: Type, __vtable: *Vtable }     3 words
+interface:  { ctx: *void, __type_id: Type, __vtable: *Vtable }    3 words
 
             ┌──────────┬────────────┬───────────┐
-Show value  │ ctx *────┼─►concrete  │ vtable *──┼─► global constant,
+Show handle │ ctx *────┼─►referent  │ vtable *──┼─► global constant,
             │          │  __type_id │           │    one per pair
             └──────────┴────────────┴───────────┘
 ```
 
-Slot 0 is the receiver address; slot 1 is the concrete type's id,
-stamped at erasure. The first two words are byte-identical to an
-`any` `{data, type_id}` — an erased protocol value *is* an `any` of
-its receiver, extended with dispatch information. `type_of`, the
-downcast, the type switch, and `@Protocol` all read this prefix.
+Slot 0 is the referent's address; slot 1 is the referent's concrete type
+id, stamped where the handle is built. The first two words are
+byte-identical to an `any` `{data, type_id}` — an interface handle *is*
+an `any` of its referent, extended with dispatch information. `type_of`,
+the downcast, the type switch, and `@Interface` all read this prefix.
 
-Vtables are global constants, one per `(protocol-instantiation,
-concrete type, impl)` — a parameterized erased protocol gets
-distinct vtables per instantiation (slot types differ, §5.6), and
-distinct impls of the same pair in visibility-disjoint modules (§3)
-each get their own. Within any one import scope exactly one impl is
-visible, so every erasure site selects one vtable deterministically.
-They emit on first erasure and are shared by every value erased
-through that impl; they are never allocated or freed at runtime.
+A handle **borrows**. The referent lives outside the handle, the handle
+carries no allocator and no ownership word, and copying a handle — `q :=
+p`, argument passing, returning, struct/array copying, storing into and
+reading out of containers — copies the three words and aliases the same
+referent. Nothing owns an interface value: no spelling allocates one,
+and `free` refuses one (§5.3).
 
-##### 5.2 Ownership classes
+Vtables are global constants, one per `(instantiation, concrete type,
+impl)` — a parameterized interface gets distinct vtables per
+instantiation, and distinct impls of the same pair in
+visibility-disjoint modules (§3) each get their own. Within any one
+import scope exactly one impl is visible, so every coercion site selects
+one vtable deterministically. They emit on first use of a pair and are
+never allocated or freed at runtime.
 
-Every erased protocol belongs to one of two classes:
+##### 5.2 View coercion
 
-- **value/own** (unmarked): erasure creates manually managed,
-  allocation-backed storage — a heap copy of the receiver, made only
-  under the explicit postfix spelling `.(P)` (funded by
-  `context.allocator`) or `.(P, alloc)` (a named fund). No other
-  spelling allocates: an implicit erasure is the demand diagnostic for
-  every operand shape. The handles over that storage may ALIAS it
-  (§5.3a); "owning erasure" names the operation and the storage's
-  discipline, not a per-handle claim. `*P` is the borrowed view.
-- **`@identity`**: for protocols whose runtime object *is* unique
-  state (an allocator, an io runtime). Values only ever borrow, in
-  every spelling; there is nothing to free.
+An interface-typed **target position** coerces its operand into a handle
+over the operand's own storage. The positions are: a call argument, a
+binding, a struct- or array-literal field initializer, a `push` field,
+an assignment, and the operand of a `?I` wrap.
 
-##### 5.3 Erasure spellings (value/own)
-
-`alloc` is an LVALUE naming an allocator; the copy allocates through
-it and pairs with `free(p, alloc)`.
-
-| spelling | receiver | result |
-|---|---|---|
-| `expr.(P)` / `expr.(P, alloc)` | concrete lvalue or rvalue | **owns** — independent heap copy |
-| `expr.(P)` / `expr.(P, alloc)` | `*Concrete` | **owns** — snapshot of the pointee |
-| `expr.(P, alloc)` | `P` (same protocol, value) | **owns** — clone: independent copy of the receiver (`rt_size_of(type_id)` bytes; vtable/fn words reused) |
-| `expr.(P, alloc)` | `*P` (same protocol) | **owns** — promotion: fresh ctx copy, vtable/fn words reused |
-| `expr.(P)` | `P` (same protocol, value) | no-op — an ordinary handle copy, aliasing (§5.3a) |
-| implicit / `xx` | any shape | **compile error** — the demand diagnostic |
-| any lvalue / pointer | at a `*P` target | **view** — borrows storage (§5.5) |
-
-Re-erasure to a *different* protocol (`p.(Q)`) is a conversion in
-its own right — see §6.4.
-
-##### 5.3a Copies alias; conversion allocates
-
-Only a CONVERSION allocates: the concrete-to-`P` rows of §5.3 and
-the re-erasures of §6.4. An ordinary same-protocol copy — `q := p`,
-argument passing, returning, struct/array/tuple copying, storing
-into and reading out of containers, a generic body copying a `P` —
-copies the handle itself and nothing else: no allocation, no second
-erasure. Every handle so copied aliases the SAME backing allocation.
-`p.(P, alloc)` (the same-protocol row of §5.3) is the explicit
-clone: a new backing allocation through `alloc` holding an
-independent shallow byte-copy of the concrete receiver.
-
-There are no compiler-enforced moves: protocol values are ordinarily
-copyable handles. A program may transfer responsibility by copying a
-handle and ceasing to use the source — a convention, not a checked
-property.
-
-The free discipline follows from aliasing: each owning backing
-allocation is freed exactly ONCE, through ANY one of its aliases,
-and the free invalidates every alias to that backing. Double-free,
-use-after-free, and allocator mismatch are unchecked errors under
-the ordinary pointer/manual-memory doctrine. The handle carries no
-allocator word and the allocation no header — pairing the free with
-the right allocator is the program's job (§5.4).
-
-```sx
-p := circle.(Show, a);  // allocation A: concrete-to-Show erasure through a
-q := p;                 // aliases A; no allocation
-r := p.(Show, a);       // allocation B: explicit shallow clone
-
-free(q, a);             // releases A; p and q are now invalid
-free(r, a);             // releases B
-```
-
-Borrowed representations sit outside this discipline: `@identity`
-values and `*P` views copy as borrowed handles over storage they
-never own (§5.2, §5.5) — there is nothing to free, and `free`
-refuses them (§5.4).
-
-The demand diagnostic exists because an implicit erasure would
-allocate silently: a copy of named storage the reader believes is
-shared, an alias of a pointee, or a fresh backing allocation for an
-rvalue. Allocation happens only where a spelling names the
-allocator:
-
-```sx
-Widget  :: struct { value: i64; }
-Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
-impl Sizable for Widget {
-    size :: (self: *Widget) -> i64 { self.value }
-}
-
-w := Widget{value = 7 };
-s : Sizable = w;      // error: 'w' is an lvalue and 'Sizable' values own
-                      // their storage — write the copy ('w.(Sizable)')
-                      // or pass a view ('*Sizable') for transient use
-t : Sizable = Widget{value = 8 };   // error: rvalue — an implicit
-                                    // erasure would silently heap-allocate
-s := w.(Sizable);                          // owning copy through context.allocator
-t := Widget{value = 8 }.(Sizable, arena);  // the rvalue's copy through a named fund
-```
-
-**Shallow-copy caveat.** Owning erasure copies the receiver's BYTES.
-Interior pointers (slices, strings, pointers) are copied as
-pointers; the copy and the source share their referents. Types whose
-deep state must not be shared belong behind `@identity` or a view.
-
-**`@identity` erasure** borrows in every spelling — decl targets,
-call arguments, struct-literal fields alike:
-
-```sx
-Rng :: protocol vtable @identity { next :: (self: *Self) -> u64; }
-Xorshift :: struct { state: u64; }
-impl Rng for Xorshift {
-    next :: (self: *Xorshift) -> u64 {
-        self.state = self.state ^ (self.state << 13);
-        self.state = self.state ^ (self.state >> 7);
-        self.state = self.state ^ (self.state << 17);
-        self.state
-    }
-}
-
-rng := Xorshift{state = 42 };
-a : Rng = rng;                      // borrow — no demand error, no copy
-b := rng.(Rng);                     // borrow, same value shape
-c : Rng = Xorshift{state = 7 };   // error: identity objects need a
-                                    // name; bind it first
-```
-
-The two-argument form `.(Rng, alloc)` refuses on an identity target
-— a borrow allocates nothing.
-
-##### 5.4 `free`
-
-`free` is one ordinary function, kind-dispatched at compile time via
-an inline type match. Its protocol arm reads the backing through
-`x.(@Protocol)`:
-
-- `free(p)` releases through `context.allocator` **as current at the
-  free**. If a different allocator was pushed since the erasure, the
-  free redirects to it (the context-drift hazard); pair the call
-  with the same ambient allocator the erasure ran under.
-- `free(p, allocator)` pairs the allocator explicitly, immune to
-  drift. The protocol value carries no allocator slot; the caller
-  supplies it.
-- `free` on an `@identity` value or a `*P` view is a compile error
-  (no owned backing; a view owns nothing).
-
-##### 5.5 Borrowed views — `*P`
-
-A pointer-to-protocol is the borrowed view of erased state, under
-the ordinary pointer doctrine (unchecked; valid while the pointee
-lives). Protocol methods dispatch through `*P` directly. Views build
-implicitly at `*P` positions:
-
-- a concrete lvalue builds the view in place — a hidden `P` value
-  (borrowing ctx = the lvalue's own address) materializes as a
-  temporary scoped to the enclosing function frame, and the `*P`
-  points at it; mutations through the view reach the original, and
-  the view stays valid to the end of the frame;
-- a pointer-to-concrete views its pointee (same hidden-value rule);
-- an owned protocol value lends a view via `*s`.
-
-An **rvalue** has no durable storage to borrow: both the
-annotated-local and argument forms are compile errors — never a
-reinterpretation of value bytes into a pointer slot.
-
-```sx
-Widget  :: struct { value: i64; }
-Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
-impl Sizable for Widget {
-    size :: (self: *Widget) -> i64 { self.value }
-}
-
-measure :: (v: *Sizable) -> i64 { v.size() }
-w := Widget{value = 7 };
-measure(w);                            // view in place — aliases w
-pv : *Sizable = w;                     // view over w, valid to end of frame
-pv : *Sizable = Widget{value = 1 };  // error: rvalue — nothing durable to borrow
-```
-
-##### 5.6 Dispatchability (per method)
-
-Erased dispatch requires a signature expressible with `Self`
-unknown. A method whose signature mentions `Self` anywhere beyond
-the receiver — at any depth, in parameters or return — has **no
-vtable slot**:
-
-| position | `Self` allowed? |
+| operand | result |
 |---|---|
-| receiver | yes (required) |
-| later parameter, any depth | no — method excluded from erased dispatch |
-| return type, any depth | no — method excluded from erased dispatch |
+| lvalue of a conforming concrete type | handle borrowing that storage in place |
+| `*T`, `T` conforming | handle borrowing the pointee |
+| `*I` | loads the handle out of the pointee |
+| a value already of type `I` | the handle, copied |
+| rvalue of a conforming concrete type | frame-scoped temporary; the handle borrows it |
 
-The protocol's own *parameters* are not `Self`: they are concrete
-per instantiation, so methods mentioning them keep their slots
-(`Conv :: protocol(T: Type) vtable { get :: (self: *Self) -> T; }`
-dispatches — each instantiation's vtable types the slot at its own
-`T`).
-
-An excluded method is still required of every impl, still callable
-on concrete receivers and through constraint bounds; calling it
-through an erased value is a compile error that points at the bound
-alternative. Because the excluded method is still a *member*, the
-call does NOT fall through to UFCS (§6.8) — members win, then the
-member's unavailability diagnoses:
+The `*I` arm is read before the pointer arm, so a `*I` operand yields
+the stored handle rather than a handle over the pointer.
 
 ```sx
-Point :: struct { x, y: f64; }
-Eq    :: protocol vtable { eq :: (self: *Self, other: Self) -> bool; }
-impl Eq for Point {
-    eq :: (self: *Point, other: Point) -> bool {
-        self.x == other.x and self.y == other.y
-    }
+Widget  :: struct { value: i64; }
+Sizable :: interface { size :: (self: *Self) -> i64; }
+impl Sizable for Widget {
+    size :: (self: *Widget) -> i64 { self.value }
 }
 
-p1 := Point{x = 1.0, y = 2.0 };
-p2 := Point{x = 3.0, y = 2.0 };
-e := p1.(Eq);
-e.eq(p2);            // error: 'eq' is unavailable on an erased 'Eq' value —
-                     // its parameter 'other: Self' has no expressible type here
-are_equal :: (a: $T/Eq, b: T) -> bool { a.eq(b) }    // fine
-are_equal(p1, p2);   // Self is the bound Point
+measure :: (v: Sizable) -> i64 { v.size() }
+
+w  := Widget{ value = 7 };
+s : Sizable = w;                    // borrows w in place
+measure(w);                         // same coercion at the argument
+measure(*w);                        // a pointer borrows its pointee
+t : Sizable = Widget{ value = 8 };  // frame-scoped temporary, borrowed
+u : Sizable = s;                    // the handle, copied — one referent
 ```
 
-A protocol always erases, whatever its methods: a marker protocol
-and an all-excluded protocol both produce legal values with an empty
-vtable — `type_of`, downcast, type switch, `@Protocol`, and `free`
-work without any dispatchable method. Slots index the dispatchable
-methods only, in declaration order. Non-receiver parameters keep
-their declared concrete types; only the receiver erases.
+An rvalue's temporary is scoped to the enclosing function frame. The
+temporaries a `[]I` variadic builds are scoped to the call (§6.7).
 
-#### 6. Cross-kind semantics
+**Explicit coercion.** `x.(I)` states the same coercion, over the same
+arms, at any expression position. There is no allocating form: `.(I,
+alloc)` is not a spelling.
+
+**The return-value spine.** The rvalue arm is refused on the spine of a
+returned expression — the temporary dies at the return. The spine is:
+
+- the returned expression itself;
+- the field and element initializers of an aggregate literal that IS the
+  returned expression;
+- the `?I` wrap operand on that spine;
+- both arms of an `if` or `match` in return position.
+
+The spine propagates from a `return` operand, and is **cleared** at
+call-argument lists, assignments, bindings, `push` fields, and nested
+function and closure bodies:
+
+```sx
+return f(Widget{});             // legal — an argument list clears the spine
+return a.make(Widget{});        // legal — same
+return S{ inner = Widget{} };   // refused — the literal is the returned expression
+```
+```
+error: cannot return a 'P' handle over a temporary — the handle borrows a
+       frame slot the caller outlives; bind the value where it lives, or
+       write it through 'Allocator.make' and return the handle over that
+```
+
+The refusal is a **spelling rule**, not a lifetime guarantee. The same
+expression written through a binding compiles:
+
+```sx
+r : Sizable = ---;
+r = Widget{ value = 1 };
+return r;                       // compiles; the handle outlives the temporary it borrows
+```
+
+That is the hazard of §5.4.
+
+**`.{ }` at an interface-typed target** is the **zero handle**: a null
+`ctx`, the bit pattern `?I` reads as absent. It is never a coercion of
+an empty aggregate.
+
+- At an ordinary (non-static) interface-typed target — a binding, an
+  assignment, a field initializer, a `push` field — it is legal.
+- At a static position (§6.6) it is refused.
+- On the return spine of a non-optional `-> I` it is refused; the
+  diagnostic names `?I`.
+- `return .{}` at `-> ?I` is the absent sentinel.
+
+##### 5.3 `free`
+
+`free` handles closures and slices. An interface handle owns nothing, so
+`free` refuses one, as it refuses a constraint-typed anything (there are
+no values at all) and any other argument kind.
+
+##### 5.4 Dangling borrows
+
+A handle borrows under the ordinary pointer doctrine: unchecked, valid
+while the referent lives. A handle that outlives its referent dangles.
+
+```sx
+collect :: (out: *List(View)) {
+    b := Button{ label = "ok" };
+    out.append(b);       // the handle borrows `b`, which dies at the return
+}
+```
+
+Struct fields, containers, and the Context snapshot a thread or fiber
+inherits all carry handles this way; keeping the referent alive is the
+program's job.
+
+#### 6. Semantics
 
 ##### 6.1 RTTI: `type_of`, downcast, type switch
 
-Every protocol value answers `type_of` with its receiver's concrete
-type id, read from slot 1. The downcast `p.(T)` and the type switch
-on a protocol subject follow the same source: a runtime type_id
-compare. There is no implicit opening of a protocol value; the type
-switch is the opening construct.
+Every handle answers `type_of` with its referent's concrete type id,
+read from slot 1. The downcast `p.(T)` and the type switch on a handle
+subject follow the same source: a runtime type_id compare. There is no
+implicit opening of a handle; the type switch is the opening construct.
 
-##### 6.2 `@Protocol`
+##### 6.2 `@Interface`
 
 ```sx
-@Protocol :: struct { ctx: *void; type_id: Type; }
+@Interface :: struct { ctx: *void; type_id: Type; }
 ```
 
-`p.(@Protocol)` (and `xx p` at a `@Protocol` target) builds the
-pair **field-wise per the operand's layout — never a bit
-reinterpret**: a prefix copy of the erased value.
+`p.(@Interface)` (and `xx p` at an `@Interface` target) builds the pair
+**field-wise per the operand's layout — never a bit reinterpret**: a
+prefix copy of the handle.
 
 ##### 6.3 The `any` bridge
 
-Boxing a protocol value into `any` yields a view of the **concrete
-receiver**: `{data = ctx, type_id = concrete}` — the value's byte
-prefix. The reverse direction is refused: a postfix assertion with a *protocol* target
-on an `any` receiver is a compile error (an `any`'s tag is always a
-concrete type; the assertion could only ever fail) — assert the
+Boxing a handle into `any` yields a view of the **referent**: `{data =
+ctx, type_id = concrete}` — the handle's byte prefix. The reverse
+direction is refused: a postfix assertion with an *interface* target on
+an `any` receiver is a compile error (an `any`'s tag is always a
+concrete type, so the assertion could only ever fail) — assert the
 concrete type or use a type switch.
 
-##### 6.4 Re-erasure — `p.(Q)` between protocols
+##### 6.4 Re-erasure — `p.(Q)` between interfaces
 
-Re-erasure to a different protocol is a direct conversion (a
-recovery target of the postfix engine), never a manual
-downcast-then-erase — the concrete type behind `p` is not statically
-known, so only the compiler can perform it. Semantics:
+Re-erasure to a different interface is a direct conversion (a recovery
+target of the postfix engine), never a manual downcast-then-erase — the
+concrete type behind `p` is not statically known, so only the compiler
+can perform it.
 
-- **Conformance check**: whether `p`'s concrete type implements `Q`
-  is a runtime fact; the assertion temperaments apply (unconsumed
-  `p.(Q)` panics, `try p.(Q)` is graceful, `p.(?Q)` is soft). The
-  check and the result's vtable/fn-ptr words come from a link-time
-  `type_id → Q-dispatch` table holding exactly the pairs with a
-  **program-unique** impl. A pair with visibility-disjoint duplicate
-  impls (§3) is absent from the table: the conversion fails as
-  non-conforming — the site-local visibility that arbitrates
-  ordinary erasure does not exist at a dynamic conversion, and no
-  other arbiter would be sound.
-- **`@identity` `Q` refuses at compile time**: identity conformers
-  are named objects, and a dynamic conversion cannot prove the
-  referent is one.
-- **Result ownership follows `Q`'s class**: value/own `Q` → the
-  two-argument `p.(Q, alloc)` makes an owning copy of the receiver
-  (`rt_size_of` via the concrete type id) through `alloc`, pairing
-  with `free(q, alloc)`; the one-argument `p.(Q)` refuses — an
-  owning result names its allocator.
-- `Q == P` degenerates to the same-protocol rows of §5.3.
+The conformance check and the result's vtable word are one runtime read
+of a link-time `(type_id, Q) → vtable-or-null` table over the pairs with
+a **program-unique** impl. The result handle reuses `p`'s ctx and
+type_id and takes the table's vtable-or-null (same referent, new
+dispatch word). A pair with visibility-disjoint duplicate impls (§3) is
+absent from the table and reads null: the site-local visibility that
+arbitrates an ordinary coercion does not exist at a dynamic conversion.
+The table is built per `Q` when a re-erasure to `Q`, a runtime
+conformance `is` against `Q`, or a `p.(?Q)` probe on an erased
+receiver exists; construction waits on the impl facts of §6.9.
+
+All three temperaments read the same null: unconsumed `p.(Q)` panics,
+`try p.(Q)` raises, `p.(?Q)` answers null. `Q == I` is the identity
+handle copy of §5.2.
 
 ##### 6.5 Equality
 
-`==`/`!=` are not defined on protocol values of any kind (compile
-error, as on `any`): two handles may reference one object, equal
-bytes may be distinct objects. Compare `type_of`, downcast and
-compare concretely, or define a protocol method. Map keys follow
-from `==`: refused.
+`==`/`!=` are not defined on interface handles (compile error, as on
+`any`): two handles may reference one referent, equal bytes may be
+distinct referents. Compare `type_of`, downcast and compare concretely,
+or define an interface method. Map keys follow from `==`: refused.
 
-##### 6.6 Protocol values in aggregates, generics, and the Context
+##### 6.6 Interfaces in aggregates, generics, statics, and the Context
 
-Erased protocol types are ordinary storable types: struct fields,
-array elements, returns, and **generic type arguments** —
-`List(Show)` is a list of 3-word owning values, `List(Hasher)` a
-list of 2 + N-word ones, and `size_of` answers per §5.1. A protocol
-type may itself be an instantiation argument of another protocol
-(`Series(View)`). Constraint protocols are refused in every storable
+Interface types are ordinary storable types: struct fields, array
+elements, returns, and **generic type arguments** — `List(Show)` and
+`List(Hasher)` are both lists of 3-word handles, and `size_of` answers
+per §5.1. An interface type may itself be an instantiation argument of
+another (`Series(View)`). Constraints are refused in every storable
 position (§4).
 
-Context fields may be protocol-typed only at an `@identity`
-protocol: context defaults are mandatory and
-comptime-evaluable, the fold of a protocol-typed default is the
-identity erasure of a named instance global — a borrow, never null
-(null ctx is exclusively the `?P` absent sentinel) — and an owning
-constant cannot exist before `main`, so a value/own protocol-typed
-context field is refused at its declaration. Threads and fibers inherit the
-context by snapshot; a snapshot copies handles, not referents — a
-borrow outliving its referent is the standard hazard. `context.allocator`
-rides the same snapshot, so the spawning container — not the language —
-is responsible for pushing an allocator that outlives the spawned fiber
-or thread when the ambient one does not.
+**Static positions.** Four positions build their handle before `main`
+runs: a module-scope global's initializer, an `@context_extend` default,
+an interface-typed struct-field default, and a field or element of a
+statically-constructed value. In each of them the one operand that
+coerces names a **module-scope global**:
+
+```sx
+c_allocator : CAllocator = .{};
+@context_extend allocator: Allocator = c_allocator;    // bare global
+fallback : Allocator = mem.c_allocator;                // module-qualified
+```
+
+The initializer is a bare or module-qualified path whose **root** is a
+module namespace, with `xx` recursing into it. A path rooted at a global
+*value* (`g.field`) is refused — the coercion needs the global's own
+symbol. Every other operand refuses, `@run` included: the position is
+judged on the written shape. `.{ }` is refused here, and legal at an
+ordinary interface-typed struct field (§5.2).
+
+`push .{ allocator = arena }` is not a static position: a `push` field
+is an ordinary interface-typed target over a frame-scoped Context.
+
+**Context.** Context defaults are mandatory and comptime-evaluable, and
+an interface-typed default folds to the handle over the named global — a
+borrow, never null (a null ctx is exclusively the `?I` absent
+sentinel). Threads and fibers inherit the context by snapshot; a
+snapshot copies handles, not referents (§5.4). `context.allocator` rides
+the same snapshot, so the spawning container — not the language — is
+responsible for pushing an allocator that outlives the spawned fiber or
+thread when the ambient one does not.
 
 ##### 6.7 Packs and variadics
 
-- `..xs: []P` (runtime variadic, erased element): each trailing
-  argument erases per its kind's rules and packs into a runtime
-  `[N]P`; `xs[i].method()` dispatches dynamically.
-- `..xs: P` (comptime heterogeneous pack): each element keeps its
-  concrete type; calls monomorphize — all kinds, including
-  `constraint`, participate.
+- `..xs: []I` (runtime variadic, erased element): each trailing argument
+  coerces per §5.2 and packs into a runtime `[N]I`;
+  `xs[i].method()` dispatches dynamically. An rvalue argument's
+  temporary is scoped to the **call**.
+- `..xs: I` and `..xs: C` (comptime heterogeneous pack): each element
+  keeps its concrete type and calls monomorphize. A pack head may be
+  either declaration. An element already typed as the head interface
+  copies (identity); it does not require `impl I for I`.
 
 ##### 6.8 UFCS
 
-A protocol-typed receiver dispatches its own members first and falls
+An interface-typed receiver dispatches its own members first and falls
 through to `ufcs` functions only for **non-members**
-(`context.allocator.create(Session)` — `create` takes the protocol
-value as its first parameter). A member excluded from dispatch is
-still a member: the call diagnoses per §5.6 rather than falling
-through. Constraint-bound receivers resolve at monomorphization.
+(`context.allocator.create(Session)` — `create` takes the handle as its
+first parameter). Constraint-bound receivers resolve at
+monomorphization.
 
 ##### 6.9 Compile-time execution
 
-Comptime protocol values are **symbolic**: the VM carries `{ctx,
-concrete type, impl}` — the **impl selected at the erasure site**,
-since visibility-disjoint duplicate impls (§3) make "the concrete
-type's impl" ambiguous without it. Vtable addresses are link-time
-artifacts that do not exist during compilation. Erasure at comptime
-is legal for every value kind under each kind's own rules; dispatch
-resolves directly against the carried impl — the VM devirtualizes,
-exactly as constraint resolution does — including through Context
-fields such as the ambient allocator. `protocol_kind`,
-`is_identity`, and all monomorphized machinery work unchanged.
+Comptime handles are **symbolic**: the VM carries `{ctx, concrete type,
+impl}` — the **impl selected at the coercion site**, since
+visibility-disjoint duplicate impls (§3) make "the concrete type's impl"
+ambiguous without it. Vtable addresses are link-time artifacts that do
+not exist during compilation. Coercion at comptime is legal under the
+rules of §5.2; dispatch resolves directly against the carried impl — the
+VM devirtualizes, exactly as constraint resolution does — including
+through Context fields such as the ambient allocator.
 
-Comptime execution is **per-evaluation**: each evaluation (a
-driver, an ordinary `@run`) owns its VM, heap, and **VM-local
-Context**; suspension parks and resumes *that* evaluation — its VM
-state is never shared with or visible to another evaluation, so
-scheduler order cannot leak through Context or heap state. The
-Context's protocol-typed fields reference VM-owned instances, whose
-mutations (an allocator's bookkeeping, an arena's cursor) are
-execution-local and discarded when the evaluation completes —
-comptime code cannot mutate globals: the VM reads globals into
-VM-local copies and never writes back. A VM object **corresponds**
-to a declared global by provenance: it is the object the VM created
-to represent that global when first referenced (the context-default
-fold included); correspondence survives borrows, not copies — a
-struct copy is a new object and escapes through the temporary path.
+Comptime execution is **per-evaluation**: each evaluation (a driver, an
+ordinary `@run`) owns its VM, heap, and **VM-local Context**; suspension
+parks and resumes *that* evaluation — its VM state is never shared with
+or visible to another evaluation, so scheduler order cannot leak through
+Context or heap state. The Context's interface-typed fields reference
+VM-owned instances, whose mutations (an allocator's bookkeeping, an
+arena's cursor) are execution-local and discarded when the evaluation
+completes — comptime code cannot mutate globals: the VM reads globals
+into VM-local copies and never writes back. A VM object **corresponds**
+to a declared global by provenance: it is the object the VM created to
+represent that global when first referenced (the context-default fold
+included); correspondence survives borrows, not copies — a struct copy
+is a new object and escapes through the temporary path.
 
-**Scheduling.** Comptime entangled with conformance — the conditions
-and iterables of top-level `inline if`/`inline for`, any `@run`
-they transitively reference, and body-level comptime reached by
+**Scheduling.** Comptime entangled with conformance — the conditions and
+iterables of top-level `inline if`/`inline for`, any `@run` they
+transitively reference, and body-level comptime reached by
 monomorphizing an impl — evaluates under one dataflow discipline:
 
-- **Impl presence only grows**, so a *positive* fact — a probe
-  answering true, a `has_impl` hit — is readable the moment it
-  exists and can never be invalidated. A *negative* answer — a soft
-  probe yielding null — is utterable only once the impls that could
-  answer it are **final**: no unexpanded `inline if`/`inline for`
-  branch can still contribute one. Contribution is judged
-  syntactically and conservatively: an unexpanded body mentioning
-  `impl P for …` contributes to `P`, and one holding an `@import`
-  contributes the whole surface of the module it names — the impls,
-  declaration names and `@context_extend`s that module authors,
-  transitively through its own imports and branches — because
-  selecting the branch is what brings them in.
-- **Erased-target conversion facts depend on impl multiplicity**
-  (the program-unique rule, §6.4), and uniqueness is not monotone —
-  a later impl destroys it. An erased-target conversion therefore
-  gates on finality of the target protocol's pairs in **both**
-  polarities.
-- **The declaration namespace follows the same rule**: a
-  name-lookup hit is monotone-safe (declarations are never
-  removed); a miss in code under this discipline suspends until the
-  scope is final — no unexpanded branch can still declare the name.
+- **Impl presence only grows**, so a *positive* fact — a probe answering
+  true, a `T is C` hit — is readable the moment it exists and can never
+  be invalidated. A *negative* answer — a soft probe yielding null — is
+  utterable only once the impls that could answer it are **final**: no
+  unexpanded `inline if`/`inline for` branch can still contribute one.
+  Contribution is judged syntactically and conservatively: an unexpanded
+  body mentioning `impl P for …` contributes to `P`, and one holding an
+  `@import` contributes the whole surface of the module it names — the
+  impls, declaration names and `@context_extend`s that module authors,
+  transitively through its own imports and branches — because selecting
+  the branch is what brings them in.
+- **Re-erasure facts depend on impl multiplicity** (the program-unique
+  rule, §6.4), and uniqueness is not monotone — a later impl destroys
+  it. A re-erasure therefore gates on finality of the target interface's
+  pairs in **both** polarities.
+- **The declaration namespace follows the same rule**: a name-lookup hit
+  is monotone-safe (declarations are never removed); a miss in code
+  under this discipline suspends until the scope is final — no
+  unexpanded branch can still declare the name.
 - **The program Context is a single layout**, so an evaluation that
-  reads it waits for that layout to settle: while any unexpanded
-  branch could still declare a `@context_extend`, the field set is
-  not final, and the evaluation suspends against Context-ready
-  exactly as it suspends against an open conformer set.
-  Contribution is judged syntactically, like an `impl`'s. Once
-  nothing can contribute, the decided declaration space registers,
-  the deterministic layout assembles, and the default context is
-  built from the selected branches' defaults — an untaken branch
-  contributes no field.
-- An evaluation needing a not-yet-utterable answer **suspends** —
-  its VM state parks as a bookmark against the facts it awaits
-  (presence of a pair or name, finality of a set or scope) — and
-  the scheduler proceeds; the bookmark resumes when a fact fires.
-  Every instruction runs exactly once: nothing is speculative,
-  nothing re-runs, no evaluation ever observes a fact that later
-  changes.
+  reads it waits for that layout to settle: while any unexpanded branch
+  could still declare a `@context_extend`, the field set is not final,
+  and the evaluation suspends against Context-ready exactly as it
+  suspends against an open conformer set. Contribution is judged
+  syntactically, like an `impl`'s. Once nothing can contribute, the
+  decided declaration space registers, the deterministic layout
+  assembles, and the default context is built from the selected
+  branches' defaults — an untaken branch contributes no field.
+- An evaluation needing a not-yet-utterable answer **suspends** — its VM
+  state parks as a bookmark against the facts it awaits (presence of a
+  pair or name, finality of a set or scope) — and the scheduler
+  proceeds; the bookmark resumes when a fact fires. Every instruction
+  runs exactly once: nothing is speculative, nothing re-runs, no
+  evaluation ever observes a fact that later changes.
 - **Quiescence is the error**: if the scheduler stops with parked
-  evaluations remaining — whether the wait runs through one
-  expansion or several — the program is refused, naming every
-  parked evaluation and the facts it awaits. The self-feeding
-  expansion is the simplest instance; a parked state admitting more
-  than one consistent outcome is genuinely ambiguous, and sx
-  refuses rather than electing a fixpoint.
+  evaluations remaining — whether the wait runs through one expansion or
+  several — the program is refused, naming every parked evaluation and
+  the facts it awaits. The self-feeding expansion is the simplest
+  instance; a parked state admitting more than one consistent outcome is
+  genuinely ambiguous, and sx refuses rather than electing a fixpoint.
 
   ```sx
   GPA :: struct { … }
-  Serialize :: protocol vtable { write :: (self: *Self, out: *Buf); }
+  Serialize :: interface { write :: (self: *Self, out: *Buf); }
   HAS :: @run { g := GPA{… }; g.(?Serialize) != null };
   inline if !HAS { impl Serialize for GPA { … } }
   ```
@@ -1763,163 +1679,146 @@ monomorphizing an impl — evaluates under one dataflow discipline:
          it feeds
   ```
 
-- A suspended **hard** operation — a dispatch, an unconsumed
-  conversion, an erasure — whose awaited fact never arrives
-  diagnoses at finality with the ordinary error at the operation's
-  site. A suspended **soft** probe answers null.
+- A suspended **hard** operation — a dispatch, an unconsumed conversion,
+  a coercion — whose awaited fact never arrives diagnoses at finality
+  with the ordinary error at the operation's site. A suspended **soft**
+  probe answers null.
 
-**The probe.** A soft protocol target on a *concrete* receiver —
-`gpa.(?Serialize)` — answers conformance directly, no value
-ceremony; `has_impl(P, T)` is the same probe spelled at type level,
-under the same rules. What it answers is **site-local impl
-visibility** — the same static fact that decides whether the site
-could erase, and a different question from the dynamic re-erasure
-check, which consults program-wide uniqueness (§6.4). Under the
-discipline, a negative gates on declaration-space finality — impls
-are declarations. A probe is not a value use: it arms the coherence
-diagnostics of the instantiation it queries (§3) and reaches
-nothing for emission.
+**The probe.** A soft interface target on a *concrete* receiver —
+`gpa.(?Serialize)` — answers conformance directly, no value ceremony.
+What it answers is **site-local impl visibility** — the same static fact
+that decides whether the site could coerce, and a different question
+from the dynamic re-erasure check, which consults program-wide
+uniqueness (§6.4). Under the discipline, a negative gates on
+declaration-space finality — impls are declarations. A probe is not a
+value use: it arms the coherence diagnostics of the instantiation it
+queries (§3) and reaches nothing for emission.
 
-**The phase law.** All comptime execution not under the discipline
-runs **after the declaration space is final**, so every such `@run`
-sees the same world and **cannot enlarge it**: an operation
-requiring a conformance no impl provides is a compile error at the
-operation's site rather than a fact the run publishes. Post-fixpoint
-code may instantiate types freely for every non-protocol purpose.
-Conformances remain unobservable as *collections* at every phase (no
-enumeration reflection exists, §3); the granted facility is per-pair
-facts — a probe, `has_impl`, a conversion — under the discipline
-above.
+**The phase law.** All comptime execution not under the discipline runs
+**after the declaration space is final**, so every such `@run` sees the
+same world and **cannot enlarge it**: an operation requiring a
+conformance no impl provides is a compile error at the operation's site
+rather than a fact the run publishes. Post-fixpoint code may instantiate
+types freely for every other purpose. Conformances remain unobservable
+as *collections* at every phase (no enumeration reflection exists, §3);
+the granted facility is per-pair facts — a probe, `T is C`, a conversion
+— under the discipline above.
 
-**Escape.** A comptime result that carries a protocol value into
-the runtime image resolves per the referent:
+**Escape.** A comptime result carries a handle into the runtime image at
+a `::` comptime constant, and at an interface-typed field inside an
+escaping comptime aggregate. A `:` global's own initializer is the
+static position of §6.6 and never runs this path. The escape resolves
+per the referent:
 
-- a referent that *is* a declared global — a named instance, the
-  object behind a context default — relocates `ctx` to that
-  global's symbol: nothing is copied, mutability is preserved, and
-  the global's runtime bytes are its declared initializer
-  (comptime-era mutations were execution-local and vanish; two
-  evaluations whose instances diverged both relocate to the one
-  global, and neither state wins). An interior pointer *into* such
-  an instance's VM state refuses to escape ("points into a global's
-  compile-time state, which is discarded");
-- a comptime **temporary** referent materializes as an anonymous
-  image global in writable data, deduplicated by comptime object
-  identity *within the evaluation* (cross-evaluation temporaries
-  are distinct objects and never deduplicate) — two handles that
-  shared one object share one global, so borrow semantics survive
-  the escape. Escaped temporaries are literal-class static data:
-  they belong to no allocator, and freeing one through any
-  allocator is the ordinary mispairing hazard — an escaped
-  structure carrying both an allocator handle and comptime-made
-  allocations is self-inconsistent by construction, and the frees
-  simply must not happen.
-  Materialization is **type-directed** machinery this design
-  requires: the referent's bytes are walked by its concrete
-  layout; nested protocol handles recurse (their referents
-  materialize and both of their words resolve), interior pointers
-  recurse, function references resolve to their symbols; an escape
-  whose carried value cannot be walked is refused;
-- the value's numeric word resolves at link — a tag, or for an
-  erased value the `(protocol, type, impl)` vtable of the impl
-  carried from its erasure site;
-- an **owning** erased value cannot escape — no runtime allocator
-  owns a compile-time copy, so carrying one into the image is a
-  compile error ("bind the concrete value; owning erasure happens
-  at runtime");
+- a referent that *is* a declared global — a named instance, the object
+  behind a context default — relocates `ctx` to that global's symbol:
+  nothing is copied, mutability is preserved, and the global's runtime
+  bytes are its declared initializer (comptime-era mutations were
+  execution-local and vanish; two evaluations whose instances diverged
+  both relocate to the one global, and neither state wins). An interior
+  pointer *into* such an instance's VM state refuses to escape ("points
+  into a global's compile-time state, which is discarded");
+- a comptime **temporary** referent materializes as an anonymous image
+  global in writable data, deduplicated by comptime object identity
+  *within the evaluation* (cross-evaluation temporaries are distinct
+  objects and never deduplicate) — two handles that shared one object
+  share one global, so borrow semantics survive the escape. Escaped
+  temporaries are literal-class static data: they belong to no
+  allocator, and freeing one through any allocator is the ordinary
+  mispairing hazard. Materialization is **type-directed**: the
+  referent's bytes are walked by its concrete layout; nested handles
+  recurse (their referents materialize and all of their words resolve),
+  interior pointers recurse, function references resolve to their
+  symbols; an escape whose carried value cannot be walked is refused;
+- the handle's third word resolves at link to the `(interface, type,
+  impl)` vtable of the impl carried from its coercion site;
 - an escape is a **value use** of its instantiation (§6.6).
 
 #### 7. Reflection
 
-- `protocol_kind(P) -> {constraint, vtable}` —
-  compile-time only; folds in `inline if`.
-- `is_identity(P)` — true for `@identity` protocols; false for
-  every other type. Compile-time only.
-- A runtime `Type` value always tags a concrete type, never a bare
-  protocol type. Composites *containing* protocol types (`*Show`,
-  `[]View`) are concrete types and get tags like any other
-  composite.
+- A directly reified `Type` may name an **interface or a constraint**:
+  `tv : Type = Show;` and `cv : Type = Ord;` are both valid. A `Type`
+  derived from a value (`type_of`) always tags the concrete referent.
+- A reified constraint answers `type_name`. `C is interface` is false,
+  `C is struct` is false, and it matches no category.
+- Composites *containing* an interface type (`*Show`, `[]View`) are
+  concrete types and get tags like any other composite.
 
 #### 8. Internals walkthrough
 
-**Symbols.** Vtables: one global constant per
-`(protocol-instantiation, concrete type, impl)`, every identity
-spelled in full — `Conv(f32)`/`Conv(i64)` never share a vtable
-symbol (their slot types differ), and neither do two
-visibility-disjoint impls of one pair (their bodies differ; the
-impl's declaring module is part of the symbol). Canonical identity
-is structural on the argument tuple after alias resolution — no
+**Symbols.** Vtables: one global constant per `(instantiation, concrete
+type, impl)`, every identity spelled in full — `Conv(f32)`/`Conv(i64)`
+never share a vtable symbol (their slot types differ), and neither do
+two visibility-disjoint impls of one pair (their bodies differ; the
+impl's declaring module is part of the symbol). Canonical identity is
+structural on the argument tuple after alias resolution — no
 display-name truncation participates in any symbol or cache key.
 
-**Emission points.** Vtables emit on first erasure of a pair.
-Marker/empty vtables are emitted like any other (a protocol always
-erases on the erased kind).
+**Emission points.** Vtables emit on first use of a pair. Marker/empty
+vtables are emitted like any other. The `(type_id, Q) → vtable-or-null`
+re-erasure table of §6.4 emits per target interface when a re-erasure
+to `Q`, a runtime conformance `is` against `Q`, or a `p.(?Q)` probe on
+an erased receiver exists. The result handle reuses `p`'s ctx and
+type_id and takes the table's vtable-or-null (same referent, new
+dispatch word).
 
 Coherence (§3) is diagnosed before codegen, so every conformance
 diagnostic is an ordinary compile error, never a link error.
 
-**Dispatch call sequences** (backend pseudocode, not sx syntax):
+**Dispatch call sequence** (backend pseudocode, not sx syntax):
 
 ```
-vtable:  load p.vtable → load slot k → indirect call(ctx, args…)
+load p.vtable → load slot k → indirect call(ctx, args…)
 ```
 
-**`free`.** One function, compile-time kind-dispatched by an inline
-type match: a protocol arm (ctx via `@Protocol`, gated on the
-ownership class — `@identity` refuses), a closure arm, a slice arm;
-every other argument kind is a compile error.
-
-**The standard `Allocator` is stdlib-owned.** Its declaration —
-kind, attributes, method set — belongs to `std/core.sx`, not to the
-compiler. The compiler-driven heap paths (an owning erasure's copy,
-the implicit-context allocation, the Obj-C `+alloc`/`-dealloc` IMPs)
-find the allocator by NAME on the assembled `Context` and go through
-the ordinary protocol dispatch for whatever kind they find there, so
-respelling `Allocator` with a different kind is a library edit that
-requires no compiler change.
+**The standard `Allocator` is stdlib-owned.** Its declaration — the
+head word and the method set — belongs to `std/core.sx`, not to the
+compiler. The compiler-driven paths (the implicit-context allocation,
+the Obj-C `+alloc`/`-dealloc` IMPs) find the allocator by NAME on the
+assembled `Context` and go through ordinary dispatch, so the library
+owns the declaration and no compiler change follows an edit to it.
 
 
 #### 9. Edge-case catalog
 
 | case | disposition |
 |---|---|
-| marker protocol (empty body) | constraint: free partition. erased: erases with empty vtable; RTTI/free work |
-| all methods `Self`-excluded (erased kind) | erases fine; every method call through the value diagnoses; concrete/bound calls fine |
-| duplicate impl `(P-instantiation, T)` | import-scoped (§3). Both impls in one module: error at the impls on every kind |
-| impl for a protocol type itself (`impl P for Q`) | protocols are not concrete types; refused |
+| marker declaration (empty body) | constraint: free partition. interface: erases with empty vtable; RTTI works |
+| `Self` past the receiver in an interface body | compile error at the declaration; the constraint form carries it |
+| duplicate impl `(instantiation, conformer)` | import-scoped (§3). Both impls in one module: error at the impls |
 | impl for a structural type (`impl Series($T) for []T`) | legal — conformer identity is canonical type identity |
+| `impl C for I` (`C` a constraint, `I` an interface) | legal; the interface's own methods satisfy exact-signature members, so the body may be empty |
+| `impl Q for I` (both interfaces) | refused — an interface handle is not a concrete conformer; `p.(Q)` is the conversion |
 | impl bounded by a constraint (`impl Show for $T/Ord`) | not a supported form; the `for` target names a type constructor |
-| protocol-typed protocol member (`m :: (self: *Self, v: View)`) | ordinary — the parameter erases per `View`'s kind at the call |
-| bare `Self` later parameter | excluded from erased dispatch |
-| `Self` at depth in parameter or return (`[]Self`, `?Self`, `Buffer(Self)`) | excluded from dynamic dispatch on every kind; concrete/bound calls fine |
-| rvalue at `P` (value/own), implicit / `xx` | compile error — the demand diagnostic; the owning copy is postfix-only (`.(P)` / `.(P, alloc)`) |
-| rvalue at `*P` | compile error — nothing durable to borrow |
-| rvalue at `P` (`@identity`) | compile error — identity objects need a name |
-| `free` on: view / identity / constraint-typed anything | compile error in each case (distinct wordings; constraint has no values at all) |
-| `p.(@Protocol)` | field-wise build per layout |
-| `p.(Q)`, different protocol | direct re-erasure conversion (§6.4); temperaments apply; result ownership per `Q`'s class; `@identity` targets refuse at compile time; the unique-impl table resolves the check — a duplicated pair converts as non-conforming |
-| `s.(P)`, operand already `P` | value/own: independent owning copy of the receiver |
-| `any` holding a protocol value | never arises from boxing a protocol value (that boxes the receiver); `xx *s` boxes a `*Show` — a concrete composite type with its own tag |
-| `av.(P)` — protocol target on `any` receiver | compile error, every kind with values; constraint refuses as constraint |
-| `==` on protocol values / protocol map keys | compile error, every kind |
-| `?P` | null ctx = absent, all value kinds; vtable words meaningless while null |
-| generic type argument `List(P)` | erased: legal, element = the protocol value layout. constraint: refused at the instantiation site |
-| protocol as a protocol-instantiation argument (`Series(View)`) | legal — a type argument like any other |
-| value parameters in a protocol head (`protocol(N: u32) vtable`) | as generic structs; canonicalized by folded value equality |
-| protocol values inside `@run` / comptime execution | legal, symbolic — `{ctx, concrete type, impl}`, VM-devirtualized dispatch; under the §6.9 discipline, negative probes, erased-target conversions (both polarities), and name-lookup misses suspend until finality |
+| interface-typed member (`m :: (self: *Self, v: View)`) | ordinary — the parameter coerces per §5.2 at the call |
+| rvalue at `I` | frame-scoped temporary, borrowed (§5.2) |
+| rvalue at `I` on the return-value spine | compile error — the temporary dies at the return; the diagnostic names `Allocator.make` |
+| `.{ }` at an ordinary interface target | the zero handle: null ctx, `?I`-absent bit pattern |
+| `.{ }` at a static interface position | compile error (§6.6) |
+| `.{ }` on the return spine of `-> I` | compile error, naming `?I`; `return .{}` at `-> ?I` is the absent sentinel |
+| static interface position whose initializer is `g.field` | compile error — the path root must be a module namespace |
+| `free` on: an interface handle / constraint-typed anything | compile error in each case (a handle owns nothing; a constraint has no values at all) |
+| `p.(@Interface)` | field-wise build per layout |
+| `p.(Q)`, different interface | runtime read of the `(type_id, Q)` table (§6.4); all three temperaments read the same null |
+| `s.(I)`, operand already `I` | the handle, copied |
+| `any` holding an interface handle | never arises from boxing a handle (that boxes the referent) |
+| `av.(I)` — interface target on an `any` receiver | compile error; a constraint target refuses as a constraint |
+| `==` on handles / handles as map keys | compile error |
+| `?I` | null ctx = absent; the vtable word is meaningless while null |
+| generic type argument `List(I)` | legal, element = the 3-word handle. `List(C)`: refused at the instantiation site |
+| interface as an instantiation argument (`Series(View)`) | legal — a type argument like any other |
+| value parameters in a head (`interface(N: u32)`) | as generic structs; canonicalized by folded value equality |
+| handles inside `@run` / comptime execution | legal, symbolic — `{ctx, concrete type, impl}`, VM-devirtualized dispatch; under the §6.9 discipline, negative probes, re-erasures (both polarities), and name-lookup misses suspend until finality |
 | scheduler quiesces with parked evaluations (self-feeding or mutual) | compile error — expansion deadlock, every parked evaluation and its awaited facts named (§6.9) |
-| comptime protocol value escaping into the image | declared-global referents relocate in place (mutable); comptime temporaries become writable anonymous image globals, deduped by object identity, nested handles recursing; OWNING erased values cannot escape — compile error (§6.9) |
+| comptime handle escaping into the image | declared-global referents relocate in place (mutable); comptime temporaries become writable anonymous image globals, deduped by object identity, nested handles recursing (§6.9) |
 | type declared inside a top-level `inline for` body | flattens to module scope — duplicate across iterations diagnoses; parameterize the type (`Vec :: struct($N: u32)`) instead of re-declaring per iteration |
-| `inline for` conformance-list elements | concrete types only (a `Type` never tags a protocol, §7); `@run`-computed lists are legal but expansion-driving (§6.9 scheduling); duplicate elements and nested unrolls diagnose with cursor provenance ("T = Point, i = 1") |
-| conformer method name colliding with an existing member of the type | exact protocol signature: the existing method satisfies conformance (impl may omit; providing it duplicates). anything else (field, different signature): compile error at the impl |
-| default method calling an excluded method | legal — defaults compile per conformer against concrete `Self` (§2); exclusion binds only calls through erased values |
-| impl inside a dead `inline if` branch | never exists — emits nothing |
-| `inline for`-generated impls | ordinary impls of the expanded program; a colliding pair is the ordinary coherence error, naming the unrolled sites |
-| comptime observation of conformances | no enumeration exists at any phase — conformances are unobservable as collections; per-pair facts (probe, `has_impl`, conversion) are legal under the §6.9 discipline |
-| the probe (`x.(?P)` on a concrete receiver / `has_impl(P, T)`) | site-local impl visibility; arms the instantiation's coherence diagnostics but reaches nothing for emission (§6.9) |
+| `inline for` conformance-list elements | concrete types only — a curated-list element resolves through the concrete-impl path; `@run`-computed lists are legal but expansion-driving (§6.9 scheduling); duplicate elements and nested unrolls diagnose with cursor provenance ("T = Point, i = 1") |
+| conformer method name colliding with an existing member of the type | exact signature: the existing method satisfies conformance (impl may omit; providing it duplicates). anything else (field, different signature): compile error at the impl |
+| default method on an interface conformer | legal — defaults compile per conformer against concrete `Self` (§2) |
+| comptime observation of conformances | no conformer list exists at any phase; the askable facts are per-pair: `T is B` / `x is B`, the probe `x.(?I)`, a conversion — comptime under §6.9, runtime reading the impl tables |
+| the probe (`x.(?I)` on a concrete receiver) | site-local impl visibility; arms the instantiation's coherence diagnostics but reaches nothing for emission (§6.9) |
 
-Design rationale, measured trade-offs, and rejected directions:
-`design/protocols.md` (appendix).
+Design notes and rejected directions: `design/protocols.md` (appendix).
 
 
 ### Anonymous products
@@ -2624,8 +2523,8 @@ sum :: (a: $T, b: T) -> T {
 A binder carries zero or more **bounds**, each introduced by `/`:
 
 ```
-Bound        := '/' ProtocolHead [ '(' TypeExpr { ',' TypeExpr } ')' ]
-ProtocolHead := identifier | at_identifier | QualifiedHead
+Bound        := '/' BoundHead [ '(' TypeExpr { ',' TypeExpr } ')' ]
+BoundHead    := identifier | at_identifier | QualifiedHead
 QualifiedHead:= identifier { '.' identifier }
 ```
 
@@ -2635,18 +2534,20 @@ are_equal :: (a: $T/Eq/Hashable, b: T) -> bool { … }    // several
 lift      :: ($T: Type/Ord, x: T) -> T { … }            // explicit form
 ```
 
-A head names what is required of the binder: a declared protocol, an **open
-set** — where the requirement is MEMBERSHIP rather than conformance (see Open
-Sets) — an enclosing type parameter, or a compiler-owned `@` contract (`@Init`,
-`@BuildBlock`). A parameterized protocol takes its type arguments in the
-bound — `$B/@BuildBlock(View)`, `$I/@Init(Button)`. An argument is an
-ordinary type expression, so it may introduce a binder of its own, with its
-own bounds: `$I/@Init($V/Drawable)`.
+A head names what is required of the binder: a declared **constraint**, a
+declared **interface**, an **open set** — where the requirement is MEMBERSHIP
+rather than conformance (see Open Sets) — an enclosing type parameter, or a
+compiler-owned `@` contract (`@Init`, `@BuildBlock`). A parameterized head takes
+its type arguments in the bound — `$B/@BuildBlock(View)`, `$I/@Init(Button)`. An
+argument is an ordinary type expression, so it may introduce a binder of its
+own, with its own bounds: `$I/@Init($V/Drawable)`.
+
+`is` is not bound-head grammar: a bound is written with `/`.
 
 A head may be **qualified** by the module that owns it — `$V/compose.View`,
-`$T/geometry.Ord` — naming a protocol or a set a module reached by name
-declares. What the bound asks is the DECLARATION's question, so a member joins
-the set it was declared into however the head that names it is spelled.
+`$T/geometry.Ord` — naming a declaration a module reached by name makes. What
+the bound asks is the DECLARATION's question, so a member joins the set it was
+declared into however the head that names it is spelled.
 
 Bounds belong to the binder, not to the type built around it, so a type
 constructor may wrap a bound binder: `*$S/@BuildSink(P)` is a pointer to some
@@ -2663,21 +2564,40 @@ Where the check lands depends on what the head names:
 
 | Head | Satisfied when |
 |---|---|
-| a declared protocol | the binding implements every method |
-| a parameterized protocol (`Into(i32)`) | a visible `impl Into(i32) for <binding>` exists, or a **blanket** impl covers it |
-| the declaration's own type parameter (`$V/P`) | deferred — asked again wherever `P` is bound: as **conformance** when `P` is a protocol, as **identity** when `P` is a concrete type |
+| a declared constraint or interface | the binding implements every method |
+| a parameterized one (`Into(i32)`) | a visible `impl Into(i32) for <binding>` exists, or a **blanket** impl covers it |
+| the declaration's own type parameter (`$V/P`) | deferred — asked again wherever `P` is bound: as **conformance** when `P` is a constraint or an interface, as **identity** when `P` is a concrete type |
 | `@Init(T)` | the binder holds an initializer the compiler formed for `T` — see [`@Init(T)`](#initt) |
 | `@BuildBlock(P)` | the binder holds a build block the compiler formed for `P` — see [`@BuildBlock(P)`](#buildblockp) |
 
-A protocol satisfies its own bound: binding `$V/View` to `View` is the identity
-case, not a request that `View` implement itself.
+**An interface head asks conformance, and the interface satisfies it.** `$V/View`
+binds `View` itself by TypeId identity — the short-circuit that also makes
+`View is View` true — so a parameter may be written `v: $T/View` or `v: View`
+and both are legal. A bound carrying more than one head (`$T/View/Other`) has no
+identity case: only a concrete conformer satisfies it.
+
+**Inference never erases.** A concrete argument binds `T` to that concrete type;
+a handle argument of type `I` binds `T = I`. Once `T` is bound, the parameter's
+slot is `T` and the coercion rules of §5.2 apply to it.
+
+A cross-interface failure diagnoses **at the bound**:
+
+```sx
+draw :: (v: $T/View) { … }
+h : Show = widget;
+draw(h);
+```
+```
+error: 'Show' does not conform to the bound 'View' — a handle conforms
+       through 'impl View for Show', and none is visible here
+```
 
 A sibling head bound to a **concrete** type collapses the bound's family to that
 one member: `$V/P` with `P = i64` admits `i64` and nothing else. A bound's
 type-argument list is validated against the arity of whatever the sibling landed
 on, before the binding is considered.
 
-**Blanket impls.** An impl may write the protocol's type arguments as its own
+**Blanket impls.** An impl may write the head's type arguments as its own
 binders — `impl Series($T) for Buffer($T)` covers every instantiation of
 `Buffer` at the matching argument. Such an impl has no concrete argument tuple
 to be keyed by, so it is matched at the use site against the request's arguments
@@ -2688,17 +2608,16 @@ constrains coverage equally — `impl Series($W) for Map2(i64, $W)` covers
 `Map2(i64, W)` for any `W` and nothing whose first argument differs.
 
 **One carrier, one impl.** A carrier covered by both a blanket impl and a
-concrete impl of the same protocol at the same arguments is an error at the
+concrete impl of the same head at the same arguments is an error at the
 overlap — nothing in either declaration says which body applies. Drop one.
 
 An impl that could never be selected is refused where it is written. A binder in
-the protocol arguments needs a carrier instantiation to bind it from
+the head's arguments needs a carrier instantiation to bind it from
 (`impl P($T) for Plain` has none), and every such binder must appear among the
-carrier's arguments to have a position to resolve through — both hold for every
-protocol kind. A generic carrier whose binder the protocol arguments never
-mention (`impl P(i64) for Carrier($T)`) is refused for a **constraint** protocol,
-but is ordinary for an **erased** family, which erases one conformance per
-instantiated carrier.
+carrier's arguments to have a position to resolve through. A generic carrier
+whose binder the head's arguments never mention (`impl P(i64) for Carrier($T)`)
+is refused for a **constraint**, and is ordinary for an **interface** family,
+which erases one conformance per instantiated carrier.
 
 ### Variadic Functions
 Functions can accept a variable number of arguments using `..name: []Type` syntax:
@@ -2714,13 +2633,14 @@ path_join :: (..parts: []string) -> string { ... }
 - For `[]any`, each trailing arg is boxed into an `any` view (type tag +
   pointer; an lvalue arg is borrowed, an rvalue spills to a call-scoped temp)
   before packing; `args[i]` reads back the view.
-- For `[]Protocol` (the element type is a protocol, e.g. `..xs: []Show`), each
-  trailing arg erases per the protocol's OWNERSHIP CLASS (owning copy for
-  value/own, borrow for `@identity` — see Protocols; a constraint element
-  type is refused as a storable position) and is packed into a
-  runtime `[N]Protocol`. `xs[runtime_i].method()`
-  then dispatches through the protocol — this is the **runtime** counterpart to
-  the comptime heterogeneous pack `..xs: Protocol`.
+- For `[]I` (the element type is an interface, e.g. `..xs: []Show`), each
+  trailing arg coerces to a handle per the view-coercion arms (see Constraints
+  and Interfaces §5.2; an rvalue's temporary is scoped to the CALL, and a
+  constraint element type is refused as a storable position) and is packed into
+  a runtime `[N]I`. `xs[runtime_i].method()` then dispatches through the
+  handle — this is the **runtime** counterpart to the comptime heterogeneous
+  pack `..xs: I`. A `..` spread of an existing slice into `[]I` coerces
+  per element the same way.
 - A `..` spread at the call site unpacks an existing slice/array into the variadic
   tail: `sum(..arr)`.
 - The heterogeneous comptime-pack form `..$args: []Type` binds per-position
@@ -2910,8 +2830,8 @@ The full family of variadic/pack forms and how they differ:
 |---|---|---|---|---|---|
 | `..xs: []T` | one uniform `T` | **runtime** (slice) | runtime or comptime | `T` | runtime |
 | `..xs: []any` | mixed, **boxed** to `any` | **runtime** (slice) | runtime or comptime | `any` (match/unwrap to use) | runtime |
-| `..xs: []P` *(P a protocol)* | mixed, **erased** to `P` `{ctx,vtable}` | **runtime** (slice) | runtime or comptime | `P` (call protocol methods) | runtime |
-| `..xs: P` *(pack)* | per-position **concrete**, each conforms to `P` | **comptime** (no runtime value) | comptime only (literal / `inline for` cursor) | the concrete element, **viewed through `P`** | comptime int |
+| `..xs: []I` *(I an interface)* | mixed, **erased** to the `I` handle | **runtime** (slice) | runtime or comptime | `I` (call interface methods) | runtime |
+| `..xs: P` *(pack)* | per-position **concrete**, each conforms to `P` — a constraint or an interface | **comptime** (no runtime value) | comptime only (literal / `inline for` cursor) | the concrete element, **viewed through `P`** | comptime int |
 | `..$args` / `..$xs: []Type` | per-position comptime **types** | **comptime** | comptime only | element value/type (reflection) | comptime int |
 | `..` *(the C tail)* | none — the C ABI's variadic slots | **runtime** (the callee's frame) | no index | `@va_arg(T, *ap)` reads the next | no length |
 
@@ -2920,10 +2840,10 @@ Key axis — **concrete vs erased, comptime vs runtime**:
   `xs[i]` needs a compile-time index (a literal or an `inline for` cursor); a
   runtime index is an error (a pack has no runtime representation). Use it when
   you need per-position types (monomorphization, `xs.T` / `xs.value` projection).
-- `..xs: []P` (slice of protocol) **erases** each element to the protocol value
-  but is **runtime**: `xs[runtime_i].method()` works in an ordinary loop. Use it
-  when you need to iterate the args at runtime and only the protocol interface
-  matters. It is the runtime counterpart to the pack.
+- `..xs: []I` (slice of interface) **erases** each element to a handle but is
+  **runtime**: `xs[runtime_i].method()` works in an ordinary loop. Use it when
+  you need to iterate the args at runtime and only the interface matters. It is
+  the runtime counterpart to the pack.
 
 The heterogeneous pack (`..xs: P`) is what powers `map :: (mapper: ...,
 ..sources: ValueListenable) -> ...`: it accepts any number of trailing args,
@@ -2934,15 +2854,16 @@ A pack is **not a runtime value** — it lowers to N typed positional parameters
 below; using the pack name where a runtime value is required is an error (see
 "Pack as value").
 
-**Element access is through the protocol, not the concrete type.** Although the
+**Element access is through the pack head, not the concrete type.** Although the
 pack monomorphizes per call shape and each element has a known concrete type,
-`xs[i]` is viewed **through the constraint protocol**: only the protocol's own
-interface (its methods, and the projections `xs.T` / `xs.value`) is accessible.
-Reaching a concrete member that isn't part of the protocol — e.g. `xs[i].v`
-where `v` is a field of the concrete `IntBox` but not declared on `Show` — is an
-error, exactly as it would be for a constrained generic `T: Show`. The protocol
-constraint is enforced (each trailing arg must conform) and bounds what the body
-may do, regardless of the concrete arg types at any particular call site.
+`xs[i]` is viewed **through the head**: only the head's own methods and the
+projections `xs.T` / `xs.value` are accessible. Reaching a concrete member the
+head does not declare — e.g. `xs[i].v` where `v` is a field of the concrete
+`IntBox` but not declared on `Show` — is an error, exactly as it would be for a
+bound generic `$T/Show`. The head is enforced (each trailing arg must conform;
+an element already typed as the head interface copies (identity); it does not
+require `impl I for I`) and bounds what the body may do, regardless of the
+concrete arg types at any particular call site.
 
 #### Pack operations
 
@@ -2951,7 +2872,7 @@ may do, regardless of the concrete arg types at any particular call site.
 | Length | `xs.len` | comptime int (field-style, not `len(xs)`) |
 | Index | `xs[i]` | i-th element; `i` must be comptime |
 | Comptime unroll (index) | `inline for i in 0..xs.len { ... }` | unrolled loop; cursor `i` is a comptime constant per iteration; not `#for` |
-| Comptime unroll (element) | `inline for x in xs { ... }` | unrolled loop; `x` is the concrete i-th element, viewed through the constraint protocol (≡ `xs[i]`) |
+| Comptime unroll (element) | `inline for x in xs { ... }` | unrolled loop; `x` is the concrete i-th element, viewed through the pack head (≡ `xs[i]`) |
 | Comptime unroll (element + index) | `inline for x, i in xs, 0.. { ... }` | multi-iterable parity with the runtime `for`: position 0 drives the count, a trailing open range pairs the cursor |
 | Projection | `xs.field` | see "Pack projection" |
 | Spread → call args | `..xs` / `..xs.field` | expands to N positional args |
@@ -2964,16 +2885,16 @@ may do, regardless of the concrete arg types at any particular call site.
 `xs.field` projects the same member out of every element, preserving order.
 Resolution is **position-driven** (no cross-namespace shadowing):
 
-- In **type** position, `..xs.field` looks `field` up in the pack constraint's
-  **type-arg** namespace. `ValueListenable :: protocol($T: Type) { ... }` declares
-  type-arg `T`, so `..xs.T` is the pack of element value-types.
-- In **value** position, `xs.field` looks `field` up among the constraint's
+- In **type** position, `..xs.field` looks `field` up in the pack head's
+  **type-arg** namespace. `ValueListenable :: constraint($T: Type) { ... }`
+  declares type-arg `T`, so `..xs.T` is the pack of element value-types.
+- In **value** position, `xs.field` looks `field` up among the head's
   **methods** and yields a positional product of the projected values
   (e.g. `xs.value` → `.{xs[0].value(), xs[1].value(), ...}`).
 
-A protocol that declares a type-arg and a method with the **same name**
-compiles, but emits a soft warning at the protocol declaration (the human is
-alerted; resolution still proceeds by position).
+A head that declares a type-arg and a method with the **same name** compiles,
+but emits a soft warning at the declaration (the human is alerted; resolution
+still proceeds by position).
 
 #### Product parallels
 
@@ -3002,26 +2923,25 @@ suggestion:
 
 - storing/binding it (`x := xs;`, `self.f = xs;`) → materialize it (`.{..xs}`);
 - passing it to a runtime call (`f(xs)`) → declare the parameter as a *slice*
-  variadic `..xs: []P` (a runtime slice) instead of a pack `..xs: P`;
+  variadic `..xs: []I` (a runtime slice) instead of a pack `..xs: P`;
 - returning it (`return xs;`) → return a materialized `.{..xs}` (and make the
   return a multi-return of those slots, or a `struct { ..P(Ts) }` field);
 - iterating it (`for x in xs`, `xs[runtime_i]`) → `inline for x in xs` (or
   `inline for i in 0..xs.len` for the index) for a comptime unroll, or take
-  `..xs: []P` for a runtime loop.
+  `..xs: []I` for a runtime loop.
 
-The recurring runtime escape hatch is the **slice-of-protocol variadic**
-`..xs: []P` (see "Variadic Functions"): it is the runtime, protocol-erased
-counterpart to the comptime pack. A pack indexed/iterated/forwarded at runtime
-is almost always better expressed by declaring `xs` as `..xs: []P` in the first
-place.
+The recurring runtime escape hatch is the **slice-of-interface variadic**
+`..xs: []I` (see "Variadic Functions"): it is the runtime, erased counterpart to
+the comptime pack. A pack indexed/iterated/forwarded at runtime is almost always
+better expressed by declaring `xs` as `..xs: []I` in the first place.
 
-#### Storage and protocol conformance
+#### Storage and conformance
 
 To **store** a pack, put it in one ordinary field whose type is an anonymous
 struct of the spread: `sources: struct { ..ValueListenable(Ts) }`, assigned
-`self.sources = .{..sources}`. To **return** a struct as a protocol value,
-`xx` requires an explicit impl (protocol erasure is impl-driven, not
-structural) — e.g. `impl ValueListenable($R) for Combined($R, ..$Ts) { ... }`.
+`self.sources = .{..sources}`. A struct reaches an interface-typed slot through
+an explicit impl (conformance is impl-driven, not structural) — e.g.
+`impl ValueListenable($R) for Combined($R, ..$Ts) { ... }`.
 
 #### Canonical example
 
@@ -3139,7 +3059,7 @@ are not written onward.
 | Pointer vs integer | the integer is an address-sized bit pattern: `region == -1`, `p != 0` |
 | `?T == T` / `?T == null` / error-set vs tag | unchanged |
 
-`any`, protocol values against a foreign type, and distinct structs are refused.
+`any`, interface handles against a foreign type, and distinct structs are refused.
 
 An explicit `xx` in a comparison still takes its target from the OTHER operand:
 `a == xx b` converts `b` to `a`'s type, reading exactly as the hoisted
@@ -3165,25 +3085,22 @@ explicit-target form of `xx`, sharing its entire engine: the same coercion
 ladder, one engine rather than a second cast. "Safe" means
 **well-defined**, not value-preserving: `1000.(i8)` truncates by definition.
 
-A PROTOCOL target follows the target's KIND (see Protocols). For an
-erased value/own target `expr.(P)` is the **owning erasure** through
-`context.allocator`; `expr.(P, alloc)` names another fund (`alloc` is
-an LVALUE; pair with `free(p, alloc)`). Concrete receivers (lvalue
-and rvalue alike) heap-copy, a `*Concrete` receiver SNAPSHOTS the
-pointee, a same-protocol `P` value CLONES, and a `*P` view PROMOTES.
-`@identity` targets keep the borrow (`gpa.(Allocator)`) and refuse
-the allocator form. A CONSTRAINT target refuses (no runtime values).
-A soft protocol target on a concrete receiver is the conformance
-PROBE; a protocol-to-protocol conversion is RE-ERASURE — both defined
-in Protocols.
+An INTERFACE target `expr.(I)` is the explicit view coercion (see
+Constraints and Interfaces §5.2): a conforming lvalue borrows in
+place, a `*Concrete` receiver borrows its pointee, a `*I` receiver
+loads the stored handle, an `I` receiver copies the handle, and an
+rvalue borrows a frame-scoped temporary. There is no allocating
+form. A CONSTRAINT target refuses (no runtime values). A soft
+interface target on a concrete receiver is the conformance PROBE;
+an interface-to-interface conversion is RE-ERASURE — both defined in
+Constraints and Interfaces.
 
 ```sx
 b := a.(i8);            // narrow (truncates)
 v := f.(i64);           // float → int
 p := raw.(*Point);      // pointer bitcast; composite targets parse: *T, []u8, ?T
 o := 5.(?i64);          // optional wrap
-s := dog.(Speaker);                    // owning erasure through context.allocator
-u := dog.(Speaker, a);                 // the same, through a named fund
+s := dog.(Speaker);                    // handle over dog's own storage
 x.(u8).(i64)            // postfix chains left to right
 -x.(i8)                 // postfix binds tighter: -(x.(i8))
 ```
@@ -3194,23 +3111,22 @@ float); `0..(5)` stays a range.
 
 **Raw-view retrieval.** The fat-value raw views (`@Closure`
 `{fn_ptr, env}`, `@Slice` `{ptr, len}` for slices AND strings,
-`@Protocol` `{ctx, type_id}`, and `@Any` `{data, type_id}`) are
+`@Interface` `{ctx, type_id}`, and `@Any` `{data, type_id}`) are
 retrieved through this same engine — `c.(@Closure)`, `name.(@Slice)`,
-`p.(@Protocol)` (or the `xx` spelling), `av.(@Any)` (postfix ONLY —
-see below). The protocol case is a MODELED conversion built field-wise, not
-a bit reinterpret: `{ctx, __type_id}` is the leading prefix of a protocol
-value `{ctx, __type_id, vtable}`, so the result is a real value usable in
-any position (argument, return, store). `@Protocol` mirrors exactly that
-prefix — byte-identical to an `any` `{data, type_id}`; the protocol value
-is wider, which is why the build is field-wise and never a reinterpret. A protocol receiver with any
+`p.(@Interface)` (or the `xx` spelling), `av.(@Any)` (postfix ONLY —
+see below). The interface case is a MODELED conversion built field-wise, not
+a bit reinterpret: `{ctx, __type_id}` is the leading prefix of a handle
+`{ctx, __type_id, vtable}`, so the result is a real value usable in
+any position (argument, return, store). `@Interface` mirrors exactly that
+prefix — byte-identical to an `any` `{data, type_id}`; the handle
+is wider, which is why the build is field-wise and never a reinterpret. A handle receiver with any
 other concrete target is the checked DOWNCAST (see the assertion
 temperaments — the receiver reads as its `{ctx, type_id}` prefix view);
 the recovery targets — a pointer type (`p.(*T)`, the typed ctx read; `T`
-must be a CONCRETE type or `void` — a pointer-to-protocol target is refused,
-since ctx addresses the concrete value: lend a view of the protocol value
-itself with `*p` instead),
-`@Protocol`, `any` (a protocol value boxes as its concrete receiver), and
-another protocol (re-erasure) — are conversions and pass through.
+must be a CONCRETE type or `void` — a pointer-to-interface target is refused,
+since ctx addresses the referent),
+`@Interface`, `any` (a handle boxes as its referent), and
+another interface (re-erasure) — are conversions and pass through.
 
 `p.(?*T)` is the SOFT ctx recovery — the pointer target under the soft
 temperament. It asks the DOWNCAST's question (is the receiver a `T`?) and
@@ -3218,7 +3134,7 @@ answers it with a pointer: `*T` addressing the receiver's own ctx on a
 match, `null` otherwise. It BORROWS where `p.(?T)` copies the value out,
 and it CHECKS where `p.(*T)` reinterprets ctx unconditionally. The pointee
 names the type to test, so it must be a concrete one: `?*void` and a
-pointer-to-protocol pointee are refused.
+pointer-to-interface pointee are refused.
 
 On an **`any` receiver** the assertion has three temperaments:
 
@@ -3261,12 +3177,12 @@ An optional TARGET flattens — `ap?.(?i64)` is `?i64`, one null level, never
 `??i64`. An unchained `.(T)` on an optional receiver is a compile error
 pointing at `?.(T)` / unwrap-first, and `x?.(T)` on a non-optional receiver
 is likewise refused. Unchecked unboxing stays `xx`.
-A **protocol-value** receiver's checked downcast (`p.(Square)`) is live:
-an ERASED value carries its concrete `type_id` word and reads as its
+An **interface-handle** receiver's checked downcast (`p.(Square)`) is live:
+a handle carries its referent's `type_id` word and reads as its
 `{ctx, type_id}` prefix view, and the check is a compare against that
-word — a target the receiver's protocol has no conformer for simply
+word — a target the receiver's interface has no conformer for simply
 never matches. The same three temperaments apply (`try p.(Square)` /
-unconsumed panic / `p.(?Square)` soft). See the protocol-receiver
+unconsumed panic / `p.(?Square)` soft). See the handle-receiver
 paragraph above for the recovery targets that bypass the downcast.
 
 ---
@@ -3684,6 +3600,26 @@ store :: (value: $I/@Init($T)) -> *T {
 button := store(Button{ label = "Play" });
 ```
 
+`Allocator` ships that shape as `make`:
+
+```sx
+make    :: ufcs (a: Allocator, value: $I/@Init($T)) -> *T;
+create  :: ufcs (a: Allocator, $T: Type) -> *T;      // storage, uninitialised
+destroy :: ufcs (a: Allocator, p: *$T);              // pairs with both
+```
+
+`make` allocates and writes in one step, so it is the spelling that gives an
+rvalue a lifetime past the frame that wrote it. `create` hands back
+uninitialised storage. Passing a type to `make` fails the `@Init` bound:
+
+```sx
+p := a.make(Session);
+```
+```
+error: 'Session' is a type, and 'make' takes an initializer — use
+       'create' for uninitialised storage
+```
+
 The argument is **not evaluated at the call**. The compiler forms an initializer
 from the expression and binds `$I` to it; the expression runs when — and each
 time — the receiver calls `write`. A receiver that never writes never evaluates
@@ -3715,11 +3651,14 @@ The target's own shape says what another tag answers — a member panics, an
 optional of a member answers null — the same distinction `v.(Label)` and
 `v.(?Label)` spell explicitly.
 
-After ordinary modeled conversions, a protocol-typed source that reaches an
-unmodeled concrete leaf is refused. It is a handle to its conformer, not the
-conformer's value, so no concrete conformer value is available for the formation
-write. The refusal is located where the expression is written, in both argument
-and dot-receiver spellings. The explicit downcast reads the conformer out
+An **interface** target is one of the modeled conversions: the source coerces to
+a handle per §5.2 and `write` fills the three words.
+
+After ordinary modeled conversions, an interface-typed source that reaches an
+unmodeled concrete leaf is refused. It is a handle to its referent, not the
+referent's value, so no concrete value is available for the formation write. The
+refusal is located where the expression is written, in both argument and
+dot-receiver spellings. The explicit downcast reads the referent out
 (`h.(Round)`, `h.(?Round)`), and what it yields forms like any other value.
 
 A set target answers in the terms it decides by whatever the source is: a type
@@ -3740,7 +3679,7 @@ The operations:
 `write` may be called zero, one, or many times: each call re-evaluates the
 expression, side effects included. The compiler does not count writes, does not
 require one, and does not check that a receiver publishes only what it wrote —
-that protocol belongs to the library that accepts the initializer.
+that convention belongs to the library that accepts the initializer.
 
 Each formation site is its own implementor type, so `write` and `site` are
 resolved per site with nothing dispatched at runtime and no storage beyond the
@@ -3795,9 +3734,9 @@ deferred to run time in the compiler.
 **What publishes.** Only a standalone expression **statement** is offered to the
 sink, and only when its type answers to `P`:
 
-- `P` a protocol: the statement's type implements it — or **is** it, which is the
-  identity case. A value that already is a `P` is written into the sink's slot as
-  itself: no second formation, no re-erasure.
+- `P` a **constraint** or an **interface**: the statement's type implements it —
+  or **is** it, which is the identity case. A value that already is a `P` is
+  written into the sink's slot as itself: no second formation, no re-erasure.
 - `P` an **open set**: its **members** publish too. A set carries its member inside
   the slot, so a member statement type-checked at the expected `P` is a complete
   `P` value — the same allocator-free formation the expected type performs at a
@@ -3805,8 +3744,9 @@ sink, and only when its type answers to `P`:
 - `P` any other type: the statement's type **is** `P`. A type that merely converts
   to `P` does not publish.
 
-So `P` is not restricted to protocols — `$B/@BuildBlock(i64)` is a general list
-builder whose children are `i64` statements. Everything else in the body is
+So `P` is not restricted to a constraint, an interface, or a set —
+`$B/@BuildBlock(i64)` is a general list builder whose children are `i64`
+statements. Everything else in the body is
 ordinary code: a binding, an assignment, a call whose value is discarded, and a
 statement of any other type all run where they are written and are not published.
 A subexpression never publishes, whatever its type.
@@ -3860,7 +3800,7 @@ by the same question:
   (`impl @BuildSink($T) for S($T)`), whose method spells the impl's own binder
   and is monomorphized with what the carrier's instantiation bound it to.
 
-A method inherited from an impl of some OTHER protocol does not answer for this
+A method inherited from an impl of some OTHER head does not answer for this
 one; the refusal names the requirement and the sink as the source spells it.
 **The initializer's target — two shapes.** `expression` takes the published child as
 an initializer, and the target that initializer names is what `write` fills. Which
@@ -3871,17 +3811,30 @@ shape a sink may spell follows from what `P` can carry:
   set holds its member inline; a plain data type IS the value. `write` fills a `*P`
   and the sink keeps what it wrote.
 - `$I/@Init($V/P)` — the **open** target — where `P` cannot carry the value: an
-  erased protocol is a handle whose receiver lives outside it, so the sink is told
-  the member `V` the block reached and decides where that lives (`modules/fluent.sx`
-  funds it from `context.allocator`, which is why its elements outlive the call). A
-  **constraint** protocol has no runtime values at all, so no `*P` exists for a
-  write to fill — the fixed shape names a target that cannot exist and is refused,
-  naming that fact.
+  interface handle's referent lives outside it, so the sink is told the member `V`
+  the block reached and decides where that lives (`modules/fluent.sx` funds it from
+  `context.allocator`, which is why its elements outlive the call). A
+  **constraint** has no runtime values at all, so no `*P` exists for a write to
+  fill — the fixed shape names a target that cannot exist and is refused, naming
+  that fact.
 
-`modules/fluent.sx` ships `Sink($T)` with a blanket impl covering both: where `T`
-carries its own storage the published value is written into a slot the list owns
-and nothing is allocated; where `T` is a handle the payload is funded from
-`context.allocator` first, so what the list holds still points at something.
+`modules/fluent.sx` ships `Sink($T)` with a blanket impl covering both. Its
+interface arm splits on whether the published value already IS the slot type:
+
+```sx
+inline match T {
+    case interface: {
+        inline if V == T { self.children.append(value); }
+        else             { self.children.append(context.allocator.make(value)); }
+    }
+    else: { self.children.append(value); }
+}
+```
+
+`V == T` is type identity. A `V is T` selector would route every conforming
+concrete into the verbatim arm, storing handles over the block's frame; `==`
+keeps that arm for values that are already handles the caller owns the lifetime
+of, and funds every concrete through `make`.
 
 ### Open Sets
 
@@ -3897,7 +3850,8 @@ Label :: @OpenVariant(View) {
 ```
 
 An **open set** is an inline tagged slot whose members declare **themselves** into
-it. It is not a protocol: `@OpenSet` states a payload **ceiling** and the methods
+it. It is neither a constraint nor an interface: `@OpenSet` states a payload
+**ceiling** and the methods
 every member must have, and `@OpenVariant(P)` is how a type joins `P`. There is no
 registry API and no enrollment statement — the declarations are the registry, so a
 plain `struct` stays out.
@@ -3961,8 +3915,8 @@ in every `List(P)`.
 
 Growth is **transitive**: a member of one set may hold another set by value, so
 growing the held set grows that member and re-lays-out the set it belongs to. A
-member that no longer fits its own ceiling after such growth is refused at its
-declaration, naming the set whose growth changed it. (Two sets that each hold the
+member that outgrows its own ceiling that way is refused at its declaration,
+naming the set whose growth exceeded it. (Two sets that each hold the
 other by value have no finite layout and are refused.)
 
 **Admission is checked at the member's declaration**, so a type that cannot be
@@ -4070,7 +4024,7 @@ What formation **refuses**:
 | `v: View = xx Plain{}` | a cast asks for the same conversion, and is not a way past a declaration |
 | `value.(View, alloc)` | not a conversion that allocates — the active member lives **inline** in the slot, so there is no allocator to pass and none is invented |
 
-An open set sits outside protocol conversion entirely: there is no `xx`-style
+An open set sits outside interface coercion entirely: there is no `xx`-style
 erasure, no heap box, and no compiler-selected storage anywhere in formation.
 
 What may fill a set slot is decided by **membership, never by width**: a non-member
@@ -4127,8 +4081,8 @@ slot**, and the member's own type. Nothing allocates and no payload is copied �
 view borrows the slot, so it answers for the member carried there and is valid
 exactly as long as that slot is. Every boxing position agrees with that spelling —
 an `any` local, an `any` argument, a formatted value — so a set value is never seen
-as the set anywhere `any` is. A set is not a protocol handle: it has no
-`@Protocol` view, and `any` is the one it has.
+as the set anywhere `any` is. A set value is not an interface handle: it has no
+`@Interface` view, and `any` is the one it has.
 
 Because a box holds the member, **no `any` holds a set value**, and each assertion
 form answers from its own contract. `av.(View)` states that a box holds one, which
@@ -4211,10 +4165,9 @@ from, not through the set value.
 
 #### Sets in signatures
 
-**The membership bound `$V/P`.** A set is not a protocol and carries no impls, so a
-bound whose head names a set asks the set's own question: **is the binding a
-member?** This is the one head in the bound grammar that is not a conformance
-question.
+**The membership bound `$V/P`.** A set carries no impls, so a bound whose head
+names a set asks the set's own question: **is the binding a member?** This is the
+one head in the bound grammar that is not a conformance question.
 
 ```sx
 show :: (v: $V/View) -> string => v.render();
@@ -4396,6 +4349,7 @@ Everything in `sx` is expression-oriented where possible.
 | 9 | `+`, `-` | addition, subtraction |
 | 8 | `<<`, `>>` | shifts |
 | 7 | `<`, `<=`, `>`, `>=`, `==`, `!=` | comparisons (chainable) |
+| 7 | `is`, `in` | type classification / membership; non-chaining |
 | 6 | `&` | bitwise AND |
 | 5 | `^` | bitwise XOR |
 | 4 | `\|` | bitwise OR |
@@ -4433,6 +4387,123 @@ Comparison operators can be chained. Each operand is evaluated exactly once.
 a == b == c            // equivalent to: a == b and b == c
 ```
 Mixed operators are allowed: `a < b <= c > d` means `a < b and b <= c and c > d`.
+
+### The `is` Operator
+
+`is` asks whether the left operand's type satisfies the static description on
+the right. It is a reserved infix keyword at comparison precedence, and it does
+**not** chain: `a is int is bool` is a parse error.
+
+```sx
+n : i64 = 5;
+n is int          // true
+n is unsigned     // false
+i64 is signed     // true
+[]u8 is slice     // true
+Wrap(i64) is Wrap(i64)   // true
+```
+
+**The right operand is a type.** It is read by the type parser: a type name, a
+composite (`?T`, `[]u8`, `*T`, `[N]T`), a parameterized head (`Wrap(i64)`), or a
+category word. The keyword categories `struct` / `enum` / `union` are admitted
+there by the same special case that admits them as match-arm patterns; `type` is
+an ordinary identifier and already in the category vocabulary. A category word
+wins over a same-spelled type name — `x is int` asks the category. The right
+operand is never a runtime `Type` value (`type_eq(t1, t2)` asks that question)
+and never a value expression.
+
+**`is` classifies; `==` and `type_eq` identify.** They are distinct questions.
+Over the slice of right operands that are concrete descriptions they answer
+alike — there is no subtyping and no fits-rule — and that coincidence is a
+theorem about those operands, not the definition of either. Nothing is refused
+for the overlap. `t1 == t2` over two `Type` values is the tag compare `type_eq`
+spells, and it folds when both operands are static.
+
+#### Left operands
+
+**A type expression or a type binder** folds at compile time. The fold covers
+identity (`i64 is i64`), conformance (`Point is Ord`, and `I is I` for an
+interface `I`), open-set membership (`Label is View`), and category
+(`Point is struct`). A constraint is a legal comptime left operand:
+`Ord is interface` is false.
+
+**A statically-typed value** folds through its static type: `5 is unsigned` is
+false, because an integer literal defaults to `i64`.
+
+**An `any`** reads its runtime TAG: tag identity, category, per-pair
+conformance, and membership all answer from the tag. An `any` holding a `Type`
+answers `at is type` — the tag is `Type`, and `is` does not peel it. Classifying
+the held type unboxes first: `at.(?Type)` is the total form, and `av.(Type)`
+panics on a value-holding `any`. (`type_name` peels a `Type`-holding `any`; `is`
+reads the tag.)
+
+**An interface handle** answers from its **static** type. With `h : I = w`,
+`h is I` is true, and `h is Q` and `h is Concrete` are false — all three fold.
+`type_of(h)` is the door to the referent: it is a runtime `Type`, and asking it
+classifies the concrete value behind the handle. `h is C` for a constraint `C`
+asks whether the handle's own interface conforms — true exactly when the bridge
+`impl C for I` is visible — and folds like the rest of the family.
+
+**An open-set value** follows the static-left-operand rule; `type_of(v)` reports
+the member the slot carries.
+
+**A runtime `Type`** takes every description: tag identity (a concrete right
+operand — the same answer `type_eq` gives, and both spellings are legal),
+interface conformance through the per-pair table of §6.4, constraint conformance
+through a per-constraint conformer-tag set emitted only for constraints a
+runtime `is` reaches, set membership, and categories. `is interface` is true for
+a directly reified interface tag and false for a tag derived from an instance.
+
+**Phase and evidence.** A static ask answers site-local impl visibility (§6.9); a
+runtime ask reads program-unique pairs (§6.4), so a duplicated pair answers
+false. The two differ only under the visibility-disjoint duplicate impls of §3.
+With `impl C for W` duplicated that way, `h : I = w` and `av : any = w`:
+
+```sx
+W is C            // true  — site-local visibility
+type_of(h) is C   // false — the pair is not program-unique
+av is C           // false — same table
+```
+
+`h is C` sits outside that split: it asks `I`'s conformance, not `W`'s, and
+answers from site-local visibility at either phase.
+
+#### Categories
+
+| category | matches |
+|---|---|
+| `int` | every integer type, both signednesses, every width, `isize`/`usize` included |
+| `signed` | the signed integers |
+| `unsigned` | the unsigned integers |
+| `float` | `f32`, `f64` |
+| `struct` | struct and tuple types |
+| `enum` | payload-less enums and tagged unions |
+| `union` | untagged unions and tagged unions |
+| `slice` | `[]T` |
+| `array` | `[N]T` |
+| `pointer` | `*T`, `[*]T`, function pointers |
+| `vector` | `@Vector(N, T)` |
+| `optional` | `?T` |
+| `error_set` | declared and inferred error sets |
+| `closure` | `Closure(…) -> R` |
+| `type` | `Type` |
+| `interface` | interface types |
+
+`signed` and `unsigned` partition `int`: they are disjoint, their union is
+`int`, and both are integer-only — `f64 is signed` is false.
+
+`bool`, `string`, and `void` are single types; a right operand naming one asks
+identity, not a category.
+
+Refinements and the umbrella compose by first-wins, so `case unsigned:` before
+`case int:` splits the integers and the reverse order leaves the second arm with
+no tags (the armless-arm error).
+
+`interface` and `struct` are **disjoint**: `T is struct` is false for every
+interface and every constraint, at both phases. A constraint matches no
+category, and there is no `constraint` category word. Flags-ness is
+`is_flags(T)`, not a category; set membership is asked with the set's own type
+as the right operand.
 
 ### Logical Operators
 `and` and `or` are short-circuit boolean operators. The right operand is not evaluated if the left operand determines the result.
@@ -4503,15 +4574,13 @@ When switching on a `Type` value (from `type_of`), category keywords match all r
 ```sx
 type := type_of(val);
 match type {
-    case int: {
-        if is_unsigned(type) { result = uint_to_string(xx val); }
-        else { result = int_to_string(xx val); }
-    }
-    case struct: result = struct_to_string_over_views(type, val);
-    case enum: result = enum_walk_over_tables(type, val);
+    case unsigned: result = uint_to_string(xx val);
+    case int:      result = int_to_string(xx val);
+    case struct:   result = struct_to_string_over_views(type, val);
+    case enum:     result = enum_walk_over_tables(type, val);
 }
 ```
-Available categories: `int`, `float`, `bool`, `string`, `void`, `struct`, `enum`, `union`, `vector`, `array`, `slice`, `pointer`, `optional`, `error_set`, `closure`, `type`. The `int` arm branches on signedness — `is_unsigned(type)` routes unsigned types to their unsigned-decimal formatter, so values like `u64.max` print as `18446744073709551615` rather than `-1`.
+Available categories: `int`, `signed`, `unsigned`, `float`, `bool`, `string`, `void`, `struct`, `enum`, `union`, `vector`, `array`, `slice`, `pointer`, `optional`, `error_set`, `closure`, `type`, `interface`. `signed` and `unsigned` are the disjoint integer-only refinements of `int` (§The `is` Operator), so `case unsigned:` above `case int:` splits the integers by signedness — unsigned types reach the unsigned-decimal formatter and `u64.max` prints as `18446744073709551615` rather than `-1`. Reversing that order leaves `case unsigned:` with no tags, which is the armless-arm error.
 
 > Note: `case enum:` matches payload-less enums AND tagged enums (enums
 > with payloads); `case union:` matches C-style untagged unions AND
@@ -4550,9 +4619,9 @@ match av {
   (aliases are transparent). An optional `|v|` capture binds exactly what
   `v := av.(T)` produces, with the tag pre-proven by the switch: no panic
   path. Works in value position.
-- **Category arms** (`int`, `float`, `struct`, `enum`, `union`, `slice`,
-  `array`, `pointer`, `vector`, `optional`, `error_set`, `closure`,
-  `type`) are tag SETS and cannot bind `|v|` — a kind names many types;
+- **Category arms** (`int`, `signed`, `unsigned`, `float`, `struct`, `enum`,
+  `union`, `slice`, `array`, `pointer`, `vector`, `optional`, `error_set`,
+  `closure`, `type`) are tag SETS and cannot bind `|v|` — a kind names many types;
   read the value through the reflection views, or `xx av` in the
   `int`/`float` arms (per-tag width dispatch). `string`/`bool`/`void`
   are single types and take the concrete path, so their arms CAN bind.
@@ -4562,13 +4631,17 @@ match av {
   reverse order, or a duplicate — is a compile error, never a silently
   dead arm. Value patterns (`case 5:`) are a compile error: the payload is
   never the scrutinee.
-- **Subjects**: `any`, PROTOCOL values, and OPEN SET values. An erased
-  protocol subject switches through its `{ctx, type_id}` prefix view; a
+- **Subjects**: `any`, INTERFACE handles, and OPEN SET values. A handle
+  subject switches through its `{ctx, type_id}` prefix view; a
   set subject switches on the member its
   tag names, and its arms name members with an `else:` arm REQUIRED
   (see Open Sets) — same arms, same captures, over the concrete value
   behind the subject. A `?any` composes through the optional match
   (`case .some: |av| { … }`).
+- **`case interface:` by subject**: over an `any` or a handle subject it is a
+  pointed compile error — those tags name the referent's concrete type and never
+  an interface. Over a runtime `Type` subject it is an ordinary category arm,
+  claiming the directly reified interface tags under the same first-wins rule.
 - Division of labor: the type switch dispatches on CONCRETE types and
   binds typed values; kind-only dispatch also exists as the category match
   on `type_of(av)` and as the static `inline match T { … }` fold in
@@ -4580,15 +4653,14 @@ match av {
 type param** selects its arm at lower time — the siblings are dropped
 whole, exactly like `inline if` branch elimination. Each kind arm may
 therefore use kind-specific operations that would not type-check for other
-kinds (`x.len` in a slice arm, `x.(@Protocol)` in a protocol arm):
+kinds (`x.len` in a slice arm, `x.(@Interface)` in an interface arm):
 
 ```sx
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
     inline match T {
-        case protocol: a.dealloc_bytes(x.(@Protocol).ctx);
         case closure:  { env := x.(@Closure).env; if env != null { a.dealloc_bytes(env); } }
         case slice:    a.dealloc_bytes(xx x.ptr);
-        else:          @error("free expects a protocol value, a closure, or a slice");
+        else:          @error("free expects a closure or a slice");
     }
 }
 ```
@@ -4598,10 +4670,8 @@ Arms select in order (a specific type name may precede its category);
 match lowers to nothing (the runtime form's skip-to-merge, statically). A
 `@error(…)` arm fires only when SELECTED — the un-selected case is
 the OS-match discipline. The static classifier mirrors the runtime tag
-switch arm for arm, **plus the `protocol` category**, which exists
-ONLY here: a protocol value
-carries no runtime type tag, so a runtime `case protocol:` is a pointed
-compile error rather than a silently dead arm. Inline branches lower in
+switch arm for arm, and `case interface:` claims the interface types.
+A constraint matches no arm of either classifier. Inline branches lower in
 statement position (like `inline if OS`), so value-producing arms use
 explicit `return`. A NON-inline type match keeps its runtime tag-switch
 semantics.
@@ -4652,7 +4722,8 @@ inline for x, i in xs, 0.. { }      // comptime unroll over a PACK: x = the
                                     // Heterogeneous Type Packs")
 inline for T in TYPES { }           // comptime unroll over a `[N]Type` list:
                                     // T is a comptime Type, legal in type
-                                    // position (see "Protocols" §3)
+                                    // position (see "Constraints and
+                                    // Interfaces" §3)
 ```
 
 **Range bound markers.** Each side of `..` takes an optional marker — `=`
@@ -5061,12 +5132,10 @@ create(f);     // a plain fn is callable only this way
 When `object.func(args)` names an opted-in function and `func` is not a
 field or method of `object`'s type, the compiler rewrites the call to
 `func(object, args)`. Fields and methods take priority over ufcs
-functions; a protocol-typed receiver dispatches its own MEMBERS first and
+functions; an interface-typed receiver dispatches its own MEMBERS first and
 falls through to ufcs functions only for non-members
 (`context.allocator.create(Session)` — `create` is a ufcs fn taking the
-protocol value as its first param). A member excluded from dynamic
-dispatch is still a member: the call diagnoses its unavailability rather
-than falling through (see Protocols, dispatchability).
+handle as its first param).
 
 UFCS works with pointer receivers (auto-deref, and auto address-of when
 the first param is `*T` and the receiver is a value) and with **generic**
@@ -5147,7 +5216,7 @@ c_allocator : CAllocator = .{};
 c_blocking_io : CBlockingIo = .{};
 @context_extend io: Io = c_blocking_io;
 ```
-Before any `push`, code runs under `__sx_default_context`, a static constant holding every field's folded default. A protocol-typed default like the two above is the identity ERASURE of the named instance global — a BORROW: the constant's receiver is the global's real address, never null (null ctx is the `?Protocol` absent sentinel). The same fold works for any user global (`fallback : Allocator = my_impl_global;` — no `xx` needed, the declared type states the erasure). Threads and fibers inherit by snapshotting the spawner's whole context value.
+Before any `push`, code runs under `__sx_default_context`, a static constant holding every field's folded default. An interface-typed default like the two above is the handle over the named instance global — a BORROW: the constant's ctx word is the global's real address, never null (null ctx is the `?I` absent sentinel). The same fold works for any user global (`fallback : Allocator = my_impl_global;` — no `xx` needed, the declared type states the coercion), and a module-scope global is the only operand it accepts (see Constraints and Interfaces §6.6). Threads and fibers inherit by snapshotting the spawner's whole context value.
 
 `push` and `context` require the `Context` type to be declared (import `std.sx` or any module that imports it). In a build without it, both error — and the diagnostic enumerates the program's registered `@context_extend` fields with their declaring modules, so the demand is traceable.
 
@@ -5168,9 +5237,9 @@ sentinel, per the pointer contract.
 - **Assembly**: the compiler assembles the program's `Context` from every declaration in the compilation — there is no builtin prefix — in a deterministic order (sorted by declaring module path, then field name). Field offsets are program-specific — never rely on them across programs.
 - **Access is global and unconditional**: after assembly, `context.field` works in ANY module of the program with no import requirement. Imports gate existence only (an uncompiled module contributes nothing); there is no per-source scoping of context fields.
 - **One flat namespace, loud collisions**: two declarations with the same field name (or colliding with a builtin field) are a hard compile error naming both declaration sites.
-- **Defaults are mandatory and comptime-evaluable**: a declaration without a default — or with one that doesn't fold to a compile-time constant — is a compile error; the default context must be constructible before `main` runs. Defaults fold into `__sx_default_context`. A protocol-typed context field is legal only at an `@identity` protocol — its default folds as the identity erasure of a named instance global; a value/own protocol-typed field is refused at its declaration (an owning constant cannot exist before `main`). `*T = null` is the idiom for handle fields (`?*T = null` where checked absence is wanted); the root `push` in `main` is the idiom for wiring real values.
+- **Defaults are mandatory and comptime-evaluable**: a declaration without a default — or with one that doesn't fold to a compile-time constant — is a compile error; the default context must be constructible before `main` runs. Defaults fold into `__sx_default_context`. An interface-typed field's default folds to the handle over a named module-scope global; any other initializer is refused there (see Constraints and Interfaces §6.6). `*T = null` is the idiom for pointer fields (`?*T = null` where checked absence is wanted); the root `push` in `main` is the idiom for wiring real values.
 - **`push` semantics**: added fields patch exactly like builtin ones.
-- **Comptime**: `@run` bodies execute under a VM-LOCAL copy of the assembled default context (see Protocols, compile-time execution): an added field's default is readable at comptime; protocol-typed fields reference VM-owned instances whose mutations are execution-local and discarded — comptime code cannot mutate globals (the VM reads globals into VM-local copies and never writes back).
+- **Comptime**: `@run` bodies execute under a VM-LOCAL copy of the assembled default context (see Constraints and Interfaces, compile-time execution): an added field's default is readable at comptime; interface-typed fields reference VM-owned instances whose mutations are execution-local and discarded — comptime code cannot mutate globals (the VM reads globals into VM-local copies and never writes back).
 - **Cost guideline** (not enforced): reads are a constant-offset load and calls share the pusher's slot — the only growth cost is the spread-copy at `push` (and the per-fiber snapshot). Prefer one POINTER per concern (`*Ui`, `*Logger`) over fat inline values; a 2 KB inline field makes every push a 2 KB memcpy. Small inline value fields are fine.
 
 There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`@context_extend logger: *Logger = null;`).
@@ -5271,7 +5340,7 @@ fallback to a runtime symbol lookup.
 
 Each intrinsic is dispatched one of three ways. Most are handled at **lowering** —
 folded to a constant (`size_of`, `struct_field_count`), or lowered to dedicated IR ops
-(the atomics). Three — `type_name`, `is_unsigned`, `type_info` — are
+(the atomics). Two — `type_name` and `type_info` — are
 **dual**: folded at lowering when the type argument is statically resolvable, and
 serviced by the comptime evaluator when it is only known at evaluation time. The
 compiler-API surface (`raw_intern`, `raw_find_type`, the `BuildOptions` methods, …) is
@@ -5285,10 +5354,7 @@ that `@sqrt` lowers to, so `@run @sqrt(x)` is a compile-time constant.
 
 Two categories are **not** intrinsics. `string`, `@Vector`, `@Array` and
 `@Slice` are language primitives, resolved by name by the type system like `int` / `bool` /
-`f64`. And a handful of keywords (`type_eq`, `has_impl`, `is_struct`) are
-recognized bare, declared nowhere. `has_impl(P, T)` is the type-level spelling
-of the conformance PROBE and follows the probe's per-kind answers and
-scheduling discipline (see Protocols, compile-time execution).
+`f64`. And `type_eq` is recognized bare, declared nowhere.
 
 ### Staging: functions belong to no stage
 
@@ -5300,9 +5366,9 @@ whether it runs at compile time or at runtime; what decides is **reachability**.
   with `on_build`. A `::` whose initializer is a call is not a compile-time
   root.
 - **Runtime roots**: `main`, exported definitions, and anything named by global
-  data (a protocol vtable, an open set's tag table, the default `Context`).
+  data (an interface vtable, an open set's tag table, the default `Context`).
   Comptime not entangled with conformance runs after the declaration space is
-  final (see Protocols, compile-time execution).
+  final (see Constraints and Interfaces, compile-time execution).
 
 A function reached from the compile-time roots is evaluated by the comptime
 evaluator. A function reached from the runtime roots is emitted into the binary.
@@ -5345,7 +5411,7 @@ error: 'intern' runs only at compile time — it cannot be called from the
 
 ### Memory
 - `malloc(size: i64) -> *void` — allocate `size` bytes of heap memory
-- `free(ptr: *void) -> void` — free previously allocated memory
+- `free(ptr: *void) -> void` — release a `malloc` allocation
 - `memcpy(dst: *void, src: *void, size: i64) -> *void` — copy `size` bytes from `src` to `dst`
 - `memset(dst: *void, val: i64, size: i64) -> void` — fill `size` bytes at `dst` with `val`
 - `size_of($T: Type) -> i64` — size of type `T` in bytes
@@ -5371,11 +5437,15 @@ error: 'intern' runs only at compile time — it cannot be called from the
 - `is_flags($T: Type) -> bool` — returns `true` if `T` is a flags enum (declared with `@flags`)
 - `vector_lanes($T: Type) -> i64` — a vector's lane count (`vector_lanes(@Vector(3, f32))` is `3`). The one vector length the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so `size_of / element size` over-counts (3 lanes read as 4). A static non-vector argument is a compile error (`.len` / `struct_field_count` are the right spellings elsewhere); a runtime `Type` reads the `__sx_vector_lanes` table, where a non-vector tag answers 0 (kind discrimination is `type_info`'s job, like the count tables).
 - `type_eq($A: Type, $B: Type) -> bool` — structural TypeId equality (`type_eq(i64, i64)` is `true`, distinct shapes are `false`); folds at compile time, so `inline if type_eq(...)` is comptime-decidable
-- `is_unsigned($T: Type) -> bool` — `true` if `T` is an unsigned integer (`u8`/`u16`/`u32`/`u64`/`usize`); used by `{}` formatting to print unsigned integers as unsigned decimal
 
-The type-only builtins — `size_of`, `align_of`, `struct_field_count`, `variant_count`, `type_name`, `type_eq`, `is_unsigned`, `is_flags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`type_of(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `type_name` and `is_unsigned` (their original runtime paths), plus `size_of`, `align_of`, `struct_field_count`, `variant_count`, `is_flags`, and `vector_lanes` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_struct_field_counts` / `_variant_counts` / `_flag_bits` / `_vector_lanes`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `type_eq`, which compares tags directly (no table). At runtime the kind gates do not apply: a wrong-kind tag reads its table row (0 for the other family) — runtime kind discrimination is `type_info`'s job. Passing a non-Type VALUE (`size_of(6)`, `is_unsigned(true)`) remains a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation. Passing a value (`size_of(6)`, `is_unsigned(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — not a silent reinterpretation of the value's bits as a type.
+Signedness is asked with `type is unsigned` (§The `is` Operator), which the `{}`
+formatter reads to print unsigned integers as unsigned decimal; it lowers to
+`__sx_type_is_unsigned` over a runtime `Type` and folds outright over a static
+one.
 
-An `any` is accepted because it can hold either a value or a `Type`. `type_name` and `is_unsigned` consult the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `type_name(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `type_of(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `type_name(av)` agree on what `av` is.
+The type-only builtins — `size_of`, `align_of`, `struct_field_count`, `variant_count`, `type_name`, `type_eq`, `is_flags` — strictly require a **type** argument. A spelled type (`i64`, `*u8`, `Point`) or a generic type parameter (`T`) is accepted by all of them. A runtime `Type` value (`type_of(x)`, a `[]Type` element, a `Type`-typed local) is supported by the whole scalar family: `type_name`, plus `size_of`, `align_of`, `struct_field_count`, `variant_count`, `is_flags`, and `vector_lanes` — each reads a lazily-emitted, tag-indexed table (`__sx_type_sizes` / `_aligns` / `_struct_field_counts` / `_variant_counts` / `_flag_bits` / `_vector_lanes`; built only when a dynamic call site exists, so programs without runtime reflection carry no tables) — and `type_eq`, which compares tags directly (no table). At runtime the kind gates do not apply: a wrong-kind tag reads its table row (0 for the other family) — runtime kind discrimination is `type_info`'s job. Passing a non-Type VALUE (`size_of(6)`, `is_flags(true)`) is a compile-time error — `<builtin> expects a type, got '<type>'` — never a silent reinterpretation of the value's bits as a type.
+
+An `any` is accepted because it can hold either a value or a `Type`. `type_name` consults the `any`'s runtime type-tag, not its payload: an `any` holding a *value* reports the type **of that value** (`av : any = 6` → `type_name(av)` is `"i64"`), while an `any` holding a *`Type` value* (e.g. `type_of(x)` stored in an `any`) names the **held type**. This is the same tag the `{}` formatter reads, so `print(av)` and `type_name(av)` agree on what `av` is. `is` reads that tag rather than peeling it: `at is type` is true for a `Type`-holding `any`, and classifying the held type unboxes first (`at.(?Type)`).
 
 ### Type Conversion
 - Conversions are implicit, or they name the type with `expr.(T)` / `expr.(T, alloc)`. Dest-inferred `xx expr` is the same classifier for application code; the stdlib never writes `xx`. There is no `cast(Type, expr)` builtin; runtime-typed data travels as `any` and comes back through the assertion forms.
@@ -5449,10 +5519,9 @@ inline match OS {
 ```sx
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
     inline match T {
-        case protocol: { ... }
         case closure:  { ... }
         case slice:    a.dealloc_bytes(xx x.ptr);
-        else:          @error("free expects a protocol value, a closure, or a slice");
+        else:          @error("free expects a closure or a slice");
     }
 }
 ```
@@ -5660,7 +5729,8 @@ File    :: struct { private fd: i64 = -1; }
 ```
 
 It applies to functions and type functions, structs/enums/unions/error sets,
-protocols, constants and globals, aliases (including UFCS aliases), named
+constraints and interfaces, constants and globals, aliases (including UFCS
+aliases), named
 imports, `@library` handles, runtime classes, `extern`/`export` declarations,
 and `main`.
 
@@ -5710,7 +5780,8 @@ declarations and on the fields of a NAMED struct declaration (a generic
 template included). It is rejected on: anonymous struct fields (a field's
 inline `struct { … }`, a type function's returned `struct { … }`), locals,
 parameters, union and runtime-class fields, enum cases and error tags,
-struct/protocol/impl methods and requirements, flat `@import`, `impl` blocks,
+struct / `constraint` / `interface` / `impl` methods and requirements, flat
+`@import`, `impl` blocks,
 `@context_extend`, `@using`, standalone `@run`, global `asm`, and `@framework`.
 Top-level `inline if` branches and `inline for` bodies MAY declare private
 globals (their statements are module-scope after comptime flattening); function
@@ -5772,7 +5843,7 @@ main :: () -> i32 {
 ```
 modules/std.sx        the prelude — print/format, string ops (concat, substr,
                       path_join, ...), List(T), Context + push, the Allocator
-                      protocol; plus the namespace tail: mem / xml / log /
+                      interface; plus the namespace tail: mem / xml / log /
                       fs / process / socket / json / cli / hash / test ::
                       @import "modules/std/<m>.sx"
 modules/std/          mem.sx (CAllocator, GPA, Arena, TrackingAllocator),
@@ -5785,7 +5856,7 @@ modules/math/         scalar.sx, vector2.sx, matrix44.sx — import the
 modules/build.sx      BuildOptions — compile-time build configuration (§10.5)
 modules/platform/     bundle.sx, uikit.sx, android.sx, sdl3.sx, ... —
                       windowing/bundling backends
-modules/gpu/, modules/ui/   GPU protocol + retained UI toolkit
+modules/gpu/, modules/ui/   GPU layer + retained UI toolkit
 ```
 
 `@import "modules/std.sx"` gives every prelude name bare, plus `mem.GPA`,
@@ -6062,7 +6133,7 @@ quick :: () -> (i32, !) {
 - A top-level (non-`main`) function declared `!` that never errors warns
   ("declared `!` but never errors — drop the `!`"). Closures and
   function-type slots with an empty `!` do **not** warn. A body that
-  forwards (`return callee(...)`) or `try`s an opaque channel — a protocol
+  forwards (`return callee(...)`) or `try`s an opaque channel — an interface
   or UFCS method, a closure slot, a checked assertion — carries a
   load-bearing `!` and does not warn either.
 - Warnings are reported on a **successful** compile too, before the program

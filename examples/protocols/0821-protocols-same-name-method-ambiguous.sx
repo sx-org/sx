@@ -9,7 +9,7 @@
 @import "0821-protocols-same-name-method-ambiguous/a.sx";
 @import "0821-protocols-same-name-method-ambiguous/b.sx";
 
-Provider :: protocol {
+Provider :: constraint {
     get :: (self: *Self) -> Box;
 }
 

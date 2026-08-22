@@ -7,7 +7,7 @@
 // so the read works and the type's name prints. The comptime interpreter
 // stores a first-class `Type` as a bare `.type_tag`, so the struct_get
 // mirrors that same `{ .any, tid }` layout — the layout reflection over the
-// same `any` (`type_name`, `is_unsigned`) reads.
+// same `any` (`type_name`, `is unsigned`) reads.
 
 @import "modules/std.sx";
 
@@ -17,7 +17,7 @@ ct_probe :: () {
     t : Type = type_of(x);
     at : any = t;
     print("name={}\n", type_name(at));
-    print("unsigned={}\n", is_unsigned(at));
+    print("unsigned={}\n", at is unsigned);
     print("value={}\n", at);
     print("after\n");
 }

@@ -1,7 +1,7 @@
 // `@BuildSink(P)` is an ordinary constraint protocol, and `expression` is an
 // ordinary generic method.
 //
-//     @BuildSink :: protocol(P: Type) constraint {
+//     @BuildSink :: constraint(P: Type) {
 //         expression :: (self: *Self, value: $I/@Init($V/P));
 //     }
 //
@@ -17,7 +17,7 @@
 @import "modules/std.sx";
 @import "modules/fluent.sx";
 
-Drawable :: protocol vtable @identity {
+Drawable :: interface {
     draw :: (self: *Self) -> string;
 }
 

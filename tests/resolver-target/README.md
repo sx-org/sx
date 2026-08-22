@@ -19,7 +19,7 @@ them, so they are not baseline-green and do not belong in the baseline corpus.
 ## Layout
 
 ```
-manifest.md                 enumerated list of all 10 cases (class / current / target / note)
+manifest.md                 enumerated list of all 9 cases (class / current / target / note)
 expected/<name>.exit        target exit
 expected/<name>.stdout      target stdout (08xx only)
 expected/<name>.stderr      target stderr (08xx only)
@@ -41,4 +41,4 @@ zig build                                 # build the compiler first
 bash tests/resolver-target/run_resolver_target.sh
 ```
 
-All 10 cases print `xfail`, `0 leaked`, exit 0.
+All 9 cases print `xfail`, `0 leaked`, exit 0.

@@ -1,10 +1,11 @@
-// Protocol dispatch on `List(Protocol)` items where the list pointer is
-// passed into another function — verifies the boxed payload survives an
-// extra call frame between erasure and dispatch.
+// Interface dispatch on `List(I)` items where the list pointer is passed into
+// another function — verifies the referent survives an extra call frame
+// between coercion and dispatch. A handle borrows, so the referent has to
+// outlive the frame that appended it: `Allocator.make` is where it lives.
 
 @import "modules/std.sx";
 
-Sizable :: protocol vtable {
+Sizable :: interface {
     size :: (self: *Self) -> i64;
 }
 
@@ -14,8 +15,7 @@ impl Sizable for Leaf {
 }
 
 add :: (items: *List(Sizable), w: Leaf) {
-    p := w;
-    items.append(p.(Sizable, context.allocator));  // explicit owning copy
+    items.append(context.allocator.make(w));
 }
 
 dispatch_fn :: (items: *List(Sizable)) {

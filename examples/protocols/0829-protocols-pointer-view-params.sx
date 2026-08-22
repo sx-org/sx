@@ -8,14 +8,14 @@
 // The rvalue case is pinned as a refusal in diagnostics/1251.
 @import "modules/std.sx";
 
-Sizable :: protocol vtable { size :: (self: *Self) -> i64; grow :: (self: *Self, by: i64); }
+Sizable :: interface { size :: (self: *Self) -> i64; grow :: (self: *Self, by: i64); }
 Widget :: struct { value: i64; }
 impl Sizable for Widget {
     size :: (self: *Widget) -> i64 { self.value }
     grow :: (self: *Widget, by: i64) { self.value += by; }
 }
 
-Fast :: protocol vtable { tick :: (self: *Self) -> i64; }
+Fast :: interface { tick :: (self: *Self) -> i64; }
 Clock :: struct { n: i64; }
 impl Fast for Clock { tick :: (self: *Clock) -> i64 { self.n += 1; self.n } }
 
@@ -41,7 +41,7 @@ main :: () {
     print("field: {}\n", h.inner.value);
 
     // owned protocol value lends a view via plain @
-    s := w.(Sizable, context.allocator);
+    s := w.(Sizable);
     print("owned-view: {}\n", measure(*s));
 
     // a mutating method through *P writes back into the original

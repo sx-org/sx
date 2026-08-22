@@ -1,0 +1,24 @@
+// Boxing peels to the referent, so the tag an `any` or an interface handle
+// carries names a concrete type. `case interface:` over either subject could
+// only ever be dead, and is a pointed error instead; the live arm wants a
+// runtime `Type` subject.
+@import "modules/std.sx";
+
+P :: interface { a :: (self: *Self) -> i64; }
+W :: struct { v: i64; }
+impl P for W { a :: (self: *W) -> i64 { self.v } }
+
+main :: () {
+    w := W{ v = 1 };
+    av : any = w;
+    match av {
+        case interface: print("?\n");
+        case int: print("int\n");
+    }
+
+    h : P = w;
+    match h {
+        case interface: print("?\n");
+        case W: print("W\n");
+    }
+}

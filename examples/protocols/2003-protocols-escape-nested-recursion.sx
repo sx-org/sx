@@ -6,7 +6,7 @@
 // and its impl's vtable to the symbol it was erased with.
 @import "modules/std.sx";
 
-View :: protocol vtable @identity {
+View :: interface {
     area :: (self: *Self) -> i64;
 }
 
@@ -17,7 +17,7 @@ impl View for Leaf { area :: (self: *Leaf) -> i64 { self.n } }
 Scaled :: struct { child: View; by: i64; }
 impl View for Scaled { area :: (self: *Scaled) -> i64 { self.child.area() * self.by } }
 
-Show :: protocol vtable { label :: (self: *Self) -> i64; }
+Show :: interface { label :: (self: *Self) -> i64; }
 Marker :: struct { k: i64; }
 impl Show for Marker { label :: (self: *Marker) -> i64 { self.k * 3 } }
 

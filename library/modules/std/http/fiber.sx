@@ -18,7 +18,7 @@
 // lifts the pool-only streaming restriction. Handlers must not use the
 // scheduler's own sleep()/block_on_fd() (the server drives fibers with a
 // non-blocking poll that cannot serve them; the provider bails loudly).
-FiberRunner :: protocol vtable @identity {
+FiberRunner :: interface {
     // Spawn a fiber running `entry(arg)` (entry is an sx `(*void) -> void`
     // fn pointer, erased). The fiber is enqueued READY — it first runs at
     // the next drive(). Returns an opaque fiber handle for wake().

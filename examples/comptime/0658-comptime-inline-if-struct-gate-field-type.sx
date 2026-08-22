@@ -1,7 +1,7 @@
-// A comptime-dead `inline if is_struct(T)` branch that
+// A comptime-dead `inline if T is struct` branch that
 // reflects with `struct_field_type(T, i)` must be ELIDED from type resolution when T is
 // a non-indexable type (an enum), so `struct_field_type(enum)` never lowers `.unresolved`
-// to the backend. The `is_struct($T)` comptime predicate gates the branch, and a
+// to the backend. The `$T is struct` comptime predicate gates the branch, and a
 // direct `Enum.variant` value (`E.A`) is a first-class generic-call argument
 // (its type infers to the enum). Compiles + runs for BOTH a struct and an enum
 // instantiation of the same generic.
@@ -12,11 +12,11 @@
 // std/core.sx.)
 
 // Field-wise fold: recurse struct fields, leaf-count everything else. The
-// `inline if is_struct(T)` branch (containing `struct_field_type(T,i)`) must not resolve
+// `inline if T is struct` branch (containing `struct_field_type(T,i)`) must not resolve
 // when T is an enum — `struct_field_count(enum)` is the variant count, so a naive path
 // would enter the field loop and trip `struct_field_type(enum)` → `.unresolved` panic.
 leaf_count :: (v: $T) -> i64 {
-    inline if is_struct(T) {
+    inline if T is struct {
         n := 0;
         inline for i in 0..struct_field_count(T) {
             n = n + leaf_count(struct_field_value(v, i).(struct_field_type(T, i)));

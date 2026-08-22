@@ -54,7 +54,7 @@ B09 :: B08;
 B10 :: B09;
 
 // 18-hop protocol alias chain, impl through the deepest alias.
-Speak :: protocol { say :: (self: *Self) -> i64; }
+Speak :: constraint { say :: (self: *Self) -> i64; }
 P01 :: Speak;
 P02 :: P01;
 P03 :: P02;

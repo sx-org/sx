@@ -1,26 +1,25 @@
-// Three comptime intrinsics let a pack-fn body branch on type identity /
-// protocol membership:
+// Three comptime spellings let a pack-fn body branch on type identity /
+// contract membership:
 //
 //   type_name(T)     -> string  // display name of T
 //   type_eq(T1, T2)  -> bool    // structural TypeId equality
-//   has_impl(P, T)   -> bool    // T has a reachable impl for P
+//   T is P           -> bool    // T has a reachable impl for P
 //
 // All three fold to compile-time constants and are accepted by
-// `tryConstBoolCondition`, so `inline if type_eq(...)` /
-// `inline if has_impl(...)` collapse to a single branch at lower
-// time — no runtime cost.
+// `tryConstBoolCondition`, so `inline if type_eq(...)` / `inline if T is P`
+// collapse to a single branch at lower time — no runtime cost.
 //
-// `has_impl`'s protocol arg accepts both shapes:
-//   - plain protocol name: `has_impl(Allocator, CAllocator)`.
-//   - parameterised call:  `has_impl(Wrap(i64), i32)` — the args
-//     match the impl's protocol type-args exactly.
+// `is` takes a contract in both shapes:
+//   - plain name:         `CAllocator is Allocator`.
+//   - parameterised head: `i32 is Wrap(i64)` — the args match the impl's
+//     type-args exactly.
 
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
-// User-defined parameterised protocol + an impl, so has_impl can
-// confirm parameterised matching works with a known-true case.
-Wrap :: protocol(Target: Type) {
+// User-defined parameterised constraint + an impl, so `is` confirms
+// parameterised matching works with a known-true case.
+Wrap :: constraint(Target: Type) {
     wrap :: (self: *Self) -> Target;
 }
 
@@ -46,14 +45,14 @@ main :: () -> i32 {
         print("inline-if folded: different\n");
     }
 
-    // has_impl — plain protocol (Allocator is unary).
-    print("Allocator/CAllocator: {}\n", has_impl(Allocator, CAllocator));
-    print("Allocator/i64: {}\n", has_impl(Allocator, i64));
+    // `is` — plain head (Allocator is unary).
+    print("Allocator/CAllocator: {}\n", CAllocator is Allocator);
+    print("Allocator/i64: {}\n", i64 is Allocator);
 
-    // has_impl — parameterised protocol (Wrap takes a Target type arg).
-    print("Wrap(i64)/i32: {}\n", has_impl(Wrap(i64), i32));
-    print("Wrap(i64)/bool: {}\n", has_impl(Wrap(i64), bool));
-    print("Wrap(bool)/i32: {}\n", has_impl(Wrap(bool), i32));
+    // `is` — parameterised head (Wrap takes a Target type arg).
+    print("Wrap(i64)/i32: {}\n", i32 is Wrap(i64));
+    print("Wrap(i64)/bool: {}\n", bool is Wrap(i64));
+    print("Wrap(bool)/i32: {}\n", i32 is Wrap(bool));
 
     return 0;
 }

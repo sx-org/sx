@@ -1,0 +1,5 @@
+error: expected ';'
+  --> examples/diagnostics/1286-diagnostics-protocol-head-removed.sx:6:17
+   |
+ 6 | Ord :: protocol erased {
+   |                 ^^^^^^

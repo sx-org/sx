@@ -6,7 +6,7 @@
 Box :: struct { total: i64 = 0; count: i64 = 0; }
 update :: (self: *Box, n: i64) { self.total += n; self.count += 1; }
 
-Doer :: protocol { go :: (self: *Self, n: i64); }
+Doer :: constraint { go :: (self: *Self, n: i64); }
 
 impl Doer for Box {
     go :: (self: *Box, u8: i64) {

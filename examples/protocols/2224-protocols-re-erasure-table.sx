@@ -1,0 +1,33 @@
+// `p.(Q)` between interfaces is one runtime read of the `(type_id, Q)` table.
+// The soft form answers null on a miss; the unconsumed form panics on the same
+// null. Both conformers reach `I`; only one of them reaches `Q`.
+@import "modules/std.sx";
+
+I :: interface { a :: (self: *Self) -> i64; }
+Q :: interface { q :: (self: *Self) -> i64; }
+
+W :: struct { v: i64; }
+impl I for W { a :: (self: *W) -> i64 { self.v } }
+impl Q for W { q :: (self: *W) -> i64 { self.v + 1 } }
+
+V :: struct { n: i64; }
+impl I for V { a :: (self: *V) -> i64 { self.n } }
+
+probe :: (p: I) -> i64 {
+    if r := p.(?Q) { return r.q(); }
+    -1
+}
+
+main :: () {
+    w := W{ v = 3 };
+    v := V{ n = 9 };
+    hit : I = w;
+    miss : I = v;
+
+    print("direct: {}\n", hit.(Q).q());
+    print("probe:  {} {}\n", probe(hit), probe(miss));
+
+    // Unconsumed, over the conformer that is absent from the table.
+    _ = miss.(Q);
+    print("unreached\n");
+}

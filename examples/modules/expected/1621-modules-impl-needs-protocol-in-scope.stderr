@@ -4,7 +4,7 @@ error: no conversion from 'string' to '*DeadBox'
 10 |     b : *DeadBox = xx "abc";
    |                    ^^^^^^^^
 
-error: unknown protocol 'Into' in impl — not declared or imported in this module
+error: unknown constraint or interface 'Into' in impl — not declared or imported in this module
   --> examples/modules/1621-modules-impl-needs-protocol-in-scope/dead_impl.sx:7:1
    |
  7 | impl Into(*DeadBox) for string {

@@ -26,7 +26,7 @@ resolver produces its exact bytes.
 - **OWN-WINS-FAILS (own-wins):** exits 1, failing to resolve the own-author, where
   the target is exit 0 and the program runs.
 
-## Manifest (10 cases)
+## Manifest (9 cases)
 
 | # | case (source tree under `examples/<category>/<name>.sx`) | surface | class | current | target | note |
 |---|---|---|---|---|---|---|
@@ -36,7 +36,6 @@ resolver produces its exact bytes.
 | 4 | `0815-route-all-new-surfaces-ambiguous` | `*Box` / `union{Box}` / `enum{Box}` / inline-union ambiguous | UNDER-DIAGNOSE | exit 1, **<5** diags | exit 1, **5** diags | one site is caught, the rest resolve silently |
 | 5 | `0821-protocols-same-name-method-ambiguous` | ambiguous protocol-method | SILENT-RESOLVE | exit 0, silent | exit 1, 1 diag | the protocol head resolves silently |
 | 6 | `0825-protocols-same-name-method-wrapped-ambiguous` | wrapped protocol-method, ambiguous | SILENT-RESOLVE | exit 0, silent | exit 1, 1 diag | — |
-| 7 | `0826-protocols-param-impl-source-wrapped-own-wins` | wrapped param-impl source, own wins | WRONG-AUTHOR | exit 0, `v=<garbage>` | exit 0, `v=7 dep=9` | the wrong author resolves → garbage field value |
-| 8 | `0827-protocols-param-impl-source-wrapped-ambiguous` | wrapped param-impl source, ambiguous | SILENT-RESOLVE | exit 0, silent | exit 1, 1 diag | — |
-| 9 | `0829-packs-param-impl-mixed-pack-source-ambiguous` | mixed pack-closure param-impl, concrete `*Box` prefix ambiguous | SILENT-RESOLVE | exit 0, silent | exit 1, 1 diag | the `*Box` collision falls to the no-author `resolveTemplateSignatureType` wrapper (global last-wins) and registers silently |
-| 10 | `e6br5-nested-pack-source-ambiguous` (tree under `tests/resolver-target/cases/`) | NESTED concrete `*Box` leaf inside `Closure(Closure(*Box,..)->.., ..)->..` | SILENT-RESOLVE | exit 0, silent | exit 1, ≥1 diag (spec) | `walkConcreteSigArgs` skips nested args; the whole-AST resolver subsumes the hole |
+| 7 | `0827-protocols-param-impl-source-wrapped-ambiguous` | wrapped param-impl source, ambiguous | SILENT-RESOLVE | exit 0, silent | exit 1, 1 diag | — |
+| 8 | `0829-packs-param-impl-mixed-pack-source-ambiguous` | mixed pack-closure param-impl, concrete `*Box` prefix ambiguous | SILENT-RESOLVE | exit 0, silent | exit 1, 1 diag | the `*Box` collision falls to the no-author `resolveTemplateSignatureType` wrapper (global last-wins) and registers silently |
+| 9 | `e6br5-nested-pack-source-ambiguous` (tree under `tests/resolver-target/cases/`) | NESTED concrete `*Box` leaf inside `Closure(Closure(*Box,..)->.., ..)->..` | SILENT-RESOLVE | exit 0, silent | exit 1, ≥1 diag (spec) | `walkConcreteSigArgs` skips nested args; the whole-AST resolver subsumes the hole |

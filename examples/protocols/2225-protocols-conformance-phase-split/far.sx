@@ -1,0 +1,6 @@
+// The second `impl C for W`. Bare-import visibility is non-transitive, so the
+// root reaches this module's declarations only through `bridge.sx` and never
+// sees this impl.
+@import "./types.sx";
+
+impl C for W { c :: (self: *W) -> i64 { self.v + 100 } }

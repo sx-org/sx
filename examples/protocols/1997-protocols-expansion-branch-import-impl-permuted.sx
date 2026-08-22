@@ -14,10 +14,10 @@ inline if POINTER_SIZE == 8 {
     NARROW :: 1;
 }
 
-inline if has_impl(Show, Item) { ADMITTED :: 1; } else { ADMITTED :: 0; }
+inline if Item is Show { ADMITTED :: 1; } else { ADMITTED :: 0; }
 
 main :: () {
     i := Item{ n = 2 };
-    s := i.(Show, context.allocator);
+    s := i.(Show);
     print("{} {}\n", ADMITTED, s.fmt());
 }

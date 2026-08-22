@@ -7,7 +7,7 @@
 // not only a protocol child.
 @import "modules/std.sx";
 
-P :: protocol vtable {
+P :: interface {
     n :: (self: *Self) -> i32;
     bump :: (self: *Self);
 }
@@ -35,6 +35,6 @@ main :: () {
         print("bound:   {}\n", g.n());
     }
     // ?P (owned optional) parity.
-    op : ?P = c.(P, context.allocator);
+    op : ?P = c.(P);
     print("owned:   {}\n", op.n());
 }

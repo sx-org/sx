@@ -1,5 +1,5 @@
 // The protocol and the target both branches agree on, so the module a branch
 // imports can author an impl over the same declarations the reader asks about.
-Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
+Show :: interface { fmt :: (self: *Self) -> i64; }
 
 Item :: struct { n: i64; }

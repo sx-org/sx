@@ -566,12 +566,12 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
     switch (node.data) {
         .bool_literal => |bl| return bl.value,
         .binary_op => |b| {
-            // `protocol_kind(P) == .vtable` — the kind classifier's comparison
-            // folds so `inline if` drops the dead branch whole, the same way
-            // the predicate builtins above do.
+            if (b.op == .is_op) return self.staticIsCondition(b.lhs, b.rhs);
+            // Two static type references under `==` / `!=` compare as TypeIds,
+            // so `inline if V == T` prunes the dead branch whole.
             if (b.op != .eq and b.op != .neq) return null;
-            const matched = protocolKindComparison(self, b.lhs, b.rhs) orelse
-                protocolKindComparison(self, b.rhs, b.lhs) orelse return null;
+            if (!isStaticTypeRef(self, b.lhs) or !isStaticTypeRef(self, b.rhs)) return null;
+            const matched = self.resolveTypeArg(b.lhs) == self.resolveTypeArg(b.rhs);
             return if (b.op == .eq) matched else !matched;
         },
         .call => |c| {
@@ -593,36 +593,11 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
                     }
                     return false;
                 }
-                if (std.mem.eql(u8, cname, "is_identity") and c.args.len >= 1) {
-                    // is_identity($T) → is T an `@identity` protocol? Folds so
-                    // `inline if is_identity(T)` drops the dead branch whole
-                    // (free's compile_error refusal lives in the taken one).
-                    // Non-static arg → null; the lowering arm then reports the
-                    // static-only requirement.
-                    if (!self.isStaticTypeArg(c.args[0])) return null;
-                    const ty = self.resolveTypeArg(c.args[0]);
-                    if (self.getProtocolInfo(ty)) |pi| return pi.ownership == .identity;
-                    return false;
-                }
-                if (std.mem.eql(u8, cname, "is_struct") and c.args.len >= 1) {
-                    // is_struct($T) → is T a nominal `struct`? A comptime
-                    // type-kind gate for field-wise reflection: folds here so
-                    // `inline if is_struct(T)` elides the whole reflection branch
-                    // (incl. `field_type(T,i)`) when T is an enum/scalar.
-                    if (!self.isStaticTypeArg(c.args[0])) return null;
-                    const ty = self.resolveTypeArg(c.args[0]);
-                    if (ty.isBuiltin() or ty == .unresolved) return false;
-                    return self.module.types.get(ty) == .@"struct";
-                }
                 if (std.mem.eql(u8, cname, "type_eq") and c.args.len >= 2) {
                     if (!self.isStaticTypeArg(c.args[0]) or !self.isStaticTypeArg(c.args[1])) return null;
                     const a = self.resolveTypeArg(c.args[0]);
                     const b = self.resolveTypeArg(c.args[1]);
                     return a == b;
-                }
-                if (std.mem.eql(u8, cname, "has_impl") and c.args.len >= 2) {
-                    const ty = self.resolveTypeArg(c.args[1]);
-                    return self.computeHasImpl(c.args[0], ty);
                 }
             }
         },
@@ -631,17 +606,26 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
     return null;
 }
 
-/// `protocol_kind(P)` against an enum literal: does the protocol's declared
-/// kind equal the named variant? Null when the pair is not that shape.
-fn protocolKindComparison(self: *Lowering, call_node: *const Node, lit_node: *const Node) ?bool {
-    if (call_node.data != .call) return null;
-    const c = call_node.data.call;
-    if (c.callee.data != .identifier) return null;
-    if (!std.mem.eql(u8, c.callee.data.identifier.name, "protocol_kind")) return null;
-    if (lit_node.data != .enum_literal) return null;
-    if (c.args.len < 1 or !self.isStaticTypeArg(c.args[0])) return null;
-    const kind = self.protocolKindOf(self.resolveTypeArg(c.args[0])) orelse return null;
-    return std.mem.eql(u8, kind.spelling(), lit_node.data.enum_literal.name);
+/// The static `is` fold: a compile-time-known subject type against the written
+/// target. Null keeps the runtime lowering (a value subject, or a conformance
+/// answer still waiting on an undecided impl driver).
+pub fn staticIsCondition(self: *Lowering, lhs: *const Node, rhs: *const Node) ?bool {
+    if (!isStaticTypeRef(self, lhs)) return null;
+    const subject = self.resolveTypeArg(lhs);
+    if (subject == .unresolved) return null;
+    return self.staticIsAnswer(subject, rhs);
+}
+
+/// Does this node name a type STATICALLY — a spelling or a bound generic
+/// parameter, as opposed to a runtime `Type` value?
+fn isStaticTypeRef(self: *Lowering, node: *const Node) bool {
+    switch (node.data) {
+        .identifier, .type_expr, .field_access, .parameterized_type_expr,
+        .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr,
+        .optional_type_expr, .array_type_expr => {},
+        else => return false,
+    }
+    return self.isStaticTypeArg(node);
 }
 
 pub fn lowerWhile(self: *Lowering, we: *const ast.WhileExpr) Ref {
@@ -1431,9 +1415,12 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 .type_expr => |te| te.name,
                 else => "",
             };
-            if (std.mem.eql(u8, cat_name, "protocol")) {
+            // Boxing peels to the referent, so the tag of an `any` or of an
+            // interface handle names a concrete type and never an interface:
+            // the arm could only ever be dead.
+            if (std.mem.eql(u8, cat_name, "interface")) {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, pat.span, "'case protocol:' needs a compile-time subject — use `inline if` over a generic type param (a protocol value carries no runtime type tag)", .{});
+                    d.addFmt(.err, pat.span, "'case interface:' needs a 'Type' subject — this subject's tag names the referent's concrete type, so the arm can never run", .{});
                 arm_tag_values.append(self.alloc, &.{}) catch unreachable;
                 continue;
             }
@@ -1480,7 +1467,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             }
             if (raw_tags.len > 0 and eff.items.len == 0) {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, pat.span, "this arm is unreachable — earlier arms already claim every type it names (a concrete arm must come BEFORE the category that contains it)", .{});
+                    d.addFmt(.err, pat.span, "this arm is unreachable — earlier arms already claim every type it names (the narrower arm must come BEFORE the category that contains it)", .{});
             }
             arm_tag_values.append(self.alloc, eff.items) catch unreachable;
             for (eff.items) |tag| {
@@ -1500,16 +1487,6 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 .type_expr => |te| te.name,
                 else => "",
             };
-            // The `protocol` category exists only in the STATIC fold (an
-            // `inline if` over a bound generic type param) — a protocol
-            // value carries no runtime tag to switch on, so a runtime arm
-            // would be silently dead.
-            if (std.mem.eql(u8, name, "protocol")) {
-                if (self.diagnostics) |d|
-                    d.addFmt(.err, pat.span, "'case protocol:' needs a compile-time subject — use `inline if` over a generic type param (a protocol value carries no runtime type tag)", .{});
-                arm_tag_values.append(self.alloc, &.{}) catch unreachable;
-                continue;
-            }
             // Single-hop visibility + ambiguity gate: a SPECIFIC 2-flat-hop
             // type name in a type-match arm (`case COnly:`) is not bare-visible
             // (consistent with annotations / 0763); ≥2 direct flat same-name
@@ -1578,7 +1555,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             }
             if (raw_tv.len > 0 and eff_tv.items.len == 0) {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, pat.span, "this arm is unreachable — earlier arms already claim every type it names (a concrete arm must come BEFORE the category that contains it)", .{});
+                    d.addFmt(.err, pat.span, "this arm is unreachable — earlier arms already claim every type it names (the narrower arm must come BEFORE the category that contains it)", .{});
             }
             arm_tag_values.append(self.alloc, eff_tv.items) catch unreachable;
             for (eff_tv.items) |tag| {

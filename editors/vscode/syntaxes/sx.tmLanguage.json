@@ -243,7 +243,7 @@
         },
         {
           "name": "storage.type.sx",
-          "match": "(?<!\\.)\\b(?:struct|union|enum|error|protocol|impl)\\b"
+          "match": "(?<!\\.)\\b(?:struct|union|enum|error|impl)\\b"
         },
         {
           "name": "storage.modifier.sx",
@@ -255,7 +255,7 @@
         },
         {
           "name": "keyword.operator.word.sx",
-          "match": "(?<!\\.)\\b(?:and|or|xx)\\b"
+          "match": "(?<!\\.)\\b(?:and|or|xx|is)\\b"
         }
       ]
     },
@@ -270,7 +270,15 @@
     "declarations": {
       "patterns": [
         {
-          "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(::)\\s*(?=(?:struct|union|enum|error|protocol)\\b)",
+          "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(::)\\s*(constraint|interface)\\b",
+          "captures": {
+            "1": { "name": "entity.name.type.sx" },
+            "2": { "name": "keyword.operator.declaration.sx" },
+            "3": { "name": "storage.type.sx" }
+          }
+        },
+        {
+          "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(::)\\s*(?=(?:struct|union|enum|error)\\b)",
           "captures": {
             "1": { "name": "entity.name.type.sx" },
             "2": { "name": "keyword.operator.declaration.sx" }

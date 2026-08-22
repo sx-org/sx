@@ -5,7 +5,7 @@
 // callee reads it back through a typed pointer.
 @import "modules/std.sx";
 
-Take :: protocol vtable @identity {
+Take :: interface {
     take :: (self: *Self, ptr: *void);
 }
 

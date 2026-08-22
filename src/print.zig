@@ -158,11 +158,48 @@ pub fn printType(node: *const Node, writer: Writer) anyerror!void {
             try writer.writeAll("[*]");
             try printType(m.element_type, writer);
         },
+        .array_type_expr => |a| {
+            try writer.writeByte('[');
+            try printExpr(a.length, writer);
+            try writer.writeByte(']');
+            try printType(a.element_type, writer);
+        },
+        .parameterized_type_expr => |p| {
+            try writer.writeAll(p.name);
+            try writer.writeByte('(');
+            for (p.args, 0..) |arg, i| {
+                if (i > 0) try writer.writeAll(", ");
+                try printExpr(arg, writer);
+            }
+            try writer.writeByte(')');
+        },
         .tuple_type_expr => |t| {
             try writer.writeByte('(');
             for (t.field_types, 0..) |ft, i| {
                 if (i > 0) try writer.writeAll(", ");
                 try printType(ft, writer);
+            }
+            try writer.writeByte(')');
+        },
+        .return_type_expr => |r| {
+            try writer.writeByte('(');
+            for (r.field_types, 0..) |ft, i| {
+                if (i > 0) try writer.writeAll(", ");
+                // The error channel's name slot holds the `!` placeholder; its
+                // type prints the `!` itself.
+                if (r.field_names) |names| {
+                    if (names[i].len > 0 and !std.mem.eql(u8, names[i], "!")) {
+                        try writer.writeAll(names[i]);
+                        try writer.writeAll(": ");
+                    }
+                }
+                try printType(ft, writer);
+                if (r.field_defaults) |defaults| {
+                    if (defaults[i]) |d| {
+                        try writer.writeAll(" = ");
+                        try printExpr(d, writer);
+                    }
+                }
             }
             try writer.writeByte(')');
         },

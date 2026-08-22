@@ -258,14 +258,14 @@ fn refuseFormationMembership(self: *Lowering, src_ty: TypeId, target: TypeId, me
     return null;
 }
 
-/// A protocol value is a handle to its conformer, not the conformer's value, so
+/// A handle names its conformer, not the conformer's value, so
 /// no concrete conformer value is available for the write. The explicit downcast
 /// reads the conformer out, spelled at the leaf the target's optionals wrap.
 fn refuseFormationFromProtocol(self: *Lowering, src_ty: TypeId, target: TypeId, leaf: TypeId, span: ast.Span) ?Ref {
     if (self.externalErrorsExist()) return null;
     if (self.diagnostics) |d| {
         const leaf_name = self.formatSourceTypeName(leaf);
-        const id = d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': a protocol value is a handle to its conformer, not the conformer", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(target) });
+        const id = d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': a handle names its conformer, not the conformer", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(target) });
         d.addHelpFmt(id, span, null, "read the conformer out with a downcast first: '.({s})' panics on another type, '.(?{s})' answers null", .{ leaf_name, leaf_name });
         self.assignability_error_count += 1;
     }

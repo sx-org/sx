@@ -10,7 +10,7 @@
 @import "0825-protocols-same-name-method-wrapped-ambiguous/a.sx";
 @import "0825-protocols-same-name-method-wrapped-ambiguous/b.sx";
 
-Provider :: protocol {
+Provider :: constraint {
     getp :: (self: *Self) -> *Box;
 }
 

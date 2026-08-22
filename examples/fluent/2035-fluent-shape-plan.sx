@@ -8,7 +8,7 @@
 @import "modules/std.sx";
 @import "modules/fluent.sx";
 
-Drawable :: protocol constraint {
+Drawable :: constraint {
     draw :: (self: *Self) -> string;
 }
 

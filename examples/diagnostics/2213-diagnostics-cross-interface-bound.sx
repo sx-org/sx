@@ -1,0 +1,15 @@
+// A handle at a different interface's bound fails at the bound: identity
+// is the only short-circuit, and no `impl View for Show` is visible here.
+@import "modules/std.sx";
+
+Show :: interface { show :: (self: *Self) -> string; }
+View :: interface { draw :: (self: *Self) -> i64; }
+W :: struct { n: i64; }
+impl Show for W { show :: (self: *W) -> string { "w" } }
+
+draw :: (v: $T/View) -> i64 { 1 }
+
+main :: () {
+    h : Show = W{ n = 1 };
+    print("{}\n", draw(h));
+}

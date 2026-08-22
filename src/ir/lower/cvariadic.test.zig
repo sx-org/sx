@@ -297,15 +297,15 @@ test "a protocol method meets the boundary rules on every kind" {
     defer arena.deinit();
     var lowered: Lowered = undefined;
     try lower(arena.allocator(),
-        \\Reader :: protocol vtable {
+        \\Reader :: interface {
         \\    read :: (self: *Self, ap: @VaList) -> i64;
         \\}
-        \\Templated :: protocol (T: Type) vtable {
+        \\Templated :: interface(T: Type) {
         \\    read :: (self: *Self, ap: @VaList) -> T;
         \\    take :: (self: *Self, cb: (@VaList) -> i64) -> i64;
         \\    hand :: (self: *Self) -> Closure(i32) -> *@VaList;
         \\}
-        \\LegalBorrow :: protocol vtable {
+        \\LegalBorrow :: interface {
         \\    read :: (self: *Self, ap: *@VaList) -> i64;
         \\}
         \\holds: Reader;
@@ -314,7 +314,7 @@ test "a protocol method meets the boundary rules on every kind" {
     , &lowered);
     defer lowered.module.deinit();
 
-    try std.testing.expectEqual(@as(usize, 2), countMessages(&lowered, "a protocol method is an sx call and has no C signature"));
+    try std.testing.expectEqual(@as(usize, 2), countMessages(&lowered, "a constraint or interface method is an sx call and has no C signature"));
     try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "is the C boundary parameter"));
     try std.testing.expectEqual(@as(usize, 1), countMessages(&lowered, "cannot outlive the call frame"));
     try std.testing.expectEqual(@as(usize, 4), lowered.diagnostics.errorCount());

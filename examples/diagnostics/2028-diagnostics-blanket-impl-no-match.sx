@@ -4,7 +4,7 @@
 // template, is not covered and the bound is not satisfied.
 @import "modules/std.sx";
 
-Series :: protocol(T: Type) constraint {
+Series :: constraint(T: Type) {
     count :: (self: *Self) -> i64;
 }
 

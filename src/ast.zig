@@ -386,6 +386,10 @@ pub const BinaryOp = struct {
         shl,
         shr,
         in_op,
+        /// `x is T` — classification. The RHS is parsed as a TYPE expression,
+        /// never as a value, so it holds a type node (or a bare category word
+        /// spelled as an identifier / `struct` / `enum` / `union`).
+        is_op,
     };
 };
 
@@ -883,8 +887,8 @@ pub const PostfixCast = struct {
     operand: *Node,
     type_expr: *Node,
     is_optional_chain: bool = false,
-    // `expr.(P, alloc)` — the owning-erasure form's explicit allocator
-    // (protocol targets only; lvalue-only, enforced at lowering).
+    // `expr.(T, alloc)` — the allocator an `Into` conversion funds from
+    // (lvalue-only; an interface target refuses it, both at lowering).
     alloc_arg: ?*Node = null,
 };
 
@@ -1108,31 +1112,25 @@ pub const ProtocolMethodDecl = struct {
     /// identifier — exempt from the reserved-type-name check.
     /// Empty for synthesized methods (treated as all-false).
     param_name_is_raw: []const bool = &.{},
+    /// The stripped receiver's form: the declaration wrote `self: *Self` rather
+    /// than `self: Self`.
+    receiver_is_pointer: bool = true,
     return_type: ?*Node, // null = void return
     default_body: ?*Node, // null = required method, non-null = default implementation
 };
 
-/// The kind slot of a protocol head — `protocol [(params)] kind [attrs]`.
-/// Ordered by cost: `constraint` emits nothing; `vtable` opts into dynamic
-/// dispatch. Absent in source ⇒ `constraint`.
+/// Which head declared this contract: `constraint` names a bound and emits
+/// nothing; `interface` mints an erased runtime value type.
 pub const ProtocolKind = enum {
     constraint,
-    vtable,
-
-    pub fn spelling(self: ProtocolKind) []const u8 {
-        return switch (self) {
-            .constraint => "constraint",
-            .vtable => "vtable",
-        };
-    }
+    erased,
 };
 
 pub const ProtocolDecl = struct {
     name: []const u8,
     methods: []const ProtocolMethodDecl,
     kind: ProtocolKind = .constraint,
-    is_identity: bool = false, // @identity — borrow-only ownership class (values never own their ctx)
-    type_params: []const StructTypeParam = &.{}, // for `protocol(Target: Type) { ... }`
+    type_params: []const StructTypeParam = &.{}, // for `constraint(Target: Type) { ... }`
     /// True when the declared NAME was a backtick raw identifier — exempt from
     /// the reserved-type-name decl check.
     is_raw: bool = false,

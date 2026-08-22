@@ -23,7 +23,7 @@ Probe :: struct {
 }
 
 // ── 2. Protocol impl method ────────────────────────────────────────
-Hashable :: protocol {
+Hashable :: constraint {
     sx_hash :: (self: *Self) -> i64;
 }
 

@@ -1,5 +1,5 @@
 // A variadic parameter carries its own type. There is nothing to infer one
-// from: the slice and protocol forms ARE the annotation, and `..$name` is a
+// from: the slice and constraint or interface forms ARE the annotation, and `..$name` is a
 // comptime pack whose element types come from the call. A name with neither is
 // refused at the parameter, ahead of any lowering.
 

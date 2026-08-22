@@ -1,0 +1,13 @@
+// A unique-pair runtime `Type` left operand against a constraint answers both
+// polarities: the conforming type is true, a foreign type is false.
+@import "modules/std.sx";
+
+Ord :: constraint { less :: (self: *Self, other: Self) -> bool; }
+W :: struct { v: i64; }
+impl Ord for W { less :: (self: *W, other: W) -> bool { self.v < other.v } }
+
+main :: () {
+    t : Type = W;
+    u : Type = i64;
+    print("{} {}\n", t is Ord, u is Ord);
+}

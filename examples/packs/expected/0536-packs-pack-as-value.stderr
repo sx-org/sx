@@ -37,7 +37,7 @@ error: pack 'xs' has no runtime value — a pack is comptime-only and can't be u
 17 | iter    :: (..xs: Show) -> void { for x in xs { _ = x; } }  // D: runtime iterate
    |                                            ^^
 
-help: to iterate at comptime use `inline for x in xs` (or `inline for i in 0..xs.len` for the index); for a runtime loop declare it as `..xs: []P` (a protocol slice) instead of a pack
+help: to iterate at comptime use `inline for x in xs` (or `inline for i in 0..xs.len` for the index); for a runtime loop declare it as `..xs: []P` (an interface slice) instead of a pack
    |
 17 | iter    :: (..xs: Show) -> void { for x in xs { _ = x; } }  // D: runtime iterate
    |                                            ^^

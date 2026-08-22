@@ -3,7 +3,7 @@
 
 foreign :: @import "0893-protocols-local-alias-not-hidden-protocol/foreign.sx";
 
-Q :: protocol vtable @identity {
+Q :: interface {
     value :: (self: *Self) -> i64;
 }
 

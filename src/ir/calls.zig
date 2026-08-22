@@ -176,8 +176,6 @@ pub const CallResolver = struct {
             // Keywords: bare names the compiler recognizes with no declaration, so
             // the registry has nothing to say about them.
             if (std.mem.eql(u8, bare_name, "type_eq")) return refl(bare_name, .bool);
-            if (std.mem.eql(u8, bare_name, "has_impl")) return refl(bare_name, .bool);
-            if (std.mem.eql(u8, bare_name, "is_struct")) return refl(bare_name, .bool);
             if (std.mem.eql(u8, bare_name, "__interp_print_frames")) return refl(bare_name, .void);
             if (std.mem.eql(u8, bare_name, "__trace_resolve_frame"))
                 return refl(bare_name, self.l.module.types.findByName(self.l.module.types.internString("TraceFrame")) orelse .unresolved);

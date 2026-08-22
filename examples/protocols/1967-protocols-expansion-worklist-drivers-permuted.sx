@@ -10,19 +10,19 @@ inline if POINTER_SIZE == 8 {
     impl View for Panel { area :: (self: *Panel) -> i64 { self.n + 100 } }
 }
 
-HAS_PANEL :: @run has_impl(View, Panel);
+HAS_PANEL :: @run Panel is View;
 inline if HAS_PANEL { WIDTH :: 3; } else { WIDTH :: 0; }
 
 inline for T in SHAPES {
     impl Tally for T { count :: (self: *T) -> i64 { self.n } }
 }
-inline if has_impl(Tally, Panel) { COUNTED :: 1; } else { COUNTED :: 0; }
+inline if Panel is Tally { COUNTED :: 1; } else { COUNTED :: 0; }
 
 inline if POINTER_SIZE == 8 {
     impl Tally for Loose { count :: (self: *Loose) -> i64 { self.n * 2 } }
 }
 
-inline if has_impl(View, Loose) { SEEN :: 1; } else { SEEN :: 0; }
+inline if Loose is View { SEEN :: 1; } else { SEEN :: 0; }
 
 main :: () {
     w := Widget{ n = 4 };
@@ -42,5 +42,5 @@ Widget :: struct { n: i64; }
 Panel :: struct { n: i64; }
 Loose :: struct { n: i64; }
 
-View :: protocol vtable { area :: (self: *Self) -> i64; }
-Tally :: protocol vtable { count :: (self: *Self) -> i64; }
+View :: interface { area :: (self: *Self) -> i64; }
+Tally :: interface { count :: (self: *Self) -> i64; }

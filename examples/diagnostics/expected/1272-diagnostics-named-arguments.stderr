@@ -40,7 +40,7 @@ error: call to 'need' is missing required parameters 'a', 'b'
 20 |     _ = need(c = true);
    |         ^^^^
 
-error: cannot use named arguments here — 'q' has no known parameter names (closure and function-pointer values, builtins, and protocol methods bind positionally)
+error: cannot use named arguments here — 'q' has no known parameter names (closure and function-pointer values, builtins, and interface methods bind positionally)
   --> examples/diagnostics/1272-diagnostics-named-arguments.sx:22:9
    |
 22 |     _ = q(a = 1);

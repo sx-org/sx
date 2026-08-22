@@ -345,6 +345,11 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // monomorphized here can still enlarge a set, so the pass is a fixpoint —
     // and before codegen, which reads the frozen layout.
     self.convergeOpenSets();
+    // Pass 5b: write the rows of every conformance table a runtime `is` or a
+    // re-erasure asked for. Runs after every body is lowered — a
+    // monomorphization here can still register an impl or mint a type — so the
+    // rows cover the whole program and answer over program-unique pairs.
+    self.fillConformanceTables();
     // Pass 6: any impl block STILL unregistered has an unresolvable head or
     // types — every registration opportunity has run. Silence here let a
     // dead impl degrade its consumers.

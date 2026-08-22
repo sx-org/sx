@@ -28,6 +28,7 @@ const std = @import("std");
 const ast = @import("../../ast.zig");
 const contracts = @import("../../contracts.zig");
 const types = @import("../types.zig");
+const lower_protocol = @import("protocol.zig");
 
 const Node = ast.Node;
 const TypeId = types.TypeId;
@@ -181,8 +182,8 @@ fn spelledHead(self: *Lowering, bound: *const Node, proto_name: []const u8) []co
 
 fn reportUnknownHead(self: *Lowering, bound: *const Node, name: []const u8, param: []const u8) void {
     const d = self.diagnostics orelse return;
-    const id = d.addFmtId(.err, bound.span, "unknown protocol '{s}' in the bound on '${s}'", .{ name, param });
-    d.addHelpFmt(id, bound.span, null, "a bound names a protocol in scope, an open set, or one of this declaration's own type parameters", .{});
+    const id = d.addFmtId(.err, bound.span, "unknown '{s}' in the bound on '${s}'", .{ name, param });
+    d.addHelpFmt(id, bound.span, null, "a bound names a constraint or interface in scope, an open set, or one of this declaration's own type parameters", .{});
 }
 
 /// An OPEN SET bound: the binding must be a MEMBER of the set. Nothing here asks
@@ -245,7 +246,7 @@ fn checkOne(
         return;
     }
     // A parameterized head names an instantiation, whose conformance is the
-    // keyed impl question `has_impl` already answers.
+    // keyed impl question.
     if (p.params > 0) {
         if (self.computeHasImpl(bound, bound_ty)) return;
         reportViolation(self, bound, spelledHead(self, bound, p.name), param, bound_ty,
@@ -253,21 +254,72 @@ fn checkOne(
         return;
     }
     const pty = p.ty orelse return;
+    checkProtocolBinding(self, bound, pty, p.name, param, bound_ty);
+}
+
+/// The one place a protocol head's conformance question is answered against a
+/// binding, whichever way the head was spelled.
+fn checkProtocolBinding(
+    self: *Lowering,
+    bound: *const Node,
+    proto_ty: TypeId,
+    proto_name: []const u8,
+    param: []const u8,
+    bound_ty: TypeId,
+) void {
     // A protocol satisfies its own bound: `$V/View` bound to `View` is the
     // identity case, and asking whether `View` implements `View` would ask the
     // protocol to impl itself.
-    if (bound_ty == pty) return;
+    if (bound_ty == proto_ty) return;
     // Only a NOMINAL type can carry an impl. A structural binding — slice,
     // closure, tuple, function — has nowhere to hang one, so it fails the bound
     // rather than escaping the check for want of a name to look up.
     const concrete_name = self.resolveConcreteTypeName(bound_ty) orelse {
-        reportViolation(self, bound, p.name, param, bound_ty,
+        reportViolation(self, bound, proto_name, param, bound_ty,
             "'{s}' is a structural type and can carry no 'impl'", .{self.formatTypeName(bound_ty)});
         return;
     };
-    const missing = self.firstUnimplementedProtocolMethod(pty, concrete_name, bound_ty) orelse return;
-    reportViolation(self, bound, p.name, param, bound_ty,
-        "'{s}' has no '{s}' for '{s}'", .{ self.formatTypeName(bound_ty), missing, p.name });
+    const b = self.boundNonConformance(proto_ty, concrete_name, bound_ty) orelse return;
+    reportBoundNonConformance(self, bound, proto_ty, proto_name, param, bound_ty, b);
+}
+
+/// A handle reaches a foreign head only through `impl Head for Handle`. With no
+/// such impl the bound names the MISSING bridge; with one written, the bridge
+/// exists and what failed is a method of it, so the report names that method.
+/// A CONCRETE binding has no bridge to miss: every way it fails is a method it
+/// does not implement.
+fn reportBoundNonConformance(
+    self: *Lowering,
+    bound: *const Node,
+    proto_ty: TypeId,
+    proto_name: []const u8,
+    param: []const u8,
+    bound_ty: TypeId,
+    b: lower_protocol.BoundNonConformance,
+) void {
+    const handle = self.protocolKindOf(bound_ty) == .erased;
+    if (handle and !b.impl_visible) {
+        const d = self.diagnostics orelse return;
+        d.addFmt(.err, bound.span, "'{s}' does not conform to the bound '{s}' — a handle conforms through 'impl {s} for {s}', and none is visible here", .{
+            self.formatTypeName(bound_ty), proto_name, proto_name, self.formatTypeName(bound_ty),
+        });
+        return;
+    }
+    if (handle) {
+        switch (b.nc.kind) {
+            .signature_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty,
+                "method '{s}' has a mismatched signature — an impl must not introduce its own type parameters (e.g. '$T: Type'); it must match the bound's signature exactly", .{b.nc.method}),
+            .type_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty,
+                "method '{s}' has a mismatched signature — {s}", .{ b.nc.method, b.nc.detail }),
+            .arity_mismatch => return reportViolation(self, bound, proto_name, param, bound_ty,
+                "method '{s}' {s}", .{ b.nc.method, b.nc.detail }),
+            // A method the bridge provides nowhere is named the way a concrete
+            // conformer's missing method is.
+            .missing => {},
+        }
+    }
+    reportViolation(self, bound, proto_name, param, bound_ty,
+        "'{s}' has no '{s}' for '{s}'", .{ self.formatTypeName(bound_ty), lower_protocol.requiredMethodSignature(self, proto_ty, b.nc.method), proto_name });
 }
 
 /// A compiler-formed bound. There is no impl to look up: the binding satisfies
@@ -408,20 +460,11 @@ fn checkAgainstSibling(
             const id = d0.addFmtId(.err, bound.span, "the bound on '${s}' writes {d} type argument{s}, but '${s}' is bound to '{s}', which takes {d}", .{
                 param, spelled_args, if (spelled_args == 1) "" else "s", sibling, self.formatTypeName(sib_ty), pd.type_params.len,
             });
-            d0.addHelpFmt(id, bound.span, null, "the arity is the bound protocol's, and '${s}' is only known at the call that binds it", .{sibling});
+            d0.addHelpFmt(id, bound.span, null, "the arity is the bound's, and '${s}' is only known at the call that binds it", .{sibling});
             return;
         }
     }
-    if (bound_ty == sib_ty) return;
-    const proto_name = self.formatTypeName(sib_ty);
-    const concrete_name = self.resolveConcreteTypeName(bound_ty) orelse {
-        reportViolation(self, bound, proto_name, param, bound_ty,
-            "'{s}' is a structural type and can carry no 'impl'", .{self.formatTypeName(bound_ty)});
-        return;
-    };
-    const missing = self.firstUnimplementedProtocolMethod(sib_ty, concrete_name, bound_ty) orelse return;
-    reportViolation(self, bound, proto_name, param, bound_ty,
-        "'{s}' has no '{s}' for '{s}'", .{ self.formatTypeName(bound_ty), missing, proto_name });
+    checkProtocolBinding(self, bound, sib_ty, self.formatTypeName(sib_ty), param, bound_ty);
 }
 
 fn reportViolation(

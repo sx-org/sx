@@ -8,7 +8,7 @@
 @import "modules/std.sx";
 @import "modules/std/meta.sx";
 
-make :: () -> Type {
+mint :: () -> Type {
     h := declare("L");
     return define(h, .enum(.{ variants = .[
         EnumVariant{ name = "cons", payload = L },     // by VALUE, not *L
@@ -16,7 +16,7 @@ make :: () -> Type {
     ] }));
 }
 
-L :: make();
+L :: mint();
 
 main :: () -> i32 {
     x : L = .nil;

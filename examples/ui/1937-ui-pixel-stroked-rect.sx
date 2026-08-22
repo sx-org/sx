@@ -18,9 +18,9 @@
 // Regenerate the reference:
 //     SX_UPDATE_PIXELS=1 sx run examples/ui/1937-ui-pixel-stroked-rect.sx
 //
-// NOT part of the byte-exact corpus (no expected/ files), same contract
-// as 1924: where no display or GPU exists, open_pixel_surface returns
-// null and this reports a clean skip.
+// The corpus compiles this file but does not run it: the pixel comparison
+// is a manual host gate, and where no display or GPU exists
+// open_pixel_surface returns null and this reports a clean skip.
 @import "modules/std.sx";
 @import "modules/ui/types.sx";
 @import "modules/ui/render.sx";

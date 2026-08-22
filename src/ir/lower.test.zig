@@ -855,7 +855,7 @@ test "pack projection: type-arg vs method namespace lookups" {
     defer module.deinit();
     var lowering = Lowering.init(&module);
 
-    // Wrap :: protocol(Target: Type) { wrap :: () -> Target; value :: () -> Target; }
+    // Wrap :: constraint(Target: Type) { wrap :: () -> Target; value :: () -> Target; }
     const type_kw = typeKeyword(alloc, "Type");
     defer alloc.destroy(type_kw);
     const type_params = [_]ast.StructTypeParam{.{ .name = "Target", .constraint = type_kw }};
@@ -1064,7 +1064,7 @@ test "protocols: registerProtocolDecl builds the dispatch method table" {
     defer module.deinit();
     var lowering = Lowering.init(&module);
 
-    // Shape :: protocol { area :: () -> f64; scaled :: (factor: f64) -> Self; }
+    // Shape :: constraint { area :: () -> f64; scaled :: (factor: f64) -> Self; }
     const methods = [_]ast.ProtocolMethodDecl{
         .{ .name = "area", .params = &.{}, .param_names = &.{}, .return_type = typeKeyword(alloc, "f64"), .default_body = null },
         .{

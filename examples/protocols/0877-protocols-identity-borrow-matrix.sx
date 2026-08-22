@@ -1,16 +1,14 @@
-// `@identity` ownership class: protocol values of an identity
-// protocol only ever BORROW a named object's storage — in EVERY erasure
-// spelling. The unmarked default class is value/own. This is the
-// POSITIVE matrix: lvalue borrows via `xx`, the target-explicit postfix
-// `x.(P)`, decl targets, call args, and struct-field targets all alias
-// the original (mutations visible both ways); `is_identity` reflects the
-// class at compile time; Allocator (std) is adopted — `push .{ allocator = gpa }`
-// borrows. `xx` at a typed identity slot also borrows. The refusals
-// (rvalue erasure, free) are pinned in diagnostics/1255.
+// An interface handle BORROWS its referent, in every coercion spelling.
+// This is the POSITIVE matrix: lvalue coercion via `xx`, the
+// target-explicit postfix `x.(I)`, decl targets, call args, and
+// struct-field targets all alias the original (mutations visible both
+// ways); `push .{ allocator = gpa }` borrows the same way. The refusals
+// (returning a handle over a temporary, `free`) are pinned in
+// diagnostics/1255.
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
-Counter :: protocol vtable @identity {
+Counter :: interface {
     bump :: (self: *Self) -> i64;
     read :: (self: *Self) -> i64;
 }
@@ -26,8 +24,8 @@ Holder :: struct { c: Counter; }
 use_counter :: (c: Counter) -> i64 { c.bump() }
 
 main :: () {
-    // Reflection: the class is a compile-time fact.
-    print("classes: {} {} {}\n", is_identity(Counter), is_identity(Allocator), is_identity(Tally));
+    // Reflection: which declaration head a name carries is a compile-time fact.
+    print("classes: {} {} {}\n", Counter is interface, Allocator is interface, Tally is interface);
 
     t := Tally{ n = 0 };
 

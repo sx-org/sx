@@ -4,8 +4,8 @@
 // are three distinct pairs and all coexist in a single module.
 @import "modules/std.sx";
 
-Show :: protocol { show :: (self: *Self) -> i64; }
-Rank :: protocol { rank :: (self: *Self) -> i64; }
+Show :: constraint { show :: (self: *Self) -> i64; }
+Rank :: constraint { rank :: (self: *Self) -> i64; }
 
 Point :: struct { v: i64 = 0; }
 Mark :: struct { v: i64 = 0; }

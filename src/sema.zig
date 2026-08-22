@@ -32,7 +32,8 @@ pub const SymbolKind = enum {
     function,
     enum_type,
     struct_type,
-    protocol_type,
+    constraint_type,
+    interface_type,
     type_alias,
     param,
     namespace,
@@ -1521,7 +1522,7 @@ pub const Analyzer = struct {
                 }
             },
             .protocol_decl => |pd| {
-                try self.addSymbol(pd.name, .protocol_type, null, node.span);
+                try self.addSymbol(pd.name, if (pd.kind == .erased) .interface_type else .constraint_type, null, node.span);
                 // Recurse into default method bodies
                 for (pd.methods) |method| {
                     if (method.default_body) |body| {
@@ -2490,8 +2491,8 @@ test "sema: method-return slice + .ptr index + tagged-enum element" {
 
     const source =
         "Event :: enum { none; click: i64; }" ++
-        "Plat :: protocol { poll :: (self: *Self) -> []Event; }" ++
-        "go :: (p: *Plat) { evs := p.poll(); e := evs.ptr[0]; }";
+        "Plat :: constraint { poll :: (self: *Self) -> []Event; }" ++
+        "go :: (p: Plat) { evs := p.poll(); e := evs.ptr[0]; }";
     var parser = try parser_mod.Parser.init(alloc, source);
     const root = try parser.parse();
     var an = Analyzer.init(alloc);

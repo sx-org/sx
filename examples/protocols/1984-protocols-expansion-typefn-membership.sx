@@ -11,7 +11,7 @@
 // here declares no impl at all — so the answer is readable on the spot.
 @import "modules/std.sx";
 
-Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
+Show :: interface { fmt :: (self: *Self) -> i64; }
 
 Wide :: struct { n: i64; }
 
@@ -23,7 +23,7 @@ Chosen :: pick();
 
 impl Show for Wide { fmt :: (self: *Wide) -> i64 { self.n * 2 } }
 
-inline if has_impl(Show, Chosen) {
+inline if Chosen is Show {
     OK :: 1;
 } else {
     OK :: 0;

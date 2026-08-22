@@ -17,7 +17,7 @@ Keycode :: enum { unknown; escape; enter; }
 KeyData :: struct { key: Keycode; }
 Event   :: enum { none; key_up: KeyData; }
 
-Plat :: protocol vtable { one_event :: (self: *Self) -> Event; }
+Plat :: interface { one_event :: (self: *Self) -> Event; }
 
 Impl :: struct { dummy: i64; }
 impl Plat for Impl {
@@ -26,7 +26,7 @@ impl Plat for Impl {
 
 main :: () {
     impl : Impl = .{ dummy = 0 };
-    g_plat := impl.(Plat, context.allocator);
+    g_plat := impl.(Plat);
     ev := g_plat.one_event();          // type INFERRED from protocol return
     match ev {
         case .key_up: |e| {

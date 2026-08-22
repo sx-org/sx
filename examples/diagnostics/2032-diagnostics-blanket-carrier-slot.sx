@@ -3,7 +3,7 @@
 // first argument is something else is a different shape and is not covered.
 @import "modules/std.sx";
 
-Series :: protocol(T: Type) constraint {
+Series :: constraint(T: Type) {
     count :: (self: *Self) -> i64;
 }
 

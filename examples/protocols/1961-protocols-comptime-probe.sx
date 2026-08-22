@@ -1,6 +1,6 @@
 // The soft probe (specs.md §6.9). A protocol target under `?` on a CONCRETE
 // receiver asks conformance instead of converting: a non-conformer answers
-// `null` where the plain erasure is a compile error. `has_impl(P, T)` is the
+// `null` where the plain erasure is a compile error. `T is P` is the
 // same question spelled at type level, and each row below answers the same
 // either side of the phase line.
 //
@@ -10,7 +10,7 @@
 // it" error.
 @import "modules/std.sx";
 
-Series :: protocol(T: Type) vtable @identity { count :: (self: *Self) -> i64; }
+Series :: interface(T: Type) { count :: (self: *Self) -> i64; }
 Buffer :: struct($T: Type) { items: []$T; }
 impl Series($T) for Buffer($T) { count :: (self: *Buffer) -> i64 { self.items.len } }
 
@@ -18,9 +18,9 @@ impl Series($T) for Buffer($T) { count :: (self: *Buffer) -> i64 { self.items.le
 Loose :: struct { n: i64; }
 
 // Nothing implements `Nobody` anywhere in the program.
-Nobody :: protocol vtable @identity { ping :: (self: *Self) -> i64; }
+Nobody :: interface { ping :: (self: *Self) -> i64; }
 
-Show :: protocol vtable @identity { text :: (self: *Self) -> i64; }
+Show :: interface { text :: (self: *Self) -> i64; }
 impl Show for Loose { text :: (self: *Loose) -> i64 { self.n } }
 
 in_set :: () -> bool {
@@ -58,8 +58,8 @@ OUT     :: @run out_of_set();
 EMPTY   :: @run empty_set();
 COUNT   :: @run through_probe();
 ERASED  :: @run erased_probe();
-HAS_YES :: @run has_impl(Show, Loose);
-HAS_NO  :: @run has_impl(Nobody, Loose);
+HAS_YES :: @run Loose is Show;
+HAS_NO  :: @run Loose is Nobody;
 
 main :: () {
     print("{} {}\n", IN, in_set());

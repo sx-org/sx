@@ -4,7 +4,7 @@
 // whichever branch is live, and coherence is never in question.
 @import "modules/std.sx";
 
-View :: protocol vtable {
+View :: interface {
     area :: (self: *Self) -> i64;
 }
 

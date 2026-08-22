@@ -47,16 +47,6 @@ variant_name :: ($T: Type, idx: i64) -> string intrinsic;
 variant_type :: ($T: Type, idx: i64) -> Type intrinsic;
 variant_payload :: (u: $T, idx: i64) -> any intrinsic;
 is_flags :: ($T: Type) -> bool intrinsic;
-// Is T an `@identity` protocol (borrow-only ownership class)? COMPILE-TIME
-// only — a runtime `Type` value always tags a concrete type, never a
-// protocol, so there is no runtime form.
-is_identity :: ($T: Type) -> bool intrinsic;
-// The kind slot of a protocol declaration. COMPILE-TIME only, for the same
-// reason `is_identity` is: a runtime `Type` value never tags a protocol.
-// A non-protocol argument is a compile error, not a silent answer.
-ProtocolKind :: enum { constraint; vtable; }
-protocol_kind :: ($T: Type) -> ProtocolKind intrinsic;
-is_unsigned :: ($T: Type) -> bool intrinsic;
 variant_value :: ($T: Type, idx: i64) -> i64 intrinsic;
 variant_index :: ($T: Type, val: T) -> i64 intrinsic;
 error_name :: (e: $T) -> string intrinsic;
@@ -360,10 +350,10 @@ raw_pointer_to        :: (t: Type) -> Type intrinsic;
 
 // Bytes-level primitives carry the `_bytes` suffix so the typed
 // helpers in std/mem.sx own the bare names (`alloc(T, n)`, `free(s)`).
-// `@identity`: an allocator IS its state object — protocol values only
-// ever borrow a named allocator (`gpa`, `gpa.(Allocator)`); rvalue
-// erasure and `free` of the protocol value refuse at compile time.
-Allocator :: protocol vtable @identity {
+// An allocator IS its state object, so a handle only ever borrows a named
+// allocator (`gpa`, `gpa.(Allocator)`); `free` of a handle refuses at compile
+// time, and a handle over a temporary cannot be returned.
+Allocator :: interface {
     alloc_bytes :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
@@ -408,9 +398,9 @@ ParkToken :: struct {
     handle: *void = null;
 }
 
-// `@identity` — like `Allocator`: the runtime object is unique state,
-// borrowed into the protocol value, never owned by it.
-Io :: protocol vtable @identity {
+// Like `Allocator`: the runtime object is unique state, borrowed by the
+// handle, never owned by it.
+Io :: interface {
     spawn_raw :: (self: *Self, entry: *void, arg: *void, opts: SpawnOpts) -> *void;
     // `park` is IN/OUT: a suspending impl records the parked execution context
     // (e.g. the awaiter's fiber) into `park.handle` before parking, so a later
@@ -464,7 +454,7 @@ Context :: struct {}
 // the (Source, T) pair and emits a direct call. Compile-time only — no vtable,
 // no runtime dispatch. `.(T)` funds from `context.allocator`; `.(T, alloc)`
 // names another. The stdlib writes `.(T)` and never dest-inferred opt-in.
-Into :: protocol(Target: Type) constraint {
+Into :: constraint(Target: Type) {
     convert :: (self: *Self, alloc: Allocator) -> Target;
 }
 

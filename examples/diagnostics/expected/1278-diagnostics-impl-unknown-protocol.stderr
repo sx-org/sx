@@ -1,4 +1,4 @@
-error: unknown protocol 'Frobnicate' in impl — not declared or imported in this module
+error: unknown constraint or interface 'Frobnicate' in impl — not declared or imported in this module
   --> examples/diagnostics/1278-diagnostics-impl-unknown-protocol.sx:9:1
    |
  9 | impl Frobnicate(*Box) for string {
@@ -8,7 +8,7 @@ error: unknown protocol 'Frobnicate' in impl — not declared or imported in thi
 11 | }
    | ^
 
-error: unknown protocol 'Munge' in impl — not declared or imported in this module
+error: unknown constraint or interface 'Munge' in impl — not declared or imported in this module
   --> examples/diagnostics/1278-diagnostics-impl-unknown-protocol.sx:14:1
    |
 14 | impl Munge for Box {

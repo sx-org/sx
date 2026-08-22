@@ -13,8 +13,8 @@
 // that contributes to a DIFFERENT protocol never held this one open.
 @import "modules/std.sx";
 
-View :: protocol vtable { area :: (self: *Self) -> i64; }
-Tally :: protocol vtable { count :: (self: *Self) -> i64; }
+View :: interface { area :: (self: *Self) -> i64; }
+Tally :: interface { count :: (self: *Self) -> i64; }
 
 Widget :: struct { n: i64; }
 Panel :: struct { n: i64; }
@@ -31,7 +31,7 @@ inline if POINTER_SIZE == 8 {
 // The condition names a `@run`; the run registers on the worklist, drains
 // there, and its value decides the branch. What it sees includes the impl the
 // driver above spliced — a taken group is module scope.
-HAS_PANEL :: @run has_impl(View, Panel);
+HAS_PANEL :: @run Panel is View;
 inline if HAS_PANEL { WIDTH :: 3; } else { WIDTH :: 0; }
 
 // Every iteration of an `inline for` contributes, so `Tally` stays open until
@@ -40,12 +40,12 @@ SHAPES :: .[Widget, Panel];
 inline for T in SHAPES {
     impl Tally for T { count :: (self: *T) -> i64 { self.n } }
 }
-inline if has_impl(Tally, Panel) { COUNTED :: 1; } else { COUNTED :: 0; }
+inline if Panel is Tally { COUNTED :: 1; } else { COUNTED :: 0; }
 
 // Nothing implements `View` for `Loose`, and the one driver still undecided
 // contributes to `Tally` alone — so `View`'s impls are closed here and the
 // negative is uttered rather than parked.
-inline if has_impl(View, Loose) { SEEN :: 1; } else { SEEN :: 0; }
+inline if Loose is View { SEEN :: 1; } else { SEEN :: 0; }
 
 inline if POINTER_SIZE == 8 {
     impl Tally for Loose { count :: (self: *Loose) -> i64 { self.n * 2 } }

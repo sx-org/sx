@@ -1,0 +1,5 @@
+error: '.(Greeter, alloc)' allocates, but an interface handle borrows its referent — write '.(Greeter)'
+  --> examples/diagnostics/2232-diagnostics-interface-erasure-allocator-refused.sx:12:9
+   |
+12 |     _ = h.(Greeter, context.allocator);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

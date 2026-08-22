@@ -6,7 +6,7 @@
 // Distinct instantiations stay distinct.
 @import "modules/std.sx";
 
-Series :: protocol(T: Type) vtable { count :: (self: *Self) -> i64; }
+Series :: interface(T: Type) { count :: (self: *Self) -> i64; }
 
 Buffer :: struct($T: Type) { n: i64; }
 impl Series($T) for Buffer($T) { count :: (self: *Buffer) -> i64 { self.n } }
@@ -15,7 +15,7 @@ BufF  :: Buffer(f32);
 BufF2 :: BufF;             // an alias of an alias resolves through
 BufI  :: Buffer(i64);
 
-Show :: protocol vtable { show :: (self: *Self) -> i64; }
+Show :: interface { show :: (self: *Self) -> i64; }
 Box  :: struct($T: Type) { v: i64; }
 BoxI :: Box(i64);
 // The impl head names the alias; the conformance it registers is the
@@ -34,7 +34,7 @@ main :: () {
     print("{} {}\n", type_eq(Buffer(f32), Buffer(i64)), type_eq(BufF, BufI));
     //stdout: false false
 
-    a := Buffer(f32){ n = 7 }.(Series(f32), context.allocator);
+    a := Buffer(f32){ n = 7 }.(Series(f32));
 
     // The arm names the alias and matches the instantiation's value.
     match a {
@@ -51,6 +51,6 @@ main :: () {
     print("{} {}\n", type_name(type_of(b)), type_name(type_of(BoxI{ v = 6 })));
     //stdout: Box__i64 Box__i64
 
-    print("{} {}\n", seen(Box(i64){ v = 1 }.(Show, context.allocator)), seen(BoxI{ v = 2 }.(Show, context.allocator)));
+    print("{} {}\n", seen(Box(i64){ v = 1 }.(Show)), seen(BoxI{ v = 2 }.(Show)));
     //stdout: 1 2
 }

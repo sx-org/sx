@@ -27,7 +27,7 @@ error: 'impl Series' names a generic carrier but no binder among its type argume
 26 | }
    | ^
 
-help: spell the carrier's binder in the protocol arguments too ('impl Series($T) for …($T)'), or give the carrier a concrete instantiation
+help: spell the carrier's binder in the type arguments too ('impl Series($T) for …($T)'), or give the carrier a concrete instantiation
    |
 24 | impl Series(i64) for Buffer($T) {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -46,7 +46,7 @@ error: 'impl Series' binds '$W', which its carrier never spells
 31 | }
    | ^
 
-help: every binder in the protocol arguments must appear in the carrier's arguments
+help: every binder in the type arguments must appear in the carrier's arguments
    |
 29 | impl Series($W) for Map2(i64, $T) {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

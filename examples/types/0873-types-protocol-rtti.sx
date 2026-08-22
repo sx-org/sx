@@ -15,7 +15,7 @@
 @import "modules/std.sx";
 @import "modules/std/mem.sx";
 
-Drawable :: protocol vtable { area :: (self: *Self) -> i64; }
+Drawable :: interface { area :: (self: *Self) -> i64; }
 Circle :: struct { r: i64; }
 Rect :: struct { w: i64; h: i64; }
 impl Drawable for Circle { area :: (self: *Circle) -> i64 { 3 * self.r * self.r } }
@@ -24,8 +24,8 @@ impl Drawable for Rect { area :: (self: *Rect) -> i64 { self.w * self.h } }
 main :: () {
     c := Circle{ r = 2 };
     q := Rect{ w = 3, h = 4 };
-    s := c.(Drawable, context.allocator);
-    t := q.(Drawable, context.allocator);
+    s := c.(Drawable);
+    t := q.(Drawable);
 
     // type_of(p) — concrete, both values; dispatch unaffected
     print("{} {}\n", type_name(type_of(s)), type_name(type_of(t)));

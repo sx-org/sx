@@ -14,8 +14,8 @@ main :: () -> i32 {
     report("a own dispatch", a.own_tag() == 101);
     report("b own dispatch", b.own_first() == 7 and b.own_tag() == 201);
 
-    pa := a.Cell{ v = 2 }.(a.P(i64), context.allocator);
-    pb := b.Cell{ v = 2 }.(b.P(i64), context.allocator);
+    pa := a.Cell{ v = 2 }.(a.P(i64));
+    pb := b.Cell{ v = 2 }.(b.P(i64));
     report("qualified a head", pa.tag() == 102);
     report("qualified b head", pb.first() == 7 and pb.tag() == 202);
     0

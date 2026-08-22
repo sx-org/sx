@@ -1,22 +1,22 @@
-// The `Allocator` protocol's dispatch cost, on demand:
+// The `Allocator` interface's dispatch cost, on demand:
 //
 //     ./zig-out/bin/sx build --opt 3 -o .sx-tmp/bench-alloc \
 //         tests/bench_allocator_dispatch.sx && .sx-tmp/bench-alloc
 //
-// Thirteen lanes over the same bump-allocation workload, so the protocol's
+// Thirteen lanes over the same bump-allocation workload, so the dispatch's
 // share of the cost is the difference between them.
 //
-// It measures the declaration std SHIPS — `Allocator :: protocol vtable
-// @identity` (std/core.sx).
+// It measures the declaration std SHIPS — `Allocator :: interface`
+// (std/core.sx).
 //
 // The first four lanes hold ONE conformer live per run — the predictable
 // regime, where a dispatch has a single arm to select and the branch
 // predictor pins it:
-//   DIRECT  — `arena.alloc_bytes(n)` on the concrete receiver. No protocol
-//             value at all: the floor a devirtualized dispatch can reach.
-//   BORROW  — the same loop through a protocol value erased AT THE SITE, so
-//             the receiver's conformer is statically known. Whether that
-//             fact reaches the machine code is the whole question a
+//   DIRECT  — `arena.alloc_bytes(n)` on the concrete receiver. No handle at
+//             all: the floor a devirtualized dispatch can reach.
+//   BORROW  — the same loop through a handle erased AT THE SITE, so the
+//             receiver's conformer is statically known. Whether that fact
+//             reaches the machine code is the whole question a
 //             representation answers.
 //   CTX     — the same loop under `push .{ allocator = arena }`, so every
 //             allocation goes through `context.allocator`. The handle is
@@ -568,7 +568,7 @@ direct_lane :: (arena: *Arena) -> i64 {
         p := arena.alloc_bytes(16);
         b : [*]u8 = xx p;
         b[0] = xx (i % 251);
-        sink = sink + xx b[0];
+        sink = sink + b[0];
         i = i + 1;
     }
     el := mono_ns() - t0;
@@ -585,7 +585,7 @@ borrow_lane :: (arena: *Arena) -> i64 {
         p := a.alloc_bytes(16);
         b : [*]u8 = xx p;
         b[0] = xx (i % 251);
-        sink = sink + xx b[0];
+        sink = sink + b[0];
         i = i + 1;
     }
     el := mono_ns() - t0;
@@ -602,7 +602,7 @@ ctx_lane :: (arena: *Arena) -> i64 {
             p := context.allocator.alloc_bytes(16);
             b : [*]u8 = xx p;
             b[0] = xx (i % 251);
-            sink = sink + xx b[0];
+            sink = sink + b[0];
             i = i + 1;
         }
         el := mono_ns() - t0;
@@ -619,7 +619,7 @@ default_lane :: () -> i64 {
         p := context.allocator.alloc_bytes(16);
         b : [*]u8 = xx p;
         b[0] = xx (i % 251);
-        sink = sink + xx b[0];
+        sink = sink + b[0];
         escaped = p;
         context.allocator.dealloc_bytes(p);
         i = i + 1;
@@ -640,7 +640,7 @@ interleaved_lane :: (h: []Allocator, idx: []i64) -> i64 {
         p := h[idx[i & IDXMASK]].alloc_bytes(16);
         b : [*]u8 = xx p;
         b[0] = xx (i % 251);
-        sink = sink + xx b[0];
+        sink = sink + b[0];
         i = i + 1;
     }
     el := mono_ns() - t0;
@@ -659,7 +659,7 @@ rotate_lane :: (h: []Allocator) -> i64 {
         p := h[k].alloc_bytes(16);
         b : [*]u8 = xx p;
         b[0] = xx (i % 251);
-        sink = sink + xx b[0];
+        sink = sink + b[0];
         k = k + 1;
         if k == NCONF { k = 0; }
         i = i + 1;
@@ -681,7 +681,7 @@ ctx_ptr_lane :: (arena: *Arena) -> i64 {
             p := context.ap.alloc_bytes(16);
             b : [*]u8 = xx p;
             b[0] = xx (i % 251);
-            sink = sink + xx b[0];
+            sink = sink + b[0];
             i = i + 1;
         }
         el := mono_ns() - t0;
@@ -703,7 +703,7 @@ interleaved_ptr_lane :: (ps: []*Allocator, idx: []i64) -> i64 {
         p := ps[idx[i & IDXMASK]].alloc_bytes(16);
         b : [*]u8 = xx p;
         b[0] = xx (i % 251);
-        sink = sink + xx b[0];
+        sink = sink + b[0];
         i = i + 1;
     }
     el := mono_ns() - t0;
@@ -720,7 +720,7 @@ rotate_ptr_lane :: (ps: []*Allocator) -> i64 {
         p := ps[k].alloc_bytes(16);
         b : [*]u8 = xx p;
         b[0] = xx (i % 251);
-        sink = sink + xx b[0];
+        sink = sink + b[0];
         k = k + 1;
         if k == NCONF { k = 0; }
         i = i + 1;
@@ -742,7 +742,7 @@ push_h16_lane :: (arena: *Arena) -> i64 {
             p := context.allocator.alloc_bytes(16);
             b : [*]u8 = xx p;
             b[0] = xx (i % 251);
-            sink = sink + xx b[0];
+            sink = sink + b[0];
         }
         i = i + 1;
     }
@@ -761,7 +761,7 @@ push_ptr_lane :: (arena: *Arena) -> i64 {
             p := context.ap.alloc_bytes(16);
             b : [*]u8 = xx p;
             b[0] = xx (i % 251);
-            sink = sink + xx b[0];
+            sink = sink + b[0];
         }
         i = i + 1;
     }
@@ -791,7 +791,7 @@ main :: () {
     // heap array whose contents no pass can fold.
     slabs := context.allocator.alloc(u8, NCONF * SLAB);
     handles := context.allocator.alloc(Allocator, NCONF);
-    fill_handles(handles, xx slabs.ptr);
+    fill_handles(handles, slabs.ptr);
     pair := context.allocator.alloc(Allocator, 2);
     pair[0] = *b00;
     pair[1] = *b01;

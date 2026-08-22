@@ -22,6 +22,16 @@ pub const ResolvedProtocol = struct {
     decl: *const ast.ProtocolDecl,
 };
 
+fn protocolMethodSelfSpan(method: ast.ProtocolMethodDecl) ?ast.Span {
+    for (method.params) |p| {
+        if (program_index_mod.typeNodeContainsSelf(p)) return p.span;
+    }
+    if (method.return_type) |rt| {
+        if (program_index_mod.typeNodeContainsSelf(rt)) return rt.span;
+    }
+    return null;
+}
+
 fn typeExprHasGeneric(node: *const Node) bool {
     return switch (node.data) {
         .type_expr => |te| te.is_generic,
@@ -119,6 +129,13 @@ pub const ProtocolResolver = struct {
         };
     }
 
+    /// Is an `impl <p_name> for <ty>` DECLARATION recorded for this pair? The
+    /// declaration is a separate fact from conformance: an impl may be written
+    /// and still fail the protocol's methods.
+    pub fn hasConcreteImplDecl(self: ProtocolResolver, proto_ty: ?TypeId, p_name: []const u8, ty: TypeId) bool {
+        return self.l.protocol_impl_decls.contains(self.protocolConcreteKey(proto_ty, p_name, ty));
+    }
+
     fn protocolImplKey(self: ProtocolResolver, proto_ty: ?TypeId, p_name: []const u8, ty: TypeId, method: []const u8) lower.ProtocolImplMethodKey {
         return .{
             .protocol = proto_ty orelse .unresolved,
@@ -165,7 +182,7 @@ pub const ProtocolResolver = struct {
     /// `Type.method` selection without cross-binding display-name collisions.
     pub fn protocolDispatchMethod(self: ProtocolResolver, proto_ty: ?TypeId, p_name: []const u8, ty: TypeId, method: []const u8) ?ProtocolImplMethod {
         if (self.protocolImplMethod(proto_ty, p_name, ty, method)) |exact| return exact;
-        if (!self.l.protocol_impl_decls.contains(self.protocolConcreteKey(proto_ty, p_name, ty))) return null;
+        if (!self.hasConcreteImplDecl(proto_ty, p_name, ty)) return null;
         const adopted = self.l.plainStructAdoptableMethod(ty, method) orelse return null;
         return .{ .fd = adopted.fd, .concrete = ty, .source = adopted.source, .is_synthesized_default = false };
     }
@@ -498,7 +515,19 @@ pub const ProtocolResolver = struct {
             for (pd.methods) |m| {
                 if (std.mem.eql(u8, tp.name, m.name)) {
                     if (self.l.diagnostics) |diags| {
-                        diags.addFmt(.warn, null, "protocol '{s}' declares type-arg and method both named '{s}'; `..pack.{s}` resolves by position (type-arg in type position, method in value position)", .{ pd.name, tp.name, tp.name });
+                        diags.addFmt(.warn, null, "'{s}' declares type-arg and method both named '{s}'; `..pack.{s}` resolves by position (type-arg in type position, method in value position)", .{ pd.name, tp.name, tp.name });
+                    }
+                }
+            }
+        }
+
+        // An interface body refuses Self past the receiver: a vtable slot must
+        // be typable with Self unknown. Constraint heads carry those signatures.
+        if (pd.kind == .erased) {
+            for (pd.methods) |method| {
+                if (program_index_mod.protocolMethodSelfOccurrence(method) != null) {
+                    if (self.l.diagnostics) |d| {
+                        d.addFmt(.err, protocolMethodSelfSpan(method), "'{s}' mentions 'Self' past the receiver, so an interface cannot carry it — declare '{s}' as a constraint and bind through it ('$T/{s}')", .{ method.name, pd.name, pd.name });
                     }
                 }
             }
@@ -603,8 +632,7 @@ pub const ProtocolResolver = struct {
         const protocol_info: ProtocolDeclInfo = .{
             .name = identity_name,
             .kind = pd.kind,
-            .ownership = if (pd.is_identity) .identity else .value_own,
-            .methods = self.l.alloc.dupe(ProtocolMethodInfo, method_infos.items) catch unreachable,
+                .methods = self.l.alloc.dupe(ProtocolMethodInfo, method_infos.items) catch unreachable,
         };
         self.l.protocol_info_by_type.put(protocol_ty, protocol_info) catch @panic("out of memory");
         self.l.protocol_ast_by_type.put(protocol_ty, pd) catch @panic("out of memory");
@@ -702,15 +730,17 @@ pub const ProtocolResolver = struct {
         // exact impl maps.
         if (ib.target_type_params.len == 0 and ib.target_type.len > 0 and concrete_ty == null) return;
         if (concrete_ty) |cty| {
-            // Protocols are not concrete types, so they never conform (§10).
-            // A curated `inline for` list that names one lands here.
+            // An interface head takes concrete conformers; a constraint head
+            // takes interface types too.
             if (!cty.isBuiltin() and self.l.module.types.get(cty) == .@"struct" and
                 self.l.module.types.get(cty).@"struct".is_protocol)
             {
-                if (self.l.diagnostics) |d|
-                    d.addFmt(.err, decl.span, "'{s}' is a protocol, not a concrete type — an impl target names a type", .{ib.target_type});
-                self.l.registered_protocol_impls.put(ib, {}) catch @panic("out of memory");
-                return;
+                if (proto.decl.kind == .erased) {
+                    if (self.l.diagnostics) |d|
+                        d.addFmt(.err, decl.span, "'{s}' is an interface handle, not a concrete conformer — 'p.({s})' is the conversion", .{ ib.target_type, proto_name });
+                    self.l.registered_protocol_impls.put(ib, {}) catch @panic("out of memory");
+                    return;
+                }
             }
             const key = self.protocolConcreteKey(proto.ty, proto_name, cty);
             if (self.recordConcreteImplSite(key, proto_name, cty, decl.span, source)) {
@@ -792,9 +822,9 @@ pub const ProtocolResolver = struct {
                     if (source) |src| diags.current_source_file = src;
                     defer diags.current_source_file = saved;
                     if (self.resolveProtocol(ib.protocol_name, source) == null) {
-                        diags.addFmt(.err, decl.span, "unknown protocol '{s}' in impl — not declared or imported in this module", .{ib.protocol_name});
+                        diags.addFmt(.err, decl.span, "unknown constraint or interface '{s}' in impl — not declared or imported in this module", .{ib.protocol_name});
                     } else if (ib.protocol_type_args.len > 0) {
-                        diags.addFmt(.err, decl.span, "impl '{s}' cannot register: a protocol type argument or the source type does not resolve in this module", .{ib.protocol_name});
+                        diags.addFmt(.err, decl.span, "impl '{s}' cannot register: a type argument or the source type does not resolve in this module", .{ib.protocol_name});
                     } else {
                         diags.addFmt(.err, decl.span, "impl '{s}' cannot register: target type '{s}' does not resolve in this module", .{ ib.protocol_name, ib.target_type });
                     }
@@ -850,7 +880,7 @@ fn registerGenericParamImpl(
     if (any_target_binder and !any_proto_binder) {
         if (self.l.diagnostics) |d| {
             const id = d.addFmtId(.err, decl.span, "'impl {s}' names a generic carrier but no binder among its type arguments", .{proto_name});
-            d.addHelpFmt(id, decl.span, null, "spell the carrier's binder in the protocol arguments too ('impl {s}($T) for …($T)'), or give the carrier a concrete instantiation", .{proto_name});
+            d.addHelpFmt(id, decl.span, null, "spell the carrier's binder in the type arguments too ('impl {s}($T) for …($T)'), or give the carrier a concrete instantiation", .{proto_name});
         }
         return;
     }
@@ -873,7 +903,7 @@ fn registerGenericParamImpl(
             if (found == null) {
                 if (self.l.diagnostics) |d| {
                     const id = d.addFmtId(.err, decl.span, "'impl {s}' binds '${s}', which its carrier never spells", .{ proto_name, want });
-                    d.addHelpFmt(id, decl.span, null, "every binder in the protocol arguments must appear in the carrier's arguments", .{});
+                    d.addHelpFmt(id, decl.span, null, "every binder in the type arguments must appear in the carrier's arguments", .{});
                 }
                 return;
             }

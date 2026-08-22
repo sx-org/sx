@@ -8,7 +8,7 @@
 
 @import "modules/std.sx";
 
-Greeter :: protocol {
+Greeter :: constraint {
     greet :: (self: *Self) -> i64;
 }
 

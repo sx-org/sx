@@ -1,0 +1,2 @@
+// Puts `far.sx` in the program without putting its impl in the root's scope.
+@import "./far.sx";

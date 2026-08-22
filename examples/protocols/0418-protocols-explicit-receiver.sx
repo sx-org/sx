@@ -8,13 +8,13 @@
 Size :: struct { w: i32; h: i32; }
 
 // `self: *Self` receiver; one no-arg method and one with extra args.
-Measurable :: protocol vtable {
+Measurable :: interface {
     measure :: (self: *Self) -> Size;
     scaled  :: (self: *Self, factor: i32) -> Size;
 }
 
 // `self: Self` (by-value) receiver is also accepted.
-Named :: protocol vtable {
+Named :: interface {
     name :: (self: Self) -> string;
 }
 
@@ -35,13 +35,13 @@ main :: () -> i32 {
     w : Widget = .{ base = 5 };
     p : *Widget = *w;
 
-    m := p.(Measurable, context.allocator);   // snapshot of the pointee
+    m := p.(Measurable);
     s := m.measure();          // 0 extra args
     s2 := m.scaled(3);         // 1 extra arg
     print("measure={}x{}\n", s.w, s.h);    // 5x10
     print("scaled={}x{}\n", s2.w, s2.h);   // 15x30
 
-    n := p.(Named, context.allocator);
+    n := p.(Named);
     print("name={}\n", n.name());          // widget
     return 0;
 }
