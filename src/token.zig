@@ -117,6 +117,9 @@ pub const Tag = enum(u8) {
     r_brace, // }
     l_bracket, // [
     r_bracket, // ]
+    /// `_{` — the env a closure literal names after its `|params|`. One token,
+    /// so `_ {` with a space is an identifier and a brace instead.
+    underscore_l_brace,
 
     // Arrows
     arrow, // ->
@@ -201,6 +204,7 @@ pub const Tag = enum(u8) {
             .r_brace => "}",
             .l_bracket => "[",
             .r_bracket => "]",
+            .underscore_l_brace => "_{",
             .arrow => "->",
             .fat_arrow => "=>",
             .triple_minus => "---",
@@ -350,6 +354,7 @@ pub const Tag = enum(u8) {
             .r_brace,
             .l_bracket,
             .r_bracket,
+            .underscore_l_brace,
             => .punctuation,
             .eof => .eof,
             .invalid => .invalid,
@@ -464,6 +469,7 @@ pub const Tag = enum(u8) {
             .r_brace,
             .l_bracket,
             .r_bracket,
+            .underscore_l_brace,
             .arrow,
             .fat_arrow,
             .at_run,
