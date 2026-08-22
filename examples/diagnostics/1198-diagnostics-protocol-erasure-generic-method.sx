@@ -1,4 +1,4 @@
-// Erasing a concrete type to a protocol whose `impl` method introduces its OWN
+// Coercing a concrete type to an interface whose `impl` method introduces its OWN
 // type parameter is reported at the erasure site. `Dog.speak` matches by name, but
 // generics are monomorphized rather than registered, so the thunk's
 // `lazyLowerFunction("Dog.speak")` bails on `type_params.len > 0`. The conformance

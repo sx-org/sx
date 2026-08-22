@@ -20,13 +20,13 @@ help: no 'impl Into(i32) for Plain' is visible here
 32 | degrees :: (c: $C/Into(i32)) -> i32 { 1 }
    |                   ^^^^^^^^^
 
-error: unknown protocol 'NoSuchProtocol' in the bound on '$T'
+error: unknown 'NoSuchProtocol' in the bound on '$T'
   --> examples/diagnostics/2027-diagnostics-bound-violated.sx:36:19
    |
 36 | mystery :: (v: $T/NoSuchProtocol) -> i32 { 1 }
    |                   ^^^^^^^^^^^^^^
 
-help: a bound names a protocol in scope, an open set, or one of this declaration's own type parameters
+help: a bound names a constraint or interface in scope, an open set, or one of this declaration's own type parameters
    |
 36 | mystery :: (v: $T/NoSuchProtocol) -> i32 { 1 }
    |                   ^^^^^^^^^^^^^^

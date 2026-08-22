@@ -1,5 +1,5 @@
 // The bound's `has no` help names the required method by the signature the
-// protocol DECLARED: the receiver keeps the form it was written with, and every
+// constraint DECLARED: the receiver keeps the form it was written with, and every
 // extra param and the return print in their written spelling.
 @import "modules/std.sx";
 

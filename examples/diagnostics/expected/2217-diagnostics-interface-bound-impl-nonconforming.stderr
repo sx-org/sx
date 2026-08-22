@@ -15,7 +15,7 @@ error: 'Show' does not satisfy the bound 'Bad' on '$T'
 37 | bad :: (v: $T/Bad) -> i64 { 1 }
    |               ^^^
 
-help: method 'show' has a mismatched signature — return type: protocol declares 'i64', impl declares 'string'
+help: method 'show' has a mismatched signature — return type: required 'i64', impl 'string'
    |
 37 | bad :: (v: $T/Bad) -> i64 { 1 }
    |               ^^^
@@ -26,7 +26,7 @@ error: 'Show' does not satisfy the bound 'Ret' on '$T'
 38 | ret :: (v: $T/Ret) -> i64 { 1 }
    |               ^^^
 
-help: method 'show' has a mismatched signature — return type: protocol declares 'string', impl declares 'i64'
+help: method 'show' has a mismatched signature — return type: required 'string', impl 'i64'
    |
 38 | ret :: (v: $T/Ret) -> i64 { 1 }
    |               ^^^
@@ -48,7 +48,7 @@ error: 'Show' does not satisfy the bound 'Gen' on '$T'
 40 | gen :: (v: $T/Gen) -> i64 { 1 }
    |               ^^^
 
-help: method 'show' has a mismatched signature — a protocol-method impl must not introduce its own type parameters (e.g. '$T: Type'); it must match the protocol's signature exactly
+help: method 'show' has a mismatched signature — an impl must not introduce its own type parameters (e.g. '$T: Type'); it must match the bound's signature exactly
    |
 40 | gen :: (v: $T/Gen) -> i64 { 1 }
    |               ^^^
@@ -87,7 +87,7 @@ error: 'Show' does not satisfy the bound 'Bad' on '$V'
 42 | relay :: ($P: Type, v: $V/P) -> i64 { 1 }
    |                           ^
 
-help: method 'show' has a mismatched signature — return type: protocol declares 'i64', impl declares 'string'
+help: method 'show' has a mismatched signature — return type: required 'i64', impl 'string'
    |
 42 | relay :: ($P: Type, v: $V/P) -> i64 { 1 }
    |                           ^

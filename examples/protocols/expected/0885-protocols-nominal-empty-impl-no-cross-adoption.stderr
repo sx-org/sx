@@ -1,4 +1,4 @@
-error: 'Thing' does not implement protocol 'P': no `impl P for Thing` provides method 'value' (protocol erasure is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy a protocol)
+error: 'Thing' does not implement interface 'P': no `impl P for Thing` provides method 'value' (handle coercion is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy an interface)
   --> examples/protocols/0885-protocols-nominal-empty-impl-no-cross-adoption.sx:11:14
    |
 11 |     bp : P = xx bv;

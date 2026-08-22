@@ -1,4 +1,4 @@
-// A protocol value does not compare with a foreign type. Unbox or recover
+// A handle does not compare with a foreign type. Unbox or recover
 // the concrete value first.
 @import "modules/std.sx";
 

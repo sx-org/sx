@@ -1,4 +1,4 @@
-// A bound's type-argument list carries the protocol's type arguments, so an
+// A bound's type-argument list carries the constraint or interface's type arguments, so an
 // empty one names nothing — the bare head is spelled without the parens.
 @import "modules/std.sx";
 

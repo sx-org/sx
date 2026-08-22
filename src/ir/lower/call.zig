@@ -4782,7 +4782,7 @@ const NamedCallee = struct {
 /// static-struct/enum-literal callees) and adds the value-receiver dot-call
 /// shapes (plain-struct method, ufcs fn — an alias resolves names against the
 /// TARGET's declared params). Null when no declaration is known (closure /
-/// fn-pointer values, builtins, protocol methods) — those bind positionally
+/// fn-pointer values, builtins, interface methods) — those bind positionally
 /// only.
 fn namedCalleeDecl(
     self: *Lowering,
@@ -4956,7 +4956,7 @@ pub fn mapNamedArgs(
             if (has_block) {
                 d.addFmt(.err, c.callee.span, "cannot use a trailing block here — '{s}' has no known declaration (closure and function-pointer values bind their arguments explicitly)", .{callee_name});
             } else {
-                d.addFmt(.err, c.callee.span, "cannot use named arguments here — '{s}' has no known parameter names (closure and function-pointer values, builtins, and protocol methods bind positionally)", .{callee_name});
+                d.addFmt(.err, c.callee.span, "cannot use named arguments here — '{s}' has no known parameter names (closure and function-pointer values, builtins, and interface methods bind positionally)", .{callee_name});
             }
         }
         return stripNamedArgs(self, c);

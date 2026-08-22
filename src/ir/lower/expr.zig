@@ -1128,7 +1128,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
             if (pcon.get(base_name)) |proto| {
                 if (self.lookupProtocolField(proto, fa.field) == null) {
                     if (self.diagnostics) |diags| {
-                        diags.addFmt(.err, span, "'{s}' is not part of protocol '{s}' — a pack element exposes only the protocol's interface", .{ fa.field, proto });
+                        diags.addFmt(.err, span, "'{s}' is not part of '{s}' — a pack element exposes only the methods of that constraint or interface", .{ fa.field, proto });
                     }
                     return self.builder.constInt(0, .void);
                 }
@@ -4163,7 +4163,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 }
                 const alloc_ty = self.module.types.findByName(self.module.types.internString("Allocator")) orelse {
                     if (self.diagnostics) |d|
-                        d.addFmt(.err, an.span, "'.(T, alloc)' needs the 'Allocator' protocol in scope — @import \"modules/std.sx\"", .{});
+                        d.addFmt(.err, an.span, "'.(T, alloc)' needs the 'Allocator' interface in scope — @import \"modules/std.sx\"", .{});
                     break :blk self.builder.constUndef(dst);
                 };
                 const av = self.lowerExpr(an);
@@ -5576,7 +5576,7 @@ fn meetCompareOperands(
             if (l_proto or r_proto) {
                 if (self.diagnostics) |d| {
                     const other = if (l_proto) rhs_ty else lhs_ty;
-                    d.addFmt(.err, span, "cannot compare a protocol value with '{s}'", .{self.formatTypeName(other)});
+                    d.addFmt(.err, span, "cannot compare a handle with '{s}'", .{self.formatTypeName(other)});
                 }
                 return null;
             }

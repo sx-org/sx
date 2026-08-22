@@ -1,6 +1,6 @@
-// Ordinary modeled conversions compose from a protocol-typed source. At an
+// Ordinary modeled conversions compose from a handle source. At an
 // unmodeled concrete leaf, the source is a handle to its conformer, not the
-// conformer's value, so a protocol source is refused in both the argument and
+// conformer's value, so a handle source is refused in both the argument and
 // dot-receiver spellings. A concrete leaf names the downcast that reads the
 // conformer out; a set destination answers in the terms it decides by,
 // membership.

@@ -850,7 +850,7 @@ fn resolveTypeListElement(self: *Lowering, element: *const Node) ?TypeId {
         const info = self.module.types.get(ty);
         if (info == .@"struct" and info.@"struct".is_protocol) {
             if (self.diagnostics) |d|
-                d.addFmt(.err, element.span, "a type list holds concrete types — '{s}' is a protocol", .{self.module.types.typeName(ty)});
+                d.addFmt(.err, element.span, "a type list holds concrete types — '{s}' is a constraint or interface", .{self.module.types.typeName(ty)});
             return null;
         }
     }

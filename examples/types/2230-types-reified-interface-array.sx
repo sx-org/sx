@@ -1,0 +1,14 @@
+// A local `[N]Type` may hold a directly-reified interface beside a concrete,
+// and `ts[k] is interface` follows k at runtime.
+@import "modules/std.sx";
+
+P :: interface { a :: (self: *Self) -> i64; }
+
+main :: () {
+    ts : [2]Type = .[P, i64];
+    print("{} {}\n", ts[0] is interface, ts[1] is interface);
+    k := 0;
+    print("{}\n", ts[k] is interface);
+    k = 1;
+    print("{}\n", ts[k] is interface);
+}

@@ -1,7 +1,7 @@
 // A bound whose head is a SIBLING type parameter defers to whatever binds that
 // parameter, and what it asks there depends on what it landed on:
 //
-//   - a protocol  -> conformance (pinned in 2027);
+//   - a constraint or interface  -> conformance (pinned in 2027);
 //   - a concrete type -> IDENTITY. The family collapses to its one member, so
 //     the binding must be exactly that type.
 //

@@ -1,5 +1,5 @@
 // `inline for` pack rejections: (1) a pack-element capture exposes only the
-// constraint protocol's interface (same rule as `xs[i]`, example 0530);
+// constraint's methods (same rule as `xs[i]`, example 0530);
 // (2) a pack element cannot be captured by reference (`*x` — an element is
 // an AST-substituted call arg, no storage); (3) a trailing pack shorter than
 // the driving iterable; (4) a non-pack, non-range iterable.

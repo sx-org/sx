@@ -1,11 +1,11 @@
-// An impl whose protocol head does not resolve in the declaring module is
+// An impl whose constraint or interface head does not resolve in the declaring module is
 // diagnosed after all registration passes, in both the parameterised and the plain
 // head forms.
 @import "modules/std.sx";
 
 Box :: struct { v: i64; }
 
-// Parameterised head: `Frobnicate` names no protocol anywhere.
+// Parameterised head: `Frobnicate` names no constraint or interface anywhere.
 impl Frobnicate(*Box) for string {
     convert :: (self: string) -> *Box { return null; }
 }

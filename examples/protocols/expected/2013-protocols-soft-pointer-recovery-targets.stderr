@@ -1,4 +1,4 @@
-error: the ctx recovery yields a pointer to the CONCRETE value, so its target must be the concrete pointee type ('p.(?*YourConcrete)'); to point at the protocol value itself, take its address with prefix '*'
+error: the ctx recovery yields a pointer to the CONCRETE value, so its target must be the concrete pointee type ('p.(?*YourConcrete)'); to point at the handle itself, take its address with prefix '*'
   --> examples/protocols/2013-protocols-soft-pointer-recovery-targets.sx:16:16
    |
 16 |     if p := b.(?*Boxed) { print("{}\n", p.area()); }

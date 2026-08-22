@@ -15,7 +15,7 @@ error: the bound on '$V' writes 1 type argument, but '$P' is bound to 'Ord', whi
 21 | spelled :: ($P: Type, v: $V/P(i32)) -> i32 { 1 }
    |                             ^^^^^^
 
-help: the arity is the bound protocol's, and '$P' is only known at the call that binds it
+help: the arity is the bound's, and '$P' is only known at the call that binds it
    |
 21 | spelled :: ($P: Type, v: $V/P(i32)) -> i32 { 1 }
    |                             ^^^^^^

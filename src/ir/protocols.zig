@@ -515,7 +515,7 @@ pub const ProtocolResolver = struct {
             for (pd.methods) |m| {
                 if (std.mem.eql(u8, tp.name, m.name)) {
                     if (self.l.diagnostics) |diags| {
-                        diags.addFmt(.warn, null, "protocol '{s}' declares type-arg and method both named '{s}'; `..pack.{s}` resolves by position (type-arg in type position, method in value position)", .{ pd.name, tp.name, tp.name });
+                        diags.addFmt(.warn, null, "'{s}' declares type-arg and method both named '{s}'; `..pack.{s}` resolves by position (type-arg in type position, method in value position)", .{ pd.name, tp.name, tp.name });
                     }
                 }
             }
@@ -822,9 +822,9 @@ pub const ProtocolResolver = struct {
                     if (source) |src| diags.current_source_file = src;
                     defer diags.current_source_file = saved;
                     if (self.resolveProtocol(ib.protocol_name, source) == null) {
-                        diags.addFmt(.err, decl.span, "unknown protocol '{s}' in impl — not declared or imported in this module", .{ib.protocol_name});
+                        diags.addFmt(.err, decl.span, "unknown constraint or interface '{s}' in impl — not declared or imported in this module", .{ib.protocol_name});
                     } else if (ib.protocol_type_args.len > 0) {
-                        diags.addFmt(.err, decl.span, "impl '{s}' cannot register: a protocol type argument or the source type does not resolve in this module", .{ib.protocol_name});
+                        diags.addFmt(.err, decl.span, "impl '{s}' cannot register: a type argument or the source type does not resolve in this module", .{ib.protocol_name});
                     } else {
                         diags.addFmt(.err, decl.span, "impl '{s}' cannot register: target type '{s}' does not resolve in this module", .{ ib.protocol_name, ib.target_type });
                     }
@@ -880,7 +880,7 @@ fn registerGenericParamImpl(
     if (any_target_binder and !any_proto_binder) {
         if (self.l.diagnostics) |d| {
             const id = d.addFmtId(.err, decl.span, "'impl {s}' names a generic carrier but no binder among its type arguments", .{proto_name});
-            d.addHelpFmt(id, decl.span, null, "spell the carrier's binder in the protocol arguments too ('impl {s}($T) for …($T)'), or give the carrier a concrete instantiation", .{proto_name});
+            d.addHelpFmt(id, decl.span, null, "spell the carrier's binder in the type arguments too ('impl {s}($T) for …($T)'), or give the carrier a concrete instantiation", .{proto_name});
         }
         return;
     }
@@ -903,7 +903,7 @@ fn registerGenericParamImpl(
             if (found == null) {
                 if (self.l.diagnostics) |d| {
                     const id = d.addFmtId(.err, decl.span, "'impl {s}' binds '${s}', which its carrier never spells", .{ proto_name, want });
-                    d.addHelpFmt(id, decl.span, null, "every binder in the protocol arguments must appear in the carrier's arguments", .{});
+                    d.addHelpFmt(id, decl.span, null, "every binder in the type arguments must appear in the carrier's arguments", .{});
                 }
                 return;
             }
