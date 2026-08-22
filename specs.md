@@ -2515,11 +2515,14 @@ sum :: (a: $T, b: T) -> T {
 ```
 - `$T` in a parameter type **introduces** type parameter `T`
 - Bare `T` (without `$`) **references** the introduced type parameter
-- At call sites, type arguments are **inferred** from actual argument types:
+- A binder introduced in a parameter type is **inferred** at each call site from the actual argument:
   ```sx
   sum(40, 2)       // T = i32
   sum(1.5, 2.5)    // T = f64
   ```
+- A function-type bound written as the function's **return** type introduces the binder there:
+  `make_adder :: (n: i64) -> $F/(i64) -> i64`. The body fixes F — F is the returned value's
+  type, which must satisfy the head. The call supplies no type argument for F.
 - Each unique set of concrete types produces a **separate specialized function** (monomorphization)
 - Multiple type parameters are supported: `(a: $T, b: $U) -> T`
 
@@ -4955,9 +4958,9 @@ reads the type `Pol.a`): write such a body as a block (`-> Pol { .a }`).
 ### Closures
 
 A lambda's value is the env struct it named, and nothing
-else. That type is **unique** to the literal, is written only through a
-binder (`$F/(…) -> R`), and carries no pointer: an empty env is a zero-sized
-value, and a two-field env is those two fields.
+else. That type is **unique** to the literal, is written only through a binder —
+`$F/(…) -> R` in a parameter or a return — and carries no pointer: an empty env
+is a zero-sized value, and a two-field env is those two fields.
 
 `Closure(…) -> R` is the **erased** form of a callable — a fat pointer
 `{ fn_ptr, env }` (16 bytes), against a bare function pointer's 8. A unique
@@ -5053,8 +5056,9 @@ closure :: (f: $F/(..$A) -> $R, alloc: Allocator = context.allocator) -> Closure
 - A `Closure` argument is returned unchanged, so `closure` composes.
 - An empty env is zero-sized. `make`/`create` of a 0-sized T return null;
   `make` does not write a null dest; `alloc_bytes(0)` returns null and
-  allocates nothing; `dealloc_bytes(null)` is a no-op. An erased empty
-  lambda has a null env word — `p := alloc.make(@env_of(f))` for that env.
+  allocates nothing; `dealloc_bytes(null)` is a no-op.
+  `p := alloc.make(@env_of(f))` is null for a 0-sized env, so an erased empty
+  lambda carries a null env word and funds nothing.
 - `free(cl)` / `free(cl, alloc)` releases the env the same allocator funded.
 
 #### Factory Functions
@@ -5070,6 +5074,13 @@ make_handler :: (n: i64) -> Closure(i64) -> i64 {
 }
 ```
 
+`$F` on `make_adder` is the return binder in Generic Functions: the body fixes F
+(here the literal's unique type). A body returns one type — one literal on two
+paths is one type; two literals are two types and cannot both be the return. The
+caller binds the value (`add5 := make_adder(5)`) and does not spell F; a later
+signature names the unique by introducing its own binder (`apply(add5, 1)`,
+`closure(add5)`).
+
 A slot written with no binder — a field, an array element, an interface method's
 parameter — is a `Closure`, so anything capturing that reaches it goes through
 `closure` first.
@@ -5082,7 +5093,8 @@ Button :: struct {
     on_click: ?Closure(i64) -> void;
 }
 btn := Button{label = "OK", on_click = null };
-btn.on_click = closure(|x|_{ id = btn_id } log(id, x));
+btn_id := 7;
+btn.on_click = closure(|x|_{ id = btn_id } print("{} {}\n", id, x));
 if handler := btn.on_click {
     handler(1);
 }
@@ -5096,8 +5108,10 @@ only there, defaulting to `context.allocator` — the compiler initializes
 `push Context` overrides it. An auto-promoted function pointer or empty lambda
 has a null env and funds nothing.
 ```sx
-f := |x: i64|_{ base = base } -> i64 x + base;   // env in f's storage
-cb := closure(f, arena);                         // env copied into the arena
+base  := 10;
+arena := Arena.init(context.allocator, 4096);
+f  := |x: i64|_{ base = base } -> i64 x + base;   // env in f's storage
+cb := closure(f, arena);                          // env copied into the arena
 ```
 
 ### Function Call
